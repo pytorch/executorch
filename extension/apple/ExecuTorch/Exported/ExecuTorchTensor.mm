@@ -12,8 +12,23 @@
 
 #import <executorch/extension/tensor/tensor.h>
 
+using namespace executorch::extension;
+
 @implementation ExecuTorchTensor {
-  ::executorch::extension::TensorPtr _tensor;
+  TensorPtr _tensor;
+}
+
+- (instancetype)initWithNativeInstance:(void *)nativeInstance {
+  ET_CHECK(nativeInstance);
+  if (self = [super init]) {
+    _tensor = std::move(*reinterpret_cast<TensorPtr *>(nativeInstance));
+    ET_CHECK(_tensor);
+  }
+  return self;
+}
+
+- (void *)nativeInstance {
+  return &_tensor;
 }
 
 @end
