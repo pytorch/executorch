@@ -52,7 +52,7 @@ UPLOAD_DIR="${UPLOAD_DIR:-}"
 PT2E_QUANTIZE="${PT2E_QUANTIZE:-}"
 
 # Default CMake Build Type to release mode
-CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-Release}
+CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-Debug}
 
 if [[ $# -lt 4 ]]; then # Assuming 4 mandatory args
     echo "Expecting atleast 4 positional arguments"
@@ -150,7 +150,7 @@ fi
 which "${PYTHON_EXECUTABLE}"
 
 cmake_install_executorch_libraries() {
-    echo "Installing libexecutorch.a, libextension_module.so, libportable_ops_lib.a"
+    echo "Installing libexecutorch.a, libextension_module.a, libportable_ops_lib.a"
     rm -rf cmake-out
     retry cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
@@ -168,7 +168,7 @@ cmake_install_executorch_libraries() {
         -DQNN_SDK_ROOT="$QNN_SDK_ROOT" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out .
-    cmake --build cmake-out -j9 --target install --config "$CMAKE_BUILD_TYPE"
+    cmake --build cmake-out -j $(nproc) --target install --config "$CMAKE_BUILD_TYPE"
 }
 
 cmake_build_llama_runner() {
@@ -187,7 +187,7 @@ cmake_build_llama_runner() {
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out/${dir} \
         ${dir}
-    cmake --build cmake-out/${dir} -j9 --config "$CMAKE_BUILD_TYPE"
+    cmake --build cmake-out/${dir} -j $(nproc) --config "$CMAKE_BUILD_TYPE"
 
 }
 
