@@ -76,7 +76,23 @@ install_sdk() {
   yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "tools"
 }
 
+function write_android_sccache_stub() {
+  BINARY=$1
+  mv "/opt/ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/$1" "/opt/ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/.$1"
+  cat >"/opt/ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/$1" <<EOF
+#!/bin/sh
+if [ command -v sccache && \$(env -u LD_PRELOAD ps -p \$PPID -o comm=) != sccache ]; then
+  exec sccache /opt/ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/.$1 "\$@"
+else
+  exec /opt/ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/.$1 "\$@"
+fi
+EOF
+  chmod a+x "/opt/toolchains/llvm/prebuilt/linux-x86_64/bin/${BINARY}"
+}
+
 install_prerequiresites
 install_ndk
 install_cmdtools
 install_sdk
+write_android_sccache_stub clang++
+write_android_sccache_stub clang
