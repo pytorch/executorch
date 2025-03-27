@@ -13,6 +13,7 @@
 
 #import <executorch/extension/tensor/tensor.h>
 
+using namespace executorch::aten;
 using namespace executorch::extension;
 
 @implementation ExecuTorchTensor {
@@ -66,6 +67,28 @@ using namespace executorch::extension;
 
 - (NSInteger)count {
   return _tensor->numel();
+}
+
+@end
+
+@implementation ExecuTorchTensor (BytesNoCopy)
+
+- (instancetype)initWithBytesNoCopy:(void *)pointer
+                              shape:(NSArray<NSNumber *> *)shape
+                            strides:(NSArray<NSNumber *> *)strides
+                     dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
+                           dataType:(ExecuTorchDataType)dataType
+                      shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  ET_CHECK(pointer);
+  auto tensor = make_tensor_ptr(
+    utils::toVector<SizesType>(shape),
+    pointer,
+    utils::toVector<DimOrderType>(dimensionOrder),
+    utils::toVector<StridesType>(strides),
+    static_cast<ScalarType>(dataType),
+    static_cast<TensorShapeDynamism>(shapeDynamism)
+  );
+  return [self initWithNativeInstance:&tensor];
 }
 
 @end
