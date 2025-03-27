@@ -63,7 +63,7 @@ class ModuleTest: XCTestCase {
     let inputTensor = inputData.withUnsafeMutableBytes {
       Tensor(bytesNoCopy: $0.baseAddress!, shape:[1], dataType: .float)
     }
-    let inputs = [Value(inputTensor), Value(inputTensor)]
+    let inputs = [inputTensor, inputTensor]
     var outputs: [Value]?
     XCTAssertNoThrow(outputs = try module.execute("forward", inputs))
     var outputData: [Float] = [2.0]
