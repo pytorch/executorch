@@ -175,14 +175,22 @@ class XNNPartitionerConfig(PartitionerConfig):
             if arg_val.dtype not in valid_dtypes:
                 return False
 
-            # Check for mixed dtypes
+            # Use the first dtype as reference
             reference_dtype = reference_dtype or arg_val.dtype
+
+            # Check for mixed dtypes
             if arg_val.dtype != reference_dtype:
+                # Get op name if the attribute exists, otherwise use the full node target for logging
+                op_name = (
+                    node.target.__name__
+                    if hasattr(node.target, "__name__")
+                    else str(node.target)
+                )
                 why(
                     node,
                     reason=(
-                        f"{node.target} does not support mixed input dtypes. "
-                        f"Got: [{reference_dtype}, {arg_val.dtype}]"
+                        f"{op_name} does not support mixed input dtypes, "
+                        f"got: [{reference_dtype}, {arg_val.dtype}]"
                     ),
                 )
                 return False
