@@ -31,6 +31,7 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
 
 @implementation ExecuTorchTensor {
   TensorPtr _tensor;
+  NSData *_data;
   NSArray<NSNumber *> *_shape;
   NSArray<NSNumber *> *_strides;
   NSArray<NSNumber *> *_dimensionOrder;
@@ -271,6 +272,30 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
               dimensionOrder:@[]
                     dataType:dataType
                shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
+@end
+
+@implementation ExecuTorchTensor (Data)
+
+- (instancetype)initWithData:(NSData *)data
+                       shape:(NSArray<NSNumber *> *)shape
+                     strides:(NSArray<NSNumber *> *)strides
+              dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
+                    dataType:(ExecuTorchDataType)dataType
+               shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  ET_CHECK_MSG(data.length >= ExecuTorchElementCountOfShape(shape) * ExecuTorchSizeOfDataType(dataType),
+               "Data length is too small");
+  self = [self initWithBytesNoCopy:(void *)data.bytes
+                             shape:shape
+                           strides:strides
+                    dimensionOrder:dimensionOrder
+                          dataType:dataType
+                     shapeDynamism:shapeDynamism];
+  if (self) {
+    _data = data;
+  }
+  return self;
 }
 
 @end
