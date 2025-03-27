@@ -455,3 +455,26 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
 }
 
 @end
+
+@implementation ExecuTorchTensor (Scalar)
+
+- (instancetype)initWithScalar:(NSNumber *)scalar
+                      dataType:(ExecuTorchDataType)dataType {
+  return [self initWithScalars:@[scalar]
+                         shape:@[]
+                       strides:@[]
+                dimensionOrder:@[]
+                      dataType:dataType
+                 shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
+- (instancetype)initWithScalar:(NSNumber *)scalar {
+  return [self initWithScalars:@[scalar]
+                         shape:@[]
+                       strides:@[]
+                dimensionOrder:@[]
+                      dataType:static_cast<ExecuTorchDataType>(utils::deduceType(scalar))
+                 shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
+@end
