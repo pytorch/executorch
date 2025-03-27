@@ -30,9 +30,29 @@ typedef NS_ENUM(uint32_t, ExecuTorchValueTag) {
   ExecuTorchValueTagOptionalTensorList,
 } NS_SWIFT_NAME(ValueTag);
 
+/**
+ * A dynamic value type used by ExecuTorch.
+ *
+ * ExecuTorchValue encapsulates a value that may be of various types such as
+ * a tensor or a scalar. The value’s type is indicated by its tag.
+ */
 NS_SWIFT_NAME(Value)
 __attribute__((deprecated("This API is experimental.")))
 @interface ExecuTorchValue : NSObject
+
+/**
+ * The tag that indicates the dynamic type of the value.
+ *
+ * @return An ExecuTorchValueTag value.
+ */
+@property(nonatomic, readonly) ExecuTorchValueTag tag;
+
+/**
+ * Returns YES if the value is of type None.
+ *
+ * @return A BOOL indicating whether the value is None.
+ */
+@property(nonatomic, readonly) BOOL isNone;
 
 @end
 
