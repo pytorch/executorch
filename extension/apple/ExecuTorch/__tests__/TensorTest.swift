@@ -165,4 +165,29 @@ class TensorTest: XCTestCase {
     XCTAssertEqual(tensor1.dimensionOrder, tensor2.dimensionOrder)
     XCTAssertEqual(tensor1.count, tensor2.count)
   }
+
+  func testResize() {
+    var data: [Int] = [1, 2, 3, 4]
+    let tensor = data.withUnsafeMutableBytes {
+      Tensor(bytesNoCopy: $0.baseAddress!, shape: [4, 1], dataType: .int)
+    }
+    XCTAssertNoThrow(try tensor.resize(to: [2, 2]))
+    XCTAssertEqual(tensor.dataType, .int)
+    XCTAssertEqual(tensor.shape, [2, 2])
+    XCTAssertEqual(tensor.strides, [2, 1])
+    XCTAssertEqual(tensor.dimensionOrder, [0, 1])
+    XCTAssertEqual(tensor.count, 4)
+
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(Array(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Int.self), count: count)), data)
+    }
+  }
+
+  func testResizeError() {
+    var data: [Int] = [1, 2, 3, 4]
+    let tensor = data.withUnsafeMutableBytes {
+      Tensor(bytesNoCopy: $0.baseAddress!, shape: [4, 1], dataType: .int)
+    }
+    XCTAssertThrowsError(try tensor.resize(to: [2, 3]))
+  }
 }
