@@ -14,6 +14,7 @@ import torch
 import torch.fx as fx
 
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
 from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
     FuseQuantizedActivationPass,
 )
@@ -142,6 +143,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.logical_or.default,
             exir_ops.edge.aten.logical_xor.default,
             exir_ops.edge.aten.logical_not.default,
+            exir_ops.edge.aten.arange.start_step,
             exir_ops.edge.aten.bitwise_and.Tensor,
             exir_ops.edge.aten.bitwise_or.Tensor,
             exir_ops.edge.aten.bitwise_xor.Tensor,
@@ -201,6 +203,8 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.constant_pad_nd.default,
             exir_ops.edge.aten.amax.default,
             exir_ops.edge.aten.amin.default,
+            exir_ops.edge.aten.eye.default,
+            exir_ops.edge.aten.linspace.default,
         ]
 
         return supported
@@ -457,16 +461,18 @@ class CheckInt64Inputs(OperatorSupportBase):
     ) -> bool:
 
         for input_node in node.all_input_nodes:
-            # We can cast constant placeholders AOT, not call_functions.
+            # We can cast constant placeholders and constant ops AOT, such int64 are ok.
+            # Otherwise, don't partition if one or more inputs are int64.
             if (
                 input_node.name in self.input_names
                 or not input_node.op == "placeholder"
             ):
                 tensor = get_first_fake_tensor(input_node)
                 if tensor.dtype == torch.int64:
-                    self.reporter.report_reject(
-                        node,
-                        f"Had int64 input {input_node.name} that couldn't be handled.",
-                    )
-                    return False
+                    if input_node.target not in ComputeConstantOpsAOT.targeted_ops:
+                        self.reporter.report_reject(
+                            node,
+                            f"Had int64 input {input_node.name} that couldn't be handled.",
+                        )
+                        return False
         return True

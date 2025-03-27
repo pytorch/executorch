@@ -11,6 +11,9 @@ from executorch.backends.xnnpack.test.tester import Tester
 
 
 class TestMeanDim(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     class MeanDim(torch.nn.Module):
         def __init__(self, dims):
             super().__init__()

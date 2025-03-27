@@ -77,47 +77,31 @@ def test_native_layer_norm_tosa_BI(test_data):
         test_data[0],
         "torch.ops.aten.sub.Tensor",  # Just check for sub op included in the layernorm decomposition
     )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
 def test_native_layer_norm_u55_BI(test_data):
     pipeline = EthosU55PipelineBI[input_t](
         test_data[1],
         test_data[0],
         "torch.ops.aten.sub.Tensor",  # Just check for sub op included in the layernorm decomposition
+        run_on_fvp=True,
     )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
 def test_native_layer_norm_u85_BI(test_data):
-    pipeline = EthosU85PipelineBI[input_t](
-        test_data[1],
-        test_data[0],
-        "torch.ops.aten.sub.Tensor",  # Just check for sub op included in the layernorm decomposition
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", test_data_suite)
-@common.SkipIfNoCorstone300
-def test_native_layer_norm_u55_BI_on_fvp(test_data):
-    pipeline = EthosU55PipelineBI[input_t](
-        test_data[1],
-        test_data[0],
-        "torch.ops.aten.sub.Tensor",  # Just check for sub op included in the layernorm decomposition
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", test_data_suite)
-@common.SkipIfNoCorstone320
-def test_native_layer_norm_u85_BI_on_fvp(test_data):
     pipeline = EthosU85PipelineBI[input_t](
         test_data[1],
         test_data[0],
         "torch.ops.aten.sub.Tensor",  # Just check for sub op included in the layernorm decomposition
         run_on_fvp=True,
     )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()

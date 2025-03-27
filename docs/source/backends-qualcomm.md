@@ -43,10 +43,17 @@ The version is documented in QNN SDK.
 
 ### Hardware:
 You will need an Android smartphone with adb-connected running on one of below Qualcomm SoCs:
+ - SA8295
  - SM8450 (Snapdragon 8 Gen 1)
  - SM8475 (Snapdragon 8 Gen 1+)
  - SM8550 (Snapdragon 8 Gen 2)
  - SM8650 (Snapdragon 8 Gen 3)
+ - SM8750 (Snapdragon 8 Elite)
+ - SSG2115P
+ - SSG2125P
+ - SXR1230P
+ - SXR2230P
+ - SXR2330P
 
 This example is verified with SM8550 and SM8450.
 

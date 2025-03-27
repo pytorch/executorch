@@ -28,6 +28,9 @@ from executorch.backends.vulkan._passes.remove_asserts import remove_asserts
 from executorch.devtools.backend_debug import print_delegation_info
 
 from executorch.devtools.etrecord import generate_etrecord
+from executorch.examples.models.llama.hf_download import (
+    download_and_convert_hf_checkpoint,
+)
 from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
@@ -95,9 +98,15 @@ EXECUTORCH_DEFINED_MODELS = [
     "llama3_2",
     "static_llama",
     "qwen2_5",
-    "phi-4-mini",
+    "phi_4_mini",
+    "smollm2",
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
+HUGGING_FACE_REPO_IDS = {
+    "qwen2_5": "Qwen/Qwen2.5-1.5B",
+    "phi_4_mini": "microsoft/Phi-4-mini-instruct",
+    "smollm2": "HuggingFaceTB/SmolLM-135M",
+}
 
 
 class WeightType(Enum):
@@ -525,6 +534,28 @@ def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
 
 
 def export_llama(args) -> str:
+    # If a checkpoint isn't provided for an HF OSS model, download and convert the
+    # weights first.
+    if not args.checkpoint and args.model in HUGGING_FACE_REPO_IDS:
+        repo_id = HUGGING_FACE_REPO_IDS[args.model]
+        if args.model == "qwen2_5":
+            from executorch.examples.models.qwen2_5 import (  # pyre-ignore[21]
+                convert_weights,
+            )
+        elif args.model == "phi_4_mini":
+            from executorch.examples.models.phi_4_mini import (  # pyre-ignore[21]
+                convert_weights,
+            )
+        elif args.model == "smollm2":
+            from executorch.examples.models.smollm2 import (  # pyre-ignore[21]
+                convert_weights,
+            )
+        else:
+            raise ValueError(
+                f"Converting weights to meta format for {args.model} is not yet supported"
+            )
+        args.checkpoint = download_and_convert_hf_checkpoint(repo_id, convert_weights)
+
     if args.profile_path is not None:
         try:
             from executorch.util.python_profiler import CProfilerFlameGraph
@@ -698,19 +729,6 @@ def _validate_args(args):
                 "Shared embedding is only supported with torchao quantization."
             )
 
-    if (
-        args.quantization_mode is not None
-        and args.quantization_mode.startswith("torchao:")
-    ) or (
-        args.embedding_quantize is not None
-        and args.embedding_quantize.startswith("torchao:")
-    ):
-        if args.enable_dynamic_shape:
-            raise ValueError(
-                "Dynamic shape is not currently supported with torchao ops. Please use --disable_dynamic_shape."
-                "If you need this feature, please file an issue."
-            )
-
 
 def _to_edge_and_lower_llama_xnnpack(
     builder_exported,
@@ -808,9 +826,19 @@ def _to_edge_and_lower_llama(  # noqa: C901
             )
         )
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
-        from executorch.backends.qualcomm.utils.utils import _transform, tag_quant_io
+        from executorch.backends.qualcomm._passes.annotate_decomposed import (
+            AnnotateDecomposed,
+        )
+        from executorch.backends.qualcomm.utils.constants import QCOM_PASS_ACTIVATE_KEY
+        from executorch.backends.qualcomm.utils.utils import (
+            _transform,
+            get_capture_program_passes,
+            tag_quant_io,
+        )
 
-        _transform(builder_exported_to_edge.edge_manager.exported_program())
+        passes_job = get_capture_program_passes()
+        passes_job[AnnotateDecomposed][QCOM_PASS_ACTIVATE_KEY] = True
+        _transform(builder_exported_to_edge.edge_manager.exported_program(), passes_job)
 
         if args.num_sharding > 0:
             model_sharding.split_graph(
