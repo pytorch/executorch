@@ -77,4 +77,21 @@ using namespace executorch::runtime;
   return _module->is_method_loaded(methodName.UTF8String);
 }
 
+- (nullable NSSet<NSString *> *)methodNames:(NSError **)error {
+  const auto result = _module->method_names();
+  if (!result.ok()) {
+    if (error) {
+      *error = [NSError errorWithDomain:ExecuTorchErrorDomain
+                                   code:(NSInteger)result.error()
+                               userInfo:nil];
+    }
+    return nil;
+  }
+  NSMutableSet<NSString *> *methods = [NSMutableSet setWithCapacity:result->size()];
+  for (const auto &name : *result) {
+    [methods addObject:(NSString *)@(name.c_str())];
+  }
+  return methods;
+}
+
 @end

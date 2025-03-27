@@ -104,6 +104,17 @@ __attribute__((deprecated("This API is experimental.")))
  */
 - (BOOL)isMethodLoaded:(NSString *)methodName NS_SWIFT_NAME(isLoaded(_:));
 
+/**
+ * Retrieves the set of method names available in the loaded program.
+ *
+ * The method names are returned as an unordered set of strings. The program and methods
+ * are loaded as needed.
+ *
+ * @param error A pointer to an NSError pointer that is set if an error occurs.
+ * @return An unordered set of method names, or nil in case of an error.
+ */
+- (nullable NSSet<NSString *> *)methodNames:(NSError **)error;
+
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
 
