@@ -25,7 +25,7 @@ et_cxx_test(
   ${_test_srcs}
   EXTRA_LIBS
   extension_data_loader
-  extension_module_static
+  extension_module
   extension_tensor
   portable_kernels
   portable_ops_lib

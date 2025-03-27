@@ -65,6 +65,7 @@ endif()
 set(lib_list
     etdump
     bundled_program
+    extension_flat_tensor
     extension_data_loader
     ${FLATCCRT_LIB}
     coreml_util
@@ -76,7 +77,6 @@ set(lib_list
     portable_ops_lib
     custom_ops
     extension_module
-    extension_module_static
     extension_runner_util
     extension_tensor
     extension_threadpool
@@ -113,13 +113,9 @@ foreach(lib ${lib_list})
             If needed rebuild with the proper options in CMakeLists.txt"
     )
   else()
-    if("${lib}" STREQUAL "extension_module" AND (NOT CMAKE_TOOLCHAIN_IOS))
-      add_library(${lib} SHARED IMPORTED)
-    else()
-      # Building a share library on iOS requires code signing, so it's easier to
-      # keep all libs as static when CMAKE_TOOLCHAIN_IOS is used
-      add_library(${lib} STATIC IMPORTED)
-    endif()
+    # Building a share library on iOS requires code signing, so it's easier to
+    # keep all libs as static when CMAKE_TOOLCHAIN_IOS is used
+    add_library(${lib} STATIC IMPORTED)
     set_target_properties(${lib} PROPERTIES IMPORTED_LOCATION "${${lib_var}}")
     target_include_directories(
       ${lib}
