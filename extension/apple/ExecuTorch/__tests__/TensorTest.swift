@@ -137,4 +137,18 @@ class TensorTest: XCTestCase {
       XCTAssertEqual(updatedData, [2, 4, 6, 8])
     }
   }
+
+  func testInitWithTensor() {
+    var data: [Int] = [10, 20, 30, 40]
+    let tensor1 = data.withUnsafeMutableBytes {
+      Tensor(bytesNoCopy: $0.baseAddress!, shape: [2, 2], dataType: .int)
+    }
+    let tensor2 = Tensor(tensor1)
+
+    XCTAssertEqual(tensor2.dataType, tensor1.dataType)
+    XCTAssertEqual(tensor2.shape, tensor1.shape)
+    XCTAssertEqual(tensor2.strides, tensor1.strides)
+    XCTAssertEqual(tensor2.dimensionOrder, tensor1.dimensionOrder)
+    XCTAssertEqual(tensor2.count, tensor1.count)
+  }
 }
