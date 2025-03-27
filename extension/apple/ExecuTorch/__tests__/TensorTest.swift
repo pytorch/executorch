@@ -393,6 +393,114 @@ class TensorTest: XCTestCase {
     }
   }
 
+  func testInitInt8() {
+    let tensor = Tensor(Int8(42))
+    XCTAssertEqual(tensor.dataType, .char)
+    XCTAssertEqual(tensor.shape, [])
+    XCTAssertEqual(tensor.strides, [])
+    XCTAssertEqual(tensor.dimensionOrder, [])
+    XCTAssertEqual(tensor.count, 1)
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Int8.self), count: count).first, 42)
+    }
+  }
+
+  func testInitInt16() {
+    let tensor = Tensor(Int16(42))
+    XCTAssertEqual(tensor.dataType, .short)
+    XCTAssertEqual(tensor.shape, [])
+    XCTAssertEqual(tensor.strides, [])
+    XCTAssertEqual(tensor.dimensionOrder, [])
+    XCTAssertEqual(tensor.count, 1)
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Int16.self), count: count).first, 42)
+    }
+  }
+
+  func testInitInt32() {
+    let tensor = Tensor(Int32(42))
+    XCTAssertEqual(tensor.dataType, .int)
+    XCTAssertEqual(tensor.shape, [])
+    XCTAssertEqual(tensor.strides, [])
+    XCTAssertEqual(tensor.dimensionOrder, [])
+    XCTAssertEqual(tensor.count, 1)
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Int32.self), count: count).first, 42)
+    }
+  }
+
+  func testInitInt64() {
+    let tensor = Tensor(Int64(42))
+    XCTAssertEqual(tensor.dataType, .long)
+    XCTAssertEqual(tensor.shape, [])
+    XCTAssertEqual(tensor.strides, [])
+    XCTAssertEqual(tensor.dimensionOrder, [])
+    XCTAssertEqual(tensor.count, 1)
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Int64.self), count: count).first, 42)
+    }
+  }
+
+  func testInitUInt8() {
+    let tensor = Tensor(UInt8(42))
+    XCTAssertEqual(tensor.dataType, .byte)
+    XCTAssertEqual(tensor.shape, [])
+    XCTAssertEqual(tensor.strides, [])
+    XCTAssertEqual(tensor.dimensionOrder, [])
+    XCTAssertEqual(tensor.count, 1)
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: UInt8.self), count: count).first, 42)
+    }
+  }
+
+  func testInitUInt16() {
+    let tensor = Tensor(UInt16(42))
+    XCTAssertEqual(tensor.dataType, .uInt16)
+    XCTAssertEqual(tensor.shape, [])
+    XCTAssertEqual(tensor.strides, [])
+    XCTAssertEqual(tensor.dimensionOrder, [])
+    XCTAssertEqual(tensor.count, 1)
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: UInt16.self), count: count).first, 42)
+    }
+  }
+
+  func testInitUInt32() {
+    let tensor = Tensor(UInt32(42))
+    XCTAssertEqual(tensor.dataType, .uInt32)
+    XCTAssertEqual(tensor.shape, [])
+    XCTAssertEqual(tensor.strides, [])
+    XCTAssertEqual(tensor.dimensionOrder, [])
+    XCTAssertEqual(tensor.count, 1)
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: UInt32.self), count: count).first, 42)
+    }
+  }
+
+  func testInitUInt64() {
+    let tensor = Tensor(UInt64(42))
+    XCTAssertEqual(tensor.dataType, .uInt64)
+    XCTAssertEqual(tensor.shape, [])
+    XCTAssertEqual(tensor.strides, [])
+    XCTAssertEqual(tensor.dimensionOrder, [])
+    XCTAssertEqual(tensor.count, 1)
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: UInt64.self), count: count).first, 42)
+    }
+  }
+
+  func testInitBool() {
+    let tensor = Tensor(true)
+    XCTAssertEqual(tensor.dataType, .bool)
+    XCTAssertEqual(tensor.shape, [])
+    XCTAssertEqual(tensor.strides, [])
+    XCTAssertEqual(tensor.dimensionOrder, [])
+    XCTAssertEqual(tensor.count, 1)
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Bool.self), count: count).first, true)
+    }
+  }
+
   func testInitFloat() {
     let tensor = Tensor(Float(42.0))
     XCTAssertEqual(tensor.dataType, .float)
@@ -402,6 +510,42 @@ class TensorTest: XCTestCase {
     XCTAssertEqual(tensor.count, 1)
     tensor.bytes { pointer, count, dataType in
       XCTAssertEqual(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Float.self), count: count).first, 42.0)
+    }
+  }
+
+  func testInitDouble() {
+    let tensor = Tensor(42.0)
+    XCTAssertEqual(tensor.dataType, .double)
+    XCTAssertEqual(tensor.shape, [])
+    XCTAssertEqual(tensor.strides, [])
+    XCTAssertEqual(tensor.dimensionOrder, [])
+    XCTAssertEqual(tensor.count, 1)
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Double.self), count: count).first, 42.0)
+    }
+  }
+
+  func testInitInt() {
+    let tensor = Tensor(42)
+    XCTAssertEqual(tensor.dataType, .long)
+    XCTAssertEqual(tensor.shape, [])
+    XCTAssertEqual(tensor.strides, [])
+    XCTAssertEqual(tensor.dimensionOrder, [])
+    XCTAssertEqual(tensor.count, 1)
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Int.self), count: count).first, 42)
+    }
+  }
+
+  func testInitUInt() {
+    let tensor = Tensor(UInt(42))
+    XCTAssertEqual(tensor.dataType, .uInt64)
+    XCTAssertEqual(tensor.shape, [])
+    XCTAssertEqual(tensor.strides, [])
+    XCTAssertEqual(tensor.dimensionOrder, [])
+    XCTAssertEqual(tensor.count, 1)
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: UInt.self), count: count).first, 42)
     }
   }
 }
