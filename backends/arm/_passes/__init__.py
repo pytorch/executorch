@@ -7,7 +7,8 @@
 from . import arm_pass_utils  # noqa
 from .annotate_channels_last_dim_order_pass import AnnotateChannelsLastDimOrder  # noqa
 from .annotate_decomposed_matmul import AnnotateDecomposedMatmulPass  # noqa
-from .cast_int64_pass import CastInt64ToInt32Pass  # noqa
+from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
+from .cast_to_int32_pass import CastToInt32Pass  # noqa
 from .conv1d_unsqueeze_pass import Conv1dUnsqueezePass  # noqa
 from .convert_any_default_dim_dims_pass import ConvertAnyDefaultDimDimsPass  # noqa
 from .convert_expand_copy_to_repeat import ConvertExpandCopyToRepeatPass  # noqa
