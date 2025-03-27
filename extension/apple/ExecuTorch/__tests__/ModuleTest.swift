@@ -39,4 +39,16 @@ class ModuleTest: XCTestCase {
     XCTAssertNoThrow(try module.load("forward"))
     XCTAssertTrue(module.isLoaded("forward"))
   }
+
+  func testMethodNames() {
+    let bundle = Bundle(for: type(of: self))
+    guard let modelPath = bundle.path(forResource: "add", ofType: "pte") else {
+      XCTFail("Couldn't find the model file")
+      return
+    }
+    let module = Module(filePath: modelPath)
+    var methodNames: Set<String>?
+    XCTAssertNoThrow(methodNames = try module.methodNames())
+    XCTAssertEqual(methodNames, Set(["forward"]))
+  }
 }
