@@ -125,7 +125,7 @@ class TOSABackend(BackendDetails):
             dbg_tosa_dump(
                 tosa_graph,
                 artifact_path,
-                suffix="{}".format(f"_{tag}" if tag else ""),
+                suffix="{}".format(f"_{tag}" if tag else "") + (f"_{tosa_spec}"),
             )
 
         # Serialize and return the TOSA flatbuffer.

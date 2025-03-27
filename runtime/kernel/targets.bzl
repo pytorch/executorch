@@ -59,9 +59,9 @@ def define_common_targets():
             "//executorch/runtime/core/portable_type/c10/c10:c10",
             "//executorch/runtime/platform:platform",
         ],
+        # Don't depend on this target, depend on //executorch/extension/threadpool:threadpool.
         visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
+            "//executorch/extension/threadpool/...",
         ],
     )
 
