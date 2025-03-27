@@ -62,6 +62,28 @@ typedef NS_ENUM(uint8_t, ExecuTorchShapeDynamism) {
 } NS_SWIFT_NAME(ShapeDynamism);
 
 /**
+ * Returns the size in bytes of the specified data type.
+ *
+ * @param dataType An ExecuTorchDataType value representing the tensor's element type.
+ * @return An NSInteger indicating the size in bytes.
+ */
+FOUNDATION_EXPORT
+__attribute__((deprecated("This API is experimental.")))
+NSInteger ExecuTorchSizeOfDataType(ExecuTorchDataType dataType)
+    NS_SWIFT_NAME(size(ofDataType:));
+
+/**
+ * Computes the total number of elements in a tensor based on its shape.
+ *
+ * @param shape An NSArray of NSNumber objects, where each element represents a dimension size.
+ * @return An NSInteger equal to the product of the sizes of all dimensions.
+ */
+FOUNDATION_EXPORT
+__attribute__((deprecated("This API is experimental.")))
+NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape)
+    NS_SWIFT_NAME(elementCount(ofShape:));
+
+/**
  * A tensor class for ExecuTorch operations.
  *
  * This class encapsulates a native TensorPtr instance and provides a variety of

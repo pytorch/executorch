@@ -16,6 +16,18 @@
 using namespace executorch::aten;
 using namespace executorch::extension;
 
+NSInteger ExecuTorchSizeOfDataType(ExecuTorchDataType dataType) {
+  return elementSize(static_cast<ScalarType>(dataType));
+}
+
+NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
+  NSInteger count = 1;
+  for (NSNumber *dimension in shape) {
+    count *= dimension.integerValue;
+  }
+  return count;
+}
+
 @implementation ExecuTorchTensor {
   TensorPtr _tensor;
   NSArray<NSNumber *> *_shape;

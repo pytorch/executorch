@@ -11,6 +11,50 @@
 import XCTest
 
 class TensorTest: XCTestCase {
+  func testElementCountOfShape() {
+    XCTAssertEqual(elementCount(ofShape: [2, 3, 4]), 24)
+    XCTAssertEqual(elementCount(ofShape: [5]), 5)
+    XCTAssertEqual(elementCount(ofShape: []), 1)
+  }
+
+  func testSizeOfDataType() {
+    let expectedSizes: [DataType: Int] = [
+      .byte: 1,
+      .char: 1,
+      .short: 2,
+      .int: 4,
+      .long: 8,
+      .half: 2,
+      .float: 4,
+      .double: 8,
+      .complexHalf: 4,
+      .complexFloat: 8,
+      .complexDouble: 16,
+      .bool: 1,
+      .qInt8: 1,
+      .quInt8: 1,
+      .qInt32: 4,
+      .bFloat16: 2,
+      .quInt4x2: 1,
+      .quInt2x4: 1,
+      .bits1x8: 1,
+      .bits2x4: 1,
+      .bits4x2: 1,
+      .bits8: 1,
+      .bits16: 2,
+      .float8_e5m2: 1,
+      .float8_e4m3fn: 1,
+      .float8_e5m2fnuz: 1,
+      .float8_e4m3fnuz: 1,
+      .uInt16: 2,
+      .uInt32: 4,
+      .uInt64: 8,
+    ]
+    for (dataType, expectedSize) in expectedSizes {
+      XCTAssertEqual(size(ofDataType: dataType), expectedSize, "Size for \(dataType) should be \(expectedSize)")
+    }
+  }
+
   func testInitBytesNoCopy() {
     var data: [Float] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     let tensor = data.withUnsafeMutableBytes {
