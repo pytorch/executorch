@@ -156,6 +156,48 @@ __attribute__((deprecated("This API is experimental.")))
                            dataType:(ExecuTorchDataType)dataType
                       shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism;
 
+/**
+ * Initializes a tensor without copying data using dynamic bound shape (default strides and dimension order).
+ *
+ * @param pointer A pointer to the data buffer.
+ * @param shape An NSArray of NSNumber objects representing the tensor's shape.
+ * @param strides An NSArray of NSNumber objects representing the tensor's strides.
+ * @param dimensionOrder An NSArray of NSNumber objects indicating the order of dimensions.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @return An initialized ExecuTorchTensor instance.
+ */
+- (instancetype)initWithBytesNoCopy:(void *)pointer
+                              shape:(NSArray<NSNumber *> *)shape
+                            strides:(NSArray<NSNumber *> *)strides
+                     dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
+                           dataType:(ExecuTorchDataType)dataType;
+
+/**
+ * Initializes a tensor without copying data, with an explicit shape dynamism.
+ *
+ * @param pointer A pointer to the data buffer.
+ * @param shape An NSArray of NSNumber objects representing the tensor's shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value indicating the shape dynamism.
+ * @return An initialized ExecuTorchTensor instance.
+ */
+- (instancetype)initWithBytesNoCopy:(void *)pointer
+                              shape:(NSArray<NSNumber *> *)shape
+                           dataType:(ExecuTorchDataType)dataType
+                      shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism;
+
+/**
+ * Initializes a tensor without copying data, specifying only the shape and data type.
+ *
+ * @param pointer A pointer to the data buffer.
+ * @param shape An NSArray of NSNumber objects representing the tensor's shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @return An initialized ExecuTorchTensor instance.
+ */
+- (instancetype)initWithBytesNoCopy:(void *)pointer
+                              shape:(NSArray<NSNumber *> *)shape
+                           dataType:(ExecuTorchDataType)dataType;
+
 @end
 
 NS_ASSUME_NONNULL_END
