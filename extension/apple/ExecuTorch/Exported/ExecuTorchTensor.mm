@@ -140,3 +140,28 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
 }
 
 @end
+
+@implementation ExecuTorchTensor (Bytes)
+
+- (instancetype)initWithBytes:(const void *)pointer
+                        shape:(NSArray<NSNumber *> *)shape
+                      strides:(NSArray<NSNumber *> *)strides
+               dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
+                     dataType:(ExecuTorchDataType)dataType
+                shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  ET_CHECK(pointer);
+  const auto size = ExecuTorchElementCountOfShape(shape) * ExecuTorchSizeOfDataType(dataType);
+  std::vector<uint8_t> data(static_cast<const uint8_t *>(pointer),
+                            static_cast<const uint8_t *>(pointer) + size);
+  auto tensor = make_tensor_ptr(
+    utils::toVector<SizesType>(shape),
+    std::move(data),
+    utils::toVector<DimOrderType>(dimensionOrder),
+    utils::toVector<StridesType>(strides),
+    static_cast<ScalarType>(dataType),
+    static_cast<TensorShapeDynamism>(shapeDynamism)
+  );
+  return [self initWithNativeInstance:&tensor];
+}
+
+@end
