@@ -67,6 +67,8 @@ dependencies=[
   "sympy",
   "tabulate",
   "typing-extensions",
+  # Keep this version in sync with: ./backends/apple/coreml/scripts/install_requirements.sh
+  "coremltools==8.1; platform_system == 'Darwin'",
 ]
 
 [project.urls]

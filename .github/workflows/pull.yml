@@ -106,7 +106,7 @@ jobs:
           - model: emformer_join
             backend: xnnpack-quantization-delegation
             runner: linux.4xlarge.memory
-          - model: phi-4-mini
+          - model: phi_4_mini
             backend: portable
             runner: linux.4xlarge.memory
           - model: llama3_2_vision_encoder
@@ -365,8 +365,7 @@ jobs:
         # build module for executorch.extension.pybindings.portable_lib
         BUILD_TOOL="cmake"
         PYTHON_EXECUTABLE=python \
-        EXECUTORCH_BUILD_XNNPACK=ON \
-        EXECUTORCH_BUILD_PYBIND=ON \
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_PYBIND=ON -DEXECUTORCH_BUILD_XNNPACK=ON" \
         bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
 
         # see if we can import the module successfully
@@ -504,7 +503,7 @@ jobs:
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python \
-        EXECUTORCH_BUILD_PYBIND=ON \
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_PYBIND=ON" \
         EXECUTORCH_BUILD_ARM_BAREMETAL=ON \
         .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
 

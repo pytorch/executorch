@@ -15,11 +15,9 @@ if __name__ == "__main__":
                 model=Model.Mv3,
                 backend=Backend.XnnpackQuantizationDelegation,
             ),
-            # Enable this once CoreML is suppported out-of-the-box
-            # https://github.com/pytorch/executorch/issues/9019
-            # test_base.ModelTest(
-            #     model=Model.Mv3,
-            #     backend=Backend.CoreMlTest,
-            # )
+            test_base.ModelTest(
+                model=Model.Mv3,
+                backend=Backend.CoreMlTest,
+            ),
         ]
     )

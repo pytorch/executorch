@@ -13,6 +13,9 @@ from executorch.backends.xnnpack.test.tester import Tester
 
 
 class TestCat(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     class Cat(torch.nn.Module):
         def __init__(self, dim=0):
             super().__init__()

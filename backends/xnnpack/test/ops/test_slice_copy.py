@@ -11,6 +11,9 @@ from executorch.backends.xnnpack.test.tester import Tester
 
 
 class TestSliceCopy(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     def _test_slice_copy(self, module, inputs, copy_count=1, edge_copy_count=1):
         (
             Tester(module, inputs)

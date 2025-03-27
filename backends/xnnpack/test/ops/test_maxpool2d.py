@@ -15,6 +15,9 @@ from torch.export.dynamic_shapes import Dim
 
 
 class TestMaxPool2d(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     class MaxPool2d(torch.nn.Module):
         def __init__(self, kernel_size=3, stride=1, padding=0, dilation=1):
             super().__init__()

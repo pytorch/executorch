@@ -10,6 +10,7 @@
  * ethos-u-core-driver for hardware interaction.
  */
 
+#include <cstdint>
 #include <cstring>
 #include <memory>
 
@@ -282,7 +283,10 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     // constant weight data, then scratch (which contains input and output)
     // scratch is written above in this function.
     uint64_t bases[2] = {
-        (uint64_t)handles.weight_data, (uint64_t)handles.scratch_data};
+        static_cast<uint64_t>(
+            reinterpret_cast<uintptr_t>((handles.weight_data))),
+        static_cast<uint64_t>(
+            reinterpret_cast<uintptr_t>((handles.scratch_data)))};
     size_t bases_size[2] = {
         handles.weight_data_size, handles.scratch_data_size};
     int result = 0;

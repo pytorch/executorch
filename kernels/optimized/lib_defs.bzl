@@ -232,9 +232,9 @@ def define_libs(is_fbcode=False):
                 "DEFAULT": [],
             }) + LIBBLAS_DEPS,
             exported_deps = [
+                "//executorch/extension/threadpool:threadpool",
                 "//executorch/kernels/optimized:libutils",
                 "//executorch/runtime/core/exec_aten:lib",
-                "//executorch/runtime/kernel:thread_parallel_interface",
             ],
             **get_apple_framework_deps_kwargs(is_fbcode),
         )

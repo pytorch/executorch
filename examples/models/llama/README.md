@@ -382,7 +382,7 @@ Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-de
 
 ## Running with low-bit kernels
 
-We now give instructions for quantizating and running your model with low-bit kernels.  These are still experimental, and require you do development on an Arm-based Mac.  Also note that low-bit quantization often requires QAT (quantization-aware training) to give good quality results.  Currently dynamic shapes must be disabled when exporting a model with these kernels.
+We now give instructions for quantizating and running your model with low-bit kernels.  These are still experimental, and require you do development on an Arm-based Mac.  Also note that low-bit quantization often requires QAT (quantization-aware training) to give good quality results.
 
 First export your model for lowbit quantization (step 2 above):
 
@@ -408,9 +408,12 @@ python -m examples.models.llama.export_llama \
   -qmode "torchao:8da${QLINEAR_BITWIDTH}w" \
   --group_size ${QLINEAR_GROUP_SIZE} \
   -E "torchao:${QEMBEDDING_BITWIDTH},${QEMBEDDING_GROUP_SIZE}" \
-  --disable_dynamic_shape \
   -d fp32
 ```
+
+A few notes:
+- If your model shares embedding/unembedding weights (like Llama1B and Llama3B do), you can add `--use_shared_embedding` to take advantage of this and reduce memory.  When this option is enabled, you can specify whether embeddings are quantized with weight zeros or not by specifying a third argument.  For example, `-E "torchao:4,32,true"` means that the embedding is quantized to 4-bits with group_size=32 and uses weight zeros (this is the default behavior if you simply use `-E "torchao:4,32"`), whereas `-E "torchao:4,32,false"` means that the embedding is quantized to 4-bits with group_size=32, but is quantized with scales-only.  If `--use_shared_embedding` is specified, the unembedding (i.e., the final linear layer) is quantized in the same way, but also uses 8-bit dynamically quantized activations.
+- To do channelwise quantization, specify group_size to 0.  This works for both linear and embedding layers.
 
 Once the model is exported, we need to build ExecuTorch and the runner with the low-bit kernels.
 

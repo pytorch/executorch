@@ -13,6 +13,9 @@ from torchvision import models
 
 
 class TestMobileNetV3(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     mv3 = models.mobilenetv3.mobilenet_v3_small(pretrained=True)
     mv3 = mv3.eval()
     model_inputs = (torch.randn(1, 3, 224, 224),)

@@ -15,6 +15,9 @@ from executorch.backends.xnnpack.test.tester.tester import ToEdgeTransformAndLow
 
 
 class TestSDPA(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     class SDPA(torch.nn.Module):
         def __init__(self, scale: Optional[float] = None):
             super().__init__()

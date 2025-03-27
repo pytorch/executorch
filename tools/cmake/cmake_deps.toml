@@ -296,6 +296,7 @@ deps = [
   "executorch_core",
   "portable_kernels",
   "quantized_kernels",
+  "etdump_flatcc",
 ]
 
 [targets.size_test]
@@ -369,6 +370,7 @@ deps = [
   "extension_threadpool",
   "xnnpack_backend",
   "portable_kernels",
+  "etdump_flatcc",
 ]
 
 [targets.xnnpack_backend]
@@ -462,3 +464,12 @@ deps = [
   "optimized_native_cpu_ops",
 ]
 # ---------------------------------- LLama end ----------------------------------
+# ---------------------------------- devtools start ----------------------------------
+[targets.etdump_flatcc]
+buck_targets = [
+  "//devtools/etdump:etdump_flatcc",
+]
+filters = [
+  ".cpp$",
+]
+# ---------------------------------- devtools end ----------------------------------

@@ -17,7 +17,7 @@ from executorch.exir.memory_planning import (
     _is_out_var_node,
     apply_algo,
     get_node_tensor_specs,
-    greedy,
+    memory_planning_algorithm_suite,
     Verifier,
 )
 from executorch.exir.operator.convert import get_out_args_from_opoverload
@@ -40,7 +40,9 @@ def _callable_name(any_callable: Callable[..., Any]) -> str:
 class MemoryPlanningPass(PassBase):
     def __init__(
         self,
-        memory_planning_algo: Callable[..., List[int]] = greedy,
+        memory_planning_algo: Callable[
+            ..., List[int]
+        ] = memory_planning_algorithm_suite,
         allow_lifetime_and_storage_overlap: bool = False,
         alloc_graph_input: bool = True,
         alloc_graph_output: bool = True,

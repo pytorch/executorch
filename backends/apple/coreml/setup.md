@@ -6,16 +6,8 @@ This is a tutorial for setting up the Core ML backend.
 
 1. Follow the instructions described in [Setting Up ExecuTorch](/docs/source/getting-started-setup.md) to set up ExecuTorch environment.
 
-2. Run `install_requirements.sh` to install dependencies required by the **Core ML** backend.
 
-```
-cd executorch
-
-./backends/apple/coreml/scripts/install_requirements.sh
-
-```
-
-3. Run the example script to validate that the **Core ML** backend is set up correctly.
+2. Run the example script to validate that the **Core ML** backend is set up correctly.
 
 ```
 cd executorch
@@ -26,7 +18,7 @@ python3 -m examples.apple.coreml.scripts.export --model_name add
 
 ```
 
-4. You can now integrate the **Core ML** backend in code.
+3. You can now integrate the **Core ML** backend in code.
 
 ```python
 # Delegate to Core ML backend

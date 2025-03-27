@@ -17,6 +17,9 @@ from executorch.backends.xnnpack.test.tester import RunPasses, Tester
 
 
 class TestChannelsLastTaggedReshapePass(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     PassStage = RunPasses([ChannelsLastTaggedReshapePass])
     # Dictionary mapping modules to expected number of reshapes
     modules = {

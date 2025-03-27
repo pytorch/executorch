@@ -16,6 +16,9 @@ class TestRemoveGetItemPass(unittest.TestCase):
     max_pool2d_name = "executorch_exir_dialects_edge__ops_aten_max_pool2d_default"
     amax_name = "executorch_exir_dialects_edge__ops_aten_amax_default"
 
+    def setUp(self):
+        torch._dynamo.reset()
+
     class MaxPool2dModule(torch.nn.Module):
         def __init__(
             self,

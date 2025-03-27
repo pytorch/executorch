@@ -1,4 +1,9 @@
 # Copyright © 2023 Apple Inc. All rights reserved.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 cmake_minimum_required(VERSION 3.19)
 
@@ -19,6 +24,8 @@ if(EXECUTORCH_BUILD_DEVTOOLS)
 endif()
 
 option(COREML_BUILD_EXECUTOR_RUNNER "Build CoreML executor runner." OFF)
+
+set(CMAKE_OSX_DEPLOYMENT_TARGET 10.15)
 
 # inmemoryfs sources
 set(INMEMORYFS_SOURCES
@@ -111,12 +118,35 @@ set(PROTOBUF_SOURCES
     runtime/sdk/format/WordTagger.pb.cc
 )
 
+find_library(FOUNDATION_FRAMEWORK Foundation)
+
+# CoreML util
+add_library(coreml_util ${UTIL_SOURCES})
+target_include_directories(coreml_util PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util)
+target_link_libraries(coreml_util PRIVATE ${FOUNDATION_FRAMEWORK})
+
+install(
+  TARGETS coreml_util
+  DESTINATION lib
+  INCLUDES
+  DESTINATION ${_common_include_directories}
+)
+
+# CoreML inmemoryfs
+add_library(coreml_inmemoryfs ${INMEMORYFS_SOURCES})
+target_include_directories(coreml_inmemoryfs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs)
+target_link_libraries(coreml_inmemoryfs PRIVATE coreml_util ${FOUNDATION_FRAMEWORK})
+
+install(
+  TARGETS coreml_inmemoryfs
+  DESTINATION lib
+  INCLUDES
+  DESTINATION ${_common_include_directories}
+)
+
 # Define the delegate library
 add_library(coremldelegate)
-target_sources(
-  coremldelegate PRIVATE ${INMEMORYFS_SOURCES} ${KVSTORE_SOURCES}
-                         ${DELEGATE_SOURCES} ${UTIL_SOURCES}
-)
+target_sources(coremldelegate PRIVATE ${KVSTORE_SOURCES} ${DELEGATE_SOURCES})
 
 target_include_directories(
   coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include
@@ -125,18 +155,11 @@ target_include_directories(
   coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/kvstore
 )
 target_include_directories(
-  coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs
-)
-target_include_directories(
   coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/delegate
-)
-target_include_directories(
-  coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util
 )
 target_include_directories(coremldelegate PRIVATE ${EXECUTORCH_ROOT}/..)
 target_include_directories(coremldelegate PRIVATE ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)
 target_compile_definitions(coremldelegate PRIVATE C10_USING_CUSTOM_GENERATED_MACROS)
-target_link_libraries(coremldelegate PRIVATE executorch_core)
 
 if(EXECUTORCH_BUILD_DEVTOOLS)
   target_sources(coremldelegate PRIVATE ${SDK_SOURCES} ${PROTOBUF_SOURCES})
@@ -156,13 +179,17 @@ endif()
 
 find_library(ACCELERATE_FRAMEWORK Accelerate)
 find_library(COREML_FRAMEWORK CoreML)
-find_library(FOUNDATION_FRAMEWORK Foundation)
 find_library(SQLITE_LIBRARY sqlite3)
 
 target_link_libraries(
   coremldelegate
-  PRIVATE executorch_core ${ACCELERATE_FRAMEWORK} ${COREML_FRAMEWORK}
-          ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
+  PUBLIC  coreml_util
+          coreml_inmemoryfs
+  PRIVATE executorch_core
+          ${ACCELERATE_FRAMEWORK}
+          ${COREML_FRAMEWORK}
+          ${FOUNDATION_FRAMEWORK}
+          ${SQLITE_LIBRARY}
 )
 
 target_link_options_shared_lib(coremldelegate)
@@ -204,3 +231,18 @@ install(
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
+
+# We only care about building the pybinding when building for macOS wheels.
+if(EXECUTORCH_BUILD_COREML AND EXECUTORCH_BUILD_PYBIND)
+  if(NOT TARGET pybind11::pybind11)
+    add_subdirectory(${EXECUTORCH_ROOT}/third-party/pybind11 ${CMAKE_CURRENT_BINARY_DIR}/pybind11)
+  endif()
+
+  pybind11_add_module(executorchcoreml SHARED runtime/inmemoryfs/inmemory_filesystem_py.cpp)
+
+  target_compile_options(executorchcoreml PRIVATE -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET})
+  if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+    target_compile_options(executorchcoreml PRIVATE -g)
+  endif()
+  target_link_libraries(executorchcoreml PRIVATE coreml_util coreml_inmemoryfs)
+endif()

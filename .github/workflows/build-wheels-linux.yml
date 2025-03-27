@@ -6,6 +6,9 @@ on:
     paths:
       - .ci/**/*
       - .github/workflows/build-wheels-linux.yml
+      - examples/**/*
+      - pyproject.toml
+      - setup.py
   push:
     branches:
       - nightly

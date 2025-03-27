@@ -35,6 +35,7 @@ namespace runtime {
 template <typename T>
 class Span final {
  public:
+  using value_type = T;
   using iterator = T*;
   using size_type = size_t;
 

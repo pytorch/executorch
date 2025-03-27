@@ -13,6 +13,9 @@ from executorch.examples.models.llama.model import Llama2Model
 
 
 class TestLlama2ETExample(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     def test_f32(self):
         self._test()
 

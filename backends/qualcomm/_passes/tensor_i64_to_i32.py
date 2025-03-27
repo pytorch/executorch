@@ -24,6 +24,9 @@ class TensorI64toI32(ExportPass):
 
     cast_ops = {
         torch.ops.aten.argmin.default,
+        torch.ops.aten.arange.start_step,
+        torch.ops.aten.full.default,
+        torch.ops.aten.scalar_tensor.default,
     }
 
     def __init__(self, edge_program):
@@ -61,7 +64,13 @@ class TensorI64toI32(ExportPass):
                         cast_node.args = args
 
                         for user in users:
-                            user.replace_input_with(n, cast_node)
+                            # _assert_tensor_metadata is used to check dtype, which will cause lowering to fail since we are changing int64 to int32
+                            # We also skip if the next op is already a cast op, which prevents redundant casting.
+                            if user.target not in {
+                                torch.ops.aten._assert_tensor_metadata.default,
+                                torch.ops.aten._to_copy.default,
+                            }:
+                                user.replace_input_with(n, cast_node)
 
         core_ep.exported_program._graph_signature = _get_updated_graph_signature(
             core_ep.exported_program._graph_signature,

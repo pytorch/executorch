@@ -66,7 +66,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if not args.delegate:
+    if not args.delegate and args.quantize:
         raise NotImplementedError(
             "T161880157: Quantization-only without delegation is not supported yet"
         )
@@ -78,6 +78,8 @@ if __name__ == "__main__":
             "quantization for the requested model"
             f"Available models are {list(MODEL_NAME_TO_OPTIONS.keys())}."
         )
+
+    quant_type = MODEL_NAME_TO_OPTIONS[args.model_name].quantization
 
     model, example_inputs, _, _ = EagerModelFactory.create_model(
         *MODEL_NAME_TO_MODEL[args.model_name]
@@ -91,7 +93,7 @@ if __name__ == "__main__":
     if args.quantize:
         logging.info("Quantizing Model...")
         # TODO(T165162973): This pass shall eventually be folded into quantizer
-        model = quantize(model, example_inputs)
+        model = quantize(model, example_inputs, quant_type)
         ep = torch.export.export_for_training(model, example_inputs)
 
     edge = to_edge_transform_and_lower(

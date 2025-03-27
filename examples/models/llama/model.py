@@ -178,7 +178,7 @@ the checkpoint format to avoid generating faulty models.
             if checkpoint:
                 self.model_.checkpoint_dtype = get_checkpoint_dtype(checkpoint)
             else:
-                self.model_.checkpoint_dtype = None
+                self.model_.checkpoint_dtype = torch.float32
 
         if "int8" in str(checkpoint_path):
             print("Using int8 weight-only quantization!")
@@ -244,30 +244,28 @@ the checkpoint format to avoid generating faulty models.
             )
 
         missing, unexpected = None, None
-        try:
-            # assign=True: load params/buffers by assignment instead of performing an in-place copy.
-            # Because we are using device="meta", tensors do not have memory associated with them
-            # and an in-place copy is a no-op. Use assign=True in load_state_dict for this scenario.
+        # assign=True: load params/buffers by assignment instead of performing an in-place copy.
+        # Because we are using device="meta", tensors do not have memory associated with them
+        # and an in-place copy is a no-op. Use assign=True in load_state_dict for this scenario.
 
-            # Also, the checkpoint is loaded and dtype promoted to the transformer's dtype, which is
-            # by default initialized to fp32. This is fine because every other supported type
-            # losslessly converts to fp32, so we don't lose precision here.
-            if checkpoint:
-                missing, unexpected = self.model_.load_state_dict(
-                    checkpoint,
-                    strict=False,
-                    assign=True,
-                )  # self.model_ = Transformer(gptconf)
-            else:
-                print("Checkpoint not provided, defaulting to uninitialized weights.")
-                self.model_.to_empty(device="cpu")
-        except RuntimeError as e:
-            print(
-                f"Could not load checkpoint into mode and will default to uninitialized weights due to error: {e}."
-            )
-            # Need to provide concrete (empty) values for meta-initialized tensors for quantization.
+        # Also, the checkpoint is loaded and dtype promoted to the transformer's dtype, which is
+        # by default initialized to fp32. This is fine because every other supported type
+        # losslessly converts to fp32, so we don't lose precision here.
+        if checkpoint:
+            missing, unexpected = self.model_.load_state_dict(
+                checkpoint,
+                strict=False,
+                assign=True,
+            )  # self.model_ = Transformer(gptconf)
+        else:
+            print("Checkpoint not provided, defaulting weights to zeros.")
             self.model_.to_empty(device="cpu")
-
+            # Need to provide concrete values for meta-initialized tensors for quantization.
+            # otherwise it is just filled with nan's.
+            for p in self.model_.parameters():
+                p.data.fill_(0)
+            for b in self.model_.buffers():
+                b.data.fill_(0)
         if missing:
             missing_weights = [fqn for fqn in missing if fqn.endswith(".weight")]
             if missing_weights:

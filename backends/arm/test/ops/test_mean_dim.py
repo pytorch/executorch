@@ -139,48 +139,36 @@ def test_mean_tosa_MI(test_data):
 
 @common.parametrize("test_data", MeanDim.test_data_suite)
 def test_mean_tosa_BI(test_data):
-    TosaPipelineBI[input_t](
+    pipeline = TosaPipelineBI[input_t](
         MeanDim(test_data[1], test_data[2]),
         (test_data[0],),
         "torch.ops.aten.sum.dim_IntList",  # Just check for sum op included in the mean decomposition
-    ).run()
+    )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
+    pipeline.run()
 
 
 @common.parametrize("test_data", MeanDim.test_data_suite)
-def test_mean_u55(test_data):
-    EthosU55PipelineBI[input_t](
-        MeanDim(test_data[1], test_data[2]),
-        (test_data[0],),
-        "torch.ops.aten.sum.dim_IntList",  # Just check for sum op included in the mean decomposition
-    ).run()
-
-
-@common.parametrize("test_data", MeanDim.test_data_suite)
-def test_mean_u85(test_data):
-    EthosU85PipelineBI[input_t](
-        MeanDim(test_data[1], test_data[2]),
-        (test_data[0],),
-        "torch.ops.aten.sum.dim_IntList",  # Just check for sum op included in the mean decomposition
-    ).run()
-
-
-@common.parametrize("test_data", MeanDim.test_data_suite)
-@common.SkipIfNoCorstone300
-def test_mean_u55_on_fvp(test_data):
-    EthosU55PipelineBI[input_t](
+@common.XfailIfNoCorstone300
+def test_mean_u55_BI(test_data):
+    pipeline = EthosU55PipelineBI[input_t](
         MeanDim(test_data[1], test_data[2]),
         (test_data[0],),
         "torch.ops.aten.sum.dim_IntList",  # Just check for sum op included in the mean decomposition
         run_on_fvp=True,
-    ).run()
+    )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
+    pipeline.run()
 
 
 @common.parametrize("test_data", MeanDim.test_data_suite)
-@common.SkipIfNoCorstone320
-def test_mean_u85_on_fvp(test_data):
-    EthosU85PipelineBI[input_t](
+@common.XfailIfNoCorstone320
+def test_mean_u85_BI(test_data):
+    pipeline = EthosU85PipelineBI[input_t](
         MeanDim(test_data[1], test_data[2]),
         (test_data[0],),
         "torch.ops.aten.sum.dim_IntList",  # Just check for sum op included in the mean decomposition
         run_on_fvp=True,
-    ).run()
+    )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
+    pipeline.run()

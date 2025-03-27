@@ -272,7 +272,7 @@ Context* context() {
 
 VkPipeline Context::get_shader_pipeline(
     const vkapi::ShaderInfo& shader,
-    const vkapi::SpecVarList& spec_constants) {
+    const vkapi::SpecVarList& additional_constants) {
   const uint32_t push_constants_size = 128u;
 
   VkDescriptorSetLayout shader_layout =
@@ -281,12 +281,15 @@ VkPipeline Context::get_shader_pipeline(
       pipeline_layout_cache().retrieve(shader_layout, push_constants_size);
 
   const utils::WorkgroupSize local_workgroup_size(4u, 4u, 1u);
+  vkapi::SpecVarList spec_constants = {
+      SV(local_workgroup_size[0u]),
+      SV(local_workgroup_size[1u]),
+      SV(local_workgroup_size[2u])};
+
+  spec_constants.append(additional_constants);
 
   VkPipeline pipeline = pipeline_cache().retrieve(
-      {pipeline_layout,
-       shader_cache().retrieve(shader),
-       spec_constants,
-       local_workgroup_size});
+      {pipeline_layout, shader_cache().retrieve(shader), spec_constants});
 
   return pipeline;
 }

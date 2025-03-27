@@ -67,6 +67,8 @@ set(lib_list
     bundled_program
     extension_data_loader
     ${FLATCCRT_LIB}
+    coreml_util
+    coreml_inmemoryfs
     coremldelegate
     mpsdelegate
     neuron_backend
@@ -143,6 +145,14 @@ if(TARGET optimized_kernels)
                                  "executorch_core;cpublas;extension_threadpool"
   )
 endif()
+
+if(TARGET coremldelegate)
+  set_target_properties(
+    coremldelegate PROPERTIES INTERFACE_LINK_LIBRARIES
+                             "coreml_inmemoryfs;coreml_util"
+  )
+endif()
+
 if(TARGET optimized_native_cpu_ops_lib)
   if(TARGET optimized_portable_kernels)
     set(_maybe_optimized_portable_kernels_lib optimized_portable_kernels)

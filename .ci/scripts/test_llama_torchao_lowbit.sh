@@ -78,7 +78,6 @@ ${PYTHON_EXECUTABLE} -m examples.models.llama.export_llama \
     -qmode "torchao:8da${QLINEAR_BITWIDTH}w" \
     --group_size ${QLINEAR_GROUP_SIZE} \
     -E "torchao:${QEMBEDDING_BITWIDTH},${QEMBEDDING_GROUP_SIZE}" \
-    --disable_dynamic_shape \
     -d fp32
 
 # Test run

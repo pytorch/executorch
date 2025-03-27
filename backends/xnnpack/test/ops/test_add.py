@@ -11,6 +11,9 @@ from executorch.backends.xnnpack.test.tester import Quantize, Tester
 
 
 class TestAdd(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     class Add(torch.nn.Module):
         def __init__(self):
             super().__init__()
