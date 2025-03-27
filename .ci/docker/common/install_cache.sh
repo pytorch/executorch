@@ -109,6 +109,8 @@ write_sccache_stub gcc
 write_sccache_stub g++
 write_sccache_stub clang
 write_sccache_stub clang++
-write_android_sccache_stub clang
-write_android_sccache_stub clang++
+if [ -n "${ANDROID_NDK_VERSION}" ]; then
+  write_android_sccache_stub clang
+  write_android_sccache_stub clang++
+fi
 init_sccache
