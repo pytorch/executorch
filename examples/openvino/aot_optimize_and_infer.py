@@ -4,7 +4,7 @@
 # except in compliance with the License. See the license file found in the
 # LICENSE file in the root directory of this source tree.
 
-# mypy: disable-error-code=import-untyped
+# mypy: disable-error-code="import-untyped,import-not-found"
 
 import argparse
 import time

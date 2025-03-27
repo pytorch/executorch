@@ -1,7 +1,7 @@
 import argparse
 import unittest
 
-import nncf.torch  # type: ignore[import-untyped]
+import nncf.torch  # type: ignore[import-untyped,import-not-found]
 
 
 class OpenvinoTestSuite(unittest.TestSuite):
