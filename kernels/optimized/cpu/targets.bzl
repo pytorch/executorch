@@ -46,6 +46,7 @@ _OPTIMIZED_ATEN_OPS = (
         name = "op_le",
         deps = [
             "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
         ],
     ),
     op_target(
@@ -93,6 +94,13 @@ _OPTIMIZED_ATEN_OPS = (
             ":add_sub_impl",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+        ],
+    ),
+    op_target(
+        name = "op_where",
+        deps = [
+            "//executorch/extension/threadpool:threadpool",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
 )

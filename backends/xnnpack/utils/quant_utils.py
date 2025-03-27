@@ -6,7 +6,7 @@
 
 import operator
 from itertools import accumulate
-from typing import cast
+from typing import cast, Union
 
 import torch
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
@@ -47,12 +47,30 @@ _DYNAMIC_OPS = {
 
 
 def is_dynamic_qdq(node: torch.fx.Node) -> bool:
-    if node.op != "call_function":
+    # check has dynamic qdq name
+    if not (is_quant(node) or is_dequant(node)):
         return False
-    node_name = format_target_name(node.target.__name__)  # pyre-ignore
-    is_dynamic_affine = is_per_token(node) and not is_per_channel_group(node)
 
-    return node_name in _DYNAMIC_OPS or is_dynamic_affine
+    # check scales and zp are dynamically chosen
+    node_input_args = node.args
+    if is_affine_qdq(node):
+        node_input_args = extract_qdq_affine_op_args_for_decomposed_ops(node)
+
+    scale = node_input_args[1]
+    zp = node_input_args[2]
+    if not (isinstance(scale, torch.fx.Node) and isinstance(zp, torch.fx.Node)):
+        return False
+
+    if not (scale.target == operator.getitem and zp.target == operator.getitem):
+        return False
+
+    scale_choose_qparam = scale.all_input_nodes[0]
+    zp_choose_qparam = zp.all_input_nodes[0]
+
+    if not (is_qparam(scale_choose_qparam) and is_qparam(zp_choose_qparam)):
+        return False
+
+    return True
 
 
 def is_qparam(node: torch.fx.Node) -> bool:
@@ -87,6 +105,15 @@ def is_per_channel(node: torch.fx.Node) -> bool:
     is_per_channel = "per_channel" in node.target.__name__  # pyre-ignore
 
     return is_per_channel or is_affine_per_channel_group
+
+
+def is_per_tensor(node: torch.fx.Node) -> bool:
+    if not (is_quant(node) or is_dequant(node)):
+        return False
+
+    is_per_tensor = "per_tensor" in node.target.__name__  # pyre-ignore
+
+    return is_per_tensor and not (is_per_channel(node))
 
 
 def is_affine_qdq(node: torch.fx.Node) -> bool:
@@ -186,3 +213,62 @@ def extract_qdq_affine_op_args_for_decomposed_ops(node: torch.fx.Node):
     args.append(node.args[-1])
 
     return args
+
+
+def is_tensor_subnormal(tensor: torch.Tensor):
+    finfo = torch.finfo(tensor.dtype)
+    return (tensor >= 0) & (torch.abs(tensor) < finfo.smallest_normal)
+
+
+def validate_quant_scales(scales: Union[float, torch.Tensor]):
+    if isinstance(scales, float):
+        scales = torch.tensor([scales])
+
+    is_infinite = torch.isinf(scales) | torch.isnan(scales)
+
+    is_subnormal = is_tensor_subnormal(scales)
+
+    if is_infinite.nonzero().numel() != 0:
+        idx = torch.where(is_infinite)
+        idx = tuple(int(index[0]) for index in idx)
+        value = scales[idx]
+        raise ValueError(
+            f"Scales must be finite and normal, however found scale value: {value}"
+            f" in scale tensor at index: {idx}"
+        )
+
+    if is_subnormal.nonzero().numel() != 0:
+        idx = torch.where(is_subnormal)
+        idx = tuple(int(index[0]) for index in idx)
+        value = scales[idx]
+        raise ValueError(
+            f"Scales must be finite and normal, however found scale value: {value}"
+            f" in scale tensor at index: {tuple(idx)}"
+        )
+
+
+def validate_quant_zeropoints(
+    zp: Union[float, int, torch.Tensor], dtype: torch.dtype, is_4bit: bool
+):
+    if not isinstance(zp, torch.Tensor):
+        zp = torch.tensor([zp])
+
+    if dtype == torch.int8 or dtype == torch.qint8:
+        if is_4bit:
+            invalid_zp = (zp < 0) | (zp > 15)
+        else:
+            invalid_zp = (zp < -128) | (zp > 127)
+    elif dtype == torch.uint8 or dtype == torch.quint8:
+        invalid_zp = (zp < 0) | (zp > 255)
+    elif dtype == torch.int32:
+        invalid_zp = zp != 0
+    else:
+        raise ValueError("Unsupported dtype for quantization")
+
+    if invalid_zp.nonzero().numel() != 0:
+        idx = torch.where(invalid_zp)
+        idx = tuple(int(index[0]) for index in idx)
+        value = zp[tuple(idx)]
+        raise ValueError(
+            f"Found invalid zeropoint {value}" f" in zero point tensor at index: {idx}"
+        )

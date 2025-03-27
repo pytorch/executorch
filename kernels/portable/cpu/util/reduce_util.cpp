@@ -48,8 +48,7 @@ ET_NODISCARD bool check_dim_list_is_valid(
       }
 
       const size_t non_neg_d = _normalize_non_neg_d(d, in.dim());
-      ET_LOG_AND_RETURN_IF_FALSE(
-          non_neg_d < kTensorDimensionLimit && non_neg_d >= 0);
+      ET_LOG_AND_RETURN_IF_FALSE(non_neg_d < kTensorDimensionLimit);
 
       ET_CHECK_OR_RETURN_FALSE(
           dim_exist[non_neg_d] == false,
@@ -84,12 +83,8 @@ size_t get_reduced_dim_product(
   if (in.dim() == 0) {
     return 1;
   }
-  size_t dim_product = 1;
   if (!dim.has_value()) {
-    for (size_t i = 0; i < in.dim(); ++i) {
-      dim_product *= in.size(i);
-    }
-    return dim_product;
+    return in.numel();
   }
   const size_t d = _normalize_non_neg_d(dim.value(), in.dim());
   return in.size(d);
@@ -105,16 +100,12 @@ size_t get_reduced_dim_product(
   if (in.dim() == 0) {
     return 1;
   }
-  size_t dim_product = 1;
-  const size_t in_dim = in.dim();
   if (!dim_list.has_value() || dim_list.value().size() == 0) {
-    for (size_t i = 0; i < in.dim(); ++i) {
-      dim_product *= in.size(i);
-    }
-    return dim_product;
+    return in.numel();
   }
+  size_t dim_product = 1;
   for (const auto& d : dim_list.value()) {
-    const size_t non_neg_d = _normalize_non_neg_d(d, in_dim);
+    const size_t non_neg_d = _normalize_non_neg_d(d, in.dim());
     dim_product *= in.size(non_neg_d);
   }
   return dim_product;
@@ -136,7 +127,7 @@ size_t get_out_numel(
       ET_CHECK_VALID_DIM(dim_val, in.dim());
     }
     const size_t non_neg_dim = _normalize_non_neg_d(dim_val, in.dim());
-    for (size_t d = 0; d < in.dim(); ++d) {
+    for (size_t d = 0; d < static_cast<size_t>(in.dim()); ++d) {
       if (d != non_neg_dim) {
         out_numel *= in.size(d);
       }
@@ -155,7 +146,7 @@ size_t get_out_numel(
         dim_list) {
   size_t out_numel = 1;
   if (dim_list.has_value() && dim_list.value().size() != 0) {
-    for (size_t d = 0; d < in.dim(); ++d) {
+    for (size_t d = 0; d < static_cast<size_t>(in.dim()); ++d) {
       if (!check_dim_in_dim_list(d, in.dim(), dim_list.value())) {
         out_numel *= in.size(d);
       }
@@ -234,7 +225,7 @@ size_t compute_reduced_out_size(
   if (dim.has_value()) {
     const auto dim_val = dim.value();
     const size_t non_neg_dim = _normalize_non_neg_d(dim_val, in_dim);
-    for (ssize_t i = 0; i < non_neg_dim; ++i) {
+    for (size_t i = 0; i < non_neg_dim; ++i) {
       sizes_arr[i] = in.size(i);
     }
     if (keepdim) {
@@ -250,7 +241,7 @@ size_t compute_reduced_out_size(
     }
   } else {
     if (keepdim) {
-      for (size_t i = 0; i < in_dim; ++i) {
+      for (size_t i = 0; i < static_cast<size_t>(in_dim); ++i) {
         sizes_arr[i] = 1;
       }
     } else {
@@ -266,7 +257,9 @@ size_t compute_reduced_out_size(
         dim_list,
     bool keepdim,
     executorch::aten::SizesType* sizes_arr) {
-  const auto in_dim = in.dim();
+  // check_dim_in_dim_list and later comparisons
+  // expect in_dim to be size_t, so cast it here
+  const size_t in_dim = static_cast<size_t>(in.dim());
   size_t out_dim = in_dim;
 
   if (dim_list.has_value() && dim_list.value().size() != 0) {

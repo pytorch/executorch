@@ -14,10 +14,10 @@
 #include <cstring>
 #include <limits>
 
+#include <executorch/runtime/platform/compat_unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <unistd.h>
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
@@ -71,6 +71,9 @@ FileDataLoader::~FileDataLoader() {
   std::free(const_cast<char*>(file_name_));
   // fd_ can be -1 if this instance was moved from, but closing a negative fd is
   // safe (though it will return an error).
+  if (fd_ == -1) {
+    return;
+  }
   ::close(fd_);
 }
 

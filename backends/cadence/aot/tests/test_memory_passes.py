@@ -16,6 +16,7 @@ import torch
 from executorch.backends.cadence.aot import compiler
 from executorch.backends.cadence.aot.memory_planning import find_peak_memory_usage
 from executorch.backends.cadence.aot.pass_utils import count_node
+from executorch.backends.cadence.aot.utils import MemoryConfig
 from executorch.exir import memory
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.memory_planning import collect_specs_from_nodes
@@ -792,7 +793,9 @@ class TestMemTransform(unittest.TestCase):
                     mem_algo=mem_algo,
                     alloc_graph_input=False,
                     alloc_graph_output=False,
-                    mem_alignment=37,
+                    memory_config=MemoryConfig(
+                        memory_sizes=[0x1000000000], memory_alignments=[37]
+                    ),
                 )
                 .exported_program()
                 .graph_module

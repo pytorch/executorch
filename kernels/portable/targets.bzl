@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 load("@fbsource//xplat/executorch/codegen:codegen.bzl", "et_operator_library", "executorch_generated_lib")
 
 def define_common_targets():
@@ -20,17 +20,18 @@ def define_common_targets():
         ],
     )
 
-    runtime.cxx_library(
-        name = "operators_aten",
-        srcs = [],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        exported_deps = [
-            "//executorch/kernels/portable/cpu:cpu_aten",
-        ],
-    )
+    if True in get_aten_mode_options():
+        runtime.cxx_library(
+            name = "operators_aten",
+            srcs = [],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_deps = [
+                "//executorch/kernels/portable/cpu:cpu_aten",
+            ],
+        )
 
     runtime.export_file(
         name = "functions.yaml",
@@ -79,9 +80,6 @@ def define_common_targets():
     )
 
     generated_lib_common_args = {
-        "custom_ops_aten_kernel_deps": [
-            "//executorch/kernels/portable:operators_aten",
-        ],
         "custom_ops_yaml_target": "//executorch/kernels/portable:custom_ops.yaml",
         # size_test expects _static targets to be available for these libraries.
         "define_static_targets": True,
@@ -102,21 +100,22 @@ def define_common_targets():
         **generated_lib_common_args
     )
 
-    executorch_generated_lib(
-        name = "generated_lib_aten",
-        deps = [
-            ":executorch_aten_ops",
-            ":executorch_custom_ops",
-            "//executorch/kernels/portable:operators_aten",
-        ],
-        custom_ops_aten_kernel_deps = [
-            "//executorch/kernels/portable:operators_aten",
-        ],
-        custom_ops_yaml_target = "//executorch/kernels/portable:custom_ops.yaml",
-        aten_mode = True,
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        define_static_targets = True,
-    )
+    if True in get_aten_mode_options():
+        executorch_generated_lib(
+            name = "generated_lib_aten",
+            deps = [
+                ":executorch_aten_ops",
+                ":executorch_custom_ops",
+                "//executorch/kernels/portable:operators_aten",
+            ],
+            custom_ops_aten_kernel_deps = [
+                "//executorch/kernels/portable:operators_aten",
+            ],
+            custom_ops_yaml_target = "//executorch/kernels/portable:custom_ops.yaml",
+            aten_mode = True,
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            define_static_targets = True,
+        )

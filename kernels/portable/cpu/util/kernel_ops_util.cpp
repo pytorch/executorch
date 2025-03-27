@@ -470,8 +470,8 @@ bool check_max_pool2d_with_indices_args(
     IntArrayRef padding,
     IntArrayRef dilation,
     bool ceil_mode,
-    Tensor& out,
-    Tensor& indices) {
+    const Tensor& out,
+    const Tensor& indices) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_CHECK_OR_RETURN_FALSE(
       indices.scalar_type() == ScalarType::Long,

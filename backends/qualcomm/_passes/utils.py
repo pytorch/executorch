@@ -4,10 +4,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Dict
+
 import torch
 from executorch.backends.qualcomm.builders.utils import get_parameter
-from executorch.backends.qualcomm.utils.constants import QCOM_ENCODING
+from executorch.backends.qualcomm.utils.constants import QCOM_DTYPE, QCOM_ENCODING
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch._subclasses import FakeTensor
 
 
 q_ops = {
@@ -21,6 +24,15 @@ dq_ops = {
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
     exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
 }
+
+
+def copy_meta(meta: Dict, callback=None):
+    copied = {}
+    for k, v in meta.items():
+        copied[k] = v
+    if callback:
+        copied = callback(copied)
+    return copied
 
 
 def get_quant_attrs(
@@ -41,6 +53,10 @@ def get_quant_attrs(
                 value = get_parameter(attr_n, edge_program)
         quant_attrs[quant_attr_keys[i - 1]] = value
 
+    # remap key for compatibility - block quantization only
+    if dtype := quant_attrs.get("input_dtype", None):
+        quant_attrs[QCOM_DTYPE] = dtype
+
     quant_attrs[QCOM_ENCODING] = quant_node.target
     return quant_attrs
 
@@ -57,13 +73,11 @@ def get_passes_dependency_for_capture_program():
         dict: A dictionary mapping each pass to its corresponding list of dependencies.
     """
     from executorch.backends.qualcomm._passes import (
-        AnnotateAndQuantScalar,
         AnnotateDecomposed,
         AnnotateQuantAttrs,
         ConstantI64toI32,
         ConvertBmmToMatmul,
-        ConvertInterpolateWithUpsample2D,
-        ConvertPReLU,
+        ConvertConv1dToConv2d,
         ConvertToLinear,
         DecomposeAny,
         DecomposeLinalgVectorNorm,
@@ -71,6 +85,7 @@ def get_passes_dependency_for_capture_program():
         FoldQDQ,
         LayoutTransform,
         RecomposePixelUnshuffle,
+        RecomposePReLU,
         RecomposeRmsNorm,
         RemoveRedundancy,
         ReplaceIndexPutInput,
@@ -78,34 +93,36 @@ def get_passes_dependency_for_capture_program():
     )
 
     return {
-        AnnotateAndQuantScalar: [
-            AnnotateQuantAttrs,
-        ],
         AnnotateDecomposed: [RemoveRedundancy],
         AnnotateQuantAttrs: [
             RecomposePixelUnshuffle,
             RecomposeRmsNorm,
             ConvertToLinear,
-            ConvertPReLU,
+            RecomposePReLU,
             ConvertBmmToMatmul,
-            ConvertInterpolateWithUpsample2D,
         ],
-        ConstantI64toI32: [ConvertInterpolateWithUpsample2D],
+        ConstantI64toI32: [RemoveRedundancy],
         ConvertBmmToMatmul: [ConvertToLinear],
-        ConvertInterpolateWithUpsample2D: [RemoveRedundancy],
-        ConvertPReLU: [RemoveRedundancy],
+        ConvertConv1dToConv2d: [FoldQDQ],
         ConvertToLinear: [RecomposePixelUnshuffle],
         DecomposeAny: [RemoveRedundancy],
         DecomposeLinalgVectorNorm: [RemoveRedundancy],
         ExpandBroadcastTensorShape: [RemoveRedundancy],
-        FoldQDQ: [AnnotateQuantAttrs, AnnotateAndQuantScalar, AnnotateDecomposed],
+        FoldQDQ: [AnnotateQuantAttrs, AnnotateDecomposed],
         LayoutTransform: [
             AnnotateQuantAttrs,
-            AnnotateAndQuantScalar,
+            ConvertConv1dToConv2d,
             ExpandBroadcastTensorShape,
         ],
         RecomposePixelUnshuffle: [RemoveRedundancy],
+        RecomposePReLU: [RemoveRedundancy],
         RecomposeRmsNorm: [RemoveRedundancy],
         ReplaceIndexPutInput: [LayoutTransform],
         TensorI64toI32: [RemoveRedundancy],
     }
+
+
+def is_float_tensor(node: torch.fx.Node) -> bool:
+    if "val" not in node.meta or not isinstance(node.meta["val"], FakeTensor):
+        return False
+    return node.meta["val"].dtype == torch.float32

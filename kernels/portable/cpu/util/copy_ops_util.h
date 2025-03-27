@@ -7,6 +7,7 @@
  */
 
 #pragma once
+#include <c10/util/irange.h>
 
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -26,8 +27,8 @@ void _as_strided_copy(
     ArrayRef<int64_t> stride,
     int64_t dim) {
   // the last dimension, copy data
-  if (dim == size.size() - 1) {
-    for (size_t i = 0; i < size.at(dim); ++i) {
+  if (dim == static_cast<int64_t>(size.size()) - 1) {
+    for (const auto i : c10::irange(size.at(dim))) {
       output_data[i] = *input_data;
       input_data += stride.at(dim);
     }
@@ -35,7 +36,7 @@ void _as_strided_copy(
   }
   size_t trailing_dims = getTrailingDims(out, dim);
   // recursively set data for the next dimension
-  for (size_t i = 0; i < size.at(dim); ++i) {
+  for ([[maybe_unused]] const auto i : c10::irange(size.at(dim))) {
     _as_strided_copy<CTYPE>(
         input_data, output_data, out, size, stride, dim + 1);
     input_data += stride.at(dim);
@@ -229,6 +230,20 @@ void get_diagonal_copy_out_target_size(
     int64_t offset,
     int64_t dim1,
     int64_t dim2,
+    executorch::aten::SizesType* out_sizes,
+    size_t* out_ndim);
+
+bool check_unfold_copy_args(
+    const Tensor& self,
+    int64_t dim,
+    int64_t size,
+    int64_t step);
+
+void get_unfold_copy_out_target_size(
+    const Tensor& self,
+    int64_t dim,
+    int64_t size,
+    int64_t step,
     executorch::aten::SizesType* out_sizes,
     size_t* out_ndim);
 

@@ -157,7 +157,7 @@ For more details about the ExecuTorch runtime, please see:
 
 * [Detailed Runtime APIs Tutorial](running-a-model-cpp-tutorial.md)
 * [Simplified Runtime APIs Tutorial](extension-module.md)
-* [Runtime Build and Cross Compilation](runtime-build-and-cross-compilation.md)
+* [Building from Source](using-executorch-building-from-source.md)
 * [Runtime Platform Abstraction Layer](runtime-platform-abstraction-layer.md)
 * [Runtime Profiling](runtime-profiling.md)
 * [Backends and Delegates](compiler-delegate-and-partitioner.md)

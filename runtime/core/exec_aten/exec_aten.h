@@ -106,7 +106,7 @@ template <typename T>
 using optional = torch::executor::optional<T>;
 using nullopt_t = torch::executor::nullopt_t;
 // NOLINTNEXTLINE(facebook-hte-NamespaceScopedStaticDeclaration)
-static constexpr nullopt_t nullopt{0};
+using std::nullopt;
 using ScalarType = torch::executor::ScalarType;
 using TensorList = ArrayRef<Tensor>;
 using Scalar = torch::executor::Scalar;

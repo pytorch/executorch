@@ -198,6 +198,8 @@ def export_to_edge(
             _skip_dim_order=True,
             # Allow specific non-core aten ops in the IR.
             _core_aten_ops_exception_list=[
+                torch.ops.aten._linalg_det.default,
+                torch.ops.aten._linalg_svd.default,
                 torch.ops.aten._native_batch_norm_legit_functional.default,
                 torch.ops.aten.linear.default,
                 torch.ops.aten.linalg_vector_norm.default,
@@ -264,7 +266,6 @@ def export_to_executorch_gen_etrecord(
     alloc_graph_output: bool = True,
     memory_config: Optional[MemoryConfig] = None,
     dump_graphs: bool = False,
-    mem_alignment: int = 1,
 ) -> ExecutorchProgramManager:
     cadence_passes = get_cadence_passes(opt_level)
     edge_prog_manager = export_to_edge(model, inputs, dump_graphs)
@@ -291,7 +292,6 @@ def export_to_executorch_gen_etrecord(
         mem_algo=mem_algo,
         alloc_graph_input=alloc_graph_input,
         alloc_graph_output=alloc_graph_output,
-        mem_alignment=mem_alignment,
     )
 
     # Get executorch program after Cadence specific passes

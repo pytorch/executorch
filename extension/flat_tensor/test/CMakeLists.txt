@@ -16,11 +16,11 @@ cmake_minimum_required(VERSION 3.19)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
-include(${EXECUTORCH_ROOT}/build/Test.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
 add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
-         "${CMAKE_CURRENT_BINARY_DIR}/_default_external_constant.ptd"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
   COMMAND
     python -m test.models.export_program --modules "ModuleLinear"
     --external-constants --outdir "${CMAKE_CURRENT_BINARY_DIR}" 2> /dev/null
@@ -30,12 +30,12 @@ add_custom_command(
 add_custom_target(
   extension_flat_tensor_test_resources
   DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
-          "${CMAKE_CURRENT_BINARY_DIR}/_default_external_constant.ptd"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
 )
 
 set(test_env
     "ET_MODULE_LINEAR_PROGRAM_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
-    "ET_MODULE_LINEAR_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/_default_external_constant.ptd"
+    "ET_MODULE_LINEAR_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
 )
 
 set(_test_srcs flat_tensor_data_map_test.cpp flat_tensor_header_test.cpp)

@@ -23,8 +23,8 @@ namespace runtime {
 namespace {
 template <typename DimOrderType>
 bool validate_dim_order(const DimOrderType* dim_order, const size_t dims) {
-  for (int32_t i = 0; i < dims; ++i) {
-    if (dim_order[i] >= dims) {
+  for (size_t i = 0; i < dims; ++i) {
+    if (dim_order[i] >= static_cast<DimOrderType>(dims)) {
       return false;
     }
   }
@@ -43,8 +43,8 @@ template <typename DimOrderType>
 inline bool is_contiguous_dim_order(
     const DimOrderType* dim_order,
     const size_t dims) {
-  for (int i = 0; i < dims; ++i) {
-    if (dim_order[i] != i) {
+  for (size_t i = 0; i < dims; ++i) {
+    if (dim_order[i] != static_cast<DimOrderType>(i)) {
       return false;
     }
   }
@@ -66,7 +66,7 @@ bool is_channels_last_dim_order(
     return false;
   }
   // 4-dim tensor is interpreted as NCHW, 5-dim tensor is interpreted as NCHWD
-  size_t channels_dim = 1;
+  DimOrderType channels_dim = 1;
   // Last value in the dim order should be the channels dim
   if (dim_order[dims - 1] != channels_dim) {
     return false;
@@ -75,8 +75,8 @@ bool is_channels_last_dim_order(
   if (dim_order[0] != 0) {
     return false;
   }
-  int d = 1;
-  while (d < dims - 1) {
+  DimOrderType d = 1;
+  while (d < static_cast<DimOrderType>(dims) - 1) {
     if (dim_order[d] != d + 1) {
       return false;
     }
@@ -163,8 +163,8 @@ struct StrideDimOrder {
   StridesType stride;
   DimOrderType dim_order;
 
-  StrideDimOrder(StridesType stride, DimOrderType dim_order)
-      : stride(stride), dim_order(dim_order) {}
+  StrideDimOrder(StridesType stride_, DimOrderType dim_order_)
+      : stride(stride_), dim_order(dim_order_) {}
   StrideDimOrder() = default;
   bool operator>(const StrideDimOrder& other) const {
     // descending order

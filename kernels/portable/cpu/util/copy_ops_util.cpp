@@ -964,5 +964,46 @@ void get_diagonal_copy_out_target_size(
   out_sizes[in.dim() - 2] = diagonal_size;
 }
 
+bool check_unfold_copy_args(
+    const Tensor& self,
+    int64_t dim,
+    int64_t size,
+    int64_t step) {
+  if (dim < 0) {
+    dim += nonzero_dim(self);
+  }
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(self, dim));
+  ET_CHECK_OR_RETURN_FALSE(
+      size >= 0, "size is %" PRId64 " but must be >= 0", size);
+  ET_CHECK_OR_RETURN_FALSE(
+      size <= self.size(dim),
+      "maximum size for tensor at dimension %" PRId64
+      " is %zd but size is %" PRId64,
+      dim,
+      self.size(dim),
+      size);
+  ET_CHECK_OR_RETURN_FALSE(
+      step > 0, "step is %" PRId64 " but must be > 0", step);
+  return true;
+}
+
+void get_unfold_copy_out_target_size(
+    const Tensor& self,
+    int64_t dim,
+    int64_t size,
+    int64_t step,
+    executorch::aten::SizesType* out_sizes,
+    size_t* out_ndim) {
+  for (auto i : c10::irange(self.dim())) {
+    out_sizes[i] = self.size(i);
+  }
+  // At `dim` dimension, we split the tensor into `size` chunks with `step`
+  // stride.
+  out_sizes[dim] = (self.size(dim) - size + step) / step;
+
+  out_sizes[self.dim()] = size;
+  *out_ndim = self.dim() + 1;
+}
+
 } // namespace executor
 } // namespace torch

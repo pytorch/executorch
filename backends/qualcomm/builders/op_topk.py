@@ -10,7 +10,11 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
-from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER, QCOM_DATA
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_AXIS_ORDER,
+    QCOM_DATA,
+    QCOM_QUANT_ATTRS,
+)
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpTopK, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -60,7 +64,7 @@ class TopK(NodeVisitor):
         output_idx_tensor = self.get_tensor(node, node, 1).to(torch.int32)
 
         # QNN constraint, topk output_0 requires having the same quant config as input
-        node.meta["quant_attrs"] = input_node.meta.get("quant_attrs")
+        node.meta[QCOM_QUANT_ATTRS] = input_node.meta.get(QCOM_QUANT_ATTRS)
         output_val_tensor_wrapper = self.define_tensor(
             node,
             node,
@@ -70,7 +74,7 @@ class TopK(NodeVisitor):
         )
 
         # topk output_1 is index, do not quantize it.
-        node.meta.pop("quant_attrs", None)
+        node.meta.pop(QCOM_QUANT_ATTRS, None)
         output_index_tensor_wrapper = self.define_tensor(
             node,
             node,
@@ -92,10 +96,10 @@ class TopK(NodeVisitor):
         topk_op.AddScalarParam(
             OpTopK.param_k,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {"data": np.uint32(k)},
+            {QCOM_DATA: np.uint32(k)},
         )
 
-        # As of QNN 2.26, QNN HTP backend only allows users to set this value to 1, or else it will fail at op validation
+        # As of QNN 2.26, QNN HTP backend only allows users to set this value to 1, or it will fail at op validation
         if len(node.args) > 3:
             largest = cast(bool, node.args[3])
             topk_op.AddScalarParam(

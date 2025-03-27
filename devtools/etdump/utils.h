@@ -1,4 +1,10 @@
-// (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
 
 #include <cstddef>
 #include <cstdint>
@@ -13,7 +19,8 @@ namespace internal {
  * Aligns a pointer to the next multiple of `alignment`.
  *
  * @param[in] ptr Pointer to align.
- * @param[in] alignment Alignment to align to. Must be a power of 2.
+ * @param[in] alignment Alignment to align to. Must be a power of 2 and cannot
+ * be 0.
  *
  * @returns A pointer aligned to `alignment`.
  */

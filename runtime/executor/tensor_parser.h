@@ -7,9 +7,12 @@
  */
 
 #pragma once
+
+#ifdef __GNUC__
 // Disable -Wdeprecated-declarations, as some builds use 'Werror'.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -91,7 +94,7 @@ parseListOptionalType(
       evalp_list[output_idx] = nullptr;
     } else {
       ET_CHECK_OR_RETURN_ERROR(
-          index >= 0 && index < values_len,
+          index >= 0 && static_cast<size_t>(index) < values_len,
           InvalidProgram,
           "Invalid value index %" PRId32 " for ListOptional",
           index);
@@ -154,4 +157,7 @@ using ::executorch::runtime::deserialization::parseTensorList;
 } // namespace deserialization
 } // namespace executor
 } // namespace torch
+
+#ifdef __GNUC__
 #pragma GCC diagnostic pop
+#endif

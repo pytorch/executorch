@@ -32,9 +32,12 @@ class SliceVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
 
+        # See slice_copy_support.py
+        if not (len(inputs) == 4 or (len(inputs) == 5 and inputs[4].number == 1)):
+            raise ValueError("Unsupported combination of inputs")
+
         # aten.slice_copy supports slicing in 1d at a time.
-        # The arguments are dimension of slicing, start index and end index.
-        assert len(inputs) == 4
+        # The arguments are the actual input, dimension of slicing, start index, end index and optinal step or stride.
         input_node, dim, start, end = inputs
 
         # Translate and check parameters in Pytorch dim order.

@@ -173,6 +173,10 @@ cmake_install_executorch_libraries() {
 
 cmake_build_llama_runner() {
     echo "Building llama runner"
+    pushd extension/llm/tokenizers
+    echo "Updating tokenizers submodule"
+    git submodule update --init
+    popd
     dir="examples/models/llama"
     retry cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \

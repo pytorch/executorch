@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import time
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
@@ -97,6 +98,7 @@ class LlamaRunner(ABC):
         pos_base: int = 0,
     ) -> List[int]:
         # Prefill
+        prefill_start = time.time()
         logits = self.forward(
             tokens=torch.tensor([prompt_tokens], dtype=torch.long, device=self.device),
             input_pos=(
@@ -105,11 +107,13 @@ class LlamaRunner(ABC):
                 else None
             ),
         )
+        prefill_time = time.time() - prefill_start
 
         current_token = next_token(logits, temperature, top_p)
         print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
         tokens = prompt_tokens + [current_token]
 
+        generate_start = time.time()
         while len(tokens) < max_seq_len:
             if self.use_kv_cache:
                 logits = self.forward(
@@ -139,6 +143,10 @@ class LlamaRunner(ABC):
 
             print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
         print("\n")
+
+        generate_time = time.time() - generate_start
+        print(f"Prefill time: {prefill_time}")
+        print(f"Generation tok/s: {len(tokens) / generate_time}")
 
         return tokens if echo else tokens[len(prompt_tokens) :]
 

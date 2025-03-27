@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "is_xplat", "runtime")
 load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
 
 def get_compiler_optimization_flags():
@@ -170,7 +170,7 @@ def define_op_target(name, deps, android_deps, is_aten_op, is_et_op = True, _all
 
     # If this is a custom op, define a target that builds it with at::Tensor
     # so that it can be imported into a host PyTorch environment for authoring.
-    if not is_aten_op:
+    if not is_aten_op and True in get_aten_mode_options():
         define_op_library(
             name = name,
             deps = _aten_mode_deps if _aten_mode_deps else deps,
@@ -480,6 +480,13 @@ ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:math_util",
             ":scalar_utils",
+        ],
+    ),
+    op_target(
+        name = "op_elu",
+        deps = [
+            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -813,6 +820,12 @@ ATEN_OPS = (
     ),
     op_target(
         name = "op_max_pool2d_with_indices",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+        ],
+    ),
+    op_target(
+        name = "op_max_pool2d_with_indices_backward",
         deps = [
             "//executorch/kernels/portable/cpu/util:kernel_ops_util",
         ],
@@ -1219,6 +1232,12 @@ ATEN_OPS = (
     ),
     op_target(
         name = "op_unbind_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+    ),
+    op_target(
+        name = "op_unfold_copy",
         deps = [
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],

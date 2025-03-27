@@ -12,7 +12,7 @@ In this tutorial, you will learn how to export an XNNPACK lowered Model and run 
 :class-card: card-prerequisites
 * [Setting up ExecuTorch](./getting-started-setup.md)
 * [Model Lowering Tutorial](./tutorials/export-to-executorch-tutorial)
-* [ExecuTorch XNNPACK Delegate](./native-delegates-executorch-xnnpack-delegate.md)
+* [ExecuTorch XNNPACK Delegate](./backends-xnnpack.md)
 :::
 ::::
 

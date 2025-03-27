@@ -12,7 +12,11 @@ import numpy as np
 
 import torch
 from executorch.backends.qualcomm.builders.utils import get_parameter
-from executorch.backends.qualcomm.utils.constants import QCOM_DATA, QCOM_QUANT_ATTRS
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_DATA,
+    QCOM_QUANT_ATTRS,
+    QCOM_ZERO_POINT,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from .node_visitor import NodeVisitor, register_node_visitor
@@ -66,7 +70,7 @@ class RmsNormVisitor(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        # Fake node, nn module seems to be inconsistant with document
+        # Fake node, nn module seems to be inconsistent with document
         bias_tensor = torch.zeros(weight_tensor.shape)
         bias_node = torch.fx.Node(
             node.graph,
@@ -78,6 +82,7 @@ class RmsNormVisitor(NodeVisitor):
         )
         if quant_attrs := node.meta.get(QCOM_QUANT_ATTRS):
             bias_node.meta[QCOM_QUANT_ATTRS] = quant_attrs
+            bias_node.meta[QCOM_QUANT_ATTRS][QCOM_ZERO_POINT] = 0
         bias_tensor_wrapper = self.define_tensor(
             bias_node,
             node,
@@ -87,14 +92,6 @@ class RmsNormVisitor(NodeVisitor):
         )
 
         epsilon = node.args[3]
-        if isinstance(epsilon, torch.fx.Node):
-            epsilon = get_parameter(epsilon, self.edge_program)
-            epsilon = (
-                epsilon
-                if isinstance(epsilon, float)
-                else torch.finfo(epsilon.dtype).eps
-            )
-
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,

@@ -125,18 +125,19 @@ class StaticVCache(StaticKVCache):
 
 
 class StaticAttentionMask:
-    def __init__(self, input_len, cache_len, style):
+    def __init__(self, input_len, cache_len, style, mask_val=float("-inf")):
         self.input_len = input_len
         self.cache_len = cache_len
         assert style in ("shift_pointer", "smart_mask")
         self.style = style
+        self.mask_val = mask_val
         self.unmasked_len = 0
         self.tensor = torch.zeros(1, input_len, input_len + cache_len)
         self.reset()
 
     def reset(self):
         self.unmasked_len = 0
-        self.tensor[:, :, : self.cache_len] = float("-inf")
+        self.tensor[:, :, : self.cache_len] = self.mask_val
 
     def unmask(self, new_unmasked_len):
         if new_unmasked_len <= 0:
@@ -208,7 +209,10 @@ class StaticAttention(Attention):
         self.head_dim = config.head_dim
         self.inv_scale = 1.0 / (float(self.head_dim) ** 0.5)
         self.attention_qkv_bias = config.attention_qkv_bias
+        self.use_qk_norm = config.use_qk_norm
+        self.use_conv2d = False
 
+        assert not self.use_qk_norm, "QK norm not supported in static attention yet"
         self.wqs = nn.ModuleList(
             [
                 nn.Linear(self.dim, self.head_dim, bias=self.attention_qkv_bias)
@@ -252,12 +256,27 @@ class StaticAttention(Attention):
         in_cache_state = kwargs.get("in_cache_state")
         out_cache_state = kwargs.get("out_cache_state")
 
+        bsz, seq_len, dim = x.shape
+        if self.use_conv2d:
+            x = x.reshape(bsz, seq_len, 1, dim).transpose(1, 3)
+
         new_qs = [self.wqs[i](x) for i in range(self.n_heads)]
         new_ks = [self.wks[i](x) for i in range(self.n_kv_heads)]
         new_vs = [self.wvs[i](x) for i in range(self.n_kv_heads)]
+
+        if self.use_conv2d:
+
+            def from_conv2ds(ts):
+                return [
+                    t.reshape(bsz, self.head_dim, seq_len).transpose(1, 2) for t in ts
+                ]
+
+            new_qs = from_conv2ds(new_qs)
+            new_ks = from_conv2ds(new_ks)
+            new_vs = from_conv2ds(new_vs)
+
         new_qs = [self.rope(q, freqs_cos, freqs_sin) for q in new_qs]
         new_ks = [self.rope(k, freqs_cos, freqs_sin) for k in new_ks]
-
         all_ks = []
         all_vs = []
         for i in range(self.n_kv_heads):
@@ -280,7 +299,14 @@ class StaticAttention(Attention):
             heads.append(attn @ all_vs[kv_idx])
 
         y = torch.cat(heads, dim=-1)
-        y = self.wo(y)
+        if self.use_conv2d:
+            y = (
+                self.wo(y.reshape(bsz, seq_len, 1, -1).transpose(1, 3))
+                .transpose(1, 3)
+                .reshape(bsz, seq_len, -1)
+            )
+        else:
+            y = self.wo(y)
         return y, {"out_cache_state": out_cache_state}
 
     def load_weights_from_attention_mha(self, other: AttentionMHA):
@@ -298,3 +324,44 @@ class StaticAttention(Attention):
             )
 
         self.wo.weight.data.copy_(other.wo.weight)
+
+    def linear_to_conv2d(self):
+        def transfer_weight(linear, conv2d):
+            conv2d.weight.data.copy_(linear.weight[:, :, None, None])
+            return conv2d
+
+        self.wqs = nn.ModuleList(
+            [
+                transfer_weight(
+                    linear,
+                    nn.Conv2d(self.dim, self.head_dim, 1, bias=self.attention_qkv_bias),
+                )
+                for linear in self.wqs
+            ]
+        )
+        self.wks = nn.ModuleList(
+            [
+                transfer_weight(
+                    linear,
+                    nn.Conv2d(self.dim, self.head_dim, 1, bias=self.attention_qkv_bias),
+                )
+                for linear in self.wks
+            ]
+        )
+        self.wvs = nn.ModuleList(
+            [
+                transfer_weight(
+                    linear,
+                    nn.Conv2d(self.dim, self.head_dim, 1, bias=self.attention_qkv_bias),
+                )
+                for linear in self.wvs
+            ]
+        )
+        self.wo = transfer_weight(
+            self.wo,
+            nn.Conv2d(
+                self.n_heads * self.head_dim, self.dim, 1, bias=self.attention_qkv_bias
+            ),
+        )
+
+        self.use_conv2d = True

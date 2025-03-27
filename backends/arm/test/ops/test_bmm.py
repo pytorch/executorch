@@ -150,11 +150,9 @@ class TestBMM(unittest.TestCase):
         test_data = test_data_generator()
         self._test_bmm_tosa_BI_pipeline(self.BMMSingleInput(), test_data)
 
-    # Expected to fail on FVP as TOSA.MATMUL is not supported on U55
     @parameterized.expand(BMM.test_data_generators)
     @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP
-    def test_bmm_u55_BI_xfails(self, test_data_generator: Callable[[], Tuple]):
+    def test_bmm_u55_BI(self, test_data_generator: Callable[[], Tuple]):
         test_data = test_data_generator()
         self._test_bmm_ethosu_BI_pipeline(
             self.BMM(), common.get_u55_compile_spec(), test_data
@@ -171,10 +169,7 @@ class TestBMM(unittest.TestCase):
     # Expected to fail on FVP as TOSA.MATMUL is not supported on U55
     @parameterized.expand(BMMSingleInput.test_data_generators)
     @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP
-    def test_bmm_single_input_u55_BI_xfails(
-        self, test_data_generator: Callable[[], Tuple]
-    ):
+    def test_bmm_single_input_u55_BI(self, test_data_generator: Callable[[], Tuple]):
         test_data = test_data_generator()
         self._test_bmm_ethosu_BI_pipeline(
             self.BMMSingleInput(), common.get_u55_compile_spec(), test_data

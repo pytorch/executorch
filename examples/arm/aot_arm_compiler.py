@@ -624,6 +624,7 @@ def save_bpte_program(exec_prog, original_model: torch.nn.Module, output_name: s
 
 
 def to_edge_TOSA_delegate(
+    exported_program,
     args,
     model: torch.nn.Module,
 ):
@@ -687,7 +688,7 @@ if __name__ == "__main__":  # noqa: C901
     # Quantize if required
     model_int8 = None
     if args.delegate:
-        model_int8, edge = to_edge_TOSA_delegate(args, model)
+        model_int8, edge = to_edge_TOSA_delegate(exported_program, args, model)
     else:
         edge = to_edge_transform_and_lower(
             exported_program,
