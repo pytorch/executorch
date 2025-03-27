@@ -48,11 +48,33 @@ __attribute__((deprecated("This API is experimental.")))
 @property(nonatomic, readonly) ExecuTorchValueTag tag;
 
 /**
+ * The tensor value if the tag is ExecuTorchValueTagTensor.
+ *
+ * @return A Tensor instance or nil.
+ */
+@property(nullable, nonatomic, readonly) ExecuTorchTensor *tensorValue NS_SWIFT_NAME(tensor);
+
+/**
  * Returns YES if the value is of type None.
  *
  * @return A BOOL indicating whether the value is None.
  */
 @property(nonatomic, readonly) BOOL isNone;
+
+/**
+ * Returns YES if the value is a Tensor.
+ *
+ * @return A BOOL indicating whether the value is a Tensor.
+ */
+@property(nonatomic, readonly) BOOL isTensor;
+
+/**
+ * Creates an instance encapsulating a Tensor.
+ *
+ * @param value An ExecuTorchTensor instance.
+ * @return A new ExecuTorchValue instance with a tag of ExecuTorchValueTagTensor.
+ */
++ (instancetype)valueWithTensor:(ExecuTorchTensor *)value NS_SWIFT_NAME(init(_:));
 
 @end
 

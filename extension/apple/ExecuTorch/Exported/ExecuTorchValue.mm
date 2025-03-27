@@ -8,6 +8,8 @@
 
 #import "ExecuTorchValue.h"
 
+#import <executorch/runtime/platform/assert.h>
+
 @interface ExecuTorchValue ()
 
 - (instancetype)initWithTag:(ExecuTorchValueTag)tag
@@ -18,6 +20,11 @@
 @implementation ExecuTorchValue {
   ExecuTorchValueTag _tag;
   id _value;
+}
+
++ (instancetype)valueWithTensor:(ExecuTorchTensor *)value {
+  ET_CHECK(value);
+  return [[ExecuTorchValue alloc] initWithTag:ExecuTorchValueTagTensor value:value];
 }
 
 - (instancetype)init {
@@ -37,8 +44,16 @@
   return _tag;
 }
 
+- (nullable ExecuTorchTensor *)tensorValue {
+  return self.isTensor ? _value : nil;
+}
+
 - (BOOL)isNone {
   return _tag == ExecuTorchValueTagNone;
+}
+
+- (BOOL)isTensor {
+  return _tag == ExecuTorchValueTagTensor;
 }
 
 @end
