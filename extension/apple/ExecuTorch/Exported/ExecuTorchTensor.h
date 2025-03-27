@@ -91,7 +91,7 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape)
  */
 NS_SWIFT_NAME(Tensor)
 __attribute__((deprecated("This API is experimental.")))
-@interface ExecuTorchTensor : NSObject
+@interface ExecuTorchTensor : NSObject<NSCopying>
 
 /**
  * Pointer to the underlying native TensorPtr instance.
@@ -159,6 +159,13 @@ __attribute__((deprecated("This API is experimental.")))
  */
 - (instancetype)initWithTensor:(ExecuTorchTensor *)otherTensor
     NS_SWIFT_NAME(init(_:));
+
+/**
+ * Returns a copy of the tensor.
+ *
+ * @return A new ExecuTorchTensor instance that is a duplicate of the current tensor.
+ */
+- (instancetype)copy;
 
 /**
  * Executes a block with a pointer to the tensor's immutable byte data.
