@@ -801,8 +801,7 @@ class SPVGenerator:
                 output_file.write(output_text)
 
             if cache_dir is not None:
-                # Otherwise, store the generated and source GLSL files in the cache
-                shutil.copyfile(source_glsl, cached_source_glsl)
+                # Otherwise, store the generated GLSL files in the cache
                 shutil.copyfile(glsl_out_path, cached_glsl_out_path)
 
             # If no GLSL compiler is specified, then only write out the generated GLSL shaders.
@@ -851,6 +850,15 @@ class SPVGenerator:
                 process_shader, self.output_shader_map.items()
             ):
                 output_file_map[spv_out_path] = glsl_out_path
+
+        # Save all source GLSL files to the cache. Only do this at the very end since
+        # multiple variants may use the same source file.
+        if cache_dir is not None:
+            for _, source_glsl in self.glsl_src_files.items():
+                cached_source_glsl = os.path.join(
+                    cache_dir, os.path.basename(source_glsl) + ".t"
+                )
+                shutil.copyfile(source_glsl, cached_source_glsl)
 
         return output_file_map
 
