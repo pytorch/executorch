@@ -118,4 +118,27 @@
   return _tag == ExecuTorchValueTagDouble;
 }
 
+- (BOOL)isEqualToValue:(nullable ExecuTorchValue *)other {
+  if (!other) {
+    return NO;
+  }
+  if (_tag != other->_tag) {
+    return NO;
+  }
+  if (_value == nil) {
+    return other->_value == nil;
+  }
+  return [_value isEqual:other->_value];
+}
+
+- (BOOL)isEqual:(nullable id)other {
+  if (self == other) {
+    return YES;
+  }
+  if (![other isKindOfClass:[ExecuTorchValue class]]) {
+    return NO;
+  }
+  return [self isEqualToValue:(ExecuTorchValue *)other];
+}
+
 @end
