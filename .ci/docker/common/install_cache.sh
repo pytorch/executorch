@@ -100,7 +100,7 @@ else
   exec /opt/ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/.$1 "\$@"
 fi
 EOF
-  chmod a+x "/opt/toolchains/llvm/prebuilt/linux-x86_64/bin/${BINARY}"
+  chmod a+x "/opt/ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/${BINARY}"
 }
 
 write_sccache_stub cc
