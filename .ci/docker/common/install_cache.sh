@@ -89,10 +89,26 @@ init_sccache() {
   as_ci_user sccache --zero-stats || true
 }
 
+function write_android_sccache_stub() {
+  BINARY=$1
+  mv "/opt/ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/$1" "/opt/ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/.$1"
+  cat >"/opt/ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/$1" <<EOF
+#!/bin/sh
+if [ \$(env -u LD_PRELOAD ps -p \$PPID -o comm=) != sccache ]; then
+  exec sccache /opt/ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/.$1 "\$@"
+else
+  exec /opt/ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/.$1 "\$@"
+fi
+EOF
+  chmod a+x "/opt/toolchains/llvm/prebuilt/linux-x86_64/bin/${BINARY}"
+}
+
 write_sccache_stub cc
 write_sccache_stub c++
 write_sccache_stub gcc
 write_sccache_stub g++
 write_sccache_stub clang
 write_sccache_stub clang++
+write_android_sccache_stub clang
+write_android_sccache_stub clang++
 init_sccache
