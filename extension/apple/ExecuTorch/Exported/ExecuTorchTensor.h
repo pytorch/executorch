@@ -134,4 +134,28 @@ __attribute__((deprecated("This API is experimental.")))
 
 @end
 
+#pragma mark - BytesNoCopy Category
+
+@interface ExecuTorchTensor (BytesNoCopy)
+
+/**
+ * Initializes a tensor without copying the provided data.
+ *
+ * @param pointer A pointer to the data buffer.
+ * @param shape An NSArray of NSNumber objects representing the tensor's shape.
+ * @param strides An NSArray of NSNumber objects representing the tensor's strides.
+ * @param dimensionOrder An NSArray of NSNumber objects indicating the order of dimensions.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value indicating whether the shape is static or dynamic.
+ * @return An initialized ExecuTorchTensor instance using the provided data buffer.
+ */
+- (instancetype)initWithBytesNoCopy:(void *)pointer
+                              shape:(NSArray<NSNumber *> *)shape
+                            strides:(NSArray<NSNumber *> *)strides
+                     dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
+                           dataType:(ExecuTorchDataType)dataType
+                      shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism;
+
+@end
+
 NS_ASSUME_NONNULL_END
