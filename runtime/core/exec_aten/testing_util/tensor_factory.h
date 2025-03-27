@@ -452,8 +452,8 @@ class TensorFactory {
   }
 
   /**
-   * Returns a new Tensor with the specified shape, containing contiguous data
-   * with all `0` elements.
+   * Returns a new Tensor with the specified shape, containing channels-last
+   * contiguous data with all `0` elements.
    *
    * @param[in] sizes The sizes of the dimensions of the Tensor.
    * @return A new Tensor with the specified shape.
@@ -464,6 +464,22 @@ class TensorFactory {
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
     auto sizes64 = vec_32_to_64(sizes);
     return at::zeros(at::IntArrayRef(sizes64), at::dtype(DTYPE));
+  }
+
+  /**
+   * Returns a new Tensor with the specified shape, containing contiguous data
+   * with all `0` elements.
+   *
+   * @param[in] sizes The sizes of the dimensions of the Tensor.
+   * @return A new Tensor with the specified shape.
+   */
+  at::Tensor zeros_channels_last(
+      const std::vector<int32_t>& sizes,
+      ET_UNUSED TensorShapeDynamism dynamism =
+          TensorShapeDynamism::DYNAMIC_UNBOUND) {
+    auto sizes64 = vec_32_to_64(sizes);
+    return at::zeros(at::IntArrayRef(sizes64), at::dtype(DTYPE))
+        .to(at::MemoryFormat::ChannelsLast);
   }
 
   /**
