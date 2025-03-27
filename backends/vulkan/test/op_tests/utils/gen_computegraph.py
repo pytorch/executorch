@@ -90,10 +90,17 @@ InableCppType = frozenset([AT_TENSOR, AT_TENSOR_LIST])
 class ComputeGraphGen:
     backend_key = None
 
-    def __init__(self, op_reg_name: str, f: NativeFunction, suite_def: TestSuite):
+    def __init__(
+        self,
+        op_reg_name: str,
+        f: NativeFunction,
+        suite_def: TestSuite,
+        include_io: bool = True,
+    ):
         self.op_reg_name = op_reg_name
         self.f = f
         self.suite_def = suite_def
+        self.include_io = include_io
 
         self.f_sig = CppSignatureGroup.from_native_function(
             self.f, method=False, fallback_binding=self.f.manual_cpp_binding
@@ -274,6 +281,10 @@ class ComputeGraphGen:
 
         prepack = self.prepack_ref(ref)
         ref_is_view = self.suite_def.is_view_op and ref.is_out
+
+        # If skipping IO, force is_in to be False
+        if not self.include_io and ref.is_in:
+            ref.is_in = False
 
         cpp_type = "IOValueRef" if (ref.is_in and not prepack) else "ValueRef"
         if not include_declarations:
@@ -602,7 +613,8 @@ for (int i=0; i<out.size(); i++) {{
         graph_build += self.create_value_for(self.refs["out"], include_declarations)
         graph_build += self.create_op_call()
 
-        graph_build += self.set_output(self.refs["out"], include_declarations)
+        if self.include_io:
+            graph_build += self.set_output(self.refs["out"], include_declarations)
 
         graph_build += f"{self.graph}{self.dot}prepare();\n"
         graph_build += f"{self.graph}{self.dot}encode_prepack();\n"
@@ -614,18 +626,22 @@ for (int i=0; i<out.size(); i++) {{
 
     def gen_graph_exec_code(self, check_output=True) -> str:
         graph_exec = ""
-        for aten_arg in self.args:
-            ref = self.refs[aten_arg.name]
-            if ref.is_in:
-                graph_exec += self.virtual_resize(ref)
-                graph_exec += self.copy_into_staging(ref)
+        if self.include_io:
+            for aten_arg in self.args:
+                ref = self.refs[aten_arg.name]
+                if ref.is_in:
+                    graph_exec += self.virtual_resize(ref)
+                    graph_exec += self.copy_into_staging(ref)
 
-        graph_exec += f"{self.graph}{self.dot}propagate_resize();\n"
+            graph_exec += f"{self.graph}{self.dot}propagate_resize();\n"
+
         graph_exec += f"{self.graph}{self.dot}execute();\n"
 
         graph_exec += self.declare_vk_out_for(self.refs["out"])
-        graph_exec += self.copy_from_staging(self.refs["out"])
-        if check_output:
+        if self.include_io:
+            graph_exec += self.copy_from_staging(self.refs["out"])
+
+        if self.include_io and check_output:
             graph_exec += self.check_graph_out(self.refs["out"])
 
         graph_exec = re.sub(r"^", "  ", graph_exec, flags=re.M)
