@@ -298,4 +298,40 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
   return self;
 }
 
+- (instancetype)initWithData:(NSData *)data
+                       shape:(NSArray<NSNumber *> *)shape
+                     strides:(NSArray<NSNumber *> *)strides
+              dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
+                    dataType:(ExecuTorchDataType)dataType {
+  return [self initWithData:data
+                      shape:shape
+                    strides:strides
+             dimensionOrder:dimensionOrder
+                   dataType:dataType
+              shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
+- (instancetype)initWithData:(NSData *)data
+                       shape:(NSArray<NSNumber *> *)shape
+                    dataType:(ExecuTorchDataType)dataType
+               shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self initWithData:data
+                      shape:shape
+                    strides:@[]
+             dimensionOrder:@[]
+                   dataType:dataType
+              shapeDynamism:shapeDynamism];
+}
+
+- (instancetype)initWithData:(NSData *)data
+                       shape:(NSArray<NSNumber *> *)shape
+                    dataType:(ExecuTorchDataType)dataType {
+  return [self initWithData:data
+                      shape:shape
+                    strides:@[]
+             dimensionOrder:@[]
+                   dataType:dataType
+              shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
 @end

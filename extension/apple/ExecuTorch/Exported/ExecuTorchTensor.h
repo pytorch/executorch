@@ -367,6 +367,48 @@ __attribute__((deprecated("This API is experimental.")))
                     dataType:(ExecuTorchDataType)dataType
                shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism;
 
+/**
+ * Initializes a tensor using an NSData object as the underlying data buffer with dynamic bound shape.
+ *
+ * @param data An NSData object containing the tensor data.
+ * @param shape An NSArray of NSNumber objects representing the tensor's shape.
+ * @param strides An NSArray of NSNumber objects representing the tensor's strides.
+ * @param dimensionOrder An NSArray of NSNumber objects indicating the order of dimensions.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @return An initialized ExecuTorchTensor instance using the provided data.
+ */
+- (instancetype)initWithData:(NSData *)data
+                       shape:(NSArray<NSNumber *> *)shape
+                     strides:(NSArray<NSNumber *> *)strides
+              dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
+                    dataType:(ExecuTorchDataType)dataType;
+
+/**
+ * Initializes a tensor using an NSData object as the underlying data buffer, specifying shape, data type, and explicit shape dynamism.
+ *
+ * @param data An NSData object containing the tensor data.
+ * @param shape An NSArray of NSNumber objects representing the tensor's shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value indicating the shape dynamism.
+ * @return An initialized ExecuTorchTensor instance using the provided data.
+ */
+- (instancetype)initWithData:(NSData *)data
+                       shape:(NSArray<NSNumber *> *)shape
+                    dataType:(ExecuTorchDataType)dataType
+               shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism;
+
+/**
+ * Initializes a tensor using an NSData object as the underlying data buffer, specifying only the shape and data type.
+ *
+ * @param data An NSData object containing the tensor data.
+ * @param shape An NSArray of NSNumber objects representing the tensor's shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @return An initialized ExecuTorchTensor instance using the provided data.
+ */
+- (instancetype)initWithData:(NSData *)data
+                       shape:(NSArray<NSNumber *> *)shape
+                    dataType:(ExecuTorchDataType)dataType;
+
 @end
 
 NS_ASSUME_NONNULL_END
