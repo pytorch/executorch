@@ -53,8 +53,6 @@ ExecuTorch provides support for:
 - [Qualcomm](backends-qualcomm)
 - [MediaTek](backends-mediatek)
 - [Cadence](backends-cadence)
-#### Tutorials
-<!-- No items listed -->
 #### Developer Tools
 - [Overview](devtools-overview)
 - [Bundled IO](bundled-io)
