@@ -153,11 +153,6 @@ class ModuleQConfig:
             if self.act_observer
             else per_channel_quant_config_func()
         )
-        self.per_block_quant_config = (
-            per_block_quant_config_func(act_observer=act_observer)
-            if self.act_observer
-            else per_block_quant_config_func()
-        )
         self.use_per_channel_weight_quant_ops = set()
         if self.is_conv_per_channel:
             self.use_per_channel_weight_quant_ops.update(
@@ -172,6 +167,12 @@ class ModuleQConfig:
                 {
                     torch.ops.aten.linear.default,
                 }
+            )
+        if per_block_quant_config_func:
+            self.per_block_quant_config = (
+                per_block_quant_config_func(act_observer=self.act_observer)
+                if self.act_observer
+                else per_block_quant_config_func()
             )
 
 

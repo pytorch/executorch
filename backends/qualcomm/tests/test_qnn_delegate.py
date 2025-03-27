@@ -1238,7 +1238,6 @@ class TestQNNQuantizedOperator(TestQNN):
                 module = self.get_qdq_module(
                     module,
                     sample_input,
-                    is_conv_per_block=True,
                     quant_dtype=QuantDtype.use_16a4w_block,
                     block_size_map={"conv2d": (1, 128, 1, 1)},
                 )
