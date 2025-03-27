@@ -434,6 +434,114 @@ __attribute__((deprecated("This API is experimental.")))
                   shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
     NS_SWIFT_NAME(init(_:shape:strides:dimensionOrder:dataType:shapeDynamism:));
 
+/**
+ * Initializes a tensor with an array of scalar values, specifying shape, strides, dimension order, and data type,
+ * using a default dynamic bound shape for shape dynamism.
+ *
+ * @param scalars An NSArray of NSNumber objects representing the scalar values.
+ * @param shape An NSArray of NSNumber objects representing the desired tensor shape.
+ * @param strides An NSArray of NSNumber objects representing the tensor strides.
+ * @param dimensionOrder An NSArray of NSNumber objects indicating the order of dimensions.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @return An initialized ExecuTorchTensor instance containing the scalar values.
+ */
+- (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
+                          shape:(NSArray<NSNumber *> *)shape
+                        strides:(NSArray<NSNumber *> *)strides
+                 dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
+                       dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(init(_:shape:strides:dimensionOrder:dataType:));
+
+/**
+ * Initializes a tensor with an array of scalar values, specifying the desired shape, data type, and explicit shape dynamism.
+ *
+ * @param scalars An NSArray of NSNumber objects representing the scalar values.
+ * @param shape An NSArray of NSNumber objects representing the desired tensor shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value indicating the shape dynamism.
+ * @return An initialized ExecuTorchTensor instance.
+ */
+- (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
+                          shape:(NSArray<NSNumber *> *)shape
+                       dataType:(ExecuTorchDataType)dataType
+                  shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(init(_:shape:dataType:shapeDynamism:));
+
+/**
+ * Initializes a tensor with an array of scalar values and a specified shape,
+ * using a default dynamic bound shape for shape dynamism.
+ *
+ * @param scalars An NSArray of NSNumber objects representing the scalar values.
+ * @param shape An NSArray of NSNumber objects representing the desired tensor shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @return An initialized ExecuTorchTensor instance.
+ */
+- (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
+                          shape:(NSArray<NSNumber *> *)shape
+                       dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(init(_:shape:dataType:));
+
+/**
+ * Initializes a tensor with an array of scalar values, specifying the tensor data type and explicit shape dynamism.
+ * The shape is deduced from the count of the scalar array.
+ *
+ * @param scalars An NSArray of NSNumber objects representing the scalar values.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value indicating the shape dynamism.
+ * @return An initialized ExecuTorchTensor instance with the shape deduced from the scalar count.
+ */
+- (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
+                       dataType:(ExecuTorchDataType)dataType
+                  shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(init(_:dataType:shapeDynamism:));
+
+/**
+ * Initializes a tensor with an array of scalar values, specifying the tensor data type.
+ * The shape is deduced from the count of the scalar array.
+ *
+ * @param scalars An NSArray of NSNumber objects representing the scalar values.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @return An initialized ExecuTorchTensor instance with the shape deduced from the scalar count.
+ */
+- (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
+                       dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(init(_:dataType:));
+
+/**
+ * Initializes a tensor with an array of scalar values, a specified shape and explicit shape dynamism.
+ * The data type is automatically deduced from the first element of the array.
+ *
+ * @param scalars An NSArray of NSNumber objects representing the scalar values.
+ * @param shape An NSArray of NSNumber objects representing the desired tensor shape.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value indicating the shape dynamism.
+ * @return An initialized ExecuTorchTensor instance.
+ */
+- (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
+                          shape:(NSArray<NSNumber *> *)shape
+                  shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(init(_:shape:shapeDynamism:));
+
+/**
+ * Initializes a tensor with an array of scalar values and a specified shape.
+ * The data type is automatically deduced from the first element of the array.
+ *
+ * @param scalars An NSArray of NSNumber objects representing the scalar values.
+ * @param shape An NSArray of NSNumber objects representing the desired tensor shape.
+ * @return An initialized ExecuTorchTensor instance.
+ */
+- (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
+                          shape:(NSArray<NSNumber *> *)shape
+    NS_SWIFT_NAME(init(_:shape:));
+
+/**
+ * Initializes a tensor with an array of scalar values, automatically deducing the tensor shape and data type.
+ *
+ * @param scalars An NSArray of NSNumber objects representing the scalar values.
+ * @return An initialized ExecuTorchTensor instance with shape and data type deduced.
+ */
+- (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
+    NS_SWIFT_NAME(init(_:));
+
 @end
 
 NS_ASSUME_NONNULL_END

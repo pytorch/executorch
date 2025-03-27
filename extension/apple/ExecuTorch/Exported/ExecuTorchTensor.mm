@@ -367,4 +367,91 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
   return [self initWithNativeInstance:&tensor];
 }
 
+- (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
+                          shape:(NSArray<NSNumber *> *)shape
+                        strides:(NSArray<NSNumber *> *)strides
+                 dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
+                       dataType:(ExecuTorchDataType)dataType {
+  return [self initWithScalars:scalars
+                         shape:shape
+                       strides:strides
+                dimensionOrder:dimensionOrder
+                      dataType:dataType
+                 shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
+- (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
+                          shape:(NSArray<NSNumber *> *)shape
+                       dataType:(ExecuTorchDataType)dataType
+                  shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self initWithScalars:scalars
+                         shape:shape
+                       strides:@[]
+                dimensionOrder:@[]
+                      dataType:dataType
+                 shapeDynamism:shapeDynamism];
+}
+
+- (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
+                          shape:(NSArray<NSNumber *> *)shape
+                       dataType:(ExecuTorchDataType)dataType {
+  return [self initWithScalars:scalars
+                         shape:shape
+                       strides:@[]
+                dimensionOrder:@[]
+                      dataType:dataType
+                 shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
+- (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
+                       dataType:(ExecuTorchDataType)dataType
+                  shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self initWithScalars:scalars
+                         shape:@[@(scalars.count)]
+                       strides:@[]
+                dimensionOrder:@[]
+                      dataType:dataType
+                 shapeDynamism:shapeDynamism];
+}
+
+- (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
+                       dataType:(ExecuTorchDataType)dataType {
+  return [self initWithScalars:scalars
+                         shape:@[@(scalars.count)]
+                       strides:@[]
+                dimensionOrder:@[]
+                      dataType:dataType
+                 shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
+- (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
+                          shape:(NSArray<NSNumber *> *)shape
+                  shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self initWithScalars:scalars
+                         shape:shape
+                       strides:@[]
+                dimensionOrder:@[]
+                      dataType:static_cast<ExecuTorchDataType>(utils::deduceType(scalars.firstObject))
+                 shapeDynamism:shapeDynamism];
+}
+
+- (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
+                          shape:(NSArray<NSNumber *> *)shape {
+  return [self initWithScalars:scalars
+                         shape:shape
+                       strides:@[]
+                dimensionOrder:@[]
+                      dataType:static_cast<ExecuTorchDataType>(utils::deduceType(scalars.firstObject))
+                 shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
+- (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars {
+  return [self initWithScalars:scalars
+                         shape:@[@(scalars.count)]
+                       strides:@[]
+                dimensionOrder:@[]
+                      dataType:static_cast<ExecuTorchDataType>(utils::deduceType(scalars.firstObject))
+                 shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
 @end
