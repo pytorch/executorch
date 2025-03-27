@@ -9,6 +9,7 @@
 #import "ExecuTorchTensor.h"
 
 #import "ExecuTorchError.h"
+#import "ExecuTorchUtils.h"
 
 #import <executorch/extension/tensor/tensor.h>
 
@@ -16,6 +17,9 @@ using namespace executorch::extension;
 
 @implementation ExecuTorchTensor {
   TensorPtr _tensor;
+  NSArray<NSNumber *> *_shape;
+  NSArray<NSNumber *> *_strides;
+  NSArray<NSNumber *> *_dimensionOrder;
 }
 
 - (instancetype)initWithNativeInstance:(void *)nativeInstance {
@@ -29,6 +33,39 @@ using namespace executorch::extension;
 
 - (void *)nativeInstance {
   return &_tensor;
+}
+
+- (ExecuTorchDataType)dataType {
+  return static_cast<ExecuTorchDataType>(_tensor->scalar_type());
+}
+
+- (NSArray<NSNumber *> *)shape {
+  if (!_shape) {
+    _shape = utils::toNSArray(_tensor->sizes());
+  }
+  return _shape;
+}
+
+- (NSArray<NSNumber *> *)dimensionOrder {
+  if (!_dimensionOrder) {
+    _dimensionOrder = utils::toNSArray(_tensor->dim_order());
+  }
+  return _dimensionOrder;
+}
+
+- (NSArray<NSNumber *> *)strides {
+  if (!_strides) {
+    _strides = utils::toNSArray(_tensor->strides());
+  }
+  return _strides;
+}
+
+- (ExecuTorchShapeDynamism)shapeDynamism {
+  return static_cast<ExecuTorchShapeDynamism>(_tensor->shape_dynamism());
+}
+
+- (NSInteger)count {
+  return _tensor->numel();
 }
 
 @end
