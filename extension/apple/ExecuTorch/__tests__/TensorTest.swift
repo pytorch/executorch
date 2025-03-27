@@ -151,4 +151,18 @@ class TensorTest: XCTestCase {
     XCTAssertEqual(tensor2.dimensionOrder, tensor1.dimensionOrder)
     XCTAssertEqual(tensor2.count, tensor1.count)
   }
+
+  func testCopy() {
+    var data: [Double] = [10.0, 20.0, 30.0, 40.0]
+    let tensor1 = data.withUnsafeMutableBytes {
+      Tensor(bytesNoCopy: $0.baseAddress!, shape: [2, 2], dataType: .double)
+    }
+    let tensor2 = tensor1.copy()
+
+    XCTAssertEqual(tensor1.dataType, tensor2.dataType)
+    XCTAssertEqual(tensor1.shape, tensor2.shape)
+    XCTAssertEqual(tensor1.strides, tensor2.strides)
+    XCTAssertEqual(tensor1.dimensionOrder, tensor2.dimensionOrder)
+    XCTAssertEqual(tensor1.count, tensor2.count)
+  }
 }
