@@ -139,4 +139,31 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) {
   return outputs;
 }
 
+- (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
+                                             withInput:(ExecuTorchValue *)value
+                                                 error:(NSError **)error {
+  return [self executeMethod:methodName
+                  withInputs:@[value]
+                       error:error];
+}
+
+- (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
+                                                 error:(NSError **)error {
+  return [self executeMethod:methodName
+                  withInputs:@[]
+                       error:error];
+}
+
+- (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
+                                           withTensors:(NSArray<ExecuTorchTensor *> *)tensors
+                                                 error:(NSError **)error {
+  NSMutableArray<ExecuTorchValue *> *values = [NSMutableArray arrayWithCapacity:tensors.count];
+  for (ExecuTorchTensor *tensor in tensors) {
+    [values addObject:[ExecuTorchValue valueWithTensor:tensor]];
+  }
+  return [self executeMethod:methodName
+                  withInputs:values
+                       error:error];
+}
+
 @end
