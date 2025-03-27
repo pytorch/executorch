@@ -4,8 +4,11 @@
 # except in compliance with the License. See the license file found in the
 # LICENSE file in the root directory of this source tree.
 
+# mypy: disable-error-code=import-untyped
+
 import argparse
 import time
+from typing import cast, List, Optional
 
 import executorch
 
@@ -15,7 +18,11 @@ import torch
 import torchvision.models as torchvision_models
 from executorch.backends.openvino.partitioner import OpenvinoPartitioner
 from executorch.backends.openvino.quantizer import quantize_model
-from executorch.exir import EdgeProgramManager, to_edge_transform_and_lower
+from executorch.exir import (
+    EdgeProgramManager,
+    ExecutorchProgramManager,
+    to_edge_transform_and_lower,
+)
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.runtime import Runtime
 from sklearn.metrics import accuracy_score
@@ -102,7 +109,7 @@ def load_calibration_dataset(
 
 
 def infer_model(
-    exec_prog: EdgeProgramManager,
+    exec_prog: ExecutorchProgramManager,
     inputs,
     num_iter: int,
     warmup_iter: int,
@@ -111,7 +118,7 @@ def infer_model(
     """
     Executes inference and reports the average timing.
 
-    :param exec_prog: EdgeProgramManager of the lowered model
+    :param exec_prog: ExecutorchProgramManager of the lowered model
     :param inputs: The inputs for the model.
     :param num_iter: The number of iterations to execute inference for timing.
     :param warmup_iter: The number of iterations to execute inference for warmup before timing.
@@ -122,8 +129,11 @@ def infer_model(
     runtime = Runtime.get()
     program = runtime.load_program(exec_prog.buffer)
     method = program.load_method("forward")
+    if method is None:
+        raise ValueError("Load method failed")
 
     # Execute warmup
+    out = None
     for _i in range(warmup_iter):
         out = method.execute(inputs)
 
@@ -137,6 +147,7 @@ def infer_model(
 
     # Save output tensor as raw tensor file
     if output_path:
+        assert out is not None
         torch.save(out, output_path)
 
     # Return average inference timing
@@ -144,12 +155,13 @@ def infer_model(
 
 
 def validate_model(
-    exec_prog: EdgeProgramManager, calibration_dataset: torch.utils.data.DataLoader
+    exec_prog: ExecutorchProgramManager,
+    calibration_dataset: torch.utils.data.DataLoader,
 ) -> float:
     """
     Validates the model using the calibration dataset.
 
-    :param exec_prog: EdgeProgramManager of the lowered model
+    :param exec_prog: ExecutorchProgramManager of the lowered model
     :param calibration_dataset: A DataLoader containing calibration data.
     :return: The accuracy score of the model.
     """
@@ -157,14 +169,16 @@ def validate_model(
     runtime = Runtime.get()
     program = runtime.load_program(exec_prog.buffer)
     method = program.load_method("forward")
+    if method is None:
+        raise ValueError("Load method failed")
 
     # Iterate over the dataset and run the executor
-    predictions = []
+    predictions: List[int] = []
     targets = []
     for _idx, data in enumerate(calibration_dataset):
         feature, target = data
         targets.extend(target)
-        out = method.execute((feature,))
+        out = list(method.execute((feature,)))
         predictions.extend(torch.stack(out).reshape(-1, 1000).argmax(-1))
 
     # Check accuracy
@@ -213,12 +227,18 @@ def main(  # noqa: C901
     model = load_model(suite, model_name)
     model = model.eval()
 
+    calibration_dataset: Optional[torch.utils.data.DataLoader] = None
+
     if dataset_path:
         calibration_dataset = load_calibration_dataset(
             dataset_path, batch_size, suite, model, model_name
         )
-        input_shape = tuple(next(iter(calibration_dataset))[0].shape)
-        print(f"Input shape retrieved from the model config: {input_shape}")
+        if calibration_dataset is not None:
+            input_shape = tuple(next(iter(calibration_dataset))[0].shape)
+            print(f"Input shape retrieved from the model config: {input_shape}")
+        else:
+            msg = "Quantization requires a valid calibration dataset"
+            raise ValueError(msg)
     # Ensure input_shape is a tuple
     elif isinstance(input_shape, (list, tuple)):
         input_shape = tuple(input_shape)
@@ -240,7 +260,7 @@ def main(  # noqa: C901
     # Export the model to the aten dialect
     aten_dialect: ExportedProgram = export(model, example_args)
 
-    if quantize:
+    if quantize and calibration_dataset:
         if suite == "huggingface":
             msg = f"Quantization of {suite} models did not support yet."
             raise ValueError(msg)
@@ -251,20 +271,20 @@ def main(  # noqa: C901
             raise ValueError(msg)
 
         subset_size = 300
-        batch_size = calibration_dataset.batch_size
+        batch_size = calibration_dataset.batch_size or 1
         subset_size = (subset_size // batch_size) + int(subset_size % batch_size > 0)
 
         def transform_fn(x):
             return x[0]
 
         quantized_model = quantize_model(
-            aten_dialect.module(),
+            cast(torch.fx.GraphModule, aten_dialect.module()),
             calibration_dataset,
             subset_size=subset_size,
             transform_fn=transform_fn,
         )
 
-        aten_dialect: ExportedProgram = export(quantized_model, example_args)
+        aten_dialect = export(quantized_model, example_args)
 
     # Convert to edge dialect and lower the module to the backend with a custom partitioner
     compile_spec = [CompileSpec("device", device.encode())]
@@ -288,7 +308,7 @@ def main(  # noqa: C901
             exec_prog.write_to_file(file)
         print(f"Model exported and saved as {model_file_name} on {device}.")
 
-    if validate:
+    if validate and calibration_dataset:
         if suite == "huggingface":
             msg = f"Validation of {suite} models did not support yet."
             raise ValueError(msg)

@@ -68,6 +68,7 @@ class BaseOpenvinoOpTest(unittest.TestCase):
             runtime = Runtime.get()
             program = runtime.load_program(exec_prog.buffer)
             method = program.load_method("forward")
+            assert method is not None
             outputs = method.execute(sample_inputs)
 
             # Compare the outputs with the reference outputs
