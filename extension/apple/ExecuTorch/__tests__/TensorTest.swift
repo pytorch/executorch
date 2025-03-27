@@ -394,7 +394,7 @@ class TensorTest: XCTestCase {
   }
 
   func testInitFloat() {
-    let tensor = Tensor(Float(42.0) as NSNumber)
+    let tensor = Tensor(Float(42.0))
     XCTAssertEqual(tensor.dataType, .float)
     XCTAssertEqual(tensor.shape, [])
     XCTAssertEqual(tensor.strides, [])
