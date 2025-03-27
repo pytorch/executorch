@@ -44,7 +44,10 @@ def pytest_configure(config):
             )
         # Only enable if we also have the TOSA reference model available.
         pytest._test_options["corstone_fvp"] = True  # type: ignore[attr-defined]
-    pytest._test_options["llama_inputs"] = config.option.llama_inputs  # type: ignore[attr-defined]
+
+    if getattr(config.option, "llama_inputs", False) and config.option.llama_inputs:
+        pytest._test_options["llama_inputs"] = config.option.llama_inputs  # type: ignore[attr-defined]
+
     pytest._test_options["fast_fvp"] = False  # type: ignore[attr-defined]
     if getattr(config.option, "fast_fvp", False):
         pytest._test_options["fast_fvp"] = config.option.fast_fvp  # type: ignore[attr-defined]

@@ -137,6 +137,7 @@ _one_to_one = [
     torch.ops.aten.sum.dim_IntList,
     torch.ops.aten.hardsigmoid.default,
     torch.ops.aten.hardswish.default,
+    torch.ops.aten.hardswish_.default,
     torch.ops.aten.full_like.default,
 ]
 
@@ -196,6 +197,7 @@ _parent_shared_qspec = [
     torch.ops.aten.full.default,
     torch.ops.aten.flatten.using_ints,
     torch.ops.aten.dropout.default,
+    torch.ops.aten.dropout_.default,
     torch.ops.aten.clamp.default,
     torch.ops.aten.clamp.Tensor,
     operator.getitem,
