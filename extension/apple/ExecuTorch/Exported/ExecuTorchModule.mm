@@ -24,6 +24,15 @@ static inline EValue toEValue(ExecuTorchValue *value) {
     ET_CHECK(nativeTensor);
     return *nativeTensor;
   }
+  if (value.isDouble) {
+    return EValue(value.doubleValue);
+  }
+  if (value.isInteger) {
+    return EValue(static_cast<int64_t>(value.intValue));
+  }
+  if (value.isBoolean) {
+    return EValue(value.boolValue);
+  }
   ET_CHECK_MSG(false, "Unsupported ExecuTorchValue type");
   return EValue();
 }
@@ -32,6 +41,22 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) {
   if (value.isTensor()) {
     auto nativeInstance = make_tensor_ptr(value.toTensor());
     return [ExecuTorchValue valueWithTensor:[[ExecuTorchTensor alloc] initWithNativeInstance:&nativeInstance]];
+  }
+  if (value.isDouble()) {
+    return [ExecuTorchValue valueWithDouble:value.toDouble()];
+  }
+  if (value.isInt()) {
+    return [ExecuTorchValue valueWithInteger:value.toInt()];
+  }
+  if (value.isBool()) {
+    return [ExecuTorchValue valueWithBoolean:value.toBool()];
+  }
+  if (value.isString()) {
+    const auto stringView = value.toString();
+    NSString *string = [[NSString alloc] initWithBytes:stringView.data()
+                                                length:stringView.size()
+                                              encoding:NSUTF8StringEncoding];
+    return [ExecuTorchValue valueWithString:string];
   }
   ET_CHECK_MSG(false, "Unsupported EValue type");
   return [ExecuTorchValue new];
