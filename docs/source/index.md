@@ -41,7 +41,7 @@ ExecuTorch provides support for:
 - [Building from Source](using-executorch-building-from-source)
 - [FAQs](using-executorch-faqs)
 #### Examples
-- [Android Demo Apps](demo-apps-android.md)
+- [Android Demo Apps](https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app)
 - [iOS Demo Apps](demo-apps-ios.md)
 #### Backends
 - [Overview](backends-overview)
@@ -142,7 +142,7 @@ using-executorch-faqs
 :caption: Examples
 :hidden:
 
-demo-apps-android.md
+Building an ExecuTorch Android Demo App <https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app>
 demo-apps-ios.md
 ```
 
