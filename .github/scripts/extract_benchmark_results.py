@@ -455,7 +455,7 @@ def transform_failure_record(
         },
         "metric": {
             "name": "FAILURE_REPORT",
-            "benchmark_values": 0,
+            "benchmark_values": [0],
             "target_value": 0,
             "extra_info": {
                 "method": "",
