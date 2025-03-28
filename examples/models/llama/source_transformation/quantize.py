@@ -783,7 +783,9 @@ class QuantizedGroupEmbedding(torch.nn.Module):
 ############################ Source Transform Start #######################
 
 
-def get_quant_embedding_transform(config: DictConfig, dtype_override: Optional[DType] = None):
+def get_quant_embedding_transform(
+    config: DictConfig, dtype_override: Optional[DType] = None
+):
     if config.quantization.embedding_quantize.startswith("torchao:"):
         from torchao.experimental.quant_api import (
             EmbeddingQuantizer,
@@ -850,15 +852,15 @@ def get_quant_weight_transform(
     # If these optional args are None, don't provide them to quantize().
     quant_args = {}
     if config.quantization.group_size is not None:
-        quant_args['group_size'] = config.quantization.group_size
+        quant_args["group_size"] = config.quantization.group_size
     if config.calibration.tasks is not None:
-        quant_args['calibration_tasks'] = OmegaConf.to_container(config.calibration.tasks)
+        quant_args["calibration_tasks"] = OmegaConf.to_container(
+            config.calibration.tasks
+        )
     if config.calibration.limit is not None:
-        quant_args['calibration_limit'] = config.calibration.limit
+        quant_args["calibration_limit"] = config.calibration.limit
     if config.calibration.seq_length is not None:
-        quant_args['calibration_seq_length'] = config.calibration.seq_length
-
-
+        quant_args["calibration_seq_length"] = config.calibration.seq_length
 
     group_size = config.quantization.group_size
     calibration_tasks = config.calibration.tasks
@@ -871,11 +873,15 @@ def get_quant_weight_transform(
         qmode=config.quantization.mode,
         computation_dtype=computation_dtype,
         checkpoint_dtype=checkpoint_dtype,
-        checkpoint_path=(Path(path) if (path := config.model.checkpoint) is not None else None),
+        checkpoint_path=(
+            Path(path) if (path := config.model.checkpoint) is not None else None
+        ),
         tokenizer_path=(
             Path(path) if (path := config.model.tokenizer_path) is not None else None
         ),
     )
+
+
 def _load_torchao_aten_lib(libname):
     import glob
     import os

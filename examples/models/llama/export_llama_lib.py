@@ -534,6 +534,11 @@ def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
         return return_val
 
 
+def get_default_llm_config() -> DictConfig:
+    default_args = build_args_parser().parse_args([])
+    return _convert_args_to_config(default_args)
+
+
 def _convert_args_to_config(args: argparse.Namespace) -> DictConfig:
     """Convert argparse.Namespace to DictConfig."""
     # Create a dictionary from args
@@ -670,7 +675,9 @@ def export_llama(args: Union[argparse.Namespace, DictConfig]) -> str:
             raise ValueError(
                 f"Converting weights to meta format for {config.model.name} is not yet supported"
             )
-        config.model.checkpoint = download_and_convert_hf_checkpoint(repo_id, convert_weights)
+        config.model.checkpoint = download_and_convert_hf_checkpoint(
+            repo_id, convert_weights
+        )
 
     if config.misc.profile_path is not None:
         try:
@@ -711,9 +718,7 @@ def _prepare_for_llama_export(config: DictConfig) -> LLMEdgeManager:
         if config.model.checkpoint_dir
         else None
     )
-    params_path = (
-        canonical_path(config.model.params) if config.model.params else None
-    )
+    params_path = canonical_path(config.model.params) if config.model.params else None
     output_dir_path = canonical_path(config.export.output_dir, dir=True)
     weight_type = (
         WeightType.FAIRSEQ2 if config.model.type == "FAIRSEQ2" else WeightType.LLAMA

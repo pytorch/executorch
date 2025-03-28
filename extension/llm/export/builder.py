@@ -203,7 +203,7 @@ class LLMEdgeManager:
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
-            if hasattr(self.args, "qnn") and self.args.qnn:
+            if self.args.backend.qnn.enabled:
                 # TODO: this is temporary, as qnn flow does not work with new, non-functional export IR.
                 # See issue: https://github.com/pytorch/executorch/issues/7373
 
@@ -249,8 +249,8 @@ class LLMEdgeManager:
         # Persisting those changes back to an ExportedProgram will require
         # an additional export().
         self.pre_autograd_graph_module = exported_module.module()
-        if hasattr(self.args, "export_only") and self.args.export_only:
-            torch.export.save(exported_module, self.args.output_name)
+        if self.args.export.export_only:
+            torch.export.save(exported_module, self.args.export.output_name)
         return self
 
     def run_canonical_optimizations(self):
@@ -414,7 +414,7 @@ class LLMEdgeManager:
                 self.export()
 
             override_export_behaviour = contextlib.nullcontext()
-            if hasattr(self.args, "qnn") and self.args.qnn:
+            if self.args.backend.qnn.enabled:
                 override_export_behaviour = patch.object(
                     torch._utils_internal,
                     "export_training_ir_rollout_check",
