@@ -22,6 +22,8 @@ The AAR artifact contains the Java library for users to integrate with their Jav
   - LLaMa-specific Custom ops library.
 - Comes with two ABI variants, arm64-v8a and x86\_64.
 
+The AAR library can be used for generic Android device with arm64-v8a or x86_64 architecture. It can be used across form factors, including phones, tablets, tv boxes, etc, as it does not contain any UI components.
+
 ## Using AAR from Maven Central
 
 ExecuTorch is available on [Maven Central](https://mvnrepository.com/artifact/org.pytorch/executorch-android).
@@ -37,6 +39,11 @@ dependencies {
 ```
 
 Note: `org.pytorch:executorch-android:0.5.1` corresponds to executorch v0.5.0.
+
+Click the screenshot below to watch the *demo video* on how to add the package and run a simple ExecuTorch model with Android Studio.
+<a href="https://pytorch.org/executorch/main/_static/img/android_studio.mp4">
+  <img src="https://pytorch.org/executorch/main/_static/img/android_studio.jpeg" width="800" alt="Integrating and Running ExecuTorch on Android">
+</a>
 
 ## Using AAR file directly
 
@@ -102,6 +109,8 @@ export ANDROID_HOME=/path/to/sdk
 export ANDROID_NDK=/path/to/ndk
 sh scripts/build_android_library.sh
 ```
+
+Currently, XNNPACK backend is always built with the script.
 
 ### Optional environment variables
 

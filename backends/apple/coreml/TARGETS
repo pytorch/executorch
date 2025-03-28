@@ -72,7 +72,7 @@ runtime.cxx_python_extension(
     headers = glob([
         "runtime/inmemoryfs/**/*.hpp",
     ]),
-    base_module = "",
+    base_module = "executorch.backends.apple.coreml",
     compiler_flags = [
         "-std=c++17",
     ],
