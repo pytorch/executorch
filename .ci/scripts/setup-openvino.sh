@@ -22,5 +22,7 @@ cd ..
 cmake --install build --prefix dist
 
 source dist/setupvars.sh
-cd ../backends/openvino/scripts
+cd ../backends/openvino
+pip install -r requirements.txt
+cd scripts
 ./openvino_build.sh --enable_python
