@@ -759,3 +759,4 @@ jobs:
         BUILD_TOOL="cmake"
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-openvino.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_openvino.sh
