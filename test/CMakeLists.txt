@@ -68,5 +68,18 @@ if(CMAKE_BUILD_TYPE EQUAL "Release")
   target_link_options(size_test_all_ops PRIVATE "LINKER:--gc-sections")
 endif()
 
+#
+# size_test_all_optimized_ops: binary with optimized ops and no delegate backend
+#
+if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+add_executable(size_test_all_optimized_ops ${_size_test__srcs})
+target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+target_link_libraries(
+  size_test_all_optimized_ops executorch optimized_native_cpu_ops_lib)
+if(CMAKE_BUILD_TYPE EQUAL "Release")
+  target_link_options(size_test_all_optimized_ops PRIVATE "LINKER:--gc-sections")
+endif()
+endif()
+
 # Print all summary
 executorch_print_configuration_summary()
