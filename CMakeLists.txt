@@ -48,7 +48,9 @@ include(tools/cmake/Utils.cmake)
 include(CMakeDependentOption)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
+# Set a flag to override the compatiblity error caused by CMake 4.0.0+ dropping support for
+# things like `cmake_minimum_required (VERSION 3.0.2 FATAL_ERROR)`
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
