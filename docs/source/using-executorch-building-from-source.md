@@ -63,7 +63,7 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
    ./install_executorch.sh
    ```
 
-   Use the [`--pybind` flag](https://github.com/pytorch/executorch/blob/main/install_executorch.sh#L26-L29) to install with pybindings and dependencies for other backends. 
+   Use the [`--pybind` flag](https://github.com/pytorch/executorch/blob/main/install_executorch.sh#L26-L29) to install with pybindings and dependencies for other backends.
    ```bash
    ./install_executorch.sh --pybind <coreml | mps | xnnpack>
 
@@ -82,7 +82,7 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
    For development mode, run the command with `--editable`, which allows us to modify Python source code and see changes reflected immediately.
    ```bash
    ./install_executorch.sh --editable [--pybind xnnpack]
-   
+
    # Or you can directly do the following if dependencies are already installed
    # either via a previous invocation of `./install_executorch.sh` or by explicitly installing requirements via `./install_requirements.sh` first.
    pip install -e .
@@ -196,7 +196,7 @@ I 00:00:00.000612 executorch:executor_runner.cpp:138] Setting up planned buffer 
 I 00:00:00.000669 executorch:executor_runner.cpp:161] Method loaded.
 I 00:00:00.000685 executorch:executor_runner.cpp:171] Inputs prepared.
 I 00:00:00.000764 executorch:executor_runner.cpp:180] Model executed successfully.
-I 00:00:00.000770 executorch:executor_runner.cpp:184] 1 outputs: 
+I 00:00:00.000770 executorch:executor_runner.cpp:184] 1 outputs:
 Output 0: tensor(sizes=[1], [2.])
 ```
 
@@ -206,6 +206,8 @@ Output 0: tensor(sizes=[1], [2.])
 Following are instruction on how to perform cross compilation for Android and iOS.
 
 ### Android
+
+#### Building executor_runner shell binary
 - Prerequisite: [Android NDK](https://developer.android.com/ndk), choose one of the following:
   - Option 1: Download Android Studio by following the instructions to [install ndk](https://developer.android.com/studio/projects/install-ndk).
   - Option 2: Download Android NDK directly from [here](https://developer.android.com/ndk/downloads).
@@ -243,7 +245,7 @@ sh scripts/build_android_library.sh
 ```
 
 This script will build the AAR, which contains the Java API and its corresponding JNI library. Please see
-[this documentation](./using-executorch-android.md#using-aar-file) for usage.
+[this documentation](./using-executorch-android#using-aar-file) for usage.
 
 ### iOS
 
@@ -278,5 +280,5 @@ Check out the [iOS Demo App](demo-apps-ios.md) tutorial for more info.
 You have successfully cross-compiled `executor_runner` binary to iOS and Android platforms. You can start exploring advanced features and capabilities. Here is a list of sections you might want to read next:
 
 * [Selective build](kernel-library-selective-build.md) to build the runtime that links to only kernels used by the program, which can provide significant binary size savings.
-* Tutorials on building [Android](./demo-apps-android.md) and [iOS](./demo-apps-ios.md) demo apps.
+* Tutorials on building [Android](https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app) and [iOS](./demo-apps-ios.md) demo apps.
 * Tutorials on deploying applications to embedded devices such as [ARM Cortex-M/Ethos-U](backends-arm-ethos-u.md) and [XTensa HiFi DSP](./backends-cadence.md).
