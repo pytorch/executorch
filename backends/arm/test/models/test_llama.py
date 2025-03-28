@@ -114,7 +114,7 @@ class TestLlama(unittest.TestCase):
                 )
                 .export()
                 .to_edge_transform_and_lower()
-                .check_count({"torch.ops.higher_order.executorch_call_delegate": 26})
+                .check_count({"torch.ops.higher_order.executorch_call_delegate": 14})
                 .to_executorch()
                 .run_method_and_compare_outputs(
                     inputs=llama_inputs,
