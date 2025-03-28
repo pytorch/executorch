@@ -88,8 +88,11 @@ Tensor& addmm_out(
           n,
           p);
 
-      utils::apply_bitensor_elementwise_fn<CTYPE, op_name>(
-          [alpha_val, beta_val](const CTYPE val_a, const CTYPE val_b) {
+      utils::apply_bitensor_elementwise_fn<
+          CTYPE,
+          op_name,
+          utils::SupportedTensorDtypes::REALHBF16>(
+          [alpha_val, beta_val](const auto val_a, const auto val_b) {
             return val_a * alpha_val + val_b * beta_val;
           },
           ctx,
@@ -97,8 +100,7 @@ Tensor& addmm_out(
           utils::SupportedTensorDtypes::REALHBF16,
           in,
           utils::SupportedTensorDtypes::REALHBF16,
-          out,
-          utils::SupportedTensorDtypes::REALHBF16);
+          out);
     }
   });
 

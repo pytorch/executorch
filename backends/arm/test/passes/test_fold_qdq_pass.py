@@ -6,9 +6,7 @@
 from typing import Tuple
 
 import torch
-from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
-    FoldAndAnnotateQParamsPass,
-)
+from executorch.backends.arm._passes import FoldAndAnnotateQParamsPass
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
 

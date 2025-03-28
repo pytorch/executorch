@@ -11,7 +11,6 @@ import executorch.backends.arm.tosa_quant_utils as tqutils
 
 import serializer.tosa_serializer as ts  # type: ignore
 
-# pyre-fixme[21]: 'Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`.'
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
 )
@@ -45,9 +44,7 @@ class MinVisitor(NodeVisitor):
         scale_back = 1.0
         min_output = output
         if inputs[0].dtype == ts.DType.INT8:
-            input_qparams = get_input_qparams(  # pyre-ignore[16]: 'Module `executorch.backends.arm` has no attribute `_passes`.'
-                node
-            )
+            input_qparams = get_input_qparams(node)
             assert (
                 len(input_qparams) == 2
             ), f"Both inputs needs to have quantization information for {node}"
