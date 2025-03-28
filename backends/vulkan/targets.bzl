@@ -44,7 +44,8 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
         "--glsl-paths {} ".format(" ".join(glsl_paths)) +
         "--output-path $OUT " +
         "--glslc-path=$(exe {}) ".format(glslc_path) +
-        "--tmp-dir-path=$OUT " +
+        "--tmp-dir-path=shader_cache " +
+        ("-f " if read_config("etvk", "force_shader_rebuild", "0") == "1" else " ") +
         select({
             "DEFAULT": "",
             "ovr_config//os:android": "--optimize",
