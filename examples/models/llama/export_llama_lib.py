@@ -905,7 +905,7 @@ def _to_edge_and_lower_llama_xnnpack(
     return builder.to_executorch(passes=additional_passes)
 
 
-def _to_edge_and_lower_llama(
+def _to_edge_and_lower_llama(  # noqa: C901
     builder_exported,
     modelname,
     additional_passes,

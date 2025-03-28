@@ -162,7 +162,7 @@ def export_image_encoder(llava, resized, dynamic_shapes):
             use_kv_cache=True,
             example_inputs=(resized,),
             dynamic_shapes=dynamic_shapes,
-            args=None,
+            config=None,
         )
         .export()
         .pt2e_quantize([quantizer])
