@@ -22,7 +22,10 @@ logger.setLevel(logging.WARNING)
 
 @register_tosa_support_check
 class RightShiftSupported(SupportedTOSAOperatorCheck):
-    targets = [exir_ops.edge.aten.__rshift__.Scalar]
+    targets = [
+        exir_ops.edge.aten.bitwise_right_shift.Tensor,
+        exir_ops.edge.aten.__rshift__.Scalar,
+    ]
 
     tosa_specs = [
         TosaSpecification.create_from_string("TOSA-0.80+BI"),
