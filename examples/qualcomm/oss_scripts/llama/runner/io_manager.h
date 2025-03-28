@@ -55,6 +55,9 @@ class IoMgrBase {
       int64_t cur_token,
       int64_t pos,
       std::vector<std::vector<executorch::aten::Tensor>>& output_tensors) = 0;
+  virtual void update_kv_to_prefill_io(
+      int64_t pos,
+      std::vector<std::vector<executorch::aten::Tensor>>& output_tensors) = 0;
   virtual void update_kv_io(
       int64_t cur_token,
       int64_t pos,
@@ -123,6 +126,10 @@ class ShiftPointerIoMgr : public IoMgrBase {
   void fill_kv_tok_mask(int64_t pos, int64_t cur_token) override;
   void update_prefill_to_kv_io(
       int64_t cur_token,
+      int64_t pos,
+      std::vector<std::vector<executorch::aten::Tensor>>& output_tensors)
+      override;
+  void update_kv_to_prefill_io(
       int64_t pos,
       std::vector<std::vector<executorch::aten::Tensor>>& output_tensors)
       override;
@@ -231,6 +238,10 @@ class SmartMaskIoMgr : public IoMgrBase {
   void fill_kv_tok_mask(int64_t pos, int64_t cur_token) override;
   void update_prefill_to_kv_io(
       int64_t cur_token,
+      int64_t pos,
+      std::vector<std::vector<executorch::aten::Tensor>>& output_tensors)
+      override;
+  void update_kv_to_prefill_io(
       int64_t pos,
       std::vector<std::vector<executorch::aten::Tensor>>& output_tensors)
       override;

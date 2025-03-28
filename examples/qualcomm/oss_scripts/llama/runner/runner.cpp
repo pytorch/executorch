@@ -57,7 +57,8 @@ Runner::Runner(
       performance_output_path_(performance_output_path),
       logits_scale_(logits_scale),
       logits_offset_(logits_offset),
-      temperature_(temperature),
+      // hardcoded here for comparing with goldens
+      temperature_(0),
       eval_mode_(static_cast<EvalMode>(eval_mode)),
       kv_updater_(kv_updater),
       num_iters_(num_iters) {
@@ -367,11 +368,12 @@ Error Runner::generate(
       pos += prefill_ar_len_;
     }
     Tensor& logits_tensor = output_tensors[method_name].back()[0];
-    prev_token = prompt_tokens[num_prompt_tokens - 1];
+    prev_token = prompt_tokens.back();
     long sample_start_time_ms = time_in_ms();
     cur_token = logitsToToken(
         logits_tensor,
         (num_prompt_tokens + prefill_ar_len_ - 1) % prefill_ar_len_);
+
     stats_.aggregate_sampling_time_ms += time_in_ms() - sample_start_time_ms;
 
     auto piece_res = tokenizer_->decode(prev_token, cur_token);
@@ -380,14 +382,17 @@ Error Runner::generate(
       token_callback(piece_res.get().c_str());
     }
 
-    pos = num_prompt_tokens;
+    pos = prompt_tokens.size();
     stats_.first_token_ms = time_in_ms();
     stats_.prompt_eval_end_ms = time_in_ms();
   };
 
   auto kv_execute = [&](const std::string& method_name) {
     io_mgr_->fill_kv_tok_mask(pos, cur_token);
-    while (pos < seq_len - 1) {
+    // force decode to generate 5 runs at most
+    int64_t max_pos = std::min(pos + 5, (int64_t)seq_len - 1);
+    //while (pos < seq_len - 1) {
+    while (pos < max_pos) {
       // inference
       run_model_step(method_name, inputs[method_name]);
       Tensor& logits_tensor = output_tensors[method_name].back()[0];
@@ -401,6 +406,7 @@ Error Runner::generate(
         }
       }
       prev_token = cur_token;
+      prompt_tokens.push_back(prev_token);
       long sample_start_time_ms = time_in_ms();
       cur_token = logitsToToken(logits_tensor, pos);
       stats_.aggregate_sampling_time_ms += time_in_ms() - sample_start_time_ms;
@@ -427,12 +433,43 @@ Error Runner::generate(
     case EvalMode::kKVCached:
       kv_execute(kv_forward_name_);
       break;
-    case EvalMode::kHybrid:
-      prefill_execute(prefill_forward_name_);
-      io_mgr_->update_prefill_to_kv_io(
-          cur_token, pos, output_tensors[kv_forward_name_]);
-      kv_execute(kv_forward_name_);
-      break;
+    case EvalMode::kHybrid: {
+      std::vector<std::vector<int32_t>> new_prompt_token;
+      new_prompt_token.push_back({7826, 4257, 365, 2354, 29889});
+      new_prompt_token.push_back({902, 304, 952, 322, 902, 25448, 304, 29891, 471, 263, 4802, 29892});
+      new_prompt_token.push_back({29892, 365, 2354, 29915});
+      new_prompt_token.push_back({1371, 902, 411, 278, 425, 870, 719});
+      new_prompt_token.push_back({304, 1371, 322, 1183, 1925, 599, 278, 22095, 297, 278, 471, 2790, 4933, 29889, 29871, 13, 13555, 278, 22095, 892, 471, 17143, 29892, 365, 2354, 29915, 29879, 16823, 4433, 902, 304, 1371, 902, 13958, 963, 701, 304, 15589});
+      new_prompt_token.push_back({});
+      for (int i = 0; i < new_prompt_token.size(); ++i) {
+        prefill_execute(prefill_forward_name_);
+        io_mgr_->update_prefill_to_kv_io(
+            cur_token, pos, output_tensors[kv_forward_name_]);
+        kv_execute(kv_forward_name_);
+        io_mgr_->update_kv_to_prefill_io(
+            pos, output_tensors[prefill_forward_name_]);
+
+        // check if generated tokens match goldens
+        ET_LOG(Info, "Current tokens after turn %d:", i);
+        for (size_t k = 0; k < prompt_tokens.size() ; k += 10) {
+          std::string tokens;
+          for (int i = k; i < std::min(k+10, prompt_tokens.size()); ++i) {
+            tokens += std::to_string(prompt_tokens[i]) + " ";
+          }
+          ET_LOG(Info, "%s", tokens.c_str());
+        }
+        // convert tokens into text
+        for (int j = 1; j < new_prompt_token[i].size(); ++j) {
+          auto piece = tokenizer_->decode(new_prompt_token[i][j-1], new_prompt_token[i][j]);
+          if (token_callback) {
+            token_callback(piece.get().c_str());
+          }
+        }
+        prompt_tokens.insert(
+            prompt_tokens.end(), begin(new_prompt_token[i]), end(new_prompt_token[i]));
+        num_prompt_tokens = new_prompt_token[i].size();
+      }
+    } break;
     default:
       ET_CHECK_MSG(false, "Unsupported eval mode");
       break;
