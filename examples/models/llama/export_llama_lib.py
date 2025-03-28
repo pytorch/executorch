@@ -1291,7 +1291,7 @@ def _load_llama_model(
             model.vocab_size,
             metadata_str,
         ),
-        args=config,  # TODO: Rename builder args field to config.
+        config=config,  # TODO: Rename builder args field to config.
     )
 
 

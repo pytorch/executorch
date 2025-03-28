@@ -862,11 +862,6 @@ def get_quant_weight_transform(
     if config.calibration.seq_length is not None:
         quant_args["calibration_seq_length"] = config.calibration.seq_length
 
-    group_size = config.quantization.group_size
-    calibration_tasks = config.calibration.tasks
-    calibration_limit = config.calibration.limit
-    calibration_seq_length = config.calibration.seq_length
-
     return partial(
         quantize,
         **quant_args,
