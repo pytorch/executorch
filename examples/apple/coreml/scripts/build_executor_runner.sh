@@ -42,8 +42,9 @@ cmake "$EXECUTORCH_ROOT_PATH" -B"$CMAKE_BUILD_DIR_PATH" \
 -DCOREML_BUILD_EXECUTOR_RUNNER=ON \
 -DCMAKE_MACOSX_BUNDLE=OFF
 
-cmake --build "$CMAKE_BUILD_DIR_PATH" -j9 -t coremldelegate
-cmake --build "$CMAKE_BUILD_DIR_PATH" -j9 -t etdump -t flatccrt
+core_count=$(sysctl -n hw.ncpu)
+cmake --build "$CMAKE_BUILD_DIR_PATH" -j$(core_count) -t coremldelegate
+cmake --build "$CMAKE_BUILD_DIR_PATH" -j$(core_count) -t etdump -t flatccrt
 
 # Copy CoreML delegate headers
 echo "ExecuTorch: Copying headers"
