@@ -157,7 +157,7 @@ jobs:
 
   export-models:
     name: export-models
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.7
     needs: set-parameters
     secrets: inherit
     strategy:
@@ -346,7 +346,7 @@ jobs:
 
   build-benchmark-app:
     name: build-benchmark-app
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.7
     needs:
       - set-parameters
     secrets: inherit
@@ -436,7 +436,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@release/2.7
     strategy:
       matrix: ${{ fromJson(needs.set-parameters.outputs.benchmark_configs) }}
       fail-fast: false
@@ -479,7 +479,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Setup conda
-        uses: pytorch/test-infra/.github/actions/setup-miniconda@main
+        uses: pytorch/test-infra/.github/actions/setup-miniconda@release/2.7
         with:
           python-version: '3.10'
 
@@ -535,7 +535,7 @@ jobs:
           done
 
       - name: Upload the benchmark results (v3)
-        uses: pytorch/test-infra/.github/actions/upload-benchmark-results@main
+        uses: pytorch/test-infra/.github/actions/upload-benchmark-results@release/2.7
         with:
           benchmark-results-dir: benchmark-results/v3
           dry-run: false
