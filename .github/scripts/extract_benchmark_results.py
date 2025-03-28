@@ -360,6 +360,7 @@ def transform(
                     "app_type": app_type,
                     # Just keep a copy of the benchmark config here
                     "benchmark_config": json.dumps(benchmark_config),
+                    "job_conclusion": "SUCCESS",
                 },
             },
             "model": {
