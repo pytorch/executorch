@@ -123,6 +123,9 @@ def install_requirements(use_pytorch_nightly):
     # This is usually not recommended.
     new_env = os.environ.copy()
     new_env["USE_CPP"] = "1"  # install torchao kernels
+    # Set a flag to override the compatiblity error caused by CMake 4.0.0+ dropping support for
+    # things like `cmake_minimum_required (VERSION 3.0.2 FATAL_ERROR)`
+    new_env["CMAKE_POLICY_VERSION_MINIMUM"] = "3.5"
     subprocess.run(
         [
             sys.executable,

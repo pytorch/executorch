@@ -703,14 +703,15 @@ class CustomBuild(build):
             # like `TorchConfig.cmake` that are provided by pip packages.
             f"-DCMAKE_PREFIX_PATH={cmake_prefix_path}",
             f"-DCMAKE_BUILD_TYPE={cfg}",
-            # A temporary flag for overriding exception caused by CMake 4.0.0+
-            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
             # Enable logging even when in release mode. We are building for
             # desktop, where saving a few kB is less important than showing
             # useful error information to users.
             "-DEXECUTORCH_ENABLE_LOGGING=ON",
             "-DEXECUTORCH_LOG_LEVEL=Info",
             "-DCMAKE_OSX_DEPLOYMENT_TARGET=10.15",
+            # Set a flag to override the compatiblity error caused by CMake 4.0.0+ dropping support for
+            # things like `cmake_minimum_required (VERSION 3.0.2 FATAL_ERROR)`
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
             # The separate host project is only required when cross-compiling,
             # and it can cause build race conditions (libflatcc.a errors) when
             # enabled. TODO(dbort): Remove this override once this option is
