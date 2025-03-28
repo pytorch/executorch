@@ -46,8 +46,8 @@ from executorch.exir.passes.sym_shape_eval_pass import (
 )
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
-from executorch.extension.llm.tokenizer.tokenizer import Tokenizer
 from executorch.util.activation_memory_profiler import generate_memory_trace
+from pytorch_tokenizers.llama2c import Llama2cTokenizer as Tokenizer
 from torch.export import Dim
 from torch.nn.attention import SDPBackend
 
