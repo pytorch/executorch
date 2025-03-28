@@ -13,7 +13,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 git clone https://github.com/openvinotoolkit/openvino.git
 cd openvino && git checkout releases/2025/1
 git submodule update --init --recursive
-./install_build_dependencies.sh
+sudo ./install_build_dependencies.sh
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_PYTHON=ON
 make -j$(nproc)
