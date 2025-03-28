@@ -21,5 +21,6 @@ make -j$(nproc)
 cd ..
 cmake --install build --prefix dist
 
+source dist/setupvars.sh
 cd ../backends/openvino/scripts
 ./openvino_build.sh --enable_python
