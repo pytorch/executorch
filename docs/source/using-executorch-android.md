@@ -40,6 +40,11 @@ dependencies {
 
 Note: `org.pytorch:executorch-android:0.5.1` corresponds to executorch v0.5.0.
 
+Click the screenshot below to watch the *demo video* on how to add the package and run a simple ExecuTorch model with Android Studio.
+<a href="https://pytorch.org/executorch/main/_static/img/android_studio.mp4">
+  <img src="https://pytorch.org/executorch/main/_static/img/android_studio.jpeg" width="800" alt="Integrating and Running ExecuTorch on Android">
+</a>
+
 ## Using AAR file directly
 
 You can also directly specify an AAR file in the app. We upload pre-built AAR to S3 during each release, or as a snapshot.
