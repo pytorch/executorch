@@ -14,6 +14,30 @@ class TestStaticConstantPad(unittest.TestCase):
     def setUp(self):
         torch._dynamo.reset()
 
+    class NHWCStaticConstantPad(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(in_channels=2, out_channels=2, kernel_size=1)
+            self.conv2 = torch.nn.Conv2d(in_channels=13, out_channels=13, kernel_size=1)
+
+        def forward(self, x):
+            a = self.conv1(x)
+            pad_6 = (1, 2, 3, 4, 5, 6)
+            a = torch.nn.functional.pad(
+                input=a,
+                pad=pad_6,
+                mode="constant",
+                value=3.1,
+            )
+            # tensorshape = [1, 13, 10, 7]
+            a = self.conv2(a)
+
+            return a
+
+        def sample_inputs(self):
+            # NCHW
+            return (torch.randn(1, 2, 3, 4),)
+
     class StaticConstantPadFunctional(torch.nn.Module):
         def __init__(self):
             super().__init__()
@@ -199,6 +223,27 @@ class TestStaticConstantPad(unittest.TestCase):
                 [
                     "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default",
                     "torch.ops.quantized_decomposed",
+                ]
+            )
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
+    def test_fp32_static_constant_pad_nhwc(self):
+        conv = self.NHWCStaticConstantPad()
+        inputs = conv.sample_inputs()
+        (
+            Tester(conv, inputs)
+            .export()
+            .check_count({"torch.ops.aten.pad.default": 1})
+            .dump_artifact()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default",
+                    "executorch_exir_dialects_edge__ops_aten_convolution_default",
                 ]
             )
             .to_executorch()
