@@ -59,8 +59,7 @@ def python_is_compatible():
 
 
 # The pip repository that hosts nightly torch packages.
-TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
-
+TORCH_URL = "https://download.pytorch.org/whl/test/cpu"
 
 # Since ExecuTorch often uses main-branch features of pytorch, only the nightly
 # pip versions will have the required features.
@@ -80,16 +79,14 @@ def install_requirements(use_pytorch_nightly):
         # Setting use_pytorch_nightly to false to test the pinned PyTorch commit. Note
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
-        f"torch==2.7.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torch",
+        "torch==2.7.0" if use_pytorch_nightly else "torch",
         (
-            f"torchvision==0.22.0.{NIGHTLY_VERSION}"
-            if use_pytorch_nightly
-            else "torchvision"
+            "torchvision==0.23.0" if use_pytorch_nightly else "torchvision"
         ),  # For testing.
     ]
 
     EXAMPLES_REQUIREMENTS = [
-        f"torchaudio==2.6.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torchaudio",
+        "torchaudio==2.7.0" if use_pytorch_nightly else "torchaudio",
     ]
 
     # Assemble the list of requirements to actually install.
@@ -110,7 +107,7 @@ def install_requirements(use_pytorch_nightly):
             "requirements-dev.txt",
             *REQUIREMENTS_TO_INSTALL,
             "--extra-index-url",
-            TORCH_NIGHTLY_URL,
+            TORCH_URL,
         ],
         check=True,
     )

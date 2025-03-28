@@ -17,11 +17,7 @@ import sys
 from contextlib import contextmanager
 from typing import List, Tuple
 
-from install_requirements import (
-    install_requirements,
-    python_is_compatible,
-    TORCH_NIGHTLY_URL,
-)
+from install_requirements import install_requirements, python_is_compatible, TORCH_URL
 
 # Set up logging
 logging.basicConfig(
@@ -260,7 +256,7 @@ def main(args):
             "--no-build-isolation",
             "-v",
             "--extra-index-url",
-            TORCH_NIGHTLY_URL,
+            TORCH_URL,
         ],
         check=True,
     )
