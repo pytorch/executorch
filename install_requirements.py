@@ -81,7 +81,7 @@ def install_requirements(use_pytorch_nightly):
         # been installed on CI before this step, so pip won't reinstall them
         "torch==2.7.0" if use_pytorch_nightly else "torch",
         (
-            "torchvision==0.23.0" if use_pytorch_nightly else "torchvision"
+            "torchvision==0.22.0" if use_pytorch_nightly else "torchvision"
         ),  # For testing.
     ]
 
