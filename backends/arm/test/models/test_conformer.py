@@ -31,11 +31,10 @@ class TestConformer(unittest.TestCase):
     # .to_executorch step, i.e. after Arm partitioner.
     ops_after_partitioner = {
         "executorch_exir_dialects_edge__ops_aten_max_default": 1,
-        "executorch_exir_dialects_edge__ops_aten_eq_Scalar": 2,
         "executorch_exir_dialects_edge__ops_aten_where_self": 4,
         "torch.ops.aten._assert_scalar.default": 10,
         "torch.ops.aten._local_scalar_dense.default": 1,
-        "torch.ops.higher_order.executorch_call_delegate": 6,
+        "torch.ops.higher_order.executorch_call_delegate": 4,
     }
 
     dim = 16
