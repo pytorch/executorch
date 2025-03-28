@@ -214,22 +214,6 @@ Tensor& div_out_mode(
   if ((a_type != ScalarType::Float) || (b_type != ScalarType::Float))
     optimized = 0;
 
-  bool float_types =
-      (a_type == ScalarType::Float) && (b_type == ScalarType::Float);
-
-  if ((a_dim == 0) && float_types) {
-    for (int i = 0; i < b.numel(); i++)
-      out.mutable_data_ptr<float>()[i] =
-          a.const_data_ptr<float>()[0] / b.const_data_ptr<float>()[i];
-    return out;
-  }
-  if ((b_dim == 0) && float_types) {
-    for (int i = 0; i < a.numel(); i++)
-      out.mutable_data_ptr<float>()[i] =
-          a.const_data_ptr<float>()[i] / b.const_data_ptr<float>()[0];
-    return out;
-  }
-
   if ((broadcast == 1) && (max_dim > kNnlibMaxDim))
     optimized = 0;
   int mode_val = -1;
