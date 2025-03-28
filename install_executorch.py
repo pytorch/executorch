@@ -53,7 +53,7 @@ def clean():
 
 
 # Please keep this insync with `ShouldBuild.pybindings` in setup.py.
-VALID_PYBINDS = ["coreml", "mps", "xnnpack", "training"]
+VALID_PYBINDS = ["coreml", "mps", "xnnpack", "training", "openvino"]
 
 
 ################################################################################
