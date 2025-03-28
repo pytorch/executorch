@@ -10,7 +10,8 @@
 from executorch.backends.arm._passes import (
     AnnotateChannelsLastDimOrder,
     AnnotateDecomposedMatmulPass,
-    CastInt64ToInt32Pass,
+    CastInt64BuffersToInt32Pass,
+    CastToInt32Pass,
     ComputeConstantOpsAOT,
     Conv1dUnsqueezePass,
     ConvertAnyDefaultDimDimsPass,
@@ -80,6 +81,8 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ConvertAnyDefaultDimDimsPass())
+        if isinstance(self.tosa_spec, Tosa_0_80) and self.tosa_spec.is_U55_subset:
+            self.add_pass(CastToInt32Pass())
 
         self.add_pass(ReplaceScalarWithTensorArgPass())
         self.add_pass(AnnotateDecomposedMatmulPass())
@@ -94,7 +97,7 @@ class ArmPassManager(PassManager):
         self.add_pass(SizeAdjustConv2DPass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(UnsqueezeBeforeRepeatPass())
-        self.add_pass(CastInt64ToInt32Pass(exported_program))
+        self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(KeepDimsFalseToSqueezePass())
         self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSelectPass())
@@ -141,7 +144,7 @@ class ArmPassManager(PassManager):
         self.add_pass(SizeAdjustConv2DPass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(UnsqueezeBeforeRepeatPass())
-        self.add_pass(CastInt64ToInt32Pass(exported_program))
+        self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(KeepDimsFalseToSqueezePass())
         self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSelectPass())
