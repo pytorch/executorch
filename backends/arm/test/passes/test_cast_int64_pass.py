@@ -6,7 +6,7 @@
 from typing import Tuple
 
 import torch
-from executorch.backends.arm._passes.cast_int64_pass import CastInt64ToInt32Pass
+from executorch.backends.arm._passes.cast_int64_pass import CastInt64BuffersToInt32Pass
 
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
@@ -34,7 +34,7 @@ def test_int64_model_tosa_BI():
         tosa_version="TOSA-0.80+BI",
         ops_before_pass=op_checks,
         ops_after_pass=op_checks,
-        passes_with_exported_program=[CastInt64ToInt32Pass],
+        passes_with_exported_program=[CastInt64BuffersToInt32Pass],
     )
     pipeline.pop_stage("quantize")
     pipeline.run()
