@@ -51,7 +51,7 @@ set(PYTHON_EXECUTABLE
 file(MAKE_DIRECTORY ${ETHOS_SDK_PATH}/../ethos_u)
 
 include(FetchContent)
-set(ethos_u_base_rev "24.08")
+set(ethos_u_base_rev "25.02")
 FetchContent_Declare(
   ethos_u
   GIT_REPOSITORY https://git.gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u.git
