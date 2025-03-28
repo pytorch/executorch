@@ -26,6 +26,7 @@ import java.util.regex.Pattern;
 
 public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallback {
   ModelRunner mModelRunner;
+  ModelRunner mModelRunner2;
 
   String mPrompt;
   StatsInfo mStatsInfo;
@@ -59,6 +60,7 @@ public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallbac
     mStatsInfo = new StatsInfo();
     mStatsInfo.modelName = model.getName().replace(".pte", "");
     mModelRunner = new ModelRunner(model.getPath(), tokenizerPath, temperature, this);
+    mModelRunner2 = new ModelRunner(model.getPath(), tokenizerPath, temperature, this);
     mStatsInfo.loadStart = System.nanoTime();
   }
 
