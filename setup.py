@@ -703,6 +703,8 @@ class CustomBuild(build):
             # like `TorchConfig.cmake` that are provided by pip packages.
             f"-DCMAKE_PREFIX_PATH={cmake_prefix_path}",
             f"-DCMAKE_BUILD_TYPE={cfg}",
+            # A temporary flag for overriding exception caused by CMake 4.0.0+
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
             # Enable logging even when in release mode. We are building for
             # desktop, where saving a few kB is less important than showing
             # useful error information to users.
