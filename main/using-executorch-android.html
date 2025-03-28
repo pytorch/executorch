@@ -339,6 +339,7 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Examples</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
@@ -527,6 +528,7 @@
 </li>
 <li><p>Comes with two ABI variants, arm64-v8a and x86_64.</p></li>
 </ul>
+<p>The AAR library can be used for generic Android device with arm64-v8a or x86_64 architecture. It can be used across form factors, including phones, tablets, tv boxes, etc, as it does not contain any UI components.</p>
 </div>
 </div>
 <div class="section" id="using-aar-from-maven-central">
@@ -541,6 +543,10 @@
 </pre></div>
 </div>
 <p>Note: <code class="docutils literal notranslate"><span class="pre">org.pytorch:executorch-android:0.5.1</span></code> corresponds to executorch v0.5.0.</p>
+<p>Click the screenshot below to watch the <em>demo video</em> on how to add the package and run a simple ExecuTorch model with Android Studio.
+<a href="https://pytorch.org/executorch/main/_static/img/android_studio.mp4">
+<img src="https://pytorch.org/executorch/main/_static/img/android_studio.jpeg" width="800" alt="Integrating and Running ExecuTorch on Android">
+</a></p>
 </div>
 <div class="section" id="using-aar-file-directly">
 <h2>Using AAR file directly<a class="headerlink" href="#using-aar-file-directly" title="Permalink to this heading">¶</a></h2>
@@ -623,6 +629,7 @@ demo apps to showcase the AAR is integrated into a user app correctly.</p>
 <span class="n">sh</span> <span class="n">scripts</span><span class="o">/</span><span class="n">build_android_library</span><span class="o">.</span><span class="n">sh</span>
 </pre></div>
 </div>
+<p>Currently, XNNPACK backend is always built with the script.</p>
 <div class="section" id="optional-environment-variables">
 <h3>Optional environment variables<a class="headerlink" href="#optional-environment-variables" title="Permalink to this heading">¶</a></h3>
 <p>Optionally, set these environment variables before running <code class="docutils literal notranslate"><span class="pre">build_android_library.sh</span></code>.</p>
