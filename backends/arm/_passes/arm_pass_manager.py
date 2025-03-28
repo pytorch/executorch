@@ -25,6 +25,7 @@ from executorch.backends.arm._passes import (
     ConvertToClampPass,
     DecomposeBatchNormPass,
     DecomposeDivPass,
+    DecomposeGeluPass,
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
     DecomposeLinearPass,
@@ -132,6 +133,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertMeanDimToAveragePoolPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeSoftmaxPass())
+        self.add_pass(DecomposeGeluPass())
         self.add_pass(ConvertFullLikeToFullPass())
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
