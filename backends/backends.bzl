@@ -9,7 +9,7 @@ def get_all_cpu_backend_targets():
         "//executorch/backends/fb/qnnpack:qnnpack_backend",
     ]
 
-def get_all_cpu_aot_and_backend_targets():
+def get_all_cpu_aot_targets():
     """Returns a list of all CPU backend targets with aot (ahead of time).
 
     For experimenting and testing, not for production, since it will typically
@@ -20,4 +20,7 @@ def get_all_cpu_aot_and_backend_targets():
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/backends/fb/qnnpack:qnnpack_preprocess",
         "//executorch/backends/fb/qnnpack/partition:qnnpack_partitioner",
-    ] + get_all_cpu_backend_targets()
+    ]
+
+def get_all_cpu_aot_and_backend_targets():
+    return get_all_cpu_aot_targets() + get_all_cpu_backend_targets()
