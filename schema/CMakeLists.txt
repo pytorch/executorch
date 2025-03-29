@@ -9,6 +9,11 @@
 # cmake-format -i CMakeLists.txt
 # ~~~
 
+if(EXECUTORCH_H12025_BUILD_MIGRATION)
+  include(${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists_H12025.cmake)
+  return()
+endif()
+
 # The include directory that will contain the generated schema headers.
 set(_program_schema__include_dir "${CMAKE_BINARY_DIR}/schema/include")
 set(_program_schema__output_dir "${_program_schema__include_dir}/executorch/schema")
