@@ -564,6 +564,77 @@ void ShiftPointerIoMgr::update_prefill_to_kv_io(
   }
 }
 
+void ShiftPointerIoMgr::update_kv_to_prefill_io(
+  int64_t pos,
+  std::vector<std::vector<Tensor>>& output_tensors) {
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>>& v_cache_in_prefill =
+      v_cache_in_[prefill_forward_name_];
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>>& v_cache_in_kv =
+      v_cache_in_[kv_forward_name_];
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>>& v_cache_out_prefil =
+      v_cache_out_[prefill_forward_name_];
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>>& v_cache_out_kv =
+      v_cache_out_[kv_forward_name_];
+
+  // update v_cache
+  // this is critical to make generated v_cache always aligned in both prefill & decode mode
+  size_t prefill_offset = (kv_cache_len_ - prefill_cache_len_) * head_dim_;
+  for (int i = 0, v_stride = head_dim_*pos; i < v_cache_in_prefill.size(); ++i) {
+    v_cache_in_prefill[i]->set_data(v_cache_in_kv[i]->mutable_data<uint8_t>() +  + prefill_offset);
+    v_cache_out_prefil[i]->set_data(v_cache_out_kv[i]->mutable_data<uint8_t>());
+    // reset decode mode pointer since it will be updated again in update_prefill_to_kv
+    v_cache_in_kv[i]->set_data(v_cache_in_kv[i]->mutable_data<uint8_t>() - v_stride);
+    v_cache_out_kv[i]->set_data(v_cache_out_kv[i]->mutable_data<uint8_t>() - v_stride);
+  }
+
+  // make framework aware that output tensor pointers have changed
+  for (int shard = 0; shard < output_tensors.size(); shard++) {
+    for (int index = 0; index < output_tensors[shard].size(); index++) {
+      ET_CHECK_MSG(
+          modules_[shard]->set_output(
+              prefill_forward_name_, output_tensors[shard][index], index) ==
+              Error::Ok,
+          "failed to set output tensor for module %d's %d'th output "
+          "while updating kv_cache output tensors",
+          shard,
+          index);
+    }
+  }
+
+  // update k_cache
+  size_t copied_size = pos * sizeof(uint8_t);
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>>& k_cache_in_prefill =
+      k_cache_in_[prefill_forward_name_];
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>>& k_cache_in_kv =
+      k_cache_in_[kv_forward_name_];
+
+  for (int i = 0; i < k_cache_in_prefill.size(); i++) {
+    // k_cache_in should be always the same between prefill & decode
+    k_cache_in_prefill[i]->set_data(k_cache_in_kv[i]->mutable_data<uint8_t>());
+    // always do deep copy from origin because of the consumed tensor size is different in prefill & decode
+    uint8_t* ptr_in = k_cache_in_prefill[i]->mutable_data<uint8_t>() - pos;
+    // reset decode mode pointer since it will be updated again in update_prefill_to_kv
+    k_cache_in_kv[i]->set_data(ptr_in);
+    // in order not to override existent k_cache_out
+    // update_prefill_to_kv: copy from last dimension
+    // update_kv_to_prefill: copy from first dimension
+    for (int j = 0; j <= head_dim_; ++j) {
+      uint8_t* dst = ptr_in + j * prefill_cache_len_;
+      const uint8_t* src = ptr_in + j * kv_cache_len_;
+      memcpy(dst, src, copied_size);
+    }
+  }
+
+  // probably could be more efficient
+  IO* ptr = static_cast<IO*>(data_ptr_.get());
+  for (int i = 0; i < pos; i++) {
+    int offset = context_len_ - prefill_ar_len_ - i - 1;
+    for (int j = 0; j < prefill_ar_len_; j++) {
+      ptr->prefill_attention_mask[j * context_len_ + offset] = 65535;
+    }
+  }
+}
+
 void ShiftPointerIoMgr::update_kv_io(
     int64_t cur_token,
     int64_t pos,
@@ -667,6 +738,7 @@ void ShiftPointerIoMgr::fill_prefill_toks(
     int64_t start_pos,
     std::vector<uint64_t>& prompt_tokens) {
   IO* ptr = static_cast<IO*>(get_mutable_ptr());
+
   for (int i = 0; i < prefill_ar_len_; i++) {
     if (!is_bert_) {
       ptr->prefill_input_pos[i] = start_pos + i;
@@ -1358,6 +1430,11 @@ void SmartMaskIoMgr::update_prefill_to_kv_io(
       }
     }
   }
+}
+
+void SmartMaskIoMgr::update_kv_to_prefill_io(
+  int64_t pos,
+  std::vector<std::vector<Tensor>>& output_tensors) {
 }
 
 void SmartMaskIoMgr::update_prefill_io(
