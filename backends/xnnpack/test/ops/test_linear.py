@@ -605,9 +605,7 @@ class TestLinear(unittest.TestCase):
 
                     if legacy_partitioner:
                         tester.to_edge()
-                        tester.partition(
-                            Partition(DynamicallyQuantizedPartitioner)
-                        ).dump_artifact()
+                        tester.partition(Partition(DynamicallyQuantizedPartitioner))
                         # should have [add]mm node
                         if uses_bias:
                             tester.check(
@@ -624,7 +622,7 @@ class TestLinear(unittest.TestCase):
                     else:
                         tester.to_edge_transform_and_lower(
                             ToEdgeTransformAndLower([DynamicallyQuantizedPartitioner])
-                        ).dump_artifact()
+                        )
                         # should not have a delegate node
                         tester.check_not(
                             [
@@ -717,7 +715,7 @@ class TestLinear(unittest.TestCase):
                     num_batch_dims=num_batch_dims,
                     uses_bias=use_bias,
                     dtype=torch.float16,
-                    atol=5e-2,  # TODO(T212995726): Investigate right atol for rand[n] inputs
+                    atol=5e-3,  # TODO(T212995726): Investigate right atol for rand[n] inputs
                 )
 
     def test_fp32_linear(self):
