@@ -6,8 +6,9 @@
 # pyre-unsafe
 from typing import List
 
-import serializer.tosa_serializer as ts  # type: ignore
 import torch
+
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,

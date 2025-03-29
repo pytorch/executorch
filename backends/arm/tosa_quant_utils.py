@@ -12,13 +12,13 @@ from typing import cast, List, NamedTuple, Tuple
 
 import executorch.backends.arm.tosa_mapping
 
-import serializer.tosa_serializer as ts  # type: ignore
 import torch.fx
 import torch.fx.node
-import tosa.Op as TosaOp  # type: ignore
+
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
+import tosa_tools.v0_80.tosa.Op as TosaOp  # type: ignore
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.exir.dialects._ops import ops as exir_ops
-from serializer.tosa_serializer import TosaSerializer, TosaSerializerTensor
 from torch import Tensor
 from torch.fx import Node
 
@@ -30,7 +30,7 @@ dq_q_ops = (q_op, dq_op)
 
 def insert_rescale_ops_to_int32(
     tosa_graph: ts.TosaSerializer, inputs: list[TosaArg], node: Node
-) -> tuple[list[TosaSerializerTensor], float]:
+) -> tuple[list[ts.TosaSerializerTensor], float]:
     """Rescales all 'nodes' to int32, adding suitable RESCALE ops to 'tosa_graph'.
     The scales are adjusted using the smallest scale of all 'nodes'.
 
@@ -61,7 +61,7 @@ def insert_rescale_ops_to_int32(
     min_scale = min([qarg.scale for qarg in qargs])
     scales = [qarg.scale / min_scale for qarg in qargs]
 
-    rescaled_nodes: list[TosaSerializerTensor] = []
+    rescaled_nodes: list[ts.TosaSerializerTensor] = []
     for tensor, qarg, scale in zip(tensors, qargs, scales):
         rescaled_nodes.append(
             build_rescale_to_int32(
@@ -198,9 +198,9 @@ def compute_multiplier_and_shift(
 
 
 def build_rescale(
-    tosa_fb: TosaSerializer,
+    tosa_fb: ts.TosaSerializer,
     scale: list[float],
-    input_node: TosaSerializerTensor,
+    input_node: ts.TosaSerializerTensor,
     output_name: str,
     output_type: ts.DType,
     output_shape: List[int],
@@ -233,14 +233,14 @@ def build_rescale(
 
 
 def build_rescale_to_int32(
-    tosa_fb: TosaSerializer,
+    tosa_fb: ts.TosaSerializer,
     input_arg: executorch.backends.arm.tosa_mapping.TosaArg,
     input_zp: int,
     rescale_scale: list[float],
     is_scale32: bool = True,
     is_double_round: bool = False,
     per_channel: bool = False,
-) -> TosaSerializerTensor:
+) -> ts.TosaSerializerTensor:
     multipliers, shifts = compute_multiplier_and_shift(rescale_scale)
     attr_rescale = ts.TosaSerializerAttribute()
     attr_rescale.RescaleAttribute(
@@ -266,7 +266,7 @@ def build_rescale_to_int32(
 
 
 def build_rescale_from_int32(
-    tosa_fb: TosaSerializer,
+    tosa_fb: ts.TosaSerializer,
     input_name: str,
     output_name: str,
     output_zp: int,
@@ -300,8 +300,8 @@ def build_rescale_from_int32(
 
 
 def build_rescale_conv_output(
-    tosa_fb: TosaSerializer,
-    op: TosaSerializerTensor,
+    tosa_fb: ts.TosaSerializer,
+    op: ts.TosaSerializerTensor,
     output_name: str,
     output_type: ts.DType,
     input_scale: list[float],

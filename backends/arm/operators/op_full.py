@@ -8,7 +8,7 @@ from typing import List
 
 import numpy as np
 
-import serializer.tosa_serializer as ts  # type: ignore
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
