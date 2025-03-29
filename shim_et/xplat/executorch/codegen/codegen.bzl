@@ -631,7 +631,7 @@ def executorch_generated_lib(
         )
 
     portable_lib = []
-    if dtype_selective_build and is_xplat() and "//executorch/kernels/portable:operators" in kernel_deps:
+    if dtype_selective_build and (is_xplat() or runtime.is_oss) and "//executorch/kernels/portable:operators" in kernel_deps:
         # Remove portable from kernel_deps as we're building it from source.
         kernel_deps.remove("//executorch/kernels/portable:operators")
 
