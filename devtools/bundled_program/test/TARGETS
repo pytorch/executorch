@@ -33,6 +33,7 @@ python_unittest(
 )
 
 python_unittest(
+    # @autodeps-skip
     name = "end2end",
     srcs = [
         "test_end2end.py",
