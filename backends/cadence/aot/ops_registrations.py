@@ -10,10 +10,13 @@ from math import prod
 from typing import Optional, Tuple
 
 import torch
+from executorch.backends.cadence.aot.utils import (
+    get_conv1d_output_size,
+    get_conv2d_output_size,
+    get_im2row_output_size,
+)
 from executorch.exir.scalar_type import ScalarType
 from torch.library import Library, register_fake
-
-from .utils import get_conv1d_output_size, get_conv2d_output_size
 
 lib = Library("cadence", "DEF")
 
@@ -131,6 +134,10 @@ lib.define(
     "im2row(Tensor input, int[2] kernel_size, int[2] dilation, int[2] padding, int[2] stride, "
     "Tensor in_zero_point, bool channel_last=False) -> (Tensor out)"
 )
+lib.define(
+    "im2row.per_tensor(Tensor input, int[2] kernel_size, int[2] dilation, int[2] padding, int[2] stride, "
+    "int in_zero_point, bool channel_last=False) -> (Tensor out)"
+)
 lib.define("linalg_vector_norm(Tensor X) -> (Tensor Y)")
 lib.define(
     "transposed_im2row(Tensor input, int[2] kernel_size, int[2] dilation, int[2] padding, int[2] stride, "
@@ -139,6 +146,10 @@ lib.define(
 lib.define(
     "requantize(Tensor input, Tensor in_scale, Tensor in_zero_point, Tensor out_scale, "
     "Tensor out_zero_point, ScalarType out_dtype) -> (Tensor Y)"
+)
+lib.define(
+    "requantize.per_tensor(Tensor input, float in_scale, int in_zero_point, float out_scale, "
+    "int out_zero_point, ScalarType out_dtype) -> (Tensor Y)"
 )
 lib.define(
     "fully_connected(Tensor input, Tensor weight, Tensor? bias=None) -> (Tensor out)"
@@ -224,6 +235,10 @@ lib.define(
     "Tensor in_zero_point, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
+    "im2row.per_tensor_out(Tensor input, int[2] kernel_size, int[2] dilation, int[2] padding, int[2] stride, "
+    "int in_zero_point, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
     "transposed_im2row.out(Tensor input, int[2] kernel_size, int[2] dilation, int[2] padding, "
     "int[2] stride, int[2] output_padding, Tensor in_zero_point, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)"
 )
@@ -231,7 +246,10 @@ lib.define(
     "requantize.out(Tensor input, Tensor in_scale, Tensor in_zero_point, Tensor out_scale, "
     "Tensor out_zero_point, ScalarType out_dtype, *, Tensor(a!) out) -> Tensor(a!)"
 )
-
+lib.define(
+    "requantize.per_tensor_out(Tensor input, float in_scale, int in_zero_point, float out_scale, "
+    "int out_zero_point, ScalarType out_dtype, *, Tensor(a!) out) -> Tensor(a!)"
+)
 
 # Custom ops with aten namespace. Need to specify the lib var as FRAGMENT type as aten library is already defined
 aten_lib = Library("aten", "FRAGMENT")
@@ -562,22 +580,25 @@ def im2row_meta(
     in_zero_point: torch.Tensor,
     channel_last: bool = False,
 ) -> torch.Tensor:
-    if len(input.shape) == 3:
-        height_dim = 1 if channel_last else 2
-        input = input.unsqueeze(height_dim)
+    output_size = get_im2row_output_size(
+        input, kernel_size, dilation, padding, stride, channel_last
+    )
+    return input.new_empty(output_size, dtype=input.dtype)
 
-    batch_size = input.shape[0]
-    n_input_plane = input.shape[3] if channel_last else input.shape[1]
-    input_height = input.shape[1] if channel_last else input.shape[2]
-    input_width = input.shape[2] if channel_last else input.shape[3]
-    output_height = (
-        input_height + 2 * padding[0] - (dilation[0] * (kernel_size[0] - 1) + 1)
-    ) // stride[0] + 1
-    output_width = (
-        input_width + 2 * padding[1] - (dilation[1] * (kernel_size[1] - 1) + 1)
-    ) // stride[1] + 1
-    n_output_plane = n_input_plane * kernel_size[0] * kernel_size[1]
-    output_size = torch.Size((batch_size, output_height * output_width, n_output_plane))
+
+@register_fake("cadence::im2row.per_tensor")
+def im2row_per_tensor_meta(
+    input: torch.Tensor,
+    kernel_size: Tuple[int],
+    dilation: Tuple[int],
+    padding: Tuple[int],
+    stride: Tuple[int],
+    in_zero_point: int,
+    channel_last: bool = False,
+) -> torch.Tensor:
+    output_size = get_im2row_output_size(
+        input, kernel_size, dilation, padding, stride, channel_last
+    )
     return input.new_empty(output_size, dtype=input.dtype)
 
 
@@ -597,6 +618,22 @@ def requantize_meta(
     in_zero_point: torch.Tensor,
     out_scale: torch.Tensor,
     out_zero_point: torch.Tensor,
+    dtype: ScalarType,
+) -> torch.Tensor:
+    return input.new_empty(
+        input.size(),
+        # pyre-ignore[6]: Incompatible type
+        dtype=dtype,
+    )
+
+
+@register_fake("cadence::requantize.per_tensor")
+def requantize_per_tensor_meta(
+    input: torch.Tensor,
+    in_scale: float,
+    in_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
     dtype: ScalarType,
 ) -> torch.Tensor:
     return input.new_empty(

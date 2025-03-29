@@ -1864,6 +1864,14 @@ class ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass(ExportPass):
             exir_ops.edge.cadence.quantized_relu.per_tensor,
             [1, 3, 4],
         ),
+        exir_ops.edge.cadence.im2row: (
+            exir_ops.edge.cadence.im2row.per_tensor,
+            [5],
+        ),
+        exir_ops.edge.cadence.requantize: (
+            exir_ops.edge.cadence.requantize.per_tensor,
+            [1, 2, 3, 4],
+        ),
     }
 
     def call_operator(self, op, args, kwargs, meta):
@@ -1882,6 +1890,9 @@ class ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass(ExportPass):
                 return super().call_operator(op, args, kwargs, meta)
 
             if not arg.is_tensor():
+                return super().call_operator(op, args, kwargs, meta)
+
+            if not isinstance(arg.node.target, EdgeOpOverload):
                 return super().call_operator(op, args, kwargs, meta)
 
             if get_edge_overload_packet(arg.node.target) != exir_ops.edge.aten.full:

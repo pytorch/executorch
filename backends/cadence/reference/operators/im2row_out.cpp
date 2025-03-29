@@ -207,6 +207,92 @@ void im2row_out(
 #undef typed_im2row
 }
 
+void im2row_per_tensor_out(
+    __ET_UNUSED KernelRuntimeContext& ctx,
+    const Tensor& input,
+    IntArrayRef kernel_size,
+    IntArrayRef dilation,
+    IntArrayRef padding,
+    IntArrayRef stride,
+    int64_t in_zero_point,
+    bool channel_last,
+    Tensor& out) {
+  // Compute the input tensor's dims
+  bool unit_height = input.dim() == 3;
+  const int32_t batch_size = input.size(0);
+  const int32_t in_c =
+      channel_last ? input.size(3 - unit_height) : input.size(1);
+  const int32_t in_h =
+      unit_height ? 1 : (channel_last ? input.size(1) : input.size(2));
+  const int32_t in_w =
+      channel_last ? input.size(2 - unit_height) : input.size(3 - unit_height);
+
+  // Get the kernel parameters
+  int32_t kernel_h = kernel_size[0];
+  int32_t kernel_w = kernel_size[1];
+  int32_t dilation_h = dilation[0];
+  int32_t dilation_w = dilation[1];
+  int32_t pad_h = padding[0];
+  int32_t pad_w = padding[1];
+  int32_t stride_h = stride[0];
+  int32_t stride_w = stride[1];
+
+  // If we were to apply a convolution on the input tensor, compute the output
+  // height and width.
+  int32_t out_h =
+      (in_h + 2 * pad_h - dilation_h * (kernel_h - 1) - 1) / stride_h + 1;
+  int32_t out_w =
+      (in_w + 2 * pad_w - dilation_w * (kernel_w - 1) - 1) / stride_w + 1;
+
+  ET_DCHECK_MSG(
+      (out_h * out_w) == out.size(1), "dimension mismatch for output");
+  ET_DCHECK_MSG(
+      (kernel_h * kernel_w * in_c) == out.size(2),
+      "dimension mismatch for output");
+
+#define typed_im2row_per_tensor(dtype, ctype)                          \
+  case ScalarType::dtype: {                                            \
+    const ctype* __restrict__ in_data = input.const_data_ptr<ctype>(); \
+    ctype* __restrict__ out_data = out.mutable_data_ptr<ctype>();      \
+    int32_t in_plane = in_c * in_h * in_w;                             \
+    int32_t out_plane = kernel_h * kernel_w * in_c * out_h * out_w;    \
+    for (size_t n = 0; n < batch_size; ++n) {                          \
+      im2row_<ctype>(                                                  \
+          &in_data[n * in_plane],                                      \
+          in_zero_point,                                               \
+          in_c,                                                        \
+          in_h,                                                        \
+          in_w,                                                        \
+          out_h,                                                       \
+          out_w,                                                       \
+          kernel_h,                                                    \
+          kernel_w,                                                    \
+          pad_h,                                                       \
+          pad_w,                                                       \
+          stride_h,                                                    \
+          stride_w,                                                    \
+          dilation_h,                                                  \
+          dilation_w,                                                  \
+          &out_data[n * out_plane],                                    \
+          channel_last);                                               \
+    }                                                                  \
+    break;                                                             \
+  }
+
+  ScalarType dtype = input.scalar_type();
+  switch (dtype) {
+    typed_im2row_per_tensor(Float, float);
+    typed_im2row_per_tensor(Byte, uint8_t);
+    typed_im2row_per_tensor(Char, int8_t);
+    default:
+      ET_DCHECK_MSG(
+          false,
+          "im2row.per_tensor not implemented for dtype %s",
+          torch::executor::toString(dtype));
+  }
+#undef typed_im2row_per_tensor
+}
+
 } // namespace native
 } // namespace reference
 } // namespace impl
