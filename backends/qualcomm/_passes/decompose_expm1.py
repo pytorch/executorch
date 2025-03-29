@@ -15,7 +15,7 @@ class DecomposeExpM1(ExportPass):
     Decompose for expm1 to exponential and minus 1.
     """
 
-    def __init__(self, quantization_capture=False) -> None:
+    def __init__(self) -> None:
         super().__init__()
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:

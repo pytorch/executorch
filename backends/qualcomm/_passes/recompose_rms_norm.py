@@ -15,6 +15,8 @@ from .utils import dq_ops
 class RecomposeRmsNorm(ExportPass):
     """
     Merge decomposed operators back to one super node.
+    TODO: After replacing export_to_edge with to_edge_transform_and_lowering
+    in examples/models/llama/export_llama_lib.py, this pass can be removed
     """
 
     def __init__(self, edge_program: torch.export.ExportedProgram):
