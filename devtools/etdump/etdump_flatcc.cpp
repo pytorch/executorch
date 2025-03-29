@@ -15,6 +15,7 @@
 #include <executorch/devtools/etdump/etdump_schema_flatcc_builder.h>
 #include <executorch/devtools/etdump/etdump_schema_flatcc_reader.h>
 #include <executorch/devtools/etdump/utils.h>
+#include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/assert.h>
@@ -27,6 +28,7 @@ using ::executorch::runtime::ArrayRef;
 using ::executorch::runtime::ChainID;
 using ::executorch::runtime::DebugHandle;
 using ::executorch::runtime::DelegateDebugIdType;
+using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::EventTracerEntry;
 using ::executorch::runtime::LoggedEValueType;
@@ -352,8 +354,21 @@ void ETDumpGen::log_intermediate_output_delegate_helper(
     const char* name,
     DebugHandle delegate_debug_index,
     const T& output) {
+  // Previously we compared delegate_debug_index to -1 to check if it is set,
+  // but this is not a good solution because delegate_debug_index is of
+  // DebugHandle type which is a uint32_t. Also we have a specific value for
+  // runtime::kUnsetDebugHandle to represent an unset debug handle.
+  //
+  // To maintain backward compatibility:
+  // 1. We keep the comparison with -1 (cast to DebugHandle)
+  // 2. We add comparison with runtime::kUnsetDebugHandle
+  //
+  // TODO(gasoonjia): In the future, we should remove the comparison with -1 and
+  // only compare with runtime::kUnsetDebugHandle.
   ET_CHECK_MSG(
-      (name == nullptr) ^ (delegate_debug_index == -1),
+      (name == nullptr) ^
+          (delegate_debug_index == runtime::kUnsetDebugHandle ||
+           delegate_debug_index == static_cast<DebugHandle>(-1)),
       "Only name or delegate_debug_index can be valid. Check DelegateMappingBuilder documentation for more details.");
 
   check_ready_to_add_events();

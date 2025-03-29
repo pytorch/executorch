@@ -102,6 +102,27 @@ def define_common_targets():
         aten_suffix = "_aten" if aten_mode else ""
 
         runtime.cxx_library(
+            name = "etdump_filter" + aten_suffix,
+            srcs = [
+                "etdump_filter.cpp",
+            ],
+            exported_headers = [
+                "etdump_filter.h",
+            ],
+            deps = [
+                "//executorch/runtime/platform:platform",
+            ],
+            exported_deps = [
+                "fbsource//third-party/re2:re2",
+                "//executorch/runtime/core:event_tracer" + aten_suffix,
+            ],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+        )
+
+        runtime.cxx_library(
             name = "etdump_flatcc" + aten_suffix,
             srcs = [
                 "etdump_flatcc.cpp",

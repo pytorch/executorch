@@ -96,13 +96,16 @@ class EventTracerFilterBase {
    *         - False if the event does not match or is unknown.
    *         - An error code if an error occurs during filtering.
    */
-  virtual Result<bool> filter(char* name, DebugHandle delegate_debug_index);
+  virtual Result<bool> filter(
+      const char* name,
+      DebugHandle delegate_debug_index) = 0;
 
   /**
    * Virtual destructor for the EventTracerFilterBase class.
    * Ensures proper cleanup of derived class objects.
    */
-  virtual ~EventTracerFilterBase();
+  virtual ~EventTracerFilterBase() = default;
+  ;
 };
 
 /**
