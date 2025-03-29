@@ -76,7 +76,11 @@ int main(int argc, char** argv) {
   std::vector<char> buf;
   buf.reserve(5 * FLAGS_seq_len); // assume each token is around 5 char
   std::ofstream fout(FLAGS_output_path.c_str());
-  auto callback = [&](const std::string& piece) {
+
+  int32_t num_total_tokens = 0;
+
+  auto callback = [&](const std::string& piece, int32_t tokens_generated) {
+    num_total_tokens += tokens_generated;
     for (const char c : piece) {
       buf.push_back(c);
     }
@@ -85,6 +89,7 @@ int main(int argc, char** argv) {
   for (int i = 0; i < FLAGS_num_iters; i++) {
     runner.generate(
         FLAGS_seq_len,
+        num_total_tokens,
         FLAGS_prompt.c_str(),
         FLAGS_system_prompt.c_str(),
         callback);

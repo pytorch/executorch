@@ -276,9 +276,10 @@ void Runner::run_model_step(
 
 Error Runner::generate(
     int32_t seq_len,
+    int32_t num_prev_tokens,
     const std::string& prompt,
     const std::string& system_prompt,
-    std::function<void(const std::string&)> token_callback,
+    std::function<void(const std::string&, int32_t)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
   std::unordered_map<std::string, std::vector<std::vector<Tensor>>>
       input_tensors, output_tensors;
@@ -327,13 +328,15 @@ Error Runner::generate(
       prompt_.append(
           "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n");
       if (token_callback) {
-        token_callback("<|begin_of_text|>");
+        token_callback("<|begin_of_text|>", 0);
       }
       break;
     default:
       ET_CHECK_MSG(false, "unsupported llama version");
       break;
   }
+
+  ET_LOG(Info, "Number of Previous Tokens Prefill + Decode: %d", num_prev_tokens);
 
   seq_len = (seq_len > 0 && seq_len <= context_len_) ? seq_len : context_len_;
   tokenizers::Result<std::vector<uint64_t>> encode_res =
@@ -349,7 +352,7 @@ Error Runner::generate(
 
   int64_t pos = 0, prev_token, cur_token = prompt_tokens[0];
   if (token_callback) {
-    token_callback(prompt_);
+      token_callback(prompt_, num_prompt_tokens);
   }
   auto prefill_execute = [&](const std::string& method_name) {
     int num_iters = 1 + ((num_prompt_tokens - 1) / prefill_ar_len_);
@@ -361,7 +364,7 @@ Error Runner::generate(
         num_iters);
 
     for (int i = 0; i < num_iters; i++) {
-      io_mgr_->fill_prefill_toks(pos, prompt_tokens);
+      io_mgr_->fill_prefill_toks(num_prev_tokens, pos, prompt_tokens);
       run_model_step(method_name, inputs[method_name]);
       io_mgr_->update_prefill_io(cur_token, pos, output_tensors[method_name]);
       pos += prefill_ar_len_;
@@ -377,10 +380,12 @@ Error Runner::generate(
     auto piece_res = tokenizer_->decode(prev_token, cur_token);
     ET_CHECK(piece_res.ok());
     if (token_callback) {
-      token_callback(piece_res.get().c_str());
+      ET_LOG(Info, "Prefill: %s", piece_res.get().c_str());
+      token_callback(piece_res.get().c_str(), 1);
     }
 
-    pos = num_prompt_tokens;
+    pos = num_prev_tokens + num_prompt_tokens;
+    ET_LOG(Info, "Pos: %ld, Prompt Tokens: %ld", pos, num_prompt_tokens);
     stats_.first_token_ms = time_in_ms();
     stats_.prompt_eval_end_ms = time_in_ms();
   };
@@ -394,9 +399,9 @@ Error Runner::generate(
 
       // hybrid mode will check these stats_ at prefill(prefill)
       if (eval_mode_ == EvalMode::kKVCached) {
-        if (pos == num_prompt_tokens) {
+        if (pos == num_prev_tokens + num_prompt_tokens) {
           stats_.first_token_ms = time_in_ms();
-        } else if (pos == num_prompt_tokens - 1) {
+        } else if (pos == num_prev_tokens + num_prompt_tokens - 1) {
           stats_.prompt_eval_end_ms = time_in_ms();
         }
       }
@@ -405,7 +410,7 @@ Error Runner::generate(
       cur_token = logitsToToken(logits_tensor, pos);
       stats_.aggregate_sampling_time_ms += time_in_ms() - sample_start_time_ms;
 
-      if (pos < num_prompt_tokens - 1) {
+      if (pos < num_prev_tokens + num_prompt_tokens - 1) {
         cur_token = prompt_tokens[pos + 1];
       }
       io_mgr_->update_kv_io(cur_token, ++pos, output_tensors[method_name]);
@@ -413,7 +418,7 @@ Error Runner::generate(
       ET_CHECK(piece_res.ok());
 
       if (token_callback && pos >= num_prompt_tokens) {
-        token_callback(piece_res.get().c_str());
+        token_callback(piece_res.get().c_str(), 1);
       }
 
       if (pos >= num_prompt_tokens && eos_id_.count(cur_token) > 0) {
@@ -432,6 +437,7 @@ Error Runner::generate(
       io_mgr_->update_prefill_to_kv_io(
           cur_token, pos, output_tensors[kv_forward_name_]);
       kv_execute(kv_forward_name_);
+      io_mgr_->update_kv_to_prefill_io(pos, output_tensors[prefill_forward_name_]);
       break;
     default:
       ET_CHECK_MSG(false, "Unsupported eval mode");
@@ -448,9 +454,9 @@ Error Runner::generate(
   if (stats_callback) {
     stats_callback(stats_);
   }
-  io_mgr_->reset_io(
-      get_methods_meta(prefill_forward_name_),
-      get_methods_meta(kv_forward_name_));
+  // io_mgr_->reset_io(
+  //     get_methods_meta(prefill_forward_name_),
+  //     get_methods_meta(kv_forward_name_));
   prompt_.clear();
   return Error::Ok;
 }

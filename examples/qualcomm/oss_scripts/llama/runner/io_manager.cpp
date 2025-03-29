@@ -494,10 +494,56 @@ void ShiftPointerIoMgr::prepare_prefill_io(
   }
 }
 
+void ShiftPointerIoMgr::update_kv_to_prefill_io(
+    int64_t pos,
+    std::vector<std::vector<executorch::aten::Tensor>>& output_tensors) {
+  // update v_cache
+  assert(pos <= 512);
+
+  ET_LOG(Info, "update kv to prefill io, pos: %ld, last prefill pos: %ld", pos, last_pos_);
+
+  int64_t pos_diff = pos - last_pos_;
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>>& v_cache_in =
+      v_cache_in_[prefill_forward_name_];
+  for (int i = 0, v_cache_stride = head_dim_ * pos_diff; i < v_cache_in.size();
+       i++) {
+    v_cache_in[i]->set_data(
+        v_cache_in[i]->mutable_data<uint8_t>() + v_cache_stride);
+  }
+
+  // update k_cache
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>>& k_cache_in =
+      k_cache_in_[prefill_forward_name_];
+
+  size_t copied_size = pos_diff * sizeof(uint8_t);
+
+  for (int i = 0, k_cache_stride = pos_diff * sizeof(uint8_t); i < k_cache_in_.size();
+       i++) {
+    k_cache_in[i]->set_data(
+        k_cache_in[i]->mutable_data<uint8_t>() + k_cache_stride);
+    uint8_t* ptr_in = k_cache_in[i]->mutable_data<uint8_t>() - pos_diff;
+    for (int j = 0; j < head_dim_; ++j) {
+      memcpy(
+        ptr_in + j * prefill_cache_len_,
+        ptr_in + j * kv_cache_len_,
+        copied_size);
+    }
+  }
+
+  // Setting attention mask from context_len - prefill_ar_len - i to context_len
+  IO* ptr = static_cast<IO*>(data_ptr_.get());
+  for (int i = prefill_ar_len_; i < pos; i++) {
+    for (int j = 0; j < prefill_ar_len_; j++) {
+      ptr->prefill_attention_mask[j * context_len_ + context_len_ - prefill_ar_len_ - i] = 65535;
+    }
+  }
+}
+
 void ShiftPointerIoMgr::update_prefill_to_kv_io(
     int64_t cur_token,
     int64_t pos,
     std::vector<std::vector<Tensor>>& output_tensors) {
+  last_pos_ = pos;
   ET_CHECK_MSG(kv_cache_len_ != 0, "k_cache_len_ should not equal to 0");
   IO* ptr = static_cast<IO*>(data_ptr_.get());
 
@@ -664,33 +710,32 @@ void ShiftPointerIoMgr::update_prefill_io(
 }
 
 void ShiftPointerIoMgr::fill_prefill_toks(
-    int64_t start_pos,
+      int64_t num_prev_tokens,
+      int64_t prompt_pos,
     std::vector<uint64_t>& prompt_tokens) {
   IO* ptr = static_cast<IO*>(get_mutable_ptr());
   for (int i = 0; i < prefill_ar_len_; i++) {
     if (!is_bert_) {
-      ptr->prefill_input_pos[i] = start_pos + i;
+      ptr->prefill_input_pos[i] = num_prev_tokens + prompt_pos + i;
     }
 
-    if (start_pos + i < prompt_tokens.size()) {
+    if (prompt_pos + i < prompt_tokens.size()) {
       // Support CPU 4-bit embedding, which requires int64 input.
       // However, for QNN embedding, only int32 input is needed.
       // Therefore, we need to cast to the correct type to write the data.
       if (use_int64_token_) {
-        ptr->prefill_input_toks[i] = prompt_tokens[start_pos + i];
+        ptr->prefill_input_toks[i] = prompt_tokens[prompt_pos + i];
       } else {
         int32_t* prefill_input_toks_ptr =
             reinterpret_cast<int32_t*>(ptr->prefill_input_toks.data());
         prefill_input_toks_ptr[i] =
-            static_cast<int32_t>(prompt_tokens[start_pos + i]);
+            static_cast<int32_t>(prompt_tokens[prompt_pos + i]);
       }
     }
-    if (start_pos >= prefill_ar_len_) {
-      for (int j = 0,
-               offset = i * context_len_ +
-               (context_len_ - prefill_ar_len_ - start_pos);
-           j < prefill_ar_len_;
-           ++j) {
+    if (num_prev_tokens + prompt_pos >= prefill_ar_len_) {
+      int64_t start_offset = i * context_len_ +
+          (context_len_ - num_prev_tokens - prompt_pos - prefill_ar_len_);
+      for (int j = 0, offset = start_offset; j < prefill_ar_len_; ++j) {
         ptr->prefill_attention_mask[offset + j] = 65535;
       }
     }
@@ -1305,6 +1350,12 @@ void SmartMaskIoMgr::prepare_prefill_io(
   }
 }
 
+void SmartMaskIoMgr::update_kv_to_prefill_io(
+    int64_t pos,
+    std::vector<std::vector<Tensor>>& output_tensors) {
+      //TODO: Fill In
+    }
+
 void SmartMaskIoMgr::update_prefill_to_kv_io(
     int64_t cur_token,
     int64_t pos,
@@ -1396,29 +1447,30 @@ void SmartMaskIoMgr::update_prefill_io(
 }
 
 void SmartMaskIoMgr::fill_prefill_toks(
-    int64_t start_pos,
+      int64_t num_prev_tokens,
+      int64_t prompt_pos,
     std::vector<uint64_t>& prompt_tokens) {
   IO* ptr = static_cast<IO*>(get_mutable_ptr());
   for (int i = 0; i < prefill_ar_len_; i++) {
     if (!is_bert_) {
-      ptr->prefill_input_pos[i] = start_pos + i;
+      ptr->prefill_input_pos[i] = prompt_pos + i;
     }
 
-    if (start_pos + i < prompt_tokens.size()) {
+    if (prompt_pos + i < prompt_tokens.size()) {
       // Support CPU 4-bit embedding, which requires int64 input.
       // However, for QNN embedding, only int32 input is needed.
       // Therefore, we need to cast to the correct type to write the data.
       if (use_int64_token_) {
-        ptr->prefill_input_toks[i] = prompt_tokens[start_pos + i];
+        ptr->prefill_input_toks[i] = prompt_tokens[prompt_pos + i];
       } else {
         int32_t* prefill_input_toks_ptr =
             reinterpret_cast<int32_t*>(ptr->prefill_input_toks);
         prefill_input_toks_ptr[i] =
-            static_cast<int32_t>(prompt_tokens[start_pos + i]);
+            static_cast<int32_t>(prompt_tokens[prompt_pos + i]);
       }
     }
-    if (start_pos >= prefill_ar_len_) {
-      for (int j = 0, offset = i * context_len_ + (start_pos - prefill_ar_len_);
+    if (prompt_pos >= prefill_ar_len_) {
+      for (int j = 0, offset = i * context_len_ + (prompt_pos - prefill_ar_len_);
            j < prefill_ar_len_;
            ++j) {
         ptr->prefill_attention_mask[offset + j] = 65535;

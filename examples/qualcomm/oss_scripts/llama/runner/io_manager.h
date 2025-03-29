@@ -48,9 +48,13 @@ class IoMgrBase {
           executorch::runtime::Result<executorch::runtime::MethodMeta>>&
           methods_meta) = 0;
   virtual void fill_prefill_toks(
-      int64_t start_pos,
+      int64_t num_prev_tokens,
+      int64_t prompt_pos,
       std::vector<uint64_t>& prompt_tokens) = 0;
   virtual void fill_kv_tok_mask(int64_t pos, int64_t cur_token) = 0;
+  virtual void update_kv_to_prefill_io(
+      int64_t pos,
+      std::vector<std::vector<executorch::aten::Tensor>>& output_tensors) = 0;
   virtual void update_prefill_to_kv_io(
       int64_t cur_token,
       int64_t pos,
@@ -118,9 +122,13 @@ class ShiftPointerIoMgr : public IoMgrBase {
           executorch::runtime::Result<executorch::runtime::MethodMeta>>&
           methods_meta) override;
   void fill_prefill_toks(
-      int64_t start_pos,
+      int64_t num_prev_tokens,
+      int64_t prompt_pos,
       std::vector<uint64_t>& prompt_tokens) override;
   void fill_kv_tok_mask(int64_t pos, int64_t cur_token) override;
+  void update_kv_to_prefill_io(
+      int64_t pos,
+      std::vector<std::vector<executorch::aten::Tensor>>& output_tensors) override;
   void update_prefill_to_kv_io(
       int64_t cur_token,
       int64_t pos,
@@ -190,6 +198,8 @@ class ShiftPointerIoMgr : public IoMgrBase {
   std::string kv_forward_name_;
   const bool use_int64_token_{false};
   const bool is_bert_{false};
+
+  int64_t last_pos_{0};
 };
 
 class SmartMaskIoMgr : public IoMgrBase {
@@ -226,9 +236,13 @@ class SmartMaskIoMgr : public IoMgrBase {
           executorch::runtime::Result<executorch::runtime::MethodMeta>>&
           methods_meta) override;
   void fill_prefill_toks(
-      int64_t start_pos,
+      int64_t num_prev_tokens,
+      int64_t prompt_pos,
       std::vector<uint64_t>& prompt_tokens) override;
   void fill_kv_tok_mask(int64_t pos, int64_t cur_token) override;
+  void update_kv_to_prefill_io(
+      int64_t pos,
+      std::vector<std::vector<executorch::aten::Tensor>>& output_tensors) override;
   void update_prefill_to_kv_io(
       int64_t cur_token,
       int64_t pos,
