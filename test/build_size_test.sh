@@ -12,7 +12,7 @@ set -e
 source "$(dirname "${BASH_SOURCE[0]}")/../.ci/scripts/utils.sh"
 
 # TODO(#8357): Remove -Wno-int-in-bool-context
-COMMON_CXXFLAGS="-fno-exceptions -fno-rtti -Wall -Werror -Wno-int-in-bool-context"
+COMMON_CXXFLAGS="-fno-exceptions -fno-rtti -Wall -Werror -Wno-int-in-bool-context -Wno-stringop-overread"
 
 cmake_install_executorch_lib() {
   echo "Installing libexecutorch.a"
