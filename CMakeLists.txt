@@ -5,6 +5,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+cmake_minimum_required(VERSION 3.24)
+project(executorch)
+
+if(EXECUTORCH_H12025_BUILD_MIGRATION)
+  message(WARNING "\n🤠 EXECUTORCH_H12025_BUILD_MIGRATION is on")
+  include(${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists_H12025.cmake)
+  return()
+endif()
+
 #
 # Simple CMake build system for runtime components.
 #
@@ -42,8 +51,6 @@
 # It should also be cmake-lint clean.
 #
 
-cmake_minimum_required(VERSION 3.24)
-project(executorch)
 include(tools/cmake/Utils.cmake)
 include(CMakeDependentOption)
 
