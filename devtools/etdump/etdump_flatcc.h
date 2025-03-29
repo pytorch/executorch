@@ -9,7 +9,6 @@
 #pragma once
 
 #include <cstdint>
-#include <memory>
 
 #include <executorch/devtools/etdump/data_sinks/buffer_data_sink.h>
 #include <executorch/devtools/etdump/data_sinks/data_sink_base.h>
