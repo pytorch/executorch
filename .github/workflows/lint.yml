@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   lintrunner:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.7
     permissions:
       id-token: write
       contents: read
@@ -65,7 +65,7 @@ jobs:
         exit $RC
 
   android-java-format:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.7
     permissions:
       id-token: write
       contents: read
