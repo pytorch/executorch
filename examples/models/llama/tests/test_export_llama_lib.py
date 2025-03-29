@@ -4,13 +4,17 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 import unittest
 
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.examples.models.llama.export_llama_lib import (
     _export_llama,
-    build_args_parser,
+    get_default_llm_config,
 )
+
+FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
+logging.basicConfig(level=logging.INFO, format=FORMAT, force=True)
 
 UNWANTED_OPS = [
     "aten_permute_copy_default",
@@ -34,13 +38,12 @@ class ExportLlamaLibTest(unittest.TestCase):
         # we cannot test quantization args in this way
         # since quantization requires promoting meta tensors
         # to device=cpu, which requires real weights.
-        parser = build_args_parser()
-        args = parser.parse_args([])
-        args.use_sdpa_with_kv_cache = True
-        args.use_kv_cache = True
-        args.verbose = True
+        export_config = get_default_llm_config()
+        export_config.kv_cache.use_sdpa_with_kv_cache = True
+        export_config.kv_cache.use_kv_cache = True
+        export_config.misc.verbose = True
 
-        builder = _export_llama(args)
+        builder = _export_llama(export_config)
         graph_module = builder.edge_manager.exported_program().graph_module
         delegation_info = get_delegation_info(graph_module)
 

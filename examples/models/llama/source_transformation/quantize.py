@@ -15,6 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from executorch.extension.llm.export.builder import DType
+from omegaconf import DictConfig, OmegaConf
 
 from sentencepiece import SentencePieceProcessor
 
@@ -782,15 +783,17 @@ class QuantizedGroupEmbedding(torch.nn.Module):
 ############################ Source Transform Start #######################
 
 
-def get_quant_embedding_transform(args, dtype_override: Optional[DType] = None):
-    if args.embedding_quantize.startswith("torchao:"):
+def get_quant_embedding_transform(
+    config: DictConfig, dtype_override: Optional[DType] = None
+):
+    if config.quantization.embedding_quantize.startswith("torchao:"):
         from torchao.experimental.quant_api import (
             EmbeddingQuantizer,
             SharedEmbeddingQuantizer,
         )
         from torchao.quantization.granularity import PerGroup, PerRow
 
-        quant_args = args.embedding_quantize.split(":")[1].split(",")
+        quant_args = config.quantization.embedding_quantize.split(":")[1].split(",")
         if len(quant_args) == 2:
             bitwidth, group_size = quant_args
             has_weight_zeros = True
@@ -808,7 +811,7 @@ def get_quant_embedding_transform(args, dtype_override: Optional[DType] = None):
 
         def _torchao_embedding_quantizer(model):
             with torch.no_grad():
-                if not args.use_shared_embedding:
+                if not config.model.use_shared_embedding:
                     EmbeddingQuantizer(
                         weight_dtype=weight_dtype,
                         granularity=granularity,
@@ -825,7 +828,7 @@ def get_quant_embedding_transform(args, dtype_override: Optional[DType] = None):
 
         return _torchao_embedding_quantizer
 
-    bitwidth, group_size = args.embedding_quantize.split(",")
+    bitwidth, group_size = config.quantization.embedding_quantize.split(",")
     if group_size == "none" or group_size == "None" or group_size == "0":
         group_size = None
     else:
@@ -842,33 +845,34 @@ def get_quant_embedding_transform(args, dtype_override: Optional[DType] = None):
 
 
 def get_quant_weight_transform(
-    args,
+    config: DictConfig,
     computation_dtype: Optional[DType] = None,
     checkpoint_dtype: Optional[DType] = None,
 ):
     # If these optional args are None, don't provide them to quantize().
-    quant_args_str = [
-        "group_size",
-        "calibration_tasks",
-        "calibration_limit",
-        "calibration_seq_length",
-    ]
-    arg_dict = vars(args)
-    quant_args = {
-        param: val
-        for param in quant_args_str
-        if (val := arg_dict.get(param)) is not None
-    }
+    quant_args = {}
+    if config.quantization.group_size is not None:
+        quant_args["group_size"] = config.quantization.group_size
+    if config.calibration.tasks is not None:
+        quant_args["calibration_tasks"] = OmegaConf.to_container(
+            config.calibration.tasks
+        )
+    if config.calibration.limit is not None:
+        quant_args["calibration_limit"] = config.calibration.limit
+    if config.calibration.seq_length is not None:
+        quant_args["calibration_seq_length"] = config.calibration.seq_length
 
     return partial(
         quantize,
         **quant_args,
-        qmode=args.quantization_mode,
+        qmode=config.quantization.mode,
         computation_dtype=computation_dtype,
         checkpoint_dtype=checkpoint_dtype,
-        checkpoint_path=(Path(path) if (path := args.checkpoint) is not None else None),
+        checkpoint_path=(
+            Path(path) if (path := config.model.checkpoint) is not None else None
+        ),
         tokenizer_path=(
-            Path(path) if (path := args.tokenizer_path) is not None else None
+            Path(path) if (path := config.model.tokenizer_path) is not None else None
         ),
     )
 
