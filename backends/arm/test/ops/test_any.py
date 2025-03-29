@@ -6,6 +6,7 @@
 
 from typing import List, Tuple
 
+import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -117,25 +118,6 @@ test_data = {
 }
 
 
-fvp_xfails = {
-    "any_rank1": "MLETORCH-706 Support ScalarType::Bool in EthosUBackend.",
-    "any_rank1_squeeze": "MLETORCH-706: Support ScalarType::Bool in EthosUBackend.",
-    "any_rank2": "MLETORCH-706: Support ScalarType::Bool in EthosUBackend.",
-    "any_rank2_squeeze": "MLETORCH-706: Support ScalarType::Bool in EthosUBackend.",
-    "any_rank2_dims": "MLETORCH-706: Support ScalarType::Bool in EthosUBackend.",
-    "any_rank2_dims_squeeze": "MLETORCH-706: Support ScalarType::Bool in EthosUBackend.",
-    "any_rank3_dims_squeeze": "MLETORCH-706: Support ScalarType::Bool in EthosUBackend.",
-    "any_rank4": "MLETORCH-706: Support ScalarType::Bool in EthosUBackend.",
-    "any_rank4_squeeze": "MLETORCH-706: Support ScalarType::Bool in EthosUBackend.",
-    "any_rank4_dims": "MLETORCH-706: Support ScalarType::Bool in EthosUBackend.",
-    "any_rank4_dims_squeeze": "MLETORCH-706: Support ScalarType::Bool in EthosUBackend.",
-    "any_rank1_reduce_all": "MLETORCH-706: Support ScalarType::Bool in EthosUBackend.",
-    "any_rank2_reduce_all": "MLETORCH-706: Support ScalarType::Bool in EthosUBackend.",
-    "any_rank3_reduce_all": "MLETORCH-706: Support ScalarType::Bool in EthosUBackend.",
-    "any_rank4_reduce_all": "MLETORCH-706: Support ScalarType::Bool in EthosUBackend.",
-}
-
-
 @common.parametrize("test_data", test_data)
 def test_any_tosa_MI(test_data: input_t1):
     op, test_input = test_data
@@ -147,13 +129,13 @@ def test_any_tosa_MI(test_data: input_t1):
 def test_any_tosa_BI(test_data: input_t1):
     op, test_input = test_data
     pipeline = TosaPipelineBI[input_t1](op, test_input, op.aten_op, op.exir_op)
-    pipeline.pop_stage(pipeline.find_pos("quantize") + 1)
     pipeline.pop_stage("quantize")
+    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data)
-def test_logical_u55_BI(test_data: input_t1):
+def test_any_u55_BI(test_data: input_t1):
     # Tests that we don't delegate these ops since they are not supported on U55.
     op, test_input = test_data
     pipeline = OpNotSupportedPipeline[input_t1](
@@ -163,23 +145,13 @@ def test_logical_u55_BI(test_data: input_t1):
 
 
 @common.parametrize("test_data", test_data)
-def test_floor_u85_BI(test_data: input_t1):
-    op, test_input = test_data
-    pipeline = EthosU85PipelineBI[input_t1](
-        op, test_input, op.aten_op, op.exir_op, run_on_fvp=False
-    )
-    pipeline.pop_stage(pipeline.find_pos("quantize") + 1)
-    pipeline.pop_stage("quantize")
-    pipeline.run()
-
-
-@common.parametrize("test_data", test_data, fvp_xfails)
-@common.SkipIfNoCorstone320
-def test_floor_u85_BI_on_fvp(test_data: input_t1):
+@pytest.mark.xfail(reason="MLETORCH-706: Support ScalarType::Bool in EthosUBackend.")
+@common.XfailIfNoCorstone320
+def test_any_u85_BI(test_data: input_t1):
     op, test_input = test_data
     pipeline = EthosU85PipelineBI[input_t1](
         op, test_input, op.aten_op, op.exir_op, run_on_fvp=True
     )
-    pipeline.pop_stage(pipeline.find_pos("quantize") + 1)
     pipeline.pop_stage("quantize")
+    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
