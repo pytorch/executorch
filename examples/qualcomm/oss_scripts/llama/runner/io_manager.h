@@ -22,6 +22,11 @@
 
 namespace example {
 
+enum class Stage {
+    kPrefill,
+    kDecode,
+};
+      
 enum EvalMode {
   kKVCached = 0,
   kHybrid,
@@ -63,6 +68,9 @@ class IoMgrBase {
       int64_t cur_token,
       int64_t pos,
       std::vector<std::vector<executorch::aten::Tensor>>& output_tensors) = 0;
+  virtual void update_kv_to_prefill_io(
+    int64_t pos,
+    std::vector<std::vector<executorch::aten::Tensor>>& output_tensors) = 0;
   void* get_mutable_ptr();
   std::vector<executorch::aten::Tensor> get_input_tensors(
       int shard_index,
@@ -136,6 +144,9 @@ class ShiftPointerIoMgr : public IoMgrBase {
       int64_t pos,
       std::vector<std::vector<executorch::aten::Tensor>>& output_tensors)
       override;
+  void update_kv_to_prefill_io(
+        int64_t pos,
+        std::vector<std::vector<executorch::aten::Tensor>>& output_tensors) override;
   struct IO {
     int64_t kv_input_toks;
     int32_t kv_input_pos;
@@ -190,6 +201,8 @@ class ShiftPointerIoMgr : public IoMgrBase {
   std::string kv_forward_name_;
   const bool use_int64_token_{false};
   const bool is_bert_{false};
+  Stage current_stage_ = Stage::kPrefill;  // Track current stage
+  int64_t current_pos_ = 0;               // Track current position
 };
 
 class SmartMaskIoMgr : public IoMgrBase {
@@ -244,6 +257,9 @@ class SmartMaskIoMgr : public IoMgrBase {
       int64_t pos,
       std::vector<std::vector<executorch::aten::Tensor>>& output_tensors)
       override;
+void update_kv_to_prefill_io(
+    int64_t pos,
+    std::vector<std::vector<executorch::aten::Tensor>>& output_tensors) override;
 
   std::unordered_map<std::string, size_t> get_io_elements();
   std::unordered_map<std::string, size_t> get_io_bytes();
