@@ -14,6 +14,7 @@
 
 #include <gtest/gtest.h>
 
+using executorch::runtime::dim_order_to_c_string;
 using executorch::runtime::dim_order_to_stride;
 using executorch::runtime::Error;
 using executorch::runtime::is_channels_last_dim_order;
@@ -285,4 +286,20 @@ TEST(DimOrderUtilTest, IsChannelsLastDimOrderFailCasesTest) {
 
   EXPECT_FALSE(is_channels_last_dim_order(dim_order_4d, 4));
   EXPECT_FALSE(is_channels_last_dim_order(dim_order_5d, 5));
+}
+
+TEST(DimOrderUtilTest, DimOrderToCStringSimple) {
+  std::array<executorch::aten::DimOrderType, 4> dim_order = {0, 1, 2, 3};
+  const auto expected = "(0, 1, 2, 3)";
+  auto c_str = dim_order_to_c_string(dim_order.data(), dim_order.size());
+
+  EXPECT_TRUE(strcmp(c_str.data(), expected) == 0);
+}
+TEST(DimOrderUtilTest, DimOrderToCStringHandlesOverflow) {
+  const auto dim_count = 1000;
+  std::vector<executorch::aten::DimOrderType> dim_order(dim_count);
+  std::iota(dim_order.begin(), dim_order.end(), 0);
+
+  auto c_str = dim_order_to_c_string(dim_order.data(), dim_count);
+  EXPECT_EQ(c_str[c_str.size() - 1], '\0');
 }
