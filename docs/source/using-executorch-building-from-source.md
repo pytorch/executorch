@@ -249,7 +249,7 @@ sh scripts/build_android_library.sh
 ```
 
 This script will build the AAR, which contains the Java API and its corresponding JNI library. Please see
-[this documentation](./using-executorch-android#using-aar-file) for usage.
+[this documentation](./using-executorch-android.md#using-aar-file) for usage.
 
 ### iOS
 
