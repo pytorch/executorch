@@ -133,7 +133,7 @@ class SDPA(nn.Module):
 
     def forward(
         self,
-        input_pos: torch.Tensor,
+        input_pos: Optional[torch.Tensor],
         q: torch.Tensor,  # Already have rotary embeddings. (bs, n_local_heads, seqlen, head_dim)
         k: torch.Tensor,  # Already have rotary embeddings. (bs, n_local_kv_heads, seqlen, head_dim)
         v: torch.Tensor,  # (bs, n_local_kv_heads, seqlen, head_dim)
@@ -218,13 +218,17 @@ class AttentionMHA(Attention):
                 self.head_dim,
                 args.enable_dynamic_shape,
             )
-            self.SDPA = SDPA(
-                dim=self.n_local_heads * self.head_dim,
-                head_dim=self.head_dim,
-                n_rep=self.n_rep,
-                max_context_len=self.max_context_len,
-                enable_dynamic_shape=args.enable_dynamic_shape,
-            )
+        else:
+            # Use a constant state to avoid export error
+            self.zero_pos = torch.tensor([0])
+
+        self.SDPA = SDPA(
+            dim=self.n_local_heads * self.head_dim,
+            head_dim=self.head_dim,
+            n_rep=self.n_rep,
+            max_context_len=self.max_context_len,
+            enable_dynamic_shape=args.enable_dynamic_shape,
+        )
 
     def forward(
         self,
@@ -258,20 +262,8 @@ class AttentionMHA(Attention):
             assert input_pos is not None
             k, v = self.kv_cache.update(input_pos, k, v)
             output = self.SDPA(input_pos, q, k, v, bsz, seqlen, self.mask)
-            return self.wo(output), None
-
-        # grouped multiquery attention: expand out keys and values
-        k = k.repeat_interleave(self.n_rep, dim=1)
-        v = v.repeat_interleave(self.n_rep, dim=1)
-
-        assert hasattr(self, "mask")
-
-        mask = self.mask[:seqlen, :seqlen]
-
-        output = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
-
-        output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
-
-        output = self.wo(output)
-
-        return output, None
+        else:
+            mask = self.mask[:seqlen, :seqlen]
+            # No kv cache. Pass 0 input_pos
+            output = self.SDPA(self.zero_pos, q, k, v, bsz, seqlen, mask)
+        return self.wo(output), None
