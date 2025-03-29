@@ -31,7 +31,7 @@ jobs:
   build-aar:
     name: build-aar
     needs: check-if-aar-exists
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.7
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -52,10 +52,13 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool buck2
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+
         # Build AAR Package
         mkdir aar-out
         export BUILD_AAR_DIR=aar-out
-        bash scripts/build_android_library.sh
+        EXECUTORCH_BUILD_QNN=ON QNN_SDK_ROOT=/tmp/qnn/2.28.0.241029 bash scripts/build_android_library.sh
         mkdir -p "${ARTIFACTS_DIR_NAME}"
         cp aar-out/executorch.aar "${ARTIFACTS_DIR_NAME}/executorch.aar"
 
