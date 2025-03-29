@@ -224,7 +224,6 @@ class SoftmaxModule(torch.nn.Module):
 
 
 class MultipleOutputsModule(torch.nn.Module):
-
     def forward(self, x: torch.Tensor, y: torch.Tensor):
         return (x * y, x.sum(dim=-1, keepdim=True))
 
@@ -648,7 +647,9 @@ def to_edge_TOSA_delegate(
         )
         model_int8 = model
         # Wrap quantized model back into an exported_program
-        exported_program = torch.export.export_for_training(model, example_inputs)
+        exported_program = torch.export.export_for_training(
+            model, example_inputs, strict=True
+        )
 
         if args.intermediates:
             os.makedirs(args.intermediates, exist_ok=True)
@@ -681,7 +682,9 @@ if __name__ == "__main__":  # noqa: C901
 
     # export_for_training under the assumption we quantize, the exported form also works
     # in to_edge if we don't quantize
-    exported_program = torch.export.export_for_training(model, example_inputs)
+    exported_program = torch.export.export_for_training(
+        model, example_inputs, strict=True
+    )
     model = exported_program.module()
     model_fp32 = model
 
