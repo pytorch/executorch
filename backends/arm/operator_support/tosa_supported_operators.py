@@ -158,6 +158,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.hardswish.default,
             exir_ops.edge.aten.div.Tensor,
             exir_ops.edge.aten.eq.Tensor,
+            exir_ops.edge.aten.eq.Scalar,
             exir_ops.edge.aten.exp.default,
             exir_ops.edge.aten.log.default,
             exir_ops.edge.aten.linear.default,
@@ -235,6 +236,7 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.amax.default,  # REDUCE_MAX
         exir_ops.edge.aten.amin.default,  # REDUCE_MIN
         exir_ops.edge.aten.eq.Tensor,
+        exir_ops.edge.aten.eq.Scalar,
         exir_ops.edge.aten.ge.Tensor,
         exir_ops.edge.aten.gt.Tensor,
         exir_ops.edge.aten.le.Tensor,
