@@ -147,7 +147,26 @@ class LLMEdgeManager:
         assert not dtype_override or isinstance(
             dtype_override, DType
         ), "Override dtype needs to be of type <DType>"
-        if dtype_override is not None and dtype_override != self.dtype:
+
+        # Checkpoint dtype should be lower or equal precision to the dtype override.
+        if hasattr(self.model, "checkpoint_dtype"):
+            checkpoint_dtype = self.model.checkpoint_dtype
+            if not (
+                checkpoint_dtype == dtype_override.to_torch_dtype()
+                or (
+                    checkpoint_dtype == torch.float16
+                    and dtype_override.to_torch_dtype() == torch.float32
+                )
+                or (
+                    checkpoint_dtype == torch.bfloat16
+                    and dtype_override.to_torch_dtype() == torch.float32
+                )
+            ):
+                logging.warning(
+                    f"Checkpoint dtype {checkpoint_dtype} precision is higher than dtype override {dtype_override.to_torch_dtype()}."
+                )
+
+        if dtype_override != self.dtype:
             torch_dtype = dtype_override.to_torch_dtype()
             logging.info(f"model.to {torch_dtype}")
             self.model = self.model.to(dtype=torch_dtype)
