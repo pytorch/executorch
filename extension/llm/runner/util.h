@@ -68,7 +68,13 @@ ET_EXPERIMENTAL void inline safe_printf(const char* piece) {
 ET_EXPERIMENTAL long inline time_in_ms() {
   // return time in milliseconds, for benchmarking the model speed
   struct timespec time;
+  // The `timespec_get` function is only available on Android API levels
+  // 29 or later.
+#if defined(__ANDROID_API__) && __ANDROID_API__ < 29
   clock_gettime(CLOCK_REALTIME, &time);
+#else
+  timespec_get(&time, TIME_UTC);
+#endif
   return time.tv_sec * 1000 + time.tv_nsec / 1000000;
 }
 
