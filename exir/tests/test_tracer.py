@@ -140,9 +140,8 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
         graph_module = (
             exir.capture(model, model.get_random_inputs(), exir.CaptureConfig())
             # torch._ops.aten.t.default
-            .to_edge(
-                exir.EdgeCompileConfig(_check_ir_validity=False)
-            ).exported_program.graph_module
+            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+            .exported_program.graph_module
         )
         num_get_attr_node = 0
         num_get_attr_node_with_tensorspec = 0
