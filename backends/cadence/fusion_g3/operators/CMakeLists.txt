@@ -50,6 +50,7 @@ set(_aten_ops__srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/op_lt.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/op_where.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/op_clamp.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_hardtanh.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_bmm.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_clone.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_div.cpp"
