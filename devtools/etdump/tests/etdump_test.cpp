@@ -34,6 +34,8 @@ using ::executorch::runtime::BoxedEvalueList;
 using ::executorch::runtime::DelegateDebugIdType;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::EventTracerEntry;
+using ::executorch::etdump::Result;
+using ::executorch::runtime::Error;
 using ::executorch::runtime::LoggedEValueType;
 using ::executorch::runtime::Span;
 using ::executorch::runtime::Tag;
@@ -707,9 +709,17 @@ TEST_F(ProfilerETDumpTest, LogDelegateEvents) {
 
     // Only a valid name or delegate debug index should be passed in. If valid
     // entries are passed in for both then the test should assert out.
+    TensorFactory<ScalarType::Float> tf;
+    Result<bool> failed_intermediate_output = etdump_gen[i]->log_intermediate_output_delegate(
+        "test_event_tensor",
+        static_cast<torch::executor::DebugHandle>(2589),
+        tf.ones({3, 2}));
+    
+    ASSERT_EQ(failed_intermediate_output.error(), Error::InvalidArgument);
     ET_EXPECT_DEATH(
-        etdump_gen[i]->start_profiling_delegate("test_event", 1),
-        "Only name or delegate_debug_index can be valid. Check DelegateMappingBuilder documentation for more details.");
+      etdump_gen[i]->start_profiling_delegate("test_event", 1),
+      "Only name or delegate_debug_index can be valid. Check DelegateMappingBuilder documentation for more details."
+    );
     ET_EXPECT_DEATH(
         etdump_gen[i]->log_profiling_delegate(
             "test_event", 1, 1, 2, nullptr, 0),

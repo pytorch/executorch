@@ -310,8 +310,8 @@ Result<bool> ETDumpGen::log_intermediate_output_delegate(
     const char* name,
     DebugHandle delegate_debug_index,
     const Tensor& output) {
-  log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
-  return true;
+  Result<bool> result = log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
+  return result;
 }
 
 Result<bool> ETDumpGen::log_intermediate_output_delegate(
@@ -319,7 +319,8 @@ Result<bool> ETDumpGen::log_intermediate_output_delegate(
     DebugHandle delegate_debug_index,
     const ArrayRef<Tensor> output) {
   log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
-  return true;
+  Result<bool> result = log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
+  return result;
 }
 
 Result<bool> ETDumpGen::log_intermediate_output_delegate(
@@ -327,7 +328,8 @@ Result<bool> ETDumpGen::log_intermediate_output_delegate(
     DebugHandle delegate_debug_index,
     const int& output) {
   log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
-  return true;
+  Result<bool> result = log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
+  return result;
 }
 
 Result<bool> ETDumpGen::log_intermediate_output_delegate(
@@ -335,7 +337,8 @@ Result<bool> ETDumpGen::log_intermediate_output_delegate(
     DebugHandle delegate_debug_index,
     const bool& output) {
   log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
-  return true;
+  Result<bool> result = log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
+  return result;
 }
 
 Result<bool> ETDumpGen::log_intermediate_output_delegate(
@@ -343,7 +346,8 @@ Result<bool> ETDumpGen::log_intermediate_output_delegate(
     DebugHandle delegate_debug_index,
     const double& output) {
   log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
-  return true;
+  Result<bool> result = log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
+  return result;
 }
 
 template <typename T>
