@@ -36,7 +36,6 @@ using ::executorch::runtime::Tag;
 
 namespace executorch {
 namespace etdump {
-
 namespace {
 
 executorch_flatbuffer_ScalarType_enum_t get_flatbuffer_scalar_type(
@@ -348,12 +347,13 @@ Result<bool> ETDumpGen::log_intermediate_output_delegate(
 }
 
 template <typename T>
-void ETDumpGen::log_intermediate_output_delegate_helper(
+Result<bool> ETDumpGen::log_intermediate_output_delegate_helper(
     const char* name,
     DebugHandle delegate_debug_index,
     const T& output) {
-  ET_CHECK_MSG(
+  ET_CHECK_OR_RETURN_ERROR(
       (name == nullptr) ^ (delegate_debug_index == -1),
+      InvalidArgument,
       "Only name or delegate_debug_index can be valid. Check DelegateMappingBuilder documentation for more details.");
 
   check_ready_to_add_events();
@@ -413,7 +413,9 @@ void ETDumpGen::log_intermediate_output_delegate_helper(
     etdump_Value_bool_value_add(builder_, bool_ref);
     etdump_Value_val_add(builder_, etdump_ValueType_Bool);
   } else {
-    ET_CHECK_MSG(0, "Unsupported output type for intermediate logging\n");
+    ET_CHECK_OR_RETURN_ERROR(0,
+    InvalidArgument,
+    "Unsupported output type for intermediate logging\n");
   }
 
   auto value_ref = etdump_Value_end(builder_);
@@ -424,6 +426,8 @@ void ETDumpGen::log_intermediate_output_delegate_helper(
   etdump_RunData_events_push_start(builder_);
   etdump_Event_debug_event_add(builder_, debug_event);
   etdump_RunData_events_push_end(builder_);
+
+  return true;
 }
 
 void ETDumpGen::end_profiling(EventTracerEntry prof_entry) {
