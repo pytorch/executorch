@@ -14,6 +14,5 @@ setup(
     version="0.1.0",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    packages=find_packages(where="pytorch_tokenizers"),
-    package_dir={"": "pytorch_tokenizers"},
+    packages=find_packages(),
 )

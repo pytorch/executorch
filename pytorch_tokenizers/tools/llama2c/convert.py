@@ -11,7 +11,7 @@
 
 import argparse
 
-from pytorch_tokenizers import Llama2cTokenizer
+from pytorch_tokenizers.llama2c import Llama2cTokenizer
 
 
 if __name__ == "__main__":

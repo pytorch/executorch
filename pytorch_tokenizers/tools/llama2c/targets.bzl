@@ -24,6 +24,9 @@ def define_common_targets():
         external_deps = [
             "sentencepiece-py",
         ],
+        deps = [
+            "//pytorch/tokenizers/pytorch_tokenizers:tokenizers",
+        ],
     )
 
     runtime.python_binary(
