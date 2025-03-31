@@ -40,13 +40,8 @@ VEC4_T read_texel(ivec4 tidx) {
   ivec4 sizes_to_use = sizes;
   int packed_dim_to_use = packed_dim;
   if (transpose_hw == 1) {
-    int tmp = sizes_to_use.x;
-    sizes_to_use.x = sizes_to_use.y;
-    sizes_to_use.y = tmp;
-
-    tmp = tidx_to_use.x;
-    tidx_to_use.x = tidx.y;
-    tidx_to_use.y = tmp;
+    sizes_to_use.xy = sizes_to_use.yx;
+    tidx_to_use.xy = tidx.yx;
 
     if (packed_dim == 1) {
       packed_dim_to_use = 0;
