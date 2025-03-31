@@ -106,15 +106,16 @@ git clone -b release/0.6 https://github.com/pytorch/executorch.git --depth 1 --r
 python3 -m venv .venv && source .venv/bin/activate && ./install_requirements.sh
 ```
 
-4. Install the required dependencies, including those needed for the backends like [Core ML](backends-coreml.md) or [MPS](backends-mps.md). Choose one:
+4. Install the required dependencies, including those needed for the backends like [Core ML](backends-coreml.md) or [MPS](backends-mps.md). Choose one, or both:
 
 ```bash
 # ExecuTorch with xnnpack and CoreML backend
-./install_executorch.sh --pybind xnnpack
+./backends/apple/coreml/scripts/install_requirements.sh
+./install_executorch.sh --pybind coreml xnnpack
 
-# Optional: ExecuTorch with xnnpack, CoreML, and MPS backend
+# ExecuTorch with xnnpack and MPS backend
 ./backends/apple/mps/install_requirements.sh
-./install_executorch.sh --pybind xnnpack mps
+./install_executorch.sh --pybind mps xnnpack
 ```
 
 5. Install [CMake](https://cmake.org):
