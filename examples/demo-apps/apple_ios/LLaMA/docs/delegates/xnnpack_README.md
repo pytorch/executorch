@@ -117,9 +117,8 @@ While we recommended using the latest prebuilt package pre-configured with the X
 
 Go to Project Navigator, click on LLaMA. `Project --> LLaMA --> Package Dependencies`, and update the package dependencies to any of the available options below:
 
-- Branch --> swiftpm-0.6.0.20250501 (amend to match the latest nightly build)
+- Branch --> swiftpm-0.7.0.20250401 (amend to match the latest nightly build)
 - Branch --> swiftpm-0.6.0
-- Branch --> swiftpm-0.5.0
 
 ### 2.2 Manually build the package locally and link them
 
