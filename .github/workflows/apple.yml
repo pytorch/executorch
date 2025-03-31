@@ -37,14 +37,14 @@ jobs:
         id: set_version
         shell: bash
         run: |
-          VERSION="0.6.0"
+          VERSION="0.5.0.$(TZ='PST8PDT' date +%Y%m%d)"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   build-demo-ios:
     name: build-demo-ios
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
     if: ${{ !github.event.pull_request.head.repo.fork }}
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.7
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
       runner: macos-latest-xlarge
@@ -114,7 +114,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@release/2.7
+    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
     with:
       device-type: ios
       # For iOS testing, the runner just needs to call AWS Device Farm, so there is no need to run this on macOS
@@ -132,7 +132,7 @@ jobs:
   build-frameworks-ios:
     name: build-frameworks-ios
     needs: set-version
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.7
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       runner: macos-latest-xlarge
       python-version: '3.11'
@@ -212,7 +212,7 @@ jobs:
           name: executorch-frameworks-ios
           path: ${{ runner.temp }}/frameworks-ios/
       - name: Only push to S3 when running the workflow manually from main branch
-        if: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/release/0.6' }}
+        if: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' }}
         shell: bash
         run: |
           echo "UPLOAD_ON_MAIN=1" >> "${GITHUB_ENV}"
@@ -274,7 +274,7 @@ jobs:
     name: build-benchmark-app
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
     if: ${{ !github.event.pull_request.head.repo.fork }}
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.7
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
       runner: macos-latest-xlarge

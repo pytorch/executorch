@@ -31,7 +31,7 @@ jobs:
   build-aar:
     name: build-aar
     needs: check-if-aar-exists
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.7
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
