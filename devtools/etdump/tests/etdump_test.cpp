@@ -27,15 +27,15 @@ using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::etdump::ETDumpGen;
 using ::executorch::etdump::ETDumpResult;
+using ::executorch::etdump::Result;
 using ::executorch::extension::testing::TempFile;
 using ::executorch::runtime::AllocatorID;
 using ::executorch::runtime::ArrayRef;
 using ::executorch::runtime::BoxedEvalueList;
 using ::executorch::runtime::DelegateDebugIdType;
+using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::EventTracerEntry;
-using ::executorch::etdump::Result;
-using ::executorch::runtime::Error;
 using ::executorch::runtime::LoggedEValueType;
 using ::executorch::runtime::Span;
 using ::executorch::runtime::Tag;
@@ -533,31 +533,34 @@ TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
 
       // Only a valid name or delegate debug index should be passed in. If valid
       // entries are passed in for both then the test should assert out.
-      Result<bool> log_tensor_result = etdump_gen[i]->log_intermediate_output_delegate(
-          "test_event_tensor",
-          static_cast<torch::executor::DebugHandle>(2589),
-          tf.ones({3, 2}));
+      Result<bool> log_tensor_result =
+          etdump_gen[i]->log_intermediate_output_delegate(
+              "test_event_tensor",
+              static_cast<torch::executor::DebugHandle>(2589),
+              tf.ones({3, 2}));
 
       std::vector<Tensor> tensors = {tf.ones({5, 4}), tf.ones({7, 6})};
-      Result<bool> log_tensor_list_result = etdump_gen[i]->log_intermediate_output_delegate(
-          nullptr,
-          static_cast<torch::executor::DebugHandle>(-1),
-          ArrayRef<Tensor>(tensors.data(), tensors.size()));
-      
-      Result<bool> log_int_result = etdump_gen[i]->log_intermediate_output_delegate(
-          "test_event_tensor",
-          static_cast<torch::executor::DebugHandle>(2589),
-          10);
+      Result<bool> log_tensor_list_result =
+          etdump_gen[i]->log_intermediate_output_delegate(
+              nullptr,
+              static_cast<torch::executor::DebugHandle>(-1),
+              ArrayRef<Tensor>(tensors.data(), tensors.size()));
 
-      Result<bool> log_double_result = etdump_gen[i]->log_intermediate_output_delegate(
-          "test_event_tensor",
-          static_cast<torch::executor::DebugHandle>(2589),
-          29.82);
+      Result<bool> log_int_result =
+          etdump_gen[i]->log_intermediate_output_delegate(
+              "test_event_tensor",
+              static_cast<torch::executor::DebugHandle>(2589),
+              10);
 
-      Result<bool> log_bool_result = etdump_gen[i]->log_intermediate_output_delegate(
-          nullptr,
-          static_cast<torch::executor::DebugHandle>(-1),
-          29.82);
+      Result<bool> log_double_result =
+          etdump_gen[i]->log_intermediate_output_delegate(
+              "test_event_tensor",
+              static_cast<torch::executor::DebugHandle>(2589),
+              29.82);
+
+      Result<bool> log_bool_result =
+          etdump_gen[i]->log_intermediate_output_delegate(
+              nullptr, static_cast<torch::executor::DebugHandle>(-1), 29.82);
 
       ASSERT_EQ(log_tensor_result.error(), Error::InvalidArgument);
       ASSERT_EQ(log_tensor_list_result.error(), Error::InvalidArgument);
@@ -745,9 +748,8 @@ TEST_F(ProfilerETDumpTest, LogDelegateEvents) {
     // Only a valid name or delegate debug index should be passed in. If valid
     // entries are passed in for both then the test should assert out.
     ET_EXPECT_DEATH(
-      etdump_gen[i]->start_profiling_delegate("test_event", 1),
-      "Only name or delegate_debug_index can be valid. Check DelegateMappingBuilder documentation for more details."
-    );
+        etdump_gen[i]->start_profiling_delegate("test_event", 1),
+        "Only name or delegate_debug_index can be valid. Check DelegateMappingBuilder documentation for more details.");
     ET_EXPECT_DEATH(
         etdump_gen[i]->log_profiling_delegate(
             "test_event", 1, 1, 2, nullptr, 0),
