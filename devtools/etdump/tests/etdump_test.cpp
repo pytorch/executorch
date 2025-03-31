@@ -497,36 +497,60 @@ TEST_F(ProfilerETDumpTest, VerifyData) {
   }
 }
 
+// Helper to assert that logging without a data sink triggers ET_EXPECT_DEATH
+static void et_expect_death_log_delegate(
+    ETDumpGen* gen,
+    TensorFactory<ScalarType::Float>& tf) {
+  ET_EXPECT_DEATH(
+      gen->log_intermediate_output_delegate(
+          "test_event_tensor",
+          static_cast<torch::executor::DebugHandle>(-1),
+          tf.ones({3, 2})),
+      "Must set data sink before writing tensor-like data");
+}
+
 TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
+  const size_t debug_buf_size = 2048;
+  const size_t etdump_buf_size = 512 * 1024;
+
   for (size_t i = 0; i < 2; i++) {
     for (size_t j = 0; j < 3; j++) {
-      void* ptr = malloc(2048);
-      Span<uint8_t> buffer((uint8_t*)ptr, 2048);
+      uint8_t* buf = nullptr;
+      void* ptr = malloc(debug_buf_size);
+      Span<uint8_t> buffer((uint8_t*)ptr, debug_buf_size);
 
-      auto buffer_data_sink = BufferDataSink::create(ptr, 2048);
+      auto buffer_data_sink = BufferDataSink::create(ptr, debug_buf_size);
       auto file_data_sink = FileDataSink::create(dump_file_path.c_str());
 
       etdump_gen[i]->create_event_block("test_block");
       TensorFactory<ScalarType::Float> tf;
 
-      // using span to record debug data
       if (j == 0) {
-        // TODO(gasoonjia): add similar ET_EXPECT_DEATH on BufferDataSink branch
-        ET_EXPECT_DEATH(
-            etdump_gen[i]->log_intermediate_output_delegate(
-                "test_event_tensor",
-                static_cast<torch::executor::DebugHandle>(-1),
-                tf.ones({3, 2})),
-            "Must set data sink before writing tensor-like data");
+        // Use span to record debug data
+        et_expect_death_log_delegate(etdump_gen[i], tf);
         etdump_gen[i]->set_debug_buffer(buffer);
-      }
-      // using buffer data sink to record debug data
-      else if (j == 1) {
-        etdump_gen[i]->set_data_sink(&buffer_data_sink.get());
-      }
-      // using file data sink to record debug data
-      else {
-        etdump_gen[i]->set_data_sink(&file_data_sink.get());
+      } else {
+        buf = (uint8_t*)malloc(etdump_buf_size * sizeof(uint8_t));
+
+        // Wrap buffer in span for ETDumGen constructor
+        Span<uint8_t> span_buf(buf, etdump_buf_size);
+
+        // Reset ETDumpGen to correctly trigger ET_EXPECT_DEATH
+        delete etdump_gen[i];
+
+        // Recreate ETDumpGen; use span buffer only for etdump_gen[1]
+        etdump_gen[i] = (i == 0) ? new ETDumpGen() : new ETDumpGen(span_buf);
+
+        etdump_gen[i]->create_event_block("test_block");
+        et_expect_death_log_delegate(etdump_gen[i], tf);
+
+        if (j == 1) {
+          // Use buffer data sink to record debug data
+          etdump_gen[i]->set_data_sink(&buffer_data_sink.get());
+        } else {
+          // Use file data sink to record debug data
+          etdump_gen[i]->set_data_sink(&file_data_sink.get());
+        }
       }
 
       // Log a tensor
@@ -567,6 +591,9 @@ TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
       free(ptr);
       if (!etdump_gen[i]->is_static_etdump()) {
         free(result.buf);
+      }
+      if (buf) {
+        free(buf);
       }
     }
   }
