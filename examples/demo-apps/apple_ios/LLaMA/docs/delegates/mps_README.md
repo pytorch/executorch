@@ -24,16 +24,14 @@ conda activate et_mps
 Checkout ExecuTorch repo and sync submodules
 
 ```
-git clone https://github.com/pytorch/executorch.git
-cd executorch
-git submodule sync
-git submodule update --init
+git clone -b release/0.6 https://github.com/pytorch/executorch.git --depth 1 --recurse-submodules --shallow-submodules && cd executorch
 ```
 
 Install dependencies
 
 ```
 ./install_executorch.sh
+./backends/apple/mps/install_requirements.sh
 ```
 
 ## Prepare Models
@@ -42,7 +40,7 @@ In this demo app, we support text-only inference with Llama 3.1, Llama 3, and Ll
 Install the required packages to export the model
 
 ```
-sh examples/models/llama/install_requirements.sh
+./examples/models/llama/install_requirements.sh
 ```
 
 Export the model
@@ -77,16 +75,6 @@ The prebuilt ExecuTorch runtime, backend, and kernels are available as a Swift P
 
 ### Xcode
 Open the project in Xcode.In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the ExecuTorch repo into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version, e.g., “swiftpm-0.6.0”, or a branch name in format "swiftpm-<version>.<year_month_date>" (e.g. "swiftpm-0.6.0-20250501") for a nightly build on a specific date.
-
-Note: If you're running into any issues related to package dependencies, quit Xcode entirely, delete the whole executorch repo, clean the caches by running the command below in terminal and clone the repo again.
-
-```
-rm -rf \
-  ~/Library/org.swift.swiftpm \
-  ~/Library/Caches/org.swift.swiftpm \
-  ~/Library/Caches/com.apple.dt.Xcode \
-  ~/Library/Developer/Xcode/DerivedData
-```
 
 Link your binary with the ExecuTorch runtime and any backends or kernels used by the exported ML model. It is recommended to link the core runtime to the components that use ExecuTorch directly, and link kernels and backends against the main app target.
 
