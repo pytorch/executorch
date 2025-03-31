@@ -20,7 +20,7 @@ A React Native mobile application for running LLaMA language models using ExecuT
 
 ## Installation
 
-1. Clone the repository: `git clone git@github.com:pytorch/executorch.git`
+1. Clone the repository: `git clone -b release/0.6 git@github.com:pytorch/executorch.git`
 
 2. Navigate to the root of the repository: `cd executorch`
 
