@@ -97,7 +97,7 @@ xcode-select --install
 2. Clone ExecuTorch:
 
 ```bash
-git clone https://github.com/pytorch/executorch.git && cd executorch
+git clone -b viable/strict https://github.com/pytorch/executorch.git && cd executorch
 ```
 
 3. Set up [Python](https://www.python.org/downloads/macos/) 3.10+ and activate a virtual environment:

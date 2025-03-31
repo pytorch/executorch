@@ -40,7 +40,7 @@ portability details.
 
    ```bash
    # Clone the ExecuTorch repo from GitHub
-   git clone https://github.com/pytorch/executorch.git && cd executorch
+   git clone -b viable/strict https://github.com/pytorch/executorch.git && cd executorch
    ```
 
 ### Create a Virtual Environment
