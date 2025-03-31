@@ -231,6 +231,20 @@ adb push  add.pte  /data/local/tmp/executorch
 adb shell  "/data/local/tmp/executorch/executor_runner --model_path /data/local/tmp/executorch/add.pte"
 ```
 
+#### Building AAR for app integration from source
+- Prerequisite: Android NDK from the previous section, and Android SDK (Android Studio is recommended).
+
+Assuming Android NDK and SDK is available, run:
+```bash
+export ANDROID_ABIS=arm64-v8a
+export BUILD_AAR_DIR=aar-out
+mkdir -p $BUILD_AAR_DIR
+sh scripts/build_android_library.sh
+```
+
+This script will build the AAR, which contains the Java API and its corresponding JNI library. Please see
+[this documentation](./using-executorch-android.md#using-aar-file) for usage.
+
 ### iOS
 
 For iOS we'll build [frameworks](https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle) instead of static libraries, that will also contain the public headers inside.
