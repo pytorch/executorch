@@ -33,13 +33,8 @@ void main() {
 
   ivec4 sizes = out_sizes;
   if (transpose_hw == 1) {
-    int tmp = sizes.x;
-    sizes.x = sizes.y;
-    sizes.y = tmp;
-
-    tmp = out_tidx.x;
-    out_tidx.x = out_tidx.y;
-    out_tidx.y = tmp;
+    sizes.xy = sizes.yx;
+    out_tidx.xy = out_tidx.yx;
   }
   const int in_nchwi = tidx_to_nchwi(out_tidx, sizes);
 

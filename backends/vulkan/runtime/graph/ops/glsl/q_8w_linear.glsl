@@ -70,7 +70,7 @@ void main() {
   // TODO(ssjia): optimize memory access pattern by traversing mat1 x in inner loop
   for (int i = 0; i < mat1_sizes.x; i++) {
     const FLOAT_T mat1_val = t_mat1[mat1_offset];
-    const FLOAT_T mat2_val = FLOAT_T(t_qmat2[qmat2_offset]) * scale;
+    const FLOAT_T mat2_val = FLOAT_T(t_qmat2[qmat2_offset]);
 
     outval += mat1_val * mat2_val;
 
@@ -78,7 +78,7 @@ void main() {
     qmat2_offset += qmat2_strides.y;
   }
 
-  t_out[out_bufi] = outval;
+  t_out[out_bufi] = outval * scale;
 }
 
 #else // USING_TEXTURE
