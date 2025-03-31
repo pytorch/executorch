@@ -175,8 +175,8 @@ ValueRef prepack_standard_hw_transposed(
   const int w_dim = new_out_sizes.size() - 1;
   const int h_dim = new_out_sizes.size() - 2;
   const int64_t tmp = new_out_sizes.at(w_dim);
-  new_out_sizes[w_dim] = new_out_sizes[h_dim];
-  new_out_sizes[h_dim] = tmp;
+  new_out_sizes.at(w_dim) = new_out_sizes.at(h_dim);
+  new_out_sizes.at(h_dim) = tmp;
   ValueRef tensor = graph.add_tensor(
       new_out_sizes,
       graph.dtype_of(tensor_data),
