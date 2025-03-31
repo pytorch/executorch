@@ -24,7 +24,7 @@ It provides a flexible framework for dynamically generating and running performa
 To get started, clone the ExecuTorch repository and cd into the source code directory:
 
 ```bash
-git clone -b release/0.6 https://github.com/pytorch/executorch.git && cd executorch
+git clone https://github.com/pytorch/executorch.git && cd executorch
 ```
 
 This command performs a shallow clone to speed up the process.

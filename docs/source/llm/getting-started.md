@@ -45,7 +45,7 @@ cd et-nanogpt
 
 # Clone the ExecuTorch repository.
 mkdir third-party
-git clone -b release/0.6 https://github.com/pytorch/executorch.git third-party/executorch && cd third-party/executorch
+git clone https://github.com/pytorch/executorch.git third-party/executorch && cd third-party/executorch
 
 # Create either a Python virtual environment:
 python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
@@ -79,7 +79,7 @@ pyenv virtualenv 3.10 executorch
 pyenv activate executorch
 
 # Clone the ExecuTorch repository.
-git clone -b release/0.6 https://github.com/pytorch/executorch.git third-party/executorch && cd third-party/executorch
+git clone https://github.com/pytorch/executorch.git third-party/executorch && cd third-party/executorch
 
 # Install requirements.
 PYTHON_EXECUTABLE=python ./install_executorch.sh

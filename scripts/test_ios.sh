@@ -47,7 +47,7 @@ say() {
 say "Cloning the Code"
 
 pushd . > /dev/null
-git clone -b release/0.6 https://github.com/pytorch/executorch.git "$OUTPUT"
+git clone https://github.com/pytorch/executorch.git "$OUTPUT"
 cd "$OUTPUT"
 
 say "Updating the Submodules"

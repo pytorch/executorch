@@ -17,7 +17,7 @@ In this section, we will need to set up the ExecuTorch repo first with Conda env
 Checkout ExecuTorch repo and sync submodules
 
 ```
-git clone -b release/0.6 https://github.com/pytorch/executorch.git && cd executorch
+git clone https://github.com/pytorch/executorch.git && cd executorch
 ```
 
 Create either a Python virtual environment:

@@ -40,7 +40,7 @@ To build the documentation locally:
 1. Clone the ExecuTorch repo to your machine.
 
    ```bash
-   git clone -b release/0.6 https://github.com/pytorch/executorch.git && cd executorch
+   git clone https://github.com/pytorch/executorch.git && cd executorch
    ```
 
 1. If you don't have it already, start either a Python virtual envitonment:
