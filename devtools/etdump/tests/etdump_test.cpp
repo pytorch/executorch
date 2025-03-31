@@ -512,10 +512,11 @@ static void et_expect_death_log_delegate(
 TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
   const size_t debug_buf_size = 2048;
   const size_t etdump_buf_size = 512 * 1024;
+  ASSERT_NE(this->buf, nullptr);
+  Span<uint8_t> span_buf = Span<uint8_t>(this->buf, etdump_buf_size);
 
   for (size_t i = 0; i < 2; i++) {
     for (size_t j = 0; j < 3; j++) {
-      uint8_t* buf = nullptr;
       void* ptr = malloc(debug_buf_size);
       Span<uint8_t> buffer((uint8_t*)ptr, debug_buf_size);
 
@@ -526,21 +527,16 @@ TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
       TensorFactory<ScalarType::Float> tf;
 
       if (j == 0) {
-        // Use span to record debug data
         et_expect_death_log_delegate(etdump_gen[i], tf);
+
+        // Use span to record debug data
         etdump_gen[i]->set_debug_buffer(buffer);
       } else {
-        buf = (uint8_t*)malloc(etdump_buf_size * sizeof(uint8_t));
-
-        // Wrap buffer in span for ETDumGen constructor
-        Span<uint8_t> span_buf(buf, etdump_buf_size);
-
         // Reset ETDumpGen to correctly trigger ET_EXPECT_DEATH
         delete etdump_gen[i];
 
         // Recreate ETDumpGen; use span buffer only for etdump_gen[1]
         etdump_gen[i] = (i == 0) ? new ETDumpGen() : new ETDumpGen(span_buf);
-
         etdump_gen[i]->create_event_block("test_block");
         et_expect_death_log_delegate(etdump_gen[i], tf);
 
@@ -591,9 +587,6 @@ TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
       free(ptr);
       if (!etdump_gen[i]->is_static_etdump()) {
         free(result.buf);
-      }
-      if (buf) {
-        free(buf);
       }
     }
   }
