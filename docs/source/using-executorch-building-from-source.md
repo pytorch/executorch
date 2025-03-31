@@ -40,8 +40,7 @@ portability details.
 
    ```bash
    # Clone the ExecuTorch repo from GitHub
-   git clone -b release/0.6 https://github.com/pytorch/executorch.git --depth 1 --recurse-submodules --shallow-submodules
-   cd executorch
+   git clone -b release/0.6 https://github.com/pytorch/executorch.git && cd executorch
    ```
 
 ### Create a Virtual Environment
@@ -53,8 +52,7 @@ Create and activate a Python virtual environment:
 
 Or alternatively, [install conda on your machine](https://conda.io/projects/conda/en/latest/user-guide/install/index.html). Then, create a Conda environment named "executorch".
    ```bash
-   conda create -yn executorch python=3.10.0
-   conda activate executorch
+   conda create -yn executorch python=3.10.0 && conda activate executorch
    ```
 
 ## Install ExecuTorch pip package from Source
