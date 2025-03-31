@@ -28,7 +28,7 @@ bool check_repeat_args(
   // Ensure the self tensors list is non-empty.
   ET_CHECK_OR_RETURN_FALSE(
       static_cast<ssize_t>(repeats.size()) >= self.dim(),
-      "Number of dimensions of repeat dims can not be smaller than number of dimensions of tensor; repeats.size() = %zu, self.dim() = %zd",
+      "Number of dimensions of repeat dims can not be smaller than number of dimensions of tensor; repeats.size() = %zu, self.dim() = %" ET_PRI_TENSOR_DIM,
       repeats.size(),
       self.dim());
 
@@ -43,7 +43,8 @@ bool check_repeat_args(
   /// Check if out.size() is legal.
   ET_CHECK_OR_RETURN_FALSE(
       static_cast<size_t>(out.dim()) == repeats.size(),
-      "The dimension of out shall equal size of repeats, but now is %zd and %zu",
+      "The dimension of out shall equal size of repeats, but now is %" ET_PRI_TENSOR_DIM
+      " and %zu",
       out.dim(),
       repeats.size());
 
