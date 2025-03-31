@@ -61,7 +61,7 @@ jobs:
         echo "mavenCentralPassword=${SECRET_EXECUTORCH_MAVEN_CENTRAL_PASSWORD}" >> ~/.gradle/gradle.properties
         echo "signing.secretKeyRingFile=/tmp/secring.gpg" >> ~/.gradle/gradle.properties
 
-        echo -n "$SECRET_EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS" | base64 --decode -o /tmp/secring.gpg
+        echo -n "$SECRET_EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS" | base64 -d > /tmp/secring.gpg
 
         # Build AAR Package
         mkdir aar-out
