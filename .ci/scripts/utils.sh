@@ -32,7 +32,7 @@ install_executorch() {
   which pip
   # Install executorch, this assumes that Executorch is checked out in the
   # current directory.
-  ./install_executorch.sh --pybind xnnpack "$@"
+  ./install_executorch.sh "$@"
   # Just print out the list of packages for debugging
   pip list
 }
