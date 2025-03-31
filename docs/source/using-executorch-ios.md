@@ -103,19 +103,18 @@ git clone https://github.com/pytorch/executorch.git --depth 1 --recurse-submodul
 3. Set up [Python](https://www.python.org/downloads/macos/) 3.10+ and activate a virtual environment:
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
+python3 -m venv .venv && source .venv/bin/activate && ./install_requirements.sh
 ```
 
-4. Install the required dependencies, including those needed for the backends like [Core ML](backends-coreml.md) or [MPS](backends-mps.md), if you plan to build them as well:
+4. Install the required dependencies, including those needed for the backends like [Core ML](backends-coreml.md) or [MPS](backends-mps.md). Choose one:
 
 ```bash
-./install_executorch.sh --pybind coreml mps xnnpack
+# ExecuTorch with xnnpack and CoreML backend
+./install_executorch.sh --pybind xnnpack
 
-# Optional dependencies for Core ML backend.
-./backends/apple/coreml/scripts/install_requirements.sh
-
-# And MPS backend.
+# Optional: ExecuTorch with xnnpack, CoreML, and MPS backend
 ./backends/apple/mps/install_requirements.sh
+./install_executorch.sh --pybind xnnpack mps
 ```
 
 5. Install [CMake](https://cmake.org):

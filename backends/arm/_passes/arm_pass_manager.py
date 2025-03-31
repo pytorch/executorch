@@ -7,82 +7,45 @@
 
 # pyre-unsafe
 
-from executorch.backends.arm._passes.annotate_channels_last_dim_order_pass import (
+from executorch.backends.arm._passes import (
     AnnotateChannelsLastDimOrder,
-)
-from executorch.backends.arm._passes.annotate_decomposed_matmul import (
     AnnotateDecomposedMatmulPass,
-)
-from executorch.backends.arm._passes.cast_int64_pass import CastInt64ToInt32Pass
-from executorch.backends.arm._passes.conv1d_unsqueeze_pass import Conv1dUnsqueezePass
-from executorch.backends.arm._passes.convert_any_default_dim_dims_pass import (
-    ConvertAnyDefaultDimDimsPass,
-)
-from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
-    ConvertExpandCopyToRepeatPass,
-)
-from executorch.backends.arm._passes.convert_full_like_to_full_pass import (
-    ConvertFullLikeToFullPass,
-)
-from executorch.backends.arm._passes.convert_minmax_pass import ConvertMinMaxPass
-from executorch.backends.arm._passes.convert_split_to_slice import (
-    ConvertSplitToSlicePass,
-)
-from executorch.backends.arm._passes.convert_squeezes_to_view import (  # type: ignore[import-not-found]
-    ConvertSqueezesToViewPass,
-)
-from executorch.backends.arm._passes.convert_to_clamp import ConvertToClampPass
-from executorch.backends.arm._passes.decompose_batchnorm_pass import (
-    DecomposeBatchNormPass,
-)
-from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
-from executorch.backends.arm._passes.decompose_layernorm_pass import (
-    DecomposeLayerNormPass,
-)
-from executorch.backends.arm._passes.decompose_linear_pass import DecomposeLinearPass
-from executorch.backends.arm._passes.decompose_meandim_pass import DecomposeMeanDimPass
-from executorch.backends.arm._passes.decompose_select import (  # type: ignore[import-not-found]
-    DecomposeSelectPass,
-)
-from executorch.backends.arm._passes.decompose_softmax_pass import DecomposeSoftmaxPass
-from executorch.backends.arm._passes.decompose_softmax_unstable_pass import (
-    DecomposeSoftmaxUnstablePass,
-)
-from executorch.backends.arm._passes.decompose_var_pass import DecomposeVarPass
-from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
-    FoldAndAnnotateQParamsPass,
-    QuantizeOperatorArguments,
-    RetraceFoldedDtypesPass,
-)
-from executorch.backends.arm._passes.fuse_batchnorm2d_pass import FuseBatchnorm2DPass
-from executorch.backends.arm._passes.fuse_constant_ops_pass import (
+    CastInt64BuffersToInt32Pass,
+    CastToInt32Pass,
     ComputeConstantOpsAOT,
-    FuseConstantArgsPass,
-)
-from executorch.backends.arm._passes.fuse_quantized_activation_pass import (  # type: ignore[import-not-found]
-    FuseQuantizedActivationPass,
-)
-from executorch.backends.arm._passes.insert_rescales_pass import InsertRescalePass
-from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
-from executorch.backends.arm._passes.keep_dims_false_to_squeeze_pass import (
-    KeepDimsFalseToSqueezePass,
-)
-from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
-from executorch.backends.arm._passes.meandim_to_averagepool_pass import (  # type: ignore[attr-defined]
+    Conv1dUnsqueezePass,
+    ConvertAnyDefaultDimDimsPass,
+    ConvertExpandCopyToRepeatPass,
+    ConvertFullLikeToFullPass,
     ConvertMeanDimToAveragePoolPass,
-)
-from executorch.backends.arm._passes.mm_to_bmm_pass import (  # type: ignore[import-not-found]
+    ConvertMinMaxPass,
     ConvertMmToBmmPass,
-)
-from executorch.backends.arm._passes.remove_clone_pass import RemoveClonePass
-from executorch.backends.arm._passes.scalars_to_attribute_pass import (
+    ConvertSplitToSlicePass,
+    ConvertSqueezesToViewPass,
+    ConvertToClampPass,
+    DecomposeBatchNormPass,
+    DecomposeDivPass,
+    DecomposeLayerNormPass,
+    DecomposeLinearPass,
+    DecomposeMeanDimPass,
+    DecomposeSelectPass,
+    DecomposeSoftmaxPass,
+    DecomposeSoftmaxUnstablePass,
+    DecomposeVarPass,
+    FoldAndAnnotateQParamsPass,
+    FuseBatchnorm2DPass,
+    FuseConstantArgsPass,
+    FuseQuantizedActivationPass,
+    InsertRescalePass,
+    InsertTableOpsPass,
+    KeepDimsFalseToSqueezePass,
+    MatchArgRanksPass,
+    QuantizeOperatorArguments,
+    RemoveClonePass,
+    RetraceFoldedDtypesPass,
     ScalarsToAttributePass,
-)
-from executorch.backends.arm._passes.size_adjust_conv2d_pass import SizeAdjustConv2DPass
-from executorch.backends.arm._passes.unsqueeze_before_repeat_pass import (
+    SizeAdjustConv2DPass,
     UnsqueezeBeforeRepeatPass,
-)
-from executorch.backends.arm._passes.unsqueeze_scalar_placeholders_pass import (
     UnsqueezeScalarPlaceholdersPass,
 )
 from executorch.backends.arm.tosa_specification import Tosa_0_80, TosaSpecification
@@ -118,6 +81,8 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ConvertAnyDefaultDimDimsPass())
+        if isinstance(self.tosa_spec, Tosa_0_80) and self.tosa_spec.is_U55_subset:
+            self.add_pass(CastToInt32Pass())
 
         self.add_pass(ReplaceScalarWithTensorArgPass())
         self.add_pass(AnnotateDecomposedMatmulPass())
@@ -132,7 +97,7 @@ class ArmPassManager(PassManager):
         self.add_pass(SizeAdjustConv2DPass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(UnsqueezeBeforeRepeatPass())
-        self.add_pass(CastInt64ToInt32Pass(exported_program))
+        self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(KeepDimsFalseToSqueezePass())
         self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSelectPass())
@@ -179,7 +144,7 @@ class ArmPassManager(PassManager):
         self.add_pass(SizeAdjustConv2DPass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(UnsqueezeBeforeRepeatPass())
-        self.add_pass(CastInt64ToInt32Pass(exported_program))
+        self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(KeepDimsFalseToSqueezePass())
         self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSelectPass())
