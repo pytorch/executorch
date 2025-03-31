@@ -40,7 +40,7 @@ To build the documentation locally:
 1. Clone the ExecuTorch repo to your machine.
 
    ```bash
-   git clone -b release/0.6 https://github.com/pytorch/executorch.git --depth 1 --recurse-submodules --shallow-submodules && cd executorch
+   git clone -b release/0.6 https://github.com/pytorch/executorch.git && cd executorch
    ```
 
 1. If you don't have it already, start either a Python virtual envitonment:
@@ -52,8 +52,7 @@ To build the documentation locally:
    Or a Conda environment:
 
    ```bash
-   conda create -yn executorch python=3.10.0
-   conda activate executorch
+   conda create -yn executorch python=3.10.0 && conda activate executorch
    ```
 
 1. Install dependencies:
