@@ -45,15 +45,13 @@ cd et-nanogpt
 
 # Clone the ExecuTorch repository and submodules.
 mkdir third-party
-git clone -b release/0.6 https://github.com/pytorch/executorch.git third-party/executorch --depth 1 --recurse-submodules --shallow-submodules
-cd third-party/executorch
+git clone -b release/0.6 https://github.com/pytorch/executorch.git third-party/executorch && cd third-party/executorch
 
 # Create either a Python virtual environment:
 python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 
 # Or a Conda environment:
-conda create -yn executorch python=3.10.0
-conda activate executorch
+conda create -yn executorch python=3.10.0 && conda activate executorch
 
 # Install requirements
 ./install_executorch.sh
