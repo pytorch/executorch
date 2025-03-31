@@ -36,6 +36,7 @@ jobs:
       id-token: write
       contents: read
     with:
+      secrets-env: EXECUTORCH_MAVEN_SIGNING_KEYID EXECUTORCH_MAVEN_SIGNING_PASSWORD EXECUTORCH_MAVEN_CENTRAL_PASSWORD EXECUTORCH_MAVEN_CENTRAL_USERNAME EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
       submodules: 'true'
@@ -51,6 +52,16 @@ jobs:
         conda activate "${CONDA_ENV}"
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool buck2
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
+
+        mkdir -p ~/.gradle
+        touch ~/.gradle/gradle.properties
+        echo "signing.keyId=${SECRET_EXECUTORCH_MAVEN_SIGNING_KEYID}" >> ~/.gradle/gradle.properties
+        echo "signing.password=${SECRET_EXECUTORCH_MAVEN_SIGNING_PASSWORD}" >> ~/.gradle/gradle.properties
+        echo "mavenCentralUsername=${SECRET_EXECUTORCH_MAVEN_CENTRAL_USERNAME}" >> ~/.gradle/gradle.properties
+        echo "mavenCentralPassword=${SECRET_EXECUTORCH_MAVEN_CENTRAL_PASSWORD}" >> ~/.gradle/gradle.properties
+        signing.secretKeyRingFile=/tmp/secring.gpg
+
+        echo -n "$SECRET_EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS" | base64 --decode -o /tmp/secring.gpg
 
         # Build AAR Package
         mkdir aar-out
