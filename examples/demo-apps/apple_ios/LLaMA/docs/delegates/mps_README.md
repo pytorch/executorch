@@ -79,7 +79,7 @@ sudo /Applications/CMake.app/Contents/bin/cmake-gui --install
 The prebuilt ExecuTorch runtime, backend, and kernels are available as a Swift PM package.
 
 ### Xcode
-Open the project in Xcode.In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the ExecuTorch repo into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version, e.g., “swiftpm-0.6.0”, or a branch name in format "swiftpm-<version>.<year_month_date>" (e.g. "swiftpm-0.6.0-20250501") for a nightly build on a specific date.
+Open the project in Xcode.In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the ExecuTorch repo into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version, e.g., “swiftpm-0.6.0”, or a branch name in format "swiftpm-<version>.<year_month_date>" (e.g. "swiftpm-0.7.0-20250401") for a nightly build on a specific date.
 
 Link your binary with the ExecuTorch runtime and any backends or kernels used by the exported ML model. It is recommended to link the core runtime to the components that use ExecuTorch directly, and link kernels and backends against the main app target.
 
