@@ -14,17 +14,23 @@ More specifically, it covers:
 ## Setup ExecuTorch
 In this section, we will need to set up the ExecuTorch repo first with Conda environment management. Make sure you have Conda available in your system (or follow the instructions to install it [here](https://conda.io/projects/conda/en/latest/user-guide/install/index.html)). The commands below are running on Linux (CentOS).
 
-Create a Conda environment
-
-```
-conda create -n et_mps python=3.10.0
-conda activate et_mps
-```
-
 Checkout ExecuTorch repo and sync submodules
 
 ```
 git clone -b release/0.6 https://github.com/pytorch/executorch.git --depth 1 --recurse-submodules --shallow-submodules && cd executorch
+```
+
+Create either a Python virtual environment:
+
+```
+python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
+```
+
+Or a Conda environment
+
+```
+conda create -n et_mps python=3.10.0
+conda activate et_mps
 ```
 
 Install dependencies
