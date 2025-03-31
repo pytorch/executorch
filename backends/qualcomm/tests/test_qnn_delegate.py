@@ -2131,11 +2131,20 @@ class TestQNNQuantizedModel(TestQNN):
             torch.rand(1, 3, 8, 8),
         )
 
-        submodule_quant_config = {
-            Add: ModuleQConfig(QuantDtype.use_16a16w)  # noqa: F405
-        }
+        from executorch.backends.qualcomm.quantizer.quantizer import (
+            get_submodule_type_predicate,
+        )
+
+        submodule_qconfig_list = [
+            (
+                get_submodule_type_predicate("Add"),
+                ModuleQConfig(QuantDtype.use_16a16w),
+            )  # noqa: F405
+        ]
         module = self.get_qdq_module(
-            module, sample_input, submodule_quant_config=submodule_quant_config
+            module,
+            sample_input,
+            submodule_qconfig_list=submodule_qconfig_list,
         )
         self.lower_module_and_test_output(module, sample_input)
 

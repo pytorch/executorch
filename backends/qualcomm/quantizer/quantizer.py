@@ -3,11 +3,10 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-import importlib
 from dataclasses import dataclass
 from enum import IntEnum, unique
 from functools import partial
-from typing import Callable, Dict, Optional, Sequence, Set, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 import torch
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
@@ -140,9 +139,11 @@ class ModuleQConfig:
             raise RuntimeError(
                 f"the quant config, (quant_dtype: {self.quant_dtype}, is_qat: {self.is_qat}) is not support"
             )
-        quant_config_func, per_channel_quant_config_func, per_block_quant_config_func = QUANT_CONFIG_DICT[
-            (self.quant_dtype, self.is_qat)
-        ]
+        (
+            quant_config_func,
+            per_channel_quant_config_func,
+            per_block_quant_config_func,
+        ) = QUANT_CONFIG_DICT[(self.quant_dtype, self.is_qat)]
         self.quant_config = (
             quant_config_func(act_observer=self.act_observer)
             if self.act_observer
@@ -184,7 +185,9 @@ class QnnQuantizer(Quantizer):
         self.quant_ops: Set[OpOverload] = self.SUPPORTED_OPS.copy()
 
         self.default_quant_config = ModuleQConfig()
-        self.module_qconfig_dict: Dict[torch.nn.Module, ModuleQConfig] = {}
+        self.submodule_qconfig_list: List[
+            Tuple[Callable[[torch.fx.Node], bool], ModuleQConfig]
+        ] = []
         self.block_size_map = {}
 
         self.custom_quant_annotations: Sequence[Callable] = []
@@ -203,44 +206,30 @@ class QnnQuantizer(Quantizer):
         for annotation_func in self.custom_quant_annotations:
             annotation_func(gm)
 
-    def _get_submodule(self, node: torch.fx.Node):
-        """
-        An example of nn_module_stack
-        {
-            'L__self__': ('', 'executorch.backends.qualcomm.tests.models.SubModules'),
-            'L__self___add': ('add', 'executorch.backends.qualcomm.tests.models.Add')
-        }
-        """
-
-        nn_module_stack = node.meta.get("nn_module_stack")
-        if nn_module_stack:
-            module_source_str, module_str = list(nn_module_stack.values())[-1][
-                -1
-            ].rsplit(".", 1)
-            module_source = importlib.import_module(module_source_str)
-            return getattr(module_source, module_str)
-        return None
+    def _get_submodule_qconfig(self, node: torch.fx.Node):
+        for func, qconfig in self.submodule_qconfig_list:
+            if func(node):
+                return qconfig
+        return self.default_quant_config
 
     def _get_quant_config(self, node: torch.fx.Node) -> Optional[QuantizationConfig]:
         """
         How to pick:
-            1. is one of use_per_block_weight_quant_ops
-            2. Choose specific submodule config if given.
+            1. is one of per_block_quant_config
+            2. Pick specific submodule config if given.
             3. Pick one if op belongs to use_per_channel_weight_quant_ops
-            4. If not 2, pick normal quant config
+            4. If not 3, pick normal quant config
         """
         op = node.target
         if isinstance(op, str):
             return
 
-        if block_size := self.block_size_map.get(op.name):
+        if block_size := self.block_size_map.get(node.name):
             config = self.default_quant_config.per_block_quant_config
             config.block_size = block_size
             return config
 
-        config = self.module_qconfig_dict.get(
-            self._get_submodule(node), self.default_quant_config
-        )
+        config = self._get_submodule_qconfig(node)
 
         if op in config.use_per_channel_weight_quant_ops:
             return config.per_channel_quant_config
@@ -290,16 +279,55 @@ class QnnQuantizer(Quantizer):
     def set_block_size_map(self, block_size_map: Dict[str, Tuple]) -> None:
         self.block_size_map = block_size_map
 
-    def set_submodule_quant_config(
-        self, submodule: torch.nn.Module, module_qconfig: ModuleQConfig
+    def set_submodule_qconfig_list(
+        self, submodule_qconfig_list: List[Tuple[Callable, ModuleQConfig]]
     ) -> None:
         """
-        Set the quant config specific for a submodule
+        Set specific quant config from a callback function.
+        If a node fits more than one callback, only apply the first one.
         """
-        self.module_qconfig_dict[submodule] = module_qconfig
+        self.submodule_qconfig_list = submodule_qconfig_list
 
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
         return QnnPassManager().transform_for_annotation_pipeline(model)
 
     def validate(self, model: GraphModule) -> None:
         pass
+
+
+def get_submodule_type_predicate(module_type_str):
+    """
+    An example of nn_module_stack
+    {
+        'L__self__': ('', 'executorch.backends.qualcomm.tests.models.SubModules'),
+        'L__self___add': ('add', 'executorch.backends.qualcomm.tests.models.Add')
+    }
+    """
+
+    def predicate(node):
+        if nn_module_stack := node.meta.get("nn_module_stack"):
+            for _, type_name in nn_module_stack.values():
+                if module_type_str in type_name:
+                    return True
+        return False
+
+    return predicate
+
+
+def get_submodule_name_predicate(module_name_str):
+    """
+    An example of nn_module_stack
+    {
+        'L__self__': ('', 'executorch.backends.qualcomm.tests.models.SubModules'),
+        'L__self___add': ('add', 'executorch.backends.qualcomm.tests.models.Add')
+    }
+    """
+
+    def predicate(node):
+        if nn_module_stack := node.meta.get("nn_module_stack"):
+            for name in nn_module_stack.keys():
+                if module_name_str in name:
+                    return True
+        return False
+
+    return predicate
