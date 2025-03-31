@@ -59,7 +59,7 @@ jobs:
         echo "signing.password=${SECRET_EXECUTORCH_MAVEN_SIGNING_PASSWORD}" >> ~/.gradle/gradle.properties
         echo "mavenCentralUsername=${SECRET_EXECUTORCH_MAVEN_CENTRAL_USERNAME}" >> ~/.gradle/gradle.properties
         echo "mavenCentralPassword=${SECRET_EXECUTORCH_MAVEN_CENTRAL_PASSWORD}" >> ~/.gradle/gradle.properties
-        signing.secretKeyRingFile=/tmp/secring.gpg
+        echo "signing.secretKeyRingFile=/tmp/secring.gpg" >> ~/.gradle/gradle.properties
 
         echo -n "$SECRET_EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS" | base64 --decode -o /tmp/secring.gpg
 
