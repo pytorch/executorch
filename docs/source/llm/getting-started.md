@@ -43,7 +43,7 @@ Instructions on installing miniconda can be [found here](https://docs.anaconda.c
 mkdir et-nanogpt
 cd et-nanogpt
 
-# Clone the ExecuTorch repository and submodules.
+# Clone the ExecuTorch repository.
 mkdir third-party
 git clone -b release/0.6 https://github.com/pytorch/executorch.git third-party/executorch && cd third-party/executorch
 
@@ -78,10 +78,8 @@ pyenv install -s 3.10
 pyenv virtualenv 3.10 executorch
 pyenv activate executorch
 
-# Clone the ExecuTorch repository and submodules.
-mkdir third-party
-git clone -b release/0.6 https://github.com/pytorch/executorch.git third-party/executorch --depth 1 --recurse-submodules --shallow-submodules
-cd third-party/executorch
+# Clone the ExecuTorch repository.
+git clone -b release/0.6 https://github.com/pytorch/executorch.git third-party/executorch && cd third-party/executorch
 
 # Install requirements.
 PYTHON_EXECUTABLE=python ./install_executorch.sh
