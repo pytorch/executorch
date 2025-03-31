@@ -95,6 +95,18 @@ inline ssize_t compute_numel(const SizesType* sizes, ssize_t dim) {
       c10::multiply_integers(c10::ArrayRef<SizesType>(sizes, dim)));
 }
 
+#undef ET_PRI_TENSOR_SIZE
+#define ET_PRI_TENSOR_SIZE PRId64
+
+#undef ET_PRI_TENSOR_DIM
+#define ET_PRI_TENSOR_DIM PRId64
+
+#undef ET_PRI_TENSOR_NUMEL
+#define ET_PRI_TENSOR_NUMEL PRId64
+
+#undef ET_PRI_SIZES_AND_STRIDES
+#define ET_PRI_SIZES_AND_STRIDES PRId64
+
 #else // Use executor types
 
 using Tensor = torch::executor::Tensor;
