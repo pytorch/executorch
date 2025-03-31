@@ -160,7 +160,7 @@ function setup_tosa_reference_model() {
     # reference_model flatbuffers version clashes with Vela.
     # go with Vela's since it newer.
     # Vela's flatbuffer requirement is expected to loosen, then remove this. MLETORCH-565
-    pip install tosa-tools@git+${tosa_reference_model_url}@${tosa_reference_model_rev} --no-dependencies flatbuffers
+    CMAKE_POLICY_VERSION_MINIMUM=3.5 pip install tosa-tools@git+${tosa_reference_model_url}@${tosa_reference_model_rev} --no-dependencies flatbuffers
 
 }
 
