@@ -7,7 +7,7 @@ In this tutorial, we show how to fine-tune an LLM using executorch.
 You will need to have a model's checkpoint, in the Hugging Face format. For example:
 
 ```console
-git clone git clone https://huggingface.co/Qwen/Qwen2-0.5B-Instruct
+git clone https://huggingface.co/Qwen/Qwen2-0.5B-Instruct
 ```
 
 You will need to install [torchtune](https://github.com/pytorch/torchtune) following [its installation instructions](https://github.com/pytorch/torchtune?tab=readme-ov-file#installation).
