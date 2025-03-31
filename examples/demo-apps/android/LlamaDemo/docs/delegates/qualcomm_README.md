@@ -80,7 +80,7 @@ cmake --build cmake-out -j16 --target install --config Release
 ### Setup Llama Runner
 Next we need to build and compile the Llama runner. This is similar to the requirements for running Llama with XNNPACK.
 ```
-sh examples/models/llama/install_requirements.sh
+./examples/models/llama/install_requirements.sh
 
 cmake -DPYTHON_EXECUTABLE=python \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
