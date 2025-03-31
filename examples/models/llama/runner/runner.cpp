@@ -252,10 +252,10 @@ Error Runner::generate(
     std::vector<uint64_t> prompt_tokens_to_process(num_tokens_to_prefill_with);
     std::copy(
         prompt_tokens.begin() + num_tokens_to_process,
-        prompt_tokens.begin() + num_tokens_to_process + num_tokens_to_prefill_with,
+        prompt_tokens.begin() + num_tokens_to_process +
+            num_tokens_to_prefill_with,
         prompt_tokens_to_process.begin());
-    auto prefill_res =
-        text_prefiller_->prefill(prompt_tokens_to_process, pos);
+    auto prefill_res = text_prefiller_->prefill(prompt_tokens_to_process, pos);
     ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
     cur_token = prefill_res.get();
     num_tokens_to_process += num_tokens_to_prefill_with;
