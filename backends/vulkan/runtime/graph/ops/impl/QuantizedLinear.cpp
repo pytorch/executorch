@@ -48,7 +48,7 @@ void resize_q_8w_linear_node(
   vTensorPtr qmat2 = graph->get_tensor(args[1].refs[1]);
 
   const int out_cols = utils::val_at(-2, mat1->sizes());
-  const int out_rows = utils::val_at(-2, qmat2->sizes());
+  const int out_rows = utils::val_at(-1, qmat2->sizes());
 
   std::vector<int64_t> new_out_sizes(3);
   if (mat1->sizes().size() == 2) {
@@ -86,7 +86,7 @@ void add_q_8w_linear_node(
     // Ensure out is packed correctly
     out_W_packed = out_tmp;
   }
-  ValueRef q_mat2 = prepack_standard(
+  ValueRef q_mat2 = prepack_standard_hw_transposed(
       graph, q_mat2_data, graph.storage_type_of(out), utils::kWidthPacked);
   ValueRef scales = prepack_standard(
       graph, scales_data, graph.storage_type_of(out), utils::kWidthPacked);
