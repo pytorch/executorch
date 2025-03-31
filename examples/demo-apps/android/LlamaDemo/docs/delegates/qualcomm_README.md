@@ -22,7 +22,7 @@ In this section, we will need to set up the ExecuTorch repo first with Conda env
 Checkout ExecuTorch repo and sync submodules
 
 ```
-git clone -b release/0.6 https://github.com/pytorch/executorch.git --depth 1 --recurse-submodules --shallow-submodules && cd executorch
+git clone -b release/0.6 https://github.com/pytorch/executorch.git && cd executorch
 ```
 
 Create either a Python virtual environment:
@@ -34,8 +34,7 @@ python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 Or a Conda environment:
 
 ```
-conda create -n et_xnnpack python=3.10.0
-conda activate et_xnnpack
+conda create -n et_xnnpack python=3.10.0 && conda activate et_xnnpack
 ```
 
 Install dependencies
