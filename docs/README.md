@@ -39,13 +39,17 @@ To build the documentation locally:
 
 1. Clone the ExecuTorch repo to your machine.
 
-1. If you don't have it already, start a conda environment:
-
-   ```{note}
-   The below command generates a completely new environment and resets
-   any existing dependencies. If you have an environment already, skip
-   the `conda create` command.
+   ```bash
+   git clone -b release/0.6 https://github.com/pytorch/executorch.git --depth 1 --recurse-submodules --shallow-submodules && cd executorch
    ```
+
+1. If you don't have it already, start either a Python virtual envitonment:
+
+   ```bash
+   python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
+   ```
+
+   Or a Conda environment:
 
    ```bash
    conda create -yn executorch python=3.10.0
@@ -57,15 +61,11 @@ To build the documentation locally:
    ```bash
    pip3 install -r ./.ci/docker/requirements-ci.txt
    ```
-1. Update submodules
 
-   ```bash
-   git submodule sync && git submodule update --init
-   ```
 1. Run:
 
    ```bash
-   bash install_executorch.sh
+   ./install_executorch.sh
    ```
 
 1. Go to the `docs/` directory.
