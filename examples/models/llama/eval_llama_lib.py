@@ -15,14 +15,12 @@ from datasets import load_dataset
 from executorch.examples.models.llama.export_llama_lib import (
     get_quantizer_and_quant_params,
 )
-from executorch.examples.models.llama.tokenizer.tiktoken import Tokenizer as Tiktoken
 
 from executorch.extension.llm.export.builder import LLMEdgeManager
-from executorch.extension.llm.tokenizer.tokenizer import (
-    Tokenizer as SentencePieceTokenizer,
-)
-from executorch.extension.llm.tokenizer.utils import get_tokenizer
 from lm_eval.evaluator import simple_evaluate
+from pytorch_tokenizers import get_tokenizer
+from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
+from pytorch_tokenizers.tiktoken import TiktokenTokenizer as Tiktoken
 from torch.nn import CrossEntropyLoss
 from tqdm import tqdm
 

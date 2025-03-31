@@ -161,6 +161,7 @@ class ComputeConstantOpsAOT(ExportPass):
         exir_ops.edge.aten.arange.start_step,
         exir_ops.edge.aten.eye.default,
         exir_ops.edge.aten.linspace.default,
+        torch.ops.aten.scalar_tensor.default,
     ]
 
     def __init__(self, exported_program: ExportedProgram) -> None:

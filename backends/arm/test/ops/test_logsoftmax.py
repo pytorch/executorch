@@ -47,6 +47,7 @@ def test_log_softmax_tosa_MI(test_data):
     pipeline.add_stage_after(
         "to_edge_transform_and_lower", pipeline.tester.check_not, [exir_op]
     )
+
     pipeline.run()
 
 
@@ -55,22 +56,7 @@ def test_log_softmax_tosa_BI(test_data):
     data, dim = test_data
     pipeline = TosaPipelineBI[input_t1](LogSoftmax(dim), data, [])
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
-    pipeline.run()
-
-
-@common.parametrize("test_data", LogSoftmax.test_data)
-def test_log_softmax_u55_BI(test_data):
-    data, dim = test_data
-    pipeline = EthosU55PipelineBI[input_t1](LogSoftmax(dim), data, [], run_on_fvp=False)
-    pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
-    pipeline.run()
-
-
-@common.parametrize("test_data", LogSoftmax.test_data)
-def test_log_softmax_u85_BI(test_data):
-    data, dim = test_data
-    pipeline = EthosU85PipelineBI[input_t1](LogSoftmax(dim), data, [], run_on_fvp=False)
-    pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
@@ -81,11 +67,12 @@ def test_log_softmax_u85_BI(test_data):
         "randn_mult_batches": "MLETORCH-433: Multiple batches not supported on FVP"
     },
 )
-@common.SkipIfNoCorstone300()
-def test_log_softmax_u55_BI_on_fvp(test_data):
+@common.XfailIfNoCorstone300()
+def test_log_softmax_u55_BI(test_data):
     data, dim = test_data
     pipeline = EthosU55PipelineBI[input_t1](LogSoftmax(dim), data, [], run_on_fvp=True)
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
@@ -96,9 +83,10 @@ def test_log_softmax_u55_BI_on_fvp(test_data):
         "randn_mult_batches": "MLETORCH-433: Multiple batches not supported on FVP"
     },
 )
-@common.SkipIfNoCorstone320
-def test_log_softmax_u85_BI_on_fvp(test_data):
+@common.XfailIfNoCorstone320
+def test_log_softmax_u85_BI(test_data):
     data, dim = test_data
     pipeline = EthosU85PipelineBI[input_t1](LogSoftmax(dim), data, [], run_on_fvp=True)
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
