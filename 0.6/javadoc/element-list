@@ -1,0 +1,7 @@
+$dokka.format:javadoc-v1
+$dokka.linkExtension:html
+
+org.pytorch.executorch
+org.pytorch.executorch.annotations
+org.pytorch.executorch.extension.llm
+
