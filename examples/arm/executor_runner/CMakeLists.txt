@@ -12,6 +12,7 @@ option(ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE "Set ET_ARM_BAREMETAL_TEMP_ALLO
 option(ET_BUNDLE_IO "Set to compile in BundleIO support" OFF)
 option(ET_ATOL "Set atol to use for BundleIO testing" OFF)
 option(ET_RTOL "Set rtol to use for BundleIO testing" OFF)
+option(FETCH_ETHOS_U_CONTENT "Fetch ethos_u dependencies instead of relying on pre-downloads" ON)
 
 if(NOT DEFINED ET_PTE_FILE_PATH AND NOT ${SEMIHOSTING})
   message(
@@ -47,38 +48,40 @@ set(PYTHON_EXECUTABLE
     CACHE PATH "Define to override python executable used"
 )
 
-# Download ethos_u dependency if needed.
-file(MAKE_DIRECTORY ${ETHOS_SDK_PATH}/../ethos_u)
+if(FETCH_ETHOS_U_CONTENT)
+  # Download ethos_u dependency if needed.
+  file(MAKE_DIRECTORY ${ETHOS_SDK_PATH}/../ethos_u)
 
-include(FetchContent)
-set(ethos_u_base_rev "25.02")
-FetchContent_Declare(
-  ethos_u
-  GIT_REPOSITORY https://git.gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u.git
-  GIT_TAG ${ethos_u_base_rev}
-  SOURCE_DIR ${ETHOS_SDK_PATH}
-  BINARY_DIR ${ETHOS_SDK_PATH}
-  SUBBUILD_DIR ${ETHOS_SDK_PATH}/../ethos_u-subbuild
-  SOURCE_SUBDIR none
+  include(FetchContent)
+  set(ethos_u_base_rev "25.02")
+  FetchContent_Declare(
+    ethos_u
+    GIT_REPOSITORY https://git.gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u.git
+    GIT_TAG ${ethos_u_base_rev}
+    SOURCE_DIR ${ETHOS_SDK_PATH}
+    BINARY_DIR ${ETHOS_SDK_PATH}
+    SUBBUILD_DIR ${ETHOS_SDK_PATH}/../ethos_u-subbuild
+    SOURCE_SUBDIR none
   )
 
-FetchContent_MakeAvailable(ethos_u)
+  FetchContent_MakeAvailable(ethos_u)
 
-# Get ethos_u externals only if core_platform folder does not already exist.
-if(NOT EXISTS "${ETHOS_SDK_PATH}/core_platform")
-  execute_process(COMMAND ${PYTHON_EXECUTABLE} fetch_externals.py -c ${ethos_u_base_rev}.json fetch
-                  WORKING_DIRECTORY ${ETHOS_SDK_PATH}
-                  COMMAND_ECHO STDOUT
+  # Get ethos_u externals only if core_platform folder does not already exist.
+  if(NOT EXISTS "${ETHOS_SDK_PATH}/core_platform")
+    execute_process(COMMAND ${PYTHON_EXECUTABLE} fetch_externals.py -c ${ethos_u_base_rev}.json fetch
+                    WORKING_DIRECTORY ${ETHOS_SDK_PATH}
+                    COMMAND_ECHO STDOUT
+    )
+  endif()
+
+  # Always patch the core_platform repo since this is fast enough.
+  set(core_platform_base_rev "b728c774158248ba2cad8e78a515809e1eb9b77f")
+  set(patch_dir "${ET_DIR_PATH}/examples/arm/ethos-u-setup")
+  execute_process(COMMAND bash -c "pwd && source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_platform ${core_platform_base_rev} ${patch_dir}"
+    WORKING_DIRECTORY ${ET_DIR_PATH}
+    COMMAND_ECHO STDOUT
   )
 endif()
-
-# Always patch the core_platform repo since this is fast enough.
-set(core_platform_base_rev "b728c774158248ba2cad8e78a515809e1eb9b77f")
-set(patch_dir "${ET_DIR_PATH}/examples/arm/ethos-u-setup")
-execute_process(COMMAND bash -c "pwd && source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_platform ${core_platform_base_rev} ${patch_dir}"
-  WORKING_DIRECTORY ${ET_DIR_PATH}
-  COMMAND_ECHO STDOUT
-)
 
 # Selects timing adapter values matching system_config.
 # Default is Ethos_U55_High_End_Embedded, simulating optimal hardware for the Corestone-300.

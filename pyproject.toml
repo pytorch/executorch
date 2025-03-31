@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-  "cmake",  # For building binary targets in the wheel.
+  "cmake<4.0.0",  # For building binary targets in the wheel. 4.0.0 breaks third-party CMake build so temporarily pin the version.
   "pip>=23",  # For building the pip package.
   "pyyaml",  # Imported by the kernel codegen tools.
   "setuptools>=63",  # For building the pip package contents.
