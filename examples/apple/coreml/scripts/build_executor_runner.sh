@@ -66,6 +66,8 @@ find "$CMAKE_BUILD_DIR_PATH/" -name 'libexecutorch_core.a' -exec cp -f "{}" "$LI
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libprotobuf-lite.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libprotobuf-lite.a"  \;
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libprotobuf-lited.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libprotobuf-lite.a"  \;
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libetdump.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libetdump.a"  \;
+find "$CMAKE_BUILD_DIR_PATH/" -name 'libcoreml_util.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libcoreml_util.a"  \;
+find "$CMAKE_BUILD_DIR_PATH/" -name 'libcoreml_inmemoryfs.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libcoreml_inmemoryfs.a"  \;
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libcoremldelegate.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libcoremldelegate.a"  \;
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libportable_ops_lib.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libportable_ops_lib.a"  \;
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libportable_kernels.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libportable_kernels.a"  \;

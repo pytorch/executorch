@@ -468,6 +468,28 @@ TEST_F(OpUpsampleBilinear2dTest, ZeroComputedOutputSizeDies) {
           out));
 }
 
+TEST_F(OpUpsampleBilinear2dTest, MismatchedDimOrderDies) {
+  TensorFactory<ScalarType::Float> tf;
+
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "ATen kernel can implicitly convert dim order";
+  }
+
+  const auto input = tf.ones({1, 1, 1, 2});
+  auto out = tf.zeros_channels_last({1, 1, 1, 4});
+  std::array<double, 2> scale_factors = {2, 2};
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_upsample_bilinear2d_vec_out(
+          input,
+          {},
+          false,
+          OptionalArrayRef<double>(
+              {scale_factors.data(), scale_factors.size()}),
+          out));
+}
+
 TEST_F(OpUpsampleBilinear2dTest, NumericsCheck) {
   TensorFactory<ScalarType::Float> tf;
 
@@ -576,4 +598,130 @@ TEST_F(OpUpsampleBilinear2dTest, Simple5x1To4x1AlignCorners) {
   const auto expected = tf.make({1, 1, 4, 1}, {1.0, 2.333333, 3.666667, 5.0});
 
   EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST_F(OpUpsampleBilinear2dTest, Simple1x2To1x4ChannelsLast) {
+  TensorFactory<ScalarType::Float> tf;
+
+  const auto input = tf.make_channels_last({1, 1, 1, 2}, {1.0, 4.0});
+  std::array<int64_t, 2> output_size = {1, 4};
+  auto out = tf.zeros_channels_last({1, 1, 1, 4});
+
+  op_upsample_bilinear2d_vec_out(
+      input,
+      OptionalArrayRef<int64_t>({output_size.data(), output_size.size()}),
+      false,
+      {},
+      out);
+
+  const auto expected =
+      tf.make_channels_last({1, 1, 1, 4}, {1.0, 1.75, 3.25, 4.0});
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpUpsampleBilinear2dTest, SmokeTestChannelsLast) {
+  TensorFactory<ScalarType::Float> tf;
+
+  const auto input = tf.make_channels_last(
+      {1, 2, 3, 4}, {0.0, 12, 1, 13, 2, 14, 3, 15, 4,  16, 5,  17,
+                     6,   18, 7, 19, 8, 20, 9, 21, 10, 22, 11, 23});
+  std::array<int64_t, 2> output_size = {6, 8};
+  auto out = tf.zeros_channels_last({1, 2, 6, 8});
+
+  op_upsample_bilinear2d_vec_out(
+      input,
+      OptionalArrayRef<int64_t>({output_size.data(), output_size.size()}),
+      false,
+      {},
+      out);
+
+  const auto expected = tf.make_channels_last(
+      {1, 2, 6, 8},
+      {0.0000, 12.0000, 0.2500,  12.2500, 0.7500,  12.7500, 1.2500,  13.2500,
+       1.7500, 13.7500, 2.2500,  14.2500, 2.7500,  14.7500, 3.0000,  15.0000,
+       1.0000, 13.0000, 1.2500,  13.2500, 1.7500,  13.7500, 2.2500,  14.2500,
+       2.7500, 14.7500, 3.2500,  15.2500, 3.7500,  15.7500, 4.0000,  16.0000,
+       3.0000, 15.0000, 3.2500,  15.2500, 3.7500,  15.7500, 4.2500,  16.2500,
+       4.7500, 16.7500, 5.2500,  17.2500, 5.7500,  17.7500, 6.0000,  18.0000,
+       5.0000, 17.0000, 5.2500,  17.2500, 5.7500,  17.7500, 6.2500,  18.2500,
+       6.7500, 18.7500, 7.2500,  19.2500, 7.7500,  19.7500, 8.0000,  20.0000,
+       7.0000, 19.0000, 7.2500,  19.2500, 7.7500,  19.7500, 8.2500,  20.2500,
+       8.7500, 20.7500, 9.2500,  21.2500, 9.7500,  21.7500, 10.0000, 22.0000,
+       8.0000, 20.0000, 8.2500,  20.2500, 8.7500,  20.7500, 9.2500,  21.2500,
+       9.7500, 21.7500, 10.2500, 22.2500, 10.7500, 22.7500, 11.0000, 23.0000});
+
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST_F(OpUpsampleBilinear2dTest, NumericsCheckChannelsLast) {
+  TensorFactory<ScalarType::Float> tf;
+
+  const auto input = tf.zeros_channels_last({3, 7, 47, 99});
+  auto out = tf.zeros_channels_last({3, 7, 291, 512});
+  std::array<int64_t, 2> output_size = {291, 512};
+
+  auto input_ptr = static_cast<float*>(input.mutable_data_ptr());
+  for (auto i = 0ul; i < input.numel(); i++) {
+    input_ptr[i] = static_cast<float>(i);
+  }
+
+  op_upsample_bilinear2d_vec_out(
+      input,
+      OptionalArrayRef<int64_t>({output_size.data(), output_size.size()}),
+      false,
+      {},
+      out);
+
+  // Indices and expected values to evaluate.
+  std::vector<std::tuple<int, int, int, int, float>> test_values = {
+      {0, 2, 60, 200, 6695.0137},
+      {1, 6, 5, 503, 33524.098},
+      {2, 0, 111, 300, 77678.68},
+  };
+
+  const auto output_data = static_cast<const float*>(out.const_data_ptr());
+  for (const auto& test_case : test_values) {
+    const auto [n, c, h, w, expected] = test_case;
+    const auto actual = output_data
+        [n * out.strides()[0] + c * out.strides()[1] + h * out.strides()[2] +
+         w * out.strides()[3]];
+    EXPECT_FLOAT_EQ(expected, actual);
+  }
+}
+
+TEST_F(OpUpsampleBilinear2dTest, NumericsCheckAlignCornersChannelsLast) {
+  TensorFactory<ScalarType::Float> tf;
+
+  const auto input = tf.zeros_channels_last({3, 7, 47, 99});
+  auto out = tf.zeros_channels_last({3, 7, 291, 512});
+  std::array<int64_t, 2> output_size = {291, 512};
+
+  auto input_ptr = static_cast<float*>(input.mutable_data_ptr());
+  for (auto i = 0ul; i < input.numel(); i++) {
+    input_ptr[i] = static_cast<float>(i);
+  }
+
+  op_upsample_bilinear2d_vec_out(
+      input,
+      OptionalArrayRef<int64_t>({output_size.data(), output_size.size()}),
+      true,
+      {},
+      out);
+
+  // Indices and expected values to evaluate.
+  std::vector<std::tuple<int, int, int, int, float>> test_values = {
+      {0, 2, 60, 200, 6865.9414},
+      {1, 6, 5, 503, 33801.883},
+      {2, 0, 111, 300, 77746.32},
+  };
+
+  const auto output_data = static_cast<const float*>(out.const_data_ptr());
+  for (const auto& test_case : test_values) {
+    const auto [n, c, h, w, expected] = test_case;
+    const auto actual = output_data
+        [n * out.strides()[0] + c * out.strides()[1] + h * out.strides()[2] +
+         w * out.strides()[3]];
+    EXPECT_FLOAT_EQ(expected, actual);
+  }
 }

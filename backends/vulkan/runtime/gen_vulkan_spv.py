@@ -12,9 +12,11 @@ import array
 import codecs
 import copy
 import glob
+import hashlib
 import io
 import os
 import re
+import shutil
 import sys
 from itertools import product
 from multiprocessing.pool import ThreadPool
@@ -733,7 +735,29 @@ class SPVGenerator:
         input_text = input_text.replace("uint16_t", "int")
         return input_text
 
-    def generateSPV(self, output_dir: str) -> Dict[str, str]:
+    def get_md5_checksum(self, file_path: str) -> str:
+        # Use a reasonably sized buffer for better performance with large files
+        BUF_SIZE = 65536  # 64kb chunks
+
+        md5 = hashlib.md5()
+
+        with open(file_path, "rb") as f:
+            while True:
+                data = f.read(BUF_SIZE)
+                if not data:
+                    break
+                md5.update(data)
+
+        # Get the hexadecimal digest and compare
+        file_md5 = md5.hexdigest()
+        return file_md5
+
+    def generateSPV(  # noqa: C901
+        self,
+        output_dir: str,
+        cache_dir: Optional[str] = None,
+        force_rebuild: bool = False,
+    ) -> Dict[str, str]:
         output_file_map = {}
 
         def process_shader(shader_paths_pair):
@@ -742,20 +766,47 @@ class SPVGenerator:
             source_glsl = shader_paths_pair[1][0]
             shader_params = shader_paths_pair[1][1]
 
+            glsl_out_path = os.path.join(output_dir, f"{shader_name}.glsl")
+            spv_out_path = os.path.join(output_dir, f"{shader_name}.spv")
+
+            if cache_dir is not None:
+                cached_source_glsl = os.path.join(
+                    cache_dir, os.path.basename(source_glsl) + ".t"
+                )
+                cached_glsl_out_path = os.path.join(cache_dir, f"{shader_name}.glsl")
+                cached_spv_out_path = os.path.join(cache_dir, f"{shader_name}.spv")
+                if (
+                    not force_rebuild
+                    and os.path.exists(cached_source_glsl)
+                    and os.path.exists(cached_glsl_out_path)
+                    and os.path.exists(cached_spv_out_path)
+                ):
+                    current_checksum = self.get_md5_checksum(source_glsl)
+                    cached_checksum = self.get_md5_checksum(cached_source_glsl)
+                    # If the cached source GLSL template is the same as the current GLSL
+                    # source file, then assume that the generated GLSL and SPIR-V will
+                    # not have changed. In that case, just copy over the GLSL and SPIR-V
+                    # files from the cache.
+                    if current_checksum == cached_checksum:
+                        shutil.copyfile(cached_spv_out_path, spv_out_path)
+                        shutil.copyfile(cached_glsl_out_path, glsl_out_path)
+                        return (spv_out_path, glsl_out_path)
+
             with codecs.open(source_glsl, "r", encoding="utf-8") as input_file:
                 input_text = input_file.read()
                 input_text = self.maybe_replace_u16vecn(input_text)
                 output_text = preprocess(input_text, shader_params)
 
-            glsl_out_path = os.path.join(output_dir, f"{shader_name}.glsl")
             with codecs.open(glsl_out_path, "w", encoding="utf-8") as output_file:
                 output_file.write(output_text)
+
+            if cache_dir is not None:
+                # Otherwise, store the generated GLSL files in the cache
+                shutil.copyfile(glsl_out_path, cached_glsl_out_path)
 
             # If no GLSL compiler is specified, then only write out the generated GLSL shaders.
             # This is mainly for testing purposes.
             if self.glslc_path is not None:
-                spv_out_path = os.path.join(output_dir, f"{shader_name}.spv")
-
                 cmd_base = [
                     self.glslc_path,
                     "-fshader-stage=compute",
@@ -788,6 +839,9 @@ class SPVGenerator:
                     else:
                         raise RuntimeError(f"{err_msg_base} {e.stderr}") from e
 
+                if cache_dir is not None:
+                    shutil.copyfile(spv_out_path, cached_spv_out_path)
+
                 return (spv_out_path, glsl_out_path)
 
         # Parallelize shader compilation as much as possible to optimize build time.
@@ -796,6 +850,15 @@ class SPVGenerator:
                 process_shader, self.output_shader_map.items()
             ):
                 output_file_map[spv_out_path] = glsl_out_path
+
+        # Save all source GLSL files to the cache. Only do this at the very end since
+        # multiple variants may use the same source file.
+        if cache_dir is not None:
+            for _, source_glsl in self.glsl_src_files.items():
+                cached_source_glsl = os.path.join(
+                    cache_dir, os.path.basename(source_glsl) + ".t"
+                )
+                shutil.copyfile(source_glsl, cached_source_glsl)
 
         return output_file_map
 
@@ -1089,8 +1152,11 @@ def main(argv: List[str]) -> int:
         default=["."],
     )
     parser.add_argument("-c", "--glslc-path", required=True, help="")
-    parser.add_argument("-t", "--tmp-dir-path", required=True, help="/tmp")
+    parser.add_argument(
+        "-t", "--tmp-dir-path", required=True, help="/tmp/vulkan_shaders/"
+    )
     parser.add_argument("-o", "--output-path", required=True, help="")
+    parser.add_argument("-f", "--force-rebuild", action="store_true", default=False)
     parser.add_argument("--replace-u16vecn", action="store_true", default=False)
     parser.add_argument("--optimize_size", action="store_true", help="")
     parser.add_argument("--optimize", action="store_true", help="")
@@ -1131,7 +1197,9 @@ def main(argv: List[str]) -> int:
         glslc_flags=glslc_flags_str,
         replace_u16vecn=options.replace_u16vecn,
     )
-    output_spv_files = shader_generator.generateSPV(options.tmp_dir_path)
+    output_spv_files = shader_generator.generateSPV(
+        options.output_path, options.tmp_dir_path, options.force_rebuild
+    )
 
     genCppFiles(
         output_spv_files,
