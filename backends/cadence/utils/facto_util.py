@@ -43,13 +43,24 @@ def apply_tensor_contraints(op_name: str, tensor_constraints: list[object]) -> N
                 cp.Size.Ge(lambda deps, r, d: 1),
                 cp.Size.Le(lambda deps, r, d: 2**9),
             ]
-        case "sigmoid.default" | "rsqrt.default":
+        case "sigmoid.default":
             additional_tensor_constraints.extend(
                 [
                     cp.Dtype.In(lambda deps: [torch.float]),
                     cp.Rank.Le(lambda deps: 2**2),
                     cp.Value.Ge(lambda deps, dtype, struct: -2),
                     cp.Value.Le(lambda deps, dtype, struct: 2),
+                ]
+            )
+        case "rsqrt.default":
+            additional_tensor_constraints.extend(
+                [
+                    cp.Dtype.In(lambda deps: [torch.float]),
+                    cp.Rank.Le(lambda deps: 2**2),
+                    cp.Value.Gt(
+                        lambda deps, dtype, struct: 0
+                    ),  # only generate real numbers
+                    cp.Value.Le(lambda deps, dtype, struct: 2**2),
                 ]
             )
         case "mean.dim":
