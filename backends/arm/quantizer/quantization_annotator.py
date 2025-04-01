@@ -139,6 +139,7 @@ _one_to_one = [
     torch.ops.aten.hardswish.default,
     torch.ops.aten.hardswish_.default,
     torch.ops.aten.full_like.default,
+    torch.ops.aten.pow.Tensor_Scalar,
 ]
 
 _one_to_one_shared_input_qspec = [
