@@ -414,7 +414,7 @@ Tensor& convolution_out(
 
   ET_SWITCH_REALH_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
     const auto load_bias = bias.has_value()
-        ? utils::internal::get_load_to_common_fn<CTYPE, name>(
+        ? utils::internal::get_load_to_compute_fn<CTYPE, name>(
               bias.value(), utils::SupportedTensorDtypes::REALHBF16)
         : nullptr;
     convolution_wrapper<CTYPE>(
