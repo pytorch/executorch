@@ -55,7 +55,7 @@ cmake --build cmake-out/examples/models/llama -j16 --config Release
 download_stories_model_artifacts
 
 echo "Creating tokenizer.bin"
-$PYTHON_EXECUTABLE -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+$PYTHON_EXECUTABLE -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokenizer.bin
 
 # Export model
 LLAMA_CHECKPOINT=stories110M.pt
@@ -78,7 +78,6 @@ ${PYTHON_EXECUTABLE} -m examples.models.llama.export_llama \
     -qmode "torchao:8da${QLINEAR_BITWIDTH}w" \
     --group_size ${QLINEAR_GROUP_SIZE} \
     -E "torchao:${QEMBEDDING_BITWIDTH},${QEMBEDDING_GROUP_SIZE}" \
-    --disable_dynamic_shape \
     -d fp32
 
 # Test run

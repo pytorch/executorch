@@ -16,8 +16,8 @@ layout(std430) buffer;
 
 #include "indexing_utils.h"
 
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
-layout(set = 0, binding = 1) uniform PRECISION ${SAMPLER_T[NDIM][DTYPE]} image_in;
+${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
+${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
 
 layout(push_constant) uniform PRECISION restrict Block {
   ivec4 out_limits;
@@ -72,7 +72,7 @@ void main() {
     fetch_pos[packed_dim] >>= 2;
 
     // fetch input texel
-    VEC4_T inval = VEC4_T(texelFetch(image_in, fetch_pos, 0));
+    VEC4_T inval = VEC4_T(load_texel(t_in, fetch_pos));
     outval[j] = inval[in_packed_dim_lane_index];
 
     // go to next position in the input, that is mapped to the packed dim in the output
@@ -81,5 +81,5 @@ void main() {
 
   pos[packed_dim] = int(gl_GlobalInvocationID[packed_dim]);
 
-  imageStore(image_out, pos, outval);
+  imageStore(t_out, pos, outval);
 }

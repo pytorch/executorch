@@ -22,6 +22,8 @@ The AAR artifact contains the Java library for users to integrate with their Jav
   - LLaMa-specific Custom ops library.
 - Comes with two ABI variants, arm64-v8a and x86\_64.
 
+The AAR library can be used for generic Android device with arm64-v8a or x86_64 architecture. It can be used across form factors, including phones, tablets, tv boxes, etc, as it does not contain any UI components.
+
 ## Using AAR from Maven Central
 
 ExecuTorch is available on [Maven Central](https://mvnrepository.com/artifact/org.pytorch/executorch-android).
@@ -37,6 +39,11 @@ dependencies {
 ```
 
 Note: `org.pytorch:executorch-android:0.5.1` corresponds to executorch v0.5.0.
+
+Click the screenshot below to watch the *demo video* on how to add the package and run a simple ExecuTorch model with Android Studio.
+<a href="https://pytorch.org/executorch/main/_static/img/android_studio.mp4">
+  <img src="https://pytorch.org/executorch/main/_static/img/android_studio.jpeg" width="800" alt="Integrating and Running ExecuTorch on Android">
+</a>
 
 ## Using AAR file directly
 
@@ -88,7 +95,7 @@ Now you can compile your app with the ExecuTorch Android library.
 
 ## Building from Source
 
-`build/build_android_library.sh` is a helper script to build the Java library (into .jar), native library (into .so), and the packaged AAR file. It can also build
+`scripts/build_android_library.sh` is a helper script to build the Java library (into .jar), native library (into .so), and the packaged AAR file. It can also build
 demo apps to showcase the AAR is integrated into a user app correctly.
 
 You need Android [SDK](https://developer.android.com/studio) and [NDK](https://developer.android.com/ndk/downloads) to use it.
@@ -100,8 +107,10 @@ You need to set `ANDROID_HOME` to Android SDK home and `ANDROID_NDK` to the corr
 ```
 export ANDROID_HOME=/path/to/sdk
 export ANDROID_NDK=/path/to/ndk
-sh build/build_android_library.sh
+sh scripts/build_android_library.sh
 ```
+
+Currently, XNNPACK backend is always built with the script.
 
 ### Optional environment variables
 
@@ -113,7 +122,7 @@ Set environment variable `ANDROID_ABIS` to either `arm64-v8a` or `x86_64` if you
 export ANDROID_ABIS=arm64-v8a
 # or
 # export ANDROID_ABIS=x86_64
-sh build/build_android_library.sh
+sh scripts/build_android_library.sh
 ```
 
 #### EXECUTORCH_CMAKE_BUILD_TYPE
@@ -176,7 +185,7 @@ public class MainActivity extends Activity {
 ```
 This example loads an ExecuTorch module, prepares input data, runs inference, and processes the output data.
 
-Please use [ExecuTorchDemo](https://github.com/pytorch/executorch/tree/main/examples/demo-apps/android/ExecuTorchDemo)
+Please use [DeepLabV3AndroidDemo](https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo)
 and [LlamaDemo](https://github.com/pytorch/executorch/tree/main/examples/demo-apps/android/LlamaDemo) for the code examples
 using ExecuTorch AAR package.
 

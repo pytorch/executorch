@@ -40,6 +40,6 @@ runtime.python_library(
         "//executorch/exir:lib",
         "//executorch/exir/backend:backend_details",
         "//executorch/extension/export_util:export_util",
-        "//executorch/extension/llm/tokenizer:tokenizer_py_lib",
+        "//pytorch/tokenizers/pytorch_tokenizers:tokenizers",
     ],
 )

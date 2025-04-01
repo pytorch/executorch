@@ -35,7 +35,7 @@ from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEv
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
 
 from executorch.extension.llm.export.export_passes import RemoveRedundantTransposes
-from executorch.extension.llm.tokenizer.utils import get_tokenizer
+from pytorch_tokenizers import get_tokenizer
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer import Quantizer
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
