@@ -5,7 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-set -exu
+set -euxo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
@@ -56,4 +56,3 @@ if [ $exit_code1 -ne 0 ] || [ $exit_code2 -ne 0 ]; then
 else
     exit 0
 fi
-set -e

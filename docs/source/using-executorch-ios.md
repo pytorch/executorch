@@ -25,7 +25,7 @@ The prebuilt ExecuTorch runtime, backend, and kernels are available as a [Swift 
 
 #### Xcode
 
-In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format "swiftpm-<version>", (e.g. "swiftpm-0.5.0"), or a branch name in format "swiftpm-<version>.<year_month_date>" (e.g. "swiftpm-0.5.0-20250228") for a nightly build on a specific date.
+In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format "swiftpm-<version>", (e.g. "swiftpm-0.6.0"), or a branch name in format "swiftpm-<version>.<year_month_date>" (e.g. "swiftpm-0.7.0-20250401") for a nightly build on a specific date.
 
 ![](_static/img/swiftpm_xcode1.png)
 
@@ -58,7 +58,7 @@ let package = Package(
   ],
   dependencies: [
     // Use "swiftpm-<version>.<year_month_day>" branch name for a nightly build.
-    .package(url: "https://github.com/pytorch/executorch.git", branch: "swiftpm-0.5.0")
+    .package(url: "https://github.com/pytorch/executorch.git", branch: "swiftpm-0.6.0")
   ],
   targets: [
     .target(
@@ -97,7 +97,7 @@ xcode-select --install
 2. Clone ExecuTorch:
 
 ```bash
-git clone https://github.com/pytorch/executorch.git --depth 1 --recurse-submodules --shallow-submodules && cd executorch
+git clone -b viable/strict https://github.com/pytorch/executorch.git && cd executorch
 ```
 
 3. Set up [Python](https://www.python.org/downloads/macos/) 3.10+ and activate a virtual environment:
@@ -106,15 +106,16 @@ git clone https://github.com/pytorch/executorch.git --depth 1 --recurse-submodul
 python3 -m venv .venv && source .venv/bin/activate && ./install_requirements.sh
 ```
 
-4. Install the required dependencies, including those needed for the backends like [Core ML](backends-coreml.md) or [MPS](backends-mps.md). Choose one:
+4. Install the required dependencies, including those needed for the backends like [Core ML](backends-coreml.md) or [MPS](backends-mps.md). Choose one, or both:
 
 ```bash
 # ExecuTorch with xnnpack and CoreML backend
-./install_executorch.sh --pybind xnnpack
+./backends/apple/coreml/scripts/install_requirements.sh
+./install_executorch.sh --pybind coreml xnnpack
 
-# Optional: ExecuTorch with xnnpack, CoreML, and MPS backend
+# ExecuTorch with xnnpack and MPS backend
 ./backends/apple/mps/install_requirements.sh
-./install_executorch.sh --pybind xnnpack mps
+./install_executorch.sh --pybind mps xnnpack
 ```
 
 5. Install [CMake](https://cmake.org):
