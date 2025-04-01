@@ -757,7 +757,7 @@ if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizer)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizers)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_MODULE)
