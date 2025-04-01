@@ -88,14 +88,16 @@ bool check_layer_norm_args(
       ndim);
   ET_CHECK_OR_RETURN_FALSE(
       in.dim() >= static_cast<ssize_t>(ndim),
-      "Expected input tensor to have rank >= the length of normalized_shape; in.dim() = %zd, ndim = %zu",
+      "Expected input tensor to have rank >= the length of normalized_shape; in.dim() = %" ET_PRI_TENSOR_DIM
+      ", ndim = %zu",
       in.dim(),
       ndim);
   size_t shift = in.dim() - ndim;
   for (const auto d : c10::irange(ndim)) {
     ET_CHECK_OR_RETURN_FALSE(
         in.size(d + shift) == normalized_shape[d],
-        "Expected normalized_shape to match the sizes of input's rightmost dimensions; in.size(%zu) = %zd, normalized_shape[%zu] = %" PRId64,
+        "Expected normalized_shape to match the sizes of input's rightmost dimensions; in.size(%zu) = %" ET_PRI_TENSOR_SIZE
+        ", normalized_shape[%zu] = %" PRId64,
         d + shift,
         in.size(d + shift),
         d,
@@ -166,7 +168,8 @@ bool check_group_norm_args(
   ET_CHECK_OR_RETURN_FALSE(
       !weight.has_value() ||
           (weight.value().dim() == 1 && weight.value().size(0) == C),
-      "Expected weight to be a vector of size equal to the number of channels in input; weight.has_value() = %d, weight.dim() = %zd, weight.size(0) = %zd, C = %" PRId64,
+      "Expected weight to be a vector of size equal to the number of channels in input; weight.has_value() = %d, weight.dim() = %" ET_PRI_TENSOR_DIM
+      ", weight.size(0) = %" ET_PRI_TENSOR_SIZE ", C = %" PRId64,
       weight.has_value(),
       weight.has_value() ? weight.value().dim() : -1,
       weight.has_value() ? weight.value().size(0) : -1,
@@ -174,7 +177,8 @@ bool check_group_norm_args(
   ET_CHECK_OR_RETURN_FALSE(
       !bias.has_value() ||
           (bias.value().dim() == 1 && bias.value().size(0) == C),
-      "Expected bias to be a vector of size equal to the number of channels in input; bias.has_value() = %d, bias.dim() = %zd, bias.size(0) = %zd, C = %" PRId64,
+      "Expected bias to be a vector of size equal to the number of channels in input; bias.has_value() = %d, bias.dim() = %" ET_PRI_TENSOR_DIM
+      ", bias.size(0) = %" ET_PRI_TENSOR_SIZE ", C = %" PRId64,
       bias.has_value(),
       bias.has_value() ? bias.value().dim() : -1,
       bias.has_value() ? bias.value().size(0) : -1,

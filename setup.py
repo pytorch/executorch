@@ -142,7 +142,7 @@ class ShouldBuild:
 
     @classmethod
     def xnnpack(cls) -> bool:
-        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_XNNPACK", default=False)
+        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_XNNPACK", default=True)
 
     @classmethod
     def training(cls) -> bool:
@@ -729,6 +729,9 @@ class CustomBuild(build):
                 "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",  # add quantized ops to pybindings.
                 "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON",
             ]
+
+            if ShouldBuild.xnnpack():
+                cmake_args += ["-DEXECUTORCH_BUILD_XNNPACK=ON"]
 
             if ShouldBuild.training():
                 build_args += ["--target", "_training_lib"]

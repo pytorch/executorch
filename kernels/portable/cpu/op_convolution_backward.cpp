@@ -42,7 +42,7 @@ bool check_convolution_backward_args(
       transposed == false, "Transposed Convolution Backward not supported yet");
   ET_CHECK_OR_RETURN_FALSE(
       weight.dim() == 4,
-      "Only 2D Convolution Backward supported for now; weight.dim() = %zd",
+      "Only 2D Convolution Backward supported for now; weight.dim() = %" ET_PRI_TENSOR_DIM,
       weight.dim());
 
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(weight, input));
@@ -93,7 +93,8 @@ bool check_convolution_backward_args(
 
   ET_CHECK_OR_RETURN_FALSE(
       grad_output.dim() == input.dim(),
-      "grad_output should have same number of dimensions as input; grad_output.dim() = %zd, input.dim() = %zd",
+      "grad_output should have same number of dimensions as input; grad_output.dim() = %" ET_PRI_TENSOR_DIM
+      ", input.dim() = %" ET_PRI_TENSOR_DIM,
       grad_output.dim(),
       input.dim());
 
