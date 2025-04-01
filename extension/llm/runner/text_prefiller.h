@@ -39,7 +39,8 @@ class ET_EXPERIMENTAL TextPrefiller {
   /**
    * Helper method to prefill a chunk of tokens.
    * @param prompt_tokens The chunk of text prompt tokens to process.
-   * @param start_pos The starting position in KV cache of the input in the LLM Module.
+   * @param start_pos The starting position in KV cache of the input in the LLM
+   * Module.
    * @return The next token of the LLM Module after prefilling this chunk.
    */
   ::executorch::runtime::Result<uint64_t> prefillChunk(
