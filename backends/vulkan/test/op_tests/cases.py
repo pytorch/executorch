@@ -1090,6 +1090,7 @@ def get_reduce_op_inputs():
         "aten.hardswish.default",
         "aten.hardsigmoid.default",
         "aten.leaky_relu.default",
+        "aten.round.default",
     ]
 )
 def get_unary_ops_inputs():
