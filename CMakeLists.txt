@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -161,7 +161,7 @@ if(OPTIMIZE_SIZE)
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Os")
 else()
   # -O2: Moderate opt.
-  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
+  set(CMAKE_CXX_FLAGS_RELEASE "-O2 ${CMAKE_CXX_FLAGS_RELEASE}")
 endif()
 
 option(EXECUTORCH_BUILD_ANDROID_JNI "Build Android JNI" OFF)
@@ -203,6 +203,8 @@ option(EXECUTORCH_BUILD_EXTENSION_TRAINING "Build the training extension" OFF)
 option(EXECUTORCH_BUILD_MPS "Build the MPS backend" OFF)
 
 option(EXECUTORCH_BUILD_NEURON "Build the backends/mediatek directory" OFF)
+
+option(EXECUTORCH_BUILD_OPENVINO "Build the Openvino backend" OFF)
 
 option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
 
@@ -715,6 +717,10 @@ if(EXECUTORCH_BUILD_NEURON)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/mediatek)
 endif()
 
+if(EXECUTORCH_BUILD_OPENVINO)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/openvino)
+endif()
+
 if(EXECUTORCH_BUILD_QNN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/qualcomm)
 endif()
@@ -751,7 +757,7 @@ if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizer)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizers)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_MODULE)
@@ -815,6 +821,10 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   if(EXECUTORCH_BUILD_MPS)
     list(APPEND _dep_libs mpsdelegate)
+  endif()
+
+  if(EXECUTORCH_BUILD_OPENVINO)
+    list(APPEND _dep_libs openvino_backend)
   endif()
 
   if(EXECUTORCH_BUILD_XNNPACK)

@@ -5,7 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-set -euo pipefail
+set -euxo pipefail
 
 SOURCE_ROOT_DIR=""
 OUTPUT="cmake-out"
@@ -206,7 +206,7 @@ cmake_build() {
     cmake --build . \
         --config "$mode" \
         --verbose
-    cd ..
+    cd -
 }
 
 for index in ${!PLATFORMS[*]}; do
@@ -284,5 +284,10 @@ for platform in "${PLATFORMS[@]}"; do
 done
 
 rm -rf "$HEADERS_PATH"
+
+echo "Running tests"
+
+cd "$SOURCE_ROOT_DIR"
+swift test
 
 echo "Build succeeded!"

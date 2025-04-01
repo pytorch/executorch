@@ -14,7 +14,7 @@ The following are required to install the ExecuTorch host libraries, needed to e
   - Windows is supported via WSL.
 
 ## Installation
-To use ExecuTorch, you will need to install both the Python package and the appropriate platform-specific runtime libraries. Pip is the recommended way to install the ExecuTorch python package. 
+To use ExecuTorch, you will need to install both the Python package and the appropriate platform-specific runtime libraries. Pip is the recommended way to install the ExecuTorch python package.
 
 This package includes the dependencies needed to export a PyTorch model, as well as Python runtime bindings for model testing and evaluation. Consider installing ExecuTorch within a virtual environment, such as one provided by [conda](https://docs.conda.io/projects/conda/en/latest/user-guide/getting-started.html#creating-environments) or [venv](https://packaging.python.org/en/latest/guides/installing-using-pip-and-virtual-environments/#create-and-use-virtual-environments).
 
@@ -72,7 +72,7 @@ Quantization can also be done at this stage to reduce model size and runtime. Qu
 
 ### Testing the Model
 
-After successfully generating a .pte file, it is common to use the Python runtime APIs to validate the model on the development platform. This can be used to evaluate model accuracy before running on-device. 
+After successfully generating a .pte file, it is common to use the Python runtime APIs to validate the model on the development platform. This can be used to evaluate model accuracy before running on-device.
 
 For the MobileNet V2 model from torchvision used in this example, image inputs are expected as a normalized, float32 tensor with a dimensions of (batch, channels, height, width). The output See [torchvision.models.mobilenet_v2](https://pytorch.org/vision/main/models/generated/torchvision.models.mobilenet_v2.html) for more information on the input and output tensor format for this model.
 
@@ -103,20 +103,13 @@ Quick Links:
 ### Android
 
 #### Installation
-ExecuTorch provides Java bindings for Android usage, which can be consumed from both Java and Kotlin. 
-To add the library to your app, download the AAR, and add it to the gradle build rule.
+ExecuTorch provides Java bindings for Android usage, which can be consumed from both Java and Kotlin.
+To add the library to your app, add the following dependency to gradle build rule.
 
-```
-mkdir -p app/libs
-curl https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar -o app/libs/executorch.aar
-```
-And in gradle,
 ```
 # app/build.gradle.kts
 dependencies {
-    implementation(files("libs/executorch.aar"))
-    implementation("com.facebook.soloader:soloader:0.10.5")
-    implementation("com.facebook.fbjni:fbjni:0.5.1")
+  implementation("org.pytorch:executorch-android:0.5.1")
 }
 ```
 
@@ -137,14 +130,14 @@ EValue[] output = model.forward(input_evalue);
 float[] scores = output[0].toTensor().getDataAsFloatArray();
 ```
 
-For a full example of running a model on Android, see the [ExecuTorch Android Demo App](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/ExecuTorchDemo/app/src/main/java/com/example/executorchdemo/ClassificationActivity.java). For more information on Android development, including building from source, a full description of the Java APIs, and information on using ExecuTorch from Android native code, see [Using ExecuTorch on Android](using-executorch-android.md).
+For a full example of running a model on Android, see the [DeepLabV3AndroidDemo](https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo). For more information on Android development, including building from source, a full description of the Java APIs, and information on using ExecuTorch from Android native code, see [Using ExecuTorch on Android](using-executorch-android.md).
 
 ### iOS
 
 #### Installation
 ExecuTorch supports both iOS and MacOS via C++, as well as hardware backends for CoreML, MPS, and CPU. The iOS runtime library is provided as a collection of .xcframework targets and are made available as a Swift PM package.
 
-To get started with Xcode, go to File > Add Package Dependencies. Paste the URL of the ExecuTorch repo into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format “swiftpm-”, (e.g. “swiftpm-0.5.0”).  The ExecuTorch dependency can also be added to the package file manually. See [Using ExecuTorch on iOS](using-executorch-ios.md) for more information.
+To get started with Xcode, go to File > Add Package Dependencies. Paste the URL of the ExecuTorch repo into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format “swiftpm-”, (e.g. “swiftpm-0.6.0”).  The ExecuTorch dependency can also be added to the package file manually. See [Using ExecuTorch on iOS](using-executorch-ios.md) for more information.
 
 #### Runtime APIs
 Models can be loaded and run from Objective-C using the C++ APIs.
@@ -158,7 +151,7 @@ ExecuTorch provides C++ APIs, which can be used to target embedded or mobile dev
 CMake is the preferred build system for the ExecuTorch C++ runtime. To use with CMake, clone the ExecuTorch repository as a subdirectory of your project, and use CMake's `add_subdirectory("executorch")` to include the dependency. The `executorch` target, as well as kernel and backend targets will be made available to link against. The runtime can also be built standalone to support diverse toolchains. See [Using ExecuTorch with C++](using-executorch-cpp.md) for a detailed description of build integration, targets, and cross compilation.
 
 ```
-git clone -b release/0.5 https://github.com/pytorch/executorch.git
+git clone -b viable/strict https://github.com/pytorch/executorch.git
 ```
 ```python
 # CMakeLists.txt

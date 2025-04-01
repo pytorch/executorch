@@ -56,6 +56,7 @@ class Llava(torch.nn.Module):
         )
         self.text_model_args = ModelArgs(
             use_kv_cache=True,
+            n_layers=32,
             vocab_size=self.model_.config.text_config.vocab_size,
             hidden_dim=self.model_.config.text_config.intermediate_size,
             max_batch_size=1,  # doesn't work with default batch size 32

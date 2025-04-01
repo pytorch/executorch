@@ -539,11 +539,17 @@ def export_llama(args) -> str:
     if not args.checkpoint and args.model in HUGGING_FACE_REPO_IDS:
         repo_id = HUGGING_FACE_REPO_IDS[args.model]
         if args.model == "qwen2_5":
-            from executorch.examples.models.qwen2_5 import convert_weights
+            from executorch.examples.models.qwen2_5 import (  # pyre-ignore[21]
+                convert_weights,
+            )
         elif args.model == "phi_4_mini":
-            from executorch.examples.models.phi_4_mini import convert_weights
+            from executorch.examples.models.phi_4_mini import (  # pyre-ignore[21]
+                convert_weights,
+            )
         elif args.model == "smollm2":
-            from executorch.examples.models.smollm2 import convert_weights
+            from executorch.examples.models.smollm2 import (  # pyre-ignore[21]
+                convert_weights,
+            )
         else:
             raise ValueError(
                 f"Converting weights to meta format for {args.model} is not yet supported"
@@ -820,9 +826,19 @@ def _to_edge_and_lower_llama(  # noqa: C901
             )
         )
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
-        from executorch.backends.qualcomm.utils.utils import _transform, tag_quant_io
+        from executorch.backends.qualcomm._passes.annotate_decomposed import (
+            AnnotateDecomposed,
+        )
+        from executorch.backends.qualcomm.utils.constants import QCOM_PASS_ACTIVATE_KEY
+        from executorch.backends.qualcomm.utils.utils import (
+            _transform,
+            get_capture_program_passes,
+            tag_quant_io,
+        )
 
-        _transform(builder_exported_to_edge.edge_manager.exported_program())
+        passes_job = get_capture_program_passes()
+        passes_job[AnnotateDecomposed][QCOM_PASS_ACTIVATE_KEY] = True
+        _transform(builder_exported_to_edge.edge_manager.exported_program(), passes_job)
 
         if args.num_sharding > 0:
             model_sharding.split_graph(
