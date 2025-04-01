@@ -30,7 +30,7 @@ pip install graphviz
 # Download stories llama110m artifacts
 download_stories_model_artifacts
 echo "Creating tokenizer.bin"
-$PYTHON_EXECUTABLE -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+$PYTHON_EXECUTABLE -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokenizer.bin
 
 set +e
 # Compile only as weight sharing is not applicable on x86

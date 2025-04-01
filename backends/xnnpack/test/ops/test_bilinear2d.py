@@ -14,6 +14,9 @@ from executorch.backends.xnnpack.test.tester.tester import Export
 
 
 class TestUpsampleBilinear2d(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     class StaticResizeBilinear2dModule(torch.nn.Module):
         def forward(self, x):
             a = torch.nn.functional.interpolate(

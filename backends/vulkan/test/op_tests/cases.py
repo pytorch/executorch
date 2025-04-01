@@ -754,11 +754,7 @@ def get_repeat_inputs():
             ((2, 3), [3, 1, 4]),
         ]
     )
-    test_suite_2d.layouts = [
-        "utils::kWidthPacked",
-        "utils::kHeightPacked",
-        "utils::kChannelsPacked",
-    ]
+    test_suite_2d.layouts = ["utils::kChannelsPacked"]
     test_suite_2d.storage_types = ["utils::kTexture2D"]
     test_suite_2d.data_gen = "make_seq_tensor"
     test_suite_2d.dtypes = ["at::kFloat"]
@@ -799,11 +795,7 @@ def get_repeat_inputs():
             ((2, 3), [3, 3, 2, 4]),
         ]
     )
-    test_suite_3d.layouts = [
-        "utils::kWidthPacked",
-        "utils::kHeightPacked",
-        "utils::kChannelsPacked",
-    ]
+    test_suite_3d.layouts = ["utils::kChannelsPacked"]
     test_suite_3d.storage_types = ["utils::kTexture3D"]
     test_suite_3d.data_gen = "make_seq_tensor"
     test_suite_3d.dtypes = ["at::kFloat"]

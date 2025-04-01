@@ -3,87 +3,156 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import unittest
-
 import torch
-from executorch.backends.arm.test import common, conftest
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.backends.arm.test.common import (
+    XfailIfNoCorstone300,
+    XfailIfNoCorstone320,
+)
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineBI,
+    EthosU85PipelineBI,
+    TosaPipelineBI,
+    TosaPipelineMI,
+)
 from parameterized import parameterized
 
+scalar_input_t = tuple[torch.Tensor, int]
 
-class TestRshift(unittest.TestCase):
-    """Tests arithmetic right shift"""
 
-    class Rshift(torch.nn.Module):
-        test_data = [
-            ((torch.IntTensor(5, 5), 2),),
-            ((torch.IntTensor(1, 2, 3, 4), 3),),
-            ((torch.CharTensor(1, 12, 3, 4), 1),),
-            ((torch.ShortTensor(1, 5, 3, 4), 5),),
-        ]
+class RshiftScalar(torch.nn.Module):
+    torch_op_MI = "torch.ops.aten.__rshift__.Scalar"
+    torch_op_BI = "torch.ops.aten.bitwise_right_shift.Tensor"
+    exir_op = "executorch_exir_dialects_edge__ops_aten_bitwise_right_shift_Tensor"
+    test_data = [
+        ((torch.randint(-100, 100, (1, 12, 3, 4), dtype=torch.int8), 1),),
+        ((torch.randint(-100, 100, (1, 5, 3, 4), dtype=torch.int16), 5),),
+        ((torch.randint(-100, 100, (1, 5, 3, 4), dtype=torch.int32), 2),),
+    ]
 
-        def forward(self, x: torch.Tensor, shift: int):
-            return x >> shift
+    def forward(self, x: torch.Tensor, shift: int):
+        return x >> shift
 
-    def _test_rshift_tosa_MI(self, test_data):
+
+tensor_input_t = tuple[torch.Tensor, torch.Tensor]
+
+
+class RshiftTensor(torch.nn.Module):
+    torch_op = "torch.ops.aten.bitwise_right_shift.Tensor"
+    exir_op = "executorch_exir_dialects_edge__ops_aten_bitwise_right_shift_Tensor"
+    test_data = [
         (
-            ArmTester(
-                self.Rshift(),
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
-            )
-            .export()
-            .to_edge_transform_and_lower()
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
-
-    def _test_rshift_tosa_BI(self, test_data):
+            (
+                torch.randint(-128, 127, (3, 3), dtype=torch.int8),
+                torch.randint(0, 5, (3, 3), dtype=torch.int8),
+            ),
+        ),
         (
-            ArmTester(
-                self.Rshift(),
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
-            )
-            .quantize()
-            .export()
-            .to_edge_transform_and_lower()
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
+            (
+                torch.randint(-1024, 1024, (3, 3, 3), dtype=torch.int16),
+                torch.randint(0, 5, (3, 3, 3), dtype=torch.int16),
+            ),
+        ),
+        (
+            (
+                torch.randint(0, 127, (1, 2, 3, 3), dtype=torch.int32),
+                torch.randint(0, 5, (1, 2, 3, 3), dtype=torch.int32),
+            ),
+        ),
+    ]
 
-    def _test_rshift_ethosu_BI(self, test_data, compile_spec):
-        return (
-            ArmTester(
-                self.Rshift(),
-                example_inputs=test_data,
-                compile_spec=compile_spec,
-            )
-            .quantize()
-            .export()
-            .to_edge_transform_and_lower()
-            .to_executorch()
-            .serialize()
-        )
+    def forward(self, x: torch.Tensor, shift: torch.Tensor):
+        return x.bitwise_right_shift(shift)
 
-    @parameterized.expand(Rshift.test_data)
-    def test_rshift_tosa_MI(self, test_data):
-        self._test_rshift_tosa_MI(test_data)
 
-    @parameterized.expand(Rshift.test_data)
-    def test_rshift_tosa_BI(self, test_data):
-        self._test_rshift_tosa_BI(test_data)
+@parameterized.expand(RshiftScalar.test_data)
+def test_rshift_scalar_tosa_MI(test_data):
+    TosaPipelineMI[scalar_input_t](
+        RshiftScalar(), test_data, RshiftScalar.torch_op_MI, RshiftScalar.exir_op
+    ).run()
 
-    @parameterized.expand(Rshift.test_data)
-    def test_rshift_u55_BI(self, test_data):
-        compile_spec = common.get_u55_compile_spec()
-        tester = self._test_rshift_ethosu_BI(test_data, compile_spec)
-        if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(atol=1, inputs=test_data)
 
-    @parameterized.expand(Rshift.test_data)
-    def test_rshift_u85_BI(self, test_data):
-        compile_spec = common.get_u85_compile_spec()
-        tester = self._test_rshift_ethosu_BI(test_data, compile_spec)
-        if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(inputs=test_data)
+@parameterized.expand(RshiftScalar.test_data)
+def test_rshift_scalar_tosa_BI(test_data):
+    pipeline = TosaPipelineBI[scalar_input_t](
+        RshiftScalar(), test_data, RshiftScalar.torch_op_BI, RshiftScalar.exir_op
+    )
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()
+
+
+@parameterized.expand(RshiftScalar.test_data)
+@XfailIfNoCorstone300
+def test_rshift_scalar_tosa_u55(test_data):
+    pipeline = EthosU55PipelineBI[scalar_input_t](
+        RshiftScalar(),
+        test_data,
+        RshiftScalar.torch_op_BI,
+        RshiftScalar.exir_op,
+        run_on_fvp=True,
+    )
+    pipeline.pop_stage("check.quant_nodes")
+
+    # Forced rounding in U55 HW causes off-by-one errors.
+    pipeline.change_args("run_method_and_compare_outputs", inputs=test_data, atol=1)
+    pipeline.run()
+
+
+@parameterized.expand(RshiftScalar.test_data)
+@XfailIfNoCorstone320
+def test_rshift_scalar_tosa_u85(test_data):
+    pipeline = EthosU85PipelineBI[scalar_input_t](
+        RshiftScalar(),
+        test_data,
+        RshiftScalar.torch_op_BI,
+        RshiftScalar.exir_op,
+        run_on_fvp=True,
+    )
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()
+
+
+@parameterized.expand(RshiftTensor.test_data)
+def test_rshift_tensor_tosa_MI(test_data):
+    TosaPipelineMI[scalar_input_t](
+        RshiftTensor(), test_data, RshiftTensor.torch_op, RshiftTensor.exir_op
+    ).run()
+
+
+@parameterized.expand(RshiftTensor.test_data)
+def test_rshift_tensor_tosa_BI(test_data):
+    pipeline = TosaPipelineBI[scalar_input_t](
+        RshiftTensor(), test_data, RshiftTensor.torch_op, RshiftTensor.exir_op
+    )
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()
+
+
+@parameterized.expand(RshiftTensor.test_data)
+@XfailIfNoCorstone300
+def test_rshift_tensor_tosa_u55(test_data):
+    pipeline = EthosU55PipelineBI[scalar_input_t](
+        RshiftTensor(),
+        test_data,
+        RshiftTensor.torch_op,
+        RshiftTensor.exir_op,
+        run_on_fvp=True,
+    )
+    pipeline.pop_stage("check.quant_nodes")
+
+    # Forced rounding in U55 HW causes off-by-one errors.
+    pipeline.change_args("run_method_and_compare_outputs", inputs=test_data, atol=1)
+    pipeline.run()
+
+
+@parameterized.expand(RshiftTensor.test_data)
+@XfailIfNoCorstone320
+def test_rshift_tensor_tosa_u85(test_data):
+    pipeline = EthosU85PipelineBI[scalar_input_t](
+        RshiftTensor(),
+        test_data,
+        RshiftTensor.torch_op,
+        RshiftTensor.exir_op,
+        run_on_fvp=True,
+    )
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()

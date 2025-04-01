@@ -142,5 +142,5 @@ def _qdq_quantized_linear(
 You can read more indepth explanations on PyTorch 2 quantization [here](https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html).
 
 ## See Also
-- [Integrating XNNPACK Delegate Android App](demo-apps-android.md)
+- [Integrating XNNPACK Delegate in Android AAR](using-executorch-android.md)
 - [Complete the Lowering to XNNPACK Tutorial](tutorial-xnnpack-delegate-lowering.md)

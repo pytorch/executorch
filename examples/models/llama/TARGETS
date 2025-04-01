@@ -119,6 +119,16 @@ runtime.python_library(
 )
 
 runtime.python_library(
+    name = "hf_download",
+    srcs = [
+        "hf_download.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/huggingface-hub:huggingface-hub",
+    ]
+)
+
+runtime.python_library(
     name = "export_library",
     srcs = [
         "export_llama.py",
@@ -134,6 +144,7 @@ runtime.python_library(
         "@EXECUTORCH_CLIENTS",
     ],
     deps = [
+        ":hf_download",
         ":source_transformation",
         "//ai_codesign/gen_ai/fast_hadamard_transform:fast_hadamard_transform",
         "//caffe2:torch",
@@ -191,7 +202,7 @@ runtime.python_library(
         ":export_library",
         "//executorch/examples/models/llama/tokenizer:tiktoken_py",
         "//executorch/extension/llm/export:export_lib",
-        "//executorch/extension/llm/tokenizer:tokenizer_py_lib",
+        "//pytorch/tokenizers/pytorch_tokenizers:tokenizers",
         "//executorch/extension/pybindings:portable_lib",
     ],
 )

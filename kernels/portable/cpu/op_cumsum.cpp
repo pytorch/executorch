@@ -113,7 +113,7 @@ Tensor& cumsum_out(
 
   ET_SWITCH_REALHBBF16_TYPES(out.scalar_type(), ctx, op_name, CTYPE_OUT, [&] {
     const auto load_self =
-        utils::internal::get_load_to_common_fn<CTYPE_OUT, op_name>(
+        utils::internal::get_load_to_compute_fn<CTYPE_OUT, op_name>(
             self, utils::SupportedTensorDtypes::REALHBBF16);
     cumsum_tensors<CTYPE_OUT>(self, load_self, dim, out);
   });
