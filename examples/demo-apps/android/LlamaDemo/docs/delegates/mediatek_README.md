@@ -21,23 +21,29 @@ Phone verified: MediaTek Dimensity 9300 (D9300) chip.
 ## Setup ExecuTorch
 In this section, we will need to set up the ExecuTorch repo first with Conda environment management. Make sure you have Conda available in your system (or follow the instructions to install it [here](https://anaconda.org/anaconda/conda)). The commands below are running on Linux (CentOS).
 
-Create a Conda environment
+Checkout ExecuTorch repo and sync submodules
+
 ```
-conda create -yn et_mtk python=3.10.0
-conda activate et_mtk
+git clone -b viable/strict https://github.com/pytorch/executorch.git && cd executorch
 ```
 
-Checkout ExecuTorch repo and sync submodules
+Create either a Python virtual environment:
+
 ```
-git clone https://github.com/pytorch/executorch.git
-cd executorch
-git submodule sync
-git submodule update --init
+python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 ```
+
+Or a Conda environment:
+
+```
+conda create -n et_xnnpack python=3.10.0 && conda activate et_xnnpack
+```
+
 Install dependencies
 ```
 ./install_executorch.sh
 ```
+
 ## Setup Environment Variables
 ### Download Buck2 and make executable
 * Download Buck2 from the official [Release Page](https://github.com/facebook/buck2/releases/tag/2024-02-01)

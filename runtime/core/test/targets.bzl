@@ -91,6 +91,9 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/core:tag",
         ],
+        preprocessor_flags = [
+            "-DET_ENABLE_ENUM_STRINGS"
+        ],
     )
 
     if True in get_aten_mode_options():
