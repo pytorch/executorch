@@ -43,10 +43,17 @@ The version is documented in QNN SDK.
 
 ### Hardware:
 You will need an Android smartphone with adb-connected running on one of below Qualcomm SoCs:
+ - SA8295
  - SM8450 (Snapdragon 8 Gen 1)
  - SM8475 (Snapdragon 8 Gen 1+)
  - SM8550 (Snapdragon 8 Gen 2)
  - SM8650 (Snapdragon 8 Gen 3)
+ - SM8750 (Snapdragon 8 Elite)
+ - SSG2115P
+ - SSG2125P
+ - SXR1230P
+ - SXR2230P
+ - SXR2330P
 
 This example is verified with SM8550 and SM8450.
 
@@ -343,11 +350,6 @@ After the above command, pre-processed inputs and outputs are put in `$EXECUTORC
 The command-line arguments are written in [utils.py](https://github.com/pytorch/executorch/blob/main/examples/qualcomm/utils.py#L139).
 The model, inputs, and output location are passed to `qnn_executorch_runner` by `--model_path`, `--input_list_path`, and `--output_folder_path`.
 
-
-### Running a model via ExecuTorch's android demo-app
-
-An Android demo-app using Qualcomm AI Engine Direct Backend can be found in
-`examples`. Please refer to android demo app [tutorial](demo-apps-android.md).
 
 ## Supported model list
 
