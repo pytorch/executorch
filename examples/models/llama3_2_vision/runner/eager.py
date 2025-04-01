@@ -22,18 +22,18 @@ class EagerLlamaRunner(TorchTuneLlamaRunner):
     Runs llama in eager mode with provided checkpoint file.
     """
 
-    def __init__(self, args):
-        with open(args.params, "r") as f:
+    def __init__(self, config):
+        with open(config.model.params, "r") as f:
             params = json.loads(f.read())
         super().__init__(
-            tokenizer_path=args.tokenizer_path,
-            max_seq_len=args.max_seq_length,
+            tokenizer_path=config.model.tokenizer_path,
+            max_seq_len=config.sequence.max_seq_length,
             max_batch_size=1,
-            use_kv_cache=args.use_kv_cache,
+            use_kv_cache=config.kv_cache.use_kv_cache,
             vocab_size=params["vocab_size"],
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
-        manager: LLMEdgeManager = _prepare_for_llama_export(args)
+        manager: LLMEdgeManager = _prepare_for_llama_export(config)
         self.model = manager.model.eval().to(device=self.device)
 
     def forward(
