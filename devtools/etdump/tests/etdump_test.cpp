@@ -61,6 +61,19 @@ class ProfilerETDumpTest : public ::testing::Test {
     free(buf);
   }
 
+  // Triggers ET_EXPECT_DEATH if log_intermediate_output_delegate has no
+  // data sink
+  void expect_log_intermediate_delegate_death(
+      ETDumpGen* gen,
+      TensorFactory<ScalarType::Float>& tf) {
+    ET_EXPECT_DEATH(
+        gen->log_intermediate_output_delegate(
+            "test_event_tensor",
+            static_cast<torch::executor::DebugHandle>(-1),
+            tf.ones({3, 2})),
+        "Must set data sink before writing tensor-like data");
+  }
+
   ETDumpGen* etdump_gen[2];
   uint8_t* buf = nullptr;
   std::unique_ptr<TempFile> temp_file;
@@ -513,18 +526,6 @@ TEST_F(ProfilerETDumpTest, VerifyData) {
       free(result.buf);
     }
   }
-}
-
-// Triggers ET_EXPECT_DEATH if log_intermediate_output_delegate has no data sink
-static void expect_log_intermediate_delegate_death(
-    ETDumpGen* gen,
-    TensorFactory<ScalarType::Float>& tf) {
-  ET_EXPECT_DEATH(
-      gen->log_intermediate_output_delegate(
-          "test_event_tensor",
-          static_cast<torch::executor::DebugHandle>(-1),
-          tf.ones({3, 2})),
-      "Must set data sink before writing tensor-like data");
 }
 
 TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
