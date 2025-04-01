@@ -23,7 +23,6 @@ from torch.export.exported_program import ExportedProgram
 
 # debug functionality
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
 
 
 @final
