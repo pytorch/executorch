@@ -151,7 +151,7 @@ void add_copy_packed_dim_offset_node(
       // Parameter buffers
       {},
       // Specialization Constants
-      {graph.hashed_layout_of(out), graph.hashed_layout_of(in), repeat},
+      {graph.hashed_layout_of(out), graph.hashed_layout_of(in), repeat ? 1 : 0},
       nullptr,
       {},
       {
