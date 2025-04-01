@@ -26,7 +26,7 @@ bool check_repeat_interleave_args(
       static_cast<int>(repeats.scalar_type()));
   ET_CHECK_OR_RETURN_FALSE(
       repeats.dim() == 1,
-      "repeats must be 1-D; repeats.dim() = %zd",
+      "repeats must be 1-D; repeats.dim() = %" ET_PRI_TENSOR_DIM,
       repeats.dim());
   ET_CHECK_OR_RETURN_FALSE(
       output_size_value == repeats_sum,

@@ -19,19 +19,24 @@ Phone verified: OnePlus 12, Samsung 24+, Samsung 23
 ## Setup ExecuTorch
 In this section, we will need to set up the ExecuTorch repo first with Conda environment management. Make sure you have Conda available in your system (or follow the instructions to install it [here](https://anaconda.org/anaconda/conda)). The commands below are running on Linux (CentOS).
 
-Create a Conda environment
+Checkout ExecuTorch repo and sync submodules
+
 ```
-conda create -n et_qnn python=3.10.0
-conda activate et_qnn
+git clone -b viable/strict https://github.com/pytorch/executorch.git && cd executorch
 ```
 
-Checkout ExecuTorch repo and sync submodules
+Create either a Python virtual environment:
+
 ```
-git clone https://github.com/pytorch/executorch.git
-cd executorch
-git submodule sync
-git submodule update --init
+python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 ```
+
+Or a Conda environment:
+
+```
+conda create -n et_xnnpack python=3.10.0 && conda activate et_xnnpack
+```
+
 Install dependencies
 ```
 ./install_executorch.sh
@@ -74,7 +79,7 @@ cmake --build cmake-out -j16 --target install --config Release
 ### Setup Llama Runner
 Next we need to build and compile the Llama runner. This is similar to the requirements for running Llama with XNNPACK.
 ```
-sh examples/models/llama/install_requirements.sh
+./examples/models/llama/install_requirements.sh
 
 cmake -DPYTHON_EXECUTABLE=python \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
