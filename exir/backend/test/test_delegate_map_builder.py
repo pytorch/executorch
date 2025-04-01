@@ -9,17 +9,12 @@ from typing import Iterator, Union
 
 import torch
 from executorch import exir
-from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import to_backend
-from executorch.exir.backend.canonical_partitioners.all_node_partitioner import (
-    AllNodePartitioner,
-)
 from executorch.exir.backend.test.backend_with_delegate_mapping_demo import (
     BackendWithDelegateMappingDemo,
 )
 
 from executorch.exir.backend.utils import DelegateMappingBuilder
-from executorch.exir.lowered_backend_module import get_lowered_submodules
 
 
 class TestDelegateMapBuilder(unittest.TestCase):
