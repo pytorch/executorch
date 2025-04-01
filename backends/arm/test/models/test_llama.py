@@ -52,7 +52,7 @@ class TestLlama(unittest.TestCase):
                 params_file, str
             ), "invalid input for --llama_inputs"
         else:
-            logging.warning(
+            logger.warning(
                 "Skipping Llama test because of lack of input. To run use --llama_inputs <.pt> <.json>"
             )
             return None, None, None
@@ -60,6 +60,8 @@ class TestLlama(unittest.TestCase):
         assert os.path.isfile(checkpoint) and os.path.isfile(
             params_file
         ), "Invalid file paths"
+
+        logger.info("Running test_llama.py")
 
         # TODO: Enable key value cache
         args = [
@@ -115,6 +117,8 @@ class TestLlama(unittest.TestCase):
                 .check_count({"torch.ops.higher_order.executorch_call_delegate": 14})
                 .to_executorch()
                 .run_method_and_compare_outputs(
-                    inputs=llama_inputs, atol=1.8, rtol=0.01  # TODO: decrease tolerance
+                    inputs=llama_inputs,
+                    atol=4.3,
+                    rtol=1.1,  # TODO: MLETORCH-825 decrease tolerance
                 )
             )

@@ -16,7 +16,6 @@ def define_common_targets():
         ],
         exported_deps = [
             "//pytorch/tokenizers:tiktoken",
-            "//executorch/extension/llm/tokenizer:tiktoken", # TODO: remove
         ],
         visibility = [
             "@EXECUTORCH_CLIENTS",
