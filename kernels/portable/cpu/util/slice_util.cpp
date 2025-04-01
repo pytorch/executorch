@@ -20,19 +20,19 @@ bool check_narrow_copy_args(
     const Tensor& in,
     int64_t dim,
     int64_t start,
-    int64_t lenth,
+    int64_t length,
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(in.dim() > 0);
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
   ET_CHECK_OR_RETURN_FALSE(
-      lenth >= 0, "lenth must be non-negative; lenth = %" PRId64, lenth);
+      length >= 0, "length must be non-negative; length = %" PRId64, length);
   ET_LOG_AND_RETURN_IF_FALSE(start >= -in.size(dim));
   ET_LOG_AND_RETURN_IF_FALSE(start <= in.size(dim));
   if (start < 0) {
     start += in.size(dim);
   }
-  ET_LOG_AND_RETURN_IF_FALSE(start + lenth <= in.size(dim));
+  ET_LOG_AND_RETURN_IF_FALSE(start + length <= in.size(dim));
   return true;
 }
 

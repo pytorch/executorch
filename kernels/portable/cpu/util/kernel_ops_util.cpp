@@ -279,7 +279,7 @@ bool check_avg_pool2d_args(
   ET_CHECK_OR_RETURN_FALSE(
       (in.dim() == 3 && in.size(0) > 0 && in.size(1) > 0 && in.size(2) > 0) ||
           (in.dim() == 4 && in.size(1) > 0 && in.size(2) > 0 && in.size(3) > 0),
-      "Expected 3D or 4D (batch mode) tensor with optional 0 dim batch size for input; in.dim() = %zd",
+      "Expected 3D or 4D (batch mode) tensor with optional 0 dim batch size for input; in.dim() = %" ET_PRI_TENSOR_DIM,
       in.dim());
 
   ET_LOG_AND_RETURN_IF_FALSE(
@@ -351,7 +351,8 @@ bool check_convolution_args(
     ET_CHECK_OR_RETURN_FALSE(
         bias.value().size(0) == transposed ? groups * weight.size(1)
                                            : weight.size(0),
-        "bias length must equal number of output channels, but got %zd; expected %" PRId64,
+        "bias length must equal number of output channels, but got %" ET_PRI_TENSOR_SIZE
+        "; expected %" PRId64,
         bias.value().size(0),
         transposed ? groups * weight.size(1) : weight.size(0));
   }
@@ -491,7 +492,7 @@ bool check_max_pool2d_with_indices_args(
   ET_CHECK_OR_RETURN_FALSE(
       (in.dim() == 3 && in.size(0) > 0 && in.size(1) > 0 && in.size(2) > 0) ||
           (in.dim() == 4 && in.size(1) > 0 && in.size(2) > 0 && in.size(3) > 0),
-      "Expected 3D or 4D (batch mode) tensor with optional 0 dim batch size for input; in.dim() = %zd",
+      "Expected 3D or 4D (batch mode) tensor with optional 0 dim batch size for input; in.dim() = %" ET_PRI_TENSOR_DIM,
       in.dim());
 
   ET_LOG_AND_RETURN_IF_FALSE(
@@ -559,7 +560,7 @@ bool check_constant_pad_args(
 
   ET_CHECK_OR_RETURN_FALSE(
       static_cast<ssize_t>(pad.size() / 2) <= in.dim(),
-      "Padding array contains too many elements; pad.size()/2 = %zu, in.dim() = %zd",
+      "Padding array contains too many elements; pad.size()/2 = %zu, in.dim() = %" ET_PRI_TENSOR_DIM,
       pad.size() / 2,
       in.dim());
 
