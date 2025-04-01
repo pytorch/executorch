@@ -10,6 +10,7 @@
 // LLM.
 
 #include <executorch/extension/llm/runner/text_prefiller.h>
+#include <algorithm>
 
 namespace executorch {
 namespace extension {
@@ -18,10 +19,13 @@ namespace llm {
 TextPrefiller::TextPrefiller(
     TextDecoderRunner* text_decoder_runner,
     bool use_kv_cache,
-    bool enable_parallel_prefill)
+    bool enable_parallel_prefill,
+    int64_t max_seq_len)
     : text_decoder_runner_(text_decoder_runner),
       use_kv_cache_(use_kv_cache),
-      enable_parallel_prefill_(enable_parallel_prefill) {}
+      enable_parallel_prefill_(enable_parallel_prefill),
+      max_seq_len_(max_seq_len > 0 ? max_seq_len - 1 : 127) {
+} // -1 because for some reason tracing results in this upperbound
 
 ::executorch::runtime::Result<uint64_t> TextPrefiller::prefill(
     std::vector<uint64_t>& prompt_tokens,
@@ -30,6 +34,45 @@ TextPrefiller::TextPrefiller(
   if (!text_decoder_runner_->is_method_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(text_decoder_runner_->load());
   }
+
+  // Check if we need to chunk the prompt tokens
+  int32_t num_prompt_tokens = prompt_tokens.size();
+
+  // If prompt tokens exceed max_seq_len_, we need to chunk them
+  if (num_prompt_tokens > max_seq_len_) {
+    uint64_t cur_token = 0;
+    int num_tokens_to_process = 0;
+
+    while (num_tokens_to_process < num_prompt_tokens) {
+      auto num_tokens_to_prefill_with = std::min<int>(
+          num_prompt_tokens - num_tokens_to_process, max_seq_len_);
+
+      std::vector<uint64_t> prompt_tokens_to_process(
+          num_tokens_to_prefill_with);
+      std::copy(
+          prompt_tokens.begin() + num_tokens_to_process,
+          prompt_tokens.begin() + num_tokens_to_process +
+              num_tokens_to_prefill_with,
+          prompt_tokens_to_process.begin());
+
+      // Process this chunk
+      auto chunk_result = prefillChunk(prompt_tokens_to_process, start_pos);
+      ET_CHECK_OK_OR_RETURN_ERROR(chunk_result.error());
+      cur_token = chunk_result.get();
+
+      num_tokens_to_process += num_tokens_to_prefill_with;
+    }
+
+    return cur_token;
+  } else {
+    // If prompt tokens don't exceed max_seq_len_, process them directly
+    return prefillChunk(prompt_tokens, start_pos);
+  }
+}
+
+::executorch::runtime::Result<uint64_t> TextPrefiller::prefillChunk(
+    std::vector<uint64_t>& prompt_tokens,
+    int64_t& start_pos) {
   // enable_parallel_prefill_ maybe set even when not using kv cache
   // When kv cache is not used, start pos is ignored
   int32_t num_prompt_tokens = prompt_tokens.size();
