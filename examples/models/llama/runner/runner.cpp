@@ -141,7 +141,8 @@ Error Runner::load() {
   text_prefiller_ = std::make_unique<llm::TextPrefiller>(
       text_decoder_runner_.get(),
       metadata_.at(kUseKVCache),
-      metadata_.at(kEnableDynamicShape));
+      metadata_.at(kEnableDynamicShape),
+      metadata_.at(kMaxSeqLen));
 
   text_token_generator_ = std::make_unique<llm::TextTokenGenerator>(
       tokenizer_.get(),
@@ -242,24 +243,9 @@ Error Runner::generate(
     wrapped_callback(prompt);
   }
   int64_t pos = 0;
-  uint64_t cur_token;
-  int max_seq_len = metadata_.at(kMaxSeqLen) -
-      1; // -1 because for some reason tracing results in this upperbound
-  int num_tokens_to_process = 0;
-  while (num_tokens_to_process < num_prompt_tokens) {
-    auto num_tokens_to_prefill_with =
-        std::min(num_prompt_tokens - num_tokens_to_process, max_seq_len);
-    std::vector<uint64_t> prompt_tokens_to_process(num_tokens_to_prefill_with);
-    std::copy(
-        prompt_tokens.begin() + num_tokens_to_process,
-        prompt_tokens.begin() + num_tokens_to_process +
-            num_tokens_to_prefill_with,
-        prompt_tokens_to_process.begin());
-    auto prefill_res = text_prefiller_->prefill(prompt_tokens_to_process, pos);
-    ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
-    cur_token = prefill_res.get();
-    num_tokens_to_process += num_tokens_to_prefill_with;
-  }
+  auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos);
+  ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
+  uint64_t cur_token = prefill_res.get();
   stats_.first_token_ms = llm::time_in_ms();
   stats_.prompt_eval_end_ms = llm::time_in_ms();
 
