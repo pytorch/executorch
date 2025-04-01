@@ -5,9 +5,33 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-#import <MLModel_Prewarm.h>
+#import "MLModel_Prewarm.h"
+#include <objc/NSObjCRuntime.h>
 
 #import <algorithm>
+
+namespace  {
+    size_t get_number_of_bytes(MLMultiArrayDataType data_type) {
+        switch (data_type) {
+            case MLMultiArrayDataTypeFloat16: {
+                return 2;
+            }
+            case MLMultiArrayDataTypeFloat32: {
+                return 4;
+            }
+            case MLMultiArrayDataTypeInt32: {
+                return 4;
+            }
+            case MLMultiArrayDataTypeFloat64: {
+                return 8;
+            }
+            default: {
+                return 0;
+            }
+        }
+    }
+
+}
 
 @interface MLMultiArray (Prewarm)
 
@@ -28,11 +52,22 @@
         return nil;
     }
     
-    [multiArray getMutableBytesWithHandler:^(void *mutableBytes, NSInteger size, NSArray<NSNumber *> * __unused strides) {
-        uint8_t *start = reinterpret_cast<uint8_t *>(mutableBytes);
-        uint8_t *end = start + size;
-        std::fill(start, end, uint8_t(0));
-    }];
+
+    if (@available(macOS 12.3, iOS 15.4, tvOS 15.4, watchOS 8.5, *)) {
+        void (^fill_zeroes)(void *, NSInteger) = ^(void *bytes, NSInteger size) {
+            uint8_t *start = reinterpret_cast<uint8_t *>(bytes);
+            uint8_t *end = start + size;
+            std::fill(start, end, uint8_t(0));
+        };
+
+        if (@available(macOS 12.3, iOS 15.4, tvOS 15.4, watchOS 8.5, *)) {
+            [multiArray getMutableBytesWithHandler:^(void *mutableBytes, NSInteger size, NSArray<NSNumber *> * __unused strides) {
+                fill_zeroes(mutableBytes, size);
+            }];
+        } else {
+            fill_zeroes(multiArray.dataPointer, multiArray.count * get_number_of_bytes(multiArray.dataType));
+        }
+    }
     
     return multiArray;
 }
