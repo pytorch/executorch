@@ -541,10 +541,10 @@ TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
       auto buffer_data_sink = BufferDataSink::create(ptr, debug_buf_size);
       auto file_data_sink = FileDataSink::create(dump_file_path.c_str());
 
-      etdump_gen[i]->create_event_block("test_block");
       TensorFactory<ScalarType::Float> tf;
 
       if (j == 0) {
+        etdump_gen[i]->create_event_block("test_block");
         expect_log_intermediate_delegate_death(etdump_gen[i], tf);
 
         // Set debug buffer with span
@@ -556,7 +556,6 @@ TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
         // Recreate ETDumpGen; set span buffer only for etdump_gen[1]
         etdump_gen[i] = (i == 0) ? new ETDumpGen() : new ETDumpGen(span_buf);
         etdump_gen[i]->create_event_block("test_block");
-
         expect_log_intermediate_delegate_death(etdump_gen[i], tf);
 
         if (j == 1) {
