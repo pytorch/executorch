@@ -9,6 +9,46 @@ Set up your environment by following the instructions at
 https://pytorch.org/executorch/stable/getting-started-setup.html to clone
 the repo and install the necessary requirements.
 
+Refer to this [document](https://pytorch.org/executorch/main/using-executorch-building-from-source.html) to build ExecuTorch from source.
+
+### Dev Setup for Android
+For Android, please refer to the [Android documentation](docs/source/using-executorch-android.md).
+
+### Dev Setup for Apple
+For Apple, please refer to the [iOS documentation](docs/source/using-executorch-ios.md).
+&nbsp;
+
+## Codebase structure
+
+For brevity only including a portion of the subtree:
+
+* [backends](backends) - Backend implementations for various hardware targets. Each backend uses partitioner to split the graph into subgraphs that can be executed on specific hardware, quantizer to optimize model precision, and runtime components to execute the graph on target hardware. For details refer to the [backend
+  documentation](docs/source/backend-delegates-integration.md) and the [Export and Lowering tutorial](docs/source/using-executorch-export.md) for more information.
+* [exir](exir) - EXport Intermediate Representation (EXIR) is a format for representing the result of [`torch.export`](https://pytorch.org/docs/main/export.ir_spec.html). This directory contains utilities and passes for lowering the EXIR graphs into different [dialects](/docs/source/ir-exir.md) and eventually suitable to run on target hardware.
+* [examples](examples) - Example applications and demos using ExecuTorch.
+* [extension](extension) - Extensions to the core ExecuTorch runtime.
+  * [android](extension/android) - JNI layer and Android native APIs for ExecuTorch. Please refer to the [Android documentation](docs/source/using-executorch-android.md) for more information.
+  * [apple](extension/apple) - Apple native APIs for ExecuTorch. Please refer to the [iOS documentation](docs/source/using-executorch-ios.md) and [how to integrate into Apple platform](https://pytorch.org/executorch/stable/apple-runtime.html) for more information.
+  * [data_loader](extension/data_loader) - Data loader extension.
+  * [module](extension/module) - An abstraction that deserializes and executes an ExecuTorch artifact (.pte file). Refer to the [module documentation](docs/source/extension-module.md) for more information.
+  * [training](extension/training) - Training extension.
+  * [llm](extension/llm) - Library to run LLM on ExecuTorch including common optimization passes, runtime C++ components. Please refer to the [LLM documentation](docs/source/llm/getting-started.md) for more information.
+  * [tensor](extension/tensor) - Tensor maker and `TensorPtr`, details in [this documentation](/docs/source/extension-tensor.md).
+  * [threadpool](extension/threadpool) - Threadpool.
+* [kernels](kernels) - Kernel implementations for various operators.
+  * [optimized](kernels/optimized) - Optimized kernel implementations.
+  * [portable](kernels/portable) - Portable kernel implementations.
+  * [quantized](kernels/quantized) - Quantized kernel implementations.
+* [runtime](runtime) - Core runtime components in C++, with corresponding Python APIs. These components are used to execute the ExecuTorch program. Please refer to the [runtime documentation](docs/source/runtime-overview.md) for more information.
+  * [backend](runtime/backend) - Backend delegate registry.
+  * [core](runtime/core) - Basic components such as `Tensor`, `EValue`, `Error` and `Result` etc.
+  * [executor](runtime/executor) - Runtime components that execute the ExecuTorch program, such as `Program`, `Method`. Refer to the [runtime API documentation](docs/source/executorch-runtime-api-reference.rst) for more information.
+  * [kernel](runtime/kernel) - Kernel registry.
+  * [platform](runtime/platform) - Platform abstraction layer.
+* [schema](schema) - FlatBuffer schema definitions.
+* [tools](tools) - Tools for development and debugging. Please refer to the [tools documentation](docs/source/devtools-overview.md) for more information.
+* [docs](docs) - Documentation source files.
+
 &nbsp;
 
 ## Contributing workflow
@@ -221,7 +261,7 @@ CI is run automatically on all pull requests. However, if you want to run tests 
 
 - The `sh test/build_size_test.sh` script will compile the C++runtime along with portable kernels.
 - The `test/run_oss_cpp_tests.sh` script will build and run C++ tests locally
-- Running `pytest` from the root directory will run Python tests locally.
+- Running `pytest` from the root directory will run Python tests locally. Make sure to run this after finishing [Dev Install](#dev-install).
 
 ### Writing Tests
 To help keep code quality high, ExecuTorch uses a combination of unit tests and
@@ -279,7 +319,8 @@ for basics.
      - Good title: "Add XYZ method to ABC"
    - Give the PR a clear and thorough description. Don't just describe what the PR
      does: the diff will do that. Explain *why* you are making this change, in a
-     way that will make sense to someone years from now.
+     way that will make sense to someone years from now. If the PR is a bug fix,
+     include the issue number at the beginning of the description: "Fixes #1234"
    - Explain how you have tested your changes by including repeatable instructions for
      testing the PR.
      - If you added tests, this can be as simple as the command you used to run the
