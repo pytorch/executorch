@@ -55,7 +55,8 @@ Error LlavaRunner::load() {
   text_prefiller_ = std::make_unique<llm::TextPrefiller>(
       text_decoder_runner_.get(),
       /*use_kv_cache=*/true,
-      /*enable_parallel_prefill=*/true);
+      /*enable_parallel_prefill=*/true,
+      /*max_seq_len=*/128);
 
   // Load the image prefiller
   image_prefiller_ = std::make_unique<LlavaImagePrefiller>(module_.get());
