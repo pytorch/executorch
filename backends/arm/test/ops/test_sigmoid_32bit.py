@@ -9,8 +9,8 @@ from executorch.backends.arm.quantizer.arm_quantizer import TOSAQuantizer
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
     EthosU85PipelineBI,
+    OpNotSupportedPipeline,
     TosaPipelineBI,
 )
 from executorch.backends.xnnpack.test.tester import Quantize
@@ -122,53 +122,23 @@ def test_sigmoid_add_sigmoid_tosa_BI(test_data):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    test_data_suite,
-    xfails={
-        "ones": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-        "rand": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-        "rand_4d": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-        "randn_pos": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-        "randn_neg": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-        "ramp": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-    },
-    # int16 tables are not supported, but some tests happen to pass regardless.
-    # Set them to xfail but strict=False -> ok if they pass.
-    strict=False,
-)
-@common.XfailIfNoCorstone300
+@common.parametrize("test_data", test_data_suite)
 def test_sigmoid_tosa_u55(test_data):
-    pipeline = EthosU55PipelineBI(
-        Sigmoid(), (test_data(),), Sigmoid.aten_op, Sigmoid.exir_op, run_on_fvp=True
+    pipeline = OpNotSupportedPipeline(
+        Sigmoid(), (test_data(),), "TOSA-0.80+BI+u55", {Sigmoid.exir_op: 1}
     )
     pipeline.change_args("quantize", get_32bit_sigmoid_quantizer("TOSA-0.80+BI+u55"))
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    test_data_suite,
-    xfails={
-        "ones": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-        "rand": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-        "rand_4d": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-        "randn_pos": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-        "randn_neg": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-        "ramp": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-    },
-    # int16 tables are not supported, but some tests happen to pass regardless.
-    # Set them to xfail but strict=False -> ok if they pass.
-    strict=False,
-)
-@common.XfailIfNoCorstone300
+@common.parametrize("test_data", test_data_suite)
 def test_sigmoid_add_sigmoid_tosa_u55(test_data):
-    pipeline = EthosU55PipelineBI(
+    pipeline = OpNotSupportedPipeline(
         SigmoidAddSigmoid(),
         (test_data(),),
-        Sigmoid.aten_op,
-        Sigmoid.exir_op,
-        run_on_fvp=True,
+        "TOSA-0.80+BI+u55",
+        {Sigmoid.exir_op: 3},
+        n_expected_delegates=1,
     )
     pipeline.change_args("quantize", get_32bit_sigmoid_quantizer("TOSA-0.80+BI+u55"))
     pipeline.run()
