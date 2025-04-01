@@ -976,7 +976,7 @@ class ReplaceConvWithChannelLastConvPass(ExportPass):
         return result
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
+@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class ReplaceTrivialConvWithLinear(ExportPass):
     """
     In nn.Conv1d, the operand shapes are:
@@ -1256,7 +1256,7 @@ class MakeSliceAndCatDimOutermostPass(ExportPassWithTransposeHelper):
         return self.transpose_dims(new_op, meta, 0, dim)
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
+@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class ReplaceConvWithIm2RowAndLinear(ExportPass):
     """
     Replace convolution where groups=1 with im2row followed by a linear op.
@@ -1449,7 +1449,7 @@ class ReplaceConvWithIm2RowAndLinear(ExportPass):
         )
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
+@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class ReplaceTransposedConvWithLinearPass(ExportPass):
     """
     Replace transposed convolution where groups=1 with transposed_im2row
@@ -1686,7 +1686,7 @@ class ReplaceNopTransposeOrPermuteWithViewPass(ExportPass):
         return result
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
+@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class ReplaceLinearWithFullyConnectedOpPass(ExportPass):
     """
     If the input of linear/quantized_linear op is a vector, replace it with
