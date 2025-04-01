@@ -550,26 +550,21 @@ portability details.</p>
 </div>
 <div class="section" id="environment-setup">
 <h2>Environment Setup<a class="headerlink" href="#environment-setup" title="Permalink to this heading">¶</a></h2>
-<div class="section" id="create-a-virtual-environment">
-<h3>Create a Virtual Environment<a class="headerlink" href="#create-a-virtual-environment" title="Permalink to this heading">¶</a></h3>
-<p><a class="reference external" href="https://conda.io/projects/conda/en/latest/user-guide/install/index.html">Install conda on your machine</a>. Then, create a virtual environment to manage our dependencies.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Create and activate a conda environment named &quot;executorch&quot;</span>
-conda<span class="w"> </span>create<span class="w"> </span>-yn<span class="w"> </span>executorch<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.10.0
-conda<span class="w"> </span>activate<span class="w"> </span>executorch
-</pre></div>
-</div>
-</div>
 <div class="section" id="clone-executorch">
 <h3>Clone ExecuTorch<a class="headerlink" href="#clone-executorch" title="Permalink to this heading">¶</a></h3>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Clone the ExecuTorch repo from GitHub</span>
-<span class="c1"># &#39;main&#39; branch is the primary development branch where you see the latest changes.</span>
-<span class="c1"># &#39;viable/strict&#39; contains all of the commits on main that pass all of the necessary CI checks.</span>
-git<span class="w"> </span>clone<span class="w"> </span>--branch<span class="w"> </span>viable/strict<span class="w"> </span>https://github.com/pytorch/executorch.git
-<span class="nb">cd</span><span class="w"> </span>executorch
-
-<span class="c1"># Update and pull submodules</span>
-git<span class="w"> </span>submodule<span class="w"> </span>sync
-git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w"> </span>--init
+git<span class="w"> </span>clone<span class="w"> </span>-b<span class="w"> </span>viable/strict<span class="w"> </span>https://github.com/pytorch/executorch.git<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>executorch
+</pre></div>
+</div>
+</div>
+<div class="section" id="create-a-virtual-environment">
+<h3>Create a Virtual Environment<a class="headerlink" href="#create-a-virtual-environment" title="Permalink to this heading">¶</a></h3>
+<p>Create and activate a Python virtual environment:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">source</span><span class="w"> </span>.venv/bin/activate<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>pip
+</pre></div>
+</div>
+<p>Or alternatively, <a class="reference external" href="https://conda.io/projects/conda/en/latest/user-guide/install/index.html">install conda on your machine</a>. Then, create a Conda environment named “executorch”.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>conda<span class="w"> </span>create<span class="w"> </span>-yn<span class="w"> </span>executorch<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.10.0<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>conda<span class="w"> </span>activate<span class="w"> </span>executorch
 </pre></div>
 </div>
 </div>
@@ -850,8 +845,8 @@ your targets and don’t forget to add an extra linker flag <code class="docutil
 </ul>
 </li>
 <li><a class="reference internal" href="#environment-setup">Environment Setup</a><ul>
-<li><a class="reference internal" href="#create-a-virtual-environment">Create a Virtual Environment</a></li>
 <li><a class="reference internal" href="#clone-executorch">Clone ExecuTorch</a></li>
+<li><a class="reference internal" href="#create-a-virtual-environment">Create a Virtual Environment</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#install-executorch-pip-package-from-source">Install ExecuTorch pip package from Source</a></li>
