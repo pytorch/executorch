@@ -45,7 +45,7 @@ const lowp int packed_dim = unhash_packed_dim(out_layout);
 ${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
 const lowp ivec4 in_axis_map = unhash_axis_map(in_layout);
 
-${layout_declare_spec_const(C, "bool", "repeat", "false")}
+${layout_declare_spec_const(C, "int", "repeat", "0")}
 
 void no_repeat_copy(ivec3 pos) {
   // Position in input tensor
@@ -229,7 +229,7 @@ void main() {
     return;
   }
 
-  if (repeat) {
+  if (repeat == 1) {
     repeat_copy(pos);
   } else {
     no_repeat_copy(pos);
