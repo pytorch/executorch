@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -7,9 +7,9 @@
 # pyre-unsafe
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass
 
 
 def get_meandim_decomposition(op) -> tuple:
@@ -28,7 +28,7 @@ def get_meandim_decomposition(op) -> tuple:
     raise RuntimeError(f"Can't get meandim decomposition for op {op}")
 
 
-class DecomposeMeanDimPass(ExportPass):
+class DecomposeMeanDimPass(ArmPass):
     """
     This pass decomposes meandim into a sum and mul node.
 
@@ -62,8 +62,8 @@ class DecomposeMeanDimPass(ExportPass):
 
         sum_op, full_op, mul_op = get_meandim_decomposition(op)
 
-        sum = super().call_operator(sum_op, (x, dim, keepdim), {}, meta)
+        sum = super().call_operator(sum_op, (x, dim, keepdim), {}, meta, True)
         full = super().call_operator(
-            full_op, ([1] * len(shape), 1 / N), {"dtype": dtype}, meta
+            full_op, ([1] * len(shape), 1 / N), {"dtype": dtype}, meta, True
         )
-        return super().call_operator(mul_op, (sum, full), {}, meta)
+        return super().call_operator(mul_op, (sum, full), {}, meta, True)
