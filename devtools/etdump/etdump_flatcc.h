@@ -171,7 +171,7 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
    * Supported types include tensor, tensor array, int, bool and double.
    */
   template <typename T>
-  void log_intermediate_output_delegate_helper(
+  Result<bool> log_intermediate_output_delegate_helper(
       const char* name,
       ::executorch::runtime::DebugHandle delegate_debug_index,
       const T& output);
