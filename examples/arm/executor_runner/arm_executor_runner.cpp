@@ -257,7 +257,6 @@ Result<BufferCleanup> prepare_input_tensors(
 
   void** inputs =
       static_cast<void**>(allocator.allocate(num_inputs * sizeof(void*)));
-
   ET_CHECK_OR_RETURN_ERROR(
       inputs != nullptr,
       MemoryAllocationFailed,
@@ -349,7 +348,7 @@ std::pair<char*, size_t> read_binary_file(
         "Could not open file %s (errno: %d) for reading, exiting!",
         filename,
         errno);
-    _exit(1);
+    return std::make_pair(nullptr, 0);
   }
 
   fseek(fp, 0, SEEK_END);
@@ -357,7 +356,11 @@ std::pair<char*, size_t> read_binary_file(
   fseek(fp, 0, SEEK_SET);
 
   char* buffer = static_cast<char*>(allocator.allocate(file_size));
-
+  if (buffer == nullptr) {
+    ET_LOG(
+        Fatal, "Failed to allocate input file size:%zu", (uint32_t)file_size);
+    return std::make_pair(nullptr, 0);
+  }
   auto read_size = fread(buffer, 1, file_size, fp);
   if (read_size != file_size) {
     ET_LOG(
@@ -415,12 +418,28 @@ int main(int argc, const char* argv[]) {
           input_tensor_filename);
       auto [buffer, buffer_size] =
           read_binary_file(input_tensor_filename, input_file_allocator);
+      if (buffer == nullptr) {
+        ET_LOG(
+            Error,
+            "Reading input tensor %d from file %s ERROR Out of memory",
+            nbr_inputs,
+            input_tensor_filename);
+        _exit(1);
+      }
       input_buffers.push_back(std::make_pair(buffer, buffer_size));
     } else if (std::strcmp(argv[i], "-m") == 0) {
       const char* pte_filename = argv[++i];
       ET_LOG(Info, "Reading pte model from file %s", pte_filename);
       auto [buffer, buffer_size] =
           read_binary_file(pte_filename, input_file_allocator);
+      if (buffer == nullptr) {
+        ET_LOG(
+            Error,
+            "Reading pte model from file %s ERROR Out of memory",
+            pte_filename);
+        _exit(1);
+      }
+
       // Store the model data with the same variable as if it was loaded
       // from compiled in location.
       model_pte = buffer;
@@ -510,6 +529,10 @@ int main(int argc, const char* argv[]) {
     /* Move to it's own allocator when MemoryPlanner is in place. */
     uint8_t* buffer =
         reinterpret_cast<uint8_t*>(method_allocator.allocate(buffer_size));
+    ET_CHECK_MSG(
+        buffer != nullptr,
+        "Could not allocate memory for memory planned buffer size %zu",
+        buffer_size);
     planned_buffers.push_back(buffer);
     planned_spans.push_back({planned_buffers.back(), buffer_size});
   }
@@ -623,6 +646,7 @@ int main(int argc, const char* argv[]) {
   ET_LOG(Info, "Starting the model execution...");
   size_t executor_membase = method_allocator.used_size();
   StartMeasurements();
+  // Run the model.
   Error status = method->execute();
   StopMeasurements();
   size_t executor_memsize = method_allocator.used_size() - executor_membase;
@@ -680,6 +704,7 @@ int main(int argc, const char* argv[]) {
   status = method->get_outputs(outputs.data(), outputs.size());
   ET_CHECK(status == Error::Ok);
 
+  // Print the outputs.
   for (int i = 0; i < outputs.size(); ++i) {
     Tensor t = outputs[i].toTensor();
 #if !defined(SEMIHOSTING)
@@ -722,6 +747,51 @@ int main(int argc, const char* argv[]) {
 #endif
   }
 
+#if defined(ET_EVENT_TRACER_ENABLED)
+#if !defined(SEMIHOSTING)
+  // Dump the etdump data containing profiling/debugging data to the serial line
+  // base64 encoded
+  ETDumpResult result = etdump_gen.get_etdump_data();
+  if (result.buf != nullptr && result.size > 0) {
+    // On a device with no file system we can't just write it out
+    // to the file-system so we base64 encode it and dump it on the log.
+    int mode = 0;
+    size_t len = result.size;
+    size_t encoded_len = base64_encoded_size(result.size, mode);
+    uint8_t* encoded_buf =
+        reinterpret_cast<uint8_t*>(method_allocator.allocate(encoded_len + 1));
+    if (encoded_buf != nullptr) {
+      int ret = base64_encode(
+          encoded_buf, (uint8_t*)result.buf, &encoded_len, &len, mode);
+      encoded_buf[encoded_len] = 0x00; // Ensure null termination
+      ET_LOG(Info, "Writing etdump.bin [base64]");
+      printf(
+          "#---\nbase64 -i -d <<<\"\\\n%s\\\n\" >etdump.bin\npython3 -m devtools.inspector.inspector_cli --etdump_path etdump.bin  --source_time_scale cycles --target_time_scale cycles\n#---\n",
+          encoded_buf);
+    } else {
+      ET_LOG(
+          Error,
+          "Could not allocate memory etdump base64 encoding size %zu",
+          encoded_len + 1);
+    }
+  }
+#else
+  // Dump the etdump data containing profiling/debugging data to the specified
+  // file.
+  etdump_result result = etdump_gen.get_etdump_data();
+  if (result.buf != nullptr && result.size > 0) {
+    // On a device with a file system we can just write it out
+    // to the file-system.
+    char etdump_filename = "etdump.bin";
+    ET_LOG(Info, "Writing etdump to file: %s", etdump_filename);
+    FILE* f = fopen(etdump_filename, "w+");
+    fwrite((uint8_t*)result.buf, 1, result.size, f);
+    fclose(f);
+    free(result.buf);
+  }
+#endif
+#endif
+
 #if defined(ET_BUNDLE_IO)
   if (bundle_io) {
     // Verify the result.
@@ -745,41 +815,6 @@ int main(int argc, const char* argv[]) {
   }
 #endif
 
-#if defined(ET_EVENT_TRACER_ENABLED)
-#if !defined(SEMIHOSTING)
-  ETDumpResult result = etdump_gen.get_etdump_data();
-  if (result.buf != nullptr && result.size > 0) {
-    // On a device with no file system we can't just write it out
-    // to the file-system so we base64 encode it and dump it on the log.
-    int mode = 0;
-    size_t len = result.size;
-    size_t encoded_len = base64_encoded_size(result.size, mode);
-    uint8_t* encoded_buf =
-        reinterpret_cast<uint8_t*>(method_allocator.allocate(encoded_len + 1));
-    int ret = base64_encode(
-        encoded_buf, (uint8_t*)result.buf, &encoded_len, &len, mode);
-    encoded_buf[encoded_len] = 0x00; // Ensure null termination
-    ET_LOG(Info, "Writing etdump.bin [base64]");
-    printf(
-        "#---\nbase64 -i -d <<<\"\\\n%s\\\n\" >etdump.bin\npython3 -m devtools.inspector.inspector_cli --etdump_path etdump.bin  --source_time_scale cycles --target_time_scale cycles\n#---\n",
-        encoded_buf);
-  }
-#else
-  etdump_result result = etdump_gen.get_etdump_data();
-  if (result.buf != nullptr && result.size > 0) {
-    // On a device with a file system we can just write it out
-    // to the file-system.
-    char etdump_filename = "etdump.bin";
-    ET_LOG(Info, "Writing etdump to file: %s", etdump_filename);
-    FILE* f = fopen(etdump_filename, "w+");
-    fwrite((uint8_t*)result.buf, 1, result.size, f);
-    fclose(f);
-    free(result.buf);
-  }
-#endif
-#endif
-
-out:
   ET_LOG(Info, "Program complete, exiting.");
 #if defined(SEMIHOSTING)
   _exit(0);

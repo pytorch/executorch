@@ -234,6 +234,11 @@
     - arg_meta: null
       kernel_name: impl::reference::im2row_out
 
+- func: cadence::im2row.per_tensor_out(Tensor input, int[2] kernel_size, int[2] dilation, int[2] padding, int[2] stride, int in_zero_point, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::reference::im2row_per_tensor_out
+
 - func: cadence::quantized_conv.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
@@ -253,3 +258,8 @@
   kernels:
     - arg_meta: null
       kernel_name: impl::reference::requantize_out
+
+- func: cadence::requantize.per_tensor_out(Tensor input, float in_scale, int in_zero_point, float out_scale, int out_zero_point, ScalarType out_dtype, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::reference::requantize_per_tensor_out
