@@ -274,6 +274,9 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
         symmetric_io_quantization: bool = False,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
+        atol: float = 1e-03,
+        rtol: float = 1e-03,
+        qtol: int = 0,
     ):
         compile_spec = common.get_tosa_compile_spec(
             tosa_version, custom_path=custom_path
@@ -322,7 +325,11 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
         )
 
         self.add_stage(
-            self.tester.run_method_and_compare_outputs, inputs=self.test_data
+            self.tester.run_method_and_compare_outputs,
+            atol=atol,
+            rtol=rtol,
+            qtol=qtol,
+            inputs=self.test_data,
         )
 
 
@@ -353,6 +360,9 @@ class TosaPipelineMI(BasePipelineMaker, Generic[T]):
         tosa_version: str = "TOSA-0.80+MI",
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
+        atol: float = 1e-03,
+        rtol: float = 1e-03,
+        qtol: int = 0,
     ):
         compile_spec = common.get_tosa_compile_spec(
             tosa_version, custom_path=custom_path
@@ -376,7 +386,11 @@ class TosaPipelineMI(BasePipelineMaker, Generic[T]):
         )
 
         self.add_stage(
-            self.tester.run_method_and_compare_outputs, inputs=self.test_data
+            self.tester.run_method_and_compare_outputs,
+            atol=atol,
+            rtol=rtol,
+            qtol=qtol,
+            inputs=self.test_data,
         )
 
 
@@ -406,6 +420,9 @@ class EthosU55PipelineBI(BasePipelineMaker, Generic[T]):
         symmetric_io_quantization: bool = False,
         use_to_edge_transform_and_lower: bool = False,
         custom_path: str = None,
+        atol: float = 1e-03,
+        rtol: float = 1e-03,
+        qtol: int = 1,
     ):
         compile_spec = common.get_u55_compile_spec(custom_path=custom_path)
         quant_stage = (
@@ -458,7 +475,9 @@ class EthosU55PipelineBI(BasePipelineMaker, Generic[T]):
             self.add_stage(self.tester.serialize)
             self.add_stage(
                 self.tester.run_method_and_compare_outputs,
-                qtol=1,
+                atol=atol,
+                rtol=rtol,
+                qtol=qtol,
                 inputs=self.test_data,
             )
 
@@ -489,6 +508,9 @@ class EthosU85PipelineBI(BasePipelineMaker, Generic[T]):
         symmetric_io_quantization: bool = False,
         use_to_edge_transform_and_lower: bool = False,
         custom_path: str = None,
+        atol: float = 1e-03,
+        rtol: float = 1e-03,
+        qtol: int = 1,
     ):
         compile_spec = common.get_u85_compile_spec(custom_path=custom_path)
         quant_stage = (
@@ -541,7 +563,9 @@ class EthosU85PipelineBI(BasePipelineMaker, Generic[T]):
             self.add_stage(self.tester.serialize)
             self.add_stage(
                 self.tester.run_method_and_compare_outputs,
-                qtol=1,
+                atol=atol,
+                rtol=rtol,
+                qtol=qtol,
                 inputs=self.test_data,
             )
 
