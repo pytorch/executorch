@@ -207,14 +207,10 @@ def main(args):
     use_pytorch_nightly = True
 
     wants_pybindings_off, pybind_defines = _list_pybind_defines(args)
-    if not wants_pybindings_off:
-        if len(pybind_defines) > 0:
-            # If the user explicitly provides a list of bindings, just use them
-            cmake_args += pybind_defines
-        else:
-            # If the user has not set pybindings off but also has not provided
-            # a list, then turn on xnnpack by default
-            cmake_args.append("-DEXECUTORCH_BUILD_XNNPACK=ON")
+    if wants_pybindings_off:
+        cmake_args.append("-DEXECUTORCH_BUILD_PYBIND=OFF")
+    else:
+        cmake_args += pybind_defines
 
     if args.clean:
         clean()

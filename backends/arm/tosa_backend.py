@@ -34,7 +34,6 @@ from torch.fx import Node
 
 # TOSA backend debug functionality
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
 TOSA_DBG_VERBOSE = os.environ.get("TOSA_DBG_VERBOSE") == "1"
 if TOSA_DBG_VERBOSE:
     logging.basicConfig(level=logging.INFO)
@@ -101,18 +100,22 @@ class TOSABackend(BackendDetails):
         input_count = 0
         for node in graph_module.graph.nodes:
             node = cast(Node, node)
-            if node.op == "call_function":
-                process_call_function(node, tosa_graph, node_visitors, tosa_spec)
-            elif node.op == "placeholder":
-                process_placeholder(node, tosa_graph, edge_program, tosa_spec)
-                if node.name in edge_program.graph_signature.user_inputs:
-                    input_count += 1
-            elif node.op == "output":
-                process_output(node, tosa_graph)
-            else:
-                # This will only happen if an unpartitioned graph is passed without
-                # any checking of compatibility.
-                dbg_fail(node, tosa_graph, artifact_path)
+            try:
+                if node.op == "call_function":
+                    process_call_function(node, tosa_graph, node_visitors, tosa_spec)
+                elif node.op == "placeholder":
+                    process_placeholder(node, tosa_graph, edge_program, tosa_spec)
+                    if node.name in edge_program.graph_signature.user_inputs:
+                        input_count += 1
+                elif node.op == "output":
+                    process_output(node, tosa_graph)
+                else:
+                    # This will only happen if an unpartitioned graph is passed without
+                    # any checking of compatibility.
+                    raise RuntimeError(f"{node.name} is unsupported op {node.op}")
+            except (AssertionError, RuntimeError, ValueError):
+                dbg_fail(node, graph_module, tosa_graph, artifact_path)
+                raise
 
         if len(input_order) > 0:
             if input_count != len(input_order):
