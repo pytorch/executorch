@@ -73,3 +73,12 @@ class BackendDetails(ABC):
         # Users should return a compiled blob - a binary that can run the desired
         # program in the backend.
         pass
+    
+    @staticmethod
+    # it's a virtual method and inheritant class needs to implement the actual function
+    @abstractmethod
+    def preprocess_all(
+        edge_programs: Dict[str, List[ExportedProgram]],
+        compile_specs: Dict[str, List[List[CompileSpec]]],
+    ) -> Dict[str, list[PreprocessResult]]:
+        pass
