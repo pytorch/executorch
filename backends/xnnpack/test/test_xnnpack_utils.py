@@ -317,10 +317,7 @@ class TestXNNPACK(unittest.TestCase):
         module.eval()
         # program capture
 
-        m = export_for_training(
-            module,
-            example_inputs,
-        ).module()
+        m = export_for_training(module, example_inputs, strict=True).module()
 
         quantizer = XNNPACKQuantizer()
         quantization_config = get_symmetric_quantization_config()
