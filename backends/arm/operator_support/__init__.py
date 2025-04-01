@@ -7,6 +7,7 @@
 
 from . import (  # noqa
     convolution_support,
+    ethos_u55_support,
     minmax_support,
     pool_2d_support,
     reduce_sum_support,
