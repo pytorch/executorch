@@ -217,6 +217,8 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.pad.default,
     torch.ops.aten.amax.default,
     torch.ops.aten.amin.default,
+    torch.ops.aten.clamp.default,
+    torch.ops.aten.clamp.Tensor,
 ]
 
 # Operators that can inherit the quantization specs from its parent node
@@ -236,8 +238,6 @@ _parent_shared_qspec = [
     torch.ops.aten.flatten.using_ints,
     torch.ops.aten.dropout.default,
     torch.ops.aten.dropout_.default,
-    torch.ops.aten.clamp.default,
-    torch.ops.aten.clamp.Tensor,
     torch.ops.aten.where,
     operator.getitem,
 ]
