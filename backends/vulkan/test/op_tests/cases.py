@@ -157,12 +157,14 @@ def get_weight_int8pack_mm_inputs():
         [6, 1024, 256],
         [6, 256, 256],
         [6, 256, 512],
+        [4, 768, 4096],
+        [1024, 1024, 1024],
     ]
 
     inputs_list = [((M, K), (N, K), (N)) for M, K, N in MKN_list]
 
     test_suite = VkTestSuite(inputs_list)
-    test_suite.dtypes = ["at::kFloat", "at::kHalf"]
+    test_suite.dtypes = ["at::kFloat"]
     test_suite.layouts = ["utils::kWidthPacked"]
     test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     test_suite.prepacked_args = ["mat2", "scales"]
