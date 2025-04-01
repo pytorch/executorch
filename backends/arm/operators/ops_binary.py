@@ -52,3 +52,6 @@ binary_operator_factory("aten.bitwise_or.Tensor", TosaOp.Op().BITWISE_OR)
 binary_operator_factory("aten.logical_and.default", TosaOp.Op().LOGICAL_AND)
 binary_operator_factory("aten.logical_xor.default", TosaOp.Op().LOGICAL_XOR)
 binary_operator_factory("aten.logical_or.default", TosaOp.Op().LOGICAL_OR)
+binary_operator_factory(
+    "aten.bitwise_left_shift.Tensor", TosaOp.Op().LOGICAL_LEFT_SHIFT
+)

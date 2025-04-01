@@ -11,11 +11,54 @@
 import XCTest
 
 class ModuleTest: XCTestCase {
-  func test() throws {
-    let bundle = Bundle(for: type(of: self))
-    guard let modelPath = bundle.path(forResource: "add", ofType: "pte") else {
+  var resourceBundle: Bundle {
+#if SWIFT_PACKAGE
+    return Bundle.module
+#else
+    return Bundle(for: type(of: self))
+#endif
+  }
+
+  func testLoad() {
+    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
       XCTFail("Couldn't find the model file")
       return
     }
+    let module = Module(filePath: modelPath)
+    XCTAssertNoThrow(try module.load())
+    XCTAssertTrue(module.isLoaded())
+  }
+
+  func testLoadMethod() {
+    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
+      XCTFail("Couldn't find the model file")
+      return
+    }
+    let module = Module(filePath: modelPath)
+    XCTAssertNoThrow(try module.load("forward"))
+    XCTAssertTrue(module.isLoaded("forward"))
+  }
+
+  func testMethodNames() {
+    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
+      XCTFail("Couldn't find the model file")
+      return
+    }
+    let module = Module(filePath: modelPath)
+    var methodNames: Set<String>?
+    XCTAssertNoThrow(methodNames = try module.methodNames())
+    XCTAssertEqual(methodNames, Set(["forward"]))
+  }
+
+  func testExecute() {
+    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
+      XCTFail("Couldn't find the model file")
+      return
+    }
+    let module = Module(filePath: modelPath)
+    let inputs = [Tensor([1], dataType: .float), Tensor([1], dataType: .float)]
+    var outputs: [Value]?
+    XCTAssertNoThrow(outputs = try module.forward(inputs))
+    XCTAssertEqual(outputs?[0].tensor, Tensor([2], dataType: .float, shapeDynamism: .static))
   }
 }
