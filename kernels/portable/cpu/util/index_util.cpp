@@ -84,7 +84,7 @@ bool check_index_select_args(
   if (index.dim() > 0 && in.dim() == 0) {
     ET_CHECK_OR_RETURN_FALSE(
         index.numel() == 1,
-        "index_select: Index to scalar must have exactly 1 value; index.numel() = %zd",
+        "index_select: Index to scalar must have exactly 1 value; index.numel() = %" ET_PRI_TENSOR_NUMEL,
         index.numel());
   }
 
@@ -155,7 +155,7 @@ bool check_scatter_add_args(
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(self, src));
   ET_CHECK_OR_RETURN_FALSE(
       index.scalar_type() == ScalarType::Long,
-      "Expected dypte int64 for index; index.scalar_type() = %d",
+      "Expected dtype int64 for index; index.scalar_type() = %d",
       static_cast<int>(index.scalar_type()));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(self, dim));
 

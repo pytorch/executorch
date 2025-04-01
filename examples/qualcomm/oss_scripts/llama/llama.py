@@ -75,10 +75,8 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.extension.llm.custom_ops import model_sharding
 from executorch.extension.llm.export.builder import DType
-from executorch.extension.llm.tokenizer.tokenizer import (
-    Tokenizer as SentencePieceTokenizer,
-)
-from executorch.extension.llm.tokenizer.utils import get_tokenizer
+from pytorch_tokenizers import get_tokenizer
+from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
 
 from torch.ao.quantization.observer import MinMaxObserver
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e

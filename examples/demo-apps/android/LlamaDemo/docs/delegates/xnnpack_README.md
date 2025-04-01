@@ -21,35 +21,34 @@ Phone verified: OnePlus 12, OnePlus 9 Pro. Samsung S23 (Llama only), Samsung S24
 ## Setup ExecuTorch
 In this section, we will need to set up the ExecuTorch repo first with Conda environment management. Make sure you have Conda available in your system (or follow the instructions to install it [here](https://anaconda.org/anaconda/conda)). The commands below are running on Linux (CentOS).
 
-Create a Conda environment
+Checkout ExecuTorch repo and sync submodules
+
 ```
-conda create -yn executorch python=3.10.0
-conda activate executorch
+git clone -b viable/strict https://github.com/pytorch/executorch.git && cd executorch
 ```
 
-Checkout ExecuTorch repo and sync submodules
+Create either a Python virtual environment:
+
 ```
-git clone https://github.com/pytorch/executorch.git
-cd executorch
-git submodule sync
-git submodule update --init
+python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 ```
+
+Or a Conda environment:
+
+```
+conda create -n et_xnnpack python=3.10.0 && conda activate et_xnnpack
+```
+
 Install dependencies
 ```
 ./install_executorch.sh
 ```
 
-Optional: Use the --pybind flag to install with pybindings.
-```
-./install_executorch.sh --pybind xnnpack
-```
-
-
 ## Prepare Models
 In this demo app, we support text-only inference with up-to-date Llama models and image reasoning inference with LLaVA 1.5.
 * You can request and download model weights for Llama through Meta official [website](https://llama.meta.com/).
 * For chat use-cases, download the instruct models instead of pretrained.
-* Run `examples/models/llama/install_requirements.sh` to install dependencies.
+* Run `./examples/models/llama/install_requirements.sh` to install dependencies.
 * Rename tokenizer for Llama3.x with command: `mv tokenizer.model tokenizer.bin`. We are updating the demo app to support tokenizer in original format directly.
 
 ### For Llama 3.2 1B and 3B SpinQuant models
