@@ -36,10 +36,8 @@ class InsertRequantize(ExportPass):
 
     def __init__(
         self,
-        edge_program: torch.export.ExportedProgram,
     ):
         super(InsertRequantize, self).__init__()
-        self.edge_program = edge_program
 
     def _make_hashable(self, value):
         if isinstance(value, dict):
