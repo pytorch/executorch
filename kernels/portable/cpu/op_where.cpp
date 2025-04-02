@@ -47,7 +47,7 @@ Tensor& where_out(
         CTYPE_COMPUTE,
         op_name,
         utils::SupportedTensorDtypes::SAME_AS_COMMON>(
-        [](const auto val_a, const auto val_b, const auto val_c) {
+        [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b, const CTYPE_COMPUTE val_c) {
           return val_c ? val_a : val_b;
         },
         ctx,
