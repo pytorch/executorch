@@ -84,6 +84,13 @@ Changelog = "https://github.com/pytorch/executorch/releases"
 [project.scripts]
 flatc = "executorch.data.bin:flatc"
 
+# Tell setuptools to follow the symlink: src/executorch/exir -> exir.
+# Doing this allows us to import from executorch.exir directly in
+# editable mode.
+[tool.setuptools.packages.find]
+where = ["src/"]
+include = ["executorch.exir"]
+
 # TODO(dbort): Could use py_modules to restrict the set of modules we
 # package, and package_data to restrict the set up non-python files we
 # include. See also setuptools/discovery.py for custom finders.
@@ -97,7 +104,6 @@ flatc = "executorch.data.bin:flatc"
 "executorch.examples.apple.coreml.llama" = "examples/apple/coreml/llama"
 "executorch.examples.llm_pte_finetuning" = "examples/llm_pte_finetuning"
 "executorch.examples.models" = "examples/models"
-"executorch" = "src/executorch"
 "executorch.extension" = "extension"
 "executorch.kernels.quantized" = "kernels/quantized"
 "executorch.schema" = "schema"
