@@ -8,10 +8,10 @@ To work around this limitation, a symlink is used. With this symlink and this pa
 
 ```toml
 [tool.setuptools.package-dir]
-...
+# ...
 "executorch" = "src/executorch"
 ```
-We are telling `pip install -e .` to treat `src/executorch` as the root of the `executorch` package and hence mapping `executorch.exir` to `src/executorch/exir`.
+We are telling `pip install -e .` to treat `src/executorch` as the root of the `executorch` package and hence mapping `executorch.*.*` to `src/executorch/*/*`. This effectively gets modules like `exir` out from the root level package.
 
 This allows us to perform `pip install -e .` successfully and enables the execution of the following command:
 
