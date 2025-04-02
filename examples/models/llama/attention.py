@@ -185,6 +185,9 @@ class AttentionMHA(Attention):
             self.q_norm_fn = RMSNorm(q_norm_dim, eps=args.norm_eps)
             self.k_norm_fn = RMSNorm(k_norm_dim, eps=args.norm_eps)
 
+        # self.wq = nn.Linear(
+        #     self.dim, self.n_heads * self.head_dim, bias=self.attention_qkv_bias
+        # )
         self.wq = nn.Linear(
             self.dim, self.n_heads * self.head_dim, bias=self.attention_qkv_bias
         )

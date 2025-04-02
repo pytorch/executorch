@@ -101,7 +101,7 @@ EXECUTORCH_DEFINED_MODELS = [
     "phi_4_mini",
     "smollm2",
 ]
-TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
+TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision", "llama3_2_lora"]
 HUGGING_FACE_REPO_IDS = {
     "qwen2_5": "Qwen/Qwen2.5-1.5B",
     "phi_4_mini": "microsoft/Phi-4-mini-instruct",
@@ -207,6 +207,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--checkpoint_dir",
         default=None,
         help="checkpoint directory. Use with a sharded checkpoint, not for the standard llama2 model. Note, checkpoint_dir takes precedence over checkpoint if both are set.",
+    )
+
+    parser.add_argument(
+        "--adapter",
+        default=None,
+        help="Adapter path",
     )
 
     parser.add_argument(
@@ -585,6 +591,7 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
     checkpoint_dir = (
         canonical_path(args.checkpoint_dir) if args.checkpoint_dir else None
     )
+    adapter_path = canonical_path(args.adapter) if args.adapter else None
     params_path = canonical_path(args.params) if args.params else None
     output_dir_path = canonical_path(args.output_dir, dir=True)
     weight_type = WeightType.FAIRSEQ2 if args.fairseq2 else WeightType.LLAMA
@@ -592,10 +599,12 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
     # Convert dtype override string arg to actual type.
     dtype_override = DType[args.dtype_override]
 
+    # breakpoint()  # 1, OK.
     edge_manager = _load_llama_model(
         args.model,
         checkpoint=checkpoint_path,
         checkpoint_dir=checkpoint_dir,
+        adapter=adapter_path,
         params_path=params_path,
         use_kv_cache=args.use_kv_cache,
         use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
@@ -616,10 +625,16 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
         dtype_override=dtype_override,
         args=args,
     )
-
     # At this point, the model is loaded in the default fp32.
 
     # Checkpoint dtype should be lower or equal precision to the dtype override.
+    eg = torch.tensor([[2, 3, 4]], dtype=torch.int64)
+    ip = torch.tensor([[0, 1, 2]], dtype=torch.long)
+
+    em1 = edge_manager.model.forward(eg, input_pos=ip)
+    eager = torch.load("/data/users/lfq/executorch/eager_res.pt")
+    torch.allclose(eager, em1)
+    # breakpoint()  # 4, OK.
     checkpoint_dtype = edge_manager.model.checkpoint_dtype
     if not (
         checkpoint_dtype == dtype_override.to_torch_dtype()
@@ -637,6 +652,10 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
         )
 
     edge_manager.model = edge_manager.model.to(dtype=dtype_override.to_torch_dtype())
+    # edge_manager.model = edge_manager.model.to(dtype=torch.float32)
+    em2 = edge_manager.model.forward(eg, input_pos=ip)
+    torch.allclose(em2, eager)
+    # breakpoint()  # 5, not OK, gets converted to bf16. OK if dtype is consistent.
 
     # We want to quantize (in the source transforms) the weights of the model
     # in the checkpoint dtype.
@@ -649,7 +668,9 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
             args=args,
         )
     )
-
+    # torch.allclose here as well.
+    em3 = edge_manager.model.forward(eg, input_pos=ip)
+    torch.allclose(em3, eager)
     return edge_manager
 
 
@@ -777,6 +798,9 @@ def _to_edge_and_lower_llama(  # noqa: C901
     builder_exported_to_edge = builder_exported.pt2e_quantize(
         quantizers
     ).export_to_edge()
+    breakpoint()
+    # ^to_edge_res.pt
+    # allclose 1e-1 compared to pre-auto.
 
     # to_backend
     partitioners = []
@@ -911,7 +935,16 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
 
     # export_to_edge
     builder_exported = _prepare_for_llama_export(args).export()
+    eg = torch.tensor([[2, 3, 4]], dtype=torch.int64)
+    ip = torch.tensor([[0, 1, 2]], dtype=torch.long)
+    b_e = builder_exported.model.forward(eg, input_pos=ip)
+    eager = torch.load("/data/users/lfq/executorch/eager_res.pt")
+    torch.allclose(b_e, eager)
+    # breakpoint()
+
     builder_exported.run_canonical_optimizations()
+    b_e2 = builder_exported.model.forward(eg, input_pos=ip)
+    torch.allclose(b_e2, eager)
     modelname = builder_exported.modelname
 
     if args.export_only:
@@ -932,6 +965,9 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
             args,
         )
     else:
+        # breakpoint()
+        b_e3 = builder_exported.model.forward(eg, input_pos=ip)
+        torch.allclose(b_e3, eager)
         builder = _to_edge_and_lower_llama(
             builder_exported,
             modelname,
@@ -941,6 +977,7 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
             quant_dtype,
             args,
         )
+        breakpoint()
 
     if args.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")
@@ -1004,6 +1041,7 @@ def _load_llama_model(
     *,
     checkpoint: Optional[str] = None,
     checkpoint_dir: Optional[str] = None,
+    adapter: Optional[str] = None,
     params_path: Optional[str] = None,
     use_kv_cache: bool = False,
     use_sdpa_with_kv_cache: bool = False,
@@ -1038,6 +1076,9 @@ def _load_llama_model(
         if modelname == "llama3_2_vision":
             module_name = "llama3_2_vision"
             model_class_name = "Llama3_2Decoder"
+        if modelname == "llama3_2_lora":
+            module_name = "llama3_2_lora"
+            model_class_name = "Llama3_2_Lora"
         else:
             raise ValueError(f"{modelname} is not a valid Llama model.")
     else:
@@ -1051,6 +1092,7 @@ def _load_llama_model(
             model_class_name,
             checkpoint=checkpoint,
             checkpoint_dir=checkpoint_dir,
+            adapter=adapter,
             params=params_path,
             use_kv_cache=use_kv_cache,
             use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
@@ -1066,6 +1108,7 @@ def _load_llama_model(
         )
     )
 
+    # breakpoint()  # 3. OK.
     return LLMEdgeManager(
         model=model,
         modelname=modelname,
@@ -1093,7 +1136,7 @@ def _load_llama_model(
             model.max_seq_len,
             # pyre-fixme[6]: For 6th argument expected `ModelArgs` but got
             #  `Union[Tensor, Module]`.
-            model.max_context_len,
+            max_context_len,
             # pyre-fixme[6]: For 7th argument expected `int` but got `Union[Tensor,
             #  Module]`.
             model.n_layers,
@@ -1244,6 +1287,9 @@ def _get_source_transforms(  # noqa
     if args.vulkan:
         transforms.append(replace_with_vulkan_rotary_emb)
 
+    # transforms.append(
+    #     replace_rope_with_inference_rope()
+    # )
     return transforms
 
 
