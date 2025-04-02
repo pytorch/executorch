@@ -157,3 +157,5 @@ class QnnExecuTorchOptions:
     shared_buffer: bool = False
     is_from_context_binary: bool = False
     multiple_graphs: bool = False
+    saver: bool = False
+    saver_output_dir: str = "saver_output"
