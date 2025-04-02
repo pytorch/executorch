@@ -121,6 +121,7 @@ class ShouldBuild:
                 [
                     cls.coreml(),
                     cls.mps(),
+                    cls.openvino(),
                     cls.xnnpack(),
                     cls.training(),
                 ]
@@ -136,8 +137,12 @@ class ShouldBuild:
         return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_MPS", default=False)
 
     @classmethod
+    def openvino(cls) -> bool:
+        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_OPENVINO", default=False)
+
+    @classmethod
     def xnnpack(cls) -> bool:
-        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_XNNPACK", default=False)
+        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_XNNPACK", default=True)
 
     @classmethod
     def training(cls) -> bool:
@@ -725,6 +730,9 @@ class CustomBuild(build):
                 "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON",
             ]
 
+            if ShouldBuild.xnnpack():
+                cmake_args += ["-DEXECUTORCH_BUILD_XNNPACK=ON"]
+
             if ShouldBuild.training():
                 build_args += ["--target", "_training_lib"]
 
@@ -861,7 +869,7 @@ def get_ext_modules() -> List[Extension]:
             ext_modules.append(
                 # Install the prebuilt pybindings extension wrapper for training
                 BuiltExtension(
-                    "_training_lib.*",
+                    "extension/training/_training_lib.*",
                     "executorch.extension.training.pybindings._training_lib",
                 )
             )

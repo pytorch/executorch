@@ -254,7 +254,10 @@ bool check_arange_args(double start, double end, double step, Tensor& out) {
 
   ET_CHECK_OR_RETURN_FALSE(
       (step > 0 && (end >= start)) || (step < 0 && (end <= start)),
-      "upper bound and larger bound inconsistent with step sign");
+      "upper bound and larger bound inconsistent with step sign; step = %.6f, start = %.6f, end = %.6f",
+      step,
+      start,
+      end);
 
   return true;
 }
@@ -276,7 +279,8 @@ bool check_avg_pool2d_args(
   ET_CHECK_OR_RETURN_FALSE(
       (in.dim() == 3 && in.size(0) > 0 && in.size(1) > 0 && in.size(2) > 0) ||
           (in.dim() == 4 && in.size(1) > 0 && in.size(2) > 0 && in.size(3) > 0),
-      "Expected 3D or 4D (batch mode) tensor with optional 0 dim batch size for input");
+      "Expected 3D or 4D (batch mode) tensor with optional 0 dim batch size for input; in.dim() = %" ET_PRI_TENSOR_DIM,
+      in.dim());
 
   ET_LOG_AND_RETURN_IF_FALSE(
       kernel_size_is_valid(kernel_size, /*kernel_ndim=*/2));
@@ -347,8 +351,10 @@ bool check_convolution_args(
     ET_CHECK_OR_RETURN_FALSE(
         bias.value().size(0) == transposed ? groups * weight.size(1)
                                            : weight.size(0),
-        "bias length must equal number of output channels, but got %zd",
-        bias.value().size(0));
+        "bias length must equal number of output channels, but got %" ET_PRI_TENSOR_SIZE
+        "; expected %" PRId64,
+        bias.value().size(0),
+        transposed ? groups * weight.size(1) : weight.size(0));
   }
 
   int64_t kernel_size[2];
@@ -398,7 +404,9 @@ bool check_convolution_args(
   } else {
     ET_CHECK_OR_RETURN_FALSE(
         in.size(1) == weight.size(0),
-        "input channels must match weight.size(0) in transposed convolution");
+        "input channels must match weight.size(0) in transposed convolution; in.size(1) = %zd, weight.size(0) = %zd",
+        in.size(1),
+        weight.size(0));
   }
 
   return true;
@@ -484,7 +492,8 @@ bool check_max_pool2d_with_indices_args(
   ET_CHECK_OR_RETURN_FALSE(
       (in.dim() == 3 && in.size(0) > 0 && in.size(1) > 0 && in.size(2) > 0) ||
           (in.dim() == 4 && in.size(1) > 0 && in.size(2) > 0 && in.size(3) > 0),
-      "Expected 3D or 4D (batch mode) tensor with optional 0 dim batch size for input");
+      "Expected 3D or 4D (batch mode) tensor with optional 0 dim batch size for input; in.dim() = %" ET_PRI_TENSOR_DIM,
+      in.dim());
 
   ET_LOG_AND_RETURN_IF_FALSE(
       kernel_size_is_valid(kernel_size, /*kernel_ndim=*/2));
@@ -545,11 +554,15 @@ bool check_constant_pad_args(
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_rank(in, out));
 
   ET_CHECK_OR_RETURN_FALSE(
-      pad.size() % 2 == 0, "Padding array must be a multiple of 2");
+      pad.size() % 2 == 0,
+      "Padding array must be a multiple of 2; pad.size() = %zu",
+      pad.size());
 
   ET_CHECK_OR_RETURN_FALSE(
       static_cast<ssize_t>(pad.size() / 2) <= in.dim(),
-      "Padding array contains too many elements");
+      "Padding array contains too many elements; pad.size()/2 = %zu, in.dim() = %" ET_PRI_TENSOR_DIM,
+      pad.size() / 2,
+      in.dim());
 
   return true;
 }
