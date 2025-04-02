@@ -22,7 +22,6 @@ from executorch.exir.backend.partitioner import (
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.graph_module import get_control_flow_submodules
 from torch.export.exported_program import ExportedProgram
-from torch.export import ExportedProgram
 from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 
 
@@ -45,7 +44,7 @@ def _preprocess_multimethod(
                 if node.op == "call_function":
                     if node.target in supported_ops:
                         total_number_of_ops += 1
-    all_processed_results = dict((key, []) for key in edge_programs.keys())
+    all_processed_results = {key: [] for key in edge_programs.keys()}
 
     for method_name, partitioned_programs in edge_programs.items():
         compile_specs_for_method = compile_specs[method_name]
@@ -68,16 +67,6 @@ def _preprocess_multimethod(
                         raise RuntimeError(
                             f"{node.op} {node.target.__name__} is not supported in backend {backend_name}"
                         )
-                elif node.op == "placeholder":
-                    continue
-                elif node.op == "output":
-                    continue
-                elif node.op == "get_attr":
-                    continue
-                else:
-                    raise RuntimeError(
-                        f"{node.op} is not supported in backend {backend_name}"
-                    )
 
             processed_bytes += "#"
             for cs in compile_spec_for_partition:

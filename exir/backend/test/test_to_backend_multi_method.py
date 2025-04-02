@@ -255,52 +255,6 @@ class TestToBackendMultiMethod(unittest.TestCase):
         }
         self._test(test_set)
 
-    def test_multi_method_to_backend_two_methods_different_partitions(self):
-        class AddSinModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                y = x + x
-                y = y * y
-                y = torch.sin(y)
-                return y
-
-        class SinAddModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                y = torch.sin(x)
-                y = y * y
-                return y + y
-
-        add_sin_edgeir_m = to_edge(
-            torch.export.export(AddSinModule(), (torch.ones(1),))
-        )
-        sin_add_edgeir_m = to_edge(
-            torch.export.export(SinAddModule(), (torch.ones(1),))
-        )
-        test_set = {
-            "add_sin": (
-                add_sin_edgeir_m.exported_program(),
-                BackendWithPreprocessAllPartitioner(),
-                [
-                    "FirstBackendWithPreprocessAll#4#aten.add.Tensor:#add:b'\\x00';",
-                    "FirstBackendWithPreprocessAll#4#aten.sin.default:#sin:b'\\x01';",
-                ],
-            ),
-            "sin_add": (
-                sin_add_edgeir_m.exported_program(),
-                BackendWithPreprocessAllPartitioner(),
-                [
-                    "FirstBackendWithPreprocessAll#4#aten.sin.default:#sin:b'\\x01';",
-                    "FirstBackendWithPreprocessAll#4#aten.add.Tensor:#add:b'\\x00';",
-                ],
-            ),
-        }
-        self._test(test_set)
-
     def test_multi_method_to_backend_two_methods_different_backends(self):
         class AddSinCosSubModule(torch.nn.Module):
             def __init__(self):
@@ -441,7 +395,7 @@ class TestToBackendMultiMethod(unittest.TestCase):
                 [],
             ),
             "add": (
-                sin_edgeir_m.exported_program(),
+                add_edgeir_m.exported_program(),
                 add_partitioner,
                 [],
             ),

@@ -37,7 +37,7 @@ from executorch.exir.program._fake_program import (
     update_to_real_program,
 )
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
-from torch.export import ExportedProgram
+from torch.export.exported_program import ExportedProgram, InputSpec, OutputSpec
 
 
 @singledispatch
@@ -191,6 +191,64 @@ def _get_node_list_with_same_tag(
     return node_list
 
 
+def _insert_lowered_submodule(
+    submodule_program: ExportedProgram,
+    owning_program: ExportedProgram,
+    call_submodule_node: torch.fx.Node,
+    lowered_module: LoweredBackendModule,
+    is_submodule: bool,
+    toplevel_input_specs_to_delete: Dict[str, InputSpec],
+    toplevel_output_specs_to_delete: Dict[str, OutputSpec],
+):
+    owning_graph_module = call_submodule_node.graph.owning_module
+    # call delegate args should only use user_inputs
+    call_delegate_args = []
+    # Preserve input order as user_inputs
+    for inp_name in submodule_program.graph_signature.user_inputs:
+        for inp_node in call_submodule_node.all_input_nodes:
+            if inp_node.name == inp_name:
+                call_delegate_args.append(inp_node)
+                break
+
+    def generate_debug_handle(ep: ExportedProgram) -> int:
+        """
+        Generate a debug handle for the given ExportedProgram.
+        """
+        debug_handle = 0
+        for node in ep.graph_module.graph.nodes:
+            debug_handle = max(debug_handle, node.meta.get("debug_handle", 0))
+        return debug_handle + 1
+
+    # Replace the partitioned submodule with a lowered submodule
+    # Add call_method node with function "forward"
+    with owning_graph_module.graph.inserting_before(call_submodule_node):
+        lowered_name = get_lowered_module_name(owning_graph_module, lowered_module)
+        lowered_node = owning_graph_module.graph.get_attr(lowered_name)
+        call_delegate_node = owning_graph_module.graph.call_function(
+            executorch_call_delegate,
+            (lowered_node,) + tuple(call_delegate_args),
+            call_submodule_node.kwargs,
+        )
+        call_delegate_node.meta["debug_handle"] = generate_debug_handle(owning_program)
+        call_delegate_node.meta["val"] = call_submodule_node.meta["val"]
+        call_submodule_node.replace_all_uses_with(call_delegate_node)
+        owning_graph_module.graph.erase_node(call_submodule_node)
+
+    if is_submodule:
+        assert len(toplevel_input_specs_to_delete) == 0
+        assert len(toplevel_output_specs_to_delete) == 0
+    elif (
+        len(toplevel_input_specs_to_delete) > 0
+        or len(toplevel_output_specs_to_delete) > 0
+    ):
+        _unsafe_adjust_original_program(
+            owning_program,
+            call_delegate_node,
+            toplevel_input_specs_to_delete,
+            toplevel_output_specs_to_delete,
+        )
+
+
 def _partition_and_lower_one_graph_module(
     tagged_graph_module: torch.fx.GraphModule,
     partition_result: PartitionResult,
@@ -255,56 +313,15 @@ def _partition_and_lower_one_graph_module(
             delegation_spec.compile_specs,
         )
 
-        # call delegate args should only use user_inputs
-        call_delegate_args = []
-        # Preserve input order as user_inputs
-        for inp_name in submodule_program.graph_signature.user_inputs:
-            for inp_node in call_module_node.all_input_nodes:
-                if inp_node.name == inp_name:
-                    call_delegate_args.append(inp_node)
-                    break
-
-        def generate_debug_handle(ep: ExportedProgram) -> int:
-            """
-            Generate a debug handle for the given ExportedProgram.
-            """
-            debug_handle = 0
-            for node in ep.graph_module.graph.nodes:
-                debug_handle = max(debug_handle, node.meta.get("debug_handle", 0))
-            return debug_handle + 1
-
-        # Replace the partitioned submodule with a lowered submodule
-        # Add call_method node with function "forward"
-        with tagged_graph_module.graph.inserting_before(call_module_node):
-            lowered_name = get_lowered_module_name(
-                tagged_graph_module, lowered_submodule
-            )
-            lowered_node = tagged_graph_module.graph.get_attr(lowered_name)
-            call_delegate_node = tagged_graph_module.graph.call_function(
-                executorch_call_delegate,
-                (lowered_node,) + tuple(call_delegate_args),
-                call_module_node.kwargs,
-            )
-            call_delegate_node.meta["debug_handle"] = generate_debug_handle(
-                owning_program
-            )
-            call_delegate_node.meta["val"] = submodule_output_node.meta["val"]
-            call_module_node.replace_all_uses_with(call_delegate_node)
-            tagged_graph_module.graph.erase_node(call_module_node)
-
-        if is_submodule:
-            assert len(toplevel_input_specs_to_delete) == 0
-            assert len(toplevel_output_specs_to_delete) == 0
-        elif (
-            len(toplevel_input_specs_to_delete) > 0
-            or len(toplevel_output_specs_to_delete) > 0
-        ):
-            _unsafe_adjust_original_program(
-                owning_program,
-                call_delegate_node,
-                toplevel_input_specs_to_delete,
-                toplevel_output_specs_to_delete,
-            )
+        _insert_lowered_submodule(
+            submodule_program,
+            owning_program,
+            call_module_node,
+            lowered_submodule,
+            is_submodule,
+            toplevel_input_specs_to_delete,
+            toplevel_output_specs_to_delete,
+        )
 
     return tagged_graph_module
 
@@ -496,9 +513,7 @@ def _create_partitions_in_graph_module(
             call_module_node.target
         )
 
-    created_submodule_nodes = dict(
-        (key, []) for key in backend_id_to_submodule_name.keys()
-    )
+    created_submodule_nodes = {key: [] for key in backend_id_to_submodule_name.keys()}
     for backend_id, submodule_name in backend_id_to_submodule_name.items():
         for node in tagged_graph_module.graph.nodes:
             if node.op == "call_module" and node.target in submodule_name:
@@ -576,10 +591,6 @@ def lower_all_submodules_to_backend(
         list_of_preprocess_results = method_to_preprocess_result[method_name]
         list_of_call_submodule_nodes = method_to_submodules_nodes[method_name]
         list_of_compile_specs = method_to_compile_specs[method_name]
-        assert (
-            len(list_of_preprocess_results) == len(list_of_call_submodule_nodes),
-            f"Expected {len(list_of_call_submodule_nodes)} preprocessed results for method {method_name} but got {len(list_of_preprocess_results)}",
-        )
         for preprocess_result, call_submodule_node, compile_spec in zip(
             list_of_preprocess_results,
             list_of_call_submodule_nodes,
@@ -591,8 +602,8 @@ def lower_all_submodules_to_backend(
                 backend_id=backend_id,
                 processed_bytes=preprocess_result.processed_bytes,
                 compile_specs=compile_spec,
+                named_data_store_output=preprocess_result.data_store_output,
             )
-            owning_graph_module = call_submodule_node.graph.owning_module
             is_submodule = call_submodule_node.meta["is_submodule"]
             toplevel_input_specs_to_delete = call_submodule_node.meta[
                 "toplevel_input_specs_to_delete"
@@ -600,56 +611,16 @@ def lower_all_submodules_to_backend(
             toplevel_output_specs_to_delete = call_submodule_node.meta[
                 "toplevel_output_specs_to_delete"
             ]
-            # call delegate args should only use user_inputs
-            call_delegate_args = []
-            # Preserve input order as user_inputs
-            for inp_name in submodule_program.graph_signature.user_inputs:
-                for inp_node in call_submodule_node.all_input_nodes:
-                    if inp_node.name == inp_name:
-                        call_delegate_args.append(inp_node)
-                        break
 
-            def generate_debug_handle(ep: ExportedProgram) -> int:
-                """
-                Generate a debug handle for the given ExportedProgram.
-                """
-                debug_handle = 0
-                for node in ep.graph_module.graph.nodes:
-                    debug_handle = max(debug_handle, node.meta.get("debug_handle", 0))
-                return debug_handle + 1
-
-            # Replace the partitioned submodule with a lowered submodule
-            # Add call_method node with function "forward"
-            with owning_graph_module.graph.inserting_before(call_submodule_node):
-                lowered_name = get_lowered_module_name(
-                    owning_graph_module, lowered_module
-                )
-                lowered_node = owning_graph_module.graph.get_attr(lowered_name)
-                call_delegate_node = owning_graph_module.graph.call_function(
-                    executorch_call_delegate,
-                    (lowered_node,) + tuple(call_delegate_args),
-                    call_submodule_node.kwargs,
-                )
-                call_delegate_node.meta["debug_handle"] = generate_debug_handle(
-                    owning_program
-                )
-                call_delegate_node.meta["val"] = call_submodule_node.meta["val"]
-                call_submodule_node.replace_all_uses_with(call_delegate_node)
-                owning_graph_module.graph.erase_node(call_submodule_node)
-
-            if is_submodule:
-                assert len(toplevel_input_specs_to_delete) == 0
-                assert len(toplevel_output_specs_to_delete) == 0
-            elif (
-                len(toplevel_input_specs_to_delete) > 0
-                or len(toplevel_output_specs_to_delete) > 0
-            ):
-                _unsafe_adjust_original_program(
-                    owning_program,
-                    call_delegate_node,
-                    toplevel_input_specs_to_delete,
-                    toplevel_output_specs_to_delete,
-                )
+            _insert_lowered_submodule(
+                submodule_program,
+                owning_program,
+                call_submodule_node,
+                lowered_module,
+                is_submodule,
+                toplevel_input_specs_to_delete,
+                toplevel_output_specs_to_delete,
+            )
 
 
 @dataclass
