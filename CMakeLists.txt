@@ -757,15 +757,11 @@ if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizer)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizers)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
-endif()
-
-if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/training)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
@@ -872,32 +868,11 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
 
-    set(_pybind_training_dep_libs
-        ${TORCH_PYTHON_LIBRARY}
-        etdump
-        executorch
-        util
-        torch
-        extension_training
-    )
-
-    if(EXECUTORCH_BUILD_XNNPACK)
-      # need to explicitly specify XNNPACK and microkernels-prod
-      # here otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
-      list(APPEND _pybind_training_dep_libs xnnpack_backend XNNPACK microkernels-prod)
-    endif()
-
-    # pybind training
-    pybind11_add_module(_training_lib SHARED extension/training/pybindings/_training_lib.cpp)
-
-    target_include_directories(_training_lib PRIVATE ${TORCH_INCLUDE_DIRS})
-    target_compile_options(_training_lib PUBLIC ${_pybind_compile_options})
-    target_link_libraries(_training_lib PRIVATE ${_pybind_training_dep_libs})
-
-    install(TARGETS _training_lib
-            LIBRARY DESTINATION executorch/extension/training/pybindings
-    )
   endif()
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/training)
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)

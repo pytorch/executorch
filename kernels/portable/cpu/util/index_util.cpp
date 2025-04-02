@@ -23,12 +23,15 @@ bool check_gather_args(
   ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
   ET_CHECK_OR_RETURN_FALSE(
       index.scalar_type() == ScalarType::Long,
-      "Expected dypte int64 for index");
+      "Expected dypte int64 for index; index.scalar_type() = %d",
+      static_cast<int>(index.scalar_type()));
   if (index.numel() != 0) {
     ET_CHECK_OR_RETURN_FALSE(
         nonzero_dim(in) == nonzero_dim(index),
         "self and index should have the same dimensionality when index is not empty "
-        "except for the case when one has dimension 0 and the other has dimension 1");
+        "except for the case when one has dimension 0 and the other has dimension 1; nonzero_dim(in) = %zd, nonzero_dim(index) = %zd",
+        nonzero_dim(in),
+        nonzero_dim(index));
   }
 
   // Normalize dim to non-negative value
@@ -67,7 +70,8 @@ bool check_index_select_args(
   dim = dim < 0 ? dim + nonzero_dim(in) : dim;
   ET_CHECK_OR_RETURN_FALSE(
       nonempty_size(in, dim) > 0,
-      "index_select: Indexing axis dim should be positive");
+      "index_select: Indexing axis dim should be positive; nonempty_size(in, dim) = %zd",
+      nonempty_size(in, dim));
 
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_CHECK_OR_RETURN_FALSE(
@@ -80,7 +84,8 @@ bool check_index_select_args(
   if (index.dim() > 0 && in.dim() == 0) {
     ET_CHECK_OR_RETURN_FALSE(
         index.numel() == 1,
-        "index_select: Index to scalar must have exactly 1 value");
+        "index_select: Index to scalar must have exactly 1 value; index.numel() = %" ET_PRI_TENSOR_NUMEL,
+        index.numel());
   }
 
   if (index.scalar_type() == ScalarType::Long) {
@@ -150,7 +155,8 @@ bool check_scatter_add_args(
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(self, src));
   ET_CHECK_OR_RETURN_FALSE(
       index.scalar_type() == ScalarType::Long,
-      "Expected dypte int64 for index");
+      "Expected dtype int64 for index; index.scalar_type() = %d",
+      static_cast<int>(index.scalar_type()));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(self, dim));
 
   if (index.numel() == 0) {
@@ -160,7 +166,10 @@ bool check_scatter_add_args(
   ET_CHECK_OR_RETURN_FALSE(
       nonzero_dim(self) == nonzero_dim(src) &&
           nonzero_dim(self) == nonzero_dim(index),
-      "self, index and src should have same number of dimensions.");
+      "self, index and src should have same number of dimensions; nonzero_dim(self) = %zd, nonzero_dim(src) = %zd, nonzero_dim(index) = %zd",
+      nonzero_dim(self),
+      nonzero_dim(src),
+      nonzero_dim(index));
 
   // Normalize dim to non-negative value
   if (dim < 0) {

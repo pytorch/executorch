@@ -22,24 +22,37 @@ bool check_repeat_interleave_args(
   ET_CHECK_OR_RETURN_FALSE(
       repeats.scalar_type() == ScalarType::Int ||
           repeats.scalar_type() == ScalarType::Long,
-      "repeats must be int or long");
-  ET_CHECK_OR_RETURN_FALSE(repeats.dim() == 1, "repeats must be 1D");
+      "repeats must be int or long; repeats.scalar_type() = %d",
+      static_cast<int>(repeats.scalar_type()));
+  ET_CHECK_OR_RETURN_FALSE(
+      repeats.dim() == 1,
+      "repeats must be 1-D; repeats.dim() = %" ET_PRI_TENSOR_DIM,
+      repeats.dim());
   ET_CHECK_OR_RETURN_FALSE(
       output_size_value == repeats_sum,
-      "output_size, if provided, must be equal to repeats.sum()");
+      "output_size, if provided, must be equal to repeats.sum(); output_size_value = %" PRId64
+      ", repeats_sum = %" PRId64,
+      output_size_value,
+      repeats_sum);
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(repeats, out));
 
   if (repeats.scalar_type() == ScalarType::Long) {
     const int64_t* const repeats_data = repeats.const_data_ptr<int64_t>();
     for (const auto i : c10::irange(repeats.numel())) {
       ET_CHECK_OR_RETURN_FALSE(
-          repeats_data[i] >= 0, "repeats cannot be negative");
+          repeats_data[i] >= 0,
+          "repeats cannot be negative; repeats_data[%" PRId64 "] = %" PRId64,
+          static_cast<int64_t>(i),
+          repeats_data[i]);
     }
   } else {
     const int32_t* const repeats_data = repeats.const_data_ptr<int32_t>();
     for (const auto i : c10::irange(repeats.numel())) {
       ET_CHECK_OR_RETURN_FALSE(
-          repeats_data[i] >= 0, "repeats cannot be negative");
+          repeats_data[i] >= 0,
+          "repeats cannot be negative; repeats_data[%" PRId64 "] = %d",
+          static_cast<int64_t>(i),
+          repeats_data[i]);
     }
   }
 

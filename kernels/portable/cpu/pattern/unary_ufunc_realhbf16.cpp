@@ -15,7 +15,7 @@ namespace executor {
 namespace native {
 namespace internal {
 
-Tensor& unary_ufunc_realh(
+Tensor& unary_ufunc_realhbf16(
     double (*fn)(double),
     KernelRuntimeContext& ctx,
     const Tensor& in,
@@ -36,7 +36,7 @@ Tensor& unary_ufunc_realh(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
-  ET_SWITCH_REALH_TYPES(in.scalar_type(), ctx, __func__, CTYPE, [&] {
+  ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, __func__, CTYPE, [&] {
     apply_unary_map_fn(
         [fn](const CTYPE val_in) { return static_cast<CTYPE>(fn(val_in)); },
         in.const_data_ptr<CTYPE>(),
