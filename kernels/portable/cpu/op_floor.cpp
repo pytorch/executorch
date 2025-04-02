@@ -17,7 +17,7 @@ namespace native {
 using executorch::aten::Tensor;
 
 Tensor& floor_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
-  return internal::unary_ufunc_realh(std::floor, ctx, in, out);
+  return internal::unary_ufunc_realhbf16(std::floor, ctx, in, out);
 }
 
 } // namespace native

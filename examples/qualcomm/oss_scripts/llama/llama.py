@@ -57,7 +57,6 @@ from executorch.devtools.backend_debug import print_delegation_info
 from executorch.examples.models.llama.source_transformation.quantize import (
     get_quant_embedding_transform,
 )
-from executorch.examples.models.llama.tokenizer.tiktoken import Tokenizer as Tiktoken
 from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
     LlamaModel,
     ModelArgs,
@@ -75,10 +74,8 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.extension.llm.custom_ops import model_sharding
 from executorch.extension.llm.export.builder import DType
-from executorch.extension.llm.tokenizer.tokenizer import (
-    Tokenizer as SentencePieceTokenizer,
-)
-from executorch.extension.llm.tokenizer.utils import get_tokenizer
+from pytorch_tokenizers import get_tokenizer, TiktokenTokenizer
+from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
 
 from torch.ao.quantization.observer import MinMaxObserver
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
@@ -143,7 +140,7 @@ def _kv_calibrate(
     # Llama2 tokenizer has no special tokens
     if isinstance(tokenizer, SentencePieceTokenizer):
         token_list = tokenizer.encode(user_prompts, bos=True, eos=False)
-    elif isinstance(tokenizer, Tiktoken):
+    elif isinstance(tokenizer, TiktokenTokenizer):
         token_list = tokenizer.encode(
             user_prompts, bos=True, eos=False, allowed_special="all"
         )
@@ -215,7 +212,7 @@ def _prefill_calibrate(
     # Llama2 tokenizer has no special tokens
     if isinstance(tokenizer, SentencePieceTokenizer):
         token_list = tokenizer.encode(user_prompts, bos=True, eos=False)
-    elif isinstance(tokenizer, Tiktoken):
+    elif isinstance(tokenizer, TiktokenTokenizer):
         token_list = tokenizer.encode(
             user_prompts, bos=True, eos=False, allowed_special="all"
         )
@@ -1113,7 +1110,7 @@ def export_llama(args) -> None:
         runtime_tokenizer_path = args.tokenizer_bin
     elif args.llama_model == "llama3_2":
         assert isinstance(
-            tokenizer, Tiktoken
+            tokenizer, TiktokenTokenizer
         ), f"Wrong tokenizer provided for llama3_2."
         runtime_tokenizer_path = args.tokenizer_model
     else:

@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # model sharding with custom op
-set(CUSTOM_OP_SRCS_FILE 
+set(CUSTOM_OP_SRCS_FILE
   "${EXECUTORCH_SOURCE_DIR}/extension/llm/custom_ops/op_fallback.cpp"
 )
 add_library(custom_ops ${CUSTOM_OP_SRCS_FILE})
@@ -35,7 +35,7 @@ list(
 list(
   APPEND
   _llama_runner__srcs
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizer/tiktoken.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizers/src/tiktoken.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../../../models/llama/tokenizer/llama_tiktoken.cpp
 )
 

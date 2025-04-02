@@ -113,7 +113,8 @@ void add_tensor_to_staging_node(
 void add_prepack_standard_node(
     ComputeGraph& graph,
     const ValueRef tensor_data,
-    const ValueRef tensor) {
+    const ValueRef tensor,
+    const bool transpose_hw = false) {
   vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(
       *graph.get_tensor(tensor), graph.int8_buffers_enabled());
 
@@ -127,6 +128,8 @@ void add_prepack_standard_node(
     ubos.append({graph.sizes_ubo(tensor)});
   }
 
+  int transpose_hw_spec = transpose_hw ? 1 : 0;
+
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       shader,
@@ -138,7 +141,7 @@ void add_prepack_standard_node(
       // Parameter Buffers
       ubos,
       // Specialization Constants
-      {graph.hashed_layout_of(tensor)}));
+      {graph.hashed_layout_of(tensor), transpose_hw_spec}));
 }
 
 ValueRef prepack_standard(
@@ -155,6 +158,33 @@ ValueRef prepack_standard(
   ValueRef tensor =
       graph.add_tensor_like(tensor_data, storage_type, layout, axis_map_layout);
   add_prepack_standard_node(graph, tensor_data, tensor);
+  return tensor;
+}
+
+ValueRef prepack_standard_hw_transposed(
+    ComputeGraph& graph,
+    const ValueRef tensor_data,
+    const utils::StorageType storage_type,
+    const utils::GPUMemoryLayout layout,
+    const bool passthrough,
+    const utils::AxisMapLayout axis_map_layout) {
+  (void)passthrough;
+
+  VK_CHECK_COND(graph.val_is_tref(tensor_data));
+  std::vector<int64_t> new_out_sizes = graph.sizes_of(tensor_data);
+  const int w_dim = new_out_sizes.size() - 1;
+  const int h_dim = new_out_sizes.size() - 2;
+  const int64_t tmp = new_out_sizes.at(w_dim);
+  new_out_sizes.at(w_dim) = new_out_sizes.at(h_dim);
+  new_out_sizes.at(h_dim) = tmp;
+  ValueRef tensor = graph.add_tensor(
+      new_out_sizes,
+      graph.dtype_of(tensor_data),
+      storage_type,
+      layout,
+      -1,
+      axis_map_layout);
+  add_prepack_standard_node(graph, tensor_data, tensor, true);
   return tensor;
 }
 

@@ -18,6 +18,11 @@ from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConsta
 from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
     FuseQuantizedActivationPass,
 )
+from executorch.backends.arm.operator_support.ethos_u55_support import (
+    EthosU55DtypeSupport,
+    EthosU55NotSupported,
+    EthosU55TransposeCheck,
+)
 from executorch.backends.arm.tosa_specification import Tosa_0_80, TosaSpecification
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.utils import WhyNoPartitionReporter
@@ -118,6 +123,8 @@ def tosa_support_factory(
         negative_checks.append(CheckProperQuantization(reporter))
     if isinstance(tosa_spec, Tosa_0_80) and tosa_spec.is_U55_subset:
         negative_checks.append(EthosU55NotSupported(reporter))
+        negative_checks.append(EthosU55DtypeSupport(reporter))
+        negative_checks.append(EthosU55TransposeCheck(reporter))
 
     return chain(
         reporter.wrap_check(
@@ -198,6 +205,8 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.clone.default,
             exir_ops.edge.aten.unsqueeze_copy.default,
             exir_ops.edge.aten.squeeze_copy.dims,
+            exir_ops.edge.aten.pow.Tensor_Scalar,
+            exir_ops.edge.aten.pow.Tensor_Tensor,
             operator.getitem,
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
@@ -212,61 +221,6 @@ class BaseTOSASupportList(OperatorSupportBase):
         ]
 
         return supported
-
-
-class EthosU55NotSupported(OperatorSupportBase):
-    """
-    Certain operators are not supported on U55. These are listed in `unsupported_ops`.
-    The comment mentions the unsupported TOSA operator that the aten operator maps to where it is not obvious.
-    For unimplemented operators, this is the anticipated mapping, and it might be incorrect.
-    """
-
-    unsupported_ops = [
-        exir_ops.edge.aten.any.default,  # REDUCE_ANY
-        exir_ops.edge.aten.any.dim,  # REDUCE_ANY
-        exir_ops.edge.aten.any.dims,  # REDUCE_ANY
-        exir_ops.edge.aten.bitwise_and.Tensor,
-        exir_ops.edge.aten.bitwise_or.Tensor,
-        exir_ops.edge.aten.bitwise_xor.Tensor,
-        exir_ops.edge.aten.bitwise_not,
-        exir_ops.edge.aten.logical_and.default,
-        exir_ops.edge.aten.logical_or.default,
-        exir_ops.edge.aten.logical_xor.default,
-        exir_ops.edge.aten.logical_not.default,
-        exir_ops.edge.aten.amax.default,  # REDUCE_MAX
-        exir_ops.edge.aten.amin.default,  # REDUCE_MIN
-        exir_ops.edge.aten.eq.Tensor,
-        exir_ops.edge.aten.eq.Scalar,
-        exir_ops.edge.aten.ge.Tensor,
-        exir_ops.edge.aten.gt.Tensor,
-        exir_ops.edge.aten.le.Tensor,
-        exir_ops.edge.aten.lt.Tensor,
-        exir_ops.edge.aten.flip.default,  # REVERSE
-        exir_ops.edge.aten.grid_sampler_2d,  # GATHER
-        exir_ops.edge.aten.scatter.src,
-        exir_ops.edge.aten.scatter.value,
-        exir_ops.edge.aten.select_scatter.default,
-        exir_ops.edge.aten.scatter_reduce.two,
-        exir_ops.edge.aten.scatter_add.default,
-        exir_ops.edge.aten.upsample_nearest2d.vec,  # RESIZE
-        exir_ops.edge.aten.upsample_bilinear2d.vec,  # RESIZE
-        exir_ops.edge.aten.reflection_pad1d.default,  # REVERSE
-        exir_ops.edge.aten.reflection_pad2d.default,  # REVERSE
-        exir_ops.edge.aten.reflection_pad3d.default,  # REVERSE
-    ]
-
-    def __init__(self, reporter: WhyNoPartitionReporter):
-        self.reporter = reporter
-
-    def is_node_supported(
-        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
-    ) -> bool:
-
-        if node.target in self.unsupported_ops:
-            self.reporter.report_reject(node, "Op is not supported on U55.")
-            return False
-
-        return True
 
 
 class NeedsDecompositionCheck(OperatorSupportBase):

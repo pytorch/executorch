@@ -43,7 +43,11 @@ bool check_glu_args(const Tensor& in, int64_t dim, Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_rank(in, out));
   ET_CHECK_OR_RETURN_FALSE(
       out.size(non_negative_dim) == dim_size / 2,
-      "output tensor must have half the size of the input tensor along the specified dimension.");
+      "output tensor must have half the size of the input tensor along the specified dimension; out.size(%zu) = %" ET_PRI_TENSOR_SIZE
+      ", dim_size = %zd",
+      non_negative_dim,
+      out.size(non_negative_dim),
+      dim_size);
 
   for (const auto i : c10::irange(in.dim())) {
     if (static_cast<size_t>(i) != non_negative_dim) {
