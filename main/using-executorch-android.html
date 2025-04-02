@@ -534,15 +534,15 @@
 <div class="section" id="using-aar-from-maven-central">
 <h2>Using AAR from Maven Central<a class="headerlink" href="#using-aar-from-maven-central" title="Permalink to this heading">¶</a></h2>
 <p>ExecuTorch is available on <a class="reference external" href="https://mvnrepository.com/artifact/org.pytorch/executorch-android">Maven Central</a>.</p>
-<p>Simply add the target <a class="reference external" href="https://repo.maven.apache.org/maven2/org/pytorch/executorch-android/0.5.1/"><code class="docutils literal notranslate"><span class="pre">org.pytorch:executorch-android:0.5.1</span></code></a> to your Android app dependency (build.gradle), and build your app.</p>
+<p>Simply add the target <a class="reference external" href="https://repo.maven.apache.org/maven2/org/pytorch/executorch-android/0.6.0-rc1/"><code class="docutils literal notranslate"><span class="pre">org.pytorch:executorch-android:0.6.0-rc1</span></code></a> to your Android app dependency (build.gradle), and build your app.</p>
 <p>For example:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># app/build.gradle.kts</span>
 <span class="n">dependencies</span> <span class="p">{</span>
-    <span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;org.pytorch:executorch-android:0.5.1&quot;</span><span class="p">)</span>
+    <span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;org.pytorch:executorch-android:0.6.0-rc1&quot;</span><span class="p">)</span>
 <span class="p">}</span>
 </pre></div>
 </div>
-<p>Note: <code class="docutils literal notranslate"><span class="pre">org.pytorch:executorch-android:0.5.1</span></code> corresponds to executorch v0.5.0.</p>
+<p>Note: If you want to use release v0.5.0, please use dependency <code class="docutils literal notranslate"><span class="pre">org.pytorch:executorch-android:0.5.1</span></code>.</p>
 <p>Click the screenshot below to watch the <em>demo video</em> on how to add the package and run a simple ExecuTorch model with Android Studio.
 <a href="https://pytorch.org/executorch/main/_static/img/android_studio.mp4">
 <img src="https://pytorch.org/executorch/main/_static/img/android_studio.jpeg" width="800" alt="Integrating and Running ExecuTorch on Android">
@@ -561,7 +561,11 @@
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><a class="reference external" href="https://github.com/pytorch/executorch/releases/tag/v0.5.0">v0.5.0</a></p></td>
+<tr class="row-even"><td><p><a class="reference external" href="https://github.com/pytorch/executorch/releases/tag/v0.6.0-rc1">v0.6.0-rc1</a></p></td>
+<td><p><a class="reference external" href="https://ossci-android.s3.amazonaws.com/executorch/release/v0.6.0-rc1/executorch.aar">executorch.aar</a></p></td>
+<td><p><a class="reference external" href="https://ossci-android.s3.amazonaws.com/executorch/release/v0.6.0-rc1/executorch.aar.sha256sums">executorch.aar.sha256sums</a></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://github.com/pytorch/executorch/releases/tag/v0.5.0">v0.5.0</a></p></td>
 <td><p><a class="reference external" href="https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar">executorch.aar</a></p></td>
 <td><p><a class="reference external" href="https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar.sha256sums">executorch.aar.sha256sums</a></p></td>
 </tr>
@@ -602,7 +606,7 @@
 <h3>Example usage<a class="headerlink" href="#example-usage" title="Permalink to this heading">¶</a></h3>
 <p>In your app working directory, such as executorch/examples/demo-apps/android/LlamaDemo,</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">mkdir</span> <span class="o">-</span><span class="n">p</span> <span class="n">app</span><span class="o">/</span><span class="n">libs</span>
-<span class="n">curl</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">ossci</span><span class="o">-</span><span class="n">android</span><span class="o">.</span><span class="n">s3</span><span class="o">.</span><span class="n">amazonaws</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">release</span><span class="o">/</span><span class="n">v0</span><span class="mf">.5.0</span><span class="o">-</span><span class="n">rc3</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span> <span class="o">-</span><span class="n">o</span> <span class="n">app</span><span class="o">/</span><span class="n">libs</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span>
+<span class="n">curl</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">ossci</span><span class="o">-</span><span class="n">android</span><span class="o">.</span><span class="n">s3</span><span class="o">.</span><span class="n">amazonaws</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">release</span><span class="o">/</span><span class="n">v0</span><span class="mf">.6.0</span><span class="o">-</span><span class="n">rc1</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span> <span class="o">-</span><span class="n">o</span> <span class="n">app</span><span class="o">/</span><span class="n">libs</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span>
 </pre></div>
 </div>
 <p>And include it in gradle:</p>
