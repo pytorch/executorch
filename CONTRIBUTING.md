@@ -20,34 +20,66 @@ For Apple, please refer to the [iOS documentation](docs/source/using-executorch-
 
 ## Codebase structure
 
-For brevity only including a portion of the subtree:
+<pre>
 
-* [backends](backends) - Backend implementations for various hardware targets. Each backend uses partitioner to split the graph into subgraphs that can be executed on specific hardware, quantizer to optimize model precision, and runtime components to execute the graph on target hardware. For details refer to the [backend
-  documentation](docs/source/backend-delegates-integration.md) and the [Export and Lowering tutorial](docs/source/using-executorch-export.md) for more information.
-* [exir](exir) - EXport Intermediate Representation (EXIR) is a format for representing the result of [`torch.export`](https://pytorch.org/docs/main/export.ir_spec.html). This directory contains utilities and passes for lowering the EXIR graphs into different [dialects](/docs/source/ir-exir.md) and eventually suitable to run on target hardware.
-* [examples](examples) - Example applications and demos using ExecuTorch.
-* [extension](extension) - Extensions to the core ExecuTorch runtime.
-  * [android](extension/android) - JNI layer and Android native APIs for ExecuTorch. Please refer to the [Android documentation](docs/source/using-executorch-android.md) for more information.
-  * [apple](extension/apple) - Apple native APIs for ExecuTorch. Please refer to the [iOS documentation](docs/source/using-executorch-ios.md) and [how to integrate into Apple platform](https://pytorch.org/executorch/stable/apple-runtime.html) for more information.
-  * [data_loader](extension/data_loader) - Data loader extension.
-  * [module](extension/module) - An abstraction that deserializes and executes an ExecuTorch artifact (.pte file). Refer to the [module documentation](docs/source/extension-module.md) for more information.
-  * [training](extension/training) - Training extension.
-  * [llm](extension/llm) - Library to run LLM on ExecuTorch including common optimization passes, runtime C++ components. Please refer to the [LLM documentation](docs/source/llm/getting-started.md) for more information.
-  * [tensor](extension/tensor) - Tensor maker and `TensorPtr`, details in [this documentation](/docs/source/extension-tensor.md).
-  * [threadpool](extension/threadpool) - Threadpool.
-* [kernels](kernels) - Kernel implementations for various operators.
-  * [optimized](kernels/optimized) - Optimized kernel implementations.
-  * [portable](kernels/portable) - Portable kernel implementations.
-  * [quantized](kernels/quantized) - Quantized kernel implementations.
-* [runtime](runtime) - Core runtime components in C++, with corresponding Python APIs. These components are used to execute the ExecuTorch program. Please refer to the [runtime documentation](docs/source/runtime-overview.md) for more information.
-  * [backend](runtime/backend) - Backend delegate registry.
-  * [core](runtime/core) - Basic components such as `Tensor`, `EValue`, `Error` and `Result` etc.
-  * [executor](runtime/executor) - Runtime components that execute the ExecuTorch program, such as `Program`, `Method`. Refer to the [runtime API documentation](docs/source/executorch-runtime-api-reference.rst) for more information.
-  * [kernel](runtime/kernel) - Kernel registry.
-  * [platform](runtime/platform) - Platform abstraction layer.
-* [schema](schema) - FlatBuffer schema definitions.
-* [tools](tools) - Tools for development and debugging. Please refer to the [tools documentation](docs/source/devtools-overview.md) for more information.
-* [docs](docs) - Documentation source files.
+executorch
+├── <a href="backends">backends</a> - Backend delegate implementations for various hardware targets. Each backend uses partitioner to split the graph into subgraphs that can be executed on specific hardware, quantizer to optimize model precision, and runtime components to execute the graph on target hardware. For details refer to the <a href="docs/source/backend-delegates-integration.md">backend documentation</a> and the <a href="docs/source/using-executorch-export.md">Export and Lowering tutorial</a> for more information.
+├── <a href="codegen">codegen</a> - Tooling to autogenerate bindings between kernels and the runtime.
+├── <a href="configurations">configurations</a> - Configuration files.
+├── <a href="docs">docs</a> - Static docs tooling and documentation source files.
+├── <a href="examples">examples</a> - Examples of various user flows, such as model export, delegates, and runtime execution.
+├── <a href="exir">exir</a> - Ahead-of-time library: model capture and lowering APIs. EXport Intermediate Representation (EXIR) is a format for representing the result of <a href="https://pytorch.org/docs/main/export.ir_spec.html">torch.export</a>. This directory contains utilities and passes for lowering the EXIR graphs into different <a href="/docs/source/ir-exir.md">dialects</a> and eventually suitable to run on target hardware.
+│   ├── <a href="exir/_serialize">_serialize</a> - Serialize final export artifact.
+│   ├── <a href="exir/backend">backend</a> - Backend delegate ahead of time APIs.
+│   ├── <a href="exir/capture">capture</a> - Program capture.
+│   ├── <a href="exir/dialects">dialects</a> - Op sets for various dialects in the export process.
+│   ├── <a href="exir/emit">emit</a> - Conversion from ExportedProgram to ExecuTorch execution instructions.
+│   ├── <a href="exir/operator">operator</a> - Operator node manipulation utilities.
+│   ├── <a href="exir/passes">passes</a> - Built-in compiler passes.
+│   ├── <a href="exir/program">program</a> - Export artifacts.
+│   ├── <a href="exir/serde">serde</a> - Graph module serialization/deserialization.
+│   ├── <a href="exir/verification">verification</a> - IR verification.
+├── <a href="extension">extension</a> - Extensions built on top of the runtime.
+│   ├── <a href="extension/android">android</a> - ExecuTorch wrappers for Android apps. Please refer to the <a href="docs/source/using-executorch-android.md">Android documentation</a> for more information.
+│   ├── <a href="extension/apple">apple</a> - ExecuTorch wrappers for iOS apps. Please refer to the <a href="docs/source/using-executorch-ios.md">iOS documentation</a> and <a href="https://pytorch.org/executorch/stable/apple-runtime.html">how to integrate into Apple platform</a> for more information.
+│   ├── <a href="extension/aten_util">aten_util</a> - Converts to and from PyTorch ATen types.
+│   ├── <a href="extension/data_loader">data_loader</a> - 1st party data loader implementations.
+│   ├── <a href="extension/evalue_util">evalue_util</a> - Helpers for working with EValue objects.
+│   ├── <a href="extension/gguf_util">gguf_util</a> - Tools to convert from the GGUF format.
+│   ├── <a href="extension/kernel_util">kernel_util</a> - Helpers for registering kernels.
+│   ├── <a href="extension/llm">llm</a> - Library to run LLM on ExecuTorch including common optimization passes, runtime C++ components. Please refer to the <a href="docs/source/llm/getting-started.md">LLM documentation</a> for more information.
+│   ├── <a href="extension/memory_allocator">memory_allocator</a> - 1st party memory allocator implementations.
+│   ├── <a href="extension/module">module</a> - A simplified C++ wrapper for the runtime. An abstraction that deserializes and executes an ExecuTorch artifact (.pte file). Refer to the <a href="docs/source/extension-module.md">module documentation</a> for more information.
+│   ├── <a href="extension/parallel">parallel</a> - C++ threadpool integration.
+│   ├── <a href="extension/pybindings">pybindings</a> - Python API for executorch runtime.
+│   ├── <a href="extension/pytree">pytree</a> - C++ and Python flattening and unflattening lib for pytrees.
+│   ├── <a href="extension/runner_util">runner_util</a> - Helpers for writing C++ PTE-execution tools.
+│   ├── <a href="extension/tensor">tensor</a> - Tensor maker and <code>TensorPtr</code>, details in <a href="/docs/source/extension-tensor.md">this documentation</a>.
+│   ├── <a href="extension/testing_util">testing_util</a> - Helpers for writing C++ tests.
+│   ├── <a href="extension/threadpool">threadpool</a> - Threadpool.
+│   └── <a href="extension/training">training</a> - Experimental libraries for on-device training.
+├── <a href="kernels">kernels</a> - 1st party kernel implementations.
+│   ├── <a href="kernels/aten">aten</a> - ATen kernel implementations.
+│   ├── <a href="kernels/optimized">optimized</a> - Optimized kernel implementations.
+│   ├── <a href="kernels/portable">portable</a> - Reference implementations of ATen operators.
+│   ├── <a href="kernels/prim_ops">prim_ops</a> - Special ops used in executorch runtime for control flow and symbolic primitives.
+│   └── <a href="kernels/quantized">quantized</a> - Quantized kernel implementations.
+├── <a href="profiler">profiler</a> - Utilities for profiling runtime execution.
+├── <a href="runtime">runtime</a> - Core C++ runtime. These components are used to execute the ExecuTorch program. Please refer to the <a href="docs/source/runtime-overview.md">runtime documentation</a> for more information.
+│   ├── <a href="runtime/backend">backend</a> - Backend delegate runtime APIs.
+│   ├── <a href="runtime/core">core</a> - Core structures used across all levels of the runtime. Basic components such as <code>Tensor</code>, <code>EValue</code>, <code>Error</code> and <code>Result</code> etc.
+│   ├── <a href="runtime/executor">executor</a> - Model loading, initialization, and execution. Runtime components that execute the ExecuTorch program, such as <code>Program</code>, <code>Method</code>. Refer to the <a href="docs/source/executorch-runtime-api-reference.rst">runtime API documentation</a> for more information.
+│   ├── <a href="runtime/kernel">kernel</a> - Kernel registration and management.
+│   └── <a href="runtime/platform">platform</a> - Layer between architecture specific code and portable C++.
+├── <a href="schema">schema</a> - ExecuTorch PTE file format flatbuffer schemas.
+├── <a href="scripts">scripts</a> - Utility scripts for building libs, size management, dependency management, etc.
+├── <a href="test">test</a> - Broad scoped end-to-end tests.
+├── <a href="third-party">third-party</a> - Third-party dependencies.
+├── <a href="tools">tools</a> - Development tool management. Please refer to the <a href="docs/source/devtools-overview.md">tools documentation</a> for more information.
+├── <a href="devtools">devtools</a> - Model profiling, debugging, and introspection.
+├── <a href="shim">shim</a> - Compatibility layer between OSS and Internal builds.
+└── <a href="util">util</a> - Various helpers and scripts.
+</pre>
 
 &nbsp;
 
