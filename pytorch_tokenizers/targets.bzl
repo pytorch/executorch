@@ -28,6 +28,7 @@ def define_common_targets():
             "sentencepiece-py",
         ],
         deps = [
+            "fbsource//third-party/pypi/blobfile:blobfile",
             "fbsource//third-party/pypi/tiktoken:tiktoken",
             "fbsource//third-party/pypi/tokenizers:tokenizers",
         ],
