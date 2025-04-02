@@ -7,6 +7,7 @@
 from . import arm_pass_utils  # noqa
 from .annotate_channels_last_dim_order_pass import AnnotateChannelsLastDimOrder  # noqa
 from .annotate_decomposed_matmul import AnnotateDecomposedMatmulPass  # noqa
+from .arm_pass import ArmPass  # noqa
 from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
 from .conv1d_unsqueeze_pass import Conv1dUnsqueezePass  # noqa
@@ -41,6 +42,10 @@ from .match_arg_ranks_pass import MatchArgRanksPass  # noqa
 from .meandim_to_averagepool_pass import ConvertMeanDimToAveragePoolPass  # noqa
 from .mm_to_bmm_pass import ConvertMmToBmmPass  # noqa
 from .remove_clone_pass import RemoveClonePass  # noqa
+from .replace_scalar_with_tensor_pass import (  # noqa
+    ReplaceScalarWithTensorArgPassTOSABI,
+    ReplaceScalarWithTensorArgPassTOSAMI,
+)
 from .scalars_to_attribute_pass import ScalarsToAttributePass  # noqa
 from .size_adjust_conv2d_pass import SizeAdjustConv2DPass  # noqa
 from .unsqueeze_before_repeat_pass import UnsqueezeBeforeRepeatPass  # noqa
