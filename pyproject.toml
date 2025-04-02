@@ -84,17 +84,14 @@ Changelog = "https://github.com/pytorch/executorch/releases"
 [project.scripts]
 flatc = "executorch.data.bin:flatc"
 
-# Tell setuptools to follow the symlink: src/executorch/exir -> exir.
-# Doing this allows us to import from executorch.exir directly in
-# editable mode.
-[tool.setuptools.packages.find]
-where = ["src/"]
-include = ["executorch.exir"]
-
 # TODO(dbort): Could use py_modules to restrict the set of modules we
 # package, and package_data to restrict the set up non-python files we
 # include. See also setuptools/discovery.py for custom finders.
 [tool.setuptools.package-dir]
+# Tell setuptools to follow the symlink: src/executorch/exir -> exir.
+# Doing this allows us to import from executorch.exir directly in
+# editable mode.
+"executorch" = "src/executorch"
 "executorch.backends" = "backends"
 "executorch.codegen" = "codegen"
 "executorch.data.bin" = "data/bin"
