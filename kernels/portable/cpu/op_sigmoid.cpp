@@ -49,8 +49,9 @@ Tensor& sigmoid_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
         CTYPE_COMPUTE,
         op_name,
         utils::SupportedTensorDtypes::FLOATHBF16>(
-        [](const auto val_in) -> CTYPE_COMPUTE {
-          // TODO: rewrite this to be vectorization-capable
+        [](const CTYPE_COMPUTE val_in) {
+          // TODO: rewrite this to be vectorization-capable; need
+          // unary - overload for Vectorized.
           CTYPE_COMPUTE out_val = static_cast<CTYPE_COMPUTE>(1.0) /
               (static_cast<CTYPE_COMPUTE>(1.0) + exp(-val_in));
           return out_val;

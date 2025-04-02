@@ -8,6 +8,10 @@
 
 #pragma once
 
+#ifdef ET_USE_PYTORCH_HEADERS
+#include <ATen/cpu/vec/vec.h>
+#endif
+
 namespace torch {
 namespace executor {
 namespace native {
@@ -138,6 +142,21 @@ T max_override(T a, T b) {
   return b;
 }
 
+#ifdef ET_USE_PYTORCH_HEADERS
+template <typename T>
+at::vec::Vectorized<T> min_override(
+    at::vec::Vectorized<T> a,
+    at::vec::Vectorized<T> b) {
+  return at::vec::minimum(a, b);
+}
+
+template <typename T>
+at::vec::Vectorized<T> max_override(
+    at::vec::Vectorized<T> a,
+    at::vec::Vectorized<T> b) {
+  return at::vec::maximum(a, b);
+}
+#endif
 /**
  * There is a slight difference in how std::fmod works compared to how ATen
  * determines remainders:
