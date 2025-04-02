@@ -104,6 +104,14 @@ The you can run the tests with
 pytest -c /dev/null -v -n auto backends/arm/test
 ```
 
+### Model test dependencies
+Some model tests in Arm backend require third-party libraries or packages. To run these tests, you need to install the required dependencies by running the script `examples/arm/setup.sh` with the flag `--setup-test-dependency`.
+
+Please note that installing model test dependencies is a standalone process. When using the `--setup-test-dependency` flag, the script will install only the necessary dependencies for model tests, skipping all other setup procedures.
+
+List of models with specific dependencies:
+- Stable Diffusion: [diffusers](https://github.com/huggingface/diffusers/tree/main)
+
 ## Passes
 
 With the default passes in the Arm Ethos-U backend, assuming the model lowers fully to the
@@ -189,7 +197,14 @@ Configuration of the EthosUBackend export flow is controlled by CompileSpec info
 As this is in active development see the EthosUBackend for accurate information on [compilation flags](https://github.com/pytorch/executorch/blob/29f6dc9353e90951ed3fae3c57ae416de0520067/backends/arm/arm_backend.py#L319-L324)
 
 ## Model specific and optional passes
-The current TOSA version does not support int64. For LLMs for example LLama, often aten.emedding is the first operator and it requires int64 indicies.
-In order to lower this to TOSA and int64->int32 cast need to be injected. This pass need to run very early in the lowering process and can be passed in to the to_edge_transform_and_lower() function call as an optional parameter. See example in: backends/arm/test/models/test_llama.py.
-By doing this aten.embedding will be decomposed into to aten.index_select which can handle int32 indices.
-Note that this additional step is only needed for pure float models. With quantization this is automatically handled during annotation before the export stage.
+The current TOSA version does not support int64. However, int64 is commonly used in many models. In order to lower the operators with int64 inputs and/or outputs to TOSA, a few passes have been developed to handle the int64-related issues. The main idea behind these passes is to replace the uses of int64 with int32 where feasible.
+- For floating-point models, these passes need to run very early in the lowering process and can be passed in to the to_edge_transform_and_lower() function call as an optional parameter.
+- For quantized models, these transformations will be automatically handled during annotation before the export stage.
+
+List of model specific and optional passes:
+- InsertCastForOpsWithInt64InputPass
+    - Functionality:
+        - For LLMs such as LLama, some opeartors like aten.embedding have int64 input. In order to lower these operators to TOSA, this pass will insert a casting node that converts the input from int64 to int32.
+        - Example usage: backends/arm/test/models/test_llama.py
+    - Supported Ops:
+        - aten.embedding.default, aten.slice_copy.Tensor
