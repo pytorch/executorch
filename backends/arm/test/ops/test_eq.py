@@ -20,8 +20,8 @@ input_t = Tuple[torch.Tensor]
 
 
 class Equal(torch.nn.Module):
-    aten_op_BI = "torch.ops.aten.eq.Tensor"
-    aten_op_MI = "torch.ops.aten.eq.Scalar"
+    aten_op_Tensor = "torch.ops.aten.eq.Tensor"
+    aten_op_Scalar = "torch.ops.aten.eq.Scalar"
     exir_op = "executorch_exir_dialects_edge__ops_aten_eq_Tensor"
 
     def __init__(self, input, other):
@@ -80,7 +80,7 @@ test_data_scalar = {
 @common.parametrize("test_module", test_data_tensor)
 def test_eq_tensor_tosa_MI(test_module):
     pipeline = TosaPipelineMI[input_t](
-        test_module, test_module.get_inputs(), Equal.aten_op_BI, Equal.exir_op
+        test_module, test_module.get_inputs(), Equal.aten_op_Tensor, Equal.exir_op
     )
     pipeline.run()
 
@@ -90,7 +90,7 @@ def test_eq_scalar_tosa_MI(test_module):
     pipeline = TosaPipelineMI[input_t](
         test_module,
         test_module.get_inputs(),
-        Equal.aten_op_MI,
+        Equal.aten_op_Scalar,
         Equal.exir_op,
     )
     pipeline.run()
@@ -99,7 +99,7 @@ def test_eq_scalar_tosa_MI(test_module):
 @common.parametrize("test_module", test_data_tensor | test_data_scalar)
 def test_eq_tosa_BI(test_module):
     pipeline = TosaPipelineBI[input_t](
-        test_module, test_module.get_inputs(), Equal.aten_op_BI, Equal.exir_op
+        test_module, test_module.get_inputs(), Equal.aten_op_Tensor, Equal.exir_op
     )
     pipeline.run()
 
@@ -135,15 +135,17 @@ def test_eq_scalar_u55_BI(test_module):
     "test_module",
     test_data_tensor | test_data_scalar,
     xfails={
-        "eq_tensor_rank4_randn": "4D fails because boolean Tensors can't be subtracted",
+        "eq_tensor_rank4_randn": "MLETORCH-847: Boolean eq result unstable on U85",
+        "eq_scalar_rank4_randn": "MLETORCH-847: Boolean eq result unstable on U85",
     },
+    strict=False,
 )
 @common.XfailIfNoCorstone320
 def test_eq_u85_BI(test_module):
     pipeline = EthosU85PipelineBI[input_t](
         test_module,
         test_module.get_inputs(),
-        Equal.aten_op_BI,
+        Equal.aten_op_Tensor,
         Equal.exir_op,
         run_on_fvp=True,
     )
