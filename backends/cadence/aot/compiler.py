@@ -86,7 +86,7 @@ def convert_pt2(
     remove_decompositions(decomp_table, ops_to_keep)
     # Export with dynamo
     model_gm = (
-        torch.export.export_for_training(model, inputs)
+        torch.export.export_for_training(model, inputs, strict=True)
         .run_decompositions(decomp_table)
         .module()
     )
