@@ -162,6 +162,10 @@ lib.define(
     "quantized_fully_connected.per_tensor(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
     "int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset) -> (Tensor Z)"
 )
+lib.define("where_Scalar(Tensor condition, float self, float other) -> (Tensor Z)")
+lib.define(
+    "where_Scalar.out(Tensor condition, float self, float other, *, Tensor(a!) out) -> Tensor(a!)"
+)
 
 # ------------------------------------ #
 #   Migrated from custom_ops.yaml      #
@@ -935,3 +939,12 @@ def transposed_im2row_meta(
     output_size = torch.Size((batch_size, output_length, n_output_plane))
 
     return input.new_empty(output_size, dtype=input.dtype)
+
+
+@register_fake("cadence::where_Scalar")
+def where_Scalar_meta(
+    condition: torch.Tensor,
+    self: float,
+    other: float,
+) -> torch.Tensor:
+    return condition.new_empty(condition.size(), dtype=torch.float32)
