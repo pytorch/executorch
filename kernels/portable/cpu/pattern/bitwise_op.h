@@ -80,15 +80,18 @@ Tensor& bitwise_tensor_out(
 
   ET_SWITCH_INT_TYPES_AND(
       Bool, compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-        utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        utils::apply_bitensor_elementwise_fn<
+            CTYPE_COMPUTE,
+            op_name,
+            utils::SupportedTensorDtypes::REALHBBF16>(
+            // TODO: rewrite this to be vectorization-capable.
             BitwiseFnForOp<CTYPE_COMPUTE, op_name>::value,
             ctx,
             a,
             utils::SupportedTensorDtypes::INTB,
             b,
             utils::SupportedTensorDtypes::INTB,
-            out,
-            utils::SupportedTensorDtypes::REALHBBF16);
+            out);
       });
 
   return out;
@@ -121,16 +124,19 @@ Tensor& bitwise_scalar_out(
   ET_SWITCH_INT_TYPES_AND(
       Bool, compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
         const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
-        utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        utils::apply_unitensor_elementwise_fn<
+            CTYPE_COMPUTE,
+            op_name,
+            utils::SupportedTensorDtypes::REALHBBF16>(
             [val_b](const CTYPE_COMPUTE val_a) {
+              // TODO: rewrite this to be vectorization-capable.
               return BitwiseFnForOp<CTYPE_COMPUTE, op_name>::value(
                   val_a, val_b);
             },
             ctx,
             a,
             utils::SupportedTensorDtypes::INTB,
-            out,
-            utils::SupportedTensorDtypes::REALHBBF16);
+            out);
       });
 
   return out;
