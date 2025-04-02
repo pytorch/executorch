@@ -55,7 +55,7 @@ cmake --build cmake-out/examples/models/llama -j16 --config Release
 download_stories_model_artifacts
 
 echo "Creating tokenizer.bin"
-$PYTHON_EXECUTABLE -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+$PYTHON_EXECUTABLE -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokenizer.bin
 
 # Export model
 LLAMA_CHECKPOINT=stories110M.pt

@@ -48,7 +48,7 @@ void resize_q_8w_linear_node(
   vTensorPtr qmat2 = graph->get_tensor(args[1].refs[1]);
 
   const int out_cols = utils::val_at(-2, mat1->sizes());
-  const int out_rows = utils::val_at(-2, qmat2->sizes());
+  const int out_rows = utils::val_at(-1, qmat2->sizes());
 
   std::vector<int64_t> new_out_sizes(3);
   if (mat1->sizes().size() == 2) {
@@ -86,7 +86,7 @@ void add_q_8w_linear_node(
     // Ensure out is packed correctly
     out_W_packed = out_tmp;
   }
-  ValueRef q_mat2 = prepack_standard(
+  ValueRef q_mat2 = prepack_standard_hw_transposed(
       graph, q_mat2_data, graph.storage_type_of(out), utils::kWidthPacked);
   ValueRef scales = prepack_standard(
       graph, scales_data, graph.storage_type_of(out), utils::kWidthPacked);
@@ -160,100 +160,111 @@ void add_q_8w_linear_node(
   }
 }
 
-void add_q_8w_linear_optimized_node(
+void add_q_8w_linear_tiled_node(
     ComputeGraph& graph,
     const ValueRef mat1,
     const ValueRef q_mat2_data,
     const ValueRef scales_data,
     const ValueRef out) {
-  auto viewFn = VK_GET_OP_FN("aten.view_copy.default");
-  ValueRef mat1_W_packed = mat1;
-  ValueRef out_W_packed = out;
-  if (!graph.is_buffer_storage(out) &&
-      graph.packed_dim_of(mat1) != WHCN::kWidthDim) {
-    // Ensure mat1 is width packed
-    mat1_W_packed = graph.add_tensor_like(mat1, utils::kWidthPacked);
-    viewFn(graph, {mat1, graph.add_none(), mat1_W_packed});
-    // Ensure out is packed correctly
-    out_W_packed = graph.add_tensor_like(out, utils::kWidthPacked);
-  }
-
   utils::StorageType stype = graph.storage_type_of(out);
-  ValueRef q_mat2 =
-      prepack_standard(graph, q_mat2_data, stype, utils::kWidthPacked);
+  ValueRef q_mat2 = prepack_standard_hw_transposed(
+      graph, q_mat2_data, stype, utils::kWidthPacked);
   ValueRef scales =
       prepack_standard(graph, scales_data, stype, utils::kWidthPacked);
 
-  std::string kernel_name = "q_8w_linear_optimized";
+  std::string kernel_name = "q_8w_linear_tiled";
   kernel_name.reserve(kShaderNameReserve);
-  add_packed_dim_suffix(kernel_name, graph.packed_dim_of(mat1_W_packed));
-  add_packed_dim_suffix(kernel_name, graph.packed_dim_of(q_mat2));
-  std::vector<int64_t> mat1_sizes = graph.sizes_of(mat1_W_packed);
-  const int mat1_dims = mat1_sizes.size();
-  if (mat1_dims == 3) {
-    kernel_name = "batch_" + kernel_name;
-  }
-  if (mat1_sizes.at(mat1_dims - 2) < 8) {
-    kernel_name += "_tile_row_2";
+  std::vector<int64_t> mat1_sizes = graph.sizes_of(mat1);
+  const int64_t M = utils::val_at(-2, mat1_sizes);
+  int out_tile_nrows = 4;
+  if (M % 6 == 0) {
+    kernel_name += "_o4x6";
+    out_tile_nrows = 6;
   } else {
-    kernel_name += "_tile_row_4";
+    kernel_name += "_o4x4";
+    out_tile_nrows = 4;
   }
 
-  add_dtype_suffix(kernel_name, graph.dtype_of(out_W_packed));
-  add_storage_type_suffix(kernel_name, graph.storage_type_of(out_W_packed));
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  vkapi::ParamsBindList ubos({});
+  utils::uvec3 global_wg_size = graph.logical_limits_of(out);
+  global_wg_size[1] = global_wg_size[1] / out_tile_nrows;
 
-  utils::uvec3 global_size;
-  utils::uvec3 local_size;
-  if (graph.is_buffer_storage(out)) {
-    ubos.append(
-        {graph.sizes_ubo(out_W_packed),
-         graph.strides_ubo(out_W_packed),
-         graph.numel_ubo(out_W_packed),
-         graph.sizes_ubo(mat1_W_packed),
-         graph.strides_ubo(mat1_W_packed),
-         graph.strides_ubo(q_mat2),
-         graph.strides_ubo(scales)});
-    global_size = graph.create_global_wg_size(out_W_packed);
-    local_size = graph.create_local_wg_size(out_W_packed);
-  } else {
-    global_size = graph.logical_limits_of(out_W_packed);
-    ubos.append(
-        {graph.logical_limits_ubo(out_W_packed),
-         graph.sizes_ubo(mat1_W_packed)});
-    if (mat1_sizes.at(mat1_dims - 2) < 8) {
-      global_size = global_size = utils::divup_vec(global_size, {1, 2, 1});
-    } else {
-      global_size = utils::divup_vec(global_size, {1, 4, 1});
-    }
-    local_size = {16, 3, 1};
-  }
+  utils::uvec3 local_wg_size{64, 1, 1};
 
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      global_wg_size,
+      local_wg_size,
       // Inputs and Outputs
-      {{out_W_packed, vkapi::MemoryAccessType::WRITE},
-       {{mat1_W_packed, q_mat2, scales}, vkapi::MemoryAccessType::READ}},
+      {{out, vkapi::kWrite}, {{mat1, q_mat2, scales}, vkapi::kRead}},
       // Shader params buffers
-      ubos,
+      {},
       // Specialization Constants
-      {}, // spec_vars,
+      {},
       // Resizing Logic
-      resize_q_8w_linear_node));
+      resize_q_8w_linear_node,
+      {},
+      // Push Constants
+      {{graph.sizes_pc_of(out), graph.sizes_pc_of(mat1)}}));
+}
 
-  if (!graph.is_buffer_storage(out)) {
-    viewFn(graph, {out_W_packed, graph.add_none(), out});
+bool can_use_tiled_impl(
+    ComputeGraph& graph,
+    const ValueRef mat1,
+    const ValueRef q_mat2_data,
+    const ValueRef scales_data,
+    const ValueRef out) {
+  (void)q_mat2_data;
+  (void)scales_data;
+
+  // Check if mat1 is not a 3D tensor or that batches = 1
+  // TODO(ssjia): Add support for batches in the tiled impl
+  if (graph.dim_of(mat1) == 3 && graph.size_at<int>(-1, mat1) != 1) {
+    return false;
   }
+  // Check that K is a multiple of 4
+  if (graph.size_at<int>(-1, mat1) % 4 != 0) {
+    return false;
+  }
+  // Check that M is a multiple of 4 or 6
+  if (graph.size_at<int>(-2, mat1) % 4 != 0 &&
+      graph.size_at<int>(-2, mat1) % 6 != 0) {
+    return false;
+  }
+  // Check that the storage type is texture
+  // TODO(ssjia): Add support for buffer storage in the tiled impl
+  if (graph.storage_type_of(out) != utils::kTexture3D) {
+    return false;
+  }
+  // Check that the packed dim is the width dim
+  if (graph.packed_dim_of(mat1) != WHCN::kWidthDim) {
+    return false;
+  }
+  // Check that no special axis mapping is used for the input
+  // TODO(ssjia): Add support for non-standard axis mapping in the tiled impl
+  if (!graph.has_standard_axis_map(mat1)) {
+    return false;
+  }
+  // Check that no special axis mapping is used for the output
+  // TODO(ssjia): Add support for non-standard axis mapping in the tiled impl
+  if (!graph.has_standard_axis_map(out)) {
+    return false;
+  }
+
+  return true;
 }
 
 void weight_int8pack_mm(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
   check_q_8w_linear_args(graph, args[0], args[1], args[2], args[3]);
+  if (can_use_tiled_impl(graph, args[0], args[1], args[2], args[3])) {
+    return add_q_8w_linear_tiled_node(
+        graph, args[0], args[1], args[2], args[3]);
+  }
   return add_q_8w_linear_node(graph, args[0], args[1], args[2], args[3]);
 }
 

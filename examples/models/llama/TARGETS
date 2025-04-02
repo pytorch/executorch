@@ -202,7 +202,7 @@ runtime.python_library(
         ":export_library",
         "//executorch/examples/models/llama/tokenizer:tiktoken_py",
         "//executorch/extension/llm/export:export_lib",
-        "//executorch/extension/llm/tokenizer:tokenizer_py_lib",
+        "//pytorch/tokenizers/pytorch_tokenizers:tokenizers",
         "//executorch/extension/pybindings:portable_lib",
     ],
 )
