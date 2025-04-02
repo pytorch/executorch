@@ -36,6 +36,7 @@ using ::executorch::runtime::DelegateDebugIdType;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::EventTracerEntry;
+using ::executorch::runtime::kUnsetDelegateDebugIntId;
 using ::executorch::runtime::LoggedEValueType;
 using ::executorch::runtime::Span;
 using ::executorch::runtime::Tag;
@@ -70,9 +71,7 @@ class ProfilerETDumpTest : public ::testing::Test {
       TensorFactory<ScalarType::Float>& tf) {
     ET_EXPECT_DEATH(
         gen->log_intermediate_output_delegate(
-            "test_event_tensor",
-            static_cast<torch::executor::DebugHandle>(-1),
-            tf.ones({3, 2})),
+            "test_event_tensor", kUnsetDelegateDebugIntId, tf.ones({3, 2})),
         "Must set data sink before writing tensor-like data");
   }
 
@@ -582,7 +581,7 @@ TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
       Result<bool> log_tensor_list_result =
           etdump_gen[i]->log_intermediate_output_delegate(
               nullptr,
-              static_cast<torch::executor::DebugHandle>(-1),
+              kUnsetDelegateDebugIntId,
               ArrayRef<Tensor>(tensors.data(), tensors.size()));
 
       Result<bool> log_int_result =
@@ -599,7 +598,7 @@ TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
 
       Result<bool> log_bool_result =
           etdump_gen[i]->log_intermediate_output_delegate(
-              nullptr, static_cast<torch::executor::DebugHandle>(-1), 29.82);
+              nullptr, kUnsetDelegateDebugIntId, 29.82);
 
       ASSERT_EQ(log_tensor_result.error(), Error::InvalidArgument);
       ASSERT_EQ(log_tensor_list_result.error(), Error::InvalidArgument);
@@ -611,33 +610,25 @@ TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
 
       // Log a tensor
       etdump_gen[i]->log_intermediate_output_delegate(
-          "test_event_tensor",
-          static_cast<torch::executor::DebugHandle>(-1),
-          tf.ones({3, 2}));
+          "test_event_tensor", kUnsetDelegateDebugIntId, tf.ones({3, 2}));
 
       // Log a tensor list
       etdump_gen[i]->log_intermediate_output_delegate(
           "test_event_tensorlist",
-          static_cast<torch::executor::DebugHandle>(-1),
+          kUnsetDelegateDebugIntId,
           ArrayRef<Tensor>(tensors.data(), tensors.size()));
 
       // Log an int
       etdump_gen[i]->log_intermediate_output_delegate(
-          "test_event_tensorlist",
-          static_cast<torch::executor::DebugHandle>(-1),
-          10);
+          "test_event_tensorlist", kUnsetDelegateDebugIntId, 10);
 
       // Log a double
       etdump_gen[i]->log_intermediate_output_delegate(
-          "test_event_tensorlist",
-          static_cast<torch::executor::DebugHandle>(-1),
-          20.75);
+          "test_event_tensorlist", kUnsetDelegateDebugIntId, 20.75);
 
       // Log a bool
       etdump_gen[i]->log_intermediate_output_delegate(
-          "test_event_tensorlist",
-          static_cast<torch::executor::DebugHandle>(-1),
-          true);
+          "test_event_tensorlist", kUnsetDelegateDebugIntId, true);
 
       ETDumpResult result = etdump_gen[i]->get_etdump_data();
       ASSERT_TRUE(result.buf != nullptr);
@@ -762,23 +753,18 @@ TEST_F(ProfilerETDumpTest, LogDelegateEvents) {
     etdump_gen[i]->log_profiling_delegate(
         nullptr, 278, 1, 2, metadata, strlen(metadata) + 1);
     EventTracerEntry entry = etdump_gen[i]->start_profiling_delegate(
-        "test_event", static_cast<torch::executor::DebugHandle>(-1));
+        "test_event", kUnsetDelegateDebugIntId);
     EXPECT_NE(entry.delegate_event_id_type, DelegateDebugIdType::kNone);
     // Event 2
     etdump_gen[i]->end_profiling_delegate(
         entry, metadata, strlen(metadata) + 1);
     // Event 3
     etdump_gen[i]->log_profiling_delegate(
-        "test_event",
-        static_cast<torch::executor::DebugHandle>(-1),
-        1,
-        2,
-        nullptr,
-        0);
+        "test_event", kUnsetDelegateDebugIntId, 1, 2, nullptr, 0);
     // Event 4
     etdump_gen[i]->log_profiling_delegate(
         "test_event",
-        static_cast<torch::executor::DebugHandle>(-1),
+        kUnsetDelegateDebugIntId,
         1,
         2,
         metadata,
@@ -856,11 +842,11 @@ TEST_F(ProfilerETDumpTest, LogDelegateEvents) {
         std::string(delegate_debug_id_name, strlen(delegate_debug_id_name)),
         "test_event");
     // Event 2 used a string delegate debug identifier, so delegate_debug_id_int
-    // should be -1.
+    // should be kUnsetDelegateDebugIntId.
     EXPECT_EQ(
         etdump_ProfileEvent_delegate_debug_id_int(
             etdump_Event_profile_event(event)),
-        -1);
+        kUnsetDelegateDebugIntId);
     if (!etdump_gen[i]->is_static_etdump()) {
       free(result.buf);
     }
