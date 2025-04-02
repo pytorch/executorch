@@ -21,6 +21,7 @@ from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
 from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
+
 from executorch.exir import EdgeProgramManager, to_edge_transform_and_lower
 from executorch.exir.backend.partitioner import Partitioner
 
@@ -33,8 +34,8 @@ from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
-
 from executorch.extension.llm.export.export_passes import RemoveRedundantTransposes
+from omegaconf import DictConfig
 from pytorch_tokenizers import get_tokenizer
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer import Quantizer
@@ -87,7 +88,7 @@ class LLMEdgeManager:
         use_kv_cache,
         example_inputs,
         example_kwarg_inputs: Optional[Dict] = None,
-        args: Optional[Any] = None,
+        config: Optional[DictConfig] = None,
         enable_dynamic_shape: bool = False,
         generate_full_logits: bool = False,
         calibration_tasks: Optional[List[str]] = None,
@@ -121,7 +122,7 @@ class LLMEdgeManager:
         self.output_dir = "."
         self.dynamic_shapes = dynamic_shapes
         self._saved_pte_filename = None
-        self.args = args
+        self.config = config
         self.calibration_tasks = calibration_tasks
         self.calibration_limit = calibration_limit
         self.calibration_seq_length = calibration_seq_length
@@ -203,7 +204,7 @@ class LLMEdgeManager:
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
-            if hasattr(self.args, "qnn") and self.args.qnn:
+            if self.config and self.config.backend.qnn.enabled:
                 # TODO: this is temporary, as qnn flow does not work with new, non-functional export IR.
                 # See issue: https://github.com/pytorch/executorch/issues/7373
 
@@ -249,8 +250,8 @@ class LLMEdgeManager:
         # Persisting those changes back to an ExportedProgram will require
         # an additional export().
         self.pre_autograd_graph_module = exported_module.module()
-        if hasattr(self.args, "export_only") and self.args.export_only:
-            torch.export.save(exported_module, self.args.output_name)
+        if self.config and self.config.export.export_only:
+            torch.export.save(exported_module, self.config.export.output_name)
         return self
 
     def run_canonical_optimizations(self):
@@ -414,7 +415,7 @@ class LLMEdgeManager:
                 self.export()
 
             override_export_behaviour = contextlib.nullcontext()
-            if hasattr(self.args, "qnn") and self.args.qnn:
+            if self.config and self.config.backend.qnn.enabled:
                 override_export_behaviour = patch.object(
                     torch._utils_internal,
                     "export_training_ir_rollout_check",

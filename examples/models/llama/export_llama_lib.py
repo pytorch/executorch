@@ -51,6 +51,7 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_vulkan_quantizer,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
+from omegaconf import DictConfig, OmegaConf
 
 from ..model_factory import EagerModelFactory
 from .source_transformation.apply_spin_quant_r1_r2 import (
@@ -533,35 +534,195 @@ def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
         return return_val
 
 
-def export_llama(args) -> str:
+def get_default_llm_config() -> DictConfig:
+    default_args = build_args_parser().parse_args([])
+    return _convert_args_to_config(default_args)
+
+
+def _convert_args_to_config(args: argparse.Namespace) -> DictConfig:
+    """Convert argparse.Namespace to DictConfig."""
+    # Create a dictionary from args
+    args_dict = {}
+
+    # Add model settings
+    args_dict["model"] = {
+        "name": args.model,
+        "type": "LLAMA" if not args.fairseq2 else "FAIRSEQ2",
+        "dtype_override": args.dtype_override if "dtype_override" in args else None,
+        "params": args.params if "params" in args else None,
+        "checkpoint": args.checkpoint if "checkpoint" in args else None,
+        "checkpoint_dir": args.checkpoint_dir if "checkpoint_dir" in args else None,
+        "tokenizer_path": args.tokenizer_path if "tokenizer_path" in args else None,
+        "metadata": args.metadata if "metadata" in args else None,
+        "use_shared_embedding": (
+            args.use_shared_embedding if "use_shared_embedding" in args else None
+        ),
+    }
+
+    # Add export settings
+    args_dict["export"] = {
+        "output_dir": args.output_dir if "output_dir" in args else None,
+        "output_name": args.output_name if "output_name" in args else None,
+        "so_library": args.so_library if "so_library" in args else None,
+        "export_only": args.export_only if "export_only" in args else None,
+    }
+
+    # Add sequence settings
+    args_dict["sequence"] = {
+        "max_seq_length": args.max_seq_length if "max_seq_length" in args else None,
+        "max_context_length": (
+            args.max_context_length if "max_context_length" in args else None
+        ),
+    }
+
+    # Add KV cache settings
+    args_dict["kv_cache"] = {
+        "use_kv_cache": args.use_kv_cache if "use_kv_cache" in args else None,
+        "quantize_kv_cache": (
+            args.quantize_kv_cache if "quantize_kv_cache" in args else None
+        ),
+        "use_sdpa_with_kv_cache": (
+            args.use_sdpa_with_kv_cache if "use_sdpa_with_kv_cache" in args else None
+        ),
+    }
+
+    # Add quantization settings
+    args_dict["quantization"] = {
+        "mode": args.quantization_mode if "quantization_mode" in args else None,
+        "embedding_quantize": (
+            args.embedding_quantize if "embedding_quantize" in args else None
+        ),
+        "pt2e_quantize": args.pt2e_quantize if "pt2e_quantize" in args else None,
+        "group_size": args.group_size if "group_size" in args else None,
+        "use_spin_quant": args.use_spin_quant if "use_spin_quant" in args else None,
+        "use_qat": args.use_qat if "use_qat" in args else None,
+        "use_lora": args.use_lora if "use_lora" in args else None,
+        "preq_mode": args.preq_mode if "preq_mode" in args else None,
+        "preq_group_size": args.preq_group_size if "preq_group_size" in args else None,
+        "preq_embedding_quantize": (
+            args.preq_embedding_quantize if "preq_embedding_quantize" in args else None
+        ),
+    }
+
+    # Add calibration settings
+    args_dict["calibration"] = {
+        "tasks": args.calibration_tasks if "calibration_tasks" in args else None,
+        "limit": args.calibration_limit if "calibration_limit" in args else None,
+        "seq_length": (
+            args.calibration_seq_length if "calibration_seq_length" in args else None
+        ),
+        "data": args.calibration_data if "calibration_data" in args else None,
+    }
+
+    # Add backend settings
+    args_dict["backend"] = {
+        "xnnpack": {
+            "enabled": args.xnnpack if "xnnpack" in args else None,
+            "extended_ops": (
+                args.xnnpack_extended_ops if "xnnpack_extended_ops" in args else None
+            ),
+        },
+        "coreml": {
+            "enabled": args.coreml if "coreml" in args else None,
+            "enable_state": (
+                args.coreml_enable_state if "coreml_enable_state" in args else None
+            ),
+            "preserve_sdpa": (
+                args.coreml_preserve_sdpa if "coreml_preserve_sdpa" in args else None
+            ),
+            "quantize": args.coreml_quantize if "coreml_quantize" in args else None,
+            "ios": args.coreml_ios if "coreml_ios" in args else None,
+            "compute_units": (
+                args.coreml_compute_units if "coreml_compute_units" in args else None
+            ),
+        },
+        "vulkan": {
+            "enabled": args.vulkan if "vulkan" in args else None,
+        },
+        "qnn": {
+            "enabled": args.qnn if "qnn" in args else None,
+            "use_sha": args.use_qnn_sha if "use_qnn_sha" in args else None,
+            "soc_model": args.soc_model if "soc_model" in args else None,
+            "optimized_rotation_path": (
+                args.optimized_rotation_path
+                if "optimized_rotation_path" in args
+                else None
+            ),
+        },
+        "mps": {
+            "enabled": args.mps if "mps" in args else None,
+        },
+    }
+
+    # Add additional settings
+    args_dict["misc"] = {
+        "profile_memory": args.profile_memory if "profile_memory" in args else None,
+        "profile_path": args.profile_path if "profile_path" in args else None,
+        "enable_dynamic_shape": (
+            args.enable_dynamic_shape if "enable_dynamic_shape" in args else None
+        ),
+        "num_sharding": args.num_sharding if "num_sharding" in args else None,
+        "expand_rope_table": (
+            args.expand_rope_table if "expand_rope_table" in args else None
+        ),
+        "generate_etrecord": (
+            args.generate_etrecord if "generate_etrecord" in args else None
+        ),
+        "generate_full_logits": (
+            args.generate_full_logits if "generate_full_logits" in args else None
+        ),
+        "use_attention_sink": (
+            args.use_attention_sink if "use_attention_sink" in args else None
+        ),
+        "output_prune_map": (
+            args.output_prune_map if "output_prune_map" in args else None
+        ),
+        "input_prune_map": args.input_prune_map if "input_prune_map" in args else None,
+        "verbose": args.verbose if "verbose" in args else None,
+    }
+
+    # Convert to DictConfig
+    return OmegaConf.create(args_dict)
+
+
+def export_llama(args: Union[argparse.Namespace, DictConfig]) -> str:
+    """Export Llama model to flatbuffer format."""
+    # Convert args to config if needed
+    if isinstance(args, argparse.Namespace):
+        config = _convert_args_to_config(args)
+    else:
+        config = args
+
     # If a checkpoint isn't provided for an HF OSS model, download and convert the
     # weights first.
-    if not args.checkpoint and args.model in HUGGING_FACE_REPO_IDS:
-        repo_id = HUGGING_FACE_REPO_IDS[args.model]
-        if args.model == "qwen2_5":
-            from executorch.examples.models.qwen2_5 import (  # pyre-ignore[21]
+    if not config.model.checkpoint and config.model.name in HUGGING_FACE_REPO_IDS:
+        repo_id = HUGGING_FACE_REPO_IDS[config.model.name]
+        if config.model.name == "qwen2_5":
+            from executorch.examples.models.qwen2_5 import (  # pyre-ignore
                 convert_weights,
             )
-        elif args.model == "phi_4_mini":
-            from executorch.examples.models.phi_4_mini import (  # pyre-ignore[21]
+        elif config.model.name == "phi_4_mini":
+            from executorch.examples.models.phi_4_mini import (  # pyre-ignore
                 convert_weights,
             )
-        elif args.model == "smollm2":
-            from executorch.examples.models.smollm2 import (  # pyre-ignore[21]
+        elif config.model.name == "smollm2":
+            from executorch.examples.models.smollm2 import (  # pyre-ignore
                 convert_weights,
             )
         else:
             raise ValueError(
-                f"Converting weights to meta format for {args.model} is not yet supported"
+                f"Converting weights to meta format for {config.model.name} is not yet supported"
             )
-        args.checkpoint = download_and_convert_hf_checkpoint(repo_id, convert_weights)
+        config.model.checkpoint = download_and_convert_hf_checkpoint(
+            repo_id, convert_weights
+        )
 
-    if args.profile_path is not None:
+    if config.misc.profile_path is not None:
         try:
             from executorch.util.python_profiler import CProfilerFlameGraph
 
-            with CProfilerFlameGraph(args.profile_path):
-                builder = _export_llama(args)
+            with CProfilerFlameGraph(config.misc.profile_path):
+                builder = _export_llama(config)
                 assert (
                     filename := builder.get_saved_pte_filename()
                 ) is not None, "Fail to get file name from builder"
@@ -572,14 +733,14 @@ def export_llama(args) -> str:
             )
             return ""
     else:
-        builder = _export_llama(args)
+        builder = _export_llama(config)
         assert (
             filename := builder.get_saved_pte_filename()
         ) is not None, "Fail to get file name from builder"
         return filename
 
 
-def _prepare_for_llama_export(args) -> LLMEdgeManager:
+def _prepare_for_llama_export(config: DictConfig) -> LLMEdgeManager:
     """
     Helper function for export_llama. Loads the model from checkpoint and params,
     and sets up a LLMEdgeManager with initial transforms and dtype conversion.
@@ -587,40 +748,51 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
     Returns a LLMEdgeManager prior to calling export_to_edge with quantizers
     """
     # load model from checkpoint and params.json
-    checkpoint_path = canonical_path(args.checkpoint) if args.checkpoint else None
-    checkpoint_dir = (
-        canonical_path(args.checkpoint_dir) if args.checkpoint_dir else None
+    checkpoint_path = (
+        canonical_path(config.model.checkpoint) if config.model.checkpoint else None
     )
-    params_path = canonical_path(args.params) if args.params else None
-    output_dir_path = canonical_path(args.output_dir, dir=True)
-    weight_type = WeightType.FAIRSEQ2 if args.fairseq2 else WeightType.LLAMA
+    checkpoint_dir = (
+        canonical_path(config.model.checkpoint_dir)
+        if config.model.checkpoint_dir
+        else None
+    )
+    params_path = canonical_path(config.model.params) if config.model.params else None
+    output_dir_path = canonical_path(config.export.output_dir, dir=True)
+    weight_type = (
+        WeightType.FAIRSEQ2 if config.model.type == "FAIRSEQ2" else WeightType.LLAMA
+    )
 
     # Convert dtype override string arg to actual type.
-    dtype_override = DType[args.dtype_override]
+    dtype_override = DType[config.model.dtype_override]
 
+    calibration_tasks = (
+        None
+        if config.calibration.tasks is None
+        else OmegaConf.to_container(config.calibration.tasks)
+    )
     edge_manager = _load_llama_model(
-        args.model,
+        config.model.name,
         checkpoint=checkpoint_path,
         checkpoint_dir=checkpoint_dir,
         params_path=params_path,
-        use_kv_cache=args.use_kv_cache,
-        use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
-        generate_full_logits=args.generate_full_logits,
+        use_kv_cache=config.kv_cache.use_kv_cache,
+        use_sdpa_with_kv_cache=config.kv_cache.use_sdpa_with_kv_cache,
+        generate_full_logits=config.misc.generate_full_logits,
         weight_type=weight_type,
-        enable_dynamic_shape=args.enable_dynamic_shape,
-        calibration_tasks=args.calibration_tasks,
-        calibration_limit=args.calibration_limit,
-        calibration_seq_length=args.calibration_seq_length,
-        calibration_data=args.calibration_data,
-        tokenizer_path=args.tokenizer_path,
-        verbose=args.verbose,
-        max_seq_len=args.max_seq_length,
-        max_context_len=args.max_context_length,
-        input_prune_map_path=args.input_prune_map,
-        output_prune_map_path=args.output_prune_map,
-        metadata_str=args.metadata,
+        enable_dynamic_shape=config.misc.enable_dynamic_shape,
+        calibration_tasks=calibration_tasks,
+        calibration_limit=config.calibration.limit,
+        calibration_seq_length=config.calibration.seq_length,
+        calibration_data=config.calibration.data,
+        tokenizer_path=config.model.tokenizer_path,
+        verbose=config.misc.verbose,
+        max_seq_len=config.sequence.max_seq_length,
+        max_context_len=config.sequence.max_context_length,
+        input_prune_map_path=config.misc.input_prune_map,
+        output_prune_map_path=config.misc.output_prune_map,
+        metadata_str=config.model.metadata,
         dtype_override=dtype_override,
-        args=args,
+        config=config,
     )
 
     # At this point, the model is loaded in the default fp32.
@@ -649,37 +821,37 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
     logging.info(f"Checkpoint dtype: {edge_manager.model.checkpoint_dtype}")
     edge_manager = edge_manager.set_output_dir(output_dir_path).source_transform(
         _get_source_transforms(
-            modelname=args.model,
+            modelname=config.model.name,
             dtype_override=dtype_override,
             checkpoint_dtype=DType.from_torch_dtype(checkpoint_dtype),
-            args=args,
+            config=config,
         )
     )
 
     return edge_manager
 
 
-def get_quantizer_and_quant_params(args):
+def get_quantizer_and_quant_params(config: DictConfig):
     pt2e_quant_params = get_pt2e_quantization_params(
-        args.pt2e_quantize, args.quantization_mode
+        config.quantization.pt2e_quantize, config.quantization.mode
     )
-    quantizers = get_pt2e_quantizers(pt2e_quant_params, args.so_library)
+    quantizers = get_pt2e_quantizers(pt2e_quant_params, config.export.so_library)
     quant_dtype = None
-    if args.qnn and args.pt2e_quantize:
+    if config.backend.qnn.enabled and config.quantization.pt2e_quantize:
         assert len(quantizers) == 0, "Should not enable both xnnpack and qnn"
         qnn_quantizer, quant_dtype = get_qnn_quantizer(
-            args.pt2e_quantize, args.quantization_mode
+            config.quantization.pt2e_quantize, config.quantization.mode
         )
         quantizers.append(qnn_quantizer)
-    if args.coreml and args.pt2e_quantize:
+    if config.backend.coreml.enabled and config.quantization.pt2e_quantize:
         assert len(quantizers) == 0, "Should not enable both xnnpack / qnn and coreml"
-        coreml_quantizer = get_coreml_quantizer(args.pt2e_quantize)
+        coreml_quantizer = get_coreml_quantizer(config.quantization.pt2e_quantize)
         quantizers.append(coreml_quantizer)
-    if args.vulkan and args.pt2e_quantize:
+    if config.backend.vulkan.enabled and config.quantization.pt2e_quantize:
         assert (
             len(quantizers) == 0
         ), "Should not enable both vulkan and other quantizers"
-        vulkan_quantizer = get_vulkan_quantizer(args.pt2e_quantize)
+        vulkan_quantizer = get_vulkan_quantizer(config.quantization.pt2e_quantize)
         quantizers.append(vulkan_quantizer)
     logging.info(f"Applying quantizers: {quantizers}")
     return pt2e_quant_params, quantizers, quant_dtype
@@ -737,8 +909,8 @@ def _to_edge_and_lower_llama_xnnpack(
     pt2e_quant_params,
     quantizers,
     quant_dtype,
-    args,
-) -> LLMEdgeManager:  # noqa: C901
+    config: DictConfig,
+) -> LLMEdgeManager:
     partitioners = []
 
     # Order matters here, dynamic quantization should be applied first when both xnnpack and xnnpack_extended_ops are enabled
@@ -746,7 +918,7 @@ def _to_edge_and_lower_llama_xnnpack(
 
     modelname = f"xnnpack_dq_{modelname}"
 
-    if args.xnnpack_extended_ops:
+    if config.backend.xnnpack.extended_ops:
         partitioners.append(
             get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
         )
@@ -757,7 +929,7 @@ def _to_edge_and_lower_llama_xnnpack(
         logging.info(f"--> {partitioner.__class__.__name__}")
 
     # TODO: Enable generating ETRecord with XNNPack and to_edge_transform_and_lower().
-    if args.generate_etrecord:
+    if config.misc.generate_etrecord:
         raise NotImplementedError(
             "export_llama does not support XNNPack and generating ETRecord at the moment."
         )
@@ -765,7 +937,7 @@ def _to_edge_and_lower_llama_xnnpack(
     builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
         partitioners
     )
-    if args.verbose:
+    if config.misc.verbose:
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
 
     return builder.to_executorch(passes=additional_passes)
@@ -778,7 +950,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
     pt2e_quant_params,
     quantizers,
     quant_dtype,
-    args,
+    config: DictConfig,
 ):
     builder_exported_to_edge = builder_exported.pt2e_quantize(
         quantizers
@@ -786,11 +958,11 @@ def _to_edge_and_lower_llama(  # noqa: C901
 
     # to_backend
     partitioners = []
-    if args.vulkan:
+    if config.backend.vulkan.enabled:
         partitioners.append(
             get_vulkan_partitioner(
-                args.dtype_override,
-                args.enable_dynamic_shape,
+                config.model.dtype_override,
+                config.misc.enable_dynamic_shape,
             )
         )
         # Apply XNNPACK after Vulkan so that undelegated ops can be accelerated by XNNPACK
@@ -802,27 +974,30 @@ def _to_edge_and_lower_llama(  # noqa: C901
         # Need to remove asserts from the graph to prevent graph breaks
         remove_asserts(builder_exported_to_edge.edge_manager.exported_program())
 
-    if args.mps:
-        partitioners.append(get_mps_partitioner(args.use_kv_cache))
+    if config.backend.mps.enabled:
+        partitioners.append(get_mps_partitioner(config.kv_cache.use_kv_cache))
         modelname = f"mps_{modelname}"
 
-    if args.coreml:
+    if config.backend.coreml.enabled:
         coreml_partitioner = get_coreml_partitioner(
-            args.coreml_ios,
-            args.embedding_quantize,
-            args.pt2e_quantize,
-            args.coreml_quantize,
-            args.coreml_compute_units,
+            config.backend.coreml.ios,
+            config.quantization.embedding_quantize,
+            config.quantization.pt2e_quantize,
+            config.backend.coreml.quantize,
+            config.backend.coreml.compute_units,
         )
         partitioners.append(coreml_partitioner)
         modelname = f"coreml_{modelname}"
 
-    if args.qnn:
+    if config.backend.qnn.enabled:
         from executorch.extension.llm.custom_ops import model_sharding
 
         partitioners.append(
             get_qnn_partitioner(
-                args.use_kv_cache, args.pt2e_quantize, args.num_sharding, args.soc_model
+                config.kv_cache.use_kv_cache,
+                config.quantization.pt2e_quantize,
+                config.misc.num_sharding,
+                config.backend.qnn.soc_model,
             )
         )
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
@@ -840,11 +1015,11 @@ def _to_edge_and_lower_llama(  # noqa: C901
         passes_job[AnnotateDecomposed][QCOM_PASS_ACTIVATE_KEY] = True
         _transform(builder_exported_to_edge.edge_manager.exported_program(), passes_job)
 
-        if args.num_sharding > 0:
+        if config.misc.num_sharding > 0:
             model_sharding.split_graph(
                 builder_exported_to_edge.edge_manager.exported_program(),
                 builder_exported_to_edge.metadata["get_n_layers"],
-                shares=args.num_sharding,
+                shares=config.misc.num_sharding,
             )
 
         # pyre-ignore
@@ -853,7 +1028,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
         )
 
         atten = builder_exported_to_edge.model.layers[0].attention
-        if args.use_qnn_sha:
+        if config.backend.qnn.use_sha:
             cache_shape = torch.Size(
                 (atten.max_batch_size, atten.max_context_len, atten.head_dim)
             )
@@ -875,7 +1050,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
     for partitioner in partitioners:
         logging.info(f"--> {partitioner.__class__.__name__}")
 
-    if args.generate_etrecord:
+    if config.misc.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
             raise ValueError("Unable to generate etrecord due to missing edge manager.")
 
@@ -883,9 +1058,9 @@ def _to_edge_and_lower_llama(  # noqa: C901
         # Copy the edge manager which will be serialized into etrecord. This is memory-wise expensive.
         edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
         builder = builder_exported_to_edge.to_backend(partitioners)
-        if args.verbose:
+        if config.misc.verbose:
             print_delegation_info(builder.edge_manager.exported_program().graph_module)
-        if args.num_sharding > 0 and args.qnn:
+        if config.misc.num_sharding > 0 and config.backend.qnn.enabled:
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
             canonicalize_program(builder.edge_manager.exported_program())
@@ -904,9 +1079,9 @@ def _to_edge_and_lower_llama(  # noqa: C901
             logging.info("Generated etrecord.bin")
     else:
         builder = builder_exported_to_edge.to_backend(partitioners)
-        if args.verbose:
+        if config.misc.verbose:
             print_delegation_info(builder.edge_manager.exported_program().graph_module)
-        if args.num_sharding > 0 and args.qnn:
+        if config.misc.num_sharding > 0 and config.backend.qnn.enabled:
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
             canonicalize_program(builder.edge_manager.exported_program())
@@ -916,28 +1091,28 @@ def _to_edge_and_lower_llama(  # noqa: C901
     return builder
 
 
-def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
-    _validate_args(args)
+def _export_llama(config: DictConfig) -> LLMEdgeManager:  # noqa: C901
+    _validate_config(config)
 
-    pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
+    pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(config)
 
     additional_passes = []
-    if args.model in TORCHTUNE_DEFINED_MODELS:
+    if config.model.name in TORCHTUNE_DEFINED_MODELS:
         additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
 
     # export_to_edge
-    builder_exported = _prepare_for_llama_export(args).export()
+    builder_exported = _prepare_for_llama_export(config).export()
     builder_exported.run_canonical_optimizations()
     modelname = builder_exported.modelname
 
-    if args.export_only:
+    if config.export.export_only:
         exit()
 
     if pt2e_quant_params is not None and pt2e_quant_params.quantize_linear is not None:
-        # Force xnnpack to be true if pt2e_quant_params is not None and args.xnnpack is False
-        args.xnnpack = True
+        # Force xnnpack to be true if pt2e_quant_params is not None and config.backend.xnnpack.enabled is False
+        config.backend.xnnpack.enabled = True
 
-    if args.xnnpack:
+    if config.backend.xnnpack.enabled:
         builder = _to_edge_and_lower_llama_xnnpack(
             builder_exported,
             modelname,
@@ -945,7 +1120,7 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
             pt2e_quant_params,
             quantizers,
             quant_dtype,
-            args,
+            config,
         )
     else:
         builder = _to_edge_and_lower_llama(
@@ -955,17 +1130,17 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
             pt2e_quant_params,
             quantizers,
             quant_dtype,
-            args,
+            config,
         )
 
-    if args.profile_memory:
+    if config.misc.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")
 
     if builder.dtype == DType.fp16:
         modelname = f"{modelname}_h"
 
-    if args.output_name:
-        modelname = args.output_name
+    if config.export.output_name:
+        modelname = config.export.output_name
         if modelname.endswith(".pte"):
             output_file = modelname
             modelname = modelname[:-4]
@@ -980,6 +1155,42 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
 
     builder.save_to_pte(output_file)
     return builder
+
+
+def _validate_config(config: DictConfig) -> None:
+    """Validate configuration values."""
+    if config.sequence.max_context_length < config.sequence.max_seq_length:
+        raise ValueError(
+            f"max_context_length {config.sequence.max_context_length} must be >= max_seq_len {config.sequence.max_seq_length}. "
+            "max_context_length impacts kv cache size that is used to remember history, while max_seq_length refers to user prompt length. "
+            "Please use --max_context_length to specify context length."
+        )
+
+    if config.misc.enable_dynamic_shape and (
+        config.backend.coreml.enabled
+        or config.backend.mps.enabled
+        or config.backend.qnn.enabled
+    ):
+        raise ValueError(
+            "Dynamic shape is not supported with coreml, MPS or qnn backends. "
+            "Please use --disable_dynamic_shape."
+        )
+
+    if config.misc.num_sharding > 0 and not config.backend.qnn.enabled:
+        raise ValueError("Model shard is only supported with qnn backend now.")
+
+    if (
+        config.quantization.mode is not None
+        and config.quantization.mode.startswith("torchao:")
+    ) or (
+        config.quantization.embedding_quantize is not None
+        and config.quantization.embedding_quantize.startswith("torchao:")
+    ):
+        if config.misc.enable_dynamic_shape:
+            raise ValueError(
+                "Dynamic shape is not currently supported with torchao ops. Please use --disable_dynamic_shape. "
+                "If you need this feature, please file an issue."
+            )
 
 
 def _load_llama_model_metadata(
@@ -1038,7 +1249,7 @@ def _load_llama_model(
     output_prune_map_path: Optional[str] = None,
     metadata_str: Optional[str] = None,
     dtype_override: Optional[DType] = None,
-    args,
+    config: Optional[DictConfig] = None,
 ) -> "LLMEdgeManager":
     """
     A helper util that builds a Llama2 model. It returns a LLMEdgeManager that
@@ -1078,7 +1289,7 @@ def _load_llama_model(
             input_prune_map_path=input_prune_map_path,
             output_prune_map_path=output_prune_map_path,
             dtype=torch_dtype,
-            args=args,
+            config=config,
         )
     )
 
@@ -1118,7 +1329,7 @@ def _load_llama_model(
             model.vocab_size,
             metadata_str,
         ),
-        args=args,
+        config=config,  # TODO: Rename builder args field to config.
     )
 
 
@@ -1127,7 +1338,7 @@ def _get_source_transforms(  # noqa
     dtype_override: DType,
     *,
     checkpoint_dtype: Optional[DType] = None,
-    args,
+    config: DictConfig,
 ) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
     """
     Return a list of functions that transform a graph.
@@ -1150,21 +1361,21 @@ def _get_source_transforms(  # noqa
 
     transforms = []
 
-    if args.use_spin_quant:
-        if args.use_spin_quant == "cuda":
+    if config.quantization.use_spin_quant:
+        if config.quantization.use_spin_quant == "cuda":
             from .source_transformation.spin_quant import (
                 inject_fast_hadamard_transform_cuda_for_spin_quant,
             )
 
             transforms.append(inject_fast_hadamard_transform_cuda_for_spin_quant)
-        elif args.use_spin_quant == "native":
+        elif config.quantization.use_spin_quant == "native":
             from .source_transformation.spin_quant import (
                 inject_fast_hadamard_transform_native_for_spin_quant,
             )
 
             transforms.append(inject_fast_hadamard_transform_native_for_spin_quant)
 
-    if args.embedding_quantize:
+    if config.quantization.embedding_quantize:
         """
         When this option is selected, it finds all embedding layers and transforms
         into quantized embedding equivalent module.
@@ -1175,11 +1386,11 @@ def _get_source_transforms(  # noqa
         this wil be a no-op.
         """
         modelname = f"{modelname}_e"
-        transforms.append(get_quant_embedding_transform(args, checkpoint_dtype))
+        transforms.append(get_quant_embedding_transform(config, checkpoint_dtype))
 
     # quantization_mode should be applied after embedding_quantize
     # to support shared_embedding
-    if args.quantization_mode:
+    if config.quantization.mode:
         """
         When this option is selected, it finds all linear layers and transforms
         into quantized linear equivalent module.
@@ -1196,68 +1407,70 @@ def _get_source_transforms(  # noqa
         modelname = f"{modelname}_q"
         transforms.append(
             get_quant_weight_transform(
-                args=args,
+                config=config,
                 computation_dtype=dtype_override,
                 checkpoint_dtype=checkpoint_dtype,
             )
         )
 
-    if args.expand_rope_table:
+    if config.misc.expand_rope_table:
         transforms.append(materialze_broadcast_of_rope_freq_cis)
 
-    if args.use_sdpa_with_kv_cache:
+    if config.kv_cache.use_sdpa_with_kv_cache:
         transforms.append(replace_kv_cache_with_custom_kv_cache)
         transforms.append(replace_sdpa_with_custom_op)
 
-    if args.quantize_kv_cache:
-        assert args.use_kv_cache, "quantize_kv_cache requires use_kv_cache=True"
+    if config.kv_cache.quantize_kv_cache:
+        assert (
+            config.kv_cache.use_kv_cache
+        ), "quantize_kv_cache requires use_kv_cache=True"
         transforms.append(replace_kv_cache_with_quantized_kv_cache)
 
-    if args.use_kv_cache:
-        if args.qnn:
+    if config.kv_cache.use_kv_cache:
+        if config.backend.qnn.enabled:
             from executorch.backends.qualcomm.utils.utils import (
                 convert_linear_to_conv2d,
             )
 
-            if args.use_qnn_sha:
-                if args.optimized_rotation_path:
+            if config.backend.qnn.use_sha:
+                if config.backend.qnn.optimized_rotation_path:
                     transforms.append(fuse_layer_norms)
                     transforms.append(
-                        get_model_with_r1_r2(args.optimized_rotation_path)
+                        get_model_with_r1_r2(config.backend.qnn.optimized_rotation_path)
                     )
                 transforms.append(replace_attention_to_attention_sha)
                 transforms.append(replace_causal_mask)
                 transforms.append(replace_rms_norm_with_native_rms_norm)
-                # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
+                # pyre-ignore: Module `backends` has no attribute `qualcomm`.
                 transforms.append(convert_linear_to_conv2d)
             else:
                 transforms.append(replace_kv_cache_with_simple_kv_cache)
                 transforms.append(replace_sdpa_with_flex_sdpa)
                 transforms.append(replace_causal_mask)
                 transforms.append(replace_rms_norm_with_native_rms_norm)
-                if args.optimized_rotation_path:
+                if config.backend.qnn.optimized_rotation_path:
                     transforms.append(fuse_layer_norms)
                     transforms.append(
-                        get_model_with_r1_r2(args.optimized_rotation_path)
+                        get_model_with_r1_r2(config.backend.qnn.optimized_rotation_path)
                     )
-                # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
+                # pyre-ignore: Module `backends` has no attribute `qualcomm`.
                 transforms.append(convert_linear_to_conv2d)
 
-        elif args.mps:
+        elif config.backend.mps.enabled:
             # Currently mps doesn't support sdpa op, use the simpler decomposition
             # to get free perf gain.
             transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_causal_mask)
 
-        elif args.coreml:
+        elif config.backend.coreml.enabled:
             # iOS 18 introduced fused sdpa op
-            if args.coreml_ios >= 18:
+            if config.backend.coreml.ios >= 18:
                 transforms.append(replace_sdpa_with_coreml_sdpa)
             else:
                 transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_kv_cache_with_coreml_kv_cache)
 
-    if args.vulkan:
+    if config.backend.vulkan.enabled:
         transforms.append(replace_with_vulkan_rotary_emb)
 
     return transforms
