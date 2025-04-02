@@ -5,7 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-set -exu
+set -euxo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
@@ -30,7 +30,7 @@ pip install graphviz
 # Download stories llama110m artifacts
 download_stories_model_artifacts
 echo "Creating tokenizer.bin"
-$PYTHON_EXECUTABLE -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+$PYTHON_EXECUTABLE -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokenizer.bin
 
 set +e
 # Compile only as weight sharing is not applicable on x86
@@ -56,4 +56,3 @@ if [ $exit_code1 -ne 0 ] || [ $exit_code2 -ne 0 ]; then
 else
     exit 0
 fi
-set -e

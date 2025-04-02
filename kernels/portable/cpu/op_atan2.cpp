@@ -55,17 +55,19 @@ Tensor& atan2_out(
   static constexpr const char op_name[] = "atan2.out";
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
-          return std::atan2(val_a, val_b);
+    utils::apply_bitensor_elementwise_fn<
+        CTYPE_COMPUTE,
+        op_name,
+        utils::SupportedTensorDtypes::FLOATHBF16>(
+        [](const auto val_a, const auto val_b) {
+          return executorch::math::atan2(val_a, val_b);
         },
         ctx,
         a,
         utils::SupportedTensorDtypes::REALHBBF16,
         b,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::FLOATHBF16);
+        out);
   });
 
   return out;

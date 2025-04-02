@@ -45,8 +45,13 @@ Tensor& sigmoid_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   static constexpr const char op_name[] = "sigmoid.out";
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+    utils::apply_unitensor_elementwise_fn<
+        CTYPE_COMPUTE,
+        op_name,
+        utils::SupportedTensorDtypes::FLOATHBF16>(
         [](const CTYPE_COMPUTE val_in) {
+          // TODO: rewrite this to be vectorization-capable; need
+          // unary - overload for Vectorized.
           CTYPE_COMPUTE out_val = static_cast<CTYPE_COMPUTE>(1.0) /
               (static_cast<CTYPE_COMPUTE>(1.0) + exp(-val_in));
           return out_val;
@@ -54,8 +59,7 @@ Tensor& sigmoid_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
         ctx,
         in,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::FLOATHBF16);
+        out);
   });
 
   return out;
