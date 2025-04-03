@@ -13,6 +13,7 @@ from typing import Optional, Sequence
 
 import torch
 import torch.fx
+from executorch.backends.arm.tosa_utils import get_node_debug_info
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -169,9 +170,13 @@ def get_first_fake_tensor(node: torch.fx.Node) -> FakeTensor:
     else:
         fake_tensor = node.meta["val"]
 
-    assert isinstance(
-        fake_tensor, FakeTensor
-    ), f'Found {fake_tensor} in meta["val"] of {node}, expected to find FakeTensor.'
+    if not isinstance(fake_tensor, FakeTensor):
+        raise TypeError(
+            f'Expected a FakeTensor in meta["val"] of node {node}, but got '
+            f"{type(fake_tensor).__name__}\n"
+            f"{get_node_debug_info(node)}"
+        )
+
     return fake_tensor
 
 
