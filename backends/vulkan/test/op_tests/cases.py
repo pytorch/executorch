@@ -385,6 +385,11 @@ def get_native_layer_norm_inputs():
             ((S, XL, M1, M2), [M2], (M2), (M2), 0.001),
         ]
     )
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+        "utils::kChannelsPacked",
+    ]
     return test_suite
 
 
@@ -1087,6 +1092,7 @@ def get_reduce_op_inputs():
         "aten.hardswish.default",
         "aten.hardsigmoid.default",
         "aten.leaky_relu.default",
+        "aten.round.default",
     ]
 )
 def get_unary_ops_inputs():

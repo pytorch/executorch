@@ -11,12 +11,7 @@ from typing import final, List
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import torch  # noqa: F401
-from executorch.backends.qualcomm._passes import (
-    FuseConsecutiveTranspose,
-    InsertIOQDQ,
-    InsertRequantize,
-    LayoutTransform,
-)
+from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.partition.utils import generate_qnn_executorch_option
@@ -25,7 +20,6 @@ from executorch.exir.backend.backend_details import (
     CompileSpec,
     PreprocessResult,
 )
-from executorch.exir.passes import PassManager
 from torch.export.exported_program import ExportedProgram
 
 DEFAULT_DEBUG_HANDLE = 65535
@@ -46,17 +40,8 @@ class QnnBackend(BackendDetails):
         qnn_manager.Init()
 
         # QNN Delegate Specific Passes
-        qnn_compiler_passes = PassManager(
-            passes=[
-                InsertRequantize(edge_program),
-                InsertIOQDQ(edge_program),
-                LayoutTransform(edge_program, insert_permute=True),
-                FuseConsecutiveTranspose(),
-            ]
-        )
-
-        pass_result = qnn_compiler_passes(edge_program.graph_module)
-        assert pass_result is not None
+        graph_module = QnnPassManager().transform_for_preprocess_pipeline(edge_program)
+        assert graph_module is not None
 
         enable_tensor_dump = qnn_manager.IsTensorDump()
         nodes_to_wrappers = defaultdict(dict)
@@ -64,7 +49,7 @@ class QnnBackend(BackendDetails):
             edge_program, enable_tensor_dump=enable_tensor_dump
         )
         py_op_wrapper_list = []
-        for node in pass_result.graph_module.graph.nodes:
+        for node in graph_module.graph.nodes:
             if node.op == "call_function":
                 logger.info(f"Visiting: {node}, {node.target.__name__}")
                 if node.target.__name__ in node_visitors:
