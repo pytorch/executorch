@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 import operator
 from dataclasses import dataclass
 from typing import Callable, List, Optional
@@ -11,12 +12,15 @@ import torch
 import torch.fx
 from executorch.backends.arm.quantizer import arm_quantizer_utils
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
+from executorch.backends.arm.tosa_utils import get_node_debug_info
 from torch.ao.quantization.quantizer import QuantizationSpecBase, SharedQuantizationSpec
 from torch.ao.quantization.quantizer.utils import (
     _annotate_input_qspec_map,
     _annotate_output_qspec,
 )
 from torch.fx import Node
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -45,18 +49,51 @@ def _as_list(x):
 
 
 def _is_ok_for_quantization(
-    node: Node, quant_property: _QuantProperty, gm: torch.fx.GraphModule
+    node: Node, quant_properties: _OpQuantProperties, gm: torch.fx.GraphModule
 ) -> bool:
-    if quant_property.optional and (
-        quant_property.index >= len(node.args)
-        or node.args[quant_property.index] is None
-    ):
-        return True
+    """Check if a node can be quantized.
 
-    for n_arg in _as_list(node.args[quant_property.index]):
-        assert isinstance(n_arg, Node)
-        if not arm_quantizer_utils.is_ok_for_quantization(n_arg, gm):  # type: ignore[attr-defined]
+    A node can be quantized if:
+    - All inputs that are required for quantization are of type `float32`
+      and are not large scalar values.
+    - The output of the node itself is of type `float32` and is not a large scalar.
+
+    Args:
+        node (Node): The node being analyzed.
+        quant_properties (_OpQuantProperties): Contains quantization properties for
+            the node, including input and output quantization specifications.
+        gm (torch.fx.GraphModule): The graph module containing the computational graph.
+
+    Returns:
+        bool: `True` if the node can be quantized, otherwise `False`.
+    """
+    # Check output
+    if quant_properties.quant_output is not None:
+        if not arm_quantizer_utils.is_ok_for_quantization(node, gm):  # type: ignore[attr-defined]
+            logger.debug(
+                f"Could not quantize node due to output: "
+                f"{get_node_debug_info(node, gm)}"
+            )
+
             return False
+
+    # Check inputs
+    for quant_property in quant_properties.quant_inputs:
+        if quant_property.optional and (
+            quant_property.index >= len(node.args)
+            or node.args[quant_property.index] is None
+        ):
+            continue
+
+        for n_arg in _as_list(node.args[quant_property.index]):
+            assert isinstance(n_arg, Node)
+            if not arm_quantizer_utils.is_ok_for_quantization(n_arg, gm):  # type: ignore[attr-defined]
+                logger.debug(
+                    f'could not quantize node due to input "{node}": '
+                    f"{get_node_debug_info(node, gm)}"
+                )
+
+                return False
 
     return True
 
@@ -139,6 +176,7 @@ _one_to_one = [
     torch.ops.aten.hardswish.default,
     torch.ops.aten.hardswish_.default,
     torch.ops.aten.full_like.default,
+    torch.ops.aten.pow.Tensor_Scalar,
 ]
 
 _one_to_one_shared_input_qspec = [
@@ -354,14 +392,9 @@ def get_quant_properties(  # noqa: C901
         return quant_properties
 
     # Check that each inputs/outputs can be quantized properly with the
-    # provided QuantProperties
-    for quant_property in quant_properties.quant_inputs:
-        if not _is_ok_for_quantization(node, quant_property, gm):
-            return None  # type: ignore[return-value]
-
-    if quant_properties.quant_output is not None:
-        if not _is_ok_for_quantization(node, quant_properties.quant_output, gm):
-            return None  # type: ignore[return-value]
+    # provided quantization properties.
+    if not _is_ok_for_quantization(node, quant_properties, gm):
+        return None  # type: ignore[return-value]
 
     return quant_properties
 

@@ -44,6 +44,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceTCopyWithTransposePass,
     ReplaceTransposedConvWithLinearPass,
     ReplaceTrivialConvWithLinear,
+    ReplaceWhereWithFullArgsWithWhereScalar,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -1213,6 +1214,89 @@ class TestReplaceOpsPasses(unittest.TestCase):
         self.assertEqual(
             count_node(
                 graph_after_passes, exir_ops.edge.cadence.linalg_vector_norm.default
+            ),
+            1,
+        )
+
+    def test_replace_aten_where_with_cadence_where_Scalar(self):
+        class WhereScalarModel(torch.nn.Module):
+            def forward(self, cond: torch.Tensor):
+                a = torch.ops.aten.full.default(a_shape, val1)
+                b = torch.ops.aten.full.default(b_shape, val2)
+                return torch.where(cond > 0, a, b)
+
+        cond_shape, a_shape, b_shape, val1, val2 = [(4, 8), (4, 8), (4, 8), 0.0, 1.0]
+        cond = torch.randn(cond_shape)
+
+        graph_module = (
+            export_to_edge(WhereScalarModel(), (cond,)).exported_program().graph_module
+        )
+
+        p = ReplaceWhereWithFullArgsWithWhereScalar()
+        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+
+        # Assert that aten.where op was replaced by a
+        # cadence.where_Scalar op
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.aten.where.self,
+            ),
+            0,
+        )
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.cadence.where_Scalar.default),
+            1,
+        )
+
+        class WhereBroadcastModel(torch.nn.Module):
+            def forward(self, cond: torch.Tensor):
+                a = torch.ops.aten.full.default(a_shape, val1)
+                b = torch.ops.aten.full.default(b_shape, val2)
+                return torch.where(cond > 0, a, b)
+
+        # a tensor bigger than cond and b
+        cond_shape, a_shape, b_shape, val1, val2 = [(8,), (4, 8), (8,), 0.0, 1.0]
+        cond = torch.randn(cond_shape)
+
+        graph_module = (
+            export_to_edge(WhereBroadcastModel(), (cond,))
+            .exported_program()
+            .graph_module
+        )
+
+        p = ReplaceWhereWithFullArgsWithWhereScalar()
+        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+
+        # Assert that aten.where op is still in the graph since where_Scalar does not
+        # support broadcast
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.aten.where.self,
+            ),
+            1,
+        )
+
+        # cond tensor bigger than a and b
+        cond_shape, a_shape, b_shape, val1, val2 = [(4, 8), (8,), (8,), 0.0, 1.0]
+        cond = torch.randn(cond_shape)
+
+        graph_module = (
+            export_to_edge(WhereBroadcastModel(), (cond,))
+            .exported_program()
+            .graph_module
+        )
+
+        p = ReplaceWhereWithFullArgsWithWhereScalar()
+        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+
+        # Assert that aten.where op is still in the graph since where_Scalar does not
+        # support broadcast
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.aten.where.self,
             ),
             1,
         )
