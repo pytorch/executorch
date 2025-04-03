@@ -33,8 +33,8 @@ class AllNodePartitioner(Partitioner):
         compile_specs: List[CompileSpec],
     ):
         """
-        Partitioner that lowers every single node in the graph module to the
-        specified backend_id
+        Partitioner that lowers every single node in the graph module unconditionally
+        to the specified backend_id
         """
         super().__init__()
         self.delegation_spec = DelegationSpec(backend_id, compile_specs)
