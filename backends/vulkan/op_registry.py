@@ -276,6 +276,7 @@ def register_binary_op(features: OpFeatures):
         exir_ops.edge.aten.sqrt.default,
         exir_ops.edge.aten.rsqrt.default,
         exir_ops.edge.aten.tanh.default,
+        exir_ops.edge.aten.round.default,
     ]
 )
 def register_unary_op(features: OpFeatures):
