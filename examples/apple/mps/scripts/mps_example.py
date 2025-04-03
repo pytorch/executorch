@@ -166,7 +166,9 @@ if __name__ == "__main__":
 
     # pre-autograd export. eventually this will become torch.export
     with torch.no_grad():
-        model = torch.export.export_for_training(model, example_inputs).module()
+        model = torch.export.export_for_training(
+            model, example_inputs, strict=True
+        ).module()
         edge: EdgeProgramManager = export_to_edge(
             model,
             example_inputs,

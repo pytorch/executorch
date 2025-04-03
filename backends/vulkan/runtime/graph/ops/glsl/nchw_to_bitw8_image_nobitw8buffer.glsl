@@ -27,6 +27,8 @@ ${layout_declare_ubo(B, "ivec4", "sizes")}
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 ${layout_declare_spec_const(C, "int", "t_layout", "DEFAULT_LAYOUT")}
+${layout_declare_spec_const(C, "int", "transpose_hw", "0")}
+
 const lowp ivec4 axis_map = unhash_axis_map(t_layout);
 const lowp int packed_dim = unhash_packed_dim(t_layout);
 
@@ -41,8 +43,23 @@ int extend_sign(int x) {
 }
 
 ivec4 read_texel(ivec4 tidx) {
+  ivec4 tidx_to_use = tidx;
+  ivec4 sizes_to_use = sizes;
+  int packed_dim_to_use = packed_dim;
+  if (transpose_hw == 1) {
+    sizes_to_use.xy = sizes_to_use.yx;
+    tidx_to_use.xy = tidx.yx;
+
+    if (packed_dim == 1) {
+      packed_dim_to_use = 0;
+    }
+    if (packed_dim == 0) {
+      packed_dim_to_use = 1;
+    }
+  }
+
   const ivec4 buf_indices = tidx_to_nchwi(
-      tidx, sizes, packed_dim);
+      tidx_to_use, sizes_to_use, packed_dim_to_use);
 
   int shift = (1 << 8) - 1;
   ivec4 masks;
@@ -70,7 +87,7 @@ ivec4 read_texel(ivec4 tidx) {
 
 void main() {
   const ivec3 lpos = ivec3(gl_GlobalInvocationID);
-  const ivec4 tidx = lpos_to_tidx(lpos, sizes, axis_map.w, packed_dim);
+  ivec4 tidx = lpos_to_tidx(lpos, sizes, axis_map.w, packed_dim);
 
   if (any(greaterThanEqual(tidx, sizes))) {
     return;
