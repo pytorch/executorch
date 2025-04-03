@@ -575,8 +575,7 @@ class CustomBuildPy(build_py):
             # In editable mode, the package directory is the original source directory
             dst_root = self.get_package_dir(".")
         else:
-            dst_root = os.path.join(self.build_lib, self.get_package_dir("executorch"))
-
+            dst_root = os.path.join(self.build_lib, "executorch")
         # Create the version file.
         Version.write_to_python_file(os.path.join(dst_root, "version.py"))
 
