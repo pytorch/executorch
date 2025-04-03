@@ -149,6 +149,7 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.reflection_pad1d.default,  # REVERSE
         exir_ops.edge.aten.reflection_pad2d.default,  # REVERSE
         exir_ops.edge.aten.reflection_pad3d.default,  # REVERSE
+        exir_ops.edge.aten.where.self,  # SELECT
     ]
 
     def __init__(self, reporter: WhyNoPartitionReporter):
