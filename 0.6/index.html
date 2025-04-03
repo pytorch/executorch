@@ -470,7 +470,7 @@
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/index.rst.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/index.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -504,70 +504,171 @@
               
   <div class="section" id="welcome-to-the-executorch-documentation">
 <span id="home"></span><h1>Welcome to the ExecuTorch Documentation<a class="headerlink" href="#welcome-to-the-executorch-documentation" title="Permalink to this heading">¶</a></h1>
-<div class="admonition important">
-<p class="admonition-title">Important</p>
-<p>v0.4.0 was the beta release of ExecuTorch. Starting from v0.4.0, the API
-follows the <a class="reference external" href="api-life-cycle.html">API Lifecycle and Deprecation Policy</a>,
-and the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> binary format complies with the <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/runtime/COMPATIBILITY.md">Runtime Compatibility
-Policy</a>.
-This helps ensure that application developers can update to the latest
-version of ExecuTorch without breaking existing integration code, in
-accordance with these policies. If any issues arise or compatibility breaks
-occur, please <a class="reference external" href="https://github.com/pytorch/executorch/issues/new/choose">report them in GitHub</a>.</p>
-<p>We welcome any feedback, suggestions, and bug reports from the community
-to help us improve the technology. Please use the <a class="reference external" href="https://discuss.pytorch.org/c/executorch">PyTorch Forums</a> for discussion and feedback
-about ExecuTorch using the <strong>ExecuTorch</strong> category, and our <a class="reference external" href="https://github.com/pytorch/executorch/issues">GitHub
-repository</a> for bug
-reporting.</p>
+<p><strong>ExecuTorch</strong> is PyTorch’s solution to training and inference on the
+Edge.</p>
+<div class="section" id="key-value-propositions">
+<h2>Key Value Propositions<a class="headerlink" href="#key-value-propositions" title="Permalink to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><strong>Portability:</strong> Compatibility with a wide variety of computing
+platforms, from high-end mobile phones to highly constrained
+embedded systems and microcontrollers.</p></li>
+<li><p><strong>Productivity:</strong> Enabling developers to use the same toolchains and
+Developer Tools from PyTorch model authoring and conversion, to
+debugging and deployment to a wide variety of platforms.</p></li>
+<li><p><strong>Performance:</strong> Providing end users with a seamless and
+high-performance experience due to a lightweight runtime and
+utilizing full hardware capabilities such as CPUs, NPUs, and DSPs.</p></li>
+</ul>
+<p>ExecuTorch provides support for:</p>
+<ul class="simple">
+<li><p><strong>Strong Model Support</strong> LLMs (Large Language Models),
+CV (Computer Vision), ASR (Automatic Speech Recognition), TTS (Text To Speech)</p></li>
+<li><p><strong>All Major Platforms</strong> Android, Mac, Linux, Windows</p></li>
+<li><p><strong>Rich Acceleration Support</strong> Apple, Arm, Cadence, MediaTek,
+Qualcomm, Vulkan, XNNPACK</p></li>
+</ul>
+<div class="section" id="documentation-navigation">
+<h3>Documentation Navigation<a class="headerlink" href="#documentation-navigation" title="Permalink to this heading">¶</a></h3>
+<div class="section" id="introduction">
+<h4>Introduction<a class="headerlink" href="#introduction" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><a class="reference internal" href="intro-overview.html"><span class="doc std std-doc">Overview</span></a></p></li>
+<li><p><a class="reference internal" href="intro-how-it-works.html"><span class="doc std std-doc">How it Works</span></a></p></li>
+<li><p><a class="reference internal" href="getting-started-architecture.html"><span class="doc std std-doc">Getting Started with Architecture</span></a></p></li>
+<li><p><a class="reference internal" href="concepts.html"><span class="doc std std-doc">Concepts</span></a></p></li>
+</ul>
 </div>
-<div class="et-page-column-row">
-  <div class="et-page-column1"><p><strong>ExecuTorch</strong> is a PyTorch platform that provides infrastructure to run PyTorch programs everywhere from AR/VR wearables to standard on-device iOS and Android mobile deployments. One of the main goals for ExecuTorch is to enable wider customization and deployment capabilities of the PyTorch programs.</p>
-  <p>ExecuTorch heavily relies on such PyTorch technologies as <a href="https://pytorch.org/docs/stable/torch.compiler.html">torch.compile</a> and <a href="https://pytorch.org/docs/main/export.html">torch.export</a>. If you are not familiar with these APIs, you might want to read about them in the PyTorch documentation before diving into the ExecuTorch documentation.</p></div>
-  <div class="et-page-column2"><img src="_static/img/ExecuTorch-Logo-cropped.svg" alt="ExecuTorch logo" title="ExecuTorch logo"></div>
-</div><p>The ExecuTorch source is hosted on GitHub at
-<a class="reference external" href="https://github.com/pytorch/executorch">https://github.com/pytorch/executorch</a>.</p>
-<p>Join us on <a class="reference external" href="https://discord.com/invite/Dh43CKSAdc">Discord</a> if you have questions
-about ExecuTorch or would like to become a contributor!</p>
-<div class="section" id="getting-started">
-<h2>Getting Started<a class="headerlink" href="#getting-started" title="Permalink to this heading">¶</a></h2>
-<p>Topics in this section will help you get started with ExecuTorch.</p>
-<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
-<div class="sd-row sd-row-cols-3 sd-row-cols-xs-3 sd-row-cols-sm-3 sd-row-cols-md-3 sd-row-cols-lg-3 docutils">
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-What is ExecuTorch?</div>
-<p class="sd-card-text">A gentle introduction to ExecuTorch. In this section,
-you will learn about main features of ExecuTorch
-and how you can use them in your projects.</p>
+<div class="section" id="usage">
+<h4>Usage<a class="headerlink" href="#usage" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><a class="reference internal" href="getting-started.html"><span class="doc std std-doc">Getting Started</span></a></p></li>
+<li><p><a class="reference internal" href="using-executorch-export.html"><span class="doc std std-doc">Using Executorch Export</span></a></p></li>
+<li><p><a class="reference internal" href="using-executorch-android.html"><span class="doc std std-doc">Using Executorch on Android</span></a></p></li>
+<li><p><a class="reference internal" href="using-executorch-ios.html"><span class="doc std std-doc">Using Executorch on iOS</span></a></p></li>
+<li><p><a class="reference internal" href="using-executorch-cpp.html"><span class="doc std std-doc">Using Executorch with C++</span></a></p></li>
+<li><p><a class="reference internal" href="using-executorch-runtime-integration.html"><span class="doc std std-doc">Runtime Integration</span></a></p></li>
+<li><p><a class="reference internal" href="using-executorch-troubleshooting.html"><span class="doc std std-doc">Troubleshooting</span></a></p></li>
+<li><p><a class="reference internal" href="using-executorch-building-from-source.html"><span class="doc std std-doc">Building from Source</span></a></p></li>
+<li><p><a class="reference internal" href="using-executorch-faqs.html"><span class="doc std std-doc">FAQs</span></a></p></li>
+</ul>
 </div>
-<a class="sd-stretched-link reference external" href="intro-overview.html"></a></div>
+<div class="section" id="examples">
+<h4>Examples<a class="headerlink" href="#examples" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Android Demo Apps</a></p></li>
+<li><p><a class="reference internal" href="demo-apps-ios.html"><span class="doc std std-doc">iOS Demo Apps</span></a></p></li>
+</ul>
 </div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-Getting started with ExecuTorch</div>
-<p class="sd-card-text">A step-by-step tutorial on how to get started with
-ExecuTorch.</p>
+<div class="section" id="backends">
+<h4>Backends<a class="headerlink" href="#backends" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><a class="reference internal" href="backends-overview.html"><span class="doc std std-doc">Overview</span></a></p></li>
+<li><p><a class="reference internal" href="backends-xnnpack.html"><span class="doc std std-doc">XNNPACK</span></a></p></li>
+<li><p><a class="reference internal" href="backends-coreml.html"><span class="doc std std-doc">Core ML</span></a></p></li>
+<li><p><a class="reference internal" href="backends-mps.html"><span class="doc std std-doc">MPS</span></a></p></li>
+<li><p><a class="reference internal" href="backends-vulkan.html"><span class="doc std std-doc">Vulkan</span></a></p></li>
+<li><p><a class="reference internal" href="backends-arm-ethos-u.html"><span class="doc std std-doc">ARM Ethos-U</span></a></p></li>
+<li><p><a class="reference internal" href="backends-qualcomm.html"><span class="doc std std-doc">Qualcomm</span></a></p></li>
+<li><p><a class="reference internal" href="backends-mediatek.html"><span class="doc std std-doc">MediaTek</span></a></p></li>
+<li><p><a class="reference internal" href="backends-cadence.html"><span class="doc std std-doc">Cadence</span></a></p></li>
+</ul>
 </div>
-<a class="sd-stretched-link reference external" href="getting-started.html"></a></div>
+<div class="section" id="developer-tools">
+<h4>Developer Tools<a class="headerlink" href="#developer-tools" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><a class="reference internal" href="devtools-overview.html"><span class="doc std std-doc">Overview</span></a></p></li>
+<li><p><a class="reference internal" href="bundled-io.html"><span class="doc std std-doc">Bundled IO</span></a></p></li>
+<li><p><a class="reference internal" href="etrecord.html"><span class="doc std std-doc">ETRecord</span></a></p></li>
+<li><p><a class="reference internal" href="etdump.html"><span class="doc std std-doc">ETDump</span></a></p></li>
+<li><p><a class="reference internal" href="runtime-profiling.html"><span class="doc std std-doc">Runtime Profiling</span></a></p></li>
+<li><p><a class="reference internal" href="model-debugging.html"><span class="doc std std-doc">Model Debugging</span></a></p></li>
+<li><p><a class="reference internal" href="model-inspector.html"><span class="doc std std-doc">Model Inspector</span></a></p></li>
+<li><p><a class="reference internal" href="memory-planning-inspection.html"><span class="doc std std-doc">Memory Planning Inspection</span></a></p></li>
+<li><p><a class="reference internal" href="delegate-debugging.html"><span class="doc std std-doc">Delegate Debugging</span></a></p></li>
+<li><p><a class="reference internal" href="devtools-tutorial.html"><span class="doc std std-doc">Tutorial</span></a></p></li>
+</ul>
 </div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-ExecuTorch Llama</div>
-<p class="sd-card-text">Learn about running Llama models via ExecuTorch</p>
+<div class="section" id="runtime">
+<h4>Runtime<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><a class="reference internal" href="runtime-overview.html"><span class="doc std std-doc">Overview</span></a></p></li>
+<li><p><a class="reference internal" href="extension-module.html"><span class="doc std std-doc">Extension Module</span></a></p></li>
+<li><p><a class="reference internal" href="extension-tensor.html"><span class="doc std std-doc">Extension Tensor</span></a></p></li>
+<li><p><a class="reference internal" href="running-a-model-cpp-tutorial.html"><span class="doc std std-doc">Running a Model (C++ Tutorial)</span></a></p></li>
+<li><p><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html"><span class="doc std std-doc">Backend Delegate Implementation and Linking</span></a></p></li>
+<li><p><a class="reference internal" href="runtime-platform-abstraction-layer.html"><span class="doc std std-doc">Platform Abstraction Layer</span></a></p></li>
+</ul>
 </div>
-<a class="sd-stretched-link reference external" href="llm/llama.html"></a></div>
+<div class="section" id="portable-c-programming">
+<h4>Portable C++ Programming<a class="headerlink" href="#portable-c-programming" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><a class="reference internal" href="pte-file-format.html"><span class="doc std std-doc">PTE File Format</span></a></p></li>
+</ul>
 </div>
+<div class="section" id="api-reference">
+<h4>API Reference<a class="headerlink" href="#api-reference" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><a class="reference internal" href="export-to-executorch-api-reference.html"><span class="doc std std-doc">Export to Executorch API Reference</span></a></p></li>
+<li><p><a class="reference internal" href="executorch-runtime-api-reference.html"><span class="doc std std-doc">Executorch Runtime API Reference</span></a></p></li>
+<li><p><a class="reference internal" href="runtime-python-api-reference.html"><span class="doc std std-doc">Runtime Python API Reference</span></a></p></li>
+<li><p><a class="reference internal" href="api-life-cycle.html"><span class="doc std std-doc">API Life Cycle</span></a></p></li>
+<li><p><a class="reference external" href="https://pytorch.org/executorch/main/javadoc/">Javadoc</a></p></li>
+</ul>
 </div>
+<div class="section" id="quantization">
+<h4>Quantization<a class="headerlink" href="#quantization" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><a class="reference internal" href="quantization-overview.html"><span class="doc std std-doc">Overview</span></a></p></li>
+</ul>
 </div>
+<div class="section" id="kernel-library">
+<h4>Kernel Library<a class="headerlink" href="#kernel-library" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><a class="reference internal" href="kernel-library-overview.html"><span class="doc std std-doc">Overview</span></a></p></li>
+<li><p><a class="reference internal" href="kernel-library-custom-aten-kernel.html"><span class="doc std std-doc">Custom ATen Kernel</span></a></p></li>
+<li><p><a class="reference internal" href="kernel-library-selective-build.html"><span class="doc std std-doc">Selective Build</span></a></p></li>
+</ul>
+</div>
+<div class="section" id="working-with-llms">
+<h4>Working with LLMs<a class="headerlink" href="#working-with-llms" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><a class="reference internal" href="llm/llama.html"><span class="doc std std-doc">Llama</span></a></p></li>
+<li><p><a class="reference internal" href="llm/llama-demo-android.html"><span class="doc std std-doc">Llama on Android</span></a></p></li>
+<li><p><a class="reference internal" href="llm/llama-demo-ios.html"><span class="doc std std-doc">Llama on iOS</span></a></p></li>
+<li><p><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html"><span class="doc std std-doc">Llama on Android via Qualcomm backend</span></a></p></li>
+<li><p><a class="reference internal" href="llm/getting-started.html"><span class="doc std std-doc">Intro to LLMs in Executorch</span></a></p></li>
+</ul>
+</div>
+<div class="section" id="backend-development">
+<h4>Backend Development<a class="headerlink" href="#backend-development" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><a class="reference internal" href="backend-delegates-integration.html"><span class="doc std std-doc">Delegates Integration</span></a></p></li>
+<li><p><a class="reference internal" href="backend-delegates-xnnpack-reference.html"><span class="doc std std-doc">XNNPACK Reference</span></a></p></li>
+<li><p><a class="reference internal" href="backend-delegates-dependencies.html"><span class="doc std std-doc">Dependencies</span></a></p></li>
+<li><p><a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">Compiler Delegate and Partitioner</span></a></p></li>
+<li><p><a class="reference internal" href="debug-backend-delegate.html"><span class="doc std std-doc">Debug Backend Delegate</span></a></p></li>
+</ul>
+</div>
+<div class="section" id="ir-specification">
+<h4>IR Specification<a class="headerlink" href="#ir-specification" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><a class="reference internal" href="ir-exir.html"><span class="doc std std-doc">EXIR</span></a></p></li>
+<li><p><a class="reference internal" href="ir-ops-set-definition.html"><span class="doc std std-doc">Ops Set Definition</span></a></p></li>
+</ul>
+</div>
+<div class="section" id="compiler-entry-points">
+<h4>Compiler Entry Points<a class="headerlink" href="#compiler-entry-points" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><a class="reference internal" href="compiler-backend-dialect.html"><span class="doc std std-doc">Backend Dialect</span></a></p></li>
+<li><p><a class="reference internal" href="compiler-custom-compiler-passes.html"><span class="doc std std-doc">Custom Compiler Passes</span></a></p></li>
+<li><p><a class="reference internal" href="compiler-memory-planning.html"><span class="doc std std-doc">Memory Planning</span></a></p></li>
+</ul>
+</div>
+<div class="section" id="contributing">
+<h4>Contributing<a class="headerlink" href="#contributing" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><a class="reference internal" href="contributing.html"><span class="doc std std-doc">Contributing</span></a></p></li>
+</ul>
 <div class="toctree-wrapper compound">
 </div>
 <div class="toctree-wrapper compound">
@@ -596,272 +697,8 @@ ExecuTorch Llama</div>
 </div>
 <div class="toctree-wrapper compound">
 </div>
-<div class="toctree-wrapper compound">
 </div>
 </div>
-<div class="section" id="tutorials-and-examples">
-<h2>Tutorials and Examples<a class="headerlink" href="#tutorials-and-examples" title="Permalink to this heading">¶</a></h2>
-<p>Ready to experiment? Check out some of the
-ExecuTorch tutorials.</p>
-<p><div id="tutorial-cards-container">
-  <nav class="navbar navbar-expand-lg navbar-light tutorials-nav col-12">
-    <div class="tutorial-tags-container">
-      <div id="dropdown-filter-tags">
-        <div class="tutorial-filter-menu">
-          <div class="tutorial-filter filter-btn all-tag-selected" data-tag="all">All</div>
-        </div>
-      </div>
-    </div>
-  </nav>
-
-  <hr class="tutorials-hr">
-
-  <div class="row">
-    <div id="tutorial-cards">
-      <div class="list"></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Delegation,Quantization>
-  <div class="card tutorials-card">
-    <a href="tutorials/export-to-executorch-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Exporting to ExecuTorch Tutorial</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Delegation,Quantization</span></p>
-        <p class="card-summary">A tutorial for exporting a model and lowering a it to be runnable on the ExecuTorch runtime.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=>
-  <div class="card tutorials-card">
-    <a href="running-a-model-cpp-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Running an ExecuTorch Model C++ Tutorial</h4>
-        </div>
-        <p>Topics: <span class="tags"></span></p>
-        <p class="card-summary">A tutorial for setting up memory pools, loading a model, setting inputs, executing the model, and retrieving outputs on device.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=>
-  <div class="card tutorials-card">
-    <a href="extension-module.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Simplified Runtime APIs Tutorial</h4>
-        </div>
-        <p>Topics: <span class="tags"></span></p>
-        <p class="card-summary">A simplified tutorial for executing the model on device.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=>
-  <div class="card tutorials-card">
-    <a href="extension-tensor.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Managing Tensor Memory in C++ Tutorial</h4>
-        </div>
-        <p>Topics: <span class="tags"></span></p>
-        <p class="card-summary">A tutorial for managing the dynamic memory when working with tensors.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=devtools>
-  <div class="card tutorials-card">
-    <a href="tutorials/devtools-integration-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Using the ExecuTorch Developer Tools to Profile a Model</h4>
-        </div>
-        <p>Topics: <span class="tags">devtools</span></p>
-        <p class="card-summary">A tutorial for using the ExecuTorch Developer Tools to profile and analyze a model with linkage back to source code.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=iOS, macOS>
-  <div class="card tutorials-card">
-    <a href="apple-runtime.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Integrating and Running ExecuTorch on Apple Platforms</h4>
-        </div>
-        <p>Topics: <span class="tags">iOS, macOS</span></p>
-        <p class="card-summary">A tutorial on integrating, using, and troubleshooting the ExecuTorch runtime on iOS.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Delegation,iOS>
-  <div class="card tutorials-card">
-    <a href="demo-apps-ios.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building an ExecuTorch iOS Demo App</h4>
-        </div>
-        <p>Topics: <span class="tags">Delegation,iOS</span></p>
-        <p class="card-summary">A demo tutorial that explains how to build ExecuTorch into iOS frameworks and run an iOS app.</p>
-        <div class="tutorials-image"><img src='_static/img/demo_ios_app.jpg'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Delegation,Android>
-  <div class="card tutorials-card">
-    <a href="demo-apps-android.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building an ExecuTorch Android Demo App</h4>
-        </div>
-        <p>Topics: <span class="tags">Delegation,Android</span></p>
-        <p class="card-summary">A demo tutorial that explains how to build ExecuTorch into a JNI library and build an Android app.</p>
-        <div class="tutorials-image"><img src='_static/img/android_app.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Delegation>
-  <div class="card tutorials-card">
-    <a href="examples-end-to-end-to-lower-model-to-delegate.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Lowering a Model as a Delegate</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Delegation</span></p>
-        <p class="card-summary">An end-to-end example showing how to lower a model as a delegate</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,Quantization,XNNPACK>
-  <div class="card tutorials-card">
-    <a href="tutorial-xnnpack-delegate-lowering.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with XNNPACK Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,Quantization,XNNPACK</span></p>
-        <p class="card-summary">A demo tutorial for lowering and exporting models with the XNNPACK Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,Vulkan>
-  <div class="card tutorials-card">
-    <a href="backends-vulkan.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with Vulkan Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,Vulkan</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with Vulkan Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,ARM,Ethos-U>
-  <div class="card tutorials-card">
-    <a href="executorch-arm-delegate-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with ARM Ethos-U Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,ARM,Ethos-U</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with ARM Ethos-U Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,CoreML>
-  <div class="card tutorials-card">
-    <a href="backends-coreml.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with CoreML Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,CoreML</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with CoreML Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,MediaTek>
-  <div class="card tutorials-card">
-    <a href="backends-mediatek-backend.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with MediaTek Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,MediaTek</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with MediaTek Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,MPS,MPSGraph>
-  <div class="card tutorials-card">
-    <a href="backends-mps.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with MPS Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,MPS,MPSGraph</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with MPSGraph Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,QNN>
-  <div class="card tutorials-card">
-    <a href="backends-qualcomm.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,QNN</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with Qualcomm AI Engine Direct Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Custom-Operators,DSP,Xtensa>
-  <div class="card tutorials-card">
-    <a href="backends-cadence.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch on Xtensa HiFi4 DSP</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Custom-Operators,DSP,Xtensa</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch for an Xtensa Hifi4 DSP using custom operators</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p>      </div>
-      <div class="pagination d-flex justify-content-center"></div>
-    </div>
-  </div>
-</div></p>
 </div>
 </div>
 
@@ -909,10 +746,29 @@ ExecuTorch tutorials.</p>
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
 <li><a class="reference internal" href="#">Welcome to the ExecuTorch Documentation</a><ul>
-<li><a class="reference internal" href="#getting-started">Getting Started</a><ul>
+<li><a class="reference internal" href="#key-value-propositions">Key Value Propositions</a><ul>
+<li><a class="reference internal" href="#documentation-navigation">Documentation Navigation</a><ul>
+<li><a class="reference internal" href="#introduction">Introduction</a></li>
+<li><a class="reference internal" href="#usage">Usage</a></li>
+<li><a class="reference internal" href="#examples">Examples</a></li>
+<li><a class="reference internal" href="#backends">Backends</a></li>
+<li><a class="reference internal" href="#developer-tools">Developer Tools</a></li>
+<li><a class="reference internal" href="#runtime">Runtime</a></li>
+<li><a class="reference internal" href="#portable-c-programming">Portable C++ Programming</a></li>
+<li><a class="reference internal" href="#api-reference">API Reference</a></li>
+<li><a class="reference internal" href="#quantization">Quantization</a></li>
+<li><a class="reference internal" href="#kernel-library">Kernel Library</a></li>
+<li><a class="reference internal" href="#working-with-llms">Working with LLMs</a></li>
+<li><a class="reference internal" href="#backend-development">Backend Development</a></li>
+<li><a class="reference internal" href="#ir-specification">IR Specification</a></li>
+<li><a class="reference internal" href="#compiler-entry-points">Compiler Entry Points</a></li>
+<li><a class="reference internal" href="#contributing">Contributing</a><ul>
 </ul>
 </li>
-<li><a class="reference internal" href="#tutorials-and-examples">Tutorials and Examples</a></li>
+</ul>
+</li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>

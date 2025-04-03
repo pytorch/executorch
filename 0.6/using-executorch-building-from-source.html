@@ -549,26 +549,21 @@ portability details.</p>
 </div>
 <div class="section" id="environment-setup">
 <h2>Environment Setup<a class="headerlink" href="#environment-setup" title="Permalink to this heading">¶</a></h2>
-<div class="section" id="create-a-virtual-environment">
-<h3>Create a Virtual Environment<a class="headerlink" href="#create-a-virtual-environment" title="Permalink to this heading">¶</a></h3>
-<p><a class="reference external" href="https://conda.io/projects/conda/en/latest/user-guide/install/index.html">Install conda on your machine</a>. Then, create a virtual environment to manage our dependencies.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Create and activate a conda environment named &quot;executorch&quot;</span>
-conda<span class="w"> </span>create<span class="w"> </span>-yn<span class="w"> </span>executorch<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.10.0
-conda<span class="w"> </span>activate<span class="w"> </span>executorch
-</pre></div>
-</div>
-</div>
 <div class="section" id="clone-executorch">
 <h3>Clone ExecuTorch<a class="headerlink" href="#clone-executorch" title="Permalink to this heading">¶</a></h3>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Clone the ExecuTorch repo from GitHub</span>
-<span class="c1"># &#39;main&#39; branch is the primary development branch where you see the latest changes.</span>
-<span class="c1"># &#39;viable/strict&#39; contains all of the commits on main that pass all of the necessary CI checks.</span>
-git<span class="w"> </span>clone<span class="w"> </span>--branch<span class="w"> </span>viable/strict<span class="w"> </span>https://github.com/pytorch/executorch.git
-<span class="nb">cd</span><span class="w"> </span>executorch
-
-<span class="c1"># Update and pull submodules</span>
-git<span class="w"> </span>submodule<span class="w"> </span>sync
-git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w"> </span>--init
+git<span class="w"> </span>clone<span class="w"> </span>-b<span class="w"> </span>release/0.6<span class="w"> </span>https://github.com/pytorch/executorch.git<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>executorch
+</pre></div>
+</div>
+</div>
+<div class="section" id="create-a-virtual-environment">
+<h3>Create a Virtual Environment<a class="headerlink" href="#create-a-virtual-environment" title="Permalink to this heading">¶</a></h3>
+<p>Create and activate a Python virtual environment:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">source</span><span class="w"> </span>.venv/bin/activate<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>pip
+</pre></div>
+</div>
+<p>Or alternatively, <a class="reference external" href="https://conda.io/projects/conda/en/latest/user-guide/install/index.html">install conda on your machine</a>. Then, create a Conda environment named “executorch”.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>conda<span class="w"> </span>create<span class="w"> </span>-yn<span class="w"> </span>executorch<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.10.0<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>conda<span class="w"> </span>activate<span class="w"> </span>executorch
 </pre></div>
 </div>
 </div>
@@ -702,7 +697,7 @@ by the output values.</p>
 <span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.000669</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">161</span><span class="p">]</span> <span class="n">Method</span> <span class="n">loaded</span><span class="o">.</span>
 <span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.000685</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">171</span><span class="p">]</span> <span class="n">Inputs</span> <span class="n">prepared</span><span class="o">.</span>
 <span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.000764</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">180</span><span class="p">]</span> <span class="n">Model</span> <span class="n">executed</span> <span class="n">successfully</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.000770</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">184</span><span class="p">]</span> <span class="mi">1</span> <span class="n">outputs</span><span class="p">:</span> 
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.000770</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">184</span><span class="p">]</span> <span class="mi">1</span> <span class="n">outputs</span><span class="p">:</span>
 <span class="n">Output</span> <span class="mi">0</span><span class="p">:</span> <span class="n">tensor</span><span class="p">(</span><span class="n">sizes</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="p">[</span><span class="mf">2.</span><span class="p">])</span>
 </pre></div>
 </div>
@@ -712,6 +707,8 @@ by the output values.</p>
 <p>Following are instruction on how to perform cross compilation for Android and iOS.</p>
 <div class="section" id="android">
 <h3>Android<a class="headerlink" href="#android" title="Permalink to this heading">¶</a></h3>
+<div class="section" id="building-executor-runner-shell-binary">
+<h4>Building executor_runner shell binary<a class="headerlink" href="#building-executor-runner-shell-binary" title="Permalink to this heading">¶</a></h4>
 <ul class="simple">
 <li><p>Prerequisite: <a class="reference external" href="https://developer.android.com/ndk">Android NDK</a>, choose one of the following:</p>
 <ul>
@@ -739,6 +736,22 @@ adb<span class="w"> </span>push<span class="w">  </span>add.pte<span class="w"> 
 
 adb<span class="w"> </span>shell<span class="w">  </span><span class="s2">&quot;/data/local/tmp/executorch/executor_runner --model_path /data/local/tmp/executorch/add.pte&quot;</span>
 </pre></div>
+</div>
+</div>
+<div class="section" id="building-aar-for-app-integration-from-source">
+<h4>Building AAR for app integration from source<a class="headerlink" href="#building-aar-for-app-integration-from-source" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p>Prerequisite: Android NDK from the previous section, and Android SDK (Android Studio is recommended).</p></li>
+</ul>
+<p>Assuming Android NDK and SDK is available, run:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_ABIS</span><span class="o">=</span>arm64-v8a
+<span class="nb">export</span><span class="w"> </span><span class="nv">BUILD_AAR_DIR</span><span class="o">=</span>aar-out
+mkdir<span class="w"> </span>-p<span class="w"> </span><span class="nv">$BUILD_AAR_DIR</span>
+sh<span class="w"> </span>scripts/build_android_library.sh
+</pre></div>
+</div>
+<p>This script will build the AAR, which contains the Java API and its corresponding JNI library. Please see
+<span class="xref myst">this documentation</span> for usage.</p>
 </div>
 </div>
 <div class="section" id="ios">
@@ -773,7 +786,7 @@ your targets and don’t forget to add an extra linker flag <code class="docutil
 <p>You have successfully cross-compiled <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> binary to iOS and Android platforms. You can start exploring advanced features and capabilities. Here is a list of sections you might want to read next:</p>
 <ul class="simple">
 <li><p><a class="reference internal" href="kernel-library-selective-build.html"><span class="doc std std-doc">Selective build</span></a> to build the runtime that links to only kernels used by the program, which can provide significant binary size savings.</p></li>
-<li><p>Tutorials on building <span class="xref myst">Android</span> and <a class="reference internal" href="demo-apps-ios.html"><span class="doc std std-doc">iOS</span></a> demo apps.</p></li>
+<li><p>Tutorials on building <a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Android</a> and <a class="reference internal" href="demo-apps-ios.html"><span class="doc std std-doc">iOS</span></a> demo apps.</p></li>
 <li><p>Tutorials on deploying applications to embedded devices such as <a class="reference internal" href="backends-arm-ethos-u.html"><span class="doc std std-doc">ARM Cortex-M/Ethos-U</span></a> and <a class="reference internal" href="backends-cadence.html"><span class="doc std std-doc">XTensa HiFi DSP</span></a>.</p></li>
 </ul>
 </div>
@@ -831,8 +844,8 @@ your targets and don’t forget to add an extra linker flag <code class="docutil
 </ul>
 </li>
 <li><a class="reference internal" href="#environment-setup">Environment Setup</a><ul>
-<li><a class="reference internal" href="#create-a-virtual-environment">Create a Virtual Environment</a></li>
 <li><a class="reference internal" href="#clone-executorch">Clone ExecuTorch</a></li>
+<li><a class="reference internal" href="#create-a-virtual-environment">Create a Virtual Environment</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#install-executorch-pip-package-from-source">Install ExecuTorch pip package from Source</a></li>
@@ -844,7 +857,11 @@ your targets and don’t forget to add an extra linker flag <code class="docutil
 </li>
 <li><a class="reference internal" href="#use-an-example-binary-executor-runner-to-execute-a-pte-file">Use an example binary <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> to execute a .pte file</a></li>
 <li><a class="reference internal" href="#cross-compilation">Cross compilation</a><ul>
-<li><a class="reference internal" href="#android">Android</a></li>
+<li><a class="reference internal" href="#android">Android</a><ul>
+<li><a class="reference internal" href="#building-executor-runner-shell-binary">Building executor_runner shell binary</a></li>
+<li><a class="reference internal" href="#building-aar-for-app-integration-from-source">Building AAR for app integration from source</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#ios">iOS</a></li>
 </ul>
 </li>
