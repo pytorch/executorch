@@ -58,6 +58,16 @@ def python_is_compatible():
     return True
 
 
+# PyTorch stopped building macOS x86_64 binaries starting with version 2.3.0 (January 2024).
+def is_intel_mac_os():
+    # Returns True if running on macOS with an Intel-based CPU.
+    return sys.platform.lower().startswith("darwin") and platform.machine().lower() in (
+        "x86",
+        "x86_64",
+        "i386",
+    )
+
+
 # The pip repository that hosts nightly torch packages.
 TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
 
@@ -153,6 +163,12 @@ def main(args):
 if __name__ == "__main__":
     # Before doing anything, cd to the directory containing this script.
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    if is_intel_mac_os():
+        print(
+            "ERROR: This platform is not supported (Intel-based macOS).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     if not python_is_compatible():
         sys.exit(1)
     main(sys.argv[1:])
