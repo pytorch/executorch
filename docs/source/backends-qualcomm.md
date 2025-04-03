@@ -351,11 +351,6 @@ The command-line arguments are written in [utils.py](https://github.com/pytorch/
 The model, inputs, and output location are passed to `qnn_executorch_runner` by `--model_path`, `--input_list_path`, and `--output_folder_path`.
 
 
-### Running a model via ExecuTorch's android demo-app
-
-An Android demo-app using Qualcomm AI Engine Direct Backend can be found in
-`examples`. Please refer to android demo app [tutorial](demo-apps-android.md).
-
 ## Supported model list
 
 Please refer to `$EXECUTORCH_ROOT/examples/qualcomm/scripts/` and `EXECUTORCH_ROOT/examples/qualcomm/oss_scripts/` to the list of supported models.

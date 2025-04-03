@@ -22,21 +22,28 @@ The AAR artifact contains the Java library for users to integrate with their Jav
   - LLaMa-specific Custom ops library.
 - Comes with two ABI variants, arm64-v8a and x86\_64.
 
+The AAR library can be used for generic Android device with arm64-v8a or x86_64 architecture. It can be used across form factors, including phones, tablets, tv boxes, etc, as it does not contain any UI components.
+
 ## Using AAR from Maven Central
 
 ExecuTorch is available on [Maven Central](https://mvnrepository.com/artifact/org.pytorch/executorch-android).
 
-Simply add the target [`org.pytorch:executorch-android:0.5.1`](https://repo.maven.apache.org/maven2/org/pytorch/executorch-android/0.5.1/) to your Android app dependency (build.gradle), and build your app.
+Simply add the target [`org.pytorch:executorch-android:0.6.0-rc1`](https://repo.maven.apache.org/maven2/org/pytorch/executorch-android/0.6.0-rc1/) to your Android app dependency (build.gradle), and build your app.
 
 For example:
 ```
 # app/build.gradle.kts
 dependencies {
-    implementation("org.pytorch:executorch-android:0.5.1")
+    implementation("org.pytorch:executorch-android:0.6.0-rc1")
 }
 ```
 
-Note: `org.pytorch:executorch-android:0.5.1` corresponds to executorch v0.5.0.
+Note: If you want to use release v0.5.0, please use dependency `org.pytorch:executorch-android:0.5.1`.
+
+Click the screenshot below to watch the *demo video* on how to add the package and run a simple ExecuTorch model with Android Studio.
+<a href="https://pytorch.org/executorch/main/_static/img/android_studio.mp4">
+  <img src="https://pytorch.org/executorch/main/_static/img/android_studio.jpeg" width="800" alt="Integrating and Running ExecuTorch on Android">
+</a>
 
 ## Using AAR file directly
 
@@ -46,6 +53,7 @@ You can also directly specify an AAR file in the app. We upload pre-built AAR to
 
 | Version | AAR | SHASUMS |
 | ------- | --- | ------- |
+| [v0.6.0-rc1](https://github.com/pytorch/executorch/releases/tag/v0.6.0-rc1) | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/v0.6.0-rc1/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/v0.6.0-rc1/executorch.aar.sha256sums) |
 | [v0.5.0](https://github.com/pytorch/executorch/releases/tag/v0.5.0) | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar.sha256sums) |
 
 ### Snapshots from main branch
@@ -71,7 +79,7 @@ implementation("com.facebook.fbjni:fbjni:0.5.1")
 In your app working directory, such as executorch/examples/demo-apps/android/LlamaDemo,
 ```
 mkdir -p app/libs
-curl https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar -o app/libs/executorch.aar
+curl https://ossci-android.s3.amazonaws.com/executorch/release/v0.6.0-rc1/executorch.aar -o app/libs/executorch.aar
 ```
 
 And include it in gradle:
@@ -102,6 +110,8 @@ export ANDROID_HOME=/path/to/sdk
 export ANDROID_NDK=/path/to/ndk
 sh scripts/build_android_library.sh
 ```
+
+Currently, XNNPACK backend is always built with the script.
 
 ### Optional environment variables
 
