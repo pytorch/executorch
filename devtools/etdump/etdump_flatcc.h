@@ -25,6 +25,7 @@ struct flatcc_builder;
 namespace executorch {
 namespace etdump {
 
+using ::executorch::runtime::DelegateDebugIntId;
 using ::executorch::runtime::Result;
 
 namespace internal {
@@ -84,14 +85,14 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
       ::executorch::runtime::EventTracerEntry prof_entry) override;
   virtual ::executorch::runtime::EventTracerEntry start_profiling_delegate(
       const char* name,
-      ::executorch::runtime::DebugHandle delegate_debug_index) override;
+      DelegateDebugIntId delegate_debug_index) override;
   virtual void end_profiling_delegate(
       ::executorch::runtime::EventTracerEntry prof_entry,
       const void* metadata,
       size_t metadata_len) override;
   virtual void log_profiling_delegate(
       const char* name,
-      ::executorch::runtime::DebugHandle delegate_debug_index,
+      DelegateDebugIntId delegate_debug_index,
       et_timestamp_t start_time,
       et_timestamp_t end_time,
       const void* metadata,
@@ -111,7 +112,7 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
    */
   virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
-      ::executorch::runtime::DebugHandle delegate_debug_index,
+      DelegateDebugIntId delegate_debug_index,
       const executorch::aten::Tensor& output) override;
 
   /**
@@ -119,7 +120,7 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
    */
   virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
-      ::executorch::runtime::DebugHandle delegate_debug_index,
+      DelegateDebugIntId delegate_debug_index,
       const ::executorch::runtime::ArrayRef<executorch::aten::Tensor> output)
       override;
 
@@ -128,7 +129,7 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
    */
   virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
-      ::executorch::runtime::DebugHandle delegate_debug_index,
+      DelegateDebugIntId delegate_debug_index,
       const int& output) override;
 
   /**
@@ -136,7 +137,7 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
    */
   virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
-      ::executorch::runtime::DebugHandle delegate_debug_index,
+      DelegateDebugIntId delegate_debug_index,
       const bool& output) override;
 
   /**
@@ -144,7 +145,7 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
    */
   virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
-      ::executorch::runtime::DebugHandle delegate_debug_index,
+      DelegateDebugIntId delegate_debug_index,
       const double& output) override;
   void set_debug_buffer(::executorch::runtime::Span<uint8_t> buffer);
   void set_data_sink(DataSinkBase* data_sink);
@@ -173,7 +174,7 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
   template <typename T>
   Result<bool> log_intermediate_output_delegate_helper(
       const char* name,
-      ::executorch::runtime::DebugHandle delegate_debug_index,
+      DelegateDebugIntId delegate_debug_index,
       const T& output);
 
   long write_tensor_or_raise_error(executorch::aten::Tensor tensor);
