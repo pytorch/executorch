@@ -121,7 +121,6 @@ void add_q_4w_linear_node(
 
   ValueRef mat2 = prepack_int4_linear_weight_transposed_interleaved(
       graph, mat2_data, utils::kTexture3D);
-  // ValueRef mat2 = prepack_direct_copy_buffer(graph, mat2_data);
 
   ValueRef scales_and_zeros = prepack_standard_hw_transposed(
       graph,

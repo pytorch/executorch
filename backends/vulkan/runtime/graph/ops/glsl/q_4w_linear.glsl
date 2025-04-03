@@ -71,6 +71,9 @@ void main() {
   // Each thread writes out 2 texels along the width axis, equivalent to 8
   // scalar elements. Therefore multiply the thread_idx.x by 8.
   const uint out_col = gl_GlobalInvocationID.x << 3;
+  // Similar reasoning to the above, each thread works on 2 texels along the
+  // width axis so multiply thread_idx.x by 2.
+  const int out_col_texel_idx = int(gl_GlobalInvocationID.x) << 1;
 
   if (out_col >= out_sizes.x || out_row >= out_sizes.y) {
     return;
@@ -87,11 +90,11 @@ void main() {
   VEC4_T zeros[2];
 
   for (int block_idx = 0; block_idx < num_blocks; ++block_idx) {
-    scales[0] = texelFetch(t_qparams, ivec3(gl_GlobalInvocationID.x << 1, 0, block_idx), 0);
-    zeros[0] = texelFetch(t_qparams, ivec3(gl_GlobalInvocationID.x << 1, 1, block_idx), 0);
+    scales[0] = texelFetch(t_qparams, ivec3(out_col_texel_idx, 0, block_idx), 0);
+    zeros[0] = texelFetch(t_qparams, ivec3(out_col_texel_idx, 1, block_idx), 0);
 
-    scales[1] = texelFetch(t_qparams, ivec3((gl_GlobalInvocationID.x << 1) + 1, 0, block_idx), 0);
-    zeros[1] = texelFetch(t_qparams, ivec3((gl_GlobalInvocationID.x << 1) + 1, 1, block_idx), 0);
+    scales[1] = texelFetch(t_qparams, ivec3(out_col_texel_idx + 1, 0, block_idx), 0);
+    zeros[1] = texelFetch(t_qparams, ivec3(out_col_texel_idx + 1, 1, block_idx), 0);
 
     for (int g_idx = 0; g_idx < group_size; g_idx += 4) {
       const int k = block_idx * group_size + g_idx;
@@ -113,6 +116,6 @@ void main() {
     }
   }
 
-  imageStore(t_out, ivec3((gl_GlobalInvocationID.x << 1), out_row, 0), sums[0]);
-  imageStore(t_out, ivec3((gl_GlobalInvocationID.x << 1) + 1, out_row, 0), sums[1]);
+  imageStore(t_out, ivec3(out_col_texel_idx, out_row, 0), sums[0]);
+  imageStore(t_out, ivec3(out_col_texel_idx + 1, out_row, 0), sums[1]);
 }
