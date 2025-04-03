@@ -50,11 +50,50 @@ class OpDiagonalCopyOutTest : public ::testing::Test {
     op_diagonal_copy_out(input, 1, 1, 0, out);
     EXPECT_TENSOR_CLOSE(out, out_expected);
   }
+
+  template <typename CTYPE, ScalarType DTYPE>
+  void run_2d_complex_dtype() {
+    TensorFactory<DTYPE> tf;
+    constexpr auto REAL_DTYPE = executorch::runtime::toRealValueType(DTYPE);
+    using REAL_CTYPE =
+        typename executorch::runtime::ScalarTypeToCppType<REAL_DTYPE>::type;
+    Tensor input = tf.make(
+        {3, 4},
+        {CTYPE{REAL_CTYPE(1), REAL_CTYPE(1)},
+         CTYPE{REAL_CTYPE(2), REAL_CTYPE(2)},
+         CTYPE{REAL_CTYPE(3), REAL_CTYPE(3)},
+         CTYPE{REAL_CTYPE(4), REAL_CTYPE(4)},
+         CTYPE{REAL_CTYPE(5), REAL_CTYPE(5)},
+         CTYPE{REAL_CTYPE(6), REAL_CTYPE(6)},
+         CTYPE{REAL_CTYPE(7), REAL_CTYPE(7)},
+         CTYPE{REAL_CTYPE(8), REAL_CTYPE(8)},
+         CTYPE{REAL_CTYPE(9), REAL_CTYPE(9)},
+         CTYPE{REAL_CTYPE(10), REAL_CTYPE(10)},
+         CTYPE{REAL_CTYPE(11), REAL_CTYPE(11)},
+         CTYPE{REAL_CTYPE(12), REAL_CTYPE(12)}});
+    Tensor out = tf.make(
+        {2},
+        {CTYPE{REAL_CTYPE(0), REAL_CTYPE(0)},
+         CTYPE{REAL_CTYPE(0), REAL_CTYPE(0)}});
+    Tensor out_expected = tf.make(
+        {2},
+        {CTYPE{REAL_CTYPE(5), REAL_CTYPE(5)},
+         CTYPE{REAL_CTYPE(10), REAL_CTYPE(10)}});
+    op_diagonal_copy_out(input, 1, 1, 0, out);
+    EXPECT_TENSOR_CLOSE(out, out_expected);
+  }
 };
 
 TEST_F(OpDiagonalCopyOutTest, SmokeTest2D) {
 #define TEST_ENTRY(ctype, dtype) test_2d_dtype<ScalarType::dtype>();
   ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
+TEST_F(OpDiagonalCopyOutTest, ComplexSmokeTest2D) {
+#define TEST_ENTRY(ctype, dtype) \
+  run_2d_complex_dtype<ctype, ScalarType::dtype>();
+  ET_FORALL_COMPLEXH_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
