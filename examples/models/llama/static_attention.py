@@ -212,7 +212,6 @@ class StaticAttention(Attention):
         self.use_qk_norm = config.use_qk_norm
         self.use_conv2d = False
 
-        assert not self.use_qk_norm, "QK norm not supported in static attention yet"
         self.wqs = nn.ModuleList(
             [
                 nn.Linear(self.dim, self.head_dim, bias=self.attention_qkv_bias)
@@ -240,6 +239,13 @@ class StaticAttention(Attention):
         )
         self.wo = nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
         self.rope = _Rope(rope.params.use_hf_rope)
+
+        if self.use_qk_norm:
+            self.q_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
+            self.k_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
+        else:
+            self.q_norm = torch.nn.Identity()
+            self.k_norm = torch.nn.Identity()
 
     def forward(
         self,
@@ -274,6 +280,10 @@ class StaticAttention(Attention):
             new_qs = from_conv2ds(new_qs)
             new_ks = from_conv2ds(new_ks)
             new_vs = from_conv2ds(new_vs)
+
+        if self.use_qk_norm:
+            new_qs = [self.q_norm(q) for q in new_qs]
+            new_ks = [self.k_norm(k) for k in new_ks]
 
         new_qs = [self.rope(q, freqs_cos, freqs_sin) for q in new_qs]
         new_ks = [self.rope(k, freqs_cos, freqs_sin) for k in new_ks]
@@ -324,6 +334,13 @@ class StaticAttention(Attention):
             )
 
         self.wo.weight.data.copy_(other.wo.weight)
+
+        if other.use_qk_norm:
+            self.use_qk_norm = True
+            self.q_norm = torch.nn.RMSNorm(other.q_norm_fn.dim, other.q_norm_fn.eps)
+            self.q_norm.load_state_dict(other.q_norm_fn.state_dict())
+            self.k_norm = torch.nn.RMSNorm(other.k_norm_fn.dim, other.k_norm_fn.eps)
+            self.k_norm.load_state_dict(other.k_norm_fn.state_dict())
 
     def linear_to_conv2d(self):
         def transfer_weight(linear, conv2d):
