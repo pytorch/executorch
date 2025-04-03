@@ -7,8 +7,4 @@
 # NB: This function could be used to install Arm dependencies
 # Setup arm example environment (including TOSA tools)
 
-
-git config --global user.email "github_executorch@arm.com" #test - line should be remove 
-git config --global user.name "Github Executorch" #test - line should be remove 
-
 bash examples/arm/setup.sh --i-agree-to-the-contained-eula
