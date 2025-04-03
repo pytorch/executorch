@@ -214,7 +214,7 @@ sdpa_with_kv_cache does not use attn_mask.
 TODO: Just handle conversion of bool mask to float
 */
 template <typename scalar_t, int64_t q_split_size, int64_t kv_split_size>
-void cpu_flash_attention(
+[[nodiscard]] bool cpu_flash_attention(
     Tensor& output,
     const Tensor& query,
     const Tensor& key,
@@ -619,7 +619,7 @@ void cpu_flash_attention(
       util::data_index_step(i, batchSize, j, num_head, k, qSlice);
     }
   };
-  torch::executor::parallel_for(
+  return torch::executor::parallel_for(
       0, batchSize * num_head * qSlice, 1, compute_lambda);
 }
 
@@ -813,13 +813,14 @@ Tensor& flash_attention_kernel_out(
 
   auto q_seq_len = query.size(2);
 
+  bool success = false;
   ET_SWITCH_FLOAT_TYPES(
       query.scalar_type(), ctx, "flash_attention", CTYPE, [&] {
         // TODO we need to re-evaluate this for ARM CPUs
         // And there can be many so instead of templatizing
         // we might consider another appraoch
         if (q_seq_len >= 768) {
-          cpu_flash_attention<CTYPE, 256, 512>(
+          success = cpu_flash_attention<CTYPE, 256, 512>(
               output,
               query,
               key,
@@ -829,7 +830,7 @@ Tensor& flash_attention_kernel_out(
               attn_mask,
               scale);
         } else if (q_seq_len >= 192) {
-          cpu_flash_attention<CTYPE, 64, 512>(
+          success = cpu_flash_attention<CTYPE, 64, 512>(
               output,
               query,
               key,
@@ -839,7 +840,7 @@ Tensor& flash_attention_kernel_out(
               attn_mask,
               scale);
         } else {
-          cpu_flash_attention<CTYPE, 32, 512>(
+          success = cpu_flash_attention<CTYPE, 32, 512>(
               output,
               query,
               key,
@@ -850,6 +851,8 @@ Tensor& flash_attention_kernel_out(
               scale);
         }
       });
+  ET_KERNEL_CHECK_MSG(
+      ctx, success, Internal, output, "cpu_flash_attention failed");
   return output;
 }
 
@@ -954,6 +957,7 @@ Tensor& custom_sdpa_out(
       InvalidArgument,
       output);
 
+  bool success = false;
   // TODO(task): replace the template param selection logic
   // with whatever apprpriately makes more sense for
   ET_SWITCH_FLOAT_TYPES(q.scalar_type(), ctx, "flash_attention", CTYPE, [&] {
@@ -961,7 +965,7 @@ Tensor& custom_sdpa_out(
     // And there can be many so instead of templatizing
     // we might consider another appraoch
     if (q_seq_len >= 768) {
-      cpu_flash_attention<CTYPE, 256, 512>(
+      success = cpu_flash_attention<CTYPE, 256, 512>(
           output,
           q,
           sliced_key_cache,
@@ -973,7 +977,7 @@ Tensor& custom_sdpa_out(
           true, /* is_seq_at_dim_1 */
           start_pos);
     } else if (q_seq_len >= 192) {
-      cpu_flash_attention<CTYPE, 64, 512>(
+      success = cpu_flash_attention<CTYPE, 64, 512>(
           output,
           q,
           sliced_key_cache,
@@ -985,7 +989,7 @@ Tensor& custom_sdpa_out(
           true, /* is_seq_at_dim_1 */
           start_pos);
     } else {
-      cpu_flash_attention<CTYPE, 32, 512>(
+      success = cpu_flash_attention<CTYPE, 32, 512>(
           output,
           q,
           sliced_key_cache,
@@ -998,6 +1002,8 @@ Tensor& custom_sdpa_out(
           start_pos);
     }
   });
+  ET_KERNEL_CHECK_MSG(
+      ctx, success, Internal, output, "cpu_flash_attention failed");
   return output;
 }
 /*
