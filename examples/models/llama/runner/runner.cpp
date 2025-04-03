@@ -11,12 +11,13 @@
 
 #include <executorch/examples/models/llama/runner/runner.h>
 
+#include <algorithm>
 #include <ctime>
 
 #include <executorch/extension/llm/runner/util.h>
 
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
-#include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
+#include <pytorch/tokenizers/llama2c_tokenizer.h>
 
 namespace example {
 
@@ -31,6 +32,7 @@ static constexpr auto kEnableDynamicShape = "enable_dynamic_shape";
 static constexpr auto kBosId = "get_bos_id";
 static constexpr auto kEosIds = "get_eos_ids";
 static constexpr auto kMaxSeqLen = "get_max_seq_len";
+static constexpr auto kMaxContextLen = "get_max_context_len";
 static constexpr auto kVocabSize = "get_vocab_size";
 static constexpr auto kUseKVCache = "use_kv_cache";
 static constexpr auto kUseSDPAWithKVCache = "use_sdpa_with_kv_cache";
@@ -39,19 +41,26 @@ static constexpr auto kUseSDPAWithKVCache = "use_sdpa_with_kv_cache";
 Runner::Runner(
     const std::string& model_path,
     const std::string& tokenizer_path,
-    const float temperature)
+    const float temperature,
+    std::optional<const std::string> data_path)
     // NOTE: we observed ~2x loading performance increase on iPhone 15
     // and a ~5% improvement on Galaxy S22 by switching to
     // FileDataLoader instead of MmapDataLoader + UseMlockIgnoreErrors.
     : temperature_(temperature),
-      module_(std::make_unique<Module>(model_path, Module::LoadMode::File)),
       tokenizer_path_(tokenizer_path),
       metadata_({
           {kEnableDynamicShape, false},
           {kMaxSeqLen, 128},
+          {kMaxContextLen, 128},
           {kUseKVCache, true},
           {kUseSDPAWithKVCache, false},
       }) {
+  if (data_path.has_value()) {
+    module_ = std::make_unique<Module>(
+        model_path, data_path.value(), Module::LoadMode::File);
+  } else {
+    module_ = std::make_unique<Module>(model_path, Module::LoadMode::File);
+  }
   ET_LOG(
       Info,
       "Creating LLaMa runner: model_path=%s, tokenizer_path=%s",
@@ -72,17 +81,21 @@ Error Runner::load() {
   // load tokenizer. Assuming tiktoken is the default tokenizer
   tokenizer_ = nullptr;
   tokenizer_ = get_tiktoken_for_llama();
-  Error err = tokenizer_->load(tokenizer_path_);
+  ::tokenizers::Error err = tokenizer_->load(tokenizer_path_);
   // Rely on tiktoken to throw error if the artifact is incompatible. Then we
   // fallback to BPE tokenizer.
-  if (err == Error::InvalidArgument) {
+  if (err != ::tokenizers::Error::Ok) {
     ET_LOG(
         Info,
         "Failed to load %s as a Tiktoken artifact, trying BPE tokenizer",
         tokenizer_path_.c_str());
     tokenizer_.reset();
-    tokenizer_ = std::make_unique<llm::BPETokenizer>();
-    tokenizer_->load(tokenizer_path_);
+    tokenizer_ = std::make_unique<::tokenizers::Llama2cTokenizer>();
+    err = tokenizer_->load(tokenizer_path_);
+    ET_CHECK_TK_OK_OR_RETURN_ERROR(
+        err,
+        "Failed to load %s as a llama2.c tokenizer artifact",
+        tokenizer_path_.c_str());
   }
 
   ET_LOG(Info, "Reading metadata from model");
@@ -128,7 +141,8 @@ Error Runner::load() {
   text_prefiller_ = std::make_unique<llm::TextPrefiller>(
       text_decoder_runner_.get(),
       metadata_.at(kUseKVCache),
-      metadata_.at(kEnableDynamicShape));
+      metadata_.at(kEnableDynamicShape),
+      metadata_.at(kMaxSeqLen));
 
   text_token_generator_ = std::make_unique<llm::TextTokenGenerator>(
       tokenizer_.get(),
@@ -191,16 +205,16 @@ Error Runner::generate(
   shouldStop_ = false;
 
   // Set the sequence length to the max seq length if not provided
-  seq_len = (seq_len > 0 && seq_len <= metadata_.at(kMaxSeqLen))
+  seq_len = (seq_len > 0 && seq_len <= metadata_.at(kMaxContextLen))
       ? seq_len
-      : metadata_.at(kMaxSeqLen);
+      : metadata_.at(kMaxContextLen);
 
-  Result<std::vector<uint64_t>> encode_res = tokenizer_->encode(
+  ::tokenizers::Result<std::vector<uint64_t>> encode_res = tokenizer_->encode(
       prompt,
       /* bos */ 0,
       /* eos */ 0);
 
-  ET_CHECK_OK_OR_RETURN_ERROR(
+  ET_CHECK_TK_OK_OR_RETURN_ERROR(
       encode_res.error(), "Failed to encode prompt %s", prompt.c_str());
 
   // encode the (string) prompt into tokens sequence
@@ -209,11 +223,11 @@ Error Runner::generate(
 
   ET_CHECK_MSG(num_prompt_tokens >= 1, "Expected at least 1 prompt token");
   ET_CHECK_MSG(
-      num_prompt_tokens < metadata_.at(kMaxSeqLen),
+      num_prompt_tokens < metadata_.at(kMaxContextLen),
       "num_prompt_tokens %d >= max_seq_len_ %" PRId64
       ", Max seq length exceeded - please increase max seq len value in .../llama2/model.py",
       num_prompt_tokens,
-      metadata_.at(kMaxSeqLen));
+      metadata_.at(kMaxContextLen));
   ET_CHECK_MSG(
       num_prompt_tokens < seq_len,
       "num_prompt_tokens %d >= seq_len %d, Sequence length exceeded - please increase the seq_len value passed to generate()",
@@ -230,13 +244,14 @@ Error Runner::generate(
   }
   int64_t pos = 0;
   auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos);
-  stats_.first_token_ms = llm::time_in_ms();
-  stats_.prompt_eval_end_ms = llm::time_in_ms();
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
   uint64_t cur_token = prefill_res.get();
+  stats_.first_token_ms = llm::time_in_ms();
+  stats_.prompt_eval_end_ms = llm::time_in_ms();
 
   // print the first token from prefill. No prev_token so use cur_token for it.
-  wrapped_callback(ET_UNWRAP(tokenizer_->decode(cur_token, cur_token)));
+  wrapped_callback(
+      ET_UNWRAP_TOKENIZER(tokenizer_->decode(cur_token, cur_token)));
   RUNNER_ET_LOG(
       warmup,
       "RSS after prompt prefill: %f MiB (0 if unsupported)",

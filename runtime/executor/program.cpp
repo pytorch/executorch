@@ -150,6 +150,22 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   const executorch_flatbuffer::Program* flatbuffer_program =
       executorch_flatbuffer::GetProgram(program_data->data());
 
+  // Instantiate PteDataMap if named_data is present.
+  const auto named_data = flatbuffer_program->named_data();
+  std::optional<internal::PteDataMap> pte_data_map = std::nullopt;
+  if (named_data != nullptr) {
+    Result<internal::PteDataMap> pte_data_map_result =
+        internal::PteDataMap::create(
+            loader,
+            segment_base_offset,
+            named_data,
+            flatbuffer_program->segments());
+    if (!pte_data_map_result.ok()) {
+      return pte_data_map_result.error();
+    }
+    pte_data_map.emplace(std::move(pte_data_map_result.get()));
+  }
+
   // Constant data may live inside the flatbuffer data (constant_buffer) or in a
   // separate segment (constant_segment). It should not be in both.
   // Check constant_segment->offsets()->size() > 1, as the offsets list will
@@ -199,7 +215,8 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
         segment_base_offset,
         std::move(program_data.get()),
         flatbuffer_program,
-        std::move(constant_segment_data.get()));
+        std::move(constant_segment_data.get()),
+        std::move(pte_data_map));
   } else {
     // The constant data is stored inside the flatbuffer, so this program does
     // not contain a separate segment for it.
@@ -208,7 +225,8 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
         segment_base_offset,
         std::move(program_data.get()),
         flatbuffer_program,
-        /*constant_segment_data=*/FreeableBuffer{});
+        /*constant_segment_data=*/FreeableBuffer{},
+        std::move(pte_data_map));
   }
 }
 
@@ -353,6 +371,13 @@ Result<const void*> Program::get_constant_buffer_data(
 
     return storage->data();
   }
+}
+
+Result<const NamedDataMap*> Program::get_named_data_map() const {
+  if (pte_data_map_.has_value()) {
+    return &pte_data_map_.value();
+  }
+  return Error::NotFound;
 }
 
 Result<const char*> Program::get_output_flattening_encoding(

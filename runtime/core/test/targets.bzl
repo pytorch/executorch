@@ -91,16 +91,20 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/core:tag",
         ],
-    )
-
-    runtime.cxx_test(
-        name = "tensor_shape_dynamism_test_aten",
-        srcs = ["tensor_shape_dynamism_test_aten.cpp"],
-        deps = [
-            "//executorch/runtime/core/exec_aten:lib_aten",
-            "//executorch/runtime/core/exec_aten/testing_util:tensor_util_aten",
+        preprocessor_flags = [
+            "-DET_ENABLE_ENUM_STRINGS"
         ],
     )
+
+    if True in get_aten_mode_options():
+        runtime.cxx_test(
+            name = "tensor_shape_dynamism_test_aten",
+            srcs = ["tensor_shape_dynamism_test_aten.cpp"],
+            deps = [
+                "//executorch/runtime/core/exec_aten:lib_aten",
+                "//executorch/runtime/core/exec_aten/testing_util:tensor_util_aten",
+            ],
+        )
 
     for aten_mode in get_aten_mode_options():
         aten_suffix = "_aten" if aten_mode else ""

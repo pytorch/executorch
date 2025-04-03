@@ -17,7 +17,7 @@ import functools
 from typing import Any, Callable, Dict, List, Optional
 
 import torch
-from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
+from executorch.backends.arm._passes import ArmPassManager
 
 from executorch.backends.arm.quantizer import arm_quantizer_utils
 from executorch.backends.arm.quantizer.arm_quantizer_utils import (  # type: ignore[attr-defined]
@@ -191,6 +191,8 @@ def _get_module_type_filter(tp: Callable) -> NodeFilterType:
     True  # the node is from the submodule `Sub` (same for `Block` and `Linear` as well)
     """
 
+    tp_str = tp.__module__ + "." + tp.__qualname__
+
     def module_type_filter(n: Node) -> bool:
         # node_stack example: {
         #     'L__self___sub': ("L['self'].sub", <class '....Sub'>),
@@ -198,7 +200,7 @@ def _get_module_type_filter(tp: Callable) -> NodeFilterType:
         # }
         nn_module_stack = n.meta.get("nn_module_stack", {})
         types = [t for _, t in nn_module_stack.values()]
-        return tp in types
+        return tp_str in types
 
     return module_type_filter
 

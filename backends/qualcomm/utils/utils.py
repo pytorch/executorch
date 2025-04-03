@@ -21,9 +21,10 @@ from executorch.backends.qualcomm._passes import (
     AnnotateQuantAttrs,
     ConstantI64toI32,
     ConvertBmmToMatmul,
-    ConvertInterpolateWithUpsample2D,
+    ConvertConv1dToConv2d,
     ConvertToLinear,
     DecomposeAny,
+    DecomposeExpM1,
     DecomposeLinalgVectorNorm,
     ExpandBroadcastTensorShape,
     FoldQDQ,
@@ -322,19 +323,31 @@ def canonicalize_program(obj):
     update_spill_fill_size(obj)
 
 
-def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
+def get_decomp_table(passes_job) -> Dict[torch._ops.OperatorBase, Callable]:
     source_decompositions = core_aten_decompositions()
     # The below super ops are supported by QNN
     skip_decompositions = [
         torch.ops.aten.adaptive_avg_pool2d.default,
+        torch.ops.aten.elu.default,
         torch.ops.aten.instance_norm.default,
         torch.ops.aten.pixel_shuffle.default,
         torch.ops.aten.pixel_unshuffle.default,
         torch.ops.aten.hardsigmoid.default,
         torch.ops.aten.hardswish.default,
+        torch.ops.pt2e_quant.quantize_affine.default,
+        torch.ops.pt2e_quant.dequantize_affine.default,
         torch.ops.aten._safe_softmax.default,
+        torch.ops.aten.stack.default,
+        torch.ops.aten.unbind.int,
     ]
 
+    # If we want to annotate the decomposed ops, then we should decompose the operation.
+    if passes_job and passes_job.get(AnnotateDecomposed, False):
+        skip_decompositions = [
+            skip_decomp_op
+            for skip_decomp_op in skip_decompositions
+            if skip_decomp_op not in AnnotateDecomposed.decomp_ops
+        ]
     remove_decompositions(source_decompositions, skip_decompositions)
 
     return source_decompositions
@@ -352,11 +365,11 @@ def get_capture_program_passes():
     # The second value in each tuple in `default_passes_and_setting` indicates whether the corresponding pass is activated by default.
     # If a pass is activated, it will be executed by default.
     default_passes_and_setting = [
-        (AnnotateDecomposed, True),
+        (AnnotateDecomposed, False),
         (AnnotateQuantAttrs, True),
         (ConstantI64toI32, True),
         (ConvertBmmToMatmul, True),
-        (ConvertInterpolateWithUpsample2D, True),
+        (ConvertConv1dToConv2d, True),
         (ConvertToLinear, True),
         (DecomposeAny, True),
         (DecomposeLinalgVectorNorm, True),
@@ -409,6 +422,13 @@ def _topological_sort_passes(passes: OrderedDict):
 def _transform(
     edge_program: ExportedProgram, passes_job: OrderedDict = None
 ) -> ExportedProgram:
+    # TODO: remove this workaround when target could be correclty detected
+    from executorch.backends.qualcomm._passes import utils
+    from executorch.exir.dialects._ops import ops as exir_ops
+
+    utils.q_ops.add(exir_ops.edge.pt2e_quant.quantize_affine.default)
+    utils.dq_ops.add(exir_ops.edge.pt2e_quant.dequantize_affine.default)
+
     # currently ExirExportedProgram.transform does not accept
     # changes of input number which was caused by FoldQDQ
     # apply passes one by one here to avoid IR capture failure
@@ -441,6 +461,7 @@ def _preprocess_module(module: torch.nn.Module, inputs: Tuple[torch.Tensor]):
     module = torch.export.export(module, inputs, strict=True).module()
     module = DecomposeScaledDotProductAttention()(module).graph_module
     module = DecomposeLinalgVectorNorm(True)(module).graph_module
+    module = DecomposeExpM1()(module).graph_module
     module = LiftConstantScalarOperands()(module).graph_module
     return module
 
@@ -452,8 +473,9 @@ def capture_program(
     dynamic_shapes: Dict = None,
 ) -> exir.ExirExportedProgram:
     module = _preprocess_module(module, inputs)
-    ep = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes)
-    decomposed_ep = ep.run_decompositions(get_decomp_table())
+    ep = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes, strict=True)
+    # TODO: Handle stack op. If we want to run annotate_decomposed pass for stack op, we need to make stack op decompose, which means we need to find a method to remove it from skip_decomp table
+    decomposed_ep = ep.run_decompositions(get_decomp_table(passes_job))
     core_ep = ExirExportedProgram(decomposed_ep, False)
     core_ep.transform(TensorI64toI32(edge_program=core_ep))
     edge_ep = core_ep.to_edge(qnn_edge_config())
@@ -1280,25 +1302,33 @@ def generate_qnn_executorch_compiler_spec(
 
 def get_soc_to_arch_map():
     return {
-        "SSG2115P": HtpArch.V73,
-        "SM8750": HtpArch.V79,
-        "SM8650": HtpArch.V75,
-        "SM8550": HtpArch.V73,
-        "SM8475": HtpArch.V69,
-        "SM8450": HtpArch.V69,
         "SA8295": HtpArch.V68,
+        "SM8450": HtpArch.V69,
+        "SM8475": HtpArch.V69,
+        "SM8550": HtpArch.V73,
+        "SM8650": HtpArch.V75,
+        "SM8750": HtpArch.V79,
+        "SSG2115P": HtpArch.V73,
+        "SSG2125P": HtpArch.V73,
+        "SXR1230P": HtpArch.V73,
+        "SXR2230P": HtpArch.V69,
+        "SXR2330P": HtpArch.V79,
     }
 
 
 def get_soc_to_chipset_map():
     return {
-        "SSG2115P": QcomChipset.SSG2115P,
-        "SM8750": QcomChipset.SM8750,
-        "SM8650": QcomChipset.SM8650,
-        "SM8550": QcomChipset.SM8550,
-        "SM8475": QcomChipset.SM8475,
-        "SM8450": QcomChipset.SM8450,
         "SA8295": QcomChipset.SA8295,
+        "SM8450": QcomChipset.SM8450,
+        "SM8475": QcomChipset.SM8475,
+        "SM8550": QcomChipset.SM8550,
+        "SM8650": QcomChipset.SM8650,
+        "SM8750": QcomChipset.SM8750,
+        "SSG2115P": QcomChipset.SSG2115P,
+        "SSG2125P": QcomChipset.SSG2125P,
+        "SXR1230P": QcomChipset.SXR1230P,
+        "SXR2230P": QcomChipset.SXR2230P,
+        "SXR2330P": QcomChipset.SXR2330P,
     }
 
 

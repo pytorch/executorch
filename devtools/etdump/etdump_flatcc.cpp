@@ -36,7 +36,6 @@ using ::executorch::runtime::Tag;
 
 namespace executorch {
 namespace etdump {
-
 namespace {
 
 executorch_flatbuffer_ScalarType_enum_t get_flatbuffer_scalar_type(
@@ -307,53 +306,64 @@ void ETDumpGen::log_profiling_delegate(
   etdump_RunData_events_push_end(builder_);
 }
 
-void ETDumpGen::log_intermediate_output_delegate(
+Result<bool> ETDumpGen::log_intermediate_output_delegate(
     const char* name,
     DebugHandle delegate_debug_index,
     const Tensor& output) {
-  log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
+  Result<bool> result = log_intermediate_output_delegate_helper(
+      name, delegate_debug_index, output);
+  return result;
 }
 
-void ETDumpGen::log_intermediate_output_delegate(
+Result<bool> ETDumpGen::log_intermediate_output_delegate(
     const char* name,
     DebugHandle delegate_debug_index,
     const ArrayRef<Tensor> output) {
   log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
+  Result<bool> result = log_intermediate_output_delegate_helper(
+      name, delegate_debug_index, output);
+  return result;
 }
 
-void ETDumpGen::log_intermediate_output_delegate(
+Result<bool> ETDumpGen::log_intermediate_output_delegate(
     const char* name,
     DebugHandle delegate_debug_index,
     const int& output) {
   log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
+  Result<bool> result = log_intermediate_output_delegate_helper(
+      name, delegate_debug_index, output);
+  return result;
 }
 
-void ETDumpGen::log_intermediate_output_delegate(
+Result<bool> ETDumpGen::log_intermediate_output_delegate(
     const char* name,
     DebugHandle delegate_debug_index,
     const bool& output) {
   log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
+  Result<bool> result = log_intermediate_output_delegate_helper(
+      name, delegate_debug_index, output);
+  return result;
 }
 
-void ETDumpGen::log_intermediate_output_delegate(
+Result<bool> ETDumpGen::log_intermediate_output_delegate(
     const char* name,
     DebugHandle delegate_debug_index,
     const double& output) {
   log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
+  Result<bool> result = log_intermediate_output_delegate_helper(
+      name, delegate_debug_index, output);
+  return result;
 }
 
 template <typename T>
-void ETDumpGen::log_intermediate_output_delegate_helper(
+Result<bool> ETDumpGen::log_intermediate_output_delegate_helper(
     const char* name,
     DebugHandle delegate_debug_index,
     const T& output) {
-  ET_CHECK_MSG(
+  ET_CHECK_OR_RETURN_ERROR(
       (name == nullptr) ^ (delegate_debug_index == -1),
+      InvalidArgument,
       "Only name or delegate_debug_index can be valid. Check DelegateMappingBuilder documentation for more details.");
-
-  ET_CHECK_MSG(
-      data_sink_,
-      "Must pre-set data sink before logging evalue with set_data_sink() or set_debug_buffer()\n");
 
   check_ready_to_add_events();
   int64_t string_id = name != nullptr ? create_string_entry(name) : -1;
@@ -412,7 +422,10 @@ void ETDumpGen::log_intermediate_output_delegate_helper(
     etdump_Value_bool_value_add(builder_, bool_ref);
     etdump_Value_val_add(builder_, etdump_ValueType_Bool);
   } else {
-    ET_CHECK_MSG(0, "Unsupported output type for intermediate logging\n");
+    ET_CHECK_OR_RETURN_ERROR(
+        0,
+        InvalidArgument,
+        "Unsupported output type for intermediate logging\n");
   }
 
   auto value_ref = etdump_Value_end(builder_);
@@ -423,6 +436,8 @@ void ETDumpGen::log_intermediate_output_delegate_helper(
   etdump_RunData_events_push_start(builder_);
   etdump_Event_debug_event_add(builder_, debug_event);
   etdump_RunData_events_push_end(builder_);
+
+  return true;
 }
 
 void ETDumpGen::end_profiling(EventTracerEntry prof_entry) {
@@ -515,8 +530,6 @@ void ETDumpGen::set_data_sink(DataSinkBase* data_sink) {
 }
 
 void ETDumpGen::log_evalue(const EValue& evalue, LoggedEValueType evalue_type) {
-  ET_CHECK_MSG(data_sink_, "Must set data sink before logging evalue\n");
-
   check_ready_to_add_events();
 
   etdump_DebugEvent_start(builder_);
@@ -650,7 +663,8 @@ long ETDumpGen::write_tensor_or_raise_error(Tensor tensor) {
     return static_cast<size_t>(-1);
   }
 
-  ET_CHECK_MSG(data_sink_, "Must set data sink before writing data");
+  ET_CHECK_MSG(
+      data_sink_, "Must set data sink before writing tensor-like data");
   Result<size_t> ret =
       data_sink_->write(tensor.const_data_ptr(), tensor.nbytes());
   ET_CHECK_MSG(

@@ -13,7 +13,7 @@
 #include <executorch/examples/models/llava/runner/llava_image_prefiller.h>
 #include <executorch/examples/models/llava/runner/llava_runner.h>
 #include <executorch/examples/models/llava/runner/llava_text_decoder_runner.h>
-#include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
+#include <pytorch/tokenizers/llama2c_tokenizer.h>
 
 #include <ctime>
 #include <memory>
@@ -43,7 +43,7 @@ Error LlavaRunner::load() {
   stats_.model_load_start_ms = llm::time_in_ms();
 
   // Load the tokenizer
-  tokenizer_ = std::make_unique<llm::BPETokenizer>();
+  tokenizer_ = std::make_unique<tokenizers::Llama2cTokenizer>();
   tokenizer_->load(tokenizer_path_);
 
   // Load the text decoder runner
@@ -55,7 +55,8 @@ Error LlavaRunner::load() {
   text_prefiller_ = std::make_unique<llm::TextPrefiller>(
       text_decoder_runner_.get(),
       /*use_kv_cache=*/true,
-      /*enable_parallel_prefill=*/true);
+      /*enable_parallel_prefill=*/true,
+      /*max_seq_len=*/128);
 
   // Load the image prefiller
   image_prefiller_ = std::make_unique<LlavaImagePrefiller>(module_.get());
@@ -90,7 +91,7 @@ Result<uint64_t> LlavaRunner::prefill_prompt(
     int8_t bos,
     int8_t eos) {
   std::vector<uint64_t> prompt_tokens =
-      ET_UNWRAP(tokenizer_->encode(prompt, bos, eos));
+      ET_UNWRAP_TOKENIZER(tokenizer_->encode(prompt, bos, eos));
 
   return text_prefiller_->prefill(prompt_tokens, start_pos);
 }

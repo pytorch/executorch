@@ -36,28 +36,27 @@ portability details.
 
 ## Environment Setup
 
-### Create a Virtual Environment
-
-[Install conda on your machine](https://conda.io/projects/conda/en/latest/user-guide/install/index.html). Then, create a virtual environment to manage our dependencies.
-   ```bash
-   # Create and activate a conda environment named "executorch"
-   conda create -yn executorch python=3.10.0
-   conda activate executorch
-   ```
-
-### Clone and install ExecuTorch requirements
+### Clone ExecuTorch
 
    ```bash
    # Clone the ExecuTorch repo from GitHub
-   # 'main' branch is the primary development branch where you see the latest changes.
-   # 'viable/strict' contains all of the commits on main that pass all of the necessary CI checks.
-   git clone --branch viable/strict https://github.com/pytorch/executorch.git
-   cd executorch
+   git clone -b viable/strict https://github.com/pytorch/executorch.git && cd executorch
+   ```
 
-   # Update and pull submodules
-   git submodule sync
-   git submodule update --init
+### Create a Virtual Environment
 
+Create and activate a Python virtual environment:
+   ```bash
+   python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
+   ```
+
+Or alternatively, [install conda on your machine](https://conda.io/projects/conda/en/latest/user-guide/install/index.html). Then, create a Conda environment named "executorch".
+   ```bash
+   conda create -yn executorch python=3.10.0 && conda activate executorch
+   ```
+
+## Install ExecuTorch pip package from Source
+   ```bash
    # Install ExecuTorch pip package and its dependencies, as well as
    # development tools like CMake.
    # If developing on a Mac, make sure to install the Xcode Command Line Tools first.
@@ -80,10 +79,10 @@ portability details.
    ./install_executorch.sh --pybind off
    ```
 
-   For development, install the package in `--editable` mode, which allows to modify Python source code and see changes reflected immediately.
+   For development mode, run the command with `--editable`, which allows us to modify Python source code and see changes reflected immediately.
    ```bash
    ./install_executorch.sh --editable [--pybind xnnpack]
-   
+
    # Or you can directly do the following if dependencies are already installed
    # either via a previous invocation of `./install_executorch.sh` or by explicitly installing requirements via `./install_requirements.sh` first.
    pip install -e .
@@ -105,7 +104,7 @@ portability details.
 > git submodule update --init
 > ```
 
-## Targets Built by the CMake Build System
+## Build ExecuTorch C++ runtime from source
 
 ExecuTorch's CMake build system covers the pieces of the runtime that are
 likely to be useful to embedded systems users.
@@ -125,17 +124,8 @@ likely to be useful to embedded systems users.
   `libportable_kernels.a`, so the program may use any of the operators it
   implements.
 
-## One-time setup to prepare for CMake Build
 
-Follow the steps below to have the tools ready before using CMake to build on your machine.
-
-1. If your system's version of python3 is older than 3.11:
-   - Run `pip install tomli`
-3. Install CMake version 3.19 or later:
-   - Run `conda install cmake` or `pip install cmake`.
-
-
-## Configure the CMake Build
+### Configure the CMake build
 
 Follow these steps after cloning or pulling the upstream repo, since the build
 dependencies may have changed.
@@ -152,7 +142,7 @@ cd executorch
 
 Once this is done, you don't need to do it again until you pull from the upstream repo again, or if you modify any CMake-related files.
 
-### CMake Build Options
+### CMake build options
 
 The release build offers optimizations intended to improve performance and reduce binary size. It disables program verification and executorch logging, and adds optimizations flags.
 ```bash
@@ -167,7 +157,7 @@ To further optimize the release build for size, use both:
 
 See [CMakeLists.txt](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt)
 
-## Build the runtime components
+### Build the runtime components
 
 Build all targets with
 
@@ -184,7 +174,7 @@ cd executorch
 cmake --build cmake-out -j9
 ```
 
-## Use an example app `executor_runner` to execute a .pte file
+## Use an example binary `executor_runner` to execute a .pte file
 
 First, generate an `add.pte` or other ExecuTorch program file using the
 instructions as described in
@@ -196,7 +186,7 @@ Then, pass it to the command line tool:
 ./cmake-out/executor_runner --model_path path/to/model.pte
 ```
 
-If it worked, you should see the message "Model executed successfully" followed
+You should see the message "Model executed successfully" followed
 by the output values.
 
 ```
@@ -206,7 +196,7 @@ I 00:00:00.000612 executorch:executor_runner.cpp:138] Setting up planned buffer 
 I 00:00:00.000669 executorch:executor_runner.cpp:161] Method loaded.
 I 00:00:00.000685 executorch:executor_runner.cpp:171] Inputs prepared.
 I 00:00:00.000764 executorch:executor_runner.cpp:180] Model executed successfully.
-I 00:00:00.000770 executorch:executor_runner.cpp:184] 1 outputs: 
+I 00:00:00.000770 executorch:executor_runner.cpp:184] 1 outputs:
 Output 0: tensor(sizes=[1], [2.])
 ```
 
@@ -216,6 +206,8 @@ Output 0: tensor(sizes=[1], [2.])
 Following are instruction on how to perform cross compilation for Android and iOS.
 
 ### Android
+
+#### Building executor_runner shell binary
 - Prerequisite: [Android NDK](https://developer.android.com/ndk), choose one of the following:
   - Option 1: Download Android Studio by following the instructions to [install ndk](https://developer.android.com/studio/projects/install-ndk).
   - Option 2: Download Android NDK directly from [here](https://developer.android.com/ndk/downloads).
@@ -241,6 +233,20 @@ adb push  add.pte  /data/local/tmp/executorch
 adb shell  "/data/local/tmp/executorch/executor_runner --model_path /data/local/tmp/executorch/add.pte"
 ```
 
+#### Building AAR for app integration from source
+- Prerequisite: Android NDK from the previous section, and Android SDK (Android Studio is recommended).
+
+Assuming Android NDK and SDK is available, run:
+```bash
+export ANDROID_ABIS=arm64-v8a
+export BUILD_AAR_DIR=aar-out
+mkdir -p $BUILD_AAR_DIR
+sh scripts/build_android_library.sh
+```
+
+This script will build the AAR, which contains the Java API and its corresponding JNI library. Please see
+[this documentation](./using-executorch-android.md#using-aar-file) for usage.
+
 ### iOS
 
 For iOS we'll build [frameworks](https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle) instead of static libraries, that will also contain the public headers inside.
@@ -256,7 +262,7 @@ xcode-select --install
 2. Build the frameworks:
 
 ```bash
-./build/build_apple_frameworks.sh
+./scripts/build_apple_frameworks.sh
 ```
 
 Run the above command with `--help` flag to learn more on how to build additional backends
@@ -274,5 +280,5 @@ Check out the [iOS Demo App](demo-apps-ios.md) tutorial for more info.
 You have successfully cross-compiled `executor_runner` binary to iOS and Android platforms. You can start exploring advanced features and capabilities. Here is a list of sections you might want to read next:
 
 * [Selective build](kernel-library-selective-build.md) to build the runtime that links to only kernels used by the program, which can provide significant binary size savings.
-* Tutorials on building [Android](./demo-apps-android.md) and [iOS](./demo-apps-ios.md) demo apps.
+* Tutorials on building [Android](https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app) and [iOS](./demo-apps-ios.md) demo apps.
 * Tutorials on deploying applications to embedded devices such as [ARM Cortex-M/Ethos-U](backends-arm-ethos-u.md) and [XTensa HiFi DSP](./backends-cadence.md).

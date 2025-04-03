@@ -15,6 +15,8 @@ et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 et_root_dir=$(realpath ${et_root_dir})
 toolchain_cmake=${script_dir}/../../../examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
 toolchain_cmake=$(realpath ${toolchain_cmake})
+setup_path_script=${et_root_dir}/examples/arm/ethos-u-scratch/setup_path.sh
+_setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
 
 et_build_root="${et_root_dir}/arm_test"
 build_type="Release"
@@ -42,6 +44,13 @@ for arg in "$@"; do
       ;;
     esac
 done
+
+# Source the tools
+# This should be prepared by the setup.sh
+[[ -f ${setup_path_script} ]] \
+    || { echo "Missing ${setup_path_script}. ${_setup_msg}"; exit 1; }
+
+source ${setup_path_script}
 
 et_build_dir="${et_build_root}/cmake-out"
 
@@ -75,7 +84,6 @@ if [ "$build_with_etdump" = true ] ; then
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON               \
         -DEXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT=ON      \
         -DFLATCC_ALLOW_WERROR=OFF                         \
-        -DFLATC_EXECUTABLE="$(which flatc)"               \
         -B"${et_build_host_dir}"                          \
         "${et_root_dir}"
 
@@ -124,7 +132,6 @@ cmake                                                 \
     -DEXECUTORCH_ENABLE_LOGGING=ON                    \
     ${build_devtools_flags}                           \
     ${build_with_etdump_flags}                        \
-    -DFLATC_EXECUTABLE="$(which flatc)"               \
     -B"${et_build_dir}"                               \
     "${et_root_dir}"
 

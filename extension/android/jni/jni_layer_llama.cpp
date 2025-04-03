@@ -75,14 +75,14 @@ std::string token_buffer;
 
 namespace executorch_jni {
 
-class ExecuTorchLlamaCallbackJni
-    : public facebook::jni::JavaClass<ExecuTorchLlamaCallbackJni> {
+class ExecuTorchLlmCallbackJni
+    : public facebook::jni::JavaClass<ExecuTorchLlmCallbackJni> {
  public:
   constexpr static const char* kJavaDescriptor =
-      "Lorg/pytorch/executorch/LlamaCallback;";
+      "Lorg/pytorch/executorch/extension/llm/LlmCallback;";
 
   void onResult(std::string result) const {
-    static auto cls = ExecuTorchLlamaCallbackJni::javaClassStatic();
+    static auto cls = ExecuTorchLlmCallbackJni::javaClassStatic();
     static const auto method =
         cls->getMethod<void(facebook::jni::local_ref<jstring>)>("onResult");
 
@@ -99,7 +99,7 @@ class ExecuTorchLlamaCallbackJni
   }
 
   void onStats(const llm::Stats& result) const {
-    static auto cls = ExecuTorchLlamaCallbackJni::javaClassStatic();
+    static auto cls = ExecuTorchLlmCallbackJni::javaClassStatic();
     static const auto method = cls->getMethod<void(jfloat)>("onStats");
     double eval_time =
         (double)(result.inference_end_ms - result.prompt_eval_end_ms);
@@ -111,8 +111,7 @@ class ExecuTorchLlamaCallbackJni
   }
 };
 
-class ExecuTorchLlamaJni
-    : public facebook::jni::HybridClass<ExecuTorchLlamaJni> {
+class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
  private:
   friend HybridBase;
   int model_type_category_;
@@ -121,7 +120,7 @@ class ExecuTorchLlamaJni
 
  public:
   constexpr static auto kJavaDescriptor =
-      "Lorg/pytorch/executorch/LlamaModule;";
+      "Lorg/pytorch/executorch/extension/llm/LlmModule;";
 
   constexpr static int MODEL_TYPE_CATEGORY_LLM = 1;
   constexpr static int MODEL_TYPE_CATEGORY_MULTIMODAL = 2;
@@ -132,16 +131,22 @@ class ExecuTorchLlamaJni
       jint model_type_category,
       facebook::jni::alias_ref<jstring> model_path,
       facebook::jni::alias_ref<jstring> tokenizer_path,
-      jfloat temperature) {
+      jfloat temperature,
+      facebook::jni::alias_ref<jstring> data_path) {
     return makeCxxInstance(
-        model_type_category, model_path, tokenizer_path, temperature);
+        model_type_category,
+        model_path,
+        tokenizer_path,
+        temperature,
+        data_path);
   }
 
-  ExecuTorchLlamaJni(
+  ExecuTorchLlmJni(
       jint model_type_category,
       facebook::jni::alias_ref<jstring> model_path,
       facebook::jni::alias_ref<jstring> tokenizer_path,
-      jfloat temperature) {
+      jfloat temperature,
+      facebook::jni::alias_ref<jstring> data_path = nullptr) {
 #if defined(ET_USE_THREADPOOL)
     // Reserve 1 thread for the main thread.
     uint32_t num_performant_cores =
@@ -160,10 +165,18 @@ class ExecuTorchLlamaJni
           tokenizer_path->toStdString().c_str(),
           temperature);
     } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
-      runner_ = std::make_unique<example::Runner>(
-          model_path->toStdString().c_str(),
-          tokenizer_path->toStdString().c_str(),
-          temperature);
+      if (data_path != nullptr) {
+        runner_ = std::make_unique<example::Runner>(
+            model_path->toStdString().c_str(),
+            tokenizer_path->toStdString().c_str(),
+            temperature,
+            data_path->toStdString().c_str());
+      } else {
+        runner_ = std::make_unique<example::Runner>(
+            model_path->toStdString().c_str(),
+            tokenizer_path->toStdString().c_str(),
+            temperature);
+      }
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
     } else if (model_type_category == MODEL_TYPE_MEDIATEK_LLAMA) {
       runner_ = std::make_unique<MTKLlamaRunner>(
@@ -183,7 +196,7 @@ class ExecuTorchLlamaJni
       jint channels,
       facebook::jni::alias_ref<jstring> prompt,
       jint seq_len,
-      facebook::jni::alias_ref<ExecuTorchLlamaCallbackJni> callback,
+      facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
       jboolean echo) {
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
       auto image_size = image->size();
@@ -282,7 +295,7 @@ class ExecuTorchLlamaJni
       facebook::jni::alias_ref<jstring> prompt,
       jint seq_len,
       jlong start_pos,
-      facebook::jni::alias_ref<ExecuTorchLlamaCallbackJni> callback,
+      facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
       jboolean echo) {
     if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
       return static_cast<jint>(Error::NotSupported);
@@ -315,22 +328,22 @@ class ExecuTorchLlamaJni
 
   static void registerNatives() {
     registerHybrid({
-        makeNativeMethod("initHybrid", ExecuTorchLlamaJni::initHybrid),
-        makeNativeMethod("generate", ExecuTorchLlamaJni::generate),
-        makeNativeMethod("stop", ExecuTorchLlamaJni::stop),
-        makeNativeMethod("load", ExecuTorchLlamaJni::load),
+        makeNativeMethod("initHybrid", ExecuTorchLlmJni::initHybrid),
+        makeNativeMethod("generate", ExecuTorchLlmJni::generate),
+        makeNativeMethod("stop", ExecuTorchLlmJni::stop),
+        makeNativeMethod("load", ExecuTorchLlmJni::load),
         makeNativeMethod(
-            "prefillImagesNative", ExecuTorchLlamaJni::prefill_images),
+            "prefillImagesNative", ExecuTorchLlmJni::prefill_images),
         makeNativeMethod(
-            "prefillPromptNative", ExecuTorchLlamaJni::prefill_prompt),
+            "prefillPromptNative", ExecuTorchLlmJni::prefill_prompt),
         makeNativeMethod(
-            "generateFromPos", ExecuTorchLlamaJni::generate_from_pos),
+            "generateFromPos", ExecuTorchLlmJni::generate_from_pos),
     });
   }
 };
 
 } // namespace executorch_jni
 
-void register_natives_for_llama() {
-  executorch_jni::ExecuTorchLlamaJni::registerNatives();
+void register_natives_for_llm() {
+  executorch_jni::ExecuTorchLlmJni::registerNatives();
 }

@@ -442,8 +442,8 @@ bool check_max_pool2d_with_indices_args(
     IntArrayRef padding,
     IntArrayRef dilation,
     bool ceil_mode,
-    Tensor& out,
-    Tensor& indices);
+    const Tensor& out,
+    const Tensor& indices);
 
 void get_max_pool2d_with_indices_out_target_size(
     const Tensor& in,

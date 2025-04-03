@@ -5,7 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Dict
+from typing import Dict, Optional
 
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -19,7 +19,7 @@ class ReplaceScalarWithTensorArgPass(ExportPass):
     replace the scalar arg with Tensor arg.
     """
 
-    scalar_to_tensor_ops: Dict[EdgeOpOverload, EdgeOpOverload] = {
+    default_ops: Dict[EdgeOpOverload, EdgeOpOverload] = {
         exir_ops.edge.aten.add.Scalar: exir_ops.edge.aten.add.Tensor,
         exir_ops.edge.aten.sub.Scalar: exir_ops.edge.aten.sub.Tensor,
         exir_ops.edge.aten.mul.Scalar: exir_ops.edge.aten.mul.Tensor,
@@ -29,6 +29,16 @@ class ReplaceScalarWithTensorArgPass(ExportPass):
         torch.ops.aten.mul.Scalar: torch.ops.aten.mul.Tensor,
         torch.ops.aten.div.Scalar: torch.ops.aten.div.Tensor,
     }
+
+    def __init__(
+        self,
+        scalar_to_tensor_ops: Optional[Dict[EdgeOpOverload, EdgeOpOverload]] = None,
+    ):
+        if scalar_to_tensor_ops is not None:
+            self.scalar_to_tensor_ops = scalar_to_tensor_ops
+        else:
+            self.scalar_to_tensor_ops = self.default_ops
+        super().__init__()
 
     def get_replacement(self, op, args, kwargs, meta):
         return super().call_operator(

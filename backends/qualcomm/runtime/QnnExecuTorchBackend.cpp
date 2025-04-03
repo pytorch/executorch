@@ -66,8 +66,10 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
 
   // Create QnnManager
   MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
-  QnnManager* qnn_manager =
-      ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(runtime_allocator, QnnManager);
+  QnnManager* qnn_manager = runtime_allocator->allocateInstance<QnnManager>();
+  if (qnn_manager == nullptr) {
+    return Error::MemoryAllocationFailed;
+  }
 
   // NOTE: Since we use placement new and since this type is not trivially
   // destructible, we must call the destructor manually in destroy().

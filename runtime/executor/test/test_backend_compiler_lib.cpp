@@ -144,10 +144,16 @@ class BackendWithCompiler final : public BackendInterface {
         "Instruction count must be non-negative: %ld",
         instruction_number);
 
-    auto op_list =
-        ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(runtime_allocator, DemoOpList);
-    op_list->ops = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-        runtime_allocator, DemoOp, instruction_number);
+    auto op_list = runtime_allocator->allocateInstance<DemoOpList>();
+    if (op_list == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+
+    op_list->ops = runtime_allocator->allocateList<DemoOp>(instruction_number);
+    if (op_list->ops == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+
     op_list->numops = static_cast<size_t>(instruction_number);
 
     parse_delegate(instruction_set_start + 1, kSignLiteral, op_list->ops);

@@ -19,15 +19,16 @@ def define_common_targets():
         deps = [
             "//executorch/extension/llm/runner:stats",
             "//executorch/extension/tensor:tensor",
+             "//executorch/kernels/quantized:generated_lib",
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
         ],
         exported_deps = [
             "//executorch/extension/module:module",
             "//executorch/extension/llm/sampler:sampler",
             "//executorch/examples/models/llama/tokenizer:tiktoken",
-            "//executorch/extension/llm/tokenizer:bpe_tokenizer",
             "//executorch/extension/evalue_util:print_evalue",
             "//executorch/backends/qualcomm/runtime:runtime",
+            "//pytorch/tokenizers:llama2c_tokenizer",
         ],
         external_deps = [
             "gflags",

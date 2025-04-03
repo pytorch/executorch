@@ -12,6 +12,7 @@ import android.app.Activity;
 import android.content.Intent;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Debug;
 import android.system.ErrnoException;
 import android.system.Os;
 import com.google.gson.Gson;
@@ -46,6 +47,8 @@ public class BenchmarkActivity extends Activity {
 
     int numIter = intent.getIntExtra("num_iter", 50);
     int numWarmupIter = intent.getIntExtra("num_warm_up_iter", 10);
+
+    long pssIdle = Debug.getPss();
 
     // TODO: Format the string with a parsable format
     Stats stats = new Stats();
@@ -92,6 +95,12 @@ public class BenchmarkActivity extends Activity {
             new BenchmarkMetric(
                 benchmarkModel,
                 "avg_inference_latency(ms)",
+                stats.latency.stream().mapToDouble(l -> l).average().orElse(0.0f),
+                0.0f));
+        results.add(
+            new BenchmarkMetric(
+                benchmarkModel,
+                "trimmean_inference_latency(ms)",
                 usedLatencyResults.stream().mapToDouble(l -> l).average().orElse(0.0f),
                 0.0f));
         // Model load time
@@ -103,6 +112,10 @@ public class BenchmarkActivity extends Activity {
                 0.0f));
         // Load status
         results.add(new BenchmarkMetric(benchmarkModel, "load_status", stats.errorCode, 0));
+        // RAM PSS usage
+        results.add(
+            new BenchmarkMetric(
+                benchmarkModel, "ram_pss_usage(mb)", (Debug.getPss() - pssIdle) / 1024, 0));
 
         try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.json")) {
           Gson gson = new Gson();

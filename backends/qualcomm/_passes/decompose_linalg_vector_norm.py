@@ -46,11 +46,13 @@ class DecomposeLinalgVectorNorm(ExportPass):
                 model = LinalgVectorNorm(ord, dim, keepdim)
                 if self.aten_dialect_capture:
                     decomposed_module = torch.export.export(
-                        model, (node.args[0].meta["val"],)
+                        model, (node.args[0].meta["val"],), strict=True
                     ).module()
                 else:
                     edge_mgr = to_edge(
-                        torch.export.export(model, (node.args[0].meta["val"],))
+                        torch.export.export(
+                            model, (node.args[0].meta["val"],), strict=True
+                        )
                     )
                     decomposed_module = edge_mgr.exported_program()
 

@@ -475,6 +475,37 @@ inline bool tensor_is_type(
   return true;
 }
 
+inline bool tensor_is_type(
+    executorch::aten::Tensor t,
+    executorch::aten::ScalarType dtype,
+    executorch::aten::ScalarType dtype2) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      t.scalar_type() == dtype || t.scalar_type() == dtype2,
+      "Expected to find %s or %s type, but tensor has type %s",
+      torch::executor::toString(dtype),
+      torch::executor::toString(dtype2),
+      torch::executor::toString(t.scalar_type()));
+
+  return true;
+}
+
+inline bool tensor_is_type(
+    executorch::aten::Tensor t,
+    executorch::aten::ScalarType dtype,
+    executorch::aten::ScalarType dtype2,
+    executorch::aten::ScalarType dtype3) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      t.scalar_type() == dtype || t.scalar_type() == dtype2 ||
+          t.scalar_type() == dtype3,
+      "Expected to find %s, %s, or %s type, but tensor has type %s",
+      torch::executor::toString(dtype),
+      torch::executor::toString(dtype2),
+      torch::executor::toString(dtype3),
+      torch::executor::toString(t.scalar_type()));
+
+  return true;
+}
+
 inline bool tensor_is_integral_type(
     executorch::aten::Tensor t,
     bool includeBool = false) {

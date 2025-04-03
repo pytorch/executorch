@@ -5,19 +5,19 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
-import sys
 
 import sentencepiece as spm
 
 import torch
+from executorch.examples.apple.coreml.llama.llama_transformer import (
+    InputManager,
+    load_model,
+)
 
-from executorch.runtime import Runtime
-
-
-sys.path.insert(0, ".")
 from executorch.examples.models.llama.runner.generation import next_token
 from executorch.examples.models.llama.tokenizer import tiktoken
-from llama_transformer import InputManager, load_model
+
+from executorch.runtime import Runtime
 
 
 class Tokenizer:

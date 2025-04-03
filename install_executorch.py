@@ -14,6 +14,8 @@ import os
 import shutil
 import subprocess
 import sys
+from contextlib import contextmanager
+from typing import List, Tuple
 
 from install_requirements import (
     install_requirements,
@@ -28,6 +30,17 @@ logging.basicConfig(
 logger = logging.getLogger()
 
 
+@contextmanager
+def pushd(new_dir):
+    """Change the current directory to new_dir and yield. When exiting the context, change back to the original directory."""
+    original_dir = os.getcwd()
+    os.chdir(new_dir)
+    try:
+        yield
+    finally:
+        os.chdir(original_dir)
+
+
 def clean():
     print("Cleaning build artifacts...")
     print("Cleaning pip-out/...")
@@ -39,7 +52,8 @@ def clean():
     print("Done cleaning build artifacts.")
 
 
-VALID_PYBINDS = ["coreml", "mps", "xnnpack", "training"]
+# Please keep this insync with `ShouldBuild.pybindings` in setup.py.
+VALID_PYBINDS = ["coreml", "mps", "xnnpack", "training", "openvino"]
 
 
 ################################################################################
@@ -66,6 +80,7 @@ REQUIRED_SUBMODULES = {
     "pthreadpool": "CMakeLists.txt",
     "pybind11": "CMakeLists.txt",
     "shim": "BUCK",
+    "tokenizers": "CMakeLists.txt",
     "XNNPACK": "CMakeLists.txt",
 }
 
@@ -117,6 +132,11 @@ def check_and_update_submodules():
                 logger.error(f"{file} not found in {path}.")
                 logger.error("Please run `git submodule update --init`.")
                 exit(1)
+    # Go into tokenizers submodule and install its submodules
+    tokenizers_path = get_required_submodule_paths().get("tokenizers", None)
+    if tokenizers_path:
+        with pushd(tokenizers_path):
+            subprocess.check_call(["git", "submodule", "update", "--init"])
     logger.info("All required submodules are present.")
 
 
@@ -150,28 +170,30 @@ def build_args_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def handle_pybind(args, cmake_args, executorch_build_pybind):
+# Returns (wants_off, wanted_pybindings)
+def _list_pybind_defines(args) -> Tuple[bool, List[str]]:
+    if args.pybind is None:
+        return False, []
+
     # Flatten list of lists.
     args.pybind = list(itertools.chain(*args.pybind))
     if "off" in args.pybind:
         if len(args.pybind) != 1:
             raise Exception(f"Cannot combine `off` with other pybinds: {args.pybind}")
-        executorch_build_pybind = "OFF"
-    else:
-        for pybind_arg in args.pybind:
-            if pybind_arg not in VALID_PYBINDS:
-                raise Exception(
-                    f"Unrecognized pybind argument {pybind_arg}; valid options are: {', '.join(VALID_PYBINDS)}"
-                )
-            if pybind_arg == "training":
-                cmake_args += " -DEXECUTORCH_BUILD_EXTENSION_TRAINING=ON"
-                os.environ["EXECUTORCH_BUILD_TRAINING"] = "ON"
-            elif pybind_arg == "mps":
-                cmake_args += " -DEXECUTORCH_BUILD_MPS=ON"
-            else:
-                cmake_args += f" -DEXECUTORCH_BUILD_{pybind_arg.upper()}=ON"
-            executorch_build_pybind = "ON"
-    return executorch_build_pybind, cmake_args
+        return True, []
+
+    cmake_args = []
+    for pybind_arg in args.pybind:
+        if pybind_arg not in VALID_PYBINDS:
+            raise Exception(
+                f"Unrecognized pybind argument {pybind_arg}; valid options are: {', '.join(VALID_PYBINDS)}"
+            )
+        if pybind_arg == "training":
+            cmake_args.append("-DEXECUTORCH_BUILD_EXTENSION_TRAINING=ON")
+        else:
+            cmake_args.append(f"-DEXECUTORCH_BUILD_{pybind_arg.upper()}=ON")
+
+    return False, cmake_args
 
 
 def main(args):
@@ -181,14 +203,14 @@ def main(args):
     parser = build_args_parser()
     args = parser.parse_args()
 
-    EXECUTORCH_BUILD_PYBIND = ""
-    CMAKE_ARGS = os.getenv("CMAKE_ARGS", "")
+    cmake_args = [os.getenv("CMAKE_ARGS", "")]
     use_pytorch_nightly = True
 
-    if args.pybind:
-        EXECUTORCH_BUILD_PYBIND, CMAKE_ARGS = handle_pybind(
-            args, CMAKE_ARGS, EXECUTORCH_BUILD_PYBIND
-        )
+    wants_pybindings_off, pybind_defines = _list_pybind_defines(args)
+    if wants_pybindings_off:
+        cmake_args.append("-DEXECUTORCH_BUILD_PYBIND=OFF")
+    else:
+        cmake_args += pybind_defines
 
     if args.clean:
         clean()
@@ -200,18 +222,11 @@ def main(args):
         # latest PT commit otherwise
         use_pytorch_nightly = False
 
-    # If --pybind is not set explicitly for backends (e.g., --pybind xnnpack)
-    # or is not turned off explicitly (--pybind off)
-    # then install XNNPACK by default.
-    if EXECUTORCH_BUILD_PYBIND == "":
-        EXECUTORCH_BUILD_PYBIND = "ON"
-        CMAKE_ARGS += " -DEXECUTORCH_BUILD_XNNPACK=ON"
-
     # Use ClangCL on Windows.
     # ClangCL is an alias to Clang that configures it to work in an MSVC-compatible
     # mode. Using it on Windows to avoid compiler compatibility issues for MSVC.
     if os.name == "nt":
-        CMAKE_ARGS += " -T ClangCL"
+        cmake_args.append("-T ClangCL")
 
     #
     # Install executorch pip package. This also makes `flatc` available on the path.
@@ -220,8 +235,7 @@ def main(args):
     #
 
     # Set environment variables
-    os.environ["EXECUTORCH_BUILD_PYBIND"] = EXECUTORCH_BUILD_PYBIND
-    os.environ["CMAKE_ARGS"] = CMAKE_ARGS
+    os.environ["CMAKE_ARGS"] = " ".join(cmake_args)
 
     # Check if the required submodules are present and update them if not
     check_and_update_submodules()

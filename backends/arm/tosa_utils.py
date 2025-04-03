@@ -7,31 +7,32 @@
 
 import logging
 import os
-from typing import Any, Tuple
+from typing import Any, Optional, Tuple
 
 import serializer.tosa_serializer as ts  # type: ignore
 import torch
 from executorch.backends.arm.tosa_mapping import TosaArg
 
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.print_program import inspect_node
 from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
 TOSA_DBG_VERBOSE = os.environ.get("TOSA_DBG_VERBOSE") == "1"
 if TOSA_DBG_VERBOSE:
     logging.basicConfig(level=logging.INFO)
     logger.setLevel(logging.INFO)
 
 
-def dbg_node(node: torch.fx.Node):
+def dbg_node(node: torch.fx.Node, graph_module: torch.fx.GraphModule):
     # Debug output of node information
-    logger.info(get_node_debug_info(node))
+    logger.info(get_node_debug_info(node, graph_module))
 
 
-def get_node_debug_info(node: torch.fx.Node) -> str:
+def get_node_debug_info(node: torch.fx.Node, graph_module: torch.fx.GraphModule) -> str:
     output = (
+        f"  {inspect_node(graph=graph_module.graph, node=node)}\n"
         "-- NODE DEBUG INFO --\n"
         f"  Op is {node.op}\n"
         f"  Name is {node.name}\n"
@@ -42,10 +43,17 @@ def get_node_debug_info(node: torch.fx.Node) -> str:
         "  Node.meta = \n"
     )
     for k, v in node.meta.items():
-        output += f"    '{k}' = {v}\n"
-        if isinstance(v, list):
-            for i in v:
-                output += f"      {i}\n"
+        if k == "stack_trace":
+            matches = v.split("\n")
+            output += "      'stack_trace =\n"
+            for m in matches:
+                output += f"      {m}\n"
+        else:
+            output += f"    '{k}' = {v}\n"
+
+            if isinstance(v, list):
+                for i in v:
+                    output += f"      {i}\n"
     return output
 
 
@@ -71,21 +79,24 @@ def dbg_tosa_dump(tosa_graph: ts.TosaSerializer, path: str, suffix: str = ""):
     assert os.path.exists(filepath_desc_json), "Failed to write TOSA JSON"
 
 
-def dbg_fail(node, tosa_graph, path):
-    dbg_tosa_dump(tosa_graph, path)
+def dbg_fail(
+    node,
+    graph_module,
+    tosa_graph: Optional[ts.TosaSerializer] = None,
+    path: Optional[str] = None,
+):
     logger.warning("Internal error due to poorly handled node:")
-    dbg_node(node)
-    logger.warning(f"Debug output captured in '{path}'.")
-    raise RuntimeError("TOSA Internal Error on node, enable logging for further info.")
+    if tosa_graph is not None and path is not None:
+        dbg_tosa_dump(tosa_graph, path)
+        logger.warning(f"Debug output captured in '{path}'.")
+    dbg_node(node, graph_module)
 
 
 def getNodeArgs(node: Node) -> list[TosaArg]:
     try:
         return [TosaArg(arg) for arg in node.args]
     except ValueError as e:
-        raise ValueError(
-            f"Failed processing args to op:\n{get_node_debug_info(node)}"
-        ) from e
+        raise ValueError(f"Failed processing args to op:\n{node}") from e
 
 
 def get_output_node(node: Node) -> Node:
@@ -100,6 +111,45 @@ def build_reshape(tosa_fb, input_name, new_shape, output_name):
     attr = ts.TosaSerializerAttribute()
     attr.ReshapeAttribute(new_shape)
     tosa_fb.addOperator(TosaOp.Op().RESHAPE, [input_name], [output_name], attr)
+
+
+def reshape_for_broadcast(tosa_fb, inputs, dim_order=None):
+    assert len(inputs) == 2
+    input1 = inputs[0]
+    input2 = inputs[1]
+
+    def get_new_shape(l_rank_in, h_rank_in):
+        rank_diff = len(h_rank_in.shape) - len(l_rank_in.shape)
+        new_shape = list(l_rank_in.shape)
+
+        for _ in range(rank_diff):
+            new_shape.insert(0, 1)
+        return tuple(new_shape)
+
+    if len(input1.shape) == len(input2.shape):
+        return input1, input2
+    elif len(input1.shape) > len(input2.shape):
+        l_rank_in = input2
+        h_rank_in = input1
+    elif len(input1.shape) < len(input2.shape):
+        l_rank_in = input1
+        h_rank_in = input2
+
+    new_shape = get_new_shape(l_rank_in, h_rank_in)
+    dim_order = h_rank_in.dim_order if dim_order is None else dim_order
+    new_shape = tosa_shape(new_shape, dim_order)
+
+    reshaped = tosa_fb.addIntermediate(
+        new_shape,
+        inputs[0].dtype,
+    )
+
+    build_reshape(tosa_fb, l_rank_in.name, new_shape, reshaped.name)
+
+    if len(input1.shape) > len(input2.shape):
+        return input1, reshaped
+    else:
+        return reshaped, input2
 
 
 def is_consumer_node_depthwise_conv2d(node):

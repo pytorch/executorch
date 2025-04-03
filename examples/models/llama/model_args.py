@@ -5,10 +5,10 @@ from typing import Dict, Optional
 @dataclass
 class ModelArgs:
     dim: int = 4096
-    n_layers: int = 32
+    n_layers: int = 8
     n_heads: int = 32
     n_kv_heads: Optional[int] = None
-    vocab_size: int = -1  # defined later by tokenizer
+    vocab_size: int = 512  # Arbitrary value, should be defined later by tokenizer.
     hidden_dim: Optional[int] = None
     head_dim: Optional[int] = None  # Optional customized head_dim
     multiple_of: int = 256  # make SwiGLU hidden layer size multiple of large power of 2
@@ -37,6 +37,7 @@ class ModelArgs:
     output_prune_map: Optional[Dict[int, int]] = None
     apply_embedding: bool = True  # Use embedding inside the transformer
     apply_output: bool = True  # Use output layer (unembedding) inside the transformer
+    use_qk_norm: bool = False  # apply normalization to q and k in the attention
     use_hf_rope: bool = False  # Use HuggingFace's RoPE implementation
     partial_rotary_factor: float = 1.0
     rope_theta: Optional[float] = (

@@ -798,6 +798,14 @@ Error Method::init(
       return Error::MemoryAllocationFailed;
     }
 
+    // Get NamedDataMap, if it exists.
+    const NamedDataMap* pte_data_map = nullptr;
+    Result<const NamedDataMap*> pte_data_map_res =
+        program_->get_named_data_map();
+    if (pte_data_map_res.ok()) {
+      pte_data_map = pte_data_map_res.get();
+    }
+
     // n_delegate_ counts the number of successfully-initialized delegates for
     // ~Method() to clean up, and is incremented at the bottom of the loop. This
     // makes it safe for errors to return without updating any state.
@@ -808,7 +816,8 @@ Error Method::init(
       BackendInitContext backend_init_context(
           method_allocator,
           /*event_tracer=*/event_tracer_,
-          /*method_name=*/serialization_plan_->name()->c_str());
+          /*method_name=*/serialization_plan_->name()->c_str(),
+          /*named_data_map=*/pte_data_map);
       Error err = BackendDelegate::Init(
           delegate, program_, backend_init_context, &delegates_[i]);
       if (err != Error::Ok) {

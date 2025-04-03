@@ -17,6 +17,12 @@ fi
 
 which "${PYTHON_EXECUTABLE}"
 
+# Update tokenizers submodule
+pushd $EXECUTORCH_ROOT/extension/llm/tokenizers
+echo "Update tokenizers submodule"
+git submodule update --init
+popd
+
 pushd $EXECUTORCH_ROOT/examples/apple/coreml/llama
 
 # Download stories llama110m artifacts

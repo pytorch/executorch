@@ -5,6 +5,7 @@
 from typing import List
 
 import serializer.tosa_serializer as ts
+from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -31,6 +32,12 @@ class MinVisitor(NodeVisitor):
 
         input = inputs[0]
         dim = inputs[1].number
+
+        if dim < 0:
+            tensor = get_first_fake_tensor(node)
+            rank = len(tensor.size())
+            dim = rank + dim
+
         keep_dims = inputs[2].number
         if not keep_dims:
             raise RuntimeError(

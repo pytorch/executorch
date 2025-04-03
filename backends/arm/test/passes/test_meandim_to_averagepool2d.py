@@ -7,9 +7,7 @@
 from typing import Tuple
 
 import torch
-from executorch.backends.arm._passes.meandim_to_averagepool_pass import (
-    ConvertMeanDimToAveragePoolPass,
-)
+from executorch.backends.arm._passes import ConvertMeanDimToAveragePoolPass
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 

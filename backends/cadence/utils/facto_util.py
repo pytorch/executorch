@@ -22,9 +22,29 @@ MAX_CASES = 50
 
 
 def apply_tensor_contraints(op_name: str, tensor_constraints: list[object]) -> None:
+    additional_tensor_constraints = [
+        cp.Dtype.In(lambda deps: [torch.int, torch.float]),
+        cp.Dtype.NotIn(lambda deps: [torch.int64, torch.float64]),
+        cp.Value.Ge(lambda deps, dtype, struct: -(2**4)),
+        cp.Value.Le(lambda deps, dtype, struct: 2**4),
+        cp.Rank.Ge(lambda deps: 1),
+        cp.Size.Ge(lambda deps, r, d: 1),
+        cp.Size.Le(lambda deps, r, d: 2**9),
+    ]
+
     match op_name:
-        case "sigmoid.default" | "rsqrt.default":
-            tensor_constraints.extend(
+        case "where.self":
+            additional_tensor_constraints = [
+                cp.Dtype.In(lambda deps: [torch.float, torch.int, torch.bool]),
+                cp.Dtype.NotIn(lambda deps: [torch.int64, torch.float64]),
+                cp.Value.Ge(lambda deps, dtype, struct: -(2**4)),
+                cp.Value.Le(lambda deps, dtype, struct: 2**4),
+                cp.Rank.Ge(lambda deps: 1),
+                cp.Size.Ge(lambda deps, r, d: 1),
+                cp.Size.Le(lambda deps, r, d: 2**9),
+            ]
+        case "sigmoid.default":
+            additional_tensor_constraints.extend(
                 [
                     cp.Dtype.In(lambda deps: [torch.float]),
                     cp.Rank.Le(lambda deps: 2**2),
@@ -32,15 +52,26 @@ def apply_tensor_contraints(op_name: str, tensor_constraints: list[object]) -> N
                     cp.Value.Le(lambda deps, dtype, struct: 2),
                 ]
             )
+        case "rsqrt.default":
+            additional_tensor_constraints.extend(
+                [
+                    cp.Dtype.In(lambda deps: [torch.float]),
+                    cp.Rank.Le(lambda deps: 2**2),
+                    cp.Value.Gt(
+                        lambda deps, dtype, struct: 0
+                    ),  # only generate real numbers
+                    cp.Value.Le(lambda deps, dtype, struct: 2**2),
+                ]
+            )
         case "mean.dim":
-            tensor_constraints.extend(
+            additional_tensor_constraints.extend(
                 [
                     cp.Dtype.In(lambda deps: [torch.float]),
                     cp.Rank.Le(lambda deps: 2**2),
                 ]
             )
         case "exp.default":
-            tensor_constraints.extend(
+            additional_tensor_constraints.extend(
                 [
                     cp.Rank.Le(lambda deps: 2**3),
                     cp.Value.Ge(lambda deps, dtype, struct: -(2**2)),
@@ -48,7 +79,7 @@ def apply_tensor_contraints(op_name: str, tensor_constraints: list[object]) -> N
                 ]
             )
         case "slice_copy.Tensor":
-            tensor_constraints.extend(
+            additional_tensor_constraints.extend(
                 [
                     cp.Rank.Le(lambda deps: 2),
                     cp.Value.Ge(lambda deps, dtype, struct: 1),
@@ -56,22 +87,12 @@ def apply_tensor_contraints(op_name: str, tensor_constraints: list[object]) -> N
                 ]
             )
         case _:
-            tensor_constraints.extend(
+            additional_tensor_constraints.extend(
                 [
                     cp.Rank.Le(lambda deps: 2**2),
                 ]
             )
-    tensor_constraints.extend(
-        [
-            cp.Dtype.In(lambda deps: [torch.int, torch.float]),
-            cp.Dtype.NotIn(lambda deps: [torch.int64, torch.float64]),
-            cp.Value.Ge(lambda deps, dtype, struct: -(2**4)),
-            cp.Value.Le(lambda deps, dtype, struct: 2**4),
-            cp.Rank.Ge(lambda deps: 1),
-            cp.Size.Ge(lambda deps, r, d: 1),
-            cp.Size.Le(lambda deps, r, d: 2**9),
-        ]
-    )
+    tensor_constraints.extend(additional_tensor_constraints)
 
 
 def apply_scalar_contraints(op_name: str) -> list[ScalarDtype]:

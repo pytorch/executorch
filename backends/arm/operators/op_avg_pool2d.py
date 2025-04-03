@@ -9,7 +9,6 @@ from typing import List
 import serializer.tosa_serializer as ts  # type: ignore
 import torch
 
-# pyre-fixme[21]: ' Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
     get_output_qparams,
@@ -43,12 +42,19 @@ class AvgPool2dVisitor_0_80_BI(NodeVisitor):
         output_zp: int,
         accumulator_type: ts.DType,
     ) -> None:
-        input_tensor = inputs[0]
 
+        input_tensor = inputs[0]
         kernel_size_list = inputs[1].special
         stride_size_list = inputs[2].special
+
         try:
             pad_size_list = inputs[3].special
+            pad_size_list = [
+                pad_size_list[0],
+                pad_size_list[0],
+                pad_size_list[1],
+                pad_size_list[1],
+            ]
         except IndexError:
             pad_size_list = [0, 0, 0, 0]
 
@@ -81,10 +87,10 @@ class AvgPool2dVisitor_0_80_BI(NodeVisitor):
 
         accumulator_type = ts.DType.INT32
 
-        input_qargs = get_input_qparams(node)  # pyre-ignore[16]
+        input_qargs = get_input_qparams(node)
         input_zp = input_qargs[0].zp
 
-        output_qargs = get_output_qparams(node)  # pyre-ignore[16]
+        output_qargs = get_output_qparams(node)
         output_zp = output_qargs[0].zp
 
         self._build_generic_avgpool2d(

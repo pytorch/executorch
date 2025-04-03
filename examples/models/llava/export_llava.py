@@ -46,8 +46,8 @@ from executorch.exir.passes.sym_shape_eval_pass import (
 )
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
-from executorch.extension.llm.tokenizer.tokenizer import Tokenizer
 from executorch.util.activation_memory_profiler import generate_memory_trace
+from pytorch_tokenizers.llama2c import Llama2cTokenizer as Tokenizer
 from torch.export import Dim
 from torch.nn.attention import SDPBackend
 
@@ -98,9 +98,19 @@ def export_text_model(llava, embeddings, dynamic_shapes):
     dtype_override = DType.fp32
     parser = build_args_parser()
     args = parser.parse_args(
-        ["-X", "-qmode", "8da4w", "--group_size", "128", "--embedding-quantize", "4,32"]
+        [
+            "-p",
+            "params.json",
+            "-X",
+            "-qmode",
+            "8da4w",
+            "--group_size",
+            "128",
+            "--embedding-quantize",
+            "4,32",
+        ]
     )
-    quant_transform = get_quant_weight_transform(args, dtype_override, False)
+    quant_transform = get_quant_weight_transform(args, dtype_override)
     _, quantizers, _ = get_quantizer_and_quant_params(args)
     source_transforms = []
     if llava.use_sdpa_with_kv_cache_op:
