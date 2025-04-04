@@ -19,6 +19,8 @@ from executorch.examples.models.llama.llama_transformer import Transformer
 
 from executorch.examples.models.llama.model_args import ModelArgs
 
+from torchtune.models import convert_weights
+
 try:
     from .fairseq2 import convert_to_llama_checkpoint
 
@@ -44,6 +46,9 @@ class Llama2Model(EagerModelBase):
 
         # Params file.
         params_path = kwargs.get("params", None)
+
+        # Adapter file.
+        adapter_path = kwargs.get("adapter", None)
 
         self.use_kv_cache = kwargs.get("use_kv_cache", False)
         self.use_sdpa_with_kv_cache_op = kwargs.get("use_sdpa_with_kv_cache", False)
@@ -95,6 +100,15 @@ class Llama2Model(EagerModelBase):
         # Load single checkpoint.
         elif checkpoint_path:
             checkpoint = torch.load(checkpoint_path, map_location=device, mmap=True)
+
+        # Load adapter.
+        if adapter_path:
+            print("Loading adapter from: ", adapter_path)
+            adapter = torch.load(adapter_path, map_location=device, mmap=True)
+            adapter = convert_weights.tune_to_meta(adapter)
+            # Convert from tune to meta.
+            # breakpoint()
+            checkpoint.update(adapter)
 
         # If given checkpoint is fairseq, convert to llama checkpoint.
         fairseq2_checkpoint = kwargs.get("fairseq2", False)
@@ -174,8 +188,10 @@ the checkpoint format to avoid generating faulty models.
         with torch.device("meta"):
             # Model itself is loaded in default dtype, fp32.
             self.model_ = Transformer(model_args)
+
             # Get checkpoint dtype.
             if checkpoint:
+                # breakpoint()
                 self.model_.checkpoint_dtype = get_checkpoint_dtype(checkpoint)
             else:
                 self.model_.checkpoint_dtype = torch.float32
@@ -252,6 +268,7 @@ the checkpoint format to avoid generating faulty models.
         # by default initialized to fp32. This is fine because every other supported type
         # losslessly converts to fp32, so we don't lose precision here.
         if checkpoint:
+            # breakpoint()
             missing, unexpected = self.model_.load_state_dict(
                 checkpoint,
                 strict=False,
