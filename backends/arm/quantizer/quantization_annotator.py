@@ -164,6 +164,7 @@ def _match_pattern(
 _one_to_one = [
     torch.ops.aten.abs.default,
     torch.ops.aten.ceil.default,
+    torch.ops.aten.erf.default,
     torch.ops.aten.exp.default,
     torch.ops.aten.floor.default,
     torch.ops.aten.log.default,
