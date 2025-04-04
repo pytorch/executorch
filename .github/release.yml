@@ -16,55 +16,55 @@ changelog:
       labels:
         - "release notes: arm"
     - title: NXP
-        labels:
+      labels:
         - "release notes: nxp"
     - title: Exir
-        labels:
+      labels:
         - "release notes: exir"
     - title: Misc
-        labels:
+      labels:
         - "release notes: misc"
     - title: Apple
-        labels:
+      labels:
         - "release notes: apple"
     - title: Build
-        labels:
+      labels:
         - "release notes: build"
     - title: Vulkan
-        labels:
+      labels:
         - "release notes: vulkan"
     - title: Cadence
-        labels:
+      labels:
         - "release notes: cadence"
     - title: Runtime
-        labels:
+      labels:
         - "release notes: runtime"
     - title: XNNPACK
-        labels:
+      labels:
         - "release notes: xnnpack"
     - title: Devtools
-        labels:
+      labels:
         - "release notes: devtools"   
     - title: Examples
-        labels:
+      labels:
         - "release notes: examples"
     - title: Mediatek
-        labels:
+      labels:
         - "release notes: mediatek"
     - title: Openvino
-        labels:
+      labels:
         - "release notes: openvino"
     - title: Qualcomm
-        labels:
+      labels:
         - "release notes: qualcomm"
     - title: Training
-        labels:
+      labels:
         - "release notes: training"
     - title: Quantization
-        labels:
+      labels:
         - "release notes: quantization" 
     - title: Ops & kernels
-        labels:
+      labels:
         - "release notes: ops & kernels" 
     - title: Other Changes
       labels:
