@@ -212,7 +212,8 @@ void cpu_flash_attention(
     const optional<Tensor>& attn_mask,
     const optional<double>& scale,
     bool is_seq_at_dim_1 = false,
-    const int64_t start_pos = 0) {
+    const int64_t start_pos = 0,
+    const int64_t num_keys_for_causal_attention = -1) {
   (void)dropout_p;
   // Query (Batch x Num_heads  x Q_seq_len  x Dim_per_head)
   // Key   (Batch x Num_heads  x KV_seq_len x Dim_per_head)
@@ -256,6 +257,13 @@ void cpu_flash_attention(
     num_heads_kv = key.size(2);
     qSize = query.size(1);
     kvSize = value.size(1);
+  }
+
+  if (num_keys_for_causal_attention > 0) {
+    ET_CHECK_MSG(
+        num_keys_for_causal_attention <= kvSize,
+        "num_keys_for_causal_attention must be <= kvSize");
+    kvSize = num_keys_for_causal_attention;
   }
 
   ET_CHECK_MSG(
