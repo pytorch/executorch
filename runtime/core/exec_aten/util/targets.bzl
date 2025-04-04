@@ -13,7 +13,7 @@ def define_common_targets():
         exported_preprocessor_flags_ = []
         exported_deps_ = ["//executorch/runtime/core:core"]
         if aten_mode:
-            exported_preprocessor_flags_ += ["-DUSE_ATEN_LIB"]
+            exported_preprocessor_flags_ += ["-DUSE_ATEN_LIB", "-DEXECUTORCH_RUNTIME_ATEN"]
         else:
             exported_deps_ += ["//executorch/runtime/core/portable_type:scalar_type"]
 
@@ -58,14 +58,14 @@ def define_common_targets():
                 "//executorch/...",
                 "@EXECUTORCH_CLIENTS",
             ],
-            exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
+            exported_preprocessor_flags = ["-DUSE_ATEN_LIB", "-DEXECUTORCH_RUNTIME_ATEN"] if aten_mode else [],
             exported_deps = [
                 ":tensor_dimension_limit",
                 "//executorch/runtime/core:core",
             ] + [
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 ":scalar_type_util" + aten_suffix,
-                ":dim_order_util" + aten_suffix,
+                ":dim_order_util",
             ],
             # WARNING: using a deprecated API to avoid being built into a shared
             # library. In the case of dynamically loading so library we don't want

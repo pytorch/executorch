@@ -19,7 +19,9 @@
 #include <ATen/ATen.h> // @donotremove @manual=//caffe2/aten:ATen-core
 
 namespace executorch {
+// This file is only used in ATen mode, so we use the runtime_aten namespace.
 namespace runtime {
+namespace aten {
 namespace deserialization {
 
 namespace {
@@ -126,5 +128,6 @@ Result<at::Tensor> parseTensor(
 }
 
 } // namespace deserialization
+} // namespace aten
 } // namespace runtime
 } // namespace executorch

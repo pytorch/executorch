@@ -32,9 +32,8 @@
 #include <executorch/schema/program_generated.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 
-using deserialization::NamedData;
 using internal::PlatformMemoryAllocator;
 
 /**
@@ -1640,5 +1639,5 @@ Method::~Method() {
   }
   // All other fields are trivially destructible.
 }
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch

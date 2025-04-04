@@ -36,8 +36,7 @@ struct Program;
 } // namespace executorch_flatbuffer
 
 namespace executorch {
-namespace runtime {
-
+namespace ET_RUNTIME_NAMESPACE {
 namespace testing {
 // Provides test access to private Program methods.
 class ProgramTestFriend;
@@ -313,16 +312,18 @@ class Program final {
   std::optional<internal::PteDataMap> pte_data_map_;
 };
 
-} // namespace runtime
-} // namespace executorch
 
 namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::Program;
+using ::executorch::ET_RUNTIME_NAMESPACE::Program;
 } // namespace executor
 } // namespace torch
+
+
+} // namespace ET_RUNTIME_NAMESPACE
+} // namespace executorch
 
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
