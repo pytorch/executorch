@@ -21,3 +21,14 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
         ],
     )
+
+    runtime.cxx_test(
+        name = "etdump_filter_test",
+        srcs = [
+            "etdump_filter_test.cpp",
+        ],
+        deps = [
+            "//executorch/devtools/etdump:etdump_filter",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
