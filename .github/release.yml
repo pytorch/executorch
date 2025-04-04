@@ -1,0 +1,71 @@
+# .github/release.yml
+
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+  categories:
+    - title: Breaking Changes 🛠
+      labels:
+        - Semver-Major
+        - breaking-change
+    - title: API
+      labels:
+        - "release notes: api"
+    - title: ARM
+      labels:
+        - "release notes: arm"
+    - title: NXP
+        labels:
+        - "release notes: nxp"
+    - title: Exir
+        labels:
+        - "release notes: exir"
+    - title: Misc
+        labels:
+        - "release notes: misc"
+    - title: Apple
+        labels:
+        - "release notes: apple"
+    - title: Build
+        labels:
+        - "release notes: build"
+    - title: Vulkan
+        labels:
+        - "release notes: vulkan"
+    - title: Cadence
+        labels:
+        - "release notes: cadence"
+    - title: Runtime
+        labels:
+        - "release notes: runtime"
+    - title: XNNPACK
+        labels:
+        - "release notes: xnnpack"
+    - title: Devtools
+        labels:
+        - "release notes: devtools"   
+    - title: Examples
+        labels:
+        - "release notes: examples"
+    - title: Mediatek
+        labels:
+        - "release notes: mediatek"
+    - title: Openvino
+        labels:
+        - "release notes: openvino"
+    - title: Qualcomm
+        labels:
+        - "release notes: qualcomm"
+    - title: Training
+        labels:
+        - "release notes: training"
+    - title: Quantization
+        labels:
+        - "release notes: quantization" 
+    - title: Ops & kernels
+        labels:
+        - "release notes: ops & kernels" 
+    - title: Other Changes
+      labels:
+        - "*"

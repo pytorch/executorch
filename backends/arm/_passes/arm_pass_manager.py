@@ -40,6 +40,7 @@ from executorch.backends.arm._passes import (
     InsertTableOpsPass,
     KeepDimsFalseToSqueezePass,
     MatchArgRanksPass,
+    MatchWhereSelfDtypePass,
     QuantizeOperatorArguments,
     RemoveClonePass,
     ReplaceScalarWithTensorArgPassTOSABI,
@@ -80,6 +81,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ConvertAnyDefaultDimDimsPass())
+        self.add_pass(MatchWhereSelfDtypePass())
         if isinstance(self.tosa_spec, Tosa_0_80) and self.tosa_spec.is_U55_subset:
             self.add_pass(CastToInt32Pass())
 
@@ -130,6 +132,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ConvertAnyDefaultDimDimsPass())
+        self.add_pass(MatchWhereSelfDtypePass())
 
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())

@@ -13,6 +13,10 @@ import torch
 from executorch.backends.qualcomm._passes.expand_broadcast_tensor_shape import (
     ExpandBroadcastTensorShape,
 )
+
+from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+    get_capture_program_passes,
+)
 from executorch.backends.qualcomm.quantizer.annotators import (
     QuantizationConfig,
     QuantizationSpec,
@@ -27,10 +31,7 @@ from executorch.backends.qualcomm.quantizer.qconfig import (
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.utils.constants import QCOM_PASS_ACTIVATE_KEY
-from executorch.backends.qualcomm.utils.utils import (
-    convert_linear_to_conv2d,
-    get_capture_program_passes,
-)
+from executorch.backends.qualcomm.utils.utils import convert_linear_to_conv2d
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
     get_imagenet_dataset,
