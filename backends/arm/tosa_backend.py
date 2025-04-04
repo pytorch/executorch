@@ -11,7 +11,6 @@
 # JIT compiler flows.
 #
 import logging
-import os
 from typing import cast, final, List
 
 import serializer.tosa_serializer as ts  # type: ignore
@@ -34,10 +33,6 @@ from torch.fx import Node
 
 # TOSA backend debug functionality
 logger = logging.getLogger(__name__)
-TOSA_DBG_VERBOSE = os.environ.get("TOSA_DBG_VERBOSE") == "1"
-if TOSA_DBG_VERBOSE:
-    logging.basicConfig(level=logging.INFO)
-    logger.setLevel(logging.INFO)
 
 
 def _get_first_delegation_tag(graph_module) -> str | None:
