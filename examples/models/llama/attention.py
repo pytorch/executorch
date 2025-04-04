@@ -160,6 +160,48 @@ class SDPA(nn.Module):
         return y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
 
 
+class LoRALinear(nn.Module):
+    def __init__(
+        self,
+        in_dim: int,
+        out_dim: int,
+        rank: int,
+        alpha: float,
+        dropout: float = 0.0,
+        use_bias: bool = False,
+    ):
+        super().__init__()
+        self.in_dim = in_dim
+        self.out_dim = out_dim
+        self.rank = rank
+        self.alpha = alpha
+        self.use_bias = use_bias
+        self.dropout = dropout
+
+        # Setup weight and bias
+        # self.wq = nn.Linear(
+        #     self.dim, self.n_heads * self.head_dim, bias=self.attention_qkv_bias
+        # )
+        linear_q = nn.Linear(in_dim, out_dim, bias=use_bias)
+        weight = linear_q.weight
+        bias = linear_q.bias if self.use_bias else None
+        self.register_parameter("weight", nn.Parameter(weight))
+        self.register_parameter(
+            "bias", nn.Parameter(bias) if bias is not None else None
+        )
+
+        self.dropout = nn.Dropout(p=dropout) if dropout > 0.0 else nn.Identity()
+        self.lora_a = nn.Linear(in_features=in_dim, out_features=rank, bias=False)
+        self.lora_b = nn.Linear(in_features=rank, out_features=out_dim, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        out = torch.nn.functional.linear(x, self.weight, self.bias)
+        lora_out = self.lora_a(self.dropout(x))
+        lora_out = (self.alpha / self.rank) * self.lora_b(lora_out)
+
+        return out + lora_out
+
+
 @register_attention("mha")
 class AttentionMHA(Attention):
     def __init__(self, args: ModelArgs, layer_id: int, rope: Rope):
@@ -185,9 +227,19 @@ class AttentionMHA(Attention):
             self.q_norm_fn = RMSNorm(q_norm_dim, eps=args.norm_eps)
             self.k_norm_fn = RMSNorm(k_norm_dim, eps=args.norm_eps)
 
-        self.wq = nn.Linear(
-            self.dim, self.n_heads * self.head_dim, bias=self.attention_qkv_bias
+        # self.wq = nn.Linear(
+        #     self.dim, self.n_heads * self.head_dim, bias=self.attention_qkv_bias
+        # )
+        self.wq = LoRALinear(
+            in_dim=self.dim,
+            out_dim=self.n_heads * self.head_dim,
+            rank=8,
+            alpha=16.0,
+            dropout=0.0,
+            use_bias=self.attention_qkv_bias,
         )
+
+        # breakpoint()
         self.wk = nn.Linear(
             self.dim, self.n_kv_heads * self.head_dim, bias=self.attention_qkv_bias
         )
@@ -238,6 +290,10 @@ class AttentionMHA(Attention):
 
         # QKV
         q, k, v = self.wq(x), self.wk(x), self.wv(x)
+
+        # q_per_kv = self.num_heads // self.num_kv_heads
+        # q = q.view(b, s_x, self.num_kv_heads * q_per_kv, self.head_dim)
+
         # We need view_copy elimination
         q = q.view(bsz, seqlen, self.n_local_heads, self.head_dim)
         k = k.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
@@ -268,6 +324,7 @@ class AttentionMHA(Attention):
 
         mask = self.mask[:seqlen, :seqlen]
 
+        # Somehow, kv become floats.
         output = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
 
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)

@@ -283,6 +283,7 @@ def replace_kv_cache_with_custom_kv_cache(module):
 def _replace_kv_cache_with_custom_kv_cache(module):
     for name, child in module.named_children():
         if isinstance(child, KVCache):
+            # breakpoint()
             cache_shape = child.k_cache.shape
             cache_dtype = child.k_cache.dtype
             max_batch_size, n_heads, max_context_length, head_dim = cache_shape
