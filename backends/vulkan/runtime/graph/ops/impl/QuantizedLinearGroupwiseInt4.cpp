@@ -75,8 +75,7 @@ void resize_q_4w_linear_node(
 
 ValueRef prepack_int4_linear_weight_transposed_interleaved(
     ComputeGraph& graph,
-    const ValueRef qmat2_data,
-    const utils::StorageType storage_type) {
+    const ValueRef qmat2_data) {
   std::vector<int64_t> qmat2_orig_sizes = graph.sizes_of(qmat2_data);
   const int64_t ndim = graph.dim_of(qmat2_data);
 
@@ -84,18 +83,29 @@ ValueRef prepack_int4_linear_weight_transposed_interleaved(
   const int64_t N = qmat2_orig_sizes.at(ndim - 2);
   const int64_t N_div2 = N / int64_t(2);
 
+  utils::StorageType storage_type = utils::kTexture3D;
+  utils::uvec3 max_extents =
+      graph.context()->adapter_ptr()->max_texture_extents();
+  if (N_div2 > max_extents[0] * 4 || K > max_extents[1]) {
+    storage_type = utils::kBuffer;
+  }
+
   std::vector<int64_t> qmat2_sizes{K, N_div2};
   ValueRef qmat2 = graph.add_tensor(
       qmat2_sizes, vkcompute::vkapi::kByte, storage_type, utils::kWidthPacked);
 
-  utils::uvec3 global_size = graph.logical_limits_of(qmat2);
-  global_size[1] = utils::div_up(global_size[1], uint32_t(2));
+  utils::uvec3 global_wg_size;
+  global_wg_size = graph.logical_limits_of(qmat2);
+  global_wg_size[1] = utils::div_up(global_wg_size[1], uint32_t(2));
+
+  std::string kernel_name = "pack_int4_linear_weight_transposed_interleaved";
+  add_storage_type_suffix(kernel_name, storage_type);
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
-      VK_KERNEL(pack_int4_linear_weight_transposed_interleaved),
-      global_size,
-      graph.create_local_wg_size(global_size),
+      VK_KERNEL_FROM_STR(kernel_name),
+      global_wg_size,
+      graph.create_local_wg_size(global_wg_size),
       // Inputs and Outputs
       qmat2_data,
       qmat2,
@@ -119,17 +129,16 @@ void add_q_4w_linear_node(
   check_q_4w_linear_args(
       graph, mat1, mat2_data, group_size, scales_and_zeros_data, out);
 
-  ValueRef mat2 = prepack_int4_linear_weight_transposed_interleaved(
-      graph, mat2_data, utils::kTexture3D);
+  ValueRef mat2 =
+      prepack_int4_linear_weight_transposed_interleaved(graph, mat2_data);
 
   ValueRef scales_and_zeros = prepack_standard_hw_transposed(
-      graph,
-      scales_and_zeros_data,
-      graph.storage_type_of(out),
-      utils::kWidthPacked);
+      graph, scales_and_zeros_data, utils::kTexture3D, utils::kWidthPacked);
 
   std::string kernel_name = "q_4w_linear";
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(mat1));
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(mat2));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   const uint32_t group_size_val = graph.extract_scalar<uint32_t>(group_size);

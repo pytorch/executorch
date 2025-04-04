@@ -8,4 +8,6 @@ pack_int4_linear_weight_transposed_interleaved:
   parameter_names_with_default_values:
     STORAGE: texture3d
   shader_variants:
-    - NAME: pack_int4_linear_weight_transposed_interleaved
+    - NAME: pack_int4_linear_weight_transposed_interleaved_texture3d
+    - NAME: pack_int4_linear_weight_transposed_interleaved_buffer
+      STORAGE: buffer

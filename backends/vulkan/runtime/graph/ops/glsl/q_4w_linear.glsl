@@ -18,10 +18,10 @@ ${define_required_extensions("int8")}
 
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
-${layout_declare_tensor(B, "r", "t_mat1", DTYPE, STORAGE)}
-${layout_declare_tensor(B, "r", "t_qmat2", "uint8", WEIGHT_STORAGE)}
-${layout_declare_tensor(B, "r", "t_qparams", DTYPE, STORAGE)}
+${layout_declare_tensor(B, "w", "t_out", DTYPE, OUT_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_mat1", DTYPE, IN_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_qmat2", "uint8", WEIGHT_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_qparams", DTYPE, "texture3D")}
 
 layout(push_constant) uniform restrict Block {
   ivec4 out_sizes;
@@ -89,6 +89,9 @@ void main() {
   VEC4_T scales[2];
   VEC4_T zeros[2];
 
+  $if WEIGHT_STORAGE == "buffer":
+    const int qmat2_stride = qmat2_sizes.x >> 2;
+
   for (int block_idx = 0; block_idx < num_blocks; ++block_idx) {
     scales[0] = texelFetch(t_qparams, ivec3(out_col_texel_idx, 0, block_idx), 0);
     zeros[0] = texelFetch(t_qparams, ivec3(out_col_texel_idx, 1, block_idx), 0);
@@ -99,13 +102,19 @@ void main() {
     for (int g_idx = 0; g_idx < group_size; g_idx += 4) {
       const int k = block_idx * group_size + g_idx;
 
-      const VEC4_T mat1_tex = texelFetch(t_mat1, ivec3(k >> 2, out_row, 0), 0);
+      $if IN_STORAGE == "buffer":
+        const VEC4_T mat1_tex = t_mat1[(out_row * mat1_sizes.x + k) >> 2];
+      $else:
+        const VEC4_T mat1_tex = texelFetch(t_mat1, ivec3(k >> 2, out_row, 0), 0);
 
       for (int comp = 0; comp < 4; ++comp) {
-        const uvec4 packed_weight_tex = texelFetch(
-            t_qmat2,
-            ivec3(gl_GlobalInvocationID.x, k + comp, 0),
-            0);
+        $if WEIGHT_STORAGE == "buffer":
+          const u8vec4 packed_weight_tex = t_qmat2[(k + comp) * qmat2_stride + gl_GlobalInvocationID.x];
+        $else:
+          const uvec4 packed_weight_tex = texelFetch(
+              t_qmat2,
+              ivec3(gl_GlobalInvocationID.x, k + comp, 0),
+              0);
 
         const uvec4 weight_tex_1 = (packed_weight_tex & 0xF0) >> 4;
         const uvec4 weight_tex_2 = packed_weight_tex & 0x0F;
@@ -116,6 +125,10 @@ void main() {
     }
   }
 
-  imageStore(t_out, ivec3(out_col_texel_idx, out_row, 0), sums[0]);
-  imageStore(t_out, ivec3(out_col_texel_idx + 1, out_row, 0), sums[1]);
+  $if OUT_STORAGE == "buffer":
+    t_out[(out_row * out_sizes.x + out_col) >> 2] = sums[0];
+    t_out[(out_row * out_sizes.x + out_col + 4) >> 2] = sums[1];
+  $else:
+    imageStore(t_out, ivec3(out_col_texel_idx, out_row, 0), sums[0]);
+    imageStore(t_out, ivec3(out_col_texel_idx + 1, out_row, 0), sums[1]);
 }

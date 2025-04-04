@@ -15,7 +15,7 @@ ${define_required_extensions("int8")}
 
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "w", "t_qmat2", "uint8", STORAGE)}
+${layout_declare_tensor(B, "w", "t_qmat2", "uint8", STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "nchw_4x2", "uint8", "buffer")}
 
 layout(push_constant) uniform restrict Block {
@@ -126,6 +126,11 @@ void main() {
       combine(in_vals[2][1], in_vals[6][1]),
       combine(in_vals[3][1], in_vals[7][1]));
 
-  imageStore(t_qmat2, ivec3(packed_pos.xy, 0), out_tex_1);
-  imageStore(t_qmat2, ivec3(packed_pos.x, packed_pos.y + 1, 0), out_tex_2);
+  $if STORAGE == "buffer":
+    int stride = qmat2_sizes.x >> 2;
+    t_qmat2[packed_pos.y * stride + packed_pos.x] = out_tex_1;
+    t_qmat2[(packed_pos.y + 1) * stride + packed_pos.x] = out_tex_2;
+  $else:
+    imageStore(t_qmat2, ivec3(packed_pos.xy, 0), out_tex_1);
+    imageStore(t_qmat2, ivec3(packed_pos.x, packed_pos.y + 1, 0), out_tex_2);
 }

@@ -36,7 +36,14 @@ class SigmoidVisitor_080_MI(NodeVisitor):
         output: TosaArg,
     ) -> None:
 
-        assert len(node.all_input_nodes) == 1
-        assert inputs[0].dtype == output.dtype == ts.DType.FP32
+        if len(node.all_input_nodes) != 1:
+            raise ValueError(
+                f"Expected 1 input for {self.target}, got {len(node.all_input_nodes)}"
+            )
+        if inputs[0].dtype != ts.DType.FP32 or output.dtype != ts.DType.FP32:
+            raise ValueError(
+                f"Input and output for {self.target} need to be FP32, got input_dtype: "
+                f"{inputs[0].dtype} and output_dtype: {output.dtype}"
+            )
 
         tosa_graph.addOperator(TosaOp.Op().SIGMOID, [inputs[0].name], [output.name])
