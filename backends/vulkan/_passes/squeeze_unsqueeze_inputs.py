@@ -30,6 +30,12 @@ class SqueezeUnsqueezeInputs(ExportPass):
     def should_squeeze(self, op, shape: List[int]) -> bool:
         if len(shape) == 3:
             return shape[1] == 1 and shape[0] > 1
+        if len(shape) == 4:
+            # No need to squeeze if all dims are 1 except the width dim
+            if all(dim == 1 for dim in shape[:-1]):
+                return False
+            # Otherwise, check for squeezable dim
+            return 1 in shape[:-1]
 
         # Prefer not to introduce additional orchestration ops by default
         return False
