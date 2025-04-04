@@ -110,7 +110,15 @@ in the example), and a list of dynamic shapes (covered later).
                 relu: "f32[1, 16, 256, 256]" = torch.ops.aten.relu.default(conv2d);  conv2d = None
                 return (relu,)
             
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.PARAMETER: 2>, arg=TensorArgument(name='p_conv_weight'), target='conv.weight', persistent=None), InputSpec(kind=<InputKind.PARAMETER: 2>, arg=TensorArgument(name='p_conv_bias'), target='conv.bias', persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='relu'), target=None)])
+    Graph signature: 
+        # inputs
+        p_conv_weight: PARAMETER target='conv.weight'
+        p_conv_bias: PARAMETER target='conv.bias'
+        x: USER_INPUT
+    
+        # outputs
+        relu: USER_OUTPUT
+    
     Range constraints: {}
 
 
@@ -200,9 +208,9 @@ different than the ones we used while tracing, we will run into an error:
         return inner()
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1784, in inner
         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 838, in _fn
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 849, in _fn
         return fn(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 55, in _check_input_constraints_pre_hook
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 82, in _check_input_constraints_pre_hook
         _check_input_constraints_for_graph(
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 398, in _check_input_constraints_for_graph
         raise RuntimeError(
@@ -250,7 +258,14 @@ To express that some input shapes are dynamic, we can insert dynamic
                 add: "f32[3, s0]" = torch.ops.aten.add.Tensor(x, y);  x = y = None
                 return (add,)
             
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='y'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='add'), target=None)])
+    Graph signature: 
+        # inputs
+        x: USER_INPUT
+        y: USER_INPUT
+    
+        # outputs
+        add: USER_OUTPUT
+    
     Range constraints: {s0: VR[1, 10]}
 
 
@@ -319,9 +334,9 @@ Now let's try running the model with different shapes:
         return inner()
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1784, in inner
         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 838, in _fn
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 849, in _fn
         return fn(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 55, in _check_input_constraints_pre_hook
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 82, in _check_input_constraints_pre_hook
         _check_input_constraints_for_graph(
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 386, in _check_input_constraints_for_graph
         raise RuntimeError(
@@ -341,9 +356,9 @@ Now let's try running the model with different shapes:
         return inner()
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1784, in inner
         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 838, in _fn
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 849, in _fn
         return fn(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 55, in _check_input_constraints_pre_hook
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 82, in _check_input_constraints_pre_hook
         _check_input_constraints_for_graph(
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 350, in _check_input_constraints_for_graph
         raise RuntimeError(
@@ -480,7 +495,7 @@ model properly for a specific backend.
                  # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:64 in forward, code: a = self.conv(x)
                 dequantize_per_tensor: "f32[16, 3, 3, 3]" = torch.ops.quantized_decomposed.dequantize_per_tensor.default(b__frozen_param0, 1.0, 0, -127, 127, torch.int8);  b__frozen_param0 = None
             
-                 # File: <eval_with_key>.206:9 in forward, code: quantize_per_tensor_default_1 = torch.ops.quantized_decomposed.quantize_per_tensor.default(x, 1.0, 0, -128, 127, torch.int8);  x = None
+                 # File: <eval_with_key>.200:9 in forward, code: quantize_per_tensor_default_1 = torch.ops.quantized_decomposed.quantize_per_tensor.default(x, 1.0, 0, -128, 127, torch.int8);  x = None
                 quantize_per_tensor: "i8[1, 3, 256, 256]" = torch.ops.quantized_decomposed.quantize_per_tensor.default(x, 1.0, 0, -128, 127, torch.int8);  x = None
             
                  # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:64 in forward, code: a = self.conv(x)
@@ -491,11 +506,19 @@ model properly for a specific backend.
                 relu: "f32[1, 16, 256, 256]" = torch.ops.aten.relu.default(conv2d);  conv2d = None
                 quantize_per_tensor_1: "i8[1, 16, 256, 256]" = torch.ops.quantized_decomposed.quantize_per_tensor.default(relu, 1.0, 0, -128, 127, torch.int8);  relu = None
             
-                 # File: <eval_with_key>.206:14 in forward, code: dequantize_per_tensor_default_2 = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor_default_2, 1.0, 0, -128, 127, torch.int8);  quantize_per_tensor_default_2 = None
+                 # File: <eval_with_key>.200:14 in forward, code: dequantize_per_tensor_default_2 = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor_default_2, 1.0, 0, -128, 127, torch.int8);  quantize_per_tensor_default_2 = None
                 dequantize_per_tensor_2: "f32[1, 16, 256, 256]" = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor_1, 1.0, 0, -128, 127, torch.int8);  quantize_per_tensor_1 = None
                 return (dequantize_per_tensor_2,)
             
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.PARAMETER: 2>, arg=TensorArgument(name='p_conv_bias'), target='conv.bias', persistent=None), InputSpec(kind=<InputKind.BUFFER: 3>, arg=TensorArgument(name='b__frozen_param0'), target='_frozen_param0', persistent=True), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='dequantize_per_tensor_2'), target=None)])
+    Graph signature: 
+        # inputs
+        p_conv_bias: PARAMETER target='conv.bias'
+        b__frozen_param0: BUFFER target='_frozen_param0' persistent=True
+        x: USER_INPUT
+    
+        # outputs
+        dequantize_per_tensor_2: USER_OUTPUT
+    
     Range constraints: {}
 
 
@@ -566,7 +589,15 @@ The lowering is done through the ``to_edge`` API.
                 aten_relu_default: "f32[1, 16, 256, 256]" = executorch_exir_dialects_edge__ops_aten_relu_default(aten_convolution_default);  aten_convolution_default = None
                 return (aten_relu_default,)
             
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.PARAMETER: 2>, arg=TensorArgument(name='p_conv_weight'), target='conv.weight', persistent=None), InputSpec(kind=<InputKind.PARAMETER: 2>, arg=TensorArgument(name='p_conv_bias'), target='conv.bias', persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_relu_default'), target=None)])
+    Graph signature: 
+        # inputs
+        p_conv_weight: PARAMETER target='conv.weight'
+        p_conv_bias: PARAMETER target='conv.bias'
+        x: USER_INPUT
+    
+        # outputs
+        aten_relu_default: USER_OUTPUT
+    
     Range constraints: {}
 
 
@@ -627,19 +658,6 @@ there is only one program, it will by default be saved to the name "forward".
       torch._C._set_onednn_allow_tf32(_allow_tf32)
     /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
       torch._C._set_onednn_allow_tf32(_allow_tf32)
-    Edge Dialect graph of decode
-    ExportedProgram:
-        class GraphModule(torch.nn.Module):
-            def forward(self, x: "f32[1, 5]"):
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:262 in forward, code: return torch.nn.functional.linear(x, torch.randn(10, 5))
-                aten_randn_default: "f32[10, 5]" = executorch_exir_dialects_edge__ops_aten_randn_default([10, 5], device = device(type='cpu'), pin_memory = False)
-                aten_permute_copy_default: "f32[5, 10]" = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
-                aten_mm_default: "f32[1, 10]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
-                return (aten_mm_default,)
-            
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_mm_default'), target=None)])
-    Range constraints: {}
-
     Edge Dialect graph of encode
     ExportedProgram:
         class GraphModule(torch.nn.Module):
@@ -650,7 +668,32 @@ there is only one program, it will by default be saved to the name "forward".
                 aten_mm_default: "f32[1, 5]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
                 return (aten_mm_default,)
             
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_mm_default'), target=None)])
+    Graph signature: 
+        # inputs
+        x: USER_INPUT
+    
+        # outputs
+        aten_mm_default: USER_OUTPUT
+    
+    Range constraints: {}
+
+    Edge Dialect graph of decode
+    ExportedProgram:
+        class GraphModule(torch.nn.Module):
+            def forward(self, x: "f32[1, 5]"):
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:262 in forward, code: return torch.nn.functional.linear(x, torch.randn(10, 5))
+                aten_randn_default: "f32[10, 5]" = executorch_exir_dialects_edge__ops_aten_randn_default([10, 5], device = device(type='cpu'), pin_memory = False)
+                aten_permute_copy_default: "f32[5, 10]" = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
+                aten_mm_default: "f32[1, 10]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
+                return (aten_mm_default,)
+            
+    Graph signature: 
+        # inputs
+        x: USER_INPUT
+    
+        # outputs
+        aten_mm_default: USER_OUTPUT
+    
     Range constraints: {}
 
 
@@ -723,7 +766,15 @@ rather than the ``torch.ops.aten`` namespace.
                 aten_relu_default: "f32[1, 16, 256, 256]" = executorch_exir_dialects_edge__ops_aten_relu_default(aten_convolution_default);  aten_convolution_default = None
                 return (aten_relu_default,)
             
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.PARAMETER: 2>, arg=TensorArgument(name='p_conv_weight'), target='conv.weight', persistent=None), InputSpec(kind=<InputKind.PARAMETER: 2>, arg=TensorArgument(name='p_conv_bias'), target='conv.bias', persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_relu_default'), target=None)])
+    Graph signature: 
+        # inputs
+        p_conv_weight: PARAMETER target='conv.weight'
+        p_conv_bias: PARAMETER target='conv.bias'
+        x: USER_INPUT
+    
+        # outputs
+        aten_relu_default: USER_OUTPUT
+    
     Range constraints: {}
 
     Transformed Edge Dialect Graph
@@ -737,7 +788,15 @@ rather than the ``torch.ops.aten`` namespace.
                 aten_sigmoid_default: "f32[1, 16, 256, 256]" = executorch_exir_dialects_edge__ops_aten_sigmoid_default(aten_convolution_default);  aten_convolution_default = None
                 return (aten_sigmoid_default,)
             
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.PARAMETER: 2>, arg=TensorArgument(name='p_conv_weight'), target='conv.weight', persistent=None), InputSpec(kind=<InputKind.PARAMETER: 2>, arg=TensorArgument(name='p_conv_bias'), target='conv.bias', persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_sigmoid_default'), target=None)])
+    Graph signature: 
+        # inputs
+        p_conv_weight: PARAMETER target='conv.weight'
+        p_conv_bias: PARAMETER target='conv.bias'
+        x: USER_INPUT
+    
+        # outputs
+        aten_sigmoid_default: USER_OUTPUT
+    
     Range constraints: {}
 
 
@@ -843,7 +902,13 @@ lowering process.
                 aten_sin_default: "f32[1]" = executorch_exir_dialects_edge__ops_aten_sin_default(x);  x = None
                 return (aten_sin_default,)
             
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_sin_default'), target=None)])
+    Graph signature: 
+        # inputs
+        x: USER_INPUT
+    
+        # outputs
+        aten_sin_default: USER_OUTPUT
+    
     Range constraints: {}
 
     /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/passes/infra/pass_base.py:46: FutureWarning: MemoryPlanningPass.call() is deprecated as it does not handle graphs         with mutation, please use MemoryPlanningPass.run() instead
@@ -922,10 +987,8 @@ can compose this lowered module with another module.
       torch._C._set_onednn_allow_tf32(_allow_tf32)
     /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
       torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py:81: UserWarning: Attempted to insert a get_attr Node with no underlying reference in the owning GraphModule! Call GraphModule.add_submodule to add the necessary submodule, GraphModule.add_parameter to add the necessary Parameter, or nn.Module.register_buffer to add the necessary buffer
+    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py:108: UserWarning: Attempted to insert a get_attr Node with no underlying reference in the owning GraphModule! Call GraphModule.add_submodule to add the necessary submodule, GraphModule.add_parameter to add the necessary Parameter, or nn.Module.register_buffer to add the necessary buffer
       getattr_node = gm.graph.get_attr(lifted_node)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph.py:1794: UserWarning: Node non_lowerable_bias target non_lowerable.bias bias of non_lowerable does not reference an nn.Module, nn.Parameter, or buffer, which is what 'get_attr' Nodes typically target
-      warnings.warn(
     /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
       torch._C._set_onednn_allow_tf32(_allow_tf32)
     Edge Dialect graph
@@ -945,7 +1008,16 @@ can compose this lowered module with another module.
                 aten_add_tensor_1: "f32[1]" = executorch_exir_dialects_edge__ops_aten_add_Tensor(aten_add_tensor, c_non_lowerable_bias);  aten_add_tensor = c_non_lowerable_bias = None
                 return (executorch_call_delegate, executorch_call_delegate_1, aten_add_tensor_1)
             
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.CONSTANT_TENSOR: 4>, arg=TensorArgument(name='c_non_lowerable_bias'), target='non_lowerable.bias', persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='executorch_call_delegate'), target=None), OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='executorch_call_delegate_1'), target=None), OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_add_tensor_1'), target=None)])
+    Graph signature: 
+        # inputs
+        c_non_lowerable_bias: CONSTANT_TENSOR target='non_lowerable.bias'
+        x: USER_INPUT
+    
+        # outputs
+        executorch_call_delegate: USER_OUTPUT
+        executorch_call_delegate_1: USER_OUTPUT
+        aten_add_tensor_1: USER_OUTPUT
+    
     Range constraints: {}
 
     Lowered Module within the graph
@@ -958,7 +1030,13 @@ can compose this lowered module with another module.
                 aten_sin_default: "f32[1]" = executorch_exir_dialects_edge__ops_aten_sin_default(x);  x = None
                 return (aten_sin_default,)
             
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_sin_default'), target=None)])
+    Graph signature: 
+        # inputs
+        x: USER_INPUT
+    
+        # outputs
+        aten_sin_default: USER_OUTPUT
+    
     Range constraints: {}
 
 
@@ -1048,7 +1126,15 @@ partition those nodes into subgraphs, and then create a
                 aten_add_tensor_1: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_add_Tensor(aten_mm_default_1, b);  aten_mm_default_1 = b = None
                 return (aten_add_tensor_1,)
             
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='a'), target=None, persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='b'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_add_tensor_1'), target=None)])
+    Graph signature: 
+        # inputs
+        a: USER_INPUT
+        x: USER_INPUT
+        b: USER_INPUT
+    
+        # outputs
+        aten_add_tensor_1: USER_OUTPUT
+    
     Range constraints: {}
 
     Delegated program
@@ -1069,7 +1155,15 @@ partition those nodes into subgraphs, and then create a
                 getitem: "f32[2, 2]" = executorch_call_delegate[0];  executorch_call_delegate = None
                 return (getitem,)
             
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='a'), target=None, persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='b'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='getitem'), target=None)])
+    Graph signature: 
+        # inputs
+        a: USER_INPUT
+        x: USER_INPUT
+        b: USER_INPUT
+    
+        # outputs
+        getitem: USER_OUTPUT
+    
     Range constraints: {}
 
     ExportedProgram:
@@ -1082,7 +1176,15 @@ partition those nodes into subgraphs, and then create a
                 aten_add_tensor_1: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_add_Tensor(aten_mm_default_1, b);  aten_mm_default_1 = b = None
                 return [aten_add_tensor_1]
             
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='aten_sub_tensor'), target=None, persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='b'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_add_tensor_1'), target=None)])
+    Graph signature: 
+        # inputs
+        aten_sub_tensor: USER_INPUT
+        x: USER_INPUT
+        b: USER_INPUT
+    
+        # outputs
+        aten_add_tensor_1: USER_OUTPUT
+    
     Range constraints: {}
 
     ExportedProgram:
@@ -1095,7 +1197,15 @@ partition those nodes into subgraphs, and then create a
                 aten_add_tensor: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_add_Tensor(aten_mm_default, b);  aten_mm_default = b = None
                 return [aten_add_tensor]
             
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='a'), target=None, persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='b'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_add_tensor'), target=None)])
+    Graph signature: 
+        # inputs
+        a: USER_INPUT
+        x: USER_INPUT
+        b: USER_INPUT
+    
+        # outputs
+        aten_add_tensor: USER_OUTPUT
+    
     Range constraints: {}
 
 
@@ -1158,7 +1268,15 @@ call ``to_backend`` on it:
                 getitem: "f32[2, 2]" = executorch_call_delegate[0];  executorch_call_delegate = None
                 return (getitem,)
             
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='a'), target=None, persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='b'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='getitem'), target=None)])
+    Graph signature: 
+        # inputs
+        a: USER_INPUT
+        x: USER_INPUT
+        b: USER_INPUT
+    
+        # outputs
+        getitem: USER_OUTPUT
+    
     Range constraints: {}
 
 
@@ -1242,7 +1360,15 @@ writing a custom memory planning pass can be found
                 aten_add_tensor_1: "f32[2, 2]" = torch.ops.aten.add.out(aten_mm_default_1, b, out = alloc_4);  aten_mm_default_1 = b = alloc_4 = None
                 return (aten_add_tensor_1,)
             
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='a'), target=None, persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='b'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_add_tensor_1'), target=None)])
+    Graph signature: 
+        # inputs
+        a: USER_INPUT
+        x: USER_INPUT
+        b: USER_INPUT
+    
+        # outputs
+        aten_add_tensor_1: USER_OUTPUT
+    
     Range constraints: {}
 
 
@@ -1357,7 +1483,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 3.473 seconds)
+   **Total running time of the script:** (0 minutes 3.113 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:
