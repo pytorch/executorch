@@ -474,7 +474,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
         # Run the standard quant/convert steps, but without fusing
         # this leaves two redundant quant/dequant pairs to test with
         quantizer = CadenceDefaultQuantizer()
-        model_exp = export_for_training(M(), (inp,)).module()
+        model_exp = export_for_training(M(), (inp,), strict=True).module()
         prepared_model = prepare_pt2e(model_exp, quantizer)
         prepared_model(inp)
         converted_model = convert_pt2e(prepared_model)

@@ -8,20 +8,7 @@ from functools import partial
 from typing import Callable, Dict, Optional, Sequence, Set, Tuple
 
 import torch
-from executorch.backends.qualcomm._passes import (
-    DecomposeEinsum,
-    DecomposeExpM1,
-    DecomposeLinalgVectorNorm,
-    DecomposeSilu,
-    LiftConstantScalarOperands,
-    RecomposePixelUnshuffle,
-    ReduceDynamicRange,
-    ReplaceArangeArgs,
-    ReplaceInfValues,
-)
-from executorch.backends.transforms.decompose_sdpa import (
-    DecomposeScaledDotProductAttention,
-)
+from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 
 from torch._ops import OpOverload
 from torch.ao.quantization.quantizer import Quantizer
@@ -273,17 +260,7 @@ class QnnQuantizer(Quantizer):
         self._update_per_channel_weight_quant_ops(linear_ops, enable)
 
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
-        model = ReduceDynamicRange()(model).graph_module
-        model = RecomposePixelUnshuffle(quantization_capture=True)(model).graph_module
-        model = ReplaceArangeArgs()(model).graph_module
-        model = DecomposeScaledDotProductAttention()(model).graph_module
-        model = DecomposeSilu()(model).graph_module
-        model = DecomposeEinsum()(model).graph_module
-        model = DecomposeExpM1()(model).graph_module
-        model = DecomposeLinalgVectorNorm(aten_dialect_capture=True)(model).graph_module
-        model = ReplaceInfValues()(model).graph_module
-        model = LiftConstantScalarOperands()(model).graph_module
-        return model
+        return QnnPassManager().transform_for_annotation_pipeline(model)
 
     def validate(self, model: GraphModule) -> None:
         pass

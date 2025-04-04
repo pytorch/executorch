@@ -64,24 +64,21 @@ void main() {
 
   FLOAT_T outval = FLOAT_T(0.0);
 
-  // Initial mat1 tensor idx will be (0, out_tidx.y, out_tidx.z, 0)
   int mat1_offset = out_tidx.y * mat1_strides.y + out_tidx.z * qmat2_strides.z;
-  // Initial qmat2 tensor idx wil be (0, out_tidx.x, 0, 0); note that the qmat2
-  // tensor is transposed
-  int qmat2_offset = out_tidx.x * qmat2_strides.y;
+  int qmat2_offset = out_tidx.x;
 
   // TODO(ssjia): optimize memory access pattern by traversing mat1 x in inner loop
   for (int i = 0; i < mat1_sizes.x; i++) {
     const FLOAT_T mat1_val = t_mat1[mat1_offset];
-    const FLOAT_T mat2_val = t_qmat2[qmat2_offset] * scale;
+    const FLOAT_T mat2_val = FLOAT_T(t_qmat2[qmat2_offset]);
 
     outval += mat1_val * mat2_val;
 
     mat1_offset++;
-    qmat2_offset++;
+    qmat2_offset += qmat2_strides.y;
   }
 
-  t_out[out_bufi] = outval;
+  t_out[out_bufi] = outval * scale;
 }
 
 #else // USING_TEXTURE
@@ -97,25 +94,27 @@ void main() {
     return;
   }
 
-  const uint16_t qmat2_pos_y = out_pos.x * uint16_t(4);
+  const uint16_t qmat2_pos_x = out_pos.x;
 
   VEC4_T outtex = VEC4_T(0);
 
   const VEC4_T scales = load_texel(t_scales,  u16vec3(out_pos.x, 0, 0));
 
+  VEC4_T mat1_tex;
+  VEC4_T mat2_tex[4];
   for (
     uint16_t i = uint16_t(0), x = uint16_t(0);
     i < uint16_t(mat1_sizes.x);
     i += uint16_t(4), x++)
   {
-    const VEC4_T mat1_tex = load_texel(t_mat1, u16vec3(x, out_pos.y, 0));
-    const VEC4_T sums = VEC4_T(
-        dot(mat1_tex, load_texel(t_qmat2, u16vec3(x, qmat2_pos_y, 0))),
-        dot(mat1_tex, load_texel(t_qmat2, u16vec3(x, qmat2_pos_y + uint16_t(1), 0))),
-        dot(mat1_tex, load_texel(t_qmat2, u16vec3(x, qmat2_pos_y + uint16_t(2), 0))),
-        dot(mat1_tex, load_texel(t_qmat2, u16vec3(x, qmat2_pos_y + uint16_t(3), 0))));
+    mat1_tex = load_texel(t_mat1, u16vec3(x, out_pos.y, 0));
 
-    outtex += sums;
+    mat2_tex[0] = load_texel(t_qmat2, u16vec3(out_pos.x, i, 0));
+    mat2_tex[1] = load_texel(t_qmat2, u16vec3(out_pos.x, i + uint16_t(1), 0));
+    mat2_tex[2] = load_texel(t_qmat2, u16vec3(out_pos.x, i + uint16_t(2), 0));
+    mat2_tex[3] = load_texel(t_qmat2, u16vec3(out_pos.x, i + uint16_t(3), 0));
+
+    outtex += mat1_tex.x * mat2_tex[0] + mat1_tex.y * mat2_tex[1] + mat1_tex.z * mat2_tex[2] + mat1_tex.w * mat2_tex[3];
   }
 
   outtex *= scales;

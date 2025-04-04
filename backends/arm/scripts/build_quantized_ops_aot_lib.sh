@@ -51,4 +51,4 @@ CXXFLAGS="-fno-exceptions -fno-rtti" cmake \
     -B${et_build_dir}                         \
     .
 
-cmake --build ${et_build_dir} --parallel -- quantized_ops_aot_lib
+cmake --build ${et_build_dir} -j$(nproc) -- quantized_ops_aot_lib

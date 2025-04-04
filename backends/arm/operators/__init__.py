@@ -19,6 +19,7 @@ from . import (  # noqa
     op_constant_pad_nd,
     op_conv2d,
     op_eq,
+    op_erf,
     op_exp,
     op_full,
     op_ge,
@@ -49,6 +50,7 @@ from . import (  # noqa
     op_transpose,
     op_upsample_nearest2d,
     op_view,
+    op_where,
     ops_binary,
     ops_unary,
 )

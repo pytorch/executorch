@@ -19,17 +19,14 @@ from typing import Callable, List, Optional
 import numpy as np
 
 import torch
-from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.utils import (
-    capture_program,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     get_soc_to_arch_map,
+    to_edge_transform_and_lower_to_qnn,
 )
-from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
-from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from torch.ao.quantization.observer import MovingAverageMinMaxObserver
@@ -76,8 +73,6 @@ class SimpleADB:
         runner="examples/qualcomm/executor_runner/qnn_executor_runner",
         expected_input_shape=None,
         expected_output_shape=None,
-        expected_input_dtype=None,
-        expected_output_dtype=None,
     ):
         self.qnn_sdk = qnn_sdk
         self.build_path = build_path
@@ -97,8 +92,6 @@ class SimpleADB:
         self.runner = runner
         self.expected_input_shape = expected_input_shape
         self.expected_output_shape = expected_output_shape
-        self.expected_input_dtype = expected_input_dtype
-        self.expected_output_dtype = expected_output_dtype
         self.extra_cmds = ""
 
     def _adb(self, cmd):
@@ -159,18 +152,6 @@ class SimpleADB:
                     with open(f"{tmp_dir}/{name}.txt", "w") as f:
                         for s in shapes:
                             f.write(str(tuple(s)).strip("()") + "\n")
-                    self._adb(["push", f"{tmp_dir}/{name}.txt", self.workspace])
-                    self.extra_cmds += f" --{name}_path {name}.txt"
-
-            if self.expected_input_dtype and self.expected_output_dtype:
-                dtype_info = {
-                    "input_type_size": self.expected_input_dtype,
-                    "output_type_size": self.expected_output_dtype,
-                }
-                for name, dtypes in dtype_info.items():
-                    with open(f"{tmp_dir}/{name}.txt", "w") as f:
-                        for dtype in dtypes:
-                            f.write(f"{torch.tensor([], dtype=dtype).element_size()}\n")
                     self._adb(["push", f"{tmp_dir}/{name}.txt", self.workspace])
                     self.extra_cmds += f" --{name}_path {name}.txt"
 
@@ -326,6 +307,15 @@ def build_executorch_binary(
     Returns:
         None: The function writes the output to a specified .pte file.
     """
+    backend_options = generate_htp_compiler_spec(
+        use_fp16=False if quant_dtype else True
+    )
+    compile_spec = generate_qnn_executorch_compiler_spec(
+        soc_model=getattr(QcomChipset, soc_model),
+        backend_options=backend_options,
+        shared_buffer=shared_buffer,
+        dump_intermediate_outputs=dump_intermediate_outputs,
+    )
     if quant_dtype is not None:
         captured_model = torch.export.export(model, inputs, strict=True).module()
         if qat_training_data:
@@ -342,23 +332,25 @@ def build_executorch_binary(
             annotated_model = ptq_calibrate(captured_model, quantizer, dataset)
 
         quantized_model = convert_pt2e(annotated_model)
-        edge_prog = capture_program(quantized_model, inputs, passes_job)
+        edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+            quantized_model,
+            inputs,
+            compile_spec,
+            constant_methods=metadata,
+            passes_job=passes_job,
+            skip_node_id_set=skip_node_id_set,
+            skip_node_op_set=skip_node_op_set,
+        )
     else:
-        edge_prog = capture_program(model, inputs, passes_job)
-
-    backend_options = generate_htp_compiler_spec(
-        use_fp16=False if quant_dtype else True
-    )
-    qnn_partitioner = QnnPartitioner(
-        generate_qnn_executorch_compiler_spec(
-            soc_model=getattr(QcomChipset, soc_model),
-            backend_options=backend_options,
-            shared_buffer=shared_buffer,
-            dump_intermediate_outputs=dump_intermediate_outputs,
-        ),
-        skip_node_id_set,
-        skip_node_op_set,
-    )
+        edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+            model,
+            inputs,
+            compile_spec,
+            constant_methods=metadata,
+            passes_job=passes_job,
+            skip_node_id_set=skip_node_id_set,
+            skip_node_op_set=skip_node_op_set,
+        )
 
     executorch_config = ExecutorchBackendConfig(
         # For shared buffer, user must pass the memory address
@@ -370,24 +362,10 @@ def build_executorch_binary(
             alloc_graph_output=not shared_buffer,
         ),
     )
-
-    if metadata is None:
-        exported_program = to_backend(edge_prog.exported_program, qnn_partitioner)
-        exported_program.graph_module.graph.print_tabular()
-        exec_prog = to_edge(exported_program).to_executorch(config=executorch_config)
-        with open(f"{file_name}.pte", "wb") as file:
-            file.write(exec_prog.buffer)
-    else:
-        edge_prog_mgr = EdgeProgramManager(
-            edge_programs={"forward": edge_prog.exported_program},
-            constant_methods=metadata,
-            compile_config=EdgeCompileConfig(_check_ir_validity=False),
-        )
-
-        edge_prog_mgr = edge_prog_mgr.to_backend(qnn_partitioner)
-        exec_prog_mgr = edge_prog_mgr.to_executorch(config=executorch_config)
-        with open(f"{file_name}.pte", "wb") as file:
-            file.write(exec_prog_mgr.buffer)
+    pte_name = f"{file_name}.pte"
+    exec_prog_mgr = edge_prog_mgr.to_executorch(config=executorch_config)
+    with open(pte_name, "wb") as file:
+        exec_prog_mgr.write_to_file(file)
 
 
 def make_output_dir(path: str):

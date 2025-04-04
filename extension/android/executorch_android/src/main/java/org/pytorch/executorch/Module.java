@@ -8,8 +8,11 @@
 
 package org.pytorch.executorch;
 
+import android.util.Log;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import org.pytorch.executorch.annotations.Experimental;
 
 /**
@@ -34,6 +37,9 @@ public class Module {
 
   /** Reference to the NativePeer object of this module. */
   private NativePeer mNativePeer;
+
+  /** Lock protecting the non-thread safe methods in NativePeer. */
+  private Lock mLock = new ReentrantLock();
 
   /**
    * Loads a serialized ExecuTorch module from the specified path on the disk.
@@ -72,7 +78,16 @@ public class Module {
    * @return return value from the 'forward' method.
    */
   public EValue[] forward(EValue... inputs) {
-    return mNativePeer.forward(inputs);
+    try {
+      mLock.lock();
+      if (mNativePeer == null) {
+        Log.e("ExecuTorch", "Attempt to use a destroyed module");
+        return new EValue[0];
+      }
+      return mNativePeer.forward(inputs);
+    } finally {
+      mLock.unlock();
+    }
   }
 
   /**
@@ -83,7 +98,16 @@ public class Module {
    * @return return value from the method.
    */
   public EValue[] execute(String methodName, EValue... inputs) {
-    return mNativePeer.execute(methodName, inputs);
+    try {
+      mLock.lock();
+      if (mNativePeer == null) {
+        Log.e("ExecuTorch", "Attempt to use a destroyed module");
+        return new EValue[0];
+      }
+      return mNativePeer.execute(methodName, inputs);
+    } finally {
+      mLock.unlock();
+    }
   }
 
   /**
@@ -96,7 +120,16 @@ public class Module {
    * @return the Error code if there was an error loading the method
    */
   public int loadMethod(String methodName) {
-    return mNativePeer.loadMethod(methodName);
+    try {
+      mLock.lock();
+      if (mNativePeer == null) {
+        Log.e("ExecuTorch", "Attempt to use a destroyed module");
+        return 0x2; // InvalidState
+      }
+      return mNativePeer.loadMethod(methodName);
+    } finally {
+      mLock.unlock();
+    }
   }
 
   /** Retrieve the in-memory log buffer, containing the most recent ExecuTorch log entries. */
@@ -111,6 +144,19 @@ public class Module {
    * more quickly. See {@link com.facebook.jni.HybridData#resetNative}.
    */
   public void destroy() {
-    mNativePeer.resetNative();
+    if (mLock.tryLock()) {
+      try {
+        mNativePeer.resetNative();
+      } finally {
+        mNativePeer = null;
+        mLock.unlock();
+      }
+    } else {
+      mNativePeer = null;
+      Log.w(
+          "ExecuTorch",
+          "Destroy was called while the module was in use. Resources will not be immediately"
+              + " released.");
+    }
   }
 }

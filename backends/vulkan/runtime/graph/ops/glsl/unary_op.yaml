@@ -44,3 +44,5 @@ unary_op:
       OPERATOR: hardsigmoid(X)
     - NAME: leaky_relu
       OPERATOR: leaky_relu(X, A)
+    - NAME: round
+      OPERATOR: round(X)

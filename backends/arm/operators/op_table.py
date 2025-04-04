@@ -41,7 +41,7 @@ class TableVisitor(NodeVisitor):
 
         if inputs[0].dtype not in (ts.DType.INT8, ts.DType.INT16):
             raise ValueError(
-                f"TOSA.TABLE only supports int8 or int16 inputs, got {ts.DTypeNames[inputs[0]]}"
+                f"TOSA.TABLE only supports int8 or int16 inputs, got {ts.DTypeNames[inputs[0].dtype]}"
             )
 
         table = self._exported_program.state_dict[node.name]  # type: ignore[union-attr]

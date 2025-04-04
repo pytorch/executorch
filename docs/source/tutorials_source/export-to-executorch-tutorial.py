@@ -190,7 +190,9 @@ except Exception:
 from torch.export import export_for_training
 
 example_args = (torch.randn(1, 3, 256, 256),)
-pre_autograd_aten_dialect = export_for_training(SimpleConv(), example_args).module()
+pre_autograd_aten_dialect = export_for_training(
+    SimpleConv(), example_args, strict=True
+).module()
 print("Pre-Autograd ATen Dialect Graph")
 print(pre_autograd_aten_dialect)
 
@@ -555,7 +557,7 @@ class M(torch.nn.Module):
 
 
 example_args = (torch.randn(3, 4),)
-pre_autograd_aten_dialect = export_for_training(M(), example_args).module()
+pre_autograd_aten_dialect = export_for_training(M(), example_args, strict=True).module()
 # Optionally do quantization:
 # pre_autograd_aten_dialect = convert_pt2e(prepare_pt2e(pre_autograd_aten_dialect, CustomBackendQuantizer))
 aten_dialect = export(pre_autograd_aten_dialect, example_args, strict=True)

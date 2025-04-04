@@ -32,6 +32,77 @@ Tensor& sdpa_with_kv_cache_out_no_context(
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
     const optional<double> scale,
+    Tensor& output);
+
+at::Tensor sdpa_with_kv_cache_aten(
+    const at::Tensor& q_projected,
+    const at::Tensor& k_projected,
+    const at::Tensor& v_projected,
+    at::Tensor& key_cache,
+    at::Tensor& value_cache,
+    const int64_t start_pos,
+    const int64_t seq_len,
+    // @lint-ignore CLANGTIDY facebook-hte-ConstantArgumentPassByValue
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const std::optional<at::Tensor> attn_mask,
+    const double dropout_p,
+    const bool is_causal,
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const std::optional<double> scale);
+
+Tensor& custom_sdpa_out_no_context(
+    const Tensor& q,
+    const Tensor& k,
+    const Tensor& v,
+    const int64_t start_pos,
+    // @lint-ignore CLANGTIDY facebook-hte-ConstantArgumentPassByValue
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const optional<Tensor> attn_mask,
+    const double dropout_p,
+    const bool is_causal,
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const optional<double> scale,
+    Tensor& output);
+
+at::Tensor custom_sdpa_aten(
+    const at::Tensor& q,
+    const at::Tensor& k,
+    const at::Tensor& v,
+    const int64_t start_pos,
+    // @lint-ignore CLANGTIDY facebook-hte-ConstantArgumentPassByValue
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const std::optional<at::Tensor> attn_mask,
+    const double dropout_p,
+    const bool is_causal,
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const std::optional<double> scale);
+
+Tensor& update_cache_out_no_context(
+    const Tensor& value,
+    Tensor& cache,
+    const int64_t start_pos,
+    Tensor& output);
+
+at::Tensor update_cache_aten(
+    const at::Tensor& value,
+    at::Tensor& cache,
+    const int64_t start_pos);
+
+Tensor& sdpa_with_kv_cache_out_no_context(
+    const Tensor& q_projected,
+    const Tensor& k_projected,
+    const Tensor& v_projected,
+    Tensor& key_cache,
+    Tensor& value_cache,
+    const int64_t start_pos,
+    const int64_t seq_len,
+    // @lint-ignore CLANGTIDY facebook-hte-ConstantArgumentPassByValue
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const optional<Tensor> attn_mask,
+    const double dropout_p,
+    const bool is_causal,
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const optional<double> scale,
     Tensor& output) {
   executorch::runtime::KernelRuntimeContext context{};
   return torch::executor::native::sdpa_with_kv_cache_out(
