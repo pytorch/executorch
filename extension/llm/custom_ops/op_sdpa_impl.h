@@ -30,6 +30,94 @@ namespace native {
 
 namespace sdpa::impl {
 
+struct MaybeQuantizedMatrixData {
+  const void* data{nullptr};
+  const int8_t* zero_points{nullptr};
+  const float* scales{nullptr};
+  int64_t m = 0, n = 0;
+  ScalarType dtype{ScalarType::Float};
+  MaybeQuantizedMatrixData() = default;
+  MaybeQuantizedMatrixData(
+      const void* data_,
+      const int8_t* zero_points_,
+      const float* scales_,
+      int64_t m_,
+      int64_t n_,
+      ScalarType dtype_)
+      : data(data_),
+        zero_points(zero_points_),
+        scales(scales_),
+        m(m_),
+        n(n_),
+        dtype(dtype_) {}
+};
+
+template <typename accum_t>
+void _q_at_k_gemm(
+    const int64_t q_m,
+    const int64_t k_n,
+    const int64_t qk_k,
+    const MaybeQuantizedMatrixData& q_data,
+    const int64_t q_stride_m,
+    const MaybeQuantizedMatrixData& k_data,
+    const int64_t k_stride_n,
+    accum_t* qk_data) {
+  ET_CHECK_MSG(q_data.dtype == k_data.dtype, "q and k must have same dtype");
+  ET_CHECK_MSG(
+      q_data.dtype == ScalarType::Char || q_data.dtype == ScalarType::Float,
+      "q and k must be either int8 or float");
+  if (q_data.dtype == ScalarType::Char) {
+    ET_CHECK_MSG(false, "int8 not supported yet");
+  } else {
+    ::executorch::cpublas::gemm(
+        ::executorch::cpublas::TransposeType::Transpose,
+        ::executorch::cpublas::TransposeType::NoTranspose,
+        k_n,
+        q_m,
+        qk_k,
+        static_cast<accum_t>(1),
+        static_cast<const accum_t*>(k_data.data),
+        k_stride_n,
+        static_cast<const accum_t*>(q_data.data),
+        q_stride_m,
+        static_cast<accum_t>(0),
+        qk_data,
+        k_n);
+  }
+}
+
+template <typename accum_t>
+void _qk_at_v_gemm(
+    const int64_t m,
+    const int64_t n,
+    const int64_t k,
+    const accum_t* qk_data,
+    const int64_t qk_stride_m,
+    const MaybeQuantizedMatrixData& v_data,
+    const int64_t v_stride_n,
+    accum_t* o_data,
+    const int64_t o_stride_m,
+    const accum_t beta) {
+  if (v_data.dtype == ScalarType::Char) {
+    ET_CHECK_MSG(false, "int8 not supported yet");
+  } else {
+    ::executorch::cpublas::gemm(
+        ::executorch::cpublas::TransposeType::NoTranspose,
+        ::executorch::cpublas::TransposeType::NoTranspose,
+        n,
+        m,
+        k,
+        static_cast<accum_t>(1),
+        static_cast<const accum_t*>(v_data.data),
+        v_stride_n,
+        qk_data,
+        qk_stride_m,
+        beta,
+        o_data,
+        o_stride_m);
+  }
+}
+
 constexpr size_t kKVDim = 4;
 
 template <typename T>
@@ -211,6 +299,12 @@ void cpu_flash_attention(
     bool is_causal,
     const optional<Tensor>& attn_mask,
     const optional<double>& scale,
+    const optional<Tensor>& q_zero_points,
+    const optional<Tensor>& q_scales,
+    const optional<Tensor>& k_zero_points,
+    const optional<Tensor>& k_scales,
+    const optional<Tensor>& v_zero_points,
+    const optional<Tensor>& v_scales,
     bool is_seq_at_dim_1 = false,
     const int64_t start_pos = 0,
     const int64_t num_keys_for_causal_attention = -1) {
@@ -299,6 +393,8 @@ void cpu_flash_attention(
         attn_mask.value().size(1),
         kvSize);
   }
+
+  bool is_quantized_sdpa = query.scalar_type() == ScalarType::Char;
 
   auto strides = query.strides();
   int64_t qStrideB = strides[0];
@@ -453,20 +549,54 @@ void cpu_flash_attention(
         int64_t kvBlockSize = std::min(kvSplitSize, kvSize - n);
         // Calculate scale * q @ k.T
         fill_stub(qk_data, static_cast<accum_t>(0), qSplitSize * kvSplitSize);
-        ::executorch::cpublas::gemm(
-            ::executorch::cpublas::TransposeType::Transpose,
-            ::executorch::cpublas::TransposeType::NoTranspose,
-            kvBlockSize,
+
+        const void* q_sub_matrix_data_ptr;
+        const void* k_sub_matrix_data_ptr;
+        const float* q_scales_ptr = nullptr;
+        const float* k_scales_ptr = nullptr;
+        const int8_t* q_zero_points_ptr = nullptr;
+        const int8_t* k_zero_points_ptr = nullptr;
+        int64_t q_offset = i * qStrideB + j * qStrideH + m * qStrideM;
+        int64_t k_offset = i * kStrideB + j_kv * kStrideH + n * kStrideN;
+        if (is_quantized_sdpa) {
+          ET_CHECK_MSG(
+              !is_seq_at_dim_1, "For quantized SDPA, seq_len must be at dim 2");
+          q_scales_ptr = q_scales.value().const_data_ptr<float>() + q_offset;
+          k_scales_ptr = k_scales.value().const_data_ptr<float>() + k_offset;
+          q_zero_points_ptr =
+              q_zero_points.value().const_data_ptr<int8_t>() + q_offset;
+          k_zero_points_ptr =
+              k_zero_points.value().const_data_ptr<int8_t>() + k_offset;
+          q_sub_matrix_data_ptr = (const int8_t*)(q_data) + q_offset;
+          k_sub_matrix_data_ptr = (const int8_t*)(k_data) + k_offset;
+        } else {
+          q_sub_matrix_data_ptr = (const scalar_t*)(q_data) + q_offset;
+          k_sub_matrix_data_ptr = (const scalar_t*)(k_data) + k_offset;
+        }
+        MaybeQuantizedMatrixData q_sub_matrix_data = MaybeQuantizedMatrixData(
+            static_cast<const void*>(q_sub_matrix_data_ptr),
+            q_zero_points_ptr,
+            q_scales_ptr,
             qBlockSize,
             headSize,
-            static_cast<accum_t>(1),
-            k_data + i * kStrideB + j_kv * kStrideH + n * kStrideN,
-            kStrideN,
-            q_data + i * qStrideB + j * qStrideH + m * qStrideM,
+            query.scalar_type());
+        MaybeQuantizedMatrixData k_sub_matrix_data = MaybeQuantizedMatrixData(
+            static_cast<const void*>(k_sub_matrix_data_ptr),
+            k_zero_points_ptr,
+            k_scales_ptr,
+            kvBlockSize,
+            headSize,
+            key.scalar_type());
+        _q_at_k_gemm<accum_t>(
+            qBlockSize,
+            kvBlockSize,
+            headSize,
+            q_sub_matrix_data,
             qStrideM,
-            static_cast<accum_t>(0),
-            qk_data,
-            kvBlockSize);
+            k_sub_matrix_data,
+            kStrideN,
+            qk_data);
+
         // There are 4 cases that is_causal has to cover to fill
         // not-attendable-position with -inf
         /* 1. Everything is attended to. This happens when m_start_pos > n +
@@ -583,21 +713,40 @@ void cpu_flash_attention(
                 headSize);
           }
         }
-        // Calculate Softmax(q @ k.T) @ v
-        ::executorch::cpublas::gemm(
-            ::executorch::cpublas::TransposeType::NoTranspose,
-            ::executorch::cpublas::TransposeType::NoTranspose,
+
+        const void* v_sub_matrix_data_ptr;
+        const float* v_scales_ptr = nullptr;
+        const int8_t* v_zero_points_ptr = nullptr;
+        int64_t v_offset = i * vStrideB + j_kv * vStrideH + n * vStrideN;
+        if (is_quantized_sdpa) {
+          ET_CHECK_MSG(
+              !is_seq_at_dim_1, "For quantized SDPA, seq_len must be at dim 2");
+          v_scales_ptr = v_scales.value().const_data_ptr<float>() + v_offset;
+          v_zero_points_ptr =
+              v_zero_points.value().const_data_ptr<int8_t>() + v_offset;
+          v_sub_matrix_data_ptr = (const int8_t*)(v_data) + v_offset;
+        } else {
+          v_sub_matrix_data_ptr = (const scalar_t*)(v_data) + v_offset;
+        }
+        MaybeQuantizedMatrixData v_sub_matrix_data = MaybeQuantizedMatrixData(
+            static_cast<const void*>(v_sub_matrix_data_ptr),
+            v_zero_points_ptr,
+            v_scales_ptr,
+            kvBlockSize,
             headSize,
+            value.scalar_type());
+        // Calculate Softmax(q @ k.T) @ v
+        _qk_at_v_gemm<accum_t>(
             qBlockSize,
+            headSize,
             kvBlockSize,
-            static_cast<accum_t>(1),
-            v_data + i * vStrideB + j_kv * vStrideH + n * vStrideN,
+            qk_data,
+            kvBlockSize,
+            v_sub_matrix_data,
             vStrideN,
-            conditional_data_ptr(qk_data, qk_reduced_data),
-            kvBlockSize,
-            n == 0 ? static_cast<accum_t>(0) : static_cast<accum_t>(1),
             dst_data,
-            headSize);
+            headSize,
+            n == 0 ? static_cast<accum_t>(0) : static_cast<accum_t>(1));
       }
       // dst <- dst / sum[row]
       // reorder MHA output with strides
