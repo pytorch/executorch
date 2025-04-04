@@ -239,13 +239,14 @@ _parent_shared_qspec = [
     torch.ops.aten.dropout_.default,
     torch.ops.aten.clamp.default,
     torch.ops.aten.clamp.Tensor,
+    torch.ops.aten.where,
     operator.getitem,
 ]
 
 
 def get_quant_properties(  # noqa: C901
     node: Node, gm: torch.fx.GraphModule, quantization_config
-) -> _OpQuantProperties:
+) -> _OpQuantProperties | None:
     input_act_qspec = quantization_config.get_input_act_qspec()
     weight_qspec = quantization_config.get_weight_qspec()
     output_act_qspec = quantization_config.get_output_act_qspec()
@@ -323,6 +324,13 @@ def get_quant_properties(  # noqa: C901
             ),
         ]
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
+    elif node.target in (torch.ops.aten.where.self,):
+        shared_qspec = SharedQuantizationSpec(node.args[1])  # type: ignore[arg-type]
+        quant_properties.quant_inputs = [
+            _QuantProperty(1, shared_qspec),  # type: ignore[arg-type]
+            _QuantProperty(2, shared_qspec),  # type: ignore[arg-type]
+        ]
+        quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
     elif node.target == torch.ops.aten.adaptive_avg_pool2d.default:
         input_qspec = (
             SharedQuantizationSpec(node.args[0])  # type: ignore[arg-type]
@@ -377,16 +385,16 @@ def get_quant_properties(  # noqa: C901
         quant_properties.quant_output = None
     elif node.target in _parent_shared_qspec:
         if not isinstance(node.args[0], Node):
-            return None  # type: ignore[return-value]
+            return None
 
         if not arm_quantizer_utils.is_output_annotated(node.args[0]):  # type: ignore[attr-defined]
-            return None  # type: ignore[return-value]
+            return None
 
         shared_qspec = SharedQuantizationSpec(node.args[0])
         quant_properties.quant_inputs = [_QuantProperty(0, shared_qspec)]  # type: ignore[arg-type]
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
     else:
-        return None  # type: ignore[return-value]
+        return None
 
     # Don't check if operator.getitem is ok for quantization, it's always ok
     if node.target == operator.getitem:
@@ -395,7 +403,7 @@ def get_quant_properties(  # noqa: C901
     # Check that each inputs/outputs can be quantized properly with the
     # provided quantization properties.
     if not _is_ok_for_quantization(node, quant_properties, gm):
-        return None  # type: ignore[return-value]
+        return None
 
     return quant_properties
 

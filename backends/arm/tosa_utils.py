@@ -30,9 +30,13 @@ def dbg_node(node: torch.fx.Node, graph_module: torch.fx.GraphModule):
     logger.info(get_node_debug_info(node, graph_module))
 
 
-def get_node_debug_info(node: torch.fx.Node, graph_module: torch.fx.GraphModule) -> str:
+def get_node_debug_info(
+    node: torch.fx.Node, graph_module: torch.fx.GraphModule | None = None
+) -> str:
     output = (
         f"  {inspect_node(graph=graph_module.graph, node=node)}\n"
+        if graph_module
+        else ""
         "-- NODE DEBUG INFO --\n"
         f"  Op is {node.op}\n"
         f"  Name is {node.name}\n"

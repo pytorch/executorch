@@ -50,6 +50,7 @@ from . import (  # noqa
     op_transpose,
     op_upsample_nearest2d,
     op_view,
+    op_where,
     ops_binary,
     ops_unary,
 )

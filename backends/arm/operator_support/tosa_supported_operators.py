@@ -208,6 +208,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.squeeze_copy.dims,
             exir_ops.edge.aten.pow.Tensor_Scalar,
             exir_ops.edge.aten.pow.Tensor_Tensor,
+            exir_ops.edge.aten.where.self,
             operator.getitem,
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
