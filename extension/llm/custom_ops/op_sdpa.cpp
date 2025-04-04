@@ -294,6 +294,13 @@ Tensor& custom_sdpa_out(
       output,
       "attn_mask and is_causal cannot be set at the same time");
 
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      validate_flash_attention_args(q, k, v, attn_mask),
+      InvalidArgument,
+      output,
+      "Invalid arguments");
+
   ET_CHECK_MSG(q.dim() == 4, "query must be a 4D tensor");
 
   const int64_t seq_len = q.size(1);
