@@ -5,15 +5,15 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-#import <ETCoreMLAsset.h>
+#import "ETCoreMLAsset.h"
+
+#import "ETCoreMLLogging.h"
+#import "objc_safe_cast.h"
 
 #import <fcntl.h>
 #import <os/lock.h>
 #import <stdio.h>
 #import <system_error>
-
-#import <objc_safe_cast.h>
-
 namespace  {
 using namespace executorchcoreml;
 
@@ -85,6 +85,10 @@ void set_error_from_error_code(const std::error_code& cppError, NSError * __auto
 
 - (BOOL)_keepAliveAndReturnError:(NSError * __autoreleasing *)error {
     if (!_isValid) {
+        ETCoreMLLogErrorAndSetNSError(error,
+                                      ETCoreMLErrorCorruptedModel, 
+                                      "The asset with identifier = %@ is invalid. Some required asset files appear to be missing.",
+                                       _identifier);
         return NO;
     }
     

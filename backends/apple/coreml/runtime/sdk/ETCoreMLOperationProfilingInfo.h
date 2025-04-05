@@ -7,7 +7,7 @@
 
 #import <CoreML/CoreML.h>
 
-#import <ETCoreMLComputeUnits.h>
+#import "ETCoreMLComputeUnits.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
