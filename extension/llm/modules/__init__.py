@@ -20,5 +20,6 @@ __all__ = [
     "replace_tiled_token_positional_embedding",
     "MultiHeadAttention",
     "replace_mha_with_inference_mha",
+    "replace_rope_with_inference_rope",
     "KVCache",
 ]
