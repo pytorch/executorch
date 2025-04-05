@@ -22,6 +22,11 @@ from typing import Callable, Dict, List, Optional, Sequence
 _SAVE_FLATC_ENV: str = "ET_EXIR_SAVE_FLATC_INPUTS_ON_FAILURE"
 
 
+# If this environment variable is set to true, save the flatc input files when
+# serialization fails.
+_SAVE_FLATC_ENV: str = "ET_EXIR_SAVE_FLATC_INPUTS_ON_FAILURE"
+
+
 def _is_valid_alignment(alignment: int) -> bool:
     """Returns True if the alignment is valid, or is None."""
     if alignment is None:
