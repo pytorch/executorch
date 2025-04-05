@@ -24,6 +24,8 @@ BUILDABLE_KERNELS_PRIM_OPS_TARGETS=$(buck2 query //kernels/prim_ops/... | grep -
 # TODO: expand the covered scope of Buck targets.
 # //runtime/kernel/... is failing because //third-party:torchgen_files's shell script can't find python on PATH.
 # //runtime/test/... requires Python torch, which we don't have in our OSS buck setup.
-buck2 test $BUILDABLE_OPTIMIZED_OPS //kernels/portable/... \
+buck2 test \
+      //examples/selective_build:select_all_dtype_selective_lib_portable_lib \
+      $BUILDABLE_OPTIMIZED_OPS //kernels/portable/... \
       $BUILDABLE_KERNELS_PRIM_OPS_TARGETS //runtime/backend/... //runtime/core/... \
       //runtime/executor: //runtime/kernel/... //runtime/platform/...
