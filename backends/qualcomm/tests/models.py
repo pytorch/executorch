@@ -100,7 +100,7 @@ class Argmin(torch.nn.Module):
 
 class ArgminViewSqueezeConv2D(torch.nn.Module):
     def __init__(self):
-        # This model is mainly to test the PASS TensorI64toI32
+        # This model is mainly to test the PASS I64toI32
         super().__init__()
         self.conv = torch.nn.Conv2d(
             in_channels=3, out_channels=16, kernel_size=3, stride=1, padding=1
@@ -235,9 +235,7 @@ class CompositeDelegateModule(torch.nn.Module):
     def __init__(
         self,
         compiler_specs,
-        partitioner_type,
-        capture_method,
-        lowered_method,
+        to_edge_transform_and_lower_method,
         quantize_method=None,
     ) -> None:
         super().__init__()
@@ -255,15 +253,15 @@ class CompositeDelegateModule(torch.nn.Module):
         ]
         self.lowered_modules = []
         for module, sample_input in zip(self.modules, self.sample_inputs):
-            partitioner = partitioner_type(compiler_specs)
             if quantize_method:
                 module = quantize_method(module, sample_input)
-            edge_prog = capture_method(module, sample_input)
-            edge_prog.exported_program = lowered_method(
-                edge_prog.exported_program, partitioner
+            edge_prog = to_edge_transform_and_lower_method(
+                module, sample_input, compiler_specs
             )
             self.lowered_modules.append(
-                edge_prog.exported_program.graph_module._modules.get("lowered_module_0")
+                edge_prog.exported_program().graph_module._modules.get(
+                    "lowered_module_0"
+                )
             )
 
     def forward(self, x, y):
@@ -873,9 +871,9 @@ class LeakyReLUDefault(torch.nn.Module):
 
 
 class LeakyReLUCustom(torch.nn.Module):
-    def __init__(self, coeff):
+    def __init__(self, coeff, inplace=False):
         super().__init__()
-        self.leaky_relu = torch.nn.LeakyReLU(coeff)
+        self.leaky_relu = torch.nn.LeakyReLU(coeff, inplace=inplace)
 
     def forward(self, x):
         return self.leaky_relu(x)
