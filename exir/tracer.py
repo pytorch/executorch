@@ -64,6 +64,16 @@ Value: TypeAlias = Union[
 
 torchdynamo_enabled = False
 
+"""
+Additional decompositions to apply by during to_edge or 
+to to_edge_transform_and_lower in addition to the default decompositions from 
+PyTorch export.
+"""
+EXECUTORCH_ADDITIONAL_DECOMPOSITIONS = [
+    torch.ops.aten.upsample_bilinear2d.vec,
+    torch.ops.aten.upsample_nearest2d.vec,
+]
+
 
 def get_stacktrace() -> List[Dict[str, str]]:
     """
@@ -631,8 +641,12 @@ def _default_decomposition_table(
         ]
         # pyre-fixme[7]: Expected `Dict[OpOverload, typing.Callable[..., executorch.e...
         return get_decompositions(decomp_opset)
+
     # pyre-fixme[7]: Expected `Dict[OpOverload, typing.Callable[..., executorch.exir....
-    return default_decompositions()
+    table = default_decompositions()
+    additional_decompositions = get_decompositions(EXECUTORCH_ADDITIONAL_DECOMPOSITIONS)    
+    table.decomp_table.update(additional_decompositions)
+    return table
 
 
 def dynamo_trace(
