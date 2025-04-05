@@ -166,6 +166,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.div.Tensor,
             exir_ops.edge.aten.eq.Tensor,
             exir_ops.edge.aten.eq.Scalar,
+            exir_ops.edge.aten.erf.default,
             exir_ops.edge.aten.exp.default,
             exir_ops.edge.aten.log.default,
             exir_ops.edge.aten.linear.default,
@@ -192,6 +193,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.repeat.default,
             exir_ops.edge.aten.reciprocal.default,
             exir_ops.edge.aten.relu.default,
+            exir_ops.edge.aten.leaky_relu.default,
             exir_ops.edge.aten.rsqrt.default,
             exir_ops.edge.aten._softmax.default,
             exir_ops.edge.aten.select_copy.int,
@@ -207,6 +209,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.squeeze_copy.dims,
             exir_ops.edge.aten.pow.Tensor_Scalar,
             exir_ops.edge.aten.pow.Tensor_Tensor,
+            exir_ops.edge.aten.where.self,
             operator.getitem,
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
@@ -256,6 +259,7 @@ class NeedsDecompositionCheck(OperatorSupportBase):
                 exir_ops.edge.aten.sub.Scalar,
                 exir_ops.edge.aten.mul.Scalar,
                 exir_ops.edge.aten.div.Scalar,
+                exir_ops.edge.aten.leaky_relu.default,
             ]
         if needs_decomp:
             self.reporter.report_reject(node, "Needs to be decomposed.")

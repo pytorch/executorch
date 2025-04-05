@@ -195,6 +195,7 @@ def _insert_lowered_submodule(
     submodule_program: ExportedProgram,
     owning_program: ExportedProgram,
     call_submodule_node: torch.fx.Node,
+    submodule_output_node: torch.fx.Node,
     lowered_module: LoweredBackendModule,
     is_submodule: bool,
     toplevel_input_specs_to_delete: Dict[str, InputSpec],
@@ -230,7 +231,7 @@ def _insert_lowered_submodule(
             call_submodule_node.kwargs,
         )
         call_delegate_node.meta["debug_handle"] = generate_debug_handle(owning_program)
-        call_delegate_node.meta["val"] = call_submodule_node.meta["val"]
+        call_delegate_node.meta["val"] = submodule_output_node.meta["val"]
         call_submodule_node.replace_all_uses_with(call_delegate_node)
         owning_graph_module.graph.erase_node(call_submodule_node)
 
@@ -317,6 +318,7 @@ def _partition_and_lower_one_graph_module(
             submodule_program,
             owning_program,
             call_module_node,
+            submodule_output_node,
             lowered_submodule,
             is_submodule,
             toplevel_input_specs_to_delete,
@@ -501,6 +503,7 @@ def _create_partitions_in_graph_module(
             toplevel_output_specs_to_delete
         )
         call_module_node.meta["is_submodule"] = is_submodule
+        call_module_node.meta["submodule_output_node"] = submodule_output_node
 
         if delegation_spec.backend_id not in backend_id_to_submodule_name:
             backend_id_to_submodule_name[delegation_spec.backend_id] = []
@@ -611,11 +614,13 @@ def lower_all_submodules_to_backend(
             toplevel_output_specs_to_delete = call_submodule_node.meta[
                 "toplevel_output_specs_to_delete"
             ]
+            submodule_output_node = call_submodule_node.meta["submodule_output_node"]
 
             _insert_lowered_submodule(
                 submodule_program,
                 owning_program,
                 call_submodule_node,
+                submodule_output_node,
                 lowered_module,
                 is_submodule,
                 toplevel_input_specs_to_delete,

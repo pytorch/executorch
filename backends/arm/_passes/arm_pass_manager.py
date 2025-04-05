@@ -26,6 +26,7 @@ from executorch.backends.arm._passes import (
     DecomposeBatchNormPass,
     DecomposeDivPass,
     DecomposeLayerNormPass,
+    DecomposeLeakyReLUPass,
     DecomposeLinearPass,
     DecomposeMeanDimPass,
     DecomposeSelectPass,
@@ -40,6 +41,7 @@ from executorch.backends.arm._passes import (
     InsertTableOpsPass,
     KeepDimsFalseToSqueezePass,
     MatchArgRanksPass,
+    MatchWhereSelfDtypePass,
     QuantizeOperatorArguments,
     RemoveClonePass,
     ReplaceScalarWithTensorArgPassTOSABI,
@@ -80,6 +82,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ConvertAnyDefaultDimDimsPass())
+        self.add_pass(MatchWhereSelfDtypePass())
         if isinstance(self.tosa_spec, Tosa_0_80) and self.tosa_spec.is_U55_subset:
             self.add_pass(CastToInt32Pass())
 
@@ -119,6 +122,7 @@ class ArmPassManager(PassManager):
         self.add_pass(FuseBatchnorm2DPass(exported_program))
         self.add_pass(ConvertMmToBmmPass())
         self.add_pass(DecomposeLinearPass())
+        self.add_pass(DecomposeLeakyReLUPass())
         self.add_pass(DecomposeBatchNormPass())
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
@@ -130,6 +134,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ConvertAnyDefaultDimDimsPass())
+        self.add_pass(MatchWhereSelfDtypePass())
 
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
@@ -175,6 +180,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass())
         self.add_pass(DecomposeDivPass())
+        self.add_pass(DecomposeLeakyReLUPass())
 
         if isinstance(self.tosa_spec, Tosa_0_80) and self.tosa_spec.is_U55_subset:
             # Numerically stable softmax uses amax which is not supported on Ethos-U55
