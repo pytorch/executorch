@@ -54,6 +54,12 @@ COPY ./common/install_conda.sh install_conda.sh
 COPY ./common/utils.sh utils.sh
 RUN bash ./install_conda.sh && rm install_conda.sh utils.sh /opt/conda/requirements-ci.txt /opt/conda/conda-env-ci.txt
 
+ARG ANDROID_NDK_VERSION
+# Install Android NDK if needed
+COPY ./common/install_android.sh install_android.sh
+RUN if [ -n "${ANDROID_NDK_VERSION}" ]; then bash ./install_android.sh; fi
+RUN rm install_android.sh
+
 # Install sccache before building torch
 COPY ./common/install_cache.sh install_cache.sh
 ENV PATH /opt/cache/bin:$PATH
@@ -75,12 +81,6 @@ COPY ./common/utils.sh utils.sh
 COPY ./requirements-lintrunner.txt requirements-lintrunner.txt
 RUN if [ -n "${LINTRUNNER}" ]; then bash ./install_linter.sh; fi
 RUN rm install_linter.sh utils.sh requirements-lintrunner.txt
-
-ARG ANDROID_NDK_VERSION
-# Install lintrunner if needed
-COPY ./common/install_android.sh install_android.sh
-RUN if [ -n "${ANDROID_NDK_VERSION}" ]; then bash ./install_android.sh; fi
-RUN rm install_android.sh
 
 ARG ARM_SDK
 
