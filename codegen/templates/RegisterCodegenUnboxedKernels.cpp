@@ -22,8 +22,8 @@
 // JIT op registry instead of c10 dispatcher. JIT op registry only takes boxed
 // kernels, so we are calling unboxing functions in UnboxingFunctions.h to cast
 // arguments into C++ types (instead of IValue) and delegate to unboxed kernels.
-using KernelSpan =
-    ::executorch::runtime::Span<const ::executorch::runtime::Kernel>;
+using KernelSpan = ::executorch::runtime::Span<
+    const ::executorch::ET_RUNTIME_NAMESPACE::Kernel>;
 namespace torch {
 namespace executor {
 namespace function {

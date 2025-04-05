@@ -22,8 +22,7 @@
 #include <executorch/runtime/platform/compiler.h>
 
 namespace executorch {
-namespace runtime {
-
+namespace ET_RUNTIME_NAMESPACE {
 /**
  * Interface to access and retrieve data via name.
  * See executorch/extension/flat_tensor/ for an example.
@@ -78,7 +77,7 @@ class ET_EXPERIMENTAL NamedDataMap {
   ET_NODISCARD virtual Result<const char*> get_key(size_t index) const = 0;
 };
 
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
 
 #ifdef __GNUC__

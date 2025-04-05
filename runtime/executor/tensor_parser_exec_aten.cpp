@@ -16,7 +16,7 @@
 #include <executorch/schema/program_generated.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 namespace deserialization {
 
 using executorch::aten::ScalarType;
@@ -256,5 +256,5 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
 }
 
 } // namespace deserialization
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch

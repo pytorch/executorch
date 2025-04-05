@@ -18,7 +18,7 @@
 #include <executorch/schema/program_generated.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 namespace deserialization {
 
 using executorch::runtime::Span;
@@ -176,5 +176,5 @@ Result<Tensor> parseTensor(
 }
 
 } // namespace deserialization
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
