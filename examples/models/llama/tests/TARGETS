@@ -3,6 +3,7 @@ load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 oncall("executorch")
 
 python_unittest(
+    # @autodeps-skip
     name = "test_simple_sdpa",
     srcs = [
         "test_simple_sdpa.py",
