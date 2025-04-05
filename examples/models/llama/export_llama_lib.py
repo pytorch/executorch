@@ -26,8 +26,9 @@ import torch
 
 from executorch.backends.vulkan._passes.remove_asserts import remove_asserts
 from executorch.devtools.backend_debug import print_delegation_info
-
 from executorch.devtools.etrecord import generate_etrecord
+
+from executorch.examples.models.llama.attention import ForwardOptions
 from executorch.examples.models.llama.hf_download import (
     download_and_convert_hf_checkpoint,
 )
@@ -456,6 +457,18 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--adapter",
+        default=None,
+        help="Adapter path",
+    )
+
+    parser.add_argument(
+        "--adapter_config",
+        default=None,
+        help="Adapter config path",
+    )
+
+    parser.add_argument(
         "-lora",
         "--use_lora",
         type=int,
@@ -591,6 +604,7 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
     checkpoint_dir = (
         canonical_path(args.checkpoint_dir) if args.checkpoint_dir else None
     )
+    adapter_path = canonical_path(args.adapter) if args.adapter else None
     params_path = canonical_path(args.params) if args.params else None
     output_dir_path = canonical_path(args.output_dir, dir=True)
     weight_type = WeightType.FAIRSEQ2 if args.fairseq2 else WeightType.LLAMA
@@ -602,6 +616,7 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
         args.model,
         checkpoint=checkpoint_path,
         checkpoint_dir=checkpoint_dir,
+        adapter=adapter_path,
         params_path=params_path,
         use_kv_cache=args.use_kv_cache,
         use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
@@ -641,7 +656,7 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
         logging.warning(
             f"Checkpoint dtype {checkpoint_dtype} precision is higher than dtype override {dtype_override.to_torch_dtype()}."
         )
-
+    breakpoint()
     edge_manager.model = edge_manager.model.to(dtype=dtype_override.to_torch_dtype())
 
     # We want to quantize (in the source transforms) the weights of the model
@@ -1039,6 +1054,7 @@ def _load_llama_model(
     *,
     checkpoint: Optional[str] = None,
     checkpoint_dir: Optional[str] = None,
+    adapter: Optional[str] = None,
     params_path: Optional[str] = None,
     use_kv_cache: bool = False,
     use_sdpa_with_kv_cache: bool = False,
@@ -1086,6 +1102,7 @@ def _load_llama_model(
             model_class_name,
             checkpoint=checkpoint,
             checkpoint_dir=checkpoint_dir,
+            adapter=adapter,
             params=params_path,
             use_kv_cache=use_kv_cache,
             use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
@@ -1100,6 +1117,11 @@ def _load_llama_model(
             args=args,
         )
     )
+    eg = torch.tensor([[13347]], dtype=torch.long)
+    ip = torch.tensor([0], dtype=torch.long)
+    fw = ForwardOptions(input_pos=ip)
+    # breakpoint()
+    # model.forward(eg, fw)
 
     return LLMEdgeManager(
         model=model,
