@@ -179,17 +179,14 @@ class ET_EXPERIMENTAL SGDParamGroup {
  */
 class ET_EXPERIMENTAL SGD {
  public:
-  explicit SGD(
-      const std::vector<SGDParamGroup>& param_groups,
-      SGDOptions defaults)
+  SGD(const std::vector<SGDParamGroup>& param_groups, SGDOptions defaults)
       : defaults_(std::make_unique<SGDOptions>(defaults)) {
     for (const auto& param_group : param_groups) {
       add_param_group(param_group);
     }
   }
 
-  explicit SGD(
-      const std::map<executorch::aten::string_view, executorch::aten::Tensor>&
+  SGD(const std::map<executorch::aten::string_view, executorch::aten::Tensor>&
           named_parameters,
       SGDOptions defaults)
       : SGD({SGDParamGroup(named_parameters)}, defaults) {}
