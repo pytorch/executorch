@@ -15,14 +15,7 @@ def define_common_targets():
             "hf_tokenizer.py",
         ],
         base_module = "pytorch_tokenizers",
-        visibility = [
-            "//executorch/examples/...",
-            "//executorch/extension/llm/export/...",
-            "//bento/...",
-            "//bento_kernels/...",
-            "//pytorch/tokenizers/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         _is_external_target = True,
         external_deps = [
             "sentencepiece-py",
