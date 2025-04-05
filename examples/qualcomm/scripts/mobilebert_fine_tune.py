@@ -17,17 +17,17 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     skip_annotation,
+    to_edge_transform_and_lower_to_qnn,
 )
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
     make_output_dir,
     make_quantizer,
     parse_skip_delegation_node,
-    QnnPartitioner,
     setup_common_args_and_variables,
     SimpleADB,
 )
-from executorch.exir import to_edge
+from executorch.exir import ExecutorchBackendConfig
 from transformers import BertTokenizer, MobileBertForSequenceClassification
 
 
@@ -273,30 +273,42 @@ def main(args):
 
         quantizer = make_quantizer(quant_dtype=quant_dtype)
         backend_options = generate_htp_compiler_spec(quant_dtype is not None)
-        partitioner = QnnPartitioner(
-            generate_qnn_executorch_compiler_spec(
-                soc_model=getattr(QcomChipset, args.model),
-                backend_options=backend_options,
-            ),
-            skip_node_id_set=skip_node_id_set,
-            skip_node_op_set=skip_node_op_set,
+        # partitioner = QnnPartitioner(
+        #     generate_qnn_executorch_compiler_spec(
+        #         soc_model=getattr(QcomChipset, args.model),
+        #         backend_options=backend_options,
+        #     ),
+        #     skip_node_id_set=skip_node_id_set,
+        #     skip_node_op_set=skip_node_op_set,
+        # )
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=False,
+        )
+        compile_spec = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8550,
+            backend_options=backend_options,
         )
         # skip embedding layer cause it's quantization sensitive
         graph_module, _ = skip_annotation(
             nn_module=model,
             quantizer=quantizer,
-            partitioner=partitioner,
+            compiler_specs=compile_spec,
             sample_input=inputs[0],
             calibration_cb=calibrator,
             fp_node_op_set={torch.ops.aten.embedding.default},
         )
         # lower all graph again, the skipped operators will be left in CPU
-        exec_prog = to_edge(
-            torch.export.export(graph_module, inputs[0], strict=True),
-        ).to_executorch()
-
+        # exec_prog = to_edge(
+        #     torch.export.export(graph_module, inputs[0], strict=True),
+        # ).to_executorch()
+        delegated_program = to_edge_transform_and_lower_to_qnn(
+            graph_module, inputs[0], compile_spec
+        )
+        executorch_program = delegated_program.to_executorch(
+            config=ExecutorchBackendConfig(extract_delegate_segments=True)
+        )
         with open(f"{args.artifact}/{pte_filename}.pte", "wb") as file:
-            file.write(exec_prog.buffer)
+            file.write(executorch_program.buffer)
 
     if args.compile_only:
         return
