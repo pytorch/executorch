@@ -27,7 +27,7 @@ class SqueezeUnsqueezeInputs(ExportPass):
         exir_ops.edge.aten.gelu.default,
     }
 
-    def should_squeeze(self, op, shape: List[int]) -> bool:
+    def should_squeeze(self, op, shape: List[int]) -> bool:  # pyre-ignore
         if len(shape) == 3:
             return shape[1] == 1 and shape[0] > 1
         if len(shape) == 4:
