@@ -59,13 +59,13 @@ from .source_transformation.apply_spin_quant_r1_r2 import (
 )
 
 from .source_transformation.attention import replace_attention_to_attention_sha
+from .source_transformation.custom_kv_cache import (
+    replace_kv_cache_with_custom_kv_cache,
+    replace_kv_cache_with_quantized_kv_cache,
+)
 from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
-)
-from .source_transformation.quantized_kv_cache import (
-    replace_kv_cache_with_custom_kv_cache,
-    replace_kv_cache_with_quantized_kv_cache,
 )
 from .source_transformation.rms_norm import replace_rms_norm_with_native_rms_norm
 
