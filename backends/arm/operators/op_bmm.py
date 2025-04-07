@@ -20,7 +20,7 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_quant_utils import build_rescale
+from executorch.backends.arm.tosa_quant_utils import build_rescale_v0_80
 
 
 @register_node_visitor
@@ -83,14 +83,13 @@ class BMMVisitor(NodeVisitor):
                 input_qparams[0].scale * input_qparams[1].scale  # type: ignore[possibly-undefined]  # pyre-ignore[61]
             ) / output_qparams.scale
 
-            build_rescale(
+            build_rescale_v0_80(
                 tosa_fb=tosa_graph,
                 scale=[final_output_scale],
                 # pyre-ignore[61]: Uninitialized local [61]: Local variable `bmm_result` is undefined, or not always defined.
                 input_node=bmm_result,  # type: ignore[possibly-undefined]
                 output_name=output.name,
                 output_type=ts.DType.INT8,
-                output_shape=bmm_result.shape,
                 input_zp=0,
                 output_zp=output_qparams.zp,
                 is_double_round=False,

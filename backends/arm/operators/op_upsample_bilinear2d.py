@@ -15,7 +15,7 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_quant_utils import build_rescale
+from executorch.backends.arm.tosa_quant_utils import build_rescale_v0_80
 from executorch.backends.arm.tosa_utils import get_resize_parameters, tosa_shape
 from tosa_tools.v0_80.tosa.ResizeMode import ResizeMode  # type: ignore
 
@@ -85,13 +85,12 @@ class UpsampleBilinear2dVisitor_0_80(NodeVisitor):
 
             final_output_scale = float(1 / (scale_n_yx[0] * scale_n_yx[1]))
 
-            build_rescale(
+            build_rescale_v0_80(
                 tosa_fb=tosa_graph,
                 scale=[final_output_scale],
                 input_node=intermediate,
                 output_name=output.name,
                 output_type=ts.DType.INT8,
-                output_shape=output.shape,
                 input_zp=0,
                 output_zp=0,
                 is_double_round=False,
