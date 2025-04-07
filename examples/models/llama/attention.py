@@ -167,6 +167,10 @@ class AttentionMHA(Attention):
         args: ModelArgs,
         layer_id: int,
         rope: Rope,
+        wq: nn.Module,
+        wk: nn.Module,
+        wv: nn.Module,
+        wo: nn.Module,
     ):
         super().__init__()
         self.use_kv_cache = args.use_kv_cache
@@ -190,16 +194,10 @@ class AttentionMHA(Attention):
             self.q_norm_fn = RMSNorm(q_norm_dim, eps=args.norm_eps)
             self.k_norm_fn = RMSNorm(k_norm_dim, eps=args.norm_eps)
 
-        self.wq = nn.Linear(
-            self.dim, self.n_heads * self.head_dim, bias=self.attention_qkv_bias
-        )
-        self.wk = nn.Linear(
-            self.dim, self.n_kv_heads * self.head_dim, bias=self.attention_qkv_bias
-        )
-        self.wv = nn.Linear(
-            self.dim, self.n_kv_heads * self.head_dim, bias=self.attention_qkv_bias
-        )
-        self.wo = nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
+        self.wq = wq
+        self.wk = wk
+        self.wv = wv
+        self.wo = wo
 
         self.layer_id = layer_id
 

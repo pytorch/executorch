@@ -210,6 +210,18 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--adapter_checkpoint",
+        required=False,
+        help="Path to the adapter.pt file. Used if the model has trained LoRA adapters. Must provide adapter_config.",
+    )
+
+    parser.add_argument(
+        "--adapter_config",
+        required=False,
+        help="Path to the adapter_config.json file. Used if the model has trained LoRA adapters. Must provide adapter_checkpoint.",
+    )
+
+    parser.add_argument(
         "--use_qnn_sha",
         action="store_true",
         help="Change multi head attention to multiple single head attention for qnn backend (Qualcomm)",
@@ -592,6 +604,18 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
         canonical_path(args.checkpoint_dir) if args.checkpoint_dir else None
     )
     params_path = canonical_path(args.params) if args.params else None
+
+    assert (args.adapter_checkpoint is None and args.adapter_config is None) or (
+        args.adapter_checkpoint is not None and args.adapter_config is not None
+    ), "Must provide both adapter_checkpoint and adapter_config, or neither"
+
+    adapter_checkpoint_path = (
+        canonical_path(args.adapter_checkpoint) if args.adapter_checkpoint else None
+    )
+    adapter_config_path = (
+        canonical_path(args.adapter_config) if args.adapter_config else None
+    )
+
     output_dir_path = canonical_path(args.output_dir, dir=True)
     weight_type = WeightType.FAIRSEQ2 if args.fairseq2 else WeightType.LLAMA
 
@@ -603,6 +627,8 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
         checkpoint=checkpoint_path,
         checkpoint_dir=checkpoint_dir,
         params_path=params_path,
+        adapter_checkpoint=adapter_checkpoint_path,
+        adapter_config=adapter_config_path,
         use_kv_cache=args.use_kv_cache,
         use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
         generate_full_logits=args.generate_full_logits,
@@ -1040,6 +1066,8 @@ def _load_llama_model(
     checkpoint: Optional[str] = None,
     checkpoint_dir: Optional[str] = None,
     params_path: Optional[str] = None,
+    adapter_checkpoint: Optional[str] = None,
+    adapter_config: Optional[str] = None,
     use_kv_cache: bool = False,
     use_sdpa_with_kv_cache: bool = False,
     generate_full_logits: bool = False,
@@ -1087,6 +1115,8 @@ def _load_llama_model(
             checkpoint=checkpoint,
             checkpoint_dir=checkpoint_dir,
             params=params_path,
+            adapter_checkpoint=adapter_checkpoint,
+            adapter_config=adapter_config,
             use_kv_cache=use_kv_cache,
             use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
             generate_full_logits=generate_full_logits,

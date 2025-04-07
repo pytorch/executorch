@@ -20,8 +20,11 @@ from executorch.examples.models.llama.llama_transformer import (
     Transformer,
     TransformerBlock,
 )
+from executorch.examples.models.llama.lora import LoRALinear
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.rope import Rope
+
+from torchtune.models import convert_weights
 
 try:
     from .fairseq2 import convert_to_llama_checkpoint
@@ -37,6 +40,86 @@ except ImportError:
 from ..model_base import EagerModelBase
 
 
+def construct_llm(model_args: ModelArgs) -> Transformer:
+    if model_args.attention_type not in ATTENTION_REGISTRY:
+        raise ValueError(
+            f"Unknown attention type: {model_args.attention_type}. "
+            f"Available: {list(ATTENTION_REGISTRY.keys())}"
+        )
+
+    rope = Rope(model_args)
+    layers = torch.nn.ModuleList()
+    cls = ATTENTION_REGISTRY[model_args.attention_type]
+
+    for layer_id in range(model_args.n_layers):
+        wq = (
+            LoRALinear(
+                in_dim=model_args.dim,
+                out_dim=model_args.n_heads * model_args.head_dim,
+                rank=model_args.r,  # todo
+                alpha=model_args.lora_alpha,  # todo
+                dropout=0.0,
+                use_bias=model_args.attention_qkv_bias,
+            )
+            if "q_proj" in model_args.target_modules
+            else (
+                torch.nn.Linear(
+                    model_args.dim,
+                    model_args.n_heads * model_args.head_dim,
+                    bias=model_args.attention_qkv_bias,
+                )
+            )
+        )
+
+        wk = (
+            LoRALinear(
+                in_dim=model_args.dim,
+                out_dim=model_args.n_kv_heads * model_args.head_dim,
+                rank=model_args.r,  # todo
+                alpha=model_args.lora_alpha,  # todo
+                dropout=0.0,
+                use_bias=model_args.attention_qkv_bias,
+            )
+            if "k_proj" in model_args.target_modules
+            else (
+                torch.nn.Linear(
+                    model_args.dim,
+                    model_args.n_kv_heads * model_args.head_dim,
+                    bias=model_args.attention_qkv_bias,
+                )
+            )
+        )
+        wv = (
+            LoRALinear(
+                in_dim=model_args.dim,
+                out_dim=model_args.n_kv_heads * model_args.head_dim,
+                rank=model_args.r,  # todo
+                alpha=model_args.lora_alpha,  # todo
+                dropout=0.0,
+                use_bias=model_args.attention_qkv_bias,
+            )
+            if "v_proj" in model_args.target_modules
+            else (
+                torch.nn.Linear(
+                    model_args.dim,
+                    model_args.n_kv_heads * model_args.head_dim,
+                    bias=model_args.attention_qkv_bias,
+                )
+            )
+        )
+
+        # todo
+        wo = torch.nn.Linear(
+            model_args.n_heads * model_args.head_dim, model_args.dim, bias=False
+        )
+        attention = cls(model_args, layer_id, rope, wq, wk, wv, wo)
+        transformer_block = TransformerBlock(model_args, attention)
+        layers.append(transformer_block)
+
+    # Construct transformer model.
+    return Transformer(model_args, layers, rope)
+
+
 class Llama2Model(EagerModelBase):
     def __init__(self, **kwargs):
         resource_dir = get_default_model_resource_dir(__file__)
@@ -48,6 +131,10 @@ class Llama2Model(EagerModelBase):
 
         # Params file.
         params_path = kwargs.get("params", None)
+
+        # Adapter
+        adapter_checkpoint = kwargs.get("adapter_checkpoint", None)
+        adapter_config = kwargs.get("adapter_config", None)
 
         self.use_kv_cache = kwargs.get("use_kv_cache", False)
         self.use_sdpa_with_kv_cache_op = kwargs.get("use_sdpa_with_kv_cache", False)
@@ -132,6 +219,22 @@ the checkpoint format to avoid generating faulty models.
             with open(params_path, "r") as f:
                 params = json.loads(f.read())
 
+        # Get adapter checkpoint and config.
+        adapter_checkpoint = {}
+        adapter_config = {}
+        adapter_checkpoint_path = kwargs.get("adapter_checkpoint", None)
+        if adapter_checkpoint_path:
+            adapter_checkpoint = torch.load(
+                adapter_checkpoint_path, map_location=device, mmap=True
+            )
+            adapter_checkpoint = convert_weights.tune_to_meta(adapter_checkpoint)
+
+            adapter_config = kwargs.get("adapter_config", None)
+            with open(adapter_config, "r") as f:
+                adapter_config = json.loads(f.read())
+
+            checkpoint.update(adapter_checkpoint)
+
         output_prune_map = None
         if self.output_prune_map_path is not None:
             with open(self.output_prune_map_path, "r") as f:
@@ -156,6 +259,7 @@ the checkpoint format to avoid generating faulty models.
             output_prune_map=output_prune_map,
             enable_dynamic_shape=self.enable_dynamic_shape,
             **params,
+            **adapter_config,
         )
 
         if model_args.use_scaled_rope:
@@ -177,23 +281,7 @@ the checkpoint format to avoid generating faulty models.
         # They possess all other metadata a tensor carries such as size, stride, requires_grad.
         with torch.device("meta"):
             # Model itself is loaded in default dtype, fp32.
-
-            # Construct attention layers.
-            rope = Rope(model_args)
-            if model_args.attention_type not in ATTENTION_REGISTRY:
-                raise ValueError(
-                    f"Unknown attention type: {model_args.attention_type}. "
-                    f"Available: {list(ATTENTION_REGISTRY.keys())}"
-                )
-            layers = torch.nn.ModuleList()
-            cls = ATTENTION_REGISTRY[model_args.attention_type]
-            for layer_id in range(model_args.n_layers):
-                attention = cls(model_args, layer_id, rope)
-                transformer_block = TransformerBlock(model_args, attention)
-                layers.append(transformer_block)
-
-            # Construct transformer model.
-            self.model_ = Transformer(model_args, layers, rope)
+            self.model_ = construct_llm(model_args)
 
             # Get checkpoint dtype.
             if checkpoint:
