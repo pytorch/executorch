@@ -33,18 +33,6 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 layout(constant_id = 3) const int group_size = 64;
 
-uint8_t get_first(const uint8_t packed) {
-  return uint8_t((packed & 0xF0) >> 4);
-}
-
-uint8_t get_second(const uint8_t packed) {
-  return uint8_t(packed & 0x0F);
-}
-
-uint8_t combine(const uint8_t first, const uint8_t second) {
-  return uint8_t(first << 4 | second);
-}
-
 /*
  * This shader computes a linear operator between a floating point input matrix
  * x and a weights matrix that is quantized to 4 bits.
