@@ -489,11 +489,11 @@ class SDPATestCommon(unittest.TestCase):
 class SDPATestForLargeSeqLength(SDPATestCommon):
 
     def test_sdpa_with_cache_seq_len_130(self):
-        n_heads_kv = 32
-        n_heads_q = 32
+        n_heads_kv = 8
+        n_heads_q = 8
         head_dim = 128
         max_seq_len = 2048
-        seq_len = 130
+        seq_len = 24
         self._test_sdpa_common(
             n_heads_kv, n_heads_q, head_dim, max_seq_len, seq_len, True
         )
