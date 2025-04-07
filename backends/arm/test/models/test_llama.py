@@ -11,6 +11,7 @@ import os
 import sys
 import unittest
 
+import pytest
 import torch
 
 from executorch.backends.arm.test import common, conftest
@@ -102,7 +103,7 @@ class TestLlama(unittest.TestCase):
         llama_model, llama_inputs, llama_meta = self.prepare_model()
 
         if llama_model is None and llama_inputs is None and llama_meta is None:
-            return
+            pytest.skip("Missing model and/or input files")
 
         with torch.no_grad():
             (
