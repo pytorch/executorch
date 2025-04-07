@@ -66,6 +66,14 @@ def _core_aten_to_edge(
         constant_methods=edge_constant_methods,
         compile_config=edge_compile_config,
     )
+    eg = torch.tensor([[2, 3, 4]], dtype=torch.int64)
+    ip = torch.tensor([[0, 1, 2]], dtype=torch.long)
+    em1 = edge_manager._edge_programs["forward"].module()(eg, input_pos=ip)
+    eager = torch.load("/data/users/lfq/executorch/eager_res.pt")
+    # breakpoint()
+    assert torch.allclose(
+        eager, em1
+    )  # Fails to 100 lol. Passes if we do not decompose sdpa.
     if verbose:
         logging.info(f"Exported graph:\n{edge_manager.exported_program()}")
     return edge_manager
@@ -82,6 +90,12 @@ def export_to_edge(
     strict=True,
     verbose=True,
 ) -> EdgeProgramManager:
+    eg = torch.tensor([[2, 3, 4]], dtype=torch.int64)
+    ip = torch.tensor([[0, 1, 2]], dtype=torch.long)
+    x = model.forward(eg, input_pos=ip)
+    eager = torch.load("/data/users/lfq/executorch/eager_res.pt")
+    torch.allclose(x, eager)
+    # breakpoint()  # same
     core_aten_ep = _to_core_aten(
         model,
         example_inputs,
@@ -90,6 +104,9 @@ def export_to_edge(
         strict=strict,
         verbose=verbose,
     )
+    # breakpoint()  # same
+    y = core_aten_ep.module()(eg, input_pos=ip)
+    torch.allclose(y, eager)
     return _core_aten_to_edge(
         core_aten_ep, edge_constant_methods, edge_compile_config, verbose=verbose
     )
@@ -108,8 +125,10 @@ def export_to_exec_prog(
 ) -> ExecutorchProgramManager:
     m = model.eval()
     # pre-autograd export. eventually this will become torch.export
+    breakpoint()
     m = export_for_training(m, example_inputs).module()
 
+    breakpoint()
     core_aten_ep = _to_core_aten(
         m,
         example_inputs,
@@ -118,11 +137,15 @@ def export_to_exec_prog(
         strict=strict,
     )
 
+    breakpoint()
     edge_m = _core_aten_to_edge(
         core_aten_ep, edge_constant_methods, edge_compile_config
     )
 
+    breakpoint()
     exec_prog = edge_m.to_executorch(backend_config)
+
+    breakpoint()
     return exec_prog
 
 

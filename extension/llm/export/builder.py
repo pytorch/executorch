@@ -29,6 +29,7 @@ from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackend
 
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 
@@ -164,6 +165,10 @@ class LLMEdgeManager:
             transforms (List[Callable[[torch.nn.Module], torch.nn.Module]]): A
                 list of source transforms.
         """
+        eg = torch.tensor([[2, 3, 4]], dtype=torch.int64)
+        ip = torch.tensor([[0, 1, 2]], dtype=torch.long)
+        eager = torch.load("/data/users/lfq/executorch/eager_res.pt")
+        breakpoint()  # OK.
         for transform in transforms:
             self.model = transform(self.model)
         self.applied_source_transforms.extend(transforms)
@@ -171,6 +176,10 @@ class LLMEdgeManager:
         if self.verbose:
             logging.info(f"Applied source transforms: {self.applied_source_transforms}")
         logging.info(f"Model after source transforms: {self.model}")
+
+        breakpoint()
+        x = self.model.forward(eg, input_pos=ip)
+        assert torch.allclose(x, eager)
         return self
 
     def _get_dynamic_shape(self) -> Any:
@@ -184,7 +193,8 @@ class LLMEdgeManager:
             self.dynamic_shapes = ({1: dim},)
         elif self.enable_dynamic_shape:
             # Two input arguments: tokens and input_pos but input_pos is static shape
-            self.dynamic_shapes = ({1: dim}, {"input_pos": {0: 1}})
+            # self.dynamic_shapes = ({1: dim}, {"input_pos": {0: 1}})
+            self.dynamic_shapes = ({1: dim}, {0: 1})
         else:
             # Two input arguments: tokens and input_pos but both are of static shape
             self.dynamic_shapes = None
@@ -195,6 +205,7 @@ class LLMEdgeManager:
             _check_ir_validity=False,
             _skip_type_promotion=bool(self.dtype == DType.fp16),
             _skip_dim_order=True,
+            _core_aten_ops_exception_list=[torch.ops.aten._assert_async.msg],
         )
         return edge_config
 
@@ -202,7 +213,8 @@ class LLMEdgeManager:
         dynamic_shape = self._get_dynamic_shape()
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
-        with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
+        # with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
+        with torch.no_grad():
             if hasattr(self.args, "qnn") and self.args.qnn:
                 # TODO: this is temporary, as qnn flow does not work with new, non-functional export IR.
                 # See issue: https://github.com/pytorch/executorch/issues/7373
@@ -229,12 +241,24 @@ class LLMEdgeManager:
                 logging.info(f"inputs: {self.example_inputs}")
                 logging.info(f"kwargs: {self.example_kwarg_inputs}")
                 logging.info(f"dynamic shapes: {dynamic_shape}")
+                eg = torch.tensor([[2, 3, 4]], dtype=torch.int64)
+                ip = torch.tensor([[0, 1, 2]], dtype=torch.long)
+
+                pre_ep = self.model.forward(eg, input_pos=ip)
+                eager = torch.load("/data/users/lfq/executorch/eager_res.pt")
+                assert torch.allclose(eager, pre_ep)
+
+                # breakpoint()  # Bad here. OK without sdpa context.
                 exported_module = export_for_training(
                     self.model if not module else module,
                     self.example_inputs,
                     kwargs=self.example_kwarg_inputs,
                     dynamic_shapes=dynamic_shape,
                 )
+                ep = self.model.forward(eg, input_pos=ip)
+                torch.allclose(eager, ep)
+                # breakpoint()  # Same as above.
+
         return exported_module
 
     def export(self) -> "LLMEdgeManager":
@@ -244,7 +268,16 @@ class LLMEdgeManager:
         The full torch.export() if called later on during to_edge() or
         to_edge_transform_and_lower().
         """
+        eg = torch.tensor([[2, 3, 4]], dtype=torch.int64)
+        ip = torch.tensor([[0, 1, 2]], dtype=torch.long)
+        x = self.model.forward(eg, input_pos=ip)
+        eager = torch.load("/data/users/lfq/executorch/eager_res.pt")
+        torch.allclose(x, eager)
         exported_module = self._export()
+        y = exported_module.module()(eg, input_pos=ip)
+        torch.allclose(y, eager)
+        # breakpoint()
+
         # Need to store the graph module to record transformation passes.
         # Persisting those changes back to an ExportedProgram will require
         # an additional export().
@@ -405,10 +438,10 @@ class LLMEdgeManager:
         """
         dynamic_shape = self._get_dynamic_shape()
         edge_config = self._get_edge_config()
-
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
-        with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
+        # with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
+        with torch.no_grad():
             if self.pre_autograd_graph_module is None:
                 # Run export() if it didn't run
                 self.export()
@@ -422,6 +455,12 @@ class LLMEdgeManager:
                 )
 
             with override_export_behaviour:
+                eg = torch.tensor([[2, 3, 4]], dtype=torch.int64)
+                ip = torch.tensor([[0, 1, 2]], dtype=torch.long)
+                x = self.model.forward(eg, input_pos=ip)
+                eager = torch.load("/data/users/lfq/executorch/eager_res.pt")
+                # breakpoint()
+                assert torch.allclose(x, eager)
                 self.edge_manager = export_to_edge(
                     self.pre_autograd_graph_module,  # pyre-fixme[6]
                     self.example_inputs,
@@ -431,6 +470,9 @@ class LLMEdgeManager:
                     edge_compile_config=edge_config,
                     verbose=self.verbose,
                 )
+                y = self.edge_manager.exported_program().module()(eg, input_pos=ip)
+                assert torch.allclose(y, eager)
+                # breakpoint()
         return self
 
     def to_backend(self, partitioners: Optional[List[Partitioner]]) -> "LLMEdgeManager":
@@ -495,6 +537,7 @@ class LLMEdgeManager:
             # transpose followed by a regular op_mm.
             ConvertToLinearPass(),
             QuantFusionPass(),
+            InitializedMutableBufferPass(["kv_cache_pos"]),
         ]
         if passes:
             # pyre-fixme[6]: In call `list.extend`, for 1st positional argument,

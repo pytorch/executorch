@@ -9,11 +9,15 @@
 # Example script for exporting Llama2 to flatbuffer
 
 import math
-from typing import Tuple
+from typing import Optional, Tuple
 
 import torch
 
 from executorch.examples.models.llama.attention import KVCache, SDPA
+
+# from executorch.extension.llm.modules.attention import SDPA as TTSDPA
+
+from torchtune.modules.attention_utils import _MaskType
 
 
 class SDPACustom(torch.nn.Module):
@@ -49,7 +53,7 @@ class SDPACustom(torch.nn.Module):
             q,
             k,
             v,
-            input_pos[0].item(),
+            input_pos.item(),
             None,  # Attention mask
             0,  # dropout probability. Ignored by the code
             True,  # is_causal
@@ -60,11 +64,19 @@ class SDPACustom(torch.nn.Module):
 def _replace_sdpa_with_custom_op(module: torch.nn.Module):
     for name, child in module.named_children():
         if isinstance(child, SDPA):
+            breakpoint()
             setattr(
                 module,
                 name,
                 SDPACustom(child.dim),
             )
+        # elif isinstance(child, TTSDPA):
+        #     # breakpoint()
+        #     setattr(
+        #         module,
+        #         name,
+        #         SDPAConverter(child.num_heads * child.head_dim),
+        #     )
         else:
             _replace_sdpa_with_custom_op(child)
 
@@ -74,6 +86,63 @@ def replace_sdpa_with_custom_op(module: torch.nn.Module) -> torch.nn.Module:
 
     _replace_sdpa_with_custom_op(module)
     return module
+
+
+# Convert from torchtune SDPA to SDPACustom.
+class SDPAConverter(torch.nn.Module):
+    def __init__(
+        self,
+        dim: int,
+    ):
+        super().__init__()
+        self.dim = dim
+        self.SDPA = SDPACustom(dim)
+
+    def forward(
+        self,
+        q: torch.Tensor,  # [b, s, n_h, h_d]
+        k: torch.Tensor,  # [b, s, n_kv, h_d]
+        v: torch.Tensor,  # [b, s, n_kv, h_d]
+        bsz: int,
+        seq_len: int,
+        mask: Optional[_MaskType] = None,
+    ):
+        # input_pos = 0
+        # Mask isn't used in SDPA?
+
+        # Make sure mask isn't None
+        # take the first row of the mask, number of 0s/Trues. Index of the first non-zero.
+        # assert mask is not None
+        if mask is not None:
+            attention_mask = mask.reshape(-1, max_seq_len)
+            first_row = attention_mask[0, :]
+            start_pos = torch.argmin(first_row).item() - 1
+        else:
+            start_pos = 0
+
+        ##
+        q = q.transpose(1, 2)  # (bs, seqlen, n_local_heads, head_dim)
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
+
+        # Custom op only supports float32 currently. Converting to/from float32 is
+        # faster than not having the op.
+        input_dtype = q.dtype
+        q = q.to(dtype=torch.float)
+        k = k.to(dtype=torch.float)
+        v = v.to(dtype=torch.float)
+
+        output = torch.ops.llama.custom_sdpa(
+            q,
+            k,
+            v,
+            start_pos,
+            mask,  # Attention mask
+            0,  # dropout probability. Ignored by the code
+            True,  # is_causal
+        )
+        return output.view(bsz, seq_len, self.dim).to(dtype=input_dtype)
+        # return self.SDPA(start_pos, q, k, v, bsz, seq_len, mask)
 
 
 class SDPASimple(torch.nn.Module):

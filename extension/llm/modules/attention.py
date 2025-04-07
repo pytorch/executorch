@@ -11,12 +11,20 @@ from typing import Optional
 
 import torch
 import torchtune.modules.attention as TorchTuneAttention
+
+from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.extension.llm.modules.kv_cache import KVCache as InferenceKVCache
 from torch import nn
 from torchtune.modules.attention_utils import _MaskType, _sdpa_or_flex_attention
 from torchtune.modules.kv_cache import KVCache
 
 logger = logging.getLogger(__name__)
+
+from executorch.examples.models.llama.rope import Rope, RotaryEmbedding
+
+from executorch.examples.models.llama.source_transformation.sdpa import SDPACustom
+from executorch.extension.llm.custom_ops import custom_ops
+from torchtune.models.llama3_1._position_embeddings import Llama3ScaledRoPE
 
 
 class MultiHeadAttention(nn.Module):
@@ -147,15 +155,17 @@ class MultiHeadAttention(nn.Module):
 
         # Use flex attention if supported and we are sample packing
         self._attention_call = _sdpa_or_flex_attention()
-        self._sdpa = SDPA(
-            num_kv_heads=self.num_kv_heads,
-            num_heads=self.num_heads,
-            head_dim=self.head_dim,
-            attn_dropout=self.attn_dropout if self.training else 0.0,
-            is_causal=self.is_causal,
-            attention_fn=self._attention_call,
-            kv_cache=self.kv_cache,
-        )
+        # self._sdpa = SDPA(
+        #     num_kv_heads=self.num_kv_heads,
+        #     num_heads=self.num_heads,
+        #     head_dim=self.head_dim,
+        #     attn_dropout=self.attn_dropout if self.training else 0.0,
+        #     is_causal=self.is_causal,
+        #     attention_fn=self._attention_call,
+        #     kv_cache=self.kv_cache,
+        # )
+        dim = self.head_dim * self.num_heads
+        self._sdpa = SDPACustom(dim=dim)
 
         # this flag indicates whether to update the kv-cache during forward
         # passes. when disabled, we can have the cache setup but still
@@ -249,6 +259,7 @@ class MultiHeadAttention(nn.Module):
         # y has shape [b, s_y, d]
         b, s_x, _ = x.shape
 
+        # breakpoint()
         # q has shape [b, s_x, num_heads * head_dim]
         q = self.q_proj(x)
 
@@ -312,7 +323,9 @@ class MultiHeadAttention(nn.Module):
             self.kv_cache.v_cache.copy_(v)
             self.kv_cache.kv_cache_pos.copy_(cache_pos)
 
-        output = self._sdpa(q, k, v, b, s_x, mask=mask)
+        # output = self._sdpa(q, k, v, b, s_x, mask=mask)
+        # breakpoint()
+        output = self._sdpa(input_pos[0][2], q, k, v, b, s_x, mask=mask)
         return self.output_proj(output)
 
 
@@ -412,4 +425,20 @@ def replace_mha_with_inference_mha(module: torch.nn.Module) -> torch.nn.Module:
     separates out the inference-related parts for further optimization.
     """
     _replace_mha_with_inference_mha(module)
+    return module
+
+
+def replace_rope_with_inference_rope(
+    module: torch.nn.Module, params: ModelArgs
+) -> None:
+    # Create a mapping of Llama3ScaledRoPE instances to their replacement Rope instances
+    rope_replacements = {}
+
+    for name, child in module.named_children():
+        print(name, child)
+        if isinstance(child, Llama3ScaledRoPE):
+            # breakpoint()
+            setattr(module, name, Rope(params))
+        else:
+            replace_rope_with_inference_rope(child, params)
     return module

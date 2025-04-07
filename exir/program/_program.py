@@ -1314,10 +1314,38 @@ def to_edge(
 
     edge_programs: Dict[str, ExportedProgram] = {}
 
+    eg = torch.tensor([[2, 3, 4]], dtype=torch.int64)
+    ip = torch.tensor([[0, 1, 2]], dtype=torch.long)
+    eager = torch.load("/data/users/lfq/executorch/eager_res.pt")
+
     for name, program in aten_programs.items():
         # Decompose to Core ATen
-        program = program.run_decompositions(_default_decomposition_table())
+        x1 = program.module()(eg, input_pos=ip)
+        preserve_ops = [
+            # torch.ops.aten.type_as.default,
+            # torch.ops.aten.to.dtype,
+            # torch.ops.aten.linear.default,
+            # torch.ops.aten.rms_norm.default,
+            # torch.ops.aten.transpose.int,
+            # torch.ops.aten.flatten.using_ints,
+            # torch.ops.aten.silu.default,
+            # torch.ops.aten.reshape.default,
+            # torch.ops.aten.stack.default,
+            torch.ops.aten.scaled_dot_product_attention.default,
+        ]
+
+        # breakpoint()
+        table = _default_decomposition_table()
+        for op in preserve_ops:
+            table.pop(op, None)
+
+        # breakpoint()
+        program = program.run_decompositions(table)
+        # x2 = program.module()(eg, input_pos=ip)
+        breakpoint()
+        # assert torch.allclose(x1, x2)
         edge_programs[name] = _generate_edge_program(name, config, program)
+        # also this does not allclose to run_decomp.
 
     return EdgeProgramManager(edge_programs, constant_methods, config)
 
