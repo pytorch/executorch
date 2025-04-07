@@ -599,6 +599,17 @@ git<span class="w"> </span>clone<span class="w"> </span>-b<span class="w"> </spa
 pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
 </pre></div>
 </div>
+<p>If C++ files are being modified, you will still have to reinstall ExecuTorch from source.</p>
+<blockquote>
+<div><p><strong><em>WARNING:</em></strong>
+Some modules can’t be imported directly in editable mode. This is a known <a class="reference external" href="https://github.com/pytorch/executorch/issues/9558">issue</a> and we are actively working on a fix for this. To workaround this:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># This will fail</span>
+python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;from executorch.exir import CaptureConfig&quot;</span>
+<span class="c1"># But this will succeed</span>
+python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;from executorch.exir.capture import CaptureConfig&quot;</span>
+</pre></div>
+</div>
+</div></blockquote>
 <blockquote>
 <div><p><strong><em>NOTE:</em></strong>  Cleaning the build system</p>
 <p>When fetching a new version of the upstream repo (via <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">fetch</span></code> or <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">pull</span></code>) it is a good idea to clean the old build artifacts. The build system
