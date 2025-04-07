@@ -497,9 +497,7 @@ vTensor::vTensor(
   VK_CHECK_COND(
       dim_order_is_valid(dim_order_), "computed dim order is invalid");
 
-  if (storage_type != utils::kBuffer) {
-    set_logical_limits(storage_.image_extents_);
-  }
+  set_logical_limits(storage_.image_extents_);
 }
 
 // NOLINTNEXTLINE
