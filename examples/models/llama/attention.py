@@ -162,7 +162,12 @@ class SDPA(nn.Module):
 
 @register_attention("mha")
 class AttentionMHA(Attention):
-    def __init__(self, args: ModelArgs, layer_id: int, rope: Rope):
+    def __init__(
+        self,
+        args: ModelArgs,
+        layer_id: int,
+        rope: Rope,
+    ):
         super().__init__()
         self.use_kv_cache = args.use_kv_cache
         self.n_heads = args.n_heads
