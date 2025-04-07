@@ -15,6 +15,7 @@
 #include <executorch/devtools/etdump/etdump_schema_flatcc_builder.h>
 #include <executorch/devtools/etdump/etdump_schema_flatcc_reader.h>
 #include <executorch/devtools/etdump/utils.h>
+#include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/assert.h>
@@ -28,6 +29,7 @@ using ::executorch::runtime::ChainID;
 using ::executorch::runtime::DebugHandle;
 using ::executorch::runtime::DelegateDebugIdType;
 using ::executorch::runtime::DelegateDebugIntId;
+using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::EventTracerEntry;
 using ::executorch::runtime::kUnsetDelegateDebugIntId;

@@ -149,7 +149,7 @@ endif()
 if(TARGET coremldelegate)
   set_target_properties(
     coremldelegate PROPERTIES INTERFACE_LINK_LIBRARIES
-                             "coreml_inmemoryfs;coreml_util"
+                              "coreml_inmemoryfs;coreml_util"
   )
 endif()
 
@@ -167,4 +167,8 @@ if(TARGET optimized_native_cpu_ops_lib)
 endif()
 if(TARGET extension_threadpool)
   target_compile_definitions(extension_threadpool INTERFACE ET_USE_THREADPOOL)
+  set_target_properties(
+    extension_threadpool PROPERTIES INTERFACE_LINK_LIBRARIES
+                                    "cpuinfo;pthreadpool"
+  )
 endif()
