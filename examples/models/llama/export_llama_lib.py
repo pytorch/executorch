@@ -63,6 +63,7 @@ from .source_transformation.custom_kv_cache import (
     replace_kv_cache_with_custom_kv_cache,
     replace_kv_cache_with_quantized_kv_cache,
 )
+
 from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
@@ -77,6 +78,7 @@ from .source_transformation.sdpa import (
     replace_sdpa_with_coreml_sdpa,
     replace_sdpa_with_custom_op,
     replace_sdpa_with_flex_sdpa,
+    replace_sdpa_with_quantized_sdpa,
     replace_sdpa_with_simple_sdpa,
 )
 from .source_transformation.vulkan_rope import replace_with_vulkan_rotary_emb
@@ -1226,11 +1228,14 @@ def _get_source_transforms(  # noqa
 
     if args.use_sdpa_with_kv_cache:
         transforms.append(replace_kv_cache_with_custom_kv_cache)
+        # todo: do this optionally
         transforms.append(replace_sdpa_with_custom_op)
 
     if args.quantize_kv_cache:
         assert args.use_kv_cache, "quantize_kv_cache requires use_kv_cache=True"
         transforms.append(replace_kv_cache_with_quantized_kv_cache)
+        # Right now
+        transforms.append(replace_sdpa_with_quantized_sdpa)
 
     if args.use_kv_cache:
         if args.qnn:
