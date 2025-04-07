@@ -631,8 +631,16 @@ def _default_decomposition_table(
         ]
         # pyre-fixme[7]: Expected `Dict[OpOverload, typing.Callable[..., executorch.e...
         return get_decompositions(decomp_opset)
+
+    decomps = default_decompositions()
+    # Add edge specific decompositions
+    additional_decomp_ops = [
+      torch.ops.aten.linalg_vector_norm.default,
+    ]
+    additional_decomps = get_decompositions(additional_decomp_ops)
+    decomps.update(additional_decomps)
     # pyre-fixme[7]: Expected `Dict[OpOverload, typing.Callable[..., executorch.exir....
-    return default_decompositions()
+    return decomps
 
 
 def dynamo_trace(
