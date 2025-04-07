@@ -15,9 +15,13 @@ from executorch.examples.models.checkpoint import (
     get_checkpoint_dtype,
     get_default_model_resource_dir,
 )
-from executorch.examples.models.llama.llama_transformer import Transformer
-
+from executorch.examples.models.llama.attention import ATTENTION_REGISTRY
+from executorch.examples.models.llama.llama_transformer import (
+    Transformer,
+    TransformerBlock,
+)
 from executorch.examples.models.llama.model_args import ModelArgs
+from executorch.examples.models.llama.rope import Rope
 from torchao.utils import TorchAOBaseTensor
 
 try:
@@ -174,7 +178,24 @@ the checkpoint format to avoid generating faulty models.
         # They possess all other metadata a tensor carries such as size, stride, requires_grad.
         with torch.device("meta"):
             # Model itself is loaded in default dtype, fp32.
-            self.model_ = Transformer(model_args)
+
+            # Construct attention layers.
+            rope = Rope(model_args)
+            if model_args.attention_type not in ATTENTION_REGISTRY:
+                raise ValueError(
+                    f"Unknown attention type: {model_args.attention_type}. "
+                    f"Available: {list(ATTENTION_REGISTRY.keys())}"
+                )
+            layers = torch.nn.ModuleList()
+            cls = ATTENTION_REGISTRY[model_args.attention_type]
+            for layer_id in range(model_args.n_layers):
+                attention = cls(model_args, layer_id, rope)
+                transformer_block = TransformerBlock(model_args, attention)
+                layers.append(transformer_block)
+
+            # Construct transformer model.
+            self.model_ = Transformer(model_args, layers, rope)
+
             # Get checkpoint dtype.
             if checkpoint:
                 self.model_.checkpoint_dtype = get_checkpoint_dtype(checkpoint)

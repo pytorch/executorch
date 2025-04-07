@@ -12,10 +12,7 @@ from typing import Any, Optional, Tuple, Union
 import torch
 import torch.nn.functional as F
 
-from executorch.examples.models.llama.attention import (
-    ATTENTION_REGISTRY,
-    ForwardOptions,
-)
+from executorch.examples.models.llama.attention import Attention, ForwardOptions
 
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.norm import RMSNorm
@@ -83,19 +80,13 @@ class MOEFeedForward(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, layer_id: int, args: ModelArgs, rope: Rope):
+    def __init__(self, args: ModelArgs, attention: Attention):
         super().__init__()
         self.use_kv_cache = args.use_kv_cache
         self.n_heads = args.n_heads
         self.dim = args.dim
         self.head_dim = args.head_dim
-        if args.attention_type not in ATTENTION_REGISTRY:
-            raise ValueError(
-                f"Unknown attention type: {args.attention_type}. "
-                f"Available: {list(ATTENTION_REGISTRY.keys())}"
-            )
-        cls = ATTENTION_REGISTRY[args.attention_type]
-        self.attention = cls(args, layer_id, rope)
+        self.attention = attention
         if args.moe:
             self.block_sparse_moe = MOEFeedForward(args)
         else:
@@ -117,7 +108,7 @@ class TransformerBlock(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, params: ModelArgs):
+    def __init__(self, params: ModelArgs, layers: nn.ModuleList, rope: Rope):
         super().__init__()
         self.params = params
         self.vocab_size = params.vocab_size
@@ -130,10 +121,8 @@ class Transformer(nn.Module):
             if self.apply_embedding
             else None
         )
-        self.rope = Rope(params)
-        self.layers = torch.nn.ModuleList()
-        for layer_id in range(params.n_layers):
-            self.layers.append(TransformerBlock(layer_id, params, self.rope))
+        self.layers = layers
+        self.rope = rope
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
         self.output = (
             nn.Linear(params.dim, params.vocab_size, bias=False)
