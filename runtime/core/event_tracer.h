@@ -101,14 +101,14 @@ class EventTracerFilterBase {
    *         - An error code if an error occurs during filtering.
    */
   virtual Result<bool> filter(
-      char* name,
-      DelegateDebugIntId delegate_debug_index);
+      const char* name,
+      DelegateDebugIntId delegate_debug_index) = 0;
 
   /**
    * Virtual destructor for the EventTracerFilterBase class.
    * Ensures proper cleanup of derived class objects.
    */
-  virtual ~EventTracerFilterBase();
+  virtual ~EventTracerFilterBase() = default;
 };
 
 /**

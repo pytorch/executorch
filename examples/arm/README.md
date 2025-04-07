@@ -32,6 +32,16 @@ $ source  executorch/examples/arm/ethos-u-scratch/setup_path.sh
 $ executorch/examples/arm/run.sh --model_name=mv2 --target=ethos-u85-128 [--scratch-dir=same-optional-scratch-dir-as-before]
 ```
 
+### Ethos-U minimal example
+
+See the jupyter notebook `ethos_u_minimal_example.ipynb` for an explained minimal example of the full flow for running a
+PyTorch module on the EthosUDelegate. The notebook runs directly in some IDE:s s.a. VS Code, otherwise it can be run in
+your browser using
+```
+pip install jupyter
+jupyter notebook ethos_u_minimal_example.ipynb
+```
+
 ### Online Tutorial
 
 We also have a [tutorial](https://pytorch.org/executorch/stable/executorch-arm-delegate-tutorial.html) explaining the steps performed in these

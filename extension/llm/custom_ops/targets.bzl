@@ -30,6 +30,9 @@ def define_common_targets():
                 "op_sdpa.h",
                 "op_update_cache.h",
             ],
+            headers = [
+                "op_sdpa_impl.h",
+            ],
             preprocessor_flags = get_vec_preprocessor_flags(),
             exported_deps = [
                 "//executorch/runtime/kernel:kernel_includes",

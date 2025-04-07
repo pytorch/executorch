@@ -21,6 +21,7 @@ from .convert_to_clamp import ConvertToClampPass  # noqa
 from .decompose_batchnorm_pass import DecomposeBatchNormPass  # noqa
 from .decompose_div_pass import DecomposeDivPass  # noqa
 from .decompose_layernorm_pass import DecomposeLayerNormPass  # noqa
+from .decompose_leaky_relu_pass import DecomposeLeakyReLUPass  # noqa
 from .decompose_linear_pass import DecomposeLinearPass  # noqa
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_select import DecomposeSelectPass  # noqa

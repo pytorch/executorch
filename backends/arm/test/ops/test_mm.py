@@ -6,6 +6,7 @@
 
 from typing import Callable
 
+import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -53,6 +54,7 @@ def test_mm_tosa_u55(test_data_generator: Callable[[], tuple]):
 
 
 @parameterized.expand(MM.test_data_generators)
+@pytest.mark.flaky  # Investigate flakiness (MLETORCH-870)
 def test_mm_tosa_u85(test_data_generator: Callable[[], tuple]):
     test_data = test_data_generator()
     EthosU85PipelineBI[test_t](MM(), test_data, MM.aten_op, MM.exir_op).run()
@@ -67,6 +69,7 @@ def test_mm_tosa_u55_on_fvp(test_data_generator: Callable[[], tuple]):
 
 @parameterized.expand(MM.test_data_generators)
 @common.SkipIfNoCorstone320
+@pytest.mark.flaky  # Investigate flakiness (MLETORCH-870)
 def test_mm_tosa_u85_on_fvp(test_data_generator: Callable[[], tuple]):
     test_data = test_data_generator()
     EthosU85PipelineBI[test_t](

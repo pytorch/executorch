@@ -26,6 +26,7 @@ from executorch.backends.arm._passes import (
     DecomposeBatchNormPass,
     DecomposeDivPass,
     DecomposeLayerNormPass,
+    DecomposeLeakyReLUPass,
     DecomposeLinearPass,
     DecomposeMeanDimPass,
     DecomposeSelectPass,
@@ -121,6 +122,7 @@ class ArmPassManager(PassManager):
         self.add_pass(FuseBatchnorm2DPass(exported_program))
         self.add_pass(ConvertMmToBmmPass())
         self.add_pass(DecomposeLinearPass())
+        self.add_pass(DecomposeLeakyReLUPass())
         self.add_pass(DecomposeBatchNormPass())
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
@@ -178,6 +180,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass())
         self.add_pass(DecomposeDivPass())
+        self.add_pass(DecomposeLeakyReLUPass())
 
         if isinstance(self.tosa_spec, Tosa_0_80) and self.tosa_spec.is_U55_subset:
             # Numerically stable softmax uses amax which is not supported on Ethos-U55
