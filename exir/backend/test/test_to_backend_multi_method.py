@@ -434,6 +434,12 @@ class TestToBackendMultiMethod(unittest.TestCase):
             self._test(test_set)
 
     def test_multi_method_end_to_end(self):
+        """
+        Tests multi method lowering end-to-end. Lowers the same Sin Module for two methods
+        "forward" and "forward_copy". Ensures that the lowered program has two delegates
+        but only one serialized blob. Ensures that the lowered program runs correctly.
+        """
+
         class SinModule(torch.nn.Module):
             def __init__(self):
                 super().__init__()
@@ -471,6 +477,7 @@ class TestToBackendMultiMethod(unittest.TestCase):
         exec_prog = new_edge_manager.to_executorch()
 
         program = exec_prog.executorch_program
+        # Since the preprocessed bytes are the same, there should only be on copy
         self.assertEqual(len(program.backend_delegate_data), 1)
 
         self.check_backend_delegate(
