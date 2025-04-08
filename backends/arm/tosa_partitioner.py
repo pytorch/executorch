@@ -6,7 +6,6 @@
 # pyre-unsafe
 
 import logging
-import os
 from typing import Callable, List, Optional, Sequence, Tuple
 
 import torch
@@ -33,11 +32,6 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-TOSA_DBG_VERBOSE = os.environ.get("TOSA_DBG_VERBOSE") == "1"
-if TOSA_DBG_VERBOSE:
-    logging.basicConfig(level=logging.INFO)
-    logger.setLevel(logging.INFO)
 
 
 def is_quant_node(node: torch.fx.node.Node) -> bool:

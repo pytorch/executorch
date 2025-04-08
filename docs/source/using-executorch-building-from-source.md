@@ -36,27 +36,23 @@ portability details.
 
 ## Environment Setup
 
-### Create a Virtual Environment
-
-[Install conda on your machine](https://conda.io/projects/conda/en/latest/user-guide/install/index.html). Then, create a virtual environment to manage our dependencies.
-   ```bash
-   # Create and activate a conda environment named "executorch"
-   conda create -yn executorch python=3.10.0
-   conda activate executorch
-   ```
-
 ### Clone ExecuTorch
 
    ```bash
    # Clone the ExecuTorch repo from GitHub
-   # 'main' branch is the primary development branch where you see the latest changes.
-   # 'viable/strict' contains all of the commits on main that pass all of the necessary CI checks.
-   git clone --branch viable/strict https://github.com/pytorch/executorch.git
-   cd executorch
+   git clone -b viable/strict https://github.com/pytorch/executorch.git && cd executorch
+   ```
 
-   # Update and pull submodules
-   git submodule sync
-   git submodule update --init
+### Create a Virtual Environment
+
+Create and activate a Python virtual environment:
+   ```bash
+   python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
+   ```
+
+Or alternatively, [install conda on your machine](https://conda.io/projects/conda/en/latest/user-guide/install/index.html). Then, create a Conda environment named "executorch".
+   ```bash
+   conda create -yn executorch python=3.10.0 && conda activate executorch
    ```
 
 ## Install ExecuTorch pip package from Source
@@ -91,6 +87,17 @@ portability details.
    # either via a previous invocation of `./install_executorch.sh` or by explicitly installing requirements via `./install_requirements.sh` first.
    pip install -e .
    ```
+
+   If C++ files are being modified, you will still have to reinstall ExecuTorch from source.
+
+> **_WARNING:_**
+> Some modules can't be imported directly in editable mode. This is a known [issue](https://github.com/pytorch/executorch/issues/9558) and we are actively working on a fix for this. To workaround this:
+> ```bash
+> # This will fail
+> python -c "from executorch.exir import CaptureConfig"
+> # But this will succeed
+> python -c "from executorch.exir.capture import CaptureConfig"
+> ```
 
 > **_NOTE:_**  Cleaning the build system
 >
@@ -249,7 +256,7 @@ sh scripts/build_android_library.sh
 ```
 
 This script will build the AAR, which contains the Java API and its corresponding JNI library. Please see
-[this documentation](./using-executorch-android#using-aar-file) for usage.
+[this documentation](./using-executorch-android.md#using-aar-file) for usage.
 
 ### iOS
 

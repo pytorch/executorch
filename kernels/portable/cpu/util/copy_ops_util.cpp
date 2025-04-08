@@ -46,7 +46,10 @@ bool check_as_strided_copy_args(
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_CHECK_OR_RETURN_FALSE(
-      size.size() == stride.size(), "mismatch in length of strides and shape");
+      size.size() == stride.size(),
+      "mismatch in length of strides and shape; size.size() = %zu, stride.size() = %zu",
+      size.size(),
+      stride.size());
   for (const auto& val : stride) {
     ET_CHECK_OR_RETURN_FALSE(
         val >= 0,
@@ -242,7 +245,9 @@ bool check_permute_copy_args(const Tensor& in, IntArrayRef dims, Tensor& out) {
 
     // Check that the dimension hasn't been seen previously.
     ET_CHECK_OR_RETURN_FALSE(
-        dim_exist[dim] == false, "duplicate dims are not allowed.");
+        dim_exist[dim] == false,
+        "duplicate dims are not allowed; dim = %zu",
+        dim);
 
     dim_exist[dim] = true;
   }
@@ -424,19 +429,27 @@ bool check_split_with_sizes_copy_args(
 
   ET_CHECK_OR_RETURN_FALSE(
       split_sizes.size() == out.size(),
-      "Number of split sizes must match the number of output tensors");
+      "Number of split sizes must match the number of output tensors; split_sizes.size() = %zu, out.size() = %zu",
+      split_sizes.size(),
+      out.size());
 
   int64_t sum = 0;
   for (const auto i : c10::irange(split_sizes.size())) {
     ET_CHECK_OR_RETURN_FALSE(
-        split_sizes[i] >= 0, "All split sizes must be non negative.");
+        split_sizes[i] >= 0,
+        "All split sizes must be non negative; split_sizes[%zu] = %" PRId64,
+        i,
+        split_sizes[i]);
     sum += split_sizes[i];
   }
 
   const ssize_t dim_size = in.size(dim);
   ET_CHECK_OR_RETURN_FALSE(
       sum == dim_size,
-      "Sum of split sizes does not match input size at given dim");
+      "Sum of split sizes does not match input size at given dim; sum = %" PRId64
+      ", dim_size = %zd",
+      sum,
+      dim_size);
 
   return true;
 }

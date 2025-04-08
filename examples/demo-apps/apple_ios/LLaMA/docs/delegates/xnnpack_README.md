@@ -13,20 +13,22 @@ More specifically, it covers:
 ## Setup ExecuTorch
 In this section, we will need to set up the ExecuTorch repo first with Conda environment management. Make sure you have Conda available in your system (or follow the instructions to install it [here](https://conda.io/projects/conda/en/latest/user-guide/install/index.html)). The commands below are running on Linux (CentOS).
 
-Create a Conda environment
-
-```
-conda create -n et_xnnpack python=3.10.0
-conda activate et_xnnpack
-```
-
 Checkout ExecuTorch repo and sync submodules
 
 ```
-git clone https://github.com/pytorch/executorch.git
-cd executorch
-git submodule sync
-git submodule update --init
+git clone -b viable/strict https://github.com/pytorch/executorch.git && cd executorch
+```
+
+Create either a Python virtual environment:
+
+```
+python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
+```
+
+Or a Conda environment:
+
+```
+conda create -n et_xnnpack python=3.10.0 && conda activate et_xnnpack
 ```
 
 Install dependencies
@@ -34,10 +36,7 @@ Install dependencies
 ```
 ./install_executorch.sh
 ```
-Optional: Use the --pybind flag to install with pybindings.
-```
-./install_executorch.sh --pybind xnnpack
-```
+
 ## Prepare Models
 In this demo app, we support text-only inference with up-to-date Llama models and image reasoning inference with LLaVA 1.5.
 * You can request and download model weights for Llama through Meta official [website](https://llama.meta.com/).
@@ -45,8 +44,9 @@ In this demo app, we support text-only inference with up-to-date Llama models an
 * Install the required packages to export the model:
 
 ```
-sh examples/models/llama/install_requirements.sh
+./examples/models/llama/install_requirements.sh
 ```
+
 ### For Llama 3.2 1B and 3B SpinQuant models
 Meta has released prequantized INT4 SpinQuant Llama 3.2 models that ExecuTorch supports on the XNNPACK backend.
 * Export Llama model and generate .pte file as below:
@@ -112,27 +112,13 @@ There are two options to add ExecuTorch runtime package into your XCode project:
 
 The current XCode project is pre-configured to automatically download and link the latest prebuilt package via Swift Package Manager.
 
-If you have an old ExecuTorch package cached before in XCode, or are running into any package dependencies issues (incorrect checksum hash, missing package, outdated package), close XCode and run the following command in terminal inside your ExecuTorch directory
-
-```
-rm -rf \
-  ~/Library/org.swift.swiftpm \
-  ~/Library/Caches/org.swift.swiftpm \
-  ~/Library/Caches/com.apple.dt.Xcode \
-  ~/Library/Developer/Xcode/DerivedData \
-  examples/demo-apps/apple_ios/LLaMA/LLaMA.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
-```
-
-The command above will clear all the package cache, and when you re-open the XCode project, it should re-download the latest package and link them correctly.
-
 #### (Optional) Changing the prebuilt package version
 While we recommended using the latest prebuilt package pre-configured with the XCode project, you can also change the package version manually to your desired version.
 
 Go to Project Navigator, click on LLaMA. `Project --> LLaMA --> Package Dependencies`, and update the package dependencies to any of the available options below:
 
-- Branch --> swiftpm-0.5.0.20250228 (amend to match the latest nightly build)
-- Branch --> swiftpm-0.5.0
-- Branch --> swiftpm-0.4.0
+- Branch --> swiftpm-0.7.0.20250401 (amend to match the latest nightly build)
+- Branch --> swiftpm-0.6.0
 
 ### 2.2 Manually build the package locally and link them
 

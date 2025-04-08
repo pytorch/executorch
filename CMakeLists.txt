@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -161,7 +161,7 @@ if(OPTIMIZE_SIZE)
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Os")
 else()
   # -O2: Moderate opt.
-  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
+  set(CMAKE_CXX_FLAGS_RELEASE "-O2 ${CMAKE_CXX_FLAGS_RELEASE}")
 endif()
 
 option(EXECUTORCH_BUILD_ANDROID_JNI "Build Android JNI" OFF)
@@ -203,6 +203,8 @@ option(EXECUTORCH_BUILD_EXTENSION_TRAINING "Build the training extension" OFF)
 option(EXECUTORCH_BUILD_MPS "Build the MPS backend" OFF)
 
 option(EXECUTORCH_BUILD_NEURON "Build the backends/mediatek directory" OFF)
+
+option(EXECUTORCH_BUILD_OPENVINO "Build the Openvino backend" OFF)
 
 option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
 
@@ -643,13 +645,18 @@ target_link_options_shared_lib(executorch)
 # Real integrations should supply their own YAML file that only lists the
 # operators necessary for the models that will run.
 #
+if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+  # find pytorch lib here to make it available to all
+  # sub-directories. Find it before including portable so that
+  # optimized_portable_kernels can use it.
+  find_package_torch_headers()
+endif()
+
 if(BUILD_EXECUTORCH_PORTABLE_OPS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
-  # find pytorch lib here to make it available to all sub-directories
-  find_package_torch_headers()
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/optimized)
 endif()
 
@@ -715,6 +722,10 @@ if(EXECUTORCH_BUILD_NEURON)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/mediatek)
 endif()
 
+if(EXECUTORCH_BUILD_OPENVINO)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/openvino)
+endif()
+
 if(EXECUTORCH_BUILD_QNN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/qualcomm)
 endif()
@@ -751,15 +762,11 @@ if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizer)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizers)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
-endif()
-
-if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/training)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
@@ -817,6 +824,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs mpsdelegate)
   endif()
 
+  if(EXECUTORCH_BUILD_OPENVINO)
+    list(APPEND _dep_libs openvino_backend)
+  endif()
+
   if(EXECUTORCH_BUILD_XNNPACK)
     # need to explicitly specify XNNPACK and microkernels-prod
     # here otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
@@ -862,32 +873,11 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
 
-    set(_pybind_training_dep_libs
-        ${TORCH_PYTHON_LIBRARY}
-        etdump
-        executorch
-        util
-        torch
-        extension_training
-    )
-
-    if(EXECUTORCH_BUILD_XNNPACK)
-      # need to explicitly specify XNNPACK and microkernels-prod
-      # here otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
-      list(APPEND _pybind_training_dep_libs xnnpack_backend XNNPACK microkernels-prod)
-    endif()
-
-    # pybind training
-    pybind11_add_module(_training_lib SHARED extension/training/pybindings/_training_lib.cpp)
-
-    target_include_directories(_training_lib PRIVATE ${TORCH_INCLUDE_DIRS})
-    target_compile_options(_training_lib PUBLIC ${_pybind_compile_options})
-    target_link_libraries(_training_lib PRIVATE ${_pybind_training_dep_libs})
-
-    install(TARGETS _training_lib
-            LIBRARY DESTINATION executorch/extension/training/pybindings
-    )
   endif()
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/training)
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)

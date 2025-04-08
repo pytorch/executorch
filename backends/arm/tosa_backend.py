@@ -11,7 +11,6 @@
 # JIT compiler flows.
 #
 import logging
-import os
 from typing import cast, final, List
 
 import serializer.tosa_serializer as ts  # type: ignore
@@ -34,11 +33,6 @@ from torch.fx import Node
 
 # TOSA backend debug functionality
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
-TOSA_DBG_VERBOSE = os.environ.get("TOSA_DBG_VERBOSE") == "1"
-if TOSA_DBG_VERBOSE:
-    logging.basicConfig(level=logging.INFO)
-    logger.setLevel(logging.INFO)
 
 
 def _get_first_delegation_tag(graph_module) -> str | None:
@@ -81,12 +75,14 @@ class TOSABackend(BackendDetails):
                 input_order = list(map(int, spec.value.decode().split(",")))
 
         # Check that the output format is set correctly in the compile spec
-        assert output_format == "tosa", "output format must be tosa"
+        if output_format != "tosa":
+            raise ValueError(f'Invalid output format {output_format}, must be "tosa"')
 
         tosa_spec = get_tosa_spec(compile_spec)
-        assert (
-            tosa_spec is not None
-        ), "TOSA backend needs a TOSA version specified in the CompileSpec!"
+        if tosa_spec is None:
+            raise ValueError(
+                "TOSA backend needs a TOSA version specified in the CompileSpec"
+            )
 
         logger.info(f"Converting ExportedProgram to TOSA: {tosa_spec}")
 
@@ -101,18 +97,22 @@ class TOSABackend(BackendDetails):
         input_count = 0
         for node in graph_module.graph.nodes:
             node = cast(Node, node)
-            if node.op == "call_function":
-                process_call_function(node, tosa_graph, node_visitors, tosa_spec)
-            elif node.op == "placeholder":
-                process_placeholder(node, tosa_graph, edge_program, tosa_spec)
-                if node.name in edge_program.graph_signature.user_inputs:
-                    input_count += 1
-            elif node.op == "output":
-                process_output(node, tosa_graph)
-            else:
-                # This will only happen if an unpartitioned graph is passed without
-                # any checking of compatibility.
-                dbg_fail(node, tosa_graph, artifact_path)
+            try:
+                if node.op == "call_function":
+                    process_call_function(node, tosa_graph, node_visitors, tosa_spec)
+                elif node.op == "placeholder":
+                    process_placeholder(node, tosa_graph, edge_program, tosa_spec)
+                    if node.name in edge_program.graph_signature.user_inputs:
+                        input_count += 1
+                elif node.op == "output":
+                    process_output(node, tosa_graph)
+                else:
+                    # This will only happen if an unpartitioned graph is passed without
+                    # any checking of compatibility.
+                    raise RuntimeError(f"{node.name} is unsupported op {node.op}")
+            except (AssertionError, RuntimeError, ValueError):
+                dbg_fail(node, graph_module, tosa_graph, artifact_path)
+                raise
 
         if len(input_order) > 0:
             if input_count != len(input_order):

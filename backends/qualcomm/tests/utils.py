@@ -15,18 +15,19 @@ import numpy as np
 import torch
 
 from executorch import exir
-from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
+    QCOM_PASS_ACTIVATE_KEY,
+    QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
     QCOM_SCALE,
     QCOM_ZERO_POINT,
 )
 from executorch.backends.qualcomm.utils.utils import (
-    capture_program,
     get_soc_to_chipset_map,
+    to_edge_transform_and_lower_to_qnn,
 )
 from executorch.devtools import generate_etrecord, Inspector
 from executorch.examples.qualcomm.utils import (
@@ -36,7 +37,6 @@ from executorch.examples.qualcomm.utils import (
     SimpleADB,
 )
 
-from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -47,6 +47,7 @@ from torch.ao.quantization.quantize_pt2e import (
     prepare_pt2e,
     prepare_qat_pt2e,
 )
+from torch.fx.passes.infra.pass_base import PassResult
 
 
 def generate_context_binary(
@@ -359,19 +360,6 @@ class TestQNN(unittest.TestCase):
                         cmd.append(f"--{name}_path")
                         cmd.append(f"{tmp_dir}/{name}.txt")
 
-                    dtype_info = {
-                        "input_type_size": input_encodings,
-                        "output_type_size": output_encodings,
-                    }
-                    for name, encodings in dtype_info.items():
-                        with open(f"{tmp_dir}/{name}.txt", "w") as f:
-                            for e in encodings:
-                                f.write(
-                                    f"{torch.tensor([], dtype=e[QCOM_DTYPE]).element_size()}\n"
-                                )
-                        cmd.append(f"--{name}_path")
-                        cmd.append(f"{tmp_dir}/{name}.txt")
-
                 env = dict(os.environ)
                 env["LD_LIBRARY_PATH"] = f"{qnn_sdk}/lib/{target}/:{build_folder}/lib"
                 proc = subprocess.run(
@@ -423,16 +411,6 @@ class TestQNN(unittest.TestCase):
                         if check_io_shape
                         else None
                     ),
-                    expected_input_dtype=(
-                        (encoding[QCOM_DTYPE] for encoding in input_encodings)
-                        if check_io_shape
-                        else None
-                    ),
-                    expected_output_dtype=(
-                        (encoding[QCOM_DTYPE] for encoding in output_encodings)
-                        if check_io_shape
-                        else None
-                    ),
                 )
                 adb.push(inputs=[processed_inputs], input_list=input_list)
                 adb.execute(method_index=method_index)
@@ -461,19 +439,18 @@ class TestQNN(unittest.TestCase):
         skip_node_op_set: set = None,
         dynamic_shapes: Dict = None,
     ):
-        qnn_partitioner = QnnPartitioner(
-            self.compiler_specs, skip_node_id_set, skip_node_op_set
-        )
-        delegated_program = capture_program(
-            module, sample_inputs, dynamic_shapes=dynamic_shapes
+        delegated_program = to_edge_transform_and_lower_to_qnn(
+            module,
+            sample_inputs,
+            self.compiler_specs,
+            dynamic_shapes=dynamic_shapes,
+            skip_node_id_set=skip_node_id_set,
+            skip_node_op_set=skip_node_op_set,
         )
 
         # this is needed for the ETRecord as lowering modifies the graph in-place
         edge_copy = copy.deepcopy(delegated_program)
 
-        delegated_program.exported_program = to_backend(
-            delegated_program.exported_program, qnn_partitioner
-        )
         exec_prog = delegated_program.to_executorch(
             exir.ExecutorchBackendConfig(
                 # For shared buffer, user must pass the memory address
@@ -489,12 +466,12 @@ class TestQNN(unittest.TestCase):
 
         # Assert the backend name is qnn
         self.assertEqual(
-            len(exec_prog.program.execution_plan[0].delegates),
+            len(exec_prog.executorch_program.execution_plan[0].delegates),
             expected_partitions,
         )
         for i in range(expected_partitions):
             self.assertEqual(
-                exec_prog.program.execution_plan[0].delegates[i].id,
+                exec_prog.executorch_program.execution_plan[0].delegates[i].id,
                 QnnBackend.__name__,
             )
 
@@ -567,7 +544,7 @@ class TestQNN(unittest.TestCase):
         custom_quant_annotations: Tuple[Callable] = (),
         quant_dtype: QuantDtype = QuantDtype.use_8a8w,
     ) -> torch.fx.GraphModule:
-        m = torch.export.export_for_training(module, inputs).module()
+        m = torch.export.export_for_training(module, inputs, strict=True).module()
 
         quantizer = make_quantizer(
             quant_dtype=quant_dtype,
@@ -599,24 +576,33 @@ class TestQNN(unittest.TestCase):
         optimizer.step()
         return torch.ao.quantization.quantize_pt2e.convert_pt2e(prepared)
 
-    def split_graph(self, graph_module: torch.fx.GraphModule, division: int):
+    def split_graph(self, division: int):
         class SplitGraph(ExportPass):
             """
             Split graph based on number of nodes.
             """
 
-            def __init__(self, shares):
+            def __init__(self, division):
                 super().__init__()
-                self.shares = shares
+                self.division = division
 
             def _insert_clone(
                 self, graph_module: torch.fx.GraphModule
             ) -> torch.fx.GraphModule:
+                # Count the total of nodes in the graph
                 num_graph_nodes = 0
                 for node in graph_module.graph.nodes:
                     num_graph_nodes += 1 if node.op == "call_function" else 0
 
-                    if num_graph_nodes % self.shares != 0 or node.op != "call_function":
+                # Compute how many nodes in one share
+                shares = num_graph_nodes // self.division
+
+                # Insert clone op to split model based on the shares
+                num_graph_nodes = 0
+                for node in graph_module.graph.nodes:
+                    num_graph_nodes += 1 if node.op == "call_function" else 0
+
+                    if num_graph_nodes % shares != 0 or node.op != "call_function":
                         continue
 
                     with graph_module.graph.inserting_after(node):
@@ -635,9 +621,9 @@ class TestQNN(unittest.TestCase):
             def call(self, graph_module: torch.fx.GraphModule):
                 self._insert_clone(graph_module)
                 graph_module.recompile()
+                return PassResult(graph_module, True)
 
-        num_graph_nodes = 0
-        for node in graph_module.graph.nodes:
-            num_graph_nodes += 1 if node.op == "call_function" else 0
-
-        SplitGraph(-(num_graph_nodes // -division))(graph_module)
+        return SplitGraph, {
+            QCOM_PASS_ACTIVATE_KEY: True,
+            QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY: {"division": division},
+        }

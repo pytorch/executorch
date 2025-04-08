@@ -83,19 +83,19 @@ function(generate_bindings_for_kernels)
   execute_process(
     COMMAND
       "${PYTHON_EXECUTABLE}" -c
-      "from distutils.sysconfig import get_python_lib;print(get_python_lib())"
-    OUTPUT_VARIABLE site-packages-out
-    ERROR_VARIABLE site-packages-out-error
-    RESULT_VARIABLE site-packages-result
+      "import torchgen;import os; print(os.path.dirname(torchgen.__file__))"
+    OUTPUT_VARIABLE torchgen-out
+    ERROR_VARIABLE torchgen-out-error
+    RESULT_VARIABLE torchgen-result
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     OUTPUT_STRIP_TRAILING_WHITESPACE
   )
-  file(GLOB_RECURSE _torchgen_srcs "${site-packages-out}/torchgen/*.py")
+  file(GLOB_RECURSE _torchgen_srcs "${torchgen-out}/*.py")
   set(_gen_command
       "${PYTHON_EXECUTABLE}" -m torchgen.gen_executorch
       --source-path=${EXECUTORCH_ROOT}/codegen --install-dir=${_out_dir}
-      --tags-path=${site-packages-out}/torchgen/packaged/ATen/native/tags.yaml
-      --aten-yaml-path=${site-packages-out}/torchgen/packaged/ATen/native/native_functions.yaml
+      --tags-path=${torchgen-out}/packaged/ATen/native/tags.yaml
+      --aten-yaml-path=${torchgen-out}/packaged/ATen/native/native_functions.yaml
       --op-selection-yaml-path=${_oplist_yaml}
     )
   if(GEN_ADD_EXCEPTION_BOUNDARY)
