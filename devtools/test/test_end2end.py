@@ -24,6 +24,10 @@ from executorch.devtools.bundled_program.config import MethodTestCase, MethodTes
 from executorch.devtools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
+from executorch.extension.pybindings.portable_lib import (
+    _load_for_executorch_from_bundled_program,
+    _load_bundled_program_from_buffer
+)
 
 # 定义一个简单的模型用于测试
 class SimpleAddModel(torch.nn.Module):
@@ -34,9 +38,9 @@ class SimpleAddModel(torch.nn.Module):
         return x + y
 
 
-class TestDevtoolsEndToEnd(unittest.TestCase):
-    def setUp(self):
-        self.tmp_dir = tempfile.mkdtemp()
+class TestDevtoolsEndToEnd():
+    def __init__(self):
+        self.tmp_dir = "./"
         self.etrecord_path = os.path.join(self.tmp_dir, "etrecord.bin")
         self.etdump_path = os.path.join(self.tmp_dir, "etdump.bin")
 
@@ -45,10 +49,10 @@ class TestDevtoolsEndToEnd(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp_dir)
 
-    def generate_etrecord(self):
+    def generate_etrecord_(self):
         aten_model: ExportedProgram = export(
             self.model,
-            (torch.randn(1, 1, 32, 32),),
+            (torch.randn(1, 1, 32, 32), torch.randn(1, 1, 32, 32)),
         )
         edge_program_manager = to_edge(
             aten_model,
@@ -64,13 +68,13 @@ class TestDevtoolsEndToEnd(unittest.TestCase):
 
     def generate_bundled_program(self):
         method_name = "forward"
-        method_graphs = {method_name: export(self.model, (torch.randn(1, 1, 32, 32),))}
+        method_graphs = {method_name: export(self.model, (torch.randn(1, 1, 32, 32), torch.randn(1, 1, 32, 32)))}
 
-        inputs = [torch.randn(1, 1, 32, 32)]
+        inputs = [(torch.randn(1, 1, 32, 32), torch.randn(1, 1, 32, 32))]
         method_test_suites = [
             MethodTestSuite(
                 method_name=method_name,
-                test_cases=[MethodTestCase(inputs=inp, expected_outputs=self.model(inp)) for inp in inputs],
+                test_cases=[MethodTestCase(inputs=inp, expected_outputs=self.model(*inp)) for inp in inputs],
             )
         ]
         
@@ -81,3 +85,32 @@ class TestDevtoolsEndToEnd(unittest.TestCase):
         )
 
         return bundled_program
+
+    def generate_etdump(self):
+        bundled_program_py = self.generate_bundled_program()
+
+        bundled_program_bytes = serialize_from_bundled_program_to_flatbuffer(
+            bundled_program_py
+        )
+
+        bundled_program_cpp = _load_bundled_program_from_buffer(bundled_program_bytes)
+
+        program = _load_for_executorch_from_bundled_program(
+            bundled_program_cpp,
+            enable_etdump=True
+        )
+
+        example_inputs = (torch.randn(1, 1, 32, 32), torch.randn(1, 1, 32, 32))
+        program.forward(example_inputs)
+
+        program.write_etdump_result_to_file(self.etdump_path)
+
+    def test_profile(self):
+        pass
+
+
+if __name__ == "__main__":
+    tester = TestDevtoolsEndToEnd()
+    tester.generate_etrecord_()
+    tester.generate_bundled_program()
+    tester.generate_etdump()
