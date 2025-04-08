@@ -32,10 +32,7 @@ namespace executor {
 
 namespace native {
 
-enum class SeqDim {
-  ONE = 1,
-  TWO
-};
+enum class SeqDim { ONE = 1, TWO };
 
 namespace sdpa::impl {
 
