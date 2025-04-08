@@ -19,6 +19,7 @@ def define_common_targets():
             "//executorch/extension/testing_util:temp_file",
             "//executorch/runtime/platform:platform",
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+            "//executorch/devtools/etdump:etdump_filter",
         ],
     )
 
