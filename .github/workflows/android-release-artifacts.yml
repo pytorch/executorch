@@ -7,6 +7,10 @@ on:
         description: Version name to be uploaded for AAR release
         required: false
         type: string
+      upload_to_maven:
+        description: Upload the AAR to maven staging repository
+        required: false
+        type: boolean
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -73,6 +77,12 @@ jobs:
         cp aar-out/executorch.aar "${ARTIFACTS_DIR_NAME}/executorch.aar"
 
         shasum -a 256 "${ARTIFACTS_DIR_NAME}/executorch.aar"
+
+        # Publish to maven staging
+        UPLOAD_TO_MAVEN="${{ inputs.upload_to_maven }}"
+        if [[ "$UPLOAD_TO_MAVEN" == "true" ]]; then
+          (cd aar-out; ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:publishToMavenCentral)
+        fi
 
   upload-release-aar:
     name: upload-release-aar
