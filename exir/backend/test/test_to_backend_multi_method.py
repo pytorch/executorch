@@ -9,16 +9,20 @@ from typing import Dict, List, Tuple
 
 import torch
 
-from executorch.exir import to_edge
+from executorch.exir import EdgeProgramManager, to_edge
 from executorch.exir.backend.backend_api import (
     MethodProgramsPartitionerSpec,
     to_backend,
 )
+
 from executorch.exir.backend.canonical_partitioners.all_node_partitioner import (
     AllNodePartitioner,
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import Partitioner
+from executorch.exir.backend.test.backend_with_compiler_demo import (
+    BackendWithCompilerDemo,
+)
 
 from executorch.exir.backend.test.backend_with_preprocess_all_demo import (
     BackendWithPreprocessAllPartitioner,
@@ -27,6 +31,15 @@ from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.lowered_backend_module import (
     get_lowered_submodules,
     LoweredBackendModule,
+)
+from executorch.exir.schema import (
+    BackendDelegate,
+    BackendDelegateDataReference,
+    DataLocation,
+    Program,
+)
+from executorch.extension.pybindings.portable_lib import (  # @manual
+    _load_for_executorch_from_buffer,
 )
 from torch.export.exported_program import ExportedProgram
 
@@ -62,6 +75,21 @@ class TestToBackendMultiMethod(unittest.TestCase):
             )
 
         return top_level_submodules
+
+    def check_backend_delegate(
+        self,
+        program: Program,
+        delegate: BackendDelegate,
+        expected_id: str,
+        expected_processed: bytes,
+    ) -> None:
+        self.assertEqual(delegate.id, expected_id)
+        processed: BackendDelegateDataReference = delegate.processed
+        self.assertEqual(processed.location, DataLocation.INLINE)
+        self.assertLess(processed.index, len(program.backend_delegate_data))
+        self.assertEqual(
+            program.backend_delegate_data[processed.index].data, expected_processed
+        )
 
     def _test(
         self, test_set: Dict[str, Tuple[ExportedProgram, Partitioner, List[str]]]
@@ -404,3 +432,86 @@ class TestToBackendMultiMethod(unittest.TestCase):
             NotImplementedError, "Backend Invalid was not found."
         ):
             self._test(test_set)
+
+    def test_multi_method_end_to_end(self):
+        class SinModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.sin(x)
+
+        sin_edgeir_m = to_edge(torch.export.export(SinModule(), (torch.ones(1),)))
+        sin_edgeir_m_copy = to_edge(torch.export.export(SinModule(), (torch.ones(1),)))
+
+        method_edge_program = {
+            "forward": sin_edgeir_m.exported_program(),
+            "forward_copy": sin_edgeir_m_copy.exported_program(),
+        }
+        compile_specs = [CompileSpec("max_value", bytes([1]))]
+
+        method_partitioner = {
+            "forward": AllNodePartitioner(
+                BackendWithCompilerDemo.__name__, compile_specs
+            ),
+            "forward_copy": AllNodePartitioner(
+                BackendWithCompilerDemo.__name__, compile_specs
+            ),
+        }
+
+        lowered_ep_dict = to_backend(
+            MethodProgramsPartitionerSpec(
+                method_edge_program,
+                method_partitioner,
+            )
+        )
+
+        new_edge_manager = EdgeProgramManager(lowered_ep_dict)
+
+        exec_prog = new_edge_manager.to_executorch()
+
+        program = exec_prog.executorch_program
+        self.assertEqual(len(program.backend_delegate_data), 1)
+
+        self.check_backend_delegate(
+            program=program,
+            delegate=program.execution_plan[0].delegates[0],
+            expected_id=BackendWithCompilerDemo.__name__,
+            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>2#",
+        )
+        self.check_backend_delegate(
+            program=program,
+            delegate=program.execution_plan[1].delegates[0],
+            expected_id=BackendWithCompilerDemo.__name__,
+            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>2#",
+        )
+
+        # Check that there are two methods
+        self.assertEqual(len(program.execution_plan), 2)
+
+        delegate_method_1 = program.execution_plan[0].delegates
+        delegate_method_2 = program.execution_plan[1].delegates
+
+        # 1 delegate blob for each method
+        self.assertEqual(len(delegate_method_1), 1)
+        self.assertEqual(len(delegate_method_2), 1)
+
+        # Delegate Blobs reference the same underlying bytes
+        delegate_reference1 = delegate_method_1[0].processed
+        delegate_reference2 = delegate_method_2[0].processed
+        self.assertEqual(delegate_reference1.index, delegate_reference2.index)
+
+        et_module = _load_for_executorch_from_buffer(exec_prog.buffer)
+        model_inputs = torch.ones(1)
+        model_outputs = et_module.run_method("forward", [model_inputs])
+        self.assertEqual(model_inputs, torch.ones(1))
+        model_outputs_from_copy_method = et_module.run_method(
+            "forward_copy", [model_inputs]
+        )
+        self.assertEqual(model_inputs, torch.ones(1))
+        self.assertEqual(model_outputs, model_outputs_from_copy_method)
+        self.assertTrue(
+            torch.allclose(
+                model_outputs[0], 0.8333 * torch.ones(1), atol=1e-03, rtol=1e-03
+            )
+        )

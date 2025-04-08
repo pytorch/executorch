@@ -10,7 +10,7 @@ import logging
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from functools import singledispatch
-from typing import Dict, Generator, List
+from typing import Dict, Generator, List, Mapping
 
 import torch
 
@@ -636,8 +636,8 @@ class MethodProgramsPartitionerSpec:
     mapping the method name to the corresponding program, partitioner
     """
 
-    method_to_edge_program: Dict[str, ExportedProgram]
-    method_to_partitioner: Dict[str, Partitioner]
+    method_to_edge_program: Mapping[str, ExportedProgram]
+    method_to_partitioner: Mapping[str, Partitioner]
 
 
 @to_backend.register
