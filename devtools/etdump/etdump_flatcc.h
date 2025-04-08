@@ -25,6 +25,7 @@ namespace executorch {
 namespace etdump {
 
 using ::executorch::runtime::DelegateDebugIntId;
+using ::executorch::runtime::EventTracerFilterBase;
 using ::executorch::runtime::Result;
 
 namespace internal {
@@ -146,6 +147,13 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
       const char* name,
       DelegateDebugIntId delegate_debug_index,
       const double& output) override;
+
+  /**
+   * Set the filter of event tracer for delegation intermediate outputs.
+   */
+  virtual void set_delegation_intermediate_output_filter(
+      EventTracerFilterBase* event_tracer_filter) override;
+
   void set_debug_buffer(::executorch::runtime::Span<uint8_t> buffer);
   void set_data_sink(DataSinkBase* data_sink);
   ETDumpResult get_etdump_data();
@@ -188,6 +196,8 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
   int bundled_input_index_ = -1;
   State state_ = State::Init;
   struct internal::ETDumpStaticAllocator alloc_;
+
+  EventTracerFilterBase* filter_ = nullptr;
 };
 
 } // namespace etdump
