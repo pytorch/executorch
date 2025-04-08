@@ -18,6 +18,10 @@ try:
 except:
     has_quantized_ops = False
 
+from executorch.backends.xnnpack.partition.config.xnnpack_config import (
+    ConfigPrecisionType,
+)
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
 )
@@ -26,7 +30,10 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
 )
 from executorch.backends.xnnpack.test.test_xnnpack_utils import randomize_bn
 from executorch.backends.xnnpack.test.tester import Quantize, Tester
-
+from executorch.backends.xnnpack.test.tester.tester import (
+    Partition,
+    ToEdgeTransformAndLower,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
@@ -222,6 +229,61 @@ class TestConv2d(unittest.TestCase):
                     .serialize()
                     .run_method_and_compare_outputs(qtol=1)
                 )
+
+    def _test_dq_conv2d(
+        self,
+        m: torch.nn.Module,
+        inputs,
+        dynamic_shapes,
+        atol=5e-02,
+    ):
+        quant_config = get_symmetric_quantization_config(
+            is_per_channel=True,
+            is_dynamic=True,
+            act_qmin=-128,
+            act_qmax=127,
+            weight_qmin=-128,
+            weight_qmax=127,
+        )
+
+        DynamicallyQuantizedPartitioner = XnnpackPartitioner(
+            config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
+            per_op_mode=False,
+        )
+
+        tester = Tester(m, inputs, dynamic_shapes=dynamic_shapes)
+        tester = tester.quantize(Quantize(quantization_config=quant_config))
+
+        # Print after quantization
+        tester.stages["quantize"] = tester.stages[tester.cur]
+        print("\n----------Annotated Graph:")
+        print(tester.stages["quantize"].graph_module.code)
+
+        exported = tester.export()
+
+        # Print after exporting
+        tester.stages["export"] = exported.stages[exported.cur]
+        print("\n----------Exported Graph:")
+        print(tester.stages["export"].graph_module.code)
+
+        # Check for choose_qparams
+        tester.check(["torch.ops.quantized_decomposed.choose_qparams"])
+
+        tester.to_edge_transform_and_lower(
+            ToEdgeTransformAndLower([DynamicallyQuantizedPartitioner])
+        )
+
+        # Print after lower and partition
+        print("\n----------Lowered Graph:")
+        print(tester.stages[tester.cur].graph_module.code)
+
+        tester.check(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
+        tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+        tester.check_not(["executorch_exir_dialects_edge__ops_aten_conv2d_default"])
+
+        tester.to_executorch()
+        tester.serialize()
+        tester.run_method_and_compare_outputs(atol=atol)
 
     def test_fp16_conv2d(self) -> None:
         for transpose in (True, False):
@@ -698,4 +760,26 @@ class TestConv2d(unittest.TestCase):
             .to_executorch()
             .serialize()
             .run_method_and_compare_outputs(qtol=1)
+        )
+
+    def test_dq_conv2d(self) -> None:
+        class SimpleConv2d(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(1, 2, 3)
+                self.conv.weight.requires_grad = False
+                self.conv.bias.requires_grad = False
+
+            def forward(self, x):
+                return self.conv(x)
+
+            def get_inputs(self):
+                return (torch.randn(1, 1, 8, 8),)
+
+        model = SimpleConv2d()
+        self._test_dq_conv2d(
+            model,
+            model.get_inputs(),
+            dynamic_shapes=None,
+            atol=5e-2,
         )

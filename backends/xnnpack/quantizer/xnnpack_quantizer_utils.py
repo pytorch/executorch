@@ -304,6 +304,17 @@ def _do_annotate_conv(
     for n in gm.graph.nodes:
         if not is_conv_node(n):
             continue
+
+        # TODO: Check for dynamically quantized convs and check if nn.Conv2d is always lowered
+        # Only dynamically quantize 2D convolutions
+        # Handle both nn.Conv2d and aten.conv2d.default
+        if n.op == "call_module":
+            mod = gm.get_submodule(n.target)
+            if not hasattr(mod, "padding") or len(mod.padding) != 2:
+                continue
+        elif n.op == "call_function" and n.target != torch.ops.aten.conv2d.default:
+            continue
+
         conv_node = n
 
         # This is hacky!
