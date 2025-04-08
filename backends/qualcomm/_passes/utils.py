@@ -8,10 +8,7 @@ from typing import Dict
 
 import torch
 from executorch.backends.qualcomm.builders.utils import get_parameter
-from executorch.backends.qualcomm.utils.constants import (
-    QCOM_DTYPE,
-    QCOM_ENCODING,
-)
+from executorch.backends.qualcomm.utils.constants import QCOM_DTYPE, QCOM_ENCODING
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses import FakeTensor
 
