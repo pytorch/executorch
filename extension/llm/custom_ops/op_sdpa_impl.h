@@ -23,6 +23,10 @@
 #endif
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
 
+#if defined(ENABLE_CUSTOM_QUANTIZED_SDPA)
+#include <torchao/experimental/kernels/cpu/interface/quantized_matmul.h>
+#endif
+
 namespace torch {
 namespace executor {
 
@@ -67,7 +71,37 @@ void _q_at_k_gemm(
       q_data.dtype == ScalarType::Char || q_data.dtype == ScalarType::Float,
       "q and k must be either int8 or float");
   if (q_data.dtype == ScalarType::Char) {
-    ET_CHECK_MSG(false, "int8 not supported yet");
+#if defined(ENABLE_CUSTOM_QUANTIZED_SDPA)
+    if constexpr (std::is_same<accum_t, float>::value) {
+      int a_stride_m_tmp, b_stride_n_tmp;
+      auto kernel = torchao::kernels::cpu::quantized_matmul::
+          get_int8_a_int8_b_channelwise_qmatmul(
+              q_m, k_n, qk_k, false, true, a_stride_m_tmp, b_stride_n_tmp);
+      kernel(
+          q_m,
+          k_n,
+          qk_k,
+          static_cast<const int8_t*>(q_data.data),
+          q_stride_m,
+          static_cast<const int8_t*>(k_data.data),
+          k_stride_n,
+          qk_data,
+          k_n,
+          static_cast<const int8_t*>(q_data.zero_points),
+          static_cast<const int8_t*>(k_data.zero_points),
+          static_cast<const float*>(q_data.scales),
+          static_cast<const float*>(k_data.scales),
+          1,
+          1);
+    } else {
+      ET_CHECK_MSG(
+          false, "Accumulation in dtype other than float not supported yet");
+    }
+#else
+    ET_CHECK_MSG(
+        false,
+        "Quantized SDPA is not enabled. Check ENABLE_CUSTOM_QUANTIZED_SDPA compile flag");
+#endif
   } else {
     ::executorch::cpublas::gemm(
         ::executorch::cpublas::TransposeType::Transpose,
@@ -99,7 +133,35 @@ void _qk_at_v_gemm(
     const int64_t o_stride_m,
     const accum_t beta) {
   if (v_data.dtype == ScalarType::Char) {
-    ET_CHECK_MSG(false, "int8 not supported yet");
+#if defined(ENABLE_CUSTOM_QUANTIZED_SDPA)
+    if constexpr (std::is_same<accum_t, float>::value) {
+      int a_stride_m_tmp, b_stride_n_tmp;
+      auto kernel = torchao::kernels::cpu::quantized_matmul::
+          get_fp32_a_input_channelwise_8bit_b_f32_c_matmul(
+              m, n, k, false, false, a_stride_m_tmp, b_stride_n_tmp);
+      kernel(
+          m,
+          n,
+          k,
+          qk_data,
+          qk_stride_m /*lhs_stride_m*/,
+          static_cast<const int8_t*>(v_data.data),
+          v_stride_n /*rhs_stride_n*/,
+          o_data,
+          o_stride_m /*out_stride_n*/,
+          static_cast<const int8_t*>(v_data.zero_points),
+          static_cast<const float*>(v_data.scales),
+          beta,
+          1);
+    } else {
+      ET_CHECK_MSG(
+          false, "Accumulation in dtype other than float not supported yet");
+    }
+#else
+    ET_CHECK_MSG(
+        false,
+        "Quantized SDPA is not enabled. Check ENABLE_CUSTOM_QUANTIZED_SDPA compile flag");
+#endif
   } else {
     ::executorch::cpublas::gemm(
         ::executorch::cpublas::TransposeType::NoTranspose,
@@ -394,7 +456,10 @@ void cpu_flash_attention(
         kvSize);
   }
 
-  bool is_quantized_sdpa = query.scalar_type() == ScalarType::Char;
+  bool is_quantized_sdpa = false;
+#if defined(ENABLE_CUSTOM_QUANTIZED_SDPA)
+  is_quantized_sdpa = query.scalar_type() == ScalarType::Char;
+#endif
 
   auto strides = query.strides();
   int64_t qStrideB = strides[0];
@@ -424,6 +489,33 @@ void cpu_flash_attention(
   if (is_seq_at_dim_1) {
     vStrideH = strides[2];
     vStrideN = strides[1];
+  }
+
+  int64_t q_quant_params_StrideB = 0;
+  int64_t q_quant_params_StrideH = 0;
+  int64_t q_quant_params_StrideM = 0;
+  int64_t k_quant_params_StrideB = 0;
+  int64_t k_quant_params_StrideH = 0;
+  int64_t k_quant_params_StrideN = 0;
+  int64_t v_quant_params_StrideB = 0;
+  int64_t v_quant_params_StrideH = 0;
+  int64_t v_quant_params_StrideN = 0;
+
+  if (is_quantized_sdpa) {
+    strides = q_zero_points.value().strides();
+    q_quant_params_StrideB = strides[0];
+    q_quant_params_StrideH = strides[1];
+    q_quant_params_StrideM = strides[2];
+
+    strides = k_zero_points.value().strides();
+    k_quant_params_StrideB = strides[0];
+    k_quant_params_StrideH = strides[1];
+    k_quant_params_StrideN = strides[2];
+
+    strides = v_zero_points.value().strides();
+    v_quant_params_StrideB = strides[0];
+    v_quant_params_StrideH = strides[1];
+    v_quant_params_StrideN = strides[2];
   }
 
   strides = output.strides();
@@ -473,7 +565,11 @@ void cpu_flash_attention(
       /* qk_sum */ qSplitSize +
       /* dst    */ qSplitSize * headSize;
 
-  int64_t size_bytes = size_per_thread * num_thread * query.element_size();
+  // Since all intermediate compute is accum_t, we need to
+  // allocate a buffer accordingly.
+  int64_t size_of_intermediate_precision = sizeof(accum_t);
+  int64_t size_bytes = size_per_thread * num_thread * query.element_size() *
+      size_of_intermediate_precision;
   std::vector<char> buf_vec(size_bytes);
   void* buf = reinterpret_cast<void*>(buf_vec.data());
   // Need to double check the following
@@ -559,14 +655,18 @@ void cpu_flash_attention(
         int64_t q_offset = i * qStrideB + j * qStrideH + m * qStrideM;
         int64_t k_offset = i * kStrideB + j_kv * kStrideH + n * kStrideN;
         if (is_quantized_sdpa) {
-          ET_CHECK_MSG(
-              !is_seq_at_dim_1, "For quantized SDPA, seq_len must be at dim 2");
-          q_scales_ptr = q_scales.value().const_data_ptr<float>() + q_offset;
-          k_scales_ptr = k_scales.value().const_data_ptr<float>() + k_offset;
-          q_zero_points_ptr =
-              q_zero_points.value().const_data_ptr<int8_t>() + q_offset;
-          k_zero_points_ptr =
-              k_zero_points.value().const_data_ptr<int8_t>() + k_offset;
+          int64_t q_quant_params_offset = i * q_quant_params_StrideB +
+              j * q_quant_params_StrideH + m * q_quant_params_StrideM;
+          int64_t k_quant_params_offset = i * k_quant_params_StrideB +
+              j_kv * k_quant_params_StrideH + n * k_quant_params_StrideN;
+          q_scales_ptr =
+              q_scales.value().const_data_ptr<float>() + q_quant_params_offset;
+          k_scales_ptr =
+              k_scales.value().const_data_ptr<float>() + k_quant_params_offset;
+          q_zero_points_ptr = q_zero_points.value().const_data_ptr<int8_t>() +
+              q_quant_params_offset;
+          k_zero_points_ptr = k_zero_points.value().const_data_ptr<int8_t>() +
+              k_quant_params_offset;
           q_sub_matrix_data_ptr = (const int8_t*)(q_data) + q_offset;
           k_sub_matrix_data_ptr = (const int8_t*)(k_data) + k_offset;
         } else {
@@ -719,11 +819,12 @@ void cpu_flash_attention(
         const int8_t* v_zero_points_ptr = nullptr;
         int64_t v_offset = i * vStrideB + j_kv * vStrideH + n * vStrideN;
         if (is_quantized_sdpa) {
-          ET_CHECK_MSG(
-              !is_seq_at_dim_1, "For quantized SDPA, seq_len must be at dim 2");
-          v_scales_ptr = v_scales.value().const_data_ptr<float>() + v_offset;
-          v_zero_points_ptr =
-              v_zero_points.value().const_data_ptr<int8_t>() + v_offset;
+          int64_t v_quant_params_offset = i * v_quant_params_StrideB +
+              j_kv * v_quant_params_StrideH + n * v_quant_params_StrideN;
+          v_scales_ptr =
+              v_scales.value().const_data_ptr<float>() + v_quant_params_offset;
+          v_zero_points_ptr = v_zero_points.value().const_data_ptr<int8_t>() +
+              v_quant_params_offset;
           v_sub_matrix_data_ptr = (const int8_t*)(v_data) + v_offset;
         } else {
           v_sub_matrix_data_ptr = (const scalar_t*)(v_data) + v_offset;
