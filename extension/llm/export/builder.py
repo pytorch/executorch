@@ -234,6 +234,7 @@ class LLMEdgeManager:
                     self.example_inputs,
                     kwargs=self.example_kwarg_inputs,
                     dynamic_shapes=dynamic_shape,
+                    strict=True,
                 )
         return exported_module
 

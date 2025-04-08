@@ -21,6 +21,7 @@ from .convert_to_clamp import ConvertToClampPass  # noqa
 from .decompose_batchnorm_pass import DecomposeBatchNormPass  # noqa
 from .decompose_div_pass import DecomposeDivPass  # noqa
 from .decompose_layernorm_pass import DecomposeLayerNormPass  # noqa
+from .decompose_leaky_relu_pass import DecomposeLeakyReLUPass  # noqa
 from .decompose_linear_pass import DecomposeLinearPass  # noqa
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_select import DecomposeSelectPass  # noqa
@@ -39,6 +40,7 @@ from .insert_rescales_pass import InsertRescalePass  # noqa
 from .insert_table_ops import InsertTableOpsPass  # noqa
 from .keep_dims_false_to_squeeze_pass import KeepDimsFalseToSqueezePass  # noqa
 from .match_arg_ranks_pass import MatchArgRanksPass  # noqa
+from .match_where_self_arg_dtype_pass import MatchWhereSelfDtypePass  # noqa
 from .meandim_to_averagepool_pass import ConvertMeanDimToAveragePoolPass  # noqa
 from .mm_to_bmm_pass import ConvertMmToBmmPass  # noqa
 from .remove_clone_pass import RemoveClonePass  # noqa

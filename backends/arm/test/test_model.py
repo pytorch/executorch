@@ -176,6 +176,7 @@ def build_ethosu_runtime(
     pte_file: str,
     target: str,
     system_config: str,
+    memory_mode: str,
     extra_flags: str,
     elf_build_path: str,
 ):
@@ -195,6 +196,7 @@ def build_ethosu_runtime(
             f"--target={target}",
             "--build_type=Release",
             f"--system_config={system_config}",
+            f"--memory_mode={memory_mode}",
             extra_build_flag,
             f"--output={elf_build_path}",
         ]
@@ -256,6 +258,7 @@ if __name__ == "__main__":
                 pte_file,
                 args.target,
                 args.system_config,
+                args.memory_mode,
                 args.extra_flags,
                 elf_build_path,
             )

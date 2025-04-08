@@ -1164,7 +1164,9 @@ class TestPasses(unittest.TestCase):
         value = torch.randn(32, 32, 32, 32)
 
         # Capture the model
-        m = torch.export.export_for_training(M(32), (query, key, value)).module()
+        m = torch.export.export_for_training(
+            M(32), (query, key, value), strict=True
+        ).module()
 
         # 8w16a quantization
         from torch.ao.quantization.observer import (
@@ -1405,8 +1407,7 @@ class TestPasses(unittest.TestCase):
         ) -> Tuple[EdgeProgramManager, int, int]:
             # program capture
             m = torch.export.export_for_training(
-                m_eager,
-                example_inputs,
+                m_eager, example_inputs, strict=True
             ).module()
 
             quantizer = XNNPACKQuantizer()

@@ -34,9 +34,11 @@ class LessEqualVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        assert (
-            inputs[0].dtype == inputs[1].dtype
-        ), "LE must have the same dtypes as input"
+        if inputs[0].dtype != inputs[1].dtype:
+            raise TypeError(
+                "All inputs need to have the same data type for operator LE but got "
+                f"{inputs[0].dtype=}, {inputs[1].dtype=}"
+            )
 
         input_nodes = inputs
         # Handle quantization

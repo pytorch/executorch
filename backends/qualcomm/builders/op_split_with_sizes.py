@@ -17,7 +17,7 @@ from .qnn_constants import OpSplit, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class SplitWithSizes(NodeVisitor):
-    target = ["aten.split_with_sizes.default"]
+    target = ["aten.split_with_sizes.default", "aten.split_with_sizes_copy.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

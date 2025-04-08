@@ -63,62 +63,61 @@ def get_quant_attrs(
 
 def get_passes_dependency_for_capture_program():
     """
-    This function records the dependencies for passes used in the capture_program.
+    This function records the dependencies for passes used in the to_edge_transform_and_lower_to_qnn.
 
     It returns a dictionary where the keys are pass classes and the values are lists of
     dependencies required by each pass. This helps in managing and organizing the sequence
-    of passes needed for the capture_program to function correctly.
+    of passes needed for the to_edge_transform_and_lower_to_qnn to function correctly.
 
     Returns:
         dict: A dictionary mapping each pass to its corresponding list of dependencies.
     """
     from executorch.backends.qualcomm._passes import (
-        AnnotateDecomposed,
         AnnotateQuantAttrs,
-        ConstantI64toI32,
+        AnnotateStack,
+        AnnotateUnbind,
         ConvertBmmToMatmul,
         ConvertConv1dToConv2d,
-        ConvertToLinear,
         DecomposeAny,
         DecomposeLinalgVectorNorm,
         ExpandBroadcastTensorShape,
+        FixedLinearKeepDim,
         FoldQDQ,
+        I64toI32,
         LayoutTransform,
         RecomposePixelUnshuffle,
-        RecomposePReLU,
         RecomposeRmsNorm,
         RemoveRedundancy,
         ReplaceIndexPutInput,
-        TensorI64toI32,
+        TagQuantIO,
     )
 
     return {
-        AnnotateDecomposed: [RemoveRedundancy],
         AnnotateQuantAttrs: [
             RecomposePixelUnshuffle,
-            RecomposeRmsNorm,
-            ConvertToLinear,
-            RecomposePReLU,
             ConvertBmmToMatmul,
+            RemoveRedundancy,
         ],
-        ConstantI64toI32: [RemoveRedundancy],
-        ConvertBmmToMatmul: [ConvertToLinear],
+        AnnotateStack: [RemoveRedundancy],
+        AnnotateUnbind: [RemoveRedundancy],
+        ConvertBmmToMatmul: [RecomposePixelUnshuffle],
         ConvertConv1dToConv2d: [FoldQDQ],
-        ConvertToLinear: [RecomposePixelUnshuffle],
         DecomposeAny: [RemoveRedundancy],
         DecomposeLinalgVectorNorm: [RemoveRedundancy],
         ExpandBroadcastTensorShape: [RemoveRedundancy],
-        FoldQDQ: [AnnotateQuantAttrs, AnnotateDecomposed],
+        FixedLinearKeepDim: [FoldQDQ],
+        FoldQDQ: [AnnotateQuantAttrs, AnnotateStack, AnnotateUnbind],
+        I64toI32: [RemoveRedundancy],
         LayoutTransform: [
             AnnotateQuantAttrs,
             ConvertConv1dToConv2d,
             ExpandBroadcastTensorShape,
+            FixedLinearKeepDim,
         ],
         RecomposePixelUnshuffle: [RemoveRedundancy],
-        RecomposePReLU: [RemoveRedundancy],
         RecomposeRmsNorm: [RemoveRedundancy],
         ReplaceIndexPutInput: [LayoutTransform],
-        TensorI64toI32: [RemoveRedundancy],
+        TagQuantIO: [ReplaceIndexPutInput],
     }
 
 

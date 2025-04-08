@@ -23,7 +23,6 @@ from executorch.examples.qualcomm.utils import (
     make_output_dir,
     make_quantizer,
     parse_skip_delegation_node,
-    QnnPartitioner,
     setup_common_args_and_variables,
     SimpleADB,
 )
@@ -273,19 +272,15 @@ def main(args):
 
         quantizer = make_quantizer(quant_dtype=quant_dtype)
         backend_options = generate_htp_compiler_spec(quant_dtype is not None)
-        partitioner = QnnPartitioner(
-            generate_qnn_executorch_compiler_spec(
-                soc_model=getattr(QcomChipset, args.model),
-                backend_options=backend_options,
-            ),
-            skip_node_id_set=skip_node_id_set,
-            skip_node_op_set=skip_node_op_set,
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=getattr(QcomChipset, args.model),
+            backend_options=backend_options,
         )
         # skip embedding layer cause it's quantization sensitive
         graph_module, _ = skip_annotation(
             nn_module=model,
             quantizer=quantizer,
-            partitioner=partitioner,
+            compiler_specs=compiler_specs,
             sample_input=inputs[0],
             calibration_cb=calibrator,
             fp_node_op_set={torch.ops.aten.embedding.default},

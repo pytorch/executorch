@@ -166,7 +166,7 @@ class Quantize(Stage):
         self, artifact: torch.nn.Module, inputs: Optional[Tuple[torch.Tensor]]
     ) -> None:
         assert inputs is not None
-        captured_graph = export_for_training(artifact, inputs).module()
+        captured_graph = export_for_training(artifact, inputs, strict=True).module()
 
         assert isinstance(captured_graph, torch.fx.GraphModule)
         prepared = prepare_pt2e(captured_graph, self.quantizer)

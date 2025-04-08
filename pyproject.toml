@@ -68,7 +68,7 @@ dependencies=[
   "tabulate",
   "typing-extensions",
   # Keep this version in sync with: ./backends/apple/coreml/scripts/install_requirements.sh
-  "coremltools==8.1; platform_system == 'Darwin'",
+  "coremltools==8.2; platform_system == 'Darwin'",
 ]
 
 [project.urls]
@@ -88,23 +88,15 @@ flatc = "executorch.data.bin:flatc"
 # package, and package_data to restrict the set up non-python files we
 # include. See also setuptools/discovery.py for custom finders.
 [tool.setuptools.package-dir]
-"executorch.backends" = "backends"
-"executorch.codegen" = "codegen"
-"executorch.data.bin" = "data/bin"
-# TODO(mnachin T180504136): Do not put examples/models
-# into core pip packages. Refactor out the necessary utils
-# or core models files into a separate package.
-"executorch.examples.apple.coreml.llama" = "examples/apple/coreml/llama"
-"executorch.examples.llm_pte_finetuning" = "examples/llm_pte_finetuning"
-"executorch.examples.models" = "examples/models"
-"executorch.exir" = "exir"
-"executorch.extension" = "extension"
-"executorch.kernels.quantized" = "kernels/quantized"
-"executorch.schema" = "schema"
-"executorch.devtools" = "devtools"
-"executorch.devtools.bundled_program" = "devtools/bundled_program"
-"executorch.runtime" = "runtime"
-"executorch.util" = "util"
+# Tell setuptools to follow the symlink: src/executorch/* -> * for all first level
+# modules such as src/executorch/exir -> exir. This helps us to semi-compliant with
+# the "src layout" convention for python packages, which is also discussed in
+# https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/.
+# In the long term we should move all the modules under the src/executorch/ folder.
+#
+# Doing this also allows us to import from executorch.exir directly in
+# editable mode.
+"executorch" = "src/executorch"
 
 [tool.setuptools.package-data]
 # TODO(dbort): Prune /test[s]/ dirs, /third-party/ dirs, yaml files that we

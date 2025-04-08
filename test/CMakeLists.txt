@@ -26,7 +26,7 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 # Find prebuilt executorch library
-find_package(executorch CONFIG REQUIRED)
+find_package(executorch CONFIG REQUIRED HINTS ${CMAKE_INSTALL_PREFIX})
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)

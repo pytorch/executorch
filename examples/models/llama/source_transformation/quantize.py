@@ -206,17 +206,6 @@ def quantize(  # noqa C901
         q_group_size = 256 if group_size is None else group_size
         model = VkInt4WeightOnlyQuantizer(groupsize=q_group_size).quantize(model)
 
-        # Apply additional quantizer for linear layers that aren't lowered to Vulkan
-        # at the moment
-        from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
-
-        # 1. Quantize in checkpoint dtype.
-        model = Int8DynActInt4WeightQuantizer(
-            precision=checkpoint_torch_dtype, groupsize=q_group_size
-        ).quantize(model)
-        # 2. Set the computation dtype (what weights/acts dequantize to).
-        model = set_8da4w_computation_dtype(model, computation_torch_dtype)
-
         return model
     else:
         raise Exception(f"Unrecognized quantize mode: {qmode}")

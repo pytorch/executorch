@@ -211,6 +211,13 @@ class Adapter final {
     return physical_device_.min_ubo_alignment;
   }
 
+  inline utils::uvec3 max_texture_extents() const {
+    return {
+        physical_device_.properties.limits.maxImageDimension1D,
+        physical_device_.properties.limits.maxImageDimension2D,
+        physical_device_.properties.limits.maxImageDimension3D};
+  }
+
   // Command Buffer Submission
 
   void

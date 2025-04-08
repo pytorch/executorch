@@ -48,11 +48,6 @@ void resize_native_layer_norm_node(
   rstd->virtual_resize(mean_size);
 }
 
-void check_args(const api::vTensor& in, const api::vTensor& out) {
-  VK_CHECK_COND(check_packed_dim_is(in, WHCN::kChannelsDim));
-  VK_CHECK_COND(check_packed_dim_is(out, WHCN::kChannelsDim));
-}
-
 void add_native_layer_norm_node(
     ComputeGraph& graph,
     const ValueRef in,
@@ -84,7 +79,7 @@ void add_native_layer_norm_node(
   vTensorPtr t_input = graph.get_tensor(in);
   float epsilon = graph.extract_scalar<float>(eps);
 
-  check_args(*t_input, *t_out);
+  VK_CHECK_COND(check_same_packed_dim(*t_input, *t_out));
 
   std::vector<int64_t> in_sizes = t_input->sizes();
 
@@ -106,11 +101,7 @@ void add_native_layer_norm_node(
         vkapi::MemoryAccessType::WRITE},
        {{in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
-      {
-          t_out->logical_limits_ubo(),
-          t_out->sizes_ubo(),
-          graph.create_params_buffer(epsilon),
-      },
+      {},
       // Specialization Constants
       {
           t_input->hashed_layout(),
@@ -118,7 +109,12 @@ void add_native_layer_norm_node(
       },
       // Resizing Logic
       resize_native_layer_norm_node,
-      {normalized_shape}));
+      {normalized_shape},
+      {
+          graph.logical_limits_pc_of(out_val->at(0)),
+          graph.sizes_pc_of(out_val->at(0)),
+          PushConstantDataInfo(&epsilon, sizeof(epsilon)),
+      }));
 }
 
 void native_layer_norm(ComputeGraph& graph, const std::vector<ValueRef>& args) {

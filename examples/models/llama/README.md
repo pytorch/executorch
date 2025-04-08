@@ -371,7 +371,7 @@ adb push cmake-out-android/examples/models/llama/llama_main /data/local/tmp/llam
 ```
 adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --tokenizer_path <tokenizer.model> --prompt \"What is the capital of France?\" --seq_len 120" --warmup=1
 ```
-## Step 6: Build Mobile apps
+## Step 5: Build Mobile apps
 
 ### iOS
 

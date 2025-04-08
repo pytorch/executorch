@@ -23,8 +23,8 @@ bool check_gather_args(
   ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
   ET_CHECK_OR_RETURN_FALSE(
       index.scalar_type() == ScalarType::Long,
-      "Expected dypte int64 for index; index.scalar_type() = %d",
-      static_cast<int>(index.scalar_type()));
+      "Expected dtype int64 for index; index.scalar_type() = %s",
+      toString(index.scalar_type()));
   if (index.numel() != 0) {
     ET_CHECK_OR_RETURN_FALSE(
         nonzero_dim(in) == nonzero_dim(index),
@@ -134,8 +134,8 @@ bool check_nonzero_args(const Tensor& in, const Tensor& out) {
 
   ET_CHECK_OR_RETURN_FALSE(
       out.scalar_type() == ScalarType::Long,
-      "Expected out to be a Long tensor but received %" PRId8,
-      static_cast<int8_t>(out.scalar_type()));
+      "Expected out to be a Long tensor but received %s",
+      toString(out.scalar_type()));
 
   ET_CHECK_OR_RETURN_FALSE(
       out.dim() == 2,
@@ -155,8 +155,8 @@ bool check_scatter_add_args(
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(self, src));
   ET_CHECK_OR_RETURN_FALSE(
       index.scalar_type() == ScalarType::Long,
-      "Expected dtype int64 for index; index.scalar_type() = %d",
-      static_cast<int>(index.scalar_type()));
+      "Expected dtype int64 for index; index.scalar_type() = %s",
+      toString(index.scalar_type()));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(self, dim));
 
   if (index.numel() == 0) {

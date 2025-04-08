@@ -15,7 +15,7 @@ set -e
 
 OUTPUT="${1:-executorch}"
 EXIT_STATUS=0
-APP_PATH="examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo"
+APP_PATH="executorch-examples/apple/ExecuTorchDemo/ExecuTorchDemo"
 MODEL_NAME="mv3"
 SIMULATOR_NAME="executorch"
 
@@ -44,26 +44,17 @@ say() {
   echo -e "\033[1m\n\t** $1 **\n\033[0m"
 }
 
-say "Cloning the Code"
-
-pushd . > /dev/null
-git clone -b viable/strict https://github.com/pytorch/executorch.git "$OUTPUT"
-cd "$OUTPUT"
-
-say "Updating the Submodules"
-
-git submodule update --init
-
 say "Activating a Virtual Environment"
 
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 
 say "Installing Requirements"
 
-pip install --upgrade cmake pip setuptools wheel zstd
+./install_executorch.sh
 
-./install_executorch.sh --pybind coreml mps xnnpack
+say "Cloning the Demo App"
+
+git clone --depth 1 https://github.com/pytorch-labs/executorch-examples.git
 
 say "Installing CoreML Backend Requirements"
 
@@ -87,11 +78,6 @@ say "Downloading Labels"
 
 curl https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt \
   -o "$APP_PATH/Resources/Models/MobileNet/imagenet_classes.txt"
-
-say "Building Frameworks"
-
-./scripts/build_apple_frameworks.sh --coreml --custom --mps --optimized --portable --quantized --xnnpack
-mv cmake-out "$APP_PATH/Frameworks"
 
 say "Creating Simulator"
 

@@ -22,9 +22,8 @@ class ReplaceIndexPutInput(ExportPass):
         exir_ops.edge.quantized_decomposed.dequantize_per_channel.default: exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
     }
 
-    def __init__(self, edge_program: torch.export.ExportedProgram):
+    def __init__(self):
         super(ReplaceIndexPutInput, self).__init__()
-        self.edge_program = edge_program
 
     def call(self, graph_module: torch.fx.GraphModule):
         graph = graph_module.graph

@@ -11,6 +11,7 @@
 
 #include <executorch/examples/models/llama/runner/runner.h>
 
+#include <algorithm>
 #include <ctime>
 
 #include <executorch/extension/llm/runner/util.h>
@@ -140,7 +141,8 @@ Error Runner::load() {
   text_prefiller_ = std::make_unique<llm::TextPrefiller>(
       text_decoder_runner_.get(),
       metadata_.at(kUseKVCache),
-      metadata_.at(kEnableDynamicShape));
+      metadata_.at(kEnableDynamicShape),
+      metadata_.at(kMaxSeqLen));
 
   text_token_generator_ = std::make_unique<llm::TextTokenGenerator>(
       tokenizer_.get(),
@@ -221,11 +223,11 @@ Error Runner::generate(
 
   ET_CHECK_MSG(num_prompt_tokens >= 1, "Expected at least 1 prompt token");
   ET_CHECK_MSG(
-      num_prompt_tokens < metadata_.at(kMaxSeqLen),
+      num_prompt_tokens < metadata_.at(kMaxContextLen),
       "num_prompt_tokens %d >= max_seq_len_ %" PRId64
       ", Max seq length exceeded - please increase max seq len value in .../llama2/model.py",
       num_prompt_tokens,
-      metadata_.at(kMaxSeqLen));
+      metadata_.at(kMaxContextLen));
   ET_CHECK_MSG(
       num_prompt_tokens < seq_len,
       "num_prompt_tokens %d >= seq_len %d, Sequence length exceeded - please increase the seq_len value passed to generate()",
@@ -242,10 +244,10 @@ Error Runner::generate(
   }
   int64_t pos = 0;
   auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos);
-  stats_.first_token_ms = llm::time_in_ms();
-  stats_.prompt_eval_end_ms = llm::time_in_ms();
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
   uint64_t cur_token = prefill_res.get();
+  stats_.first_token_ms = llm::time_in_ms();
+  stats_.prompt_eval_end_ms = llm::time_in_ms();
 
   // print the first token from prefill. No prev_token so use cur_token for it.
   wrapped_callback(

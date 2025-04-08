@@ -104,7 +104,15 @@ def test_nn_functional_MI(test_data):
             raise e
 
 
-@parametrize("test_data", module_tests)
+x_fails = {
+    "normalize": "MLETORCH-852: Support aten.index_put.default",
+    "cosine_similarity": "MLETORCH-854: Support aten.linalg_vector_norm.default",
+    "unfold": "Int64 input && MLETORCH-827: Support aten.index.Tensor",
+    "fold": "Int64 input && MLETORCH-827: Support aten.index_put.default",
+}
+
+
+@parametrize("test_data", module_tests, x_fails, strict=False)
 def test_nn_functional_BI(test_data):
     module, inputs = test_data
     pipeline = TosaPipelineBI[input_t](

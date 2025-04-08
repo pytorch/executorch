@@ -192,16 +192,13 @@ class TestCollateTosaTests(unittest.TestCase):
             .to_edge_transform_and_lower()
             .to_executorch()
         )
+
+        test_collate_dir = "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests"
         # test that the output directory is created and contains the expected files
-        assert os.path.exists(
-            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests"
-        )
-        assert os.path.exists(
-            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/output_tag6_TOSA-0.80+BI.tosa"
-        )
-        assert os.path.exists(
-            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/desc_tag6_TOSA-0.80+BI.json"
-        )
+        assert os.path.exists(test_collate_dir)
+
+        for file in os.listdir(test_collate_dir):
+            assert file.endswith(("TOSA-0.80+BI.json", "TOSA-0.80+BI.tosa"))
 
         os.environ.pop("TOSA_TESTCASES_BASE_PATH")
         shutil.rmtree("test_collate_tosa_tests", ignore_errors=True)

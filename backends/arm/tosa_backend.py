@@ -11,7 +11,6 @@
 # JIT compiler flows.
 #
 import logging
-import os
 from typing import cast, final, List
 
 import serializer.tosa_serializer as ts  # type: ignore
@@ -34,10 +33,6 @@ from torch.fx import Node
 
 # TOSA backend debug functionality
 logger = logging.getLogger(__name__)
-TOSA_DBG_VERBOSE = os.environ.get("TOSA_DBG_VERBOSE") == "1"
-if TOSA_DBG_VERBOSE:
-    logging.basicConfig(level=logging.INFO)
-    logger.setLevel(logging.INFO)
 
 
 def _get_first_delegation_tag(graph_module) -> str | None:
@@ -80,12 +75,14 @@ class TOSABackend(BackendDetails):
                 input_order = list(map(int, spec.value.decode().split(",")))
 
         # Check that the output format is set correctly in the compile spec
-        assert output_format == "tosa", "output format must be tosa"
+        if output_format != "tosa":
+            raise ValueError(f'Invalid output format {output_format}, must be "tosa"')
 
         tosa_spec = get_tosa_spec(compile_spec)
-        assert (
-            tosa_spec is not None
-        ), "TOSA backend needs a TOSA version specified in the CompileSpec!"
+        if tosa_spec is None:
+            raise ValueError(
+                "TOSA backend needs a TOSA version specified in the CompileSpec"
+            )
 
         logger.info(f"Converting ExportedProgram to TOSA: {tosa_spec}")
 

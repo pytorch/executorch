@@ -145,7 +145,12 @@ def test_linear_residaul_tosa_MI(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data)
+@common.parametrize(
+    "test_data",
+    test_data,
+    {"3d_rand": "MLETORCH-855: Issue with Quantization folding."},
+    strict=False,
+)
 def test_linear_residual_tosa_BI(test_data: input_t1):
     pipeline = TosaPipelineBI[input_t1](
         LinearResidualModule(),

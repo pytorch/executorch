@@ -108,7 +108,7 @@ def export_to_exec_prog(
 ) -> ExecutorchProgramManager:
     m = model.eval()
     # pre-autograd export. eventually this will become torch.export
-    m = export_for_training(m, example_inputs).module()
+    m = export_for_training(m, example_inputs, strict=True).module()
 
     core_aten_ep = _to_core_aten(
         m,

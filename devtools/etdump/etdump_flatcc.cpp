@@ -15,6 +15,7 @@
 #include <executorch/devtools/etdump/etdump_schema_flatcc_builder.h>
 #include <executorch/devtools/etdump/etdump_schema_flatcc_reader.h>
 #include <executorch/devtools/etdump/utils.h>
+#include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/assert.h>
@@ -27,8 +28,11 @@ using ::executorch::runtime::ArrayRef;
 using ::executorch::runtime::ChainID;
 using ::executorch::runtime::DebugHandle;
 using ::executorch::runtime::DelegateDebugIdType;
+using ::executorch::runtime::DelegateDebugIntId;
+using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::EventTracerEntry;
+using ::executorch::runtime::kUnsetDelegateDebugIntId;
 using ::executorch::runtime::LoggedEValueType;
 using ::executorch::runtime::Result;
 using ::executorch::runtime::Span;
@@ -223,9 +227,9 @@ EventTracerEntry ETDumpGen::start_profiling(
 // EventTracerEntry struct is updated.
 EventTracerEntry ETDumpGen::start_profiling_delegate(
     const char* name,
-    DebugHandle delegate_debug_index) {
+    DelegateDebugIntId delegate_debug_index) {
   ET_CHECK_MSG(
-      (name == nullptr) ^ (delegate_debug_index == -1),
+      (name == nullptr) ^ (delegate_debug_index == kUnsetDelegateDebugIntId),
       "Only name or delegate_debug_index can be valid. Check DelegateMappingBuilder documentation for more details.");
   check_ready_to_add_events();
   EventTracerEntry prof_entry;
@@ -234,7 +238,7 @@ EventTracerEntry ETDumpGen::start_profiling_delegate(
   prof_entry.delegate_event_id_type = delegate_event_id_type;
   prof_entry.chain_id = chain_id_;
   prof_entry.debug_handle = debug_handle_;
-  prof_entry.event_id = delegate_debug_index == static_cast<unsigned int>(-1)
+  prof_entry.event_id = delegate_debug_index == kUnsetDelegateDebugIntId
       ? create_string_entry(name)
       : delegate_debug_index;
   prof_entry.start_time = et_pal_current_ticks();
@@ -276,13 +280,13 @@ void ETDumpGen::end_profiling_delegate(
 
 void ETDumpGen::log_profiling_delegate(
     const char* name,
-    DebugHandle delegate_debug_index,
+    DelegateDebugIntId delegate_debug_index,
     et_timestamp_t start_time,
     et_timestamp_t end_time,
     const void* metadata,
     size_t metadata_len) {
   ET_CHECK_MSG(
-      (name == nullptr) ^ (delegate_debug_index == -1),
+      (name == nullptr) ^ (delegate_debug_index == kUnsetDelegateDebugIntId),
       "Only name or delegate_debug_index can be valid. Check DelegateMappingBuilder documentation for more details.");
   check_ready_to_add_events();
   int64_t string_id = name != nullptr ? create_string_entry(name) : -1;
@@ -308,7 +312,7 @@ void ETDumpGen::log_profiling_delegate(
 
 Result<bool> ETDumpGen::log_intermediate_output_delegate(
     const char* name,
-    DebugHandle delegate_debug_index,
+    DelegateDebugIntId delegate_debug_index,
     const Tensor& output) {
   Result<bool> result = log_intermediate_output_delegate_helper(
       name, delegate_debug_index, output);
@@ -317,7 +321,7 @@ Result<bool> ETDumpGen::log_intermediate_output_delegate(
 
 Result<bool> ETDumpGen::log_intermediate_output_delegate(
     const char* name,
-    DebugHandle delegate_debug_index,
+    DelegateDebugIntId delegate_debug_index,
     const ArrayRef<Tensor> output) {
   log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
   Result<bool> result = log_intermediate_output_delegate_helper(
@@ -327,7 +331,7 @@ Result<bool> ETDumpGen::log_intermediate_output_delegate(
 
 Result<bool> ETDumpGen::log_intermediate_output_delegate(
     const char* name,
-    DebugHandle delegate_debug_index,
+    DelegateDebugIntId delegate_debug_index,
     const int& output) {
   log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
   Result<bool> result = log_intermediate_output_delegate_helper(
@@ -337,7 +341,7 @@ Result<bool> ETDumpGen::log_intermediate_output_delegate(
 
 Result<bool> ETDumpGen::log_intermediate_output_delegate(
     const char* name,
-    DebugHandle delegate_debug_index,
+    DelegateDebugIntId delegate_debug_index,
     const bool& output) {
   log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
   Result<bool> result = log_intermediate_output_delegate_helper(
@@ -347,7 +351,7 @@ Result<bool> ETDumpGen::log_intermediate_output_delegate(
 
 Result<bool> ETDumpGen::log_intermediate_output_delegate(
     const char* name,
-    DebugHandle delegate_debug_index,
+    DelegateDebugIntId delegate_debug_index,
     const double& output) {
   log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
   Result<bool> result = log_intermediate_output_delegate_helper(
@@ -358,12 +362,25 @@ Result<bool> ETDumpGen::log_intermediate_output_delegate(
 template <typename T>
 Result<bool> ETDumpGen::log_intermediate_output_delegate_helper(
     const char* name,
-    DebugHandle delegate_debug_index,
+    DelegateDebugIntId delegate_debug_index,
     const T& output) {
   ET_CHECK_OR_RETURN_ERROR(
-      (name == nullptr) ^ (delegate_debug_index == -1),
+      (name == nullptr) ^ (delegate_debug_index == kUnsetDelegateDebugIntId),
       InvalidArgument,
       "Only name or delegate_debug_index can be valid. Check DelegateMappingBuilder documentation for more details.");
+
+  if (filter_) {
+    Result<bool> result = filter_->filter(name, delegate_debug_index);
+    if (!result.ok()) {
+      return result;
+    }
+
+    // If the filter returns true, meaning this event should be filtered out and
+    // we should not log it.
+    if (result.get()) {
+      return false;
+    }
+  }
 
   check_ready_to_add_events();
   int64_t string_id = name != nullptr ? create_string_entry(name) : -1;
@@ -648,6 +665,11 @@ bool ETDumpGen::is_static_etdump() {
 
 DataSinkBase* ETDumpGen::get_data_sink() {
   return data_sink_;
+}
+
+void ETDumpGen::set_delegation_intermediate_output_filter(
+    EventTracerFilterBase* filter) {
+  filter_ = filter;
 }
 
 long ETDumpGen::write_tensor_or_raise_error(Tensor tensor) {

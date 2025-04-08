@@ -52,6 +52,18 @@ ValueRef prepack_standard(
     const utils::AxisMapLayout axis_map_layout = utils::kDefaultAxisMap);
 
 /*
+ * Same as prepack_standard, but transpose the height and width dimensions of
+ * the tensor while packing.
+ */
+ValueRef prepack_standard_hw_transposed(
+    ComputeGraph& graph,
+    const ValueRef tensor_data,
+    const utils::StorageType storage_type,
+    const utils::GPUMemoryLayout layout,
+    const bool passthrough = false,
+    const utils::AxisMapLayout axis_map_layout = utils::kDefaultAxisMap);
+
+/*
  * Equivalent to `prepack_standard()` function, except the `storage_type` and
  * `memory_layout` are set to match `to_copy`, which must be a `Tensor`.
  */

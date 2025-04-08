@@ -10,10 +10,7 @@ from torch.testing import FileCheck
 
 class RemoveRedundantTransposesPassTest(unittest.TestCase):
     def _export(self, model, example_inputs):
-        exported_module = export_for_training(
-            model,
-            example_inputs,
-        )
+        exported_module = export_for_training(model, example_inputs, strict=True)
         return exported_module.module()
 
     def _check(self, model, example_inputs, key, before_count, after_count):

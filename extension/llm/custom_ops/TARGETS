@@ -47,3 +47,17 @@ runtime.python_test(
         "//caffe2:torch",
     ],
 )
+
+runtime.python_test(
+    name = "test_quantized_sdpa",
+    srcs = [
+        "test_quantized_sdpa.py",
+    ],
+    preload_deps = [
+        ":custom_ops_aot_lib_mkl_noomp",
+        ":custom_ops_aot_py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
