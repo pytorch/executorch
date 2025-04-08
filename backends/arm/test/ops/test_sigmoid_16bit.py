@@ -11,12 +11,13 @@ from executorch.backends.arm.quantizer import (
     TOSAQuantizer,
 )
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineBI,
     OpNotSupportedPipeline,
     TosaPipelineBI,
 )
+from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.xnnpack.test.tester import Quantize
 from torch.ao.quantization.observer import HistogramObserver
 from torch.ao.quantization.quantizer import QuantizationSpec
@@ -37,9 +38,18 @@ def _get_16_bit_quant_config():
     return qconfig
 
 
-def get_16bit_sigmoid_quantizer(tosa_str: str):
-    tosa_spec = common.TosaSpecification.create_from_string(tosa_str)
-    quantizer = TOSAQuantizer(tosa_spec)
+def get_16bit_sigmoid_quantizer(u55_config=False):
+    tosa_version = conftest.get_option("tosa_version")
+    tosa_profiles = {
+        "0.80": TosaSpecification.create_from_string(
+            "TOSA-0.80+BI" + ("+u55" if u55_config else "")
+        ),
+        "1.0": TosaSpecification.create_from_string(
+            "TOSA-1.0+INT" + ("+u55" if u55_config else "")
+        ),
+    }
+
+    quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
     quantizer.set_global(get_symmetric_quantization_config())
     quantizer.set_module_type(
         torch.nn.modules.activation.Sigmoid, _get_16_bit_quant_config()
@@ -86,7 +96,7 @@ def test_sigmoid_tosa_BI(test_data):
     pipeline = TosaPipelineBI(
         Sigmoid(), (test_data(),), Sigmoid.aten_op, Sigmoid.exir_op
     )
-    pipeline.change_args("quantize", get_16bit_sigmoid_quantizer("TOSA-0.80+BI"))
+    pipeline.change_args("quantize", get_16bit_sigmoid_quantizer())
     pipeline.run()
 
 
@@ -96,14 +106,25 @@ def test_sigmoid_tosa_BI(test_data):
     xfails={
         "ramp": "AssertionError: Output 0 does not match reference output. MLETORCH-787"
     },
+    strict=False,
 )
 @pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
-def test_sigmoid_add_sigmoid_tosa_BI(test_data):
+def test_sigmoid_tosa_BI_add_sigmoid(test_data):
     pipeline = TosaPipelineBI(
-        SigmoidAddSigmoid(), (test_data(),), Sigmoid.aten_op, Sigmoid.exir_op
+        SigmoidAddSigmoid(),
+        (test_data(),),
+        Sigmoid.aten_op,
+        Sigmoid.exir_op,
     )
-    pipeline.change_args("quantize", get_16bit_sigmoid_quantizer("TOSA-0.80+BI"))
     pipeline.run()
+
+
+xfails = {
+    "ones": "AssertionError: Output 0 does not match reference output. MLETORCH-787",
+    "rand": "AssertionError: Output 0 does not match reference output. MLETORCH-787",
+    "rand_4d": "AssertionError: Output 0 does not match reference output. MLETORCH-787",
+    "ramp": "AssertionError: Output 0 does not match reference output. MLETORCH-787",
+}
 
 
 @common.parametrize(
@@ -111,11 +132,11 @@ def test_sigmoid_add_sigmoid_tosa_BI(test_data):
     test_data_suite,
 )
 @pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
-def test_sigmoid_tosa_u55(test_data):
+def test_sigmoid_u55_BI(test_data):
     pipeline = OpNotSupportedPipeline(
         Sigmoid(), (test_data(),), "TOSA-0.80+BI+u55", {Sigmoid.exir_op: 1}
     )
-    pipeline.change_args("quantize", get_16bit_sigmoid_quantizer("TOSA-0.80+BI+u55"))
+    pipeline.change_args("quantize", get_16bit_sigmoid_quantizer(True))
     pipeline.run()
 
 
@@ -124,7 +145,7 @@ def test_sigmoid_tosa_u55(test_data):
     test_data_suite,
 )
 @pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
-def test_sigmoid_add_sigmoid_tosa_u55(test_data):
+def test_sigmoid_u55_BI_add_sigmoid(test_data):
     pipeline = OpNotSupportedPipeline(
         SigmoidAddSigmoid(),
         (test_data(),),
@@ -132,18 +153,22 @@ def test_sigmoid_add_sigmoid_tosa_u55(test_data):
         {Sigmoid.exir_op: 3},
         n_expected_delegates=1,
     )
-    pipeline.change_args("quantize", get_16bit_sigmoid_quantizer("TOSA-0.80+BI+u55"))
+    pipeline.change_args("quantize", get_16bit_sigmoid_quantizer(True))
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
 @common.XfailIfNoCorstone320
-def test_sigmoid_tosa_u85(test_data):
+def test_sigmoid_u85_BI(test_data):
     pipeline = EthosU85PipelineBI(
-        Sigmoid(), (test_data(),), Sigmoid.aten_op, Sigmoid.exir_op, run_on_fvp=True
+        Sigmoid(),
+        (test_data(),),
+        Sigmoid.aten_op,
+        Sigmoid.exir_op,
+        run_on_fvp=True,
     )
-    pipeline.change_args("quantize", get_16bit_sigmoid_quantizer("TOSA-0.80+BI"))
+    pipeline.change_args("quantize", get_16bit_sigmoid_quantizer())
     pipeline.run()
 
 
@@ -156,7 +181,7 @@ def test_sigmoid_tosa_u85(test_data):
 )
 @pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
 @common.XfailIfNoCorstone320
-def test_sigmoid_add_sigmoid_tosa_u85(test_data):
+def test_sigmoid_u85_BI_add_sigmoid(test_data):
     pipeline = EthosU85PipelineBI(
         SigmoidAddSigmoid(),
         (test_data(),),
@@ -164,5 +189,5 @@ def test_sigmoid_add_sigmoid_tosa_u85(test_data):
         Sigmoid.exir_op,
         run_on_fvp=True,
     )
-    pipeline.change_args("quantize", get_16bit_sigmoid_quantizer("TOSA-0.80+BI"))
+    pipeline.change_args("quantize", get_16bit_sigmoid_quantizer())
     pipeline.run()

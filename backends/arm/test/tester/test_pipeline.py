@@ -676,7 +676,6 @@ class TransformAnnotationPassPipeline(BasePipelineMaker, Generic[T]):
     Attributes:
         module: The module which the pipeline is applied to.
         test_data: Data used for testing the module.
-        tosa_version: The TOSA-version which to test for.
 
         custom_path : Path to dump intermediate artifacts such as tosa and pte to.
 
@@ -686,11 +685,16 @@ class TransformAnnotationPassPipeline(BasePipelineMaker, Generic[T]):
         self,
         module: torch.nn.Module,
         test_data: T,
-        tosa_version: str,
         custom_path: str = None,
     ):
+        tosa_profiles = {
+            "0.80": TosaSpecification.create_from_string("TOSA-0.80+BI"),
+            "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT"),
+        }
+        tosa_version = conftest.get_option("tosa_version")
+
         compile_spec = common.get_tosa_compile_spec(
-            tosa_version, custom_path=custom_path
+            tosa_profiles[tosa_version], custom_path=custom_path
         )
         super().__init__(
             module,
