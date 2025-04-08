@@ -24,7 +24,7 @@ main() {
         # Configure the project with CMake
         # Note: Add any additional configuration options you need here
         cmake -DCMAKE_INSTALL_PREFIX="${build_dir}" \
-              -DCMAKE_BUILD_TYPE=Debug \
+              -DCMAKE_BUILD_TYPE=Release \
               -DEXECUTORCH_BUILD_OPENVINO=ON \
               -DEXECUTORCH_BUILD_XNNPACK=ON \
               -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
@@ -33,12 +33,12 @@ main() {
               -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
               -DEXECUTORCH_BUILD_OPENVINO_EXECUTOR_RUNNER=ON \
               -DPYTHON_EXECUTABLE=python \
-              -DEXECUTORCH_LOG_LEVEL=Debug \
               -B"${build_dir}"
+              #-DEXECUTORCH_LOG_LEVEL=Debug \
 
 
         # Build the project
-        cmake --build ${build_dir} --target install --config Debug -j$(nproc)
+        cmake --build ${build_dir} --target install --config Release -j$(nproc)
 
     # If the first arguments is --enable_python, build python package with python bindings
     elif [[ "$build_type" == "--enable_python" ]]; then

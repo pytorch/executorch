@@ -1,15 +1,12 @@
 #ifndef INFERENCE_H
 #define INFERENCE_H
 
-#include <getopt.h>
 #include <iostream>
-#include <random>
 #include <vector>
 
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/error.h>
-#include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -20,7 +17,6 @@ using executorch::aten::Tensor;
 using executorch::extension::from_blob;
 using executorch::extension::Module;
 using executorch::runtime::Error;
-using executorch::runtime::EValue;
 using executorch::runtime::Result;
 
 struct Detection {
@@ -88,50 +84,40 @@ std::vector<Detection> infer_yolo_once(
   ET_CHECK_MSG(result.ok(), "Could not infer the model with an error");
 
   const auto t = result->at(0).toTensor(); // Using only the 0 output
-  cv::Mat mat_output(t.dim(), t.sizes().data(), CV_32FC1, t.data_ptr());
-
   // yolov8 has an output of shape (batchSize, 84,  8400) (Num classes + box[x,y,w,h])
-  int rows = mat_output.size[2];
-  int dimensions = mat_output.size[1];
-
-  mat_output = mat_output.reshape(1, dimensions);
-  cv::transpose(mat_output, mat_output);
-
-  float* data = (float*)mat_output.data;
+  cv::Mat mat_output(t.dim() - 1, t.sizes().data() + 1, CV_32FC1, t.data_ptr());
 
   std::vector<int> class_ids;
   std::vector<float> confidences;
   std::vector<cv::Rect> boxes;
 
-  for (int i = 0; i < rows; ++i) {
-    float* classes_scores = data + 4;
+	// Iterate over detections and collect class IDs, confidence scores, and bounding boxes
+	for (int i = 0; i < mat_output.cols; ++i) {
+		const cv::Mat classes_scores = mat_output.col(i).rowRange(4, mat_output.rows);
 
-    cv::Mat scores(1, yolo_config.classes.size(), CV_32FC1, classes_scores);
-    cv::Point class_id;
-    double max_class_score;
+		cv::Point class_id;
+		double score;
+		cv::minMaxLoc(classes_scores, nullptr, &score, nullptr, &class_id); // Find the class with the highest score
 
-    cv::minMaxLoc(scores, 0, &max_class_score, 0, &class_id);
+		// Check if the detection meets the confidence threshold
+		if (score <= yolo_config.modelScoreThreshold)
+      continue;
 
-    if (max_class_score > yolo_config.modelScoreThreshold) {
-      confidences.push_back(max_class_score);
-      class_ids.push_back(class_id.x);
+		class_ids.push_back(class_id.y);
+		confidences.push_back(score);
 
-      float x = data[0];
-      float y = data[1];
-      float w = data[2];
-      float h = data[3];
+		const float x = mat_output.at<float>(0, i);
+		const float y = mat_output.at<float>(1, i);
+		const float w = mat_output.at<float>(2, i);
+		const float h = mat_output.at<float>(3, i);
 
-      int left = int((x - 0.5 * w - pad_x) / scale);
-      int top = int((y - 0.5 * h - pad_y) / scale);
+    const int left = int((x - 0.5 * w - pad_x) / scale);
+    const int top = int((y - 0.5 * h - pad_y) / scale);
+    const int width = int(w / scale);
+    const int height = int(h / scale);
 
-      int width = int(w / scale);
-      int height = int(h / scale);
-
-      boxes.push_back(cv::Rect(left, top, width, height));
-    }
-
-    data += dimensions;
-  }
+    boxes.push_back(cv::Rect(left, top, width, height));
+	}
 
   std::vector<int> nms_result;
   cv::dnn::NMSBoxes(
