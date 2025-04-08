@@ -77,7 +77,6 @@ at::Tensor custom_sdpa_aten(
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
     const std::optional<double> scale);
 
-#ifdef ENABLE_CUSTOM_QUANTIZED_SDPA
 Tensor& custom_quantized_sdpa_out_no_context(
     const Tensor& q,
     const Tensor& k,
@@ -118,7 +117,6 @@ at::Tensor custom_quantized_sdpa_aten(
     const std::optional<at::Tensor>& v_zero_points,
     const std::optional<at::Tensor>& v_scales,
     const bool is_seq_at_dim_2);
-#endif // ENABLE_CUSTOM_QUANTIZED_SDPA
 
 Tensor& update_cache_out_no_context(
     const Tensor& value,
@@ -241,7 +239,6 @@ at::Tensor custom_sdpa_aten(
   return output;
 }
 
-#ifdef ENABLE_CUSTOM_QUANTIZED_SDPA
 Tensor& custom_quantized_sdpa_out_no_context(
     const Tensor& q,
     const Tensor& k,
@@ -322,7 +319,6 @@ at::Tensor custom_quantized_sdpa_aten(
    output);
   return output;
 }
-#endif // ENABLE_CUSTOM_QUANTIZED_SDPA
 
 Tensor& update_cache_out_no_context(
     const Tensor& value,
@@ -371,7 +367,6 @@ TORCH_LIBRARY_FRAGMENT(llama, m) {
   m.def(
       "update_cache.out(Tensor value, Tensor(a!) cache, "
       "SymInt start_pos, *, Tensor(b!) out) -> Tensor(b!)");
-#ifdef ENABLE_CUSTOM_QUANTIZED_SDPA
   m.def(
       "custom_quantized_sdpa(Tensor query, Tensor key, Tensor value, SymInt start_pos, "
       "Tensor? attn_mask=None, float drpout_p=0.0, bool is_causal=False, "
@@ -384,7 +379,6 @@ TORCH_LIBRARY_FRAGMENT(llama, m) {
       "float? scale=None, Tensor? q_zero_points=None, Tensor? q_scales=None, "
       "Tensor? k_zero_points=None, Tensor? k_scales=None, Tensor? v_zero_points=None, "
       "Tensor? v_scales=None, bool is_seq_at_dim_2=False, *, Tensor(a!) out) -> Tensor(a!)");
-#endif // ENABLE_CUSTOM_QUANTIZED_SDPA
 }
 
 // TODO: Rename this file to op_custom_ops_aot.cpp
@@ -403,7 +397,6 @@ TORCH_LIBRARY_IMPL(llama, CompositeExplicitAutograd, m) {
   m.impl(
       "update_cache.out",
       WRAP_TO_ATEN(torch::executor::native::update_cache_out_no_context, 3));
-#ifdef ENABLE_CUSTOM_QUANTIZED_SDPA
   m.impl(
       "custom_quantized_sdpa",
       torch::executor::native::custom_quantized_sdpa_aten);
@@ -411,5 +404,4 @@ TORCH_LIBRARY_IMPL(llama, CompositeExplicitAutograd, m) {
       "custom_quantized_sdpa.out",
       WRAP_TO_ATEN(
           torch::executor::native::custom_quantized_sdpa_out_no_context, 15));
-#endif // ENABLE_CUSTOM_QUANTIZED_SDPA
 }

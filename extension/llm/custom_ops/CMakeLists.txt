@@ -38,6 +38,7 @@ include(${EXECUTORCH_SRCS_FILE})
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+list(APPEND _common_include_directories ${EXECUTORCH_ROOT}/third-party/ao)
 
 # Custom op libraries
 set(custom_ops_libs pthreadpool)

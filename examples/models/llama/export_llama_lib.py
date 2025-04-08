@@ -795,10 +795,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
                 args.enable_dynamic_shape,
             )
         )
-        # Apply XNNPACK after Vulkan so that undelegated ops can be accelerated by XNNPACK
-        partitioners.append(
-            get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
-        )
         modelname = f"vulkan_{modelname}"
 
         # Need to remove asserts from the graph to prevent graph breaks

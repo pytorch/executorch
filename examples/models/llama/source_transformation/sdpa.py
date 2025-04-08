@@ -165,7 +165,7 @@ def _update_attention_module_with_quantized_sdpa(
 ):
     sdpa = getattr(module, "SDPA", None)
     assert sdpa is not None
-    setattr(module, "SDPA", QuantizedSDPA(sdpa.dim, kv_cache))
+    setattr(module, "SDPA", QuantizedSDPA(sdpa.dim, kv_cache))  # noqa: B010
 
 
 def _replace_sdpa_with_quantized_sdpa(module: torch.nn.Module):
