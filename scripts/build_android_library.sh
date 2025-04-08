@@ -118,8 +118,8 @@ build_aar() {
   fi
   pushd extension/android/
   ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build
-  cp executorch_android/build/outputs/aar/executorch_android-debug.aar "${BUILD_AAR_DIR}/executorch.aar"
   popd
+  cp extension/android/executorch_android/build/outputs/aar/executorch_android-debug.aar "${BUILD_AAR_DIR}/executorch.aar"
 }
 
 main() {
