@@ -152,13 +152,17 @@ vkcompute::vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
   }
 }
 
-void test_vulkan_linear_int4(
+void test_vulkan_linear_int4_impl(
     const int B,
     const int M,
     const int K,
     const int N,
     const int group_size = 32,
-    const int inner_k_tiles = 8) {
+    const int inner_k_tiles = 8,
+    const vkcompute::utils::StorageType in_storage =
+        vkcompute::utils::kTexture3D,
+    const vkcompute::utils::StorageType out_storage =
+        vkcompute::utils::kTexture3D) {
   assert(K % group_size == 0);
 
   at::Tensor x = at::rand({B, M, K}, at::device(at::kCPU).dtype(at::kFloat));
@@ -169,8 +173,13 @@ void test_vulkan_linear_int4(
   at::Tensor scales_and_zeros =
       at::rand({k_groups, N, 2}, at::device(at::kCPU).dtype(at::kFloat));
 
-  at::Tensor out_ref = dequantize_and_linear(
-      x, weights_4x2, group_size, scales_and_zeros, inner_k_tiles);
+  at::Tensor weights_int = unpack_weights_4x2(weights_4x2);
+  at::Tensor out_ref = linear_weight_int4_reference_impl(
+      x,
+      at::_convert_weight_to_int4pack_for_cpu(weights_int, group_size),
+      group_size,
+      scales_and_zeros,
+      inner_k_tiles);
 
   // Build Vulkan graph
   using namespace vkcompute;
@@ -188,14 +197,13 @@ void test_vulkan_linear_int4(
   MAKE_TENSORREF_FOR(weights_4x2);
   MAKE_TENSORREF_FOR(scales_and_zeros);
 
-#define MAKE_INPUT_FOR(x)                    \
-  IOValueRef r_##x = graph.add_input_tensor( \
-      x.sizes().vec(), from_at_scalartype(x.scalar_type()));
-
-  MAKE_INPUT_FOR(x);
+  IOValueRef r_x = graph.add_input_tensor(
+      x.sizes().vec(), from_at_scalartype(x.scalar_type()), in_storage);
 
   const ValueRef r_out = graph.add_tensor(
-      out_ref.sizes().vec(), from_at_scalartype(out_ref.scalar_type()));
+      out_ref.sizes().vec(),
+      from_at_scalartype(out_ref.scalar_type()),
+      out_storage);
 
   VK_GET_OP_FN("et_vk.linear_weight_int4.default")
   (graph,
@@ -227,6 +235,34 @@ void test_vulkan_linear_int4(
       staging_out, vk_out.mutable_data_ptr(), vk_out.numel());
 
   ASSERT_TRUE(at::allclose(vk_out, out_ref, 1e-4, 1e-4));
+}
+
+void test_vulkan_linear_int4(
+    const int B,
+    const int M,
+    const int K,
+    const int N,
+    const int group_size = 32,
+    const int inner_k_tiles = 8) {
+  test_vulkan_linear_int4_impl(
+      B,
+      M,
+      K,
+      N,
+      group_size,
+      inner_k_tiles,
+      vkcompute::utils::kBuffer,
+      vkcompute::utils::kBuffer);
+
+  test_vulkan_linear_int4_impl(
+      B,
+      M,
+      K,
+      N,
+      group_size,
+      inner_k_tiles,
+      vkcompute::utils::kTexture3D,
+      vkcompute::utils::kTexture3D);
 }
 
 TEST(VulkanInt4LinearTest, test_reference_impl) {

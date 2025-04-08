@@ -28,6 +28,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::EventTracer;
 using executorch::runtime::EventTracerDebugLogLevel;
 using executorch::runtime::EventTracerEntry;
+using executorch::runtime::EventTracerFilterBase;
 using executorch::runtime::kUnsetChainId;
 using executorch::runtime::kUnsetDebugHandle;
 using executorch::runtime::kUnsetDelegateDebugIntId;
@@ -88,6 +89,11 @@ class DummyEventTracer : public EventTracer {
     (void)event_tracer_entry;
     (void)metadata;
     (void)metadata_len;
+  }
+
+  void set_delegation_intermediate_output_filter(
+      EventTracerFilterBase* event_tracer_filter) override {
+    (void)event_tracer_filter;
   }
 
   void log_profiling_delegate(
