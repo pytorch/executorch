@@ -189,7 +189,7 @@ for COMMIT in ${COMMITS}; do
             FAILED=1
         fi
 
-        if grep -icq "on_fvp" $op_test_files; then
+        if grep -icq "on_fvp(" $op_test_files; then
             echo -e "${ERROR} All unittests should run on FVP if relevant,"\
             "on_fvp suffix can be excluded." >&2
             FAILED=1
