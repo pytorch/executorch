@@ -3,7 +3,10 @@
 #include <gflags/gflags.h>
 #include <csignal>
 
-void draw_detection(cv::Mat& frame, const Detection detection, const cv::Scalar color);
+void draw_detection(
+    cv::Mat& frame,
+    const Detection detection,
+    const cv::Scalar color);
 
 DetectionConfig DEFAULT_YOLO_CONFIG = {
     {"person",        "bicycle",      "car",
@@ -55,21 +58,23 @@ int main(int argc, char** argv) {
   error = yolo_module.load_forward();
 
   cv::VideoCapture cap(FLAGS_input_path.c_str());
-  if(!cap.isOpened()){
+  if (!cap.isOpened()) {
     std::cout << "Error opening video stream or file" << std::endl;
     return -1;
   }
   const auto frame_width = cap.get(cv::CAP_PROP_FRAME_WIDTH);
-  const auto  frame_height = cap.get(cv::CAP_PROP_FRAME_HEIGHT);
-  cv::VideoWriter video(FLAGS_output_path.c_str(), cv::VideoWriter::fourcc('M','J','P','G'),30, cv::Size(frame_width,frame_height));
+  const auto frame_height = cap.get(cv::CAP_PROP_FRAME_HEIGHT);
+  cv::VideoWriter video(
+      FLAGS_output_path.c_str(),
+      cv::VideoWriter::fourcc('M', 'J', 'P', 'G'),
+      30,
+      cv::Size(frame_width, frame_height));
 
-
-  while (true){
-
+  while (true) {
     cv::Mat frame;
     cap >> frame;
 
-   // If the frame is empty, break immediately
+    // If the frame is empty, break immediately
     if (frame.empty())
       break;
 
@@ -88,7 +93,10 @@ int main(int argc, char** argv) {
   video.release();
 }
 
-void draw_detection(cv::Mat& frame, const Detection detection, const cv::Scalar color) {
+void draw_detection(
+    cv::Mat& frame,
+    const Detection detection,
+    const cv::Scalar color) {
   cv::Rect box = detection.box;
 
   // Detection box
