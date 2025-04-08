@@ -277,6 +277,7 @@ def register_binary_op(features: OpFeatures):
         exir_ops.edge.aten.rsqrt.default,
         exir_ops.edge.aten.tanh.default,
         exir_ops.edge.aten.round.default,
+        exir_ops.edge.aten.leaky_relu.default,
     ]
 )
 def register_unary_op(features: OpFeatures):
@@ -392,6 +393,7 @@ def register_int8_mm_op(features: OpFeatures):
 
 @update_features(exir_ops.edge.et_vk.linear_weight_int4.default)
 def register_int4_mm_op(features: OpFeatures):
+    features.buffer_impl = True
     features.texture_impl = TextureImplFeatures(
         uses_axis_map=False,
         valid_packed_dims={PackedDim.WIDTH},
@@ -400,6 +402,7 @@ def register_int4_mm_op(features: OpFeatures):
     features.optimal_storage = VkStorageType.TEXTURE_3D
     features.optimal_layout = VkMemoryLayout.TENSOR_WIDTH_PACKED
     features.handles_own_prepacking = True
+    features.skip_limits_check = {1}
     return features
 
 

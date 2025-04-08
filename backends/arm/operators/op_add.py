@@ -41,9 +41,18 @@ class AddVisitor_080_BI(NodeVisitor):
     ) -> None:
         # Specification (0.80) states that input and output types
         # should all be the same
-        assert inputs[0].dtype == inputs[1].dtype == output.dtype
+        if inputs[0].dtype != inputs[1].dtype or inputs[0].dtype != output.dtype:
+            raise TypeError(
+                f"All IO needs to have the same data type, got input 1: "
+                f"{inputs[0].dtype}, input 2: {inputs[1].dtype} and output: "
+                f"{output.dtype}"
+            )
         # Handle int8 (quantized) and int32
-        assert inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]
+        supported_dtypes = [ts.DType.INT8, ts.DType.INT32]
+        if inputs[0].dtype not in supported_dtypes:
+            raise TypeError(
+                f'IO data type needs to be {supported_dtypes}, got "{inputs[0].dtype}"'
+            )
 
         dim_order = (
             inputs[0].dim_order
@@ -105,15 +114,22 @@ class AddVisitor_080_MI(AddVisitor_080_BI):
     ) -> None:
         # Specification (0.80) states that input and output types
         # should all be the same
-        assert inputs[0].dtype == inputs[1].dtype == output.dtype
+        if inputs[0].dtype != inputs[1].dtype or inputs[0].dtype != output.dtype:
+            raise TypeError(
+                f"All IO needs to have the same data type, got input 1: "
+                f"{inputs[0].dtype}, input 2: {inputs[1].dtype} and output: "
+                f"{output.dtype}"
+            )
 
         if inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]:
             # Call the inherited define_node for handling integers
             super().define_node(node, tosa_graph, inputs, output)
         else:
             # FP32 Add lowering
-            assert inputs[0].dtype == ts.DType.FP32
-            assert output.dtype == ts.DType.FP32
+            if inputs[0].dtype != ts.DType.FP32:
+                raise TypeError(
+                    f"Expected IO data type to be FP32, got {inputs[0].dtype}"
+                )
 
             input1, input2 = tutils.reshape_for_broadcast(tosa_graph, inputs)
 

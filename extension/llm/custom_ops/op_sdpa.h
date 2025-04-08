@@ -56,6 +56,26 @@ Tensor& flash_attention_kernel_out(
     const optional<double> scale,
     Tensor& output);
 
+#ifdef ENABLE_CUSTOM_QUANTIZED_SDPA
+Tensor& custom_quantized_sdpa_out(
+    RuntimeContext& ctx,
+    const Tensor& q,
+    const Tensor& k,
+    const Tensor& v,
+    const int64_t start_pos,
+    const optional<Tensor>& attn_mask,
+    const double dropout_p,
+    const bool is_causal,
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const optional<double> scale,
+    const optional<Tensor>& q_zero_points,
+    const optional<Tensor>& q_scales,
+    const optional<Tensor>& k_zero_points,
+    const optional<Tensor>& k_scales,
+    const optional<Tensor>& v_zero_points,
+    const optional<Tensor>& v_scales,
+    Tensor& output);
+#endif // ENABLE_CUSTOM_QUANTIZED_SDPA
 } // namespace native
 } // namespace executor
 } // namespace torch

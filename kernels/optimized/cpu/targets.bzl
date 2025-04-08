@@ -25,6 +25,14 @@ _OPTIMIZED_ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:broadcast_util",
         ],
     ),
+    op_target(
+        name = "op_elu",
+        deps = [
+            "//executorch/extension/threadpool:threadpool",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
+        ],
+    ),
     op_target(name = "op_exp"),
     op_target(
         name = "op_fft_r2c",
@@ -99,8 +107,8 @@ _OPTIMIZED_ATEN_OPS = (
     op_target(
         name = "op_where",
         deps = [
+            "//executorch/extension/threadpool:threadpool",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
-            "//executorch/runtime/kernel:thread_parallel_interface",
         ],
     ),
 )
