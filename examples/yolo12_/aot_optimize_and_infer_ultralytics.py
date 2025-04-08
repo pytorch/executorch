@@ -8,21 +8,27 @@
 
 import argparse
 import time
-from typing import cast, List, Optional
+from typing import Any, cast, Iterator, List, Optional, Tuple
+
+import cv2
 
 import executorch
 
 import nncf.torch
+import numpy as np
 import timm
 import torch
 import torchvision.models as torchvision_models
 from executorch.backends.openvino.partitioner import OpenvinoPartitioner
 from executorch.backends.openvino.quantizer import quantize_model
+
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import (
+    EdgeCompileConfig,
     EdgeProgramManager,
+    ExecutorchBackendConfig,
     ExecutorchProgramManager,
     to_edge_transform_and_lower,
-    EdgeCompileConfig
 )
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.runtime import Runtime
@@ -33,229 +39,50 @@ from torch.export import export
 from torch.export.exported_program import ExportedProgram
 from torchvision import datasets
 from transformers import AutoModel
+from ultralytics import YOLO
 
 
-BACKEND = "XNNPACK"
-BACKEND = "OPENVINO"
+class CV2VideoIter:
+    def __init__(self, cap) -> None:
+        self._cap = cap
 
-def load_calibration_dataset(
-    dataset_path: str,
-    batch_size: int,
-    suite: str,
-    model: torch.nn.Module,
-    model_name: str,
-):
-    """
-    Loads a calibration dataset for model quantization.
+    def __iter__(self):
+        return self
 
-    :param dataset_path: Path to the dataset directory.
-    :param batch_size: Number of samples per batch.
-    :param suite: The model suite used for preprocessing transformations. Supported values are:
-        - "torchvision": Uses predefined transformations for torchvision models.
-        - "timm": Uses dataset transformations based on the model's pretrained configuration.
-    :param model: The model instance, required for timm transformation resolution.
-    :param model_name: The model name, required for torchvision transformations.
-    :return: A DataLoader instance for the calibration dataset.
-    :raises ValueError: If the suite is unsupported for validation.
-    """
-    val_dir = f"{dataset_path}/val"
+    def __next__(self):
+        success, frame = self._cap.read()
+        if not success:
+            raise StopIteration()
+        return frame
 
-    if suite == "torchvision":
-        transform = torchvision_models.get_model_weights(
-            model_name
-        ).DEFAULT.transforms()
-    elif suite == "timm":
-        transform = create_transform(
-            **resolve_data_config(model.pretrained_cfg, model=model)
-        )
-    else:
-        msg = f"Validation is not supported yet for the suite {suite}"
-        raise ValueError(msg)
-
-    val_dataset = datasets.ImageFolder(val_dir, transform=transform)
-
-    calibration_dataset = torch.utils.data.DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=0,
-        pin_memory=True,
-    )
-
-    return calibration_dataset
+    def __len__(self):
+        return int(self._cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
 
-def infer_model(
-    exec_prog: ExecutorchProgramManager,
-    inputs,
-    num_iter: int,
-    warmup_iter: int,
-    output_path: str,
-) -> float:
-    """
-    Executes inference and reports the average timing.
+class CV2VideoDataset(torch.utils.data.IterableDataset):
+    def __init__(self, cap) -> None:
+        super().__init__()
+        self._iter = CV2VideoIter(cap)
 
-    :param exec_prog: ExecutorchProgramManager of the lowered model
-    :param inputs: The inputs for the model.
-    :param num_iter: The number of iterations to execute inference for timing.
-    :param warmup_iter: The number of iterations to execute inference for warmup before timing.
-    :param output_path: Path to the output tensor file to save the output of inference..
-    :return: The average inference timing.
-    """
-    # Load model from buffer
-    runtime = Runtime.get()
-    program = runtime.load_program(exec_prog.buffer)
-    method = program.load_method("forward")
-    if method is None:
-        raise ValueError("Load method failed")
+    def __iter__(self) -> Iterator:
+        return self._iter
 
-    # Execute warmup
-    out = None
-    for _i in range(warmup_iter):
-        out = method.execute(inputs)
-
-    # Execute inference and measure timing
-    time_total = 0.0
-    for _i in range(num_iter):
-        time_start = time.time()
-        out = method.execute(inputs)
-        time_end = time.time()
-        time_total += time_end - time_start
-
-    # Save output tensor as raw tensor file
-    if output_path:
-        assert out is not None
-        torch.save(out, output_path)
-
-    # Return average inference timing
-    return time_total / float(num_iter)
+    def __len__(self):
+        return len(self._iter)
 
 
-def validate_model(
-    exec_prog: ExecutorchProgramManager,
-    calibration_dataset: torch.utils.data.DataLoader,
-) -> float:
-    """
-    Validates the model using the calibration dataset.
-
-    :param exec_prog: ExecutorchProgramManager of the lowered model
-    :param calibration_dataset: A DataLoader containing calibration data.
-    :return: The accuracy score of the model.
-    """
-    # Load model from buffer
-    runtime = Runtime.get()
-    program = runtime.load_program(exec_prog.buffer)
-    method = program.load_method("forward")
-    if method is None:
-        raise ValueError("Load method failed")
-
-    # Iterate over the dataset and run the executor
-    predictions: List[int] = []
-    targets = []
-    for _idx, data in enumerate(calibration_dataset):
-        feature, target = data
-        targets.extend(target)
-        out = list(method.execute((feature,)))
-        predictions.extend(torch.stack(out).reshape(-1, 1000).argmax(-1))
-
-    # Check accuracy
-    return accuracy_score(predictions, targets)
 
 
-def main(  # noqa: C901
-    input_shape,
-    save_model: bool,
-    model_file_name: str,
-    quantize: bool,
-    validate: bool,
-    dataset_path: str,
+def lower_to_openvino(
+    aten_dialect: torch.ExportedProgram,
+    example_args: Tuple[Any, ...],
+    transform_fn: callable,
     device: str,
-    batch_size: int,
-    infer: bool,
-    num_iter: int,
-    warmup_iter: int,
-    input_path: str,
-    output_path: str,
-):
-    """
-    Main function to load, quantize, and validate a model.
-
-    :param suite: The model suite to use (e.g., "timm", "torchvision", "huggingface").
-    :param model_name: The name of the model to load.
-    :param input_shape: The input shape for the model.
-    :param save_model: Whether to save the compiled model as a .pte file.
-    :param model_file_name: Custom file name to save the exported model.
-    :param quantize: Whether to quantize the model.
-    :param validate: Whether to validate the model.
-    :param dataset_path: Path to the dataset for calibration/validation.
-    :param device: The device to run the model on (e.g., "cpu", "gpu").
-    :param batch_size: Batch size for dataset loading.
-    :param infer: Whether to execute inference and report timing.
-    :param num_iter: The number of iterations to execute inference for timing.
-    :param warmup_iter: The number of iterations to execute inference for warmup before timing.
-    :param input_path: Path to the input tensor file to read the input for inference.
-    :param output_path: Path to the output tensor file to save the output of inference..
-
-    """
-
-    # Load the selected model
-    from ultralytics import YOLO
-    import numpy as np
-    model_name = "yolov8s"
-    model_name = "yolo12s"
-    model = YOLO(model_name)
-
-    # Setup pre-processing
-    height = width = 640
-    np_dummy_tensor = np.ones((height, width, 3))
-    model.predict(np_dummy_tensor, imgsz=((height, width)), device="cpu")
-
-    breakpoint()
-    pt_model = model.model.to(torch.device("cpu"))
-
-
-    def transform_fn(frame):
-          input_tensor = model.predictor.preprocess([frame])
-          return input_tensor
-
-    with torch.no_grad():
-        aten_dialect = torch.export.export(pt_model, args=(transform_fn(np_dummy_tensor),))
-
-    pre_frame = transform_fn(np_dummy_tensor)
-    results = pt_model(pre_frame)
-    results = model.predictor.postprocess(results, pre_frame, [np_dummy_tensor])
-
-    calibration_dataset: Optional[torch.utils.data.DataLoader] = None
-
-    if dataset_path:
-        calibration_dataset = load_calibration_dataset(
-            dataset_path, batch_size, suite, model, model_name
-        )
-        if calibration_dataset is not None:
-            input_shape = tuple(next(iter(calibration_dataset))[0].shape)
-            print(f"Input shape retrieved from the model config: {input_shape}")
-        else:
-            msg = "Quantization requires a valid calibration dataset"
-            raise ValueError(msg)
-
-
-    if quantize and calibration_dataset:
-        if suite == "huggingface":
-            msg = f"Quantization of {suite} models did not support yet."
-            raise ValueError(msg)
-
-        # Quantize model
-        if not dataset_path:
-            msg = "Quantization requires a calibration dataset."
-            raise ValueError(msg)
-
-        subset_size = 300
-        batch_size = calibration_dataset.batch_size or 1
-        subset_size = (subset_size // batch_size) + int(subset_size % batch_size > 0)
-
-        def transform_fn(x):
-            return x[0]
-
+    calibration_dataset: CV2VideoDataset,
+    subset_size: int,
+    quantize: bool,
+) -> ExecutorchProgramManager:
+    if quantize:
         quantized_model = quantize_model(
             cast(torch.fx.GraphModule, aten_dialect.module()),
             calibration_dataset,
@@ -264,89 +91,114 @@ def main(  # noqa: C901
         )
 
         aten_dialect = export(quantized_model, example_args)
-
-    if BACKEND == "OPENVINO":
         # Convert to edge dialect and lower the module to the backend with a custom partitioner
-        compile_spec = [CompileSpec("device", device.encode())]
-        lowered_module: EdgeProgramManager = to_edge_transform_and_lower(
-            aten_dialect,
-            partitioner=[
-                OpenvinoPartitioner(compile_spec),
-            ],
-            compile_config=EdgeCompileConfig(
-                _skip_dim_order=True,
-            )
-        )
+    compile_spec = [CompileSpec("device", device.encode())]
+    lowered_module: EdgeProgramManager = to_edge_transform_and_lower(
+        aten_dialect,
+        partitioner=[
+            OpenvinoPartitioner(compile_spec),
+        ],
+        compile_config=EdgeCompileConfig(
+            _skip_dim_order=True,
+        ),
+    )
 
-        # Apply backend-specific passes
-        exec_prog = lowered_module.to_executorch(
-            config=executorch.exir.ExecutorchBackendConfig()
-        )
-    elif BACKEND == "XNNPACK":
-
-        from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-        from executorch.exir import (
-            ExecutorchBackendConfig,
-        )
-        edge = to_edge_transform_and_lower(
-            aten_dialect,
-            partitioner=[XnnpackPartitioner()],
-            compile_config=EdgeCompileConfig(
-                _check_ir_validity=False if args.quantize else True,
-                _skip_dim_order=True,  # TODO(T182187531): enable dim order in xnnpack
-            ),
-        )
+    # Apply backend-specific passes
+    return lowered_module.to_executorch(
+        config=executorch.exir.ExecutorchBackendConfig()
+    )
 
 
-        exec_prog = edge.to_executorch(
-            config=ExecutorchBackendConfig(extract_delegate_segments=False)
-        )
-    # Serialize and save it to a file
-    if save_model:
-        if not model_file_name:
-            model_file_name = f"{BACKEND}_{model_name}_{'int8' if quantize else 'fp32'}.pte"
-        with open(model_file_name, "wb") as file:
-            exec_prog.write_to_file(file)
-        print(f"Model exported and saved as {model_file_name} on {device}.")
+def lower_to_xnnpack(
+    aten_dialect: torch.ExportedProgram,
+    example_args: Tuple[Any, ...],
+    transform_fn: callable,
+    device: str,
+    calibration_dataset: CV2VideoDataset,
+    subset_size: int,
+    quantize: bool,
+) -> ExecutorchProgramManager:
+    edge = to_edge_transform_and_lower(
+        aten_dialect,
+        partitioner=[XnnpackPartitioner()],
+        compile_config=EdgeCompileConfig(
+            _check_ir_validity=False if args.quantize else True,
+            _skip_dim_order=True,  # TODO(T182187531): enable dim order in xnnpack
+        ),
+    )
 
-    if validate and calibration_dataset:
-        if suite == "huggingface":
-            msg = f"Validation of {suite} models did not support yet."
-            raise ValueError(msg)
+    return edge.to_executorch(
+        config=ExecutorchBackendConfig(extract_delegate_segments=False)
+    )
 
-        if not dataset_path:
-            msg = "Validation requires a calibration dataset."
-            raise ValueError(msg)
 
-        print("Start validation of the model:")
-        acc_top1 = validate_model(exec_prog, calibration_dataset)
-        print(f"acc@1: {acc_top1}")
+def main(
+    model_name: str,
+    quantize: bool,
+    video_path: str,
+    subset_size: int,
+    backend: str,
+    device: str,
+):
+    """
+    Main function to load, quantize, and validate a model.
 
-    if infer:
-        print("Start inference of the model:")
-        avg_time = infer_model(
-            exec_prog, example_args, num_iter, warmup_iter, output_path
-        )
-        print(f"Average inference time: {avg_time}")
+    :param model_name: The name of the model to load.
+    :param quantize: Whether to quantize the model.
+    :param video_path: Path to the video to use for the calibration
+    :param device: The device to run the model on (e.g., "cpu", "gpu").
+    """
+
+    # Load the selected model
+    model = YOLO(model_name)
+
+    cap = cv2.VideoCapture(video_path, cv2.CAP_FFMPEG)
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+
+    # Setup pre-processing
+    np_dummy_tensor = np.ones((height, width, 3))
+    model.predict(np_dummy_tensor, imgsz=((height, width)), device="cpu")
+
+    pt_model = model.model.to(torch.device("cpu"))
+
+    def transform_fn(frame):
+        input_tensor = model.predictor.preprocess([frame])
+        return input_tensor
+
+    example_args = (transform_fn(np_dummy_tensor),)
+    with torch.no_grad():
+        aten_dialect = torch.export.export(pt_model, args=example_args)
+
+    if backend == "openvino":
+        lower_fn = lower_to_openvino
+    elif backend == "xnnpack":
+        lower_fn = lower_to_xnnpack
+
+    exec_prog = lower_fn(
+        aten_dialect=aten_dialect,
+        example_args=example_args,
+        transform_fn=transform_fn,
+        device=device,
+        calibration_dataset=CV2VideoDataset(cap),
+        subset_size=subset_size,
+        quantize=quantize,
+    )
+
+    if not model_file_name:
+        model_file_name = f"{model_name}_{'int8' if quantize else 'fp32'}_{backend}.pte"
+    with open(model_file_name, "wb") as file:
+        exec_prog.write_to_file(file)
+    print(f"Model exported and saved as {model_file_name} on {device}.")
 
 
 if __name__ == "__main__":
     # Argument parser for dynamic inputs
     parser = argparse.ArgumentParser(description="Export models with executorch.")
     parser.add_argument(
-        "--input_shape",
+        "--input_dims",
         type=eval,
-        help="Input shape for the model as a list or tuple (e.g., [1, 3, 224, 224] or (1, 3, 224, 224)).",
-    )
-    parser.add_argument(
-        "--batch_size",
-        type=int,
-        default=1,
-        help="Batch size for the validation. Default batch_size == 1."
-        " The dataset length must be evenly divisible by the batch size.",
-    )
-    parser.add_argument(
-        "--export", action="store_true", help="Export the compiled model as .pte file."
+        help="Dimesion in format [hight, weight] or (hight, weight). Input shape for the model as a list or tuple (e.g., [1, 3, 224, 224] or (1, 3, 224, 224)).",
     )
     parser.add_argument(
         "--model_file_name",
@@ -416,3 +268,4 @@ if __name__ == "__main__":
             args.input_tensor_path,
             args.output_tensor_path,
         )
+
