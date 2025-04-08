@@ -77,8 +77,9 @@ class ETDumpFilter : public ::executorch::runtime::EventTracerFilterBase {
    *
    * @return A Result<bool> indicating whether the event matches the filter
    * criteria.
-   *         - True if the event matches the filter, or filter is unset.
-   *         - False if the event does not match or is unknown.
+   *         - True if the event matches the filter.
+   *         - False if the event does not match, or is unknown, or filter is
+   * unset.
    *         - An error code if an error occurs during filtering.
    */
   Result<bool> filter(
