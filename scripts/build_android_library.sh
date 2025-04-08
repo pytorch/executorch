@@ -127,6 +127,7 @@ main() {
     BUILD_AAR_DIR="$(mktemp -d)"
   fi
   export BUILD_AAR_DIR
+  mkdir -p $BUILD_AAR_DIR
   if [ -z "$ANDROID_ABIS" ]; then
     ANDROID_ABIS=("arm64-v8a" "x86_64")
   fi
