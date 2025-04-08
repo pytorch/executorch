@@ -369,6 +369,19 @@ Result<bool> ETDumpGen::log_intermediate_output_delegate_helper(
       InvalidArgument,
       "Only name or delegate_debug_index can be valid. Check DelegateMappingBuilder documentation for more details.");
 
+  if (filter_) {
+    Result<bool> result = filter_->filter(name, delegate_debug_index);
+    if (!result.ok()) {
+      return result;
+    }
+
+    // If the filter returns true, meaning this event should be filtered out and
+    // we should not log it.
+    if (result.get()) {
+      return false;
+    }
+  }
+
   check_ready_to_add_events();
   int64_t string_id = name != nullptr ? create_string_entry(name) : -1;
 
@@ -652,6 +665,11 @@ bool ETDumpGen::is_static_etdump() {
 
 DataSinkBase* ETDumpGen::get_data_sink() {
   return data_sink_;
+}
+
+void ETDumpGen::set_delegation_intermediate_output_filter(
+    EventTracerFilterBase* filter) {
+  filter_ = filter;
 }
 
 long ETDumpGen::write_tensor_or_raise_error(Tensor tensor) {
