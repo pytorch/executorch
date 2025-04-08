@@ -1751,8 +1751,8 @@ class TestEmit(unittest.TestCase):
         module_1(*example_inputs)
         module_2(*example_inputs)
 
-        ep1 = export_for_training(module_1, example_inputs)
-        ep2 = export_for_training(module_2, example_inputs)
+        ep1 = export_for_training(module_1, example_inputs, strict=True)
+        ep2 = export_for_training(module_2, example_inputs, strict=True)
 
         edge_program_manager = exir.to_edge(
             {"forward1": ep1, "forward2": ep2},
