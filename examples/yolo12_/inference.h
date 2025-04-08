@@ -27,7 +27,6 @@ struct Detection {
   int class_id{0};
   std::string className{};
   float confidence{0.0};
-  cv::Scalar color{};
   cv::Rect box{};
 };
 
@@ -91,8 +90,7 @@ std::vector<Detection> infer_yolo_once(
   const auto t = result->at(0).toTensor(); // Using only the 0 output
   cv::Mat mat_output(t.dim(), t.sizes().data(), CV_32FC1, t.data_ptr());
 
-  // yolov8 has an output of shape (batchSize, 84,  8400) (Num classes +
-  // box[x,y,w,h])
+  // yolov8 has an output of shape (batchSize, 84,  8400) (Num classes + box[x,y,w,h])
   int rows = mat_output.size[2];
   int dimensions = mat_output.size[1];
 
@@ -149,10 +147,6 @@ std::vector<Detection> infer_yolo_once(
     result.class_id = class_ids[idx];
     result.confidence = confidences[idx];
 
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<int> dis(100, 255);
-    result.color = cv::Scalar(dis(gen), dis(gen), dis(gen));
 
     result.className = yolo_config.classes[result.class_id];
     result.box = boxes[idx];
