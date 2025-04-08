@@ -3,7 +3,7 @@
 #include <gflags/gflags.h>
 #include <csignal>
 
-void draw_detection(cv::Mat& frame, const Detection detection);
+void draw_detection(cv::Mat& frame, const Detection detection, const cv::Scalar color);
 
 DetectionConfig DEFAULT_YOLO_CONFIG = {
     {"person",        "bicycle",      "car",
@@ -41,9 +41,9 @@ DEFINE_string(
     "model.pte",
     "Model serialized in flatbuffer format.");
 
-DEFINE_string(input_path, "input.jpg", "Path to the input image");
+DEFINE_string(input_path, "input.mp4", "Path to the input video");
 
-DEFINE_string(output_path, "output.jpg", "Path to the output image");
+DEFINE_string(output_path, "output.mp4", "Path to the output video");
 
 int main(int argc, char** argv) {
   executorch::runtime::runtime_init();
@@ -52,24 +52,26 @@ int main(int argc, char** argv) {
   Module yolo_module(FLAGS_model_path);
 
   auto error = yolo_module.load();
-  // TODO: enable
-  // ET_CHECK_MSG(
-  //    error == Error::ok ,
-  //    "Failed to parse model file %s, error: 0x%",
-  //    projectBasePath.c_str(), error);
-
-  const auto names = yolo_module.method_names();
-  const auto p = yolo_module.program();
-  //const auto ep = executorch::runtime::get_execution_plan(ip, "forward");
   error = yolo_module.load_forward();
-  // ET_CHECK_MSG(
-  //     error == Error::ok ,
-  //     "Failed to get method_meta for forward, error: 0x%", error);
 
-  std::vector<std::string> imageNames({FLAGS_input_path});
+  cv::VideoCapture cap(FLAGS_input_path.c_str());
+  if(!cap.isOpened()){
+    std::cout << "Error opening video stream or file" << std::endl;
+    return -1;
+  }
+  const auto frame_width = cap.get(cv::CAP_PROP_FRAME_WIDTH);
+  const auto  frame_height = cap.get(cv::CAP_PROP_FRAME_HEIGHT);
+  cv::VideoWriter video(FLAGS_output_path.c_str(), cv::VideoWriter::fourcc('M','J','P','G'),30, cv::Size(frame_width,frame_height));
 
-  for (int i = 0; i < imageNames.size(); ++i) {
-    cv::Mat frame = cv::imread(imageNames[i]);
+
+  while (true){
+
+    cv::Mat frame;
+    cap >> frame;
+
+   // If the frame is empty, break immediately
+    if (frame.empty())
+      break;
 
     std::vector<Detection> output =
         infer_yolo_once(yolo_module, frame, DEFAULT_YOLO_CONFIG);
@@ -77,22 +79,17 @@ int main(int argc, char** argv) {
     std::cout << "Number of detections:" << output.size() << std::endl;
 
     for (auto& detection : output) {
-      draw_detection(frame, detection);
+      draw_detection(frame, detection, cv::Scalar(0, 0, 255));
     }
 
-    // This is only for preview purposes
-    float scale = 0.8;
-    cv::resize(frame, frame, cv::Size(frame.cols * scale, frame.rows * scale));
-    // std::raise(SIGINT);
-    cv::imwrite(FLAGS_output_path, frame);
-    // cv::imshow("Inference", frame);
-    // cv::waitKey(-1);
+    video.write(frame);
   }
+  cap.release();
+  video.release();
 }
 
-void draw_detection(cv::Mat& frame, const Detection detection) {
+void draw_detection(cv::Mat& frame, const Detection detection, const cv::Scalar color) {
   cv::Rect box = detection.box;
-  cv::Scalar color = detection.color;
 
   // Detection box
   cv::rectangle(frame, box, color, 2);

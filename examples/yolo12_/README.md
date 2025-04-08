@@ -1,6 +1,8 @@
 # YOLOv8/YOLOv5 C++ Inference with OpenCV DNN
 
-This example demonstrates how to perform inference using Ultralytics YOLOv8 and YOLOv5 models in C++ leveraging the [OpenCV DNN module](https://docs.opencv.org/4.x/d6/d0f/group__dnn.html).
+This example demonstrates how to perform inference using Ultralytics YOLO12 models in C++ leveraging the Executorch backends:
+- OpenVINO
+- XNNPACK.
 
 ## 🛠️ Usage
 
