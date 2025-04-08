@@ -132,13 +132,22 @@ void add_q_4w_linear_node(
   ValueRef mat2 =
       prepack_int4_linear_weight_transposed_interleaved(graph, mat2_data);
 
+  utils::StorageType qparams_storage_type = utils::kTexture3D;
+  utils::uvec3 max_extents =
+      graph.context()->adapter_ptr()->max_texture_extents();
+  if (graph.size_at<uint32_t>(-2, scales_and_zeros_data) > max_extents[0] * 4 ||
+      graph.size_at<uint32_t>(-3, scales_and_zeros_data) > max_extents[2]) {
+    qparams_storage_type = utils::kBuffer;
+  }
+
   ValueRef scales_and_zeros = prepack_standard_hw_transposed(
-      graph, scales_and_zeros_data, utils::kTexture3D, utils::kWidthPacked);
+      graph, scales_and_zeros_data, qparams_storage_type, utils::kWidthPacked);
 
   std::string kernel_name = "q_4w_linear";
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(mat1));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(mat2));
+  add_storage_type_suffix(kernel_name, qparams_storage_type);
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   const uint32_t group_size_val = graph.extract_scalar<uint32_t>(group_size);

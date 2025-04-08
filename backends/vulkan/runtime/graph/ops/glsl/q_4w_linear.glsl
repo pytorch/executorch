@@ -21,7 +21,7 @@ layout(std430) buffer;
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, OUT_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_mat1", DTYPE, IN_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_qmat2", "uint8", WEIGHT_STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_qparams", DTYPE, "texture3D")}
+${layout_declare_tensor(B, "r", "t_qparams", DTYPE, PARAMS_STORAGE, is_scalar_array=False)}
 
 layout(push_constant) uniform restrict Block {
   ivec4 out_sizes;
@@ -79,13 +79,23 @@ void main() {
 
   $if WEIGHT_STORAGE == "buffer":
     const int qmat2_stride = qmat2_sizes.x >> 2;
+  $if PARAMS_STORAGE == "buffer":
+    const int qparams_y_stride = out_sizes.x >> 2;
+    const int qparams_z_stride = qparams_y_stride * 2;
 
   for (int block_idx = 0; block_idx < num_blocks; ++block_idx) {
-    scales[0] = texelFetch(t_qparams, ivec3(out_col_texel_idx, 0, block_idx), 0);
-    zeros[0] = texelFetch(t_qparams, ivec3(out_col_texel_idx, 1, block_idx), 0);
+    $if PARAMS_STORAGE == "buffer":
+      scales[0] = t_qparams[block_idx * qparams_z_stride + out_col_texel_idx];
+      zeros[0] = t_qparams[block_idx * qparams_z_stride + out_col_texel_idx + qparams_y_stride];
 
-    scales[1] = texelFetch(t_qparams, ivec3(out_col_texel_idx + 1, 0, block_idx), 0);
-    zeros[1] = texelFetch(t_qparams, ivec3(out_col_texel_idx + 1, 1, block_idx), 0);
+      scales[1] = t_qparams[block_idx * qparams_z_stride + out_col_texel_idx + 1];
+      zeros[1] = t_qparams[block_idx * qparams_z_stride + out_col_texel_idx + 1 + qparams_y_stride];
+    $else:
+      scales[0] = texelFetch(t_qparams, ivec3(out_col_texel_idx, 0, block_idx), 0);
+      zeros[0] = texelFetch(t_qparams, ivec3(out_col_texel_idx, 1, block_idx), 0);
+
+      scales[1] = texelFetch(t_qparams, ivec3(out_col_texel_idx + 1, 0, block_idx), 0);
+      zeros[1] = texelFetch(t_qparams, ivec3(out_col_texel_idx + 1, 1, block_idx), 0);
 
     for (int g_idx = 0; g_idx < group_size; g_idx += 4) {
       const int k = block_idx * group_size + g_idx;

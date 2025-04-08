@@ -218,6 +218,10 @@ class Adapter final {
         physical_device_.properties.limits.maxImageDimension3D};
   }
 
+  inline uint32_t max_buffer_numel() const {
+    return physical_device_.properties.limits.maxStorageBufferRange;
+  }
+
   // Command Buffer Submission
 
   void

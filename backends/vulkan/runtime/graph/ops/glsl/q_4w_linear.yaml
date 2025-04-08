@@ -10,14 +10,13 @@ q_4w_linear:
     OUT_STORAGE: texture3d
     IN_STORAGE: texture3d
     WEIGHT_STORAGE: texture3d
+    PARAMS_STORAGE: texture3d
   shader_variants:
-    - NAME: q_4w_linear_texture3d_texture3d_texture3d_float
-    - NAME: q_4w_linear_texture3d_buffer_texture3d_float
-      IN_STORAGE: buffer
-    - NAME: q_4w_linear_buffer_buffer_texture3d_float
+    - NAME: q_4w_linear_texture3d_texture3d_texture3d_texture3d_float
+    - NAME: q_4w_linear_buffer_buffer_texture3d_texture3d_float
       OUT_STORAGE: buffer
       IN_STORAGE: buffer
-    - NAME: q_4w_linear_buffer_buffer_buffer_float
+    - NAME: q_4w_linear_buffer_buffer_texture3d_buffer_float
       OUT_STORAGE: buffer
       IN_STORAGE: buffer
-      WEIGHT_STORAGE: buffer
+      PARAMS_STORAGE: buffer

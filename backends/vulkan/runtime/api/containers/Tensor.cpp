@@ -260,6 +260,11 @@ vkapi::VulkanImage allocate_image(
       return vkapi::VulkanImage();
   }
 
+  utils::uvec3 max_extents = adapter_ptr->max_texture_extents();
+  VK_CHECK_COND(
+      image_extents[0] <= max_extents[0] &&
+      image_extents[1] <= max_extents[1] && image_extents[2] <= max_extents[2]);
+
   VkSampler sampler = adapter_ptr->sampler_cache().retrieve(sampler_props);
 
   return adapter_ptr->vma().create_image(
@@ -290,6 +295,8 @@ vkapi::VulkanBuffer allocate_buffer(
       // Return an empty VulkanBuffer if Buffer storage is not used
       return vkapi::VulkanBuffer();
   }
+
+  VK_CHECK_COND(numel <= context_ptr->adapter_ptr()->max_buffer_numel());
 
   return adapter_ptr->vma().create_storage_buffer(
       element_size(dtype) * numel, allocate_memory);
