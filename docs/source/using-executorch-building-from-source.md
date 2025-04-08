@@ -29,6 +29,7 @@ Windows (x86_64)
   - Otherwise, Python's built-in virtual environment manager `python venv` is a good alternative.
 * `g++` version 7 or higher, `clang++` version 5 or higher, or another
   C++17-compatible toolchain.
+* `python` version 3.10-3.12 
 
 Note that the cross-compilable core runtime code supports a wider range of
 toolchains, down to C++17. See the [Runtime Overview](./runtime-overview.md) for
