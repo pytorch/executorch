@@ -816,8 +816,7 @@ struct PyModule final {
       ET_LOG(
           Info,
           "No etdump data found, try rebuilding with "
-          "the CMake option EXECUTORCH_ENABLE_EVENT_TRACER or with "
-          "buck run --config executorch.event_tracer_enabled=true");
+          "the CMake option EXECUTORCH_ENABLE_EVENT_TRACER");
     }
   }
 
