@@ -1612,6 +1612,7 @@ class ExecutorchProgramManager:
             self._execution_programs,
             backend_config.emit_stacktrace,
             self._config_methods,
+            backend_config.emit_mutable_buffer_names,
         )
 
         # Serialize emitter output, ready to be written to a file.
