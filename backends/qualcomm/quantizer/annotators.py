@@ -182,6 +182,11 @@ def annotate_add(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.amax.default])
+def annotate_amax(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.argmin.default])
 def annotate_argmin(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
