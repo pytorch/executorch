@@ -6,9 +6,7 @@
 from typing import Tuple
 
 import torch
-from executorch.backends.arm._passes.decompose_softmaxes_pass import (
-    DecomposeSoftmaxesPass,
-)
+from executorch.backends.arm._passes.decompose_softmax_pass import DecomposeSoftmaxPass
 
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
@@ -71,7 +69,7 @@ def test_softmax_basic_tosa_MI():
             "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList": 1,
         },
         ops_not_after_pass=["executorch_exir_dialects_edge__ops_aten__softmax_default"],
-        pass_list=[DecomposeSoftmaxesPass],
+        pass_list=[DecomposeSoftmaxPass],
     )
     pipeline.run()
 
@@ -100,6 +98,6 @@ def test_softmax_log_tosa_MI():
         ops_not_after_pass=[
             "executorch_exir_dialects_edge__ops_aten__log_softmax_default"
         ],
-        pass_list=[DecomposeSoftmaxesPass],
+        pass_list=[DecomposeSoftmaxPass],
     )
     pipeline.run()
