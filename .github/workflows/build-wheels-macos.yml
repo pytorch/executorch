@@ -61,7 +61,7 @@ jobs:
       post-script: ${{ matrix.post-script }}
       package-name: ${{ matrix.package-name }}
       # Meta's macOS runners do not have Xcode, so use GitHub's runners.
-      runner-type: macos-15-xlarge
+      runner-type: macos-latest-xlarge
       setup-miniconda: true
       smoke-test-script: ${{ matrix.smoke-test-script }}
       trigger-event: ${{ github.event_name }}

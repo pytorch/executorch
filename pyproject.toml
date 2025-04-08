@@ -66,8 +66,6 @@ dependencies=[
   "ruamel.yaml",
   "sympy",
   "tabulate",
-  # Keep this version in sync with: third-party/ao pin
-  "torchao==0.10.0",
   "typing-extensions",
   # Keep this version in sync with: ./backends/apple/coreml/scripts/install_requirements.sh
   "coremltools==8.2; platform_system == 'Darwin'",
