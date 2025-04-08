@@ -44,7 +44,9 @@ bool validate_flash_attention_args(
       "scaled_dot_product_attention_flash_attention: Q/K/V should have the same head size");
 
   ET_CHECK_OR_RETURN_FALSE(
-      (query.scalar_type() == ScalarType::Float), "Query must be Float type");
+      (query.scalar_type() == ScalarType::Float) ||
+          (query.scalar_type() == ScalarType::Char),
+      "Query must be Float type");
 
   ET_CHECK_OR_RETURN_FALSE(
       (query.scalar_type() == key.scalar_type()) &&
@@ -354,9 +356,14 @@ Tensor& custom_sdpa_out_impl(
       output,
       "Invalid arguments");
 
+  int64_t seq_len = q.size(1);
+  auto q_seq_len = q.size(1);
+
   bool is_seq_at_dim_1{true};
   if (q.scalar_type() == ScalarType::Char) {
     is_seq_at_dim_1 = false;
+    seq_len = q.size(2);
+    q_seq_len = q.size(2);
     ET_KERNEL_CHECK_MSG(
         ctx,
         q_scales.has_value() && q_zero_points.has_value() &&
@@ -390,9 +397,6 @@ Tensor& custom_sdpa_out_impl(
 
   ET_CHECK_MSG(q.dim() == 4, "query must be a 4D tensor");
 
-  const int64_t seq_len = q.size(1);
-  auto q_seq_len = q.size(1);
-
   const int64_t num_keys_for_causal_attention = start_pos + seq_len;
 
   ET_KERNEL_CHECK(
@@ -418,12 +422,12 @@ Tensor& custom_sdpa_out_impl(
               is_causal,
               attn_mask,
               scale,
-              nullopt, // q_zero_points
-              nullopt, // q_scales
-              nullopt, // k_zero_points
-              nullopt, // k_scales
-              nullopt, // v_zero_points
-              nullopt, // v_scales
+              q_zero_points, // q_zero_points
+              q_scales, // q_scales
+              k_zero_points, // k_zero_points
+              k_scales, // k_scales
+              v_zero_points, // v_zero_points
+              v_scales, // v_scales
               is_seq_at_dim_1, /* is_seq_at_dim_1 */
               start_pos,
               num_keys_for_causal_attention);
@@ -437,12 +441,12 @@ Tensor& custom_sdpa_out_impl(
               is_causal,
               attn_mask,
               scale,
-              nullopt, // q_zero_points
-              nullopt, // q_scales
-              nullopt, // k_zero_points
-              nullopt, // k_scales
-              nullopt, // v_zero_points
-              nullopt, // v_scales
+              q_zero_points, // q_zero_points
+              q_scales, // q_scales
+              k_zero_points, // k_zero_points
+              k_scales, // k_scales
+              v_zero_points, // v_zero_points
+              v_scales, // v_scales
               is_seq_at_dim_1, /* is_seq_at_dim_1 */
               start_pos,
               num_keys_for_causal_attention);
@@ -456,12 +460,12 @@ Tensor& custom_sdpa_out_impl(
               is_causal,
               attn_mask,
               scale,
-              nullopt, // q_zero_points
-              nullopt, // q_scales
-              nullopt, // k_zero_points
-              nullopt, // k_scales
-              nullopt, // v_zero_points
-              nullopt, // v_scales
+              q_zero_points, // q_zero_points
+              q_scales, // q_scales
+              k_zero_points, // k_zero_points
+              k_scales, // k_scales
+              v_zero_points, // v_zero_points
+              v_scales, // v_scales
               is_seq_at_dim_1, /* is_seq_at_dim_1 */
               start_pos,
               num_keys_for_causal_attention);
@@ -469,6 +473,45 @@ Tensor& custom_sdpa_out_impl(
       });
   return output;
 }
+
+#ifdef ENABLE_CUSTOM_QUANTIZED_SDPA
+Tensor& custom_quantized_sdpa_out(
+    RuntimeContext& ctx,
+    const Tensor& q,
+    const Tensor& k,
+    const Tensor& v,
+    const int64_t start_pos,
+    const optional<Tensor>& attn_mask,
+    const double dropout_p,
+    const bool is_causal,
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const optional<double> scale,
+    const optional<Tensor>& q_zero_points,
+    const optional<Tensor>& q_scales,
+    const optional<Tensor>& k_zero_points,
+    const optional<Tensor>& k_scales,
+    const optional<Tensor>& v_zero_points,
+    const optional<Tensor>& v_scales,
+    Tensor& output) {
+  return custom_sdpa_out_impl(
+      ctx,
+      q,
+      k,
+      v,
+      start_pos,
+      attn_mask,
+      dropout_p,
+      is_causal,
+      scale,
+      output,
+      q_zero_points,
+      q_scales,
+      k_zero_points,
+      k_scales,
+      v_zero_points,
+      v_scales);
+}
+#endif // ENABLE_CUSTOM_QUANTIZED_SDPA
 
 /*
   Input params
@@ -570,3 +613,10 @@ EXECUTORCH_LIBRARY(
     llama,
     "custom_sdpa.out",
     torch::executor::native::custom_sdpa_out);
+
+#ifdef ENABLE_CUSTOM_QUANTIZED_SDPA
+EXECUTORCH_LIBRARY(
+    llama,
+    "custom_quantized_sdpa.out",
+    torch::executor::native::custom_quantized_sdpa_out);
+#endif // ENABLE_CUSTOM_QUANTIZED_SDPA
