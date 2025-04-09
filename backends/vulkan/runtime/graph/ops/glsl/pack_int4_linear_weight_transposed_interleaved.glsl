@@ -56,6 +56,50 @@ $if NO_INT8_BUFFERS:
     return (packed4 >> (idx * 8)) & 0xFF;
   }
 
+/*
+ * This shader packs the weight tensor into a texture.
+ *
+ * The original tensor has a (W, H) shape of (K / 2, N) and each scalar element
+ * is a uint8_t, which contains 2 packed 4 bit uint values.
+ *
+ * The transform performed by this shader is to first transpose the tensor, so
+ * the shape of the packed tensor becomes (N / 2, K). Then, the 4 bit integers
+ * are re-packed in groups of 8. For each 4 uint8_t values, the "left" 4-bits
+ * of each value contain the 0, 1, 2, 3 4-bit values, and the "right" 4-bits of
+ * each value contain the 4, 5, 6, 7 4-bit values.
+ *
+ * As a concrete example, consider the following weight tensor. The | demarks
+ * the packing boundary, so 1| 2 represents a single uint8_t value with 1 in the
+ * leftmost 4 bits and 2 in the rightmost 4 bits.
+ *
+ *  1| 2,  3| 4,  5| 6,  7| 8,
+ *  9|10, 11|12, 13|14, 15|16,
+ * 17|18, 19|20, 21|22, 23|24,
+ * 25|26, 27|28, 29|30, 31|32,
+ * 33|34, 35|36, 37|38, 39|40,
+ * 41|42, 43|44, 45|46, 47|48,
+ * 49|50, 51|52, 53|54, 55|56,
+ * 57|58, 59|60, 61|62, 63|64,
+ *
+ * After packing, the packed tensor would contain
+ *
+ *  1|33,  9|41, 17|49, 25|57,
+ *  2|34, 10|42, 18|50, 26|58,
+ *  3|35, 11|43, 19|51, 27|59,
+ *  4|36, 12|44, 20|52, 28|60,
+ *  5|37, 13|45, 21|53, 29|61,
+ *  6|38, 14|46, 22|54, 30|62,
+ *  7|39, 15|47, 23|55, 31|63,
+ *  8|40, 16|48, 24|56, 32|64,
+ *
+ * The purpose of interleaving is to make it easier to extract the unpacked
+ * values in order using the u8vec4 vectorized type. With the packing in place,
+ * The 4-bit values can be extracted via
+ *
+ * u8vec4 packed;
+ * u8vec4 vals_0123 = (packed & 0xF0) >> 4;
+ * u8vec4 vals_4567 = (packed | 0x0F);
+ */
 void main() {
   // Each thread writes 2 output texels along the height axis
   ivec2 packed_pos = ivec2(
