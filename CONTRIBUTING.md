@@ -103,6 +103,8 @@ executorch
 ## Contributing workflow
 We actively welcome your pull requests (PRs).
 
+If you're completely new to open-source projects, GitHub, or ExecuTorch, please see our [Open-Source Onboarding Guide](./docs/source/onboarding.md) for a step-by-step walkthrough on making your first contribution. Otherwise, read on.
+
 1. [Claim an issue](#claiming-issues), if present, before starting work. If an
    issue doesn't cover the work you plan to do, consider creating one to provide
    context about it, and to build consensus about the scope and solution.
