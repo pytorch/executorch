@@ -83,10 +83,9 @@ ValueRef prepack_int4_linear_weight_transposed_interleaved(
   const int64_t N = qmat2_orig_sizes.at(ndim - 2);
   const int64_t N_div2 = N / int64_t(2);
 
-  utils::StorageType storage_type = utils::kTexture3D;
-  utils::uvec3 max_extents =
-      graph.context()->adapter_ptr()->max_texture_extents();
-  if (N_div2 > max_extents[0] * 4 || K > max_extents[1]) {
+  utils::StorageType storage_type = utils::kTexture2D;
+  uint32_t max_extent = graph.context()->adapter_ptr()->max_texture2d_dim();
+  if (N_div2 > max_extent * 4 || K > max_extent) {
     storage_type = utils::kBuffer;
   }
 
@@ -133,7 +132,7 @@ void add_q_4w_linear_node(
       prepack_int4_linear_weight_transposed_interleaved(graph, mat2_data);
 
   ValueRef scales_and_zeros = prepack_standard_hw_transposed(
-      graph, scales_and_zeros_data, utils::kTexture3D, utils::kWidthPacked);
+      graph, scales_and_zeros_data, utils::kBuffer, utils::kWidthPacked);
 
   std::string kernel_name = "q_4w_linear";
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
