@@ -293,6 +293,15 @@ jarvis_nn_lib.define(
     "attention_mask.out(Tensor input, Tensor start, Tensor stop, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
+# Custom ops in aten namespace. RMSNorm is usually decomposed, so having
+# an out-variant is non-standard
+
+lib_aten = Library("aten", "FRAGMENT")
+
+lib_aten.define(
+    "rms_norm.out(Tensor input, SymInt[] normalized_shape, Tensor? weight=None, float? eps=None, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
 
 @register_fake("cadence::quantize_per_tensor")
 def quantize_per_tensor_meta(
@@ -617,15 +626,6 @@ def linalg_vector_norm_meta(
 ) -> torch.Tensor:
     # Output of norm is a scalar, so we return a [] tensor
     return X.new_empty([], dtype=X.dtype)
-
-
-@register_fake("cadence::rms_norm")
-def rms_norm_meta(
-    X: torch.Tensor,
-    eps: float,
-    weight: torch.Tensor,
-) -> torch.Tensor:
-    return X.new_empty(X.shape, dtype=X.dtype)
 
 
 @register_fake("cadence::requantize")
