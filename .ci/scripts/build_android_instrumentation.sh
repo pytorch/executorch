@@ -12,10 +12,10 @@ if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
 fi
 which "${PYTHON_EXECUTABLE}"
 
-mkdir -p "${BUILD_AAR_DIR}"/executorch_android/src/androidTest/resources
-cp extension/module/test/resources/add.pte "${BUILD_AAR_DIR}"/executorch_android/src/androidTest/resources
+mkdir -p extension/android/executorch_android/src/androidTest/resources
+cp extension/module/test/resources/add.pte extension/android/executorch_android/src/androidTest/resources
 
-pushd "${BUILD_AAR_DIR}"
+pushd extension/android
 ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:testDebugUnitTest
 ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:assembleAndroidTest
 popd
