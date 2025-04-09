@@ -133,8 +133,6 @@ Before you can start writing any code, you need to get a copy of ExecuTorch code
 
     Unfortunately, this step is too long to detail here. If you get stuck at any point, please feel free to ask for help on our [Discord server](https://discord.com/invite/Dh43CKSAdc) — we're always eager to help newcomers get onboarded.
 
-    * TODO: add a brief overview of the build process or common pitfalls users might encounter.
-
 One final note before we finish this section. It's very important to get your tests running at this stage, for two reasons:
 
 * If they work, it's a great sign that you've got things set up correctly.
@@ -270,14 +268,3 @@ Once you've successfully finished local development, it's time to send out your 
     Those reviewers/maintainers are here to finetune your contribution and eventually catch some issues before we merge the PR. We aim for this process to be pleasing on both sides: we try to give and get the best.
 
     Once the reviewers are happy, one of our core contributors will merge your PR. Congratulations — you're now an official ExecuTorch contributor!
-
-    * TODO: Clarify the expected timeline for reviews and what contributors should do if they don't receive feedback within a certain period.
-
-
-## FAQ
-
-Some answers to some frequently asked questions are given below. If you still can't find what you're looking for, please feel free to:
-* ask on our [Discord Server](https://discord.com/invite/Dh43CKSAdc).
-* search or post on our [GitHub Discussions forum](https://github.com/pytorch/executorch/discussions).
-
-TODO: add FAQ.
