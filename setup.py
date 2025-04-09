@@ -861,7 +861,7 @@ def get_ext_modules() -> List[Extension]:
             ext_modules.append(
                 # Install the prebuilt pybindings extension wrapper for training
                 BuiltExtension(
-                    "_training_lib.*",
+                    "extension/training/_training_lib.*",
                     "executorch.extension.training.pybindings._training_lib",
                 )
             )
