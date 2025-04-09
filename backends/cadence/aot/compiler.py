@@ -155,8 +155,6 @@ def quantize_pt2(
     unit tests but should not be used for end-to-end use cases.
     Returns a GraphModule with the quantized model.
     """
-    # Make the model inference mode by calling model.eval()
-    model.eval()
 
     # Instantiate the quantizer to CadenceQuantizer if not supplied
     if not quantizer:
