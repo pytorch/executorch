@@ -125,6 +125,8 @@ def buffer_gvec_type(dtype: str, n: int) -> str:
 
     if dtype == "float":
         return f"vec{n}"
+    if dtype == "uint":
+        return f"uvec{n}"
     elif dtype == "half":
         return f"f16vec{n}"
     elif dtype == "int":

@@ -14,7 +14,8 @@
 #define VEC4_T ${buffer_gvec_type(DTYPE, 4)}
 
 ${define_required_extensions(DTYPE)}
-${define_required_extensions("int8")}
+$if WEIGHT_STORAGE == "buffer":
+  ${define_required_extensions("uint8")}
 
 layout(std430) buffer;
 
