@@ -21,6 +21,7 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+list(APPEND _common_compile_options "-march=armv8.2-a+dotprod")
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
