@@ -15,6 +15,13 @@ QNN_OP_PACKAGE_NAME_QTI_AISW = "qti.aisw"
 
 
 @dataclass(init=False, frozen=True)
+class OpAmax:
+    op_name: str = "ReduceMax"
+    param_axes: str = "axes"
+    param_keep_dims: str = "keep_dims"
+
+
+@dataclass(init=False, frozen=True)
 class OpBatchnorm:
     op_name: str = "Batchnorm"
 
