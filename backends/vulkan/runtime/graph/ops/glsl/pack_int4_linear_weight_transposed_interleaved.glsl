@@ -131,6 +131,6 @@ void main() {
     t_qmat2[packed_pos.y * stride + packed_pos.x] = out_tex_1;
     t_qmat2[(packed_pos.y + 1) * stride + packed_pos.x] = out_tex_2;
   $else:
-    imageStore(t_qmat2, ivec3(packed_pos.xy, 0), out_tex_1);
-    imageStore(t_qmat2, ivec3(packed_pos.x, packed_pos.y + 1, 0), out_tex_2);
+    imageStore(t_qmat2, packed_pos.xy, out_tex_1);
+    imageStore(t_qmat2, ivec2(packed_pos.x, packed_pos.y + 1), out_tex_2);
 }

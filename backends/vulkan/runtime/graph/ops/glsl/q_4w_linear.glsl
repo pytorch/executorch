@@ -21,7 +21,7 @@ layout(std430) buffer;
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, OUT_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_mat1", DTYPE, IN_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_qmat2", "uint8", WEIGHT_STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_qparams", DTYPE, PARAMS_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_qparams", DTYPE, "buffer", is_scalar_array=False)}
 
 layout(push_constant) uniform restrict Block {
   ivec4 out_sizes;
@@ -111,7 +111,7 @@ void main() {
         $else:
           const uvec4 packed_weight_tex = texelFetch(
               t_qmat2,
-              ivec3(gl_GlobalInvocationID.x, k + comp, 0),
+              ivec2(gl_GlobalInvocationID.x, k + comp),
               0);
 
         const uvec4 weight_tex_1 = (packed_weight_tex & 0xF0) >> 4;
