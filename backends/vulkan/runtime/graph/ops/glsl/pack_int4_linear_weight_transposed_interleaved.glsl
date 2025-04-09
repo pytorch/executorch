@@ -109,8 +109,8 @@ void main() {
       in_vals[r][0] = get_first(in_val_packed);
       in_vals[r][1] = get_second(in_val_packed);
     } else {
-      in_vals[r][0] = uint8_t(254);
-      in_vals[r][1] = uint8_t(254);
+      in_vals[r][0] = uint8_t(0);
+      in_vals[r][1] = uint8_t(0);
     }
   }
 
