@@ -777,11 +777,14 @@ Run the export script and the ETRecord will be generated as `etrecord.bin`.
 
 An ETDump is an artifact generated at runtime containing a trace of the model execution. For more information, see [the ETDump docs](../etdump.md).
 
-Include the ETDump header in your code.
+Include the ETDump header and namespace in your code.
 ```cpp
 // main.cpp
 
 #include <executorch/devtools/etdump/etdump_flatcc.h>
+
+using executorch::etdump::ETDumpGen;
+using torch::executor::etdump_result;
 ```
 
 Create an Instance of the ETDumpGen class and pass it to the Module constructor.
