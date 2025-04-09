@@ -72,6 +72,16 @@ class Any(torch.nn.Module):
         return torch.any(x, dim=self.dim, keepdim=self.keepdim)
 
 
+class AMax(torch.nn.Module):
+    def __init__(self, dim=None, keepdim=False):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x):
+        return torch.amax(x, dim=self.dim, keepdim=self.keepdim)
+
+
 class Arange(torch.nn.Module):
     def __init__(self, start, end, step, dtype):
         super().__init__()

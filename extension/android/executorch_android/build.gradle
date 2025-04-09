@@ -27,6 +27,9 @@ android {
     }
 
     sourceSets {
+        main {
+            jniLibs.srcDirs = ['../../../cmake-out-android-so/']
+        }
         androidTest {
             resources.srcDirs += [ 'src/androidTest/resources' ]
         }
@@ -48,7 +51,7 @@ mavenPublishing {
   publishToMavenCentral(SonatypeHost.DEFAULT)
   signAllPublications()
 
-  coordinates("org.pytorch", "executorch-android", "0.5.0-SNAPSHOT")
+  coordinates("org.pytorch", "executorch-android", "0.7.0")
 
   pom {
     name = "ExecuTorch Android"
