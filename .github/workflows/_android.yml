@@ -37,7 +37,7 @@ jobs:
 
         mkdir -p ${ARTIFACTS_DIR_NAME}/library_test_dir
         bash .ci/scripts/build_android_instrumentation.sh
-        cp ${BUILD_AAR_DIR}/executorch_android/build/outputs/apk/androidTest/debug/executorch_android-debug-androidTest.apk "${ARTIFACTS_DIR_NAME}/library_test_dir"
+        cp extension/android/executorch_android/build/outputs/apk/androidTest/debug/executorch_android-debug-androidTest.apk "${ARTIFACTS_DIR_NAME}/library_test_dir"
 
         mkdir -p ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom
         bash examples/models/llama/install_requirements.sh
