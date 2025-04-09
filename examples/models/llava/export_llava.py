@@ -92,7 +92,9 @@ def export_text_model(llava, embeddings, dynamic_shapes):
         use_kv_cache=True,
         example_inputs=(torch.tensor([0], dtype=torch.int64), embeddings),
         dynamic_shapes=dynamic_shapes,
-        args=llava.text_model_args,
+        qnn = llava.text_model_args.qnn,
+        export_only=llava.text_model_args.export_only,
+        output_name=llava.text_model_args.output_name,
     )
 
     dtype_override = DType.fp32
