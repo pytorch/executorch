@@ -172,7 +172,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         // Load the ExecuTorch module
-        module = Module.load("/data/local/tmp/add.pte");
+        Module module = Module.load("/data/local/tmp/add.pte");
         Tensor tensor1 = Tensor.fromBlob(new float[] {1.0f}, new long[] {1});
         Tensor tensor2 = Tensor.fromBlob(new float[] {20.0f}, new long[] {1});
 
