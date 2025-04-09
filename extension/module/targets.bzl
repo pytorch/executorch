@@ -28,6 +28,7 @@ def define_common_targets():
                 "//executorch/extension/flat_tensor:flat_tensor_data_map",
             ],
             exported_deps = [
+                "//executorch/devtools/etdump:etdump_flatcc" + aten_suffix,
                 "//executorch/runtime/executor:program" + aten_suffix,
             ],
         )
