@@ -78,7 +78,7 @@ PreTokenizerConfig& PreTokenizerConfig::parse_json(const json& json_config) {
   type = json_config.at("type");
   if (type == "Split") {
     try {
-      pattern = json_config.at("pattern");
+      pattern = json_config.at("pattern").at("Regex");
     } catch (json::out_of_range&) {
     }
   } else if (type == "Digits") {

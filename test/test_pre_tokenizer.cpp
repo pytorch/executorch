@@ -221,7 +221,8 @@ TEST_F(PreTokenizerConfigTest, Split) {
           .parse_json(json{
               {"type", "Split"},
               {"pattern",
-               R"((?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+)"},
+               {{"Regex",
+                 R"((?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+)"}}},
           })
           .create();
   assert_split_match(*ptok, "Hello World", {"Hello", " World"});
