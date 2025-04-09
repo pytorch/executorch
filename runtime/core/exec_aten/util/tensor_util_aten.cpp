@@ -12,7 +12,7 @@
 #include <executorch/runtime/platform/assert.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 /**
  * Implementation for ATen tensor util, should only be included in
  * `<target>_aten` target and only be used in ATen mode. Explicitly taking
@@ -214,6 +214,5 @@ Error resize_tensor_impl(
 }
 
 } // namespace internal
-
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch

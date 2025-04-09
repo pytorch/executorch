@@ -17,7 +17,7 @@
 #include <executorch/runtime/platform/platform.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 namespace internal {
 
 /**
@@ -107,5 +107,5 @@ class PlatformMemoryAllocator final : public MemoryAllocator {
 };
 
 } // namespace internal
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
