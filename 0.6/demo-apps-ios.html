@@ -541,18 +541,22 @@ pip<span class="w"> </span>--version
 <h3>3. Getting Started Tutorial<a class="headerlink" href="#getting-started-tutorial" title="Permalink to this heading">¶</a></h3>
 <p>Follow the <a class="reference external" href="https://pytorch.org/executorch/stable/getting-started-setup">Setting Up ExecuTorch</a>
 tutorial to configure the basic environment:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>-b<span class="w"> </span>release/0.6<span class="w"> </span>https://github.com/pytorch/executorch.git<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>executorch
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>-b<span class="w"> </span>viable/strict<span class="w"> </span>https://github.com/pytorch/executorch.git<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>executorch
 
-python3<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">source</span><span class="w"> </span>.venv/bin/activate
+python3<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">source</span><span class="w"> </span>.venv/bin/activate<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>pip
 
-pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>cmake<span class="w"> </span>pip<span class="w"> </span>setuptools<span class="w"> </span>wheel
-
-./install_executorch.sh<span class="w"> </span>--pybind<span class="w"> </span>coreml<span class="w"> </span>mps<span class="w"> </span>xnnpack
+./install_executorch.sh
+</pre></div>
+</div>
+</div>
+<div class="section" id="clone-the-demo-app">
+<h3>4. Clone the Demo App<a class="headerlink" href="#clone-the-demo-app" title="Permalink to this heading">¶</a></h3>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>https://github.com/pytorch-labs/executorch-examples.git
 </pre></div>
 </div>
 </div>
 <div class="section" id="backend-dependencies">
-<h3>4. Backend Dependencies<a class="headerlink" href="#backend-dependencies" title="Permalink to this heading">¶</a></h3>
+<h3>5. Backend Dependencies<a class="headerlink" href="#backend-dependencies" title="Permalink to this heading">¶</a></h3>
 <p>Also, follow the corresponding sections from <a class="reference external" href="https://pytorch.org/executorch/stable/build-run-coreml">Core ML</a> and
 <a class="reference external" href="https://pytorch.org/executorch/stable/build-run-mps">MPS</a> tutorials to install additional dependencies for those
 backends:</p>
@@ -577,8 +581,10 @@ python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.coreml.s
 python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$MODEL_NAME</span><span class="s2">&quot;</span>
 python3<span class="w"> </span>-m<span class="w"> </span>examples.xnnpack.aot_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$MODEL_NAME</span><span class="s2">&quot;</span><span class="w"> </span>--delegate
 
-mkdir<span class="w"> </span>-p<span class="w"> </span>examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
-mv<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$MODEL_NAME</span><span class="s2">*.pte&quot;</span><span class="w"> </span>examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
+<span class="nv">APP_PATH</span><span class="o">=</span><span class="s2">&quot;executorch-examples/apple/ExecuTorchDemo/ExecuTorchDemo&quot;</span>
+
+mkdir<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$APP_PATH</span><span class="s2">/Resources/Models/MobileNet/&quot;</span>
+mv<span class="w"> </span><span class="nv">$MODEL_NAME</span>*.pte<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$APP_PATH</span><span class="s2">/Resources/Models/MobileNet/&quot;</span>
 </pre></div>
 </div>
 </div>
@@ -586,7 +592,7 @@ mv<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$MODEL_
 <h3>2. Download Labels<a class="headerlink" href="#download-labels" title="Permalink to this heading">¶</a></h3>
 <p>Download the MobileNet model labels required for image classification:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>curl<span class="w"> </span>https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-o<span class="w"> </span>examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/imagenet_classes.txt
+<span class="w">  </span>-o<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$APP_PATH</span><span class="s2">/Resources/Models/MobileNet/imagenet_classes.txt&quot;</span>
 </pre></div>
 </div>
 </div>
@@ -597,9 +603,8 @@ mv<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$MODEL_
 tests, and finally run the app.</p>
 <div class="section" id="open-project-in-xcode">
 <h3>1. Open Project in Xcode<a class="headerlink" href="#open-project-in-xcode" title="Permalink to this heading">¶</a></h3>
-<p>Double-click on the project file under
-<code class="docutils literal notranslate"><span class="pre">examples/demo-apps/apple_ios/ExecuTorchDemo</span></code> or run the command:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>open<span class="w"> </span>examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo.xcodeproj
+<p>Double-click on the project file under <code class="docutils literal notranslate"><span class="pre">executorch-examples/apple/ExecuTorchDemo</span></code> or run the command:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>open<span class="w"> </span><span class="nv">$APP_PATH</span>.xcodeproj
 </pre></div>
 </div>
 </div>
@@ -609,7 +614,7 @@ tests, and finally run the app.</p>
 command line:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>xcrun<span class="w"> </span>simctl<span class="w"> </span>create<span class="w"> </span>executorch<span class="w"> </span><span class="s2">&quot;iPhone 15&quot;</span>
 xcodebuild<span class="w"> </span>clean<span class="w"> </span><span class="nb">test</span><span class="w"> </span><span class="se">\</span>
-<span class="w">     </span>-project<span class="w"> </span>examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo.xcodeproj<span class="w"> </span><span class="se">\</span>
+<span class="w">     </span>-project<span class="w"> </span><span class="nv">$APP_PATH</span>.xcodeproj<span class="w"> </span><span class="se">\</span>
 <span class="w">     </span>-scheme<span class="w"> </span>App<span class="w"> </span><span class="se">\</span>
 <span class="w">     </span>-destination<span class="w"> </span><span class="nv">name</span><span class="o">=</span>executorch
 xcrun<span class="w"> </span>simctl<span class="w"> </span>delete<span class="w"> </span>executorch
@@ -678,7 +683,8 @@ you can explore and enjoy the power of ExecuTorch on your iOS device!</p>
 <li><a class="reference internal" href="#xcode-15-and-command-line-tools">1. Xcode 15 and Command Line Tools</a></li>
 <li><a class="reference internal" href="#python-3-10">2. Python 3.10+</a></li>
 <li><a class="reference internal" href="#getting-started-tutorial">3. Getting Started Tutorial</a></li>
-<li><a class="reference internal" href="#backend-dependencies">4. Backend Dependencies</a></li>
+<li><a class="reference internal" href="#clone-the-demo-app">4. Clone the Demo App</a></li>
+<li><a class="reference internal" href="#backend-dependencies">5. Backend Dependencies</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#models-and-labels">Models and Labels</a><ul>
