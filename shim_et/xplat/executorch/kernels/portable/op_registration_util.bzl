@@ -969,6 +969,10 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_randn",
+        deps = [],
+    ),
+    op_target(
         name = "op_reciprocal",
         deps = [
             "//executorch/kernels/portable/cpu/pattern:pattern",
