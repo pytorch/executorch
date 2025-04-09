@@ -660,19 +660,15 @@ edge_config = get_xnnpack_edge_compile_config()
 # Convert to edge dialect and lower to XNNPack.
 edge_manager = to_edge_transform_and_lower(traced_model, partitioner = [XnnpackPartitioner()], compile_config = edge_config)
 et_program = edge_manager.to_executorch()
+
+with open("nanogpt.pte", "wb") as file:
+    file.write(et_program.buffer)
 ```
 
-Finally, ensure that the runner links against the `xnnpack_backend` target in CMakeLists.txt.
-
-```
-add_executable(nanogpt_runner main.cpp)
-target_link_libraries(
-    nanogpt_runner
-    PRIVATE
-    executorch
-    extension_module_static # Provides the Module class
-    optimized_native_cpu_ops_lib # Provides baseline cross-platform kernels
-    xnnpack_backend) # Provides the XNNPACK CPU acceleration backend
+Then run:
+```bash
+python export_nanogpt.py
+./cmake-out/nanogpt_runner
 ```
 
 For more information, see [Quantization in ExecuTorch](../quantization-overview.md).
