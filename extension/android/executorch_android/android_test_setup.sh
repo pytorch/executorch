@@ -22,8 +22,7 @@ curl -Ls "https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.m
 touch params.json
 echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps": 1e-05, "vocab_size": 32000}' > params.json
 python -m examples.models.llama.export_llama -c stories110M.pt -p params.json -X -kv
-python -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
 
 cp *.pte "${BASEDIR}/src/androidTest/resources/stories.pte"
-cp tokenizer.bin "${BASEDIR}/src/androidTest/resources/tokenizer.bin"
+cp tokenizer.model "${BASEDIR}/src/androidTest/resources/tokenizer.bin"
 popd
