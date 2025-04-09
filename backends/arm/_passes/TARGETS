@@ -1,6 +1,7 @@
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
 python_library(
+    # @autodeps-skip
     name = "passes",
     srcs = glob(["*.py"]),
     deps = [
