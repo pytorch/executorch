@@ -27,7 +27,7 @@ For non-POSIX-compliant systems, a minimal no-op PAL implementation is provided.
 Overriding the default PAL implementation is commonly done to route logs to a user-specified destination or to provide PAL functionality on embedded systems. To override one or more PAL methods, take the following steps:
 
 - Include
-  [`executorch/runtime/platform/platform.h`](https://github.com/pytorch/executorch/blob/main/runtime/platform/platform.h)
+  [`executorch/runtime/platform/platform.h`](https://github.com/pytorch/executorch/blob/release/0.6/runtime/platform/platform.h)
   in one of your application's `.c` or `.cpp` files.
 - Define an implementation of one or more of the `et_pal_*()` functions.
 
@@ -36,13 +36,13 @@ definition can override them at link time. To ensure that your definitions take
 precedence, you may need to ensure that the strong definitions precede the weak
 definitions in the link order.
 
-See [runtime/platform/platform.h](https://github.com/pytorch/executorch/blob/main/runtime/platform/platform.h) for the PAL function signatures and [runtime/platform/default/posix.cpp](https://github.com/pytorch/executorch/blob/main/runtime/platform/default/posix.cpp) for the reference POSIX implementation.
+See [runtime/platform/platform.h](https://github.com/pytorch/executorch/blob/release/0.6/runtime/platform/platform.h) for the PAL function signatures and [runtime/platform/default/posix.cpp](https://github.com/pytorch/executorch/blob/release/0.6/runtime/platform/default/posix.cpp) for the reference POSIX implementation.
 
 ## Kernel Libraries
 
 During export, a model is broken down into a list of operators, each providing some fundamental computation. Adding two tensors is an operator, as is convolution. Each operator requires a corresponding operator kernel to perform the computation on the target hardware. ExecuTorch backends are the preferred way to do this, but not all operators are supported on all backends.
 
-To handle this, ExecuTorch provides two implementations - the *portable* and *optimized* kernel libraries. The portable kernel library provides full support for all operators in a platform-independent manner. The optimized library carries additional system requirements, but is able to leverage multithreading and vectorized code to achieve greater performance. Operators can be drawn for both for a single build, allowing the optimized library to be used where available with the portable library as a fallback.
+To handle this, ExecuTorch provides two implementations - the *portable* and *optimized* kernel libraries. The portable kernel library provides full support for all operators in a platform-independent manner. The optimized library carries additional system requirements, but is able to leverage multithreading and vectorized code to achieve greater performance. Operators can be drawn from both for a single build, allowing the optimized library to be used where available with the portable library as a fallback.
 
 The choice of kernel library is transparent to the user when using mobile pre-built packages. However, it is important when building from source, especially on embedded systems. On mobile, the optimized operators are preferred where available. See [Overview of ExecuTorch's Kernel Libraries](kernel-library-overview.md) for more information.
 
