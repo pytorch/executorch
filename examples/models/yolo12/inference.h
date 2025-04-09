@@ -62,11 +62,8 @@ cv::Mat scale_with_padding(
 std::vector<Detection> infer_yolo_once(
     Module& module,
     cv::Mat input,
+    cv::Size img_dims,
     const DetectionConfig yolo_config) {
-  const auto model_input_shape =
-      module.method_meta("forward")->input_tensor_meta(0)->sizes();
-  cv::Size img_dims = {model_input_shape[2], model_input_shape[3]};
-
   int pad_x, pad_y;
   float scale;
   input = scale_with_padding(input, &pad_x, &pad_y, &scale, img_dims);

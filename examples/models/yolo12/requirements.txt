@@ -1,0 +1,2 @@
+ultralytics==8.3.97
+pytubefix==8.12.3

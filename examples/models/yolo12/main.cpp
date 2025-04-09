@@ -1,7 +1,6 @@
 #include "inference.h"
 
 #include <gflags/gflags.h>
-#include <csignal>
 
 void draw_detection(
     cv::Mat& frame,
@@ -57,6 +56,10 @@ int main(int argc, char** argv) {
   auto error = yolo_module.load();
   error = yolo_module.load_forward();
 
+  const auto model_input_shape =
+      yolo_module.method_meta("forward")->input_tensor_meta(0)->sizes();
+  const cv::Size img_dims = {model_input_shape[3], model_input_shape[2]};
+
   cv::VideoCapture cap(FLAGS_input_path.c_str());
   if (!cap.isOpened()) {
     std::cout << "Error opening video stream or file" << std::endl;
@@ -74,12 +77,11 @@ int main(int argc, char** argv) {
     cv::Mat frame;
     cap >> frame;
 
-    // If the frame is empty, break immediately
     if (frame.empty())
       break;
 
     std::vector<Detection> output =
-        infer_yolo_once(yolo_module, frame, DEFAULT_YOLO_CONFIG);
+        infer_yolo_once(yolo_module, frame, img_dims, DEFAULT_YOLO_CONFIG);
 
     std::cout << "Number of detections:" << output.size() << std::endl;
 

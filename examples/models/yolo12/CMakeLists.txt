@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.5)
 
-project(Yolov8CPPInference VERSION 0.1)
+project(Yolo12DetectionDemo VERSION 0.1)
 
 option(USE_OPENVINO_BACKEND "Build the tutorial with the XNNPACK backend" ON)
 option(USE_XNNPACK_BACKEND "Build the tutorial with the XNNPACK backend" OFF)
@@ -20,7 +20,7 @@ if(NOT PYTHON_EXECUTABLE)
   set(PYTHON_EXECUTABLE python3)
 endif()
 
-set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
@@ -29,8 +29,7 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 # find `executorch` libraries Same as for gflags
-set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../lib/cmake/ExecuTorch)
-find_package(executorch CONFIG REQUIRED)
+find_package(executorch CONFIG REQUIRED PATHS ${EXECUTORCH_ROOT}/cmake-out)
 target_link_options_shared_lib(executorch)
 
 set(link_libraries gflags)
@@ -78,8 +77,8 @@ set(PROJECT_SOURCES
     ${EXECUTORCH_ROOT}/extension/runner_util/inputs_portable.cpp
 )
 
-add_executable(Yolov8CPPInference ${PROJECT_SOURCES})
-target_link_libraries(Yolov8CPPInference PUBLIC
+add_executable(Yolo12DetectionDemo ${PROJECT_SOURCES})
+target_link_libraries(Yolo12DetectionDemo PUBLIC
     ${link_libraries}
     ${OpenCV_LIBS}
     executorch_core
@@ -88,5 +87,5 @@ target_link_libraries(Yolov8CPPInference PUBLIC
 )
 
 find_package(Threads REQUIRED)
-target_link_libraries(Yolov8CPPInference PRIVATE Threads::Threads)
-target_include_directories(Yolov8CPPInference PUBLIC ${_common_include_directories})
+target_link_libraries(Yolo12DetectionDemo PRIVATE Threads::Threads)
+target_include_directories(Yolo12DetectionDemo PUBLIC ${_common_include_directories})
