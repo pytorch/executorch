@@ -28,6 +28,7 @@ the core ExecuTorch runtime.
 To target the XNNPACK backend during the export and lowering process, pass an instance of the `XnnpackPartitioner` to `to_edge_transform_and_lower`. The example below demonstrates this process using the MobileNet V2 model from torchvision.
 
 ```python
+import torch
 import torchvision.models as models
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
