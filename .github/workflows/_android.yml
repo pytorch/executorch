@@ -36,7 +36,7 @@ jobs:
         cp ${BUILD_AAR_DIR}/executorch.aar $ARTIFACTS_DIR_NAME
 
         mkdir -p ${ARTIFACTS_DIR_NAME}/library_test_dir
-        sh extension/android/executorch_android/android_test_setup.sh
+        bash extension/android/executorch_android/android_test_setup.sh
         (cd extension/android; ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:assembleAndroidTest)
         cp extension/android/executorch_android/build/outputs/apk/androidTest/debug/executorch_android-debug-androidTest.apk "${ARTIFACTS_DIR_NAME}/library_test_dir"
 

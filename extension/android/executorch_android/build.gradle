@@ -37,7 +37,7 @@ android {
 }
 
 task copyTestRes(type: Exec) {
-  commandLine 'sh', 'android_test_setup.sh'
+  commandLine 'bash', 'android_test_setup.sh'
 }
 
 dependencies {
