@@ -88,7 +88,7 @@ class OpenVINOQuantizer(Quantizer):
         names: Optional[List[str]] = None,
         patterns: Optional[List[str]] = None,
         types: Optional[List[str]] = None,
-        subgraphs: Optional[List[Tuple[List[str], List[str]]]] = None,
+        subgraphs: Optional[List[nncf.Subgraph]] = None,
         validate: bool = True,
     ) -> None:
         """
@@ -107,7 +107,7 @@ class OpenVINOQuantizer(Quantizer):
                 names=names or [],
                 patterns=patterns or [],
                 types=types or [],
-                subgraphs=subgraphs or [],
+                subgraphs=subgraphs or nncf.Subgraph(),
                 validate=validate,
             )
         )
