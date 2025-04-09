@@ -395,7 +395,6 @@ At this point, the working directory should contain the following files:
 
 If all of these are present, you can now build and run:
 ```bash
-./install_executorch.sh --clean
 (mkdir cmake-out && cd cmake-out && cmake ..)
 cmake --build cmake-out -j10
 ./cmake-out/nanogpt_runner
