@@ -12,7 +12,7 @@ import logging
 import math
 import typing
 from functools import partial
-from typing import Iterable, List, Optional, Tuple
+from typing import Iterable, List, Optional, Set, Tuple
 
 import torch
 from executorch.backends.cadence.aot.memory_constraints import (
@@ -73,11 +73,11 @@ def collect_specs_from_graph_module(
 # the fastest memory available
 # flake8: noqa 'position_based_greedy_with_hierarchy' is too complex (13)
 def position_based_greedy_with_hierarchy(
-    graph_module: torch.fx.GraphModule,
     alignment: int,
+    specs: Set[TensorSpec],
+    graph_module: torch.fx.GraphModule,
     graph_signature: ExportGraphSignature,
-    alloc_graph_input: bool,
-    alloc_graph_output: bool,
+    extra_padding: int = 0,
     *,
     memory_config: MemoryConfig,
     mem_constraints: MemConstraints,
@@ -119,9 +119,7 @@ def position_based_greedy_with_hierarchy(
 
     # Iterate over all the specs in sorted order
     for spec in sorted(
-        collect_specs_from_graph_module(
-            graph_module, graph_signature, alloc_graph_input, alloc_graph_output
-        ),
+        specs,
         key=lambda spec: spec.allocated_memory,
         reverse=True,
     ):
@@ -167,11 +165,11 @@ def position_based_greedy_with_hierarchy(
 
 # Greedy tensor placement with the heuristics from arxiv.org/pdf/2001.03288.pdf
 def greedy_by_size_for_offset_calculation_with_hierarchy(
-    graph_module: torch.fx.GraphModule,
     alignment: int,
+    specs: Set[TensorSpec],
+    graph_module: torch.fx.GraphModule,
     graph_signature: ExportGraphSignature,
-    alloc_graph_input: bool,
-    alloc_graph_output: bool,
+    extra_padding: int = 0,
     *,
     memory_config: MemoryConfig,
     mem_constraints: MemConstraints,
@@ -199,9 +197,7 @@ def greedy_by_size_for_offset_calculation_with_hierarchy(
 
     # Iterate over all the specs in sorted order
     for spec in sorted(
-        collect_specs_from_graph_module(
-            graph_module, graph_signature, alloc_graph_input, alloc_graph_output
-        ),
+        specs,
         key=lambda spec: spec.allocated_memory,
         reverse=True,
     ):
