@@ -74,9 +74,9 @@ jobs:
 
         echo -n "$SECRET_EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS" | base64 -d > /tmp/secring.gpg
 
-        FLAVOR="${{ inputs.flavor}}"
+        FLAVOR="${{ inputs.flavor }}"
 
-        if [[ "${FLAVOR}" == "qnn+xnnpack"]; then
+        if [[ "$FLAVOR" == "qnn+xnnpack" ]]; then
           PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
           PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
           export EXECUTORCH_BUILD_QNN=ON
