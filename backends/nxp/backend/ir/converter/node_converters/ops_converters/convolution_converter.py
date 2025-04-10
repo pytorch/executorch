@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -48,6 +48,34 @@ class ConvolutionConverter(NodeConverter):
     ) -> bool:
         match target:
             case Target.RT700:
+                activations = node.args[0]
+                weights = node.args[1]
+                groups = node.args[8]
+
+                if activations.meta["val"].shape[0] != 1:
+                    # Only batch size 1 is supported on neutron.
+                    return False
+
+                if groups == 1:  # Regular convolution.
+                    pass
+                elif conv_utils.group_conv_convertible_as_depthwise(
+                    node, groups
+                ):  # Depthwise convolution.
+                    # Only supported if the weights are static, because TFLite `DepthwiseConv2D` uses permuted
+                    #  weights. In case the weights are dynamic, a Transpose operator would have to be added, which
+                    #  is not supported on Neutron.
+                    if not node_is_effectively_static_tensor(
+                        weights, parameters_mapping
+                    ):
+                        return False
+                elif conv_utils.group_conv_convertible_into_multiple_convolutions(
+                    node, groups
+                ):  # Separable conv.
+                    # Requires addition of `Split` and `Concatenation` operators, which are not supported on Neutron.
+                    return False
+                else:  # Unexpected case (should never happen).
+                    return False
+
                 return True
 
             case _:
@@ -59,37 +87,11 @@ class ConvolutionConverter(NodeConverter):
     ) -> bool:
         is_transposed = node.args[6]
         output_padding = node.args[7]
-        groups = node.args[8]
 
         if is_transposed:
             return False
 
         if output_padding != [0, 0]:
-            return False
-
-        if groups == 1:
-            # Regular (pointwise) convolution.
-            pass
-
-        elif conv_utils.group_conv_convertible_as_depthwise(
-            node, groups
-        ) and node_is_effectively_static_tensor(node.args[1], parameters_mapping):
-            # Depthwise convolution.
-            # Only supported if the weights are static, because TFLite `DepthwiseConv2D` uses permuted weights. In case
-            #  the weights are dynamic, a Transpose operator would have to be added, which is not supported on Neutron.
-            pass
-
-        elif conv_utils.group_conv_convertible_into_multiple_convolutions(node, groups):
-            # Group Separable convolution.
-            # Not supported natively by the eIQ Neutron so Group Separable Convolution.
-            # In practice it can be computed by splitting the Group Separable Convolution into multiple Pointwise
-            # Convo it will use the Split and Concat operation. The Concat operation in Neutron Converter
-            # SDK  25.03 requires the # of channels to be multipy of # of MAC units in the eIQ Neutron.
-            # For this reason Group Separable Convolution is not delegated by default at this moment.
-            return False
-
-        else:
-            # All conversion options related to the `group` attribute have been checked and none of them can be used.
             return False
 
         if input_tensor_safe(node, 2) is None:
