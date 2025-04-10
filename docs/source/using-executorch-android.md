@@ -96,8 +96,7 @@ Now you can compile your app with the ExecuTorch Android library.
 
 ## Building from Source
 
-`scripts/build_android_library.sh` is a helper script to build the Java library (into .jar), native library (into .so), and the packaged AAR file. It can also build
-demo apps to showcase the AAR is integrated into a user app correctly.
+`scripts/build_android_library.sh` is a helper script to build the Java library (into .jar), native library (into .so), and the packaged AAR file.
 
 You need Android [SDK](https://developer.android.com/studio) and [NDK](https://developer.android.com/ndk/downloads) to use it.
 
