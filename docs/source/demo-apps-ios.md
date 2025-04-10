@@ -44,7 +44,7 @@ Follow the [Setting Up ExecuTorch](https://pytorch.org/executorch/stable/getting
 tutorial to configure the basic environment:
 
 ```bash
-git clone -b viable/strict https://github.com/pytorch/executorch.git && cd executorch
+git clone -b release/0.6 https://github.com/pytorch/executorch.git && cd executorch
 
 python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 
