@@ -167,67 +167,68 @@ class TestMimiModel(unittest.TestCase):
         self.assertTrue(torch.allclose(ep_encode_output, ref_encode_output, atol=1e-6))
 
     def test_exported_decoder_xnnpack(self):
-        class MimiDecode(nn.Module):
-            def __init__(self, mimi: nn.Module):
-                super().__init__()
-                self.mimi_model = mimi
+        with self.mimi.streaming(1):
+            class MimiDecode(nn.Module):
+                def __init__(self, mimi: nn.Module):
+                    super().__init__()
+                    self.mimi_model = mimi
 
-            def forward(self, x):
-                x = x.transpose(1, 2)
-                x = self.mimi_model.upsample(x)
-                (emb,) = self.mimi_model.decoder_transformer(x)
-                emb.transpose(1, 2)
-                with self.mimi_model._context_for_encoder_decoder:
-                    out = self.mimi_model.decoder(emb)
-                return out
+                def forward(self, x):
+                    x = x.transpose(1, 2)
+                    x = self.mimi_model.upsample(x)
+                    (emb,) = self.mimi_model.decoder_transformer(x)
+                    emb.transpose(1, 2)
+                    with self.mimi_model._context_for_encoder_decoder:
+                        out = self.mimi_model.decoder(emb)
+                    return out
 
-        emb_input = torch.rand(1, 1, 512, device="cpu")
-        mimi_cpu = loaders.get_mimi(self.mimi_weight, "cpu")
-        mimi_decode = MimiDecode(mimi_cpu)
-        mimi_decode.eval()
-        mimi_decode(emb_input)
+            emb_input = torch.rand(1, 1, 512, device="cpu")
+            mimi_cpu = loaders.get_mimi(self.mimi_weight, "cpu")
+            mimi_decode = MimiDecode(mimi_cpu)
+            mimi_decode.eval()
+            mimi_decode(emb_input)
 
-        exported_decode: ExportedProgram = export(
-            mimi_decode, (emb_input,), strict=False
-        )
-        quantization_config = get_symmetric_quantization_config(
-            is_per_channel=True,
-            is_dynamic=True,
-        )
-        quantizer = XNNPACKQuantizer()
-        quantizer.set_global(quantization_config)
-        m = exported_decode.module()
-        m = prepare_pt2e(m, quantizer)
-        m(emb_input)
-        m = convert_pt2e(m)
-        print("quantized graph:")
-        print(m.graph)
-        # Export quantized module
-        exported_decode: ExportedProgram = export(m, (emb_input,), strict=False)
-        # Lower
-        edge_manager = to_edge_transform_and_lower(
-            exported_decode,
-            partitioner=[XnnpackPartitioner()],
-        )
-        print("delegate graph:")
-        print_delegation_info(edge_manager.exported_program().graph_module)
-        exec_prog = edge_manager.to_executorch()
-        output_file = "/tmp/mimi_decode.pte"
-        with open(output_file, "wb") as file:
-            exec_prog.write_to_file(file)
+            exported_decode: ExportedProgram = export(
+                mimi_decode, (emb_input,), strict=False
+            )
+            quantization_config = get_symmetric_quantization_config(
+                is_per_channel=True,
+                is_dynamic=True,
+            )
+            quantizer = XNNPACKQuantizer()
+            quantizer.set_global(quantization_config)
+            m = exported_decode.module()
+            m = prepare_pt2e(m, quantizer)
+            m(emb_input)
+            m = convert_pt2e(m)
+            print("quantized graph:")
+            print(m.graph)
+            # Export quantized module
+            exported_decode: ExportedProgram = export(m, (emb_input,), strict=False)
+            # Lower
+            edge_manager = to_edge_transform_and_lower(
+                exported_decode,
+                partitioner=[XnnpackPartitioner()],
+            )
+            print("delegate graph:")
+            print_delegation_info(edge_manager.exported_program().graph_module)
+            exec_prog = edge_manager.to_executorch()
+            output_file = "/tmp/mimi_decode.pte"
+            with open(output_file, "wb") as file:
+                exec_prog.write_to_file(file)
 
-        eager_res = mimi_decode(emb_input)
-        runtime = Runtime.get()
-        program = runtime.load_program(output_file)
-        method = program.load_method("forward")
-        flattened_x = tree_flatten(emb_input)[0]
-        res = method.execute(flattened_x)
-        # Compare results
-        sqnr = compute_sqnr(eager_res, res[0])
-        print(f"SQNR: {sqnr}")
-        # Don't check for exact equality, but check that the SQNR is high enough
-        # torch.testing.assert_close(eager_res, res[0], atol=4e-3, rtol=1e-3)
-        self.assertGreater(sqnr, 25.0)
+            eager_res = mimi_decode(emb_input)
+            runtime = Runtime.get()
+            program = runtime.load_program(output_file)
+            method = program.load_method("forward")
+            flattened_x = tree_flatten(emb_input)[0]
+            res = method.execute(flattened_x)
+            # Compare results
+            sqnr = compute_sqnr(eager_res, res[0])
+            print(f"SQNR: {sqnr}")
+            # Don't check for exact equality, but check that the SQNR is high enough
+            # torch.testing.assert_close(eager_res, res[0], atol=4e-3, rtol=1e-3)
+            self.assertGreater(sqnr, 25.0)
 
 
 if __name__ == "__main__":
