@@ -1,0 +1,16 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_unittest(
+    name = "executorch_export",
+    srcs = [
+        "test_executorch_export.py",
+    ],
+    deps = [
+        "//executorch/exir:lib",
+        "//executorch/export:lib",
+        "//executorch/devtools/backend_debug:delegation_info",
+        "//executorch/runtime:runtime",
+    ]
+)
