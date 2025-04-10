@@ -8,9 +8,9 @@
 
 from typing import Any, List, Tuple
 
-import serializer.tosa_serializer as ts  # type: ignore
-
 import torch
+
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -18,7 +18,6 @@ from executorch.backends.arm.operators.node_visitor import (
 
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
-from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
 
 
@@ -51,7 +50,7 @@ class ClampVisitor_080_BI(NodeVisitor):
             min_fp32,
             max_fp32,
         )
-        tosa_graph.addOperator(TosaOp.Op().CLAMP, [input_name], [output_name], attr)
+        tosa_graph.addOperator(ts.TosaOp.Op().CLAMP, [input_name], [output_name], attr)
 
     def _get_min_max_arguments(
         self, node: Node, dtype_min: int | float, dtype_max: int | float
