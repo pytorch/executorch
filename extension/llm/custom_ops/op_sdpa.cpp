@@ -477,7 +477,6 @@ Tensor& custom_sdpa_out_impl(
   return output;
 }
 
-#ifdef ENABLE_CUSTOM_QUANTIZED_SDPA
 Tensor& custom_quantized_sdpa_out(
     RuntimeContext& ctx,
     const Tensor& q,
@@ -516,7 +515,6 @@ Tensor& custom_quantized_sdpa_out(
       v_scales,
       is_seq_at_dim_2);
 }
-#endif // ENABLE_CUSTOM_QUANTIZED_SDPA
 
 /*
   Input params
@@ -619,9 +617,7 @@ EXECUTORCH_LIBRARY(
     "custom_sdpa.out",
     torch::executor::native::custom_sdpa_out);
 
-#ifdef ENABLE_CUSTOM_QUANTIZED_SDPA
 EXECUTORCH_LIBRARY(
     llama,
     "custom_quantized_sdpa.out",
     torch::executor::native::custom_quantized_sdpa_out);
-#endif // ENABLE_CUSTOM_QUANTIZED_SDPA
