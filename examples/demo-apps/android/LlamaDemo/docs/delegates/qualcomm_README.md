@@ -135,7 +135,7 @@ You may also wonder what the "--metadata" flag is doing. This flag helps export 
 
 Convert tokenizer for Llama 2
 ```
-python -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+python -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokenizer.bin
 ```
 Rename tokenizer for Llama 3 with command: `mv tokenizer.model tokenizer.bin`. We are updating the demo app to support tokenizer in original format directly.
 
