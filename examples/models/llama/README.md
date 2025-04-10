@@ -158,7 +158,7 @@ Llama 3 8B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 
 
 1. Download `consolidated.00.pth`, `params.json` and `tokenizer.model` from [Llama website](https://www.llama.com/llama-downloads/) or [Hugging Face](https://huggingface.co/meta-llama/Llama-3.2-1B). For chat use-cases, download the instruct models.
 
-2. Export model and generate `.pte` file.
+2. Export model and generate `.pte` file. For convenience, here's an already ExecuTorch [exported model](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/llama3_2-1B.pte) using [this recipe](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/ExportRecipe_1B.ipynb) on Hugging Face.
 
 - Use **original BF16** version, without any quantization.
 ```
