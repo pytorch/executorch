@@ -24,6 +24,7 @@ from executorch.backends.qualcomm._passes.utils import (
 
 from executorch.backends.qualcomm.tests.utils import (
     generate_context_binary,
+    ModuleQConfig,
     QuantDtype,
     TestQNN,
     validate_context_binary,
@@ -112,6 +113,13 @@ class TestQNNFloatingPointOperator(TestQNN):
         module = AdaptiveAvgPool2D()  # noqa: F405
         sample_input = (torch.randn(1, 512, 7, 7),)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_amax(self):
+        modules = [AMax(dim=1, keepdim=False), AMax(dim=1, keepdim=True)]  # noqa: F405
+        sample_input = (torch.randn(4, 4),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_any(self):
         modules = [Any(), Any(dim=[0, 1]), Any(dim=1, keepdim=True)]  # noqa: F405
@@ -1111,6 +1119,14 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_amax(self):
+        modules = [AMax(dim=1, keepdim=False), AMax(dim=1, keepdim=True)]  # noqa: F405
+        sample_input = (torch.randn(4, 4),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_any(self):
         modules = [Any(), Any(dim=[0, 1]), Any(dim=1, keepdim=True)]  # noqa: F405
         sample_input = (torch.randn(3, 3, 3) > 0,)
@@ -1237,7 +1253,6 @@ class TestQNNQuantizedOperator(TestQNN):
                 module = self.get_qdq_module(
                     module,
                     sample_input,
-                    is_conv_per_block=True,
                     quant_dtype=QuantDtype.use_16a4w_block,
                     block_size_map={"conv2d": (1, 128, 1, 1)},
                 )
@@ -1326,8 +1341,8 @@ class TestQNNQuantizedOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
-                        module = self.get_qdq_module(module, sample_input)
-                        self.lower_module_and_test_output(module, sample_input)
+                        gm = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(gm, sample_input)
                         index += 1
 
     def test_qnn_backend_element_wise_and(self):
@@ -1367,8 +1382,8 @@ class TestQNNQuantizedOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
-                        module = self.get_qdq_module(module, sample_input)
-                        self.lower_module_and_test_output(module, sample_input)
+                        gm = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(gm, sample_input)
                         index += 1
 
     def test_qnn_backend_element_wise_mul(self):
@@ -1395,8 +1410,8 @@ class TestQNNQuantizedOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
-                        module = self.get_qdq_module(module, sample_input)
-                        self.lower_module_and_test_output(module, sample_input)
+                        gm = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(gm, sample_input)
                         index += 1
 
     def test_qnn_backend_element_wise_or(self):
@@ -1455,8 +1470,8 @@ class TestQNNQuantizedOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
-                        module = self.get_qdq_module(module, sample_input)
-                        self.lower_module_and_test_output(module, sample_input)
+                        gm = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(gm, sample_input)
                         index += 1
 
     def test_qnn_backend_elu(self):
@@ -2120,6 +2135,32 @@ class TestQNNQuantizedModel(TestQNN):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_submodules(self):
+        module = SimpleSubModules()  # noqa: F405
+        sample_input = (
+            torch.rand(1, 3, 8, 8),
+            torch.rand(1, 3, 8, 8),
+            torch.rand(1, 3, 8, 8),
+            torch.rand(1, 3, 8, 8),
+        )
+
+        from executorch.backends.qualcomm.quantizer.quantizer import (
+            get_submodule_type_predicate,
+        )
+
+        submodule_qconfig_list = [
+            (
+                get_submodule_type_predicate("Add"),
+                ModuleQConfig(QuantDtype.use_16a16w),
+            )  # noqa: F405
+        ]
+        module = self.get_qdq_module(
+            module,
+            sample_input,
+            submodule_qconfig_list=submodule_qconfig_list,
+        )
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_topk_and_index(self):

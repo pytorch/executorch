@@ -38,7 +38,7 @@ Running a model using the low-level runtime APIs allows for a high-degree of con
 
 ## Building with CMake
 
-ExecuTorch uses CMake as the primary build system. Inclusion of the module and tensor APIs are controlled by the `EXECUTORCH_BUILD_EXTENSION_MODULE` and `EXECUTORCH_BUILD_EXTENSION_TENSOR` CMake options. As these APIs may not be supported on embedded systems, they are disabled by default when building from source. The low-level API surface is always included. To link, add the `executorch` target as a CMake dependency, along with `executorch_module_static` and `executorch_tensor`, if desired.
+ExecuTorch uses CMake as the primary build system. Inclusion of the module and tensor APIs are controlled by the `EXECUTORCH_BUILD_EXTENSION_MODULE` and `EXECUTORCH_BUILD_EXTENSION_TENSOR` CMake options. As these APIs may not be supported on embedded systems, they are disabled by default when building from source. The low-level API surface is always included. To link, add the `executorch` target as a CMake dependency, along with `extension_module_static` and `extension_tensor`, if desired.
 
 ```
 # CMakeLists.txt
@@ -47,8 +47,8 @@ add_subdirectory("executorch")
 target_link_libraries(
     my_target
     PRIVATE executorch
-    executorch_module_static
-    executorch_tensor
+    extension_module_static
+    extension_tensor
     optimized_native_cpu_ops_lib
     xnnpack_backend)
 ```

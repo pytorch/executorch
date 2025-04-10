@@ -171,6 +171,11 @@
   kernels:
     - arg_meta: null
       kernel_name: cadence::impl::G3::exp_out
+      
+- op: hardtanh.out
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::G3::hardtanh_out
 
 # custom ops
 - func: cadence::quantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)
