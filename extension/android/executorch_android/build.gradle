@@ -36,6 +36,10 @@ android {
     }
 }
 
+task copyTestRes(type: Exec) {
+  commandLine 'bash', 'android_test_setup.sh'
+}
+
 dependencies {
     implementation 'com.facebook.fbjni:fbjni:0.5.1'
     implementation 'com.facebook.soloader:nativeloader:0.10.5'
