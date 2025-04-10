@@ -18,7 +18,7 @@ namespace bundled_program {
  * An opaque pointer to a serialized bundled program.
  */
 using SerializedBundledProgram = const void;
-
+using ::executorch::ET_RUNTIME_NAMESPACE::Method;
 /**
  * Load testset_idx-th bundled input of method_idx-th Method test in
  * bundled_program_ptr to given Method.
@@ -31,7 +31,7 @@ using SerializedBundledProgram = const void;
  * execution.
  */
 ET_NODISCARD ::executorch::runtime::Error load_bundled_input(
-    ::executorch::runtime::Method& method,
+    Method& method,
     SerializedBundledProgram* bundled_program_ptr,
     size_t testset_idx);
 
@@ -49,7 +49,7 @@ ET_NODISCARD ::executorch::runtime::Error load_bundled_input(
  * execution.
  */
 ET_NODISCARD ::executorch::runtime::Error verify_method_outputs(
-    ::executorch::runtime::Method& method,
+    Method& method,
     SerializedBundledProgram* bundled_program_ptr,
     size_t testset_idx,
     double rtol = 1e-5,
@@ -106,7 +106,7 @@ using serialized_bundled_program =
     ::executorch::bundled_program::SerializedBundledProgram;
 
 ET_NODISCARD inline ::executorch::runtime::Error LoadBundledInput(
-    ::executorch::runtime::Method& method,
+    Method& method,
     serialized_bundled_program* bundled_program_ptr,
     size_t testset_idx) {
   return ::executorch::bundled_program::load_bundled_input(
@@ -115,7 +115,7 @@ ET_NODISCARD inline ::executorch::runtime::Error LoadBundledInput(
 
 ET_NODISCARD inline ::executorch::runtime::Error
 VerifyResultWithBundledExpectedOutput(
-    ::executorch::runtime::Method& method,
+    Method& method,
     serialized_bundled_program* bundled_program_ptr,
     size_t testset_idx,
     double rtol = 1e-5,

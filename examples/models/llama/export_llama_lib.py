@@ -793,10 +793,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
                 args.enable_dynamic_shape,
             )
         )
-        # Apply XNNPACK after Vulkan so that undelegated ops can be accelerated by XNNPACK
-        partitioners.append(
-            get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
-        )
         modelname = f"vulkan_{modelname}"
 
         # Need to remove asserts from the graph to prevent graph breaks
@@ -904,6 +900,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
         if args.verbose:
             print_delegation_info(builder.edge_manager.exported_program().graph_module)
         if args.num_sharding > 0 and args.qnn:
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`.
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
             canonicalize_program(builder.edge_manager.exported_program())

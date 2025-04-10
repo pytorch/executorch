@@ -31,7 +31,7 @@ class TestConformer(unittest.TestCase):
     # .to_executorch step, i.e. after Arm partitioner.
     ops_after_partitioner = {
         "executorch_exir_dialects_edge__ops_aten_max_default": 1,
-        "torch.ops.aten._assert_scalar.default": 10,
+        "torch.ops.aten._assert_scalar.default": 7,
         "torch.ops.aten._local_scalar_dense.default": 1,
     }
 

@@ -19,10 +19,6 @@ from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
 
 logger = logging.getLogger(__name__)
-TOSA_DBG_VERBOSE = os.environ.get("TOSA_DBG_VERBOSE") == "1"
-if TOSA_DBG_VERBOSE:
-    logging.basicConfig(level=logging.INFO)
-    logger.setLevel(logging.INFO)
 
 
 def dbg_node(node: torch.fx.Node, graph_module: torch.fx.GraphModule):
