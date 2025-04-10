@@ -25,7 +25,7 @@ using torch::executor::testing::TensorFactory;
 // executorch/kernels/test/op_gelu_test.cpp instead.
 
 Tensor& op_gelu_out(const Tensor& self, string_view approximate, Tensor& out) {
-  executorch::runtime::KernelRuntimeContext context{};
+  executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext context{};
   return torch::executor::native::gelu_out(context, self, approximate, out);
 }
 

@@ -21,6 +21,7 @@ using executorch::aten::ArrayRef;
 using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext;
 using torch::executor::testing::TensorFactory;
 
 Tensor& op_cdist_forward_out(
@@ -29,7 +30,7 @@ Tensor& op_cdist_forward_out(
     double p,
     optional<int64_t> compute_mode,
     Tensor& out) {
-  executorch::runtime::KernelRuntimeContext context{};
+  KernelRuntimeContext context{};
   return torch::executor::aten::_cdist_forward_outf(
       context, x1, x2, p, compute_mode, out);
 }
