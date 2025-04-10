@@ -58,6 +58,20 @@ runtime.python_library(
     ],
 )
 
+runtime.python_library(
+    name = "recipes",
+    srcs = glob([
+        "recipes/*.py",
+    ]),
+    deps = [
+        ":partitioner",
+        ":quantizer",
+    ],
+    visibility = [
+        "@EXECUTORCH_CLIENTS",
+    ],
+)
+
 runtime.cxx_python_extension(
     name = "executorchcoreml",
     srcs = [
