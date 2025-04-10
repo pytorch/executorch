@@ -135,16 +135,28 @@ class TestMimiModel(unittest.TestCase):
 
         all_codes_th = torch.cat(all_codes, dim=-1)
 
+        pcm_ref = self.mimi.decode(all_codes_th)
+
         all_pcms = []
+        for i in range(all_codes_th.shape[-1]):
+            codes = all_codes_th[..., i : i + 1]
+            pcm = self.mimi.decode(codes)
+            all_pcms.append(pcm)
+        all_pcms = torch.cat(all_pcms, dim=-1)
+        sqnr = compute_sqnr(pcm_ref, all_pcms)
+        print(f"sqnr = {sqnr} dB")
+        self.assertTrue(sqnr > 4)
+
+        all_pcms_streaming = []
         with self.mimi.streaming(1):
             for i in range(all_codes_th.shape[-1]):
                 codes = all_codes_th[..., i : i + 1]
-                pcm = self.mimi.decode(codes)
-                all_pcms.append(pcm)
-        all_pcms = torch.cat(all_pcms, dim=-1)
-
-        pcm_ref = self.mimi.decode(all_codes_th)
-        self.assertTrue(torch.allclose(pcm_ref, all_pcms, atol=1e-5))
+                pcm_streaming = self.mimi.decode(codes)
+                all_pcms_streaming.append(pcm_streaming)
+        all_pcms_streaming = torch.cat(all_pcms_streaming, dim=-1)
+        sqnr_streaming = compute_sqnr(pcm_ref, all_pcms_streaming)
+        print(f"sqnr_streaming = {sqnr_streaming} dB")
+        self.assertTrue(sqnr_streaming > 100)
 
     def test_exported_encoding(self):
         """Ensure exported encoding model is consistent with reference output."""
