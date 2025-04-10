@@ -880,8 +880,7 @@ target_link_libraries(
 <li><p>nanogpt.pte</p></li>
 </ul>
 <p>If all of these are present, you can now build and run:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_executorch.sh<span class="w"> </span>--clean
-<span class="o">(</span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>..<span class="o">)</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="o">(</span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>..<span class="o">)</span>
 cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j10
 ./cmake-out/nanogpt_runner
 </pre></div>
@@ -1116,17 +1115,14 @@ instructs ExecuTorch to optimize the model for CPU execution via the XNNPACK bac
 <span class="c1"># Convert to edge dialect and lower to XNNPack.</span>
 <span class="n">edge_manager</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span><span class="n">traced_model</span><span class="p">,</span> <span class="n">partitioner</span> <span class="o">=</span> <span class="p">[</span><span class="n">XnnpackPartitioner</span><span class="p">()],</span> <span class="n">compile_config</span> <span class="o">=</span> <span class="n">edge_config</span><span class="p">)</span>
 <span class="n">et_program</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;nanogpt.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+    <span class="n">file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">et_program</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>Finally, ensure that the runner links against the <code class="docutils literal notranslate"><span class="pre">xnnpack_backend</span></code> target in CMakeLists.txt.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">add_executable</span><span class="p">(</span><span class="n">nanogpt_runner</span> <span class="n">main</span><span class="o">.</span><span class="n">cpp</span><span class="p">)</span>
-<span class="n">target_link_libraries</span><span class="p">(</span>
-    <span class="n">nanogpt_runner</span>
-    <span class="n">PRIVATE</span>
-    <span class="n">executorch</span>
-    <span class="n">extension_module_static</span> <span class="c1"># Provides the Module class</span>
-    <span class="n">optimized_native_cpu_ops_lib</span> <span class="c1"># Provides baseline cross-platform kernels</span>
-    <span class="n">xnnpack_backend</span><span class="p">)</span> <span class="c1"># Provides the XNNPACK CPU acceleration backend</span>
+<p>Then run:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python<span class="w"> </span>export_nanogpt.py
+./cmake-out/nanogpt_runner
 </pre></div>
 </div>
 <p>For more information, see <a class="reference internal" href="../quantization-overview.html"><span class="doc std std-doc">Quantization in ExecuTorch</span></a>.</p>
@@ -1262,10 +1258,13 @@ To see a more detailed view, use the <code class="docutils literal notranslate">
 <div class="section" id="etdump-generation">
 <h5>ETDump generation<a class="headerlink" href="#etdump-generation" title="Permalink to this heading">¶</a></h5>
 <p>An ETDump is an artifact generated at runtime containing a trace of the model execution. For more information, see <a class="reference internal" href="../etdump.html"><span class="doc std std-doc">the ETDump docs</span></a>.</p>
-<p>Include the ETDump header in your code.</p>
+<p>Include the ETDump header and namespace in your code.</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="c1">// main.cpp</span>
 
 <span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/devtools/etdump/etdump_flatcc.h&gt;</span>
+
+<span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">etdump</span><span class="o">::</span><span class="n">ETDumpGen</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">etdump_result</span><span class="p">;</span>
 </pre></div>
 </div>
 <p>Create an Instance of the ETDumpGen class and pass it to the Module constructor.</p>
