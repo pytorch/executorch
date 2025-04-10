@@ -97,7 +97,7 @@ class SigmoidAddSigmoid(torch.nn.Module):
 
 
 @common.parametrize("test_data", test_data_suite)
-@pytest.mark.flaky(reruns=5)
+@pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
 def test_sigmoid_tosa_BI(test_data):
     pipeline = TosaPipelineBI(
         Sigmoid(),
@@ -110,7 +110,7 @@ def test_sigmoid_tosa_BI(test_data):
 
 
 @common.parametrize("test_data", test_data_suite)
-@pytest.mark.flaky(reruns=5)
+@pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
 def test_sigmoid_add_sigmoid_tosa_BI(test_data):
     pipeline = TosaPipelineBI(
         SigmoidAddSigmoid(),
@@ -123,6 +123,7 @@ def test_sigmoid_add_sigmoid_tosa_BI(test_data):
 
 
 @common.parametrize("test_data", test_data_suite)
+@pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
 def test_sigmoid_tosa_u55(test_data):
     pipeline = OpNotSupportedPipeline(
         Sigmoid(), (test_data(),), "TOSA-0.80+BI+u55", {Sigmoid.exir_op: 1}
@@ -132,6 +133,7 @@ def test_sigmoid_tosa_u55(test_data):
 
 
 @common.parametrize("test_data", test_data_suite)
+@pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
 def test_sigmoid_add_sigmoid_tosa_u55(test_data):
     pipeline = OpNotSupportedPipeline(
         SigmoidAddSigmoid(),
@@ -145,7 +147,7 @@ def test_sigmoid_add_sigmoid_tosa_u55(test_data):
 
 
 @common.parametrize("test_data", test_data_suite)
-@pytest.mark.flaky(reruns=5)
+@pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
 @common.XfailIfNoCorstone320
 def test_sigmoid_tosa_u85(test_data):
     pipeline = EthosU85PipelineBI(
@@ -162,7 +164,7 @@ def test_sigmoid_tosa_u85(test_data):
         "ramp": "AssertionError: Output 0 does not match reference output.",
     },
 )
-@pytest.mark.flaky(reruns=5)
+@pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
 @common.XfailIfNoCorstone320
 def test_sigmoid_add_sigmoid_tosa_u85(test_data):
     pipeline = EthosU85PipelineBI(
