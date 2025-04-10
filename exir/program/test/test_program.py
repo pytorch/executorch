@@ -725,17 +725,17 @@ class TestProgramManagers(unittest.TestCase):
         )
 
     def test_edge_dialect_non_core_aten_ops(self):
-        class LinalgNorm(torch.nn.Module):
+        class LinalgRank(torch.nn.Module):
             def __init__(self):
                 super().__init__()
 
             def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return torch.linalg.norm(x)
+                return torch.linalg.matrix_rank(x)
 
         from torch._export.verifier import SpecViolationError
 
-        input = torch.arange(9, dtype=torch.float) - 4
-        ep = torch.export.export(LinalgNorm(), (input,), strict=True)
+        input = torch.ones((9, 9, 9), dtype=torch.float)
+        ep = torch.export.export(LinalgRank(), (input,), strict=True)
 
         # aten::linalg_norm is not a core op, so it should error out
         with self.assertRaises(SpecViolationError):
@@ -748,9 +748,7 @@ class TestProgramManagers(unittest.TestCase):
                 ep,
                 compile_config=EdgeCompileConfig(
                     _check_ir_validity=True,
-                    _core_aten_ops_exception_list=[
-                        torch.ops.aten.linalg_vector_norm.default
-                    ],
+                    _core_aten_ops_exception_list=[torch.ops.aten._linalg_svd.default],
                 ),
             )
         except SpecViolationError:
