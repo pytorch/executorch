@@ -11,6 +11,11 @@ on:
         description: Upload the AAR to maven staging repository
         required: false
         type: boolean
+      flavor:
+        type: choice
+        options:
+          - "xnnpack"
+          - "qnn+xnnpack"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -35,8 +40,8 @@ jobs:
   build-aar:
     name: build-aar
     needs: check-if-aar-exists
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     if: ${{ !github.event.pull_request.head.repo.fork }}
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.7
     secrets: inherit
     permissions:
       id-token: write
@@ -68,6 +73,15 @@ jobs:
         echo "signing.secretKeyRingFile=/tmp/secring.gpg" >> ~/.gradle/gradle.properties
 
         echo -n "$SECRET_EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS" | base64 -d > /tmp/secring.gpg
+
+        FLAVOR="${{ inputs.flavor}}"
+
+        if [[ "${FLAVOR}" == "qnn+xnnpack"]; then
+          PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+          PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+          export EXECUTORCH_BUILD_QNN=ON
+          export QNN_SDK_ROOT=/tmp/qnn/2.28.0.241029
+        fi
 
         # Build AAR Package
         mkdir aar-out
