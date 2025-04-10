@@ -264,14 +264,14 @@ Tensor& flash_attention_kernel_out(
       InvalidArgument,
       output);
 
-  auto q_seq_len = query.size(2);
+  auto seq_len = query.size(2);
 
   ET_SWITCH_FLOAT_TYPES(
       query.scalar_type(), ctx, "flash_attention", CTYPE, [&] {
         // TODO we need to re-evaluate this for ARM CPUs
         // And there can be many so instead of templatizing
         // we might consider another appraoch
-        if (q_seq_len >= 768) {
+        if (seq_len >= 768) {
           sdpa::impl::cpu_flash_attention<CTYPE, 256, 512>(
               output,
               query,
@@ -287,7 +287,7 @@ Tensor& flash_attention_kernel_out(
               nullopt,
               nullopt,
               nullopt);
-        } else if (q_seq_len >= 192) {
+        } else if (seq_len >= 192) {
           sdpa::impl::cpu_flash_attention<CTYPE, 64, 512>(
               output,
               query,
@@ -341,7 +341,8 @@ Tensor& custom_sdpa_out_impl(
     const optional<Tensor>& k_zero_points = nullopt,
     const optional<Tensor>& k_scales = nullopt,
     const optional<Tensor>& v_zero_points = nullopt,
-    const optional<Tensor>& v_scales = nullopt) {
+    const optional<Tensor>& v_scales = nullopt,
+    bool is_seq_at_dim_2 = false) {
   ET_KERNEL_CHECK_MSG(
       ctx,
       !attn_mask.has_value() || !is_causal,
@@ -357,13 +358,15 @@ Tensor& custom_sdpa_out_impl(
       "Invalid arguments");
 
   int64_t seq_len = q.size(1);
-  auto q_seq_len = q.size(1);
+  SeqDim seq_dim{SeqDim::TWO};
+  if (!is_seq_at_dim_2) {
+    seq_dim = SeqDim::ONE;
+  }
 
-  bool is_seq_at_dim_1{true};
   if (q.scalar_type() == ScalarType::Char) {
-    is_seq_at_dim_1 = false;
-    seq_len = q.size(2);
-    q_seq_len = q.size(2);
+    if (seq_dim == SeqDim::TWO) {
+      seq_len = q.size(2);
+    }
     ET_KERNEL_CHECK_MSG(
         ctx,
         q_scales.has_value() && q_zero_points.has_value() &&
@@ -412,7 +415,7 @@ Tensor& custom_sdpa_out_impl(
         // TODO we need to re-evaluate this for ARM CPUs
         // And there can be many so instead of templatizing
         // we might consider another appraoch
-        if (q_seq_len >= 768) {
+        if (seq_len >= 768) {
           sdpa::impl::cpu_flash_attention<CTYPE, 256, 512>(
               output,
               q,
@@ -428,10 +431,10 @@ Tensor& custom_sdpa_out_impl(
               k_scales, // k_scales
               v_zero_points, // v_zero_points
               v_scales, // v_scales
-              is_seq_at_dim_1, /* is_seq_at_dim_1 */
+              seq_dim, /* seq_dim */
               start_pos,
               num_keys_for_causal_attention);
-        } else if (q_seq_len >= 192) {
+        } else if (seq_len >= 192) {
           sdpa::impl::cpu_flash_attention<CTYPE, 64, 512>(
               output,
               q,
@@ -447,7 +450,7 @@ Tensor& custom_sdpa_out_impl(
               k_scales, // k_scales
               v_zero_points, // v_zero_points
               v_scales, // v_scales
-              is_seq_at_dim_1, /* is_seq_at_dim_1 */
+              seq_dim, /* seq_dim */
               start_pos,
               num_keys_for_causal_attention);
         } else {
@@ -466,7 +469,7 @@ Tensor& custom_sdpa_out_impl(
               k_scales, // k_scales
               v_zero_points, // v_zero_points
               v_scales, // v_scales
-              is_seq_at_dim_1, /* is_seq_at_dim_1 */
+              seq_dim, /* seq_dim */
               start_pos,
               num_keys_for_causal_attention);
         }
@@ -492,6 +495,7 @@ Tensor& custom_quantized_sdpa_out(
     const optional<Tensor>& k_scales,
     const optional<Tensor>& v_zero_points,
     const optional<Tensor>& v_scales,
+    const bool is_seq_at_dim_2,
     Tensor& output) {
   return custom_sdpa_out_impl(
       ctx,
@@ -509,7 +513,8 @@ Tensor& custom_quantized_sdpa_out(
       k_zero_points,
       k_scales,
       v_zero_points,
-      v_scales);
+      v_scales,
+      is_seq_at_dim_2);
 }
 #endif // ENABLE_CUSTOM_QUANTIZED_SDPA
 
