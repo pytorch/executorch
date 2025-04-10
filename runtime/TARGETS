@@ -9,8 +9,7 @@ runtime.python_library(
         "//executorch/extension/pybindings:portable_lib",
     ],
     visibility = [
-        "//executorch/runtime/...",
-        "//executorch/exir/emit/test/...",
+        "//executorch/...",
         "@EXECUTORCH_CLIENTS",
     ],
 )
