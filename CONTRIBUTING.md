@@ -1,7 +1,6 @@
 Thank you for your interest in contributing to ExecuTorch! We want to make
 it easy to contribute to this project.
 
-&nbsp;
 
 ## Dev Install
 
@@ -91,7 +90,7 @@ executorch
 │   └── <a href="runtime/platform">platform</a> - Layer between architecture specific code and portable C++.
 ├── <a href="schema">schema</a> - ExecuTorch PTE file format flatbuffer schemas.
 ├── <a href="scripts">scripts</a> - Utility scripts for building libs, size management, dependency management, etc.
-├── <a href="shim">shim</a> - Compatibility layer between OSS and Internal builds.
+├── <a href="shim_et">shim_et</a> - Compatibility layer between OSS and Internal builds.
 ├── <a href="test">test</a> - Broad scoped end-to-end tests.
 ├── <a href="third-party">third-party</a> - Third-party dependencies.
 ├── <a href="tools">tools</a> - Tools for building ExecuTorch from source, for different built tools (CMake, Buck).
@@ -192,9 +191,6 @@ in the Github repo.
 
 ## Coding Style
 
-Goal: Encourage standards that make it easier to read, edit, maintain, and debug
-the ExecuTorch code.
-
 ### lintrunner
 
 We use [`lintrunner`](https://pypi.org/project/lintrunner/) to help make sure the
@@ -259,7 +255,7 @@ toolchains, and having access to relatively modern C++ features.
 
 #### C/C++ standard library usage
 
-**Restricted usage of the C++ standard library.**
+**Restricted usage of the C++ standard library**
 
 Rationale: ExecuTorch is intended to be portable to bare-metal systems that lack
 certain features, like dynamic memory, threading, and locking, required by parts
@@ -280,7 +276,7 @@ careful to also manually destroy objects initialized in this way.
 
 #### C++ language features
 
-**Exceptions: Do not use.**
+**Exceptions: Do not use**
 - Rationale: Exceptions are not widely supported on some classes of
   microcontrollers and DSPs, and they can significantly increase binary size.
 
@@ -289,12 +285,12 @@ must work with threading**
 - Rationale: The core runtime must work on systems that do not have threading
   support.
 
-**RTTI, dynamic_cast, and `<typeid>`: Do not use.**
+**RTTI, dynamic_cast, and `<typeid>`: Do not use**
 - Rationale: RTTI adds extra data to every virtual class. ExecuTorch doesn't
   have a strong need for `dynamic_cast` and friends, so it's better to reduce
   the binary size.
 
-**Templates and template metaprogramming: Be careful and avoid if possible.**
+**Templates and template metaprogramming: Be careful and avoid if possible**
 - Rationale: Most templating results in code generation, and is one of the most
   common sources of binary bloat. Some use of templates is fine (e.g. an
   `ArrayRef<T>`, or code that handles multiple `ScalarType` types), but for the
@@ -359,7 +355,7 @@ docs](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/
 for basics.
 
 1. Push your branch to your fork of `pytorch/executorch`. Most people do not
-  have permission to push a branch directoy to the upstream repo.
+  have permission to push a branch directory to the upstream repo.
 1. Create your PR
    - Use the `main` branch as the base.
    - Give the PR a clear and descriptive title. It will become the title of the

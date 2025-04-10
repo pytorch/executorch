@@ -121,6 +121,14 @@ def get_passes_dependency_for_capture_program():
     }
 
 
+def copy_nn_module_stack(src, target):
+    """
+    Copy meta["nn_module_stack"] from src node to target node if existing.
+    """
+    if value := src.meta.get("nn_module_stack"):
+        target.meta["nn_module_stack"] = value
+
+
 def is_float_tensor(node: torch.fx.Node) -> bool:
     if "val" not in node.meta or not isinstance(node.meta["val"], FakeTensor):
         return False

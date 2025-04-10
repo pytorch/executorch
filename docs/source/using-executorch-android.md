@@ -172,18 +172,22 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         // Load the ExecuTorch module
-        module = Module.load("/path/to/module.pte");
-    }
-    public void runInference(View view) {
-        // Prepare input data
-        Tensor input = Tensor.fromBlob(getInputData());
-        // Run inference
-        Tensor output = module.forward(EValue.from(input))[0].toTensor();
-        // Process output data
-        processOutput(output);
+        Module module = Module.load("/data/local/tmp/add.pte");
+        Tensor tensor1 = Tensor.fromBlob(new float[] {1.0f}, new long[] {1});
+        Tensor tensor2 = Tensor.fromBlob(new float[] {20.0f}, new long[] {1});
+
+        EValue eValue1 = EValue.from(tensor1);
+        EValue eValue2 = EValue.from(tensor2);
+        float result = module.forward(eValue1, eValue2)[0].toTensor().getDataAsFloatArray()[0];
     }
 }
 ```
+
+Push the corresponding pte file to the phone:
+```sh
+adb push extension/module/test/resources/add.pte /data/local/tmp/
+```
+
 This example loads an ExecuTorch module, prepares input data, runs inference, and processes the output data.
 
 Please use [DeepLabV3AndroidDemo](https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo)

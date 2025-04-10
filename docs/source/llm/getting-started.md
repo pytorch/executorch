@@ -395,7 +395,6 @@ At this point, the working directory should contain the following files:
 
 If all of these are present, you can now build and run:
 ```bash
-./install_executorch.sh --clean
 (mkdir cmake-out && cd cmake-out && cmake ..)
 cmake --build cmake-out -j10
 ./cmake-out/nanogpt_runner
@@ -661,19 +660,15 @@ edge_config = get_xnnpack_edge_compile_config()
 # Convert to edge dialect and lower to XNNPack.
 edge_manager = to_edge_transform_and_lower(traced_model, partitioner = [XnnpackPartitioner()], compile_config = edge_config)
 et_program = edge_manager.to_executorch()
+
+with open("nanogpt.pte", "wb") as file:
+    file.write(et_program.buffer)
 ```
 
-Finally, ensure that the runner links against the `xnnpack_backend` target in CMakeLists.txt.
-
-```
-add_executable(nanogpt_runner main.cpp)
-target_link_libraries(
-    nanogpt_runner
-    PRIVATE
-    executorch
-    extension_module_static # Provides the Module class
-    optimized_native_cpu_ops_lib # Provides baseline cross-platform kernels
-    xnnpack_backend) # Provides the XNNPACK CPU acceleration backend
+Then run:
+```bash
+python export_nanogpt.py
+./cmake-out/nanogpt_runner
 ```
 
 For more information, see [Quantization in ExecuTorch](../quantization-overview.md).
@@ -782,11 +777,14 @@ Run the export script and the ETRecord will be generated as `etrecord.bin`.
 
 An ETDump is an artifact generated at runtime containing a trace of the model execution. For more information, see [the ETDump docs](../etdump.md).
 
-Include the ETDump header in your code.
+Include the ETDump header and namespace in your code.
 ```cpp
 // main.cpp
 
 #include <executorch/devtools/etdump/etdump_flatcc.h>
+
+using executorch::etdump::ETDumpGen;
+using torch::executor::etdump_result;
 ```
 
 Create an Instance of the ETDumpGen class and pass it to the Module constructor.

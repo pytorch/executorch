@@ -65,7 +65,7 @@ class TestCheckQuantParams(unittest.TestCase):
         with self.assertRaises(ValueError) as context:
             to_edge_transform_and_lower(aten, partitioner=[XnnpackPartitioner()])
 
-        self.assertEquals(str(context.exception), expected_message)
+        self.assertEqual(str(context.exception), expected_message)
 
     def test_in_per_tensor_quant(self):
         for invalid_scale in [

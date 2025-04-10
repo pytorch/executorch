@@ -173,6 +173,7 @@ class TOSAPartitioner(Partitioner):
             torch.ops.aten.upsample_nearest2d.vec,
             torch.ops.aten.eye.default,
             torch.ops.aten.linspace.default,
+            torch.ops.aten.linalg_vector_norm.default,
         ] + ops_to_not_decompose_if_quant_op
 
         return (ops_to_not_decompose, filter_fn)

@@ -14,12 +14,16 @@ import sys
 import tempfile
 from pathlib import Path
 
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
 import numpy as np
 
 import torch
-from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
+from executorch.backends.qualcomm.quantizer.quantizer import (
+    ModuleQConfig,
+    QnnQuantizer,
+    QuantDtype,
+)
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
@@ -254,18 +258,23 @@ def qat_train(ori_model, captured_model, quantizer, dataset):
 def make_quantizer(
     quant_dtype: Optional[QuantDtype] = QuantDtype.use_8a8w,
     custom_annotations=(),
-    per_block_conv=False,
     per_channel_conv=True,
     per_channel_linear=False,
     act_observer=MovingAverageMinMaxObserver,
     is_qat=False,
+    callback_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
 ):
     quantizer = QnnQuantizer()
     quantizer.add_custom_quant_annotations(custom_annotations)
-    quantizer.set_per_block_conv_quant(per_block_conv)
-    quantizer.set_per_channel_conv_quant(per_channel_conv)
-    quantizer.set_per_channel_linear_quant(per_channel_linear)
-    quantizer.set_quant_config(quant_dtype, is_qat, act_observer)
+    quantizer.set_default_quant_config(
+        quant_dtype,
+        is_qat=is_qat,
+        is_conv_per_channel=per_channel_conv,
+        is_linear_per_channel=per_channel_linear,
+        act_observer=act_observer,
+    )
+    callback_qconfig_list = callback_qconfig_list or []
+    quantizer.set_submodule_qconfig_list(callback_qconfig_list)
     return quantizer
 
 
