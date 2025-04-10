@@ -69,7 +69,11 @@ import random
 from collections import defaultdict
 from typing import List
 
-from executorch.backends.qualcomm._passes import FoldQDQ, TagQuantIO
+from executorch.backends.qualcomm._passes import (
+    ExpandBroadcastTensorShape,
+    FoldQDQ,
+    TagQuantIO,
+)
 from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
 from executorch.backends.qualcomm.debugger.utils import DrawGraph
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
@@ -435,10 +439,20 @@ class TestQNNFloatingPointOperator(TestQNN):
 
     def test_qnn_backend_expand(self):
         modules = [ExpandAs(), ExpandCopy()]  # noqa: F405
-        sample_input = (torch.randn([3, 1]),)
-        for i, module in enumerate(modules):
-            with self.subTest(i=i):
-                self.lower_module_and_test_output(module, sample_input)
+        sample_inputs = [
+            (torch.randn([3, 1]),),
+            (torch.randn([4]),),
+        ]
+        passes_job = get_capture_program_passes()
+        passes_job[ExpandBroadcastTensorShape][QCOM_PASS_ACTIVATE_KEY] = True
+        index = 0
+        for module in modules:
+            for sample_input in sample_inputs:
+                with self.subTest(i=index):
+                    self.lower_module_and_test_output(
+                        module, sample_input, passes_job=passes_job
+                    )
+                    index += 1
 
     def test_qnn_backend_expm1(self):
         sample_input = (torch.randn(3, 4, 5),)
@@ -1517,11 +1531,21 @@ class TestQNNQuantizedOperator(TestQNN):
 
     def test_qnn_backend_expand(self):
         modules = [ExpandAs(), ExpandCopy()]  # noqa: F405
-        sample_input = (torch.randn([3, 1]),)
-        for i, module in enumerate(modules):
-            with self.subTest(i=i):
-                module = self.get_qdq_module(module, sample_input)
-                self.lower_module_and_test_output(module, sample_input)
+        sample_inputs = [
+            (torch.randn([3, 1]),),
+            (torch.randn([4]),),
+        ]
+        passes_job = get_capture_program_passes()
+        passes_job[ExpandBroadcastTensorShape][QCOM_PASS_ACTIVATE_KEY] = True
+        index = 0
+        for module in modules:
+            for sample_input in sample_inputs:
+                with self.subTest(i=index):
+                    module = self.get_qdq_module(module, sample_input)
+                    self.lower_module_and_test_output(
+                        module, sample_input, passes_job=passes_job
+                    )
+                    index += 1
 
     def test_qnn_backend_expm1(self):
         sample_input = (torch.randn(3, 4, 5),)
