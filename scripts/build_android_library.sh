@@ -119,6 +119,8 @@ build_aar() {
   fi
   pushd extension/android/
   ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build
+  # Use java unit test as sanity check
+  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:testDebugUnitTest
   popd
   cp extension/android/executorch_android/build/outputs/aar/executorch_android-debug.aar "${BUILD_AAR_DIR}/executorch.aar"
 }
