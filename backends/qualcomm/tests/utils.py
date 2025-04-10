@@ -438,12 +438,14 @@ class TestQNN(unittest.TestCase):
         skip_node_id_set: set = None,
         skip_node_op_set: set = None,
         dynamic_shapes: Dict = None,
+        passes_job: collections.OrderedDict = None,
     ):
         delegated_program = to_edge_transform_and_lower_to_qnn(
             module,
             sample_inputs,
             self.compiler_specs,
             dynamic_shapes=dynamic_shapes,
+            passes_job=passes_job,
             skip_node_id_set=skip_node_id_set,
             skip_node_op_set=skip_node_op_set,
         )
