@@ -16,7 +16,7 @@ import torch
 
 from executorch import exir
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
-from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.quantizer.quantizer import ModuleQConfig, QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
@@ -497,7 +497,6 @@ class TestQNN(unittest.TestCase):
         self,
         module: torch.nn.Module,
         inputs: Tuple[torch.Tensor],
-        is_conv_per_block: Optional[bool] = False,
         is_conv_per_channel: Optional[bool] = True,
         is_linear_per_channel: Optional[bool] = False,
         custom_quant_annotations: Tuple[Callable] = (),
@@ -505,7 +504,9 @@ class TestQNN(unittest.TestCase):
         dynamic_shapes: Dict = None,
         bypass_check: bool = False,
         block_size_map: Dict[str, Tuple] = None,
+        submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
     ) -> torch.fx.GraphModule:
+        module = module.eval()
         m = torch.export.export(
             module, inputs, dynamic_shapes=dynamic_shapes, strict=True
         ).module()
@@ -513,9 +514,9 @@ class TestQNN(unittest.TestCase):
         quantizer = make_quantizer(
             quant_dtype=quant_dtype,
             custom_annotations=custom_quant_annotations,
-            per_block_conv=is_conv_per_block,
             per_channel_conv=is_conv_per_channel,
             per_channel_linear=is_linear_per_channel,
+            submodule_qconfig_list=submodule_qconfig_list,
         )
         if block_size_map is not None:
             quantizer.set_block_size_map(block_size_map)
@@ -543,6 +544,7 @@ class TestQNN(unittest.TestCase):
         is_linear_per_channel: Optional[bool] = False,
         custom_quant_annotations: Tuple[Callable] = (),
         quant_dtype: QuantDtype = QuantDtype.use_8a8w,
+        submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
     ) -> torch.fx.GraphModule:
         m = torch.export.export_for_training(module, inputs, strict=True).module()
 
@@ -551,12 +553,12 @@ class TestQNN(unittest.TestCase):
             custom_annotations=custom_quant_annotations,
             per_channel_conv=is_conv_per_channel,
             per_channel_linear=is_linear_per_channel,
+            is_qat=True,
+            submodule_qconfig_list=submodule_qconfig_list,
         )
 
-        if quant_dtype == QuantDtype.use_8a8w:
-            quantizer.set_quant_config(quant_dtype, is_qat=True)
-        else:
-            raise RuntimeError("Shuld not be here")
+        submodule_qconfig_list = submodule_qconfig_list or []
+        quantizer.set_submodule_qconfig_list(submodule_qconfig_list)
 
         prepared = prepare_qat_pt2e(m, quantizer)
         return torch.ao.quantization.move_exported_model_to_train(prepared)
