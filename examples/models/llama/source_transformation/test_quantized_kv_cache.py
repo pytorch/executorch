@@ -10,7 +10,7 @@ import torch
 
 from executorch.examples.models.llama.attention import KVCache
 
-from executorch.examples.models.llama.source_transformation.quantized_kv_cache import (
+from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
     QuantizedCacheType,
     QuantizedKVCache,
 )

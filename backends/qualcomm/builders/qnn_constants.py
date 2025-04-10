@@ -58,6 +58,14 @@ class OpConvert:
 
 
 @dataclass(init=False, frozen=True)
+class OpCumulativeSum:
+    op_name = "CumulativeSum"
+    param_axis = "axis"
+    param_exclusive = "exclusive"
+    param_reverse = "reverse"
+
+
+@dataclass(init=False, frozen=True)
 class OpDepthToSpace:
     op_name: str = "DepthToSpace"
     param_block_size: str = "block_size"
