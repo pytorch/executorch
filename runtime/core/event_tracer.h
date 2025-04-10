@@ -314,7 +314,7 @@ class EventTracer {
    * @param[in] evalue_type Indicates what type of output this is logging e.g.
    * an intermediate output, program output etc.
    */
-  virtual void log_evalue(
+  virtual Result<bool> log_evalue(
       const EValue& evalue,
       LoggedEValueType evalue_type) = 0;
 
