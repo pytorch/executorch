@@ -158,7 +158,7 @@ Llama 3 8B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 
 
 1. Download `consolidated.00.pth`, `params.json` and `tokenizer.model` from [Llama website](https://www.llama.com/llama-downloads/) or [Hugging Face](https://huggingface.co/meta-llama/Llama-3.2-1B). For chat use-cases, download the instruct models.
 
-2. Export model and generate `.pte` file. For convenience, here's an already ExecuTorch [exported model](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/llama3_2-1B.pte) using [this recipe](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/ExportRecipe_1B.ipynb) on Hugging Face.
+2. Export model and generate `.pte` file.
 
 - Use **original BF16** version, without any quantization.
 ```
@@ -177,6 +177,7 @@ python -m examples.models.llama.export_llama \
   --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
   --output_name="llama3_2.pte"
 ```
+For convenience, an [exported ExecuTorch bf16 model](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/llama3_2-1B.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/ExportRecipe_1B.ipynb).
 
 - To use **SpinQuant**, here are two ways:
     - Download directly from [Llama website](https://www.llama.com/llama-downloads). The model weights are prequantized and can be exported to `pte` file directly.
@@ -206,8 +207,7 @@ python -m examples.models.llama.export_llama \
    --use_spin_quant native \
    --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
 ```
-
-For convenience, here's an already ExecuTorch [exported model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8.pte) using [this recipe](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_SpinQuant_INT4_EO8.ipynb) on Hugging Face.
+For convenience, an [exported ExecuTorch SpinQuant model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_SpinQuant_INT4_EO8.ipynb).
 
 
 - To use **QAT+LoRA**, download directly from [Llama website](https://www.llama.com/llama-downloads). The model weights are prequantized and can be exported to `pte` file directly by:
@@ -237,8 +237,7 @@ python -m examples.models.llama.export_llama \
    --output_name "llama3_2.pte" \
    --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
 ```
-
-For convenience, here's an already ExecuTorch [exported model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-QLORA_INT4_EO8.pte) using [this recipe](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_QLORA_INT4_EO8.ipynb) on Hugging Face.
+For convenience, an [exported ExecuTorch QAT+LoRA model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-QLORA_INT4_EO8.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_QLORA_INT4_EO8.ipynb).
 
 ### Option B: Download and export Llama 3 8B instruct model
 
