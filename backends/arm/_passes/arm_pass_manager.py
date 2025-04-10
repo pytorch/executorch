@@ -26,6 +26,7 @@ from executorch.backends.arm._passes import (
     DecomposeBatchNormPass,
     DecomposeDivPass,
     DecomposeGeluPass,
+    DecomposeGroupNormPass,
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
     DecomposeLinearPass,
@@ -127,6 +128,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeLinearPass())
         self.add_pass(DecomposeLeakyReLUPass())
         self.add_pass(DecomposeBatchNormPass())
+        self.add_pass(DecomposeGroupNormPass())
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass())
@@ -180,6 +182,7 @@ class ArmPassManager(PassManager):
     def transform_for_annotation_pipeline(self, graph_module: GraphModule):
         self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(ScalarsToAttributePass())
+        self.add_pass(DecomposeGroupNormPass())
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass())
