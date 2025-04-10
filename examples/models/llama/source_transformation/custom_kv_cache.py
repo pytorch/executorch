@@ -52,6 +52,8 @@ class QuantizedKVCache(nn.Module):
         self.use_custom_update_cache_op = use_custom_update_cache_op
         self.quantized_cache_dtype = torch.int8
         self.cache_fp_type = torch.float32
+        self.return_float_values = True
+        self.max_context_length = max_context_length
         cache_shape = (max_batch_size, max_context_length, n_heads, head_dim)
         scale_shape = (max_batch_size, max_context_length, n_heads, 1)
         self.register_buffer(
@@ -61,17 +63,17 @@ class QuantizedKVCache(nn.Module):
             "v_cache", torch.zeros(cache_shape, dtype=self.quantized_cache_dtype)
         )
         self.register_buffer(
-            "k_cache_scales", torch.ones(scale_shape, dtype=torch.float64)
+            "k_cache_scales", torch.ones(scale_shape, dtype=torch.float32)
         )
         self.register_buffer(
-            "v_cache_scales", torch.ones(scale_shape, dtype=torch.float64)
+            "v_cache_scales", torch.ones(scale_shape, dtype=torch.float32)
         )
         if cache_type == QuantizedCacheType.AffineAsymmetric:
             self.register_buffer(
-                "k_cache_zero_points", torch.ones(scale_shape, dtype=torch.int64)
+                "k_cache_zero_points", torch.ones(scale_shape, dtype=torch.int8)
             )
             self.register_buffer(
-                "v_cache_zero_points", torch.ones(scale_shape, dtype=torch.int64)
+                "v_cache_zero_points", torch.ones(scale_shape, dtype=torch.int8)
             )
 
     def _quantize(self, value):
@@ -91,19 +93,14 @@ class QuantizedKVCache(nn.Module):
         )
         return quantized_value, scales, zero_points
 
-    def update(self, input_pos, k_val, v_val):
-        """
-        k_val, v_val: [B, H, S, D]
-        return: [B, H, S, D]
-        However the storage is [B, S, H, D] so we incur transpose in, transpose out
-        This shall be removed by subsequent post-export graph pass
-        """
-        k_val = k_val.transpose(1, 2)
-        v_val = v_val.transpose(1, 2)
-        # quantize current k_val and store it in the cache
+    def _quantize_and_update(self, input_pos, k_val, v_val):
         quantized_k_val, k_scales, k_zero_points = self._quantize(k_val)
-
         quantized_v_val, v_scales, v_zero_points = self._quantize(v_val)
+
+        k_scales = k_scales.to(torch.float32)
+        k_zero_points = k_zero_points.to(self.quantized_cache_dtype)
+        v_scales = v_scales.to(torch.float32)
+        v_zero_points = v_zero_points.to(self.quantized_cache_dtype)
 
         if self.use_custom_update_cache_op:
             start_pos = input_pos[0].item()
@@ -125,10 +122,13 @@ class QuantizedKVCache(nn.Module):
             self.v_cache_scales[:, input_pos] = v_scales
             self.v_cache_zero_points[:, input_pos] = v_zero_points
 
+    def _update_and_return_float_values(self, input_pos, k_val, v_val):
+        self._quantize_and_update(input_pos, k_val, v_val)
+
         k_out = torch.ops.quantized_decomposed.dequantize_per_token(
             self.k_cache,
-            self.k_cache_scales,
-            self.k_cache_zero_points,
+            self.k_cache_scales.to(torch.float64),
+            self.k_cache_zero_points.to(torch.int64),
             torch.iinfo(self.quantized_cache_dtype).min,
             torch.iinfo(self.quantized_cache_dtype).max,
             self.quantized_cache_dtype,
@@ -136,14 +136,16 @@ class QuantizedKVCache(nn.Module):
         )
         v_out = torch.ops.quantized_decomposed.dequantize_per_token(
             self.v_cache,
-            self.v_cache_scales,
-            self.v_cache_zero_points,
+            self.v_cache_scales.to(torch.float64),
+            self.v_cache_zero_points.to(torch.int64),
             torch.iinfo(self.quantized_cache_dtype).min,
             torch.iinfo(self.quantized_cache_dtype).max,
             self.quantized_cache_dtype,
             self.cache_fp_type,
         )
 
+        # When returning float values we jsut use the last value
+        # instead of dequantized value.
         start_pos = input_pos[0].item()
         if self.use_custom_update_cache_op:
             _ = torch.ops.llama.update_cache(k_val, k_out, start_pos)
@@ -152,6 +154,29 @@ class QuantizedKVCache(nn.Module):
             k_out[:, input_pos] = k_val
             v_out[:, input_pos] = v_val
 
+        return k_out, v_out
+
+    def _update_and_return_quantized_values(self, input_pos, k_val, v_val):
+        self._quantize_and_update(input_pos, k_val, v_val)
+
+        return self.k_cache, self.v_cache
+
+    def update(self, input_pos, k_val, v_val):
+        """
+        k_val, v_val: [B, H, S, D]
+        return: [B, H, S, D]
+        However the storage is [B, S, H, D] so we incur transpose in, transpose out
+        This shall be removed by subsequent post-export graph pass
+        """
+        k_val = k_val.transpose(1, 2)
+        v_val = v_val.transpose(1, 2)
+
+        if self.return_float_values:
+            k_out, v_out = self._update_and_return_float_values(input_pos, k_val, v_val)
+        else:
+            k_out, v_out = self._update_and_return_quantized_values(
+                input_pos, k_val, v_val
+            )
         return k_out.transpose(1, 2), v_out.transpose(1, 2)
 
     @classmethod
