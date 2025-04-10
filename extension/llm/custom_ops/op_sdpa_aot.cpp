@@ -96,6 +96,7 @@ Tensor& custom_quantized_sdpa_out_no_context(
     const optional<Tensor> k_scales,
     const optional<Tensor> v_zero_points,
     const optional<Tensor> v_scales,
+    const bool is_seq_at_dim_2,
     Tensor& output);
 
 at::Tensor custom_quantized_sdpa_aten(
@@ -115,7 +116,8 @@ at::Tensor custom_quantized_sdpa_aten(
     const std::optional<at::Tensor>& k_zero_points,
     const std::optional<at::Tensor>& k_scales,
     const std::optional<at::Tensor>& v_zero_points,
-    const std::optional<at::Tensor>& v_scales);
+    const std::optional<at::Tensor>& v_scales,
+    const bool is_seq_at_dim_2);
 #endif // ENABLE_CUSTOM_QUANTIZED_SDPA
 
 Tensor& update_cache_out_no_context(
@@ -258,6 +260,7 @@ Tensor& custom_quantized_sdpa_out_no_context(
     const optional<Tensor> k_scales,
     const optional<Tensor> v_zero_points,
     const optional<Tensor> v_scales,
+    const bool is_seq_at_dim_2,
     Tensor& output) {
   executorch::aten::RuntimeContext context{};
   return torch::executor::native::custom_quantized_sdpa_out(
@@ -276,6 +279,7 @@ Tensor& custom_quantized_sdpa_out_no_context(
       k_scales,
       v_zero_points,
       v_scales,
+      is_seq_at_dim_2,
       output);
 }
 
@@ -296,9 +300,10 @@ at::Tensor custom_quantized_sdpa_aten(
     const std::optional<at::Tensor>& k_zero_points,
     const std::optional<at::Tensor>& k_scales,
     const std::optional<at::Tensor>& v_zero_points,
-    const std::optional<at::Tensor>& v_scales) {
+    const std::optional<at::Tensor>& v_scales,
+    const bool is_seq_at_dim_2) {
   auto output = at::empty(q.sizes());
-  WRAP_TO_ATEN(custom_quantized_sdpa_out_no_context, 14)
+  WRAP_TO_ATEN(custom_quantized_sdpa_out_no_context, 15)
   (q,
    k,
    v,
@@ -313,6 +318,7 @@ at::Tensor custom_quantized_sdpa_aten(
    k_scales,
    v_zero_points,
    v_scales,
+   is_seq_at_dim_2,
    output);
   return output;
 }
@@ -371,13 +377,13 @@ TORCH_LIBRARY_FRAGMENT(llama, m) {
       "Tensor? attn_mask=None, float drpout_p=0.0, bool is_causal=False, "
       "float? scale=None, Tensor? q_zero_points=None, Tensor? q_scales=None, "
       "Tensor? k_zero_points=None, Tensor? k_scales=None, Tensor? v_zero_points=None, "
-      "Tensor? v_scales=None) -> Tensor");
+      "Tensor? v_scales=None, bool is_seq_at_dim_2=False) -> Tensor");
   m.def(
       "custom_quantized_sdpa.out(Tensor query, Tensor key, Tensor value, SymInt start_pos, "
       "Tensor? attn_mask=None, float drpout_p=0.0, bool is_causal=False, "
       "float? scale=None, Tensor? q_zero_points=None, Tensor? q_scales=None, "
       "Tensor? k_zero_points=None, Tensor? k_scales=None, Tensor? v_zero_points=None, "
-      "Tensor? v_scales=None, *, Tensor(a!) out) -> Tensor(a!)");
+      "Tensor? v_scales=None, bool is_seq_at_dim_2=False, *, Tensor(a!) out) -> Tensor(a!)");
 #endif // ENABLE_CUSTOM_QUANTIZED_SDPA
 }
 
@@ -404,6 +410,6 @@ TORCH_LIBRARY_IMPL(llama, CompositeExplicitAutograd, m) {
   m.impl(
       "custom_quantized_sdpa.out",
       WRAP_TO_ATEN(
-          torch::executor::native::custom_quantized_sdpa_out_no_context, 14));
+          torch::executor::native::custom_quantized_sdpa_out_no_context, 15));
 #endif // ENABLE_CUSTOM_QUANTIZED_SDPA
 }
