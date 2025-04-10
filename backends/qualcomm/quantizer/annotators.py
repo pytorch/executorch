@@ -976,6 +976,11 @@ def annotate_conv2d(node: Node, quantization_config: QuantizationConfig) -> None
     )
 
 
+@register_annotator([torch.ops.aten.cumsum.default])
+def annotate_cumsum(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.linear.default])
 def annotate_linear(node: Node, quantization_config: QuantizationConfig) -> None:
     act_node = node.args[0]
