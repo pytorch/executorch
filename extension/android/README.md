@@ -35,6 +35,9 @@ Please see [Android building from source](https://pytorch.org/executorch/main/us
 After the library is built,
 
 ```sh
+# Set up models for testing
+sh executorch_android/android_test_setup.sh
+
 # Run unit test
 ./gradlew :executorch_android:testDebugUnitTest
 
