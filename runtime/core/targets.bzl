@@ -95,9 +95,9 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
-                "//executorch/runtime/core:core",
-                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                ":core",
                 ":tag",
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
             ],
         )
 
@@ -119,6 +119,37 @@ def define_common_targets():
             ],
         )
 
+        runtime.cxx_library(
+            name = "named_data_map" + aten_suffix,
+            exported_headers = [
+                "named_data_map.h",
+            ],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_deps = [
+                ":tensor_layout" + aten_suffix,
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+            ],
+        )
+
+
+        runtime.cxx_library(
+            name = "tensor_layout" + aten_suffix,
+            srcs = ["tensor_layout.cpp"],
+            exported_headers = ["tensor_layout.h"],
+            deps = [
+                "//executorch/runtime/core/portable_type/c10/c10:c10",
+            ],
+            exported_deps = [
+                ":core",
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
+            ],
+            visibility = ["//executorch/..."],
+        )
+
     runtime.cxx_library(
         name = "tag",
         srcs = ["tag.cpp"],
@@ -132,32 +163,4 @@ def define_common_targets():
         visibility = [
             "//executorch/...",
         ],
-    )
-
-    runtime.cxx_library(
-        name = "named_data_map",
-        exported_headers = [
-            "named_data_map.h",
-        ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        exported_deps = [
-            ":tensor_layout",
-        ],
-    )
-
-    runtime.cxx_library(
-        name = "tensor_layout",
-        srcs = ["tensor_layout.cpp"],
-        exported_headers = ["tensor_layout.h"],
-        deps = [
-            "//executorch/runtime/core/portable_type/c10/c10:c10",
-        ],
-        exported_deps = [
-            ":core",
-            "//executorch/runtime/core/exec_aten:lib",
-        ],
-        visibility = ["//executorch/..."],
     )

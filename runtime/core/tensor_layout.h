@@ -14,7 +14,7 @@
 #include <executorch/runtime/core/span.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 
 /**
  * Describes the layout of a tensor.
@@ -89,5 +89,5 @@ class ET_EXPERIMENTAL TensorLayout final {
   const size_t nbytes_;
 };
 
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch

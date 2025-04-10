@@ -32,7 +32,7 @@ struct EValue;
 } // namespace executorch_flatbuffer
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 
 // Forward declare NamedData. This is a public header and must not include
 // internal data types.
@@ -394,14 +394,14 @@ class Method final {
   void log_outputs();
 };
 
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
 
 namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::Method;
+using ::executorch::ET_RUNTIME_NAMESPACE::Method;
 } // namespace executor
 } // namespace torch
 

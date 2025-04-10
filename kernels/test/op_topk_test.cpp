@@ -106,7 +106,8 @@ std::tuple<Tensor&, Tensor&> op_topk_values(
     Tensor& values,
     Tensor& indices) {
   TempMemoryAllocator allocator = TempMemoryAllocator();
-  executorch::runtime::KernelRuntimeContext context(nullptr, &allocator);
+  executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext context(
+      nullptr, &allocator);
   return torch::executor::aten::topk_outf(
       context, input, k, dim, largest, sorted, values, indices);
 }

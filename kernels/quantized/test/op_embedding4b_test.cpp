@@ -21,7 +21,7 @@ using executorch::aten::ArrayRef;
 using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using executorch::runtime::KernelRuntimeContext;
+using executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext;
 using torch::executor::native::quantized_embedding_4bit_out;
 
 using torch::executor::testing::TensorFactory;

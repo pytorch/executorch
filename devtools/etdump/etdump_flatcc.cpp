@@ -323,40 +323,32 @@ Result<bool> ETDumpGen::log_intermediate_output_delegate(
     const char* name,
     DelegateDebugIntId delegate_debug_index,
     const ArrayRef<Tensor> output) {
-  log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
-  Result<bool> result = log_intermediate_output_delegate_helper(
+  return log_intermediate_output_delegate_helper(
       name, delegate_debug_index, output);
-  return result;
 }
 
 Result<bool> ETDumpGen::log_intermediate_output_delegate(
     const char* name,
     DelegateDebugIntId delegate_debug_index,
     const int& output) {
-  log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
-  Result<bool> result = log_intermediate_output_delegate_helper(
+  return log_intermediate_output_delegate_helper(
       name, delegate_debug_index, output);
-  return result;
 }
 
 Result<bool> ETDumpGen::log_intermediate_output_delegate(
     const char* name,
     DelegateDebugIntId delegate_debug_index,
     const bool& output) {
-  log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
-  Result<bool> result = log_intermediate_output_delegate_helper(
+  return log_intermediate_output_delegate_helper(
       name, delegate_debug_index, output);
-  return result;
 }
 
 Result<bool> ETDumpGen::log_intermediate_output_delegate(
     const char* name,
     DelegateDebugIntId delegate_debug_index,
     const double& output) {
-  log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
-  Result<bool> result = log_intermediate_output_delegate_helper(
+  return log_intermediate_output_delegate_helper(
       name, delegate_debug_index, output);
-  return result;
 }
 
 template <typename T>

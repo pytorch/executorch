@@ -22,6 +22,7 @@ namespace native {
 using Tensor = executorch::aten::Tensor;
 using Scalar = executorch::aten::Scalar;
 using ScalarType = executorch::aten::ScalarType;
+using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 
 namespace {
 
@@ -214,7 +215,7 @@ Tensor& quantize_per_tensor_tensor_args_out(
     int64_t quant_max,
     ScalarType dtype,
     Tensor& out) {
-  auto context = executorch::runtime::KernelRuntimeContext();
+  auto context = KernelRuntimeContext();
   auto& res = quantize_per_tensor_tensor_args_out(
       context, input, scale, zero_point, quant_min, quant_max, dtype, out);
   ET_CHECK(context.failure_state() == Error::Ok);

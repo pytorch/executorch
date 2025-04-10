@@ -260,7 +260,7 @@ class OpClampTensorOutTest : public OperatorTest {
       const optional<Tensor>& min,
       const optional<Tensor>& max,
       Tensor& out) {
-    executorch::runtime::KernelRuntimeContext context{};
+    executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext context{};
     return torch::executor::aten::clamp_outf(context, self, min, max, out);
   }
 };

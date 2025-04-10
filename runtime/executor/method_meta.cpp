@@ -16,7 +16,7 @@
 #include <executorch/schema/program_generated.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 
 namespace {
 Result<Tag> get_tag(
@@ -279,6 +279,5 @@ size_t MethodMeta::num_instructions() const {
   }
   return num_instructions;
 }
-
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch

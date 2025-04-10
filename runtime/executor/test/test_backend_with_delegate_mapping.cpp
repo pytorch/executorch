@@ -14,13 +14,13 @@
 #include <cstdlib> /* strtol */
 #include <cstring>
 
+using executorch::ET_RUNTIME_NAMESPACE::Backend;
+using executorch::ET_RUNTIME_NAMESPACE::BackendExecutionContext;
+using executorch::ET_RUNTIME_NAMESPACE::BackendInitContext;
+using executorch::ET_RUNTIME_NAMESPACE::BackendInterface;
+using executorch::ET_RUNTIME_NAMESPACE::CompileSpec;
+using executorch::ET_RUNTIME_NAMESPACE::DelegateHandle;
 using executorch::runtime::ArrayRef;
-using executorch::runtime::Backend;
-using executorch::runtime::BackendExecutionContext;
-using executorch::runtime::BackendInitContext;
-using executorch::runtime::BackendInterface;
-using executorch::runtime::CompileSpec;
-using executorch::runtime::DelegateHandle;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;

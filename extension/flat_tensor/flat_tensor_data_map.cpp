@@ -25,8 +25,8 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 
 using executorch::aten::ScalarType;
+using executorch::ET_RUNTIME_NAMESPACE::TensorLayout;
 using executorch::runtime::DataLoader;
-using executorch::runtime::TensorLayout;
 
 namespace executorch {
 namespace extension {
