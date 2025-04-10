@@ -207,6 +207,9 @@ python -m examples.models.llama.export_llama \
    --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
 ```
 
+For convenience, here's an already ExecuTorch [exported model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8.pte) using [this recipe](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_SpinQuant_INT4_EO8.ipynb) on Hugging Face.
+
+
 - To use **QAT+LoRA**, download directly from [Llama website](https://www.llama.com/llama-downloads). The model weights are prequantized and can be exported to `pte` file directly by:
 
 ```
@@ -234,6 +237,8 @@ python -m examples.models.llama.export_llama \
    --output_name "llama3_2.pte" \
    --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
 ```
+
+For convenience, here's an already ExecuTorch [exported model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-QLORA_INT4_EO8.pte) using [this recipe](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_QLORA_INT4_EO8.ipynb) on Hugging Face.
 
 ### Option B: Download and export Llama 3 8B instruct model
 
