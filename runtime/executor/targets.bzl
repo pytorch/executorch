@@ -42,30 +42,33 @@ def define_common_targets():
         ],
     )
 
-    runtime.cxx_library(
-        name = "pte_data_map",
-        srcs = [
-            "pte_data_map.cpp",
-        ],
-        exported_headers = [
-            "pte_data_map.h",
-        ],
-        visibility = [
-            "//executorch/runtime/executor/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        exported_deps = [
-            "//executorch/runtime/core:core",
-            "//executorch/runtime/core:named_data_map",
-        ],
-        deps = [
-            "//executorch/schema:program",
-        ],
-        exported_preprocessor_flags = [] if runtime.is_oss else ["-DEXECUTORCH_INTERNAL_FLATBUFFERS=1"],
-    )
 
     for aten_mode in get_aten_mode_options():
         aten_suffix = "_aten" if aten_mode else ""
+
+        runtime.cxx_library(
+            name = "pte_data_map" + aten_suffix,
+            srcs = [
+                "pte_data_map.cpp",
+            ],
+            exported_headers = [
+                "pte_data_map.h",
+            ],
+            visibility = [
+                "//executorch/runtime/executor/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_deps = [
+                "//executorch/runtime/core:core",
+                "//executorch/runtime/core:named_data_map" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
+            ],
+            deps = [
+                "//executorch/schema:program",
+            ],
+            exported_preprocessor_flags = [] if runtime.is_oss else ["-DEXECUTORCH_INTERNAL_FLATBUFFERS=1"],
+        )
+
         runtime.cxx_library(
             name = "program" + aten_suffix,
             exported_deps = [
@@ -103,17 +106,17 @@ def define_common_targets():
             preprocessor_flags = _program_preprocessor_flags(),
             exported_deps = [
                 ":memory_manager",
-                ":pte_data_map",
-                "//executorch/runtime/backend:interface",
+                ":pte_data_map" + aten_suffix,
+                "//executorch/runtime/backend:interface" + aten_suffix,
                 "//executorch/runtime/core:core",
-                "//executorch/runtime/core:named_data_map",
+                "//executorch/runtime/core:named_data_map" + aten_suffix,
                 "//executorch/runtime/core:evalue" + aten_suffix,
                 "//executorch/runtime/core:event_tracer" + aten_suffix,
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
-                "//executorch/runtime/kernel:operator_registry",
+                "//executorch/runtime/kernel:operator_registry" + aten_suffix,
                 "//executorch/runtime/platform:platform",
                 "//executorch/schema:extended_header",
             ],
