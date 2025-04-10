@@ -274,3 +274,20 @@ runtime.python_test(
         ":export_library",
     ],
 )
+
+runtime.python_test(
+    name = "quantized_sdpa_source_transform_test",
+    srcs = [
+        "source_transformation/test_quantized_sdpa.py",
+    ],
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+    ],
+    deps = [
+        ":custom_kv_cache",
+        ":sdpa",
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:llama_transformer",
+    ],
+)

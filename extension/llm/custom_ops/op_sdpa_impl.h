@@ -23,9 +23,7 @@
 #endif
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
 
-#if defined(ENABLE_CUSTOM_QUANTIZED_SDPA)
 #include <torchao/experimental/kernels/cpu/interface/quantized_matmul.h>
-#endif
 
 namespace torch {
 namespace executor {
@@ -78,7 +76,6 @@ void _q_at_k_gemm(
       q_data.dtype == ScalarType::Char || q_data.dtype == ScalarType::Float,
       "q and k must be either int8 or float");
   if (q_data.dtype == ScalarType::Char) {
-#if defined(ENABLE_CUSTOM_QUANTIZED_SDPA)
     if constexpr (std::is_same<accum_t, float>::value) {
       int a_stride_m_tmp, b_stride_n_tmp;
       auto kernel = torchao::kernels::cpu::quantized_matmul::
@@ -105,11 +102,6 @@ void _q_at_k_gemm(
       ET_CHECK_MSG(
           false, "Accumulation in dtype other than float not supported yet");
     }
-#else
-    ET_CHECK_MSG(
-        false,
-        "Quantized SDPA is not enabled. Check ENABLE_CUSTOM_QUANTIZED_SDPA compile flag");
-#endif
   } else {
     ::executorch::cpublas::gemm(
         ::executorch::cpublas::TransposeType::Transpose,
@@ -141,7 +133,6 @@ void _qk_at_v_gemm(
     const int64_t o_stride_m,
     const accum_t beta) {
   if (v_data.dtype == ScalarType::Char) {
-#if defined(ENABLE_CUSTOM_QUANTIZED_SDPA)
     if constexpr (std::is_same<accum_t, float>::value) {
       int a_stride_m_tmp, b_stride_n_tmp;
       auto kernel = torchao::kernels::cpu::quantized_matmul::
@@ -165,11 +156,6 @@ void _qk_at_v_gemm(
       ET_CHECK_MSG(
           false, "Accumulation in dtype other than float not supported yet");
     }
-#else
-    ET_CHECK_MSG(
-        false,
-        "Quantized SDPA is not enabled. Check ENABLE_CUSTOM_QUANTIZED_SDPA compile flag");
-#endif
   } else {
     ::executorch::cpublas::gemm(
         ::executorch::cpublas::TransposeType::NoTranspose,
@@ -487,9 +473,7 @@ void cpu_flash_attention(
   }
 
   bool is_quantized_sdpa = false;
-#if defined(ENABLE_CUSTOM_QUANTIZED_SDPA)
   is_quantized_sdpa = query.scalar_type() == ScalarType::Char;
-#endif
 
   auto strides = query.strides();
   int64_t qStrideB = strides[0];
