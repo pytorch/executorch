@@ -21,7 +21,6 @@ from . import (  # noqa
     op_eq,
     op_erf,
     op_exp,
-    op_full,
     op_ge,
     op_get_item,
     op_gt,
