@@ -107,7 +107,7 @@ def get_passes_dependency_for_capture_program():
         ConvertUpsampleBicubicWithBilinear: [RemoveRedundancy],
         DecomposeAny: [RemoveRedundancy],
         DecomposeLinalgVectorNorm: [RemoveRedundancy],
-        ExpandBroadcastTensorShape: [RemoveRedundancy],
+        ExpandBroadcastTensorShape: [FoldQDQ],
         FixedLinearKeepDim: [FoldQDQ],
         FoldQDQ: [AnnotateQuantAttrs, AnnotateStack, AnnotateUnbind],
         I64toI32: [ConvertUpsampleBicubicWithBilinear, RemoveRedundancy],
