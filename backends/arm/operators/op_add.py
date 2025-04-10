@@ -10,14 +10,13 @@ from typing import List
 import executorch.backends.arm.tosa_quant_utils as tqutils
 import executorch.backends.arm.tosa_utils as tutils
 
-import serializer.tosa_serializer as ts  # type: ignore
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
-from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
 
 
@@ -82,7 +81,7 @@ class AddVisitor_080_BI(NodeVisitor):
 
         # Do the INT32 Add
         tosa_graph.addOperator(
-            TosaOp.Op().ADD,
+            ts.TosaOp.Op().ADD,
             [input1.name, input2.name],
             [add_output.name],
             None,
@@ -135,7 +134,7 @@ class AddVisitor_080_MI(AddVisitor_080_BI):
 
             # MI lowering
             tosa_graph.addOperator(
-                TosaOp.Op().ADD,
+                ts.TosaOp.Op().ADD,
                 [input1.name, input2.name],
                 [output.name],
                 None,

@@ -55,10 +55,6 @@ else
     echo "[main] Error: only x86-64 & aarch64/arm64 architecture is supported for now!"; exit 1;
 fi
 
-# tosa reference model
-tosa_reference_model_url="https://git.gitlab.arm.com/tosa/tosa-reference-model.git"
-tosa_reference_model_rev="70ed0b40fa831387e36abdb4f7fb9670a3464f5a"
-
 # vela
 vela_repo_url="https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela"
 vela_rev="425541302c7e4b6fbeca7c0061286b131ee507c3"
@@ -156,14 +152,6 @@ function setup_toolchain() {
     tar xf "${toolchain_dir}.tar.xz"
 }
 
-function setup_tosa_reference_model() {
-    # reference_model flatbuffers version clashes with Vela.
-    # go with Vela's since it newer.
-    # Vela's flatbuffer requirement is expected to loosen, then remove this. MLETORCH-565
-    CMAKE_POLICY_VERSION_MINIMUM=3.5 pip install tosa-tools@git+${tosa_reference_model_url}@${tosa_reference_model_rev} --no-dependencies flatbuffers
-
-}
-
 function setup_vela() {
     pip install ethos-u-vela@git+${vela_repo_url}@${vela_rev}
 }
@@ -233,7 +221,7 @@ if [[ $is_script_sourced -eq 0 ]]
     create_setup_path
 
     # Setup the tosa_reference_model
-    setup_tosa_reference_model
+    $et_dir/backends/arm/scripts/install_reference_model.sh ${root_dir}
 
     # Setup vela and patch in codegen fixes
     setup_vela

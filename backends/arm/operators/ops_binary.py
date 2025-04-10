@@ -7,16 +7,16 @@
 
 from typing import List
 
-import serializer.tosa_serializer as ts
 import torch
 import torch.fx
+
+import tosa_tools.v0_80.serializer.tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from serializer.tosa_serializer import TosaOp
 
 
 def binary_operator_factory(bw_target: str, tosa_op):
@@ -46,12 +46,12 @@ def binary_operator_factory(bw_target: str, tosa_op):
     register_node_visitor(BinaryOperator)
 
 
-binary_operator_factory("aten.bitwise_and.Tensor", TosaOp.Op().BITWISE_AND)
-binary_operator_factory("aten.bitwise_xor.Tensor", TosaOp.Op().BITWISE_XOR)
-binary_operator_factory("aten.bitwise_or.Tensor", TosaOp.Op().BITWISE_OR)
-binary_operator_factory("aten.logical_and.default", TosaOp.Op().LOGICAL_AND)
-binary_operator_factory("aten.logical_xor.default", TosaOp.Op().LOGICAL_XOR)
-binary_operator_factory("aten.logical_or.default", TosaOp.Op().LOGICAL_OR)
+binary_operator_factory("aten.bitwise_and.Tensor", ts.TosaOp.Op().BITWISE_AND)
+binary_operator_factory("aten.bitwise_xor.Tensor", ts.TosaOp.Op().BITWISE_XOR)
+binary_operator_factory("aten.bitwise_or.Tensor", ts.TosaOp.Op().BITWISE_OR)
+binary_operator_factory("aten.logical_and.default", ts.TosaOp.Op().LOGICAL_AND)
+binary_operator_factory("aten.logical_xor.default", ts.TosaOp.Op().LOGICAL_XOR)
+binary_operator_factory("aten.logical_or.default", ts.TosaOp.Op().LOGICAL_OR)
 binary_operator_factory(
-    "aten.bitwise_left_shift.Tensor", TosaOp.Op().LOGICAL_LEFT_SHIFT
+    "aten.bitwise_left_shift.Tensor", ts.TosaOp.Op().LOGICAL_LEFT_SHIFT
 )
