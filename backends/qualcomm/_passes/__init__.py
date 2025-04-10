@@ -9,6 +9,7 @@ from .annotate_stack import AnnotateStack
 from .annotate_unbind import AnnotateUnbind
 from .convert_bmm_to_matmul import ConvertBmmToMatmul
 from .convert_conv1d_to_conv2d import ConvertConv1dToConv2d
+from .convert_upsample_bicubic2d import ConvertUpsampleBicubicWithBilinear
 from .decompose_any import DecomposeAny
 from .decompose_einsum import DecomposeEinsum
 from .decompose_expm1 import DecomposeExpM1
@@ -40,6 +41,7 @@ __all__ = [
     ConvertBmmToMatmul,
     ConvertConv1dToConv2d,
     DecomposeAny,
+    ConvertUpsampleBicubicWithBilinear,
     DecomposeEinsum,
     DecomposeExpM1,
     DecomposeLinalgVectorNorm,
