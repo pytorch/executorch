@@ -74,6 +74,7 @@ Tensor& custom_quantized_sdpa_out(
     const optional<Tensor>& k_scales,
     const optional<Tensor>& v_zero_points,
     const optional<Tensor>& v_scales,
+    const bool is_seq_at_dim_1,
     Tensor& output);
 #endif // ENABLE_CUSTOM_QUANTIZED_SDPA
 } // namespace native
