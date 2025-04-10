@@ -6,14 +6,14 @@ metadata `AndroidManifest.xml`.
 
 ## Core contents
 
-Under `extension/android`,
+Under `extension/android/`,
 
 - `executorch_android/` is the root for the Java `org.pytorch.executorch` package
- - `src/`
-  - `androidTest` contains the android instrumentation test source
-  - `main` contains the Java source
-  - `test` contains the Java unit test source
- - `build.gradle` is the rule to build the Java package.
+  - `src/`
+    - `androidTest/` contains the android instrumentation test source
+    - `main/` contains the Java source
+    - `test/` contains the Java unit test source
+  - `build.gradle` is the rule to build the Java package.
 - `jni/` contains the JNI layer code, which depends on the ExecuTorch c++ runtime library.
 - `CMakeLists.txt` is the rule for building the JNI library.
 
