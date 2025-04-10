@@ -548,3 +548,22 @@ clang: error: linker command failed with exit code 1 (use -v to see invocation)
 ```
 It's a known issue for Xcode version 15.1.
 Mitigation: update to most recent Xcode version, clean and rebuild.
+
+- If you encounter issues with missing abseil-cpp or re2, try running `git submodule update --init --recursive` to pull in those submodules.
+Example error:
+```
+CMake Error at runner/CMakeLists.txt:68 (add_subdirectory):
+  The source directory
+
+    /Users/../executorch/extension/llm/tokenizers/third-party/abseil-cpp
+
+  does not contain a CMakeLists.txt file.
+
+
+CMake Error at runner/CMakeLists.txt:72 (add_subdirectory):
+  The source directory
+
+    /Users/../executorch/extension/llm/tokenizers/third-party/re2
+
+  does not contain a CMakeLists.txt file.
+```
