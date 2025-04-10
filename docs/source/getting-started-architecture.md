@@ -18,7 +18,7 @@ There are three phases to deploy a PyTorch model to on-device: program preparati
 
 ExecuTorch extends the flexibility and usability of PyTorch to edge devices. It
 leverages PyTorch 2 compiler and export functionality
-([TorchDynamo](https://pytorch.org/docs/stable/dynamo/index.html),
+([TorchDynamo](https://pytorch.org/docs/stable/torch.compiler_dynamo_overview.html),
 [AOTAutograd](https://pytorch.org/functorch/stable/notebooks/aot_autograd_optimizations.html),
 [Quantization](https://pytorch.org/docs/main/quantization.html),
 [dynamic shapes](https://pytorch.org/get-started/pytorch-2.0/#pytorch-2x-faster-more-pythonic-and-as-dynamic-as-ever),

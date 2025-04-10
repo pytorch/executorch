@@ -27,6 +27,9 @@ android {
     }
 
     sourceSets {
+        main {
+            jniLibs.srcDirs = ['../../../cmake-out-android-so/']
+        }
         androidTest {
             resources.srcDirs += [ 'src/androidTest/resources' ]
         }

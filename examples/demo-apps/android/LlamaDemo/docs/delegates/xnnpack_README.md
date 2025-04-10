@@ -103,7 +103,7 @@ You may wonder what the ‘--metadata’ flag is doing. This flag helps export t
 
 * Convert tokenizer for Llama 2 and Llava (skip this for Llama 3.x)
 ```
-python -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+python -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokenizer.bin
 ```
 
 ### For LLaVA model

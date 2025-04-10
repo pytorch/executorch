@@ -49,9 +49,9 @@ Key value propositions of ExecuTorch are:
 ## Getting Started
 To get started you can:
 
-- Visit the [Step by Step Tutorial](https://pytorch.org/executorch/main/index.html) on getting things running locally and deploy a model to a device
+- Visit the [Step by Step Tutorial](https://pytorch.org/executorch/main/index.html) to get things running locally and deploy a model to a device
 - Use this [Colab Notebook](https://pytorch.org/executorch/stable/getting-started-setup.html#quick-setup-colab-jupyter-notebook-prototype) to start playing around right away
-- Jump straight into LLMs use cases by following specific instructions for [Llama](./examples/models/llama/README.md) and [Llava](./examples/models/llava/README.md)
+- Jump straight into LLM use cases by following specific instructions for [Llama](./examples/models/llama/README.md) and [Llava](./examples/models/llava/README.md)
 
 ## Feedback and Engagement
 

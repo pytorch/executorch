@@ -113,6 +113,13 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(1, 512, 7, 7),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_amax(self):
+        modules = [AMax(dim=1, keepdim=False), AMax(dim=1, keepdim=True)]  # noqa: F405
+        sample_input = (torch.randn(4, 4),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_any(self):
         modules = [Any(), Any(dim=[0, 1]), Any(dim=1, keepdim=True)]  # noqa: F405
         sample_input = (torch.randn(3, 3, 3) > 0,)
@@ -1110,6 +1117,14 @@ class TestQNNQuantizedOperator(TestQNN):
         sample_input = (torch.randn(1, 512, 7, 7),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_amax(self):
+        modules = [AMax(dim=1, keepdim=False), AMax(dim=1, keepdim=True)]  # noqa: F405
+        sample_input = (torch.randn(4, 4),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_any(self):
         modules = [Any(), Any(dim=[0, 1]), Any(dim=1, keepdim=True)]  # noqa: F405
