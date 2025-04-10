@@ -111,6 +111,8 @@ To add the library to your app, add the following dependency to gradle build rul
 dependencies {
   implementation("org.pytorch:executorch-android:0.5.1")
 }
+
+# See latest available versions in https://mvnrepository.com/artifact/org.pytorch/executorch-android
 ```
 
 #### Runtime APIs
