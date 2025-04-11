@@ -271,6 +271,14 @@ Once you've successfully finished local development, it's time to send out your 
 
     Those reviewers/maintainers are here to finetune your contribution and eventually catch some issues before we merge the PR. We aim for this process to be pleasing on both sides: we try to give and get the best.
 
-    Once the reviewers are happy, one of our core contributors will merge your PR. Congratulations — you're now an official ExecuTorch contributor!
+    Once the reviewers are happy, they'll approve your PR, indicating that they're happy for it to be merged. This will send you a notification and display as follows on your PR page:
+
+    ![](./_static/img/new-contributor-guide/pr_approval1.png)
+
+    And in the PR comments:
+
+    ![](./_static/img/new-contributor-guide/pr_approval2.png)
+
+    Once you've received the required approval from a core contributor, you can go ahead and merge your PR. Congratulations — you're now an official ExecuTorch contributor!
 
 Great job making it to the end of our guide — we hope you enjoy contributing. Once again, please check out **[Discord Server](https://discord.com/invite/Dh43CKSAdc)** if you want to say hello, ask any questions, or talk about any and all things ExecuTorch. We look forward to receiving your contributions!
