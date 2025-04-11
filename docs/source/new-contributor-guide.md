@@ -279,6 +279,18 @@ Once you've successfully finished local development, it's time to send out your 
 
     ![](./_static/img/new-contributor-guide/pr_approval2.png)
 
-    Once you've received the required approval from a core contributor, you can go ahead and merge your PR. Congratulations — you're now an official ExecuTorch contributor!
+6. Once you've received the required approval from a core contributor, you're very nearly done. We just need to make sure all the CI checks have passed, some of which need approval from a maintainer to start:
 
-Great job making it to the end of our guide — we hope you enjoy contributing. Once again, please check out **[Discord Server](https://discord.com/invite/Dh43CKSAdc)** if you want to say hello, ask any questions, or talk about any and all things ExecuTorch. We look forward to receiving your contributions!
+    ![](./_static/img/new-contributor-guide/how_to_merge1.png)
+
+    Once all checks these have all been approved, ran, and passed, you can go ahead and merge your PR. If there's a grey `Update branch` button instead of a green `Merge pull request` button, click that first:
+
+    ![](./_static/img/new-contributor-guide/how_to_merge2.png)
+
+    After a moment, the branch should update with the latest changes, and you'll see the final green `Merge pull request` button:
+
+    ![](./_static/img/new-contributor-guide/how_to_merge3.png)
+
+    Click it to merge your changes into the main codebase. Congratulations — you're now an official ExecuTorch contributor!
+
+Great job making it to the end of our guide — we hope you enjoy contributing. Once again, please check out our **[Discord Server](https://discord.com/invite/Dh43CKSAdc)** if you want to say hello, ask any questions, or talk about any and all things ExecuTorch. We look forward to receiving your contributions!
