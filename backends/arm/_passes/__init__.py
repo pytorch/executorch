@@ -27,6 +27,7 @@ from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_select import DecomposeSelectPass  # noqa
 from .decompose_softmax_pass import DecomposeSoftmaxPass  # noqa
 from .decompose_softmax_unstable_pass import DecomposeSoftmaxUnstablePass  # noqa
+from .decompose_sqrt_pass import DecomposeSqrtPass  # noqa
 from .decompose_var_pass import DecomposeVarPass  # noqa
 from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     FoldAndAnnotateQParamsPass,
