@@ -47,7 +47,17 @@ void main() {
 
   // Compute the start and end of the input indices to load. Padding is assumed
   // to be constant 0 padding, so reads from the padding region are skipped.
-  const ivec2 start = max(ivec2(0), ipos);
+  ivec2 start = ipos;
+  if (start.x < 0) {
+    // number of "steps" to get to >= zero is div_up(-start, dilation)
+    int num_steps = ((-ipos.x) + dilation.x - 1) / dilation.x;
+    start.x = ipos.x + num_steps * dilation.x;
+  }
+  if (start.y < 0) {
+    // number of "steps" to get to >= zero is div_up(-start, dilation)
+    int num_steps = ((-ipos.y) + dilation.y - 1) / dilation.y;
+    start.y = ipos.y + num_steps * dilation.y;
+  }
   const ivec2 end = min(ipos + overlay_region.xy, ivec2(in_sizes.xy));
   // Compute the start of the kernel based on how far we are skipping ahead when
   // reading the input. Note that these are "canonical" indices.
