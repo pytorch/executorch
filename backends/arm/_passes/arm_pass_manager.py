@@ -37,6 +37,7 @@ from executorch.backends.arm._passes import (
     FoldAndAnnotateQParamsPass,
     FuseBatchnorm2DPass,
     FuseConstantArgsPass,
+    FuseEqualPlaceholdersPass,
     FuseQuantizedActivationPass,
     InsertRescalePass,
     InsertTableOpsPass,
@@ -110,6 +111,7 @@ class ArmPassManager(PassManager):
         self.add_pass(FuseConstantArgsPass(exported_program))
 
         self.add_pass(InsertTableOpsPass(exported_program))
+        self.add_pass(FuseEqualPlaceholdersPass(exported_program))
         self.add_pass(AnnotateChannelsLastDimOrder())
         self.add_pass(InsertRescalePass())
 
@@ -159,6 +161,7 @@ class ArmPassManager(PassManager):
         self.add_pass(FuseViewCopyTransform())
         self.add_pass(FuseConstantArgsPass(exported_program))
         self.add_pass(InsertTableOpsPass(exported_program))
+        self.add_pass(FuseEqualPlaceholdersPass(exported_program))
         self.add_pass(AnnotateChannelsLastDimOrder())
         self.add_pass(InsertRescalePass())
 
