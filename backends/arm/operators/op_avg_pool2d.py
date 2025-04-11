@@ -85,8 +85,12 @@ class AvgPool2dVisitor_0_80_BI(NodeVisitor):
     ) -> None:
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
-        input_tensor = inputs[0]
-        assert input_tensor.dtype == ts.DType.INT8
+        supported_dtypes = [ts.DType.INT8]
+        if inputs[0].dtype not in supported_dtypes:
+            raise TypeError(
+                f"IO data type needs to be one of {supported_dtypes}, got "
+                f'"{inputs[0].dtype}"'
+            )
 
         accumulator_type = ts.DType.INT32
 
@@ -118,9 +122,12 @@ class AvgPool2dVisitor_0_80_MI(AvgPool2dVisitor_0_80_BI):
     ) -> None:
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
-        assert (
-            inputs[0].dtype == ts.DType.INT8 or inputs[0].dtype == ts.DType.FP32
-        ), "Only FP32 and INT8 supported"
+        supported_dtypes = [ts.DType.INT8, ts.DType.FP32]
+        if inputs[0].dtype not in supported_dtypes:
+            raise TypeError(
+                f"IO data type needs to be one of {supported_dtypes}, got "
+                f'"{inputs[0].dtype}"'
+            )
 
         if inputs[0].dtype == ts.DType.INT8:
             super().define_node(node, tosa_graph, inputs, output)
@@ -205,8 +212,12 @@ class AvgPool2dVisitor(NodeVisitor):
     ) -> None:
         import serializer.tosa_serializer as ts  # type: ignore
 
-        input_tensor = inputs[0]
-        assert input_tensor.dtype == ts.DType.INT8
+        supported_dtypes = [ts.DType.INT8]
+        if inputs[0].dtype not in supported_dtypes:
+            raise TypeError(
+                f"IO data type needs to be one of {supported_dtypes}, got "
+                f'"{inputs[0].dtype}"'
+            )
 
         accumulator_type = ts.DType.INT32
 
@@ -241,9 +252,12 @@ class AvgPool2dVisitor_FP(AvgPool2dVisitor):
     ) -> None:
         import serializer.tosa_serializer as ts  # type: ignore
 
-        assert (
-            inputs[0].dtype == ts.DType.INT8 or inputs[0].dtype == ts.DType.FP32
-        ), "Only FP32 and INT8 supported"
+        supported_dtypes = [ts.DType.INT8, ts.DType.FP32]
+        if inputs[0].dtype not in supported_dtypes:
+            raise TypeError(
+                f"IO data type needs to be one of {supported_dtypes}, got "
+                f'"{inputs[0].dtype}"'
+            )
 
         if inputs[0].dtype == ts.DType.INT8:
             super().define_node(node, tosa_graph, inputs, output)
