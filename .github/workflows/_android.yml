@@ -14,7 +14,7 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       upload-artifact: android-apps
@@ -36,8 +36,9 @@ jobs:
         cp ${BUILD_AAR_DIR}/executorch.aar $ARTIFACTS_DIR_NAME
 
         mkdir -p ${ARTIFACTS_DIR_NAME}/library_test_dir
-        bash .ci/scripts/build_android_instrumentation.sh
-        cp ${BUILD_AAR_DIR}/executorch_android/build/outputs/apk/androidTest/debug/executorch_android-debug-androidTest.apk "${ARTIFACTS_DIR_NAME}/library_test_dir"
+        bash extension/android/executorch_android/android_test_setup.sh
+        (cd extension/android; ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:assembleAndroidTest)
+        cp extension/android/executorch_android/build/outputs/apk/androidTest/debug/executorch_android-debug-androidTest.apk "${ARTIFACTS_DIR_NAME}/library_test_dir"
 
         mkdir -p ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom
         bash examples/models/llama/install_requirements.sh

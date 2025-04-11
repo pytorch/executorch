@@ -7,12 +7,12 @@
  */
 
 #pragma once
+#include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/core/named_data_map.h>
 
 namespace executorch {
-namespace runtime {
-
+namespace ET_RUNTIME_NAMESPACE {
 /**
  * BackendInitContext will be used to inject runtime info for to initialize
  * delegate.
@@ -70,13 +70,13 @@ class BackendInitContext final {
   const NamedDataMap* named_data_map_ = nullptr;
 };
 
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
 
 namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::BackendInitContext;
+using ::executorch::ET_RUNTIME_NAMESPACE::BackendInitContext;
 } // namespace executor
 } // namespace torch

@@ -182,6 +182,11 @@ def annotate_add(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.amax.default])
+def annotate_amax(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.argmin.default])
 def annotate_argmin(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
@@ -969,6 +974,11 @@ def annotate_conv2d(node: Node, quantization_config: QuantizationConfig) -> None
         output_qspec=quantization_config.output_activation,
         _annotated=True,
     )
+
+
+@register_annotator([torch.ops.aten.cumsum.default])
+def annotate_cumsum(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
 
 
 @register_annotator([torch.ops.aten.linear.default])
