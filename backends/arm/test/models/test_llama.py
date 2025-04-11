@@ -79,24 +79,6 @@ class TestLlama(unittest.TestCase):
 
         llama_model, llama_inputs, llama_meta = get_llama_model(args)
 
-        # TODO: Remove workaround since attention mask should not be persistent,
-        # it only works if input shape is always the same
-        freqs_c = "freqs_cos"
-        freqs_s = "freqs_sin"
-        for i in range(llama_model.n_layers):
-            val = llama_model.layers[i].attention.get_buffer("mask")
-            llama_model.layers[i].attention.register_buffer(
-                "mask", val, persistent=True
-            )
-            val = llama_model.layers[i].attention.rope.get_buffer(freqs_c)
-            llama_model.layers[i].attention.rope.register_buffer(
-                freqs_c, val, persistent=True
-            )
-            val = llama_model.layers[i].attention.rope.get_buffer(freqs_s)
-            llama_model.layers[i].attention.rope.register_buffer(
-                freqs_s, val, persistent=True
-            )
-
         return llama_model, llama_inputs, llama_meta
 
     def test_llama_tosa_MI(self):
