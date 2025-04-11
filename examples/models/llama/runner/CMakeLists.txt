@@ -73,10 +73,19 @@ add_subdirectory(
   ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/re2
   ${CMAKE_CURRENT_BINARY_DIR}/re2
 )
+add_subdirectory(
+  ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/json
+  ${CMAKE_CURRENT_BINARY_DIR}/json
+)
+target_include_directories(llama_runner
+  PRIVATE ${CMAKE_INSTALL_PREFIX}/include
+  ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/llama.cpp-unicode/include
+  ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/llama.cpp-unicode/src
+)
 set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 
 set(llama_runner_deps executorch extension_data_loader extension_module
-                      extension_tensor re2::re2
+                      extension_tensor re2::re2 nlohmann_json::nlohmann_json
 )
 
 target_link_libraries(llama_runner PUBLIC ${llama_runner_deps})
