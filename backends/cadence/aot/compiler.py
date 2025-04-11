@@ -31,11 +31,11 @@ from executorch.exir import (
     EdgeProgramManager,
     ExecutorchBackendConfig,
     ExecutorchProgramManager,
-    to_edge,
 )
 from executorch.exir.pass_base import PassResult
 from executorch.exir.passes import ToOutVarPass
 from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
+from executorch.exir.program._program import to_edge_with_preserved_ops
 from torch._inductor.decomposition import remove_decompositions
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
@@ -80,6 +80,7 @@ def convert_pt2(
         torch.ops.aten.layer_norm.default,
         torch.ops.aten.linear.default,
         torch.ops.aten.matmul.default,
+        torch.ops.aten.rms_norm.default,
     ]
     # Remove decompositions for the ops we want to keep
     # pyre-fixme[6]: For 1st argument expected `Dict[typing.Callable[..., typing.Any
@@ -201,9 +202,9 @@ def lower_ep_to_edge(
     """
     Lower an ExportedProgram to an EdgeProgramManager (in edge IR).
     """
-    # Call to_edge to convert the graph to edge IR.
+    # Call to_edge_with_preserved_ops to convert the graph to edge IR.
     # Note: dim_order is skipped (https://github.com/pytorch/executorch/issues/3704)
-    edge_prog_manager = to_edge(
+    edge_prog_manager = to_edge_with_preserved_ops(
         expo_program,
         compile_config=EdgeCompileConfig(
             _skip_dim_order=True,
@@ -216,9 +217,11 @@ def lower_ep_to_edge(
                 torch.ops.aten.linalg_vector_norm.default,
                 torch.ops.aten.unfold.default,
                 torch.ops.aten.angle.default,
+                torch.ops.aten.rms_norm.default,
             ],
         ),
         constant_methods=constant_methods,
+        preserve_ops=(torch.ops.aten.rms_norm.default,),
     )
 
     if dump_graphs:
