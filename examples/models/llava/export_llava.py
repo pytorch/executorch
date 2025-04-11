@@ -20,12 +20,12 @@ from executorch.examples.models.llama.export_llama_lib import (
     build_args_parser,
     get_quantizer_and_quant_params,
 )
+from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
+    replace_kv_cache_with_custom_kv_cache,
+)
 from executorch.examples.models.llama.source_transformation.quantize import (
     EmbeddingQuantHandler,
     get_quant_weight_transform,
-)
-from executorch.examples.models.llama.source_transformation.quantized_kv_cache import (
-    replace_kv_cache_with_custom_kv_cache,
 )
 from executorch.examples.models.llama.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,

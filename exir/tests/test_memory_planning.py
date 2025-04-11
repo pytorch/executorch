@@ -8,7 +8,6 @@
 
 import itertools
 import unittest
-from functools import partial
 from typing import Any, Callable, List, Optional, Tuple, Type
 
 import executorch.exir as exir
@@ -20,8 +19,8 @@ from executorch.exir.memory_planning import (
     filter_nodes,
     get_node_tensor_specs,
     greedy,
-    memory_planning_algorithm_suite,
     MemoryAlgoResult,
+    MemoryPlanningAlgorithmSuite,
     naive,
     Verifier,
 )
@@ -269,7 +268,7 @@ def maketest(
                 .exported_program()
                 .graph_module
             )
-            mem_algo = partial(memory_planning_algorithm_suite, algo_list=[algo])
+            mem_algo = MemoryPlanningAlgorithmSuite(algo_list=[algo])
             graph_module = PassManager(
                 passes=[
                     SpecPropPass(),
@@ -497,7 +496,6 @@ class TestMisc(unittest.TestCase):
         )
         return quantized_model
 
-    # pyre-ignore
     @parameterized.expand(
         [
             (
@@ -514,7 +512,7 @@ class TestMisc(unittest.TestCase):
     )
     def test_multiple_pools(
         self,
-        algo: Callable[..., List[int]],
+        algo: Callable[..., MemoryAlgoResult],
         expected_allocs: List[Tuple[int, int]],
         expected_bufsizes: List[int],
     ) -> None:
@@ -522,7 +520,7 @@ class TestMisc(unittest.TestCase):
             export(MultiplePoolsToyModel(), (torch.ones(1),), strict=True)
         )
 
-        mem_algo = partial(memory_planning_algorithm_suite, algo_list=[algo])
+        mem_algo = MemoryPlanningAlgorithmSuite(algo_list=[algo])
         edge_program.to_executorch(
             exir.ExecutorchBackendConfig(
                 memory_planning_pass=CustomPoolMemoryPlanningPass(
