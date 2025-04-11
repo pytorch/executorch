@@ -5,7 +5,6 @@
 
 import logging
 import os
-import platform
 import random
 import shutil
 import subprocess
@@ -174,30 +173,31 @@ def get_option(option: str) -> Any | None:
     return None
 
 
-def _load_libquantized_ops_aot_lib():
+def _load_lib(lib_name_pattern: str, build_folder: str):
+    """
+    Find and load a library by name in build_folder.
+    """
+    find_lib_cmd = [
+        "find",
+        build_folder,
+        "-name",
+        f"{lib_name_pattern}",
+    ]
+    res = subprocess.run(find_lib_cmd, capture_output=True)
+    if res.returncode == 0:
+        library_paths = res.stdout.decode().strip().split("\n")
+        import torch
+
+        torch.ops.load_library(library_paths[0])
+    else:
+        raise RuntimeError(
+            f"Did not find any library matching {lib_name_pattern} in {build_folder}. Have you installed executorch properly?"
+        )
+
+
+def _load_libquantized_ops_aot_lib(executorch_install_dir: str = "pip-out"):
     """
     Find and load the libquantized_ops_aot_lib shared library.
     """
-    so_ext = {
-        "Darwin": "dylib",
-        "Linux": "so",
-        "Windows": "dll",
-    }.get(platform.system(), None)
-
-    find_lib_cmd = [
-        "find",
-        "cmake-out-aot-lib",
-        "-name",
-        f"libquantized_ops_aot_lib.{so_ext}",
-    ]
-
-    res = subprocess.run(find_lib_cmd, capture_output=True)
-    if res.returncode == 0:
-        library_path = res.stdout.decode().strip()
-        import torch
-
-        torch.ops.load_library(library_path)
-    else:
-        raise RuntimeError(
-            f"Did not find libquantized_ops_aot_lib.{so_ext} in cmake-out-aot-lib. Did you build it?"
-        )
+    _load_lib("_portable_lib.cpython-310*", executorch_install_dir)
+    _load_lib("libquantized_ops_aot_lib.*", executorch_install_dir)

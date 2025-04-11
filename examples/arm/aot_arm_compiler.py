@@ -29,6 +29,7 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_quantization_config,
     TOSAQuantizer,
 )
+from executorch.backends.arm.test.conftest import _load_libquantized_ops_aot_lib
 from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
 from executorch.backends.arm.tosa_specification import TosaSpecification
 
@@ -466,7 +467,7 @@ def get_args():
         "--so_library",
         required=False,
         default=None,
-        help="Provide path to so library. E.g., cmake-out/examples/portable/custom_ops/libcustom_ops_aot_lib.so",
+        help="Provide path to custom .so library.",
     )
     parser.add_argument(
         "--debug", action="store_true", help="Set the logging level to debug."
@@ -509,11 +510,10 @@ def get_args():
     if args.debug:
         logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
 
-    if args.quantize and not args.so_library:
-        logging.warning(
-            "Quantization enabled without supplying path to libcustom_ops_aot_lib using -s flag."
-            + "This is required for running quantized models with unquantized input."
-        )
+    # Load quantized ops library.
+    if args.quantize:
+        logging.info("Loading lib_quantized_custom_op_lib")
+        _load_libquantized_ops_aot_lib(executorch_install_dir="pip-out")
 
     # if we have custom ops, register them before processing the model
     if args.so_library is not None:
