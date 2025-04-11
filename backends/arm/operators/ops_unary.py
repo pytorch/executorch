@@ -6,15 +6,15 @@
 # pyre-unsafe
 from typing import List
 
-import serializer.tosa_serializer as ts  # type: ignore
 import torch.fx
+
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 
 from executorch.backends.arm.tosa_mapping import TosaArg
-from serializer.tosa_serializer import TosaOp
 
 
 def unary_operator_factory(unary_target: str, tosa_op):
@@ -53,6 +53,6 @@ def unary_operator_factory(unary_target: str, tosa_op):
     register_node_visitor(UnaryOperator)
 
 
-unary_operator_factory("aten.ceil.default", TosaOp.Op().CEIL)
-unary_operator_factory("aten.floor.default", TosaOp.Op().FLOOR)
-unary_operator_factory("aten.logical_not.default", TosaOp.Op().LOGICAL_NOT)
+unary_operator_factory("aten.ceil.default", ts.TosaOp.Op().CEIL)
+unary_operator_factory("aten.floor.default", ts.TosaOp.Op().FLOOR)
+unary_operator_factory("aten.logical_not.default", ts.TosaOp.Op().LOGICAL_NOT)

@@ -45,7 +45,7 @@ jobs:
       secrets-env: EXECUTORCH_MAVEN_SIGNING_KEYID EXECUTORCH_MAVEN_SIGNING_PASSWORD EXECUTORCH_MAVEN_CENTRAL_PASSWORD EXECUTORCH_MAVEN_CENTRAL_USERNAME EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.sha }}
       timeout: 90
       upload-artifact: android-apps

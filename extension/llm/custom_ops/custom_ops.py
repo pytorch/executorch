@@ -229,3 +229,127 @@ def update_cache_meta(
     # workaround. Should we just return cache instead? But I am afraid that
     # will result in extra memory allocation
     return torch.empty((1,), dtype=value.dtype, device="meta")
+
+
+def _validate_quantized_sdpa_params(
+    query,
+    key,
+    value,
+    start_pos,
+    seq_len,
+    attn_mask,
+    drpout_p,
+    is_causal,
+    scale,
+    q_scale,
+    q_zero_point,
+    k_scale,
+    k_zero_point,
+    v_scale,
+    v_zero_point,
+    is_seq_at_dim_2,
+):
+    assert (
+        query.dim() == 4
+    ), f"Expected query to be 4 dimensional but got {query.dim()} dimensions."
+    assert (
+        key.dim() == 4
+    ), f"Expected key to be 4 dimensional but got {key.dim()} dimensions."
+    assert (
+        value.dim() == 4
+    ), f"Expected value to be 4 dimensional but got {value.dim()} dimensions."
+
+    assert (q_scale is not None) and (
+        q_zero_point is not None
+    ), "q_scale and q_zero_point must be provided"
+    assert (k_scale is not None) and (
+        k_zero_point is not None
+    ), "k_scale and k_zero_point must be provided"
+    assert (v_scale is not None) and (
+        v_zero_point is not None
+    ), "v_scale and v_zero_point must be provided"
+
+    assert query.dtype == torch.int8, f"Expected query to be int8 but got {query.dtype}"
+    assert key.dtype == torch.int8, f"Expected key to be int8 but got {key.dtype}"
+    assert value.dtype == torch.int8, f"Expected value to be int8 but got {value.dtype}"
+
+    assert (
+        q_scale.dtype == torch.float32
+    ), f"Expected q_scale to be float32 but got {q_scale.dtype}"
+    assert (
+        q_zero_point.dtype == torch.int8
+    ), f"Expected q_zero_point to be int8 but got {q_zero_point.dtype}"
+    assert (
+        k_scale.dtype == torch.float32
+    ), f"Expected k_scale to be float32 but got {k_scale.dtype}"
+    assert (
+        k_zero_point.dtype == torch.int8
+    ), f"Expected k_zero_point to be int8 but got {k_zero_point.dtype}"
+    assert (
+        v_scale.dtype == torch.float32
+    ), f"Expected v_scale to be float32 but got {v_scale.dtype}"
+    assert (
+        v_zero_point.dtype == torch.int8
+    ), f"Expected v_zero_point to be int8 but got {v_zero_point.dtype}"
+
+    assert (
+        query.size()[:-1] == q_scale.size()[:-1]
+    ), f"Expected query and q_scale to have same size except last dimensions but got {query.size()} and {q_scale.size()}"
+    assert (
+        query.size()[:-1] == q_zero_point.size()[:-1]
+    ), f"Expected query and q_zero_point to have same size except last dimensions but got {query.size()} and {q_zero_point.size()}"
+
+    assert (
+        key.size()[:-1] == k_scale.size()[:-1]
+    ), f"Expected key and k_scale to have same size except last dimensions but got {key.size()} and {k_scale.size()}"
+    assert (
+        key.size()[:-1] == k_zero_point.size()[:-1]
+    ), f"Expected key and k_zero_point to have same size except last dimensions but got {key.size()} and {k_zero_point.size()}"
+
+    assert (
+        value.size()[:-1] == v_scale.size()[:-1]
+    ), f"Expected value and v_scale to have same size except last dimensions but got {value.size()} and {v_scale.size()}"
+    assert (
+        value.size()[:-1] == v_zero_point.size()[:-1]
+    ), f"Expected value and v_zero_point to have same size except last dimensions but got {value.size()} and {v_zero_point.size()}"
+
+
+@impl(custom_ops_lib, "custom_quantized_sdpa", "Meta")
+def custom_quantized_sdpa_meta(
+    query,
+    key,
+    value,
+    start_pos,
+    attn_mask=None,
+    drpout_p=0.0,
+    is_causal=False,
+    scale=None,
+    q_zero_point=None,
+    q_scale=None,
+    k_zero_point=None,
+    k_scale=None,
+    v_zero_point=None,
+    v_scale=None,
+    is_seq_at_dim_2=False,
+):
+    seq_len = query.size(1)
+    _validate_quantized_sdpa_params(
+        query,
+        key,
+        value,
+        start_pos,
+        seq_len,
+        attn_mask,
+        drpout_p,
+        is_causal,
+        scale,
+        q_scale,
+        q_zero_point,
+        k_scale,
+        k_zero_point,
+        v_scale,
+        v_zero_point,
+        is_seq_at_dim_2,
+    )
+
+    return torch.empty(query.size(), dtype=torch.float32, device="meta")
