@@ -10,6 +10,8 @@
 
 #include <executorch/runtime/core/portable_type/bfloat16.h>
 #include <executorch/runtime/core/portable_type/half.h>
+#include <executorch/runtime/core/portable_type/complex.h>
+#include <executorch/runtime/core/portable_type/scalar_type.h>
 #include <executorch/runtime/core/tag.h>
 #include <executorch/runtime/platform/assert.h>
 
@@ -42,6 +44,7 @@ class Scalar {
   /*implicit*/ Scalar(double val) : tag(Tag::Double) {
     v.as_double = val;
   }
+  /*implicit*/ Scalar(float val) : Scalar((double)val) {}
   /*implicit*/ Scalar(BFloat16 val) : Scalar((double)(float)val) {}
   /*implicit*/ Scalar(Half val) : Scalar((double)(float)val) {}
 
@@ -65,29 +68,25 @@ class Scalar {
   }
 
  private:
-  int64_t toInt() const {
-    if (isIntegral(/*includeBool=*/false)) {
-      return v.as_int;
-    } else if (isBoolean()) {
-      return static_cast<int64_t>(v.as_bool);
-    } else {
-      ET_CHECK_MSG(false, "Scalar is not an int nor a Boolean.");
-    }
+ #define DEFINE_ACCESSOR(type, name)                                \
+  type to##name() const {                                           \
+    if (Tag::Double == tag) {                                       \
+      return static_cast<type>(v.as_double);                        \
+    }                                                               \
+    if (Tag::Int == tag) {                                          \
+      return static_cast<type>(v.as_int);                           \
+    }                                                               \
+    if (Tag::Bool == tag) {                                         \
+      return static_cast<type>(v.as_bool);                          \
+    }                                                               \
+    ET_CHECK_MSG(false, "Scalar Tag is not Double, Int, or Bool."); \
   }
-
+ET_FORALL_FLOAT_INT_BOOL_TYPES(DEFINE_ACCESSOR)
+#undef DEFINE_ACCESSOR
+  
   double toFloatingPoint() const {
     ET_CHECK_MSG(isFloatingPoint(), "Scalar is not a Double.");
     return v.as_double;
-  }
-
-  double toDouble() const {
-    ET_CHECK_MSG(isFloatingPoint(), "Scalar is not a Double.");
-    return v.as_double;
-  }
-
-  bool toBool() const {
-    ET_CHECK_MSG(isBoolean(), "Scalar is not a Boolean.");
-    return v.as_bool;
   }
 
   Tag tag;
@@ -105,9 +104,7 @@ class Scalar {
     return to##name();                      \
   }
 
-ET_DEFINE_SCALAR_TO_METHOD(double, Double)
-ET_DEFINE_SCALAR_TO_METHOD(int64_t, Int)
-ET_DEFINE_SCALAR_TO_METHOD(bool, Bool)
+ET_FORALL_FLOAT_INT_BOOL_TYPES(ET_DEFINE_SCALAR_TO_METHOD)
 #undef ET_DEFINE_SCALAR_TO_METHOD
 
 } // namespace etensor
