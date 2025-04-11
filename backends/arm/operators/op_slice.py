@@ -23,6 +23,18 @@ class SliceVisitor(NodeVisitor):
     def __init__(self, *args):
         super().__init__(*args)
 
+    def _fixup_start(self, start, shape, dim):
+        if start.number < 0:
+            return start.number % shape[dim]
+        else:
+            return start.number
+
+    def _fixup_end(self, end, shape, dim):
+        if end.number < 0:
+            return end.number % shape[dim]
+        else:
+            return min(end.number, shape[dim])
+
     def define_node(
         self,
         node: Node,
@@ -42,17 +54,21 @@ class SliceVisitor(NodeVisitor):
         # Translate and check parameters in Pytorch dim order.
         shape = input_node.shape
         dim = dim.number
-        if end.number < 0:
-            end_index = end.number % shape[dim]
-        else:
-            end_index = min(end.number, shape[dim])
-        size = end_index - start.number
+
+        start_index = self._fixup_start(start, shape, dim)
+        end_index = self._fixup_end(end, shape, dim)
+        size = end_index - start_index
+
         assert size > 0
         assert size <= shape[dim]
 
         # Convert aten args to Tosa's start and size attributes and in TOSA dim order.
         attr = ts.TosaSerializerAttribute()
-        start_attr = [start.number if i == dim else 0 for i in input_node.dim_order]
+
+        start_attr = [
+            self._fixup_start(start, shape, dim) if i == dim else 0
+            for i in input_node.dim_order
+        ]
         size_attr = [size if i == dim else shape[i] for i in input_node.dim_order]
         attr.SliceAttribute(start_attr, size_attr)
 
