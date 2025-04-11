@@ -102,7 +102,7 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
       size_t size) override;
   virtual ::executorch::runtime::AllocatorID track_allocator(
       const char* name) override;
-  virtual void log_evalue(
+  virtual Result<bool> log_evalue(
       const ::executorch::runtime::EValue& evalue,
       ::executorch::runtime::LoggedEValueType evalue_type =
           ::executorch::runtime::LoggedEValueType::kIntermediateOutput)
