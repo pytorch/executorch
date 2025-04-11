@@ -66,7 +66,7 @@ def vela_compile(
         output_dir = os.path.join(tmpdir, "output")
         args.append(f"--output-dir={output_dir}")
         args.append(tosa_path)
-        if verbose:
+        if verbose or True:
             args.append("--verbose-all")
         vela.main(" ".join(args).split(" "))
 
