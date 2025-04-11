@@ -7,9 +7,11 @@
 import unittest
 from typing import Tuple
 
+import pytest
+
 import torch
 
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
@@ -35,7 +37,7 @@ class TestSimpleSlice(unittest.TestCase):
     def _test_slice_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: torch.Tensor
     ):
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -48,14 +50,16 @@ class TestSimpleSlice(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
         )
+
+        if conftest.is_option_enabled("tosa_ref_model"):
+            tester.run_method_and_compare_outputs(inputs=test_data)
 
     def _test_slice_tosa_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
 
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -68,8 +72,10 @@ class TestSimpleSlice(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
+
+        if conftest.is_option_enabled("tosa_ref_model"):
+            tester.run_method_and_compare_outputs(inputs=test_data, qtol=1)
 
     def _test_slice_ethos_BI_pipeline(
         self,
@@ -107,14 +113,17 @@ class TestSimpleSlice(unittest.TestCase):
         )
 
     @parameterized.expand(Slice.test_tensors)
+    @pytest.mark.tosa_ref_model
     def test_slice_tosa_MI(self, tensor):
         self._test_slice_tosa_MI_pipeline(self.Slice(), (tensor,))
 
     @parameterized.expand(Slice.test_tensors[:2])
+    @pytest.mark.tosa_ref_model
     def test_slice_nchw_tosa_BI(self, test_tensor: torch.Tensor):
         self._test_slice_tosa_BI_pipeline(self.Slice(), (test_tensor,))
 
     @parameterized.expand(Slice.test_tensors[2:])
+    @pytest.mark.tosa_ref_model
     def test_slice_nhwc_tosa_BI(self, test_tensor: torch.Tensor):
         self._test_slice_tosa_BI_pipeline(self.Slice(), (test_tensor,))
 
