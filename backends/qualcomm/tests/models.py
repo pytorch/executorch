@@ -568,6 +568,14 @@ class Cos(torch.nn.Module):
         return torch.cos(x)
 
 
+class CumSum(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return x.cumsum(dim=0)
+
+
 class Div(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1458,6 +1466,18 @@ class SubConstantLong(torch.nn.Module):
 
     def forward(self, x):
         return 10 - x
+
+
+class SimpleSubModules(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.add = Add()
+        self.sub = Sub()
+
+    def forward(self, a, b, c, d):
+        lhs = self.add(a, b)
+        rhs = self.sub(c, d)
+        return torch.mul(lhs, rhs)
 
 
 class SumIntList(torch.nn.Module):

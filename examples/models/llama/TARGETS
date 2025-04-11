@@ -108,7 +108,7 @@ runtime.python_library(
         "source_transformation/pre_quantization.py",
         "source_transformation/prune_vocab.py",
         "source_transformation/quantize.py",
-        "source_transformation/quantized_kv_cache.py",
+        "source_transformation/custom_kv_cache.py",
         "source_transformation/rms_norm.py",
         "source_transformation/rope.py",
         "source_transformation/sdpa.py",
@@ -208,9 +208,9 @@ runtime.python_library(
 )
 
 runtime.python_library(
-    name = "quantized_kv_cache",
+    name = "custom_kv_cache",
     srcs = [
-        "source_transformation/quantized_kv_cache.py",
+        "source_transformation/custom_kv_cache.py",
     ],
     _is_external_target = True,
     visibility = ["//executorch/..."],
@@ -240,7 +240,7 @@ runtime.python_test(
         "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
     ],
     deps = [
-        ":quantized_kv_cache",
+        ":custom_kv_cache",
         "//caffe2:torch",
         "//executorch/examples/models/llama:llama_transformer",
     ],
@@ -255,7 +255,7 @@ runtime.python_test(
         "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
     ],
     deps = [
-        ":quantized_kv_cache",
+        ":custom_kv_cache",
         ":sdpa",
         "//caffe2:torch",
         "//executorch/examples/models/llama:llama_transformer",
@@ -272,5 +272,22 @@ runtime.python_test(
         "fbsource//third-party/pypi/parameterized:parameterized",
         "//caffe2:torch",
         ":export_library",
+    ],
+)
+
+runtime.python_test(
+    name = "quantized_sdpa_source_transform_test",
+    srcs = [
+        "source_transformation/test_quantized_sdpa.py",
+    ],
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+    ],
+    deps = [
+        ":custom_kv_cache",
+        ":sdpa",
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:llama_transformer",
     ],
 )
