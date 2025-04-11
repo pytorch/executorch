@@ -37,6 +37,9 @@
 namespace executorch {
 namespace extension {
 
+using ET_RUNTIME_NAMESPACE::MethodMeta;
+using ET_RUNTIME_NAMESPACE::Program;
+
 namespace {
 runtime::Result<std::unique_ptr<runtime::DataLoader>> load_file(
     const std::string& file_path,
@@ -113,7 +116,7 @@ Module::Module(
 }
 
 Module::Module(
-    std::shared_ptr<runtime::Program> program,
+    std::shared_ptr<Program> program,
     std::unique_ptr<runtime::MemoryAllocator> memory_allocator,
     std::unique_ptr<runtime::MemoryAllocator> temp_allocator,
     std::unique_ptr<runtime::EventTracer> event_tracer,
@@ -131,7 +134,7 @@ Module::Module(
   runtime::runtime_init();
 }
 
-runtime::Error Module::load(const runtime::Program::Verification verification) {
+runtime::Error Module::load(const Program::Verification verification) {
   if (!is_loaded()) {
     // Load the program
     if (!data_loader_) {
@@ -156,10 +159,10 @@ runtime::Error Module::load(const runtime::Program::Verification verification) {
     }
     // else: either the map itself was provided or we have no data map, either
     // way no work to do.
-    auto program = ET_UNWRAP_UNIQUE(
-        runtime::Program::load(data_loader_.get(), verification));
-    program_ = std::shared_ptr<runtime::Program>(
-        program.release(), [](runtime::Program* pointer) { delete pointer; });
+    auto program =
+        ET_UNWRAP_UNIQUE(Program::load(data_loader_.get(), verification));
+    program_ = std::shared_ptr<Program>(
+        program.release(), [](Program* pointer) { delete pointer; });
   }
   return runtime::Error::Ok;
 }
@@ -224,7 +227,7 @@ runtime::Error Module::load_method(
   return runtime::Error::Ok;
 }
 
-runtime::Result<runtime::MethodMeta> Module::method_meta(
+runtime::Result<MethodMeta> Module::method_meta(
     const std::string& method_name) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
   return methods_.at(method_name).method->method_meta();

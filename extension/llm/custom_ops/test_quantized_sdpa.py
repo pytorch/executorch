@@ -35,6 +35,7 @@ class SDPATestForCustomQuantizedSDPA(unittest.TestCase):
         self.float_dtype = torch.float32
         self.q_shape = None
         self.kv_shape = None
+        self.is_seq_at_dim_2 = True
 
     def _scale_tensor(self, tensor, min_value, max_value, scale=True):
         normalized_tensor = (tensor - tensor.min()) / (tensor.max() - tensor.min())
@@ -105,6 +106,10 @@ class SDPATestForCustomQuantizedSDPA(unittest.TestCase):
             self.float_dtype,
         )
 
+        if not self.is_seq_at_dim_2:
+            q = q.transpose(1, 2).contiguous()
+            k = k.transpose(1, 2).contiguous()
+            v = v.transpose(1, 2).contiguous()
         num_heads_q = q.size(1)
         num_heads_kv = k.size(1)
         seq_len = q.size(2)
@@ -119,6 +124,8 @@ class SDPATestForCustomQuantizedSDPA(unittest.TestCase):
             k = k.repeat_interleave(n_reps, dim=1)
             v = v.repeat_interleave(n_reps, dim=1)
         out = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
+        if not self.is_seq_at_dim_2:
+            out = out.transpose(1, 2).contiguous()
         return out
 
     def _int_matmul(
@@ -212,7 +219,7 @@ class SDPATestForCustomQuantizedSDPA(unittest.TestCase):
         seq_len,
         scale_tensors=False,
         atol=1e-5,
-        is_seq_at_dim_2=True,
+        is_seq_at_dim_2=False,
     ):
         # Range arbitrarily chosen to reproduce a numerical error on x86 in some of the long context tests
         tensor_scale_max = 15
@@ -221,9 +228,10 @@ class SDPATestForCustomQuantizedSDPA(unittest.TestCase):
         self.n_heads_q = n_heads_q
         self.head_dim = head_dim
         self.max_seq_len = max_seq_len
+        self.is_seq_at_dim_2 = is_seq_at_dim_2
         seq_dim = 2
         self.q_shape = (self.n_batch, self.n_heads_q, seq_len, self.head_dim)
-        self.kv_shape = (self.n_batch, self.n_heads_q, self.max_seq_len, self.head_dim)
+        self.kv_shape = (self.n_batch, self.n_heads_kv, self.max_seq_len, self.head_dim)
         if not is_seq_at_dim_2:
             seq_dim = 1
             self.q_shape = (self.n_batch, seq_len, self.n_heads_q, self.head_dim)
@@ -286,7 +294,6 @@ class SDPATestForCustomQuantizedSDPA(unittest.TestCase):
             quantized_dtype,
         )
 
-        start_pos = 0
         seq_len = q.size(seq_dim)
         attn_mask = self.mask[start_pos : start_pos + seq_len, :]
         attn_mask = attn_mask[:, : start_pos + seq_len]
@@ -334,6 +341,7 @@ class SDPATestForCustomQuantizedSDPA(unittest.TestCase):
             k_scale_fp32,
             v_zero_point_int8,
             v_scale_fp32,
+            is_seq_at_dim_2,
         )
         self.assertTrue(torch.allclose(ref_output, op_output, atol=atol))
         # Following line crashes due to some weird issues in mkldnn with crash in mkl_sgemm with `wild jump`
@@ -374,6 +382,7 @@ class SDPATestForCustomQuantizedSDPA(unittest.TestCase):
             k_scale_fp32,
             v_zero_point_int8,
             v_scale_fp32,
+            is_seq_at_dim_2,
         )
         self.assertTrue(torch.allclose(ref_output, op_output, atol=atol))
 
@@ -393,6 +402,18 @@ class SDPATestForCustomQuantizedSDPA(unittest.TestCase):
             seq_len,
             True,
             atol=1e-4,
+            is_seq_at_dim_2=True,
+        )
+        self._test_sdpa_common(
+            n_heads_kv,
+            n_heads_q,
+            head_dim,
+            max_seq_len,
+            start_pos,
+            seq_len,
+            True,
+            atol=1e-4,
+            is_seq_at_dim_2=False,
         )
 
     def test_sdpa_with_custom_quantized_seq_len_1(self):
@@ -403,7 +424,22 @@ class SDPATestForCustomQuantizedSDPA(unittest.TestCase):
         seq_len = 1
         start_pos = 0
         self._test_sdpa_common(
-            n_heads_kv, n_heads_q, head_dim, max_seq_len, start_pos, seq_len
+            n_heads_kv,
+            n_heads_q,
+            head_dim,
+            max_seq_len,
+            start_pos,
+            seq_len,
+            is_seq_at_dim_2=True,
+        )
+        self._test_sdpa_common(
+            n_heads_kv,
+            n_heads_q,
+            head_dim,
+            max_seq_len,
+            start_pos,
+            seq_len,
+            is_seq_at_dim_2=False,
         )
 
     def test_sdpa_with_custom_quantized_seq_len_small(self):
@@ -414,7 +450,22 @@ class SDPATestForCustomQuantizedSDPA(unittest.TestCase):
         seq_len = 4
         start_pos = 0
         self._test_sdpa_common(
-            n_heads_kv, n_heads_q, head_dim, max_seq_len, start_pos, seq_len
+            n_heads_kv,
+            n_heads_q,
+            head_dim,
+            max_seq_len,
+            start_pos,
+            seq_len,
+            is_seq_at_dim_2=True,
+        )
+        self._test_sdpa_common(
+            n_heads_kv,
+            n_heads_q,
+            head_dim,
+            max_seq_len,
+            start_pos,
+            seq_len,
+            is_seq_at_dim_2=False,
         )
 
     def test_sdpa_with_custom_quantized_seq_len_llava_example(self):
@@ -466,5 +517,20 @@ class SDPATestForCustomQuantizedSDPA(unittest.TestCase):
         seq_len = 24
         start_pos = 0
         self._test_sdpa_common(
-            n_heads_kv, n_heads_q, head_dim, max_seq_len, start_pos, seq_len
+            n_heads_kv,
+            n_heads_q,
+            head_dim,
+            max_seq_len,
+            start_pos,
+            seq_len,
+            is_seq_at_dim_2=True,
+        )
+        self._test_sdpa_common(
+            n_heads_kv,
+            n_heads_q,
+            head_dim,
+            max_seq_len,
+            start_pos,
+            seq_len,
+            is_seq_at_dim_2=False,
         )
