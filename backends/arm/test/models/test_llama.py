@@ -28,7 +28,6 @@ project_dir = os.path.abspath(os.path.join(this_files_dir, "../../../.."))
 sys.path.append(project_dir)
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 class TestLlama(unittest.TestCase):
