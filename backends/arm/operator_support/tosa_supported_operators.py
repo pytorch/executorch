@@ -225,6 +225,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.bitwise_left_shift.Tensor,
             exir_ops.edge.aten.__lshift__.Scalar,
             torch.ops.aten.scalar_tensor.default,
+            exir_ops.edge.aten.gelu.default,
         ]
 
         return supported
@@ -361,6 +362,7 @@ class CheckProperQuantization(OperatorSupportBase):
             exir_ops.edge.aten.sub.Tensor,
             exir_ops.edge.aten.tanh.default,
             exir_ops.edge.aten.upsample_nearest2d.vec,
+            exir_ops.edge.aten.gelu.default,
         ):
             return True
         elif node.target in (
