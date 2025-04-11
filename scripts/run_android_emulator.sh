@@ -26,9 +26,17 @@ adb install -t app-debug-androidTest.apk
 adb shell mkdir -p /data/local/tmp/llama
 adb push model.pte /data/local/tmp/llama
 adb push tokenizer.bin /data/local/tmp/llama
-adb shell am instrument -w -r com.example.executorchllamademo.test/androidx.test.runner.AndroidJUnitRunner
+adb shell am instrument -w -r com.example.executorchllamademo.test/androidx.test.runner.AndroidJUnitRunner >result.txt 2>&1
+if [ grep -q FAILURES result.txt ]; then
+  cat result.txt
+  exit 1
+fi
 
 adb uninstall org.pytorch.executorch.test || true
 adb install -t android-test-debug-androidTest.apk
 
-adb shell am instrument -w -r org.pytorch.executorch.test/androidx.test.runner.AndroidJUnitRunner
+adb shell am instrument -w -r org.pytorch.executorch.test/androidx.test.runner.AndroidJUnitRunner >result.txt 2>&1
+if [ grep -q FAILURES result.txt ]; then
+  cat result.txt
+  exit 1
+fi

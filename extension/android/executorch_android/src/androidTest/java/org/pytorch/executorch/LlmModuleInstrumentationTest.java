@@ -86,7 +86,6 @@ public class LlmModuleInstrumentationTest implements LlmCallback {
 
     @Test
     public void testGenerateAndStop() throws IOException, URISyntaxException{
-        int seqLen = 32;
         mModule.generate(TEST_PROMPT, SEQ_LEN, new LlmCallback() {
             @Override
             public void onResult(String result) {
