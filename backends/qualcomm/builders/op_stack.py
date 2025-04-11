@@ -51,7 +51,7 @@ class Stack(NodeVisitor):
 
         dim = 0 if len(node.args) == 1 else cast(int, node.args[1])
         if dim < 0:
-            dim = dim % len(input_tensor.shape)
+            dim = dim % len(output_tensor.shape)
         if QCOM_AXIS_ORDER in node.meta:
             dim = node.meta[QCOM_AXIS_ORDER].index(dim)
         stack_op = PyQnnWrapper.PyQnnOpWrapper(

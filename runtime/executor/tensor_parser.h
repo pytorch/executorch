@@ -21,7 +21,7 @@
 #include <executorch/schema/program_generated.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 namespace deserialization {
 
 /// Data structure to hold key and data buffer for external data used
@@ -142,7 +142,7 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
     Span<NamedData> external_constants = {});
 
 } // namespace deserialization
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
 
 namespace torch {
@@ -150,10 +150,11 @@ namespace executor {
 namespace deserialization {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::deserialization::getTensorDataPtr;
-using ::executorch::runtime::deserialization::parseListOptionalType;
-using ::executorch::runtime::deserialization::parseTensor;
-using ::executorch::runtime::deserialization::parseTensorList;
+using ::executorch::ET_RUNTIME_NAMESPACE::deserialization::getTensorDataPtr;
+using ::executorch::ET_RUNTIME_NAMESPACE::deserialization::
+    parseListOptionalType;
+using ::executorch::ET_RUNTIME_NAMESPACE::deserialization::parseTensor;
+using ::executorch::ET_RUNTIME_NAMESPACE::deserialization::parseTensorList;
 } // namespace deserialization
 } // namespace executor
 } // namespace torch
