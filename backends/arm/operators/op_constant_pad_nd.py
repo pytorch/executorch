@@ -7,8 +7,9 @@
 
 from typing import List
 
-import serializer.tosa_serializer as ts
 import torch
+
+import tosa_tools.v0_80.serializer.tosa_serializer as ts
 
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
@@ -18,7 +19,6 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from serializer.tosa_serializer import TosaOp
 
 
 @register_node_visitor
@@ -71,4 +71,6 @@ class ConstantPadNDVisitor(NodeVisitor):
         attr = ts.TosaSerializerAttribute()
         attr.PadAttribute(tosa_graph.builder, output_pad, pad_const_qs, pad_const_fp)
 
-        tosa_graph.addOperator(TosaOp.Op().PAD, [inputs[0].name], [output.name], attr)
+        tosa_graph.addOperator(
+            ts.TosaOp.Op().PAD, [inputs[0].name], [output.name], attr
+        )

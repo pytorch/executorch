@@ -9,13 +9,12 @@ from typing import List
 
 import executorch.backends.arm.tosa_quant_utils as tqutils
 
-import serializer.tosa_serializer as ts  # type: ignore
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from serializer.tosa_serializer import TosaOp
 
 from torch.fx import Node
 
@@ -53,7 +52,7 @@ class EqualVisitor(NodeVisitor):
 
         # Do the equal comparison
         tosa_graph.addOperator(
-            TosaOp.Op().EQUAL,
+            ts.TosaOp.Op().EQUAL,
             [input_nodes[0].name, input_nodes[1].name],
             output.name,
             None,

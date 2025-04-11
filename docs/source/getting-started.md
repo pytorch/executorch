@@ -99,6 +99,7 @@ print("Comparing against original PyTorch module")
 print(torch.allclose(output[0], eager_reference_output, rtol=1e-3, atol=1e-5))
 ```
 
+For complete examples of exporting and running the model, please refer to our [examples GitHub repository](https://github.com/pytorch-labs/executorch-examples/tree/main/mv2/python).
 
 <hr/>
 
@@ -178,6 +179,7 @@ target_link_libraries(
           xnnpack_backend)
 ```
 
+
 #### Runtime APIs
 Both high-level and low-level C++ APIs are provided. The low-level APIs are platform independent, do not dynamically allocate memory, and are most suitable for resource-constrained embedded systems. The high-level APIs are provided as a convenience wrapper around the lower-level APIs, and make use of dynamic memory allocation and standard library constructs to reduce verbosity.
 
@@ -194,8 +196,8 @@ using namespace ::executorch::extension;
 Module module("/path/to/model.pte");
 
 // Create an input tensor.
-float input[1 * 3 * 256 * 256];
-auto tensor = from_blob(input, {1, 3, 256, 256});
+float input[1 * 3 * 224 * 224];
+auto tensor = from_blob(input, {1, 3, 224, 224});
 
 // Perform an inference.
 const auto result = module.forward(tensor);
@@ -207,6 +209,8 @@ if (result.ok()) {
 ```
 
 For more information on the C++ APIs, see [Running an ExecuTorch Model Using the Module Extension in C++](extension-module.md) and [Managing Tensor Memory in C++](extension-tensor.md).
+
+For complete examples of building and running C++ application, please refer to our [examples GitHub repository](https://github.com/pytorch-labs/executorch-examples/tree/main/mv2/cpp).
 
 <hr/>
 

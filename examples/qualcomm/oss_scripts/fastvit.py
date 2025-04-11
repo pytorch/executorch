@@ -107,14 +107,16 @@ def main(args):
         weight=weight_qspec,
         bias=_derived_bias_quant_spec,
     )
+
     # rewrite default ptq config
-    q_config = quantizer.bit8_quant_config
-    quantizer.bit8_quant_config = QuantizationConfig(
+    q_config = quantizer.quant_config
+    quantizer.quant_config = QuantizationConfig(
         input_activation=act_qspec,
         output_activation=act_qspec,
         weight=q_config.weight,
         bias=q_config.bias,
     )
+
     # lower to QNN
     passes_job = get_capture_program_passes()
     passes_job[ExpandBroadcastTensorShape][QCOM_PASS_ACTIVATE_KEY] = True
