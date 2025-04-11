@@ -603,6 +603,7 @@
 <span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">output</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">eager_reference_output</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">))</span>
 </pre></div>
 </div>
+<p>For complete examples of exporting and running the model, please refer to our <a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/mv2/python">examples GitHub repository</a>.</p>
 <hr/>
 </div>
 </div>
@@ -623,8 +624,10 @@
 To add the library to your app, add the following dependency to gradle build rule.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># app/build.gradle.kts</span>
 <span class="n">dependencies</span> <span class="p">{</span>
-  <span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;org.pytorch:executorch-android:0.5.1&quot;</span><span class="p">)</span>
+  <span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;org.pytorch:executorch-android:0.6.0-rc3&quot;</span><span class="p">)</span>
 <span class="p">}</span>
+
+<span class="c1"># See latest available versions in https://mvnrepository.com/artifact/org.pytorch/executorch-android</span>
 </pre></div>
 </div>
 </div>
@@ -676,8 +679,8 @@ To add the library to your app, add the following dependency to gradle build rul
 <span class="n">target_link_libraries</span><span class="p">(</span>
   <span class="n">my_target</span>
   <span class="n">PRIVATE</span> <span class="n">executorch</span>
-          <span class="n">executorch_module_static</span>
-          <span class="n">executorch_tensor</span>
+          <span class="n">extension_module_static</span>
+          <span class="n">extension_tensor</span>
           <span class="n">optimized_native_cpu_ops_lib</span>
           <span class="n">xnnpack_backend</span><span class="p">)</span>
 </pre></div>
@@ -697,8 +700,8 @@ To add the library to your app, add the following dependency to gradle build rul
 <span class="n">Module</span><span class="w"> </span><span class="k">module</span><span class="p">(</span><span class="s">&quot;/path/to/model.pte&quot;</span><span class="p">);</span>
 
 <span class="c1">// Create an input tensor.</span>
-<span class="kt">float</span><span class="w"> </span><span class="n">input</span><span class="p">[</span><span class="mi">1</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">256</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">256</span><span class="p">];</span>
-<span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">from_blob</span><span class="p">(</span><span class="n">input</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">256</span><span class="p">,</span><span class="w"> </span><span class="mi">256</span><span class="p">});</span>
+<span class="kt">float</span><span class="w"> </span><span class="n">input</span><span class="p">[</span><span class="mi">1</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">224</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">224</span><span class="p">];</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">from_blob</span><span class="p">(</span><span class="n">input</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">224</span><span class="p">,</span><span class="w"> </span><span class="mi">224</span><span class="p">});</span>
 
 <span class="c1">// Perform an inference.</span>
 <span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">module</span><span class="p">.</span><span class="n">forward</span><span class="p">(</span><span class="n">tensor</span><span class="p">);</span>
@@ -710,6 +713,7 @@ To add the library to your app, add the following dependency to gradle build rul
 </pre></div>
 </div>
 <p>For more information on the C++ APIs, see <a class="reference internal" href="extension-module.html"><span class="doc std std-doc">Running an ExecuTorch Model Using the Module Extension in C++</span></a> and <a class="reference internal" href="extension-tensor.html"><span class="doc std std-doc">Managing Tensor Memory in C++</span></a>.</p>
+<p>For complete examples of building and running C++ application, please refer to our <a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/mv2/cpp">examples GitHub repository</a>.</p>
 <hr/>
 </div>
 </div>

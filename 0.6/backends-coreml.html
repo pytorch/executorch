@@ -562,15 +562,15 @@
 </div>
 <div class="section" id="partitioner-api">
 <h3>Partitioner API<a class="headerlink" href="#partitioner-api" title="Permalink to this heading">¶</a></h3>
-<p>The CoreML partitioner API allows for configuration of the model delegation to CoreML. Passing an <code class="docutils literal notranslate"><span class="pre">CoreMLPartitioner</span></code> instance with no additional parameters will run as much of the model as possible on the CoreML backend with default settings. This is the most common use-case. For advanced use cases, the partitioner exposes the following options via the <a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/partition/coreml_partitioner.py#L60">constructor</a>:</p>
+<p>The CoreML partitioner API allows for configuration of the model delegation to CoreML. Passing an <code class="docutils literal notranslate"><span class="pre">CoreMLPartitioner</span></code> instance with no additional parameters will run as much of the model as possible on the CoreML backend with default settings. This is the most common use-case. For advanced use cases, the partitioner exposes the following options via the <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/0.6/backends/apple/coreml/partition/coreml_partitioner.py#L60">constructor</a>:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">skip_ops_for_coreml_delegation</span></code>: Allows you to skip ops for delegation by CoreML.  By default, all ops that CoreML supports will be delegated.  See <a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/test/test_coreml_partitioner.py#L42">here</a> for an example of skipping an op for delegation.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">skip_ops_for_coreml_delegation</span></code>: Allows you to skip ops for delegation by CoreML.  By default, all ops that CoreML supports will be delegated.  See <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/0.6/backends/apple/coreml/test/test_coreml_partitioner.py#L42">here</a> for an example of skipping an op for delegation.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">compile_specs</span></code>: A list of CompileSpec for the CoreML backend.  These control low-level details of CoreML delegation, such as the compute unit (CPU, GPU, ANE), the iOS deployment target, and the compute precision (FP16, FP32).  These are discussed more below.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">take_over_mutable_buffer</span></code>: A boolean that indicates whether PyTorch mutable buffers in stateful models should be converted to <a class="reference external" href="https://developer.apple.com/documentation/coreml/mlstate">CoreML MLState</a>.  If set to false, mutable buffers in the PyTorch graph are converted to graph inputs and outputs to the CoreML lowered module under the hood.  Generally setting take_over_mutable_buffer to true will result in better performance, but using MLState requires iOS &gt;= 18.0, macOS &gt;= 15.0, and XCode &gt;= 16.0.</p></li>
 </ul>
 <div class="section" id="coreml-compilespec">
 <h4>CoreML CompileSpec<a class="headerlink" href="#coreml-compilespec" title="Permalink to this heading">¶</a></h4>
-<p>A list of CompileSpec is constructed with <a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L210">CoreMLBackend.generate_compile_specs</a>.  Below are the available options:</p>
+<p>A list of CompileSpec is constructed with <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/0.6/backends/apple/coreml/compiler/coreml_preprocess.py#L210">CoreMLBackend.generate_compile_specs</a>.  Below are the available options:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">compute_unit</span></code>: this controls the compute units (CPU, GPU, ANE) that are used by CoreML.  The default value is coremltools.ComputeUnit.ALL.  The available options from coremltools are:</p>
 <ul>
@@ -582,7 +582,7 @@
 </li>
 <li><p><code class="docutils literal notranslate"><span class="pre">minimum_deployment_target</span></code>: The minimum iOS deployment target (e.g., coremltools.target.iOS18).  The default value is coremltools.target.iOS15.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">compute_precision</span></code>: The compute precision used by CoreML (coremltools.precision.FLOAT16, coremltools.precision.FLOAT32).  The default value is coremltools.precision.FLOAT16.  Note that the compute precision is applied no matter what dtype is specified in the exported PyTorch model.  For example, an FP32 PyTorch model will be converted to FP16 when delegating to the CoreML backend by default.  Also note that the ANE only supports FP16 precision.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">model_type</span></code>: Whether the model should be compiled to the CoreML <a class="reference external" href="https://developer.apple.com/documentation/coreml/downloading-and-compiling-a-model-on-the-user-s-device">mlmodelc format</a> during .pte creation (<a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L71">CoreMLBackend.MODEL_TYPE.COMPILED_MODEL</a>), or whether it should be compiled to mlmodelc on device (<a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L70">CoreMLBackend.MODEL_TYPE.MODEL</a>).  Using CoreMLBackend.MODEL_TYPE.COMPILED_MODEL and doing compilation ahead of time should improve the first time on-device model load time.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">model_type</span></code>: Whether the model should be compiled to the CoreML <a class="reference external" href="https://developer.apple.com/documentation/coreml/downloading-and-compiling-a-model-on-the-user-s-device">mlmodelc format</a> during .pte creation (<a class="reference external" href="https://github.com/pytorch/executorch/blob/release/0.6/backends/apple/coreml/compiler/coreml_preprocess.py#L71">CoreMLBackend.MODEL_TYPE.COMPILED_MODEL</a>), or whether it should be compiled to mlmodelc on device (<a class="reference external" href="https://github.com/pytorch/executorch/blob/release/0.6/backends/apple/coreml/compiler/coreml_preprocess.py#L70">CoreMLBackend.MODEL_TYPE.MODEL</a>).  Using CoreMLBackend.MODEL_TYPE.COMPILED_MODEL and doing compilation ahead of time should improve the first time on-device model load time.</p></li>
 </ul>
 </div>
 </div>
@@ -677,8 +677,8 @@
 <span class="n">target_link_libraries</span><span class="p">(</span>
     <span class="n">my_target</span>
     <span class="n">PRIVATE</span> <span class="n">executorch</span>
-    <span class="n">executorch_module_static</span>
-    <span class="n">executorch_tensor</span>
+    <span class="n">extension_module_static</span>
+    <span class="n">extension_tensor</span>
     <span class="n">optimized_native_cpu_ops_lib</span>
     <span class="n">coremldelegate</span><span class="p">)</span>
 </pre></div>

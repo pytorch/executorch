@@ -541,6 +541,7 @@ support and integrates smoothly with <code class="docutils literal notranslate">
 </li>
 <li><p><code class="docutils literal notranslate"><span class="pre">g++</span></code> version 7 or higher, <code class="docutils literal notranslate"><span class="pre">clang++</span></code> version 5 or higher, or another
 C++17-compatible toolchain.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">python</span></code> version 3.10-3.12</p></li>
 </ul>
 <p>Note that the cross-compilable core runtime code supports a wider range of
 toolchains, down to C++17. See the <a class="reference internal" href="runtime-overview.html"><span class="doc std std-doc">Runtime Overview</span></a> for
@@ -576,7 +577,7 @@ git<span class="w"> </span>clone<span class="w"> </span>-b<span class="w"> </spa
 ./install_executorch.sh
 </pre></div>
 </div>
-<p>Use the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/install_executorch.sh#L26-L29"><code class="docutils literal notranslate"><span class="pre">--pybind</span></code> flag</a> to install with pybindings and dependencies for other backends.</p>
+<p>Use the <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/0.6/install_executorch.sh#L26-L29"><code class="docutils literal notranslate"><span class="pre">--pybind</span></code> flag</a> to install with pybindings and dependencies for other backends.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_executorch.sh<span class="w"> </span>--pybind<span class="w"> </span>&lt;coreml<span class="w"> </span><span class="p">|</span><span class="w"> </span>mps<span class="w"> </span><span class="p">|</span><span class="w"> </span>xnnpack&gt;
 
 <span class="c1"># Example: pybindings with CoreML *only*</span>
@@ -672,7 +673,7 @@ dependencies may have changed.</p>
 -DOPTIMIZE_SIZE<span class="o">=</span>ON
 </pre></div>
 </div>
-<p>See <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/CMakeLists.txt">CMakeLists.txt</a></p>
+<p>See <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/0.6/CMakeLists.txt">CMakeLists.txt</a></p>
 </div>
 <div class="section" id="build-the-runtime-components">
 <h3>Build the runtime components<a class="headerlink" href="#build-the-runtime-components" title="Permalink to this heading">¶</a></h3>
@@ -734,7 +735,7 @@ by the output values.</p>
 mkdir<span class="w"> </span>cmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-android-out
 
 <span class="c1"># point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed</span>
-cmake<span class="w"> </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>/Users/<span class="o">{</span>user_name<span class="o">}</span>/Library/Android/sdk/ndk/27.2.12479018/build/cmake/android.toolchain.cmake<span class="w">  </span>-DANDROID_ABI<span class="o">=</span>arm64-v8a<span class="w"> </span>..
+cmake<span class="w"> </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w">  </span>-DANDROID_ABI<span class="o">=</span>arm64-v8a<span class="w"> </span>..
 
 <span class="nb">cd</span><span class="w">  </span>..
 cmake<span class="w"> </span>--build<span class="w">  </span>cmake-android-out<span class="w">  </span>-j9

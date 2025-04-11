@@ -525,7 +525,7 @@
 <p>Overriding the default PAL implementation is commonly done to route logs to a user-specified destination or to provide PAL functionality on embedded systems. To override one or more PAL methods, take the following steps:</p>
 <ul class="simple">
 <li><p>Include
-<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/platform.h"><code class="docutils literal notranslate"><span class="pre">executorch/runtime/platform/platform.h</span></code></a>
+<a class="reference external" href="https://github.com/pytorch/executorch/blob/release/0.6/runtime/platform/platform.h"><code class="docutils literal notranslate"><span class="pre">executorch/runtime/platform/platform.h</span></code></a>
 in one of your application’s <code class="docutils literal notranslate"><span class="pre">.c</span></code> or <code class="docutils literal notranslate"><span class="pre">.cpp</span></code> files.</p></li>
 <li><p>Define an implementation of one or more of the <code class="docutils literal notranslate"><span class="pre">et_pal_*()</span></code> functions.</p></li>
 </ul>
@@ -533,7 +533,7 @@ in one of your application’s <code class="docutils literal notranslate"><span 
 definition can override them at link time. To ensure that your definitions take
 precedence, you may need to ensure that the strong definitions precede the weak
 definitions in the link order.</p>
-<p>See <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/platform.h">runtime/platform/platform.h</a> for the PAL function signatures and <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/default/posix.cpp">runtime/platform/default/posix.cpp</a> for the reference POSIX implementation.</p>
+<p>See <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/0.6/runtime/platform/platform.h">runtime/platform/platform.h</a> for the PAL function signatures and <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/0.6/runtime/platform/default/posix.cpp">runtime/platform/default/posix.cpp</a> for the reference POSIX implementation.</p>
 </div>
 </div>
 <div class="section" id="kernel-libraries">

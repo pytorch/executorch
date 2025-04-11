@@ -532,6 +532,7 @@
 </pre></div>
 </div>
 <p>For more information on the Module class, see <a class="reference internal" href="extension-module.html"><span class="doc std std-doc">Running an ExecuTorch Model Using the Module Extension in C++</span></a>. For information on high-level tensor APIs, see <a class="reference internal" href="extension-tensor.html"><span class="doc std std-doc">Managing Tensor Memory in C++</span></a>.</p>
+<p>For complete examples of building and running a C++ application using the Module API, refer to our <a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/mv2/cpp">examples GitHub repository</a>.</p>
 </div>
 <div class="section" id="low-level-apis">
 <h2>Low-Level APIs<a class="headerlink" href="#low-level-apis" title="Permalink to this heading">¶</a></h2>
@@ -539,15 +540,15 @@
 </div>
 <div class="section" id="building-with-cmake">
 <h2>Building with CMake<a class="headerlink" href="#building-with-cmake" title="Permalink to this heading">¶</a></h2>
-<p>ExecuTorch uses CMake as the primary build system. Inclusion of the module and tensor APIs are controlled by the <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_EXTENSION_MODULE</span></code> and <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_EXTENSION_TENSOR</span></code> CMake options. As these APIs may not be supported on embedded systems, they are disabled by default when building from source. The low-level API surface is always included. To link, add the <code class="docutils literal notranslate"><span class="pre">executorch</span></code> target as a CMake dependency, along with <code class="docutils literal notranslate"><span class="pre">executorch_module_static</span></code> and <code class="docutils literal notranslate"><span class="pre">executorch_tensor</span></code>, if desired.</p>
+<p>ExecuTorch uses CMake as the primary build system. Inclusion of the module and tensor APIs are controlled by the <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_EXTENSION_MODULE</span></code> and <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_EXTENSION_TENSOR</span></code> CMake options. As these APIs may not be supported on embedded systems, they are disabled by default when building from source. The low-level API surface is always included. To link, add the <code class="docutils literal notranslate"><span class="pre">executorch</span></code> target as a CMake dependency, along with <code class="docutils literal notranslate"><span class="pre">extension_module_static</span></code> and <code class="docutils literal notranslate"><span class="pre">extension_tensor</span></code>, if desired.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># CMakeLists.txt</span>
 <span class="n">add_subdirectory</span><span class="p">(</span><span class="s2">&quot;executorch&quot;</span><span class="p">)</span>
 <span class="o">...</span>
 <span class="n">target_link_libraries</span><span class="p">(</span>
     <span class="n">my_target</span>
     <span class="n">PRIVATE</span> <span class="n">executorch</span>
-    <span class="n">executorch_module_static</span>
-    <span class="n">executorch_tensor</span>
+    <span class="n">extension_module_static</span>
+    <span class="n">extension_tensor</span>
     <span class="n">optimized_native_cpu_ops_lib</span>
     <span class="n">xnnpack_backend</span><span class="p">)</span>
 </pre></div>
@@ -561,7 +562,7 @@
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">./</span><span class="n">cmake</span><span class="o">-</span><span class="n">out</span><span class="o">/</span><span class="n">executor_runner</span> <span class="o">--</span><span class="n">model_path</span> <span class="n">path</span><span class="o">/</span><span class="n">to</span><span class="o">/</span><span class="n">model</span><span class="o">.</span><span class="n">pte</span>
 </pre></div>
 </div>
-<p>The runner source code can be found in the ExecuTorch repo under <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/portable/executor_runner/executor_runner.cpp">examples/portable/executor_runner.cpp</a>. Some backends, such as CoreML, have dedicated runners to showcase backend and platform-specific functionality. See <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/apple/coreml">examples/apple/coreml</a> and the <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples">examples</a> directory for more information.</p>
+<p>The runner source code can be found in the ExecuTorch repo under <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/0.6/examples/portable/executor_runner/executor_runner.cpp">examples/portable/executor_runner.cpp</a>. Some backends, such as CoreML, have dedicated runners to showcase backend and platform-specific functionality. See <a class="reference external" href="https://github.com/pytorch/executorch/tree/release/0.6/examples/apple/coreml">examples/apple/coreml</a> and the <a class="reference external" href="https://github.com/pytorch/executorch/tree/release/0.6/examples">examples</a> directory for more information.</p>
 </div>
 <div class="section" id="next-steps">
 <h2>Next Steps<a class="headerlink" href="#next-steps" title="Permalink to this heading">¶</a></h2>

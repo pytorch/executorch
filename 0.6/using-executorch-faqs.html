@@ -522,7 +522,7 @@
 <h2>Export<a class="headerlink" href="#export" title="Permalink to this heading">¶</a></h2>
 <div class="section" id="missing-out-variants">
 <h3>Missing out variants: { _ }<a class="headerlink" href="#missing-out-variants" title="Permalink to this heading">¶</a></h3>
-<p>The model likely contains torch custom operators. Custom ops need an Executorch implementation and need to be loaded at export time. See the <a class="reference external" href="https://pytorch.org/executorch/main/kernel-library-custom-aten-kernel.html#apis">ExecuTorch Custom Ops Documentation</a> for details on how to do this.</p>
+<p>The model likely contains torch custom operators. Custom ops need an Executorch implementation and need to be loaded at export time. See the <a class="reference internal" href="kernel-library-custom-aten-kernel.html#apis"><span class="std std-doc">ExecuTorch Custom Ops Documentation</span></a> for details on how to do this.</p>
 </div>
 <div class="section" id="runtimeerror-pytorch-convert-function-for-op-not-implemented">
 <h3>RuntimeError: PyTorch convert function for op _ not implemented<a class="headerlink" href="#runtimeerror-pytorch-convert-function-for-op-not-implemented" title="Permalink to this heading">¶</a></h3>
@@ -531,21 +531,21 @@
 </div>
 <div class="section" id="runtime">
 <h2>Runtime<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h2>
-<p>ExecuTorch error codes are defined in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/core/error.h">executorch/core/runtime/error.h</a>.</p>
+<p>ExecuTorch error codes are defined in <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/0.6/runtime/core/error.h">executorch/core/runtime/error.h</a>.</p>
 <div class="section" id="inference-is-slow-performance-troubleshooting">
 <h3>Inference is Slow / Performance Troubleshooting<a class="headerlink" href="#inference-is-slow-performance-troubleshooting" title="Permalink to this heading">¶</a></h3>
 <p>If building the runtime from source, ensure that the build is done in release mode. For CMake builds, this can be done by passing <code class="docutils literal notranslate"><span class="pre">-DCMAKE_BUILD_TYPE=Release</span></code>.</p>
-<p>Ensure the model is delegated. If not targeting a specific accelerator, use the XNNPACK delegate for CPU performance. Undelegated operators will typically fall back to the ExecuTorch portable library, which is designed as a fallback, and is not intended for performance sensitive operators. To target XNNPACK, pass an <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code> to <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower</span></code>. See <a class="reference external" href="https://pytorch.org/executorch/main/tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a> for more information.</p>
+<p>Ensure the model is delegated. If not targeting a specific accelerator, use the XNNPACK delegate for CPU performance. Undelegated operators will typically fall back to the ExecuTorch portable library, which is designed as a fallback, and is not intended for performance sensitive operators. To target XNNPACK, pass an <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code> to <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower</span></code>. See <a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html"><span class="doc std std-doc">Building and Running ExecuTorch with XNNPACK Backend</span></a> for more information.</p>
 <p>Thread count can have a significant impact on CPU performance. The optimal thread count may depend on the model and application. By default, ExecuTorch will currently use as many threads as there are cores. Consider setting the thread count to cores / 2, or just set to 4 on mobile CPUs.</p>
 <p>Thread count can be set with the following function. Ensure this is done prior to loading or running a model.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="p">::</span><span class="n">executorch</span><span class="p">::</span><span class="n">extension</span><span class="p">::</span><span class="n">threadpool</span><span class="p">::</span><span class="n">get_threadpool</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">_unsafe_reset_threadpool</span><span class="p">(</span><span class="n">num_threads</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>For a deeper investgiation into model performance, ExecuTorch supports operator-level performance profiling. See <a class="reference external" href="https://pytorch.org/executorch/main/tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a> for more information.</p>
+<p>For a deeper investgiation into model performance, ExecuTorch supports operator-level performance profiling. See <span class="xref myst">Using the ExecuTorch Developer Tools to Profile a Model</span> for more information.</p>
 </div>
 <div class="section" id="missing-logs">
 <h3>Missing Logs<a class="headerlink" href="#missing-logs" title="Permalink to this heading">¶</a></h3>
-<p>ExecuTorch provides hooks to route runtime logs. By default, logs are sent to stdout/stderr, but users can override <code class="docutils literal notranslate"><span class="pre">et_pal_emit_log_message</span></code> to route logs to a custom destination. The Android and iOS extensions also provide out-of-box log routing to the appropriate platform logs. See <a class="reference external" href="https://pytorch.org/executorch/main/runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a> for more information.</p>
+<p>ExecuTorch provides hooks to route runtime logs. By default, logs are sent to stdout/stderr, but users can override <code class="docutils literal notranslate"><span class="pre">et_pal_emit_log_message</span></code> to route logs to a custom destination. The Android and iOS extensions also provide out-of-box log routing to the appropriate platform logs. See <a class="reference internal" href="runtime-platform-abstraction-layer.html"><span class="doc std std-doc">Runtime Platform Abstraction Layer (PAL)</span></a> for more information.</p>
 </div>
 <div class="section" id="error-setting-input-0x10-attempted-to-resize-a-bounded-tensor">
 <h3>Error setting input: 0x10 / Attempted to resize a bounded tensor…<a class="headerlink" href="#error-setting-input-0x10-attempted-to-resize-a-bounded-tensor" title="Permalink to this heading">¶</a></h3>
