@@ -32,6 +32,7 @@ from executorch.backends.arm._passes import (
     DecomposeSelectPass,
     DecomposeSoftmaxPass,
     DecomposeSoftmaxUnstablePass,
+    DecomposeSqrtPass,
     DecomposeVarPass,
     FoldAndAnnotateQParamsPass,
     FuseBatchnorm2DPass,
@@ -115,6 +116,7 @@ class ArmPassManager(PassManager):
         return self._transform(exported_program.graph_module)
 
     def _tosa_080_MI_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
+        self.add_pass(DecomposeSqrtPass())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSAMI())
         self.add_pass(FuseQuantizedActivationPass())
         self.add_pass(RemoveGetItemPass())
@@ -181,6 +183,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeMeanDimPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeLeakyReLUPass())
+        self.add_pass(DecomposeSqrtPass())
 
         if isinstance(self.tosa_spec, Tosa_0_80) and self.tosa_spec.is_U55_subset:
             # Numerically stable softmax uses amax which is not supported on Ethos-U55
