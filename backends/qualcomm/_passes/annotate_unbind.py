@@ -24,7 +24,9 @@ class AnnotateUnbind(ExportPass):
         self.edge_program = edge_program
 
     def _annotate_unbind(self, graph_module: torch.fx.GraphModule):
-        partitions = get_source_partitions(graph_module.graph, [torch.unbind, "unbind"])
+        partitions = get_source_partitions(
+            graph_module.graph, [torch.unbind, torch.ops.aten.unbind.int, "unbind"]
+        )
         for _, src_partitions in partitions.items():
             for src_partition in src_partitions:
                 if src_partition.input_nodes[0].target in dq_ops:

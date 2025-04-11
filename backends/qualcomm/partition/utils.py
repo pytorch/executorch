@@ -24,6 +24,21 @@ def generate_qnn_executorch_option(
     return qnn_compile_spec_buffer
 
 
+# Logic to determine whether to skip decompose and has higher priority than get_skip_decomp_table()
+def filter_fn(node: torch.fx.Node) -> bool:
+    # QNN does not support int32/int64 IO for the following OPs.
+    potential_i32_i64_io_ops = [
+        torch.ops.aten.stack.default,
+        torch.ops.aten.unbind.int,
+    ]
+    if node.target in potential_i32_i64_io_ops and node.meta["val"].dtype in [
+        torch.int32,
+        torch.int64,
+    ]:
+        return False
+    return True
+
+
 def get_skip_decomp_table() -> List[torch._ops.OperatorBase]:
     do_not_decompose = [
         torch.ops.aten.adaptive_avg_pool2d.default,
@@ -41,7 +56,7 @@ def get_skip_decomp_table() -> List[torch._ops.OperatorBase]:
         torch.ops.aten.stack.default,
         torch.ops.aten.upsample_bicubic2d.vec,
         # This request is ignored because it is in a blocklist. Refer to exir/program/_program.py
-        # torch.ops.aten.unbind.int,
+        torch.ops.aten.unbind.int,
         torch.ops.pt2e_quant.quantize_affine.default,
         torch.ops.pt2e_quant.dequantize_affine.default,
     ]
