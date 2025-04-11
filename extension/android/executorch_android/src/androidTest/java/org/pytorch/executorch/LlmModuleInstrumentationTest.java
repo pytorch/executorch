@@ -40,7 +40,7 @@ import org.pytorch.executorch.extension.llm.LlmModule;
 /** Unit tests for {@link org.pytorch.executorch.extension.llm.LlmModule}. */
 @RunWith(AndroidJUnit4.class)
 public class LlmModuleInstrumentationTest implements LlmCallback {
-    private static String TEST_FILE_NAME = "/tinyllama_portable_fp16_h.pte";
+    private static String TEST_FILE_NAME = "/stories.pte";
     private static String TOKENIZER_FILE_NAME = "/tokenizer.bin";
     private static String TEST_PROMPT = "Hello";
     private static int OK = 0x00;
