@@ -86,9 +86,20 @@ runtime = Runtime.get()
 input_tensor: torch.Tensor = torch.randn(1, 3, 224, 224)
 program = runtime.load_program("model.pte")
 method = program.load_method("forward")
-outputs: List[torch.Tensor] = method.execute([input_tensor])
+output: List[torch.Tensor] = method.execute([input_tensor])
+print("Run succesfully via executorch")
+
+from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
+import torchvision.models as models
+
+eager_reference_model = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval()
+eager_reference_output = eager_reference_model(input_tensor)
+
+print("Comparing against original PyTorch module")
+print(torch.allclose(output[0], eager_reference_output, rtol=1e-3, atol=1e-5))
 ```
 
+For complete examples of exporting and running the model, please refer to our [examples GitHub repository](https://github.com/pytorch-labs/executorch-examples/tree/main/mv2/python).
 
 <hr/>
 
@@ -111,6 +122,8 @@ To add the library to your app, add the following dependency to gradle build rul
 dependencies {
   implementation("org.pytorch:executorch-android:0.5.1")
 }
+
+# See latest available versions in https://mvnrepository.com/artifact/org.pytorch/executorch-android
 ```
 
 #### Runtime APIs
@@ -160,11 +173,12 @@ add_subdirectory("executorch")
 target_link_libraries(
   my_target
   PRIVATE executorch
-          executorch_module_static
-          executorch_tensor
+          extension_module_static
+          extension_tensor
           optimized_native_cpu_ops_lib
           xnnpack_backend)
 ```
+
 
 #### Runtime APIs
 Both high-level and low-level C++ APIs are provided. The low-level APIs are platform independent, do not dynamically allocate memory, and are most suitable for resource-constrained embedded systems. The high-level APIs are provided as a convenience wrapper around the lower-level APIs, and make use of dynamic memory allocation and standard library constructs to reduce verbosity.
@@ -182,8 +196,8 @@ using namespace ::executorch::extension;
 Module module("/path/to/model.pte");
 
 // Create an input tensor.
-float input[1 * 3 * 256 * 256];
-auto tensor = from_blob(input, {1, 3, 256, 256});
+float input[1 * 3 * 224 * 224];
+auto tensor = from_blob(input, {1, 3, 224, 224});
 
 // Perform an inference.
 const auto result = module.forward(tensor);
@@ -195,6 +209,8 @@ if (result.ok()) {
 ```
 
 For more information on the C++ APIs, see [Running an ExecuTorch Model Using the Module Extension in C++](extension-module.md) and [Managing Tensor Memory in C++](extension-tensor.md).
+
+For complete examples of building and running C++ application, please refer to our [examples GitHub repository](https://github.com/pytorch-labs/executorch-examples/tree/main/mv2/cpp).
 
 <hr/>
 
