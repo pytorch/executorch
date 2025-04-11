@@ -5,15 +5,15 @@
 # pyre-unsafe
 from typing import List
 
-import serializer.tosa_serializer as ts  # type: ignore
 import torch.fx
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
+import tosa_tools.v0_80.tosa.Op as TosaOp  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
-from serializer.tosa_serializer import TosaOp
 
 
 @register_node_visitor

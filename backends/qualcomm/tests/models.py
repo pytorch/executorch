@@ -72,6 +72,16 @@ class Any(torch.nn.Module):
         return torch.any(x, dim=self.dim, keepdim=self.keepdim)
 
 
+class AMax(torch.nn.Module):
+    def __init__(self, dim=None, keepdim=False):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x):
+        return torch.amax(x, dim=self.dim, keepdim=self.keepdim)
+
+
 class Arange(torch.nn.Module):
     def __init__(self, start, end, step, dtype):
         super().__init__()
@@ -556,6 +566,14 @@ class Cos(torch.nn.Module):
 
     def forward(self, x):
         return torch.cos(x)
+
+
+class CumSum(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return x.cumsum(dim=0)
 
 
 class Div(torch.nn.Module):
@@ -1448,6 +1466,18 @@ class SubConstantLong(torch.nn.Module):
 
     def forward(self, x):
         return 10 - x
+
+
+class SimpleSubModules(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.add = Add()
+        self.sub = Sub()
+
+    def forward(self, a, b, c, d):
+        lhs = self.add(a, b)
+        rhs = self.sub(c, d)
+        return torch.mul(lhs, rhs)
 
 
 class SumIntList(torch.nn.Module):
