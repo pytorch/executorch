@@ -66,7 +66,7 @@ std::optional<ModelPackageInfo> ModelPackageInfo::make(NSURL* model_package_url,
     NSURL *manifest_url = [model_package_url URLByAppendingPathComponent:@"manifest.json"].URLByStandardizingPath;
     BOOL is_directory = NO;
     if (![fm fileExistsAtPath:manifest_url.path isDirectory:&is_directory] || is_directory) {
-        ETCoreMLLogErrorAndSetNSError(error, 0, "%@ is broken, manifest doesn't exist.", model_package_url.lastPathComponent);
+        ETCoreMLLogErrorAndSetNSError(error, ETCoreMLErrorCorruptedModel, "%@ is broken, manifest doesn't exist.", model_package_url.lastPathComponent);
         return std::nullopt;
     }
     
