@@ -310,7 +310,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             if is_dequant:
                 # Replace downstream input_nodes with NHWC node
                 for user in list(input_node.users):
-                    if user != input_node_nhwc:
+                    if user is not input_node_nhwc:
                         user.replace_input_with(input_node, input_node_nhwc)
                 graph_module.recompile()
 
