@@ -249,13 +249,9 @@ class TestConv2d(unittest.TestCase):
 
         tester = Tester(m, inputs, dynamic_shapes=dynamic_shapes)
         tester = tester.quantize(Quantize(quantization_config=quant_config))
-        exported = tester.export()
+        tester.export()
 
         tester.check(["torch.ops.quantized_decomposed.choose_qparams"])
-
-        tester.stages["export"] = exported.stages[exported.cur]
-        print("\n----------Exported Graph:")
-        print(tester.stages["export"].graph_module.code)
 
         tester.to_edge_transform_and_lower(
             ToEdgeTransformAndLower([DynamicallyQuantizedPartitioner])
@@ -265,7 +261,7 @@ class TestConv2d(unittest.TestCase):
         tester.check_not(["executorch_exir_dialects_edge__ops_aten_conv2d_default"])
 
         tester.to_executorch()
-        #tester.serialize()
+        # tester.serialize()
         tester.serialize().dump_artifact("conv2d.pte")
 
         tester.run_method_and_compare_outputs(atol=atol)
@@ -751,7 +747,11 @@ class TestConv2d(unittest.TestCase):
         class SimpleConv2d(torch.nn.Module):
             def __init__(self):
                 super().__init__()
-                self.conv = torch.nn.Conv2d(3, 10, 3, )
+                self.conv = torch.nn.Conv2d(
+                    3,
+                    10,
+                    3,
+                )
                 self.conv.weight.requires_grad = False
                 self.conv.bias.requires_grad = False
 

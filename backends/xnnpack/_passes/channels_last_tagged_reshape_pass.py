@@ -283,30 +283,33 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             ]
         else:
             # Need to create NHWC node
-            origin = input_node
-            # TODO: safe/correct to always trace back?
-            # Trace back to source node
-            while hasattr(origin, "args") and isinstance(origin.args, tuple) and len(origin.args) > 0:
-                origin = origin.args[0]
+            source_node = input_node
 
-            with graph_module.graph.inserting_after(origin):
+            # TODO: safe/correct to always trace back?
+            # Trace back to find original source node
+            while (
+                hasattr(source_node, "args")
+                and isinstance(source_node.args, tuple)
+                and len(source_node.args) > 0
+            ):
+                source_node = source_node.args[0]
+
+            with graph_module.graph.inserting_after(source_node):
                 input_node_nhwc = self.create_call_function_node(
                     graph_module=graph_module,
                     target=exir_ops.edge.aten._to_copy.default,
-                    args=(origin,),
+                    args=(source_node,),
                     memory_format=torch.channels_last,
                 )
 
-            # If input_node was not source
-            if origin != input_node:
-                print("Permuted\n\n")
+            # If input_node was not the original source node
+            if source_node != input_node:
+                input_node = source_node
                 # Replace downstream source node with NHWC node
-                for user in list(origin.users):
+                for user in list(input_node.users):
                     if user != input_node_nhwc:
-                        user.replace_input_with(origin, input_node_nhwc)
+                        user.replace_input_with(input_node, input_node_nhwc)
                 graph_module.recompile()
-
-            self.mark_as_nhwc_node(input_node_nhwc)
 
         self.insert_copy_and_assign_partner_nodes_quantization_sensitive(
             graph_module=graph_module,
