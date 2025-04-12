@@ -283,29 +283,32 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             ]
         else:
             # Need to create NHWC node
-            source_node = input_node
+            # TODO: Best way to determine if trace back required?
+            is_dequant = (
+                input_node.op == "call_function"
+                and getattr(input_node.target, "__name__", "")
+                == "quantized_decomposed.dequantize_per_tensor.tensor"
+            )
 
-            # TODO: safe/correct to always trace back?
-            # Trace back to find original source node
-            while (
-                hasattr(source_node, "args")
-                and isinstance(source_node.args, tuple)
-                and len(source_node.args) > 0
-            ):
-                source_node = source_node.args[0]
+            if is_dequant:
+                # Trace back to find original source node
+                while (
+                    hasattr(input_node, "args")
+                    and isinstance(input_node.args, tuple)
+                    and len(input_node.args) > 0
+                ):
+                    input_node = input_node.args[0]
 
-            with graph_module.graph.inserting_after(source_node):
+            with graph_module.graph.inserting_after(input_node):
                 input_node_nhwc = self.create_call_function_node(
                     graph_module=graph_module,
                     target=exir_ops.edge.aten._to_copy.default,
-                    args=(source_node,),
+                    args=(input_node,),
                     memory_format=torch.channels_last,
                 )
 
-            # If input_node was not the original source node
-            if source_node != input_node:
-                input_node = source_node
-                # Replace downstream source node with NHWC node
+            if is_dequant:
+                # Replace downstream input_nodes with NHWC node
                 for user in list(input_node.users):
                     if user != input_node_nhwc:
                         user.replace_input_with(input_node, input_node_nhwc)

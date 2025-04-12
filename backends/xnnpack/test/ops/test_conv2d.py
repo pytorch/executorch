@@ -248,7 +248,7 @@ class TestConv2d(unittest.TestCase):
         )
 
         tester = Tester(m, inputs, dynamic_shapes=dynamic_shapes)
-        tester = tester.quantize(Quantize(quantization_config=quant_config))
+        tester.quantize(Quantize(quantization_config=quant_config))
         tester.export()
 
         tester.check(["torch.ops.quantized_decomposed.choose_qparams"])
