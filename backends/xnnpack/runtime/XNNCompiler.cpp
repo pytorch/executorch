@@ -1172,7 +1172,7 @@ Error defineStaticTransposeNode(
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
       Internal,
-      "Failed to create sigmoid node %i with code: %s",
+      "Failed to create static transpose node %i with code: %s",
       node->debug_handle(),
       xnn_status_to_string(status));
 

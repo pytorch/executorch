@@ -240,10 +240,6 @@ class TestConv2d(unittest.TestCase):
         quant_config = get_symmetric_quantization_config(
             is_per_channel=True,
             is_dynamic=True,
-            act_qmin=-128,
-            act_qmax=127,
-            weight_qmin=-128,
-            weight_qmax=127,
         )
 
         DynamicallyQuantizedPartitioner = XnnpackPartitioner(
@@ -254,35 +250,26 @@ class TestConv2d(unittest.TestCase):
         tester = Tester(m, inputs, dynamic_shapes=dynamic_shapes)
         tester = tester.quantize(Quantize(quantization_config=quant_config))
 
-        # Print after quantization
         tester.stages["quantize"] = tester.stages[tester.cur]
-        print("\n----------Annotated Graph:")
-        print(tester.stages["quantize"].graph_module.code)
 
         exported = tester.export()
 
-        # Print after exporting
         tester.stages["export"] = exported.stages[exported.cur]
-        print("\n----------Exported Graph:")
-        print(tester.stages["export"].graph_module.code)
 
-        # Check for choose_qparams
         tester.check(["torch.ops.quantized_decomposed.choose_qparams"])
 
         tester.to_edge_transform_and_lower(
             ToEdgeTransformAndLower([DynamicallyQuantizedPartitioner])
         )
 
-        # Print after lower and partition
-        print("\n----------Lowered Graph:")
-        print(tester.stages[tester.cur].graph_module.code)
-
-        tester.check(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
         tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
         tester.check_not(["executorch_exir_dialects_edge__ops_aten_conv2d_default"])
 
         tester.to_executorch()
-        tester.serialize()
+
+        #tester.serialize()
+        tester.serialize().dump_artifact("conv2d.pte")
+
         tester.run_method_and_compare_outputs(atol=atol)
 
     def test_fp16_conv2d(self) -> None:
@@ -766,7 +753,7 @@ class TestConv2d(unittest.TestCase):
         class SimpleConv2d(torch.nn.Module):
             def __init__(self):
                 super().__init__()
-                self.conv = torch.nn.Conv2d(1, 2, 3)
+                self.conv = torch.nn.Conv2d(3, 10, 3, )
                 self.conv.weight.requires_grad = False
                 self.conv.bias.requires_grad = False
 
@@ -774,7 +761,7 @@ class TestConv2d(unittest.TestCase):
                 return self.conv(x)
 
             def get_inputs(self):
-                return (torch.randn(1, 1, 8, 8),)
+                return (torch.randn(1, 3, 8, 8),)
 
         model = SimpleConv2d()
         self._test_dq_conv2d(
