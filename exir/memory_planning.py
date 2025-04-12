@@ -44,12 +44,14 @@ class Verifier:
         graph_module: torch.fx.GraphModule,
         alloc_graph_input: bool,
         alloc_graph_output: bool,
+        alloc_mutable_buffers: bool,
         graph_signature: Optional[ExportGraphSignature] = None,
     ) -> None:
         self.graph_module = graph_module
         self.graph_signature = graph_signature
         self.alloc_graph_input = alloc_graph_input
         self.alloc_graph_output = alloc_graph_output
+        self.alloc_mutable_buffers = alloc_mutable_buffers
 
     @classmethod
     def mem_obj_id_match(
@@ -149,6 +151,7 @@ class Verifier:
                 ignore_const=True,
                 ignore_graph_input=not self.alloc_graph_input,
                 ignore_graph_output=not self.alloc_graph_output,
+                ignore_mutable_buffers=not self.alloc_mutable_buffers,
                 do_assertion=False,
                 ignore_out_var_node=False,
                 dedup=True,
@@ -374,6 +377,7 @@ def collect_specs_from_nodes(  # noqa: C901
     graph_signature: Optional[ExportGraphSignature] = None,
     ignore_graph_input: bool = False,
     ignore_graph_output: bool = False,
+    ignore_mutable_buffers: bool = False,
     ignore_const: bool = True,
     ignore_out_var_node: bool = True,
     dedup: bool = True,
@@ -412,6 +416,9 @@ def collect_specs_from_nodes(  # noqa: C901
             continue
 
         if _is_inplace_node(node):
+            continue
+
+        if _is_mutable_buffer(node, graph_signature) and ignore_mutable_buffers:
             continue
 
         if do_assertion:
@@ -469,6 +476,7 @@ def update_all_tensors_lifetime(
     Set the lifetime for all the tensors encountered in the Fx graph.
     """
     specs = set()
+
     for node_idx, node in enumerate(graph_module.graph.nodes):
         for spec in collect_specs_from_nodes(
             filter_nodes(itertools.chain([node], node.args, node.kwargs.values())),
@@ -1053,6 +1061,7 @@ def apply_algo(
     graph_signature: Optional[ExportGraphSignature] = None,
     alloc_graph_input: bool = True,
     alloc_graph_output: bool = True,
+    alloc_mutable_buffers: bool = True,
 ) -> List[int]:
     """
     Recursively apply algo to graph_module and its submodules for control flow.
@@ -1065,12 +1074,10 @@ def apply_algo(
        storage with tensors in the outer module.
     TODO: make these optimizations once we have some baseline working.
     """
-
     # Extract the nodes and their lifespans from the graph_module
     # Difficult to just filter the list of specs returned by this due to
     # how we flag trainable weights.
     _ = update_all_tensors_lifetime(graph_module, graph_signature)
-
     # Filter specs based on alloc_graph_input and alloc_graph_output
     specs = collect_specs_from_nodes(
         graph_module.graph.nodes,
@@ -1078,6 +1085,7 @@ def apply_algo(
         do_assertion=False,
         ignore_graph_input=not alloc_graph_input,
         ignore_graph_output=not alloc_graph_output,
+        ignore_mutable_buffers=not alloc_mutable_buffers,
     )
 
     # Get extra padding for XNNPACK if needed
