@@ -144,7 +144,7 @@ class XnnpackBackend(BackendDetails):
         graph_module = ep.graph_module
 
         node_to_external_map = generate_node_to_external_map(ep, graph_module)
-
+        print("\n----------XNNPack Preprocess Graph:", graph_module)
         # Make sure all inputs are contiguous_format or NCHW or default dim order
         assert_default_dim_order(graph_module)
 

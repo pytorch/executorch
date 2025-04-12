@@ -282,12 +282,13 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 ChannelsLastTaggedReshapePass.PARTNER_NODE
             ]
         else:
-            # trace back to permute
+            # Need to create NHWC node
             origin = input_node
+            # TODO: safe/correct to always trace back?
+            # Trace back to source node
             while hasattr(origin, "args") and isinstance(origin.args, tuple) and len(origin.args) > 0:
                 origin = origin.args[0]
 
-            # at x choose_qparams and quantize insert permute
             with graph_module.graph.inserting_after(origin):
                 input_node_nhwc = self.create_call_function_node(
                     graph_module=graph_module,
@@ -296,23 +297,16 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                     memory_format=torch.channels_last,
                 )
 
-            for user in list(origin.users):
-                if user != input_node_nhwc:
-                    user.replace_input_with(origin, input_node_nhwc)
+            # If input_node was not source
+            if origin != input_node:
+                print("Permuted\n\n")
+                # Replace downstream source node with NHWC node
+                for user in list(origin.users):
+                    if user != input_node_nhwc:
+                        user.replace_input_with(origin, input_node_nhwc)
+                graph_module.recompile()
 
-            graph_module.recompile()
             self.mark_as_nhwc_node(input_node_nhwc)
-
-        # TODO: uncomment, use case when permute not needed
-        #     # Need to create NHWC node                     ----------------------------- CONVERSION HAPPENING ----->>
-        #     with graph_module.graph.inserting_after(input_node):
-        #         input_node_nhwc = self.create_call_function_node(
-        #             graph_module=graph_module,
-        #             target=exir_ops.edge.aten._to_copy.default,
-        #             args=(input_node,),
-        #             memory_format=torch.channels_last,
-        #         )
-        #     self.mark_as_nhwc_node(input_node_nhwc)
 
         self.insert_copy_and_assign_partner_nodes_quantization_sensitive(
             graph_module=graph_module,
