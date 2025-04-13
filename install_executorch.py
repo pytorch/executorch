@@ -53,7 +53,7 @@ def clean():
 
 
 # Please keep this insync with `ShouldBuild.pybindings` in setup.py.
-VALID_PYBINDS = ["coreml", "mps", "xnnpack", "training", "openvino"]
+VALID_PYBINDS = ["coreml", "mps", "xnnpack", "neutron", "training", "openvino"]
 
 
 ################################################################################
@@ -242,6 +242,7 @@ def main(args):
     install_requirements(use_pytorch_nightly)
 
     # Run the pip install command
+    print(f"CMAKE_ARGS: {cmake_args}")
     subprocess.run(
         [
             sys.executable,
