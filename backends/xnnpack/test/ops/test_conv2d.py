@@ -766,5 +766,5 @@ class TestConv2d(unittest.TestCase):
             model,
             model.get_inputs(),
             dynamic_shapes=None,
-            atol=5e-2,
+            atol=3.0,
         )

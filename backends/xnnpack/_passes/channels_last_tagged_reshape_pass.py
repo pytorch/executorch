@@ -9,9 +9,9 @@ from typing import Optional, Tuple
 import torch
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.utils import is_param_node
+from executorch.backends.xnnpack.utils.quant_utils import is_dequant
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
-
 
 # TODO(T151254305) use subgraph_rewriter
 class ChannelsLastTaggedReshapePass(XNNPACKPass):
@@ -283,20 +283,12 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             ]
         else:
             # Need to create NHWC node
-            # TODO: Best way to determine if trace back required?
-            is_dequant = (
-                input_node.op == "call_function"
-                and getattr(input_node.target, "__name__", "")
-                == "quantized_decomposed.dequantize_per_tensor.tensor"
-            )
+            # TODO: If input is dequant does that it's from dynamic quantization?
+            input_is_dequant = is_dequant(input_node)
 
-            if is_dequant:
+            if input_is_dequant:
                 # Trace back to find original source node
-                while (
-                    hasattr(input_node, "args")
-                    and isinstance(input_node.args, tuple)
-                    and len(input_node.args) > 0
-                ):
+                while getattr(input_node, "args", None):
                     input_node = input_node.args[0]
 
             with graph_module.graph.inserting_after(input_node):
@@ -307,7 +299,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                     memory_format=torch.channels_last,
                 )
 
-            if is_dequant:
+            if input_is_dequant:
                 # Replace downstream input_nodes with NHWC node
                 for user in list(input_node.users):
                     if user is not input_node_nhwc:
