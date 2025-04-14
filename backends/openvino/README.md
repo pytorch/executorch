@@ -59,24 +59,16 @@ cd <your_preferred_install_location>
 source setupvars.sh
 ```
 
-### Build OpenVINO from Release Packages
+### Use OpenVINO from Release Packages
 
 1. Download the OpenVINO release package from [here](https://docs.openvino.ai/2025/get-started/install-openvino.html). Make sure to select your configuration and click on **OpenVINO Archives** under the distribution section to download the appropriate archive for your platform.
 
 2. Extract the release package from the archive and set the environment variables.
 
-#### Linux
    ```bash
    tar -zxf openvino_toolkit_<your_release_configuration>.tgz
    cd openvino_toolkit_<your_release_configuration>
    source setupvars.sh
-   ```
-
-#### Windows
-   ```bash
-   tar -xf openvino_toolkit_<your_release_configuration>.zip
-   cd openvino_toolkit_<your_release_configuration>
-   setupvars.bat
    ```
 
 For more information about OpenVINO build, refer to the [OpenVINO Build Instructions](https://github.com/openvinotoolkit/openvino/blob/master/docs/dev/build_linux.md).
