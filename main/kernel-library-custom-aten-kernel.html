@@ -779,6 +779,24 @@
 </pre></div>
 </div>
 </div>
+<div class="section" id="using-a-custom-operator-in-a-model">
+<h4>Using a Custom Operator in a Model<a class="headerlink" href="#using-a-custom-operator-in-a-model" title="Permalink to this heading">¶</a></h4>
+<p>The custom operator can explicitly used in the PyTorch model, or you can write a transformation to replace instances of a core operator with the custom variant. For this example, you could find
+all instances of <code class="docutils literal notranslate"><span class="pre">torch.nn.Linear</span></code> and replace them with <code class="docutils literal notranslate"><span class="pre">CustomLinear</span></code>.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w">  </span><span class="nf">replace_linear_with_custom_linear</span><span class="p">(</span><span class="n">module</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">module</span><span class="o">.</span><span class="n">named_children</span><span class="p">():</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">child</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">):</span>
+            <span class="nb">setattr</span><span class="p">(</span>
+                <span class="n">module</span><span class="p">,</span>
+                <span class="n">name</span><span class="p">,</span>
+                <span class="n">CustomLinear</span><span class="p">(</span><span class="n">child</span><span class="o">.</span><span class="n">in_features</span><span class="p">,</span>  <span class="n">child</span><span class="o">.</span><span class="n">out_features</span><span class="p">,</span> <span class="n">child</span><span class="o">.</span><span class="n">bias</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">replace_linear_with_custom_linear</span><span class="p">(</span><span class="n">child</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The remaining steps are the same as the normal flow. Now you can run this module in eager mode as well as export to ExecuTorch.</p>
+</div>
 </div>
 <div class="section" id="custom-ops-api-best-practices">
 <h3>Custom Ops API Best Practices<a class="headerlink" href="#custom-ops-api-best-practices" title="Permalink to this heading">¶</a></h3>
@@ -895,6 +913,7 @@
 <li><a class="reference internal" href="#prepare-custom-kernel-implementation">Prepare custom kernel implementation</a></li>
 <li><a class="reference internal" href="#use-a-c-macro-to-register-it-into-executorch">Use a C++ macro to register it into ExecuTorch</a></li>
 <li><a class="reference internal" href="#compile-and-link-the-custom-kernel">Compile and link the custom kernel</a></li>
+<li><a class="reference internal" href="#using-a-custom-operator-in-a-model">Using a Custom Operator in a Model</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#custom-ops-api-best-practices">Custom Ops API Best Practices</a></li>
