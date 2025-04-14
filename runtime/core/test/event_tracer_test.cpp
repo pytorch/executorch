@@ -82,7 +82,7 @@ class DummyEventTracer : public EventTracer {
     return Result<EventTracerEntry>(EventTracerEntry());
   }
 
-  void end_profiling_delegate(
+  Result<bool> end_profiling_delegate(
       ET_UNUSED EventTracerEntry event_tracer_entry,
       ET_UNUSED const void* metadata,
       ET_UNUSED size_t metadata_len) override {

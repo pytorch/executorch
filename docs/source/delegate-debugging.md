@@ -100,7 +100,7 @@ To conclude an `EventTracerEntry`, `event_tracer_end_profiling_delegate` is simp
 Optionally, additional runtime `metadata` can also be logged at this point.
 
 ```c++
-void event_tracer_end_profiling_delegate(
+Result<bool> event_tracer_end_profiling_delegate(
     EventTracer* event_tracer,
     EventTracerEntry event_tracer_entry,
     const void* metadata = nullptr,
