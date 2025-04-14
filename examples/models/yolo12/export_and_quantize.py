@@ -15,9 +15,6 @@ import cv2
 import executorch
 import numpy as np
 import torch
-from executorch.backends.openvino.partitioner import OpenvinoPartitioner
-from executorch.backends.openvino.quantizer import OpenVINOQuantizer
-from executorch.backends.openvino.quantizer.quantizer import QuantizationMode
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
@@ -80,7 +77,11 @@ def lower_to_openvino(
     subset_size: int,
     quantize: bool,
 ) -> ExecutorchProgramManager:
+    # Import openvino locally to avoid nncf side-effects
     import nncf.torch
+    from executorch.backends.openvino.partitioner import OpenvinoPartitioner
+    from executorch.backends.openvino.quantizer import OpenVINOQuantizer
+    from executorch.backends.openvino.quantizer.quantizer import QuantizationMode
     from nncf.experimental.torch.fx import quantize_pt2e
 
     with nncf.torch.disable_patching():

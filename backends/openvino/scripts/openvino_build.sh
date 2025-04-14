@@ -26,14 +26,11 @@ main() {
         cmake -DCMAKE_INSTALL_PREFIX="${build_dir}" \
               -DCMAKE_BUILD_TYPE=Release \
               -DEXECUTORCH_BUILD_OPENVINO=ON \
-              -DEXECUTORCH_BUILD_XNNPACK=ON \
               -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
               -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
               -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
               -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
               -DEXECUTORCH_BUILD_OPENVINO_EXECUTOR_RUNNER=ON \
-              -DPYTHON_EXECUTABLE=python \
-              -DEXECUTORCH_LOG_LEVEL=Debug \
               -B"${build_dir}"
 
 
@@ -51,14 +48,13 @@ main() {
         # Set parameters to configure the project with CMake
         # Note: Add any additional configuration options you need here
         export CMAKE_ARGS="-DEXECUTORCH_BUILD_OPENVINO=ON \
-                           -DEXECUTORCH_BUILD_XNNPACK=ON \
                            -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
                            -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
                            -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
                            -DEXECUTORCH_ENABLE_LOGGING=ON \
                            -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
                            -DEXECUTORCH_BUILD_PYBIND=ON"
-        export CMAKE_BUILD_ARGS="--target openvino_backend xnnpack_backend"
+        export CMAKE_BUILD_ARGS="--target openvino_backend"
 
         # Build the package
         pip install . --no-build-isolation

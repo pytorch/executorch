@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.5)
 
 project(Yolo12DetectionDemo VERSION 0.1)
 
-option(USE_OPENVINO_BACKEND "Build the tutorial with the XNNPACK backend" ON)
+option(USE_OPENVINO_BACKEND "Build the tutorial with the OPENVINO backend" ON)
 option(USE_XNNPACK_BACKEND "Build the tutorial with the XNNPACK backend" OFF)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)

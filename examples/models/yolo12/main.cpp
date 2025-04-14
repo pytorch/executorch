@@ -57,12 +57,12 @@ int main(int argc, char** argv) {
 
   ET_CHECK_MSG(
       error == Error::Ok,
-      "Loading of the model failed with status 0x%",
+      "Loading of the model failed with status 0x%" PRIx32,
       (uint32_t)error);
   error = yolo_module.load_forward();
   ET_CHECK_MSG(
       error == Error::Ok,
-      "Loading of the forward method failed with status 0x%",
+      "Loading of the forward method failed with status 0x%" PRIx32,
       (uint32_t)error);
 
   const auto model_input_shape =
