@@ -16,7 +16,9 @@ from torch.nn import Parameter
 
 class SigmoidConverter(NodeConverter):
     @staticmethod
-    def _is_supported_on_target(target: Target) -> bool:
+    def _is_supported_on_target(
+        node: Node, target: Target, parameters_mapping: dict[str, Parameter]
+    ) -> bool:
         match target:
             case Target.RT700:
                 return True

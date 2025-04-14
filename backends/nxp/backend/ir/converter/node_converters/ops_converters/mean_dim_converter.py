@@ -24,15 +24,24 @@ from torch.nn import Parameter
 
 
 class MeanDimConverter(NodeConverter):
-    supported_targets = [Target.RT700]
-
     @staticmethod
-    def _to_neg_dim(d, rank):
-        return d - rank if d > 0 else d
+    def _is_supported_on_target(
+        node: Node, target: Target, parameters_mapping: dict[str, Parameter]
+    ) -> bool:
+        match target:
+            case Target.RT700:
+                return True
+
+            case _:
+                return False
 
     @staticmethod
     def _to_pos_dim(d, rank):
         return d + rank if d < 0 else d
+
+    @staticmethod
+    def _to_neg_dim(d, rank):
+        return d - rank if d > 0 else d
 
     @staticmethod
     def _is_supported_in_IR(
