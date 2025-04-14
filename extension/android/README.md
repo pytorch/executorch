@@ -28,6 +28,10 @@ export ANDROID_NDK=/path/to/ndk
 sh scripts/build_android_library.sh
 ```
 
+The AAR file will be `extension/android/executorch_android/build/outputs/aar/executorch_android-debug.aar`.
+If you set an environment variable `BUILD_AAR_DIR`, then the AAR will be copied to `$BUILD_AAR_DIR`.
+Later, you can copy `$BUILD_AAR_DIR/executorch.aar` to your app directory to use as a library.
+
 Please see [Android building from source](https://pytorch.org/executorch/main/using-executorch-android.html#building-from-source) for details
 
 ## Test
