@@ -74,12 +74,12 @@ class DummyEventTracer : public EventTracer {
     return 0;
   }
 
-  EventTracerEntry start_profiling_delegate(
+  Result<EventTracerEntry> start_profiling_delegate(
       const char* name,
       DelegateDebugIntId delegate_debug_id) override {
     (void)name;
     (void)delegate_debug_id;
-    return EventTracerEntry();
+    return Result<EventTracerEntry>(EventTracerEntry());
   }
 
   void end_profiling_delegate(
@@ -236,7 +236,7 @@ TEST(TestEventTracer, SimpleEventTracerTest) {
  */
 void RunSimpleTracerTestDelegate(EventTracer* event_tracer) {
   EventTracerEntry event_tracer_entry = event_tracer_start_profiling_delegate(
-      event_tracer, "test_event", kUnsetDelegateDebugIntId);
+      event_tracer, "test_event", kUnsetDelegateDebugIntId).get();
   event_tracer_end_profiling_delegate(
       event_tracer, event_tracer_entry, nullptr);
   event_tracer_start_profiling_delegate(event_tracer, nullptr, 1);
