@@ -17,7 +17,11 @@ import sys
 from contextlib import contextmanager
 from typing import List, Tuple
 
-from install_requirements import install_requirements, python_is_compatible, TORCH_URL
+from install_requirements import (
+    install_requirements,
+    python_is_compatible,
+    TORCH_NIGHTLY_URL,
+)
 
 # Set up logging
 logging.basicConfig(
@@ -49,7 +53,7 @@ def clean():
 
 
 # Please keep this insync with `ShouldBuild.pybindings` in setup.py.
-VALID_PYBINDS = ["coreml", "mps", "xnnpack", "training"]
+VALID_PYBINDS = ["coreml", "mps", "xnnpack", "training", "openvino"]
 
 
 ################################################################################
@@ -198,14 +202,10 @@ def main(args):
     use_pytorch_nightly = True
 
     wants_pybindings_off, pybind_defines = _list_pybind_defines(args)
-    if not wants_pybindings_off:
-        if len(pybind_defines) > 0:
-            # If the user explicitly provides a list of bindings, just use them
-            cmake_args += pybind_defines
-        else:
-            # If the user has not set pybindings off but also has not provided
-            # a list, then turn on xnnpack by default
-            cmake_args.append("-DEXECUTORCH_BUILD_XNNPACK=ON")
+    if wants_pybindings_off:
+        cmake_args.append("-DEXECUTORCH_BUILD_PYBIND=OFF")
+    else:
+        cmake_args += pybind_defines
 
     if args.clean:
         clean()
@@ -251,7 +251,7 @@ def main(args):
             "--no-build-isolation",
             "-v",
             "--extra-index-url",
-            TORCH_URL,
+            TORCH_NIGHTLY_URL,
         ],
         check=True,
     )
