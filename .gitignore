@@ -1,5 +1,19 @@
-build/
+# System files
 .DS_Store
+
+# Python environment and cache
+.hypothesis
+.mypy_cache/
+.venv/
+__pycache__/
+
+# Build and tool-generated files
+build/
+cmake-out*
+dist/
+pip-out/
+*.egg-info
+
 # Editor temporaries
 *.swa
 *.swb
