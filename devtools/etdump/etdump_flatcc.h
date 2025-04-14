@@ -90,7 +90,7 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
       ::executorch::runtime::EventTracerEntry prof_entry,
       const void* metadata,
       size_t metadata_len) override;
-  virtual void log_profiling_delegate(
+  virtual Result<bool> log_profiling_delegate(
       const char* name,
       DelegateDebugIntId delegate_debug_index,
       et_timestamp_t start_time,

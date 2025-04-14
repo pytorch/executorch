@@ -124,7 +124,7 @@ inline void event_tracer_end_profiling_delegate(
  * make it available for the user again in the post-processing stage.
  * @param[in] metadata_len Length of the metadata buffer.
  */
-inline void event_tracer_log_profiling_delegate(
+inline Result<bool> event_tracer_log_profiling_delegate(
     EventTracer* event_tracer,
     const char* name,
     DebugHandle delegate_debug_id,
@@ -134,7 +134,7 @@ inline void event_tracer_log_profiling_delegate(
     size_t metadata_len = 0) {
 #ifdef ET_EVENT_TRACER_ENABLED
   if (event_tracer) {
-    event_tracer->log_profiling_delegate(
+    return event_tracer->log_profiling_delegate(
         name, delegate_debug_id, start_time, end_time, metadata, metadata_len);
   }
 #else //! ET_EVENT_TRACER_ENABLED
@@ -144,6 +144,7 @@ inline void event_tracer_log_profiling_delegate(
   (void)end_time;
   (void)metadata;
   (void)metadata_len;
+  return Result<bool>(false);
 #endif
 }
 
