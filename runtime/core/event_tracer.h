@@ -215,7 +215,10 @@ class EventTracer {
    * over into internal memory during this call.
    * @param[in] delegate_debug_index The id of the delegate event. If string
    * based names are used by this delegate to identify ops executed in the
-   * backend then kUnsetDebugHandle should be passed in here.
+   * backend then kUnsetDebugHandle should be passed in here. 
+   * @return Returns an instance of EventTracerEntry which should be passed back
+   * into the end_profiling_dele  gate() call.
+   *         - An error code if an error occurs during logging.
    */
   virtual Result<EventTracerEntry> start_profiling_delegate(
       const char* name,
@@ -234,6 +237,9 @@ class EventTracer {
    * are transparent to the event tracer. It will just pipe along the data and
    * make it available for the user again in the post-processing stage.
    * @param[in] metadata_len Length of the metadata buffer.
+   * @return A Result<bool> indicating the status of the logging operation.
+   *         - True if the event tracer delegate event was successfully logged.
+   *         - An error code if an error occurs during logging.
    */
   virtual Result<bool> end_profiling_delegate(
       EventTracerEntry event_tracer_entry,
@@ -264,6 +270,9 @@ class EventTracer {
    * are transparent to the event tracer. It will just pipe along the data and
    * make it available for the user again in the post-processing stage.
    * @param[in] metadata_len Length of the metadata buffer.
+   * @return A Result<bool> indicating the status of the logging operation.
+   *         - True if the event tracer delegate event was successfully logged.
+   *         - An error code if an error occurs during logging.
    */
   virtual Result<bool> log_profiling_delegate(
       const char* name,

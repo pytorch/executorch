@@ -46,7 +46,9 @@ namespace runtime {
  * @param[in] delegate_debug_id The id of the delegate event. If string
  * based names are used by this delegate to identify ops executed in the
  * backend then kUnsetDebugHandle should be passed in here.
-
+ * @return Returns an instance of EventTracerEntry which should be passed back
+ * into the end_profiling_delegate() call.
+ *         - An error code if an error occurs during logging.
  */
 inline Result<EventTracerEntry> event_tracer_start_profiling_delegate(
     EventTracer* event_tracer,
