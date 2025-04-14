@@ -130,7 +130,7 @@ jobs:
           # https://github.com/ReactiveCircus/android-emulator-runner. The max number
           # of cores we can set is 6, any higher number will be reduced to 6.
           cores: 6
-          ram-size: 12288M
+          ram-size: 16384M
           force-avd-creation: false
           disable-animations: true
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
