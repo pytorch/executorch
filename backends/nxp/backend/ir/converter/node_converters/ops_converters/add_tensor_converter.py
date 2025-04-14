@@ -25,6 +25,10 @@ class AddTensorConverter(NodeConverter):
     ) -> bool:
         match target:
             case Target.RT700:
+                if node_uses_shape_broadcasting(node):
+                    # Shape broadcasting may require the addition of `Transpose` ops during conversion.
+                    return False
+
                 return True
 
             case _:
@@ -38,10 +42,6 @@ class AddTensorConverter(NodeConverter):
             return False
 
         if hasattr(node.kwargs, "alpha"):
-            return False
-
-        # Don't convert if broadcasting input tensors
-        if node_uses_shape_broadcasting(node):
             return False
 
         return True
