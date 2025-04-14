@@ -284,7 +284,7 @@ void ETDumpGen::end_profiling_delegate(
   etdump_RunData_events_push_end(builder_);
 }
 
-void ETDumpGen::log_profiling_delegate(
+Result<bool> ETDumpGen::log_profiling_delegate(
     const char* name,
     DelegateDebugIntId delegate_debug_index,
     et_timestamp_t start_time,
@@ -314,6 +314,7 @@ void ETDumpGen::log_profiling_delegate(
   etdump_RunData_events_push_start(builder_);
   etdump_Event_profile_event_add(builder_, id);
   etdump_RunData_events_push_end(builder_);
+  return Result<bool>(true);
 }
 
 Result<bool> ETDumpGen::log_intermediate_output_delegate(

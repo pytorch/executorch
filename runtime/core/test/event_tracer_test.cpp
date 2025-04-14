@@ -96,7 +96,7 @@ class DummyEventTracer : public EventTracer {
     (void)event_tracer_filter;
   }
 
-  void log_profiling_delegate(
+  Result<bool> log_profiling_delegate(
       const char* name,
       DelegateDebugIntId delegate_debug_id,
       et_timestamp_t start_time,
@@ -109,6 +109,7 @@ class DummyEventTracer : public EventTracer {
     (void)end_time;
     (void)metadata;
     (void)metadata_len;
+    return Result<bool>(true);
   }
 
   virtual Result<bool> log_intermediate_output_delegate(

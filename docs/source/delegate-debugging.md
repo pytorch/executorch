@@ -113,7 +113,7 @@ ExecuTorch also allows you to log in post time. Some runtime settings don't have
 To log events in post (for example, logging start and end time simultaneously) `event_tracer_log_profiling_delegate` is called with a combination of the arguments used in the real-time logging API’s and timestamps.
 
 ```c++
-void event_tracer_log_profiling_delegate(
+Result<bool> event_tracer_log_profiling_delegate(
     EventTracer* event_tracer,
     const char* name,
     DebugHandle delegate_debug_id,

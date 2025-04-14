@@ -265,7 +265,7 @@ class EventTracer {
    * make it available for the user again in the post-processing stage.
    * @param[in] metadata_len Length of the metadata buffer.
    */
-  virtual void log_profiling_delegate(
+  virtual Result<bool> log_profiling_delegate(
       const char* name,
       DelegateDebugIntId delegate_debug_index,
       et_timestamp_t start_time,
