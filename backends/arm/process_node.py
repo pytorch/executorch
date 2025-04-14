@@ -5,15 +5,18 @@
 #
 
 # pyre-unsafe
-from typing import cast, Dict
+from typing import Any, cast, Dict
 
 import numpy as np
 import torch
 import torch.fx
-import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import NodeVisitor
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa_specification import (
+    Tosa_0_80,
+    Tosa_1_00,
+    TosaSpecification,
+)
 from executorch.backends.arm.tosa_utils import getNodeArgs, tosa_shape
 from torch._export.utils import (
     get_buffer,
@@ -28,7 +31,7 @@ from torch.export.exported_program import ExportedProgram
 
 def process_call_function(
     node: torch.fx.Node,
-    tosa_graph: ts.TosaSerializer,
+    tosa_graph: Any,
     node_visitors: Dict[str, NodeVisitor],
     tosa_spec: TosaSpecification,
 ):
@@ -63,7 +66,7 @@ def process_call_function(
 
 def process_inputs(
     node: torch.fx.Node,
-    tosa_graph: ts.TosaSerializer,
+    tosa_graph: Any,
     tosa_spec: TosaSpecification,
 ):
     """Serialize an input node"""
@@ -81,6 +84,14 @@ def process_inputs(
             f"Failed processing input placeholder: {node.name}. "
             "Is the original torch function supported?"
         ) from e
+
+    if isinstance(tosa_spec, Tosa_0_80):
+        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
+    elif isinstance(tosa_spec, Tosa_1_00):
+        import serializer.tosa_serializer as ts
+    else:
+        raise ValueError(f"Unsupported TOSA spec: {tosa_spec}")
+
     input_shape = tosa_arg.shape
     input_dim_order = tosa_arg.dim_order
     tensor = ts.TosaSerializerTensor(
@@ -95,7 +106,7 @@ def process_inputs(
 
 def process_inputs_to_parameters(
     node: torch.fx.Node,
-    tosa_graph: ts.TosaSerializer,
+    tosa_graph: Any,
     edge_program: ExportedProgram,
     tosa_spec: TosaSpecification,
 ):
@@ -124,7 +135,7 @@ def process_inputs_to_parameters(
 
 def process_inputs_to_buffers(
     node: torch.fx.Node,
-    tosa_graph: ts.TosaSerializer,
+    tosa_graph: Any,
     edge_program: ExportedProgram,
 ):
     """Serialize quantized weights"""
@@ -152,7 +163,7 @@ def process_inputs_to_buffers(
 
 def process_inputs_to_lifted_tensor_constants(
     node: torch.fx.Node,
-    tosa_graph: ts.TosaSerializer,
+    tosa_graph: Any,
     edge_program: ExportedProgram,
 ):
     try:
@@ -172,7 +183,7 @@ def process_inputs_to_lifted_tensor_constants(
 
 def process_placeholder(
     node: torch.fx.Node,
-    tosa_graph: ts.TosaSerializer,
+    tosa_graph: Any,
     edge_program: ExportedProgram,
     tosa_spec: TosaSpecification,
 ):
@@ -198,7 +209,7 @@ def process_placeholder(
 
 def process_output(
     node: torch.fx.Node,
-    tosa_graph: ts.TosaSerializer,
+    tosa_graph: Any,
 ):
     for output in cast(tuple[torch.fx.Node, ...], node.args[0]):
         tosa_graph.addOutputTensor(
