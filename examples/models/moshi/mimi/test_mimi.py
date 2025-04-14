@@ -2,6 +2,8 @@ import io
 import os
 import random
 import unittest
+from functools import partial
+from executorch.examples.models.llama.source_transformation.quantize import quantize
 
 import numpy as np
 import requests
@@ -22,12 +24,22 @@ from moshi.models import loaders
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.export import export, ExportedProgram
 from torch.utils._pytree import tree_flatten
+from executorch.extension.llm.export.builder import DType, LLMEdgeManager
+from omegaconf import OmegaConf
+from pathlib import Path
+from executorch.examples.models.llama.export_llama_lib import (
+    _get_source_transforms,
+    get_quantizer_and_quant_params,
+)
+from executorch.extension.llm.export.partitioner_lib import (
+    get_xnnpack_partitioner,
+)
+import logging
 
 proxies = {
     "http": "http://fwdproxy:8080",
     "https": "http://fwdproxy:8080",
 }
-
 
 def compute_sqnr(x: torch.Tensor, y: torch.Tensor) -> float:
     assert x.shape == y.shape, "Tensor shapes do not match"
@@ -240,6 +252,127 @@ class TestMimiModel(unittest.TestCase):
         # Don't check for exact equality, but check that the SQNR is high enough
         # torch.testing.assert_close(eager_res, res[0], atol=4e-3, rtol=1e-3)
         self.assertGreater(sqnr, 25.0)
+
+    def test_exported_decoder_hybrid_quant(self):
+        class MimiDecode(nn.Module):
+            def __init__(self, mimi: nn.Module):
+                super().__init__()
+                self.mimi_model = mimi
+
+            def forward(self, x):
+                return self.mimi_model.decode(x)
+
+        sample_pcm = torch.tensor(self.sample_pcm, device=self.device)[None]
+        pcm_chunk_size = int(self.mimi.sample_rate / self.mimi.frame_rate)
+        chunk = sample_pcm[..., 0:pcm_chunk_size]
+        input = self.mimi.encode(chunk)
+
+        mimi_decode = MimiDecode(self.mimi)
+        eager_output = mimi_decode(input)
+
+        config_dict = {
+            "model": "llama3",
+            "checkpoint": None,
+            "max_seq_length": 128,
+            "dtype_override": "fp32",
+            "use_kv_cache": False,
+            "generate_full_logits": False,
+            "enable_dynamic_shape": False,
+            "verbose": True,
+            "qnn": False,
+            "export_only": False,
+            "output_name": "output",
+            "output_dir": "/tmp",
+            "xnnpack_extended_ops": True,
+            "quantization": {
+                "mode": "8da4w",
+                "group_size": 64,
+            }
+        }
+
+        # Create a DictConfig object from the dictionary
+        config = OmegaConf.create(config_dict)
+
+        edge_manager = LLMEdgeManager(
+            model=mimi_decode,
+            modelname=config.model,
+            max_seq_len=config.max_seq_length,
+            dtype=config.dtype_override,
+            use_kv_cache=config.use_kv_cache,
+            generate_full_logits=config.generate_full_logits,
+            example_inputs=(input,),
+            example_kwarg_inputs=None,
+            dynamic_shapes=None,
+            enable_dynamic_shape=config.enable_dynamic_shape,
+            verbose=config.verbose,
+        )
+
+        dtype_override = DType[config.dtype_override]
+        edge_manager.to_dtype(dtype_override)
+
+        transforms = []
+
+        # Linear 8da4w.
+        # TODO: look into decode_latent as an "embedding" layer
+        if config.quantization.mode:
+            quant_args = {
+                "group_size": config.quantization.group_size,
+            }
+            transforms.append(
+                partial(
+                    quantize,
+                    **quant_args,
+                    qmode=config.quantization.mode,
+                    computation_dtype=dtype_override,
+                    checkpoint_dtype=None,
+                    checkpoint_path=(Path(path) if (path := config.checkpoint) is not None else None),
+                )
+            )
+
+        llm_manager = edge_manager.source_transform(transforms)
+        # llm_manager = edge_manager
+        builder_exported = llm_manager.export()
+        builder_exported.run_canonical_optimizations()
+
+
+        # Lower to xnnpack
+        partitioners = []
+
+        # Order matters here, dynamic quantization should be applied first when both xnnpack and xnnpack_extended_ops are enabled
+        partitioners.append(get_xnnpack_partitioner(dynamic_quant_only_partitioner=True))
+
+
+        if config.xnnpack_extended_ops:
+            partitioners.append(
+                get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
+            )
+
+        for partitioner in partitioners:
+            logging.info(f"--> {partitioner.__class__.__name__}")
+
+        # builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
+        builder = builder_exported.to_edge_transform_and_lower(
+            partitioners
+        )
+        print_delegation_info(builder.edge_manager.exported_program().graph_module)
+
+        builder = builder.to_executorch()
+
+        builder.save_to_pte("mimi_4bit")
+
+        #
+        #
+        # llm_manager = edge_manager.source_transform(
+        #     _get_source_transforms(
+        #         modelname=config.model, dtype_override=dtype_override, args=args
+        #     )
+        # )
+        # builder_exported = edge_manager.set_output_dir(args.output_dir).export()
+        # builder_exported.run_canonical_optimizations()
+        #
+        # pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(
+        #     args
+        # )
 
 
 if __name__ == "__main__":
