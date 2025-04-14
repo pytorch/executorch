@@ -29,6 +29,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceConvWithIm2RowAndLinear,
     ReplaceEmptyTensorsWithFullPass,
     ReplaceFunctionallyEquivalentOpTargets,
+    ReplaceGeluWithApproximateGeluPass,
     ReplaceIm2RowWithViewPass,
     ReplaceLinearWithFullyConnectedOpPass,
     ReplaceMMWithAddMMPass,
@@ -1299,6 +1300,41 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 exir_ops.edge.aten.where.self,
             ),
             1,
+        )
+
+    def test_replace_aten_gelu_with_approximate_gelu(self):
+        class Gelu(torch.nn.Module):
+            def forward(self, input):
+                return torch.nn.functional.gelu(input)
+
+        inputs = torch.randn(2, 1, 64)
+
+        graph_module = export_to_edge(Gelu(), (inputs,)).exported_program().graph_module
+
+        p = ReplaceGeluWithApproximateGeluPass()
+        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+
+        # Assert that aten.gelu op was decomposed
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.aten.gelu.default,
+            ),
+            0,
+        )
+
+        # The decomposition should have one tanh, 2 add and 6 mul
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.tanh.default),
+            1,
+        )
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.add.Tensor),
+            2,
+        )
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.mul.Tensor),
+            6,
         )
 
 
