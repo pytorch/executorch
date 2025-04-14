@@ -763,6 +763,7 @@ def _to_edge_and_lower_llama_xnnpack(
         raise NotImplementedError(
             "export_llama does not support XNNPack and generating ETRecord at the moment."
         )
+
     builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
         partitioners
     )

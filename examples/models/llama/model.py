@@ -16,6 +16,7 @@ from executorch.examples.models.checkpoint import (
     get_default_model_resource_dir,
 )
 from executorch.examples.models.llama.llama_transformer import Transformer
+
 from executorch.examples.models.llama.model_args import ModelArgs
 from torchao.utils import TorchAOBaseTensor
 
@@ -101,7 +102,6 @@ class Llama2Model(EagerModelBase):
         if fairseq2_checkpoint:
             print("Using fairseq2 checkpoint")
             checkpoint = convert_to_llama_checkpoint(checkpoint=checkpoint)
-            print("checkpoint", checkpoint)
         if "model" in checkpoint:
             # NB: some checkpoint contains a "model" field, which is the actual weights dict
             checkpoint = checkpoint["model"]

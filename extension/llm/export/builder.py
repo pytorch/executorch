@@ -31,6 +31,7 @@ from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
+
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
 
 from executorch.extension.llm.export.export_passes import RemoveRedundantTransposes
@@ -231,7 +232,6 @@ class LLMEdgeManager:
                     logging.info("Re-exporting with:")
                 else:
                     logging.info("Exporting with:")
-
                 logging.info(f"inputs: {self.example_inputs}")
                 logging.info(f"kwargs: {self.example_kwarg_inputs}")
                 logging.info(f"dynamic shapes: {dynamic_shape}")
