@@ -17,7 +17,6 @@ from executorch.backends.arm.tosa_specification import Tosa_0_80, TosaSpecificat
 from executorch.exir.dialects._ops import ops as exir_ops
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
 
 
 @register_tosa_support_check

@@ -34,7 +34,16 @@ class ReciprocalVisitor_080_MI(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        assert inputs[0].dtype == output.dtype == ts.DType.FP32
+        if len(node.all_input_nodes) != 1:
+            raise ValueError(
+                f"Expected 1 input for {self.target}, got {len(node.all_input_nodes)}"
+            )
+        if inputs[0].dtype != ts.DType.FP32 or output.dtype != ts.DType.FP32:
+            raise ValueError(
+                f"Input and output for {self.target} need to be FP32, got "
+                f"{inputs[0].dtype=} and {output.dtype=}"
+            )
+
         tosa_graph.addOperator(
             ts.TosaOp.Op().RECIPROCAL, [inputs[0].name], [output.name]
         )
