@@ -46,8 +46,9 @@ namespace runtime {
  * @param[in] delegate_debug_id The id of the delegate event. If string
  * based names are used by this delegate to identify ops executed in the
  * backend then kUnsetDebugHandle should be passed in here.
+
  */
-inline EventTracerEntry event_tracer_start_profiling_delegate(
+inline Result<EventTracerEntry> event_tracer_start_profiling_delegate(
     EventTracer* event_tracer,
     const char* name,
     DebugHandle delegate_debug_id) {
@@ -60,7 +61,7 @@ inline EventTracerEntry event_tracer_start_profiling_delegate(
   (void)delegate_debug_id;
 #endif
   // There is no active tracer; this value will be ignored.
-  return EventTracerEntry();
+  return Result<EventTracerEntry>(EventTracerEntry());
 }
 
 /**

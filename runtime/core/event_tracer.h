@@ -217,7 +217,7 @@ class EventTracer {
    * based names are used by this delegate to identify ops executed in the
    * backend then kUnsetDebugHandle should be passed in here.
    */
-  virtual EventTracerEntry start_profiling_delegate(
+  virtual Result<EventTracerEntry> start_profiling_delegate(
       const char* name,
       DelegateDebugIntId delegate_debug_index) = 0;
 

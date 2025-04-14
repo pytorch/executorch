@@ -89,7 +89,7 @@ To log events in real-time (for example, explicitly denoting the profiling start
 To start an `EventTracerEntry` using `event_tracer_start_profiling_delegate`, the **Delegate Debug Identifier** (provided AOT to the `debug_handle_map`) is passed as either the name or `delegate_debug_id` argument depending on the **Delegate Debug Identifier** type (str and int respectively)
 
 ```c++
-EventTracerEntry event_tracer_start_profiling_delegate(
+Result<EventTracerEntry> event_tracer_start_profiling_delegate(
     EventTracer* event_tracer,
     const char* name,
     DebugHandle delegate_debug_id)
