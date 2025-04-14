@@ -14,7 +14,10 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     create_channels_first_to_channels_last_permutation,
     tf_lite_type_to_numpy,
 )
-from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
+from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    NodeConverter,
+    Target,
+)
 from executorch.backends.nxp.backend.ir.converter.quantization_utils import (
     quantize_int8,
 )
@@ -28,6 +31,22 @@ from torch.nn import Parameter
 
 
 class ConstantPadNDConverter(NodeConverter):
+    @staticmethod
+    def _is_supported_on_target(
+        node: Node, target: Target, parameters_mapping: dict[str, Parameter]
+    ) -> bool:
+        match target:
+            case Target.RT700:
+                # TODO: Consider different tensor formats (dim-order)
+                paddings = node.args[1]
+                if len(paddings) > 4 and paddings[4:6] != [0, 0]:
+                    # Attempt to Pad channels dimension, which is not supported on Neutron.
+                    return False
+
+                return True
+
+            case _:
+                return False
 
     @staticmethod
     def _is_supported_in_IR(
