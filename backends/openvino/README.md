@@ -40,7 +40,7 @@ executorch
 
 ### Prerequisites
 
-Before you begin, ensure you have openvino installed and configured on your system
+Before you begin, ensure you have openvino installed and configured on your system.
 
 ### Build OpenVINO from Source
 
@@ -61,9 +61,9 @@ source setupvars.sh
 
 ### Build OpenVINO from Release Packages
 
-1. Download the OpenVINO release package from [here](https://docs.openvino.ai/2025/get-started/install-openvino.html). Make sure to select your configuration and click on **OpenVINO Archives** under the distribution section to download the appropriate archive for your platform
+1. Download the OpenVINO release package from [here](https://docs.openvino.ai/2025/get-started/install-openvino.html). Make sure to select your configuration and click on **OpenVINO Archives** under the distribution section to download the appropriate archive for your platform.
 
-2. Extract the release package from the archive and set the environment variables
+2. Extract the release package from the archive and set the environment variables.
 
 #### Linux
    ```bash
