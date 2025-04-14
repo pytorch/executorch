@@ -121,7 +121,9 @@ def check_and_update_submodules():
         logger.warning("Some required submodules are missing. Updating submodules...")
         try:
             subprocess.check_call(["git", "submodule", "sync", "--recursive"])
-            subprocess.check_call(["git", "submodule", "update", "--init", "--recursive"])
+            subprocess.check_call(
+                ["git", "submodule", "update", "--init", "--recursive"]
+            )
         except subprocess.CalledProcessError as e:
             logger.error(f"Error updating submodules: {e}")
             exit(1)
@@ -130,7 +132,9 @@ def check_and_update_submodules():
         for path, file in missing_submodules.items():
             if not check_folder(path, file):
                 logger.error(f"{file} not found in {path}.")
-                logger.error("Submodule update failed. Please run `git submodule update --init --recursive` manually.")
+                logger.error(
+                    "Submodule update failed. Please run `git submodule update --init --recursive` manually."
+                )
                 exit(1)
     logger.info("All required submodules are present.")
 
