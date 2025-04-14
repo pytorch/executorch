@@ -555,7 +555,8 @@
 </div>
 <div class="section" id="exporting">
 <h3>Exporting<a class="headerlink" href="#exporting" title="Permalink to this heading">¶</a></h3>
-<p>Exporting is done using Python APIs. ExecuTorch provides a high degree of customization during the export process, but the typical flow is as follows. This example uses the MobileNet V2 image classification model implementation in torchvision, but the process supports any <a class="reference external" href="https://pytorch.org/docs/stable/export.html">export-compliant</a> PyTorch model.</p>
+<p>Exporting is done using Python APIs. ExecuTorch provides a high degree of customization during the export process, but the typical flow is as follows. This example uses the MobileNet V2 image classification model implementation in torchvision, but the process supports any <a class="reference external" href="https://pytorch.org/docs/stable/export.html">export-compliant</a> PyTorch model. For users working with Hugging Face models,
+you can find a list of supported models in the <a class="reference external" href="https://github.com/huggingface/optimum-executorch"><em>huggingface/optimum-executorch</em></a> repo.</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torchvision.models</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">models</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torchvision.models.mobilenetv2</span><span class="w"> </span><span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
@@ -605,6 +606,7 @@
 </pre></div>
 </div>
 <p>For complete examples of exporting and running the model, please refer to our <a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/mv2/python">examples GitHub repository</a>.</p>
+<p>Additionally, if you work with Hugging Face models, the <a class="reference external" href="https://github.com/huggingface/optimum-executorch"><em>huggingface/optimum-executorch</em></a> library simplifies running these models end-to-end with ExecuTorch, using familiar Hugging Face APIs. Visit the repository for specific examples and supported models.</p>
 <hr/>
 </div>
 </div>
