@@ -37,6 +37,12 @@ class ConstantPadNDConverter(NodeConverter):
     ) -> bool:
         match target:
             case Target.RT700:
+                # TODO: Consider different tensor formats (dim-order)
+                paddings = node.args[1]
+                if len(paddings) > 4 and paddings[4:6] != [0, 0]:
+                    # Attempt to Pad channels dimension, which is not supported on Neutron.
+                    return False
+
                 return True
 
             case _:
