@@ -9,7 +9,10 @@ import torch
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     create_channels_last_to_channels_first_permutation,
 )
-from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
+from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    NodeConverter,
+    Target,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.shared.reduce_utils import (
     convert_axes_from_attribute,
 )
@@ -21,6 +24,26 @@ from torch.nn import Parameter
 
 
 class MeanDimConverter(NodeConverter):
+    @staticmethod
+    def _is_supported_on_target(
+        node: Node, target: Target, parameters_mapping: dict[str, Parameter]
+    ) -> bool:
+        match target:
+            case Target.RT700:
+                # TODO: Consider different tensor formats (dim-order)
+                dim = node.args[1]
+                keepdim = node.args[2] if len(node.args) >= 3 else False
+                rank = len(node.args[0].meta["val"].shape)
+                dim = [MeanDimConverter._to_neg_dim(d, rank) for d in dim]
+
+                # Only last 2 dimensions (H, W) and keepdim=True with rank=4 are supported on Neutron.
+                if rank != 4 or dim not in [[-1, -2], [-2, -1]] or not keepdim:
+                    return False
+
+                return True
+
+            case _:
+                return False
 
     @staticmethod
     def _to_pos_dim(d, rank):
@@ -34,15 +57,6 @@ class MeanDimConverter(NodeConverter):
     def _is_supported_in_IR(
         node: Node, parameters_mapping: dict[str, Parameter]
     ) -> bool:
-        dim = node.args[1]
-        keepdim = node.args[2] if len(node.args) >= 3 else False
-        rank = len(node.args[0].meta["val"].shape)
-        dim = [MeanDimConverter._to_neg_dim(d, rank) for d in dim]
-
-        # Only last 2 dimensions (H, W) and keepdim=True with rank=4 are supported on Neutron.
-        if rank != 4 or dim not in [[-1, -2], [-2, -1]] or not keepdim:
-            return False
-
         if hasattr(node.kwargs, "dtype") and node.kwargs["dtype"] not in [
             torch.float32,
             torch.uint32,
