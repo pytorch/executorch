@@ -22,8 +22,8 @@ adb uninstall org.pytorch.executorch.test || true
 adb install -t android-test-debug-androidTest.apk
 
 adb logcat -c
-adb shell am instrument -w -r org.pytorch.executorch.test/androidx.test.runner.AndroidJUnitRunner \
-  -e class org.pytorch.executorch.ModuleInstrumentationTest >result.txt 2>&1
+adb shell am instrument -w -r -e class org.pytorch.executorch.ModuleInstrumentationTest >result.txt \
+  org.pytorch.executorch.test/androidx.test.runner.AndroidJUnitRunner 2>&1
 adb logcat -d > logcat.txt
 cat logcat.txt
 grep -q FAILURES result.txt || cat result.txt
