@@ -202,6 +202,49 @@ void dequantize_per_channel_optimized(
   }
 }
 
+void dequant_and_gemm(
+    const int64_t m,
+    const int64_t n,
+    const int64_t k,
+    float* qk_data,
+    const int64_t qk_stride_m,
+    const MaybeQuantizedMatrixData& v_data,
+    const int64_t v_stride_n,
+    float* o_data,
+    const int64_t o_stride_m,
+    const float beta) {
+  std::vector<float> dequantized_v_data(v_data.m * v_data.n);
+  dequantize_per_channel_optimized(
+      static_cast<const int8_t*>(v_data.data),
+      static_cast<const float*>(v_data.scales),
+      static_cast<const int8_t*>(v_data.zero_points),
+      dequantized_v_data.data(),
+      -128,
+      127,
+      1,
+      0,
+      0,
+      v_data.m,
+      v_stride_n,
+      v_data.n,
+      v_data.n,
+      v_data.zero_points_stride);
+  ::executorch::cpublas::gemm(
+      ::executorch::cpublas::TransposeType::NoTranspose,
+      ::executorch::cpublas::TransposeType::NoTranspose,
+      n,
+      m,
+      k,
+      static_cast<float>(1),
+      dequantized_v_data.data(),
+      v_data.n,
+      qk_data,
+      qk_stride_m,
+      beta,
+      o_data,
+      o_stride_m);
+}
+
 template <typename accum_t>
 void _qk_at_v_gemm(
     const int64_t m,
@@ -216,36 +259,41 @@ void _qk_at_v_gemm(
     const accum_t beta) {
   if (v_data.dtype == ScalarType::Char) {
     if constexpr (std::is_same<accum_t, float>::value) {
-      std::vector<float> dequantized_v_data(v_data.m * v_data.n);
-      dequantize_per_channel_optimized(
-          static_cast<const int8_t*>(v_data.data),
-          static_cast<const float*>(v_data.scales),
-          static_cast<const int8_t*>(v_data.zero_points),
-          dequantized_v_data.data(),
-          -128,
-          127,
-          1,
-          0,
-          0,
-          v_data.m,
-          v_stride_n,
-          v_data.n,
-          v_data.n,
-          v_data.zero_points_stride);
-      ::executorch::cpublas::gemm(
-          ::executorch::cpublas::TransposeType::NoTranspose,
-          ::executorch::cpublas::TransposeType::NoTranspose,
-          n,
-          m,
-          k,
-          static_cast<accum_t>(1),
-          dequantized_v_data.data(),
-          v_data.n,
-          qk_data,
-          qk_stride_m,
-          beta,
-          o_data,
-          o_stride_m);
+      if (m > 4) {
+        // For larger batch sizes, dequantize and use BLAS for better
+        // performance
+        dequant_and_gemm(
+            m,
+            n,
+            k,
+            const_cast<float*>(qk_data),
+            qk_stride_m,
+            v_data,
+            v_stride_n,
+            o_data,
+            o_stride_m,
+            beta);
+      } else {
+        // For smaller batch sizes, use quantized gemm
+        int a_stride_m_tmp, b_stride_n_tmp;
+        auto kernel = torchao::kernels::cpu::quantized_matmul::
+            get_fp32_a_input_channelwise_8bit_b_f32_c_matmul(
+                m, n, k, false, false, a_stride_m_tmp, b_stride_n_tmp);
+        kernel(
+            m,
+            n,
+            k,
+            qk_data,
+            qk_stride_m /*lhs_stride_m*/,
+            static_cast<const int8_t*>(v_data.data),
+            v_stride_n /*rhs_stride_n*/,
+            o_data,
+            o_stride_m /*out_stride_n*/,
+            static_cast<const int8_t*>(v_data.zero_points),
+            static_cast<const float*>(v_data.scales),
+            beta,
+            v_data.zero_points_stride);
+      }
     } else {
       ET_CHECK_MSG(
           false, "Accumulation in dtype other than float not supported yet");
