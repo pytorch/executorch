@@ -4,7 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
 import os
 import shutil
 import tempfile
@@ -14,9 +13,6 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 class Linear(torch.nn.Module):
@@ -205,7 +201,6 @@ class TestCollateTosaTests(unittest.TestCase):
 
 
 def test_dump_tosa_ops(caplog):
-    caplog.set_level(logging.INFO)
     model = Linear(20, 30)
     (
         ArmTester(
@@ -222,7 +217,6 @@ def test_dump_tosa_ops(caplog):
 
 
 def test_fail_dump_tosa_ops(caplog):
-    caplog.set_level(logging.INFO)
 
     class Add(torch.nn.Module):
         def forward(self, x):
