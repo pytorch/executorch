@@ -38,10 +38,9 @@ python3 --version
 pip --version
 ```
 
-### 3. Getting Started Tutorial
+### 3. Set Up ExecuTorch
 
-Follow the [Setting Up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup)
-tutorial to configure the basic environment:
+Clone ExecuTorch and set up the environment as explained in the [Building from Source](using-executorch-building-from-source.md) tutorial:
 
 ```bash
 git clone -b release/0.6 https://github.com/pytorch/executorch.git && cd executorch
@@ -51,22 +50,19 @@ python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 ./install_executorch.sh
 ```
 
-### 4. Clone the Demo App
+### 4. Backend Dependencies
 
-```bash
-git clone --depth 1 https://github.com/pytorch-labs/executorch-examples.git
-```
-
-### 5. Backend Dependencies
-
-Also, follow the corresponding sections from [Core ML](https://pytorch.org/executorch/stable/build-run-coreml) and
-[MPS](https://pytorch.org/executorch/stable/build-run-mps) tutorials to install additional dependencies for those
-backends:
+Install additional dependencies for [Core ML](backends-coreml.md) and [MPS](backends-mps.md) backends:
 
 ```bash
 ./backends/apple/coreml/scripts/install_requirements.sh
-
 ./backends/apple/mps/install_requirements.sh
+```
+
+### 5. Clone the Demo App
+
+```bash
+git clone --depth 1 https://github.com/pytorch-labs/executorch-examples.git
 ```
 
 ## Models and Labels
@@ -101,10 +97,9 @@ curl https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt \
   -o "$APP_PATH/Resources/Models/MobileNet/imagenet_classes.txt"
 ```
 
-## Final Steps
+## Build and Run the App
 
-We're almost done! Now, we just need to open the project in Xcode, run the
-tests, and finally run the app.
+We're almost done! Now, we just need to open the project in Xcode, run the tests, and finally run the app.
 
 ### 1. Open Project in Xcode
 
@@ -116,8 +111,7 @@ open $APP_PATH.xcodeproj
 
 ### 2. Run Tests
 
-You can run tests on Simulaltor directly in Xcode with `Cmd + U` or use the
-command line:
+You can run tests on Simulaltor directly in Xcode with `Cmd + U` or use the command line:
 
 ```bash
 xcrun simctl create executorch "iPhone 15"
@@ -136,6 +130,4 @@ using `Cmd + R`. Try installing a Release build for better performance.
 Congratulations! You've successfully set up the ExecuTorch iOS Demo App. Now,
 you can explore and enjoy the power of ExecuTorch on your iOS device!
 
-Learn more about integrating and running [ExecuTorch on Apple](https://pytorch.org/executorch/stable/apple-runtime) platforms.
-
-![](_static/img/demo_ios_xcode.jpg)
+Learn more about [Using ExecuTorch on iOS](using-executorch-ios.md).
