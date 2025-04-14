@@ -40,7 +40,7 @@ pip --version
 
 ### 3. Set Up ExecuTorch
 
-Clone ExecuTorch and set up the environment:
+Clone ExecuTorch and set up the environment as explained in the [Building from Source](using-executorch-building-from-source.md) tutorial:
 
 ```bash
 git clone -b viable/strict https://github.com/pytorch/executorch.git && cd executorch
