@@ -337,4 +337,3 @@ def define_common_targets():
     _common_op_test("op_view_copy_test", ["aten", "portable"])
     _common_op_test("op_where_test", ["aten", "portable"])
     _common_op_test("op_zeros_test", ["aten", "portable"])
-    
