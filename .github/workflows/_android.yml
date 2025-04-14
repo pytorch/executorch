@@ -98,10 +98,10 @@ jobs:
         shell: bash
         run: |
           set -eux
-          curl -O https://gha-artifacts.s3.amazonaws.com/pytorch/executorch/14456045058/artifacts/llm_demo/app-debug.apk
-          curl -O https://gha-artifacts.s3.amazonaws.com/pytorch/executorch/14456045058/artifacts/llm_demo/app-debug-androidTest.apk
-          curl -O https://gha-artifacts.s3.amazonaws.com/pytorch/executorch/14456045058/artifacts/fp32-xnnpack-custom/model.zip
-          curl -o android-test-debug-androidTest.apk https://gha-artifacts.s3.amazonaws.com/pytorch/executorch/14456045058/artifacts/library_test_dir/executorch_android-debug-androidTest.apk
+          curl -O https://gha-artifacts.s3.amazonaws.com/pytorch/executorch/14413548251/artifacts/llm_demo/app-debug.apk
+          curl -O https://gha-artifacts.s3.amazonaws.com/pytorch/executorch/14413548251/artifacts/llm_demo/app-debug-androidTest.apk
+          curl -O https://gha-artifacts.s3.amazonaws.com/pytorch/executorch/14413548251/artifacts/fp32-xnnpack-custom/model.zip
+          curl -o android-test-debug-androidTest.apk https://gha-artifacts.s3.amazonaws.com/pytorch/executorch/14413548251/artifacts/library_test_dir/executorch_android-debug-androidTest.apk
           unzip model.zip
           mv *.pte model.pte
 
