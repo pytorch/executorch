@@ -185,11 +185,13 @@ class QuantParams:
             quant_node_args = extract_qdq_affine_op_args_for_decomposed_ops(quant_node)
 
         scale = quant_node_args[1]
-        zp = quant_node_args[2]
+        zp = quant_node_args[2] if len(quant_node_args) > 2 else None
         axis = 0
         if per_channel:
             assert isinstance(scale, torch.fx.Node) and isinstance(scale.target, str)
-            assert isinstance(zp, torch.fx.Node) and isinstance(zp.target, str)
+            assert zp is None or (
+                isinstance(zp, torch.fx.Node) and isinstance(zp.target, str)
+            )
             assert (
                 ep is not None
             ), "ExportedProgram must be provided to extract per channel params"
@@ -200,7 +202,11 @@ class QuantParams:
                 return cast(torch.Tensor, param)
 
             scale = _get_tensor(scale)
-            zp = _get_tensor(zp)
+            zp = (
+                _get_tensor(zp)
+                if zp is not None
+                else torch.zeros_like(scale, dtype=torch.int8)
+            )
             axis = cast(int, quant_node_args[3])
 
             if _groupwise:
