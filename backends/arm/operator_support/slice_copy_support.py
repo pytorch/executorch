@@ -25,6 +25,8 @@ class SliceCopySupported(SupportedTOSAOperatorCheck):
     tosa_specs = [
         TosaSpecification.create_from_string("TOSA-0.80+BI"),
         TosaSpecification.create_from_string("TOSA-0.80+MI"),
+        TosaSpecification.create_from_string("TOSA-1.0+INT"),
+        TosaSpecification.create_from_string("TOSA-1.0+FP"),
     ]
 
     def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification) -> bool:  # type: ignore[override, misc]
