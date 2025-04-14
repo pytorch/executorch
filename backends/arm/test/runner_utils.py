@@ -18,7 +18,6 @@ from typing import cast, Dict, List, Literal, Optional, Tuple
 import numpy as np
 import torch
 
-logger = logging.getLogger(__name__)
 try:
     import tosa_tools.v0_80.tosa_reference_model as tosa_reference_model
 except ImportError:
@@ -37,7 +36,6 @@ from torch.overrides import TorchFunctionMode
 from tosa_tools.v0_80.tosa import TosaGraph
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.CRITICAL)
 
 # Copied from PyTorch.
 # From torch/testing/_internal/common_utils.py:torch_to_numpy_dtype_dict
