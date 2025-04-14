@@ -12,9 +12,18 @@ script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 cd "${et_root_dir}"
 pwd
+setup_path_script=${et_root_dir}/examples/arm/ethos-u-scratch/setup_path.sh
+_setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
 
 
 TEST_SUITE=$1
+
+# Source the tools
+# This should be prepared by the setup.sh
+[[ -f ${setup_path_script} ]] \
+    || { echo "Missing ${setup_path_script}. ${_setup_msg}"; exit 1; }
+
+source ${setup_path_script}
 
 help() {
     echo "Usage:"
@@ -66,7 +75,6 @@ test_pytest() { # Test ops and other things
     ./examples/models/llama3_2_vision/install_requirements.sh
 
     cd "${et_root_dir}"
-    source examples/arm/ethos-u-scratch/setup_path.sh
     backends/arm/scripts/build_quantized_ops_aot_lib.sh
 
     # Run arm baremetal pytest tests without FVP
@@ -78,7 +86,6 @@ test_pytest_ethosu_fvp() { # Same as test_pytest but also sometime verify using 
     echo "${TEST_SUITE_NAME}: Run pytest with fvp"
 
     ./examples/models/llama3_2_vision/install_requirements.sh
-    source examples/arm/ethos-u-scratch/setup_path.sh
 
     # Prepare Corstone-3x0 FVP for pytest
     examples/arm/run.sh --model_name=add --build_only
@@ -91,8 +98,6 @@ test_pytest_ethosu_fvp() { # Same as test_pytest but also sometime verify using 
 
 test_run_ethosu_fvp() { # End to End model tests using run.sh
     echo "${TEST_SUITE_NAME}: Test ethos-u delegate examples with run.sh"
-
-    source examples/arm/ethos-u-scratch/setup_path.sh
 
     # TOSA quantized
     echo "${TEST_SUITE_NAME}: Test ethos-u target TOSA"
@@ -113,8 +118,6 @@ test_run_ethosu_fvp() { # End to End model tests using run.sh
 
 test_models_ethosu_fvp() { # End to End model tests using model_test.py
     echo "${TEST_SUITE_NAME}: Test ethos-u delegate models with test_model.py"
-
-    source examples/arm/ethos-u-scratch/setup_path.sh
 
     # Build common libs once
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --build_libs
