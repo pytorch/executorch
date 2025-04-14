@@ -58,7 +58,7 @@ executorch
 │   ├── <a href="exir/verification">verification</a> - IR verification.
 ├── <a href="extension">extension</a> - Extensions built on top of the runtime.
 │   ├── <a href="extension/android">android</a> - ExecuTorch wrappers for Android apps. Please refer to the <a href="docs/source/using-executorch-android.md">Android documentation</a> and <a href="https://pytorch.org/executorch/main/javadoc/">Javadoc</a> for more information.
-│   ├── <a href="extension/apple">apple</a> - ExecuTorch wrappers for iOS apps. Please refer to the <a href="docs/source/using-executorch-ios.md">iOS documentation</a> and <a href="https://pytorch.org/executorch/stable/apple-runtime.html">how to integrate into Apple platform</a> for more information.
+│   ├── <a href="extension/apple">apple</a> - ExecuTorch wrappers for iOS apps. Please refer to the <a href="docs/source/using-executorch-ios.md">iOS documentation</a> and <a href="https://pytorch.org/executorch/main/using-executorch-ios.html">how to integrate into Apple platform</a> for more information.
 │   ├── <a href="extension/aten_util">aten_util</a> - Converts to and from PyTorch ATen types.
 │   ├── <a href="extension/data_loader">data_loader</a> - 1st party data loader implementations.
 │   ├── <a href="extension/evalue_util">evalue_util</a> - Helpers for working with EValue objects.
