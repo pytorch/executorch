@@ -14,6 +14,7 @@ from executorch.backends.qualcomm._passes import (
     AnnotateUnbind,
     ConvertBmmToMatmul,
     ConvertConv1dToConv2d,
+    ConvertSquareToPow,
     ConvertUpsampleBicubicWithBilinear,
     DecomposeAny,
     DecomposeCDist,
@@ -199,6 +200,7 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(DecomposeExpM1())
+        self.add_pass(ConvertSquareToPow())
         self.add_pass(LiftConstantScalarOperands())
         self._transform(exported_program.graph_module)
         ep = lift_constant_tensor_pass(exported_program)
