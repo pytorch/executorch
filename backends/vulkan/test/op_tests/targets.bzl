@@ -8,6 +8,7 @@ def define_test_targets(test_name, extra_deps = [], src_file = None, is_fbcode =
         "//third-party/googletest:gtest_main",
         "//executorch/backends/vulkan:vulkan_graph_runtime",
         runtime.external_dep_location("libtorch"),
+        runtime.external_dep_location("libtorch_cpu"),
     ] + extra_deps
 
     src_file_str = src_file if src_file else "{}.cpp".format(test_name)
