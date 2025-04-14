@@ -660,22 +660,443 @@ OTHER_LDFLAGS = $(inherited) \
 </div>
 <div class="section" id="runtime-api">
 <h2>Runtime API<a class="headerlink" href="#runtime-api" title="Permalink to this heading">¶</a></h2>
-<p>Check out the <a class="reference internal" href="extension-module.html"><span class="doc std std-doc">C++ Runtime API</span></a> and <a class="reference internal" href="extension-tensor.html"><span class="doc std std-doc">Tensors</span></a> tutorials to learn more about how to load and run an exported model. It is recommended to use the C++ API for macOS or iOS, wrapped with Objective-C++ and Swift code if needed to expose it for other components. Please refer to the <a class="reference internal" href="demo-apps-ios.html"><span class="doc std std-doc">Demo App</span></a> as an example of such a setup.</p>
-<p>Once linked against the <code class="docutils literal notranslate"><span class="pre">executorch</span></code> runtime framework, the target can now import all ExecuTorch public headers. For example, in Objective-C++:</p>
-<div class="highlight-none notranslate highlight-objectivecpp"><div class="highlight"><pre><span></span>#import &lt;ExecuTorch/ExecuTorch.h&gt;
-#import &lt;executorch/extension/module/module.h&gt;
-#import &lt;executorch/extension/tensor/tensor.h&gt;
+<p>ExecuTorch provides native Objective-C APIs, automatically bridged to Swift, for interacting with the runtime. These APIs act as wrappers around the core C++ components found in <a class="reference internal" href="extension-tensor.html"><span class="doc std std-doc">extension/tensor</span></a> and <a class="reference internal" href="extension-module.html"><span class="doc std std-doc">extension/module</span></a>, offering a more idiomatic experience for Apple platform developers.</p>
+<p><strong>Note:</strong> These Objective-C/Swift APIs are currently experimental and subject to change.</p>
+<div class="section" id="importing">
+<h3>Importing<a class="headerlink" href="#importing" title="Permalink to this heading">¶</a></h3>
+<p>Once linked against the <code class="docutils literal notranslate"><span class="pre">executorch</span></code> framework, you can import the necessary components.</p>
+<p>Objective-C (Objective-C++):</p>
+<div class="highlight-none notranslate highlight-objectivec"><div class="highlight"><pre><span></span><span class="c1">// Import the main umbrella header for Module/Tensor/Value wrappers.</span>
+<span class="cp">#import &lt;ExecuTorch/ExecuTorch.h&gt;</span>
+
+<span class="c1">// If using C++ directly alongside Objective-C++, you might still need C++ headers.</span>
+<span class="cp">#import &lt;executorch/extension/module/module.h&gt;</span>
+<span class="cp">#import &lt;executorch/extension/tensor/tensor.h&gt;</span>
 </pre></div>
 </div>
-<p>Or in Swift:</p>
+<p>Swift:</p>
 <div class="highlight-none notranslate highlight-swift"><div class="highlight"><pre><span></span><span class="kd">import</span><span class="w"> </span><span class="nc">ExecuTorch</span>
 </pre></div>
 </div>
-<p><strong>Note:</strong> Importing the ExecuTorch umbrella header (or ExecuTorch module in Swift) provides access to the logging API only. You still need to import the other runtime headers explicitly as needed, e.g., <code class="docutils literal notranslate"><span class="pre">module.h</span></code>. There is no support for other runtime APIs in Objective-C or Swift beyond logging described below.</p>
-<p><strong>Note:</strong> Logs are stripped in the release builds of ExecuTorch frameworks. To preserve logging, use debug builds during development.</p>
+<div class="section" id="example">
+<h4>Example<a class="headerlink" href="#example" title="Permalink to this heading">¶</a></h4>
+<p>Here’s a concise example demonstrating how to load a model, prepare input, run inference, and process output using the Objective-C and Swift API. Imagine you have a MobileNet v3 model (<code class="docutils literal notranslate"><span class="pre">mv3.pte</span></code>) that takes a <code class="docutils literal notranslate"><span class="pre">[1,</span> <span class="pre">3,</span> <span class="pre">224,</span> <span class="pre">224]</span></code> float tensor as input and outputs logits.</p>
+<p>Objective-C:</p>
+<div class="highlight-none notranslate highlight-objectivec"><div class="highlight"><pre><span></span><span class="bp">NSString</span><span class="w"> </span><span class="o">*</span><span class="n">modelPath</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[[</span><span class="bp">NSBundle</span><span class="w"> </span><span class="n">mainBundle</span><span class="p">]</span><span class="w"> </span><span class="n">pathForResource</span><span class="o">:</span><span class="s">@&quot;mv3&quot;</span><span class="w"> </span><span class="n">ofType</span><span class="o">:</span><span class="s">@&quot;pte&quot;</span><span class="p">];</span>
+
+<span class="c1">// Create a module with the model file path. Nothing gets loaded into memory just yet.</span>
+<span class="n">ExecuTorchModule</span><span class="w"> </span><span class="o">*</span><span class="n">module</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[[</span><span class="n">ExecuTorchModule</span><span class="w"> </span><span class="n">alloc</span><span class="p">]</span><span class="w"> </span><span class="n">initWithFilePath</span><span class="o">:</span><span class="n">modelPath</span><span class="p">];</span>
+
+<span class="bp">NSError</span><span class="w"> </span><span class="o">*</span><span class="n">error</span><span class="p">;</span><span class="w">  </span><span class="c1">// Optional error output argument to learn about failures.</span>
+
+<span class="c1">// Force-load the program and &#39;forward&#39; method. Otherwise, it&#39;s loaded at the first execution.</span>
+<span class="p">[</span><span class="n">module</span><span class="w"> </span><span class="n">loadMethod</span><span class="o">:</span><span class="s">@&quot;forward&quot;</span><span class="w"> </span><span class="n">error</span><span class="o">:&amp;</span><span class="n">error</span><span class="p">];</span>
+
+<span class="kt">float</span><span class="w"> </span><span class="o">*</span><span class="n">imageBuffer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">...;</span><span class="w">  </span><span class="c1">// Existing image buffer.</span>
+
+<span class="c1">// Create an input tensor referencing the buffer and assuming the given shape and data type.</span>
+<span class="n">ExecuTorchTensor</span><span class="w"> </span><span class="o">*</span><span class="n">inputTensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[[</span><span class="n">ExecuTorchTensor</span><span class="w"> </span><span class="n">alloc</span><span class="p">]</span><span class="w"> </span><span class="n">initWithBytesNoCopy</span><span class="o">:</span><span class="n">imageBuffer</span>
+<span class="w">                                                                        </span><span class="nl">shape</span><span class="p">:</span><span class="l">@[</span><span class="mi">@1</span><span class="p">,</span><span class="w"> </span><span class="mi">@3</span><span class="p">,</span><span class="w"> </span><span class="mi">@224</span><span class="p">,</span><span class="w"> </span><span class="mi">@224</span><span class="l">]</span>
+<span class="w">                                                                     </span><span class="nl">dataType</span><span class="p">:</span><span class="n">ExecuTorchDataTypeFloat</span><span class="p">];</span>
+
+<span class="c1">// Execute the &#39;forward&#39; method with the given input tensor and get output values back.</span>
+<span class="bp">NSArray</span><span class="o">&lt;</span><span class="n">ExecuTorchValue</span><span class="w"> </span><span class="o">*&gt;</span><span class="w"> </span><span class="o">*</span><span class="n">outputs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="n">module</span><span class="w"> </span><span class="n">forwardWithTensor</span><span class="o">:</span><span class="n">inputTensor</span><span class="w"> </span><span class="n">error</span><span class="o">:&amp;</span><span class="n">error</span><span class="p">];</span>
+
+<span class="c1">// Get the first output value assuming it&#39;s a tensor.</span>
+<span class="n">ExecuTorchTensor</span><span class="w"> </span><span class="o">*</span><span class="n">outputTensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">outputs</span><span class="p">.</span><span class="n">firstObject</span><span class="p">.</span><span class="n">tensor</span><span class="p">;</span>
+
+<span class="c1">// Access the output tensor data.</span>
+<span class="p">[</span><span class="n">outputTensor</span><span class="w"> </span><span class="n">bytesWithHandler</span><span class="o">:^</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">pointer</span><span class="p">,</span><span class="w"> </span><span class="n">NSInteger</span><span class="w"> </span><span class="n">count</span><span class="p">,</span><span class="w"> </span><span class="n">ExecuTorchDataType</span><span class="w"> </span><span class="n">dataType</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kt">float</span><span class="w"> </span><span class="o">*</span><span class="n">logits</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="kt">float</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">pointer</span><span class="p">;</span>
+<span class="w">  </span><span class="c1">// Use logits...</span>
+<span class="p">}];</span>
+</pre></div>
+</div>
+<p>Swift:</p>
+<div class="highlight-none notranslate highlight-swift"><div class="highlight"><pre><span></span><span class="kd">let</span><span class="w"> </span><span class="nv">modelPath</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">Bundle</span><span class="p">.</span><span class="n">main</span><span class="p">.</span><span class="n">path</span><span class="p">(</span><span class="n">forResource</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;mv3&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">ofType</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;pte&quot;</span><span class="p">)</span><span class="o">!</span>
+
+<span class="c1">// Create a module with the model file path. Nothing gets loaded into memory just yet.</span>
+<span class="kd">let</span><span class="w"> </span><span class="nv">module</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">Module</span><span class="p">(</span><span class="n">filePath</span><span class="p">:</span><span class="w"> </span><span class="n">modelPath</span><span class="p">)</span>
+
+<span class="c1">// Force-load the program and &#39;forward&#39; method. Otherwise, it&#39;s loaded at the first execution.</span>
+<span class="k">try</span><span class="w"> </span><span class="n">module</span><span class="p">.</span><span class="n">load</span><span class="p">(</span><span class="s">&quot;forward&quot;</span><span class="p">)</span>
+
+<span class="kd">let</span><span class="w"> </span><span class="nv">imageBuffer</span><span class="p">:</span><span class="w"> </span><span class="n">UnsafeMutableRawPointer</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="c1">// Existing image buffer</span>
+
+<span class="c1">// Create an input tensor referencing the buffer and assuming the given shape and data type.</span>
+<span class="kd">let</span><span class="w"> </span><span class="nv">inputTensor</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">Tensor</span><span class="p">(</span>
+<span class="w">  </span><span class="n">bytesNoCopy</span><span class="p">:</span><span class="w"> </span><span class="n">imageBuffer</span><span class="p">,</span>
+<span class="w">  </span><span class="n">shape</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">224</span><span class="p">,</span><span class="w"> </span><span class="mi">224</span><span class="p">],</span>
+<span class="w">  </span><span class="n">dataType</span><span class="p">:</span><span class="w"> </span><span class="p">.</span><span class="n">float</span>
+<span class="p">)</span>
+
+<span class="c1">// Execute the &#39;forward&#39; method with the given input tensor and get output values back.</span>
+<span class="kd">let</span><span class="w"> </span><span class="nv">outputs</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="k">try</span><span class="w"> </span><span class="n">module</span><span class="p">.</span><span class="n">forward</span><span class="p">(</span><span class="n">inputTensor</span><span class="p">)</span>
+
+<span class="c1">// Get the first output value assuming it&#39;s a tensor.</span>
+<span class="k">if</span><span class="w"> </span><span class="kd">let</span><span class="w"> </span><span class="nv">outputTensor</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">outputs</span><span class="p">.</span><span class="bp">first</span><span class="p">?.</span><span class="n">tensor</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="c1">// Access the output tensor data.</span>
+<span class="w">  </span><span class="n">outputTensor</span><span class="p">.</span><span class="n">bytes</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">pointer</span><span class="p">,</span><span class="w"> </span><span class="bp">count</span><span class="p">,</span><span class="w"> </span><span class="n">dataType</span><span class="w"> </span><span class="k">in</span>
+<span class="w">    </span><span class="c1">// Copy the tensor data into logits array for easier access.</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="nv">logits</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nb">Array</span><span class="p">(</span><span class="nb">UnsafeBufferPointer</span><span class="p">(</span>
+<span class="w">      </span><span class="n">start</span><span class="p">:</span><span class="w"> </span><span class="n">pointer</span><span class="p">.</span><span class="n">assumingMemoryBound</span><span class="p">(</span><span class="n">to</span><span class="p">:</span><span class="w"> </span><span class="nb">Float</span><span class="p">.</span><span class="kc">self</span><span class="p">),</span>
+<span class="w">      </span><span class="bp">count</span><span class="p">:</span><span class="w"> </span><span class="bp">count</span>
+<span class="w">    </span><span class="p">))</span>
+<span class="w">    </span><span class="c1">// Use logits...</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="tensor">
+<h3>Tensor<a class="headerlink" href="#tensor" title="Permalink to this heading">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> class (exposed as <code class="docutils literal notranslate"><span class="pre">ExecuTorchTensor</span></code> in Objective-C) represents a multi-dimensional array of elements (such as floats or ints) and includes metadata like shape (dimensions) and data type. Tensors are used to feed inputs to a model and retrieve outputs, or for any computation you need to do on raw data. You can create tensors from simple arrays of numbers, inspect their properties, read or modify their contents, and even reshape or copy them.</p>
+<div class="section" id="key-properties">
+<h4>Key Properties:<a class="headerlink" href="#key-properties" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p>dataType: The element type (e.g., <code class="docutils literal notranslate"><span class="pre">.float</span></code>, <code class="docutils literal notranslate"><span class="pre">.int</span></code>, <code class="docutils literal notranslate"><span class="pre">.byte</span></code>).</p></li>
+<li><p>shape: An array of <code class="docutils literal notranslate"><span class="pre">NSNumber</span></code> describing the size of each dimension.</p></li>
+<li><p>count: The total number of elements.</p></li>
+<li><p>strides: The jump in memory needed to advance one element along each dimension.</p></li>
+<li><p>dimensionOrder: The order of dimensions in memory.</p></li>
+<li><p>shapeDynamism: Indicates if the tensor shape can change (<code class="docutils literal notranslate"><span class="pre">.static</span></code>, <code class="docutils literal notranslate"><span class="pre">.dynamicBound</span></code>, <code class="docutils literal notranslate"><span class="pre">.dynamicUnbound</span></code>).</p></li>
+</ul>
+</div>
+<div class="section" id="initialization">
+<h4>Initialization:<a class="headerlink" href="#initialization" title="Permalink to this heading">¶</a></h4>
+<p>You can create tensors in various ways:</p>
+<p>From existing memory buffers:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">init(bytesNoCopy:shape:dataType:...)</span></code>: Creates a tensor that references an existing memory buffer without copying. The buffer’s lifetime must exceed the tensor’s.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">init(bytes:shape:dataType:...)</span></code>: Creates a tensor by copying data from a memory buffer.</p></li>
+</ul>
+<p>From <code class="docutils literal notranslate"><span class="pre">NSData</span></code> / <code class="docutils literal notranslate"><span class="pre">Data</span></code>:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">init(data:shape:dataType:...)</span></code>: Creates a tensor using an <code class="docutils literal notranslate"><span class="pre">NSData</span></code> object, referencing its bytes without copying.</p></li>
+</ul>
+<p>From scalar arrays:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">init(_:shape:dataType:...)</span></code>: Creates a tensor from an array of <code class="docutils literal notranslate"><span class="pre">NSNumber</span></code> scalars. Convenience initializers exist to infer shape or data type.</p></li>
+</ul>
+<p>From single scalars:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">init(_:)</span></code>, <code class="docutils literal notranslate"><span class="pre">init(_:dataType:)</span></code>, <code class="docutils literal notranslate"><span class="pre">init(float:)</span></code>, <code class="docutils literal notranslate"><span class="pre">init(int:)</span></code>, etc.: Create 0-dimensional tensors (scalars).</p></li>
+</ul>
+<p>Objective-C:</p>
+<div class="highlight-none notranslate highlight-objectivec"><div class="highlight"><pre><span></span><span class="cp">#import &lt;ExecuTorch/ExecuTorch.h&gt;</span>
+
+<span class="c1">// Create from copying bytes.</span>
+<span class="kt">float</span><span class="w"> </span><span class="n">data</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="mf">1.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">2.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">3.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">4.0f</span><span class="p">};</span>
+<span class="bp">NSArray</span><span class="o">&lt;</span><span class="bp">NSNumber</span><span class="w"> </span><span class="o">*&gt;</span><span class="w"> </span><span class="o">*</span><span class="n">shape</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="l">@[</span><span class="mi">@2</span><span class="p">,</span><span class="w"> </span><span class="mi">@2</span><span class="l">]</span><span class="p">;</span>
+<span class="n">ExecuTorchTensor</span><span class="w"> </span><span class="o">*</span><span class="n">tensorFromBytes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[[</span><span class="n">ExecuTorchTensor</span><span class="w"> </span><span class="n">alloc</span><span class="p">]</span><span class="w"> </span><span class="n">initWithBytes</span><span class="o">:</span><span class="n">data</span>
+<span class="w">                                                                      </span><span class="nl">shape</span><span class="p">:</span><span class="n">shape</span>
+<span class="w">                                                                   </span><span class="nl">dataType</span><span class="p">:</span><span class="n">ExecuTorchDataTypeFloat</span><span class="p">];</span>
+
+<span class="c1">// Create from scalars.</span>
+<span class="bp">NSArray</span><span class="o">&lt;</span><span class="bp">NSNumber</span><span class="w"> </span><span class="o">*&gt;</span><span class="w"> </span><span class="o">*</span><span class="n">scalars</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="l">@[@(</span><span class="mi">1</span><span class="l">)</span><span class="p">,</span><span class="w"> </span><span class="l">@(</span><span class="mi">2</span><span class="l">)</span><span class="p">,</span><span class="w"> </span><span class="l">@(</span><span class="mi">3</span><span class="l">)]</span><span class="p">;</span>
+<span class="n">ExecuTorchTensor</span><span class="w"> </span><span class="o">*</span><span class="n">tensorFromScalars</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[[</span><span class="n">ExecuTorchTensor</span><span class="w"> </span><span class="n">alloc</span><span class="p">]</span><span class="w"> </span><span class="n">initWithScalars</span><span class="o">:</span><span class="n">scalars</span>
+<span class="w">                                                                       </span><span class="nl">dataType</span><span class="p">:</span><span class="n">ExecuTorchDataTypeInt</span><span class="p">];</span>
+
+<span class="c1">// Create a float scalar tensor.</span>
+<span class="n">ExecuTorchTensor</span><span class="w"> </span><span class="o">*</span><span class="n">scalarTensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[[</span><span class="n">ExecuTorchTensor</span><span class="w"> </span><span class="n">alloc</span><span class="p">]</span><span class="w"> </span><span class="n">initWithFloat</span><span class="o">:</span><span class="mf">3.14f</span><span class="p">];</span>
+</pre></div>
+</div>
+<p>Swift:</p>
+<div class="highlight-none notranslate highlight-swift"><div class="highlight"><pre><span></span><span class="kd">import</span><span class="w"> </span><span class="nc">ExecuTorch</span>
+
+<span class="c1">// Create from existing buffer without copying.</span>
+<span class="kd">var</span><span class="w"> </span><span class="nv">mutableData</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="nb">Float</span><span class="p">]</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="p">[</span><span class="mf">1.0</span><span class="p">,</span><span class="w"> </span><span class="mf">2.0</span><span class="p">,</span><span class="w"> </span><span class="mf">3.0</span><span class="p">,</span><span class="w"> </span><span class="mf">4.0</span><span class="p">]</span>
+<span class="kd">let</span><span class="w"> </span><span class="nv">tensorNoCopy</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">mutableData</span><span class="p">.</span><span class="n">withUnsafeMutableBytes</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">bufferPointer</span><span class="w"> </span><span class="k">in</span>
+<span class="w">  </span><span class="n">Tensor</span><span class="p">(</span>
+<span class="w">    </span><span class="n">bytesNoCopy</span><span class="p">:</span><span class="w"> </span><span class="n">bufferPointer</span><span class="p">.</span><span class="n">baseAddress</span><span class="p">!,</span>
+<span class="w">    </span><span class="n">shape</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">],</span>
+<span class="w">    </span><span class="n">dataType</span><span class="p">:</span><span class="w"> </span><span class="p">.</span><span class="n">float</span>
+<span class="w">  </span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="c1">// Create from Data (no copy).</span>
+<span class="kd">let</span><span class="w"> </span><span class="nv">data</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">Data</span><span class="p">(</span><span class="n">bytes</span><span class="p">:</span><span class="w"> </span><span class="n">mutableData</span><span class="p">,</span><span class="w"> </span><span class="bp">count</span><span class="p">:</span><span class="w"> </span><span class="n">mutableData</span><span class="p">.</span><span class="bp">count</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">MemoryLayout</span><span class="p">&lt;</span><span class="nb">Float</span><span class="p">&gt;.</span><span class="n">size</span><span class="p">)</span>
+<span class="kd">let</span><span class="w"> </span><span class="nv">tensorFromData</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">Tensor</span><span class="p">(</span><span class="n">data</span><span class="p">:</span><span class="w"> </span><span class="n">data</span><span class="p">,</span><span class="w"> </span><span class="n">shape</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">],</span><span class="w"> </span><span class="n">dataType</span><span class="p">:</span><span class="w"> </span><span class="p">.</span><span class="n">float</span><span class="p">)</span>
+
+<span class="c1">// Create from scalars (infers float type).</span>
+<span class="kd">let</span><span class="w"> </span><span class="nv">tensorFromScalars</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">Tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span><span class="w"> </span><span class="mf">2.0</span><span class="p">,</span><span class="w"> </span><span class="mf">3.0</span><span class="p">,</span><span class="w"> </span><span class="mf">4.0</span><span class="p">],</span><span class="w"> </span><span class="n">shape</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">4</span><span class="p">])</span>
+
+<span class="c1">// Create an Int scalar tensor.</span>
+<span class="kd">let</span><span class="w"> </span><span class="nv">scalarTensor</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">Tensor</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span><span class="w"> </span><span class="c1">// Infers Int as .long data type (64-bit integer)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="accessing-data">
+<h4>Accessing Data:<a class="headerlink" href="#accessing-data" title="Permalink to this heading">¶</a></h4>
+<p>Use <code class="docutils literal notranslate"><span class="pre">bytes(_:)</span></code> for immutable access and <code class="docutils literal notranslate"><span class="pre">mutableBytes(_:)</span></code> for mutable access to the tensor’s underlying data buffer.</p>
+<p>Objective-C:</p>
+<div class="highlight-none notranslate highlight-objectivec"><div class="highlight"><pre><span></span><span class="p">[</span><span class="n">tensor</span><span class="w"> </span><span class="n">bytesWithHandler</span><span class="o">:^</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">pointer</span><span class="p">,</span><span class="w"> </span><span class="n">NSInteger</span><span class="w"> </span><span class="n">count</span><span class="p">,</span><span class="w"> </span><span class="n">ExecuTorchDataType</span><span class="w"> </span><span class="n">dataType</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">dataType</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">ExecuTorchDataTypeFloat</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">float</span><span class="w"> </span><span class="o">*</span><span class="n">floatPtr</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">float</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">pointer</span><span class="p">;</span>
+<span class="w">    </span><span class="n">NSLog</span><span class="p">(</span><span class="s">@&quot;First float element: %f&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">floatPtr</span><span class="p">[</span><span class="mi">0</span><span class="p">]);</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}];</span>
+
+<span class="p">[</span><span class="n">tensor</span><span class="w"> </span><span class="n">mutableBytesWithHandler</span><span class="o">:^</span><span class="p">(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">pointer</span><span class="p">,</span><span class="w"> </span><span class="n">NSInteger</span><span class="w"> </span><span class="n">count</span><span class="p">,</span><span class="w"> </span><span class="n">ExecuTorchDataType</span><span class="w"> </span><span class="n">dataType</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">dataType</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">ExecuTorchDataTypeFloat</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">float</span><span class="w"> </span><span class="o">*</span><span class="n">floatPtr</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="kt">float</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">pointer</span><span class="p">;</span>
+<span class="w">    </span><span class="n">floatPtr</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">100.0f</span><span class="p">;</span><span class="w"> </span><span class="c1">// Modify the original mutableData buffer.</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}];</span>
+</pre></div>
+</div>
+<p>Swift:</p>
+<div class="highlight-none notranslate highlight-swift"><div class="highlight"><pre><span></span><span class="n">tensor</span><span class="p">.</span><span class="n">bytes</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">pointer</span><span class="p">,</span><span class="w"> </span><span class="bp">count</span><span class="p">,</span><span class="w"> </span><span class="n">dataType</span><span class="w"> </span><span class="k">in</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="n">dataType</span><span class="w"> </span><span class="p">==</span><span class="w"> </span><span class="p">.</span><span class="n">float</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="nv">buffer</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nb">UnsafeBufferPointer</span><span class="p">(</span><span class="n">start</span><span class="p">:</span><span class="w"> </span><span class="n">pointer</span><span class="p">.</span><span class="n">assumingMemoryBound</span><span class="p">(</span><span class="n">to</span><span class="p">:</span><span class="w"> </span><span class="nb">Float</span><span class="p">.</span><span class="kc">self</span><span class="p">),</span><span class="w"> </span><span class="bp">count</span><span class="p">:</span><span class="w"> </span><span class="bp">count</span><span class="p">)</span>
+<span class="w">    </span><span class="bp">print</span><span class="p">(</span><span class="s">&quot;First float element: </span><span class="si">\(</span><span class="n">buffer</span><span class="p">.</span><span class="bp">first</span><span class="w"> </span><span class="p">??</span><span class="w"> </span><span class="mf">0.0</span><span class="si">)</span><span class="s">&quot;</span><span class="p">)</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+
+<span class="n">tensor</span><span class="p">.</span><span class="n">mutableBytes</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">pointer</span><span class="p">,</span><span class="w"> </span><span class="bp">count</span><span class="p">,</span><span class="w"> </span><span class="n">dataType</span><span class="w"> </span><span class="k">in</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="n">dataType</span><span class="w"> </span><span class="p">==</span><span class="w"> </span><span class="p">.</span><span class="n">float</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="nv">buffer</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nb">UnsafeMutableBufferPointer</span><span class="p">(</span><span class="n">start</span><span class="p">:</span><span class="w"> </span><span class="n">pointer</span><span class="p">.</span><span class="n">assumingMemoryBound</span><span class="p">(</span><span class="n">to</span><span class="p">:</span><span class="w"> </span><span class="nb">Float</span><span class="p">.</span><span class="kc">self</span><span class="p">),</span><span class="w"> </span><span class="bp">count</span><span class="p">:</span><span class="w"> </span><span class="bp">count</span><span class="p">)</span>
+<span class="w">    </span><span class="n">buffer</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mf">200.0</span><span class="w"> </span><span class="c1">// Modify the original mutableData buffer.</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="resizing">
+<h4>Resizing:<a class="headerlink" href="#resizing" title="Permalink to this heading">¶</a></h4>
+<p>Tensors can be resized if their underlying memory allocation allows it (typically requires ShapeDynamism other than Static or sufficient capacity).</p>
+<p>Objective-C:</p>
+<div class="highlight-none notranslate highlight-objectivec"><div class="highlight"><pre><span></span><span class="bp">NSError</span><span class="w"> </span><span class="o">*</span><span class="n">error</span><span class="p">;</span>
+<span class="kt">BOOL</span><span class="w"> </span><span class="n">success</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="n">tensor</span><span class="w"> </span><span class="n">resizeToShape</span><span class="o">:</span><span class="l">@[</span><span class="mi">@4</span><span class="p">,</span><span class="w"> </span><span class="mi">@1</span><span class="l">]</span><span class="w"> </span><span class="n">error</span><span class="o">:&amp;</span><span class="n">error</span><span class="p">];</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">success</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="n">NSLog</span><span class="p">(</span><span class="s">@&quot;Resized shape: %@&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">tensor</span><span class="p">.</span><span class="n">shape</span><span class="p">);</span>
+<span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="n">NSLog</span><span class="p">(</span><span class="s">@&quot;Resize failed: %@&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">error</span><span class="p">);</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Swift:</p>
+<div class="highlight-none notranslate highlight-swift"><div class="highlight"><pre><span></span><span class="k">do</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">try</span><span class="w"> </span><span class="n">tensor</span><span class="p">.</span><span class="n">resize</span><span class="p">(</span><span class="n">to</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">4</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">])</span>
+<span class="w">  </span><span class="bp">print</span><span class="p">(</span><span class="s">&quot;Resized shape: </span><span class="si">\(</span><span class="n">tensor</span><span class="p">.</span><span class="n">shape</span><span class="si">)</span><span class="s">&quot;</span><span class="p">)</span>
+<span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="bp">print</span><span class="p">(</span><span class="s">&quot;Resize failed: </span><span class="si">\(</span><span class="n">error</span><span class="si">)</span><span class="s">&quot;</span><span class="p">)</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="value">
+<h3>Value<a class="headerlink" href="#value" title="Permalink to this heading">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">Value</span></code> class (exposed as <code class="docutils literal notranslate"><span class="pre">ExecuTorchValue</span></code> in Objective-C) is a dynamic container that can hold different types of data, primarily used for model inputs and outputs. ExecuTorch methods accept and return arrays of <code class="docutils literal notranslate"><span class="pre">Value</span></code> objects.</p>
+<div class="section" id="id1">
+<h4>Key Properties:<a class="headerlink" href="#id1" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">tag</span></code>: Indicates the type of data held (e.g., <code class="docutils literal notranslate"><span class="pre">.tensor</span></code>, <code class="docutils literal notranslate"><span class="pre">.integer</span></code>, <code class="docutils literal notranslate"><span class="pre">.string</span></code>, <code class="docutils literal notranslate"><span class="pre">.boolean</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">isTensor</span></code>, <code class="docutils literal notranslate"><span class="pre">isInteger</span></code>, <code class="docutils literal notranslate"><span class="pre">isString</span></code>, etc.: Boolean checks for the type.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tensor</span></code>, <code class="docutils literal notranslate"><span class="pre">integer</span></code>, <code class="docutils literal notranslate"><span class="pre">string</span></code>, <code class="docutils literal notranslate"><span class="pre">boolean</span></code>, <code class="docutils literal notranslate"><span class="pre">double</span></code>: Accessors for the underlying data (return <code class="docutils literal notranslate"><span class="pre">nil</span></code> or a default value if the tag doesn’t match).</p></li>
+</ul>
+</div>
+<div class="section" id="id2">
+<h4>Initialization:<a class="headerlink" href="#id2" title="Permalink to this heading">¶</a></h4>
+<p>Create Value objects directly from the data they should hold.</p>
+<p>Objective-C:</p>
+<div class="highlight-none notranslate highlight-objectivec"><div class="highlight"><pre><span></span><span class="cp">#import &lt;ExecuTorch/ExecuTorch.h&gt;</span>
+
+<span class="n">ExecuTorchTensor</span><span class="w"> </span><span class="o">*</span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[[</span><span class="n">ExecuTorchTensor</span><span class="w"> </span><span class="n">alloc</span><span class="p">]</span><span class="w"> </span><span class="n">initWithFloat</span><span class="o">:</span><span class="mf">1.0f</span><span class="p">];</span>
+
+<span class="n">ExecuTorchValue</span><span class="w"> </span><span class="o">*</span><span class="n">tensorValue</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[[</span><span class="n">ExecuTorchValue</span><span class="w"> </span><span class="n">alloc</span><span class="p">]</span><span class="w"> </span><span class="n">valueWithTensor</span><span class="o">:</span><span class="n">tensor</span><span class="p">];</span>
+<span class="n">ExecuTorchValue</span><span class="w"> </span><span class="o">*</span><span class="n">intValue</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[[</span><span class="n">ExecuTorchValue</span><span class="w"> </span><span class="n">alloc</span><span class="p">]</span><span class="w"> </span><span class="n">valueWithInteger</span><span class="o">:</span><span class="mi">100</span><span class="p">];</span>
+<span class="n">ExecuTorchValue</span><span class="w"> </span><span class="o">*</span><span class="n">stringValue</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[[</span><span class="n">ExecuTorchValue</span><span class="w"> </span><span class="n">alloc</span><span class="p">]</span><span class="w"> </span><span class="n">valueWithString</span><span class="o">:</span><span class="s">@&quot;hello&quot;</span><span class="p">];</span>
+<span class="n">ExecuTorchValue</span><span class="w"> </span><span class="o">*</span><span class="n">boolValue</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[[</span><span class="n">ExecuTorchValue</span><span class="w"> </span><span class="n">alloc</span><span class="p">]</span><span class="w"> </span><span class="n">valueWithBoolean</span><span class="o">:</span><span class="nb">YES</span><span class="p">];</span>
+<span class="n">ExecuTorchValue</span><span class="w"> </span><span class="o">*</span><span class="n">doubleValue</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[[</span><span class="n">ExecuTorchValue</span><span class="w"> </span><span class="n">alloc</span><span class="p">]</span><span class="w"> </span><span class="n">valueWithDouble</span><span class="o">:</span><span class="mf">3.14</span><span class="p">];</span>
+</pre></div>
+</div>
+<p>Swift:</p>
+<div class="highlight-none notranslate highlight-swift"><div class="highlight"><pre><span></span><span class="kd">import</span><span class="w"> </span><span class="nc">ExecuTorch</span>
+
+<span class="kd">let</span><span class="w"> </span><span class="nv">tensor</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">Tensor</span><span class="p">(</span><span class="mf">2.0</span><span class="p">)</span>
+
+<span class="kd">let</span><span class="w"> </span><span class="nv">tensorValue</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">Value</span><span class="p">(</span><span class="n">tensor</span><span class="p">)</span>
+<span class="kd">let</span><span class="w"> </span><span class="nv">intValue</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">Value</span><span class="p">(</span><span class="mi">200</span><span class="p">)</span>
+<span class="kd">let</span><span class="w"> </span><span class="nv">stringValue</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">Value</span><span class="p">(</span><span class="s">&quot;world&quot;</span><span class="p">)</span>
+<span class="kd">let</span><span class="w"> </span><span class="nv">boolValue</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">Value</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
+<span class="kd">let</span><span class="w"> </span><span class="nv">doubleValue</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">Value</span><span class="p">(</span><span class="mf">2.718</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="module">
+<h3>Module<a class="headerlink" href="#module" title="Permalink to this heading">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">Module</span></code> class (exposed as <code class="docutils literal notranslate"><span class="pre">ExecuTorchModule</span></code> in Objective-C) represents a loaded ExecuTorch model (<code class="docutils literal notranslate"><span class="pre">.pte</span></code> file). It provides methods to load the model program and execute its internal methods (like <code class="docutils literal notranslate"><span class="pre">forward</span></code>).</p>
+<div class="section" id="id3">
+<h4>Initialization:<a class="headerlink" href="#id3" title="Permalink to this heading">¶</a></h4>
+<p>Create a <code class="docutils literal notranslate"><span class="pre">Module</span></code> instance by providing the file path to the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> model. Initialization itself is lightweight and doesn’t load the program data immediately.</p>
+<p>Objective-C:</p>
+<div class="highlight-none notranslate highlight-objectivec"><div class="highlight"><pre><span></span><span class="cp">#import &lt;ExecuTorch/ExecuTorch.h&gt;</span>
+
+<span class="bp">NSString</span><span class="w"> </span><span class="o">*</span><span class="n">modelPath</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[[</span><span class="bp">NSBundle</span><span class="w"> </span><span class="n">mainBundle</span><span class="p">]</span><span class="w"> </span><span class="n">pathForResource</span><span class="o">:</span><span class="s">@&quot;model&quot;</span><span class="w"> </span><span class="n">ofType</span><span class="o">:</span><span class="s">@&quot;pte&quot;</span><span class="p">];</span>
+<span class="n">ExecuTorchModule</span><span class="w"> </span><span class="o">*</span><span class="n">module</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[[</span><span class="n">ExecuTorchModule</span><span class="w"> </span><span class="n">alloc</span><span class="p">]</span><span class="w"> </span><span class="n">initWithFilePath</span><span class="o">:</span><span class="n">modelPath</span><span class="p">];</span>
+<span class="c1">// Optional: specify load mode, e.g., memory mapping.</span>
+<span class="c1">// ExecuTorchModule *moduleMmap = [[ExecuTorchModule alloc] initWithFilePath:modelPath</span>
+<span class="c1">//                                                                   loadMode:ExecuTorchModuleLoadModeMmap];</span>
+</pre></div>
+</div>
+<p>Swift:</p>
+<div class="highlight-none notranslate highlight-swift"><div class="highlight"><pre><span></span><span class="kd">import</span><span class="w"> </span><span class="nc">ExecuTorch</span>
+
+<span class="kd">let</span><span class="w"> </span><span class="nv">modelPath</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">Bundle</span><span class="p">.</span><span class="n">main</span><span class="p">.</span><span class="n">path</span><span class="p">(</span><span class="n">forResource</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;model&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">ofType</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;pte&quot;</span><span class="p">)</span>
+<span class="kd">let</span><span class="w"> </span><span class="nv">module</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">Module</span><span class="p">(</span><span class="n">filePath</span><span class="p">:</span><span class="w"> </span><span class="n">modelPath</span><span class="p">!)</span>
+<span class="c1">// Optional: specify load mode, e.g., memory mapping.</span>
+<span class="c1">// let moduleMmap = Module(filePath: modelPath, loadMode: .mmap)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="loading">
+<h4>Loading:<a class="headerlink" href="#loading" title="Permalink to this heading">¶</a></h4>
+<p>Model loading is deferred until explicitly requested or needed for execution. While execution calls can trigger loading automatically, it’s often more efficient to load methods explicitly beforehand.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">load()</span></code>: Loads the basic program structure. Minimal verification is used by default.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">load(_:)</span></code>: Loads the program structure and prepares a specific method (e.g., “forward”) for execution. This performs necessary setup like backend delegation and is recommended if you know which method you’ll run.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">isLoaded()</span></code> / <code class="docutils literal notranslate"><span class="pre">isLoaded(_:)</span></code>: Check loading status.</p></li>
+</ul>
+<p>Objective-C:</p>
+<div class="highlight-none notranslate highlight-objectivec"><div class="highlight"><pre><span></span><span class="bp">NSError</span><span class="w"> </span><span class="o">*</span><span class="n">error</span><span class="p">;</span>
+<span class="c1">// Loads program and prepares &#39;forward&#39; for execution.</span>
+<span class="kt">BOOL</span><span class="w"> </span><span class="n">success</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="n">module</span><span class="w"> </span><span class="n">loadMethod</span><span class="o">:</span><span class="s">@&quot;forward&quot;</span><span class="w"> </span><span class="n">error</span><span class="o">:&amp;</span><span class="n">error</span><span class="p">];</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">success</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="n">NSLog</span><span class="p">(</span><span class="s">@&quot;Forward method loaded: %d&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">[</span><span class="n">module</span><span class="w"> </span><span class="n">isMethodLoaded</span><span class="o">:</span><span class="s">@&quot;forward&quot;</span><span class="p">]);</span>
+<span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="n">NSLog</span><span class="p">(</span><span class="s">@&quot;Failed to load method: %@&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">error</span><span class="p">);</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Swift:</p>
+<div class="highlight-none notranslate highlight-swift"><div class="highlight"><pre><span></span><span class="k">do</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="c1">// Loads program and prepares &#39;forward&#39; for execution.</span>
+<span class="w">  </span><span class="k">try</span><span class="w"> </span><span class="n">module</span><span class="p">.</span><span class="n">load</span><span class="p">(</span><span class="s">&quot;forward&quot;</span><span class="p">)</span>
+<span class="w">  </span><span class="bp">print</span><span class="p">(</span><span class="s">&quot;Forward method loaded: </span><span class="si">\(</span><span class="n">module</span><span class="p">.</span><span class="n">isLoaded</span><span class="si">(</span><span class="s">&quot;forward&quot;</span><span class="si">))</span><span class="s">&quot;</span><span class="p">)</span>
+<span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="bp">print</span><span class="p">(</span><span class="s">&quot;Failed to load method: </span><span class="si">\(</span><span class="n">error</span><span class="si">)</span><span class="s">&quot;</span><span class="p">)</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="execution">
+<h4>Execution:<a class="headerlink" href="#execution" title="Permalink to this heading">¶</a></h4>
+<p>The <code class="docutils literal notranslate"><span class="pre">Module</span></code> class offers flexible ways to execute methods within the loaded program.</p>
+<ul class="simple">
+<li><p>Named Execution: You can execute any available method by name using <code class="docutils literal notranslate"><span class="pre">execute(methodName:inputs:)</span></code>.</p></li>
+<li><p>Forward Shortcut: For the common case of running the primary inference method, use the <code class="docutils literal notranslate"><span class="pre">forward(inputs:)</span></code> shortcut, which is equivalent to calling execute with the method name “forward”.</p></li>
+<li><p>Input Flexibility: Inputs can be provided in several ways:</p>
+<ul>
+<li><p>As an array of <code class="docutils literal notranslate"><span class="pre">Value</span></code> objects. This is the most general form.</p></li>
+<li><p>As an array of <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> objects. This is a convenience where tensors are automatically wrapped into <code class="docutils literal notranslate"><span class="pre">Value</span></code> objects.</p></li>
+<li><p>As a single <code class="docutils literal notranslate"><span class="pre">Value</span></code> or <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> object if the method expects only one input.</p></li>
+<li><p>With no inputs if the method takes none.</p></li>
+</ul>
+</li>
+</ul>
+<p>Outputs are always returned as an array of <code class="docutils literal notranslate"><span class="pre">Value</span></code>.</p>
+<p>Objective-C:</p>
+<div class="highlight-none notranslate highlight-objectivec"><div class="highlight"><pre><span></span><span class="n">ExecuTorchTensor</span><span class="w"> </span><span class="o">*</span><span class="n">inputTensor1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[[</span><span class="n">ExecuTorchTensor</span><span class="w"> </span><span class="n">alloc</span><span class="p">]</span><span class="w"> </span><span class="n">initWithScalars</span><span class="o">:</span><span class="l">@[</span><span class="mf">@1.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">@2.0f</span><span class="l">]</span><span class="p">];</span>
+<span class="n">ExecuTorchTensor</span><span class="w"> </span><span class="o">*</span><span class="n">inputTensor2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[[</span><span class="n">ExecuTorchTensor</span><span class="w"> </span><span class="n">alloc</span><span class="p">]</span><span class="w"> </span><span class="n">initWithScalars</span><span class="o">:</span><span class="l">@[</span><span class="mf">@3.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">@4.0f</span><span class="l">]</span><span class="p">];</span>
+<span class="n">ExecuTorchTensor</span><span class="w"> </span><span class="o">*</span><span class="n">singleInputTensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[[</span><span class="n">ExecuTorchTensor</span><span class="w"> </span><span class="n">alloc</span><span class="p">]</span><span class="w"> </span><span class="n">initWithFloat</span><span class="o">:</span><span class="mf">5.0f</span><span class="p">];</span>
+<span class="bp">NSError</span><span class="w"> </span><span class="o">*</span><span class="n">error</span><span class="p">;</span>
+
+<span class="c1">// Execute &quot;forward&quot; using the shortcut with an array of Tensors.</span>
+<span class="bp">NSArray</span><span class="o">&lt;</span><span class="n">ExecuTorchValue</span><span class="w"> </span><span class="o">*&gt;</span><span class="w"> </span><span class="o">*</span><span class="n">outputs1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="n">module</span><span class="w"> </span><span class="n">forwardWithTensors</span><span class="o">:</span><span class="l">@[</span><span class="n">inputTensor1</span><span class="p">,</span><span class="w"> </span><span class="n">inputTensor2</span><span class="l">]</span><span class="w"> </span><span class="n">error</span><span class="o">:&amp;</span><span class="n">error</span><span class="p">];</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">outputs1</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="n">NSLog</span><span class="p">(</span><span class="s">@&quot;Forward output count: %lu&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">long</span><span class="p">)</span><span class="n">outputs1</span><span class="p">.</span><span class="n">count</span><span class="p">);</span>
+<span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="n">NSLog</span><span class="p">(</span><span class="s">@&quot;Execution failed: %@&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">error</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="c1">// Execute &quot;forward&quot; with a single Tensor input.</span>
+<span class="bp">NSArray</span><span class="o">&lt;</span><span class="n">ExecuTorchValue</span><span class="w"> </span><span class="o">*&gt;</span><span class="w"> </span><span class="o">*</span><span class="n">outputs2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="n">module</span><span class="w"> </span><span class="n">forwardWithTensor</span><span class="o">:</span><span class="n">singleInputTensor</span><span class="w"> </span><span class="n">error</span><span class="o">:&amp;</span><span class="n">error</span><span class="p">];</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">outputs2</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">NSLog</span><span class="p">(</span><span class="s">@&quot;Forward single input output count: %lu&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">long</span><span class="p">)</span><span class="n">outputs2</span><span class="p">.</span><span class="n">count</span><span class="p">);</span>
+<span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">NSLog</span><span class="p">(</span><span class="s">@&quot;Execution failed: %@&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">error</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="c1">// Execute a potentially different method by name.</span>
+<span class="bp">NSArray</span><span class="o">&lt;</span><span class="n">ExecuTorchValue</span><span class="w"> </span><span class="o">*&gt;</span><span class="w"> </span><span class="o">*</span><span class="n">outputs3</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="n">module</span><span class="w"> </span><span class="n">executeMethod</span><span class="o">:</span><span class="s">@&quot;another_method&quot;</span>
+<span class="w">                                                   </span><span class="nl">withInput</span><span class="p">:[[</span><span class="n">ExecuTorchValue</span><span class="w"> </span><span class="n">alloc</span><span class="p">]</span><span class="w"> </span><span class="n">valueWithTensor</span><span class="o">:</span><span class="n">inputTensor1</span><span class="p">]</span>
+<span class="w">                                                       </span><span class="nl">error</span><span class="p">:</span><span class="o">&amp;</span><span class="n">error</span><span class="p">];</span>
+
+<span class="c1">// Process outputs (assuming first output is a tensor).</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">outputs1</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="n">ExecuTorchValue</span><span class="w"> </span><span class="o">*</span><span class="n">firstOutput</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">outputs1</span><span class="p">.</span><span class="n">firstObject</span><span class="p">;</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">firstOutput</span><span class="p">.</span><span class="n">isTensor</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">ExecuTorchTensor</span><span class="w"> </span><span class="o">*</span><span class="n">resultTensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">firstOutput</span><span class="p">.</span><span class="n">tensorValue</span><span class="p">;</span>
+<span class="w">    </span><span class="c1">// Process resultTensor.</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Swift:</p>
+<div class="highlight-none notranslate highlight-swift"><div class="highlight"><pre><span></span><span class="kd">let</span><span class="w"> </span><span class="nv">inputTensor1</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">Tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span><span class="w"> </span><span class="mf">2.0</span><span class="p">],</span><span class="w"> </span><span class="n">dataType</span><span class="p">:</span><span class="w"> </span><span class="p">.</span><span class="n">float</span><span class="p">)</span>
+<span class="kd">let</span><span class="w"> </span><span class="nv">inputTensor2</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">Tensor</span><span class="p">([</span><span class="mf">3.0</span><span class="p">,</span><span class="w"> </span><span class="mf">4.0</span><span class="p">],</span><span class="w"> </span><span class="n">dataType</span><span class="p">:</span><span class="w"> </span><span class="p">.</span><span class="n">float</span><span class="p">)</span>
+<span class="kd">let</span><span class="w"> </span><span class="nv">singleInputTensor</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">Tensor</span><span class="p">([</span><span class="mf">5.0</span><span class="p">],</span><span class="w"> </span><span class="n">dataType</span><span class="p">:</span><span class="w"> </span><span class="p">.</span><span class="n">float</span><span class="p">)</span>
+
+<span class="k">do</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="c1">// Execute &quot;forward&quot; using the shortcut with an array of Tensors.</span>
+<span class="w">  </span><span class="kd">let</span><span class="w"> </span><span class="nv">outputs1</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="k">try</span><span class="w"> </span><span class="n">module</span><span class="p">.</span><span class="n">forward</span><span class="p">([</span><span class="n">inputTensor1</span><span class="p">,</span><span class="w"> </span><span class="n">inputTensor2</span><span class="p">])</span>
+<span class="w">  </span><span class="bp">print</span><span class="p">(</span><span class="s">&quot;Forward output count: </span><span class="si">\(</span><span class="n">outputs1</span><span class="p">.</span><span class="bp">count</span><span class="si">)</span><span class="s">&quot;</span><span class="p">)</span>
+
+<span class="w">  </span><span class="c1">// Execute &quot;forward&quot; with a single Tensor input.</span>
+<span class="w">  </span><span class="kd">let</span><span class="w"> </span><span class="nv">outputs2</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="k">try</span><span class="w"> </span><span class="n">module</span><span class="p">.</span><span class="n">forward</span><span class="p">(</span><span class="n">singleInputTensor</span><span class="p">)</span>
+<span class="w">  </span><span class="bp">print</span><span class="p">(</span><span class="s">&quot;Forward single input output count: </span><span class="si">\(</span><span class="n">outputs2</span><span class="p">.</span><span class="bp">count</span><span class="si">)</span><span class="s">&quot;</span><span class="p">)</span>
+
+<span class="w">  </span><span class="c1">// Execute a potentially different method by name.</span>
+<span class="w">  </span><span class="kd">let</span><span class="w"> </span><span class="nv">outputs3</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="k">try</span><span class="w"> </span><span class="n">module</span><span class="p">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;another_method&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">inputs</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="n">Value</span><span class="p">(</span><span class="n">inputTensor1</span><span class="p">)])</span>
+
+<span class="w">  </span><span class="c1">// Process outputs (assuming first output is a tensor).</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="kd">let</span><span class="w"> </span><span class="nv">resultTensor</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">outputs1</span><span class="p">.</span><span class="bp">first</span><span class="p">?.</span><span class="n">tensor</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">resultTensor</span><span class="p">.</span><span class="n">bytes</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">ptr</span><span class="p">,</span><span class="w"> </span><span class="bp">count</span><span class="p">,</span><span class="w"> </span><span class="n">dtype</span><span class="w"> </span><span class="k">in</span>
+<span class="w">      </span><span class="c1">// Access result data.</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="bp">print</span><span class="p">(</span><span class="s">&quot;Execution failed: </span><span class="si">\(</span><span class="n">error</span><span class="si">)</span><span class="s">&quot;</span><span class="p">)</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="method-names">
+<h4>Method Names:<a class="headerlink" href="#method-names" title="Permalink to this heading">¶</a></h4>
+<p>You can query the available method names in the model after the program is loaded.</p>
+<p>Objective-C:</p>
+<div class="highlight-none notranslate highlight-objectivec"><div class="highlight"><pre><span></span><span class="bp">NSError</span><span class="w"> </span><span class="o">*</span><span class="n">error</span><span class="p">;</span>
+
+<span class="c1">// Note: methodNames: will load the program if not already loaded.</span>
+<span class="bp">NSSet</span><span class="o">&lt;</span><span class="bp">NSString</span><span class="w"> </span><span class="o">*&gt;</span><span class="w"> </span><span class="o">*</span><span class="n">names</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="n">module</span><span class="w"> </span><span class="n">methodNames</span><span class="o">:&amp;</span><span class="n">error</span><span class="p">];</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">names</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="n">NSLog</span><span class="p">(</span><span class="s">@&quot;Available methods: %@&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">names</span><span class="p">);</span>
+<span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="n">NSLog</span><span class="p">(</span><span class="s">@&quot;Could not get method names: %@&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">error</span><span class="p">);</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Swift:</p>
+<div class="highlight-none notranslate highlight-swift"><div class="highlight"><pre><span></span><span class="k">do</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="c1">// Note: methodNames() will load the program if not already loaded.</span>
+<span class="w">  </span><span class="kd">let</span><span class="w"> </span><span class="nv">names</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="k">try</span><span class="w"> </span><span class="n">module</span><span class="p">.</span><span class="n">methodNames</span><span class="p">()</span>
+<span class="w">  </span><span class="bp">print</span><span class="p">(</span><span class="s">&quot;Available methods: </span><span class="si">\(</span><span class="n">names</span><span class="si">)</span><span class="s">&quot;</span><span class="p">)</span><span class="w"> </span><span class="c1">// Output: e.g., {&quot;forward&quot;}</span>
+<span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="bp">print</span><span class="p">(</span><span class="s">&quot;Could not get method names: </span><span class="si">\(</span><span class="n">error</span><span class="si">)</span><span class="s">&quot;</span><span class="p">)</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</div>
+</div>
 <div class="section" id="logging">
 <h3>Logging<a class="headerlink" href="#logging" title="Permalink to this heading">¶</a></h3>
-<p>ExecuTorch provides extra APIs for logging in Objective-C and Swift as a lightweight wrapper of the internal ExecuTorch machinery. To use it, just import the main framework header in Objective-C. Then use the <code class="docutils literal notranslate"><span class="pre">ExecuTorchLog</span></code> interface (or the <code class="docutils literal notranslate"><span class="pre">Log</span></code> class in Swift) to subscribe your own implementation of the <code class="docutils literal notranslate"><span class="pre">ExecuTorchLogSink</span></code> protocol (or <code class="docutils literal notranslate"><span class="pre">LogSink</span></code> in Swift) to listen to log events.</p>
+<p>ExecuTorch provides APIs for logging in Objective-C and Swift via the <code class="docutils literal notranslate"><span class="pre">ExecuTorchLog</span></code> (<code class="docutils literal notranslate"><span class="pre">Log</span></code> in Swift) singleton. You can subscribe custom log sinks conforming to the <code class="docutils literal notranslate"><span class="pre">ExecuTorchLogSink</span></code> (<code class="docutils literal notranslate"><span class="pre">LogSink</span></code> in Swift) protocol to receive internal ExecuTorch log messages.</p>
+<p><strong>Note:</strong> Logs are stripped in the Release builds of ExecuTorch frameworks. To capture logs, link against the Debug builds (e.g., <code class="docutils literal notranslate"><span class="pre">executorch_debug</span></code>) during development.</p>
+<p>Objective-C:</p>
 <div class="highlight-none notranslate highlight-objectivec"><div class="highlight"><pre><span></span><span class="cp">#import &lt;ExecuTorch/ExecuTorch.h&gt;</span>
 <span class="cp">#import &lt;os/log.h&gt;</span>
 
@@ -730,7 +1151,7 @@ OTHER_LDFLAGS = $(inherited) \
 <span class="k">@end</span>
 </pre></div>
 </div>
-<p>Swift version:</p>
+<p>Swift:</p>
 <div class="highlight-none notranslate highlight-swift"><div class="highlight"><pre><span></span><span class="kd">import</span><span class="w"> </span><span class="nc">ExecuTorch</span>
 <span class="kd">import</span><span class="w"> </span><span class="nc">os</span><span class="p">.</span><span class="nc">log</span>
 
@@ -857,6 +1278,29 @@ OTHER_LDFLAGS = $(inherited) \
 </li>
 <li><a class="reference internal" href="#linkage">Linkage</a></li>
 <li><a class="reference internal" href="#runtime-api">Runtime API</a><ul>
+<li><a class="reference internal" href="#importing">Importing</a><ul>
+<li><a class="reference internal" href="#example">Example</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#tensor">Tensor</a><ul>
+<li><a class="reference internal" href="#key-properties">Key Properties:</a></li>
+<li><a class="reference internal" href="#initialization">Initialization:</a></li>
+<li><a class="reference internal" href="#accessing-data">Accessing Data:</a></li>
+<li><a class="reference internal" href="#resizing">Resizing:</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#value">Value</a><ul>
+<li><a class="reference internal" href="#id1">Key Properties:</a></li>
+<li><a class="reference internal" href="#id2">Initialization:</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module">Module</a><ul>
+<li><a class="reference internal" href="#id3">Initialization:</a></li>
+<li><a class="reference internal" href="#loading">Loading:</a></li>
+<li><a class="reference internal" href="#execution">Execution:</a></li>
+<li><a class="reference internal" href="#method-names">Method Names:</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#logging">Logging</a></li>
 </ul>
 </li>
