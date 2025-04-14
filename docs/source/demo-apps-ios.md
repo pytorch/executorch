@@ -52,8 +52,7 @@ python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 
 ### 4. Backend Dependencies
 
-Install additional dependencies for [Core ML](https://pytorch.org/executorch/stable/backends-coreml) and
-[MPS](https://pytorch.org/executorch/stable/backends-mps) backends:
+Install additional dependencies for [Core ML](backends-coreml.md) and [MPS](backends-mps.md) backends:
 
 ```bash
 ./backends/apple/coreml/scripts/install_requirements.sh
@@ -131,4 +130,4 @@ using `Cmd + R`. Try installing a Release build for better performance.
 Congratulations! You've successfully set up the ExecuTorch iOS Demo App. Now,
 you can explore and enjoy the power of ExecuTorch on your iOS device!
 
-Learn more about [Using ExecuTorch on iOS](https://pytorch.org/executorch/stable/using-executorch-ios).
+Learn more about [Using ExecuTorch on iOS](using-executorch-ios.md).
