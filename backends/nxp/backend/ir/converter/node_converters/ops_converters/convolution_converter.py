@@ -16,10 +16,7 @@ from executorch.backends.nxp.backend.ir.converter.conversion import (
     common,
 )
 from executorch.backends.nxp.backend.ir.converter.conversion.common import try_get_input
-from executorch.backends.nxp.backend.ir.converter.node_converter import (
-    NodeConverter,
-    Target,
-)
+from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
 from executorch.backends.nxp.backend.ir.converter.node_converters.shared import (
     conv_utils,
 )
@@ -42,7 +39,6 @@ from torch.nn import Parameter
 
 
 class ConvolutionConverter(NodeConverter):
-    supported_targets = [Target.RT700]
 
     @staticmethod
     def _is_supported_in_IR(
@@ -88,10 +84,6 @@ class ConvolutionConverter(NodeConverter):
             weight_tensor = input_tensor(node, 1)
             if weight_tensor.dtype not in [torch.float32, torch.int8, torch.uint8]:
                 return False
-
-        if node.args[0].meta["val"].shape[0] != 1:
-            # Only batch size 1 is supported on neutron.
-            return False
 
         return True
 

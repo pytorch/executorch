@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,10 +14,7 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     create_channels_first_to_channels_last_permutation,
     tf_lite_type_to_numpy,
 )
-from executorch.backends.nxp.backend.ir.converter.node_converter import (
-    NodeConverter,
-    Target,
-)
+from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
 from executorch.backends.nxp.backend.ir.converter.quantization_utils import (
     quantize_int8,
 )
@@ -31,7 +28,6 @@ from torch.nn import Parameter
 
 
 class ConstantPadNDConverter(NodeConverter):
-    supported_targets = [Target.RT700]
 
     @staticmethod
     def _is_supported_in_IR(

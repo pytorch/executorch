@@ -9,10 +9,7 @@ import torch
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     create_channels_last_to_channels_first_permutation,
 )
-from executorch.backends.nxp.backend.ir.converter.node_converter import (
-    NodeConverter,
-    Target,
-)
+from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
 from executorch.backends.nxp.backend.ir.converter.node_converters.shared.reduce_utils import (
     convert_axes_from_attribute,
 )
@@ -24,15 +21,14 @@ from torch.nn import Parameter
 
 
 class MeanDimConverter(NodeConverter):
-    supported_targets = [Target.RT700]
-
-    @staticmethod
-    def _to_neg_dim(d, rank):
-        return d - rank if d > 0 else d
 
     @staticmethod
     def _to_pos_dim(d, rank):
         return d + rank if d < 0 else d
+
+    @staticmethod
+    def _to_neg_dim(d, rank):
+        return d - rank if d > 0 else d
 
     @staticmethod
     def _is_supported_in_IR(
