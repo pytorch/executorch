@@ -235,7 +235,7 @@ class EventTracer {
    * make it available for the user again in the post-processing stage.
    * @param[in] metadata_len Length of the metadata buffer.
    */
-  virtual void end_profiling_delegate(
+  virtual Result<bool> end_profiling_delegate(
       EventTracerEntry event_tracer_entry,
       const void* metadata = nullptr,
       size_t metadata_len = 0) = 0;

@@ -251,7 +251,7 @@ Result<EventTracerEntry> ETDumpGen::start_profiling_delegate(
   return Result<EventTracerEntry>(prof_entry);
 }
 
-void ETDumpGen::end_profiling_delegate(
+Result<bool> ETDumpGen::end_profiling_delegate(
     EventTracerEntry event_tracer_entry,
     const void* metadata,
     size_t metadata_len) {
@@ -282,6 +282,7 @@ void ETDumpGen::end_profiling_delegate(
   etdump_RunData_events_push_start(builder_);
   etdump_Event_profile_event_add(builder_, id);
   etdump_RunData_events_push_end(builder_);
+  return Result<bool>(true);
 }
 
 Result<bool> ETDumpGen::log_profiling_delegate(
