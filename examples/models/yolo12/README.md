@@ -1,87 +1,90 @@
-# YOLOv8/YOLOv5 C++ Inference with OpenCV DNN
+# YOLO12 Detection C++ Inference with ExecuTorch
 
-This example demonstrates how to perform inference using Ultralytics YOLO12 models in C++ leveraging the Executorch backends:
-- OpenVINO
-- XNNPACK.
+<p align="center">
+      <br>
+      <img src="./yolo12s_demo.gif" width=300>
+      <br>
+</p>
 
-## 🛠️ Usage
+This example demonstrates how to perform inference of Ultralytics YOLO12 family detection models in C++ leveraging the Executorch backends:
+- [OpenVINO](../../../backends/openvino/README.md)
+- [XNNPACK](../../../backends/xnnpack/README.md)
 
-Follow these steps to set up and run the C++ inference example:
 
+# Instructions
+
+### Step 1: Install ExecuTorch
+
+To install ExecuTorch, follow this [guide](https://pytorch.org/executorch/stable/getting-started-setup.html).
+
+### Step 2: Install the backend of your choice
+
+- [OpenVINO backend installation guide](../../../backends/openvino/README.md#build-instructions)
+- [XNNPACK backend installation guilde](https://pytorch.org/executorch/stable/tutorial-xnnpack-delegate-lowering.html#running-the-xnnpack-model-with-cmake)
+
+### Step 3: Install the demo requirements
+
+
+Python demo requirements:
 ```bash
-# 1. Clone the Ultralytics repository
-git clone https://github.com/ultralytics/ultralytics
-cd ultralytics
-
-# 2. Install Ultralytics Python package (needed for exporting models)
-pip install .
-
-# 3. Navigate to the C++ example directory
-cd examples/YOLOv8-CPP-Inference
-
-# 4. Export Models: Add yolov8*.onnx and/or yolov5*.onnx models (see export instructions below)
-#    Place the exported ONNX models in the current directory (YOLOv8-CPP-Inference).
-
-# 5. Update Source Code: Edit main.cpp and set the 'projectBasePath' variable
-#    to the absolute path of the 'YOLOv8-CPP-Inference' directory on your system.
-#    Example: std::string projectBasePath = "/path/to/your/ultralytics/examples/YOLOv8-CPP-Inference";
-
-# 6. Configure OpenCV DNN Backend (Optional - CUDA):
-#    - The default CMakeLists.txt attempts to use CUDA for GPU acceleration with OpenCV DNN.
-#    - If your OpenCV build doesn't support CUDA/cuDNN, or you want CPU inference,
-#      remove the CUDA-related lines from CMakeLists.txt.
-
-# 7. Build the project
-mkdir build
-cd build
-cmake ..
-make
-
-# 8. Run the inference executable
-./Yolov8CPPInference
+python -m pip install -r examples/models/yolo12/requirements.txt
 ```
 
-## ✨ Exporting YOLOv8 and YOLOv5 Models
+Demo infenrece dependency - OpenCV library:
+https://opencv.org/get-started/
 
-You need to export your trained PyTorch models to the [ONNX](https://onnx.ai/) format to use them with OpenCV DNN.
 
-**Exporting Ultralytics YOLOv8 Models:**
+### Step 4: Export the Yolo12 model to the ExecuTorch
 
-Use the Ultralytics CLI to export. Ensure you specify the desired `imgsz` and `opset`. For compatibility with this example, `opset=12` is recommended.
 
+OpenVINO:
 ```bash
-yolo export model=yolov8s.pt imgsz=640,480 format=onnx opset=12 # Example: 640x480 resolution
+python export_and_quantize.py --model_name yolo12s --input_dims=[1920,1080]  --backend openvino --device CPU
 ```
 
-**Exporting YOLOv5 Models:**
-
-Use the `export.py` script from the YOLOv5 repository structure (included within the cloned `ultralytics` repo).
-
+XNNPACK:
 ```bash
-# Assuming you are in the 'ultralytics' base directory after cloning
-python export.py --weights yolov5s.pt --imgsz 640 480 --include onnx --opset 12 # Example: 640x480 resolution
+python export_and_quantize.py --model_name yolo12s --input_dims=[1920,1080] --backend xnnpack
 ```
 
-Place the generated `.onnx` files (e.g., `yolov8s.onnx`, `yolov5s.onnx`) into the `ultralytics/examples/YOLOv8-CPP-Inference/` directory.
+> **_NOTE:_**  Quantization is comming soon!
 
-**Example Output:**
+To get a full parameters description please use the following command:
+```bash
+python export_and_quantize.py
+```
+### Step 5: Build the demo project
 
-_yolov8s.onnx:_
+OpenVINO:
 
-![YOLOv8 ONNX Output](https://user-images.githubusercontent.com/40023722/217356132-a4cecf2e-2729-4acb-b80a-6559022d7707.png)
+```bash
+cd examples/models/yolo12
+mkdir build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release -DUSE_OPENVINO_BACKEND=ON ..
+make -j$(nproc)
+```
 
-_yolov5s.onnx:_
+XNNPACK:
 
-![YOLOv5 ONNX Output](https://user-images.githubusercontent.com/40023722/217357005-07464492-d1da-42e3-98a7-fc753f87d5e6.png)
+```bash
+cd examples/models/yolo12
+mkdir build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release -DUSE_XNNPACK_BACKEND=ON ..
+make -j$(nproc)
+```
 
-## 📝 Notes
+### Step 6: Run the demo
 
-- This repository utilizes the [OpenCV DNN API](https://docs.opencv.org/4.x/d6/d0f/group__dnn.html) to run [ONNX](https://onnx.ai/) exported models of YOLOv5 and Ultralytics YOLOv8.
-- While not explicitly tested, it might theoretically work for other YOLO architectures like YOLOv6 and YOLOv7 if their ONNX export formats are compatible.
-- The example models are exported with a rectangular resolution (640x480), but the code should handle models exported with different resolutions. Consider using techniques like [letterboxing](https://docs.ultralytics.com/modes/predict/#letterbox) if your input images have different aspect ratios than the model's training resolution, especially for square `imgsz` exports.
-- The `main` branch version includes a simple GUI wrapper using [Qt](https://www.qt.io/). However, the core logic resides in the `Inference` class (`inference.h`, `inference.cpp`).
-- A key part of the `Inference` class demonstrates how to handle the output differences between YOLOv5 and YOLOv8 models, effectively transposing YOLOv8's output format to match the structure expected from YOLOv5 for consistent post-processing.
+```bash
+./build/Yolo12DetectionDemo -model_path /path/to/exported/model -input_path /path/to/video/file -output_path /path/to/output/annotated/video
+```
 
-## 🤝 Contributing
+To get a full parameters description please use the following command:
+```
+./build/Yolo12DetectionDemo --help
+```
 
-Contributions are welcome! If you find any issues or have suggestions for improvement, please feel free to open an issue or submit a pull request. See our [Contributing Guide](https://docs.ultralytics.com/help/contributing/) for more details.
+
+# Credits:
+Ultralytics examples: https://github.com/ultralytics/ultralytics/tree/main/examples
+Sample video: https://www.pexels.com/@shanu-1040189/

@@ -61,13 +61,6 @@ list(APPEND _common_include_directories
      ${XNNPACK_ROOT}/third-party/pthreadpool/include
 )
 
-list(APPEND link_libraries extension_threadpool cpuinfo)
-list(APPEND _common_include_directories
-     ${XNNPACK_ROOT}/third-party/cpuinfo/include
-)
-
-message(STATUS ${link_libraries})
-
 set(PROJECT_SOURCES
     main.cpp
     inference.h

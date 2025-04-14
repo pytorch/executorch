@@ -77,7 +77,10 @@ std::vector<Detection> infer_yolo_once(
       ScalarType::Float);
   const auto result = module.forward(t_input);
 
-  ET_CHECK_MSG(result.ok(), "Could not infer the model with an error");
+  ET_CHECK_MSG(
+      result.ok(),
+      "Execution of method forward failed with status 0x%" PRIx32,
+      (uint32_t)result.error());
 
   const auto t = result->at(0).toTensor(); // Using only the 0 output
   // yolov8 has an output of shape (batchSize, 84,  8400) (Num classes +

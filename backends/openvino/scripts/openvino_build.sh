@@ -33,8 +33,8 @@ main() {
               -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
               -DEXECUTORCH_BUILD_OPENVINO_EXECUTOR_RUNNER=ON \
               -DPYTHON_EXECUTABLE=python \
+              -DEXECUTORCH_LOG_LEVEL=Debug \
               -B"${build_dir}"
-              #-DEXECUTORCH_LOG_LEVEL=Debug \
 
 
         # Build the project

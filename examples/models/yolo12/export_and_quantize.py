@@ -13,7 +13,6 @@ from typing import Any, Iterator, Tuple
 
 import cv2
 import executorch
-import nncf.torch
 import numpy as np
 import torch
 from executorch.backends.openvino.partitioner import OpenvinoPartitioner
@@ -32,7 +31,6 @@ from executorch.exir import (
     to_edge_transform_and_lower,
 )
 from executorch.exir.backend.backend_details import CompileSpec
-from nncf.experimental.torch.fx import quantize_pt2e
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.graph_drawer import FxGraphDrawer
@@ -82,45 +80,48 @@ def lower_to_openvino(
     subset_size: int,
     quantize: bool,
 ) -> ExecutorchProgramManager:
-    if quantize:
-        target_input_dims = tuple(example_args[0].shape[2:])
+    import nncf.torch
+    from nncf.experimental.torch.fx import quantize_pt2e
 
-        def ext_transform_fn(sample):
-            sample = transform_fn(sample)
-            return pad_to_target(sample, target_input_dims)
+    with nncf.torch.disable_patching():
+        if quantize:
+            target_input_dims = tuple(example_args[0].shape[2:])
 
-        quantizer = OpenVINOQuantizer(mode=QuantizationMode.INT8_TRANSFORMER)
-        quantizer.set_ignored_scope(
-            types=["mul", "sub", "sigmoid", "__getitem__"],
-            subgraphs=[nncf.Subgraph(inputs=["cat_18"], outputs=["output"])]
+            def ext_transform_fn(sample):
+                sample = transform_fn(sample)
+                return pad_to_target(sample, target_input_dims)
+
+            quantizer = OpenVINOQuantizer(mode=QuantizationMode.INT8_TRANSFORMER)
+            quantizer.set_ignored_scope(
+                types=["mul", "sub", "sigmoid", "__getitem__"],
+            )
+            quantized_model = quantize_pt2e(
+                aten_dialect.module(),
+                quantizer,
+                nncf.Dataset(calibration_dataset, ext_transform_fn),
+                subset_size=subset_size,
+                smooth_quant=True,
+                fold_quantize=False,
+            )
+
+            visualize_fx_model(quantized_model, "tmp_quantized_model.svg")
+            aten_dialect = torch.export.export(quantized_model, example_args)
+            # Convert to edge dialect and lower the module to the backend with a custom partitioner
+        compile_spec = [CompileSpec("device", device.encode())]
+        lowered_module: EdgeProgramManager = to_edge_transform_and_lower(
+            aten_dialect,
+            partitioner=[
+                OpenvinoPartitioner(compile_spec),
+            ],
+            compile_config=EdgeCompileConfig(
+                _skip_dim_order=True,
+            ),
         )
-        quantized_model = quantize_pt2e(
-            aten_dialect.module(),
-            quantizer,
-            nncf.Dataset(calibration_dataset, ext_transform_fn),
-            subset_size=subset_size,
-            smooth_quant=True,
-            fold_quantize=False
+
+        # Apply backend-specific passes
+        return lowered_module.to_executorch(
+            config=executorch.exir.ExecutorchBackendConfig()
         )
-
-        visualize_fx_model(quantized_model, "tmp_quantized_model.svg")
-        aten_dialect = torch.export.export(quantized_model, example_args)
-        # Convert to edge dialect and lower the module to the backend with a custom partitioner
-    compile_spec = [CompileSpec("device", device.encode())]
-    lowered_module: EdgeProgramManager = to_edge_transform_and_lower(
-        aten_dialect,
-        partitioner=[
-            OpenvinoPartitioner(compile_spec),
-        ],
-        compile_config=EdgeCompileConfig(
-            _skip_dim_order=True,
-        ),
-    )
-
-    # Apply backend-specific passes
-    return lowered_module.to_executorch(
-        config=executorch.exir.ExecutorchBackendConfig()
-    )
 
 
 def lower_to_xnnpack(
@@ -217,6 +218,7 @@ def main(
     model = YOLO(model_name)
 
     if quantize:
+        raise NotImplementedError("Quantization is comming soon!")
         if video_path is None:
             raise RuntimeError(
                 "Could not quantize model without the video for the calibration."
@@ -273,7 +275,8 @@ if __name__ == "__main__":
         "--model_name",
         type=str,
         default="yolo12s",
-        help="Ultralytics yolo model name.",
+        choices=["yolo12n", "yolo12s", "yolo12m", "yolo12l", "yolo12x"],
+        help="Ultralytics yolo12 model name.",
     )
     parser.add_argument(
         "--input_dims",
@@ -312,14 +315,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Run the main function with parsed arguments
-    # Disable nncf patching as export of the patched model is not supported.
-    with nncf.torch.disable_patching():
-        main(
-            model_name=args.model_name,
-            input_dims=args.input_dims,
-            quantize=args.quantize,
-            video_path=args.video_path,
-            subset_size=args.subset_size,
-            backend=args.backend,
-            device=args.device,
-        )
+    main(
+        model_name=args.model_name,
+        input_dims=args.input_dims,
+        quantize=args.quantize,
+        video_path=args.video_path,
+        subset_size=args.subset_size,
+        backend=args.backend,
+        device=args.device,
+    )

@@ -43,9 +43,9 @@ DEFINE_string(
     "model.pte",
     "Model serialized in flatbuffer format.");
 
-DEFINE_string(input_path, "input.mp4", "Path to the input video");
+DEFINE_string(input_path, "input.mp4", "Path to the mp4 input video");
 
-DEFINE_string(output_path, "output.mp4", "Path to the output video");
+DEFINE_string(output_path, "output.mp4", "Path to the mp4 output video");
 
 int main(int argc, char** argv) {
   executorch::runtime::runtime_init();
@@ -54,10 +54,24 @@ int main(int argc, char** argv) {
   Module yolo_module(FLAGS_model_path);
 
   auto error = yolo_module.load();
+
+  ET_CHECK_MSG(
+      error == Error::Ok,
+      "Loading of the model failed with status 0x%",
+      (uint32_t)error);
   error = yolo_module.load_forward();
+  ET_CHECK_MSG(
+      error == Error::Ok,
+      "Loading of the forward method failed with status 0x%",
+      (uint32_t)error);
 
   const auto model_input_shape =
       yolo_module.method_meta("forward")->input_tensor_meta(0)->sizes();
+  std::cout << "Model input shape: [";
+  for (auto& dim : model_input_shape) {
+    std::cout << dim << ", ";
+  }
+  std::cout << "]" << std::endl;
   const cv::Size img_dims = {model_input_shape[3], model_input_shape[2]};
 
   cv::VideoCapture cap(FLAGS_input_path.c_str());
@@ -67,12 +81,21 @@ int main(int argc, char** argv) {
   }
   const auto frame_width = cap.get(cv::CAP_PROP_FRAME_WIDTH);
   const auto frame_height = cap.get(cv::CAP_PROP_FRAME_HEIGHT);
+  const auto video_lenght = cap.get(cv::CAP_PROP_FRAME_COUNT);
+  std::cout << "Input video shape: [3, " << frame_width << ", " << frame_height
+            << ", ]" << std::endl;
+
   cv::VideoWriter video(
       FLAGS_output_path.c_str(),
-      cv::VideoWriter::fourcc('M', 'J', 'P', 'G'),
+      cv::VideoWriter::fourcc('m', 'p', '4', 'v'),
       30,
       cv::Size(frame_width, frame_height));
 
+  std::cout << "Start the detection..." << std::endl;
+  et_timestamp_t time_spent_executing = 0;
+  unsigned long long iters = 0;
+  // Show progress every 10%
+  unsigned long long progress_bar_tick = std::round(video_lenght / 10);
   while (true) {
     cv::Mat frame;
     cap >> frame;
@@ -80,17 +103,36 @@ int main(int argc, char** argv) {
     if (frame.empty())
       break;
 
+    const et_timestamp_t before_execute = et_pal_current_ticks();
     std::vector<Detection> output =
         infer_yolo_once(yolo_module, frame, img_dims, DEFAULT_YOLO_CONFIG);
-
-    std::cout << "Number of detections:" << output.size() << std::endl;
 
     for (auto& detection : output) {
       draw_detection(frame, detection, cv::Scalar(0, 0, 255));
     }
+    const et_timestamp_t after_execute = et_pal_current_ticks();
+    time_spent_executing += after_execute - before_execute;
+    iters++;
 
+    if (!(iters % progress_bar_tick)) {
+      const int precent_ready = (100 * iters) / video_lenght;
+      std::cout << iters << " out of " << video_lenght
+                << " frames are are processed (" << precent_ready << "\%)"
+                << std::endl;
+    }
     video.write(frame);
   }
+
+  const auto tick_ratio = et_pal_ticks_to_ns_multiplier();
+  constexpr auto NANOSECONDS_PER_MILLISECOND = 1000000;
+
+  double elapsed_ms = static_cast<double>(time_spent_executing) *
+      tick_ratio.numerator / tick_ratio.denominator /
+      NANOSECONDS_PER_MILLISECOND;
+  std::cout << "Model executed successfully " << iters << " times in "
+            << elapsed_ms << " ms." << std::endl;
+  std::cout << "Average detection time: " << elapsed_ms / iters << " ms."
+            << std::endl;
   cap.release();
   video.release();
 }
