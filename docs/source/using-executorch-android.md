@@ -58,9 +58,19 @@ You can also directly specify an AAR file in the app. We upload pre-built AAR to
 
 ### Snapshots from main branch
 
-| Date | AAR | SHASUMS |
-| ------- | --- | ------- |
-| 2025-02-27 | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/executorch-20250227/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/executorch-20250227/executorch.aar.sha256sums) |
+Starting from 2025-04-12, you can download nightly `main` branch snapshots:
+* `executorch.aar`: `https://ossci-android.s3.amazonaws.com/executorch/release/snapshot-YYYYMMDD/executorch.aar`
+* `executorch.aar.sha256sums`: `https://ossci-android.s3.amazonaws.com/executorch/release/snapshot-YYYYMMDD/executorch.aar.sha256sums`
+* Replace `YYYYMMDD` with the actual date you want to use.
+
+For example:
+
+```sh
+curl -O https://ossci-android.s3.amazonaws.com/executorch/release/snapshot-20250412/executorch.aar
+curl -O https://ossci-android.s3.amazonaws.com/executorch/release/snapshot-20250412/executorch.aar.sha256sums
+```
+
+We aim to make every daily snapshot available and useable. However, for best stability, please use releases, not snapshots.
 
 ## Using AAR file
 
