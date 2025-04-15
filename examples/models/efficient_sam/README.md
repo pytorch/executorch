@@ -12,7 +12,7 @@ Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup#
 
 ### Exporting to Core ML
 
-Make sure to install the [required dependencies](https://pytorch.org/executorch/main/build-run-coreml.html#setting-up-your-developer-environment) for Core ML export.
+Make sure to install the [required dependencies](https://pytorch.org/executorch/main/backends-coreml#development-requirements) for Core ML export.
 
 To export the model to Core ML, run the following command:
 

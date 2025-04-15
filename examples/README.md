@@ -71,7 +71,7 @@ You will find demos of [ExecuTorch QNN Backend](./qualcomm) in the [`qualcomm/`]
 
 ### Cadence HiFi4 DSP
 
-The [`Cadence/`](./cadence) directory hosts a demo that showcases the process of exporting and executing a model on Xtensa Hifi4 DSP. You can utilize [this tutorial](../docs/source/build-run-xtensa.md) to guide you in configuring the demo and running it.
+The [`Cadence/`](./cadence) directory hosts a demo that showcases the process of exporting and executing a model on Xtensa Hifi4 DSP. You can utilize [this tutorial](../docs/source/backends-cadence.md) to guide you in configuring the demo and running it.
 
 ## Dependencies
 
