@@ -3,7 +3,7 @@ This example demonstrates how to run [Deepseek R1 Distill Llama 8B](https://hugg
 
 # Instructions
 ## Step 1: Setup
-1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch. For installation run `./install_executorch.sh`
+1. Follow the [tutorial](https://pytorch.org/executorch/0.6/getting-started-setup) to set up ExecuTorch. For installation run `./install_executorch.sh`
 
 2. Run the installation step for Llama specific requirements
 ```

@@ -79,7 +79,7 @@ ExecuTorch provides support for:
 - [Executorch Runtime API Reference](executorch-runtime-api-reference)
 - [Runtime Python API Reference](runtime-python-api-reference)
 - [API Life Cycle](api-life-cycle)
-- [Javadoc](https://pytorch.org/executorch/main/javadoc/)
+- [Javadoc](https://pytorch.org/executorch/0.6/javadoc/)
 #### Quantization
 - [Overview](quantization-overview)
 #### Kernel Library
@@ -208,7 +208,7 @@ export-to-executorch-api-reference
 executorch-runtime-api-reference
 runtime-python-api-reference
 api-life-cycle
-Javadoc <https://pytorch.org/executorch/main/javadoc/>
+Javadoc <https://pytorch.org/executorch/0.6/javadoc/>
 ```
 
 ```{toctree}

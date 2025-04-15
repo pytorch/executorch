@@ -9,7 +9,7 @@ ExecuTorch's extensive support spans from simple modules like "Add" to comprehen
 ## Directory structure
 ```
 examples
-├── llm_manual                        # A storage place for the files that [LLM Maunal](https://pytorch.org/executorch/main/llm/getting-started.html) needs
+├── llm_manual                        # A storage place for the files that [LLM Maunal](https://pytorch.org/executorch/0.6/llm/getting-started.html) needs
 ├── models                            # Contains a set of popular and representative PyTorch models
 ├── portable                          # Contains end-to-end demos for ExecuTorch in portable mode
 ├── selective_build                   # Contains demos of selective build for optimizing the binary size of the ExecuTorch runtime

@@ -8,7 +8,7 @@ This backend is implemented on the top of
 [Qualcomm AI Engine Direct SDK](https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk).
 Please follow [tutorial](../../docs/source/backends-qualcomm.md) to setup environment, build, and run executorch models by this backend (Qualcomm AI Engine Direct is also referred to as QNN in the source and documentation).
 
-A website version of the tutorial is [here](https://pytorch.org/executorch/main/backends-qualcomm).
+A website version of the tutorial is [here](https://pytorch.org/executorch/0.6/backends-qualcomm).
 
 ## Delegate Options
 

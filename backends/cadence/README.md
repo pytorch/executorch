@@ -6,7 +6,7 @@
 
 ## Tutorial
 
-Please follow the [tutorial](https://pytorch.org/executorch/main/backends-cadence) for more information on how to run models on Cadence/Xtensa DSPs.
+Please follow the [tutorial](https://pytorch.org/executorch/0.6/backends-cadence) for more information on how to run models on Cadence/Xtensa DSPs.
 
 ## Directory Structure
 
