@@ -3,6 +3,14 @@ name: android-perf (private devices)
 on:
   schedule:
     - cron: 0 0,8,16 * * *
+  pull_request:
+    paths:
+      - .github/workflows/android-perf-private-device-experiment.yml
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/android-perf-private-device-experiment.yml
   # Note: GitHub has an upper limit of 10 inputs
   workflow_dispatch:
     inputs:
