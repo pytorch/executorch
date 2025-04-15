@@ -286,10 +286,10 @@ class TOSAQuantizer(Quantizer):
         quantization_config: Optional[QuantizationConfig],
         filter_fn: Optional[Callable[[Node], bool]] = None,
     ) -> GraphModule:
-        """Loops over all STATIC_OPS and runs the corresponding registred annotator.
+        """Loops over all STATIC_OPS and runs the corresponding registered annotator.
         Args:
             model: The model to annotate statically.
-            quantization_config: Specifices the QuantizationSpecs for the model's
+            quantization_config: Specifies the QuantizationSpecs for the model's
                 input activations, output activations, weights and biases.
             filter_fn: An optional filter function that takes a node and returns whether the node should be annotated.
         Returns:
