@@ -9,7 +9,7 @@ import os
 import subprocess
 import tempfile
 import unittest
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, OrderedDict, Tuple
 
 import numpy as np
 import torch
@@ -435,10 +435,10 @@ class TestQNN(unittest.TestCase):
         expected_profile_events: int = -1,
         expected_intermediate_events: int = -1,
         assert_output_equal: bool = True,
+        passes_job: Optional[OrderedDict] = None,
         skip_node_id_set: set = None,
         skip_node_op_set: set = None,
         dynamic_shapes: Dict = None,
-        passes_job: collections.OrderedDict = None,
     ):
         delegated_program = to_edge_transform_and_lower_to_qnn(
             module,
@@ -508,7 +508,6 @@ class TestQNN(unittest.TestCase):
         block_size_map: Dict[str, Tuple] = None,
         submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
     ) -> torch.fx.GraphModule:
-        module = module.eval()
         m = torch.export.export(
             module, inputs, dynamic_shapes=dynamic_shapes, strict=True
         ).module()

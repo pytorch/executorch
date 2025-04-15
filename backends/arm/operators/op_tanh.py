@@ -6,14 +6,13 @@
 # pyre-unsafe
 from typing import List
 
-import serializer.tosa_serializer as ts  # type: ignore
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
-from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
 
 
@@ -44,4 +43,4 @@ class TanhVisitor_080_MI(NodeVisitor):
                 f"{inputs[0].dtype} and output_dtype: {output.dtype}"
             )
 
-        tosa_graph.addOperator(TosaOp.Op().TANH, [inputs[0].name], [output.name])
+        tosa_graph.addOperator(ts.TosaOp.Op().TANH, [inputs[0].name], [output.name])

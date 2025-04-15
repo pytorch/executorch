@@ -58,7 +58,7 @@ executorch
 │   ├── <a href="exir/verification">verification</a> - IR verification.
 ├── <a href="extension">extension</a> - Extensions built on top of the runtime.
 │   ├── <a href="extension/android">android</a> - ExecuTorch wrappers for Android apps. Please refer to the <a href="docs/source/using-executorch-android.md">Android documentation</a> and <a href="https://pytorch.org/executorch/main/javadoc/">Javadoc</a> for more information.
-│   ├── <a href="extension/apple">apple</a> - ExecuTorch wrappers for iOS apps. Please refer to the <a href="docs/source/using-executorch-ios.md">iOS documentation</a> and <a href="https://pytorch.org/executorch/stable/apple-runtime.html">how to integrate into Apple platform</a> for more information.
+│   ├── <a href="extension/apple">apple</a> - ExecuTorch wrappers for iOS apps. Please refer to the <a href="docs/source/using-executorch-ios.md">iOS documentation</a> and <a href="https://pytorch.org/executorch/main/using-executorch-ios.html">how to integrate into Apple platform</a> for more information.
 │   ├── <a href="extension/aten_util">aten_util</a> - Converts to and from PyTorch ATen types.
 │   ├── <a href="extension/data_loader">data_loader</a> - 1st party data loader implementations.
 │   ├── <a href="extension/evalue_util">evalue_util</a> - Helpers for working with EValue objects.
@@ -101,6 +101,8 @@ executorch
 
 ## Contributing workflow
 We actively welcome your pull requests (PRs).
+
+If you're completely new to open-source projects, GitHub, or ExecuTorch, please see our [New Contributor Guide](./docs/source/new-contributor-guide.md) for a step-by-step walkthrough on making your first contribution. Otherwise, read on.
 
 1. [Claim an issue](#claiming-issues), if present, before starting work. If an
    issue doesn't cover the work you plan to do, consider creating one to provide
@@ -407,18 +409,9 @@ for basics.
    - If the reviewers have requests or questions, follow up with them.
    - The goal of the reviewer is to ensure that the code in the `main` branch of
      the repo is consistent, maintainable, and of high quality.
-1. Once the PR has been approved,
-   - If you have the "write permission" in this repo, you can merge it yourself
-     by clicking the "Squash and merge" button once it is green and all CI
-     signals are passing.
-   - If you don't have "write permission" in this repo, the reviewer will take
-     care of the PR. The reviewer may import the PR into Meta's internal system
-     to validate it against internal CI.
-   - If the PR is approved but not merged within 5 business days, please comment
-     on the PR to ask about its status.
-   - Note that if the `main` [CI](#continuous-integration) jobs are broken, we
-     will only merge PRs that fix the broken jobs until all critical jobs are
-     fixed.
+1. Once the PR has been approved, you can merge it yourself
+     by clicking the "Squash and merge" button once it is
+     green and all CI signals are passing.
 
 &nbsp;
 

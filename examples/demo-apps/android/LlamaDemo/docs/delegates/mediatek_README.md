@@ -65,7 +65,7 @@ export ANDROID_ABIS=arm64-v8a
 MTK currently supports Llama 3 exporting.
 
 ### Set up Environment
-1. Follow the ExecuTorch set-up environment instructions found on the [Getting Started](https://pytorch.org/executorch/stable/getting-started-setup.html) page
+1. Follow the ExecuTorch set-up environment instructions found on the [Getting Started](https://pytorch.org/executorch/main/getting-started-setup.html) page
 2. Set-up MTK AoT environment
 ```
 // Ensure that you are inside executorch/examples/mediatek directory
@@ -126,13 +126,31 @@ The Mediatek runner (`examples/mediatek/executor_runner/mtk_llama_runner.cpp`) c
 
 
 ## Build AAR Library
-
-Next we need to build and compile the MediaTek backend and MediaTek Llama runner. By setting  `NEURON_BUFFER_ALLOCATOR_LIB`, the script will build the MediaTek backend.
+1. Open a terminal window and navigate to the root directory of the executorch
+2. Set the following environment variables:
+```sh
+export ANDROID_NDK=<path_to_android_ndk>
+export ANDROID_ABIS=arm64-v8a
+export NEURON_BUFFER_ALLOCATOR_LIB=<path_to_neuron_buffer_allocator_lib>
 ```
+*Note: <path_to_android_ndk> is the root for the NDK, which is usually under ~/Library/Android/sdk/ndk/XX.Y.ZZZZZ for macOS, and contains NOTICE and README.md. We use <path_to_android_ndk>/build/cmake/android.toolchain.cmake for CMake to cross-compile.*
+
+3. Create a directory to hold the AAR
+```sh
+mkdir -p aar-out
+export BUILD_AAR_DIR=aar-out
+```
+
+4. Run the following command to build the AAR:
+```sh
 sh scripts/build_android_library.sh
 ```
 
-**Output**: This will generate an .aar file that is already imported into the expected directory for the Android app. It will live in `examples/demo-apps/android/Llamademo/app/libs`.
+5. Copy the AAR to the app:
+```sh
+mkdir -p examples/demo-apps/android/LlamaDemo/app/libs
+cp aar-out/executorch.aar examples/demo-apps/android/LlamaDemo/app/libs/executorch.aar
+```
 
 If you were to unzip the .aar file or open it in Android Studio, verify it contains the following related to MediaTek backend:
 * libneuron_buffer_allocator.so
