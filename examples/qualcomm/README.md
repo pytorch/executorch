@@ -22,7 +22,7 @@ Here are some general information and limitations.
 
 ## Prerequisite
 
-Please finish tutorial [Setting up executorch](https://pytorch.org/executorch/stable/getting-started-setup).
+Please finish tutorial [Setting up executorch](https://pytorch.org/executorch/main/getting-started-setup).
 
 Please finish [setup QNN backend](../../docs/source/build-run-qualcomm-ai-engine-direct-backend.md).
 
