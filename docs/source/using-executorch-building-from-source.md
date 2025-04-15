@@ -113,7 +113,7 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
 > # From the root of the executorch repo:
 > ./install_executorch.sh --clean
 > git submodule sync
-> git submodule update --init
+> git submodule update --init --recursive
 > ```
 
 ## Build ExecuTorch C++ runtime from source
