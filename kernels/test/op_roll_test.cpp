@@ -26,7 +26,7 @@ Tensor& op_roll_out(
     ArrayRef<int64_t> shifts,
     ArrayRef<int64_t> dims,
     Tensor& out) {
-  executorch::runtime::KernelRuntimeContext context{};
+  executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext context{};
   return torch::executor::aten::roll_outf(context, input, shifts, dims, out);
 }
 

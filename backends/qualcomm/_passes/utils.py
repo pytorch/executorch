@@ -78,6 +78,7 @@ def get_passes_dependency_for_capture_program():
         AnnotateUnbind,
         ConvertBmmToMatmul,
         ConvertConv1dToConv2d,
+        ConvertUpsampleBicubicWithBilinear,
         DecomposeAny,
         DecomposeLinalgVectorNorm,
         ExpandBroadcastTensorShape,
@@ -96,18 +97,20 @@ def get_passes_dependency_for_capture_program():
         AnnotateQuantAttrs: [
             RecomposePixelUnshuffle,
             ConvertBmmToMatmul,
+            ConvertUpsampleBicubicWithBilinear,
             RemoveRedundancy,
         ],
         AnnotateStack: [RemoveRedundancy],
         AnnotateUnbind: [RemoveRedundancy],
         ConvertBmmToMatmul: [RecomposePixelUnshuffle],
         ConvertConv1dToConv2d: [FoldQDQ],
+        ConvertUpsampleBicubicWithBilinear: [RemoveRedundancy],
         DecomposeAny: [RemoveRedundancy],
         DecomposeLinalgVectorNorm: [RemoveRedundancy],
-        ExpandBroadcastTensorShape: [RemoveRedundancy],
+        ExpandBroadcastTensorShape: [FoldQDQ],
         FixedLinearKeepDim: [FoldQDQ],
         FoldQDQ: [AnnotateQuantAttrs, AnnotateStack, AnnotateUnbind],
-        I64toI32: [RemoveRedundancy],
+        I64toI32: [ConvertUpsampleBicubicWithBilinear, RemoveRedundancy],
         LayoutTransform: [
             AnnotateQuantAttrs,
             ConvertConv1dToConv2d,
@@ -119,6 +122,14 @@ def get_passes_dependency_for_capture_program():
         ReplaceIndexPutInput: [LayoutTransform],
         TagQuantIO: [ReplaceIndexPutInput],
     }
+
+
+def copy_nn_module_stack(src, target):
+    """
+    Copy meta["nn_module_stack"] from src node to target node if existing.
+    """
+    if value := src.meta.get("nn_module_stack"):
+        target.meta["nn_module_stack"] = value
 
 
 def is_float_tensor(node: torch.fx.Node) -> bool:
