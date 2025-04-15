@@ -28,7 +28,7 @@ export ANDROID_NDK=/path/to/ndk
 sh scripts/build_android_library.sh
 ```
 
-Please see [Android building from source](https://pytorch.org/executorch/main/using-executorch-android.html#building-from-source) for details
+Please see [Android building from source](https://pytorch.org/executorch/main/using-executorch-android#building-from-source) for details
 
 ## Test
 

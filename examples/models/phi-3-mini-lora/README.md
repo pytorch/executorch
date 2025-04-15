@@ -16,7 +16,7 @@ To see how you can use the model exported for training in a fully involved finet
 python export_model.py
 ```
 
-2. Run the inference model using an example runtime. For more detailed steps on this, check out [Build & Run](https://pytorch.org/executorch/stable/getting-started-setup.html#build-run).
+2. Run the inference model using an example runtime. For more detailed steps on this, check out [Build & Run](https://pytorch.org/executorch/main/getting-started-setup#build-run).
 ```
 # Clean and configure the CMake build system. Compiled programs will appear in the executorch/cmake-out directory we create here.
 ./install_executorch.sh --clean
