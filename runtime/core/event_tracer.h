@@ -215,7 +215,7 @@ class EventTracer {
    * over into internal memory during this call.
    * @param[in] delegate_debug_index The id of the delegate event. If string
    * based names are used by this delegate to identify ops executed in the
-   * backend then kUnsetDebugHandle should be passed in here. 
+   * backend then kUnsetDebugHandle should be passed in here.
    * @return Returns an Result<EventTracerEntry> instance which may contatain
    *  a EventTracerEntry instance. The EventTracerEntry instance should be
    *  passed back into the end_profiling_delegate() call.

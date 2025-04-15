@@ -53,8 +53,8 @@ inline EventTracerEntry event_tracer_start_profiling_delegate(
     DebugHandle delegate_debug_id) {
 #ifdef ET_EVENT_TRACER_ENABLED
   if (event_tracer) {
-    Result<EventTracerEntry> res = event_tracer->start_profiling_delegate(
-        name, delegate_debug_id);
+    Result<EventTracerEntry> res =
+        event_tracer->start_profiling_delegate(name, delegate_debug_id);
     ET_CHECK_MSG(res.ok(), "Failed to start profiling delegate event");
     return res.get();
   }
