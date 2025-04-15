@@ -25,7 +25,7 @@ From `executorch` root:
 ## Smaller model delegated to other backends
 
 Currently we supported lowering the stories model to other backends, including, CoreML, MPS and QNN. Please refer to the instruction
-for each backend ([CoreML](https://pytorch.org/executorch/main/backends-coreml), [MPS](https://pytorch.org/executorch/main/backends-mps), [QNN](https://pytorch.org/executorch/main/backends-qualcomm)) before trying to lower them. After the backend library is installed, the script to export a lowered model is
+for each backend ([CoreML](https://pytorch.org/executorch/0.6/backends-coreml), [MPS](https://pytorch.org/executorch/0.6/backends-mps), [QNN](https://pytorch.org/executorch/0.6/backends-qualcomm)) before trying to lower them. After the backend library is installed, the script to export a lowered model is
 
 - Lower to CoreML: `python -m examples.models.llama.export_llama -kv --disable_dynamic_shape --coreml -c stories110M.pt -p params.json `
 - MPS: `python -m examples.models.llama.export_llama -kv --disable_dynamic_shape --mps -c stories110M.pt -p params.json `

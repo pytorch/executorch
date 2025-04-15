@@ -14,10 +14,10 @@ to run ExecuTorch `.pte` files, with some restrictions:
   operators](https://pytorch.org/executorch/stable/ir-ops-set-definition.html)
   are linked into the prebuilt module
 * Only the [XNNPACK backend
-  delegate](https://pytorch.org/executorch/main/native-delegates-executorch-xnnpack-delegate.html)
+  delegate](https://pytorch.org/executorch/0.6/backends-xnnpack)
   is linked into the prebuilt module.
-* \[macOS only] [Core ML](https://pytorch.org/executorch/main/build-run-coreml.html)
-  and [MPS](https://pytorch.org/executorch/main/build-run-mps.html) backend
+* \[macOS only] [Core ML](https://pytorch.org/executorch/0.6/backends-coreml)
+  and [MPS](https://pytorch.org/executorch/0.6/backends-mps) backend
   delegates are also linked into the prebuilt module.
 
 Please visit the [ExecuTorch website](https://pytorch.org/executorch/) for
@@ -30,7 +30,7 @@ tutorials and documentation. Here are some starting points:
   * Learn how to use ExecuTorch to export and accelerate a large-language model
     from scratch.
 * [Exporting to
-  ExecuTorch](https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial.html)
+  ExecuTorch](https://pytorch.org/executorch/0.6/tutorials/export-to-executorch-tutorial.html)
   * Learn the fundamentals of exporting a PyTorch `nn.Module` to ExecuTorch, and
     optimizing its performance using quantization and hardware delegation.
 * Running LLaMA on

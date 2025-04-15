@@ -129,7 +129,7 @@ Before you can start writing any code, you need to get a copy of ExecuTorch code
     git push                  # push updated local main to your GitHub fork
     ```
 
-6. [Build the project](https://pytorch.org/executorch/main/using-executorch-building-from-source.html) and [run the tests](https://github.com/pytorch/executorch/blob/main/CONTRIBUTING.md#testing).
+6. [Build the project](https://pytorch.org/executorch/0.6/using-executorch-building-from-source.html) and [run the tests](https://github.com/pytorch/executorch/blob/main/CONTRIBUTING.md#testing).
 
     Unfortunately, this step is too long to detail here. If you get stuck at any point, please feel free to ask for help on our [Discord server](https://discord.com/invite/Dh43CKSAdc) — we're always eager to help newcomers get onboarded.
 

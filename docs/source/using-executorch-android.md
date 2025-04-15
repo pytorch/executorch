@@ -2,7 +2,7 @@
 
 To use from Android, ExecuTorch provides Java/Kotlin API bindings and Android platform integration, available as an AAR file.
 
-Note: This page covers Android app integration through the AAR library. The ExecuTorch C++ APIs can also be used from Android native, and the documentation can be found on [this page about cross compilation](https://pytorch.org/executorch/main/using-executorch-building-from-source.html#cross-compilation).
+Note: This page covers Android app integration through the AAR library. The ExecuTorch C++ APIs can also be used from Android native, and the documentation can be found on [this page about cross compilation](https://pytorch.org/executorch/0.6/using-executorch-building-from-source.html#cross-compilation).
 
 ## Installation
 
@@ -41,8 +41,8 @@ dependencies {
 Note: If you want to use release v0.5.0, please use dependency `org.pytorch:executorch-android:0.5.1`.
 
 Click the screenshot below to watch the *demo video* on how to add the package and run a simple ExecuTorch model with Android Studio.
-<a href="https://pytorch.org/executorch/main/_static/img/android_studio.mp4">
-  <img src="https://pytorch.org/executorch/main/_static/img/android_studio.jpeg" width="800" alt="Integrating and Running ExecuTorch on Android">
+<a href="https://pytorch.org/executorch/0.6/_static/img/android_studio.mp4">
+  <img src="https://pytorch.org/executorch/0.6/_static/img/android_studio.jpeg" width="800" alt="Integrating and Running ExecuTorch on Android">
 </a>
 
 ## Using AAR file directly
@@ -130,17 +130,17 @@ Set environment variable `EXECUTORCH_CMAKE_BUILD_TYPE` to `Release` or `Debug` b
 
 #### Using MediaTek backend
 
-To use [MediaTek backend](https://pytorch.org/executorch/main/backends-mediatek.html),
+To use [MediaTek backend](https://pytorch.org/executorch/0.6/backends-mediatek.html),
 after installing and setting up the SDK, set `NEURON_BUFFER_ALLOCATOR_LIB` and `NEURON_USDK_ADAPTER_LIB` to the corresponding path.
 
 #### Using Qualcomm AI Engine Backend
 
-To use [Qualcomm AI Engine Backend](https://pytorch.org/executorch/main/backends-qualcomm.html#qualcomm-ai-engine-backend),
+To use [Qualcomm AI Engine Backend](https://pytorch.org/executorch/0.6/backends-qualcomm.html#qualcomm-ai-engine-backend),
 after installing and setting up the SDK, set `QNN_SDK_ROOT` to the corresponding path.
 
 #### Using Vulkan Backend
 
-To use [Vulkan Backend](https://pytorch.org/executorch/main/backends-vulkan.html#vulkan-backend),
+To use [Vulkan Backend](https://pytorch.org/executorch/0.6/backends-vulkan.html#vulkan-backend),
 set `EXECUTORCH_BUILD_VULKAN` to `ON`.
 
 ## Android Backends
@@ -195,4 +195,4 @@ using ExecuTorch AAR package.
 
 ## Java API reference
 
-Please see [Java API reference](https://pytorch.org/executorch/main/javadoc/).
+Please see [Java API reference](https://pytorch.org/executorch/0.6/javadoc/).

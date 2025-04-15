@@ -10,7 +10,7 @@ Export:
 python -m examples.models.llama2.export_llama --checkpoint llama3.pt --params params.json -kv --disable_dynamic_shape --mps --use_sdpa_with_kv_cache -d fp32 -qmode 8da4w -G 32 --embedding-quantize 4,32
 ```
 
-After exporting the MPS model .pte file, the [iOS LLAMA](https://pytorch.org/executorch/main/llm/llama-demo-ios.html) app can support running the model. ` --embedding-quantize 4,32` is an optional args for quantizing embedding to reduce the model size.
+After exporting the MPS model .pte file, the [iOS LLAMA](https://pytorch.org/executorch/0.6/llm/llama-demo-ios.html) app can support running the model. ` --embedding-quantize 4,32` is an optional args for quantizing embedding to reduce the model size.
 
 ### CoreML
 Export:

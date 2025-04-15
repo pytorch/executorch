@@ -24,7 +24,7 @@ To run these scripts. On a Linux system, in a terminal, with a working internet 
 $ cd <EXECUTORCH-ROOT-FOLDER>
 $ executorch/examples/arm/setup.sh --i-agree-to-the-contained-eula [optional-scratch-dir]
 
-# Step [2] - Setup Patch to tools, The `setup.sh` script has generated a script that you need to source everytime you restart you shell. 
+# Step [2] - Setup Patch to tools, The `setup.sh` script has generated a script that you need to source everytime you restart you shell.
 $ source  executorch/examples/arm/ethos-u-scratch/setup_path.sh
 
 # Step [3] - build + run ExecuTorch and executor_runner baremetal application
@@ -34,6 +34,6 @@ $ executorch/examples/arm/run.sh --model_name=mv2 --target=ethos-u85-128 [--scra
 
 ### Online Tutorial
 
-We also have a [tutorial](https://pytorch.org/executorch/main/backends-arm-ethos-u) explaining the steps performed in these
+We also have a [tutorial](https://pytorch.org/executorch/0.6/backends-arm-ethos-u) explaining the steps performed in these
 scripts, expected results, possible problems and more. It is a step-by-step guide
 you can follow to better understand this delegate.

@@ -35,8 +35,8 @@ Then select which ExecuTorch framework should link against which target.
 
 Click the screenshot below to watch the *demo video* on how to add the package and run a simple ExecuTorch model on iOS.
 
-<a href="https://pytorch.org/executorch/main/_static/img/swiftpm_xcode.mp4">
-  <img src="https://pytorch.org/executorch/main/_static/img/swiftpm_xcode.png" width="800" alt="Integrating and Running ExecuTorch on Apple Platforms">
+<a href="https://pytorch.org/executorch/0.6/_static/img/swiftpm_xcode.mp4">
+  <img src="https://pytorch.org/executorch/0.6/_static/img/swiftpm_xcode.png" width="800" alt="Integrating and Running ExecuTorch on Apple Platforms">
 </a>
 
 #### CLI
@@ -293,7 +293,7 @@ From existing memory buffers:
 
 From `NSData` / `Data`:
 - `init(data:shape:dataType:...)`: Creates a tensor using an `NSData` object, referencing its bytes without copying.
-  
+
 From scalar arrays:
 - `init(_:shape:dataType:...)`: Creates a tensor from an array of `NSNumber` scalars. Convenience initializers exist to infer shape or data type.
 

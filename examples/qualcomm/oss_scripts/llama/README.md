@@ -12,7 +12,7 @@ KV Cache Mode: In KV Cache mode, the model takes in a single previous token and 
 
 Hybrid Mode: Hybrid mode leverages the strengths of both AR-N model and KV cache modes to optimize token generation speed. Initially, it uses AR-N model to efficiently generate the prompt's key-value (KV) cache. Then, the mode switches to KV cache mode, which excels at generating subsequent tokens.
   - AR-N model: The auto-regression (AR) length determines the number of tokens to consume and the number of logits to produce. Use it to process the prompt and generate the key-value (kv) cache, which serves as a prompt processor in hybrid mode.
-  - Prompt processing with AR-N model: 
+  - Prompt processing with AR-N model:
   <figure>
     <img src="./assets/PromptProcessingWithARN.png" alt="Prompt Processing With AR-N Model">
     <figcaption>Prompt processing is done using a for-loop. An N-token block is taken, and the KV cache is updated for that block. This process is repeated until all tokens are consumed, with the last block potentially requiring padding. For flexibility, the AR-N model can handle any input length less than the maximum sequence length. For TTFT, the input length (or number of blocks) will vary depending on the actual input length, rather than always being the same.
@@ -27,8 +27,8 @@ Hybrid Mode: Hybrid mode leverages the strengths of both AR-N model and KV cache
 
 
 ### Step 1: Setup
-1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch.
-2. Follow the [tutorial](https://pytorch.org/executorch/main/backends-qualcomm) to build Qualcomm AI Engine Direct Backend.
+1. Follow the [tutorial](https://pytorch.org/executorch/0.6/getting-started-setup) to set up ExecuTorch.
+2. Follow the [tutorial](https://pytorch.org/executorch/0.6/backends-qualcomm) to build Qualcomm AI Engine Direct Backend.
 
 ### Step 2: Prepare Model
 
