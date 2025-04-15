@@ -51,7 +51,8 @@ int main(int argc, char** argv) {
   executorch::runtime::runtime_init();
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-  Module yolo_module(FLAGS_model_path);
+  // Use Mmap model to enable loading of big YOLO models in OpenVINO
+  Module yolo_module(FLAGS_model_path, Module::LoadMode::Mmap);
 
   auto error = yolo_module.load();
 
