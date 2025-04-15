@@ -130,7 +130,7 @@ Use the
 to contribute to the documentation.
 
 In addition to that, see
-[Markdown in Sphinx Tips and Tricks](https://pytorch.org/executorch/markdown-sphinx-tips-tricks.html)
+[Markdown in Sphinx Tips and Tricks](source/markdown-sphinx-tips-tricks.md)
 for tips on how to author high-quality markdown pages with Myst Parser.
 
 ## Adding Tutorials
