@@ -283,7 +283,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             ]
         else:
             # Need to create NHWC node
-            # TODO: If input is dequant does that it's from dynamic quantization?
+            # TODO: Replace with check to determine if dynamic quant
             input_is_dequant = is_dequant(input_node)
 
             if input_is_dequant:
@@ -301,10 +301,8 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
 
             if input_is_dequant:
                 # Replace downstream input_nodes with NHWC node
-                for user in list(input_node.users):
-                    if user is not input_node_nhwc:
-                        user.replace_input_with(input_node, input_node_nhwc)
-                graph_module.recompile()
+                input_node.replace_all_uses_with(input_node_nhwc)
+                input_node_nhwc.args = (input_node,)
 
         self.insert_copy_and_assign_partner_nodes_quantization_sensitive(
             graph_module=graph_module,

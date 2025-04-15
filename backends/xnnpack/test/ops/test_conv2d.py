@@ -244,7 +244,7 @@ class TestConv2d(unittest.TestCase):
 
         DynamicallyQuantizedPartitioner = XnnpackPartitioner(
             config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
-            per_op_mode=False,
+            per_op_mode=True,
         )
 
         tester = Tester(m, inputs, dynamic_shapes=dynamic_shapes)
@@ -762,9 +762,11 @@ class TestConv2d(unittest.TestCase):
                 return (torch.randn(1, 3, 8, 8),)
 
         model = SimpleConv2d()
+        inputs = model.get_inputs()
+
         self._test_dq_conv2d(
             model,
-            model.get_inputs(),
+            inputs,
             dynamic_shapes=None,
             atol=3.0,
         )
