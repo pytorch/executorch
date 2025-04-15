@@ -89,6 +89,7 @@ class DummyEventTracer : public EventTracer {
     (void)event_tracer_entry;
     (void)metadata;
     (void)metadata_len;
+    return true;
   }
 
   void set_delegation_intermediate_output_filter(
