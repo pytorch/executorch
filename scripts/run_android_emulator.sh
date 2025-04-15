@@ -28,3 +28,4 @@ adb logcat -d > logcat.txt
 cat logcat.txt
 grep -q FAILURES result.txt && cat result.txt
 grep -q FAILURES result.txt && exit -1
+exit 0
