@@ -28,7 +28,7 @@ Hybrid Mode: Hybrid mode leverages the strengths of both AR-N model and KV cache
 
 ### Step 1: Setup
 1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch.
-2. Follow the [tutorial](https://pytorch.org/executorch/main/build-run-qualcomm-ai-engine-direct-backend) to build Qualcomm AI Engine Direct Backend.
+2. Follow the [tutorial](https://pytorch.org/executorch/main/backends-qualcomm) to build Qualcomm AI Engine Direct Backend.
 
 ### Step 2: Prepare Model
 
