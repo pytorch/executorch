@@ -42,7 +42,7 @@ namespace executorch {
 namespace etdump {
 namespace {
 
-executorch_flatbuffer_ScalarType_enum_t get_flatbuffer_scalar_type(
+Result<executorch_flatbuffer_ScalarType_enum_t> get_flatbuffer_scalar_type(
     executorch::aten::ScalarType tensor_scalar_type) {
   switch (tensor_scalar_type) {
     case executorch::aten::ScalarType::Byte:
@@ -66,21 +66,26 @@ executorch_flatbuffer_ScalarType_enum_t get_flatbuffer_scalar_type(
     case executorch::aten::ScalarType::UInt16:
       return executorch_flatbuffer_ScalarType_UINT16;
     default:
-      ET_CHECK_MSG(
+      ET_CHECK_OR_RETURN_ERROR(
           0,
+          InvalidArgument,
           "This ScalarType = %hhd is not yet supported in ETDump",
           static_cast<char>(tensor_scalar_type));
   }
 }
 
-etdump_Tensor_ref_t add_tensor_entry(
+Result<etdump_Tensor_ref_t> add_tensor_entry(
     flatcc_builder_t* builder_,
     const executorch::aten::Tensor& tensor,
     long offset) {
   etdump_Tensor_start(builder_);
 
-  etdump_Tensor_scalar_type_add(
-      builder_, get_flatbuffer_scalar_type(tensor.scalar_type()));
+  Result<executorch_flatbuffer_ScalarType_enum_t> scalar_type =
+      get_flatbuffer_scalar_type(tensor.scalar_type());
+  if (!scalar_type.ok()) {
+    return scalar_type.error();
+  }
+  etdump_Tensor_scalar_type_add(builder_, scalar_type.get());
   etdump_Tensor_sizes_start(builder_);
 
   for (auto dim : tensor.sizes()) {
@@ -323,40 +328,32 @@ Result<bool> ETDumpGen::log_intermediate_output_delegate(
     const char* name,
     DelegateDebugIntId delegate_debug_index,
     const ArrayRef<Tensor> output) {
-  log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
-  Result<bool> result = log_intermediate_output_delegate_helper(
+  return log_intermediate_output_delegate_helper(
       name, delegate_debug_index, output);
-  return result;
 }
 
 Result<bool> ETDumpGen::log_intermediate_output_delegate(
     const char* name,
     DelegateDebugIntId delegate_debug_index,
     const int& output) {
-  log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
-  Result<bool> result = log_intermediate_output_delegate_helper(
+  return log_intermediate_output_delegate_helper(
       name, delegate_debug_index, output);
-  return result;
 }
 
 Result<bool> ETDumpGen::log_intermediate_output_delegate(
     const char* name,
     DelegateDebugIntId delegate_debug_index,
     const bool& output) {
-  log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
-  Result<bool> result = log_intermediate_output_delegate_helper(
+  return log_intermediate_output_delegate_helper(
       name, delegate_debug_index, output);
-  return result;
 }
 
 Result<bool> ETDumpGen::log_intermediate_output_delegate(
     const char* name,
     DelegateDebugIntId delegate_debug_index,
     const double& output) {
-  log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
-  Result<bool> result = log_intermediate_output_delegate_helper(
+  return log_intermediate_output_delegate_helper(
       name, delegate_debug_index, output);
-  return result;
 }
 
 template <typename T>
@@ -398,18 +395,26 @@ Result<bool> ETDumpGen::log_intermediate_output_delegate_helper(
   // Check the type of `output` then call the corresponding logging functions
   if constexpr (std::is_same<T, Tensor>::value) {
     long offset = write_tensor_or_raise_error(output);
-    etdump_Tensor_ref_t tensor_ref = add_tensor_entry(builder_, output, offset);
+    Result<etdump_Tensor_ref_t> tensor_ref =
+        add_tensor_entry(builder_, output, offset);
+    if (!tensor_ref.ok()) {
+      return tensor_ref.error();
+    }
 
     etdump_Value_start(builder_);
     etdump_Value_val_add(builder_, etdump_ValueType_Tensor);
-    etdump_Value_tensor_add(builder_, tensor_ref);
+    etdump_Value_tensor_add(builder_, tensor_ref.get());
 
   } else if constexpr (std::is_same<T, ArrayRef<Tensor>>::value) {
     etdump_Tensor_vec_start(builder_);
     for (size_t i = 0; i < output.size(); ++i) {
       long offset = write_tensor_or_raise_error(output[i]);
-      etdump_Tensor_vec_push(
-          builder_, add_tensor_entry(builder_, output[i], offset));
+      Result<etdump_Tensor_ref_t> tensor_ref =
+          add_tensor_entry(builder_, output[i], offset);
+      if (!tensor_ref.ok()) {
+        return tensor_ref.error();
+      }
+      etdump_Tensor_vec_push(builder_, tensor_ref.get());
     }
     etdump_Tensor_vec_ref_t tensor_vec_ref = etdump_Tensor_vec_end(builder_);
     etdump_TensorList_ref_t tensor_list_ref =
@@ -531,22 +536,26 @@ ETDumpResult ETDumpGen::get_etdump_data() {
   return result;
 }
 
-void ETDumpGen::set_debug_buffer(Span<uint8_t> buffer) {
+Result<bool> ETDumpGen::set_debug_buffer(Span<uint8_t> buffer) {
   Result<BufferDataSink> bds_ret = BufferDataSink::create(buffer);
-  ET_CHECK_MSG(
+  ET_CHECK_OR_RETURN_ERROR(
       bds_ret.ok(),
+      InvalidArgument,
       "Failed to create data sink from debug buffer with error 0x%" PRIx32,
       static_cast<uint32_t>(bds_ret.error()));
 
   buffer_data_sink_ = std::move(bds_ret.get());
   data_sink_ = &buffer_data_sink_;
+  return true;
 }
 
 void ETDumpGen::set_data_sink(DataSinkBase* data_sink) {
   data_sink_ = data_sink;
 }
 
-void ETDumpGen::log_evalue(const EValue& evalue, LoggedEValueType evalue_type) {
+Result<bool> ETDumpGen::log_evalue(
+    const EValue& evalue,
+    LoggedEValueType evalue_type) {
   check_ready_to_add_events();
 
   etdump_DebugEvent_start(builder_);
@@ -558,12 +567,15 @@ void ETDumpGen::log_evalue(const EValue& evalue, LoggedEValueType evalue_type) {
     case Tag::Tensor: {
       executorch::aten::Tensor tensor = evalue.toTensor();
       long offset = write_tensor_or_raise_error(tensor);
-      etdump_Tensor_ref_t tensor_ref =
+      Result<etdump_Tensor_ref_t> tensor_ref =
           add_tensor_entry(builder_, tensor, offset);
+      if (!tensor_ref.ok()) {
+        return tensor_ref.error();
+      }
 
       etdump_Value_start(builder_);
       etdump_Value_val_add(builder_, etdump_ValueType_Tensor);
-      etdump_Value_tensor_add(builder_, tensor_ref);
+      etdump_Value_tensor_add(builder_, tensor_ref.get());
       if (evalue_type == LoggedEValueType::kProgramOutput) {
         auto bool_ref = etdump_Bool_create(builder_, FLATBUFFERS_TRUE);
         etdump_Value_output_add(builder_, bool_ref);
@@ -580,8 +592,12 @@ void ETDumpGen::log_evalue(const EValue& evalue, LoggedEValueType evalue_type) {
       etdump_Tensor_vec_start(builder_);
       for (size_t i = 0; i < tensors.size(); ++i) {
         long offset = write_tensor_or_raise_error(tensors[i]);
-        etdump_Tensor_vec_push(
-            builder_, add_tensor_entry(builder_, tensors[i], offset));
+        Result<etdump_Tensor_ref_t> tensor_ref =
+            add_tensor_entry(builder_, tensors[i], offset);
+        if (!tensor_ref.ok()) {
+          return tensor_ref.error();
+        }
+        etdump_Tensor_vec_push(builder_, tensor_ref.get());
       }
       etdump_Tensor_vec_ref_t tensor_vec_ref = etdump_Tensor_vec_end(builder_);
       etdump_TensorList_ref_t tensor_list_ref =
@@ -653,6 +669,7 @@ void ETDumpGen::log_evalue(const EValue& evalue, LoggedEValueType evalue_type) {
   etdump_RunData_events_push_start(builder_);
   etdump_Event_debug_event_add(builder_, debug_event);
   etdump_RunData_events_push_end(builder_);
+  return true;
 }
 
 size_t ETDumpGen::get_num_blocks() {

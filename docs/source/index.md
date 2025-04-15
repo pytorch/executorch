@@ -43,6 +43,7 @@ ExecuTorch provides support for:
 #### Examples
 - [Android Demo Apps](https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app)
 - [iOS Demo Apps](demo-apps-ios.md)
+- [Hugging Face Models](https://github.com/huggingface/optimum-executorch/blob/main/README.md)
 #### Backends
 - [Overview](backends-overview)
 - [XNNPACK](backends-xnnpack)
