@@ -2,7 +2,7 @@ name: android-perf (private devices)
 
 on:
   schedule:
-    - cron: 0 0,8,16 * * *
+    - cron: 0 0,4,8,12,16,20 * * *
   pull_request:
     paths:
       - .github/workflows/android-perf-private-device-experiment.yml
@@ -18,7 +18,7 @@ on:
         description: Models to be benchmarked
         required: false
         type: string
-        default: llama
+        default: mv3,meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8,meta-llama/Llama-3.2-1B-Instruct-QLORA_INT4_EO8
       devices:
         description: Target devices to run benchmark
         required: false
@@ -34,7 +34,7 @@ on:
         description: Models to be benchmarked
         required: false
         type: string
-        default: llama
+        default: mv3,meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8,meta-llama/Llama-3.2-1B-Instruct-QLORA_INT4_EO8
       devices:
         description: Target devices to run benchmark
         required: false
