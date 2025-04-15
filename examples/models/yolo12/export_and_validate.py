@@ -9,7 +9,7 @@
 
 import argparse
 from itertools import islice
-from typing import Any, Iterator, Tuple
+from typing import Any, Dict, Iterator, Optional, Tuple
 
 import cv2
 import executorch
@@ -28,10 +28,15 @@ from executorch.exir import (
     to_edge_transform_and_lower,
 )
 from executorch.exir.backend.backend_details import CompileSpec
+from executorch.runtime import Runtime
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.graph_drawer import FxGraphDrawer
 from ultralytics import YOLO
+
+from ultralytics.data.utils import check_det_dataset
+from ultralytics.engine.validator import BaseValidator as Validator
+from ultralytics.utils.torch_utils import de_parallel
 
 
 class CV2VideoIter:
@@ -204,17 +209,21 @@ def main(
     subset_size: int,
     backend: str,
     device: str,
+    val_dataset_yaml_path: Optional[str],
 ):
     """
     Main function to load, quantize, and export an Yolo model model.
 
     :param model_name: The name of the YOLO model to load.
+    :param input_dims: Input dims to use for the export of a YOLO12 model.
     :param quantize: Whether to quantize the model.
     :param video_path: Path to the video to use for the calibration
+    :param subset_size: Subset size for the quantized model calibration. The default value is 300.
     :param backend: The Executorch inference backend (e.g., "openvino", "xnnpack").
     :param device: The device to run the model on (e.g., "cpu", "gpu").
+    :param val_dataset_yaml_path: Path to the validation dataset file in Ultralytics .yaml format.
+        Performs validation if the path is not None, skips validation otherwise.
     """
-
     # Load the selected model
     model = YOLO(model_name)
 
@@ -267,6 +276,67 @@ def main(
         exec_prog.write_to_file(file)
     print(f"Model exported and saved as {model_file_name} on {device}.")
 
+    if val_dataset_yaml_path is not None:
+        if input_dims != [640, 640]:
+            raise NotImplementedError(
+                f"Validation with the custom input shape {input_dims} is not implmenented."
+                " Please use the default --input_dims=[640, 640] for the validation."
+            )
+        stats = validate_yolo(model, exec_prog, val_dataset_yaml_path)
+        for stat, value in stats.items():
+            print(f"{stat}: {value}")
+
+
+def _prepare_validation(
+    model: YOLO, dataset_yaml_path: str
+) -> Tuple[Validator, torch.utils.data.DataLoader]:
+    custom = {"rect": False, "batch": 1}  # method defaults
+    args = {
+        **model.overrides,
+        **custom,
+        "mode": "val",
+    }  # highest priority args on the right
+
+    validator = model._smart_load("validator")(args=args, _callbacks=model.callbacks)
+    stride = 32  # default stride
+    validator.stride = stride  # used in get_dataloader() for padding
+    validator.data = check_det_dataset(dataset_yaml_path)
+    validator.init_metrics(de_parallel(model))
+
+    data_loader = validator.get_dataloader(
+        validator.data.get(validator.args.split), validator.args.batch
+    )
+
+    return validator, data_loader
+
+
+def validate_yolo(
+    model: YOLO, exec_prog: ExecutorchProgramManager, dataset_yaml_path: str
+) -> Dict[str, float]:
+    """
+    Runs validation on a YOLO model using an ExecuTorch program and a dataset in Ultralytics format.
+
+    :param model: The YOLO model instance to validate.
+    :param exec_prog: The ExecuTorch program manager containing the compiled model.
+    :param dataset_yaml_path: Path to the validation dataset file in Ultralytics .yaml format.
+    :return: Dictionary of validation statistics computed over the dataset.
+    """
+    # Load model from buffer
+    runtime = Runtime.get()
+    program = runtime.load_program(exec_prog.buffer)
+    method = program.load_method("forward")
+    if method is None:
+        raise ValueError("Load method failed")
+    validator, data_loader = _prepare_validation(model, dataset_yaml_path)
+    print(f"Start validation on {dataset_yaml_path} dataset ...")
+    for batch in data_loader:
+        batch = validator.preprocess(batch)
+        preds = method.execute((batch["img"],))
+        preds = validator.postprocess(preds)
+        validator.update_metrics(preds, batch)
+    stats = validator.get_stats()
+    return stats
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -312,6 +382,13 @@ if __name__ == "__main__":
         default="CPU",
         help="Target device for compiling the model (e.g., CPU, GPU). Default is CPU.",
     )
+    parser.add_argument(
+        "--validate",
+        nargs="?",
+        const="coco128.yaml",
+        help="Validate executorch model using the Ultralytics validation pipeline."
+        " Default validateion dataset is coco128.yaml.",
+    )
 
     args = parser.parse_args()
 
@@ -320,6 +397,7 @@ if __name__ == "__main__":
         model_name=args.model_name,
         input_dims=args.input_dims,
         quantize=args.quantize,
+        val_dataset_yaml_path=args.validate,
         video_path=args.video_path,
         subset_size=args.subset_size,
         backend=args.backend,

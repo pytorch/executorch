@@ -39,20 +39,31 @@ https://opencv.org/get-started/
 
 OpenVINO:
 ```bash
-python export_and_quantize.py --model_name yolo12s --input_dims=[1920,1080]  --backend openvino --device CPU
+python export_and_validate.py --model_name yolo12s --input_dims=[1920,1080]  --backend openvino --device CPU
 ```
 
 XNNPACK:
 ```bash
-python export_and_quantize.py --model_name yolo12s --input_dims=[1920,1080] --backend xnnpack
+python export_and_validate.py --model_name yolo12s --input_dims=[1920,1080] --backend xnnpack
 ```
 
 > **_NOTE:_**  Quantization is comming soon!
 
+Exported model could be validated using the `--validate` key:
+
+```bash
+python export_and_validate.py --model_name yolo12s --backend ... --validate dataset_name.yaml
+```
+
+A list of available datasets and instructions on how to use a custom dataset can be found [here](https://docs.ultralytics.com/datasets/detect/).
+Validation only supports the default `--input_dims`; please do not specify this parameter when using the `--validate` flag.
+
+
 To get a full parameters description please use the following command:
 ```bash
-python export_and_quantize.py
+python export_and_validate.py --help
 ```
+
 ### Step 5: Build the demo project
 
 OpenVINO:
