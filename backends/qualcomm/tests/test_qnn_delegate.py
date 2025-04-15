@@ -478,6 +478,26 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(1, 2, 3, 4),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_gather(self):
+        modules = [
+            Gather(),  # noqa: F405
+            # TODO: resolve accuracy problem
+            # GatherArgmin(),  # noqa: F405
+            GatherWhere(),  # noqa: F405
+        ]
+        shape = (2, 2, 3, 4)
+        sample_inputs = [
+            (
+                torch.arange(128, dtype=torch.float32).view(64, 2),
+                torch.ones(64, 2, dtype=torch.int64),
+            ),
+            # (torch.arange(128, dtype=torch.float32).view(64, 2),),
+            (torch.randn(shape), torch.randn(shape)),
+        ]
+        for i, (module, sample_input) in enumerate(zip(modules, sample_inputs)):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_gelu(self):
         module = Gelu()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
@@ -821,12 +841,17 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_slice_copy(self):
-        modules = [SliceCopy(), SliceCopyWithStep()]  # noqa: F405
-        sample_input = (
-            torch.randn([1, 512]),
-            torch.randn([1, 8]),
-        )
-        for module in modules:
+        modules = [
+            SliceCopyDefaultParameter(),  # noqa: F405
+            SliceCopy(),  # noqa: F405
+            SliceCopyWithStep(),  # noqa: F405
+        ]
+        sample_inputs = [
+            (torch.randn([2, 1, 320, 512]),),
+            (torch.randn([1, 512]), torch.randn([1, 8])),
+            (torch.randn([1, 512]), torch.randn([1, 8])),
+        ]
+        for module, sample_input in zip(modules, sample_inputs):
             self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_stack(self):
@@ -1596,6 +1621,27 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_gather(self):
+        modules = [
+            Gather(),  # noqa: F405
+            # TODO: resolve accuracy problem
+            # GatherArgmin(),  # noqa: F405
+            GatherWhere(),  # noqa: F405
+        ]
+        shape = (2, 2, 3, 4)
+        sample_inputs = [
+            (
+                torch.arange(128, dtype=torch.float32).view(64, 2),
+                torch.ones(64, 2, dtype=torch.int64),
+            ),
+            # (torch.arange(128, dtype=torch.float32).view(64, 2),),
+            (torch.randn(shape), torch.randn(shape)),
+        ]
+        for i, (module, sample_input) in enumerate(zip(modules, sample_inputs)):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_gelu(self):
         module = Gelu()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
@@ -1994,12 +2040,17 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_slice_copy(self):
-        modules = [SliceCopy(), SliceCopyWithStep()]  # noqa: F405
-        sample_input = (
-            torch.randn([1, 512]),
-            torch.randn([1, 8]),
-        )
-        for module in modules:
+        modules = [
+            SliceCopyDefaultParameter(),  # noqa: F405
+            SliceCopy(),  # noqa: F405
+            SliceCopyWithStep(),  # noqa: F405
+        ]
+        sample_inputs = [
+            (torch.randn([2, 1, 320, 512]),),
+            (torch.randn([1, 512]), torch.randn([1, 8])),
+            (torch.randn([1, 512]), torch.randn([1, 8])),
+        ]
+        for module, sample_input in zip(modules, sample_inputs):
             module = self.get_qdq_module(module, sample_input)
             self.lower_module_and_test_output(module, sample_input)
 
