@@ -52,6 +52,7 @@ concurrency:
 jobs:
   android:
     uses: ./.github/workflows/android-perf.yml
+    secrets: inherit
     permissions:
       id-token: write
       contents: read
