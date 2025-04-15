@@ -32,7 +32,7 @@ python -m examples.xnnpack.aot_compiler -m efficient_sam
 
 # Performance
 
-Tests were conducted on an Apple M1 Pro chip using the instructions for building and running Executorch with [Core ML](https://pytorch.org/executorch/main/build-run-coreml.html#runtime) and [XNNPACK](https://pytorch.org/executorch/main/tutorial-xnnpack-delegate-lowering.html#running-the-xnnpack-model-with-cmake) backends.
+Tests were conducted on an Apple M1 Pro chip using the instructions for building and running Executorch with [Core ML](https://pytorch.org/executorch/main/backends-coreml#runtime-integration) and [XNNPACK](https://pytorch.org/executorch/main/tutorial-xnnpack-delegate-lowering#running-the-xnnpack-model-with-cmake) backends.
 
 | Backend Configuration  | Average Inference Time (seconds) |
 | ---------------------- | -------------------------------- |
