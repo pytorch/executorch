@@ -14,10 +14,10 @@ to run ExecuTorch `.pte` files, with some restrictions:
   operators](https://pytorch.org/executorch/stable/ir-ops-set-definition.html)
   are linked into the prebuilt module
 * Only the [XNNPACK backend
-  delegate](https://pytorch.org/executorch/0.6/native-delegates-executorch-xnnpack-delegate.html)
+  delegate](https://pytorch.org/executorch/0.6/backends-xnnpack)
   is linked into the prebuilt module.
-* \[macOS only] [Core ML](https://pytorch.org/executorch/0.6/build-run-coreml.html)
-  and [MPS](https://pytorch.org/executorch/0.6/build-run-mps.html) backend
+* \[macOS only] [Core ML](https://pytorch.org/executorch/0.6/backends-coreml)
+  and [MPS](https://pytorch.org/executorch/0.6/backends-mps) backend
   delegates are also linked into the prebuilt module.
 
 Please visit the [ExecuTorch website](https://pytorch.org/executorch/) for
