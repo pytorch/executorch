@@ -50,7 +50,7 @@ jobs:
     with:
       secrets-env: EXECUTORCH_MAVEN_SIGNING_KEYID EXECUTORCH_MAVEN_SIGNING_PASSWORD EXECUTORCH_MAVEN_CENTRAL_PASSWORD EXECUTORCH_MAVEN_CENTRAL_USERNAME EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS
       # As this job has access to Maven credential, run this on a fresh ephemeral runner
-      runner: linux.2xlarge.ephemeral
+      runner: ephemeral.linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
       submodules: 'recursive'
       ref: ${{ github.sha }}
