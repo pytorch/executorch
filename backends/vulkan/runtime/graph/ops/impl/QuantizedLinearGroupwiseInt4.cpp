@@ -128,6 +128,15 @@ void add_q_4w_linear_node(
   check_q_4w_linear_args(
       graph, mat1, mat2_data, group_size, scales_and_zeros_data, out);
 
+  const uint32_t group_size_val = graph.extract_scalar<uint32_t>(group_size);
+
+  bool use_coop_algorithm = false;
+  // Apply the coop algorithm for gemv cases, i.e. mat1 is a vector as opposed
+  // to a matrix.
+  if (graph.size_at<uint32_t>(-2, mat1) == 1) {
+    use_coop_algorithm = true;
+  }
+
   ValueRef mat2 =
       prepack_int4_linear_weight_transposed_interleaved(graph, mat2_data);
 
@@ -135,17 +144,21 @@ void add_q_4w_linear_node(
       graph, scales_and_zeros_data, utils::kBuffer, utils::kWidthPacked);
 
   std::string kernel_name = "q_4w_linear";
+  if (use_coop_algorithm) {
+    kernel_name += "_coop";
+  }
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(mat1));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(mat2));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  const uint32_t group_size_val = graph.extract_scalar<uint32_t>(group_size);
-
   utils::uvec3 global_wg_size = graph.logical_limits_of(out);
   global_wg_size[0] = utils::div_up(global_wg_size[0], uint32_t(2));
 
   utils::uvec3 local_wg_size = graph.create_local_wg_size(global_wg_size);
+  if (use_coop_algorithm) {
+    local_wg_size = {8, 1, 8};
+  }
 
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
