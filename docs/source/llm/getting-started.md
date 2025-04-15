@@ -588,7 +588,7 @@ The delegated model should be noticeably faster compared to the non-delegated mo
 
 For more information regarding backend delegation, see the ExecuTorch guides
 for the [XNNPACK Backend](../backends-xnnpack.md),  [Core ML
-Backend](../backends-coreml.md) and [Qualcomm AI Engine Direct Backend](build-run-llama3-qualcomm-ai-engine-direct-backend.md).
+Backend](../backends-coreml.md) and [Qualcomm AI Engine Direct Backend](../backends-qualcomm.md).
 
 ## Quantization
 
