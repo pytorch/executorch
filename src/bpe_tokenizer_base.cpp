@@ -138,7 +138,12 @@ BPETokenizerBase::split_with_allowed_special_token_(
     return std::make_pair(std::nullopt, input);
   }
 
+#if __cplusplus >= 202002L
   auto start = input.begin();
+#else
+  const char* start = input.data();
+#endif
+
   std::string special;
   while (true) {
     if (!re2::RE2::FindAndConsume(&input, *special_token_regex_, &special)) {
@@ -148,9 +153,15 @@ BPETokenizerBase::split_with_allowed_special_token_(
 
     if (allowed_special.tryGetInteger(special).has_value()) {
       // Found an allowed special token, split the text with it.
+#if __cplusplus >= 202002L
       return std::make_pair(
           special,
           re2::StringPiece(start, input.begin() - start - special.size()));
+#else
+      return std::make_pair(
+          special,
+          re2::StringPiece(start, (input.data() - start) - special.size()));
+#endif
     } // else try to find the next special token
   }
 
@@ -168,7 +179,8 @@ BPETokenizerBase::encode_with_special_token_(
     auto [special, sub_input] =
         split_with_allowed_special_token_(input, allowed_special);
 
-    _encode(sub_input, tokens, last_piece_token_len);
+    TK_CHECK_OK_OR_RETURN_ERROR(
+        _encode(sub_input, tokens, last_piece_token_len));
 
     if (special) {
       const auto result = special_token_map_->tryGetInteger(*special);

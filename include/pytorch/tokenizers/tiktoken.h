@@ -76,23 +76,12 @@ class Tiktoken : public detail::BPETokenizerBase {
     return special_tokens;
   }
 
-  template <typename T>
-  std::pair<std::optional<std::string>, re2::StringPiece>
-  _split_with_allowed_special_token(
-      re2::StringPiece& input,
-      const T& allowed_special) const;
-
   Error _encode(
       re2::StringPiece& input,
       std::vector<uint64_t>& ret,
       uint64_t& last_piece_token_len) const override;
 
   void _decode(re2::StringPiece input, std::string& ret) const override;
-
-  template <typename T>
-  Result<std::pair<std::vector<uint64_t>, uint64_t>> _encode_with_special_token(
-      const std::string& text,
-      const T& allowed_special) const;
 
   detail::TokenMap _build_special_token_map(ssize_t num_base_tokens) const;
 

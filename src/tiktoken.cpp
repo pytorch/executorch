@@ -113,44 +113,6 @@ static Result<TokenMap> _load_token_map(const std::string& path) {
 // ------------------------------Util end------------------------------------
 // -------------------------private method start-------------------------------
 
-template <typename T>
-std::pair<std::optional<std::string>, re2::StringPiece>
-Tiktoken::_split_with_allowed_special_token(
-    re2::StringPiece& input,
-    const T& allowed_special) const {
-  if (!special_token_regex_) {
-    return std::make_pair(std::nullopt, input);
-  }
-
-#if __cplusplus >= 202002L
-  auto start = input.begin();
-#else
-  const char* start = input.data();
-#endif
-  std::string special;
-  while (true) {
-    if (!re2::RE2::FindAndConsume(&input, *special_token_regex_, &special)) {
-      // No special token.
-      break;
-    }
-
-    if (allowed_special.tryGetInteger(special)) {
-      // Found an allowed special token, split the text with it.
-#if __cplusplus >= 202002L
-      return std::make_pair(
-          special,
-          re2::StringPiece(start, input.begin() - start - special.size()));
-#else
-      return std::make_pair(
-          special,
-          re2::StringPiece(start, (input.data() - start) - special.size()));
-#endif
-    } // else try to find the next special token
-  }
-
-  return std::make_pair(std::nullopt, input);
-}
-
 Error Tiktoken::_encode(
     re2::StringPiece& input,
     std::vector<uint64_t>& ret,
@@ -177,43 +139,6 @@ void Tiktoken::_decode(re2::StringPiece input, std::string& ret) const {
 #else
   ret += input;
 #endif
-}
-
-template <typename T>
-Result<std::pair<std::vector<uint64_t>, uint64_t>>
-Tiktoken::_encode_with_special_token(
-    const std::string& text,
-    const T& allowed_special) const {
-  std::vector<uint64_t> tokens;
-  uint64_t last_piece_token_len = 0;
-  re2::StringPiece input(text);
-  while (true) {
-    auto [special, sub_input] =
-        _split_with_allowed_special_token(input, allowed_special);
-
-    TK_CHECK_OK_OR_RETURN_ERROR(
-        _encode(sub_input, tokens, last_piece_token_len));
-
-    if (special) {
-      const auto result = special_token_map_->tryGetInteger(*special);
-      if (!result) {
-        // Should never go here, since special pattern includes all special
-        // chars.
-        TK_LOG(Error, "unknown special token: %s", special->c_str());
-        return Error::EncodeFailure;
-      }
-
-      tokens.push_back(*result);
-      last_piece_token_len = 0;
-    } else {
-      break;
-    }
-  }
-
-  // last_piece_token_len is how many tokens came from the last regex split.
-  // This is used for determining unstable tokens, since you can't merge
-  // across (stable) regex splits
-  return std::make_pair(tokens, last_piece_token_len);
 }
 
 // -------------------------private method end-------------------------------
