@@ -54,31 +54,22 @@ class OpDiagonalCopyOutTest : public ::testing::Test {
   template <typename CTYPE, ScalarType DTYPE>
   void run_2d_complex_dtype() {
     TensorFactory<DTYPE> tf;
-    constexpr auto REAL_DTYPE = executorch::runtime::toRealValueType(DTYPE);
-    using REAL_CTYPE =
-        typename executorch::runtime::ScalarTypeToCppType<REAL_DTYPE>::type;
     Tensor input = tf.make(
         {3, 4},
-        {CTYPE{REAL_CTYPE(1), REAL_CTYPE(1)},
-         CTYPE{REAL_CTYPE(2), REAL_CTYPE(2)},
-         CTYPE{REAL_CTYPE(3), REAL_CTYPE(3)},
-         CTYPE{REAL_CTYPE(4), REAL_CTYPE(4)},
-         CTYPE{REAL_CTYPE(5), REAL_CTYPE(5)},
-         CTYPE{REAL_CTYPE(6), REAL_CTYPE(6)},
-         CTYPE{REAL_CTYPE(7), REAL_CTYPE(7)},
-         CTYPE{REAL_CTYPE(8), REAL_CTYPE(8)},
-         CTYPE{REAL_CTYPE(9), REAL_CTYPE(9)},
-         CTYPE{REAL_CTYPE(10), REAL_CTYPE(10)},
-         CTYPE{REAL_CTYPE(11), REAL_CTYPE(11)},
-         CTYPE{REAL_CTYPE(12), REAL_CTYPE(12)}});
-    Tensor out = tf.make(
-        {2},
-        {CTYPE{REAL_CTYPE(0), REAL_CTYPE(0)},
-         CTYPE{REAL_CTYPE(0), REAL_CTYPE(0)}});
-    Tensor out_expected = tf.make(
-        {2},
-        {CTYPE{REAL_CTYPE(5), REAL_CTYPE(5)},
-         CTYPE{REAL_CTYPE(10), REAL_CTYPE(10)}});
+        {CTYPE(1, 1),
+         CTYPE(2, 2),
+         CTYPE(3, 3),
+         CTYPE(4, 4),
+         CTYPE(5, 5),
+         CTYPE(6, 6),
+         CTYPE(7, 7),
+         CTYPE(8, 8),
+         CTYPE(9, 9),
+         CTYPE(10, 10),
+         CTYPE(11, 11),
+         CTYPE(12, 12)});
+    Tensor out = tf.make({2}, {CTYPE(0, 0), CTYPE(0, 0)});
+    Tensor out_expected = tf.make({2}, {CTYPE(5, 5), CTYPE(10, 10)});
     op_diagonal_copy_out(input, 1, 1, 0, out);
     EXPECT_TENSOR_CLOSE(out, out_expected);
   }
