@@ -1,4 +1,4 @@
-name: android-perf (private devices)
+name: android-perf-private-devices
 
 on:
   schedule:
