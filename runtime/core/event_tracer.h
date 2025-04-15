@@ -216,9 +216,13 @@ class EventTracer {
    * @param[in] delegate_debug_index The id of the delegate event. If string
    * based names are used by this delegate to identify ops executed in the
    * backend then kUnsetDebugHandle should be passed in here. 
-   * @return Returns an instance of EventTracerEntry which should be passed back
-   * into the end_profiling_dele  gate() call.
-   *         - An error code if an error occurs during logging.
+   * @return Returns an Result<EventTracerEntry> instance which may contatain
+   *  a EventTracerEntry instance. The EventTracerEntry instance should be
+   *  passed back into the end_profiling_delegate() call.
+   *         - Result<EventTracerEntry>::ok() is true if the event tracer entry
+   *           was successfully created.
+   *         - Result<EventTracerEntry>::error() is true if an error occurs
+   *           during logging.
    */
   virtual Result<EventTracerEntry> start_profiling_delegate(
       const char* name,

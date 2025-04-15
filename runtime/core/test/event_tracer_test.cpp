@@ -109,7 +109,7 @@ class DummyEventTracer : public EventTracer {
     (void)end_time;
     (void)metadata;
     (void)metadata_len;
-    return Result<bool>(true);
+    return true;
   }
 
   virtual Result<bool> log_intermediate_output_delegate(
@@ -237,7 +237,7 @@ TEST(TestEventTracer, SimpleEventTracerTest) {
  */
 void RunSimpleTracerTestDelegate(EventTracer* event_tracer) {
   EventTracerEntry event_tracer_entry = event_tracer_start_profiling_delegate(
-      event_tracer, "test_event", kUnsetDelegateDebugIntId).get();
+      event_tracer, "test_event", kUnsetDelegateDebugIntId);
   event_tracer_end_profiling_delegate(
       event_tracer, event_tracer_entry, nullptr);
   event_tracer_start_profiling_delegate(event_tracer, nullptr, 1);
