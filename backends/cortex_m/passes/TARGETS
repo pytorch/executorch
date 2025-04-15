@@ -1,0 +1,15 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+python_library(
+    name = "cortex_m_passes",
+    srcs = ["replace_quant_nodes_pass.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+        "//executorch/backends/cortex_m/ops:ops",
+    ]
+)
