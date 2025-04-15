@@ -65,11 +65,6 @@ build_android_native_library() {
   fi
   cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install --config "${EXECUTORCH_CMAKE_BUILD_TYPE}"
 
-  # Update tokenizers submodule
-  pushd extension/llm/tokenizers
-  echo "Update tokenizers submodule"
-  git submodule update --init
-  popd
   cmake extension/android \
     -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI="${ANDROID_ABI}" \
@@ -119,16 +114,15 @@ build_aar() {
   fi
   pushd extension/android/
   ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build
+  # Use java unit test as sanity check
+  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:testDebugUnitTest
   popd
-  cp extension/android/executorch_android/build/outputs/aar/executorch_android-debug.aar "${BUILD_AAR_DIR}/executorch.aar"
+  if [ ! -z $BUILD_AAR_DIR ]; then
+    cp extension/android/executorch_android/build/outputs/aar/executorch_android-debug.aar "${BUILD_AAR_DIR}/executorch.aar"
+  fi
 }
 
 main() {
-  if [[ -z "${BUILD_AAR_DIR:-}" ]]; then
-    BUILD_AAR_DIR="$(mktemp -d)"
-  fi
-  export BUILD_AAR_DIR
-  mkdir -p $BUILD_AAR_DIR
   if [ -z "$ANDROID_ABIS" ]; then
     ANDROID_ABIS=("arm64-v8a" "x86_64")
   fi
