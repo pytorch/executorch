@@ -158,7 +158,7 @@ def get_qnn_quantizer(
 
     except ImportError:
         raise ImportError(
-            "Please install the Qualcomm backend follwing https://pytorch.org/executorch/main/build-run-qualcomm.html"
+            "Please install the Qualcomm backend follwing https://pytorch.org/executorch/main/backends-qualcomm"
         )
 
     backend, quant_config = pt2e_quantize.split("_")
@@ -226,7 +226,7 @@ def get_coreml_quantizer(pt2e_quantize: str):
         from executorch.backends.apple.coreml.quantizer import CoreMLQuantizer
     except ImportError:
         raise ImportError(
-            "Please install the CoreML backend follwing https://pytorch.org/executorch/main/build-run-coreml.html"
+            "Please install the CoreML backend follwing https://pytorch.org/executorch/main/backends-coreml"
         )
 
     if pt2e_quantize == "coreml_8a_c8w":
