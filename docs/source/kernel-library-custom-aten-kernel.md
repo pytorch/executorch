@@ -299,6 +299,26 @@ torch.ops.load_library("libcustom_linear.so/dylib")
 op = torch.ops.myop.custom_linear.default
 ```
 
+#### Using a Custom Operator in a Model
+
+The custom operator can explicitly used in the PyTorch model, or you can write a transformation to replace instances of a core operator with the custom variant. For this example, you could find
+all instances of `torch.nn.Linear` and replace them with `CustomLinear`.
+
+```python
+def  replace_linear_with_custom_linear(module):
+    for name, child in module.named_children():
+        if isinstance(child, nn.Linear):
+            setattr(
+                module,
+                name,
+                CustomLinear(child.in_features,  child.out_features, child.bias),
+        )
+        else:
+            replace_linear_with_custom_linear(child)
+```
+
+The remaining steps are the same as the normal flow. Now you can run this module in eager mode as well as export to ExecuTorch.
+
 ### Custom Ops API Best Practices
 
 Given that we have 2 kernel registration APIs for custom ops, which API should we use? Here are some pros and cons for each API:
