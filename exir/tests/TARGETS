@@ -1,3 +1,5 @@
+load("@fbsource//tools/target_determinator/macros:fbcode_ci_helpers.bzl", "fbcode_ci")
+load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
 load("@fbcode_macros//build_defs:cpp_library.bzl", "cpp_library")
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
@@ -93,12 +95,12 @@ python_unittest(
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/exir:lib",
         "//executorch/exir/backend:backend_api",
         "//executorch/exir/backend/test:backend_with_compiler_demo",
         "//executorch/exir/backend/test:op_partitioner_demo",
         "//executorch/exir/serde:serialize",
-        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
     ],
 )
 
@@ -197,6 +199,9 @@ python_unittest(
         ":models",
         "//caffe2:torch",
         "//caffe2/functorch:functorch_src",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer_utils",
         "//executorch/exir:graph_module",
         "//executorch/exir:lib",
         "//executorch/exir:memory",
@@ -222,9 +227,6 @@ python_unittest(
         "//executorch/exir/passes:sym_to_tensor_pass",
         "//executorch/exir/program:program",
         "//executorch/extension/pybindings:portable_lib",  # @manual
-        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
-        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
-        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer_utils",
     ],
 )
 
@@ -312,10 +314,10 @@ python_unittest(
     deps = [
         "fbsource//third-party/pypi/expecttest:expecttest",  # @manual
         "//caffe2:torch",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
         "//executorch/exir:lib",
         "//executorch/exir/passes:quant_fusion_pass",
         "//executorch/exir/passes:spec_prop_pass",
-        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
         "//pytorch/vision:torchvision",
     ],
 )
@@ -391,6 +393,7 @@ python_unittest(
     srcs = [
         "test_memory_format_ops_pass.py",
     ],
+    labels = ci.labels(fbcode_ci.use_opt_instead_of_dev()),
     deps = [
         ":test_memory_format_ops_pass_utils",
         "//caffe2:torch",
@@ -475,8 +478,8 @@ python_unittest(
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
         "//executorch/exir:lib",
         "//executorch/exir/passes:quantize_io_pass",
-        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
     ],
 )
