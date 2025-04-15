@@ -20,7 +20,7 @@ struct ExecutionPlan;
 } // namespace executorch_flatbuffer
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 
 /**
  * Metadata about a specific tensor of an ExecuTorch Program.
@@ -240,14 +240,14 @@ class MethodMeta final {
   const executorch_flatbuffer::ExecutionPlan* s_plan_;
 };
 
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
 
 namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::MethodMeta;
-using ::executorch::runtime::TensorInfo;
+using ::executorch::ET_RUNTIME_NAMESPACE::MethodMeta;
+using ::executorch::ET_RUNTIME_NAMESPACE::TensorInfo;
 } // namespace executor
 } // namespace torch

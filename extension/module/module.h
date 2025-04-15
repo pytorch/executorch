@@ -19,6 +19,11 @@
 namespace executorch {
 namespace extension {
 
+using ET_RUNTIME_NAMESPACE::Method;
+using ET_RUNTIME_NAMESPACE::MethodMeta;
+using ET_RUNTIME_NAMESPACE::NamedDataMap;
+using ET_RUNTIME_NAMESPACE::Program;
+
 /**
  * A facade class for loading programs and executing methods within them.
  */
@@ -95,7 +100,7 @@ class Module {
    * @param[in] data_map_loader A DataLoader used for loading external weights.
    */
   explicit Module(
-      std::shared_ptr<runtime::Program> program,
+      std::shared_ptr<Program> program,
       std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
       std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr,
       std::unique_ptr<runtime::EventTracer> event_tracer = nullptr,
@@ -116,8 +121,8 @@ class Module {
    */
   ET_NODISCARD
   runtime::Error load(
-      const runtime::Program::Verification verification =
-          runtime::Program::Verification::Minimal);
+      const Program::Verification verification =
+          Program::Verification::Minimal);
 
   /**
    * Checks if the program is loaded.
@@ -134,7 +139,7 @@ class Module {
    *
    * @returns Shared pointer to the program or nullptr if it's not yet loaded.
    */
-  inline std::shared_ptr<runtime::Program> program() const {
+  inline std::shared_ptr<Program> program() const {
     return program_;
   }
 
@@ -224,8 +229,7 @@ class Module {
    * @returns A method metadata, or an error if the program or method failed to
    * load.
    */
-  runtime::Result<runtime::MethodMeta> method_meta(
-      const std::string& method_name);
+  runtime::Result<MethodMeta> method_meta(const std::string& method_name);
 
   /**
    * Execute a specific method with the given input values and retrieve the
@@ -473,20 +477,20 @@ class Module {
     std::vector<runtime::Span<uint8_t>> planned_spans;
     std::unique_ptr<runtime::HierarchicalAllocator> planned_memory;
     std::unique_ptr<runtime::MemoryManager> memory_manager;
-    std::unique_ptr<runtime::Method> method;
+    std::unique_ptr<Method> method;
     std::vector<runtime::EValue> inputs;
   };
 
   std::string file_path_;
   std::string data_map_path_;
   LoadMode load_mode_{LoadMode::MmapUseMlock};
-  std::shared_ptr<runtime::Program> program_;
+  std::shared_ptr<Program> program_;
   std::unique_ptr<runtime::DataLoader> data_loader_;
   std::unique_ptr<runtime::MemoryAllocator> memory_allocator_;
   std::unique_ptr<runtime::MemoryAllocator> temp_allocator_;
   std::unique_ptr<runtime::EventTracer> event_tracer_;
   std::unique_ptr<runtime::DataLoader> data_map_loader_;
-  std::unique_ptr<runtime::NamedDataMap> data_map_;
+  std::unique_ptr<NamedDataMap> data_map_;
 
  protected:
   std::unordered_map<std::string, MethodHolder> methods_;

@@ -29,6 +29,7 @@ Windows (x86_64)
   - Otherwise, Python's built-in virtual environment manager `python venv` is a good alternative.
 * `g++` version 7 or higher, `clang++` version 5 or higher, or another
   C++17-compatible toolchain.
+* `python` version 3.10-3.12
 
 Note that the cross-compilable core runtime code supports a wider range of
 toolchains, down to C++17. See the [Runtime Overview](./runtime-overview.md) for
@@ -112,7 +113,7 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
 > # From the root of the executorch repo:
 > ./install_executorch.sh --clean
 > git submodule sync
-> git submodule update --init
+> git submodule update --init --recursive
 > ```
 
 ## Build ExecuTorch C++ runtime from source
@@ -230,7 +231,7 @@ Assuming Android NDK is available, run:
 mkdir cmake-android-out && cd cmake-android-out
 
 # point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed
-cmake -DCMAKE_TOOLCHAIN_FILE=/Users/{user_name}/Library/Android/sdk/ndk/27.2.12479018/build/cmake/android.toolchain.cmake  -DANDROID_ABI=arm64-v8a ..
+cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake  -DANDROID_ABI=arm64-v8a ..
 
 cd  ..
 cmake --build  cmake-android-out  -j9

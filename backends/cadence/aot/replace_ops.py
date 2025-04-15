@@ -2110,6 +2110,102 @@ class ReplaceWhereWithFullArgsWithWhereScalar(ExportPass):
         return super().call_operator(op, args, kwargs, meta)
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=2))
+class ReplaceGeluWithApproximateGeluPass(ExportPass):
+    """
+    Replace the gelu op with an approximate gelu op. The approximate gelu op
+    is more efficient on DSP backends.
+    """
+
+    def call_operator(
+        self,
+        op,
+        args: Tuple[Argument, ...],
+        kwargs: Dict[str, Argument],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
+        if op not in {
+            exir_ops.edge.aten.gelu.default,
+        }:
+            return super().call_operator(op, args, kwargs, meta)
+
+        # compute the approximate gelu (0.7978845608028654 is sqrt(2 / pi))
+        # as 0.5 * x * (1 + torch.tanh(0.7978845608028654 * ( x + 0.044715 * x^3)))
+
+        # Get 0.5 * x
+        half = super().call_operator(
+            exir_ops.edge.aten.mul.Tensor,
+            (args[0], 0.5),
+            {},
+            meta,
+        )
+
+        scaled = super().call_operator(
+            exir_ops.edge.aten.mul.Tensor,
+            (args[0], 0.044715),
+            {},
+            meta,
+        )
+
+        # Get x^2 (note that we use mul.Tensor twice instead of pow.Tensor because
+        # it is much more efficient on DSP backends)
+        scaled_square = super().call_operator(
+            exir_ops.edge.aten.mul.Tensor,
+            (scaled, args[0]),
+            {},
+            meta,
+        )
+
+        # Get x^3
+        scaled_cubed = super().call_operator(
+            exir_ops.edge.aten.mul.Tensor,
+            (scaled_square, args[0]),
+            {},
+            meta,
+        )
+
+        # Get x + 0.044715 * x^3
+        inner_sum = super().call_operator(
+            exir_ops.edge.aten.add.Tensor,
+            (scaled_cubed, args[0]),
+            {},
+            meta,
+        )
+
+        # Get 0.7978845608028654 * ( x + 0.044715 * x^3)
+        scaled_sum = super().call_operator(
+            exir_ops.edge.aten.mul.Tensor,
+            (inner_sum, 0.7978845608028654),
+            {},
+            meta,
+        )
+
+        # Get torch.tanh(0.7978845608028654 * ( x + 0.044715 * x^3))
+        tanh = super().call_operator(
+            exir_ops.edge.aten.tanh.default,
+            (scaled_sum,),
+            {},
+            meta,
+        )
+
+        # Get 1 + torch.tanh(0.79788456 * ( x + 0.044715 * x^3))
+        # TODO(): Check why this is not working properly with integer values (e.g. 1 instead of 1.)
+        outer_sum = super().call_operator(
+            exir_ops.edge.aten.add.Tensor,
+            (tanh, 1.0),
+            {},
+            meta,
+        )
+
+        # Retunr the final result
+        return super().call_operator(
+            exir_ops.edge.aten.mul.Tensor,
+            (half, outer_sum),
+            {},
+            meta,
+        )
+
+
 # This class encapsulates all the functions that replace/switch one op in the
 # graph with another.
 class CadenceReplaceOpsInGraph:
@@ -2149,4 +2245,5 @@ class CadenceReplaceOpsInGraph:
         ReplaceAtenAvgPoolWithJarvisAvgPoolPass,
         ReplaceAtenLinalgVectorNormWithCadenceLinalgVectorNormPass,
         ReplaceWhereWithFullArgsWithWhereScalar,
+        # ReplaceGeluWithApproximateGeluPass,
     ]
