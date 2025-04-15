@@ -820,8 +820,10 @@ TEST_F(ProfilerETDumpTest, LogDelegateEvents) {
     const char* metadata = "test_metadata";
     etdump_gen[i]->log_profiling_delegate(
         nullptr, 278, 1, 2, metadata, strlen(metadata) + 1);
-    EventTracerEntry entry = etdump_gen[i]->start_profiling_delegate(
-        "test_event", kUnsetDelegateDebugIntId).get();
+    Result<EventTracerEntry> res = etdump_gen[i]->start_profiling_delegate(
+        "test_event", kUnsetDelegateDebugIntId);
+    ASSERT_TRUE(res.ok());
+    EventTracerEntry entry = res.get();
     EXPECT_NE(entry.delegate_event_id_type, DelegateDebugIdType::kNone);
     // Event 2
     etdump_gen[i]->end_profiling_delegate(

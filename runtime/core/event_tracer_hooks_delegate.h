@@ -53,7 +53,10 @@ inline EventTracerEntry event_tracer_start_profiling_delegate(
     DebugHandle delegate_debug_id) {
 #ifdef ET_EVENT_TRACER_ENABLED
   if (event_tracer) {
-    return event_tracer->start_profiling_delegate(name, delegate_debug_id);
+    Result<EventTracerEntry> res = event_tracer->start_profiling_delegate(
+        name, delegate_debug_id);
+    ET_CHECK_MSG(res.ok(), "Failed to start profiling delegate event");
+    return res.get();
   }
 #else //! ET_EVENT_TRACER_ENABLED
   (void)name;
@@ -179,8 +182,9 @@ inline void event_tracer_log_output_delegate(
             std::is_same<T, executorch::aten::Tensor>::value ||
             std::is_same<T, ArrayRef<executorch::aten::Tensor>>::value,
         "Unsupported type for intermediate output");
-    event_tracer->log_intermediate_output_delegate(
+    Result<bool> res = event_tracer->log_intermediate_output_delegate(
         name, delegate_debug_id, output);
+    ET_CHECK_MSG(res.ok(), "Failed to log intermediate output delegate event");
   }
 #else //! ET_EVENT_TRACER_ENABLED
   (void)name;
