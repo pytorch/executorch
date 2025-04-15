@@ -25,4 +25,3 @@ popd
 pushd "$BASEDIR"
 ./gradlew connectedAndroidTest
 popd
-
