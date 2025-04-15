@@ -159,7 +159,7 @@ example_inputs = (torch.randint(0, 100, (1, model.config.block_size), dtype=torc
 # long as they adhere to the rules specified in the dynamic shape configuration.
 # Here we set the range of 0th model input's 1st dimension as
 # [0, model.config.block_size].
-# See https://pytorch.org/executorch/main/concepts.html#dynamic-shapes
+# See https://pytorch.org/executorch/main/concepts#dynamic-shapes
 # for details about creating dynamic shapes.
 dynamic_shape = (
     {1: torch.export.Dim("token_dim", max=model.config.block_size)},

@@ -664,7 +664,7 @@ file which can be loaded by a desktop or mobile application at runtime.</p>
 <span class="c1"># long as they adhere to the rules specified in the dynamic shape configuration.</span>
 <span class="c1"># Here we set the range of 0th model input&#39;s 1st dimension as</span>
 <span class="c1"># [0, model.config.block_size].</span>
-<span class="c1"># See https://pytorch.org/executorch/main/concepts.html#dynamic-shapes</span>
+<span class="c1"># See https://pytorch.org/executorch/main/concepts#dynamic-shapes</span>
 <span class="c1"># for details about creating dynamic shapes.</span>
 <span class="n">dynamic_shape</span> <span class="o">=</span> <span class="p">(</span>
     <span class="p">{</span><span class="mi">1</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">Dim</span><span class="p">(</span><span class="s2">&quot;token_dim&quot;</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">block_size</span><span class="p">)},</span>
