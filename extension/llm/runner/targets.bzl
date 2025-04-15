@@ -70,6 +70,25 @@ def define_common_targets():
         )
 
         runtime.cxx_library(
+            name = "decoder_llm_runner" + aten_suffix,
+            exported_headers = ["decoder_llm_runner.h"],
+            srcs = ["decoder_llm_runner.cpp"],
+            visibility = [
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_deps = [
+                ":text_decoder_runner" + aten_suffix,
+                ":text_prefiller" + aten_suffix,
+                ":text_token_generator" + aten_suffix,
+                ":irunner",
+                ":stats",
+                "//pytorch/tokenizers:headers",
+                "//executorch/extension/module:module" + aten_suffix,
+                "//executorch/extension/tensor:tensor" + aten_suffix,
+            ],
+        )
+
+        runtime.cxx_library(
             name = "image_prefiller" + aten_suffix,
             exported_headers = ["image_prefiller.h", "image.h"],
             visibility = [
@@ -93,5 +112,6 @@ def define_common_targets():
                 ":text_decoder_runner" + aten_suffix,
                 ":text_prefiller" + aten_suffix,
                 ":text_token_generator" + aten_suffix,
+                ":decoder_llm_runner" + aten_suffix,
             ],
         )
