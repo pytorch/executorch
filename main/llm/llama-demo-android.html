@@ -404,6 +404,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#supporting-models">Supporting Models</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#building-the-apk">Building the APK</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#how-to-use-the-app">How to Use the App</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#instrumentation-test">Instrumentation Test</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#reporting-issues">Reporting Issues</a></li>
 </ul>
 </li>
@@ -660,6 +661,39 @@
 </div>
 </div>
 </div>
+<div class="section" id="instrumentation-test">
+<h2>Instrumentation Test<a class="headerlink" href="#instrumentation-test" title="Permalink to this heading">¶</a></h2>
+<p>You can run the instrumentation test for sanity check. The test loads a model pte file and tokenizer.bin file
+under <code class="docutils literal notranslate"><span class="pre">/data/local/tmp/llama</span></code>.</p>
+<div class="section" id="model-preparation">
+<h3>Model preparation<a class="headerlink" href="#model-preparation" title="Permalink to this heading">¶</a></h3>
+<p>Go to ExecuTorch root,</p>
+<div class="highlight-none notranslate highlight-sh"><div class="highlight"><pre><span></span>curl<span class="w"> </span>-C<span class="w"> </span>-<span class="w"> </span>-Ls<span class="w"> </span><span class="s2">&quot;https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt&quot;</span><span class="w"> </span>--output<span class="w"> </span>stories110M.pt
+curl<span class="w"> </span>-C<span class="w"> </span>-<span class="w"> </span>-Ls<span class="w"> </span><span class="s2">&quot;https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model&quot;</span><span class="w"> </span>--output<span class="w"> </span>tokenizer.model
+<span class="c1"># Create params.json file</span>
+touch<span class="w"> </span>params.json
+<span class="nb">echo</span><span class="w"> </span><span class="s1">&#39;{&quot;dim&quot;: 768, &quot;multiple_of&quot;: 32, &quot;n_heads&quot;: 12, &quot;n_layers&quot;: 12, &quot;norm_eps&quot;: 1e-05, &quot;vocab_size&quot;: 32000}&#39;</span><span class="w"> </span>&gt;<span class="w"> </span>params.json
+python<span class="w"> </span>-m<span class="w"> </span>examples.models.llama.export_llama<span class="w"> </span>-c<span class="w"> </span>stories110M.pt<span class="w"> </span>-p<span class="w"> </span>params.json<span class="w"> </span>-d<span class="w"> </span>fp16<span class="w"> </span>-n<span class="w"> </span>stories110m_h.pte<span class="w"> </span>-kv
+python<span class="w"> </span>-m<span class="w"> </span>pytorch_tokenizers.tools.llama2c.convert<span class="w"> </span>-t<span class="w"> </span>tokenizer.model<span class="w"> </span>-o<span class="w"> </span>tokenizer.bin
+</pre></div>
+</div>
+</div>
+<div class="section" id="push-model">
+<h3>Push model<a class="headerlink" href="#push-model" title="Permalink to this heading">¶</a></h3>
+<div class="highlight-none notranslate highlight-sh"><div class="highlight"><pre><span></span>adb<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/data/local/tmp/llama
+adb<span class="w"> </span>push<span class="w"> </span>stories110m_h.pte<span class="w"> </span>/data/local/tmp/llama
+adb<span class="w"> </span>push<span class="w"> </span>tokenizer.bin<span class="w"> </span>/data/local/tmp/llama
+</pre></div>
+</div>
+</div>
+<div class="section" id="run-test">
+<h3>Run test<a class="headerlink" href="#run-test" title="Permalink to this heading">¶</a></h3>
+<p>Go to <code class="docutils literal notranslate"><span class="pre">examples/demo-apps/android/LlamaDemo</span></code>,</p>
+<div class="highlight-none notranslate highlight-sh"><div class="highlight"><pre><span></span>./gradlew<span class="w"> </span>connectedAndroidTest
+</pre></div>
+</div>
+</div>
+</div>
 <div class="section" id="reporting-issues">
 <h2>Reporting Issues<a class="headerlink" href="#reporting-issues" title="Permalink to this heading">¶</a></h2>
 <p>If you encountered any bugs or issues following this tutorial please file a bug/issue here on <a class="reference external" href="https://github.com/pytorch/executorch/issues/new">Github</a>.</p>
@@ -729,6 +763,12 @@
 <li><a class="reference internal" href="#id2">ExecuTorch App API</a></li>
 </ul>
 </li>
+</ul>
+</li>
+<li><a class="reference internal" href="#instrumentation-test">Instrumentation Test</a><ul>
+<li><a class="reference internal" href="#model-preparation">Model preparation</a></li>
+<li><a class="reference internal" href="#push-model">Push model</a></li>
+<li><a class="reference internal" href="#run-test">Run test</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#reporting-issues">Reporting Issues</a></li>
