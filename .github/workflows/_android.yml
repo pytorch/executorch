@@ -59,7 +59,6 @@ jobs:
 
   # Running Android emulator directly on the runner and not using Docker
   run-emulator:
-    needs: build-llm-demo
     # NB: Use metal install for KVM support to run the emulator faster
     runs-on: linux.24xl.spr-metal
     env:
