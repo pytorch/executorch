@@ -46,11 +46,8 @@ namespace runtime {
  * @param[in] delegate_debug_id The id of the delegate event. If string
  * based names are used by this delegate to identify ops executed in the
  * backend then kUnsetDebugHandle should be passed in here.
- * @return Returns an instance of EventTracerEntry which should be passed back
- * into the end_profiling_delegate() call.
- *         - An error code if an error occurs during logging.
  */
-inline Result<EventTracerEntry> event_tracer_start_profiling_delegate(
+inline EventTracerEntry event_tracer_start_profiling_delegate(
     EventTracer* event_tracer,
     const char* name,
     DebugHandle delegate_debug_id) {
@@ -63,7 +60,7 @@ inline Result<EventTracerEntry> event_tracer_start_profiling_delegate(
   (void)delegate_debug_id;
 #endif
   // There is no active tracer; this value will be ignored.
-  return Result<EventTracerEntry>(EventTracerEntry());
+  return EventTracerEntry();
 }
 
 /**
@@ -126,7 +123,7 @@ inline void event_tracer_end_profiling_delegate(
  * make it available for the user again in the post-processing stage.
  * @param[in] metadata_len Length of the metadata buffer.
  */
-inline Result<bool> event_tracer_log_profiling_delegate(
+inline void event_tracer_log_profiling_delegate(
     EventTracer* event_tracer,
     const char* name,
     DebugHandle delegate_debug_id,
@@ -136,7 +133,7 @@ inline Result<bool> event_tracer_log_profiling_delegate(
     size_t metadata_len = 0) {
 #ifdef ET_EVENT_TRACER_ENABLED
   if (event_tracer) {
-    return event_tracer->log_profiling_delegate(
+    event_tracer->log_profiling_delegate(
         name, delegate_debug_id, start_time, end_time, metadata, metadata_len);
   }
 #else //! ET_EVENT_TRACER_ENABLED
@@ -146,7 +143,6 @@ inline Result<bool> event_tracer_log_profiling_delegate(
   (void)end_time;
   (void)metadata;
   (void)metadata_len;
-  return Result<bool>(false);
 #endif
 }
 
