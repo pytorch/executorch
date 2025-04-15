@@ -521,7 +521,7 @@
 <dt class="sig sig-object py" id="executorch.exir.EdgeProgramManager">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">executorch.exir.</span></span><span class="sig-name descname"><span class="pre">EdgeProgramManager</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">edge_programs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constant_methods</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">compile_config</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ops_set_to_not_decompose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#EdgeProgramManager"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.exir.EdgeProgramManager" title="Permalink to this definition">¶</a></dt>
 <dd><p>Package of one or more <cite>ExportedPrograms</cite> in Edge dialect. Designed to simplify
-lowering to ExecuTorch. See: <a class="reference external" href="https://pytorch.org/executorch/stable/ir-exir.html">https://pytorch.org/executorch/stable/ir-exir.html</a></p>
+lowering to ExecuTorch. See: <a class="reference external" href="https://pytorch.org/executorch/main/ir-exir">https://pytorch.org/executorch/main/ir-exir</a></p>
 <p>Allows easy applications of transforms across a collection of exported programs
 including the delegation of subgraphs.</p>
 <p>Manages the second link in the lowering chain of ATen -&gt; Edge -&gt; ExecuTorch.</p>
@@ -549,7 +549,7 @@ including the delegation of subgraphs.</p>
 <dt class="sig sig-object py" id="executorch.exir.ExecutorchProgramManager">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">executorch.exir.</span></span><span class="sig-name descname"><span class="pre">ExecutorchProgramManager</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">execution_programs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config_methods</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">backend_config</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">named_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#ExecutorchProgramManager"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.exir.ExecutorchProgramManager" title="Permalink to this definition">¶</a></dt>
 <dd><p>Package of one or more <cite>ExportedPrograms</cite> in Execution dialect. Designed to simplify
-lowering to ExecuTorch. See: <a class="reference external" href="https://pytorch.org/executorch/stable/ir-exir.html">https://pytorch.org/executorch/stable/ir-exir.html</a></p>
+lowering to ExecuTorch. See: <a class="reference external" href="https://pytorch.org/executorch/main/ir-exir">https://pytorch.org/executorch/main/ir-exir</a></p>
 <p>When the ExecutorchProgramManager is constructed the ExportedPrograms in execution dialect
 are used to form the executorch binary (in a process called emission) and then serialized
 to a buffer.</p>
@@ -833,14 +833,14 @@ for (var i = 0; i < menuItems.length; i++) {
     $(".main-menu a:contains('GitHub')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
-    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
+    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
+    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
     // Mobile
     $(".mobile-menu a:contains('Github')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
-    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
+    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
+    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
 
   });
 </script>
