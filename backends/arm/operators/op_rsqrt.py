@@ -6,15 +6,15 @@
 # pyre-unsafe
 from typing import List
 
-import serializer.tosa_serializer as ts  # type: ignore
 import torch
+
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
-from serializer.tosa_serializer import TosaOp
 
 
 @register_node_visitor
@@ -34,5 +34,14 @@ class RsqrtVisitor_080_MI(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        assert inputs[0].dtype == output.dtype == ts.DType.FP32
-        tosa_graph.addOperator(TosaOp.Op().RSQRT, [inputs[0].name], [output.name])
+        if len(node.all_input_nodes) != 1:
+            raise ValueError(
+                f"Expected 1 input for {self.target}, got {len(node.all_input_nodes)}"
+            )
+        if inputs[0].dtype != ts.DType.FP32 or output.dtype != ts.DType.FP32:
+            raise ValueError(
+                f"Input and output for {self.target} need to be FP32, got "
+                f"{inputs[0].dtype=} and {output.dtype=}"
+            )
+
+        tosa_graph.addOperator(ts.TosaOp.Op().RSQRT, [inputs[0].name], [output.name])

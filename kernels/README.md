@@ -351,9 +351,11 @@ Once you have your operator and corresponding tests in place, we can try it out.
 cmake . \
   -DCMAKE_INSTALL_PREFIX=cmake-out \
   -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
+  -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
   -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
   -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
   -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
   -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
   -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
   -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
@@ -369,6 +371,7 @@ cmake --build cmake-out -j9 --target install
 ```
 ./cmake-out/kernels/test/portable_kernels_test
 ./cmake-out/kernels/test/optimized_kernels_test
+./cmake-out/kernels/test/quantized_kernels_test
 ```
 
 #### Implementation restrictions

@@ -7,6 +7,12 @@ on:
         description: Version name to be uploaded for AAR release
         required: false
         type: string
+      upload_to_maven:
+        description: Upload the AAR to maven staging repository
+        required: false
+        type: boolean
+  schedule:
+    - cron: 0 10 * * *
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -22,6 +28,10 @@ jobs:
         shell: bash
         run: |
           VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            echo "No version name specified. Will create a snapshot AAR"
+            exit 0
+          fi
           if curl -I "https://ossci-android.s3.amazonaws.com/executorch/release/${VERSION}/executorch.aar" | grep "200 OK"; then
             echo "AAR already exists at https://ossci-android.s3.amazonaws.com/executorch/release/${VERSION}/executorch.aar"
             echo "Will skip build/upload"
@@ -31,14 +41,17 @@ jobs:
   build-aar:
     name: build-aar
     needs: check-if-aar-exists
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    if: ${{ !github.event.pull_request.head.repo.fork }}
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.7
+    secrets: inherit
     permissions:
       id-token: write
       contents: read
     with:
+      secrets-env: EXECUTORCH_MAVEN_SIGNING_KEYID EXECUTORCH_MAVEN_SIGNING_PASSWORD EXECUTORCH_MAVEN_CENTRAL_PASSWORD EXECUTORCH_MAVEN_CENTRAL_USERNAME EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.sha }}
       timeout: 90
       upload-artifact: android-apps
@@ -52,6 +65,16 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool buck2
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
+        mkdir -p ~/.gradle
+        touch ~/.gradle/gradle.properties
+        echo "signing.keyId=${SECRET_EXECUTORCH_MAVEN_SIGNING_KEYID}" >> ~/.gradle/gradle.properties
+        echo "signing.password=${SECRET_EXECUTORCH_MAVEN_SIGNING_PASSWORD}" >> ~/.gradle/gradle.properties
+        echo "mavenCentralUsername=${SECRET_EXECUTORCH_MAVEN_CENTRAL_USERNAME}" >> ~/.gradle/gradle.properties
+        echo "mavenCentralPassword=${SECRET_EXECUTORCH_MAVEN_CENTRAL_PASSWORD}" >> ~/.gradle/gradle.properties
+        echo "signing.secretKeyRingFile=/tmp/secring.gpg" >> ~/.gradle/gradle.properties
+
+        echo -n "$SECRET_EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS" | base64 -d > /tmp/secring.gpg
+
         # Build AAR Package
         mkdir aar-out
         export BUILD_AAR_DIR=aar-out
@@ -60,6 +83,12 @@ jobs:
         cp aar-out/executorch.aar "${ARTIFACTS_DIR_NAME}/executorch.aar"
 
         shasum -a 256 "${ARTIFACTS_DIR_NAME}/executorch.aar"
+
+        # Publish to maven staging
+        UPLOAD_TO_MAVEN="${{ inputs.upload_to_maven }}"
+        if [[ "$UPLOAD_TO_MAVEN" == "true" ]]; then
+          (cd aar-out; ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:publishToMavenCentral)
+        fi
 
   upload-release-aar:
     name: upload-release-aar
@@ -84,6 +113,8 @@ jobs:
           pip install awscli==1.32.18
           AWS_CMD="aws s3 cp"
           VERSION="${{ inputs.version }}"
-          VERSION_NAME="${VERSION:-temp_snapshot}"
-          ${AWS_CMD} executorch.aar s3://ossci-android/executorch/release/${VERSION_NAME}/executorch.aar --acl public-read
-          ${AWS_CMD} executorch.aar.sha256sums s3://ossci-android/executorch/release/${VERSION_NAME}/executorch.aar.sha256sums --acl public-read
+          if [ -z "$VERSION" ]; then
+            VERSION="snapshot-$(date +"%Y%m%d")"
+          fi
+          ${AWS_CMD} executorch.aar s3://ossci-android/executorch/release/${VERSION}/executorch.aar --acl public-read
+          ${AWS_CMD} executorch.aar.sha256sums s3://ossci-android/executorch/release/${VERSION}/executorch.aar.sha256sums --acl public-read

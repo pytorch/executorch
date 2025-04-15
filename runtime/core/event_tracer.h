@@ -313,8 +313,11 @@ class EventTracer {
    * @param[in] evalue The value to be logged.
    * @param[in] evalue_type Indicates what type of output this is logging e.g.
    * an intermediate output, program output etc.
+   * @return A Result<bool> indicating the status of the logging operation.
+   *         - True if the evalue output was successfully logged.
+   *         - An error code if an error occurs during logging.
    */
-  virtual void log_evalue(
+  virtual Result<bool> log_evalue(
       const EValue& evalue,
       LoggedEValueType evalue_type) = 0;
 

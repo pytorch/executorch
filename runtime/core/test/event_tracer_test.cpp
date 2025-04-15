@@ -161,9 +161,11 @@ class DummyEventTracer : public EventTracer {
     return true;
   }
 
-  void log_evalue(const EValue& evalue, LoggedEValueType evalue_type) override {
+  Result<bool> log_evalue(const EValue& evalue, LoggedEValueType evalue_type)
+      override {
     logged_evalue_ = evalue;
     logged_evalue_type_ = evalue_type;
+    return true;
   }
 
   EValue logged_evalue() {

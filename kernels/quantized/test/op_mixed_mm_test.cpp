@@ -20,7 +20,7 @@ using namespace ::testing;
 using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using executorch::runtime::KernelRuntimeContext;
+using executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext;
 using torch::executor::native::quantized_mixed_mm_out;
 using torch::executor::testing::TensorFactory;
 
