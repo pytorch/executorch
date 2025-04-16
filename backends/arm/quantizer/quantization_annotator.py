@@ -244,6 +244,11 @@ _parent_shared_qspec = [
     operator.getitem,
 ]
 
+_one_to_one_shared_input_or_input_act_qspec = [
+    torch.ops.aten.adaptive_avg_pool2d.default,
+    torch.ops.aten.alias_copy.default,
+]
+
 
 def get_quant_properties(  # noqa: C901
     node: Node, gm: torch.fx.GraphModule, quantization_config
@@ -332,7 +337,7 @@ def get_quant_properties(  # noqa: C901
             _QuantProperty(2, shared_qspec),  # type: ignore[arg-type]
         ]
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
-    elif node.target == torch.ops.aten.adaptive_avg_pool2d.default:
+    elif node.target in _one_to_one_shared_input_or_input_act_qspec:
         input_qspec = (
             SharedQuantizationSpec(node.args[0])  # type: ignore[arg-type]
             if arm_quantizer_utils.is_output_annotated(node.args[0])  # type: ignore
