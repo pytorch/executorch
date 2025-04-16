@@ -217,7 +217,7 @@ cd executorch
    ./cmake-out/examples/devtools/example_runner --bundled_program_path {your-bpte-file} --output_verification
 ```
 
-It is expected to see no input from running the above mentioned snippet.
+It is expected to see no output from running the above mentioned snippet.
 
 For a detailed example of how the runner should be like, please refer to our [example runner](https://github.com/pytorch/executorch/blob/release/0.6/examples/devtools/example_runner/example_runner.cpp).
 
