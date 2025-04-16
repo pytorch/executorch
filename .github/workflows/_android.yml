@@ -124,7 +124,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ env.API_LEVEL }}
-          arch: arm64-v8a
+          arch: x86_64
           script: ./scripts/run_android_emulator.sh
           # NB: This is to boot the emulator faster following the instructions on
           # https://github.com/ReactiveCircus/android-emulator-runner. The max number
@@ -135,6 +135,6 @@ jobs:
           disk-size: 20000M
           force-avd-creation: false
           disable-animations: true
-          emulator-options: -memory 8192 -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -memory 80000 -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           # This is to make sure that the job doesn't fail flakily
           emulator-boot-timeout: 900
