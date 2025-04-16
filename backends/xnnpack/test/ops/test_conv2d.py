@@ -176,6 +176,20 @@ class Conv2dPermute(torch.nn.Module):
         return (torch.randn(2, 2, 4, 4),)
 
 
+class DQConv2d(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 10, 3)
+        self.conv.weight.requires_grad = False
+        self.conv.bias.requires_grad = False
+
+    def forward(self, x):
+        return self.conv(x)
+
+    def get_inputs(self):
+        return (torch.randn(1, 3, 8, 8),)
+
+
 class TestConv2d(unittest.TestCase):
     def setUp(self):
         torch._dynamo.reset()
@@ -230,12 +244,11 @@ class TestConv2d(unittest.TestCase):
                     .run_method_and_compare_outputs(qtol=1)
                 )
 
-    def _test_dq_conv2d(
+    def _test_dq(
         self,
         m: torch.nn.Module,
         inputs,
         dynamic_shapes,
-        atol=5e-02,
     ):
         quant_config = get_symmetric_quantization_config(
             is_per_channel=True,
@@ -250,21 +263,15 @@ class TestConv2d(unittest.TestCase):
         tester = Tester(m, inputs, dynamic_shapes=dynamic_shapes)
         tester.quantize(Quantize(quantization_config=quant_config))
         tester.export()
-
         tester.check(["torch.ops.quantized_decomposed.choose_qparams"])
-
         tester.to_edge_transform_and_lower(
             ToEdgeTransformAndLower([DynamicallyQuantizedPartitioner])
         )
-
         tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
         tester.check_not(["executorch_exir_dialects_edge__ops_aten_conv2d_default"])
-
         tester.to_executorch()
-        # tester.serialize()
-        tester.serialize().dump_artifact("conv2d.pte")
-
-        tester.run_method_and_compare_outputs(atol=atol)
+        tester.serialize()
+        tester.run_method_and_compare_outputs(qtol=1)
 
     def test_fp16_conv2d(self) -> None:
         for transpose in (True, False):
@@ -743,30 +750,10 @@ class TestConv2d(unittest.TestCase):
             .run_method_and_compare_outputs(qtol=1)
         )
 
-    def test_dq_conv2d(self) -> None:
-        class SimpleConv2d(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.conv = torch.nn.Conv2d(
-                    3,
-                    10,
-                    3,
-                )
-                self.conv.weight.requires_grad = False
-                self.conv.bias.requires_grad = False
-
-            def forward(self, x):
-                return self.conv(x)
-
-            def get_inputs(self):
-                return (torch.randn(1, 3, 8, 8),)
-
-        model = SimpleConv2d()
-        inputs = model.get_inputs()
-
-        self._test_dq_conv2d(
+    def test_qs8_dq_conv2d(self) -> None:
+        model = DQConv2d()
+        self._test_dq(
             model,
-            inputs,
+            model.get_inputs(),
             dynamic_shapes=None,
-            atol=3.0,
         )
