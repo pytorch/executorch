@@ -74,10 +74,19 @@ public class LlmModuleInstrumentationTest implements LlmCallback {
     public GrantPermissionRule mRuntimePermissionRule = GrantPermissionRule.grant(Manifest.permission.READ_EXTERNAL_STORAGE);
 
     @Test
-    public void testLoad() throws IOException, URISyntaxException{
+    public void testGenerate() throws IOException, URISyntaxException{
         int loadResult = mModule.load();
         // Check that the model can be load successfully
         assertEquals(OK, loadResult);
     }
 
+    @Override
+    public void onResult(String result) {
+        results.add(result);
+    }
+
+    @Override
+    public void onStats(float tps) {
+        tokensPerSecond.add(tps);
+    }
 }
