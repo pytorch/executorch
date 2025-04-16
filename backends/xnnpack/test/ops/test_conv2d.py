@@ -30,10 +30,7 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
 )
 from executorch.backends.xnnpack.test.test_xnnpack_utils import randomize_bn
 from executorch.backends.xnnpack.test.tester import Quantize, Tester
-from executorch.backends.xnnpack.test.tester.tester import (
-    Partition,
-    ToEdgeTransformAndLower,
-)
+from executorch.backends.xnnpack.test.tester.tester import ToEdgeTransformAndLower
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
@@ -176,7 +173,7 @@ class Conv2dPermute(torch.nn.Module):
         return (torch.randn(2, 2, 4, 4),)
 
 
-class DQConv2d(torch.nn.Module):
+class Conv2dDynamicQuant(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.conv = torch.nn.Conv2d(3, 10, 3)
@@ -750,8 +747,8 @@ class TestConv2d(unittest.TestCase):
             .run_method_and_compare_outputs(qtol=1)
         )
 
-    def test_qs8_dq_conv2d(self) -> None:
-        model = DQConv2d()
+    def test_dq_conv2d(self) -> None:
+        model = Conv2dDynamicQuant()
         self._test_dq(
             model,
             model.get_inputs(),
