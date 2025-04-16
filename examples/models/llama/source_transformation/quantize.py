@@ -128,10 +128,10 @@ def quantize(  # noqa C901
                 model,
                 Int8DynamicActivationIntxWeightConfig(
                     weight_dtype=getattr(torch, f"int{bitwidth}"),
-                    granularity=(
+                    weight_granularity=(
                         PerAxis(0) if group_size == 0 else PerGroup(group_size)
                     ),
-                    mapping_type=MappingType.SYMMETRIC,
+                    weight_mapping_type=MappingType.SYMMETRIC,
                     layout=PackedLinearInt8DynamicActivationIntxWeightLayout(),
                 ),
             )
