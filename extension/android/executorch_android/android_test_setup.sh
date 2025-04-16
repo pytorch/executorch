@@ -36,7 +36,9 @@ prepare_tinyllama() {
 prepare_vision() {
   pushd "${BASEDIR}/../../../"
   python3 -m examples.xnnpack.aot_compiler --model_name "mv2" --delegate
-  cp mv2*.pte "${BASEDIR}/src/androidTest/resources/"
+  python3 -m examples.xnnpack.aot_compiler --model_name "mv3" --delegate
+  python3 -m examples.xnnpack.aot_compiler --model_name "resnet50" --quantize --delegate
+  cp mv2*.pte mv3*.pte resnet50*.pte "${BASEDIR}/src/androidTest/resources/"
   popd
 }
 
