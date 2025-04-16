@@ -372,7 +372,6 @@ ATEN_OPS = (
         name = "op_bmm",
         deps = [
             "//executorch/kernels/portable/cpu/util:matmul_ops_util",
-            ":vec_ops",
         ],
     ),
     op_target(

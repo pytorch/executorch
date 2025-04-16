@@ -7,8 +7,8 @@ contains the Cortex-M55 CPU and Ethos-U55 NPU.
 We will start from a PyTorch model in python, export it, convert it to a `.pte`
 file - A binary format adopted by ExecuTorch. Then we will take the `.pte`
 model file and embed that with a baremetal application executor_runner. We will
-then take the executor_runner file, which contains not only the `.pte` file but
-also necessary software component to run standalone on a baremetal system.
+then take the executor_runner file, which contains not only the `.pte` binary but
+also necessary software components to run standalone on a baremetal system.
 Lastly, we will run the executor_runner binary on a Corstone-300 FVP Simulator
 platform.
 
@@ -44,6 +44,6 @@ jupyter notebook ethos_u_minimal_example.ipynb
 
 ### Online Tutorial
 
-We also have a [tutorial](https://pytorch.org/executorch/stable/executorch-arm-delegate-tutorial.html) explaining the steps performed in these
+We also have a [tutorial](https://pytorch.org/executorch/main/backends-arm-ethos-u) explaining the steps performed in these
 scripts, expected results, possible problems and more. It is a step-by-step guide
 you can follow to better understand this delegate.
