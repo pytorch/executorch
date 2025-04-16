@@ -810,6 +810,10 @@ if(EXECUTORCH_BUILD_PYBIND)
       torch
   )
 
+  if(EXECUTORCH_BUILD_TESTS)
+    list(APPEND _dep_libs test_backend_compiler_lib)
+  endif()
+
   if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     list(APPEND _dep_libs optimized_native_cpu_ops_lib)
   else()

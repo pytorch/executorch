@@ -59,13 +59,14 @@ from .source_transformation.apply_spin_quant_r1_r2 import (
 )
 
 from .source_transformation.attention import replace_attention_to_attention_sha
+from .source_transformation.custom_kv_cache import (
+    replace_kv_cache_with_custom_kv_cache,
+    replace_kv_cache_with_quantized_kv_cache,
+)
+
 from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
-)
-from .source_transformation.quantized_kv_cache import (
-    replace_kv_cache_with_custom_kv_cache,
-    replace_kv_cache_with_quantized_kv_cache,
 )
 from .source_transformation.rms_norm import replace_rms_norm_with_native_rms_norm
 
@@ -77,6 +78,7 @@ from .source_transformation.sdpa import (
     replace_sdpa_with_coreml_sdpa,
     replace_sdpa_with_custom_op,
     replace_sdpa_with_flex_sdpa,
+    replace_sdpa_with_quantized_sdpa,
     replace_sdpa_with_simple_sdpa,
 )
 from .source_transformation.vulkan_rope import replace_with_vulkan_rotary_emb
@@ -793,10 +795,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
                 args.enable_dynamic_shape,
             )
         )
-        # Apply XNNPACK after Vulkan so that undelegated ops can be accelerated by XNNPACK
-        partitioners.append(
-            get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
-        )
         modelname = f"vulkan_{modelname}"
 
         # Need to remove asserts from the graph to prevent graph breaks
@@ -1226,11 +1224,14 @@ def _get_source_transforms(  # noqa
 
     if args.use_sdpa_with_kv_cache:
         transforms.append(replace_kv_cache_with_custom_kv_cache)
+        # todo: do this optionally
         transforms.append(replace_sdpa_with_custom_op)
 
     if args.quantize_kv_cache:
         assert args.use_kv_cache, "quantize_kv_cache requires use_kv_cache=True"
         transforms.append(replace_kv_cache_with_quantized_kv_cache)
+        # Right now
+        transforms.append(replace_sdpa_with_quantized_sdpa)
 
     if args.use_kv_cache:
         if args.qnn:

@@ -27,10 +27,17 @@ android {
     }
 
     sourceSets {
+        main {
+            jniLibs.srcDirs = ['../../../cmake-out-android-so/']
+        }
         androidTest {
             resources.srcDirs += [ 'src/androidTest/resources' ]
         }
     }
+}
+
+task copyTestRes(type: Exec) {
+  commandLine 'bash', 'android_test_setup.sh'
 }
 
 dependencies {
@@ -48,7 +55,7 @@ mavenPublishing {
   publishToMavenCentral(SonatypeHost.DEFAULT)
   signAllPublications()
 
-  coordinates("org.pytorch", "executorch-android", "0.5.0-SNAPSHOT")
+  coordinates("org.pytorch", "executorch-android", "0.7.0")
 
   pom {
     name = "ExecuTorch Android"

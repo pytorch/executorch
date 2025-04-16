@@ -9,14 +9,15 @@ import logging
 import os
 from typing import Any, Optional, Tuple
 
-import serializer.tosa_serializer as ts  # type: ignore
 import torch
+
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.tosa_mapping import TosaArg
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.print_program import inspect_node
-from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
+from tosa_tools.v0_80.serializer.tosa_serializer import TosaOp
 
 logger = logging.getLogger(__name__)
 

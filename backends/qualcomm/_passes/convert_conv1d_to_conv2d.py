@@ -7,6 +7,7 @@
 import torch
 import torch.nn as nn
 from executorch.backends.qualcomm.builders.utils import get_parameter, set_parameter
+from executorch.backends.qualcomm.utils.constants import QCOM_REQUANTIZE
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -43,6 +44,7 @@ class ConvertConv1dToConv2d(ExportPass):
                     unsqueeze_node.meta = copy_meta(
                         input_node.meta, lambda m: {**m, "val": m["val"].unsqueeze(2)}
                     )
+
                     with graph_module.graph.inserting_after(unsqueeze_node):
 
                         filter_node = node.args[1]
@@ -92,6 +94,14 @@ class ConvertConv1dToConv2d(ExportPass):
                                 ),
                             )
                             squeeze_node.meta = copy_meta(node.meta)
+
+                            if QCOM_REQUANTIZE in input_node.meta:
+                                input_node.meta.pop(QCOM_REQUANTIZE)
+                            if QCOM_REQUANTIZE in node.meta:
+                                squeeze_node.meta[QCOM_REQUANTIZE] = node.meta[
+                                    QCOM_REQUANTIZE
+                                ]
+                                conv2d_node.meta.pop(QCOM_REQUANTIZE, None)
                 for user in node.users.copy():
                     user.replace_input_with(node, squeeze_node)
         graph.eliminate_dead_code()

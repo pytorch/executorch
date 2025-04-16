@@ -313,8 +313,11 @@ class EventTracer {
    * @param[in] evalue The value to be logged.
    * @param[in] evalue_type Indicates what type of output this is logging e.g.
    * an intermediate output, program output etc.
+   * @return A Result<bool> indicating the status of the logging operation.
+   *         - True if the evalue output was successfully logged.
+   *         - An error code if an error occurs during logging.
    */
-  virtual void log_evalue(
+  virtual Result<bool> log_evalue(
       const EValue& evalue,
       LoggedEValueType evalue_type) = 0;
 
@@ -440,6 +443,12 @@ class EventTracer {
       const double& output) = 0;
 
   /**
+   * Set the filter of event tracer for delegation intermediate outputs.
+   */
+  virtual void set_delegation_intermediate_output_filter(
+      EventTracerFilterBase* event_tracer_filter) = 0;
+
+  /**
    * Helper function to set the chain id ands debug handle. Users have two
    * options, the first is that they can directly pass in the chain id and debug
    * handle to start_profiling or they can explicitly set them through this
@@ -512,12 +521,6 @@ class EventTracer {
       EventTracerProfilingLevel profiling_level) {
     event_tracer_profiling_level_ = profiling_level;
   }
-
-  /**
-   * Set the filter of event tracer for delegation intermediate outputs.
-   */
-  void set_delegation_intermediate_output_filter(
-      EventTracerFilterBase* event_tracer_filter);
 
   /**
    * Return the current level of event tracer profiling.

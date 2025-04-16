@@ -9,7 +9,7 @@ ExecuTorch's extensive support spans from simple modules like "Add" to comprehen
 ## Directory structure
 ```
 examples
-├── llm_manual                        # A storage place for the files that [LLM Maunal](https://pytorch.org/executorch/main/llm/getting-started.html) needs
+├── llm_manual                        # A storage place for the files that [LLM Maunal](https://pytorch.org/executorch/main/llm/getting-started) needs
 ├── models                            # Contains a set of popular and representative PyTorch models
 ├── portable                          # Contains end-to-end demos for ExecuTorch in portable mode
 ├── selective_build                   # Contains demos of selective build for optimizing the binary size of the ExecuTorch runtime
@@ -71,11 +71,11 @@ You will find demos of [ExecuTorch QNN Backend](./qualcomm) in the [`qualcomm/`]
 
 ### Cadence HiFi4 DSP
 
-The [`Cadence/`](./cadence) directory hosts a demo that showcases the process of exporting and executing a model on Xtensa Hifi4 DSP. You can utilize [this tutorial](../docs/source/build-run-xtensa.md) to guide you in configuring the demo and running it.
+The [`Cadence/`](./cadence) directory hosts a demo that showcases the process of exporting and executing a model on Xtensa Hifi4 DSP. You can utilize [this tutorial](../docs/source/backends-cadence.md) to guide you in configuring the demo and running it.
 
 ## Dependencies
 
-Various models and workflows listed in this directory have dependencies on some other packages. You need to follow the setup guide in [Setting up ExecuTorch from GitHub](https://pytorch.org/executorch/stable/getting-started-setup) to have appropriate packages installed.
+Various models and workflows listed in this directory have dependencies on some other packages. You need to follow the setup guide in [Setting up ExecuTorch from GitHub](https://pytorch.org/executorch/main/getting-started-setup) to have appropriate packages installed.
 
 # Disclaimer
 

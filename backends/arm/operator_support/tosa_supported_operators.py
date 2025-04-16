@@ -66,6 +66,8 @@ class SupportedTOSAOperatorCheck(OperatorSupportBase):
 _tosa_spec_support: dict[TosaSpecification, list[Type[SupportedTOSAOperatorCheck]]] = {
     TosaSpecification.create_from_string("TOSA-0.80+BI"): [],
     TosaSpecification.create_from_string("TOSA-0.80+MI"): [],
+    TosaSpecification.create_from_string("TOSA-1.0+INT"): [],
+    TosaSpecification.create_from_string("TOSA-1.0+FP"): [],
 }
 
 
@@ -112,6 +114,7 @@ def tosa_support_factory(
     # Negative checks: Remove nodes from partitioning
     negative_checks: list[OperatorSupportBase] = [
         CheckInt64Inputs(exported_program, reporter),
+        CheckFloat64Inputs(exported_program, reporter),
         *[
             reporter.wrap_check(check, f"Rejected by {check.__class__.__name__}")
             for check in (additional_checks if additional_checks else [])
@@ -175,9 +178,12 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.full.default,
             exir_ops.edge.aten.full_like.default,
             exir_ops.edge.aten.ge.Tensor,
+            exir_ops.edge.aten.ge.Scalar,
             exir_ops.edge.aten.gt.Tensor,
+            exir_ops.edge.aten.gt.Scalar,
             exir_ops.edge.aten.le.Tensor,
             exir_ops.edge.aten.lt.Tensor,
+            exir_ops.edge.aten.lt.Scalar,
             exir_ops.edge.aten.mul.Tensor,
             exir_ops.edge.aten.add.Scalar,
             exir_ops.edge.aten.sub.Scalar,
@@ -194,6 +200,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.reciprocal.default,
             exir_ops.edge.aten.relu.default,
             exir_ops.edge.aten.leaky_relu.default,
+            exir_ops.edge.aten.sqrt.default,
             exir_ops.edge.aten.rsqrt.default,
             exir_ops.edge.aten._softmax.default,
             exir_ops.edge.aten.select_copy.int,
@@ -221,6 +228,8 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.bitwise_left_shift.Tensor,
             exir_ops.edge.aten.__lshift__.Scalar,
             torch.ops.aten.scalar_tensor.default,
+            exir_ops.edge.aten.gelu.default,
+            exir_ops.edge.aten.alias_copy.default,
         ]
 
         return supported
@@ -256,6 +265,7 @@ class NeedsDecompositionCheck(OperatorSupportBase):
                 exir_ops.edge.aten.var.correction,
                 exir_ops.edge.aten.var.dim,
                 exir_ops.edge.aten.add.Scalar,
+                exir_ops.edge.aten.sqrt.default,
                 exir_ops.edge.aten.sub.Scalar,
                 exir_ops.edge.aten.mul.Scalar,
                 exir_ops.edge.aten.div.Scalar,
@@ -356,6 +366,7 @@ class CheckProperQuantization(OperatorSupportBase):
             exir_ops.edge.aten.sub.Tensor,
             exir_ops.edge.aten.tanh.default,
             exir_ops.edge.aten.upsample_nearest2d.vec,
+            exir_ops.edge.aten.gelu.default,
         ):
             return True
         elif node.target in (
@@ -438,4 +449,27 @@ class CheckInt64Inputs(OperatorSupportBase):
                             f"Had int64 input {input_node.name} that couldn't be handled.",
                         )
                         return False
+        return True
+
+
+class CheckFloat64Inputs(OperatorSupportBase):
+
+    def __init__(
+        self, exported_program: ExportedProgram, reporter: WhyNoPartitionReporter
+    ):
+        self.reporter = reporter
+        super().__init__()
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+
+        for input_node in node.all_input_nodes:
+            tensor = get_first_fake_tensor(input_node)
+            if tensor.dtype == torch.float64:
+                self.reporter.report_reject(
+                    node,
+                    f"Had float64 input {input_node.name} that couldn't be handled.",
+                )
+                return False
         return True

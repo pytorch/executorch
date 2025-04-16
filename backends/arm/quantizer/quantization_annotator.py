@@ -178,6 +178,7 @@ _one_to_one = [
     torch.ops.aten.hardswish_.default,
     torch.ops.aten.full_like.default,
     torch.ops.aten.pow.Tensor_Scalar,
+    torch.ops.aten.gelu.default,
 ]
 
 _one_to_one_shared_input_qspec = [
@@ -241,6 +242,11 @@ _parent_shared_qspec = [
     torch.ops.aten.dropout_.default,
     torch.ops.aten.where,
     operator.getitem,
+]
+
+_one_to_one_shared_input_or_input_act_qspec = [
+    torch.ops.aten.adaptive_avg_pool2d.default,
+    torch.ops.aten.alias_copy.default,
 ]
 
 
@@ -331,7 +337,7 @@ def get_quant_properties(  # noqa: C901
             _QuantProperty(2, shared_qspec),  # type: ignore[arg-type]
         ]
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
-    elif node.target == torch.ops.aten.adaptive_avg_pool2d.default:
+    elif node.target in _one_to_one_shared_input_or_input_act_qspec:
         input_qspec = (
             SharedQuantizationSpec(node.args[0])  # type: ignore[arg-type]
             if arm_quantizer_utils.is_output_annotated(node.args[0])  # type: ignore

@@ -15,6 +15,7 @@ _OPTIMIZED_ATEN_OPS = (
         name = "op_bmm",
         deps = [
             "//executorch/kernels/optimized:libblas",
+            "//executorch/kernels/portable/cpu/util:matmul_ops_util",
         ],
     ),
     op_target(

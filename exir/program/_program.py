@@ -1027,6 +1027,7 @@ def _remove_invalid_ops_for_not_decompose(
             torch.ops.aten.item.default,
             torch.ops.aten._local_scalar_dense.default,
             torch.ops.aten.unbind.int,
+            torch.ops.aten.split_with_sizes.default,
         ]:
             logging.warn(
                 f"Op {op} was requested for preservation by partitioner.  This request is ignored because it is in a blocklist."
@@ -1325,7 +1326,7 @@ def to_edge(
 class EdgeProgramManager:
     """
     Package of one or more `ExportedPrograms` in Edge dialect. Designed to simplify
-    lowering to ExecuTorch. See: https://pytorch.org/executorch/stable/ir-exir.html
+    lowering to ExecuTorch. See: https://pytorch.org/executorch/main/ir-exir
 
     Allows easy applications of transforms across a collection of exported programs
     including the delegation of subgraphs.
@@ -1565,7 +1566,7 @@ class EdgeProgramManager:
 class ExecutorchProgramManager:
     """
     Package of one or more `ExportedPrograms` in Execution dialect. Designed to simplify
-    lowering to ExecuTorch. See: https://pytorch.org/executorch/stable/ir-exir.html
+    lowering to ExecuTorch. See: https://pytorch.org/executorch/main/ir-exir
 
     When the ExecutorchProgramManager is constructed the ExportedPrograms in execution dialect
     are used to form the executorch binary (in a process called emission) and then serialized
@@ -1612,6 +1613,7 @@ class ExecutorchProgramManager:
             self._execution_programs,
             backend_config.emit_stacktrace,
             self._config_methods,
+            backend_config.emit_mutable_buffer_names,
         )
 
         # Serialize emitter output, ready to be written to a file.

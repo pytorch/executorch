@@ -177,6 +177,7 @@ python -m examples.models.llama.export_llama \
   --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
   --output_name="llama3_2.pte"
 ```
+For convenience, an [exported ExecuTorch bf16 model](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/llama3_2-1B.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/ExportRecipe_1B.ipynb).
 
 - To use **SpinQuant**, here are two ways:
     - Download directly from [Llama website](https://www.llama.com/llama-downloads). The model weights are prequantized and can be exported to `pte` file directly.
@@ -206,6 +207,8 @@ python -m examples.models.llama.export_llama \
    --use_spin_quant native \
    --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
 ```
+For convenience, an [exported ExecuTorch SpinQuant model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_SpinQuant_INT4_EO8.ipynb).
+
 
 - To use **QAT+LoRA**, download directly from [Llama website](https://www.llama.com/llama-downloads). The model weights are prequantized and can be exported to `pte` file directly by:
 
@@ -234,6 +237,7 @@ python -m examples.models.llama.export_llama \
    --output_name "llama3_2.pte" \
    --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
 ```
+For convenience, an [exported ExecuTorch QAT+LoRA model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-QLORA_INT4_EO8.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_QLORA_INT4_EO8.ipynb).
 
 ### Option B: Download and export Llama 3 8B instruct model
 
@@ -371,14 +375,14 @@ adb push cmake-out-android/examples/models/llama/llama_main /data/local/tmp/llam
 ```
 adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --tokenizer_path <tokenizer.model> --prompt \"What is the capital of France?\" --seq_len 120" --warmup=1
 ```
-## Step 6: Build Mobile apps
+## Step 5: Build Mobile apps
 
 ### iOS
 
-Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-ios.html) to for full instructions on building the iOS LLAMA Demo App. Rename `tokenizer.model` file to `tokenizer.bin` because the demo app looks for the tokenizer file with .bin extension.
+Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-ios) to for full instructions on building the iOS LLAMA Demo App. Rename `tokenizer.model` file to `tokenizer.bin` because the demo app looks for the tokenizer file with .bin extension.
 
 ### Android
-Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-android.html) to for full instructions on building the Android LLAMA Demo App.
+Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-android) to for full instructions on building the Android LLAMA Demo App.
 
 ## Running with low-bit kernels
 
@@ -427,7 +431,7 @@ cmake -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-    -DEXECUTORCH_BUILD_XNNPACK=ON \
+    -DEXECUTORCH_BUILD_XNNPACK=OFF \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
@@ -544,3 +548,22 @@ clang: error: linker command failed with exit code 1 (use -v to see invocation)
 ```
 It's a known issue for Xcode version 15.1.
 Mitigation: update to most recent Xcode version, clean and rebuild.
+
+- If you encounter issues with missing abseil-cpp or re2, try running `git submodule update --init --recursive` to pull in those submodules.
+Example error:
+```
+CMake Error at runner/CMakeLists.txt:68 (add_subdirectory):
+  The source directory
+
+    /Users/../executorch/extension/llm/tokenizers/third-party/abseil-cpp
+
+  does not contain a CMakeLists.txt file.
+
+
+CMake Error at runner/CMakeLists.txt:72 (add_subdirectory):
+  The source directory
+
+    /Users/../executorch/extension/llm/tokenizers/third-party/re2
+
+  does not contain a CMakeLists.txt file.
+```
