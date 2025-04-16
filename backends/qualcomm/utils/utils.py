@@ -16,7 +16,7 @@ import executorch.exir as exir
 
 import torch
 
-from executorch.backends.qualcomm._passes import AnnotateStack
+from executorch.backends.qualcomm._passes import AnnotateStack, AnnotateUnbind
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 
 from executorch.backends.qualcomm.builders.node_visitor import (
@@ -304,11 +304,12 @@ def get_decomp_table(passes_job) -> Dict[torch._ops.OperatorBase, Callable]:
     skip_decompositions = get_skip_decomp_table()
 
     # If we want to annotate the decomposed ops, then we should decompose the operation.
-    if passes_job and passes_job.get(AnnotateStack, False):
+    if passes_job:
         skip_decompositions = [
             skip_decomp_op
             for skip_decomp_op in skip_decompositions
-            if skip_decomp_op not in AnnotateStack.decomp_ops
+            if skip_decomp_op
+            not in AnnotateStack.decomp_ops + AnnotateUnbind.decomp_ops
         ]
     remove_decompositions(source_decompositions, skip_decompositions)
 
