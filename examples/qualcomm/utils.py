@@ -288,7 +288,7 @@ def build_executorch_binary(
     skip_node_id_set=None,
     skip_node_op_set=None,
     quant_dtype: Optional[QuantDtype] = None,
-    custom_quantizer=None,
+    custom_quantizer: Optional[QnnQuantizer] = None,
     shared_buffer=False,
     metadata=None,
     dump_intermediate_outputs=False,
@@ -325,8 +325,8 @@ def build_executorch_binary(
         shared_buffer=shared_buffer,
         dump_intermediate_outputs=dump_intermediate_outputs,
     )
-    if quant_dtype is not None:
-        captured_model = torch.export.export(model, inputs, strict=True).module()
+    if quant_dtype is not None or custom_quantizer is not None:
+        captured_model = torch.export.export(model, inputs, strict=False).module()
         if qat_training_data:
             quantizer = custom_quantizer or make_quantizer(
                 quant_dtype=quant_dtype, is_qat=True

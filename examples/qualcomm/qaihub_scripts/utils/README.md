@@ -1,6 +1,6 @@
 # CLI Tool for Compile / Deploy Pre-Built QNN Artifacts
 
-An easy-to-use tool for generating / executing .pte program from pre-built model libraries / context binaries from Qualcomm AI Engine Direct. Tool is verified with [host environement](../../../../docs/source/build-run-qualcomm-ai-engine-direct-backend.md#host-os).
+An easy-to-use tool for generating / executing .pte program from pre-built model libraries / context binaries from Qualcomm AI Engine Direct. Tool is verified with [host environement](../../../../docs/source/backends-qualcomm.md#host-os).
 
 ## Description
 
@@ -20,7 +20,7 @@ If users are interested in well-known applications, [Qualcomm AI HUB](https://ai
 ### Dependencies
 
 * Register for Qualcomm AI HUB.
-* Download the corresponding QNN SDK via [link](https://www.qualcomm.com/developer/software/qualcomm-ai-engine-direct-sdk) which your favorite model is compiled with. Ths link will automatically download the latest version at this moment (users should be able to specify version soon, please refer to [this](../../../../docs/source/build-run-qualcomm-ai-engine-direct-backend.md#software) for earlier releases).
+* Download the corresponding QNN SDK via [link](https://www.qualcomm.com/developer/software/qualcomm-ai-engine-direct-sdk) which your favorite model is compiled with. Ths link will automatically download the latest version at this moment (users should be able to specify version soon, please refer to [this](../../../../docs/source/backends-qualcomm.md#software) for earlier releases).
 
 ### Target Model
 
