@@ -11,7 +11,7 @@ The model architecture, scheduler, and time embedding are from the [stabilityai/
 ### Instructions
 #### Step 1: Setup
 1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch.
-2. Follow the [tutorial](https://pytorch.org/executorch/stable/build-run-qualcomm-ai-engine-direct-backend.html) to build Qualcomm AI Engine Direct Backend.
+2. Follow the [tutorial](https://pytorch.org/executorch/main/backends-qualcomm) to build Qualcomm AI Engine Direct Backend.
 
 #### Step2: Prepare Model
 1. Download the context binaries for TextEncoder, UNet, and VAEDecoder under https://huggingface.co/qualcomm/Stable-Diffusion-v2.1/tree/main
