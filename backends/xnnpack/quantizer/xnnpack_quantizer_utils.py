@@ -42,6 +42,8 @@ __all__ = [
     "propagate_annotation",
 ]
 
+from pytorch.ao.test.dtypes.test_bitpacking import dimensions
+
 
 # In the absence of better name, just winging it with QuantizationConfig
 @dataclass(eq=True, frozen=True)
@@ -322,6 +324,17 @@ def _do_annotate_conv(
         weight = conv_node.args[1]
         assert isinstance(weight, Node)
         input_qspec_map[weight] = get_weight_qspec(quantization_config)
+
+        # Only annotate dynamically quantized conv if it's 2D
+        if (
+            quantization_config
+            and quantization_config.input_activation
+            and quantization_config.input_activation.is_dynamic
+        ):
+            weight_val = weight.meta.get("val", None)
+            weight_shape = getattr(weight_val, "shape", None)
+            if weight_shape is not None and len(weight_shape) != 4:
+                continue
 
         # adding weight node to the partition as well
         partition = [conv_node, conv_node.args[1]]
