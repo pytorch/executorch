@@ -9,8 +9,10 @@ from .annotate_stack import AnnotateStack
 from .annotate_unbind import AnnotateUnbind
 from .convert_bmm_to_matmul import ConvertBmmToMatmul
 from .convert_conv1d_to_conv2d import ConvertConv1dToConv2d
+from .convert_square_to_pow import ConvertSquareToPow
 from .convert_upsample_bicubic2d import ConvertUpsampleBicubicWithBilinear
 from .decompose_any import DecomposeAny
+from .decompose_cdist import DecomposeCDist
 from .decompose_einsum import DecomposeEinsum
 from .decompose_expm1 import DecomposeExpM1
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
@@ -27,6 +29,7 @@ from .lift_constant_scalar_operands import LiftConstantScalarOperands
 from .recompose_pixel_unshuffle import RecomposePixelUnshuffle
 from .recompose_rms_norm import RecomposeRmsNorm
 from .reduce_dynamic_range import ReduceDynamicRange
+from .remove_0d_tensor import Remove0DTensor
 from .remove_redundancy import RemoveRedundancy
 from .replace_arange_args import ReplaceArangeArgs
 from .replace_index_put_input import ReplaceIndexPutInput
@@ -40,8 +43,10 @@ __all__ = [
     AnnotateUnbind,
     ConvertBmmToMatmul,
     ConvertConv1dToConv2d,
-    DecomposeAny,
+    ConvertSquareToPow,
     ConvertUpsampleBicubicWithBilinear,
+    DecomposeAny,
+    DecomposeCDist,
     DecomposeEinsum,
     DecomposeExpM1,
     DecomposeLinalgVectorNorm,
@@ -58,6 +63,7 @@ __all__ = [
     RecomposePixelUnshuffle,
     RecomposeRmsNorm,
     ReduceDynamicRange,
+    Remove0DTensor,
     RemoveRedundancy,
     ReplaceArangeArgs,
     ReplaceIndexPutInput,

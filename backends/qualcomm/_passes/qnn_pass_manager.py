@@ -14,8 +14,10 @@ from executorch.backends.qualcomm._passes import (
     AnnotateUnbind,
     ConvertBmmToMatmul,
     ConvertConv1dToConv2d,
+    ConvertSquareToPow,
     ConvertUpsampleBicubicWithBilinear,
     DecomposeAny,
+    DecomposeCDist,
     DecomposeEinsum,
     DecomposeExpM1,
     DecomposeLinalgVectorNorm,
@@ -32,6 +34,7 @@ from executorch.backends.qualcomm._passes import (
     RecomposePixelUnshuffle,
     RecomposeRmsNorm,
     ReduceDynamicRange,
+    Remove0DTensor,
     RemoveRedundancy,
     ReplaceArangeArgs,
     ReplaceIndexPutInput,
@@ -71,7 +74,7 @@ def get_capture_program_passes():
     # If a pass is activated, it will be executed by default.
     default_passes_and_setting = [
         (AnnotateQuantAttrs, True),
-        (AnnotateStack, False),
+        (AnnotateStack, True),
         (AnnotateUnbind, True),
         (ConvertBmmToMatmul, True),
         (ConvertConv1dToConv2d, True),
@@ -84,6 +87,7 @@ def get_capture_program_passes():
         (LayoutTransform, True),
         (RecomposePixelUnshuffle, True),
         (RecomposeRmsNorm, False),
+        (Remove0DTensor, True),
         (RemoveRedundancy, True),
         (ReplaceIndexPutInput, True),
         (TagQuantIO, False),
@@ -176,10 +180,27 @@ class QnnPassManager(PassManager):
 
         return exported_program
 
+    # Before quantizer
+    def transform_for_annotation_pipeline(self, graph_module: GraphModule):
+        self.add_pass(ReduceDynamicRange())
+        self.add_pass(RecomposePixelUnshuffle(quantization_capture=True))
+        self.add_pass(ReplaceArangeArgs())
+        self.add_pass(DecomposeCDist())
+        self.add_pass(DecomposeScaledDotProductAttention())
+        self.add_pass(DecomposeSilu())
+        self.add_pass(DecomposeEinsum())
+        self.add_pass(DecomposeExpM1())
+        self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
+        self.add_pass(ReplaceInfValues())
+        self.add_pass(LiftConstantScalarOperands())
+        return self._transform(graph_module)
+
     def transform_for_export_pipeline(self, exported_program: ExportedProgram):
+        self.add_pass(DecomposeCDist())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(DecomposeExpM1())
+        self.add_pass(ConvertSquareToPow())
         self.add_pass(LiftConstantScalarOperands())
         self._transform(exported_program.graph_module)
         ep = lift_constant_tensor_pass(exported_program)
@@ -191,16 +212,3 @@ class QnnPassManager(PassManager):
         self.add_pass(LayoutTransform(exported_program, insert_permute=True))
         self.add_pass(FuseConsecutiveTranspose())
         return self._transform(exported_program.graph_module)
-
-    def transform_for_annotation_pipeline(self, graph_module: GraphModule):
-        self.add_pass(ReduceDynamicRange())
-        self.add_pass(RecomposePixelUnshuffle(quantization_capture=True))
-        self.add_pass(ReplaceArangeArgs())
-        self.add_pass(DecomposeScaledDotProductAttention())
-        self.add_pass(DecomposeSilu())
-        self.add_pass(DecomposeEinsum())
-        self.add_pass(DecomposeExpM1())
-        self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
-        self.add_pass(ReplaceInfValues())
-        self.add_pass(LiftConstantScalarOperands())
-        return self._transform(graph_module)
