@@ -353,6 +353,10 @@ jobs:
       script: |
         set -eux
 
+        # Use sccache for NDK compiler as well
+        export CMAKE_CXX_COMPILER_LAUNCHER=sccache
+        export CMAKE_C_COMPILER_LAUNCHER=sccache
+
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
@@ -392,7 +396,7 @@ jobs:
       fail-fast: false
     with:
       # Due to scheduling a job may be pushed beyond the default 60m threshold
-      timeout: 120
+      timeout: 240
       device-type: android
       runner: linux.2xlarge
       test-infra-ref: ''
