@@ -135,6 +135,6 @@ jobs:
           disk-size: 20000M
           force-avd-creation: false
           disable-animations: true
-          emulator-options: -memory 24576 -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -memory 49152 -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           # This is to make sure that the job doesn't fail flakily
           emulator-boot-timeout: 900
