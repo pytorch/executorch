@@ -273,10 +273,24 @@ TEST(VulkanInt4LinearTest, test_reference_impl) {
       /*N = */ 32);
 }
 
-TEST(VulkanInt4LinearTest, test_vulkan_impl) {
+TEST(VulkanInt4LinearTest, test_vulkan_impl_small_m) {
   test_vulkan_linear_int4(
       /*B = */ 1,
       /*M = */ 4,
       /*K = */ 128,
       /*N = */ 32);
+
+  test_vulkan_linear_int4(
+      /*B = */ 1,
+      /*M = */ 1,
+      /*K = */ 256,
+      /*N = */ 256);
+}
+
+TEST(VulkanInt4LinearTest, test_vulkan_impl_gemm) {
+  test_vulkan_linear_int4(
+      /*B = */ 1,
+      /*M = */ 256,
+      /*K = */ 256,
+      /*N = */ 256);
 }
