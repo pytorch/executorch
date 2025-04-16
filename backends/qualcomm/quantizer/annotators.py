@@ -97,6 +97,7 @@ def annotate_in_out_obs_sharing_op(
         QUANT_ANNOTATION_KEY not in input_act.meta
         or not input_act.meta[QUANT_ANNOTATION_KEY]._annotated
         or input_act.meta[QUANT_ANNOTATION_KEY].output_qspec is None
+        or not _is_float_tensor(input_act)
     ):
         return
 
@@ -132,9 +133,10 @@ def annotate_single_in_single_out(
         return
 
     input_qspec_map = {}
-    input_act = node.args[0]
-    assert isinstance(input_act, Node)
-    input_qspec_map[input_act] = quantization_config.input_activation
+    if _is_float_tensor(node.args[0]):
+        input_act = node.args[0]
+        assert isinstance(input_act, Node)
+        input_qspec_map[input_act] = quantization_config.input_activation
 
     if _is_float_tensor(node):
         node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
@@ -177,7 +179,9 @@ def annotate_binary(node: Node, quantization_config: QuantizationConfig) -> None
     )
 
 
-@register_annotator([torch.ops.aten.add, torch.ops.aten.add.Tensor])
+@register_annotator(
+    [torch.ops.aten.add, torch.ops.aten.add.Tensor, torch.ops.aten.add_.Tensor]
+)
 def annotate_add(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
@@ -933,6 +937,11 @@ def annotate_bmm(node: Node, quantization_config: QuantizationConfig) -> None:
     node.meta["source_fn_stack"] = [(node, torch.bmm)]
 
 
+@register_annotator([torch.ops.aten.cdist.default])
+def annotate_cdist(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
+
+
 @register_annotator(
     [
         torch.ops.aten.conv2d.default,
@@ -941,7 +950,7 @@ def annotate_bmm(node: Node, quantization_config: QuantizationConfig) -> None:
         torch.ops.aten.conv_transpose1d.default,
     ]
 )
-def annotate_conv2d(node: Node, quantization_config: QuantizationConfig) -> None:
+def annotate_conv(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
         return
 
@@ -1118,15 +1127,17 @@ def annotate_cat(node: Node, quantization_config: QuantizationConfig) -> None:
     input_qspec_map = {}
     assert isinstance(first_input_node, Node)
     assert isinstance(node, Node)
-    input_qspec_map[first_input_node] = quantization_config.input_activation
-    share_qparams_with_input_act0_qspec = SharedQuantizationSpec(
-        (first_input_node, node)
-    )
+    if _is_float_tensor(first_input_node):
+        input_qspec_map[first_input_node] = quantization_config.input_activation
+        share_qparams_with_input_act0_qspec = SharedQuantizationSpec(
+            (first_input_node, node)
+        )
 
     for input_node in input_nodes[1:]:
         if input_node not in input_qspec_map:
             assert isinstance(input_node, Node)
-            input_qspec_map[input_node] = share_qparams_with_input_act0_qspec
+            if _is_float_tensor(input_node):
+                input_qspec_map[input_node] = share_qparams_with_input_act0_qspec
 
     node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
@@ -1140,7 +1151,6 @@ def annotate_unbind(node: Node, quantization_config: QuantizationConfig) -> None
     # Seems like unbind.int can be either float or int. Only quant when input is float.
     if _is_annotated([node]) or not _is_float_tensor(node.args[0]):
         return
-
     input_qspec_map = {}
     input_act = node.args[0]
     assert isinstance(input_act, Node)
