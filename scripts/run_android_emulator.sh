@@ -26,7 +26,6 @@ adb install -t android-test-debug-androidTest.apk
 adb logcat -c
 adb shell am instrument -w -r \
   org.pytorch.executorch.test/androidx.test.runner.AndroidJUnitRunner >result.txt 2>&1
-adb logcat -d > logcat.txt
 
 adb shell dumpsys meminfo
 
