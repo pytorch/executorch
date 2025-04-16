@@ -110,7 +110,8 @@ def phi_4_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.T
 
 
 def convert_weights(input_dir_or_checkpoint: str, output_file: str) -> None:
-    # Don't necessarily need to use TorchTune checkpointer, can just aggregate checkpoint files by ourselves.
+    # If input_dir_or_checkpoint is a directory downloaded from HF, FullModelHFCheckpointer is used to extract the state dict
+    # If input_dir_or_checkpoint is a checkpoint (from eager model model), it is loaded directly
     if os.path.isdir(input_dir_or_checkpoint):
         checkpointer = FullModelHFCheckpointer(
             checkpoint_dir=input_dir_or_checkpoint,

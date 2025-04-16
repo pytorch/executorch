@@ -58,24 +58,18 @@ def is_dynamic_qdq(node: torch.fx.Node) -> bool:
         node_input_args = extract_qdq_affine_op_args_for_decomposed_ops(node)
 
     scale = node_input_args[1]
-    if not isinstance(scale, torch.fx.Node):
+    zp = node_input_args[2]
+    if not (isinstance(scale, torch.fx.Node) and isinstance(zp, torch.fx.Node)):
         return False
-    if not (scale.target == operator.getitem):
+
+    if not (scale.target == operator.getitem and zp.target == operator.getitem):
         return False
+
     scale_choose_qparam = scale.all_input_nodes[0]
-    if not is_qparam(scale_choose_qparam):
+    zp_choose_qparam = zp.all_input_nodes[0]
+
+    if not (is_qparam(scale_choose_qparam) and is_qparam(zp_choose_qparam)):
         return False
-
-    if len(node_input_args) > 2:
-        zp = node_input_args[2]
-        if not isinstance(zp, torch.fx.Node):
-            return False
-
-        if not (zp.target == operator.getitem):
-            return False
-        zp_choose_qparam = zp.all_input_nodes[0]
-        if not is_qparam(zp_choose_qparam):
-            return False
 
     return True
 
@@ -229,7 +223,7 @@ def extract_qdq_affine_op_args_for_decomposed_ops(node: torch.fx.Node):
     # add target_dtype_node after quant_min/quant_max
     args.append(target_dtype)
     # zero_point_domain
-    if len(node.args) > 7 and node.args[7] not in ["INT", "NONE"]:
+    if len(node.args) > 7 and node.args[7] != "INT":
         return None, None
 
     if is_per_channel_group(node):
