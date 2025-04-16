@@ -7,6 +7,8 @@
 
 set -ex
 
+free -h
+
 # This script is originally adopted from https://github.com/pytorch/pytorch/blob/main/android/run_tests.sh
 ADB_PATH=$ANDROID_HOME/platform-tools/adb
 
