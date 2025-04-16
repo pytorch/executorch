@@ -146,6 +146,8 @@ void add_q_4w_linear_node(
   std::string kernel_name = "q_4w_linear";
   if (use_coop_algorithm) {
     kernel_name += "_coop";
+  } else {
+    kernel_name += "_tiled";
   }
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(mat1));
@@ -154,10 +156,12 @@ void add_q_4w_linear_node(
 
   utils::uvec3 global_wg_size = graph.logical_limits_of(out);
   global_wg_size[0] = utils::div_up(global_wg_size[0], uint32_t(2));
-
   utils::uvec3 local_wg_size = graph.create_local_wg_size(global_wg_size);
+
   if (use_coop_algorithm) {
     local_wg_size = {8, 1, 8};
+  } else {
+    global_wg_size[1] = utils::div_up(global_wg_size[1], uint32_t(3));
   }
 
   graph.execute_nodes().emplace_back(new DispatchNode(
