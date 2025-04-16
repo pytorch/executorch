@@ -44,6 +44,6 @@ jupyter notebook ethos_u_minimal_example.ipynb
 
 ### Online Tutorial
 
-We also have a [tutorial](https://pytorch.org/executorch/stable/executorch-arm-delegate-tutorial.html) explaining the steps performed in these
+We also have a [tutorial](https://pytorch.org/executorch/main/backends-arm-ethos-u) explaining the steps performed in these
 scripts, expected results, possible problems and more. It is a step-by-step guide
 you can follow to better understand this delegate.

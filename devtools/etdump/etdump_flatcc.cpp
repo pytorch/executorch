@@ -536,15 +536,17 @@ ETDumpResult ETDumpGen::get_etdump_data() {
   return result;
 }
 
-void ETDumpGen::set_debug_buffer(Span<uint8_t> buffer) {
+Result<bool> ETDumpGen::set_debug_buffer(Span<uint8_t> buffer) {
   Result<BufferDataSink> bds_ret = BufferDataSink::create(buffer);
-  ET_CHECK_MSG(
+  ET_CHECK_OR_RETURN_ERROR(
       bds_ret.ok(),
+      InvalidArgument,
       "Failed to create data sink from debug buffer with error 0x%" PRIx32,
       static_cast<uint32_t>(bds_ret.error()));
 
   buffer_data_sink_ = std::move(bds_ret.get());
   data_sink_ = &buffer_data_sink_;
+  return true;
 }
 
 void ETDumpGen::set_data_sink(DataSinkBase* data_sink) {
