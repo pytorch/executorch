@@ -132,6 +132,7 @@ jobs:
           cores: 6
           ram-size: 12288M
           heap-size: 12288M
+          disk-size: 20000M
           force-avd-creation: false
           disable-animations: true
           emulator-options: -memory 24576 -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none

@@ -18,6 +18,8 @@ $ADB_PATH wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; d
 echo "List all running emulators"
 $ADB_PATH devices
 
+adb shell "free -h"
+
 adb uninstall org.pytorch.executorch.test || true
 adb install -t android-test-debug-androidTest.apk
 
