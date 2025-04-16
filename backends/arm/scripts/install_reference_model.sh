@@ -13,7 +13,7 @@ tosa_reference_model_url="https://git.gitlab.arm.com/tosa/tosa-reference-model.g
 tosa_reference_model_0_80_branch="v0.80"
 tosa_reference_model_0_80_rev="70ed0b40fa831387e36abdb4f7fb9670a3464f5a"
 tosa_serialization_lib_0_80_rev="v0.80.1"
-tosa_reference_model_1_0_rev="v1.0"
+tosa_reference_model_1_0_rev="f9b4ceb850964be03a39e965ad7a0546dc6c57ae"
 
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 
@@ -47,6 +47,9 @@ function setup_tosa_reference_model() {
     # Vela's flatbuffer requirement is expected to loosen, then remove this. MLETORCH-565
     CMAKE_POLICY_VERSION_MINIMUM=3.5 pip install . --no-dependencies flatbuffers
     popd
+
+    # Install the 1.0 branch from upstream
+    CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install "tosa-tools@git+${tosa_reference_model_url}@${tosa_reference_model_1_0_rev}" ml_dtypes==0.5.1 --no-dependencies flatbuffers
 }
 
 setup_tosa_reference_model $1
