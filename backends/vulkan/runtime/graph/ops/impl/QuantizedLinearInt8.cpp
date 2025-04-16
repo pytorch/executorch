@@ -100,19 +100,22 @@ void add_q_8w_linear_node(
 
   std::vector<PushConstantDataInfo> pcs;
   if (graph.is_buffer_storage(out_W_packed)) {
-    pcs = {graph.sizes_pc_of(out_W_packed),
-      graph.strides_pc_of(out_W_packed),
-      graph.sizes_pc_of(mat1_W_packed),
-      graph.strides_pc_of(mat1),
-      graph.strides_pc_of(q_mat2),
-      graph.strides_pc_of(scales),
-      graph.numel_pc_of(out_W_packed)};
+    pcs = {
+        graph.sizes_pc_of(out_W_packed),
+        graph.strides_pc_of(out_W_packed),
+        graph.sizes_pc_of(mat1_W_packed),
+        graph.strides_pc_of(mat1),
+        graph.strides_pc_of(q_mat2),
+        graph.strides_pc_of(scales),
+        graph.numel_pc_of(out_W_packed)};
   } else {
-    pcs = {graph.logical_limits_pc_of(out_W_packed),
-         graph.sizes_pc_of(mat1_W_packed)};
+    pcs = {
+        graph.logical_limits_pc_of(out_W_packed),
+        graph.sizes_pc_of(mat1_W_packed)};
   }
 
-  const utils::uvec3 global_wg = {static_cast<uint32_t>(graph.numel_of(out_W_packed)), 1, 1};
+  const utils::uvec3 global_wg = {
+      static_cast<uint32_t>(graph.numel_of(out_W_packed)), 1, 1};
   const utils::uvec3 local_wg{64, 1, 1};
 
   graph.execute_nodes().emplace_back(new DispatchNode(
