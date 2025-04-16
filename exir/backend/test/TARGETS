@@ -203,6 +203,7 @@ python_unittest(
         ":backend_with_preprocess_all_demo",
         "//caffe2:torch",
         "//caffe2/functorch:functorch_src",
+        "//executorch/exir/backend/test:backend_with_compiler_demo",
         "//executorch/exir:delegate",
         "//executorch/exir:graph_module",
         "//executorch/exir:lib",
