@@ -718,6 +718,7 @@ class CustomBuild(build):
             # enabled. TODO(dbort): Remove this override once this option is
             # managed by cmake itself.
             "-DEXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT=OFF",
+            "-DEXECUTORCH_BUILD_TESTS=ON",
         ]
 
         build_args = [f"-j{self.parallel}"]
