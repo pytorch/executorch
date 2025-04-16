@@ -1269,15 +1269,15 @@
     <span class="n">gm</span> <span class="o">=</span> <span class="n">insert_subgm</span><span class="p">(</span><span class="n">gm</span><span class="p">,</span> <span class="n">sub_gm</span><span class="p">,</span> <span class="n">orig_inputs</span><span class="p">,</span> <span class="n">orig_outputs</span><span class="p">)</span>
     <span class="n">submodule_node</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_module&quot;</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">submodule_name</span><span class="p">:</span>
-                <span class="n">submodule_node</span> <span class="o">=</span> <span class="n">node</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;The submodule created with nodes </span><span class="si">{</span><span class="n">node_list</span><span class="si">}</span><span class="s2"> did not form </span><span class="se">\</span>
-<span class="s2">                    one fully contained subgraph. Check that these nodes form a </span><span class="se">\</span>
-<span class="s2">                    fully contained graph. Partitioned graph: </span><span class="si">{</span><span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="si">}</span><span class="s2">.&quot;</span>
-                <span class="p">)</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_module&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">submodule_name</span><span class="p">:</span>
+            <span class="n">submodule_node</span> <span class="o">=</span> <span class="n">node</span>
+
+    <span class="k">if</span> <span class="n">submodule_node</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;The submodule created with nodes </span><span class="si">{</span><span class="n">node_list</span><span class="si">}</span><span class="s2"> did not form </span><span class="se">\</span>
+<span class="s2">            one fully contained subgraph. Check that these nodes form a </span><span class="se">\</span>
+<span class="s2">            fully contained graph. Partitioned graph: </span><span class="si">{</span><span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="p">)</span>
 
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">orig_outputs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">orig_outputs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;val&quot;</span><span class="p">],</span> <span class="n">FakeTensor</span><span class="p">):</span>
         <span class="c1"># If the original output is a single tensor, it has been</span>
@@ -1312,12 +1312,13 @@
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_module&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">submodule_name</span><span class="p">:</span>
             <span class="n">submodule_node</span> <span class="o">=</span> <span class="n">node</span>
-        <span class="k">elif</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_module&quot;</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;The submodule created with nodes </span><span class="si">{</span><span class="n">node_list</span><span class="si">}</span><span class="s2"> did not form </span><span class="se">\</span>
-<span class="s2">                one fully contained subgraph. Check that these nodes form a </span><span class="se">\</span>
-<span class="s2">                fully contained graph. Partitioned graph: </span><span class="si">{</span><span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="si">}</span><span class="s2">.&quot;</span>
-            <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">submodule_node</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;The submodule created with nodes </span><span class="si">{</span><span class="n">node_list</span><span class="si">}</span><span class="s2"> did not form </span><span class="se">\</span>
+<span class="s2">            one fully contained subgraph. Check that these nodes form a </span><span class="se">\</span>
+<span class="s2">            fully contained graph. Partitioned graph: </span><span class="si">{</span><span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="p">)</span>
 
     <span class="k">assert</span> <span class="p">(</span>
         <span class="n">submodule_node</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
