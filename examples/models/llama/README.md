@@ -379,10 +379,10 @@ adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --t
 
 ### iOS
 
-Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-ios.html) to for full instructions on building the iOS LLAMA Demo App. Rename `tokenizer.model` file to `tokenizer.bin` because the demo app looks for the tokenizer file with .bin extension.
+Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-ios) to for full instructions on building the iOS LLAMA Demo App. Rename `tokenizer.model` file to `tokenizer.bin` because the demo app looks for the tokenizer file with .bin extension.
 
 ### Android
-Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-android.html) to for full instructions on building the Android LLAMA Demo App.
+Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-android) to for full instructions on building the Android LLAMA Demo App.
 
 ## Running with low-bit kernels
 
@@ -431,7 +431,7 @@ cmake -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-    -DEXECUTORCH_BUILD_XNNPACK=ON \
+    -DEXECUTORCH_BUILD_XNNPACK=OFF \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \

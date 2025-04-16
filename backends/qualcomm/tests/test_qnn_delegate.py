@@ -176,6 +176,14 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_cdist(self):
+        module = CDist()  # noqa: F405
+        sample_input = (
+            torch.randn(1, 125, 256),
+            torch.randn(1, 2048, 256),
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_chunk_single(self):
         module = Chunk()  # noqa: F405
         sample_input = (torch.randn(1, 1, 4, 3),)
@@ -835,6 +843,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([1, 4, 8, 8]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_squared_relu(self):
+        module = SquaredReLU()  # noqa: F405
+        sample_input = (torch.randn([2, 5, 1, 3]),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_squeeze(self):
         module = Squeeze()  # noqa: F405
         sample_input = (torch.randn([1, 3, 3]),)
@@ -870,14 +883,14 @@ class TestQNNFloatingPointOperator(TestQNN):
             Where(),  # noqa: F405
             WhereConstant(torch.randn(3, 2), torch.randn(3, 2)),  # noqa: F405
             WhereConstantOther(),  # noqa: F405
-            # WhereConstantAll(),  # noqa: F405 TODO: constant dtype does not propogate when doing const i64->32, causing where to fail since where does not support int64 output
+            WhereConstantAll(),  # noqa: F405
             WhereConstantInf(),  # noqa: F405
         ]
         sample_inputs = [
             (torch.randn(3, 2), torch.randn(3, 2), torch.randn(3, 2)),
             (torch.randn(3, 2),),
             (torch.randn(3, 2),),
-            # (torch.randn(3, 2),),
+            (torch.randn(3, 2),),
             (torch.randn(30, 20),),
         ]
         for i, module in enumerate(modules):
@@ -1004,6 +1017,11 @@ class TestQNNFloatingPointModel(TestQNN):
         module = ViewPermuteMatMul()  # noqa: F405
         torch.manual_seed(8)
         sample_input = (torch.randn([1, 8, 512]), torch.randn([1, 2, 8, 256]))
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_zero_dim_tensor(self):
+        module = ZeroDimTensor()  # noqa: F405
+        sample_input = (torch.randn(1, 256, 125),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_example_models(self):
@@ -1198,6 +1216,15 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_cdist(self):
+        module = CDist()  # noqa: F405
+        sample_input = (
+            torch.randn(1, 125, 256),
+            torch.randn(1, 2048, 256),
+        )
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_chunk_single(self):
         module = Chunk()  # noqa: F405
@@ -1979,6 +2006,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_squared_relu(self):
+        module = SquaredReLU()  # noqa: F405
+        sample_input = (torch.randn([2, 5, 1, 3]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_squeeze(self):
         module = Squeeze()  # noqa: F405
         sample_input = (torch.randn([1, 3, 3]),)
@@ -2030,14 +2063,14 @@ class TestQNNQuantizedOperator(TestQNN):
             Where(),  # noqa: F405
             WhereConstant(torch.randn(3, 2), torch.randn(3, 2)),  # noqa: F405
             WhereConstantOther(),  # noqa: F405
-            # WhereConstantAll(),  # noqa: F405, TODO: constant dtype does not propogate when doing const i64->32, causing where to fail since where does not support int64 output
+            WhereConstantAll(),  # noqa: F405
             WhereConstantInf(),  # noqa: F405
         ]
         sample_inputs = [
             (torch.randn(3, 2), torch.randn(3, 2), torch.randn(3, 2)),
             (torch.randn(3, 2),),
             (torch.randn(3, 2),),
-            # (torch.randn(3, 2),),
+            (torch.randn(3, 2),),
             (torch.randn(30, 20),),
         ]
         for i, module in enumerate(modules):
@@ -2208,6 +2241,12 @@ class TestQNNQuantizedModel(TestQNN):
         module = ViewPermuteMatMul()  # noqa: F405
         torch.manual_seed(8)
         sample_input = (torch.randn([1, 8, 512]), torch.randn([1, 2, 8, 256]))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_zero_dim_tensor(self):
+        module = ZeroDimTensor()  # noqa: F405
+        sample_input = (torch.randn(1, 256, 125),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -3614,7 +3653,7 @@ class TestExampleOssScript(TestQNN):
             self.skipTest("missing required envs")
         cmds = [
             "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/efficientSAM.py",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/efficientSAM/efficientSAM.py",
             "--dataset",
             self.image_dataset,
             "--artifact",
