@@ -13,27 +13,24 @@ import tempfile
 
 from pathlib import Path
 
-from typing import cast, Dict, List, Literal, Optional, Tuple
+from typing import Any, cast, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import torch
 
-try:
-    import tosa_tools.v0_80.tosa_reference_model as tosa_reference_model
-except ImportError:
-    tosa_reference_model = None
 from executorch.backends.arm.arm_backend import get_tosa_spec, is_tosa
-
 from executorch.backends.arm.test.conftest import is_option_enabled
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa_specification import (
+    Tosa_0_80,
+    Tosa_1_00,
+    TosaSpecification,
+)
 from executorch.exir import ExecutorchProgramManager, ExportedProgram
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.lowered_backend_module import LoweredBackendModule
-from packaging.version import Version
 from torch.fx.node import Node
 
 from torch.overrides import TorchFunctionMode
-from tosa_tools.v0_80.tosa import TosaGraph
 
 logger = logging.getLogger(__name__)
 
@@ -566,7 +563,7 @@ def arm_executor_runner_exists(target_board):
 
 
 def run_tosa_graph(
-    graph: TosaGraph,
+    graph: Any,
     tosa_version: TosaSpecification,
     inputs: list[torch.Tensor],
 ) -> list[torch.Tensor]:
@@ -574,25 +571,38 @@ def run_tosa_graph(
     inputs_np = [input.numpy() for input in inputs]
     transpose_data_format(inputs_np, to="NHWC")
 
-    tosa_release = tosa_version.version
+    if isinstance(tosa_version, Tosa_0_80):
+        import tosa_tools.v0_80.tosa_reference_model as reference_model
 
-    if tosa_release > Version("0.80"):
-        logger.warning("The reference model is only tested for TOSA v0.80")
+        # tosa_profile: 0 = Base Inference, 1 = Main Inference, 2 = Main Training.
+        tosa_profile = 1 if tosa_version.support_float() else 0
+        debug_mode = "ALL" if logger.level <= logging.DEBUG else None
+        outputs_np, status = reference_model.run(
+            graph,
+            inputs_np,
+            verbosity=_tosa_refmodel_loglevel(logger.level),
+            tosa_profile=tosa_profile,
+            initialize_variable_tensor_from_numpy=True,
+            debug_mode=debug_mode,
+        )
+    elif isinstance(tosa_version, Tosa_1_00):
+        import tosa_reference_model as reference_model
 
-    # tosa_profile: 0 = Base Inference, 1 = Main Inference, 2 = Main Training.
-    tosa_profile = 1 if tosa_version.support_float() else 0
-    debug_mode = "ALL" if logger.level <= logging.DEBUG else None
-    outputs_np, status = tosa_reference_model.run(
-        graph,
-        inputs_np,
-        verbosity=_tosa_refmodel_loglevel(logger.level),
-        tosa_profile=tosa_profile,
-        initialize_variable_tensor_from_numpy=1,  # True
-        debug_mode=debug_mode,
-    )
+        debug_mode = "ALL" if logger.level <= logging.DEBUG else None
+        outputs_np, status = reference_model.run(
+            graph,
+            inputs_np,
+            verbosity=_tosa_refmodel_loglevel(logger.level),
+            initialize_variable_tensor_from_numpy=True,
+            debug_mode=debug_mode,
+        )
+    else:
+        raise ValueError(
+            f"Unknown TOSA specification: {tosa_version}. No refererence model available to run for this specification version"
+        )
 
     assert (
-        status == tosa_reference_model.GraphStatus.TOSA_VALID
+        status == reference_model.GraphStatus.TOSA_VALID
     ), "Non-valid TOSA given to reference model."
 
     transpose_data_format(outputs_np, to="NCHW")
