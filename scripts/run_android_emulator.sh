@@ -18,9 +18,13 @@ adb shell "free -h"
 adb uninstall org.pytorch.executorch.test || true
 adb install -t android-test-debug-androidTest.apk
 
+for i in {1..40}; do
+  adb shell 'free -h'
+  sleep 1
+done &
+
 adb logcat -c
-adb shell am instrument -w -r -e \
-  class org.pytorch.executorch.ModuleInstrumentationTest,org.pytorch.executorch.ModuleE2ETest \
+adb shell am instrument -w -r \
   org.pytorch.executorch.test/androidx.test.runner.AndroidJUnitRunner >result.txt 2>&1
 adb logcat -d > logcat.txt
 adb shell dumpsys meminfo
