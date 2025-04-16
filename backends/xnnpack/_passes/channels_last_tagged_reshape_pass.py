@@ -9,7 +9,7 @@ from typing import Optional, Tuple
 import torch
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.utils import is_param_node
-from executorch.backends.xnnpack.utils.quant_utils import is_dequant
+from executorch.backends.xnnpack.utils.quant_utils import is_dynamic_qdq
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
 
@@ -283,11 +283,11 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             ]
         else:
             # Need to create NHWC node
-            # TODO: Replace with check to determine if dynamic quant
-            input_is_dequant = is_dequant(input_node)
+            # Check if input uses dynamic quantization
+            is_dynamic_input = is_dynamic_qdq(input_node)
 
-            if input_is_dequant:
-                # Trace back to find original source node
+            if is_dynamic_input:
+                # Trace back to original source node
                 while getattr(input_node, "args", None):
                     input_node = input_node.args[0]
 
@@ -299,7 +299,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                     memory_format=torch.channels_last,
                 )
 
-            if input_is_dequant:
+            if is_dynamic_input:
                 # Replace downstream input_nodes with NHWC node
                 input_node.replace_all_uses_with(input_node_nhwc)
                 input_node_nhwc.args = (input_node,)
