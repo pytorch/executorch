@@ -16,7 +16,7 @@ Linux (x86_64)
 - Ubuntu 20.04.6 LTS+
 - RHEL 8+
 
-macOS (x86_64/M1/M2)
+macOS (ARM64)
 - Big Sur (11.0)+
 
 Windows (x86_64)

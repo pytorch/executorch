@@ -1,6 +1,6 @@
 # Using ExecuTorch on iOS
 
-ExecuTorch supports both iOS and macOS via Objective-C, Swift, and C++. ExecuTorch also provides backends to leverage Core ML and Metal Performance Shaders (MPS) for hardware-accelerated execution on Apple platforms.
+ExecuTorch supports both iOS and macOS (ARM64) via Objective-C, Swift, and C++. ExecuTorch also provides backends to leverage Core ML and Metal Performance Shaders (MPS) for hardware-accelerated execution on Apple platforms.
 
 ## Integration
 
