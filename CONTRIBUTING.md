@@ -5,10 +5,10 @@ it easy to contribute to this project.
 ## Dev Install
 
 Set up your environment by following the instructions at
-https://pytorch.org/executorch/stable/getting-started-setup.html to clone
+https://pytorch.org/executorch/main/getting-started-setup to clone
 the repo and install the necessary requirements.
 
-Refer to this [document](https://pytorch.org/executorch/main/using-executorch-building-from-source.html) to build ExecuTorch from source.
+Refer to this [document](docs/source/using-executorch-building-from-source.md) to build ExecuTorch from source.
 
 ### Dev Setup for Android
 For Android, please refer to the [Android documentation](docs/source/using-executorch-android.md).
@@ -40,8 +40,8 @@ executorch
 ├── <a href="devtools">devtools</a> - Model profiling, debugging, and inspection. Please refer to the <a href="docs/source/devtools-overview.md">tools documentation</a> for more information.
 │   ├── <a href="devtools/bundled_program">bundled_program</a> - a tool for validating ExecuTorch model. See <a href="docs/source/bundled-io.md">doc</a>.
 │   ├── <a href="devtools/etdump">etdump</a> - ETDump - a format for saving profiling and debugging data from runtime. See <a href="docs/source/etdump.md">doc</a>.
-│   ├── <a href="devtools/etrecord">etrecord</a> - ETRecord - AOT debug artifact for ExecuTorch. See <a href="https://pytorch.org/executorch/main/etrecord.html">doc</a>.
-│   ├── <a href="devtools/inspector">inspector</a> - Python API to inspect ETDump and ETRecord. See <a href="https://pytorch.org/executorch/main/model-inspector.html">doc</a>.
+│   ├── <a href="devtools/etrecord">etrecord</a> - ETRecord - AOT debug artifact for ExecuTorch. See <a href="https://pytorch.org/executorch/main/etrecord">doc</a>.
+│   ├── <a href="devtools/inspector">inspector</a> - Python API to inspect ETDump and ETRecord. See <a href="https://pytorch.org/executorch/main/model-inspector">doc</a>.
 │   └── <a href="devtools/visualization">visualization</a> - Visualization tools for representing model structure and performance metrics.
 ├── <a href="docs">docs</a> - Static docs tooling and documentation source files.
 ├── <a href="examples">examples</a> - Examples of various user flows, such as model export, delegates, and runtime execution.
@@ -57,8 +57,8 @@ executorch
 │   ├── <a href="exir/serde">serde</a> - Graph module serialization/deserialization.
 │   ├── <a href="exir/verification">verification</a> - IR verification.
 ├── <a href="extension">extension</a> - Extensions built on top of the runtime.
-│   ├── <a href="extension/android">android</a> - ExecuTorch wrappers for Android apps. Please refer to the <a href="docs/source/using-executorch-android.md">Android documentation</a> and <a href="https://pytorch.org/executorch/main/javadoc/">Javadoc</a> for more information.
-│   ├── <a href="extension/apple">apple</a> - ExecuTorch wrappers for iOS apps. Please refer to the <a href="docs/source/using-executorch-ios.md">iOS documentation</a> and <a href="https://pytorch.org/executorch/stable/apple-runtime.html">how to integrate into Apple platform</a> for more information.
+│   ├── <a href="extension/android">android</a> - ExecuTorch wrappers for Android apps. Please refer to the <a href="docs/source/using-executorch-android.md">Android documentation</a> and <a href="https://pytorch.org/executorch/main/javadoc">Javadoc</a> for more information.
+│   ├── <a href="extension/apple">apple</a> - ExecuTorch wrappers for iOS apps. Please refer to the <a href="docs/source/using-executorch-ios.md">iOS documentation</a> on how to integrate into Apple platform</a> for more information.
 │   ├── <a href="extension/aten_util">aten_util</a> - Converts to and from PyTorch ATen types.
 │   ├── <a href="extension/data_loader">data_loader</a> - 1st party data loader implementations.
 │   ├── <a href="extension/evalue_util">evalue_util</a> - Helpers for working with EValue objects.
@@ -68,10 +68,10 @@ executorch
 │   ├── <a href="extension/memory_allocator">memory_allocator</a> - 1st party memory allocator implementations.
 │   ├── <a href="extension/module">module</a> - A simplified C++ wrapper for the runtime. An abstraction that deserializes and executes an ExecuTorch artifact (.pte file). Refer to the <a href="docs/source/extension-module.md">module documentation</a> for more information.
 │   ├── <a href="extension/parallel">parallel</a> - C++ threadpool integration.
-│   ├── <a href="extension/pybindings">pybindings</a> - Python API for executorch runtime. This is powering up the <a href="https://pytorch.org/executorch/main/runtime-python-api-reference.html">runtime Python API</a> for ExecuTorch.
+│   ├── <a href="extension/pybindings">pybindings</a> - Python API for executorch runtime. This is powering up the <a href="docs/source/runtime-python-api-reference.md">runtime Python API</a> for ExecuTorch.
 │   ├── <a href="extension/pytree">pytree</a> - C++ and Python flattening and unflattening lib for pytrees.
 │   ├── <a href="extension/runner_util">runner_util</a> - Helpers for writing C++ PTE-execution tools.
-│   ├── <a href="extension/tensor">tensor</a> - Tensor maker and <code>TensorPtr</code>, details in <a href="/docs/source/extension-tensor.md">this documentation</a>. For how to use <code>TensorPtr</code> and <code>Module</code>, please refer to the <a href="/docs/source/using-executorch-cpp.md">"Using ExecuTorch with C++"</a> doc.
+│   ├── <a href="extension/tensor">tensor</a> - Tensor maker and <code>TensorPtr</code>, details in <a href="docs/source/extension-tensor.md">this documentation</a>. For how to use <code>TensorPtr</code> and <code>Module</code>, please refer to the <a href="docs/source/using-executorch-cpp.md">"Using ExecuTorch with C++"</a> doc.
 │   ├── <a href="extension/testing_util">testing_util</a> - Helpers for writing C++ tests.
 │   ├── <a href="extension/threadpool">threadpool</a> - Threadpool.
 │   └── <a href="extension/training">training</a> - Experimental libraries for on-device training.
@@ -85,7 +85,7 @@ executorch
 ├── <a href="runtime">runtime</a> - Core C++ runtime. These components are used to execute the ExecuTorch program. Please refer to the <a href="docs/source/runtime-overview.md">runtime documentation</a> for more information.
 │   ├── <a href="runtime/backend">backend</a> - Backend delegate runtime APIs.
 │   ├── <a href="runtime/core">core</a> - Core structures used across all levels of the runtime. Basic components such as <code>Tensor</code>, <code>EValue</code>, <code>Error</code> and <code>Result</code> etc.
-│   ├── <a href="runtime/executor">executor</a> - Model loading, initialization, and execution. Runtime components that execute the ExecuTorch program, such as <code>Program</code>, <code>Method</code>. Refer to the <a href="https://pytorch.org/executorch/main/executorch-runtime-api-reference.html">runtime API documentation</a> for more information.
+│   ├── <a href="runtime/executor">executor</a> - Model loading, initialization, and execution. Runtime components that execute the ExecuTorch program, such as <code>Program</code>, <code>Method</code>. Refer to the <a href="https://pytorch.org/executorch/main/executorch-runtime-api-reference">runtime API documentation</a> for more information.
 │   ├── <a href="runtime/kernel">kernel</a> - Kernel registration and management.
 │   └── <a href="runtime/platform">platform</a> - Layer between architecture specific code and portable C++.
 ├── <a href="schema">schema</a> - ExecuTorch PTE file format flatbuffer schemas.
@@ -102,7 +102,7 @@ executorch
 ## Contributing workflow
 We actively welcome your pull requests (PRs).
 
-If you're completely new to open-source projects, GitHub, or ExecuTorch, please see our [New Contributor Guide](./docs/source/new-contributor-guide.md) for a step-by-step walkthrough on making your first contribution. Otherwise, read on.
+If you're completely new to open-source projects, GitHub, or ExecuTorch, please see our [New Contributor Guide](docs/source/new-contributor-guide.md) for a step-by-step walkthrough on making your first contribution. Otherwise, read on.
 
 1. [Claim an issue](#claiming-issues), if present, before starting work. If an
    issue doesn't cover the work you plan to do, consider creating one to provide
@@ -245,7 +245,7 @@ modifications to the Google C++ style guide.
 
 ### C++ Portability Guidelines
 
-See also [Portable C++ Programming](/docs/source/portable-cpp-programming.md)
+See also [Portable C++ Programming](docs/source/portable-cpp-programming.md)
 for detailed advice.
 
 #### C++ language version
@@ -417,9 +417,9 @@ for basics.
 
 ## For Backend Delegate Authors
 
-- Use [this](/docs/source/backend-delegates-integration.md) guide when
+- Use [this](docs/source/backend-delegates-integration.md) guide when
   integrating your delegate with ExecuTorch.
-- Refer to [this](/docs/source/backend-delegates-dependencies.md) set of
+- Refer to [this](docs/source/backend-delegates-dependencies.md) set of
   guidelines when including a third-party depenency for your delegate.
 
 &nbsp;
