@@ -66,6 +66,8 @@ class SupportedTOSAOperatorCheck(OperatorSupportBase):
 _tosa_spec_support: dict[TosaSpecification, list[Type[SupportedTOSAOperatorCheck]]] = {
     TosaSpecification.create_from_string("TOSA-0.80+BI"): [],
     TosaSpecification.create_from_string("TOSA-0.80+MI"): [],
+    TosaSpecification.create_from_string("TOSA-1.0+INT"): [],
+    TosaSpecification.create_from_string("TOSA-1.0+FP"): [],
 }
 
 
