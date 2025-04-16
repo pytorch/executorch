@@ -49,7 +49,8 @@ jobs:
       contents: read
     with:
       secrets-env: EXECUTORCH_MAVEN_SIGNING_KEYID EXECUTORCH_MAVEN_SIGNING_PASSWORD EXECUTORCH_MAVEN_CENTRAL_PASSWORD EXECUTORCH_MAVEN_CENTRAL_USERNAME EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS
-      runner: linux.2xlarge
+      # As this job has access to Maven credential, run this on a fresh ephemeral runner
+      runner: ephemeral.linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
       submodules: 'recursive'
       ref: ${{ github.sha }}
@@ -58,6 +59,10 @@ jobs:
       upload-artifact-to-s3: true
       script: |
         set -eux
+
+        # Use sccache for NDK compiler as well
+        export CMAKE_CXX_COMPILER_LAUNCHER=sccache
+        export CMAKE_C_COMPILER_LAUNCHER=sccache
 
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
