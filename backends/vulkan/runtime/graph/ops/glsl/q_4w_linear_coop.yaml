@@ -11,16 +11,10 @@ q_4w_linear_coop:
     IN_STORAGE: texture3d
     WEIGHT_STORAGE: texture2d
     PARAMS_STORAGE: buffer
-<<<<<<<< HEAD:backends/vulkan/runtime/graph/ops/glsl/q_4w_linear_coop.yaml
     TILE_ROWS: 1
   shader_variants:
     - NAME: q_4w_linear_coop_texture3d_texture3d_texture2d_float
     - NAME: q_4w_linear_coop_buffer_buffer_texture2d_float
-========
-  shader_variants:
-    - NAME: q_4w_linear_texture3d_texture3d_texture2d_float
-    - NAME: q_4w_linear_buffer_buffer_texture2d_float
->>>>>>>> main:backends/vulkan/runtime/graph/ops/glsl/q_4w_linear.yaml
       OUT_STORAGE: buffer
       IN_STORAGE: buffer
     - NAME: q_4w_linear_coop_buffer_buffer_buffer_float
