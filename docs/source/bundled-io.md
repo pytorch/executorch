@@ -17,7 +17,7 @@ This stage mainly focuses on the creation of a `BundledProgram` and dumping it o
 
 ### Step 1: Create a Model and Emit its ExecuTorch Program.
 
-ExecuTorch Program can be emitted from user's model by using ExecuTorch APIs. Follow the [Generate Sample ExecuTorch program](./getting-started-setup.md) or [Exporting to ExecuTorch tutorial](./tutorials/export-to-executorch-tutorial).
+ExecuTorch Program can be emitted from user's model by using ExecuTorch APIs. Follow the [Generate and emit sample ExecuTorch program](./getting-started.md#exporting) or [Exporting to ExecuTorch tutorial](./tutorials/export-to-executorch-tutorial).
 
 ### Step 2: Construct `List[MethodTestSuite]` to hold test info
 
@@ -89,7 +89,7 @@ Here is a flow highlighting how to generate a `BundledProgram` given a PyTorch m
 ```python
 import torch
 
-from executorch.exir import to_edge
+from executorch.exir import to_edge_transform_and_lower
 from executorch.devtools import BundledProgram
 
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
@@ -105,8 +105,8 @@ class SampleModel(torch.nn.Module):
 
     def __init__(self) -> None:
         super().__init__()
-        self.a: torch.Tensor = 3 * torch.ones(2, 2, dtype=torch.int32)
-        self.b: torch.Tensor = 2 * torch.ones(2, 2, dtype=torch.int32)
+        self.register_buffer('a', 3 * torch.ones(2, 2, dtype=torch.int32))
+        self.register_buffer('b', 2 * torch.ones(2, 2, dtype=torch.int32))
 
     def forward(self, x: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
         z = x.clone()
@@ -136,7 +136,7 @@ method_graph = export(
 
 
 # Emit the traced method into ET Program.
-et_program = to_edge(method_graph).to_executorch()
+et_program = to_edge_transform_and_lower(method_graph).to_executorch()
 
 # Step 2: Construct MethodTestSuite for Each Method
 
@@ -180,7 +180,6 @@ serialized_bundled_program = serialize_from_bundled_program_to_flatbuffer(
 save_path = "bundled_program.bpte"
 with open(save_path, "wb") as f:
     f.write(serialized_bundled_program)
-
 ```
 
 We can also regenerate `BundledProgram` from flatbuffer file if needed:
@@ -199,102 +198,28 @@ This stage mainly focuses on executing the model with the bundled inputs and and
 
 
 ### Get ExecuTorch Program Pointer from `BundledProgram` Buffer
-We need the pointer to ExecuTorch program to do the execution. To unify the process of loading and executing `BundledProgram` and Program flatbuffer, we create an API:
-
-:::{dropdown} `get_program_data`
-
-```{eval-rst}
-.. doxygenfunction:: ::executorch::bundled_program::get_program_data
-```
-:::
-
-Here's an example of how to use the `get_program_data` API:
-```c++
-// Assume that the user has read the contents of the file into file_data using
-// whatever method works best for their application. The file could contain
-// either BundledProgram data or Program data.
-void* file_data = ...;
-size_t file_data_len = ...;
-
-// If file_data contains a BundledProgram, get_program_data() will return a
-// pointer to the Program data embedded inside it. Otherwise it will return
-// file_data, which already pointed to Program data.
-const void* program_ptr;
-size_t program_len;
-status = executorch::bundled_program::get_program_data(
-    file_data, file_data_len, &program_ptr, &program_len);
-ET_CHECK_MSG(
-    status == Error::Ok,
-    "get_program_data() failed with status 0x%" PRIx32,
-    status);
-```
+We need the pointer to ExecuTorch program to do the execution. To unify the process of loading and executing `BundledProgram` and Program flatbuffer, we create an API for this
+`executorch::bundled_program::get_program_data`. Check out an [example usage](https://github.com/pytorch/executorch/blob/release/0.6/examples/devtools/example_runner/example_runner.cpp#L128-L137) of this API.
 
 ### Load Bundled Input to Method
-To execute the program on the bundled input, we need to load the bundled input into the method. Here we provided an API called `executorch::bundled_program::load_bundled_input`:
-
-:::{dropdown} `load_bundled_input`
-
-```{eval-rst}
-.. doxygenfunction:: ::executorch::bundled_program::load_bundled_input
-```
-:::
+To execute the program on the bundled input, we need to load the bundled input into the method. Here we provided an API called `executorch::bundled_program::load_bundled_input`.  Check out an [example usage](https://github.com/pytorch/executorch/blob/release/0.6/examples/devtools/example_runner/example_runner.cpp#L253-L259) of this API.
 
 ### Verify the Method's Output.
-We call `executorch::bundled_program::verify_method_outputs` to verify the method's output with bundled expected outputs. Here's the details of this API:
-
-:::{dropdown} `verify_method_outputs`
-
-```{eval-rst}
-.. doxygenfunction:: ::executorch::bundled_program::verify_method_outputs
-```
-:::
-
+We call `executorch::bundled_program::verify_method_outputs` to verify the method's output with bundled expected outputs. Check out an [example usage](https://github.com/pytorch/executorch/blob/release/0.6/examples/devtools/example_runner/example_runner.cpp#L300-L311) of this API.
 
 ### Runtime Example
 
-Here we provide an example about how to run the bundled program step by step. Most of the code is borrowed from [executor_runner](https://github.com/pytorch/executorch/blob/main/examples/devtools/example_runner/example_runner.cpp), and please review that file if you need more info and context:
+Please checkout our [example runner](https://github.com/pytorch/executorch/blob/release/0.6/examples/devtools/README.md#bundledprogram) for a bundled program. You could run these commands to test with the BundledProgram binary (`.bpte`) file you generated in the previous step:
 
-```c++
-// method_name is the name for the method we want to test
-// memory_manager is the executor::MemoryManager variable for executor memory allocation.
-// program is the ExecuTorch program.
-Result<Method> method = program->load_method(method_name, &memory_manager);
-
-ET_CHECK_MSG(
-    method.ok(),
-    "load_method() failed with status 0x%" PRIx32,
-    method.error());
-
-// Load testset_idx-th input in the buffer to plan
-status = executorch::bundled_program::load_bundled_input(
-        *method,
-        program_data.bundled_program_data(),
-        FLAGS_testset_idx);
-ET_CHECK_MSG(
-    status == Error::Ok,
-    "load_bundled_input failed with status 0x%" PRIx32,
-    status);
-
-// Execute the plan
-status = method->execute();
-ET_CHECK_MSG(
-    status == Error::Ok,
-    "method->execute() failed with status 0x%" PRIx32,
-    status);
-
-// Verify the result.
-status = executorch::bundled_program::verify_method_outputs(
-        *method,
-        program_data.bundled_program_data(),
-        FLAGS_testset_idx,
-        FLAGS_rtol,
-        FLAGS_atol);
-ET_CHECK_MSG(
-    status == Error::Ok,
-    "Bundle verification failed with status 0x%" PRIx32,
-    status);
-
+```bash
+cd executorch
+   ./examples/devtools/build_example_runner.sh
+   ./cmake-out/examples/devtools/example_runner --bundled_program_path {your-bpte-file} --output_verification
 ```
+
+It is expected to see no output from running the above mentioned snippet.
+
+For a detailed example of how the runner should be like, please refer to our [example runner](https://github.com/pytorch/executorch/blob/release/0.6/examples/devtools/example_runner/example_runner.cpp).
 
 ## Common Errors
 
