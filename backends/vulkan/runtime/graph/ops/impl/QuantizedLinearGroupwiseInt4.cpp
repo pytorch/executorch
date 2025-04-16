@@ -22,9 +22,6 @@ void check_q_4w_linear_args(
     const ValueRef group_size,
     const ValueRef scales_and_zeros,
     const ValueRef out) {
-  VK_CHECK_COND(graph.int16_shader_types_enabled());
-  VK_CHECK_COND(graph.int8_buffers_enabled());
-
   VK_CHECK_COND(graph.val_is_tensor(mat1));
   VK_CHECK_COND(graph.val_is_tref(mat2_data));
   VK_CHECK_COND(graph.val_is_tref(scales_and_zeros));
@@ -97,7 +94,10 @@ ValueRef prepack_int4_linear_weight_transposed_interleaved(
   global_wg_size = graph.logical_limits_of(qmat2);
   global_wg_size[1] = utils::div_up(global_wg_size[1], uint32_t(2));
 
-  std::string kernel_name = "pack_int4_linear_weight_transposed_interleaved";
+  std::string kernel_name =
+      graph.context()->adapter_ptr()->has_full_int8_buffers_support()
+      ? "pack_int4_linear_weight_transposed_interleaved"
+      : "pack_int4_linear_weight_transposed_interleaved_nobitw8buffer";
   add_storage_type_suffix(kernel_name, storage_type);
 
   graph.prepack_nodes().emplace_back(new PrepackNode(

@@ -274,11 +274,6 @@ TEST(VulkanInt4LinearTest, test_reference_impl) {
 }
 
 TEST(VulkanInt4LinearTest, test_vulkan_impl) {
-  if (!vkcompute::api::context()
-           ->adapter_ptr()
-           ->has_full_int8_buffers_support()) {
-    GTEST_SKIP();
-  }
   test_vulkan_linear_int4(
       /*B = */ 1,
       /*M = */ 4,
