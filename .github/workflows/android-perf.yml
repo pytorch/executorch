@@ -392,7 +392,7 @@ jobs:
       fail-fast: false
     with:
       # Due to scheduling a job may be pushed beyond the default 60m threshold
-      timeout: 120
+      timeout: 240
       device-type: android
       runner: linux.2xlarge
       test-infra-ref: ''
