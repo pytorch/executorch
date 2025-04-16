@@ -157,9 +157,6 @@ void add_q_4w_linear_node(
   utils::uvec3 global_wg_size = graph.logical_limits_of(out);
   global_wg_size[0] = utils::div_up(global_wg_size[0], uint32_t(2));
   utils::uvec3 local_wg_size = graph.create_local_wg_size(global_wg_size);
-  if (use_coop_algorithm) {
-    local_wg_size = {8, 1, 8};
-  }
 
   if (use_coop_algorithm) {
     local_wg_size = {8, 1, 8};
