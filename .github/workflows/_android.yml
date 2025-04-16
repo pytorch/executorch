@@ -102,10 +102,10 @@ jobs:
         shell: bash
         run: |
           set -eux
-          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/14481854512/artifacts/llm_demo/app-debug.apk
-          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/14481854512/artifacts/llm_demo/app-debug-androidTest.apk
-          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/14481854512/artifacts/fp32-xnnpack-custom/model.zip
-          curl -o android-test-debug-androidTest.apk https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/14481854512/artifacts/library_test_dir/executorch_android-debug-androidTest.apk
+          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/14500471784/artifacts/llm_demo/app-debug.apk
+          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/14500471784/artifacts/llm_demo/app-debug-androidTest.apk
+          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/14500471784/artifacts/fp32-xnnpack-custom/model.zip
+          curl -o android-test-debug-androidTest.apk https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/14500471784/artifacts/library_test_dir/executorch_android-debug-androidTest.apk
           unzip model.zip
           mv *.pte model.pte
 
