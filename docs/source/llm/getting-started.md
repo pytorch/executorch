@@ -159,7 +159,7 @@ example_inputs = (torch.randint(0, 100, (1, model.config.block_size), dtype=torc
 # long as they adhere to the rules specified in the dynamic shape configuration.
 # Here we set the range of 0th model input's 1st dimension as
 # [0, model.config.block_size].
-# See https://pytorch.org/executorch/main/concepts.html#dynamic-shapes
+# See https://pytorch.org/executorch/main/concepts#dynamic-shapes
 # for details about creating dynamic shapes.
 dynamic_shape = (
     {1: torch.export.Dim("token_dim", max=model.config.block_size)},
@@ -588,7 +588,7 @@ The delegated model should be noticeably faster compared to the non-delegated mo
 
 For more information regarding backend delegation, see the ExecuTorch guides
 for the [XNNPACK Backend](../backends-xnnpack.md),  [Core ML
-Backend](../backends-coreml.md) and [Qualcomm AI Engine Direct Backend](build-run-llama3-qualcomm-ai-engine-direct-backend.md).
+Backend](../backends-coreml.md) and [Qualcomm AI Engine Direct Backend](../backends-qualcomm.md).
 
 ## Quantization
 
