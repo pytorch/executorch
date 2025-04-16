@@ -25,7 +25,6 @@ class ArmCompileSpecBuilder:
         self.output_format = None
         self.path_for_intermediates = None
         self.tosa_spec = None
-        self.input_order = None
 
     def vgf_compile_spec(
         self,
@@ -157,13 +156,6 @@ class ArmCompileSpecBuilder:
         if self.path_for_intermediates is not None:
             self.compile_spec.append(
                 CompileSpec("debug_artifact_path", self.path_for_intermediates.encode())
-            )
-
-        if self.input_order:
-            self.compile_spec.append(
-                CompileSpec(
-                    "input_order", " ".join(map(str, self.input_order)).encode()
-                )
             )
 
         return self.compile_spec
