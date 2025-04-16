@@ -163,7 +163,7 @@ If you cannot add the package into your app target (it's greyed out), it might h
 
 
 
- More details on integrating and Running ExecuTorch on Apple Platforms, check out the detailed guide [here](https://pytorch.org/executorch/main/using-executorch-ios.html#local-build).
+ More details on integrating and Running ExecuTorch on Apple Platforms, check out the detailed guide [here](https://pytorch.org/executorch/main/using-executorch-ios#local-build).
 
 ### 3. Configure Build Schemes
 
@@ -175,7 +175,7 @@ Navigate to `Product --> Scheme --> Edit Scheme --> Info --> Build Configuration
 
 We recommend that you only use the Debug build scheme during development, where you might need to access additional logs. Debug build has logging overhead and will impact inferencing performance, while release build has compiler optimizations enabled and all logging overhead removed.
 
-For more details integrating and Running ExecuTorch on Apple Platforms or building the package locally, checkout this [link](https://pytorch.org/executorch/main/using-executorch-ios.html).
+For more details integrating and Running ExecuTorch on Apple Platforms or building the package locally, checkout this [link](https://pytorch.org/executorch/main/using-executorch-ios).
 
 ### 4. Build and Run the project
 
