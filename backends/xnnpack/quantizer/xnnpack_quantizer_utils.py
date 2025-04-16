@@ -42,8 +42,6 @@ __all__ = [
     "propagate_annotation",
 ]
 
-from pytorch.ao.test.dtypes.test_bitpacking import dimensions
-
 
 # In the absence of better name, just winging it with QuantizationConfig
 @dataclass(eq=True, frozen=True)
