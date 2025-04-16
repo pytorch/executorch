@@ -331,6 +331,8 @@ def _do_annotate_conv(
         ):
             weight_val = weight.meta.get("val", None)
             weight_shape = getattr(weight_val, "shape", None)
+
+            # Skip if not a 4D weight tensor (i.e. not conv2d)
             if weight_shape is not None and len(weight_shape) != 4:
                 continue
 
