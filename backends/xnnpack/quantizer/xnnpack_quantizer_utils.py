@@ -304,7 +304,6 @@ def _do_annotate_conv(
     for n in gm.graph.nodes:
         if not is_conv_node(n):
             continue
-
         conv_node = n
 
         # This is hacky!
