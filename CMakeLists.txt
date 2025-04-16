@@ -44,6 +44,17 @@
 
 cmake_minimum_required(VERSION 3.24)
 project(executorch)
+
+# MARK: - Start EXECUTORCH_H12025_BUILD_MIGRATION --------------------------------------------------
+
+include(${PROJECT_SOURCE_DIR}/tools/cmake/common.cmake)
+include(${PROJECT_SOURCE_DIR}/tools/cmake/platform.cmake)
+
+# Print all the configs that were called with announce_configured_options.
+print_configured_options()
+
+# MARK: - End EXECUTORCH_H12025_BUILD_MIGRATION ----------------------------------------------------
+
 include(tools/cmake/Utils.cmake)
 include(CMakeDependentOption)
 
