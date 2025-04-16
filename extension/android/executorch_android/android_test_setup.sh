@@ -21,7 +21,8 @@ curl -C - -Ls "https://raw.githubusercontent.com/karpathy/llama2.c/master/tokeni
 # Create params.json file
 touch params.json
 echo '{"dim": 288, "multiple_of": 32, "n_heads": 6, "n_layers": 6, "norm_eps": 1e-05, "vocab_size": 32000}' > params.json
-python -m examples.models.llama.export_llama -c stories15M.pt -p params.json -d fp16 -n stories15m_h.pte -kv
+# python -m examples.models.llama.export_llama -c stories15M.pt -p params.json -d fp16 -n stories15m_h.pte -kv
+python -m examples.models.llama.export_llama -c stories15M.pt -p params.json -n stories15m_h.pte -X -kv
 python -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokenizer.bin
 
 cp stories15m_h.pte "${BASEDIR}/src/androidTest/resources/stories.pte"
