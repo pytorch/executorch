@@ -26,6 +26,7 @@ adb shell am instrument -w -r \
   org.pytorch.executorch.test/androidx.test.runner.AndroidJUnitRunner >result.txt 2>&1
 adb logcat -d > logcat.txt
 cat logcat.txt
+cat result.txt
 grep -q FAILURES result.txt && cat result.txt
 grep -q FAILURES result.txt && exit -1
 exit 0
