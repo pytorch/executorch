@@ -149,7 +149,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       facebook::jni::alias_ref<jstring> data_path = nullptr) {
 #if defined(ET_USE_THREADPOOL)
     // Reserve 1 thread for the main thread.
-    uint32_t num_performant_cores =
+    int32_t num_performant_cores =
         ::executorch::extension::cpuinfo::get_num_performant_cores() - 1;
     if (num_performant_cores > 0) {
       ET_LOG(Info, "Resetting threadpool to %d threads", num_performant_cores);
