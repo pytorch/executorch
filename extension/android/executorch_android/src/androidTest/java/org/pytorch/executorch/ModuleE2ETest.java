@@ -98,7 +98,6 @@ public class ModuleE2ETest {
         inputStream.close();
 
         Module module = Module.load(getTestFilePath(filePath));
-
         EValue[] results = module.forward();
     }
 
