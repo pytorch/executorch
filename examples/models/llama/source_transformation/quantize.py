@@ -164,7 +164,7 @@ def quantize(  # noqa C901
 
         try:
             # torchao 0.3+
-            from torchao._eval import InputRecorder  # pyre-fixme[21]
+            from torchao._models._eval import InputRecorder
         except ImportError:
             from torchao.quantization.GPTQ import InputRecorder  # pyre-ignore
 
