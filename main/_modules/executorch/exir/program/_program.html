@@ -1489,7 +1489,7 @@
         <span class="k">try</span><span class="p">:</span>
             <span class="c1"># Ops in torch.ops.quant are not always loaded, so we use try/except</span>
             <span class="c1"># Aliases output, but we need to allow it for XNNPACK</span>
-            <span class="n">allow_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">quant</span><span class="o">.</span><span class="n">choose_qparams_affine</span><span class="o">.</span><span class="n">default</span><span class="p">)</span>
+            <span class="n">allow_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">torchao</span><span class="o">.</span><span class="n">choose_qparams_affine</span><span class="o">.</span><span class="n">default</span><span class="p">)</span>
         <span class="k">except</span><span class="p">:</span>
             <span class="k">pass</span>
 
