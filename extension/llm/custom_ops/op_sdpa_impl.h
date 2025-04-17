@@ -605,7 +605,11 @@ void cpu_flash_attention(
     */
     ET_CHECK_MSG(attn_mask.value().dim() == 2, "attn_mask must be 2D");
     ET_CHECK_MSG(
-        attn_mask.value().size(0) == qSize, "attn_mask shape mismatch");
+        attn_mask.value().size(0) == qSize,
+        "attn_mask shape mismatch"
+        "attn_mask.size(0)=%zd qSize=%" PRId64,
+        attn_mask.value().size(0),
+        qSize);
     ET_CHECK_MSG(
         attn_mask.value().size(1) == kvSize,
         "attn_mask shape mismatch"
