@@ -212,7 +212,23 @@ def _get_updated_graph_signature(
     return new_signature
 
 
-def _transform(self, *passes: PassType) -> "ExportedProgram":
+def _transform(
+    self,
+    *passes: PassType,
+    override_verifiers: None | list[Type[Verifier]] = None,
+) -> "ExportedProgram":
+    """
+    Transforms the program according to the provided passes.
+
+    Args:
+        self: The ExportedProgram instance to transform
+        *passes: A sequence of passes to apply to the program
+        override_verifiers: Optional list of verifier classes to use instead of the default verifiers.
+            This is needed if the transforms yields illegal graph that the default verifier cannot handle.
+
+    Returns:
+        ExportedProgram: A new ExportedProgram with the transformations applied, or self if no changes were made
+    """
     pm = PassManager(list(passes))
     res = pm(self.graph_module)
     transformed_gm = res.graph_module if res is not None else self.graph_module
@@ -221,7 +237,9 @@ def _transform(self, *passes: PassType) -> "ExportedProgram":
     if transformed_gm is self.graph_module and not res.modified:
         return self
 
-    return _update_exported_program_graph_module(self, transformed_gm)
+    return _update_exported_program_graph_module(
+        self, transformed_gm, override_verifiers
+    )
 
 
 def _update_exported_program_graph_module(
