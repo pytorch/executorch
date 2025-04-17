@@ -675,7 +675,7 @@ public abstract class Tensor {
     } else if (DType.INT8.jniCode == dtype) {
       tensor = new Tensor_int8(data, shape);
     } else {
-      throw new IllegalArgumentException("Unknown Tensor dtype");
+      throw new IllegalArgumentException("Unknown Tensor dtype: " + dtype);
     }
     tensor.mHybridData = hybridData;
     return tensor;
