@@ -11,7 +11,7 @@ process live camera images leveraging three different backends:
 (Xcode 15+ and iOS 17+ only).
 
 <p align="center">
-  <img src="https://pytorch.org/executorch/main/_static/img/demo_ios_app.png" width="600"">
+  <img src="_static/img/demo_ios_app.png" width="600"">
 </p>
 
 ## Prerequisites
