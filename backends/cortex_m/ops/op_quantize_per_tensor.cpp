@@ -82,7 +82,8 @@ T quantize_val(
     K value,
     int64_t quant_min,
     int64_t quant_max) {
-  int32_t qvalue = zero_point + static_cast<int32_t>(std::nearbyint(inv_scale * value));
+  int32_t qvalue =
+      zero_point + static_cast<int32_t>(std::nearbyint(inv_scale * value));
   qvalue = std::max<int32_t>(qvalue, static_cast<int32_t>(quant_min));
   qvalue = std::min<int32_t>(qvalue, static_cast<int32_t>(quant_max));
   return static_cast<T>(qvalue);
@@ -123,12 +124,13 @@ Tensor& quantize_per_tensor_out(
   const size_t numel = input.numel();
 
 #if defined(HAS_HELIUM_SIMD)
-  // Helium MVE implementation for float32 to int8 quantization
-  #Error "Implement MVE version!"
+// Helium MVE implementation for float32 to int8 quantization
+#Error "Implement MVE version!"
 #else
   // Scalar implementation for float32 to int8 quantization
   for (size_t i = 0; i < numel; i++) {
-    out_data[i] = quantize_val<int8_t, float>(inv_scale, zp, input_data[i], qmin, qmax);
+    out_data[i] =
+        quantize_val<int8_t, float>(inv_scale, zp, input_data[i], qmin, qmax);
   }
 #endif
 
@@ -143,9 +145,10 @@ Tensor& quantize_per_tensor_out(
     int64_t quant_max,
     ScalarType dtype,
     Tensor& out) {
-    KernelRuntimeContext context;
-    return quantize_per_tensor_out(context, input, scale, zero_point, quant_min, quant_max, dtype, out);
+  KernelRuntimeContext context;
+  return quantize_per_tensor_out(
+      context, input, scale, zero_point, quant_min, quant_max, dtype, out);
 }
-  
+
 } // namespace native
 } // namespace cortex_m
