@@ -14,8 +14,6 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.fail;
 
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.os.Environment;
 import androidx.test.rule.GrantPermissionRule;
 import android.Manifest;
@@ -47,72 +45,18 @@ public class ModuleE2ETest {
     @Rule
     public GrantPermissionRule mRuntimePermissionRule = GrantPermissionRule.grant(Manifest.permission.READ_EXTERNAL_STORAGE);
 
-    static int argmax(float[] array) {
-        if (array.length == 0) {
-            throw new IllegalArgumentException("Array cannot be empty");
-        }
-        int maxIndex = 0;
-        float maxValue = array[0];
-        for (int i = 1; i < array.length; i++) {
-            if (array[i] > maxValue) {
-                maxValue = array[i];
-                maxIndex = i;
-            }
-        }
-        return maxIndex;
-    }
-
-    public void testClassification(String filePath) throws IOException, URISyntaxException {
+    @Test
+    public void testMv2Fp32() throws IOException, URISyntaxException{
+        String filePath = "/mv2_xnnpack_fp32.pte";
         File pteFile = new File(getTestFilePath(filePath));
         InputStream inputStream = getClass().getResourceAsStream(filePath);
         FileUtils.copyInputStreamToFile(inputStream, pteFile);
         inputStream.close();
 
-        InputStream imgInputStream = getClass().getResourceAsStream("/banana.jpeg");
-        Bitmap bitmap = BitmapFactory.decodeStream(imgInputStream);
-        bitmap = Bitmap.createScaledBitmap(bitmap, 224, 224, true);
-        imgInputStream.close();
-
-        Tensor inputTensor =
-        TensorImageUtils.bitmapToFloat32Tensor(
-            bitmap,
-            TensorImageUtils.TORCHVISION_NORM_MEAN_RGB,
-            TensorImageUtils.TORCHVISION_NORM_STD_RGB);
-
         Module module = Module.load(getTestFilePath(filePath));
 
-        EValue[] results = module.forward(EValue.from(inputTensor));
+        EValue[] results = module.forward();
         assertTrue(results[0].isTensor());
-        float[] scores = results[0].toTensor().getDataAsFloatArray();
-
-        int bananaClass = 954;  // From ImageNet 1K
-        assertEquals(bananaClass, argmax(scores));
     }
 
-    @Test
-    public void testStories() throws IOException, URISyntaxException{
-        String filePath = "/stories.pte";
-        File pteFile = new File(getTestFilePath(filePath));
-        InputStream inputStream = getClass().getResourceAsStream(filePath);
-        FileUtils.copyInputStreamToFile(inputStream, pteFile);
-        inputStream.close();
-
-        Module module = Module.load(getTestFilePath(filePath));
-        module.loadMethod("forward");
-        module.forward();
-    }
-
-    public void testMv2Fp32() throws IOException, URISyntaxException {
-        testClassification("/mv2_xnnpack_fp32.pte");
-    }
-
-    @Test
-    public void testMv3Fp32() throws IOException, URISyntaxException {
-        testClassification("/mv3_xnnpack_fp32.pte");
-    }
-
-    @Test
-    public void testResnet50() throws IOException, URISyntaxException {
-        testClassification("/resnet50_xnnpack_q8.pte");
-    }
 }

@@ -79,6 +79,28 @@ public class LlmModuleInstrumentationTest implements LlmCallback {
         // Check that the model can be load successfully
         assertEquals(OK, loadResult);
 
+        mModule.generate(TEST_PROMPT, SEQ_LEN, LlmModuleInstrumentationTest.this);
+        assertEquals(results.size(), SEQ_LEN);
+        assertTrue(tokensPerSecond.get(tokensPerSecond.size() - 1) > 0);
+    }
+
+    @Test
+    public void testGenerateAndStop() throws IOException, URISyntaxException{
+        mModule.generate(TEST_PROMPT, SEQ_LEN, new LlmCallback() {
+            @Override
+            public void onResult(String result) {
+                LlmModuleInstrumentationTest.this.onResult(result);
+                mModule.stop();
+            }
+
+            @Override
+            public void onStats(float tps) {
+                LlmModuleInstrumentationTest.this.onStats(tps);
+            }
+        });
+
+        int stoppedResultSize = results.size();
+        assertTrue(stoppedResultSize < SEQ_LEN);
     }
 
     @Override
