@@ -201,6 +201,19 @@ inspector.event_blocks = []
 # sphinx_gallery_end_ignore
 inspector.print_data_tabular()
 
+import matplotlib.image as mpimg
+
+# sphinx_gallery_start_ignore
+# Display the actural inspector tabular table image
+import matplotlib.pyplot as plt
+
+# Load and display the image
+img = mpimg.imread("inspector_tabular.png")
+imgplot = plt.imshow(img)
+plt.axis("off")  # Hide axes
+plt.show()
+# sphinx_gallery_end_ignore
+
 # sphinx_gallery_start_ignore
 inspector_patch.stop()
 inspector_patch_print.stop()
