@@ -5,8 +5,8 @@ Get hands-on with running LLaMA and LLaVA models — exported via ExecuTorch —
 *Click the image below to see it in action!*
 
 <p align="center">
-<a href="https://pytorch.org/executorch/main/_static/img/llama_ios_app.mp4">
-  <img src="https://pytorch.org/executorch/main/_static/img/llama_ios_app.png" width="600" alt="iOS app running a LlaMA model">
+<a href="https://pytorch.org/executorch/0.6/_static/img/llama_ios_app.mp4">
+  <img src="https://pytorch.org/executorch/0.6/_static/img/llama_ios_app.png" width="600" alt="iOS app running a LlaMA model">
 </a>
 </p>
 
