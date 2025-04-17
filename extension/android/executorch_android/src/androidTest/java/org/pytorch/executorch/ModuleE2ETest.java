@@ -59,4 +59,18 @@ public class ModuleE2ETest {
         assertTrue(results[0].isTensor());
     }
 
+    @Test
+    public void testStories() throws IOException, URISyntaxException{
+        String filePath = "/stories.pte";
+        File pteFile = new File(getTestFilePath(filePath));
+        InputStream inputStream = getClass().getResourceAsStream(filePath);
+        FileUtils.copyInputStreamToFile(inputStream, pteFile);
+        inputStream.close();
+
+        Module module = Module.load(getTestFilePath(filePath));
+
+        EValue[] results = module.forward();
+    }
+
+
 }
