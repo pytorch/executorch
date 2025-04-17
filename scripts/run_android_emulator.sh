@@ -24,8 +24,7 @@ for i in {1..40}; do
 done &
 
 adb logcat -c
-adb shell am instrument -w -r -e \
-  class org.pytorch.executorch.LlmModuleInstrumentationTest,org.pytorch.executorch.ModuleE2ETest \
+adb shell am instrument -w -r \
   org.pytorch.executorch.test/androidx.test.runner.AndroidJUnitRunner >result.txt 2>&1
 adb logcat -d > logcat.txt
 adb shell dumpsys meminfo
