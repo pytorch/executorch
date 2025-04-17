@@ -18,7 +18,6 @@ from executorch.examples.models.checkpoint import (
 from executorch.examples.models.llama.llama_transformer import Transformer
 
 from executorch.examples.models.llama.model_args import ModelArgs
-from torchao.utils import TorchAOBaseTensor
 
 try:
     from .fairseq2 import convert_to_llama_checkpoint
@@ -258,9 +257,6 @@ the checkpoint format to avoid generating faulty models.
                 strict=False,
                 assign=True,
             )  # self.model_ = Transformer(gptconf)
-            for param in self.model_.parameters():
-                if isinstance(param, TorchAOBaseTensor):
-                    param.requires_grad = False
         else:
             print("Checkpoint not provided, defaulting weights to zeros.")
             self.model_.to_empty(device="cpu")
