@@ -9,8 +9,10 @@ import unittest
 
 from typing import Tuple
 
+import pytest
+
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
@@ -63,7 +65,7 @@ class TestSigmoid(unittest.TestCase):
     def _test_sigmoid_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
     ):
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -77,11 +79,13 @@ class TestSigmoid(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_sigmoid_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
         )
 
+        if conftest.is_option_enabled("tosa_ref_model"):
+            tester.run_method_and_compare_outputs(inputs=test_data)
+
     def _test_sigmoid_tosa_BI_pipeline(self, module: torch.nn.Module, test_data: Tuple):
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -96,8 +100,10 @@ class TestSigmoid(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_sigmoid_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
         )
+
+        if conftest.is_option_enabled("tosa_ref_model"):
+            tester.run_method_and_compare_outputs(inputs=test_data)
 
     def _test_sigmoid_tosa_ethos_BI_pipeline(
         self,
@@ -137,6 +143,7 @@ class TestSigmoid(unittest.TestCase):
         )
 
     @parameterized.expand(test_data_suite)
+    @pytest.mark.tosa_ref_model
     def test_sigmoid_tosa_MI(
         self,
         test_name: str,
@@ -145,26 +152,33 @@ class TestSigmoid(unittest.TestCase):
         self._test_sigmoid_tosa_MI_pipeline(self.Sigmoid(), (test_data,))
 
     @parameterized.expand(test_data_suite)
+    @pytest.mark.tosa_ref_model
     def test_sigmoid_tosa_BI(self, test_name: str, test_data: torch.Tensor):
         self._test_sigmoid_tosa_BI_pipeline(self.Sigmoid(), (test_data,))
 
+    @pytest.mark.tosa_ref_model
     def test_add_sigmoid_tosa_MI(self):
         self._test_sigmoid_tosa_MI_pipeline(self.AddSigmoid(), (test_data_suite[0][1],))
 
+    @pytest.mark.tosa_ref_model
     def test_add_sigmoid_tosa_BI(self):
         self._test_sigmoid_tosa_BI_pipeline(self.AddSigmoid(), (test_data_suite[5][1],))
 
+    @pytest.mark.tosa_ref_model
     def test_sigmoid_add_tosa_MI(self):
         self._test_sigmoid_tosa_MI_pipeline(self.SigmoidAdd(), (test_data_suite[0][1],))
 
+    @pytest.mark.tosa_ref_model
     def test_sigmoid_add_tosa_BI(self):
         self._test_sigmoid_tosa_BI_pipeline(self.SigmoidAdd(), (test_data_suite[0][1],))
 
+    @pytest.mark.tosa_ref_model
     def test_sigmoid_add_sigmoid_tosa_MI(self):
         self._test_sigmoid_tosa_MI_pipeline(
             self.SigmoidAddSigmoid(), (test_data_suite[4][1], test_data_suite[3][1])
         )
 
+    @pytest.mark.tosa_ref_model
     def test_sigmoid_add_sigmoid_tosa_BI(self):
         self._test_sigmoid_tosa_BI_pipeline(
             self.SigmoidAddSigmoid(), (test_data_suite[4][1], test_data_suite[3][1])
