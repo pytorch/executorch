@@ -107,6 +107,12 @@ def quantize(  # noqa C901
             print("quantized model:", model)
         return model
     elif qmode.startswith("torchao:8da"):
+        # Check for required args
+        if group_size is None:
+            raise Exception(
+                "For torchao:8daxw quantization, group size must be specified."
+            )
+
         pattern = r"torchao:8da(\d+)w"
         matches = re.findall(pattern, qmode)
         assert len(matches) == 1, f"Expected 1 match for pattern but got {len(matches)}"
