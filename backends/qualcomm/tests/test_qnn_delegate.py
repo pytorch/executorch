@@ -843,6 +843,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([1, 4, 8, 8]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_squared_relu(self):
+        module = SquaredReLU()  # noqa: F405
+        sample_input = (torch.randn([2, 5, 1, 3]),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_squeeze(self):
         module = Squeeze()  # noqa: F405
         sample_input = (torch.randn([1, 3, 3]),)
@@ -1998,6 +2003,12 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_softmax(self):
         module = Softmax()  # noqa: F405
         sample_input = (torch.randn([1, 4, 8, 8]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_squared_relu(self):
+        module = SquaredReLU()  # noqa: F405
+        sample_input = (torch.randn([2, 5, 1, 3]),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -3642,7 +3653,7 @@ class TestExampleOssScript(TestQNN):
             self.skipTest("missing required envs")
         cmds = [
             "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/efficientSAM.py",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/efficientSAM/efficientSAM.py",
             "--dataset",
             self.image_dataset,
             "--artifact",
