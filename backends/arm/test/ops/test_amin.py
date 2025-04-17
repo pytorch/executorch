@@ -96,8 +96,9 @@ def test_amin_u55_BI_not_delegated():
     pipeline = OpNotSupportedPipeline[Amin.input_t](
         Amin(dim, keep_dims),
         data,
-        "TOSA-0.80+BI+u55",
         {" executorch_exir_dialects_edge__ops_aten_amin_default": 1},
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 
@@ -137,14 +138,15 @@ def test_min_dim_tosa_BI_to_amin(test_data: Min.input_t):
 def test_min_dim_tosa_BI_not_delegated():
     data, dim = Min.test_data["rank_4_dim_3"]()
     pipeline = OpNotSupportedPipeline[Min.input_t](
-        MinWithIndex(dim), data, "TOSA-0.80+BI+u55", {}
+        MinWithIndex(dim),
+        data,
+        {},
+        quantize=True,
     )
     pipeline.run()
 
 
 def test_min_dim_tosa_MI_not_delegated():
     data, dim = Min.test_data["rank_4_dim_3"]()
-    pipeline = OpNotSupportedPipeline[Min.input_t](
-        MinWithIndex(dim), data, "TOSA-0.80+MI", {}
-    )
+    pipeline = OpNotSupportedPipeline[Min.input_t](MinWithIndex(dim), data, {})
     pipeline.run()

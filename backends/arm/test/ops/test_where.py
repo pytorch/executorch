@@ -181,12 +181,13 @@ def test_where_self_u55_BI_not_delegated(test_module):
     pipeline = OpNotSupportedPipeline[input_t](
         test_module(),
         test_module().get_inputs(),
-        "TOSA-0.80+BI+u55",
         {
             exir_op: 1,
             "executorch_exir_dialects_edge__ops_aten_full_default": num_exir,
         },
         num_delegates,
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.change_args(
         "quantize", Quantize(quantizer, get_symmetric_quantization_config())

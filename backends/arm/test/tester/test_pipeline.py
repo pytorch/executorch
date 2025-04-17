@@ -740,11 +740,21 @@ class OpNotSupportedPipeline(BasePipelineMaker, Generic[T]):
         self,
         module: torch.nn.Module,
         test_data: T,
-        tosa_version: str,
         non_delegated_ops: Dict[str, int],
         n_expected_delegates: int = 0,
         custom_path: str = None,
+        quantize: Optional[bool] = False,
+        u55_subset: Optional[bool] = False,
     ):
+        tosa_profiles = {
+            "0.80": "TOSA-0.80+" + ("BI" if quantize else "MI"),
+            "1.0": "TOSA-1.0+" + ("INT" if quantize else "FP"),
+        }
+        tosa_version = tosa_profiles[conftest.get_option("tosa_version")]
+
+        if u55_subset and quantize:
+            tosa_version = f"{tosa_version}+u55"
+
         compile_spec = common.get_tosa_compile_spec(
             tosa_version, custom_path=custom_path
         )

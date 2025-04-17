@@ -134,7 +134,11 @@ xfails = {
 @pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
 def test_sigmoid_u55_BI(test_data):
     pipeline = OpNotSupportedPipeline(
-        Sigmoid(), (test_data(),), "TOSA-0.80+BI+u55", {Sigmoid.exir_op: 1}
+        Sigmoid(),
+        (test_data(),),
+        {Sigmoid.exir_op: 1},
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.change_args("quantize", get_16bit_sigmoid_quantizer(True))
     pipeline.run()
@@ -149,9 +153,10 @@ def test_sigmoid_u55_BI_add_sigmoid(test_data):
     pipeline = OpNotSupportedPipeline(
         SigmoidAddSigmoid(),
         (test_data(),),
-        "TOSA-0.80+BI+u55",
         {Sigmoid.exir_op: 3},
         n_expected_delegates=1,
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.change_args("quantize", get_16bit_sigmoid_quantizer(True))
     pipeline.run()

@@ -400,6 +400,7 @@ def test_convolution_u55_BI_not_delegated_3d(module: Conv3d):
     OpNotSupportedPipeline(
         module(),
         module().get_inputs(),
-        "TOSA-0.80+BI+u55",
         {"executorch_exir_dialects_edge__ops_aten_convolution_default": 1},
+        quantize=True,
+        u55_subset=True,
     ).run()

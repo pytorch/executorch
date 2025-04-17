@@ -87,7 +87,11 @@ def test_bitwise_and_tensor_tosa_BI(test_data: input_t2):
 def test_bitwise_and_tensor_u55_BI(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
-        And(), test_data(), "TOSA-0.80+BI+u55", {And().exir_op: 1}
+        And(),
+        test_data(),
+        {And().exir_op: 1},
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 
@@ -126,7 +130,11 @@ def test_bitwise_xor_tensor_tosa_BI(test_data: input_t2):
 def test_bitwise_xor_tensor_u55_BI(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
-        Xor(), test_data(), "TOSA-0.80+BI+u55", {Xor().exir_op: 1}
+        Xor(),
+        test_data(),
+        {Xor().exir_op: 1},
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 
@@ -161,7 +169,11 @@ def test_bitwise_or_tensor_tosa_BI(test_data: input_t2):
 def test_bitwise_or_tensor_u55_BI(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
-        Or(), test_data(), "TOSA-0.80+BI+u55", {Or().exir_op: 1}
+        Or(),
+        test_data(),
+        {Or().exir_op: 1},
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 

@@ -128,8 +128,9 @@ def test_lt_tensor_u55_BI_not_delegated(test_module):
     pipeline = OpNotSupportedPipeline[input_t](
         test_module(),
         test_module().get_inputs(),
-        "TOSA-0.80+BI+u55",
         {LessThan.exir_op: 1},
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 
@@ -141,9 +142,10 @@ def test_lt_scalar_u55_BI_not_delegated(test_module):
     pipeline = OpNotSupportedPipeline[input_t](
         test_module(),
         test_module().get_inputs(),
-        "TOSA-0.80+BI+u55",
         {LessThan.exir_op: 1},
         n_expected_delegates=1,
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 

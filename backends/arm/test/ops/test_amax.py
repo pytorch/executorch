@@ -87,8 +87,9 @@ def test_amax_u55_BI_not_delegated():
     pipeline = OpNotSupportedPipeline[Amax.input_t](
         Amax(dim, keep_dims),
         data,
-        "TOSA-0.80+BI+u55",
         {" executorch_exir_dialects_edge__ops_aten_amax_default": 1},
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 
@@ -128,14 +129,12 @@ def test_max_dim_tosa_BI_to_amax(test_data: Max.input_t):
 def test_max_dim_tosa_BI_not_delegated():
     data, dim = Max.test_data()["rank_4_dim_3"]()
     pipeline = OpNotSupportedPipeline[Max.input_t](
-        MaxWithIndex(dim), data, "TOSA-0.80+BI", {}
+        MaxWithIndex(dim), data, {}, quantize=True
     )
     pipeline.run()
 
 
 def test_max_dim_tosa_MI_not_delegated():
     data, dim = Max.test_data["rank_4_dim_3"]()
-    pipeline = OpNotSupportedPipeline[Max.input_t](
-        MaxWithIndex(dim), data, "TOSA-0.80+MI", {}
-    )
+    pipeline = OpNotSupportedPipeline[Max.input_t](MaxWithIndex(dim), data, {})
     pipeline.run()

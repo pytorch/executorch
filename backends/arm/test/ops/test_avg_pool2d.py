@@ -159,8 +159,8 @@ def test_avg_pool2d_tosa_BI_not_delegated(reject_module):
     pipeline = OpNotSupportedPipeline[input_t](
         module=model,
         test_data=(test_data,),
-        tosa_version="TOSA-0.80+BI",
         non_delegated_ops={},
         n_expected_delegates=0,
+        quantize=True,
     )
     pipeline.run()

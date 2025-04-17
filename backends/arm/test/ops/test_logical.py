@@ -103,7 +103,11 @@ def test_logical_and_tosa_BI(test_data: input_t2):
 def test_logical_and_u55_BI_not_delegated(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
-        And(), test_data(), "TOSA-0.80+BI+u55", {And().exir_op: 1}
+        And(),
+        test_data(),
+        {And().exir_op: 1},
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 
@@ -142,7 +146,11 @@ def test_logical_xor_tosa_BI(test_data: input_t2):
 def test_logical_xor_u55_BI_not_delegated(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
-        Xor(), test_data(), "TOSA-0.80+BI+u55", {Xor().exir_op: 1}
+        Xor(),
+        test_data(),
+        {Xor().exir_op: 1},
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 
@@ -177,7 +185,11 @@ def test_logical_or_tosa_BI(test_data: input_t2):
 def test_logical_or_u55_BI_not_delegated(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
-        Or(), test_data(), "TOSA-0.80+BI+u55", {Or().exir_op: 1}
+        Or(),
+        test_data(),
+        {Or().exir_op: 1},
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 
@@ -216,7 +228,11 @@ def test_logical_not_tosa_BI(test_data: input_t2):
 def test_logical_not_u55_BI_not_delegated(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
-        Not(), test_data(), "TOSA-0.80+BI+u55", {Not().exir_op: 1}
+        Not(),
+        test_data(),
+        {Not().exir_op: 1},
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 

@@ -143,7 +143,11 @@ def test_any_u55_BI(test_data: input_t1):
     # Tests that we don't delegate these ops since they are not supported on U55.
     op, test_input = test_data()
     pipeline = OpNotSupportedPipeline[input_t1](
-        op, test_input(), "TOSA-0.80+BI+u55", {op.exir_op: 1}
+        op,
+        test_input(),
+        {op.exir_op: 1},
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 
