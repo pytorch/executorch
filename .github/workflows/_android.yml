@@ -65,7 +65,7 @@ jobs:
   run-emulator:
     # NB: Use metal install for KVM support to run the emulator faster
     runs-on: linux.24xl.spr-metal
-    needs: build-llm-demo
+    # needs: build-llm-demo
     env:
       ANDROID_NDK_VERSION: r27b
       API_LEVEL: 34
@@ -103,10 +103,10 @@ jobs:
         shell: bash
         run: |
           set -eux
-          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/14502524222/artifacts/llm_demo/app-debug.apk
-          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/14502524222/artifacts/llm_demo/app-debug-androidTest.apk
-          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/14502524222/artifacts/fp32-xnnpack-custom/model.zip
-          curl -o android-test-debug-androidTest.apk https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/14502524222/artifacts/library_test_dir/executorch_android-debug-androidTest.apk
+          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/14505002240/artifacts/llm_demo/app-debug.apk
+          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/14505002240/artifacts/llm_demo/app-debug-androidTest.apk
+          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/14505002240/artifacts/fp32-xnnpack-custom/model.zip
+          curl -o android-test-debug-androidTest.apk https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/14505002240/artifacts/library_test_dir/executorch_android-debug-androidTest.apk
           unzip model.zip
           mv *.pte model.pte
 
