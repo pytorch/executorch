@@ -80,8 +80,8 @@ T dequantize_val(
     K value,
     int64_t quant_min,
     int64_t quant_max) {
-  (void) quant_min;
-  (void) quant_max;
+  (void)quant_min;
+  (void)quant_max;
   return static_cast<T>((static_cast<int32_t>(value) - zero_point) * scale);
 }
 
@@ -119,12 +119,13 @@ Tensor& dequantize_per_tensor_out(
   const size_t numel = input.numel();
 
 #if defined(HAS_HELIUM_SIMD)
-  // Helium MVE implementation for float32 to int8 quantization
-  #Error "Implement MVE version!"
+// Helium MVE implementation for float32 to int8 quantization
+#Error "Implement MVE version!"
 #else
   // Scalar implementation for float32 to int8 quantization
   for (size_t i = 0; i < numel; i++) {
-    out_data[i] = dequantize_val<int8_t, float>(scale, zp, input_data[i], qmin, qmax);
+    out_data[i] =
+        dequantize_val<int8_t, float>(scale, zp, input_data[i], qmin, qmax);
   }
 #endif
 
@@ -139,9 +140,10 @@ Tensor& dequantize_per_tensor_out(
     int64_t quant_max,
     ScalarType dtype,
     Tensor& out) {
-    KernelRuntimeContext context;
-    return dequantize_per_tensor_out(context, input, scale, zero_point, quant_min, quant_max, dtype, out);
+  KernelRuntimeContext context;
+  return dequantize_per_tensor_out(
+      context, input, scale, zero_point, quant_min, quant_max, dtype, out);
 }
-  
+
 } // namespace native
 } // namespace cortex_m

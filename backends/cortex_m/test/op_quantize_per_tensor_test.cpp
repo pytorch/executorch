@@ -7,10 +7,10 @@
  */
 
 #include <executorch/backends/cortex_m/ops/NativeFunctions.h> // Declares the operator
-#include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
+#include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
 #include <gtest/gtest.h>
 
 using executorch::aten::ScalarType;
@@ -38,11 +38,18 @@ void test_dtype() {
 
   KernelRuntimeContext ctx;
   quantize_per_tensor_out(
-      ctx, input, scale, zero_point, quant_min, quant_max, ScalarType::Char, out);
+      ctx,
+      input,
+      scale,
+      zero_point,
+      quant_min,
+      quant_max,
+      ScalarType::Char,
+      out);
 
   EXPECT_TENSOR_EQ(out, expected);
 }
 
 TEST(OpQuantizeOutTest, AllDtypesSupported) {
-  test_dtype(); 
+  test_dtype();
 }
