@@ -99,6 +99,7 @@ public class ModuleE2ETest {
 
         Module module = Module.load(getTestFilePath(filePath));
         module.loadMethod("forward");
+        module.forward();
     }
 
     public void testMv2Fp32() throws IOException, URISyntaxException {
