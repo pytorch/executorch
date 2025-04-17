@@ -1435,22 +1435,32 @@ class EdgeProgramManager:
         """
         compile_config = compile_config or self.compile_config
         new_programs: Dict[str, ExportedProgram] = {}
+
+        def _transform_and_verify(
+            program: ExportedProgram,
+            passes: Sequence[PassType],
+            verifier: EXIREdgeDialectVerifier,
+        ) -> ExportedProgram:
+            # Overwrite the original verifier with the new one
+            # This should be a no-op for the most cases where compile_config is none.
+            new_program = _transform(program, *passes, [verifier])
+            # ExportedProgram constructor should call the verifier, but
+            # the validate() function in the constructor is marked for deprecation.
+            verifier(new_program.graph_module)
+            return new_program
+
+        verifier = EXIREdgeDialectVerifier(edge_compile_config=compile_config)
         if isinstance(passes, dict):
             for name, program in self._edge_programs.items():
                 if name in passes.keys():
-                    new_programs[name] = _transform(program, *passes[name])
-                    EXIREdgeDialectVerifier(edge_compile_config=compile_config)(
-                        new_programs[name].graph_module
+                    new_programs[name] = _transform_and_verify(
+                        program, passes[name], verifier
                     )
                 else:
                     new_programs[name] = copy.deepcopy(program)
-
         else:  # apply passes to every method
             for name, program in self._edge_programs.items():
-                new_programs[name] = _transform(program, *passes)
-                EXIREdgeDialectVerifier(edge_compile_config=compile_config)(
-                    new_programs[name].graph_module
-                )
+                new_programs[name] = _transform_and_verify(program, passes, verifier)
 
         return EdgeProgramManager(
             new_programs, copy.deepcopy(self._config_methods), compile_config
