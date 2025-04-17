@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#if defined(XTENSA)
+#if defined(__XTENSA__)
 
 #include <stdio.h>
 #include <sys/times.h>
