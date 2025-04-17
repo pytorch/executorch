@@ -98,8 +98,7 @@ public class ModuleE2ETest {
         inputStream.close();
 
         Module module = Module.load(getTestFilePath(filePath));
-
-        EValue[] results = module.forward();
+        module.loadMethod("forward");
     }
 
     public void testMv2Fp32() throws IOException, URISyntaxException {
