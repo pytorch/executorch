@@ -78,6 +78,10 @@ public class LlmModuleInstrumentationTest implements LlmCallback {
         int loadResult = mModule.load();
         // Check that the model can be load successfully
         assertEquals(OK, loadResult);
+
+        mModule.generate(TEST_PROMPT, SEQ_LEN, LlmModuleInstrumentationTest.this);
+        assertEquals(results.size(), SEQ_LEN);
+        assertTrue(tokensPerSecond.get(tokensPerSecond.size() - 1) > 0);
     }
 
     @Override
