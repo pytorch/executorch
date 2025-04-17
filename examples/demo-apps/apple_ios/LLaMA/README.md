@@ -23,20 +23,25 @@ Download already exported LLaMA/LLaVA models along with tokenizers from [Hugging
 
 ## Build and Run
 
-1. Open the Xcode project:
+1. Make sure git submodules are up-to-date:
+   ```bash
+   git submodule update --init --recursive
+   ```
+
+2. Open the Xcode project:
     ```bash
     open examples/demo-apps/apple_ios/LLaMA/LLaMA.xcodeproj
     ```
     
-2. Click the Play button to launch the app in the Simulator.
+3. Click the Play button to launch the app in the Simulator.
 
-3. To run on a device, ensure you have it set up for development and a provisioning profile with the `increased-memory-limit` entitlement. Update the app's bundle identifier to match your provisioning profile with the required capability.
+4. To run on a device, ensure you have it set up for development and a provisioning profile with the `increased-memory-limit` entitlement. Update the app's bundle identifier to match your provisioning profile with the required capability.
 
-4. After successfully launching the app, copy the exported ExecuTorch model (`.pte`) and tokenizer (`.model`) files to the iLLaMA folder.
+5. After successfully launching the app, copy the exported ExecuTorch model (`.pte`) and tokenizer (`.model`) files to the iLLaMA folder.
 
     - **For the Simulator:** Drag and drop both files onto the Simulator window and save them in the `On My iPhone > iLLaMA` folder.
-    - **For a device:** Open a separate Finder window, navigate to the Files tab, drag and drop both files into the iLLaMA folder, and wait for the copying to finish.
+    - **For a Device:** Open a separate Finder window, navigate to the Files tab, drag and drop both files into the iLLaMA folder, and wait for the copying to finish.
 
-5. Follow the app's UI guidelines to select the model and tokenizer files from the local filesystem and issue a prompt.
+6. Follow the app's UI guidelines to select the model and tokenizer files from the local filesystem and issue a prompt.
 
 For more details check out the [Using ExecuTorch on iOS](../../../../docs/source/using-executorch-ios.md) page.
