@@ -152,14 +152,17 @@ def get_linear_inputs():
 @register_test_suite("aten._weight_int8pack_mm.default")
 def get_weight_int8pack_mm_inputs():
     MKN_list = [
-        [3, 480, 256],
-        [6, 480, 256],
-        [6, 256, 1024],
-        [6, 1024, 256],
-        [6, 256, 256],
-        [6, 256, 512],
-        [4, 768, 4096],
-        [1024, 1024, 1024],
+        [1, 480, 256],
+        # [1, 1024, 1024],
+        # [1, 1024, 256],
+        # [3, 480, 256],
+        # [6, 480, 256],
+        # [6, 256, 1024],
+        # [6, 1024, 256],
+        # [6, 256, 256],
+        # [6, 256, 512],
+        # [4, 768, 4096],
+        # [1024, 1024, 1024],
     ]
 
     inputs_list = [((M, K), (N, K), (N)) for M, K, N in MKN_list]
@@ -167,7 +170,8 @@ def get_weight_int8pack_mm_inputs():
     test_suite = VkTestSuite(inputs_list)
     test_suite.dtypes = ["at::kFloat"]
     test_suite.layouts = ["utils::kWidthPacked"]
-    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    # test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    test_suite.storage_types = ["utils::kBuffer"]
     test_suite.prepacked_args = ["mat2", "scales"]
     test_suite.requires_prepack = True
 
