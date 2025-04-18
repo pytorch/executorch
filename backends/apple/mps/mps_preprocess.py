@@ -93,7 +93,7 @@ class MPSBackend(BackendDetails):
         edge_program = _transform(
             edge_program,
             DimOrderOpsRevertPass(),
-            [
+            override_verifiers=[
                 EXIREdgeDialectVerifier(
                     edge_compile_config=exir.EdgeCompileConfig(
                         _check_ir_validity=False,  # Disable the edge dialect verifier, since we are in the mps backend.
