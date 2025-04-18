@@ -193,6 +193,18 @@ class Method final {
   ET_NODISCARD Error get_inputs(EValue* input_evalues, size_t length);
 
   /**
+   *
+   * Retrieves the attribute tensor associated with the given name.
+   *
+   * @param[in] name The name of the attribute tensor to retrieve.
+   *
+   * @returns Result containing the attribute tensor on success, non-Ok on
+   * failure.
+   */
+  ET_NODISCARD Result<executorch::aten::Tensor> get_attribute(
+      executorch::aten::string_view name);
+
+  /**
    * Execute the method.
    *
    * NOTE: Will fail if the method has been partially executed using the
