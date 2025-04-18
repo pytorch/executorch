@@ -323,6 +323,19 @@ def _do_annotate_conv(
         assert isinstance(weight, Node)
         input_qspec_map[weight] = get_weight_qspec(quantization_config)
 
+        # Only annotate dynamically quantized conv if it's 2D
+        if (
+            quantization_config
+            and quantization_config.input_activation
+            and quantization_config.input_activation.is_dynamic
+        ):
+            weight_val = weight.meta.get("val", None)
+            weight_shape = getattr(weight_val, "shape", None)
+
+            # Skip if not a 4D weight tensor (i.e. not conv2d)
+            if weight_shape is not None and len(weight_shape) != 4:
+                continue
+
         # adding weight node to the partition as well
         partition = [conv_node, conv_node.args[1]]
 

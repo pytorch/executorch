@@ -145,8 +145,13 @@ class QuantParams:
     def _from_dynamic_input_node(cls, quant_node: torch.fx.Node) -> QuantParams:
         q_input = quant_node.args[0]  # fp32 input
         assert isinstance(q_input, torch.fx.Node)
-        # TODO - materialize this from the quant_node scale count and val shape
         num_nonbatch_dims = 1
+
+        # Compute non-batch dimensions (shape length - 1), defaulting to 1
+        q_input_val = q_input.meta.get("val", None)
+        q_input_shape = getattr(q_input_val, "shape", None)
+        if q_input_shape is not None:
+            num_nonbatch_dims = max(len(q_input_shape) - 1, 1)
 
         return cls(
             per_channel=False,  # True is not valid

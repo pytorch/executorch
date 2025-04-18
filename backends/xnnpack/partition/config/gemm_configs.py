@@ -358,6 +358,11 @@ class ConvolutionConfig(GEMMConfig):
             why(node, "Only support 1D + 2D Conv")
             return False  # Only support 1D + 2D Conv
 
+        precision = self._detect_precision(node)
+        if precision == ConfigPrecisionType.DYNAMIC_QUANT and len(conv_stride) != 2:
+            why(node, "Only support 2D Conv for dynamic quantization")
+            return False
+
         kernel_node = get_input_node(node, 1)
         weight_quant_params = QuantParams.from_weights(kernel_node, ep)
 
@@ -394,6 +399,7 @@ class ConvolutionConfig(GEMMConfig):
         return [
             ConfigPrecisionType.FP32,
             ConfigPrecisionType.STATIC_QUANT,
+            ConfigPrecisionType.DYNAMIC_QUANT,
         ]
 
 
