@@ -17,6 +17,7 @@
 #include <executorch/extension/llm/runner/util.h>
 
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
+#include <pytorch/tokenizers/hf_tokenizer.h>
 #include <pytorch/tokenizers/llama2c_tokenizer.h>
 
 namespace example {
@@ -36,6 +37,40 @@ static constexpr auto kMaxContextLen = "get_max_context_len";
 static constexpr auto kVocabSize = "get_vocab_size";
 static constexpr auto kUseKVCache = "use_kv_cache";
 static constexpr auto kUseSDPAWithKVCache = "use_sdpa_with_kv_cache";
+
+std::unique_ptr<::tokenizers::Tokenizer> load_tokenizer(
+    const std::string& tokenizer_path) {
+  std::unique_ptr<::tokenizers::Tokenizer> tokenizer = nullptr;
+
+  // First try to load as a json tokenizer.
+  {
+    auto tokenizer = std::make_unique<tokenizers::HFTokenizer>();
+    if (tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
+      ET_LOG(Info, "Loaded json tokenizer");
+      return tokenizer;
+    }
+  }
+
+  // Try to load as tiktoken tokenizer.
+  {
+    auto tokenizer = get_tiktoken_for_llama();
+    if (tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
+      ET_LOG(Info, "Loaded TikToken tokenizer");
+      return tokenizer;
+    }
+  }
+
+  // Try to load as BPE tokenizer.
+  {
+    auto tokenizer = std::make_unique<::tokenizers::Llama2cTokenizer>();
+    if (tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
+      ET_LOG(Info, "Loaded BPE tokenizer");
+      return tokenizer;
+    }
+  }
+
+  return nullptr;
+}
 } // namespace
 
 Runner::Runner(
@@ -78,24 +113,15 @@ Error Runner::load() {
     return Error::Ok;
   }
   ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method("forward"));
-  // load tokenizer. Assuming tiktoken is the default tokenizer
-  tokenizer_ = nullptr;
-  tokenizer_ = get_tiktoken_for_llama();
-  ::tokenizers::Error err = tokenizer_->load(tokenizer_path_);
-  // Rely on tiktoken to throw error if the artifact is incompatible. Then we
-  // fallback to BPE tokenizer.
-  if (err != ::tokenizers::Error::Ok) {
+
+  // Load tokenizer.
+  tokenizer_ = load_tokenizer(tokenizer_path_);
+  if (tokenizer_ == nullptr) {
     ET_LOG(
-        Info,
-        "Failed to load %s as a Tiktoken artifact, trying BPE tokenizer",
-        tokenizer_path_.c_str());
-    tokenizer_.reset();
-    tokenizer_ = std::make_unique<::tokenizers::Llama2cTokenizer>();
-    err = tokenizer_->load(tokenizer_path_);
-    ET_CHECK_TK_OK_OR_RETURN_ERROR(
-        err,
+        Error,
         "Failed to load %s as a llama2.c tokenizer artifact",
         tokenizer_path_.c_str());
+    return ::executorch::runtime::Error::InvalidArgument;
   }
 
   ET_LOG(Info, "Reading metadata from model");
