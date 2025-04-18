@@ -16,11 +16,11 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
     propagate_annotation,
     QuantizationConfig,
 )
-from torch.ao.quantization.fake_quantize import (
+from torchao.quantization.pt2e.fake_quantize import (
     FakeQuantize,
     FusedMovingAvgObsFakeQuantize,
 )
-from torch.ao.quantization.observer import (
+from torchao.quantization.pt2e.observer import (
     HistogramObserver,
     MinMaxObserver,
     MovingAverageMinMaxObserver,
@@ -28,13 +28,13 @@ from torch.ao.quantization.observer import (
     PerChannelMinMaxObserver,
     PlaceholderObserver,
 )
-from torch.ao.quantization.quantizer import QuantizationSpec, Quantizer
-from torch.ao.quantization.quantizer.utils import _get_module_name_filter
+from torchao.quantization.pt2e.quantizer import QuantizationSpec, Quantizer
+from torchao.quantization.pt2e.quantizer.utils import _get_module_name_filter
 
 
 if TYPE_CHECKING:
-    from torch.ao.quantization.qconfig import _ObserverOrFakeQuantizeConstructor
     from torch.fx import Node
+    from torchao.quantization.pt2e import _ObserverOrFakeQuantizeConstructor
 
 
 __all__ = [

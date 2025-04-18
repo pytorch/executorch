@@ -34,11 +34,13 @@ from executorch.backends.arm.arm_backend import (
     is_ethosu,
 )  # usort: skip
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from torch.ao.quantization.fake_quantize import (
+from torch.fx import GraphModule, Node
+from torchao.quantization.pt2e import _ObserverOrFakeQuantizeConstructor
+from torchao.quantization.pt2e.fake_quantize import (
     FakeQuantize,
     FusedMovingAvgObsFakeQuantize,
 )
-from torch.ao.quantization.observer import (
+from torchao.quantization.pt2e.observer import (
     HistogramObserver,
     MinMaxObserver,
     MovingAverageMinMaxObserver,
@@ -46,13 +48,11 @@ from torch.ao.quantization.observer import (
     PerChannelMinMaxObserver,
     PlaceholderObserver,
 )
-from torch.ao.quantization.qconfig import _ObserverOrFakeQuantizeConstructor
-from torch.ao.quantization.quantizer import QuantizationSpec, Quantizer
-from torch.ao.quantization.quantizer.utils import (
+from torchao.quantization.pt2e.quantizer import QuantizationSpec, Quantizer
+from torchao.quantization.pt2e.quantizer.utils import (
     _annotate_input_qspec_map,
     _annotate_output_qspec,
 )
-from torch.fx import GraphModule, Node
 
 __all__ = [
     "TOSAQuantizer",

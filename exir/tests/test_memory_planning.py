@@ -41,10 +41,6 @@ from torch.ao.quantization import (  # @manual=//caffe2:torch
 from torch.ao.quantization.backend_config.executorch import (
     get_executorch_backend_config,
 )
-from torch.ao.quantization.observer import (
-    default_dynamic_quant_observer,
-    default_per_channel_weight_observer,
-)
 from torch.ao.quantization.qconfig_mapping import QConfig, QConfigMapping
 from torch.ao.quantization.quantize_fx import (
     _convert_to_reference_decomposed_fx,
@@ -55,6 +51,10 @@ from torch.export.experimental import _export_forward_backward
 from torch.export.exported_program import ExportGraphSignature
 from torch.fx import Graph, GraphModule, Node
 from torch.nn import functional as F
+from torchao.quantization.pt2e.observer import (
+    default_dynamic_quant_observer,
+    default_per_channel_weight_observer,
+)
 
 torch.ops.load_library("//executorch/kernels/portable:custom_ops_generated_lib")
 

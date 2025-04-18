@@ -41,10 +41,10 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from parameterized.parameterized import parameterized
 from pyre_extensions import none_throws
 
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-
 from torch.export import export_for_training
 from torch.fx.passes.infra.pass_base import PassResult
+
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 class TestRemoveOpsPasses(unittest.TestCase):

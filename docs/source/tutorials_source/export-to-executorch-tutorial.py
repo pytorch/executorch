@@ -200,7 +200,7 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 quantizer = XNNPACKQuantizer().set_global(get_symmetric_quantization_config())
 prepared_graph = prepare_pt2e(pre_autograd_aten_dialect, quantizer)  # type: ignore[arg-type]

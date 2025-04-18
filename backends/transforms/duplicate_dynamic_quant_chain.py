@@ -9,13 +9,13 @@ import operator
 
 import torch
 
-from torch.ao.quantization.pt2e.utils import (
+from torch.fx.node import map_arg
+from torch.fx.passes.infra.pass_base import PassBase, PassResult
+
+from torchao.quantization.pt2e.pt2e.utils import (
     _filter_sym_size_users,
     _is_valid_annotation,
 )
-
-from torch.fx.node import map_arg
-from torch.fx.passes.infra.pass_base import PassBase, PassResult
 
 
 logger = logging.getLogger(__name__)
