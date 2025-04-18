@@ -9,3 +9,9 @@
   kernels:
     - arg_meta: null
       kernel_name: cortex_m::quantize_per_tensor_out
+
+- func: cortex_m::dequantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: cortex_m::dequantize_per_tensor_out
