@@ -1444,7 +1444,7 @@ class EdgeProgramManager:
         def _transform_and_verify(
             program: ExportedProgram,
             passes: Sequence[PassType],
-            verifier: EXIREdgeDialectVerifier,
+            verifier: type[Verifier],
         ) -> ExportedProgram:
             # Overwrite the original verifier with the new one
             # This should be a no-op for the most cases where compile_config is none.
