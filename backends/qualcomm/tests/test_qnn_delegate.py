@@ -2505,7 +2505,7 @@ class TestQNNFloatingPointUtils(TestQNN):
             module,
             sample_input,
             expected_partitions=1,
-            expected_profile_events=24,
+            expected_profile_events=34,
         )
 
     def test_qnn_backend_shared_buffer(self):
@@ -3120,7 +3120,7 @@ class TestQNNQuantizedUtils(TestQNN):
             module,
             sample_input,
             expected_partitions=1,
-            expected_profile_events=25,
+            expected_profile_events=35,
         )
 
     def test_qnn_backend_shared_buffer(self):

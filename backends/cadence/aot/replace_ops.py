@@ -1806,30 +1806,6 @@ class ReplaceInfArgInFullWithValuePass(ExportPass):
         return super().call_operator(op, tuple(new_args), kwargs, meta)
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
-class ReplaceAtenLinalgVectorNormWithCadenceLinalgVectorNormPass(ExportPass):
-    """
-    Replace the aten.linalg_vector_norm op with a custom op.
-    aten.linalg_vector_norm is not supported by Jarvis, so we
-    need to replace it with native_batch_norm at all optimization levels.
-    """
-
-    def call_operator(self, op, args, kwargs, meta):
-        if op != exir_ops.edge.aten.linalg_vector_norm.default:
-            return super().call_operator(op, args, kwargs, meta)
-
-        assert (
-            len(args) == 1
-        ), "aten.linalg_vector_norm should have 1 argument (a tensor), we do not support any custom variants"
-
-        return super().call_operator(
-            exir_ops.edge.cadence.linalg_vector_norm.default,
-            args,
-            kwargs,
-            meta,
-        )
-
-
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass(ExportPass):
     """
@@ -2243,7 +2219,6 @@ class CadenceReplaceOpsInGraph:
         ReplacePT2DequantWithCadenceDequantPass,
         ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass,
         ReplaceAtenAvgPoolWithJarvisAvgPoolPass,
-        ReplaceAtenLinalgVectorNormWithCadenceLinalgVectorNormPass,
         ReplaceWhereWithFullArgsWithWhereScalar,
         # ReplaceGeluWithApproximateGeluPass,
     ]
