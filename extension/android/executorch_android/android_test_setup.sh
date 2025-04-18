@@ -12,17 +12,36 @@ if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
 fi
 which "${PYTHON_EXECUTABLE}"
 
-BASEDIR=$(dirname "$0")
-cp "${BASEDIR}/../../../extension/module/test/resources/add.pte" "${BASEDIR}/src/androidTest/resources"
+BASEDIR=$(dirname "$(realpath $0)")
 
-pushd "${BASEDIR}/../../../"
-curl -Ls "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt" --output stories110M.pt
-curl -Ls "https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model" --output tokenizer.model
-# Create params.json file
-touch params.json
-echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps": 1e-05, "vocab_size": 32000}' > params.json
-python -m examples.models.llama.export_llama -c stories110M.pt -p params.json -X -kv --model=stories110m
+prepare_add() {
+  cp "${BASEDIR}/../../../extension/module/test/resources/add.pte" "${BASEDIR}/src/androidTest/resources"
+}
 
-cp *.pte "${BASEDIR}/src/androidTest/resources/stories.pte"
-cp tokenizer.model "${BASEDIR}/src/androidTest/resources/tokenizer.bin"
-popd
+prepare_tinyllama() {
+  pushd "${BASEDIR}/../../../"
+  curl -C - -Ls "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.pt" --output stories15M.pt
+  curl -C - -Ls "https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model" --output tokenizer.model
+  # Create params.json file
+  touch params.json
+  echo '{"dim": 288, "multiple_of": 32, "n_heads": 6, "n_layers": 6, "norm_eps": 1e-05, "vocab_size": 32000}' > params.json
+  python -m examples.models.llama.export_llama -c stories15M.pt -p params.json -d fp16 -n stories15m_h.pte -kv
+  python -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokenizer.bin
+
+  cp stories15m_h.pte "${BASEDIR}/src/androidTest/resources/stories.pte"
+  cp tokenizer.bin "${BASEDIR}/src/androidTest/resources/tokenizer.bin"
+  popd
+}
+
+prepare_vision() {
+  pushd "${BASEDIR}/../../../"
+  python3 -m examples.xnnpack.aot_compiler --model_name "mv2" --delegate
+  python3 -m examples.xnnpack.aot_compiler --model_name "mv3" --delegate
+  python3 -m examples.xnnpack.aot_compiler --model_name "resnet50" --quantize --delegate
+  cp mv2*.pte mv3*.pte resnet50*.pte "${BASEDIR}/src/androidTest/resources/"
+  popd
+}
+
+prepare_add
+prepare_tinyllama
+prepare_vision

@@ -38,16 +38,20 @@ class ET_EXPERIMENTAL TextTokenGenerator {
    * prefill.
    * @param start_pos the start position of the new tokens, based on how many
    * prompt tokens is prefilled.
-   * @param seq_len the total sequence length, including the prompt tokens, next
-   * token from prefill and new tokens.
+   * @param max_new_tokens Maximum number of new tokens to generate.
+   * @param temperature controls the randomness of predictions by scaling the
+   * logits before applying softmax. A higher temperature results in more
+   * random predictions, while a lower temperature results in more deterministic
+   * predictions.
    * @param token_callback what to do after a token is generated.
    * @return how many tokens are generated.
    */
   inline ::executorch::runtime::Result<int64_t> generate(
       std::vector<uint64_t> tokens,
       int64_t start_pos,
-      int32_t seq_len,
-      std::function<void(const std::string&)> token_callback) {
+      int32_t max_new_tokens,
+      float temperature = 0.0f,
+      const std::function<void(const std::string&)>& token_callback = {}) {
     ET_CHECK_MSG(
         !tokens.empty(), "Token generation loop shouldn't take empty tokens");
     int64_t pos = start_pos; // position in the sequence
@@ -78,7 +82,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
     should_stop_ = false;
 
     // Generate our tokens
-    while (pos < seq_len - 1) {
+    while (pos < start_pos + max_new_tokens) {
       // Run the model
       auto logits_res =
           text_decoder_runner_->step(tokens_managed, start_pos_managed);
@@ -89,7 +93,8 @@ class ET_EXPERIMENTAL TextTokenGenerator {
       prev_token = cur_token;
 
       stats_->on_sampling_begin();
-      cur_token = text_decoder_runner_->logits_to_token(logits_tensor);
+      cur_token =
+          text_decoder_runner_->logits_to_token(logits_tensor, temperature);
       stats_->on_sampling_end();
 
       pos++;

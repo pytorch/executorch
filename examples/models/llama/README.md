@@ -379,10 +379,10 @@ adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --t
 
 ### iOS
 
-Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-ios.html) to for full instructions on building the iOS LLAMA Demo App. Rename `tokenizer.model` file to `tokenizer.bin` because the demo app looks for the tokenizer file with .bin extension.
+Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-ios) to for full instructions on building the iOS LLAMA Demo App. Rename `tokenizer.model` file to `tokenizer.bin` because the demo app looks for the tokenizer file with .bin extension.
 
 ### Android
-Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-android.html) to for full instructions on building the Android LLAMA Demo App.
+Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-android) to for full instructions on building the Android LLAMA Demo App.
 
 ## Running with low-bit kernels
 
@@ -416,7 +416,7 @@ python -m examples.models.llama.export_llama \
 ```
 
 A few notes:
-- If your model shares embedding/unembedding weights (like Llama1B and Llama3B do), you can add `--use_shared_embedding` to take advantage of this and reduce memory.  When this option is enabled, you can specify whether embeddings are quantized with weight zeros or not by specifying a third argument.  For example, `-E "torchao:4,32,true"` means that the embedding is quantized to 4-bits with group_size=32 and uses weight zeros (this is the default behavior if you simply use `-E "torchao:4,32"`), whereas `-E "torchao:4,32,false"` means that the embedding is quantized to 4-bits with group_size=32, but is quantized with scales-only.  If `--use_shared_embedding` is specified, the unembedding (i.e., the final linear layer) is quantized in the same way, but also uses 8-bit dynamically quantized activations.
+- If your model shares embedding/unembedding weights (like Llama1B and Llama3B do), you can add `--use_shared_embedding` to take advantage of this and reduce memory.  When this option is enabled, you can specify whether embeddings are quantized asymmetrically or not by specifying a third argument.  For example, `-E "torchao:4,32,true"` means that the embedding is quantized to 4-bits with group_size=32 and is asymmetric (this is the default behavior if you simply use `-E "torchao:4,32"`), whereas `-E "torchao:4,32,false"` means that the embedding is quantized to 4-bits with group_size=32 and is symmetric.  If `--use_shared_embedding` is specified, the unembedding (i.e., the final linear layer) is quantized in the same way, but also uses 8-bit dynamically quantized activations.
 - To do channelwise quantization, specify group_size to 0.  This works for both linear and embedding layers.
 
 Once the model is exported, we need to build ExecuTorch and the runner with the low-bit kernels.
@@ -431,7 +431,7 @@ cmake -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-    -DEXECUTORCH_BUILD_XNNPACK=ON \
+    -DEXECUTORCH_BUILD_XNNPACK=OFF \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \

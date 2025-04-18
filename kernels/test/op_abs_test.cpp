@@ -44,12 +44,7 @@ class OpAbsTest : public OperatorTest {
     TensorFactory<DTYPE> tf;
     constexpr auto REAL_DTYPE = executorch::runtime::toRealValueType(DTYPE);
     TensorFactory<REAL_DTYPE> tf_out;
-    using REAL_CTYPE =
-        typename executorch::runtime::ScalarTypeToCppType<REAL_DTYPE>::type;
-    Tensor in = tf.make(
-        {1, 2},
-        {CTYPE{REAL_CTYPE(3), REAL_CTYPE(4)},
-         CTYPE{REAL_CTYPE(5), REAL_CTYPE(12)}});
+    Tensor in = tf.make({1, 2}, {CTYPE(3, 4), CTYPE(5, 12)});
     Tensor out = tf_out.zeros({1, 2});
     Tensor expected = tf_out.make({1, 2}, {5, 13});
     Tensor ret = op_abs_out(in, out);

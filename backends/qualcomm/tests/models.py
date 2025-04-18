@@ -190,6 +190,14 @@ class Cat4(torch.nn.Module):
         return torch.cat((y, y, x, x), axis=2)
 
 
+class CDist(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.cdist(x, y, p=2)
+
+
 class Ceil(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1428,6 +1436,15 @@ class SqrtConstant(torch.nn.Module):
         return x / torch.sqrt(torch.tensor([64.0]))
 
 
+class SquaredReLU(torch.nn.Module):
+    def __init__(self, inplace=False):
+        super().__init__()
+        self.relu = torch.nn.ReLU(inplace=inplace)
+
+    def forward(self, x):
+        return torch.square(self.relu(x))
+
+
 class Squeeze(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1588,3 +1605,14 @@ class WhereConstantInf(torch.nn.Module):
         return torch.nn.functional.softmax(
             torch.where(x >= 0, 0.1, float("-inf")), dim=-1
         )
+
+
+# Mimi Decoder has 0D tensor which QNN cannot handle.
+class ZeroDimTensor(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        input1 = torch.zeros(1)
+        selected_element = torch.select(input1, 0, 0)
+        return torch.add(x, selected_element)
