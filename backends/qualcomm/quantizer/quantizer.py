@@ -9,11 +9,12 @@ from functools import partial
 from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 import torch
+import torchao
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 
 from torch._ops import OpOverload
-from torch.ao.quantization.quantizer import Quantizer
 from torch.fx import GraphModule
+from torchao.quantization.pt2e.quantizer import Quantizer
 
 from .annotators import OP_ANNOTATOR
 
@@ -131,7 +132,7 @@ class ModuleQConfig:
     is_conv_per_channel: bool = False
     is_linear_per_channel: bool = False
     act_observer: Optional[
-        torch.ao.quantization.observer.UniformQuantizationObserverBase
+        torchao.quantization.pt2e.observer.UniformQuantizationObserverBase
     ] = None
 
     def __post_init__(self):

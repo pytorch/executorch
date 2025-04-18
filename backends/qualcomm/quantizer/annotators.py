@@ -12,20 +12,20 @@ import torch
 from torch._ops import OpOverload
 
 from torch._subclasses import FakeTensor
-from torch.ao.quantization.fake_quantize import FixedQParamsFakeQuantize
+from torch.fx import Node
+from torchao.quantization.pt2e.fake_quantize import FixedQParamsFakeQuantize
 
-from torch.ao.quantization.observer import FixedQParamsObserver
-from torch.ao.quantization.quantizer import (
+from torchao.quantization.pt2e.observer import FixedQParamsObserver
+from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
     QuantizationAnnotation,
     QuantizationSpec,
     SharedQuantizationSpec,
 )
-from torch.ao.quantization.quantizer.utils import (
+from torchao.quantization.pt2e.quantizer.utils import (
     _annotate_input_qspec_map,
     _annotate_output_qspec,
 )
-from torch.fx import Node
 
 from .qconfig import (
     get_16a16w_qnn_ptq_config,

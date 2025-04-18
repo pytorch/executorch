@@ -18,8 +18,8 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineMI,
 )
 from executorch.backends.xnnpack.test.tester import Quantize
-from torch.ao.quantization.observer import HistogramObserver
-from torch.ao.quantization.quantizer import QuantizationSpec
+from torchao.quantization.pt2e.observer import HistogramObserver
+from torchao.quantization.pt2e.quantizer import QuantizationSpec
 
 
 aten_op = "torch.ops.aten.add.Tensor"

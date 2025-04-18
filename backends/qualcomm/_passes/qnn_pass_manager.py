@@ -131,8 +131,8 @@ class QnnPassManager(PassManager):
         from executorch.backends.qualcomm._passes import utils
         from executorch.exir.dialects._ops import ops as exir_ops
 
-        utils.q_ops.add(exir_ops.edge.pt2e_quant.quantize_affine.default)
-        utils.dq_ops.add(exir_ops.edge.pt2e_quant.dequantize_affine.default)
+        utils.q_ops.add(exir_ops.edge.torchao.quantize_affine.default)
+        utils.dq_ops.add(exir_ops.edge.torchao.dequantize_affine.default)
 
         passes_job = (
             passes_job if passes_job is not None else get_capture_program_passes()
