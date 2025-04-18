@@ -14,18 +14,21 @@ on:
     - cron: '0 0 * * *'
 
 jobs:
-  lint-docs:
+  check-urls:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
       - name: Check URLs
         run: bash ./scripts/check_urls.sh
+
+  check-links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
       - name: Check Links
         run: bash ./scripts/check_links.sh
 
   build:
-    needs: lint-docs
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
