@@ -98,7 +98,7 @@ jobs:
         # Publish to maven staging
         UPLOAD_TO_MAVEN="${{ inputs.upload_to_maven }}"
         if [[ "$UPLOAD_TO_MAVEN" == "true" ]]; then
-          (cd aar-out; ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:publishToMavenCentral)
+          (cd extension/android; ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:publishToMavenCentral)
         fi
 
   upload-release-aar:
