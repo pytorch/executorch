@@ -30,6 +30,7 @@ from executorch.backends.qualcomm.utils.utils import (
     to_edge_transform_and_lower_to_qnn,
 )
 from executorch.devtools import generate_etrecord, Inspector
+from executorch.devtools.inspector._inspector_utils import TimeScale
 from executorch.examples.qualcomm.utils import (
     generate_inputs,
     make_output_dir,
@@ -290,7 +291,12 @@ class TestQNN(unittest.TestCase):
                     outputs.append(output)
 
             def validate_profile():
-                inspector = Inspector(etdump_path=etdump_path, etrecord=etrecord_path)
+                inspector = Inspector(
+                    etdump_path=etdump_path,
+                    etrecord=etrecord_path,
+                    source_time_scale=TimeScale.CYCLES,
+                    target_time_scale=TimeScale.CYCLES,
+                )
                 self.assertTrue(
                     len(inspector.to_dataframe().index) == expected_profile_events
                 )

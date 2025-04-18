@@ -4,7 +4,7 @@ load(
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/backends/qualcomm:targets.bzl", "generate_schema_header")
-load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_verision")
+load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
 
 QCIR_NAME = "qcir"
 INPUT_QCIR = QCIR_NAME + ".fbs"
@@ -56,7 +56,7 @@ def define_common_targets():
         platforms = [ANDROID],
         visibility = ["@EXECUTORCH_CLIENTS"],
         deps = [
-            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
+            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",
             "//executorch/backends/qualcomm/aot/wrappers:wrappers",
