@@ -976,7 +976,7 @@ class ReplaceConvWithChannelLastConvPass(ExportPass):
         return result
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
+@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class ReplaceTrivialConvWithLinear(ExportPass):
     """
     In nn.Conv1d, the operand shapes are:
@@ -1256,7 +1256,7 @@ class MakeSliceAndCatDimOutermostPass(ExportPassWithTransposeHelper):
         return self.transpose_dims(new_op, meta, 0, dim)
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
+@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class ReplaceConvWithIm2RowAndLinear(ExportPass):
     """
     Replace convolution where groups=1 with im2row followed by a linear op.
@@ -1449,7 +1449,7 @@ class ReplaceConvWithIm2RowAndLinear(ExportPass):
         )
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
+@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class ReplaceTransposedConvWithLinearPass(ExportPass):
     """
     Replace transposed convolution where groups=1 with transposed_im2row
@@ -1686,7 +1686,7 @@ class ReplaceNopTransposeOrPermuteWithViewPass(ExportPass):
         return result
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
+@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class ReplaceLinearWithFullyConnectedOpPass(ExportPass):
     """
     If the input of linear/quantized_linear op is a vector, replace it with
@@ -1864,6 +1864,14 @@ class ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass(ExportPass):
             exir_ops.edge.cadence.quantized_relu.per_tensor,
             [1, 3, 4],
         ),
+        exir_ops.edge.cadence.im2row: (
+            exir_ops.edge.cadence.im2row.per_tensor,
+            [5],
+        ),
+        exir_ops.edge.cadence.requantize: (
+            exir_ops.edge.cadence.requantize.per_tensor,
+            [1, 2, 3, 4],
+        ),
     }
 
     def call_operator(self, op, args, kwargs, meta):
@@ -1882,6 +1890,9 @@ class ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass(ExportPass):
                 return super().call_operator(op, args, kwargs, meta)
 
             if not arg.is_tensor():
+                return super().call_operator(op, args, kwargs, meta)
+
+            if not isinstance(arg.node.target, EdgeOpOverload):
                 return super().call_operator(op, args, kwargs, meta)
 
             if get_edge_overload_packet(arg.node.target) != exir_ops.edge.aten.full:
@@ -2051,6 +2062,150 @@ class ReplaceEmptyTensorsWithFullPass(ExportPass):
         return PassResult(ret.graph_module, modified)
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class ReplaceWhereWithFullArgsWithWhereScalar(ExportPass):
+    """Replaces where ops using two full ops as tensors with a scalar
+    version.
+    """
+
+    def call_operator(
+        self,
+        op,
+        args: Tuple[Argument, ...],
+        kwargs: Dict[str, Argument],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
+        if op not in {
+            exir_ops.edge.aten.where.self,
+        }:
+            return super().call_operator(op, args, kwargs, meta)
+
+        # If the args are not full ops, bail
+        # pyre-ignore[16]: `ProxyValue` has no attribute `node`.
+        if (args[1].node.target != exir_ops.edge.aten.full.default) or (
+            args[2].node.target != exir_ops.edge.aten.full.default
+        ):
+            return super().call_operator(op, args, kwargs, meta)
+
+        # If one of the full ops is a different size than than the cond tensor, we need to broadcast. Bail.
+        if (
+            # pyre-ignore[16]: `ProxyValue` has no attribute `node`.
+            list(args[0].to_tensor().shape) != args[1].node.args[0]
+            or list(args[0].to_tensor().shape) != args[2].node.args[0]
+        ):
+            return super().call_operator(op, args, kwargs, meta)
+
+        # Get the scalar values from the full ops
+        scalar_value_1 = args[1].node.args[1]
+        scalar_value_2 = args[2].node.args[1]
+
+        # Replace the where op with a scalar where op
+        return super().call_operator(
+            exir_ops.edge.cadence.where_Scalar.default,
+            (args[0], scalar_value_1, scalar_value_2),
+            kwargs,
+            meta,
+        )
+
+        return super().call_operator(op, args, kwargs, meta)
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=2))
+class ReplaceGeluWithApproximateGeluPass(ExportPass):
+    """
+    Replace the gelu op with an approximate gelu op. The approximate gelu op
+    is more efficient on DSP backends.
+    """
+
+    def call_operator(
+        self,
+        op,
+        args: Tuple[Argument, ...],
+        kwargs: Dict[str, Argument],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
+        if op not in {
+            exir_ops.edge.aten.gelu.default,
+        }:
+            return super().call_operator(op, args, kwargs, meta)
+
+        # compute the approximate gelu (0.7978845608028654 is sqrt(2 / pi))
+        # as 0.5 * x * (1 + torch.tanh(0.7978845608028654 * ( x + 0.044715 * x^3)))
+
+        # Get 0.5 * x
+        half = super().call_operator(
+            exir_ops.edge.aten.mul.Tensor,
+            (args[0], 0.5),
+            {},
+            meta,
+        )
+
+        scaled = super().call_operator(
+            exir_ops.edge.aten.mul.Tensor,
+            (args[0], 0.044715),
+            {},
+            meta,
+        )
+
+        # Get x^2 (note that we use mul.Tensor twice instead of pow.Tensor because
+        # it is much more efficient on DSP backends)
+        scaled_square = super().call_operator(
+            exir_ops.edge.aten.mul.Tensor,
+            (scaled, args[0]),
+            {},
+            meta,
+        )
+
+        # Get x^3
+        scaled_cubed = super().call_operator(
+            exir_ops.edge.aten.mul.Tensor,
+            (scaled_square, args[0]),
+            {},
+            meta,
+        )
+
+        # Get x + 0.044715 * x^3
+        inner_sum = super().call_operator(
+            exir_ops.edge.aten.add.Tensor,
+            (scaled_cubed, args[0]),
+            {},
+            meta,
+        )
+
+        # Get 0.7978845608028654 * ( x + 0.044715 * x^3)
+        scaled_sum = super().call_operator(
+            exir_ops.edge.aten.mul.Tensor,
+            (inner_sum, 0.7978845608028654),
+            {},
+            meta,
+        )
+
+        # Get torch.tanh(0.7978845608028654 * ( x + 0.044715 * x^3))
+        tanh = super().call_operator(
+            exir_ops.edge.aten.tanh.default,
+            (scaled_sum,),
+            {},
+            meta,
+        )
+
+        # Get 1 + torch.tanh(0.79788456 * ( x + 0.044715 * x^3))
+        # TODO(): Check why this is not working properly with integer values (e.g. 1 instead of 1.)
+        outer_sum = super().call_operator(
+            exir_ops.edge.aten.add.Tensor,
+            (tanh, 1.0),
+            {},
+            meta,
+        )
+
+        # Retunr the final result
+        return super().call_operator(
+            exir_ops.edge.aten.mul.Tensor,
+            (half, outer_sum),
+            {},
+            meta,
+        )
+
+
 # This class encapsulates all the functions that replace/switch one op in the
 # graph with another.
 class CadenceReplaceOpsInGraph:
@@ -2089,4 +2244,6 @@ class CadenceReplaceOpsInGraph:
         ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass,
         ReplaceAtenAvgPoolWithJarvisAvgPoolPass,
         ReplaceAtenLinalgVectorNormWithCadenceLinalgVectorNormPass,
+        ReplaceWhereWithFullArgsWithWhereScalar,
+        # ReplaceGeluWithApproximateGeluPass,
     ]

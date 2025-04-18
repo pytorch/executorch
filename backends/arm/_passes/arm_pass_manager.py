@@ -10,7 +10,8 @@
 from executorch.backends.arm._passes import (
     AnnotateChannelsLastDimOrder,
     AnnotateDecomposedMatmulPass,
-    CastInt64ToInt32Pass,
+    CastInt64BuffersToInt32Pass,
+    CastToInt32Pass,
     ComputeConstantOpsAOT,
     Conv1dUnsqueezePass,
     ConvertAnyDefaultDimDimsPass,
@@ -24,12 +25,16 @@ from executorch.backends.arm._passes import (
     ConvertToClampPass,
     DecomposeBatchNormPass,
     DecomposeDivPass,
+    DecomposeGeluPass,
     DecomposeLayerNormPass,
+    DecomposeLeakyReLUPass,
     DecomposeLinearPass,
     DecomposeMeanDimPass,
     DecomposeSelectPass,
+    DecomposeSiluPass,
     DecomposeSoftmaxPass,
     DecomposeSoftmaxUnstablePass,
+    DecomposeSqrtPass,
     DecomposeVarPass,
     FoldAndAnnotateQParamsPass,
     FuseBatchnorm2DPass,
@@ -39,20 +44,20 @@ from executorch.backends.arm._passes import (
     InsertTableOpsPass,
     KeepDimsFalseToSqueezePass,
     MatchArgRanksPass,
+    MatchWhereSelfDtypePass,
     QuantizeOperatorArguments,
     RemoveClonePass,
+    ReplaceScalarWithTensorArgPassTOSABI,
+    ReplaceScalarWithTensorArgPassTOSAMI,
     RetraceFoldedDtypesPass,
     ScalarsToAttributePass,
     SizeAdjustConv2DPass,
     UnsqueezeBeforeRepeatPass,
     UnsqueezeScalarPlaceholdersPass,
 )
+
 from executorch.backends.arm.tosa_specification import Tosa_0_80, TosaSpecification
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
-
-from executorch.backends.transforms.replace_scalar_with_tensor import (
-    ReplaceScalarWithTensorArgPass,
-)
 from executorch.backends.xnnpack._passes.remove_getitem_op import RemoveGetItemPass
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_manager import PassManager
@@ -80,8 +85,11 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ConvertAnyDefaultDimDimsPass())
+        self.add_pass(MatchWhereSelfDtypePass())
+        if isinstance(self.tosa_spec, Tosa_0_80) and self.tosa_spec.is_U55_subset:
+            self.add_pass(CastToInt32Pass())
 
-        self.add_pass(ReplaceScalarWithTensorArgPass())
+        self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
         self.add_pass(FoldAndAnnotateQParamsPass())  # type: ignore[call-arg]
@@ -94,7 +102,7 @@ class ArmPassManager(PassManager):
         self.add_pass(SizeAdjustConv2DPass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(UnsqueezeBeforeRepeatPass())
-        self.add_pass(CastInt64ToInt32Pass(exported_program))
+        self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(KeepDimsFalseToSqueezePass())
         self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSelectPass())
@@ -110,13 +118,15 @@ class ArmPassManager(PassManager):
         return self._transform(exported_program.graph_module)
 
     def _tosa_080_MI_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
-        self.add_pass(ReplaceScalarWithTensorArgPass())
+        self.add_pass(DecomposeSqrtPass())
+        self.add_pass(ReplaceScalarWithTensorArgPassTOSAMI())
         self.add_pass(FuseQuantizedActivationPass())
         self.add_pass(RemoveGetItemPass())
         self.add_pass(ConvertSplitToSlicePass())
         self.add_pass(FuseBatchnorm2DPass(exported_program))
         self.add_pass(ConvertMmToBmmPass())
         self.add_pass(DecomposeLinearPass())
+        self.add_pass(DecomposeLeakyReLUPass())
         self.add_pass(DecomposeBatchNormPass())
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
@@ -124,10 +134,12 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertMeanDimToAveragePoolPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeSoftmaxPass())
+        self.add_pass(DecomposeGeluPass())
         self.add_pass(ConvertFullLikeToFullPass())
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ConvertAnyDefaultDimDimsPass())
+        self.add_pass(MatchWhereSelfDtypePass())
 
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
@@ -141,7 +153,7 @@ class ArmPassManager(PassManager):
         self.add_pass(SizeAdjustConv2DPass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(UnsqueezeBeforeRepeatPass())
-        self.add_pass(CastInt64ToInt32Pass(exported_program))
+        self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(KeepDimsFalseToSqueezePass())
         self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSelectPass())
@@ -155,24 +167,37 @@ class ArmPassManager(PassManager):
 
         return self._transform(exported_program.graph_module)
 
+    def _tosa_1_0_int_quantized_pipeline(self, exported_program: ExportedProgram):
+        return self._tosa_080_BI_pipeline(exported_program)
+
+    def _tosa_1_0_fp_pipeline(self, exported_program: ExportedProgram):
+        return self._tosa_080_MI_pipeline(exported_program)
+
     def transform_to_backend_pipeline(self, exported_program: ExportedProgram):
         """Apply passes before transforming program to backend"""
         if self.tosa_spec == TosaSpecification.create_from_string("TOSA-0.80.0+BI"):
             return self._tosa_080_BI_pipeline(exported_program)
         elif self.tosa_spec == TosaSpecification.create_from_string("TOSA-0.80.0+MI"):
             return self._tosa_080_MI_pipeline(exported_program)
+        elif self.tosa_spec == TosaSpecification.create_from_string("TOSA-1.0+FP"):
+            return self._tosa_1_0_fp_pipeline(exported_program)
+        elif self.tosa_spec == TosaSpecification.create_from_string("TOSA-1.0+INT"):
+            return self._tosa_1_0_int_quantized_pipeline(exported_program)
         else:
             raise NotImplementedError(
                 f"No pass pipeline implemented for {self.tosa_spec=}"
             )
 
     def transform_for_annotation_pipeline(self, graph_module: GraphModule):
-        self.add_pass(ReplaceScalarWithTensorArgPass())
+        self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(ScalarsToAttributePass())
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass())
         self.add_pass(DecomposeDivPass())
+        self.add_pass(DecomposeLeakyReLUPass())
+        self.add_pass(DecomposeSqrtPass())
+        self.add_pass(DecomposeSiluPass())
 
         if isinstance(self.tosa_spec, Tosa_0_80) and self.tosa_spec.is_U55_subset:
             # Numerically stable softmax uses amax which is not supported on Ethos-U55

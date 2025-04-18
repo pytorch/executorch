@@ -85,26 +85,26 @@ void et_pal_emit_log_message(
 
 namespace py = pybind11;
 using executorch::bundled_program::verify_method_outputs;
+using ::executorch::ET_RUNTIME_NAMESPACE::BackendInterface;
+using ::executorch::ET_RUNTIME_NAMESPACE::get_backend_class;
+using ::executorch::ET_RUNTIME_NAMESPACE::get_backend_name;
+using ::executorch::ET_RUNTIME_NAMESPACE::get_num_registered_backends;
+using ::executorch::ET_RUNTIME_NAMESPACE::get_registered_kernels;
+using ::executorch::ET_RUNTIME_NAMESPACE::Kernel;
+using ::executorch::ET_RUNTIME_NAMESPACE::Method;
+using ::executorch::ET_RUNTIME_NAMESPACE::Program;
 using ::executorch::extension::BufferDataLoader;
 using ::executorch::extension::MallocMemoryAllocator;
 using ::executorch::extension::MmapDataLoader;
 using ::executorch::runtime::ArrayRef;
-using ::executorch::runtime::BackendInterface;
 using ::executorch::runtime::DataLoader;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::EventTracerDebugLogLevel;
-using ::executorch::runtime::get_backend_class;
-using ::executorch::runtime::get_backend_name;
-using ::executorch::runtime::get_num_registered_backends;
-using ::executorch::runtime::get_registered_kernels;
 using ::executorch::runtime::HierarchicalAllocator;
-using ::executorch::runtime::Kernel;
 using ::executorch::runtime::MemoryAllocator;
 using ::executorch::runtime::MemoryManager;
-using ::executorch::runtime::Method;
 using ::executorch::runtime::prof_result_t;
-using ::executorch::runtime::Program;
 using ::executorch::runtime::Result;
 using ::executorch::runtime::Span;
 using ::executorch::runtime::Tag;
@@ -703,13 +703,6 @@ struct PyModule final {
       const std::string& type_str = py::str(python_input.get_type());
       if (type_str == "<class 'torch.Tensor'>") {
         auto at_tensor = python_input.cast<at::Tensor>();
-        // alias_etensor_to_attensor will assert on this later, so to better
-        // propogate up to python we check early and throw an exception.
-        if (!at_tensor.is_contiguous()) {
-          auto error_msg = "Input " + std::to_string(i) + "for method " +
-              method_name + " is not contiguous.";
-          throw std::runtime_error(error_msg);
-        }
 
 #ifdef USE_ATEN_LIB
         EValue evalue(at_tensor);
@@ -725,10 +718,21 @@ struct PyModule final {
         input_strides.emplace_back(
             at_tensor.strides().begin(), at_tensor.strides().end());
 
-        // Only works for MemoryFormat::Contiguous inputs
+        // Only works for MemoryFormat::Contiguous or MemoryFormat::ChannelsLast
+        // inputs
         std::vector<torch::executor::Tensor::DimOrderType> dim_order;
-        for (size_t cur_dim = 0; cur_dim < dim; cur_dim++) {
-          dim_order.push_back(cur_dim);
+        if (at_tensor.is_contiguous()) {
+          for (size_t cur_dim = 0; cur_dim < dim; cur_dim++) {
+            dim_order.push_back(cur_dim);
+          }
+        } else if (
+            at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast) &&
+            at_tensor.dim() == 4) {
+          dim_order = decltype(dim_order)({0, 2, 3, 1});
+        } else {
+          auto error_msg = "Input " + std::to_string(i) + "for method " +
+              method_name + " should be contiguous or channels-last.";
+          throw std::runtime_error(error_msg);
         }
         input_dim_order.push_back(std::move(dim_order));
         input_tensors.emplace_back(

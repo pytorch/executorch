@@ -152,3 +152,23 @@ target_include_directories(
   PRIVATE "${CMAKE_INSTALL_PREFIX}/schema/include"
           "${EXECUTORCH_ROOT}/third-party/flatbuffers/include"
 )
+
+list(TRANSFORM _test_backend_compiler_lib__srcs PREPEND "${EXECUTORCH_ROOT}/")
+add_library(
+  test_backend_compiler_lib
+  STATIC
+  ${_test_backend_compiler_lib__srcs}
+)
+
+target_link_libraries(
+  test_backend_compiler_lib
+  PUBLIC
+  executorch_core
+)
+
+target_link_options_shared_lib(test_backend_compiler_lib)
+
+install(
+  TARGETS test_backend_compiler_lib
+  DESTINATION lib
+)

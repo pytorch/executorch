@@ -39,17 +39,20 @@ To build the documentation locally:
 
 1. Clone the ExecuTorch repo to your machine.
 
-1. If you don't have it already, start a conda environment:
-
-   ```{note}
-   The below command generates a completely new environment and resets
-   any existing dependencies. If you have an environment already, skip
-   the `conda create` command.
+   ```bash
+   git clone -b viable/strict https://github.com/pytorch/executorch.git && cd executorch
    ```
 
+1. If you don't have it already, start either a Python virtual envitonment:
+
    ```bash
-   conda create -yn executorch python=3.10.0
-   conda activate executorch
+   python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
+   ```
+
+   Or a Conda environment:
+
+   ```bash
+   conda create -yn executorch python=3.10.0 && conda activate executorch
    ```
 
 1. Install dependencies:
@@ -57,15 +60,11 @@ To build the documentation locally:
    ```bash
    pip3 install -r ./.ci/docker/requirements-ci.txt
    ```
-1. Update submodules
 
-   ```bash
-   git submodule sync && git submodule update --init
-   ```
 1. Run:
 
    ```bash
-   bash install_executorch.sh
+   ./install_executorch.sh
    ```
 
 1. Go to the `docs/` directory.
@@ -131,7 +130,7 @@ Use the
 to contribute to the documentation.
 
 In addition to that, see
-[Markdown in Sphinx Tips and Tricks](https://pytorch.org/executorch/markdown-sphinx-tips-tricks.html)
+[Markdown in Sphinx Tips and Tricks](source/markdown-sphinx-tips-tricks.md)
 for tips on how to author high-quality markdown pages with Myst Parser.
 
 ## Adding Tutorials

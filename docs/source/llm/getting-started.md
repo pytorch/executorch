@@ -43,15 +43,17 @@ Instructions on installing miniconda can be [found here](https://docs.anaconda.c
 mkdir et-nanogpt
 cd et-nanogpt
 
-# Clone the ExecuTorch repository and submodules.
+# Clone the ExecuTorch repository.
 mkdir third-party
-git clone -b release/0.4 https://github.com/pytorch/executorch.git third-party/executorch
-cd third-party/executorch
-git submodule update --init
+git clone -b viable/strict https://github.com/pytorch/executorch.git third-party/executorch && cd third-party/executorch
 
-# Create a conda environment and install requirements.
-conda create -yn executorch python=3.10.0
-conda activate executorch
+# Create either a Python virtual environment:
+python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
+
+# Or a Conda environment:
+conda create -yn executorch python=3.10.0 && conda activate executorch
+
+# Install requirements
 ./install_executorch.sh
 
 cd ../..
@@ -76,11 +78,8 @@ pyenv install -s 3.10
 pyenv virtualenv 3.10 executorch
 pyenv activate executorch
 
-# Clone the ExecuTorch repository and submodules.
-mkdir third-party
-git clone -b release/0.4 https://github.com/pytorch/executorch.git third-party/executorch
-cd third-party/executorch
-git submodule update --init
+# Clone the ExecuTorch repository.
+git clone -b viable/strict https://github.com/pytorch/executorch.git third-party/executorch && cd third-party/executorch
 
 # Install requirements.
 PYTHON_EXECUTABLE=python ./install_executorch.sh
@@ -160,7 +159,7 @@ example_inputs = (torch.randint(0, 100, (1, model.config.block_size), dtype=torc
 # long as they adhere to the rules specified in the dynamic shape configuration.
 # Here we set the range of 0th model input's 1st dimension as
 # [0, model.config.block_size].
-# See https://pytorch.org/executorch/main/concepts.html#dynamic-shapes
+# See https://pytorch.org/executorch/main/concepts#dynamic-shapes
 # for details about creating dynamic shapes.
 dynamic_shape = (
     {1: torch.export.Dim("token_dim", max=model.config.block_size)},
@@ -396,7 +395,6 @@ At this point, the working directory should contain the following files:
 
 If all of these are present, you can now build and run:
 ```bash
-./install_executorch.sh --clean
 (mkdir cmake-out && cd cmake-out && cmake ..)
 cmake --build cmake-out -j10
 ./cmake-out/nanogpt_runner
@@ -590,7 +588,7 @@ The delegated model should be noticeably faster compared to the non-delegated mo
 
 For more information regarding backend delegation, see the ExecuTorch guides
 for the [XNNPACK Backend](../backends-xnnpack.md),  [Core ML
-Backend](../backends-coreml.md) and [Qualcomm AI Engine Direct Backend](build-run-llama3-qualcomm-ai-engine-direct-backend.md).
+Backend](../backends-coreml.md) and [Qualcomm AI Engine Direct Backend](../backends-qualcomm.md).
 
 ## Quantization
 
@@ -662,19 +660,15 @@ edge_config = get_xnnpack_edge_compile_config()
 # Convert to edge dialect and lower to XNNPack.
 edge_manager = to_edge_transform_and_lower(traced_model, partitioner = [XnnpackPartitioner()], compile_config = edge_config)
 et_program = edge_manager.to_executorch()
+
+with open("nanogpt.pte", "wb") as file:
+    file.write(et_program.buffer)
 ```
 
-Finally, ensure that the runner links against the `xnnpack_backend` target in CMakeLists.txt.
-
-```
-add_executable(nanogpt_runner main.cpp)
-target_link_libraries(
-    nanogpt_runner
-    PRIVATE
-    executorch
-    extension_module_static # Provides the Module class
-    optimized_native_cpu_ops_lib # Provides baseline cross-platform kernels
-    xnnpack_backend) # Provides the XNNPACK CPU acceleration backend
+Then run:
+```bash
+python export_nanogpt.py
+./cmake-out/nanogpt_runner
 ```
 
 For more information, see [Quantization in ExecuTorch](../quantization-overview.md).
@@ -783,11 +777,14 @@ Run the export script and the ETRecord will be generated as `etrecord.bin`.
 
 An ETDump is an artifact generated at runtime containing a trace of the model execution. For more information, see [the ETDump docs](../etdump.md).
 
-Include the ETDump header in your code.
+Include the ETDump header and namespace in your code.
 ```cpp
 // main.cpp
 
 #include <executorch/devtools/etdump/etdump_flatcc.h>
+
+using executorch::etdump::ETDumpGen;
+using torch::executor::etdump_result;
 ```
 
 Create an Instance of the ETDumpGen class and pass it to the Module constructor.
@@ -858,98 +855,12 @@ With the ExecuTorch custom operator APIs, custom operator and kernel authors can
 
 There are three steps to use custom kernels in ExecuTorch:
 
-1.  Write the custom kernel using ExecuTorch types.
-2.  Compile and link the custom kernel to both AOT Python environment as well as the runtime binary.
-3.  Source-to-source transformation to swap an operator with a custom op.
-
-### Writing a Custom Kernel
-
-Define your custom operator schema for both functional variant (used in AOT compilation) and out variant (used in ExecuTorch runtime). The schema needs to follow PyTorch ATen convention (see [native_functions.yaml](https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/native_functions.yaml)).
-
-```
-custom_linear(Tensor weight, Tensor input, Tensor(?) bias) -> Tensor
-
-custom_linear.out(Tensor weight, Tensor input, Tensor(?) bias, *, Tensor(a!) out) -> Tensor(a!)
-```
-
-Write your custom kernel according to the schema defined above. Use the `EXECUTORCH_LIBRARY` macro to make the kernel available to the ExecuTorch runtime.
-
-```cpp
-// custom_linear.h / custom_linear.cpp
-#include <executorch/runtime/kernel/kernel_includes.h>
-
-Tensor& custom_linear_out(const Tensor& weight, const Tensor& input, optional<Tensor> bias, Tensor& out) {
-    // calculation
-    return out;
-}
-
-// Register as myop::custom_linear.out
-EXECUTORCH_LIBRARY(myop, "custom_linear.out", custom_linear_out);
-```
-
-To make this operator available in PyTorch, you can define a wrapper around the ExecuTorch custom kernel. Note that the ExecuTorch
-implementation uses ExecuTorch tensor types, while the PyTorch wrapper uses ATen tensors.
-
-```cpp
-// custom_linear_pytorch.cpp
-
-#include "custom_linear.h"
-#include <torch/library.h>
-
-at::Tensor custom_linear(const at::Tensor& weight, const at::Tensor& input, std::optional<at::Tensor> bias) {
-
-    // initialize out
-    at::Tensor out = at::empty({weight.size(1), input.size(1)});
-
-    // wrap kernel in custom_linear.cpp into ATen kernel
-    WRAP_TO_ATEN(custom_linear_out, 3)(weight, input, bias, out);
-
-    return out;
-}
-
-// Register the operator with PyTorch.
-TORCH_LIBRARY(myop,  m) {
-    m.def("custom_linear(Tensor weight, Tensor input, Tensor(?) bias) -> Tensor", custom_linear);
-    m.def("custom_linear.out(Tensor weight, Tensor input, Tensor(?) bias, *, Tensor(a!) out) -> Tensor(a!)", WRAP_TO_ATEN(custom_linear_out, 3));
-}
-```
-
-### Compile and Link the Custom Kernel
-
-To make it available to the ExecuTorch runtime, compile custom_linear.h/cpp into the binary target. You can also build the kernel as a dynamically loaded library (.so or .dylib) and link it as well.
-
-To make it available to PyTorch, package custom_linear.h, custom_linear.cpp and custom_linear_pytorch.cpp into a dynamically loaded library (.so or .dylib) and load it into the python environment.
-This is needed to make PyTorch aware of the custom operator at the time of export.
-
-```python
-import torch
-torch.ops.load_library("libcustom_linear.so")
-```
-
-Once loaded, you can use the custom operator in PyTorch code.
+1.  [Write the custom kernel](../kernel-library-custom-aten-kernel.md#c-api-for-custom-ops) using ExecuTorch types.
+2.  [Compile and link the custom kernel](../kernel-library-custom-aten-kernel.md#compile-and-link-the-custom-kernel) to both AOT Python environment as well as the runtime binary.
+3.  [Source-to-source transformation](../kernel-library-custom-aten-kernel.md#using-a-custom-operator-in-a-model) to swap an operator with a custom op.
 
 For more information, see [PyTorch Custom Operators](https://pytorch.org/tutorials/advanced/torch_script_custom_ops.html) and
 and [ExecuTorch Kernel Registration](../kernel-library-custom-aten-kernel.md).
-
-### Using a Custom Operator in a Model
-
-The custom operator can explicitly used in the PyTorch model, or you can write a transformation to replace instances of a core operator with the custom variant. For this example, you could find
-all instances of `torch.nn.Linear` and replace them with `CustomLinear`.
-
-```python
-def  replace_linear_with_custom_linear(module):
-    for name, child in module.named_children():
-        if isinstance(child, nn.Linear):
-            setattr(
-                module,
-                name,
-                CustomLinear(child.in_features,  child.out_features, child.bias),
-        )
-        else:
-            replace_linear_with_custom_linear(child)
-```
-
-The remaining steps are the same as the normal flow. Now you can run this module in eager mode as well as export to ExecuTorch.
 
 ## How to Build Mobile Apps
 See the instructions for building and running LLMs using ExecuTorch on iOS and Android.

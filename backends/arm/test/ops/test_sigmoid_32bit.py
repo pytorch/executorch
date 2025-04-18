@@ -9,8 +9,8 @@ from executorch.backends.arm.quantizer.arm_quantizer import TOSAQuantizer
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
     EthosU85PipelineBI,
+    OpNotSupportedPipeline,
     TosaPipelineBI,
 )
 from executorch.backends.xnnpack.test.tester import Quantize
@@ -97,7 +97,7 @@ class SigmoidAddSigmoid(torch.nn.Module):
 
 
 @common.parametrize("test_data", test_data_suite)
-@pytest.mark.flaky(reruns=5)
+@pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
 def test_sigmoid_tosa_BI(test_data):
     pipeline = TosaPipelineBI(
         Sigmoid(),
@@ -110,7 +110,7 @@ def test_sigmoid_tosa_BI(test_data):
 
 
 @common.parametrize("test_data", test_data_suite)
-@pytest.mark.flaky(reruns=5)
+@pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
 def test_sigmoid_add_sigmoid_tosa_BI(test_data):
     pipeline = TosaPipelineBI(
         SigmoidAddSigmoid(),
@@ -122,60 +122,32 @@ def test_sigmoid_add_sigmoid_tosa_BI(test_data):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    test_data_suite,
-    xfails={
-        "ones": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-        "rand": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-        "rand_4d": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-        "randn_pos": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-        "randn_neg": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-        "ramp": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-    },
-    # int16 tables are not supported, but some tests happen to pass regardless.
-    # Set them to xfail but strict=False -> ok if they pass.
-    strict=False,
-)
-@common.XfailIfNoCorstone300
+@common.parametrize("test_data", test_data_suite)
+@pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
 def test_sigmoid_tosa_u55(test_data):
-    pipeline = EthosU55PipelineBI(
-        Sigmoid(), (test_data(),), Sigmoid.aten_op, Sigmoid.exir_op, run_on_fvp=True
-    )
-    pipeline.change_args("quantize", get_32bit_sigmoid_quantizer("TOSA-0.80+BI+u55"))
-    pipeline.run()
-
-
-@common.parametrize(
-    "test_data",
-    test_data_suite,
-    xfails={
-        "ones": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-        "rand": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-        "rand_4d": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-        "randn_pos": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-        "randn_neg": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-        "ramp": "AssertionError: Output 0 does not match reference output. MLBEDSW-9770",
-    },
-    # int16 tables are not supported, but some tests happen to pass regardless.
-    # Set them to xfail but strict=False -> ok if they pass.
-    strict=False,
-)
-@common.XfailIfNoCorstone300
-def test_sigmoid_add_sigmoid_tosa_u55(test_data):
-    pipeline = EthosU55PipelineBI(
-        SigmoidAddSigmoid(),
-        (test_data(),),
-        Sigmoid.aten_op,
-        Sigmoid.exir_op,
-        run_on_fvp=True,
+    pipeline = OpNotSupportedPipeline(
+        Sigmoid(), (test_data(),), "TOSA-0.80+BI+u55", {Sigmoid.exir_op: 1}
     )
     pipeline.change_args("quantize", get_32bit_sigmoid_quantizer("TOSA-0.80+BI+u55"))
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
-@pytest.mark.flaky(reruns=5)
+@pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
+def test_sigmoid_add_sigmoid_tosa_u55(test_data):
+    pipeline = OpNotSupportedPipeline(
+        SigmoidAddSigmoid(),
+        (test_data(),),
+        "TOSA-0.80+BI+u55",
+        {Sigmoid.exir_op: 3},
+        n_expected_delegates=1,
+    )
+    pipeline.change_args("quantize", get_32bit_sigmoid_quantizer("TOSA-0.80+BI+u55"))
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
 @common.XfailIfNoCorstone320
 def test_sigmoid_tosa_u85(test_data):
     pipeline = EthosU85PipelineBI(
@@ -192,7 +164,7 @@ def test_sigmoid_tosa_u85(test_data):
         "ramp": "AssertionError: Output 0 does not match reference output.",
     },
 )
-@pytest.mark.flaky(reruns=5)
+@pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
 @common.XfailIfNoCorstone320
 def test_sigmoid_add_sigmoid_tosa_u85(test_data):
     pipeline = EthosU85PipelineBI(

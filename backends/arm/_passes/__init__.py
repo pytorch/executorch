@@ -7,7 +7,9 @@
 from . import arm_pass_utils  # noqa
 from .annotate_channels_last_dim_order_pass import AnnotateChannelsLastDimOrder  # noqa
 from .annotate_decomposed_matmul import AnnotateDecomposedMatmulPass  # noqa
-from .cast_int64_pass import CastInt64ToInt32Pass  # noqa
+from .arm_pass import ArmPass  # noqa
+from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
+from .cast_to_int32_pass import CastToInt32Pass  # noqa
 from .conv1d_unsqueeze_pass import Conv1dUnsqueezePass  # noqa
 from .convert_any_default_dim_dims_pass import ConvertAnyDefaultDimDimsPass  # noqa
 from .convert_expand_copy_to_repeat import ConvertExpandCopyToRepeatPass  # noqa
@@ -18,12 +20,16 @@ from .convert_squeezes_to_view import ConvertSqueezesToViewPass  # noqa
 from .convert_to_clamp import ConvertToClampPass  # noqa
 from .decompose_batchnorm_pass import DecomposeBatchNormPass  # noqa
 from .decompose_div_pass import DecomposeDivPass  # noqa
+from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_layernorm_pass import DecomposeLayerNormPass  # noqa
+from .decompose_leaky_relu_pass import DecomposeLeakyReLUPass  # noqa
 from .decompose_linear_pass import DecomposeLinearPass  # noqa
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_select import DecomposeSelectPass  # noqa
+from .decompose_silu_pass import DecomposeSiluPass  # noqa
 from .decompose_softmax_pass import DecomposeSoftmaxPass  # noqa
 from .decompose_softmax_unstable_pass import DecomposeSoftmaxUnstablePass  # noqa
+from .decompose_sqrt_pass import DecomposeSqrtPass  # noqa
 from .decompose_var_pass import DecomposeVarPass  # noqa
 from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     FoldAndAnnotateQParamsPass,
@@ -37,9 +43,14 @@ from .insert_rescales_pass import InsertRescalePass  # noqa
 from .insert_table_ops import InsertTableOpsPass  # noqa
 from .keep_dims_false_to_squeeze_pass import KeepDimsFalseToSqueezePass  # noqa
 from .match_arg_ranks_pass import MatchArgRanksPass  # noqa
+from .match_where_self_arg_dtype_pass import MatchWhereSelfDtypePass  # noqa
 from .meandim_to_averagepool_pass import ConvertMeanDimToAveragePoolPass  # noqa
 from .mm_to_bmm_pass import ConvertMmToBmmPass  # noqa
 from .remove_clone_pass import RemoveClonePass  # noqa
+from .replace_scalar_with_tensor_pass import (  # noqa
+    ReplaceScalarWithTensorArgPassTOSABI,
+    ReplaceScalarWithTensorArgPassTOSAMI,
+)
 from .scalars_to_attribute_pass import ScalarsToAttributePass  # noqa
 from .size_adjust_conv2d_pass import SizeAdjustConv2DPass  # noqa
 from .unsqueeze_before_repeat_pass import UnsqueezeBeforeRepeatPass  # noqa

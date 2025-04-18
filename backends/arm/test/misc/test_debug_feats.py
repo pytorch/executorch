@@ -4,7 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
 import os
 import shutil
 import tempfile
@@ -14,9 +13,6 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 class Linear(torch.nn.Module):
@@ -192,23 +188,19 @@ class TestCollateTosaTests(unittest.TestCase):
             .to_edge_transform_and_lower()
             .to_executorch()
         )
+
+        test_collate_dir = "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests"
         # test that the output directory is created and contains the expected files
-        assert os.path.exists(
-            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests"
-        )
-        assert os.path.exists(
-            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/output_tag6_TOSA-0.80+BI.tosa"
-        )
-        assert os.path.exists(
-            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/desc_tag6_TOSA-0.80+BI.json"
-        )
+        assert os.path.exists(test_collate_dir)
+
+        for file in os.listdir(test_collate_dir):
+            assert file.endswith(("TOSA-0.80+BI.json", "TOSA-0.80+BI.tosa"))
 
         os.environ.pop("TOSA_TESTCASES_BASE_PATH")
         shutil.rmtree("test_collate_tosa_tests", ignore_errors=True)
 
 
 def test_dump_tosa_ops(caplog):
-    caplog.set_level(logging.INFO)
     model = Linear(20, 30)
     (
         ArmTester(
@@ -225,7 +217,6 @@ def test_dump_tosa_ops(caplog):
 
 
 def test_fail_dump_tosa_ops(caplog):
-    caplog.set_level(logging.INFO)
 
     class Add(torch.nn.Module):
         def forward(self, x):

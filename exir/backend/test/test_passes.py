@@ -28,7 +28,9 @@ class TestPasses(unittest.TestCase):
                 z = x - self.const
                 return y, z
 
-        model = export_for_training(ReuseConstData(), (torch.ones(2, 2),)).module()
+        model = export_for_training(
+            ReuseConstData(), (torch.ones(2, 2),), strict=True
+        ).module()
         edge = exir.to_edge(
             torch.export.export(model, (torch.ones(2, 2),), strict=True)
         )

@@ -28,7 +28,7 @@ Hybrid Mode: Hybrid mode leverages the strengths of both AR-N model and KV cache
 
 ### Step 1: Setup
 1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch.
-2. Follow the [tutorial](https://pytorch.org/executorch/stable/build-run-qualcomm-ai-engine-direct-backend.html) to build Qualcomm AI Engine Direct Backend.
+2. Follow the [tutorial](https://pytorch.org/executorch/main/backends-qualcomm) to build Qualcomm AI Engine Direct Backend.
 
 ### Step 2: Prepare Model
 
@@ -41,7 +41,7 @@ wget "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt"
 wget "https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model"
 
 # tokenizer.bin:
-python -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+python -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokenizer.bin
 
 # params.json:
 echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps": 1e-05, "vocab_size": 32000}' > params.json

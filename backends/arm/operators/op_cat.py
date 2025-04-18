@@ -7,13 +7,12 @@
 
 from typing import List
 
-import serializer.tosa_serializer as ts  # type: ignore
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
 
 
@@ -42,5 +41,8 @@ class CatVisitor(NodeVisitor):
         attr.AxisAttribute(dim)
 
         tosa_graph.addOperator(
-            TosaOp.Op().CONCAT, [tensor.name for tensor in tensors], [output.name], attr
+            ts.TosaOp.Op().CONCAT,
+            [tensor.name for tensor in tensors],
+            [output.name],
+            attr,
         )

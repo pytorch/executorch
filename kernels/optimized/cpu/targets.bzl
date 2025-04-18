@@ -15,6 +15,7 @@ _OPTIMIZED_ATEN_OPS = (
         name = "op_bmm",
         deps = [
             "//executorch/kernels/optimized:libblas",
+            "//executorch/kernels/portable/cpu/util:matmul_ops_util",
         ],
     ),
     op_target(
@@ -23,6 +24,14 @@ _OPTIMIZED_ATEN_OPS = (
             ":binary_ops",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+        ],
+    ),
+    op_target(
+        name = "op_elu",
+        deps = [
+            "//executorch/extension/threadpool:threadpool",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
     ),
     op_target(name = "op_exp"),

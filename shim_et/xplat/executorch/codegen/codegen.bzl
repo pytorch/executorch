@@ -688,7 +688,7 @@ def executorch_generated_lib(
                 "ovr_config//os:windows": [],
             }) + compiler_flags,
             deps = [
-                "//executorch/runtime/kernel:operator_registry",
+                "//executorch/runtime/kernel:operator_registry" + aten_suffix,
                 "//executorch/kernels/prim_ops:prim_ops_registry" + aten_suffix,
                 "//executorch/runtime/core:evalue" + aten_suffix,
                 "//executorch/codegen:macros",

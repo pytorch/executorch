@@ -1,0 +1,72 @@
+From 23712ff626db16793d428dddcb530f9e5faaa073 Mon Sep 17 00:00:00 2001
+From: Adrian Lundell <adrian.lundell@arm.com>
+Date: Thu, 3 Apr 2025 14:25:52 +0200
+Subject: [PATCH] Move input_data_sec to NOLOAD area
+
+---
+ targets/corstone-300/platform.ld | 10 ++++++++--
+ targets/corstone-320/platform.ld |  8 ++++++--
+ 2 files changed, 14 insertions(+), 4 deletions(-)
+
+diff --git a/targets/corstone-300/platform.ld b/targets/corstone-300/platform.ld
+index 1733509..3ccce64 100644
+--- a/targets/corstone-300/platform.ld
++++ b/targets/corstone-300/platform.ld
+@@ -272,13 +272,12 @@ SECTIONS
+     *(.bss.tensor_arena)
+ #endif
+
+-    . = ALIGN(4);
+-    *(input_data_sec)
+     . = ALIGN(16);
+ #if (ETHOSU_MODEL == 1)
+     *(network_model_sec)
+ #endif
+     * (expected_output_data_sec)
++    . = ALIGN(16);
+     * (sec_command_stream, sec_weight_data, sec_input_data)
+     *(.got*)
+     *(.rodata*)
+@@ -287,6 +286,13 @@ SECTIONS
+     . = ALIGN(4);
+   } > DDR :rom_dram
+
++  .ddr_noload (NOLOAD) :
++  {
++    . = ALIGN(16);
++    *(input_data_sec)
++    . = ALIGN(16);
++  } > DDR :null
++
+   __eddr_data = ALIGN (4) ;
+   .sram.data : {
+     __sram_data_start__ = .;
+diff --git a/targets/corstone-320/platform.ld b/targets/corstone-320/platform.ld
+index c8261c0..9b7e071 100644
+--- a/targets/corstone-320/platform.ld
++++ b/targets/corstone-320/platform.ld
+@@ -268,8 +268,6 @@ SECTIONS
+     *(network_model_sec)
+ #endif
+
+-    . = ALIGN(4);
+-    *(input_data_sec)
+     *(expected_output_data_sec)
+     *(output_data_sec)
+
+@@ -279,6 +277,12 @@ SECTIONS
+     __etext = .;
+   } > DDR :rom_dram
+
++  .ddr_noload (NOLOAD) :
++  {
++    . = ALIGN(16);
++    *(input_data_sec)
++  } > DDR :null
++
+   .bss :
+   {
+     . = ALIGN(4);
+--
+2.43.0
+

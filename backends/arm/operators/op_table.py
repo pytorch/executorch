@@ -8,15 +8,14 @@
 from typing import List
 
 import numpy as np
-
-import serializer.tosa_serializer as ts  # type: ignore
 import torch
+
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from serializer.tosa_serializer import TosaOp
 
 
 @register_node_visitor
@@ -41,7 +40,7 @@ class TableVisitor(NodeVisitor):
 
         if inputs[0].dtype not in (ts.DType.INT8, ts.DType.INT16):
             raise ValueError(
-                f"TOSA.TABLE only supports int8 or int16 inputs, got {ts.DTypeNames[inputs[0]]}"
+                f"TOSA.TABLE only supports int8 or int16 inputs, got {ts.DTypeNames[inputs[0].dtype]}"
             )
 
         table = self._exported_program.state_dict[node.name]  # type: ignore[union-attr]
@@ -49,5 +48,5 @@ class TableVisitor(NodeVisitor):
         table_attr.TableAttribute(np.array(table))
 
         tosa_graph.addOperator(
-            TosaOp.Op().TABLE, [inputs[0].name], [output.name], table_attr
+            ts.TosaOp.Op().TABLE, [inputs[0].name], [output.name], table_attr
         )

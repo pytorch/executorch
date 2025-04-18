@@ -29,16 +29,20 @@ ${layout_declare_tensor(2, "r", "t_qmat2", "int8", STORAGE)}
 ${layout_declare_tensor(3, "r", "t_scales", DTYPE, STORAGE)}
 
 $if STORAGE == "buffer":
-  ${layout_declare_ubo(4, "ivec4", "out_sizes")}
-  ${layout_declare_ubo(5, "ivec4", "out_strides")}
-  ${layout_declare_ubo(6, "int", "out_numel")}
-  ${layout_declare_ubo(7, "ivec4", "mat1_sizes")}
-  ${layout_declare_ubo(8, "ivec4", "mat1_strides")}
-  ${layout_declare_ubo(9, "ivec4", "qmat2_strides")}
-  ${layout_declare_ubo(10, "ivec4", "scales_strides")}
+  layout(push_constant) uniform restrict Block {
+    ivec4 out_sizes;
+    ivec4 out_strides;
+    ivec4 mat1_sizes;
+    ivec4 mat1_strides;
+    ivec4 qmat2_strides;
+    ivec4 scales_strides;
+    int out_numel;
+  };
 $else:
-  ${layout_declare_ubo(4, "ivec3", "out_limits")}
-  ${layout_declare_ubo(5, "ivec4", "mat1_sizes")}
+  layout(push_constant) uniform restrict Block {
+    ivec3 out_limits;
+    ivec4 mat1_sizes;
+  };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -64,62 +68,59 @@ void main() {
 
   FLOAT_T outval = FLOAT_T(0.0);
 
-  // Initial mat1 tensor idx will be (0, out_tidx.y, out_tidx.z, 0)
   int mat1_offset = out_tidx.y * mat1_strides.y + out_tidx.z * qmat2_strides.z;
-  // Initial qmat2 tensor idx wil be (0, out_tidx.x, 0, 0); note that the qmat2
-  // tensor is transposed
-  int qmat2_offset = out_tidx.x * qmat2_strides.y;
+  int qmat2_offset = out_tidx.x;
 
   // TODO(ssjia): optimize memory access pattern by traversing mat1 x in inner loop
   for (int i = 0; i < mat1_sizes.x; i++) {
     const FLOAT_T mat1_val = t_mat1[mat1_offset];
-    const FLOAT_T mat2_val = t_qmat2[qmat2_offset] * scale;
+    const FLOAT_T mat2_val = FLOAT_T(t_qmat2[qmat2_offset]);
 
     outval += mat1_val * mat2_val;
 
     mat1_offset++;
-    qmat2_offset++;
+    qmat2_offset += qmat2_strides.y;
   }
 
-  t_out[out_bufi] = outval;
+  t_out[out_bufi] = outval * scale;
 }
 
 #else // USING_TEXTURE
 
-#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
-
 void main() {
-  const u16vec2 out_pos = u16vec2(
-    gl_GlobalInvocationID.x,
-    gl_GlobalInvocationID.y);
+  const ivec2 out_pos = ivec2(
+    gl_GlobalInvocationID.x % out_limits.x,
+    gl_GlobalInvocationID.x / out_limits.x);
 
-  if (out_pos.x >= out_limits.x || out_pos.y >= out_limits.y) {
+  if (out_pos.y >= out_limits.y) {
     return;
   }
 
-  const uint16_t qmat2_pos_y = out_pos.x * uint16_t(4);
+  const int qmat2_pos_x = out_pos.x;
 
   VEC4_T outtex = VEC4_T(0);
 
-  const VEC4_T scales = load_texel(t_scales,  u16vec3(out_pos.x, 0, 0));
+  const VEC4_T scales = load_texel(t_scales,  ivec3(out_pos.x, 0, 0));
 
+  VEC4_T mat1_tex;
+  VEC4_T mat2_tex[4];
   for (
-    uint16_t i = uint16_t(0), x = uint16_t(0);
-    i < uint16_t(mat1_sizes.x);
-    i += uint16_t(4), x++)
+    int i = 0, x = 0;
+    i < mat1_sizes.x;
+    i += 4, x++)
   {
-    const VEC4_T mat1_tex = load_texel(t_mat1, u16vec3(x, out_pos.y, 0));
-    const VEC4_T sums = VEC4_T(
-        dot(mat1_tex, load_texel(t_qmat2, u16vec3(x, qmat2_pos_y, 0))),
-        dot(mat1_tex, load_texel(t_qmat2, u16vec3(x, qmat2_pos_y + uint16_t(1), 0))),
-        dot(mat1_tex, load_texel(t_qmat2, u16vec3(x, qmat2_pos_y + uint16_t(2), 0))),
-        dot(mat1_tex, load_texel(t_qmat2, u16vec3(x, qmat2_pos_y + uint16_t(3), 0))));
+    mat1_tex = load_texel(t_mat1, ivec3(x, out_pos.y, 0));
 
-    outtex += sums;
+    mat2_tex[0] = load_texel(t_qmat2, ivec3(out_pos.x, i, 0));
+    mat2_tex[1] = load_texel(t_qmat2, ivec3(out_pos.x, i + 1, 0));
+    mat2_tex[2] = load_texel(t_qmat2, ivec3(out_pos.x, i + 2, 0));
+    mat2_tex[3] = load_texel(t_qmat2, ivec3(out_pos.x, i + 3, 0));
+
+    outtex += mat1_tex.x * mat2_tex[0] + mat1_tex.y * mat2_tex[1] + mat1_tex.z * mat2_tex[2] + mat1_tex.w * mat2_tex[3];
   }
 
   outtex *= scales;
-  write_texel(t_out, u16vec3(out_pos, 0), outtex);
+  write_texel(t_out, ivec3(out_pos, 0), outtex);
 }
 
 #endif

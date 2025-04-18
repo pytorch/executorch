@@ -78,16 +78,6 @@ DEFINE_string(
     "",
     "Path to file with output shapes specified (used in dynamic shape scenario).");
 
-DEFINE_string(
-    input_type_size_path,
-    "",
-    "Path to file with input dtype sizes specified.");
-
-DEFINE_string(
-    output_type_size_path,
-    "",
-    "Path to file with output dtype sizes specified.");
-
 DEFINE_int32(
     debug_buffer_size,
     20000000, // 20MB
@@ -368,23 +358,6 @@ int main(int argc, char** argv) {
         expected_output_shapes.emplace_back(std::move(shape));
       }
     }
-    // currently only expected_output_type_sizes is used
-    // TODO: remove following when meta could be correctly propagated
-    std::vector<int32_t> expected_input_type_sizes, expected_output_type_sizes;
-    if (!FLAGS_input_type_size_path.empty() &&
-        !FLAGS_output_type_size_path.empty()) {
-      std::ifstream input_type_size_list(FLAGS_input_type_size_path);
-      std::ifstream output_type_size_list(FLAGS_output_type_size_path);
-      std::string type_sizes_content;
-      while (std::getline(input_type_size_list, type_sizes_content)) {
-        expected_input_type_sizes.push_back(
-            std::stoi(split(type_sizes_content, ", ")[0]));
-      }
-      while (std::getline(output_type_size_list, type_sizes_content)) {
-        expected_output_type_sizes.push_back(
-            std::stoi(split(type_sizes_content, ", ")[0]));
-      }
-    }
 
     std::string file_path;
     int inference_index = 0;
@@ -495,10 +468,7 @@ int main(int argc, char** argv) {
           nbytes = std::accumulate(
               expected_output_shapes[output_index].begin(),
               expected_output_shapes[output_index].end(),
-              !expected_output_type_sizes.empty()
-                  ? expected_output_type_sizes[output_index]
-                  : executorch::runtime::elementSize(
-                        output_tensor.scalar_type()),
+              executorch::runtime::elementSize(output_tensor.scalar_type()),
               std::multiplies<int>());
         }
         auto output_file_name = FLAGS_output_folder_path + "/output_" +
