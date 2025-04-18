@@ -423,6 +423,8 @@
 
 - op: var.out
 
+- op: view_as_real_copy.out
+
 - op: view_copy.out
 
 - op: where.self_out
