@@ -85,14 +85,18 @@ using namespace ::executorch::runtime;
       [testCase measureWithMetrics:@[ tokensPerSecondMetric, [XCTClockMetric new], [XCTMemoryMetric new] ]
                             block:^{
                               tokensPerSecondMetric.tokenCount = 0;
+                              // Create a GenerationConfig object
+                              ::executorch::extension::llm::GenerationConfig config{
+                                .max_new_tokens = 50,
+                                .warming = false,
+                              };
+
                               const auto status = runner->generate(
                                   "Once upon a time",
-                                  50,
+                                  config,
                                   [=](const std::string &token) {
                                     tokensPerSecondMetric.tokenCount++;
-                                  },
-                                  nullptr,
-                                  false);
+                                  });
                               XCTAssertEqual(status, Error::Ok);
                             }];
     },
