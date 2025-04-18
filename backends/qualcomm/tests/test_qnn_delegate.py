@@ -1060,6 +1060,12 @@ class TestQNNFloatingPointModel(TestQNN):
         )
         self.lower_module_and_test_output(module, sample_input)
 
+    # TODO: Create a new UT class for passes specific checks
+    def test_qnn_backend_lift_add_tensor(self):
+        module = LiftAddTensor()  # noqa: F405
+        sample_input = (torch.Tensor([1, 2, 3, 4]).to(torch.int32),)
+        self.lower_module_and_test_output(module, sample_input)
+
     @unittest.skip("Fail because of bad accuracy")
     def test_qnn_backend_moe_feed_forward(self):
         args = ModelArgs()
