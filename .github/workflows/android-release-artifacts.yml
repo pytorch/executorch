@@ -80,6 +80,12 @@ jobs:
 
         echo -n "$SECRET_EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS" | base64 -d > /tmp/secring.gpg
 
+        # Update the version name in build.gradle in case of maven publish
+        VERSION="${{ inputs.version }}"
+        if [ ! -z "$VERSION" ]; then
+          sed -i "s/\(coordinates(\"org.pytorch\", \"executorch-android\", \"\)\([0-9]\+.[0-9]\+.[0-9]\+\)\(\")\)/\1$VERSION\3/" extension/android/executorch_android/build.gradle
+        fi
+
         # Build AAR Package
         mkdir aar-out
         export BUILD_AAR_DIR=aar-out
@@ -92,7 +98,7 @@ jobs:
         # Publish to maven staging
         UPLOAD_TO_MAVEN="${{ inputs.upload_to_maven }}"
         if [[ "$UPLOAD_TO_MAVEN" == "true" ]]; then
-          (cd aar-out; ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:publishToMavenCentral)
+          (cd extension/android; ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:publishToMavenCentral)
         fi
 
   upload-release-aar:

@@ -986,7 +986,7 @@ def _remove_invalid_ops_for_not_decompose(
         try:
             # Ops in torch.ops.quant are not always loaded, so we use try/except
             # Aliases output, but we need to allow it for XNNPACK
-            allow_list.append(torch.ops.quant.choose_qparams_affine.default)
+            allow_list.append(torch.ops.torchao.choose_qparams_affine.default)
         except:
             pass
 
