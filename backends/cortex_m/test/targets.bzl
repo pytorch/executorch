@@ -8,6 +8,7 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 OPERATORS = [
     "quantize_per_tensor",
+    "dequantize_per_tensor",
 ]
 
 def define_operator_test_target(op):
