@@ -21,6 +21,7 @@ def define_operator_test_target(op):
             "//executorch/kernels/test:test_util",
             "//executorch/backends/cortex_m/ops:op_{}".format(op),
             "//executorch/backends/cortex_m/ops:cortex_m_generated_lib",
+            "//executorch/backends/cortex_m/ops:cortex_m_generated_lib_headers",
         ]
     )
 

@@ -45,7 +45,7 @@ executorch
 │   └── <a href="devtools/visualization">visualization</a> - Visualization tools for representing model structure and performance metrics.
 ├── <a href="docs">docs</a> - Static docs tooling and documentation source files.
 ├── <a href="examples">examples</a> - Examples of various user flows, such as model export, delegates, and runtime execution.
-├── <a href="exir">exir</a> - Ahead-of-time library: model capture and lowering APIs. EXport Intermediate Representation (EXIR) is a format for representing the result of <a href="https://pytorch.org/docs/main/export.ir_spec.html">torch.export</a>. This directory contains utilities and passes for lowering the EXIR graphs into different <a href="/docs/source/ir-exir.md">dialects</a> and eventually suitable to run on target hardware.
+├── <a href="exir">exir</a> - Ahead-of-time library: model capture and lowering APIs. EXport Intermediate Representation (EXIR) is a format for representing the result of <a href="https://pytorch.org/docs/stable/export.html">torch.export</a>. This directory contains utilities and passes for lowering the EXIR graphs into different <a href="/docs/source/ir-exir.md">dialects</a> and eventually suitable to run on target hardware.
 │   ├── <a href="exir/_serialize">_serialize</a> - Serialize final export artifact.
 │   ├── <a href="exir/backend">backend</a> - Backend delegate ahead of time APIs.
 │   ├── <a href="exir/capture">capture</a> - Program capture.
