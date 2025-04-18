@@ -41,6 +41,7 @@ from torch.ao.quantization.quantizer import Quantizer
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
 from torch.export import export_for_training, ExportedProgram
 from torch.nn.attention import SDPBackend
+from torchao.utils import unwrap_tensor_subclass
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -199,6 +200,11 @@ class LLMEdgeManager:
         return edge_config
 
     def _export(self, module: Optional[torch.nn.Module] = None) -> ExportedProgram:
+        if module is not None:
+            unwrap_tensor_subclass(module)
+        else:
+            unwrap_tensor_subclass(self.model)
+
         dynamic_shape = self._get_dynamic_shape()
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)

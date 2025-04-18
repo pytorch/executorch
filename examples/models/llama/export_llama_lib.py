@@ -816,6 +816,10 @@ def _to_edge_and_lower_llama(  # noqa: C901
         modelname = f"coreml_{modelname}"
 
     if args.qnn:
+        logging.warning(
+            "The model definition in current repro is not performant, please refer to the instruction"
+            " in https://github.com/pytorch/executorch/tree/main/examples/qualcomm/oss_scripts/llama/README.md for better performance."
+        )
         from executorch.extension.llm.custom_ops import model_sharding
 
         partitioners.append(
