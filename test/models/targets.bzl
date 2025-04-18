@@ -155,6 +155,7 @@ def define_common_targets():
         "ModuleAddMul",
         "ModuleAddLarge",
         "ModuleSubLarge",
+        "ModuleLinear",
     ]
 
     # Name of the backend to use when exporting delegated programs.
