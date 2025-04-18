@@ -47,7 +47,6 @@ class SDPACustom(torch.nn.Module):
             torch._check_is_size(start_pos)
             torch._check(start_pos < self.max_context_len)
             seq_length = q.size(2)
-            # pyre-ignore: Incompatible parameter type [6]
             mask = mask.narrow(0, start_pos, seq_length)
         else:
             mask = mask[input_pos]
