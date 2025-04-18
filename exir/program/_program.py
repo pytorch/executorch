@@ -229,6 +229,11 @@ def _transform(
     Returns:
         ExportedProgram: A new ExportedProgram with the transformations applied, or self if no changes were made
     """
+    # A user friendly check to avoid vararg surprises, PEP 3102
+    assert not any(
+        isinstance(p, (list, Verifier)) for p in passes
+    ), f"Expected all passes to be of PassType, not list or Verifier. Use override_verifiers kwarg instead. Got: {list(passes)}"
+
     pm = PassManager(list(passes))
     res = pm(self.graph_module)
     transformed_gm = res.graph_module if res is not None else self.graph_module
@@ -1004,7 +1009,7 @@ def _remove_invalid_ops_for_not_decompose(
         try:
             # Ops in torch.ops.quant are not always loaded, so we use try/except
             # Aliases output, but we need to allow it for XNNPACK
-            allow_list.append(torch.ops.quant.choose_qparams_affine.default)
+            allow_list.append(torch.ops.torchao.choose_qparams_affine.default)
         except:
             pass
 
@@ -1443,13 +1448,15 @@ class EdgeProgramManager:
         ) -> ExportedProgram:
             # Overwrite the original verifier with the new one
             # This should be a no-op for the most cases where compile_config is none.
-            new_program = _transform(program, *passes, [verifier])
+            new_program = _transform(program, *passes, override_verifiers=[verifier])
             # ExportedProgram constructor should call the verifier, but
             # the validate() function in the constructor is marked for deprecation.
-            verifier(new_program.graph_module)
+            verifier()(new_program.graph_module)
             return new_program
 
-        verifier = EXIREdgeDialectVerifier(edge_compile_config=compile_config)
+        verifier = EXIREdgeDialectVerifier(
+            edge_compile_config=compile_config, class_only=True
+        )
         if isinstance(passes, dict):
             for name, program in self._edge_programs.items():
                 if name in passes.keys():
