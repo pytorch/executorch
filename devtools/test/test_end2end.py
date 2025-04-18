@@ -25,11 +25,9 @@ from executorch.devtools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
 from executorch.extension.pybindings.portable_lib import (
-    _load_for_executorch_from_bundled_program,
-    _load_bundled_program_from_buffer
+    _load_for_executorch_from_buffer,
 )
 
-# 定义一个简单的模型用于测试
 class SimpleAddModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -43,6 +41,7 @@ class TestDevtoolsEndToEnd():
         self.tmp_dir = "./"
         self.etrecord_path = os.path.join(self.tmp_dir, "etrecord.bin")
         self.etdump_path = os.path.join(self.tmp_dir, "etdump.bin")
+        self.et_program_manager = None
 
         self.model = SimpleAddModel()
 
@@ -64,45 +63,16 @@ class TestDevtoolsEndToEnd():
         edge_program_manager_copy = copy.deepcopy(edge_program_manager)
         et_program_manager = edge_program_manager.to_executorch()
 
+        self.et_program_manager = et_program_manager
+
         generate_etrecord(self.etrecord_path, edge_program_manager_copy, et_program_manager)
 
-    def generate_bundled_program(self):
-        method_name = "forward"
-        method_graphs = {method_name: export(self.model, (torch.randn(1, 1, 32, 32), torch.randn(1, 1, 32, 32)))}
-
-        inputs = [(torch.randn(1, 1, 32, 32), torch.randn(1, 1, 32, 32))]
-        method_test_suites = [
-            MethodTestSuite(
-                method_name=method_name,
-                test_cases=[MethodTestCase(inputs=inp, expected_outputs=self.model(*inp)) for inp in inputs],
-            )
-        ]
-        
-        executorch_program = to_edge(method_graphs).to_executorch()
-        bundled_program = BundledProgram(
-            executorch_program=executorch_program,
-            method_test_suites=method_test_suites,
-        )
-
-        return bundled_program
-
     def generate_etdump(self):
-        bundled_program_py = self.generate_bundled_program()
-
-        bundled_program_bytes = serialize_from_bundled_program_to_flatbuffer(
-            bundled_program_py
-        )
-
-        bundled_program_cpp = _load_bundled_program_from_buffer(bundled_program_bytes)
-
-        program = _load_for_executorch_from_bundled_program(
-            bundled_program_cpp,
-            enable_etdump=True
-        )
-
-        example_inputs = (torch.randn(1, 1, 32, 32), torch.randn(1, 1, 32, 32))
-        program.forward(example_inputs)
-
+        # load executorch program from buffer, and set enable_etdump to True
+        program = _load_for_executorch_from_buffer(self.et_program_manager.buffer, enable_etdump=True)
+        # run program with example inputs to generate etdump
+        program.forward((torch.randn(1, 1, 32, 32), torch.randn(1, 1, 32, 32)))
+        # write etdump to file
         program.write_etdump_result_to_file(self.etdump_path)
 
     def test_profile(self):
@@ -112,5 +82,4 @@ class TestDevtoolsEndToEnd():
 if __name__ == "__main__":
     tester = TestDevtoolsEndToEnd()
     tester.generate_etrecord_()
-    tester.generate_bundled_program()
     tester.generate_etdump()
