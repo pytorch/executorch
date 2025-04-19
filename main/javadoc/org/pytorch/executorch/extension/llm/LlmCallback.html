@@ -155,11 +155,19 @@ public interface <span class="typeNameLabel"><a href=LlmCallback.html>LlmCallbac
                                         </tr>
                                         
                                         <tr id="i1" class="rowColor">
-                                            <td class="colFirst"><code>abstract void</code>
+                                            <td class="colFirst"><code>void</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmCallback.html#onStats(float)>onStats</a>(float tps) </code>
                                             </th>
-                                            <td class="colLast">Called when the statistics for the generate() is available.</td>
+                                            <td class="colLast">Called when the statistics for the generate() is available.Note: This is a deprecated API and will be removed in the future.</td>
+                                        </tr>
+                                        
+                                        <tr id="i2" class="altColor">
+                                            <td class="colFirst"><code>void</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=LlmCallback.html#onStats(String)>onStats</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> stats) </code>
+                                            </th>
+                                            <td class="colLast">Called when the statistics for the generate() is available.The result will be a JSON string.</td>
                                         </tr>
                                         
                                         </tbody>
@@ -223,18 +231,42 @@ public interface <span class="typeNameLabel"><a href=LlmCallback.html>LlmCallbac
                                     <!--   -->
                                 </a>
                                 <ul class=
-                                              "blockListLast"
+                                              "blockList"
                                           >
                                     <li class="blockList">
                                         <h4>onStats</h4>
-                                        <pre class="methodSignature"> abstract void <a href=LlmCallback.html#onStats(float)>onStats</a>(float tps)</pre>
-                                        <div class="block"><p>Called when the statistics for the generate() is available.</p></div>
+                                        <pre class="methodSignature">@<a href=https://developer.android.com/reference/kotlin/java/lang/Deprecated.html>Deprecated</a>() void <a href=LlmCallback.html#onStats(float)>onStats</a>(float tps)</pre>
+                                        <div class="block"><p>Called when the statistics for the generate() is available.Note: This is a deprecated API and will be removed in the future. Please use onStats(String stats)</p></div>
                                         
                                         <dl>
                                             <dt><span class="paramLabel">Parameters:</span></dt>
                                             
                                             
                                             <dd><code>tps</code> - Tokens/second for generated tokens.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="onStats(String)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockListLast"
+                                          >
+                                    <li class="blockList">
+                                        <h4>onStats</h4>
+                                        <pre class="methodSignature"> void <a href=LlmCallback.html#onStats(String)>onStats</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> stats)</pre>
+                                        <div class="block"><p>Called when the statistics for the generate() is available.The result will be a JSON string. See extension/llm/stats.h for the fielddefinitions.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>stats</code> - JSON string containing the statistics for the generate()</dd>
                                             
                                             
                                         </dl>
