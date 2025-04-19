@@ -146,9 +146,9 @@ After creating a tutorial, make sure to add the corresponding path in the
 [index.rst](source/index.md) file in the following places:
 
 - In the
-  [tutorials torctree](https://github.com/pytorch/executorch/blob/main/docs/source/index.rst?plain=1#L183)
+  [tutorials torctree](https://github.com/pytorch/executorch/blob/main/docs/source/index.md?plain=1#L185)
 - In the
-  [customcard section](https://github.com/pytorch/executorch/blob/main/docs/source/index.rst?plain=1#L201)
+  [customcard section](https://github.com/pytorch/executorch/blob/main/docs/source/index.md?plain=1#L201)
 
 If you want to include a Markdown tutorial that is stored in another directory
 outside of the `docs/source` directory, complete the following steps:

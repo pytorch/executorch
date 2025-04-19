@@ -27,17 +27,20 @@ while IFS=: read -r filepath url; do
     status=1
   fi
 done < <(
-  git --no-pager grep --no-color -I -o -E \
-    'https?://[^[:space:]<>\")\{\(\$]+' \
+  git --no-pager grep --no-color -I -P -o \
+    '(?<!git\+)(?<!\$\{)https?://(?![^\s<>\")]*[\{\}\$])[^[:space:]<>\")\[\]\(]+' \
     -- '*' \
     ':(exclude).*' \
     ':(exclude)**/.*' \
     ':(exclude)**/*.lock' \
     ':(exclude)**/*.svg' \
     ':(exclude)**/*.xml' \
+    ':(exclude)**/*.gradle*' \
+    ':(exclude)**/*gradle*' \
     ':(exclude)**/third-party/**' \
-  | sed 's/[[:punct:]]*$//' \
+  | sed -E 's/[^/[:alnum:]]+$//' \
   | grep -Ev '://(0\.0\.0\.0|127\.0\.0\.1|localhost)([:/])' \
+  | grep -Ev 'fwdproxy:8080'
   || true
 )
 
