@@ -143,7 +143,7 @@ directory. Use one of the following templates:
 - [Markdown template](https://github.com/pytorch/executorch/blob/main/docs/source/tutorial-template.md)
 
 After creating a tutorial, make sure to add the corresponding path in the
-[index.rst](./source/index.rst) file in the following places:
+[index.rst](source/index.md) file in the following places:
 
 - In the
   [tutorials torctree](https://github.com/pytorch/executorch/blob/main/docs/source/index.rst?plain=1#L183)

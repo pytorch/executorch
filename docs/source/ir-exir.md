@@ -66,7 +66,7 @@ properties:
 
 ### ATen Operator Definition
 
-The operator set definition can be found [here](./ir-ops-set-definition.md).
+The operator set definition can be found [here](ir-ops-set-definition.md).
 
 ## Edge Dialect
 
@@ -113,7 +113,7 @@ At this point, user defined graph transformation can be run through
 is touching `node.target`, be aware that all of the `node.target` at this stage
 are "Edge ops" (more details below) and not torch ops like in the ATen dialect.
 A tutorial on pass writing can be found
-[here](./compiler-custom-compiler-passes.md). After all these passes are
+[here](compiler-custom-compiler-passes.md). After all these passes are
 executed, `to_edge()` will make sure the graph is still valid.
 
 ### Edge Operators
@@ -175,4 +175,4 @@ for all core ATen ops.
 
 ## Backend Dialect
 
-See this [doc](./compiler-backend-dialect.md)
+See this [doc](compiler-backend-dialect.md)

@@ -11,7 +11,7 @@ Here are supported models:
 
 Pretrained models are not included in this repo. Users are suggested to download them [here](https://ai.meta.com/resources/models-and-libraries/llama-downloads/).
 
-This page contains the basic recipe for running Llama. See [Llama utils page](./UTILS.md) page for more advanced use-cases such as fine-tuning and running smaller models for educational purposes.
+This page contains the basic recipe for running Llama. See [Llama utils page](UTILS.md) page for more advanced use-cases such as fine-tuning and running smaller models for educational purposes.
 
 # What is Llama?
 Llama is a collection of large language models that use publicly available data for training. These models are based on the transformer architecture, which allows it to process input sequences of arbitrary length and generate output sequences of variable length. One of the key features of Llama models is its ability to generate coherent and contextually relevant text. This is achieved through the use of attention mechanisms, which allow the model to focus on different parts of the input sequence as it generates output. Additionally, Llama models use a technique called “masked language modeling” to pre-train the model on a large corpus of text, which helps it learn to predict missing words in a sentence.
@@ -143,7 +143,7 @@ Llama 3 8B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 
 ## Tested on
 
 - MacOS M1/M2, Linux.
-- For Llama 3 8B, your device may require at least 32GB RAM. If this is a constraint for you, please try the [smaller stories model](./UTILS.md).
+- For Llama 3 8B, your device may require at least 32GB RAM. If this is a constraint for you, please try the [smaller stories model](UTILS.md).
 
 ## Step 1: Setup
 > :warning: **double check your python environment**: make sure `conda activate <VENV>` is run before all the bash and python scripts.
@@ -496,7 +496,7 @@ python -m examples.models.llama.eval_llama \
 	--max_context_len <max context length>
 ```
 
-See [Llama utils page](./UTILS.md) page for more advanced use-cases such as fine-tuning and running smaller models for educational purposes, and quick iteration and verification.
+See [Llama utils page](UTILS.md) page for more advanced use-cases such as fine-tuning and running smaller models for educational purposes, and quick iteration and verification.
 
 # What is coming next?
 ## Quantization
