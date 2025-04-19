@@ -102,7 +102,7 @@ The current version of PyTorch is ${executorch_version:pytorch}.
 
 This will result in the following output:
 
-<img src="./source/_static/img/s_custom_variables_extension.png" width="300">
+<img src="source/_static/img/s_custom_variables_extension.png" width="300">
 
 Right now we only support PyTorch version as custom variable, but will support others in the future.
 
