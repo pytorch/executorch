@@ -135,8 +135,8 @@ Ensure you have the following functions in your callback class that you provided
   }
 
   @Override
-  public void onStats(float tps) {
-    //...tps (tokens per second) stats is provided by framework
+  public void onStats(String stats) {
+    //... will be a json. See extension/llm/stats.h for the field definitions
   }
 
 ```
