@@ -18,11 +18,9 @@
 #include <unordered_map>
 #include <vector>
 
-// Third Party
-#include <re2/re2.h>
-
 // Local
 #include <pytorch/tokenizers/error.h>
+#include <pytorch/tokenizers/regex.h>
 #include <pytorch/tokenizers/result.h>
 #include <pytorch/tokenizers/string_integer_map.h>
 #include <pytorch/tokenizers/tokenizer.h>
@@ -30,7 +28,6 @@
 namespace tokenizers {
 namespace detail {
 
-using Re2UPtr = std::unique_ptr<re2::RE2>;
 using TokenMap = StringIntegerMap<>;
 
 template <typename TToken, typename TRank>
@@ -119,9 +116,15 @@ class BPETokenizerBase : public Tokenizer {
   explicit BPETokenizerBase() {}
   virtual ~BPETokenizerBase() override {}
 
-  std::pair<std::optional<std::string>, re2::StringPiece>
+  std::pair<std::optional<std::string>, std::string>
   split_with_allowed_special_token_(
-      re2::StringPiece& input,
+      const std::string& input,
+      const TokenMap& allowed_special) const;
+
+  std::pair<std::optional<std::string>, std::string>
+  split_with_allowed_special_token_(
+      const std::string& input,
+      size_t offset,
       const TokenMap& allowed_special) const;
 
   Result<std::pair<std::vector<uint64_t>, uint64_t>> encode_with_special_token_(
@@ -133,17 +136,17 @@ class BPETokenizerBase : public Tokenizer {
       const TokenMap& encoder) const;
 
   // Protected members that can be overloaded by other BPE tokenizers
-  Re2UPtr special_token_regex_;
+  std::unique_ptr<IRegex> special_token_regex_;
   std::optional<TokenMap> token_map_;
   std::optional<TokenMap> special_token_map_;
 
  private:
   virtual Error _encode(
-      re2::StringPiece& input,
+      const std::string& input,
       std::vector<uint64_t>& ret,
       uint64_t& last_piece_token_len) const = 0;
 
-  virtual void _decode(re2::StringPiece input, std::string& ret) const = 0;
+  virtual void _decode(const std::string& input, std::string& ret) const = 0;
 };
 
 } // namespace detail

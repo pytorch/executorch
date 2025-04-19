@@ -71,15 +71,14 @@ static std::string format(const char* fmt, ...) {
 
 } // namespace
 
-std::string ByteLevelTokenDecoder::decode(re2::StringPiece token) const {
+std::string ByteLevelTokenDecoder::decode(const std::string& token) const {
   // This is borrowed and lightly tweaked from llama.cpp
   // CITE:
   // https://github.com/ggerganov/llama.cpp/blob/master/src/llama-vocab.cpp#L1755
   std::string decoded_text;
   // TODO: This could be more efficient since what we really need is a string
   //  const ref.
-  std::string text(token);
-  const auto cpts = unicode_cpts_from_utf8(text);
+  const auto cpts = unicode_cpts_from_utf8(token);
   for (const auto cpt : cpts) {
     const auto utf8 = unicode_cpt_to_utf8(cpt);
     try {
@@ -89,7 +88,7 @@ std::string ByteLevelTokenDecoder::decode(re2::StringPiece token) const {
       for (const auto c : utf8) {
         decoded_text += format("%02x", (uint8_t)c);
       }
-      decoded_text += text + "]";
+      decoded_text += token + "]";
     }
   }
 

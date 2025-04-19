@@ -130,42 +130,25 @@ static std::vector<uint64_t> _byte_pair_merge(
 // ---- Helper utils end -------------------------------------------------------
 // ---- protected start --------------------------------------------------------
 
-std::pair<std::optional<std::string>, re2::StringPiece>
+std::pair<std::optional<std::string>, std::string>
 BPETokenizerBase::split_with_allowed_special_token_(
-    re2::StringPiece& input,
+    const std::string& input,
+    size_t offset,
     const TokenMap& allowed_special) const {
   if (!special_token_regex_) {
-    return std::make_pair(std::nullopt, input);
+    return std::make_pair(std::nullopt, input.substr(offset));
   }
 
-#if __cplusplus >= 202002L
-  auto start = input.begin();
-#else
-  const char* start = input.data();
-#endif
+  auto matches = special_token_regex_->find_all(input.substr(offset));
 
-  std::string special;
-  while (true) {
-    if (!re2::RE2::FindAndConsume(&input, *special_token_regex_, &special)) {
-      // No special token.
-      break;
+  for (const auto& m : matches) {
+    std::string matched_text = input.substr(offset + m.start, m.end - m.start);
+    if (allowed_special.tryGetInteger(matched_text).has_value()) {
+      return {matched_text, input.substr(offset, m.start)};
     }
-
-    if (allowed_special.tryGetInteger(special).has_value()) {
-      // Found an allowed special token, split the text with it.
-#if __cplusplus >= 202002L
-      return std::make_pair(
-          special,
-          re2::StringPiece(start, input.begin() - start - special.size()));
-#else
-      return std::make_pair(
-          special,
-          re2::StringPiece(start, (input.data() - start) - special.size()));
-#endif
-    } // else try to find the next special token
   }
 
-  return std::make_pair(std::nullopt, input);
+  return {std::nullopt, input.substr(offset)};
 }
 
 Result<std::pair<std::vector<uint64_t>, uint64_t>>
@@ -174,33 +157,31 @@ BPETokenizerBase::encode_with_special_token_(
     const TokenMap& allowed_special) const {
   std::vector<uint64_t> tokens;
   uint64_t last_piece_token_len = 0;
-  re2::StringPiece input(text);
-  while (true) {
+  size_t offset = 0;
+
+  while (offset < text.size()) {
     auto [special, sub_input] =
-        split_with_allowed_special_token_(input, allowed_special);
+        split_with_allowed_special_token_(text, offset, allowed_special);
 
     TK_CHECK_OK_OR_RETURN_ERROR(
         _encode(sub_input, tokens, last_piece_token_len));
+    offset += sub_input.size();
 
     if (special) {
       const auto result = special_token_map_->tryGetInteger(*special);
       if (!result) {
-        // Should never go here, since special pattern includes all special
-        // chars.
         TK_LOG(Error, "unknown special token: %s\n", special->c_str());
         return Error::EncodeFailure;
       }
 
       tokens.push_back(*result);
       last_piece_token_len = 0;
+      offset += special->size(); // advance past the matched token
     } else {
       break;
     }
   }
 
-  // last_piece_token_len is how many tokens came from the last regex split.
-  // This is used for determining unstable tokens, since you can't merge
-  // across (stable) regex splits
   return std::make_pair(tokens, last_piece_token_len);
 }
 
@@ -273,7 +254,7 @@ Result<std::string> BPETokenizerBase::decode(uint64_t prev, uint64_t cur)
   } else {
     token_bytes = *result;
   }
-  _decode(token_bytes, ret);
+  _decode(std::string(token_bytes), ret);
 
   return ret;
 }

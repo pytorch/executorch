@@ -186,6 +186,23 @@ T* Result<T>::operator->() {
 } // namespace tokenizers
 
 /**
+ * Unwraps a Result<T> value, throwing a runtime_error if the result contains an
+ * error.
+ *
+ * @param[in] result__ The Result<T> to unwrap
+ */
+#define TK_UNWRAP_THROW(result__)                                     \
+  ({                                                                  \
+    auto unwrap_result__ = (result__);                                \
+    if (!unwrap_result__.ok()) {                                      \
+      throw std::runtime_error(                                       \
+          "Error: " +                                                 \
+          std::to_string(static_cast<int>(unwrap_result__.error()))); \
+    }                                                                 \
+    std::move(unwrap_result__.get());                                 \
+  })
+
+/**
  * Unwrap a Result to obtain its value. If the Result contains an error,
  * propogate the error via trivial function return.
  *

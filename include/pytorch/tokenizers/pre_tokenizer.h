@@ -19,6 +19,9 @@
 #include <nlohmann/json.hpp>
 #include <re2/re2.h>
 
+// Local
+#include <pytorch/tokenizers/regex.h>
+
 namespace tokenizers {
 
 // -- Base ---------------------------------------------------------------------
@@ -42,7 +45,7 @@ class PreTokenizer {
    *  https://abseil.io/docs/cpp/guides/strings#string_view
    */
   virtual std::vector<std::string> pre_tokenize(
-      re2::StringPiece input) const = 0;
+      const std::string& input) const = 0;
 
   virtual ~PreTokenizer() = default;
 }; // end class PreTokenizer
@@ -138,18 +141,16 @@ class PreTokenizerConfig {
 
 class RegexPreTokenizer : public PreTokenizer {
  public:
-  typedef std::unique_ptr<re2::RE2> Re2UPtr;
-
   explicit RegexPreTokenizer(const std::string& pattern)
       : regex_(RegexPreTokenizer::create_regex_(pattern)) {}
 
   /** Pre-tokenize with the stored regex */
-  std::vector<std::string> pre_tokenize(re2::StringPiece input) const;
+  std::vector<std::string> pre_tokenize(const std::string& input) const;
 
  protected:
-  static Re2UPtr create_regex_(const std::string& pattern);
+  static std::unique_ptr<IRegex> create_regex_(const std::string& pattern);
 
-  Re2UPtr regex_;
+  std::unique_ptr<IRegex> regex_;
 
 }; // end class RegexPreTokenizer
 
@@ -185,7 +186,8 @@ class ByteLevelPreTokenizer : public PreTokenizer {
       : ByteLevelPreTokenizer(true, pattern) {}
 
   /** Perform pre-tokenization */
-  std::vector<std::string> pre_tokenize(re2::StringPiece input) const override;
+  std::vector<std::string> pre_tokenize(
+      const std::string& input) const override;
 
  private:
   const std::string pattern_;
@@ -206,7 +208,8 @@ class SequencePreTokenizer : public PreTokenizer {
   explicit SequencePreTokenizer(std::vector<PreTokenizer::Ptr> pre_tokenizers);
 
   /** Perform pre-tokenization */
-  std::vector<std::string> pre_tokenize(re2::StringPiece input) const override;
+  std::vector<std::string> pre_tokenize(
+      const std::string& input) const override;
 
  private:
   const std::vector<PreTokenizer::Ptr> pre_tokenizers_;

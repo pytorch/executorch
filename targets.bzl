@@ -24,9 +24,32 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "regex",
+        srcs = ["src/regex.cpp"] + glob([
+            "src/*_regex.cpp",
+        ]),
+        exported_headers = subdir_glob([
+            ("include", "pytorch/tokenizers/regex.h"),
+            ("include", "pytorch/tokenizers/*_regex.h"),
+        ]),
+        exported_deps = [
+            ":headers",
+        ],
+        exported_external_deps = [
+            "re2",
+        ],
+        visibility = ["//pytorch/tokenizers/..."],
+        header_namespace = "",
+        platforms = PLATFORMS,
+    )
+
+    runtime.cxx_library(
         name = "sentencepiece",
         srcs = [
             "src/sentencepiece.cpp",
+        ],
+        deps = [
+            ":regex",
         ],
         exported_deps = [
             ":headers",
@@ -34,9 +57,6 @@ def define_common_targets():
         visibility = [
             "@EXECUTORCH_CLIENTS",
             "//pytorch/tokenizers/...",
-        ],
-        compiler_flags = [
-            "-D_USE_INTERNAL_STRING_VIEW",
         ],
         external_deps = [
             "sentencepiece",
@@ -51,18 +71,18 @@ def define_common_targets():
             "src/tiktoken.cpp",
             "src/bpe_tokenizer_base.cpp",
         ],
+        deps = [
+            ":regex",
+        ],
         exported_deps = [
             ":headers",
+        ],
+        exported_external_deps = [
+            "re2",
         ],
         visibility = [
             "@EXECUTORCH_CLIENTS",
             "//pytorch/tokenizers/...",
-        ],
-        compiler_flags = [
-            "-D_USE_INTERNAL_STRING_VIEW",
-        ],
-        exported_external_deps = [
-            "re2",
         ],
         platforms = PLATFORMS,
     )
@@ -75,6 +95,9 @@ def define_common_targets():
             "src/pre_tokenizer.cpp",
             "src/token_decoder.cpp",
         ],
+        deps = [
+            ":regex",
+        ],
         exported_deps = [
             ":headers",
             "//pytorch/tokenizers/third-party:unicode",
@@ -82,9 +105,6 @@ def define_common_targets():
         visibility = [
             "@EXECUTORCH_CLIENTS",
             "//pytorch/tokenizers/...",
-        ],
-        compiler_flags = [
-            "-D_USE_INTERNAL_STRING_VIEW",
         ],
         exported_external_deps = [
             "re2",

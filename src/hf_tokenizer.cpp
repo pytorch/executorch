@@ -100,9 +100,11 @@ Error HFTokenizer::load(const std::string& path) {
 
   // Set up the pre-tokenizer
   try {
+    std::cout << "Setting up pretokenizer..." << std::endl;
     _pretokenizer = PreTokenizerConfig()
                         .parse_json(parsed_json.at("pre_tokenizer"))
                         .create();
+    std::cout << "Pretokenizer set up" << std::endl;
   } catch (const json::out_of_range& e) {
     fprintf(stderr, "Could not parse pre_tokenizer: %s\n", e.what());
     return Error::LoadFailure;
@@ -231,7 +233,7 @@ Error HFTokenizer::load(const std::string& path) {
 // -------------------------private method start--------------------------------
 
 Error HFTokenizer::_encode(
-    re2::StringPiece& input,
+    const std::string& input,
     std::vector<uint64_t>& ret,
     uint64_t& last_piece_token_len) const {
   for (const auto& piece : _pretokenizer->pre_tokenize(input)) {
@@ -249,15 +251,11 @@ Error HFTokenizer::_encode(
   return Error::Ok;
 }
 
-void HFTokenizer::_decode(re2::StringPiece input, std::string& ret) const {
+void HFTokenizer::_decode(const std::string& input, std::string& ret) const {
   if (_decoder) {
     ret += _decoder->decode(input);
   } else {
-#ifdef _USE_INTERNAL_STRING_VIEW
-    ret += input.as_string();
-#else
     ret += input;
-#endif
   }
 }
 

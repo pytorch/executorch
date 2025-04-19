@@ -41,13 +41,13 @@ using namespace detail;
 // ------------------------------Util start------------------------------------
 namespace {
 
-static Re2UPtr _create_regex(const std::string& pattern) {
+static Result<std::unique_ptr<IRegex>> _create_regex(
+    const std::string& pattern) {
   assert(!pattern.empty());
-
-  return std::make_unique<re2::RE2>("(" + pattern + ")");
+  return create_regex(pattern);
 }
 
-static Re2UPtr _build_special_token_regex(
+static Result<std::unique_ptr<IRegex>> _build_special_token_regex(
     const std::vector<std::pair<std::string, std::uint64_t>>& special_encoder) {
   std::string special_pattern;
   for (const auto& ele : special_encoder) {
@@ -56,11 +56,9 @@ static Re2UPtr _build_special_token_regex(
     }
     special_pattern += re2::RE2::QuoteMeta(ele.first);
   }
-
   if (special_pattern.empty()) {
-    return nullptr;
+    return static_cast<std::unique_ptr<IRegex>>(nullptr);
   }
-
   return _create_regex(special_pattern);
 }
 
@@ -114,31 +112,29 @@ static Result<TokenMap> _load_token_map(const std::string& path) {
 // -------------------------private method start-------------------------------
 
 Error Tiktoken::_encode(
-    re2::StringPiece& input,
+    const std::string& input,
     std::vector<uint64_t>& ret,
     uint64_t& last_piece_token_len) const {
   std::string piece;
   assert(_regex);
-  while (re2::RE2::FindAndConsume(&input, *_regex, &piece)) {
-    const auto result = token_map_->tryGetInteger(piece);
+  for (const auto& match : _regex->find_all(input)) {
+    std::string matched_text =
+        input.substr(match.start, match.end - match.start);
+    const auto result = token_map_->tryGetInteger(matched_text);
     if (result) {
       last_piece_token_len = 1;
       ret.push_back(*result);
       continue;
     }
-    auto tokens = TK_UNWRAP(byte_pair_encode_(piece, *token_map_));
+    auto tokens = TK_UNWRAP(byte_pair_encode_(matched_text, *token_map_));
     last_piece_token_len = tokens.size();
     ret.insert(ret.end(), tokens.begin(), tokens.end());
   }
   return Error::Ok;
 }
 
-void Tiktoken::_decode(re2::StringPiece input, std::string& ret) const {
-#ifdef _USE_INTERNAL_STRING_VIEW
-  ret += input.as_string();
-#else
+void Tiktoken::_decode(const std::string& input, std::string& ret) const {
   ret += input;
-#endif
 }
 
 // -------------------------private method end-------------------------------
@@ -155,15 +151,9 @@ Error Tiktoken::load(const std::string& path) {
 
   special_token_map_.emplace(TokenMap(special_token_map));
 
-  _regex = _create_regex(_pattern);
-  // Warmup re2 as it is slow on the first run, void the return value as it's
-  // not needed Refer to
-  // https://github.com/google/re2/blob/6dcd83d60f7944926bfd308cc13979fc53dd69ca/re2/fuzzing/re2_fuzzer.cc#L136-L141
-  (void)_regex->ReverseProgramSize();
-
-  special_token_regex_ = _build_special_token_regex(special_token_map);
-  // Same as above, warm up re2
-  (void)special_token_regex_->ReverseProgramSize();
+  _regex = TK_UNWRAP(_create_regex(_pattern));
+  special_token_regex_ =
+      TK_UNWRAP(_build_special_token_regex(special_token_map));
 
   // initialize vocab_size, bos_tok, eos_tok
   vocab_size_ = token_map_->size() + special_token_map_->size();

@@ -15,10 +15,11 @@
 #include <cstdint>
 
 // Third Party
-#include "re2/re2.h"
+#include <re2/re2.h>
 
 // Local
 #include <pytorch/tokenizers/bpe_tokenizer_base.h>
+#include <pytorch/tokenizers/regex.h>
 #include <pytorch/tokenizers/result.h>
 #include <pytorch/tokenizers/tokenizer.h>
 
@@ -77,11 +78,11 @@ class Tiktoken : public detail::BPETokenizerBase {
   }
 
   Error _encode(
-      re2::StringPiece& input,
+      const std::string& input,
       std::vector<uint64_t>& ret,
       uint64_t& last_piece_token_len) const override;
 
-  void _decode(re2::StringPiece input, std::string& ret) const override;
+  void _decode(const std::string& input, std::string& ret) const override;
 
   detail::TokenMap _build_special_token_map(ssize_t num_base_tokens) const;
 
@@ -93,7 +94,7 @@ class Tiktoken : public detail::BPETokenizerBase {
   const std::string _pattern =
       R"((?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+)";
 
-  detail::Re2UPtr _regex;
+  std::unique_ptr<IRegex> _regex;
 };
 
 } // namespace tokenizers

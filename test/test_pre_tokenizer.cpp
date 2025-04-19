@@ -23,8 +23,7 @@ static void assert_split_match(
     const PreTokenizer& ptok,
     const std::string& prompt,
     const std::vector<std::string>& expected) {
-  re2::StringPiece prompt_view(prompt);
-  const auto& got = ptok.pre_tokenize(prompt_view);
+  const auto& got = ptok.pre_tokenize(prompt);
   EXPECT_EQ(expected.size(), got.size());
   for (auto i = 0; i < got.size(); ++i) {
     EXPECT_EQ(expected[i], got[i]);

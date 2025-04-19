@@ -45,7 +45,7 @@ class TokenDecoder {
    *
    * @returns decoded: The decoded token string
    */
-  virtual std::string decode(re2::StringPiece token) const = 0;
+  virtual std::string decode(const std::string& token) const = 0;
 
   // virtual destructor
   virtual ~TokenDecoder() = default;
@@ -92,7 +92,7 @@ class TokenDecoderConfig {
 
 class ByteLevelTokenDecoder : public TokenDecoder {
  public:
-  std::string decode(re2::StringPiece token) const override;
+  std::string decode(const std::string& token) const override;
 
 }; // end class ByteLevelTokenDecoder
 
