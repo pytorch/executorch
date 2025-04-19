@@ -40,7 +40,7 @@ done < <(
     ':(exclude)**/third-party/**' \
   | sed -E 's/[^/[:alnum:]]+$//' \
   | grep -Ev '://(0\.0\.0\.0|127\.0\.0\.1|localhost)([:/])' \
-  | grep -Ev 'fwdproxy:8080'
+  | grep -Ev 'fwdproxy:8080' \
   || true
 )
 
