@@ -33,7 +33,7 @@ using ::executorch::runtime::EValue;
 using ::executorch::runtime::Result;
 
 namespace executorch {
-namespace bundled_program {
+namespace BUNDLED_PROGRAM_NAMESPACE {
 
 namespace {
 
@@ -433,5 +433,5 @@ bool is_bundled_program(void* file_data, ET_UNUSED size_t file_data_len) {
       file_data);
 }
 
-} // namespace bundled_program
+} // namespace BUNDLED_PROGRAM_NAMESPACE
 } // namespace executorch
