@@ -277,6 +277,7 @@ set(_optimized_kernels_test_sources
     "op_div_test.cpp"
     "op_elu_test.cpp"
     "op_exp_test.cpp"
+    "op_fft_c2r_test.cpp"
     "op_fft_r2c_test.cpp"
     "op_gelu_test.cpp"
     "op_le_test.cpp"
