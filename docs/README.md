@@ -102,7 +102,7 @@ The current version of PyTorch is ${executorch_version:pytorch}.
 
 This will result in the following output:
 
-<img src="./source/_static/img/s_custom_variables_extension.png" width="300">
+<img src="source/_static/img/s_custom_variables_extension.png" width="300">
 
 Right now we only support PyTorch version as custom variable, but will support others in the future.
 
@@ -143,7 +143,7 @@ directory. Use one of the following templates:
 - [Markdown template](https://github.com/pytorch/executorch/blob/main/docs/source/tutorial-template.md)
 
 After creating a tutorial, make sure to add the corresponding path in the
-[index.rst](source/index.md) file in the following places:
+[index.md](source/index.md) file in the following places:
 
 - In the
   [tutorials torctree](https://github.com/pytorch/executorch/blob/main/docs/source/index.md?plain=1#L185)
@@ -163,7 +163,7 @@ outside of the `docs/source` directory, complete the following steps:
 
    **NOTE:** Your tutorial source file needs to follow the tutorial template.
 
-3. Add the file that you have created in **Step 1** to the `index.rst` toctree
+3. Add the file that you have created in **Step 1** to the `index.md` toctree
    and add a `customcarditem` with the link to that file.
 
 For example, if I wanted to include the `README.md` file from
@@ -176,7 +176,7 @@ file:
 ```{include} ../../../examples/selective_build/README.md
 ````
 
-In the `index.rst` file, I would add `tutorials/selective-build-tutorial` in
+In the `index.md` file, I would add `tutorials/selective-build-tutorial` in
 both the `toctree` and the `cusotmcarditem` sections.
 
 # Auto-generated API documentation
@@ -211,7 +211,7 @@ executorch.exir
 ```
 
 These separate `.rst` files should all be linked together, with the initial
-landing page under `index.rst`.
+landing page under `index.md`.
 
 ### C++ APIs
 
@@ -236,4 +236,4 @@ important/relevant parts are:
 
 If you need to include new files, simply add them to the `INPUT` in the
 `Doxyfile`. The generated output is included to the ExecuTorch documentation
-build and referenced in `index.rst`.
+build and referenced in `index.md`.

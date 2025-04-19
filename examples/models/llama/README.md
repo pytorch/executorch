@@ -80,12 +80,12 @@ Llama 3.2 1B and 3B performance was measured on Android OnePlus 12 device. The p
 <table>
   <tr>
     <td>
-        <img src="./Android3_2_1B_bf16.gif" width="300">
+        <img src="Android3_2_1B_bf16.gif" width="300">
         <br>
         <em> Llama3.2 1B, unquantized, BF16 on Android phone. </em>
     </td>
     <td>
-      <img src="./Android3_2_3B_SpinQuant.gif" width="300">
+      <img src="Android3_2_3B_SpinQuant.gif" width="300">
       <br>
       <em>
       Llama3.2 3B, 4bit quantized (SpinQuant) on Android phone
@@ -129,7 +129,7 @@ Llama 3 8B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 
 
 <p align="center">
       <br>
-      <img src="./llama_via_xnnpack.gif" width=300>
+      <img src="llama_via_xnnpack.gif" width=300>
       <br>
       <em>
       Llama3.1 8B, 4bit quantized on Android phone

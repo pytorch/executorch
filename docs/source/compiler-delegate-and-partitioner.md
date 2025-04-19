@@ -28,7 +28,7 @@ A delegate backend implementation is composed of:
 
 The diagram looks like following
 
-<img src="./_static/img/backend_interface.png" alt="drawing" style="width:600px;"/>
+<img src="_static/img/backend_interface.png" alt="drawing" style="width:600px;"/>
 
 **Figure 1.** A high level of entry points for backend interfaces, including both ahead-of-time and runtime.
 
@@ -71,7 +71,7 @@ parsed and executed at runtime.
 
 The diagram looks like following
 
-<img src="./_static/img/backend_interface_aot.png" alt="drawing" style="width:800px;"/>
+<img src="_static/img/backend_interface_aot.png" alt="drawing" style="width:800px;"/>
 
 **Figure 2.** The graph goes through partition and each subgraph will be sent to the preprocess part.
 
@@ -107,7 +107,7 @@ virtual void destroy(ET_UNUSED DelegateHandle* handle);
 
 The diagram looks like following
 
-<img src="./_static/img/backend_interface_runtime.png" alt="drawing" style="width:600px;"/>
+<img src="_static/img/backend_interface_runtime.png" alt="drawing" style="width:600px;"/>
 
 **Figure 3.** The relationship between standard ExecuTorch Runtime and backend entry point.
 
@@ -137,12 +137,12 @@ In order to provide consistent debugging experience to users, regardless of the 
 
 By leveraging the debug identifier, backend developer can embed the debug as part of the delegated blob
 
-<img src="./_static/img/backend_debug_handle.png" alt="drawing" style="width:600px;"/>
+<img src="_static/img/backend_debug_handle.png" alt="drawing" style="width:600px;"/>
 
 In this way, during execute stage, with the debug identifier, backend developer can associate the failed instruction inside the delegate
 back to the exact line of PyThon code.
 
-<img src="./_static/img/backend_debug_handle_example.png" alt="drawing" style="width:700px;"/>
+<img src="_static/img/backend_debug_handle_example.png" alt="drawing" style="width:700px;"/>
 
 ## Common Questions
 
