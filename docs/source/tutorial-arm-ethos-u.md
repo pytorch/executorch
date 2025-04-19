@@ -6,9 +6,9 @@
 
 :::{grid-item-card}  Tutorials we recommend you complete before this:
 :class-card: card-prerequisites
-* [Introduction to ExecuTorch](./intro-how-it-works.md)
-* [Getting Started](./getting-started.md)
-* [Building ExecuTorch with CMake](./using-executorch-building-from-source.md)
+* [Introduction to ExecuTorch](intro-how-it-works.md)
+* [Getting Started](getting-started.md)
+* [Building ExecuTorch with CMake](using-executorch-building-from-source.md)
 :::
 
 :::{grid-item-card}  What you will learn in this tutorial:
@@ -246,7 +246,7 @@ python3 -m examples.arm.aot_arm_compiler --model_name="add" --delegate
 ### Delegated Quantized Workflow
 Before generating the `.pte` file for delegated quantized networks like MobileNetV2, you need to build the `quantized_ops_aot_lib`
 
-You can just run the `backends/arm/scripts/build_quantized_ops_aot_lib.sh` script to build this for you or build it yourself like this. 
+You can just run the `backends/arm/scripts/build_quantized_ops_aot_lib.sh` script to build this for you or build it yourself like this.
 
 ```bash
 
@@ -295,7 +295,7 @@ Also before you get started, make sure that you have completed ExecuTorch cmake 
 
 The block diagram below demonstrates, at the high level, how the various build artifacts are generated and are linked together to generate the final bare-metal executable.
 
-![](./arm-delegate-runtime-build.svg)
+![](arm-delegate-runtime-build.svg)
 
 ```{tip}
 The `generate_pte_file` function in `run.sh` script produces the `.pte` files based on the models provided through `--model_name` input argument
@@ -305,7 +305,7 @@ The `generate_pte_file` function in `run.sh` script produces the `.pte` files ba
 
 ExecuTorch's CMake build system produces a set of build pieces which are critical to building the ExecuTorch runtime with-in the bare-metal environment you have for Corstone FVPs from Ethos-U SDK.
 
-[This](./using-executorch-building-from-source.md) document provides a detailed overview of each individual build piece. For running either variant of the `.pte` file, you will need a core set of libraries. Here is a list,
+[This](using-executorch-building-from-source.md) document provides a detailed overview of each individual build piece. For running either variant of the `.pte` file, you will need a core set of libraries. Here is a list,
 
 - `libexecutorch.a`
 - `libportable_kernels.a`
@@ -389,12 +389,12 @@ I [executorch:arm_perf_monitor.cpp:171] ethosu_pmu_cntr2 : 0
 I [executorch:arm_perf_monitor.cpp:171] ethosu_pmu_cntr3 : 503
 I [executorch:arm_perf_monitor.cpp:178] Ethos-U PMU Events:[ETHOSU_PMU_EXT0_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_EXT1_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_EXT0_WR_DATA_BEAT_WRITTEN, ETHOSU_PMU_NPU_IDLE]
 I [executorch:arm_executor_runner.cpp:470] model_pte_loaded_size:     4425968 bytes.
-I [executorch:arm_executor_runner.cpp:484] method_allocator_used:     1355722 / 62914560  free: 61558838 ( used: 2 % ) 
+I [executorch:arm_executor_runner.cpp:484] method_allocator_used:     1355722 / 62914560  free: 61558838 ( used: 2 % )
 I [executorch:arm_executor_runner.cpp:491] method_allocator_planned:  752640 bytes
 I [executorch:arm_executor_runner.cpp:493] method_allocator_loaded:   966 bytes
 I [executorch:arm_executor_runner.cpp:494] method_allocator_input:    602116 bytes
 I [executorch:arm_executor_runner.cpp:495] method_allocator_executor: 0 bytes
-I [executorch:arm_executor_runner.cpp:498] temp_allocator_used:       0 / 1048576 free: 1048576 ( used: 0 % ) 
+I [executorch:arm_executor_runner.cpp:498] temp_allocator_used:       0 / 1048576 free: 1048576 ( used: 0 % )
 I [executorch:arm_executor_runner.cpp:152] Model executed successfully.
 I [executorch:arm_executor_runner.cpp:156] 1 outputs:
 Output[0][0]: -0.749744
