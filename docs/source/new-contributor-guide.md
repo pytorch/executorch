@@ -92,8 +92,8 @@ Before you can start writing any code, you need to get a copy of ExecuTorch code
     Depending on how you cloned your repo (HTTP, SSH, etc.), this should print something like:
 
     ```bash
-    origin  https://github.com/YOUR_GITHUB_USERNAME/executorch.git (fetch)
-    origin  https://github.com/YOUR_GITHUB_USERNAME/executorch.git (push)
+    origin  https://github.com/{YOUR_GITHUB_USERNAME}/executorch.git (fetch)
+    origin  https://github.com/{YOUR_GITHUB_USERNAME}/executorch.git (push)
     upstream        https://github.com/pytorch/executorch.git (fetch)
     upstream        https://github.com/pytorch/executorch.git (push)
     ```

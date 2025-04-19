@@ -16,10 +16,12 @@ while IFS=: read -r filepath url; do
     printf '\n%s:\n' "$filepath"
     last_filepath=$filepath
   fi
-  code=$(curl -gsLm30 -o /dev/null -w "%{http_code}" -I "$url") || code=000
-  if [ "$code" -ge 400 ]; then
-    code=$(curl -gsLm30 -o /dev/null -w "%{http_code}" -r 0-0 -A "Mozilla/5.0" "$url") || code=000
-  fi
+  code=$(curl -g -sSL -m30 \
+    -A 'Mozilla/5.0' \
+    -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' \
+    --range 0-0 \
+    -w '%{http_code}' -o /dev/null \
+    "$url") || code=000
   if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
     printf "${green}%s${reset} ${cyan}%s${reset}\n" "$code" "$url"
   else
@@ -27,17 +29,20 @@ while IFS=: read -r filepath url; do
     status=1
   fi
 done < <(
-  git --no-pager grep --no-color -I -o -E \
-    'https?://[^[:space:]<>\")\{\(\$]+' \
+  git --no-pager grep --no-color -I -P -o \
+    '(?<!git\+)(?<!\$\{)https?://(?![^\s<>\")]*[\{\}\$])[^[:space:]<>\")\[\]\(]+' \
     -- '*' \
     ':(exclude).*' \
     ':(exclude)**/.*' \
     ':(exclude)**/*.lock' \
     ':(exclude)**/*.svg' \
     ':(exclude)**/*.xml' \
+    ':(exclude)**/*.gradle*' \
+    ':(exclude)**/*gradle*' \
     ':(exclude)**/third-party/**' \
-  | sed 's/[[:punct:]]*$//' \
+  | sed -E 's/[^/[:alnum:]]+$//' \
   | grep -Ev '://(0\.0\.0\.0|127\.0\.0\.1|localhost)([:/])' \
+  | grep -Ev 'fwdproxy:8080' \
   || true
 )
 
