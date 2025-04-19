@@ -13,7 +13,7 @@ We encourage users to use this project as a starting point and adapt it to their
 which includes creating your own versions of the tokenizer, sampler, acceleration backends, and
 other components. We hope this project serves as a useful guide in your journey with LLMs and ExecuTorch.
 
-For deploying Llama with optimal performance, please see [Llama guide](./llama.md).
+For deploying Llama with optimal performance, please see [Llama guide](llama.md).
 
 ### Table Of Contents
 
@@ -89,7 +89,7 @@ cd ../..
 :::
 ::::
 
-For more information, see [Setting Up ExecuTorch](../getting-started-setup.md).
+For more information, see [Setting Up ExecuTorch](../getting-started-setup.rst).
 
 
 ## Running a Large Language Model Locally
@@ -183,7 +183,7 @@ with open("nanogpt.pte", "wb") as file:
 
 To export, run the script with `python export_nanogpt.py` (or python3, as appropriate for your environment). It will generate a `nanogpt.pte` file in the current directory.
 
-For more information, see [Exporting to ExecuTorch](../tutorials/export-to-executorch-tutorial) and
+For more information, see [Exporting to ExecuTorch](https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial) and
 [torch.export](https://pytorch.org/docs/stable/export.html).
 
 ### Step 2. Invoking the Runtime
@@ -751,7 +751,7 @@ Through the ExecuTorch Developer Tools, users are able to profile model executio
 
 ##### ETRecord generation (Optional)
 
-An ETRecord is an artifact generated at the time of export that contains model graphs and source-level metadata linking the ExecuTorch program to the original PyTorch model. You can view all profiling events without an ETRecord, though with an ETRecord, you will also be able to link each event to the types of operators being executed, module hierarchy, and stack traces of the original PyTorch source code. For more information, see [the ETRecord docs](../etrecord.md).
+An ETRecord is an artifact generated at the time of export that contains model graphs and source-level metadata linking the ExecuTorch program to the original PyTorch model. You can view all profiling events without an ETRecord, though with an ETRecord, you will also be able to link each event to the types of operators being executed, module hierarchy, and stack traces of the original PyTorch source code. For more information, see [the ETRecord docs](../etrecord.rst).
 
 
 In your export script, after calling `to_edge()` and `to_executorch()`, call `generate_etrecord()` with the `EdgeProgramManager` from `to_edge()` and the `ExecuTorchProgramManager` from `to_executorch()`. Make sure to copy the `EdgeProgramManager`, as the call to `to_edge_transform_and_lower()` mutates the graph in-place.
@@ -848,7 +848,7 @@ This prints the performance data in a tabular format in “inspector_out.txt”,
 ![](../_static/img/llm_manual_print_data_tabular.png)
 <a href="../_static/img/llm_manual_print_data_tabular.png" target="_blank">View in full size</a>
 
-To learn more about the Inspector and the rich functionality it provides, see the [Inspector API Reference](../model-inspector.md).
+To learn more about the Inspector and the rich functionality it provides, see the [Inspector API Reference](../model-inspector.rst).
 
 ## Custom Kernels
 With the ExecuTorch custom operator APIs, custom operator and kernel authors can easily bring in their kernel into PyTorch/ExecuTorch.
