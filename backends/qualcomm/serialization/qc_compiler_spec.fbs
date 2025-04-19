@@ -194,6 +194,12 @@ table QnnExecuTorchOptions {
 
   /// True if there exists multiple graphs in one .pte file.
   multiple_graphs:bool;
+
+  // Enable this option to record all QNN API calls for debugging purpose
+  saver:bool;
+
+  // Path to saver output folder
+  saver_output_dir:string;
 }
 
 root_type QnnExecuTorchOptions;
