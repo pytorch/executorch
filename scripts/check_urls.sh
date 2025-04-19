@@ -16,10 +16,12 @@ while IFS=: read -r filepath url; do
     printf '\n%s:\n' "$filepath"
     last_filepath=$filepath
   fi
-  code=$(curl -gsLm30 -o /dev/null -w "%{http_code}" -I "$url") || code=000
-  if [ "$code" -ge 400 ]; then
-    code=$(curl -gsLm30 -o /dev/null -w "%{http_code}" -r 0-0 -A "Mozilla/5.0" "$url") || code=000
-  fi
+  code=$(curl -g -sSL -m30 \
+    -A 'Mozilla/5.0' \
+    -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' \
+    --range 0-0 \
+    -w '%{http_code}' -o /dev/null \
+    "$url") || code=000
   if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
     printf "${green}%s${reset} ${cyan}%s${reset}\n" "$code" "$url"
   else
