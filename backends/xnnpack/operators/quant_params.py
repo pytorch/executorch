@@ -141,17 +141,27 @@ class QuantParams:
                 tensor, self.scale, self.zp, self.qmin, self.qmax, self.dtype
             )
 
+    # Temporary helper until non-batch dimensions can be inferred
+    # Detects if a node feeds into a conv op by checking all downstream users
+    @staticmethod
+    def _feeds_into_conv(node: torch.fx.Node) -> bool:
+        users_list = [node]
+
+        while users_list:
+            current_user = users_list.pop()
+            if "convolution" in str(current_user.target):
+                return True
+            users_list.extend(current_user.users)
+
+        return False
+
     @classmethod
     def _from_dynamic_input_node(cls, quant_node: torch.fx.Node) -> QuantParams:
         q_input = quant_node.args[0]  # fp32 input
         assert isinstance(q_input, torch.fx.Node)
-        num_nonbatch_dims = 1
-
-        # Compute non-batch dimensions (shape length - 1), defaulting to 1
-        q_input_val = q_input.meta.get("val", None)
-        q_input_shape = getattr(q_input_val, "shape", None)
-        if q_input_shape is not None:
-            num_nonbatch_dims = max(len(q_input_shape) - 1, 1)
+        # TODO - materialize this from the quant_node scale count and val shape
+        # Set non-batch dims to 3 if node feeds into conv (only 2D is supported), otherwise set to 1 for linear
+        num_nonbatch_dims = 3 if cls._feeds_into_conv(quant_node) else 1
 
         return cls(
             per_channel=False,  # True is not valid
