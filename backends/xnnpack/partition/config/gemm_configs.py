@@ -9,6 +9,7 @@ from itertools import chain
 from typing import cast, List, Optional, Tuple
 
 import torch
+from executorch.backends.transforms import get_shape
 from executorch.backends.xnnpack.operators.quant_params import QuantParams
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
@@ -358,18 +359,35 @@ class ConvolutionConfig(GEMMConfig):
             why(node, "Only support 1D + 2D Conv")
             return False  # Only support 1D + 2D Conv
 
-        precision = self._detect_precision(node)
-        if precision == ConfigPrecisionType.DYNAMIC_QUANT and len(conv_stride) != 2:
-            why(node, "Only support 2D Conv for dynamic quantization")
+        kernel_node = get_input_node(node, 1)
+        kernel_shape = get_shape(kernel_node)
+        weight_quant_params = QuantParams.from_weights(kernel_node, ep)
+        groups = cast(int, node.args[8])
+        is_transpose = node.args[6]
+
+        if is_transpose:
+            group_input_channels = int(kernel_shape[0] / groups)
+            group_output_channels = kernel_shape[1]
+        else:
+            group_input_channels = kernel_shape[1]
+            group_output_channels = int(kernel_shape[0] / groups)
+
+        is_depthwise = (
+            group_input_channels == 1
+            and group_output_channels % group_input_channels == 0
+        )
+
+        # XNNPACK does not support dynamic quantization convs that are not 2D or are depthwise
+        if self._detect_precision(node) == ConfigPrecisionType.DYNAMIC_QUANT and (
+            len(conv_stride) != 2 or is_depthwise
+        ):
+            why(
+                node,
+                "XNNPACK only supports standard 2D convolutions for dynamic quantization",
+            )
             return False
 
-        kernel_node = get_input_node(node, 1)
-        weight_quant_params = QuantParams.from_weights(kernel_node, ep)
-
-        is_transpose = node.args[6]
-        groups = cast(int, node.args[8])
-
-        # XNNPack does not support non-zero output padding in transposed
+        # XNNPACK does not support non-zero output padding in transposed
         # convolutions.
         if is_transpose and any(
             out_pad != 0 for out_pad in cast(List[int], node.args[7])
