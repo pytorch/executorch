@@ -323,7 +323,7 @@ def _do_annotate_conv(
         assert isinstance(weight, Node)
         input_qspec_map[weight] = get_weight_qspec(quantization_config)
 
-        # Only annotate dynamically quantized conv if it's 2D
+        # Only annotate dynamically quantized conv if it's 2D and not depthwise
         if (
             quantization_config
             and quantization_config.input_activation
@@ -334,6 +334,22 @@ def _do_annotate_conv(
 
             # Skip if not a 4D weight tensor (i.e. not conv2d)
             if weight_shape is not None and len(weight_shape) != 4:
+                continue
+
+            # Default to 1 since groups is not available in the node
+            groups = 1
+            if is_conv_transpose:
+                group_input_channels = int(weight_shape[0] / groups)
+                group_output_channels = weight_shape[1]
+            else:
+                group_input_channels = weight_shape[1]
+                group_output_channels = int(weight_shape[0] / groups)
+
+            # Skip if depthwise
+            if (
+                group_input_channels == 1
+                and group_output_channels % group_input_channels == 0
+            ):
                 continue
 
         # adding weight node to the partition as well
