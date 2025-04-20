@@ -214,6 +214,11 @@ Error Runner::load() {
   bos_id_ = tokenizer_->bos_tok();
   eos_id_.insert(tokenizer_->eos_tok());
 
+  ET_LOG(
+      Info,
+      "RSS after loading model: %f MiB (0 if unsupported)",
+      executorch::extension::llm::get_rss_bytes() / 1024.0 / 1024.0);
+
   // create sampler
   sampler_ = std::make_unique<Sampler>(
       vocab_size_,
@@ -383,6 +388,11 @@ Error Runner::generate(
     pos = num_prompt_tokens;
     stats_.first_token_ms = time_in_ms();
     stats_.prompt_eval_end_ms = time_in_ms();
+
+    ET_LOG(
+        Info,
+        "RSS after prompt prefill: %f MiB (0 if unsupported)",
+        executorch::extension::llm::get_rss_bytes() / 1024.0 / 1024.0);
   };
 
   auto kv_execute = [&](const std::string& method_name) {
@@ -441,6 +451,11 @@ Error Runner::generate(
   if (pos == seq_len) {
     ET_LOG(Info, "\nSequence length (%i tokens) reached!", seq_len);
   }
+
+  ET_LOG(
+      Info,
+      "RSS after finishing text generation: %f MiB (0 if unsupported)",
+      executorch::extension::llm::get_rss_bytes() / 1024.0 / 1024.0);
 
   stats_.num_prompt_tokens = num_prompt_tokens;
   stats_.num_generated_tokens = pos - num_prompt_tokens;
