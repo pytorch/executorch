@@ -173,15 +173,50 @@ class Conv2dPermute(torch.nn.Module):
         return (torch.randn(2, 2, 4, 4),)
 
 
-class Conv2dDynamicQuant(torch.nn.Module):
+class Conv2dDQ(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv = torch.nn.Conv2d(3, 10, 3)
-        self.conv.weight.requires_grad = False
-        self.conv.bias.requires_grad = False
+        self.conv = torch.nn.Conv2d(in_channels=3, out_channels=10, kernel_size=3)
 
     def forward(self, x):
         return self.conv(x)
+
+    def get_inputs(self):
+        return (torch.randn(1, 3, 8, 8),)
+
+
+class Conv2dDQSeq(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.first = torch.nn.Conv2d(
+            in_channels=3, out_channels=8, kernel_size=3, padding=1
+        )
+        self.second = torch.nn.Conv2d(
+            in_channels=8, out_channels=10, kernel_size=3, padding=1
+        )
+
+    def forward(self, x):
+        y = self.first(x)
+        return self.second(y)
+
+    def get_inputs(self):
+        return (torch.randn(1, 3, 8, 8),)
+
+
+class Conv2dDQParallel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.first = torch.nn.Conv2d(
+            in_channels=3, out_channels=8, kernel_size=3, padding=1
+        )
+        self.second = torch.nn.Conv2d(
+            in_channels=3, out_channels=10, kernel_size=3, padding=1
+        )
+
+    def forward(self, x):
+        first = self.first(x)
+        second = self.second(x)
+        return first, second
 
     def get_inputs(self):
         return (torch.randn(1, 3, 8, 8),)
@@ -244,8 +279,8 @@ class TestConv2d(unittest.TestCase):
     def _test_dq(
         self,
         m: torch.nn.Module,
-        inputs,
-        dynamic_shapes,
+        conv_count=1,
+        dynamic_shapes=None,
     ):
         quant_config = get_symmetric_quantization_config(
             is_per_channel=True,
@@ -257,14 +292,16 @@ class TestConv2d(unittest.TestCase):
             per_op_mode=True,
         )
 
-        tester = Tester(m, inputs, dynamic_shapes=dynamic_shapes)
+        tester = Tester(m, m.get_inputs(), dynamic_shapes=dynamic_shapes)
         tester.quantize(Quantize(quantization_config=quant_config))
         tester.export()
         tester.check(["torch.ops.quantized_decomposed.choose_qparams"])
         tester.to_edge_transform_and_lower(
             ToEdgeTransformAndLower([DynamicallyQuantizedPartitioner])
         )
-        tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+        tester.check_count(
+            {"torch.ops.higher_order.executorch_call_delegate": conv_count}
+        )
         tester.check_not(["executorch_exir_dialects_edge__ops_aten_conv2d_default"])
         tester.to_executorch()
         tester.serialize()
@@ -748,9 +785,13 @@ class TestConv2d(unittest.TestCase):
         )
 
     def test_dq_conv2d(self) -> None:
-        model = Conv2dDynamicQuant()
-        self._test_dq(
-            model,
-            model.get_inputs(),
-            dynamic_shapes=None,
-        )
+        model = Conv2dDQ()
+        self._test_dq(model)
+
+    def test_dq_conv2d_seq(self) -> None:
+        model = Conv2dDQSeq()
+        self._test_dq(model, conv_count=2)
+
+    def test_dq_conv2d_parallel(self) -> None:
+        model = Conv2dDQParallel()
+        self._test_dq(model, conv_count=2)
