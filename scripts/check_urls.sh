@@ -8,22 +8,18 @@
 set -x
 
 ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36'
-url='https://wiki.mozilla.org/Abstract_Interpretation'
+accept_hdr='text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+url='<<PUT_YOUR_URL_HERE>>'
 
-curl -s -o /dev/null -w '%{http_code}\n' --http1.1 -I "$url"
+curl -s -o /dev/null -w '%{http_code}\n' -L "$url"
 
-curl -s -o /dev/null -w '%{http_code}\n' --http1.1 --range 0-0 -A "$ua" "$url"
+curl -s -o /dev/null -w '%{http_code}\n' -L -A "$ua" "$url"
 
-curl -s -o /dev/null -w '%{http_code}\n' --http1.1 --range 0-0 -A "$ua" --compressed "$url"
+curl -s -o /dev/null -w '%{http_code}\n' -L -A "$ua" -H "Accept: $accept_hdr" "$url"
 
-curl -s -o /dev/null -w '%{http_code}\n' --http1.1 --range 0-0 -A "$ua" \
-     -H 'Accept-Language: en-US,en;q=0.9' \
-     "$url"
+curl -s -o /dev/null -w '%{http_code}\n' -L -A "$ua" -H "Referer: https://$(echo $url | awk -F/ '{print $3}')/" "$url"
 
-curl -s -o /dev/null -w '%{http_code}\n' --http1.1 --range 0-0 -A "$ua" \
-     -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' \
-     -H 'Referer: https://wiki.mozilla.org/' \
-     "$url"
+curl -4 -s -o /dev/null -w '%{http_code}\n' -L -A "$ua" "$url"
 
 set -euo pipefail
 
