@@ -42,7 +42,7 @@ def parse_args() -> Any:
     )
 
     parser.add_argument(
-        "--modesl",
+        "--models",
         type=str,
         required=True,
         help='Comma separated list of Models for benchmarking. Model options: https://github.com/pytorch/executorch/blob/0342babc505bcb90244874e9ed9218d90dd67b87/examples/models/__init__.py#L53 or ok to use HuggingFace model name, e.g. "meta-llama/Llama-3.2-1B"',
@@ -53,33 +53,16 @@ def parse_args() -> Any:
         type=str,
         required=False,
         default="",
-        choices=[
-            "apple_iphone_15",
-            "apple_iphone_15+ios_18",
-            "samsung_galaxy_s22",
-            "samsung_galaxy_s24",
-            "google_pixel_8_pro",
-        ],
-        help="specific devices to run on. Default is s22 for android and iphone 15 for ios.",
+        # TODO update example or add choices once we establish custom device pools
+        help="Comma-separated list of specific devices to run the benchmark on. Defaults to device pools for approriate platform. For example, `--devices samsung_galaxy_s22,samsung_galaxy_s24`.",
     )
 
     parser.add_argument(
-        "--benchmark_configs",
+        "--benchmark-configs",
         type=str,
         required=False,
-        choices=[
-            "xnnpack_q8",
-            "hf_xnnpack_fp32",
-            "llama3_fb16",
-            "llama3_spinquant",
-            "llama3_qlora",
-            "qnn_q8",
-            "coreml_fp16",
-            "mps",
-            "llama3_coreml_ane",
-        ],
         default="",
-        help="The list of configs used in the benchmark",
+        help="Comma-separated list of benchmark configs to use. For example, `--benchmark-configs xnnpack_q8,hf_xnnpack_fp32,llama3_fb16` (See https://github.com/pytorch/executorch/blob/main/.ci/scripts/gather_benchmark_configs.py#L29-L47 for options)",
     )
 
     args, unknown = parser.parse_known_args()
