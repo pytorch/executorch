@@ -3,7 +3,7 @@ load(
     "ANDROID",
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_verision")
+load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -24,7 +24,7 @@ def define_common_targets():
         platforms = [ANDROID],
         visibility = ["@EXECUTORCH_CLIENTS"],
         deps = [
-            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
+            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
             "//executorch/runtime/backend:interface",
         ],
         exported_deps = [
@@ -60,11 +60,11 @@ def define_common_targets():
             platforms = [ANDROID],
             visibility = ["@EXECUTORCH_CLIENTS"],
             resources = ({
-                "qnn_lib": "fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs".format(get_qnn_library_verision()),
+                "qnn_lib": "fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs".format(get_qnn_library_version()),
                 } if include_aot_qnn_lib else {
             }),
             deps = [
-                "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
+                "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
                 ":logging",
                 "//executorch/backends/qualcomm:schema",
                 "//executorch/backends/qualcomm/aot/ir:qcir_utils",

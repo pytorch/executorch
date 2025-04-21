@@ -192,7 +192,7 @@ html_js_files = ["js/progress-bar.js"]
 # Example configuration for intersphinx: refer to the Python standard library.
 intersphinx_mapping = {
     "python": ("https://docs.python.org/", None),
-    "numpy": ("https://docs.scipy.org/doc/numpy/", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
     "torch": ("https://pytorch.org/docs/stable/", None),
 }
 
@@ -211,7 +211,6 @@ redirects = {
     "build-run-qualcomm-ai-engine-direct-backend": "backends-qualcomm.html",
     "build-run-xtensa": "backends-cadence.html",
     "apple-runtime": "using-executorch-ios.html",
-    "tutorials/devtools-integration-tutorial": "../using-executorch-troubleshooting.html",
 }
 
 # Custom directives defintions to create cards on main landing page
