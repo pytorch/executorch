@@ -5,6 +5,7 @@ import os
 from argparse import ArgumentParser
 from logging import info
 from re import A
+from shutil import Error
 from typing import Any
 
 import requests
@@ -22,19 +23,18 @@ def parse_args() -> Any:
     parser.add_argument(
         "--branch",
         type=str,
-        default="main",
-        required=False,
-        help="what gh branch to use in pytorch/executorch",
+        required=True,
+        help="what (non-fork) gh branch to use in pytorch/executorch",
     )
 
-    app_type = parser.add_mutually_exclusive_group(required=True)
-    app_type.add_argument(
+    platform = parser.add_mutually_exclusive_group(required=True)
+    platform.add_argument(
         "--android",
         action="store_true",
         required=False,
         help="run the test on Android",
     )
-    app_type.add_argument(
+    platform.add_argument(
         "--ios",
         action="store_true",
         required=False,
@@ -42,11 +42,10 @@ def parse_args() -> Any:
     )
 
     parser.add_argument(
-        "--models",
+        "--modesl",
         type=str,
-        required=False,
-        default="llama",
-        help="the model to run on. Default is llama. See https://github.com/pytorch/executorch/blob/0342babc505bcb90244874e9ed9218d90dd67b87/examples/models/__init__.py#L53 for more model options",
+        required=True,
+        help='Comma separated list of Models for benchmarking. Model options: https://github.com/pytorch/executorch/blob/0342babc505bcb90244874e9ed9218d90dd67b87/examples/models/__init__.py#L53 or ok to use HuggingFace model name, e.g. "meta-llama/Llama-3.2-1B"',
     )
 
     parser.add_argument(
@@ -68,7 +67,17 @@ def parse_args() -> Any:
         "--benchmark_configs",
         type=str,
         required=False,
-        choices=["xplat", "android", "ios"],
+        choices=[
+            "xnnpack_q8",
+            "hf_xnnpack_fp32",
+            "llama3_fb16",
+            "llama3_spinquant",
+            "llama3_qlora",
+            "qnn_q8",
+            "coreml_fp16",
+            "mps",
+            "llama3_coreml_ane",
+        ],
         default="",
         help="The list of configs used in the benchmark",
     )
@@ -79,13 +88,14 @@ def parse_args() -> Any:
     return args
 
 
-def run_workflow(app_type, branch, models, devices, benchmark_configs):
+def run_workflow(platform, branch, models, devices, benchmark_configs):
     dispatch_hook = "/dispatches"
-    if app_type == "android":
+    if platform == "android":
         url = f"https://api.github.com/repos/pytorch/executorch/actions/workflows/android-perf.yml"
     else:
         url = f"https://api.github.com/repos/pytorch/executorch/actions/workflows/apple-perf.yml"
 
+    # see github workflow dispatch for header details https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event
     headers = {
         "Accept": "application/vnd.github.v3+json",
         "Authorization": f"Bearer {GITHUB_TOKEN}",
@@ -106,7 +116,7 @@ def run_workflow(app_type, branch, models, devices, benchmark_configs):
         raise Exception(f"Failed to start workflow: {resp.text}")
     else:
         print("Workflow started successfully.")
-        if app_type == "android":
+        if platform == "android":
             print(
                 "Find your workflow run here: https://github.com/pytorch/executorch/actions/workflows/android-perf.yml"
             )
@@ -118,19 +128,17 @@ def run_workflow(app_type, branch, models, devices, benchmark_configs):
 
 def main() -> None:
     args = parse_args()
-    app_type = None
+    platform = None
     if args.android:
-        app_type = "android"
+        platform = "android"
     elif args.ios:
-        app_type = "ios"
-    if app_type:
+        platform = "ios"
+    if platform:
         resp = run_workflow(
-            app_type, args.branch, args.models, args.devices, args.benchmark_configs
+            platform, args.branch, args.models, args.devices, args.benchmark_configs
         )
     else:
-        raise Exception(
-            "No app type specified. Please specify either --android or --ios."
-        )
+        raise Error("No app type specified. Please specify either --android or --ios.")
 
 
 if __name__ == "__main__":
