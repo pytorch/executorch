@@ -21,8 +21,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -120,8 +118,7 @@ public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallbac
             (mStatsInfo.generateEnd - mStatsInfo.generateStart) * 1e-6,
             0.0f));
     // Token per second
-    results.add(
-        new BenchmarkMetric(benchmarkModel, "token_per_sec", mStatsInfo.tps, 0.0f));
+    results.add(new BenchmarkMetric(benchmarkModel, "token_per_sec", mStatsInfo.tps, 0.0f));
 
     try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.json")) {
       Gson gson = new Gson();
