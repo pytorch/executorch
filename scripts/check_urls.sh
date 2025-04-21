@@ -9,7 +9,7 @@ set -x
 
 ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36'
 accept_hdr='text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-url='<<PUT_YOUR_URL_HERE>>'
+url='https://wiki.mozilla.org/Abstract_Interpretation'
 
 curl -s -o /dev/null -w '%{http_code}\n' -L "$url"
 
