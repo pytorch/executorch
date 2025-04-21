@@ -17,11 +17,11 @@ while IFS=: read -r filepath url; do
     printf '\n%s:\n' "$filepath"
     last_filepath=$filepath
   fi
-  code=$(curl -gsLm30 -o /dev/null -w "%{http_code}" -I "$url") || code=000
+  code=$(curl -gsLm30 --retry 3 --retry-delay 3 -o /dev/null -w "%{http_code}" -I "$url") || code=000
   if [ "$code" -ge 400 ]; then
-    code=$(curl -gsLm30 -o /dev/null -w "%{http_code}" -r 0-0 -A "$user_agent" "$url") || code=000
+    code=$(curl -gsLm30 --retry 3 --retry-delay 3 -o /dev/null -w "%{http_code}" -r 0-0 -A "$user_agent" "$url") || code=000
   fi
-  if [ "$code" -ge 400 ]; then
+  if [ "$code" -lt 200 ] || [ "$code" -ge 400 ]; then
     request_id=$(curl -sS -H 'Accept: application/json' \
       "https://check-host.net/check-http?host=$url&max_nodes=1&node=us3.node.check-host.net" \
       | jq -r .request_id)
