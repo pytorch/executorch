@@ -699,7 +699,11 @@ git<span class="w"> </span>push
 </li>
 <li><p>You may see a comment from <code class="docutils literal notranslate"><span class="pre">github-actions</span></code> requesting a “release notes” label:</p>
 <p><img alt="" src="_images/release_notes.png" /></p>
-<p>Please ignore this message. It’s directed at the ExecuTorch maintainers — they’ll label your PR for you.</p>
+<p>As the comment says, you can add a label by commenting on the PR with an instruction to pytorchbot. You can see a list of all our labels <a class="reference external" href="https://github.com/pytorch/executorch/labels/">here</a>. Pick the one which fits your PR best, then add it as a comment using the syntax <code class="docutils literal notranslate"><span class="pre">&#64;pytorchbot</span> <span class="pre">label</span> <span class="pre">&quot;YOUR</span> <span class="pre">LABEL</span> <span class="pre">HERE&quot;</span></code>. For example:</p>
+<p><img alt="" src="_images/how_to_label1.png" /></p>
+<p>After you’ve submitted your comment, <code class="docutils literal notranslate"><span class="pre">pytorchbot</span></code> will add your chosen label to the PR:</p>
+<p><img alt="" src="_images/how_to_label2.png" /></p>
+<p>and the <code class="docutils literal notranslate"><span class="pre">github-actions</span></code> comment requesting a label will disappear.</p>
 </li>
 <li><p>At the end of your Draft PR, you’ll see something like this:</p>
 <p><img alt="" src="_images/end_of_draft_pr1.png" /></p>
