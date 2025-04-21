@@ -17,9 +17,9 @@ while IFS=: read -r filepath url; do
     printf '\n%s:\n' "$filepath"
     last_filepath=$filepath
   fi
-  code=$(curl -x fwdproxy:8080 -gsLm30 -o /dev/null -w "%{http_code}" -I "$url") || code=000
+  code=$(curl -gsLm30 -o /dev/null -w "%{http_code}" -I "$url") || code=000
   if [ "$code" -ge 400 ]; then
-    code=$(curl -x fwdproxy:8080 -gsLm30 -o /dev/null -w "%{http_code}" -r 0-0 -A "$user_agent" "$url") || code=000
+    code=$(curl -gsLm30 -o /dev/null -w "%{http_code}" -r 0-0 -A "$user_agent" "$url") || code=000
   fi
   if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
     printf "${green}%s${reset} ${cyan}%s${reset}\n" "$code" "$url"
