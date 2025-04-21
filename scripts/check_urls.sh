@@ -5,6 +5,27 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+curl -I https://wiki.mozilla.org/Abstract_Interpretation
+curl -I https://mvnrepository.com/artifact/org.pytorch/executorch-android
+curl -I https://www.cadence.com/en_US/home.html
+curl -I https://www.cadence.com/en_US/home/tools/ip/tensilica-ip/hifi-dsps/hifi-4.html
+curl -I -A "Mozilla/5.0" https://wiki.mozilla.org/Abstract_Interpretation
+curl -I -A "Mozilla/5.0" https://mvnrepository.com/artifact/org.pytorch/executorch-android
+curl -I -A "Mozilla/5.0" https://www.cadence.com/en_US/home.html
+curl -I -A "Mozilla/5.0" https://www.cadence.com/en_US/home/tools/ip/tensilica-ip/hifi-dsps/hifi-4.html
+curl -I -A "" https://wiki.mozilla.org/Abstract_Interpretation
+curl -I -A "" https://mvnrepository.com/artifact/org.pytorch/executorch-android
+curl -I -A "" https://www.cadence.com/en_US/home.html
+curl -I -A "" https://www.cadence.com/en_US/home/tools/ip/tensilica-ip/hifi-dsps/hifi-4.html
+curl -I -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36" https://wiki.mozilla.org/Abstract_Interpretation
+curl -I -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36" https://mvnrepository.com/artifact/org.pytorch/executorch-android
+curl -I -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36" https://www.cadence.com/en_US/home.html
+curl -I -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36" https://www.cadence.com/en_US/home/tools/ip/tensilica-ip/hifi-dsps/hifi-4.html
+curl -I -A "GitHubActions" https://wiki.mozilla.org/Abstract_Interpretation
+curl -I -A "GitHubActions" https://mvnrepository.com/artifact/org.pytorch/executorch-android
+curl -I -A "GitHubActions" https://www.cadence.com/en_US/home.html
+curl -I -A "GitHubActions" https://www.cadence.com/en_US/home/tools/ip/tensilica-ip/hifi-dsps/hifi-4.html
+
 set -euo pipefail
 
 status=0
