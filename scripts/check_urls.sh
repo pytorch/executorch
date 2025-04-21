@@ -10,9 +10,11 @@ set -x
 UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
 URL="https://wiki.mozilla.org/Abstract_Interpretation"
 
-curl -sS --http2 -o /dev/null -w 'HEAD→%{http_code}\n' -I -A "$UA" "$URL"
+echo "===== CI DEBUG: HEAD over HTTP/2 ====="
+curl -vvv --http2 -I -A "$UA" "$URL" || true
 
-curl -sS --http2 -o /dev/null -w 'RANGE→%{http_code}\n' --range 0-0 -A "$UA" "$URL"
+echo "===== CI DEBUG: GET byte‑0 over HTTP/2 ====="
+curl -vvv --http2 --range 0-0 -A "$UA" "$URL" || true
 
 set -euo pipefail
 
