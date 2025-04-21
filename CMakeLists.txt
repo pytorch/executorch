@@ -410,20 +410,6 @@ endif()
 message(STATUS "executorch: Using sources file ${EXECUTORCH_SRCS_FILE}")
 include(${EXECUTORCH_SRCS_FILE})
 
-#
-# Modify default options when cross-compiling.
-#
-# The intent is for the EXECUTORCH_BUILD_HOST_TARGETS option to affect the
-# default ON/OFF values of host targets around the tree. This way, a user can
-# disable EXECUTORCH_BUILD_HOST_TARGETS to disable all host targets, and then
-# optionally re-enable some of those targets. Or they could leave
-# EXECUTORCH_BUILD_HOST_TARGETS enabled and then optionally disable any given
-# host target.
-#
-# We can then use various cross-compilation hints to set the default value of
-# EXECUTORCH_BUILD_HOST_TARGETS, which can still be overridden if desired.
-#
-
 # Detect if an iOS toolchain is set.
 if(CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   set(CMAKE_TOOLCHAIN_IOS ON)
@@ -457,16 +443,6 @@ if(EXECUTORCH_USE_CPP_CODE_COVERAGE)
     )
   endif()
 endif()
-
-# EXECUTORCH_BUILD_HOST_TARGETS: Option to control the building of host-only
-# tools like `flatc`, along with example executables like `executor_runner` and
-# libraries that it uses, like `gflags`. Disabling this can be helpful when
-# cross-compiling, but some required tools that would have been built need to be
-# provided directly.
-cmake_dependent_option(
-  EXECUTORCH_BUILD_HOST_TARGETS "Build host-only targets." ON
-  "NOT CMAKE_TOOLCHAIN_IOS" OFF
-)
 
 #
 # flatc: Flatbuffer commandline tool to generate .h files from .fbs files
@@ -665,10 +641,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/configurations)
 #
 # gflags: Commandline flag host library.
 #
-cmake_dependent_option(
-  EXECUTORCH_BUILD_GFLAGS "Build the gflags library." ON
-  EXECUTORCH_BUILD_HOST_TARGETS OFF
-)
+option(EXECUTORCH_BUILD_GFLAGS "Build the gflags library." ON)
 if(EXECUTORCH_BUILD_GFLAGS)
   add_subdirectory(third-party/gflags)
 endif()
@@ -692,10 +665,7 @@ install(FILES tools/cmake/executorch-config.cmake DESTINATION lib/cmake/ExecuTor
 #
 # executor_runner: Host tool that demonstrates program execution.
 #
-cmake_dependent_option(
-  EXECUTORCH_BUILD_EXECUTOR_RUNNER "Build the executor_runner executable" ON
-  EXECUTORCH_BUILD_HOST_TARGETS OFF
-)
+option(EXECUTORCH_BUILD_EXECUTOR_RUNNER "Build the executor_runner executable" ON)
 
 # Add googletest if any test targets should be built
 if(BUILD_TESTING)
