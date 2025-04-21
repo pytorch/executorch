@@ -7,18 +7,20 @@
 
 set -x
 
-curl -sS -o /dev/null -w "%{http_code}\n" \
--H 'Accept-Language: en-US,en;q=0.9' \
--H 'Accept-Encoding: gzip, deflate, br, zstd' \
--H 'Referer: https://www.google.com/' \
--H 'Connection: keep-alive' \
--H 'Upgrade-Insecure-Requests: 1' \
--H 'Sec-Fetch-Dest: document' \
--H 'Sec-Fetch-Mode: navigate' \
--H 'Sec-Fetch-Site: cross-site' \
--H 'Sec-Fetch-User: ?1' \
--A 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36' \
-https://www.cadence.com/en_US/home.html
+curl --http1.1 -sS -o /dev/null -w '%{http_code}\n' \
+  -H 'Accept-Language: en-US,en;q=0.9' \
+  -H 'Accept-Encoding: gzip, deflate, br' \
+  -H 'Referer: https://www.google.com/' \
+  -H 'Connection: keep-alive' \
+  -H 'Upgrade-Insecure-Requests: 1' \
+  -A 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36' \
+  https://www.cadence.com/en_US/home.html
+
+curl -c cookies.txt -b cookies.txt -sS -o /dev/null -w '%{http_code}\n' \
+  -H 'Accept-Language: en-US,en;q=0.9' \
+  -H 'Referer: https://www.google.com/' \
+  -A 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36' \
+  https://www.cadence.com/en_US/home.html
 
 set -euo pipefail
 
