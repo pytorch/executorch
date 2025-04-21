@@ -5,6 +5,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+set -x
+
+url="https://www.cadence.com/en_US/home.html"
+request_id=$(curl -sS -H 'Accept: application/json' \
+      "https://check-host.net/check-http?host=$url&max_nodes=1&node=us3.node.check-host.net" \
+      | jq -r .request_id)
+curl -sS -H 'Accept: application/json' "https://check-host.net/check-result/$request_id"
+
 set -euo pipefail
 
 status=0
@@ -20,14 +28,6 @@ while IFS=: read -r filepath url; do
   code=$(curl -gsLm30 -o /dev/null -w "%{http_code}" -I "$url") || code=000
   if [ "$code" -ge 400 ]; then
     code=$(curl -gsLm30 -o /dev/null -w "%{http_code}" -r 0-0 -A "$user_agent" "$url") || code=000
-  fi
-  if [ "$code" -ge 400 ]; then
-    request_id=$(curl -sS -H 'Accept: application/json' \
-      "https://check-host.net/check-http?host=$url&max_nodes=1&node=us3.node.check-host.net" \
-      | jq -r .request_id)
-    code=$(curl -sS -H 'Accept: application/json' \
-      "https://check-host.net/check-result/$request_id" \
-      | jq -r '."us3.node.check-host.net"[0][3]' || echo 000)
   fi
   if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
     printf "${green}%s${reset} ${cyan}%s${reset}\n" "$code" "$url"
