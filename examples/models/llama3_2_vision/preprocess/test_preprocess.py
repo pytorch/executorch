@@ -124,9 +124,9 @@ class TestImageTransform:
     same output as the reference model.
 
     Reference model: CLIPImageTransform
-        https://github.com/pytorch/torchtune/blob/main/torchtune/models/clip/inference/_transforms.py#L115
+        https://github.com/pytorch/torchtune/blob/main/torchtune/models/clip/inference/_transform.py#L127
     Eager and exported models: _CLIPImageTransform
-        https://github.com/pytorch/torchtune/blob/main/torchtune/models/clip/inference/_transforms.py#L26
+        https://github.com/pytorch/torchtune/blob/main/torchtune/models/clip/inference/_transform.py#L28
     """
 
     models_no_resize = initialize_models(resize_to_max_canvas=False)
@@ -147,7 +147,7 @@ class TestImageTransform:
             without distortion.
 
         These calculations are done by the reference model inside __init__ and __call__
-        https://github.com/pytorch/torchtune/blob/main/torchtune/models/clip/inference/_transforms.py#L115
+        https://github.com/pytorch/torchtune/blob/main/torchtune/models/clip/inference/_transform.py#L198
         """
         image_tensor = F.to_dtype(
             F.grayscale_to_rgb_image(F.to_image(image)), scale=True
