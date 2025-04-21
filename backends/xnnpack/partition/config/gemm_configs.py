@@ -28,6 +28,7 @@ from executorch.backends.xnnpack.utils.quant_utils import (
 )
 from executorch.backends.xnnpack.utils.utils import (
     get_input_node,
+    is_depthwise_conv,
     is_getitem,
     is_node,
     is_param_node,
@@ -365,21 +366,10 @@ class ConvolutionConfig(GEMMConfig):
         groups = cast(int, node.args[8])
         is_transpose = node.args[6]
 
-        if is_transpose:
-            group_input_channels = int(kernel_shape[0] / groups)
-            group_output_channels = kernel_shape[1]
-        else:
-            group_input_channels = kernel_shape[1]
-            group_output_channels = int(kernel_shape[0] / groups)
-
-        is_depthwise = (
-            group_input_channels == 1
-            and group_output_channels % group_input_channels == 0
-        )
-
         # XNNPACK does not support dynamic quantization convs that are not 2D or are depthwise
         if self._detect_precision(node) == ConfigPrecisionType.DYNAMIC_QUANT and (
-            len(conv_stride) != 2 or is_depthwise
+            len(conv_stride) != 2
+            or is_depthwise_conv(kernel_shape, groups, is_transpose)
         ):
             why(
                 node,

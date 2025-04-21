@@ -6,6 +6,7 @@ from typing import Callable, NamedTuple, Optional
 
 import torch
 import torch.nn.functional as F
+from executorch.backends.xnnpack.utils.utils import is_depthwise_conv
 from torch._subclasses import FakeTensor
 from torch.ao.quantization.fx.utils import get_new_attr_name_with_prefix
 from torch.ao.quantization.pt2e.export_utils import _WrapperModule
@@ -28,7 +29,6 @@ from torch.fx.passes.utils.matcher_with_name_node_map_utils import (
     SubgraphMatcherWithNameNodeMap,
 )
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
-
 
 __all__ = [
     "OperatorConfig",
@@ -336,20 +336,8 @@ def _do_annotate_conv(
             if weight_shape is not None and len(weight_shape) != 4:
                 continue
 
-            # Default to 1 since groups is not available in the node
-            groups = 1
-            if is_conv_transpose:
-                group_input_channels = int(weight_shape[0] / groups)
-                group_output_channels = weight_shape[1]
-            else:
-                group_input_channels = weight_shape[1]
-                group_output_channels = int(weight_shape[0] / groups)
-
-            # Skip if depthwise
-            if (
-                group_input_channels == 1
-                and group_output_channels % group_input_channels == 0
-            ):
+            # Skip if depthwise (default to groups=1 since it's not an arg)
+            if is_depthwise_conv(weight_shape, 1, is_conv_transpose):
                 continue
 
         # adding weight node to the partition as well
