@@ -211,7 +211,6 @@ redirects = {
     "build-run-qualcomm-ai-engine-direct-backend": "backends-qualcomm.html",
     "build-run-xtensa": "backends-cadence.html",
     "apple-runtime": "using-executorch-ios.html",
-    "tutorials/devtools-integration-tutorial": "../using-executorch-troubleshooting.html",
 }
 
 # Custom directives defintions to create cards on main landing page
