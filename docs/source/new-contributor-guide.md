@@ -253,7 +253,15 @@ Once you've successfully finished local development, it's time to send out your 
 
         ![](_static/img/new-contributor-guide/release_notes.png)
 
-        Please ignore this message. It's directed at the ExecuTorch maintainers — they'll label your PR for you.
+        As the comment says, you can add a label by commenting on the PR with an instruction to pytorchbot. You can see a list of all our labels [here](https://github.com/pytorch/executorch/labels/). Pick the one which fits your PR best, then add it as a comment using the syntax `@pytorchbot label "YOUR LABEL HERE"`. For example:
+
+        ![](./_static/img/new-contributor-guide/how_to_label1.png)
+
+        After you've submitted your comment, `pytorchbot` will add your chosen label to the PR:
+
+        ![](./_static/img/new-contributor-guide/how_to_label2.png)
+
+        and the `github-actions` comment requesting a label will disappear.
 
     * At the end of your Draft PR, you'll see something like this:
 
