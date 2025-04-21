@@ -7,17 +7,20 @@
 
 set -x
 
-ua="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
-url="https://wiki.mozilla.org/Abstract_Interpretation"
-jar="/tmp/ci_cookies.txt"
+curl -sSI -o /dev/null -w '%{http_code}\n' \
+  'https://wiki.mozilla.org/Abstract_Interpretation?action=raw'
 
-curl -s -c "$jar" -A "$ua" --compressed "$url"
+curl -sSI -o /dev/null -w '%{http_code}\n' \
+  'https://wiki.mozilla.org/Abstract_Interpretation?printable=yes'
 
-curl -s -b "$jar" -o /dev/null -w 'HEAD→%{http_code}\n' -I -A "$ua" "$url"
+curl -sSI -o /dev/null -w '%{http_code}\n' \
+  https://repo1.maven.org/maven2/org/pytorch/executorch-android/maven-metadata.xml
 
-curl -s -b "$jar" -o /dev/null -w 'RANGE→%{http_code}\n' --range 0-0 -A "$ua" "$url"
+curl -sSI -o /dev/null -w '%{http_code}\n' \
+  https://www.cadence.com/robots.txt
 
-curl -s -b "$jar" -o /dev/null -w 'GET →%{http_code}\n' -A "$ua" "$url"
+curl -sSI -o /dev/null -w '%{http_code}\n' \
+  https://www.cadence.com/en_US/home/tools/silicon-solutions/compute-ip/hifi-dsps/hifi-4.html
 
 set -euo pipefail
 
