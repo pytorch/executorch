@@ -5,6 +5,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+set -x
+
 curl -I https://wiki.mozilla.org/Abstract_Interpretation
 curl -I https://mvnrepository.com/artifact/org.pytorch/executorch-android
 curl -I https://www.cadence.com/en_US/home.html
