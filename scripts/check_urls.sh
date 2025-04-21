@@ -7,22 +7,22 @@
 
 set -x
 
-user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
-accept_hdr="text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-url="https://wiki.mozilla.org/Abstract_Interpretation"
+ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36'
+url='https://wiki.mozilla.org/Abstract_Interpretation'
 
-curl -sS -o /dev/null -w '%{http_code}\n' -I "$url"
+curl -s -o /dev/null -w '%{http_code}\n' --http1.1 -I "$url"
 
-curl -sS -o /dev/null -w '%{http_code}\n' -I -A "$user_agent" "$url"
+curl -s -o /dev/null -w '%{http_code}\n' --http1.1 --range 0-0 -A "$ua" "$url"
 
-curl -sS -o /dev/null -w '%{http_code}\n' --range 0-0 "$url"
+curl -s -o /dev/null -w '%{http_code}\n' --http1.1 --range 0-0 -A "$ua" --compressed "$url"
 
-curl -sS -o /dev/null -w '%{http_code}\n' --range 0-0 -A "$user_agent" "$url"
+curl -s -o /dev/null -w '%{http_code}\n' --http1.1 --range 0-0 -A "$ua" \
+     -H 'Accept-Language: en-US,en;q=0.9' \
+     "$url"
 
-curl -sS -o /dev/null -w '%{http_code}\n' \
-     --range 0-0 \
-     -A "$user_agent" \
-     -H "Accept: $accept_hdr" \
+curl -s -o /dev/null -w '%{http_code}\n' --http1.1 --range 0-0 -A "$ua" \
+     -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' \
+     -H 'Referer: https://wiki.mozilla.org/' \
      "$url"
 
 set -euo pipefail
