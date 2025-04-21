@@ -7,20 +7,25 @@
 
 set -x
 
-curl -sSI -o /dev/null -w '%{http_code}\n' \
-  'https://wiki.mozilla.org/Abstract_Interpretation?action=raw'
+UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+URL="https://wiki.mozilla.org/Abstract_Interpretation"
+PREFIX=$(hostname)_$(date +%s)
 
-curl -sSI -o /dev/null -w '%{http_code}\n' \
-  'https://wiki.mozilla.org/Abstract_Interpretation?printable=yes'
+dig +short "$URL" | tee "${PREFIX}_dns.txt"
 
-curl -sSI -o /dev/null -w '%{http_code}\n' \
-  https://repo1.maven.org/maven2/org/pytorch/executorch-android/maven-metadata.xml
+openssl s_client \
+  -connect wiki.mozilla.org:443 \
+  -servername wiki.mozilla.org \
+  -alpn h2 < /dev/null \
+  2>&1 | tee "${PREFIX}_tls.txt"
 
-curl -sSI -o /dev/null -w '%{http_code}\n' \
-  https://www.cadence.com/robots.txt
+curl -vvv -A "$UA" -I "$URL" 2>&1 | tee "${PREFIX}_head_http2.txt"
 
-curl -sSI -o /dev/null -w '%{http_code}\n' \
-  https://www.cadence.com/en_US/home/tools/silicon-solutions/compute-ip/hifi-dsps/hifi-4.html
+curl -vvv --http1.1 -A "$UA" -I "$URL" 2>&1 | tee "${PREFIX}_head_http1.txt"
+
+curl -vvv -A "$UA" --range 0-0 "$URL" 2>&1 | tee "${PREFIX}_range_http2.txt"
+
+curl -vvv --http1.1 -A "$UA" --range 0-0 "$URL" 2>&1 | tee "${PREFIX}_range_http1.txt"
 
 set -euo pipefail
 
