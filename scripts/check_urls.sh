@@ -18,7 +18,7 @@ while IFS=: read -r filepath url; do
     last_filepath=$filepath
   fi
   code=$(curl -gsLm60 --retry 3 --retry-delay 3 --retry-connrefused -o /dev/null -w "%{http_code}" -I "$url") || code=000
-  if [ "$code" -ge 400 ]; then
+  if [ "$code" -lt 200 ] || [ "$code" -ge 400 ]; then
     code=$(curl -gsLm60 --retry 3 --retry-delay 3 --retry-connrefused -o /dev/null -w "%{http_code}" -r 0-0 -A "$user_agent" "$url") || code=000
   fi
   if [ "$code" -lt 200 ] || [ "$code" -ge 400 ]; then
@@ -30,11 +30,11 @@ while IFS=: read -r filepath url; do
       sleep 3
     done
   fi
-  if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
-    printf "${green}%s${reset} ${cyan}%s${reset}\n" "$code" "$url"
-  else
+  if [ "$code" -lt 200 ] || [ "$code" -ge 400 ]; then
     printf "${red}%s${reset} ${yellow}%s${reset}\n" "$code" "$url" >&2
     status=1
+  else
+    printf "${green}%s${reset} ${cyan}%s${reset}\n" "$code" "$url"
   fi
 done < <(
   git --no-pager grep --no-color -I -P -o \
