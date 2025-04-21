@@ -89,6 +89,7 @@ def _fuse_quantized_cat(model: GraphModule) -> None:
         qnode.replace_all_uses_with(maybe_cat)
         model.graph.erase_node(qnode)
 
+
 def _remove_dtype_getattr_nodes(model: GraphModule) -> None:
     for n in model.graph.nodes:
         if n.op == "call_function" and n.target == getattr:
@@ -99,7 +100,8 @@ def _remove_dtype_getattr_nodes(model: GraphModule) -> None:
     model.graph.eliminate_dead_code()
     model.graph.lint()
     model.recompile()
-                
+
+
 class QuantFusionPass(ExportPass):
     def __init__(self, _fix_node_meta_val=False):
         super().__init__()
