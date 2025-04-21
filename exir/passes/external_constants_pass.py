@@ -97,8 +97,12 @@ def delegate_external_constants_pass(
     Tag external constants before to_backend. Tagged constants will be saved
     to an external file.
 
+    Note: this pass must be run after run_decompositions(), as tags on
+    constants are removed then.
+
     Args:
         gm: GraphModule to tag.
+        ep: ExportedProgram, to distinguish if a node is a constant.
         filter_fn: node -> str callable indicating the file (str) that a node should be saved to.
     Returns:
         PassResult: The resulting gm, and if it was mutated or not.
