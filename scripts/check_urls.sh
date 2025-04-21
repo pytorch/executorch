@@ -5,33 +5,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-set -x
-
-curl -I https://wiki.mozilla.org/Abstract_Interpretation
-curl -I https://mvnrepository.com/artifact/org.pytorch/executorch-android
-curl -I https://www.cadence.com/en_US/home.html
-curl -I https://www.cadence.com/en_US/home/tools/ip/tensilica-ip/hifi-dsps/hifi-4.html
-curl -I -A "Mozilla/5.0" https://wiki.mozilla.org/Abstract_Interpretation
-curl -I -A "Mozilla/5.0" https://mvnrepository.com/artifact/org.pytorch/executorch-android
-curl -I -A "Mozilla/5.0" https://www.cadence.com/en_US/home.html
-curl -I -A "Mozilla/5.0" https://www.cadence.com/en_US/home/tools/ip/tensilica-ip/hifi-dsps/hifi-4.html
-curl -I -A "" https://wiki.mozilla.org/Abstract_Interpretation
-curl -I -A "" https://mvnrepository.com/artifact/org.pytorch/executorch-android
-curl -I -A "" https://www.cadence.com/en_US/home.html
-curl -I -A "" https://www.cadence.com/en_US/home/tools/ip/tensilica-ip/hifi-dsps/hifi-4.html
-curl -I -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36" https://wiki.mozilla.org/Abstract_Interpretation
-curl -I -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36" https://mvnrepository.com/artifact/org.pytorch/executorch-android
-curl -I -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36" https://www.cadence.com/en_US/home.html
-curl -I -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36" https://www.cadence.com/en_US/home/tools/ip/tensilica-ip/hifi-dsps/hifi-4.html
-curl -I -A "GitHubActions" https://wiki.mozilla.org/Abstract_Interpretation
-curl -I -A "GitHubActions" https://mvnrepository.com/artifact/org.pytorch/executorch-android
-curl -I -A "GitHubActions" https://www.cadence.com/en_US/home.html
-curl -I -A "GitHubActions" https://www.cadence.com/en_US/home/tools/ip/tensilica-ip/hifi-dsps/hifi-4.html
-
 set -euo pipefail
 
 status=0
 green='\e[1;32m'; red='\e[1;31m'; cyan='\e[1;36m'; yellow='\e[1;33m'; reset='\e[0m'
+user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
 last_filepath=
 
 while IFS=: read -r filepath url; do
@@ -39,12 +17,10 @@ while IFS=: read -r filepath url; do
     printf '\n%s:\n' "$filepath"
     last_filepath=$filepath
   fi
-  code=$(curl -g -sSL -m30 \
-    -A 'Mozilla/5.0' \
-    -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' \
-    --range 0-0 \
-    -w '%{http_code}' -o /dev/null \
-    "$url") || code=000
+  code=$(curl -x fwdproxy:8080 -gsLm30 -o /dev/null -w "%{http_code}" -I "$url") || code=000
+  if [ "$code" -ge 400 ]; then
+    code=$(curl -x fwdproxy:8080 -gsLm30 -o /dev/null -w "%{http_code}" -r 0-0 -A "$user_agent" "$url") || code=000
+  fi
   if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
     printf "${green}%s${reset} ${cyan}%s${reset}\n" "$code" "$url"
   else
