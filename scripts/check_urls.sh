@@ -27,7 +27,7 @@ while IFS=: read -r filepath url; do
       | jq -r .request_id)
     code=$(curl -sS -H 'Accept: application/json' \
       "https://check-host.net/check-result/$request_id" \
-      | jq -r '."us3.node.check-host.net"[0][3]' 2>/dev/null)
+      | jq -r 'to_entries[0].value[0][3]')
   fi
   [[ "$code" =~ ^[0-9]+$ ]] || code=000
   if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
