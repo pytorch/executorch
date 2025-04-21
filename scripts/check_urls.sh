@@ -7,20 +7,18 @@
 
 set -x
 
-curl -v -A "Mozilla/5.0" https://www.cadence.com/en_US/home.html
-
-nslookup www.cadence.com
-
-curl -4 -v -A "Mozilla/5.0" https://www.cadence.com/en_US/home.html
-
-openssl s_client -connect www.cadence.com:443
-
 curl -sS -o /dev/null -w "%{http_code}\n" \
-  -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36" \
-  -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
-  -H "Accept-Language: en-US,en;q=0.9" \
-  -H "Connection: keep-alive" \
-  https://www.cadence.com/en_US/home.html
+-H 'Accept-Language: en-US,en;q=0.9' \
+-H 'Accept-Encoding: gzip, deflate, br, zstd' \
+-H 'Referer: https://www.google.com/' \
+-H 'Connection: keep-alive' \
+-H 'Upgrade-Insecure-Requests: 1' \
+-H 'Sec-Fetch-Dest: document' \
+-H 'Sec-Fetch-Mode: navigate' \
+-H 'Sec-Fetch-Site: cross-site' \
+-H 'Sec-Fetch-User: ?1' \
+-A 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36' \
+https://www.cadence.com/en_US/home.html
 
 set -euo pipefail
 
