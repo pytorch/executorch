@@ -715,7 +715,30 @@
     <span class="k">return</span> <span class="n">new_signature</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_transform</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">passes</span><span class="p">:</span> <span class="n">PassType</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExportedProgram&quot;</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_transform</span><span class="p">(</span>
+    <span class="bp">self</span><span class="p">,</span>
+    <span class="o">*</span><span class="n">passes</span><span class="p">:</span> <span class="n">PassType</span><span class="p">,</span>
+    <span class="n">override_verifiers</span><span class="p">:</span> <span class="kc">None</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">Verifier</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExportedProgram&quot;</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Transforms the program according to the provided passes.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        self: The ExportedProgram instance to transform</span>
+<span class="sd">        *passes: A sequence of passes to apply to the program</span>
+<span class="sd">        override_verifiers: Optional list of verifier classes to use instead of the default verifiers.</span>
+<span class="sd">            This is needed if the transforms yields illegal graph that the default verifier cannot handle.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        ExportedProgram: A new ExportedProgram with the transformations applied, or self if no changes were made</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># A user friendly check to avoid vararg surprises, PEP 3102</span>
+    <span class="k">assert</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span>
+        <span class="nb">isinstance</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="n">Verifier</span><span class="p">))</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">passes</span>
+    <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Expected all passes to be of PassType, not list or Verifier. Use override_verifiers kwarg instead. Got: </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">passes</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">passes</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">p</span><span class="p">))</span>
     <span class="n">pm</span> <span class="o">=</span> <span class="n">PassManager</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">passes</span><span class="p">))</span>
     <span class="n">res</span> <span class="o">=</span> <span class="n">pm</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
     <span class="n">transformed_gm</span> <span class="o">=</span> <span class="n">res</span><span class="o">.</span><span class="n">graph_module</span> <span class="k">if</span> <span class="n">res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph_module</span>
@@ -724,7 +747,9 @@
     <span class="k">if</span> <span class="n">transformed_gm</span> <span class="ow">is</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph_module</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">res</span><span class="o">.</span><span class="n">modified</span><span class="p">:</span>
         <span class="k">return</span> <span class="bp">self</span>
 
-    <span class="k">return</span> <span class="n">_update_exported_program_graph_module</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">transformed_gm</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_update_exported_program_graph_module</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">transformed_gm</span><span class="p">,</span> <span class="n">override_verifiers</span>
+    <span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_update_exported_program_graph_module</span><span class="p">(</span>
