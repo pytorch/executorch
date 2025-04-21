@@ -6,6 +6,7 @@
 
 # pyre-unsafe
 
+import operator
 import unittest
 from typing import Any, Callable, cast, List, Optional, Sequence, Tuple, Union
 
@@ -40,6 +41,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceScalarWithTensorArgPass,
     ReplaceSelectWithViewOpPass,
     ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass,
+    ReplaceSplitWithSlicePass,
     ReplaceSqueezeAndUnsqueezeWithViewPass,
     ReplaceTCopyWithTransposePass,
     ReplaceTransposedConvWithLinearPass,
@@ -1304,6 +1306,32 @@ class TestReplaceOpsPasses(unittest.TestCase):
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.mul.Tensor),
             6,
+        )
+
+    def test_replace_split_with_sizes_with_slice(self):
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 16, 8, 4))
+        split = builder.call_operator(
+            exir_ops.edge.aten.split_with_sizes_copy.default, (x, [8, 8], 1)
+        )
+        # We need the outputs to be gathered by getitem ops
+        out0 = builder.call_operator(operator.getitem, (split, 0))
+        out1 = builder.call_operator(operator.getitem, (split, 1))
+        builder.output([out0, out1])
+        graph_module = builder.get_graph_module()
+
+        p = ReplaceSplitWithSlicePass()
+        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+
+        self.assertEqual(
+            count_node(
+                graph_after_passes, exir_ops.edge.aten.split_with_sizes_copy.default
+            ),
+            0,
+        )
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.slice_copy.Tensor),
+            2,
         )
 
 
