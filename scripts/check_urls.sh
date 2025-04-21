@@ -9,23 +9,10 @@ set -x
 
 UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
 URL="https://wiki.mozilla.org/Abstract_Interpretation"
-PREFIX=$(hostname)_$(date +%s)
 
-dig +short "$URL" | tee "${PREFIX}_dns.txt"
+curl -sS --http2 -o /dev/null -w 'HEAD→%{http_code}\n' -I -A "$UA" "$URL"
 
-openssl s_client \
-  -connect wiki.mozilla.org:443 \
-  -servername wiki.mozilla.org \
-  -alpn h2 < /dev/null \
-  2>&1 | tee "${PREFIX}_tls.txt"
-
-curl -vvv -A "$UA" -I "$URL" 2>&1 | tee "${PREFIX}_head_http2.txt"
-
-curl -vvv --http1.1 -A "$UA" -I "$URL" 2>&1 | tee "${PREFIX}_head_http1.txt"
-
-curl -vvv -A "$UA" --range 0-0 "$URL" 2>&1 | tee "${PREFIX}_range_http2.txt"
-
-curl -vvv --http1.1 -A "$UA" --range 0-0 "$URL" 2>&1 | tee "${PREFIX}_range_http1.txt"
+curl -sS --http2 -o /dev/null -w 'RANGE→%{http_code}\n' --range 0-0 -A "$UA" "$URL"
 
 set -euo pipefail
 
