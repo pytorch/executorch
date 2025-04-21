@@ -5,6 +5,26 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+set -x
+
+user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
+accept_hdr="text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+url="https://wiki.mozilla.org/Abstract_Interpretation"
+
+curl -sS -o /dev/null -w '%{http_code}\n' -I "$url"
+
+curl -sS -o /dev/null -w '%{http_code}\n' -I -A "$user_agent" "$url"
+
+curl -sS -o /dev/null -w '%{http_code}\n' --range 0-0 "$url"
+
+curl -sS -o /dev/null -w '%{http_code}\n' --range 0-0 -A "$user_agent" "$url"
+
+curl -sS -o /dev/null -w '%{http_code}\n' \
+     --range 0-0 \
+     -A "$user_agent" \
+     -H "Accept: $accept_hdr" \
+     "$url"
+
 set -euo pipefail
 
 status=0
