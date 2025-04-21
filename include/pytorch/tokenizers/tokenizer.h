@@ -59,7 +59,7 @@ class Tokenizer {
  protected:
   bool initialized_ = false;
   int32_t vocab_size_ = 0;
-  uint64_t bos_tok_, eos_tok_ = 0;
+  uint64_t bos_tok_ = 0, eos_tok_ = 0;
 };
 
 } // namespace tokenizers
