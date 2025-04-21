@@ -594,8 +594,8 @@ class NodeVisitor:
         )
 
         external_tag = None
-        if tensor.meta.get("delegate_constant_tag", None) is not None:
-            external_tag = tensor.meta["delegate_constant_tag"]
+        if tensor.meta.get("xnnpack_constant_tag", None) is not None:
+            external_tag = tensor.meta["xnnpack_constant_tag"]
         self._named_data_store.add_named_data(
             named_key,
             bytes(array),

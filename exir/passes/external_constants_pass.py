@@ -100,6 +100,6 @@ def xnnpack_external_constants_pass(
             if node.op == "placeholder":
                 # Move specified constants to external file. If none, move all constants.
                 if names is None or node.name in names:
-                    node.meta["delegate_constant_tag"] = "_default_external_constant"
+                    node.meta["xnnpack_constant_tag"] = "_default_external_constant"
                     mutated = True
     return PassResult(gm, mutated)
