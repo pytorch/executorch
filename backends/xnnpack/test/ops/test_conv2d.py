@@ -173,18 +173,6 @@ class Conv2dPermute(torch.nn.Module):
         return (torch.randn(2, 2, 4, 4),)
 
 
-class Conv2dDQ(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv = torch.nn.Conv2d(in_channels=3, out_channels=10, kernel_size=3)
-
-    def forward(self, x):
-        return self.conv(x)
-
-    def get_inputs(self):
-        return (torch.randn(1, 3, 8, 8),)
-
-
 class Conv2dDQSeq(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -210,7 +198,7 @@ class Conv2dDQParallel(torch.nn.Module):
             in_channels=3, out_channels=8, kernel_size=3, padding=1
         )
         self.second = torch.nn.Conv2d(
-            in_channels=3, out_channels=10, kernel_size=3, padding=1
+            in_channels=3, out_channels=8, kernel_size=3, padding=1
         )
 
     def forward(self, x):
@@ -785,13 +773,24 @@ class TestConv2d(unittest.TestCase):
         )
 
     def test_dq_conv2d(self) -> None:
-        model = Conv2dDQ()
+        model = Conv2d(
+            in_channels=3,
+            out_channels=10,
+            kernel_size=(3, 3),
+            stride=(1, 1),
+            padding=(0, 0),
+            batches=1,
+            width=8,
+            height=8,
+        )
         self._test_dq(model)
 
     def test_dq_conv2d_seq(self) -> None:
         model = Conv2dDQSeq()
-        self._test_dq(model, conv_count=2)
+        conv_count = sum(1 for m in model.modules() if type(m) is torch.nn.Conv2d)
+        self._test_dq(model, conv_count)
 
     def test_dq_conv2d_parallel(self) -> None:
         model = Conv2dDQParallel()
-        self._test_dq(model, conv_count=2)
+        conv_count = sum(1 for m in model.modules() if type(m) is torch.nn.Conv2d)
+        self._test_dq(model, conv_count)
