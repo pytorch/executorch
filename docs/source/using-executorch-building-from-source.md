@@ -32,7 +32,7 @@ Windows (x86_64)
 * `python` version 3.10-3.12
 
 Note that the cross-compilable core runtime code supports a wider range of
-toolchains, down to C++17. See the [Runtime Overview](./runtime-overview.md) for
+toolchains, down to C++17. See the [Runtime Overview](runtime-overview.md) for
 portability details.
 
 ## Environment Setup
@@ -113,7 +113,7 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
 > # From the root of the executorch repo:
 > ./install_executorch.sh --clean
 > git submodule sync
-> git submodule update --init
+> git submodule update --init --recursive
 > ```
 
 ## Build ExecuTorch C++ runtime from source
@@ -257,7 +257,7 @@ sh scripts/build_android_library.sh
 ```
 
 This script will build the AAR, which contains the Java API and its corresponding JNI library. Please see
-[this documentation](./using-executorch-android.md#using-aar-file) for usage.
+[this documentation](using-executorch-android.md#using-aar-file) for usage.
 
 ### iOS
 
@@ -292,5 +292,5 @@ Check out the [iOS Demo App](demo-apps-ios.md) tutorial for more info.
 You have successfully cross-compiled `executor_runner` binary to iOS and Android platforms. You can start exploring advanced features and capabilities. Here is a list of sections you might want to read next:
 
 * [Selective build](kernel-library-selective-build.md) to build the runtime that links to only kernels used by the program, which can provide significant binary size savings.
-* Tutorials on building [Android](https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app) and [iOS](./demo-apps-ios.md) demo apps.
-* Tutorials on deploying applications to embedded devices such as [ARM Cortex-M/Ethos-U](backends-arm-ethos-u.md) and [XTensa HiFi DSP](./backends-cadence.md).
+* Tutorials on building [Android](https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app) and [iOS](demo-apps-ios.md) demo apps.
+* Tutorials on deploying applications to embedded devices such as [ARM Cortex-M/Ethos-U](backends-arm-ethos-u.md) and [XTensa HiFi DSP](backends-cadence.md).

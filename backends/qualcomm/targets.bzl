@@ -3,7 +3,7 @@ load(
     "ANDROID",
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_verision")
+load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
 
 # Construct the input and output file names. All input and output files rely on scalar_type file.
 SCHEMA_NAME = "qc_compiler_spec"
@@ -84,7 +84,7 @@ def define_common_targets():
         define_static_target = True,
         visibility = ["@EXECUTORCH_CLIENTS"],
         deps = [
-            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
+            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",
             "//executorch/backends/qualcomm/runtime:runtime_android_build",

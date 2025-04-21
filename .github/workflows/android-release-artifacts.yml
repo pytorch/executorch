@@ -11,6 +11,11 @@ on:
         description: Upload the AAR to maven staging repository
         required: false
         type: boolean
+      flavor:
+        type: choice
+        options:
+          - "xnnpack"
+          - "vulkan+xnnpack"
   schedule:
     - cron: 0 10 * * *
 
@@ -49,7 +54,8 @@ jobs:
       contents: read
     with:
       secrets-env: EXECUTORCH_MAVEN_SIGNING_KEYID EXECUTORCH_MAVEN_SIGNING_PASSWORD EXECUTORCH_MAVEN_CENTRAL_PASSWORD EXECUTORCH_MAVEN_CENTRAL_USERNAME EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS
-      runner: linux.2xlarge
+      # As this job has access to Maven credential, run this on a fresh ephemeral runner
+      runner: ephemeral.linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
       submodules: 'recursive'
       ref: ${{ github.sha }}
@@ -58,6 +64,10 @@ jobs:
       upload-artifact-to-s3: true
       script: |
         set -eux
+
+        # Use sccache for NDK compiler as well
+        export CMAKE_CXX_COMPILER_LAUNCHER=sccache
+        export CMAKE_C_COMPILER_LAUNCHER=sccache
 
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -75,6 +85,17 @@ jobs:
 
         echo -n "$SECRET_EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS" | base64 -d > /tmp/secring.gpg
 
+        # Update the version name in build.gradle in case of maven publish
+        VERSION="${{ inputs.version }}"
+        if [ ! -z "$VERSION" ]; then
+          sed -i "s/\(coordinates(\"org.pytorch\", \"executorch-android\", \"\)\([0-9]\+.[0-9]\+.[0-9]\+\)\(\")\)/\1$VERSION\3/" extension/android/executorch_android/build.gradle
+        fi
+
+        FLAVOR="${{ inputs.flavor }}"
+        if [[ "$FLAVOR" == "vulkan+xnnpack" ]]; then
+          export EXECUTORCH_BUILD_VULKAN=ON
+        fi
+
         # Build AAR Package
         mkdir aar-out
         export BUILD_AAR_DIR=aar-out
@@ -87,7 +108,7 @@ jobs:
         # Publish to maven staging
         UPLOAD_TO_MAVEN="${{ inputs.upload_to_maven }}"
         if [[ "$UPLOAD_TO_MAVEN" == "true" ]]; then
-          (cd aar-out; ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:publishToMavenCentral)
+          (cd extension/android; ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:publishToMavenCentral)
         fi
 
   upload-release-aar:

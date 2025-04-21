@@ -22,6 +22,10 @@ jobs:
       script: |
         set -eux
 
+        # Use sccache for NDK compiler as well
+        export CMAKE_CXX_COMPILER_LAUNCHER=sccache
+        export CMAKE_C_COMPILER_LAUNCHER=sccache
+
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
@@ -131,7 +135,8 @@ jobs:
           # https://github.com/ReactiveCircus/android-emulator-runner. The max number
           # of cores we can set is 6, any higher number will be reduced to 6.
           cores: 6
-          ram-size: 12288M
+          ram-size: 16384M
+          heap-size: 12288M
           force-avd-creation: false
           disable-animations: true
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none

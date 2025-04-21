@@ -1,7 +1,7 @@
 # Kernel Registration
 ## Overview
 
-At the last stage of [ExecuTorch model exporting](./export-overview.md), we lower the operators in the dialect to the _out variants_ of the [core ATen operators](./ir-ops-set-definition.md). Then we serialize these operator names into the model artifact. During runtime execution, for each operator name we will need to find the actual _kernels_, i.e., the C++ functions that do the heavy-lifting calculations and return results.
+At the last stage of [ExecuTorch model exporting](export-overview.md), we lower the operators in the dialect to the _out variants_ of the [core ATen operators](ir-ops-set-definition.md). Then we serialize these operator names into the model artifact. During runtime execution, for each operator name we will need to find the actual _kernels_, i.e., the C++ functions that do the heavy-lifting calculations and return results.
 
 ## Kernel Libraries
 ### First-party kernel libraries:
@@ -47,7 +47,7 @@ If it's not clear which API to use, please see [Best Practices](#custom-ops-api-
 
 ### YAML Entry API High Level Architecture
 
-![](./_static/img/kernel-library-custom-aten-kernel.png)
+![](_static/img/kernel-library-custom-aten-kernel.png)
 
 ExecuTorch users are asked to provide:
 
@@ -298,6 +298,26 @@ torch.ops.load_library("libcustom_linear.so/dylib")
 # Now we have access to the custom op, backed by kernel implemented in custom_linear.cpp.
 op = torch.ops.myop.custom_linear.default
 ```
+
+#### Using a Custom Operator in a Model
+
+The custom operator can explicitly used in the PyTorch model, or you can write a transformation to replace instances of a core operator with the custom variant. For this example, you could find
+all instances of `torch.nn.Linear` and replace them with `CustomLinear`.
+
+```python
+def  replace_linear_with_custom_linear(module):
+    for name, child in module.named_children():
+        if isinstance(child, nn.Linear):
+            setattr(
+                module,
+                name,
+                CustomLinear(child.in_features,  child.out_features, child.bias),
+        )
+        else:
+            replace_linear_with_custom_linear(child)
+```
+
+The remaining steps are the same as the normal flow. Now you can run this module in eager mode as well as export to ExecuTorch.
 
 ### Custom Ops API Best Practices
 

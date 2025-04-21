@@ -101,15 +101,12 @@ build_aar() {
   # Use java unit test as sanity check
   ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:testDebugUnitTest
   popd
-  cp extension/android/executorch_android/build/outputs/aar/executorch_android-debug.aar "${BUILD_AAR_DIR}/executorch.aar"
+  if [ ! -z $BUILD_AAR_DIR ]; then
+    cp extension/android/executorch_android/build/outputs/aar/executorch_android-debug.aar "${BUILD_AAR_DIR}/executorch.aar"
+  fi
 }
 
 main() {
-  if [[ -z "${BUILD_AAR_DIR:-}" ]]; then
-    BUILD_AAR_DIR="$(mktemp -d)"
-  fi
-  export BUILD_AAR_DIR
-  mkdir -p $BUILD_AAR_DIR
   if [ -z "$ANDROID_ABIS" ]; then
     ANDROID_ABIS=("arm64-v8a" "x86_64")
   fi

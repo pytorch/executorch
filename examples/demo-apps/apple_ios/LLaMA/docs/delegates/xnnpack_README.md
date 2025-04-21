@@ -73,7 +73,7 @@ python -m examples.models.llama.export_llama --model "llama3_2" --checkpoint <pa
 ```
 For convenience, an [exported ExecuTorch bf16 model](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/llama3_2-1B.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/ExportRecipe_1B.ipynb).
 
-For more detail using Llama 3.2 lightweight models including prompt template, please go to our official [website](https://www.llama.com/docs/model-cards-and-prompt-formats/llama3_2#-llama-3.2-lightweight-models-(1b/3b)-).
+For more detail using Llama 3.2 lightweight models including prompt template, please go to our official [website](https://www.llama.com/docs/model-cards-and-prompt-formats/llama3_2/#-llama-3.2-lightweight-models-(1b/3b)-).
 
 ### For Llama 3.1 and Llama 2 models
 
@@ -134,7 +134,7 @@ BUCK2_RELEASE_DATE="2024-12-16"
 BUCK2_ARCHIVE="buck2-aarch64-apple-darwin.zst"
 BUCK2=".venv/bin/buck2"
 
-curl -LO "https://github.com/facebook/buck2/releases/download/$BUCK2_RELEASE_DATE/$BUCK2_ARCHIVE"
+curl -LO "https://github.com/facebook/buck2/releases/download/${BUCK2_RELEASE_DATE}/${BUCK2_ARCHIVE}"
 zstd -cdq "$BUCK2_ARCHIVE" > "$BUCK2" && chmod +x "$BUCK2"
 rm "$BUCK2_ARCHIVE"
 
@@ -163,7 +163,7 @@ If you cannot add the package into your app target (it's greyed out), it might h
 
 
 
- More details on integrating and Running ExecuTorch on Apple Platforms, check out the detailed guide [here](https://pytorch.org/executorch/main/apple-runtime.html#local-build).
+ More details on integrating and Running ExecuTorch on Apple Platforms, check out the detailed guide [here](https://pytorch.org/executorch/main/using-executorch-ios#local-build).
 
 ### 3. Configure Build Schemes
 
@@ -175,7 +175,7 @@ Navigate to `Product --> Scheme --> Edit Scheme --> Info --> Build Configuration
 
 We recommend that you only use the Debug build scheme during development, where you might need to access additional logs. Debug build has logging overhead and will impact inferencing performance, while release build has compiler optimizations enabled and all logging overhead removed.
 
-For more details integrating and Running ExecuTorch on Apple Platforms or building the package locally, checkout this [link](https://pytorch.org/executorch/main/apple-runtime.html).
+For more details integrating and Running ExecuTorch on Apple Platforms or building the package locally, checkout this [link](https://pytorch.org/executorch/main/using-executorch-ios).
 
 ### 4. Build and Run the project
 

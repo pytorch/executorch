@@ -98,47 +98,25 @@ void add_q_8w_linear_node(
   add_dtype_suffix(kernel_name, graph.dtype_of(out_W_packed));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out_W_packed));
 
-  vkapi::ParamsBindList ubos({});
+  std::vector<PushConstantDataInfo> pcs;
   if (graph.is_buffer_storage(out_W_packed)) {
-    ubos.append(
-        {graph.sizes_ubo(out_W_packed),
-         graph.strides_ubo(out_W_packed),
-         graph.numel_ubo(out_W_packed),
-         graph.sizes_ubo(mat1_W_packed),
-         graph.strides_ubo(mat1),
-         graph.strides_ubo(q_mat2),
-         graph.strides_ubo(scales)});
+    pcs = {
+        graph.sizes_pc_of(out_W_packed),
+        graph.strides_pc_of(out_W_packed),
+        graph.sizes_pc_of(mat1_W_packed),
+        graph.strides_pc_of(mat1),
+        graph.strides_pc_of(q_mat2),
+        graph.strides_pc_of(scales),
+        graph.numel_pc_of(out_W_packed)};
   } else {
-    ubos.append(
-        {graph.logical_limits_ubo(out_W_packed),
-         graph.sizes_ubo(mat1_W_packed)});
+    pcs = {
+        graph.logical_limits_pc_of(out_W_packed),
+        graph.sizes_pc_of(mat1_W_packed)};
   }
 
-  utils::uvec3 global_wg;
-  if (graph.is_buffer_storage(out)) {
-    global_wg = {static_cast<uint32_t>(graph.numel_of(out_W_packed)), 1, 1};
-  } else {
-    global_wg = graph.logical_limits_of(out_W_packed);
-  }
-
-  utils::uvec3 local_wg{8, 8, 1};
-  int32_t out_W = graph.size_at<int32_t>(-1, out_W_packed);
-
-  if (graph.is_buffer_storage(out_W_packed)) {
-    local_wg[0] = 64;
-    local_wg[1] = 1;
-    local_wg[2] = 1;
-  } else {
-    if (out_W % 8 != 0) {
-      if (out_W % 4 == 0) {
-        local_wg[0] = 4;
-        local_wg[1] = 16;
-      } else {
-        local_wg[0] = 2;
-        local_wg[1] = 32;
-      }
-    }
-  }
+  const utils::uvec3 global_wg = {
+      static_cast<uint32_t>(graph.numel_of(out_W_packed)), 1, 1};
+  const utils::uvec3 local_wg{64, 1, 1};
 
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
@@ -149,11 +127,13 @@ void add_q_8w_linear_node(
       {{out_W_packed, vkapi::MemoryAccessType::WRITE},
        {{mat1_W_packed, q_mat2, scales}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
-      ubos,
+      {},
       // Specialization Constants
       {},
       // Resizing Logic
-      resize_q_8w_linear_node));
+      resize_q_8w_linear_node,
+      {},
+      pcs));
   if (!graph.is_buffer_storage(out) &&
       graph.packed_dim_of(out) != WHCN::kWidthDim) {
     viewFn(graph, {out_W_packed, graph.add_none(), out});

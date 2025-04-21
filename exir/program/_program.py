@@ -212,7 +212,30 @@ def _get_updated_graph_signature(
     return new_signature
 
 
-def _transform(self, *passes: PassType) -> "ExportedProgram":
+def _transform(
+    self,
+    *passes: PassType,
+    override_verifiers: None | list[Type[Verifier]] = None,
+) -> "ExportedProgram":
+    """
+    Transforms the program according to the provided passes.
+
+    Args:
+        self: The ExportedProgram instance to transform
+        *passes: A sequence of passes to apply to the program
+        override_verifiers: Optional list of verifier classes to use instead of the default verifiers.
+            This is needed if the transforms yields illegal graph that the default verifier cannot handle.
+
+    Returns:
+        ExportedProgram: A new ExportedProgram with the transformations applied, or self if no changes were made
+    """
+    # A user friendly check to avoid vararg surprises, PEP 3102
+    assert not any(
+        isinstance(p, (list, Verifier)) for p in passes
+    ), f"Expected all passes to be of PassType, not list or Verifier. Use override_verifiers kwarg instead. Got: {list(passes)}"
+
+    for p in list(passes):
+        print(type(p))
     pm = PassManager(list(passes))
     res = pm(self.graph_module)
     transformed_gm = res.graph_module if res is not None else self.graph_module
@@ -221,7 +244,9 @@ def _transform(self, *passes: PassType) -> "ExportedProgram":
     if transformed_gm is self.graph_module and not res.modified:
         return self
 
-    return _update_exported_program_graph_module(self, transformed_gm)
+    return _update_exported_program_graph_module(
+        self, transformed_gm, override_verifiers
+    )
 
 
 def _update_exported_program_graph_module(
@@ -986,7 +1011,7 @@ def _remove_invalid_ops_for_not_decompose(
         try:
             # Ops in torch.ops.quant are not always loaded, so we use try/except
             # Aliases output, but we need to allow it for XNNPACK
-            allow_list.append(torch.ops.quant.choose_qparams_affine.default)
+            allow_list.append(torch.ops.torchao.choose_qparams_affine.default)
         except:
             pass
 
@@ -1027,6 +1052,7 @@ def _remove_invalid_ops_for_not_decompose(
             torch.ops.aten.item.default,
             torch.ops.aten._local_scalar_dense.default,
             torch.ops.aten.unbind.int,
+            torch.ops.aten.split_with_sizes.default,
         ]:
             logging.warn(
                 f"Op {op} was requested for preservation by partitioner.  This request is ignored because it is in a blocklist."
@@ -1325,7 +1351,7 @@ def to_edge(
 class EdgeProgramManager:
     """
     Package of one or more `ExportedPrograms` in Edge dialect. Designed to simplify
-    lowering to ExecuTorch. See: https://pytorch.org/executorch/stable/ir-exir.html
+    lowering to ExecuTorch. See: https://pytorch.org/executorch/main/ir-exir
 
     Allows easy applications of transforms across a collection of exported programs
     including the delegation of subgraphs.
@@ -1565,7 +1591,7 @@ class EdgeProgramManager:
 class ExecutorchProgramManager:
     """
     Package of one or more `ExportedPrograms` in Execution dialect. Designed to simplify
-    lowering to ExecuTorch. See: https://pytorch.org/executorch/stable/ir-exir.html
+    lowering to ExecuTorch. See: https://pytorch.org/executorch/main/ir-exir
 
     When the ExecutorchProgramManager is constructed the ExportedPrograms in execution dialect
     are used to form the executorch binary (in a process called emission) and then serialized
