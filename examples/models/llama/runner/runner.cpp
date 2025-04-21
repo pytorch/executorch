@@ -41,13 +41,11 @@ static constexpr auto kUseSDPAWithKVCache = "use_sdpa_with_kv_cache";
 Runner::Runner(
     const std::string& model_path,
     const std::string& tokenizer_path,
-    const float temperature,
     std::optional<const std::string> data_path)
     // NOTE: we observed ~2x loading performance increase on iPhone 15
     // and a ~5% improvement on Galaxy S22 by switching to
     // FileDataLoader instead of MmapDataLoader + UseMlockIgnoreErrors.
-    : temperature_(temperature),
-      tokenizer_path_(tokenizer_path),
+    : tokenizer_path_(tokenizer_path),
       metadata_({
           {kEnableDynamicShape, false},
           {kMaxSeqLen, 128},
@@ -66,6 +64,17 @@ Runner::Runner(
       "Creating LLaMa runner: model_path=%s, tokenizer_path=%s",
       model_path.c_str(),
       tokenizer_path.c_str());
+}
+
+[[deprecated(
+    "This constructor is deprecated. Use the constructor without temperature parameter instead.")]]
+Runner::Runner(
+    const std::string& model_path,
+    const std::string& tokenizer_path,
+    const float temperature,
+    std::optional<const std::string> data_path)
+    : Runner(model_path, tokenizer_path, std::move(data_path)) {
+  temperature_ = temperature;
 }
 
 bool Runner::is_loaded() const {
@@ -133,11 +142,9 @@ Error Runner::load() {
       ET_LOG(Info, "eos_id = %" PRId64, value);
     }
   }
+  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
   text_decoder_runner_ = std::make_unique<llm::TextDecoderRunner>(
-      module_.get(),
-      metadata_.at(kUseKVCache),
-      metadata_.at(kVocabSize),
-      temperature_);
+      module_.get(), metadata_.at(kUseKVCache));
   text_prefiller_ = std::make_unique<llm::TextPrefiller>(
       text_decoder_runner_.get(),
       metadata_.at(kUseKVCache),
@@ -164,11 +171,9 @@ Error Runner::load() {
 
 Error Runner::generate(
     const std::string& prompt,
-    int32_t seq_len,
+    const ::executorch::extension::llm::GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
-    std::function<void(const llm::Stats&)> stats_callback,
-    bool echo,
-    bool warmup) {
+    std::function<void(const llm::Stats&)> stats_callback) {
   // Prepare the inputs.
   // Use ones-initialized inputs.
   ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");
@@ -178,19 +183,19 @@ Error Runner::generate(
     stats_.model_load_end_ms = llm::time_in_ms();
   }
 
-  if (warmup) {
+  if (config.warming) {
     ET_LOG(Info, "Doing a warmup run...");
   }
 
   RUNNER_ET_LOG(
-      warmup,
+      config.warming,
       "RSS after loading model: %f MiB (0 if unsupported)",
       llm::get_rss_bytes() / 1024.0 / 1024.0);
 
   // Wrap the token_callback with print function
   std::function<void(const std::string&)> wrapped_callback =
-      [token_callback, warmup](const std::string& piece) {
-        if (!warmup) {
+      [token_callback, config](const std::string& piece) {
+        if (!config.warming) {
           llm::safe_printf(piece.c_str());
           fflush(stdout);
         }
@@ -203,11 +208,6 @@ Error Runner::generate(
 
   stats_.inference_start_ms = llm::time_in_ms();
   shouldStop_ = false;
-
-  // Set the sequence length to the max seq length if not provided
-  seq_len = (seq_len > 0 && seq_len <= metadata_.at(kMaxContextLen))
-      ? seq_len
-      : metadata_.at(kMaxContextLen);
 
   ::tokenizers::Result<std::vector<uint64_t>> encode_res = tokenizer_->encode(
       prompt,
@@ -225,21 +225,22 @@ Error Runner::generate(
   ET_CHECK_MSG(
       num_prompt_tokens < metadata_.at(kMaxContextLen),
       "num_prompt_tokens %d >= max_seq_len_ %" PRId64
-      ", Max seq length exceeded - please increase max seq len value in .../llama2/model.py",
+      ", Max seq length exceeded - please increase max seq len value in your export script",
       num_prompt_tokens,
       metadata_.at(kMaxContextLen));
-  ET_CHECK_MSG(
-      num_prompt_tokens < seq_len,
-      "num_prompt_tokens %d >= seq_len %d, Sequence length exceeded - please increase the seq_len value passed to generate()",
-      num_prompt_tokens,
-      seq_len);
+
+  // Determine max_new_tokens using the GenerationConfig's resolve method
+  int max_new_tokens = config.resolve_max_new_tokens(
+      metadata_.at(kMaxContextLen), num_prompt_tokens);
+
+  ET_LOG(Info, "Max new tokens resolved: %d", max_new_tokens);
 
   // Prefill first
   // Here feed all tokens to the model and get the next predicted token
   // after the prompt. After that we will enter generate loop.
 
   // print prompts
-  if (echo) {
+  if (config.echo) {
     wrapped_callback(prompt);
   }
   int64_t pos = 0;
@@ -253,32 +254,38 @@ Error Runner::generate(
   wrapped_callback(
       ET_UNWRAP_TOKENIZER(tokenizer_->decode(cur_token, cur_token)));
   RUNNER_ET_LOG(
-      warmup,
+      config.warming,
       "RSS after prompt prefill: %f MiB (0 if unsupported)",
       llm::get_rss_bytes() / 1024.0 / 1024.0);
 
   // start the main loop
   prompt_tokens.push_back(cur_token);
+
+  // Generate max_new_tokens - 1 because prefill already generated 1 token.
   int64_t num_generated_tokens = ET_UNWRAP(text_token_generator_->generate(
-      prompt_tokens, num_prompt_tokens, seq_len, wrapped_callback));
+      prompt_tokens,
+      num_prompt_tokens,
+      max_new_tokens - 1,
+      temperature_ == -1.0f ? config.temperature : temperature_,
+      wrapped_callback));
 
   stats_.inference_end_ms = llm::time_in_ms();
-  if (!warmup) {
+  if (!config.warming) {
     printf("\n");
   }
   RUNNER_ET_LOG(
-      warmup,
+      config.warming,
       "RSS after finishing text generation: %f MiB (0 if unsupported)",
       llm::get_rss_bytes() / 1024.0 / 1024.0);
 
-  if (num_prompt_tokens + num_generated_tokens == seq_len) {
-    RUNNER_ET_LOG(warmup, "Sequence length (%i tokens) reached!", seq_len);
+  if (num_generated_tokens == max_new_tokens) {
+    RUNNER_ET_LOG(config.warming, "Max new tokens %i reached!", max_new_tokens);
   }
 
   stats_.num_prompt_tokens = num_prompt_tokens;
   stats_.num_generated_tokens = num_generated_tokens;
 
-  if (warmup) {
+  if (config.warming) {
     ET_LOG(Info, "Warmup run finished!");
   } else {
     // Do not print report during warmup
@@ -291,14 +298,15 @@ Error Runner::generate(
   return Error::Ok;
 }
 
-Error Runner::warmup(const std::string& prompt, int32_t seq_len) {
-  Error err = generate(
-      prompt,
-      seq_len,
-      /*token_callback=*/nullptr,
-      /*stats_callbak=*/nullptr,
-      /*echo=*/false,
-      /*warmup=*/true);
+Error Runner::warmup(const std::string& prompt, int32_t max_new_tokens) {
+  // Create a GenerationConfig for warmup
+  llm::GenerationConfig config{
+      .echo = false, .max_new_tokens = max_new_tokens, .warming = true};
+
+  // Call generate with the warmup config
+  Error err = generate(prompt, config);
+
+  // Reset stats after warmup
   stats_.reset();
   return err;
 }

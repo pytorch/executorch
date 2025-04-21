@@ -10,7 +10,9 @@ process live camera images leveraging three different backends:
 [Metal Performance Shaders (MPS)](https://developer.apple.com/documentation/metalperformanceshaders)
 (Xcode 15+ and iOS 17+ only).
 
-![](_static/img/demo_ios_app.jpg)
+<p align="center">
+  <img src="_static/img/demo_ios_app.png" width="600"">
+</p>
 
 ## Prerequisites
 
