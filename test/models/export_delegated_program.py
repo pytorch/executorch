@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import argparse
 import inspect
 import os
@@ -87,7 +89,7 @@ class ModuleSubLarge(nn.Module):
         n = 10  # to create a large tensor
         return (torch.ones(n, n, n), 2 * torch.ones(n, n, n), 3 * torch.ones(n, n, n))
 
-	
+
 class ModuleLinear(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -242,7 +244,7 @@ def main() -> None:
     suffix = ""
     for module_name, module_class in module_names_to_classes.items():
         if args.inline_delegate_segments:
-            suffix += f"-nosegments"
+            suffix += "-nosegments"
         if args.delegate_alignment is not None:
             suffix += f"-da{args.delegate_alignment}"
         outfile = os.path.join(args.outdir, f"{module_name}{suffix}.pte")
