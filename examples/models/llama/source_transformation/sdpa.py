@@ -42,14 +42,15 @@ class SDPACustom(torch.nn.Module):
         seqlen,
         mask,
     ):
-        if self.enable_dynamic_shape:
-            start_pos = input_pos[-1].item()
-            torch._check_is_size(start_pos)
-            torch._check(start_pos < self.max_context_len)
-            seq_length = q.size(2)
-            mask = mask.narrow(0, start_pos, seq_length)
-        else:
-            mask = mask[input_pos]
+        if self.use_attention_mask:
+            if self.enable_dynamic_shape:
+                start_pos = input_pos[-1].item()
+                torch._check_is_size(start_pos)
+                torch._check(start_pos < self.max_context_len)
+                seq_length = q.size(2)
+                mask = mask.narrow(0, start_pos, seq_length)
+            else:
+                mask = mask[input_pos]
 
         q = q.transpose(1, 2)  # (bs, seqlen, n_local_heads, head_dim)
         k = k.transpose(1, 2)

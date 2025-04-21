@@ -53,7 +53,7 @@ int32_t main(int32_t argc, char** argv) {
 
   const char* prompt = FLAGS_prompt.c_str();
 
-  double temperature = FLAGS_temperature;
+  float temperature = FLAGS_temperature;
 
   int32_t seq_len = FLAGS_seq_len;
 
@@ -73,13 +73,18 @@ int32_t main(int32_t argc, char** argv) {
   }
 #endif
   // create llama runner
-  example::Runner runner(model_path, tokenizer_path, temperature);
+  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+  example::Runner runner(model_path, tokenizer_path);
 
   if (warmup) {
-    runner.warmup(prompt, seq_len);
+    // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+    runner.warmup(prompt, /*max_new_tokens=*/seq_len);
   }
   // generate
-  runner.generate(prompt, seq_len);
+  executorch::extension::llm::GenerationConfig config{
+      .seq_len = seq_len, .temperature = temperature};
+  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+  runner.generate(prompt, config);
 
   return 0;
 }

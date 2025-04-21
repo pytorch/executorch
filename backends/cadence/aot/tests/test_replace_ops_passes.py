@@ -23,7 +23,6 @@ from executorch.backends.cadence.aot.replace_ops import (
     MakeSliceAndCatDimOutermostPass,
     ReplaceAddMMWithLinearPass,
     ReplaceAtenConvolutionWithJarvisConvolutionPass,
-    ReplaceAtenLinalgVectorNormWithCadenceLinalgVectorNormPass,
     ReplaceConstantPadNdWithSlicePass,
     ReplaceConvolutionOptionalArgsWithConcreteArgsPass,
     ReplaceConvWithIm2RowAndLinear,
@@ -1187,36 +1186,6 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.transpose_copy.int), 0
-        )
-
-    def test_replace_aten_linalg_vector_norm_with_cadence_linalg_vector_norm(self):
-        class LinalgVectorNorm(torch.nn.Module):
-            def forward(self, x: torch.Tensor):
-                return torch.linalg.vector_norm(x)
-
-        x = torch.randn(32)
-
-        graph_module = (
-            export_to_edge(LinalgVectorNorm(), (x,)).exported_program().graph_module
-        )
-
-        p = ReplaceAtenLinalgVectorNormWithCadenceLinalgVectorNormPass()
-        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
-
-        # Assert that aten.linalg_vector_norm op was replaced by a
-        # cadence.linalg_vector_norm op
-        self.assertEqual(
-            count_node(
-                graph_after_passes,
-                exir_ops.edge.aten.linalg_vector_norm.default,
-            ),
-            0,
-        )
-        self.assertEqual(
-            count_node(
-                graph_after_passes, exir_ops.edge.cadence.linalg_vector_norm.default
-            ),
-            1,
         )
 
     def test_replace_aten_where_with_cadence_where_Scalar(self):

@@ -12,7 +12,7 @@ All ExecuTorch Android libraries are packaged into an [Android library (AAR)](ht
 
 The AAR artifact contains the Java library for users to integrate with their Java/Kotlin application code, as well as the corresponding JNI library (.so file), which is loaded by the Java code during initialization.
 
-- [Java library](https://github.com/pytorch/executorch/tree/main/extension/android/src/main/java/org/pytorch/executorch)
+- [Java library](https://github.com/pytorch/executorch/tree/main/extension/android/executorch_android/src/main/java/org/pytorch/executorch)
 - JNI contains the JNI binding for the corresponding Java code, and ExecuTorch native library, including
   - core ExecuTorch runtime libraries
   - XNNPACK backend

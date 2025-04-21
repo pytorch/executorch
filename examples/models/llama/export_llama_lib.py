@@ -653,7 +653,7 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
         _get_source_transforms(
             modelname=args.model,
             dtype_override=dtype_override,
-            checkpoint_dtype=DType.from_torch_dtype(checkpoint_dtype),
+            checkpoint_dtype=DType.from_torch_dtype(checkpoint_dtype),  # type: ignore
             args=args,
         )
     )
@@ -816,6 +816,10 @@ def _to_edge_and_lower_llama(  # noqa: C901
         modelname = f"coreml_{modelname}"
 
     if args.qnn:
+        logging.warning(
+            "The model definition in current repro is not performant, please refer to the instruction"
+            " in https://github.com/pytorch/executorch/tree/main/examples/qualcomm/oss_scripts/llama/README.md for better performance."
+        )
         from executorch.extension.llm.custom_ops import model_sharding
 
         partitioners.append(
@@ -1102,7 +1106,7 @@ def _load_llama_model(
     return LLMEdgeManager(
         model=model,
         modelname=modelname,
-        max_seq_len=model.max_seq_len,
+        max_seq_len=model.max_seq_len,  # type: ignore
         dtype=dtype_override,
         use_kv_cache=use_kv_cache,
         generate_full_logits=generate_full_logits,
@@ -1115,6 +1119,8 @@ def _load_llama_model(
         calibration_seq_length=calibration_seq_length,
         calibration_data=calibration_data,
         tokenizer_path=tokenizer_path,
+        use_legacy_export=args.qnn,
+        save_exported_program=args.export_only,
         verbose=verbose,
         metadata=_load_llama_model_metadata(
             weight_type,
@@ -1135,7 +1141,6 @@ def _load_llama_model(
             model.vocab_size,
             metadata_str,
         ),
-        args=args,
     )
 
 
