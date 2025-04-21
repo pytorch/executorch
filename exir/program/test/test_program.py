@@ -851,8 +851,10 @@ class TestProgramManagers(unittest.TestCase):
 
     def test__transform_override_verifiers(self):
         """Test that _transform can override verifiers in the exported program."""
+
         class MyVerifier(Verifier):
             dialect: str = "MY_DIALECT"
+
             def __init__(self):
                 super().__init__()
 
@@ -861,6 +863,8 @@ class TestProgramManagers(unittest.TestCase):
         self.assertFalse(issubclass(program.verifiers[0], MyVerifier))
 
         # Apply transformation with custom verifier
-        transformed = _transform(program, AddToMulPassEdge(), override_verifiers=[MyVerifier])
+        transformed = _transform(
+            program, AddToMulPassEdge(), override_verifiers=[MyVerifier]
+        )
         self.assertTrue(issubclass(transformed.verifiers[0], MyVerifier))
         self.assertFalse(issubclass(program.verifiers[0], MyVerifier))
