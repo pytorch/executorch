@@ -29,6 +29,19 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/abseil-cpp)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/re2)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/sentencepiece)
+
+# Configure PCRE2
+set(PCRE2_BUILD_PCRE2_8 ON)
+set(PCRE2_BUILD_PCRE2_16 OFF)
+set(PCRE2_BUILD_PCRE2_32 OFF)
+set(PCRE2_BUILD_TESTS OFF)
+set(PCRE2_BUILD_PCRE2GREP OFF)
+set(PCRE2_BUILD_PCRE2TEST OFF)
+set(PCRE2_BUILD_PCRE2GPERF OFF)
+set(PCRE2_BUILD_DOCS OFF)
+set(PCRE2_BUILD_LIBPCRE2_PDB OFF)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pcre2)
+
 set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 
 file(GLOB tokenizers_source_files ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
@@ -45,9 +58,10 @@ target_include_directories(
          ${CMAKE_CURRENT_SOURCE_DIR}/third-party/sentencepiece/src
          ${CMAKE_CURRENT_SOURCE_DIR}/third-party/re2
          ${CMAKE_CURRENT_SOURCE_DIR}/third-party/json/single_include
-         ${CMAKE_CURRENT_SOURCE_DIR}/third-party/llama.cpp-unicode/include)
+         ${CMAKE_CURRENT_SOURCE_DIR}/third-party/llama.cpp-unicode/include
+         ${CMAKE_CURRENT_SOURCE_DIR}/third-party/pcre2/src)
 
-target_link_libraries(tokenizers PUBLIC sentencepiece-static re2::re2)
+target_link_libraries(tokenizers PUBLIC sentencepiece-static re2::re2 pcre2-8)
 
 # Build test
 if(TOKENIZERS_BUILD_TEST)
@@ -77,7 +91,8 @@ if(TOKENIZERS_BUILD_TEST)
               ${CMAKE_CURRENT_SOURCE_DIR}/include
               ${CMAKE_CURRENT_SOURCE_DIR}/third-party/sentencepiece
               ${CMAKE_CURRENT_SOURCE_DIR}/third-party/re2
-              ${CMAKE_CURRENT_SOURCE_DIR}/third-party/json/single_include)
+              ${CMAKE_CURRENT_SOURCE_DIR}/third-party/json/single_include
+              ${CMAKE_CURRENT_SOURCE_DIR}/third-party/pcre2/src)
     target_link_libraries(${test_name} gtest_main GTest::gmock tokenizers)
     add_test(${test_name} "${test_name}")
     set_tests_properties(${test_name} PROPERTIES ENVIRONMENT ${test_env})

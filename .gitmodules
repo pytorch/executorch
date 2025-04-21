@@ -10,3 +10,6 @@
 [submodule "third-party/json"]
 	path = third-party/json
 	url = https://github.com/nlohmann/json.git
+[submodule "third-party/pcre2"]
+	path = third-party/pcre2
+	url = https://github.com/PCRE2Project/pcre2.git
