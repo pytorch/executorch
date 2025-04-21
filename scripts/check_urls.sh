@@ -5,17 +5,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-set -x
-
-url="https://mvnrepository.com/artifact/org.pytorch/executorch-android"
-request_id=$(curl -sS -H 'Accept: application/json' \
-  "https://check-host.net/check-http?host=$url&max_nodes=1&node=us3.node.check-host.net" \
-  | jq -r .request_id)
-code=$(curl -sS -H 'Accept: application/json' \
-  "https://check-host.net/check-result/$request_id" \
-  | jq -r '.[][0][3]')
-echo $code
-
 set -euo pipefail
 
 status=0
@@ -36,6 +25,7 @@ while IFS=: read -r filepath url; do
     request_id=$(curl -sS -H 'Accept: application/json' \
       "https://check-host.net/check-http?host=$url&max_nodes=1&node=us3.node.check-host.net" \
       | jq -r .request_id)
+    sleep 5
     code=$(curl -sS -H 'Accept: application/json' \
       "https://check-host.net/check-result/$request_id" \
       | jq -r '.[][0][3]')
