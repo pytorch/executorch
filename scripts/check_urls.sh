@@ -5,23 +5,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-set -x
-
-curl --http1.1 -sS -o /dev/null -w '%{http_code}\n' \
-  -H 'Accept-Language: en-US,en;q=0.9' \
-  -H 'Accept-Encoding: gzip, deflate, br' \
-  -H 'Referer: https://www.google.com/' \
-  -H 'Connection: keep-alive' \
-  -H 'Upgrade-Insecure-Requests: 1' \
-  -A 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36' \
-  https://www.cadence.com/en_US/home.html
-
-curl -c cookies.txt -b cookies.txt -sS -o /dev/null -w '%{http_code}\n' \
-  -H 'Accept-Language: en-US,en;q=0.9' \
-  -H 'Referer: https://www.google.com/' \
-  -A 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36' \
-  https://www.cadence.com/en_US/home.html
-
 set -euo pipefail
 
 status=0
