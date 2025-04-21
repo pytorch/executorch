@@ -10,6 +10,18 @@ import torch
 # module with related operator only
 
 
+# Ensure alias_copy is removed in remove_redundancy pass
+class Alias(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc = torch.nn.Linear(10, 10)
+
+    def forward(self, x):
+        alias_x = torch.ops.aten.alias.default(x)
+        out = self.fc(alias_x)
+        return out
+
+
 class And(torch.nn.Module):
     def __init__(self, pos, neg):
         super().__init__()

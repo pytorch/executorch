@@ -118,6 +118,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(1, 512, 7, 7),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_alias(self):
+        module = Alias()  # noqa: F405
+        sample_input = (torch.randn(1, 10),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_amax(self):
         modules = [AMax(dim=1, keepdim=False), AMax(dim=1, keepdim=True)]  # noqa: F405
         sample_input = (torch.randn(4, 4),)
@@ -1153,6 +1158,12 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_adaptive_avg_pool2d(self):
         module = AdaptiveAvgPool2D()  # noqa: F405
         sample_input = (torch.randn(1, 512, 7, 7),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_alias(self):
+        module = Alias()  # noqa: F405
+        sample_input = (torch.randn(1, 10),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
