@@ -5,17 +5,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-set -x
-
-UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-URL="https://wiki.mozilla.org/Abstract_Interpretation"
-
-echo "===== CI DEBUG: HEAD over HTTP/2 ====="
-curl -vvv --http2 -I -A "$UA" "$URL" || true
-
-echo "===== CI DEBUG: GET byte‑0 over HTTP/2 ====="
-curl -vvv --http2 --range 0-0 -A "$UA" "$URL" || true
-
 set -euo pipefail
 
 status=0
@@ -30,7 +19,7 @@ while IFS=: read -r filepath url; do
   fi
   code=$(curl -gsLm30 -o /dev/null -w "%{http_code}" -I "$url") || code=000
   if [ "$code" -ge 400 ]; then
-    code=$(curl -gsLm30 -o /dev/null -w "%{http_code}" -r 0-0 -A "$user_agent" "$url") || code=000
+    code=$(curl -gsLm30 -o /dev/null -w "%{http_code}" --http2 -r 0-0 -A "$user_agent" "$url") || code=000
   fi
   if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
     printf "${green}%s${reset} ${cyan}%s${reset}\n" "$code" "$url"
