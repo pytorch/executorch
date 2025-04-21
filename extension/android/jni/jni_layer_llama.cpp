@@ -100,14 +100,20 @@ class ExecuTorchLlmCallbackJni
 
   void onStats(const llm::Stats& result) const {
     static auto cls = ExecuTorchLlmCallbackJni::javaClassStatic();
-    static const auto method = cls->getMethod<void(jfloat)>("onStats");
+    static const auto tps_method = cls->getMethod<void(jfloat)>("onStats");
     double eval_time =
         (double)(result.inference_end_ms - result.prompt_eval_end_ms);
 
     float tps = result.num_generated_tokens / eval_time *
         result.SCALING_FACTOR_UNITS_PER_SECOND;
+    tps_method(self(), tps);
 
-    method(self(), tps);
+    static const auto on_stats_method =
+        cls->getMethod<void(facebook::jni::local_ref<jstring>)>("onStats");
+    on_stats_method(
+        self(),
+        facebook::jni::make_jstring(
+            executorch::extension::llm::stats_to_json_string(result)));
   }
 };
 
