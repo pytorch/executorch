@@ -7,29 +7,14 @@
 
 set -x
 
-url="https://www.cadence.com/en_US/home.html"
-request_id=$(curl -sS -H 'Accept: application/json' \
-  "https://check-host.net/check-http?host=$url&max_nodes=1&node=us3.node.check-host.net" \
-  | jq -r .request_id)
-curl -sS -H 'Accept: application/json' "https://check-host.net/check-result/$request_id"
-
-url="https://www.cadence.com/en_US/home/tools/ip/tensilica-ip/hifi-dsps/hifi-4.html"
-request_id=$(curl -sS -H 'Accept: application/json' \
-  "https://check-host.net/check-http?host=$url&max_nodes=1&node=us3.node.check-host.net" \
-  | jq -r .request_id)
-curl -sS -H 'Accept: application/json' "https://check-host.net/check-result/$request_id"
-
-url="https://wiki.mozilla.org/Abstract_Interpretation"
-request_id=$(curl -sS -H 'Accept: application/json' \
-  "https://check-host.net/check-http?host=$url&max_nodes=1&node=us3.node.check-host.net" \
-  | jq -r .request_id)
-curl -sS -H 'Accept: application/json' "https://check-host.net/check-result/$request_id"
-
 url="https://mvnrepository.com/artifact/org.pytorch/executorch-android"
 request_id=$(curl -sS -H 'Accept: application/json' \
   "https://check-host.net/check-http?host=$url&max_nodes=1&node=us3.node.check-host.net" \
   | jq -r .request_id)
-curl -sS -H 'Accept: application/json' "https://check-host.net/check-result/$request_id"
+code=$(curl -sS -H 'Accept: application/json' \
+  "https://check-host.net/check-result/$request_id" \
+  | jq -r '.[][0][3]')
+echo $code
 
 set -euo pipefail
 
@@ -53,7 +38,7 @@ while IFS=: read -r filepath url; do
       | jq -r .request_id)
     code=$(curl -sS -H 'Accept: application/json' \
       "https://check-host.net/check-result/$request_id" \
-      | jq -r 'to_entries[0].value[0][3]')
+      | jq -r '.[][0][3]')
   fi
   [[ "$code" =~ ^[0-9]+$ ]] || code=000
   if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
