@@ -206,3 +206,22 @@ def define_common_targets():
         ],
         env = {"PYTORCH_DISABLE_JUSTKNOBS": "1",},
     )
+
+    runtime.genrule(
+        name = "exported_program_data",
+        cmd = "$(exe :export_delegated_program)" +
+            " --modules ModuleLinear" + 
+            " --backend_id XnnpackBackend" +
+            " --external_constants" +
+            " --outdir $OUT",
+        
+        outs = {
+            "ModuleLinear-e.pte": ["ModuleLinear-e.pte"],
+            "ModuleLinear-e.ptd": ["ModuleLinear-e.ptd"],
+        },
+        default_outs = ["."],
+        visibility = [
+            "//executorch/runtime/executor/test/...",
+            "//executorch/test/...",
+        ],
+    )

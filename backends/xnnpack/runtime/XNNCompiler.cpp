@@ -204,8 +204,9 @@ const uint8_t* getConstantDataPtr(
         if (!buffer.ok()) {
           ET_LOG(
               Error,
-              "Failed to get constant data for key %s",
-              data_name.c_str());
+              "Failed to get constant data for key %s from named_data_map. Error code: %u",
+              data_name.c_str(),
+              static_cast<uint32_t>(buffer.error()));
           return nullptr;
         }
         const uint8_t* data_ptr =

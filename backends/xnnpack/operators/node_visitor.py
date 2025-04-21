@@ -592,8 +592,15 @@ class NodeVisitor:
         xnn_graph.constant_data.append(
             ConstantDataOffset(offset=UINT64_MAX, size=size, named_key=named_key)
         )
+
+        external_tag = None
+        if tensor.meta.get("delegate_constant_tag", None) is not None:
+            external_tag = tensor.meta["delegate_constant_tag"]
         self._named_data_store.add_named_data(
-            named_key, bytes(array), alignment=CONSTANT_TENSOR_ALIGNMENT
+            named_key,
+            bytes(array),
+            alignment=CONSTANT_TENSOR_ALIGNMENT,
+            external_tag=external_tag,
         )
 
         return buffer_idx
