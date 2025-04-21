@@ -13,7 +13,7 @@ import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER, QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
-from .qnn_constants import OpAmax, QNN_OP_PACKAGE_NAME_QTI_AISW
+from .qnn_constants import OpReduceMax, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
@@ -61,12 +61,12 @@ class AMax(NodeVisitor):
         reduce_max_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
-            OpAmax.op_name,
+            OpReduceMax.op_name,
         )
         reduce_max_op.AddInputTensors([input_tensor_wrapper])
         reduce_max_op.AddOutputTensors([output_tensor_wrapper])
         reduce_max_op.AddTensorParam(
-            OpAmax.param_axes,
+            OpReduceMax.param_axes,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(mean_dims_shape),
             mean_dims_shape,
@@ -76,7 +76,7 @@ class AMax(NodeVisitor):
         if len(node.args) > 2:
             keep_dims = cast(bool, node.args[2])
             reduce_max_op.AddScalarParam(
-                OpAmax.param_keep_dims,
+                OpReduceMax.param_keep_dims,
                 PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
                 {QCOM_DATA: keep_dims},
             )

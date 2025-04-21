@@ -27,9 +27,10 @@ add_custom_command(
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleMultipleEntry.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrain.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleStateful.pte"
   COMMAND
     python3 -m test.models.export_program --modules
-    "ModuleAdd,ModuleAddHalf,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleLinear,ModuleMultipleEntry,ModuleSimpleTrain"
+    "ModuleAdd,ModuleAddHalf,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleLinear,ModuleMultipleEntry,ModuleSimpleTrain,ModuleStateful"
     --outdir "${CMAKE_CURRENT_BINARY_DIR}" 2> /dev/null
   COMMAND
     python3 -m test.models.export_program --modules "ModuleLinear"
@@ -51,6 +52,7 @@ add_custom_target(
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleMultipleEntry.pte"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrain.pte"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleStateful.pte"
 )
 
 set(test_env
@@ -64,6 +66,7 @@ set(test_env
     "ET_MODULE_LINEAR_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
     "ET_MODULE_MULTI_ENTRY_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleMultipleEntry.pte"
     "ET_MODULE_SIMPLE_TRAIN_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrain.pte"
+    "ET_MODULE_STATEFUL_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleStateful.pte"
 )
 
 et_cxx_test(

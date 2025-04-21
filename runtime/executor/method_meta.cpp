@@ -69,9 +69,11 @@ TensorInfo::TensorInfo(
     Span<const int32_t> sizes,
     Span<const uint8_t> dim_order,
     executorch::aten::ScalarType scalar_type,
-    const bool is_memory_planned)
+    const bool is_memory_planned,
+    executorch::aten::string_view name)
     : sizes_(sizes),
       dim_order_(dim_order),
+      name_(name),
       scalar_type_(scalar_type),
       is_memory_planned_(is_memory_planned),
       nbytes_(calculate_nbytes(sizes_, scalar_type_)) {}
@@ -94,6 +96,10 @@ bool TensorInfo::is_memory_planned() const {
 
 size_t TensorInfo::nbytes() const {
   return nbytes_;
+}
+
+executorch::aten::string_view TensorInfo::name() const {
+  return name_;
 }
 
 MethodMeta::MethodMeta(const executorch_flatbuffer::ExecutionPlan* s_plan)
@@ -149,8 +155,9 @@ Result<TensorInfo> MethodMeta::input_tensor_meta(size_t index) const {
           tensor_value->dim_order()->data(), tensor_value->dim_order()->size()),
       static_cast<executorch::aten::ScalarType>(tensor_value->scalar_type()),
       tensor_value->allocation_info() != nullptr ||
-          tensor_value->data_buffer_idx() !=
-              0); // Count constant returns as memory planned.
+          tensor_value->data_buffer_idx() != 0 /* is_memory_planned */,
+      executorch::aten::string_view{nullptr, 0}); // Count constant returns as
+                                                  // memory planned.
 }
 
 size_t MethodMeta::num_outputs() const {
@@ -200,8 +207,60 @@ Result<TensorInfo> MethodMeta::output_tensor_meta(size_t index) const {
           tensor_value->dim_order()->data(), tensor_value->dim_order()->size()),
       static_cast<executorch::aten::ScalarType>(tensor_value->scalar_type()),
       tensor_value->allocation_info() != nullptr ||
-          tensor_value->data_buffer_idx() !=
-              0); // Count constant returns as memory planned.
+          tensor_value->data_buffer_idx() != 0 /* is_memory_planned */,
+      executorch::aten::string_view{nullptr, 0}); // Count constant returns as
+                                                  // memory planned.
+}
+
+size_t MethodMeta::num_attributes() const {
+  size_t counter = 0;
+  auto values = s_plan_->values();
+  for (size_t i = 0; i < values->size(); ++i) {
+    auto value = values->Get(i);
+    if (value->val_type() == executorch_flatbuffer::KernelTypes::Tensor) {
+      auto tensor_value = value->val_as_Tensor();
+      if (tensor_value->extra_tensor_info() != nullptr &&
+          tensor_value->extra_tensor_info()->fully_qualified_name()->c_str() !=
+              nullptr) {
+        ++counter;
+      }
+    }
+  }
+  return counter;
+}
+
+Result<TensorInfo> MethodMeta::attribute_tensor_meta(size_t index) const {
+  size_t counter = 0;
+  auto values = s_plan_->values();
+  for (size_t i = 0; i < values->size(); ++i) {
+    auto value = values->Get(i);
+    if (value->val_type() == executorch_flatbuffer::KernelTypes::Tensor) {
+      auto tensor_value = value->val_as_Tensor();
+      if (tensor_value->extra_tensor_info() != nullptr &&
+          tensor_value->extra_tensor_info()->fully_qualified_name()->c_str() !=
+              nullptr) {
+        if (counter == index) {
+          auto t_name =
+              tensor_value->extra_tensor_info()->fully_qualified_name();
+          // Count constant returns as memory planned
+          return TensorInfo(
+              Span<const int32_t>(
+                  tensor_value->sizes()->data(), tensor_value->sizes()->size()),
+              Span<const uint8_t>(
+                  tensor_value->dim_order()->data(),
+                  tensor_value->dim_order()->size()),
+              static_cast<executorch::aten::ScalarType>(
+                  tensor_value->scalar_type()),
+              tensor_value->allocation_info() != nullptr ||
+                  tensor_value->data_buffer_idx() != 0 /* is_memory_planned */,
+              executorch::aten::string_view{t_name->c_str(), t_name->size()});
+        }
+        ++counter;
+      }
+    }
+  }
+  ET_LOG(Error, "No attribute tensor found at index %zu", index);
+  return Error::InvalidArgument;
 }
 
 size_t MethodMeta::num_memory_planned_buffers() const {
