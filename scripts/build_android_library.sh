@@ -34,13 +34,15 @@ build_android_native_library() {
 
   EXECUTORCH_BUILD_VULKAN="${EXECUTORCH_BUILD_VULKAN:-OFF}"
 
-  cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
-    -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
+  cmake extension/android \
+    -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI="${ANDROID_ABI}" \
     -DANDROID_PLATFORM=android-26 \
     -DBUILD_TESTING=OFF \
+    -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DEXECUTORCH_ENABLE_LOGGING=ON \
     -DEXECUTORCH_LOG_LEVEL=Info \
+    -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_XNNPACK_SHARED_WORKSPACE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
@@ -56,15 +58,15 @@ build_android_native_library() {
     -DEXECUTORCH_BUILD_QNN="${EXECUTORCH_BUILD_QNN}" \
     -DQNN_SDK_ROOT="${QNN_SDK_ROOT}" \
     -DEXECUTORCH_BUILD_VULKAN="${EXECUTORCH_BUILD_VULKAN}" \
-    -DCMAKE_BUILD_TYPE="${EXECUTORCH_CMAKE_BUILD_TYPE}" \
-    -B"${CMAKE_OUT}"
+    -B"${CMAKE_OUT}"/extension/android
 
   if [ "$(uname)" == "Darwin" ]; then
     CMAKE_JOBS=$(( $(sysctl -n hw.ncpu) - 1 ))
   else
     CMAKE_JOBS=$(( $(nproc) - 1 ))
   fi
-  cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install --config "${EXECUTORCH_CMAKE_BUILD_TYPE}"
+
+  cmake --build "${CMAKE_OUT}"/extension/android -j "${CMAKE_JOBS}" --config "${EXECUTORCH_CMAKE_BUILD_TYPE}"
 
   # Copy artifacts to ABI specific directory
   local SO_STAGE_DIR="cmake-out-android-so/${ANDROID_ABI}"

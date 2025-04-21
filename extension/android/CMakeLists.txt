@@ -6,6 +6,10 @@
 
 cmake_minimum_required(VERSION 3.24) # 3.24 is required for WHOLE_ARCHIVE
 
+project(executorch_jni)
+
+include(ExternalProject)
+
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
@@ -59,6 +63,36 @@ add_library(fbjni SHARED IMPORTED)
 add_dependencies(fbjni fbjni_prefab)
 set_target_properties(fbjni PROPERTIES
   IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/libs/android.${ANDROID_ABI}/libfbjni.so"
+)
+
+ExternalProject_Add(executorch_root
+  PREFIX executorch_root
+  SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../.."
+  CMAKE_ARGS
+        -DCMAKE_POSITION_INDEPENDENT_CODE:BOOL=TRUE
+        -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake
+        -DANDROID_ABI=${ANDROID_ABI}
+        -DANDROID_PLATFORM=android-26
+        -DBUILD_TESTING=OFF
+        -DCMAKE_INSTALL_PREFIX=${CMAKE_OUT}
+        -DEXECUTORCH_ENABLE_LOGGING=ON
+        -DEXECUTORCH_LOG_LEVEL=Info
+        -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH
+        -DEXECUTORCH_BUILD_XNNPACK=ON
+        -DEXECUTORCH_XNNPACK_SHARED_WORKSPACE=ON
+        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
+        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON
+        -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON
+        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON
+        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON
+        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON
+        -DEXECUTORCH_BUILD_KERNELS_CUSTOM=${EXECUTORCH_BUILD_EXTENSION_LLM}
+        -DEXECUTORCH_BUILD_LLAMA_JNI=${EXECUTORCH_BUILD_EXTENSION_LLM}
+        -DEXECUTORCH_BUILD_NEURON=${EXECUTORCH_BUILD_NEURON}
+        -DNEURON_BUFFER_ALLOCATOR_LIB=${NEURON_BUFFER_ALLOCATOR_LIB}
+        -DEXECUTORCH_BUILD_QNN=${EXECUTORCH_BUILD_QNN}
+        -DQNN_SDK_ROOT=${QNN_SDK_ROOT}
+        -DEXECUTORCH_BUILD_VULKAN=${EXECUTORCH_BUILD_VULKAN}
 )
 
 target_link_options_shared_lib(executorch)
@@ -132,44 +166,6 @@ if(EXECUTORCH_JNI_CUSTOM_LIBRARY)
     executorch_jni -Wl,--whole-archive ${EXECUTORCH_JNI_CUSTOM_LIBRARY}
     -Wl,--no-whole-archive
   )
-endif()
-
-if(EXECUTORCH_BUILD_LLAMA_JNI)
-  target_sources(executorch_jni PRIVATE jni/jni_layer_llama.cpp jni/log.cpp)
-  list(APPEND link_libraries llama_runner llava_runner)
-  target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_LLAMA_JNI=1)
-  add_subdirectory(
-    ${EXECUTORCH_ROOT}/examples/models/llava/runner
-    ${CMAKE_CURRENT_BINARY_DIR}/examples/models/llava/runner
-  )
-
-  add_subdirectory(
-    ${EXECUTORCH_ROOT}/examples/models/llama/runner
-    ${CMAKE_CURRENT_BINARY_DIR}/examples/models/llama/runner
-  )
-
-  if(NEURON_BUFFER_ALLOCATOR_LIB)
-      target_sources(
-      executorch_jni PRIVATE
-      ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/mtk_llama_runner.cpp
-      ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/LlamaModelChunk.cpp
-      ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/LlamaRuntime.cpp
-      ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/ModelChunk.cpp
-      ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/MultiModelLoader.cpp
-      ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/llm_helper/mask_builder.cpp
-      ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/llm_helper/rotary_embedding.cpp
-      ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/llm_helper/token_embedding.cpp
-    )
-    target_include_directories(
-      executorch_jni PRIVATE
-      ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/
-      ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner
-    )
-    add_library(libneuron_buffer_allocator SHARED IMPORTED)
-    set_property(TARGET libneuron_buffer_allocator PROPERTY IMPORTED_LOCATION ${NEURON_BUFFER_ALLOCATOR_LIB})
-    list(APPEND link_libraries neuron_backend libneuron_buffer_allocator)
-    target_compile_definitions(executorch_jni PRIVATE EXECUTORCH_BUILD_MEDIATEK=1)
-  endif()
 endif()
 
 target_include_directories(
