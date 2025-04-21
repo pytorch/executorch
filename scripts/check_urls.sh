@@ -26,7 +26,8 @@ while IFS=: read -r filepath url; do
       | jq -r .request_id)
     for _ in {1..3}; do
       code=$(curl -sS -H 'Accept: application/json' "https://check-host.net/check-result/$request_id" \
-        | jq -r -e '.[][0][3]') || code=000
+        | jq -r -e '.[][0][3]')
+      [[ "$code" =~ ^[0-9]+$ ]] || code=000
       sleep 3
     done
   fi
