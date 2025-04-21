@@ -49,6 +49,7 @@ _EXTERNAL_DEPS = {
     "pybind11": "//third-party:pybind11",
     "pcre2": "//extension/llm/tokenizers/third-party:pcre2",
     "re2": "//extension/llm/tokenizers/third-party:re2",
+    "pcre2": "//extension/llm/tokenizers/third-party:pcre2",
     "sentencepiece": [], # Intentionally not supporting OSS buck build of sentencepiece.
     "sentencepiece-py": [],
     # Core C++ PyTorch functionality like Tensor and ScalarType.
