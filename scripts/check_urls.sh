@@ -9,6 +9,7 @@ set -euo pipefail
 
 status=0
 green='\e[1;32m'; red='\e[1;31m'; cyan='\e[1;36m'; yellow='\e[1;33m'; reset='\e[0m'
+user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
 last_filepath=
 
 while IFS=: read -r filepath url; do
@@ -18,7 +19,7 @@ while IFS=: read -r filepath url; do
   fi
   code=$(curl -gsLm30 -o /dev/null -w "%{http_code}" -I "$url") || code=000
   if [ "$code" -ge 400 ]; then
-    code=$(curl -gsLm30 -o /dev/null -w "%{http_code}" -r 0-0 -A "Mozilla/5.0" "$url") || code=000
+    code=$(curl -gsLm30 -o /dev/null -w "%{http_code}" -r 0-0 -A "$user_agent" "$url") || code=000
   fi
   if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
     printf "${green}%s${reset} ${cyan}%s${reset}\n" "$code" "$url"
@@ -27,17 +28,20 @@ while IFS=: read -r filepath url; do
     status=1
   fi
 done < <(
-  git --no-pager grep --no-color -I -o -E \
-    'https?://[^[:space:]<>\")\{\(\$]+' \
+  git --no-pager grep --no-color -I -P -o \
+    '(?<!git\+)(?<!\$\{)https?://(?![^\s<>\")]*[\{\}\$])[^[:space:]<>\")\[\]\(]+' \
     -- '*' \
     ':(exclude).*' \
     ':(exclude)**/.*' \
     ':(exclude)**/*.lock' \
     ':(exclude)**/*.svg' \
     ':(exclude)**/*.xml' \
+    ':(exclude)**/*.gradle*' \
+    ':(exclude)**/*gradle*' \
     ':(exclude)**/third-party/**' \
-  | sed 's/[[:punct:]]*$//' \
+  | sed -E 's/[^/[:alnum:]]+$//' \
   | grep -Ev '://(0\.0\.0\.0|127\.0\.0\.1|localhost)([:/])' \
+  | grep -Ev 'fwdproxy:8080' \
   || true
 )
 
