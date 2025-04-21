@@ -6,7 +6,7 @@
 
 # pyre-strict
 
-from typing import List, Optional
+from typing import Callable, Optional
 
 import torch
 from executorch.exir.pass_base import PassResult
@@ -80,7 +80,7 @@ def external_mutable_weights_pass(
 
 def xnnpack_external_constants_pass(
     gm: GraphModule,
-    names: Optional[List[str]] = None,
+    filter_fn: Optional[Callable[[torch.fx.Node], str]] = None,
 ) -> PassResult:
     """
     Tag external constants before to_backend. Tagged constants will be saved
@@ -88,7 +88,7 @@ def xnnpack_external_constants_pass(
 
     Args:
         gm: GraphModule to tag.
-        names: List of constant names to tag. If None, tag all constants.
+        filter_fn: node -> str callable indicating the file (str) that a node should be saved to.
     Returns:
         PassResult: The resulting gm, and if it was mutated or not.
     """
@@ -97,9 +97,7 @@ def xnnpack_external_constants_pass(
         if not isinstance(module, torch.fx.GraphModule):
             continue
         for node in module.graph.nodes:
-            if node.op == "placeholder":
-                # Move specified constants to external file. If none, move all constants.
-                if names is None or node.name in names:
-                    node.meta["xnnpack_constant_tag"] = "_default_external_constant"
-                    mutated = True
+            if node.op == "placeholder" and filter_fn is not None:
+                node.meta["xnnpack_constant_tag"] = filter_fn(node)
+                mutated = True
     return PassResult(gm, mutated)

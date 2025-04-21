@@ -166,7 +166,10 @@ def export_module_to_program(
 
         transform_passes = []
         if external_constants:
-            partial_function = partial(xnnpack_external_constants_pass, names=None)
+            partial_function = partial(
+                xnnpack_external_constants_pass,
+                filter_fn=lambda x: module_class.__name__,
+            )
             transform_passes.append(partial_function)
         executorch_program = to_edge_transform_and_lower(
             exported_program,
@@ -277,12 +280,8 @@ def main() -> None:
             fp.write(executorch_program.buffer)
         print(f"Exported {module_name} and wrote program data to {outfile}")
         if args.external_constants:
-            # current infra doesnt easily allow renaming this file, so just hackily do it here.
-            executorch_program._tensor_data[f"{module_name}{suffix}"] = (
-                executorch_program._tensor_data.pop("_default_external_constant")
-            )
-            print(f"Saving external constants to {module_name}{suffix}.ptd")
-        executorch_program.write_tensor_data_to_file(args.outdir)
+            print(f"Saving external constants to {module_name}.ptd")
+            executorch_program.write_tensor_data_to_file(args.outdir)
 
 
 if __name__ == "__main__":

@@ -593,9 +593,7 @@ class NodeVisitor:
             ConstantDataOffset(offset=UINT64_MAX, size=size, named_key=named_key)
         )
 
-        external_tag = None
-        if tensor.meta.get("xnnpack_constant_tag", None) is not None:
-            external_tag = tensor.meta["xnnpack_constant_tag"]
+        external_tag = tensor.meta.get("xnnpack_constant_tag", None)
         self._named_data_store.add_named_data(
             named_key,
             bytes(array),

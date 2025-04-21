@@ -217,7 +217,7 @@ def define_common_targets():
         
         outs = {
             "ModuleLinear-e.pte": ["ModuleLinear-e.pte"],
-            "ModuleLinear-e.ptd": ["ModuleLinear-e.ptd"],
+            "ModuleLinear.ptd": ["ModuleLinear.ptd"],
         },
         default_outs = ["."],
         visibility = [
