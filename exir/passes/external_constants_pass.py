@@ -11,8 +11,18 @@ from typing import Callable, Optional
 import torch
 from executorch.exir.pass_base import PassResult
 from executorch.exir.tensor import TensorSpec
+
+from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.export.exported_program import ExportedProgram, OutputKind
 from torch.fx import GraphModule
+
+
+def is_param_node(exp_prog: ExportedProgram, node: torch.fx.Node) -> bool:
+    return (
+        is_param(exp_prog, node)
+        or is_buffer(exp_prog, node)
+        or is_lifted_tensor_constant(exp_prog, node)
+    )
 
 
 def external_constants_pass(
@@ -78,8 +88,9 @@ def external_mutable_weights_pass(
     return PassResult(gm, mutated)
 
 
-def xnnpack_external_constants_pass(
+def delegate_external_constants_pass(
     gm: GraphModule,
+    ep: ExportedProgram,
     filter_fn: Optional[Callable[[torch.fx.Node], str]] = None,
 ) -> PassResult:
     """
@@ -97,7 +108,8 @@ def xnnpack_external_constants_pass(
         if not isinstance(module, torch.fx.GraphModule):
             continue
         for node in module.graph.nodes:
-            if node.op == "placeholder" and filter_fn is not None:
-                node.meta["xnnpack_constant_tag"] = filter_fn(node)
-                mutated = True
+            if node.op == "placeholder" and is_param_node(ep, node):
+                if filter_fn is not None:
+                    node.meta["delegate_constant_tag"] = filter_fn(node)
+                    mutated = True
     return PassResult(gm, mutated)

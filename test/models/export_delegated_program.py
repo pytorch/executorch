@@ -24,7 +24,7 @@ from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
 from executorch.exir.passes.external_constants_pass import (
-    xnnpack_external_constants_pass,
+    delegate_external_constants_pass,
 )
 from executorch.exir.program import ExecutorchProgramManager
 from torch import nn
@@ -167,7 +167,8 @@ def export_module_to_program(
         transform_passes = []
         if external_constants:
             partial_function = partial(
-                xnnpack_external_constants_pass,
+                delegate_external_constants_pass,
+                ep=exported_program,
                 filter_fn=lambda x: module_class.__name__,
             )
             transform_passes.append(partial_function)
