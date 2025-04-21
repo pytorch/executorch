@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import argparse
 import inspect
 import os
@@ -19,6 +21,7 @@ from executorch.exir.backend.backend_details import BackendDetails, PreprocessRe
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
+from executorch.exir.program import ExecutorchProgramManager
 from torch import nn
 from torch.export import export
 
@@ -111,10 +114,10 @@ def export_module_to_program(
     *,
     backend_id: str,
     extract_delegate_segments: bool,
-    constant_tensor_alignemnt: Optional[int] = None,
+    constant_tensor_alignment: Optional[int] = None,
     delegate_alignment: Optional[int] = None,
     method: str = "forward",
-) -> bytes:
+) -> ExecutorchProgramManager:
     eager_module = module_class().eval()
     inputs = ()
     if hasattr(eager_module, "get_random_inputs"):
@@ -135,7 +138,7 @@ def export_module_to_program(
     edge_config = EdgeCompileConfig(_check_ir_validity=False)
     et_config = exir.ExecutorchBackendConfig(
         extract_delegate_segments=extract_delegate_segments,
-        constant_tensor_alignment=constant_tensor_alignemnt,
+        constant_tensor_alignment=constant_tensor_alignment,
         delegate_alignment=delegate_alignment,
     )
 
@@ -170,7 +173,7 @@ def export_module_to_program(
             export(composite_module, args=inputs, strict=True)
         ).to_executorch(config=et_config)
 
-    return executorch_program.buffer
+    return executorch_program
 
 
 def main() -> None:
@@ -200,6 +203,14 @@ def main() -> None:
         + f"one of {known_backend_ids}",
     )
     parser.add_argument(
+        "--inline_delegate_segments",
+        action="store_true",
+        help="Store delegate data inside the flatbuffer.",
+    )
+    parser.add_argument(
+        "--delegate_alignment", type=int, default=None, help="Delegate alignment."
+    )
+    parser.add_argument(
         "--outdir",
         type=str,
         required=True,
@@ -219,25 +230,22 @@ def main() -> None:
 
     # Export and write to the output files.
     os.makedirs(args.outdir, exist_ok=True)
+    suffix = ""
     for module_name, module_class in module_names_to_classes.items():
-        for extract_delegate_segments in (True, False):
-            suffix = "" if extract_delegate_segments else "-nosegments"
-            # Create files with the default alignment, and a large alignment.
-            # This alignment should be so large that it's extremely unlikely for
-            # the data to accidentally be aligned to it in the default case.
-            for delegate_alignment in (None, 1024):
-                suffix += f"-da{delegate_alignment}" if delegate_alignment else ""
-                outfile = os.path.join(args.outdir, f"{module_name}{suffix}.pte")
-                with open(outfile, "wb") as fp:
-                    fp.write(
-                        export_module_to_program(
-                            module_class,
-                            backend_id=args.backend_id,
-                            extract_delegate_segments=extract_delegate_segments,
-                            delegate_alignment=delegate_alignment,
-                        )
-                    )
-                print(f"Exported {module_name} and wrote program data to {outfile}")
+        if args.inline_delegate_segments:
+            suffix += "-nosegments"
+        if args.delegate_alignment is not None:
+            suffix += f"-da{args.delegate_alignment}"
+        outfile = os.path.join(args.outdir, f"{module_name}{suffix}.pte")
+        executorch_program = export_module_to_program(
+            module_class,
+            backend_id=args.backend_id,
+            extract_delegate_segments=not args.inline_delegate_segments,
+            delegate_alignment=args.delegate_alignment,
+        )
+        with open(outfile, "wb") as fp:
+            fp.write(executorch_program.buffer)
+        print(f"Exported {module_name} and wrote program data to {outfile}")
 
 
 if __name__ == "__main__":
