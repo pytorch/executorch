@@ -78,7 +78,7 @@ class OpDynamicDequantizePerToken(NodeVisitor):
 
 @register_node_visitor
 class OpDequantizeAffine(NodeVisitor):
-    target = "quant.dequantize_affine.default"
+    target = "torchao.dequantize_affine.default"
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
