@@ -57,6 +57,12 @@ void add_upsample_nearest2d_node(
     VK_THROW(
         "Invalid input, must provide ONLY one of output_sizes or scale_factors");
   }
+
+  int align_corners_val = 0;
+  if (is_valid(align_corners) && graph.get_bool(align_corners)) {
+    align_corners_val = 1;
+  }
+
   utils::uvec3 in_limits = graph.logical_limits_of(in);
   utils::uvec3 out_limits = graph.logical_limits_of(out);
 
@@ -86,8 +92,13 @@ void add_upsample_nearest2d_node(
     VK_CHECK_COND(in_limits[1u] * scale_factor_y == out_height);
   }
 
-  recip_scale_factor_x = float(in_limits[0u] - 1) / float(out_width - 1);
-  recip_scale_factor_y = float(in_limits[1u] - 1) / float(out_height - 1);
+  if (align_corners_val == 1) {
+    recip_scale_factor_x = float(in_limits[0u] - 1) / float(out_width - 1);
+    recip_scale_factor_y = float(in_limits[1u] - 1) / float(out_height - 1);
+  } else {
+    recip_scale_factor_x = float(in_limits[0u]) / float(out_width);
+    recip_scale_factor_y = float(in_limits[1u]) / float(out_height);
+  }
 
   utils::vec2 recip_scales = {recip_scale_factor_x, recip_scale_factor_y};
 
@@ -116,7 +127,7 @@ void add_upsample_nearest2d_node(
        graph.logical_limits_ubo(in),
        graph.create_params_buffer(recip_scales)},
       // Specialization Constants
-      {},
+      {align_corners_val},
       resize_upsample_nearest2d_node,
       {output_sizes, scale_factors}));
 }

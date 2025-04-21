@@ -455,6 +455,7 @@ def get_upsample_bilinear2d_inputs():
     base_inputs_list = get_upsample_inputs()
     inputs_list = []
     for input_case in base_inputs_list:
+        inputs_list.append((input_case[0], input_case[1], False, input_case[2]))
         inputs_list.append((input_case[0], input_case[1], True, input_case[2]))
     return VkTestSuite(inputs_list)
 

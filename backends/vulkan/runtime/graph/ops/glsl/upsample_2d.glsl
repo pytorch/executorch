@@ -22,6 +22,8 @@ ${layout_declare_ubo(B, "vec2", "recip_scales")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+layout(constant_id = 3) const int align_corners = 0;
+
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
 
@@ -30,7 +32,13 @@ void main() {
   }
 
   ivec2 max_in_xy = in_limits.xy - 1;
-  vec2 scaled_xy = pos.xy * recip_scales;
+  vec2 scaled_xy;
+
+  if (align_corners == 1) {
+    scaled_xy = pos.xy * recip_scales;
+  } else {
+    scaled_xy = (pos.xy + 0.5) * recip_scales - 0.5;
+  }
 
   $if MODE == "nearest":
     const ivec2 ipos = clamp(ivec2(round(scaled_xy)), ivec2(0), max_in_xy);
@@ -58,7 +66,6 @@ void main() {
       mix(sample01, sample11, interp_weights.x),
       interp_weights.y
     );
-    // VEC4_T out_tex = VEC4_T(interp_weights.y);
 
   imageStore(t_out, pos, out_tex);
 }

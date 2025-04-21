@@ -223,6 +223,7 @@ def define_common_targets():
     _common_op_test("op_exp_test", ["aten", "portable", "optimized"])
     _common_op_test("op_expand_copy_test", ["aten", "portable"])
     _common_op_test("op_expm1_test", ["aten", "portable"])
+    _common_op_test("op_fft_c2r_test", ["aten", "optimized"])
     _common_op_test("op_fft_r2c_test", ["aten", "optimized"])
     _common_op_test("op_fill_test", ["aten", "portable"])
     _common_op_test("op_flip_test", ["aten", "portable"])
