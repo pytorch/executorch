@@ -1,5 +1,5 @@
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
-load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_verision")
+load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
 load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
@@ -48,7 +48,7 @@ python_binary(
 runtime.command_alias(
     name = "llama_qnn",
     env = {
-        "LD_LIBRARY_PATH": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs)".format(get_qnn_library_verision()),
+        "LD_LIBRARY_PATH": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs)".format(get_qnn_library_version()),
         # Place holder to pass the QNN_SDK_ROOT check in executorch/examples/qualcomm/utils.py
         "QNN_SDK_ROOT": "",
     },

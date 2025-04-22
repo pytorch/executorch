@@ -23,12 +23,15 @@ using executorch::runtime::AllocatorID;
 using executorch::runtime::ArrayRef;
 using executorch::runtime::ChainID;
 using executorch::runtime::DebugHandle;
+using executorch::runtime::DelegateDebugIntId;
 using executorch::runtime::EValue;
 using executorch::runtime::EventTracer;
 using executorch::runtime::EventTracerDebugLogLevel;
 using executorch::runtime::EventTracerEntry;
+using executorch::runtime::EventTracerFilterBase;
 using executorch::runtime::kUnsetChainId;
 using executorch::runtime::kUnsetDebugHandle;
+using executorch::runtime::kUnsetDelegateDebugIntId;
 using executorch::runtime::LoggedEValueType;
 using executorch::runtime::Result;
 
@@ -73,7 +76,7 @@ class DummyEventTracer : public EventTracer {
 
   EventTracerEntry start_profiling_delegate(
       const char* name,
-      DebugHandle delegate_debug_id) override {
+      DelegateDebugIntId delegate_debug_id) override {
     (void)name;
     (void)delegate_debug_id;
     return EventTracerEntry();
@@ -88,9 +91,14 @@ class DummyEventTracer : public EventTracer {
     (void)metadata_len;
   }
 
+  void set_delegation_intermediate_output_filter(
+      EventTracerFilterBase* event_tracer_filter) override {
+    (void)event_tracer_filter;
+  }
+
   void log_profiling_delegate(
       const char* name,
-      DebugHandle delegate_debug_id,
+      DelegateDebugIntId delegate_debug_id,
       et_timestamp_t start_time,
       et_timestamp_t end_time,
       const void* metadata,
@@ -105,7 +113,7 @@ class DummyEventTracer : public EventTracer {
 
   virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
-      DebugHandle delegate_debug_index,
+      DelegateDebugIntId delegate_debug_index,
       const Tensor& output) override {
     (void)name;
     (void)delegate_debug_index;
@@ -115,7 +123,7 @@ class DummyEventTracer : public EventTracer {
 
   virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
-      DebugHandle delegate_debug_index,
+      DelegateDebugIntId delegate_debug_index,
       const ArrayRef<Tensor> output) override {
     (void)name;
     (void)delegate_debug_index;
@@ -125,7 +133,7 @@ class DummyEventTracer : public EventTracer {
 
   virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
-      DebugHandle delegate_debug_index,
+      DelegateDebugIntId delegate_debug_index,
       const int& output) override {
     (void)name;
     (void)delegate_debug_index;
@@ -135,7 +143,7 @@ class DummyEventTracer : public EventTracer {
 
   virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
-      DebugHandle delegate_debug_index,
+      DelegateDebugIntId delegate_debug_index,
       const bool& output) override {
     (void)name;
     (void)delegate_debug_index;
@@ -145,7 +153,7 @@ class DummyEventTracer : public EventTracer {
 
   virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
-      DebugHandle delegate_debug_index,
+      DelegateDebugIntId delegate_debug_index,
       const double& output) override {
     (void)name;
     (void)delegate_debug_index;
@@ -153,9 +161,11 @@ class DummyEventTracer : public EventTracer {
     return true;
   }
 
-  void log_evalue(const EValue& evalue, LoggedEValueType evalue_type) override {
+  Result<bool> log_evalue(const EValue& evalue, LoggedEValueType evalue_type)
+      override {
     logged_evalue_ = evalue;
     logged_evalue_type_ = evalue_type;
+    return true;
   }
 
   EValue logged_evalue() {
@@ -226,14 +236,14 @@ TEST(TestEventTracer, SimpleEventTracerTest) {
  */
 void RunSimpleTracerTestDelegate(EventTracer* event_tracer) {
   EventTracerEntry event_tracer_entry = event_tracer_start_profiling_delegate(
-      event_tracer, "test_event", kUnsetDebugHandle);
+      event_tracer, "test_event", kUnsetDelegateDebugIntId);
   event_tracer_end_profiling_delegate(
       event_tracer, event_tracer_entry, nullptr);
   event_tracer_start_profiling_delegate(event_tracer, nullptr, 1);
   event_tracer_end_profiling_delegate(
       event_tracer, event_tracer_entry, "test_metadata");
   event_tracer_log_profiling_delegate(
-      event_tracer, "test_event", kUnsetDebugHandle, 0, 1, nullptr);
+      event_tracer, "test_event", kUnsetDelegateDebugIntId, 0, 1, nullptr);
   event_tracer_log_profiling_delegate(event_tracer, nullptr, 1, 0, 1, nullptr);
 }
 

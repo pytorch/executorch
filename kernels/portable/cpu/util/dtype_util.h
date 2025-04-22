@@ -293,6 +293,10 @@ template <typename CTYPE_COMPUTE, const char* op_name>
 load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn(
     const Tensor& t,
     SupportedTensorDtypes dtypes) {
+  // NOTE: Selective build relies on the operator name being passed
+  // here. When it's *not* active, using the same operator name
+  // everywhere saves on size because we don't require a new template
+  // instantiation for every operator.
   return get_load_to_compute_fn_impl<
       CTYPE_COMPUTE,
 #ifdef EXECUTORCH_SELECTIVE_BUILD_DTYPE
@@ -324,7 +328,7 @@ bool check_tensor_dtype(
 /// Return the one output type we are willing to emit specialized code
 /// to handle, given a compute type of CTYPE_COMMON and supported
 /// output types of out_dtypes.
-template <typename CTYPE_COMMON>
+template <typename CTYPE_COMPUTE>
 inline constexpr ScalarType specialized_output_scalar_type(
     SupportedTensorDtypes out_dtypes) {
   switch (out_dtypes) {
@@ -336,7 +340,7 @@ inline constexpr ScalarType specialized_output_scalar_type(
     case SupportedTensorDtypes::INTB:
     case SupportedTensorDtypes::SAME_AS_COMPUTE:
     case SupportedTensorDtypes::SAME_AS_COMMON:
-      return CppTypeToScalarType<CTYPE_COMMON>::value;
+      return CppTypeToScalarType<CTYPE_COMPUTE>::value;
   }
 }
 

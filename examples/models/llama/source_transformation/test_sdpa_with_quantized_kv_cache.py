@@ -10,7 +10,7 @@ import torch
 
 from executorch.examples.models.llama.attention import KVCache
 
-from executorch.examples.models.llama.source_transformation.quantized_kv_cache import (
+from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
     CustomKVCache,
     QuantizedCacheType,
     QuantizedKVCache,
@@ -71,8 +71,8 @@ class SDPAWithQuantizedKVCacheTest(unittest.TestCase):
         self.seq_len = 3
         self._init_cache()
         q, k_val, v_val = self._init_kv()
-        self.float_sdpa = SDPACustom(self.dim)
-        self.quantized_sdpa = SDPACustom(self.dim)
+        self.float_sdpa = SDPACustom(self.dim, self.max_context_len, True)
+        self.quantized_sdpa = SDPACustom(self.dim, self.max_context_len, True)
         k, v = self.custom_kv_cache.update(input_pos, k_val, v_val)
         float_out = self.float_sdpa(input_pos, q, k, v, 1, self.seq_len, None)
         k, v = self.quantized_kv_cache.update(input_pos, k_val, v_val)

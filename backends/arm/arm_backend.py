@@ -11,17 +11,11 @@
 # JIT compiler flows.
 #
 
-import logging
-
 from typing import List, Optional
 
 from executorch.backends.arm.tosa_specification import TosaSpecification
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
 
 
 class ArmCompileSpecBuilder:

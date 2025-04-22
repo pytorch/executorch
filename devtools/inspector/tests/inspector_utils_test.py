@@ -205,7 +205,7 @@ class TestInspectorUtils(unittest.TestCase):
         self.assertAlmostEqual(calculate_cosine_similarity([a], [b])[0], 1.0)
 
     def test_compare_results_uint8(self):
-        a = torch.randint(0, 255, (4, 4), dtype=torch.uint8)
+        a = torch.randint(1, 255, (4, 4), dtype=torch.uint8)
 
         # Create tensor b which has very close value to tensor a
         b = a.clone()

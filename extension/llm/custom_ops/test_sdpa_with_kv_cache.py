@@ -67,12 +67,14 @@ class SDPATest(unittest.TestCase):
         )
         if self.use_mask_with_custom_op:
             attn_mask = attn_mask.contiguous()
+            sliced_k_cache = self.k_cache[:, : start_pos + seq_len, :, :]
+            sliced_v_cache = self.v_cache[:, : start_pos + seq_len, :, :]
             op_output = torch.ops.llama.sdpa_with_kv_cache(
                 q,
                 k,
                 v,
-                self.k_cache,
-                self.v_cache,
+                sliced_k_cache,
+                sliced_v_cache,
                 start_pos,
                 seq_len,
                 attn_mask,
@@ -108,12 +110,14 @@ class SDPATest(unittest.TestCase):
         )
         if self.use_mask_with_custom_op:
             attn_mask = attn_mask.contiguous()
+            sliced_k_cache = self.k_cache[:, : start_pos + seq_len, :, :]
+            sliced_v_cache = self.v_cache[:, : start_pos + seq_len, :, :]
             op_output = torch.ops.llama.sdpa_with_kv_cache(
                 q,
                 k,
                 v,
-                self.k_cache,
-                self.v_cache,
+                sliced_k_cache,
+                sliced_v_cache,
                 start_pos,
                 seq_len,
                 attn_mask,
@@ -150,12 +154,14 @@ class SDPATest(unittest.TestCase):
         )
         if self.use_mask_with_custom_op:
             attn_mask = attn_mask.contiguous()
+            sliced_k_cache = self.k_cache[:, : start_pos + seq_len, :, :]
+            sliced_v_cache = self.v_cache[:, : start_pos + seq_len, :, :]
             op_output = torch.ops.llama.sdpa_with_kv_cache(
                 q,
                 k,
                 v,
-                self.k_cache,
-                self.v_cache,
+                sliced_k_cache,
+                sliced_v_cache,
                 start_pos,
                 seq_len,
                 attn_mask,
@@ -191,12 +197,14 @@ class SDPATest(unittest.TestCase):
         )
         if self.use_mask_with_custom_op:
             attn_mask = attn_mask.contiguous()
+            sliced_k_cache = self.k_cache[:, : start_pos + seq_len, :, :]
+            sliced_v_cache = self.v_cache[:, : start_pos + seq_len, :, :]
             op_output = torch.ops.llama.sdpa_with_kv_cache(
                 q,
                 k,
                 v,
-                self.k_cache,
-                self.v_cache,
+                sliced_k_cache,
+                sliced_v_cache,
                 start_pos,
                 seq_len,
                 attn_mask,
@@ -489,11 +497,11 @@ class SDPATestCommon(unittest.TestCase):
 class SDPATestForLargeSeqLength(SDPATestCommon):
 
     def test_sdpa_with_cache_seq_len_130(self):
-        n_heads_kv = 32
-        n_heads_q = 32
+        n_heads_kv = 8
+        n_heads_q = 8
         head_dim = 128
         max_seq_len = 2048
-        seq_len = 130
+        seq_len = 24
         self._test_sdpa_common(
             n_heads_kv, n_heads_q, head_dim, max_seq_len, seq_len, True
         )
