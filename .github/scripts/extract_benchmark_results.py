@@ -341,7 +341,7 @@ def transform(
     benchmark_results: List,
     benchmark_config: Dict[str, str],
     job_name: str,
-    job_report: Any
+    job_report: Any = {},
 ) -> List:
     """
     Transform the benchmark results into the format writable into the benchmark database
