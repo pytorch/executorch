@@ -11,10 +11,9 @@
 # JIT compiler flows.
 #
 import logging
-import os
 from typing import cast, final, List
 
-import serializer.tosa_serializer as ts  # type: ignore
+import executorch.backends.arm.tosa_specification as tosa_specification
 
 from executorch.backends.arm.arm_backend import get_tosa_spec
 from executorch.backends.arm.operators.node_visitor import get_node_visitors
@@ -34,10 +33,6 @@ from torch.fx import Node
 
 # TOSA backend debug functionality
 logger = logging.getLogger(__name__)
-TOSA_DBG_VERBOSE = os.environ.get("TOSA_DBG_VERBOSE") == "1"
-if TOSA_DBG_VERBOSE:
-    logging.basicConfig(level=logging.INFO)
-    logger.setLevel(logging.INFO)
 
 
 def _get_first_delegation_tag(graph_module) -> str | None:
@@ -80,18 +75,35 @@ class TOSABackend(BackendDetails):
                 input_order = list(map(int, spec.value.decode().split(",")))
 
         # Check that the output format is set correctly in the compile spec
-        assert output_format == "tosa", "output format must be tosa"
+        if output_format != "tosa":
+            raise ValueError(f'Invalid output format {output_format}, must be "tosa"')
 
         tosa_spec = get_tosa_spec(compile_spec)
-        assert (
-            tosa_spec is not None
-        ), "TOSA backend needs a TOSA version specified in the CompileSpec!"
+        if tosa_spec is None:
+            raise ValueError(
+                "TOSA backend needs a TOSA version specified in the CompileSpec"
+            )
 
         logger.info(f"Converting ExportedProgram to TOSA: {tosa_spec}")
 
         # Converted output for this subgraph, serializer needs path early as it emits
         # const data directly. Path created and data written only in debug builds.
+        if isinstance(tosa_spec, tosa_specification.Tosa_0_80):
+            import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
+        elif isinstance(tosa_spec, tosa_specification.Tosa_1_00):
+            import serializer.tosa_serializer as ts  # type: ignore
+        else:
+            raise RuntimeError(
+                f"Unknown TOSA version {tosa_spec}, no pip package installed to handle serialization to that version."
+            )
+
         tosa_graph = ts.TosaSerializer(artifact_path)
+
+        assert (
+            tosa_spec.version.major == ts.TOSA_VERSION_MAJOR
+            and tosa_spec.version.minor == ts.TOSA_VERSION_MINOR
+        ), f"TOSA serializer version ({ts.TOSA_VERSION_MAJOR}.{ts.TOSA_VERSION_MINOR}) doesn't match specification {tosa_spec}"
+
         graph_module = ArmPassManager(tosa_spec).transform_to_backend_pipeline(  # type: ignore
             exported_program=edge_program
         )

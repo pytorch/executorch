@@ -4,12 +4,12 @@ This directory contains examples for some AI models.
 
 We have seperated the example scripts into the following subfolders, please refer to [README.md](../../backends/qualcomm/README.md) for the example scripts' directory structure:
 
-1. executor_runner: This folder contains a general executor runner capable of running most of the models. As a rule of thumb, if a model does not have its own customized runner, execute the model using [executor_runner](./executor_runner/qnn_executor_runner.cpp). On the other hand, if a model has its own runner, such as [llama](./oss_scripts/llama/qnn_llama_runner.cpp), use the customized runner to execute the model. Customized runner should be located under the same folder as the model's python script.
+1. executor_runner: This folder contains a general executor runner capable of running most of the models. As a rule of thumb, if a model does not have its own customized runner, execute the model using [executor_runner](executor_runner/qnn_executor_runner.cpp). On the other hand, if a model has its own runner, such as [llama](oss_scripts/llama/qnn_llama_runner.cpp), use the customized runner to execute the model. Customized runner should be located under the same folder as the model's python script.
 
 2. oss_scripts: OSS stands for Open Source Software. This folder contains python scripts for open source models. Some models under this folder might also have their own customized runner.
-   For example, [llama](./oss_scripts/llama/qnn_llama_runner.cpp) contains not only the python scripts to prepare the model but also a customized runner for executing the model.
+   For example, [llama](oss_scripts/llama/qnn_llama_runner.cpp) contains not only the python scripts to prepare the model but also a customized runner for executing the model.
 
-3. qaihub_scripts: QAIHub stands for [Qualcomm AI Hub](https://aihub.qualcomm.com/). On QAIHub, users can find pre-compiled context binaries, a format used by QNN to save its models. This provides users with a new option for model deployment. Different from oss_scripts & scripts, which the example scripts are converting a model from nn.Module to ExecuTorch .pte files, qaihub_scripts provides example scripts for converting pre-compiled context binaries to ExecuTorch .pte files. Additionaly, users can find customized example runners specific to the QAIHub models for execution. For example [qaihub_llama2_7b](./qaihub_scripts/llama2/qaihub_llama2_7b.py) is a script converting context binaries to ExecuTorch .pte files, and [qaihub_llama2_7b_runner](./qaihub_scripts/llama2/qaihub_llama2_7b_runner.cpp) is a customized example runner to execute llama2 .pte files. Please be aware that context-binaries downloaded from QAIHub are tied to a specific QNN SDK version.
+3. qaihub_scripts: QAIHub stands for [Qualcomm AI Hub](https://aihub.qualcomm.com/). On QAIHub, users can find pre-compiled context binaries, a format used by QNN to save its models. This provides users with a new option for model deployment. Different from oss_scripts & scripts, which the example scripts are converting a model from nn.Module to ExecuTorch .pte files, qaihub_scripts provides example scripts for converting pre-compiled context binaries to ExecuTorch .pte files. Additionaly, users can find customized example runners specific to the QAIHub models for execution. For example [qaihub_llama2_7b](qaihub_scripts/llama/llama2/qaihub_llama2_7b.py) is a script converting context binaries to ExecuTorch .pte files, and [qaihub_llama2_7b_runner](qaihub_scripts/llama/llama2/qaihub_llama2_7b_runner.cpp) is a customized example runner to execute llama2 .pte files. Please be aware that context-binaries downloaded from QAIHub are tied to a specific QNN SDK version.
 Before executing the scripts and runner, please ensure that you are using the QNN SDK version that is matching the context binary. Please refer to [Check context binary version](#check-context-binary-version) for tutorial on how to check the QNN Version for a context binary.
 
 4. scripts: This folder contains scripts to build models provided by Executorch.
@@ -22,15 +22,15 @@ Here are some general information and limitations.
 
 ## Prerequisite
 
-Please finish tutorial [Setting up executorch](https://pytorch.org/executorch/stable/getting-started-setup).
+Please finish tutorial [Setting up executorch](https://pytorch.org/executorch/main/getting-started-setup).
 
-Please finish [setup QNN backend](../../docs/source/build-run-qualcomm-ai-engine-direct-backend.md).
+Please finish [setup QNN backend](../../docs/source/backends-qualcomm.md).
 
 ## Environment
 
 Please set up `QNN_SDK_ROOT` environment variable.
 Note that this version should be exactly same as building QNN backend.
-Please check [setup](../../docs/source/build-run-qualcomm-ai-engine-direct-backend.md).
+Please check [setup](../../docs/source/backends-qualcomm.md).
 
 Please set up `LD_LIBRARY_PATH` to `$QNN_SDK_ROOT/lib/x86_64-linux-clang`.
 Or, you could put QNN libraries to default search path of the dynamic linker.
@@ -44,11 +44,22 @@ commands in the `SimpleADB` class inside [utils.py](utils.py).
 
 ## Please use python xxx.py --help for information of each examples.
 
-Some CLI examples here. Please adjust according to your environment:
+Some CLI examples here. Please adjust according to your environment. If you want to export the model without running it, please add `-compile_only` to the command.:
 
 #### First switch to following folder
 ```bash
 cd $EXECUTORCH_ROOT/examples/qualcomm/scripts
+```
+
+## Simple Examples to Verify the Backend is Working
+```bash
+python export_example.py -m add -g
+```
+
+It will generate a simple add model targeting for "SM8550". You can manually push the `add.pte` file to the device following https://pytorch.org/executorch/stable/build-run-qualcomm-ai-engine-direct-backend.html and run it with
+
+```bash
+./qnn_executor_runner --model_path add.pte
 ```
 
 #### For MobileNet_v2

@@ -27,13 +27,13 @@ using executorch::aten::ArrayRef;
 using executorch::aten::Half;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using ::executorch::ET_RUNTIME_NAMESPACE::Method;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
-using ::executorch::runtime::Method;
 using ::executorch::runtime::Result;
 
 namespace executorch {
-namespace bundled_program {
+namespace BUNDLED_PROGRAM_NAMESPACE {
 
 namespace {
 
@@ -332,8 +332,9 @@ ET_NODISCARD Error load_bundled_input(
         static_cast<uint32_t>(status));
   }
 
-  ::executorch::runtime::internal::event_tracer_set_bundled_input_index(
-      method.get_event_tracer(), testset_idx);
+  ::executorch::ET_RUNTIME_NAMESPACE::internal::
+      event_tracer_set_bundled_input_index(
+          method.get_event_tracer(), testset_idx);
 
   return Error::Ok;
 }
@@ -432,5 +433,5 @@ bool is_bundled_program(void* file_data, ET_UNUSED size_t file_data_len) {
       file_data);
 }
 
-} // namespace bundled_program
+} // namespace BUNDLED_PROGRAM_NAMESPACE
 } // namespace executorch

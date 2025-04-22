@@ -133,7 +133,7 @@ inline bool check_dim_order(
   size_t gauss_sum = 0;
   std::vector<int> count(dim_order.size(), 0);
   for (int i = 0; i < dim_order.size(); i++) {
-    if (dim_order[i] < 0 || dim_order[i] >= sizes.size()) {
+    if (dim_order[i] >= sizes.size()) {
       return false;
     }
     gauss_sum += static_cast<size_t>(dim_order[i]) + 1;
