@@ -15,8 +15,8 @@ import com.facebook.soloader.nativeloader.SystemDelegate;
 import org.pytorch.executorch.annotations.Experimental;
 
 /**
- * LlmModule is a wrapper around the Executorch LLM. It provides a simple interface to
- * generate text from the model.
+ * LlmModule is a wrapper around the Executorch LLM. It provides a simple interface to generate text
+ * from the model.
  *
  * <p>Warning: These APIs are experimental and subject to change without notice
  */
