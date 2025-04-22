@@ -37,9 +37,6 @@ struct PhysicalDevice final {
   VkPhysicalDeviceShaderFloat16Int8Features shader_float16_int8_types;
 #endif /* VK_KHR_shader_float16_int8 */
 
-  // Head of the linked list of extensions to be requested
-  void* extension_features;
-
   // Available GPU queues
   std::vector<VkQueueFamilyProperties> queue_families;
 
