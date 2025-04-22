@@ -18,6 +18,14 @@
 namespace vkcompute {
 namespace vkapi {
 
+enum class DeviceType : uint32_t {
+  UNKNOWN,
+  NVIDIA,
+  MALI,
+  ADRENO,
+  SWIFTSHADER,
+};
+
 struct PhysicalDevice final {
   // Handle
   VkPhysicalDevice handle;
@@ -47,6 +55,10 @@ struct PhysicalDevice final {
   bool has_timestamps;
   float timestamp_period;
   size_t min_ubo_alignment;
+
+  // Device identity
+  std::string device_name;
+  DeviceType device_type;
 
   explicit PhysicalDevice(VkPhysicalDevice);
 };
