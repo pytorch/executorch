@@ -901,9 +901,7 @@ class FuseMulIntoDequantPass(ExportPass):
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseTransposeOpPairsPass(FuseOpPairsAcrossBranchesPass):
     """
-    Fuse dequantize-quantize op pairs to a single requantize op.
-    For the special case where quant params match, this will remove
-    both dequant and quant ops.
+    Fuse transpose op pairs to a single view op.
     """
 
     # A list of ops that can be bypassed when looking for a
@@ -915,6 +913,7 @@ class FuseTransposeOpPairsPass(FuseOpPairsAcrossBranchesPass):
         exir_ops.edge.cadence.dequantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        exir_ops.edge.cadence.quantized_relu.per_tensor,
     }
 
     def can_fuse_for_chain(
