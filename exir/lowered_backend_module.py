@@ -958,5 +958,3 @@ def _unsafe_adjust_original_program(  # noqa: C901
             if user_idx > idx:
                 user.args = (user.args[0], user_idx - (len(getitem_idxs) - i))
                 break
-
-    original_program._validate()

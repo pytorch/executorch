@@ -7,6 +7,7 @@
 
 import copy
 import logging
+import operator
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from functools import singledispatch
@@ -204,11 +205,36 @@ def _insert_lowered_submodule(
     owning_graph_module = call_submodule_node.graph.owning_module
     # call delegate args should only use user_inputs
     call_delegate_args = []
+    # handle getitem node in multi-method scenario
+    call_submodule_inputs = []
+    for inp_node in call_submodule_node.all_input_nodes:
+        if inp_node.target == operator.getitem:
+            # it could be an executorch_call_delegate node or a submodule to be replaced
+            subgraph = (
+                # get owning_module of lowered_module node
+                getattr(
+                    inp_node.args[0].all_input_nodes[0].graph.owning_module,
+                    inp_node.args[0].all_input_nodes[0].name,
+                ).original_module
+                if inp_node.args[0].target
+                == torch._higher_order_ops.executorch_call_delegate
+                # get owning_module of submodule node
+                else getattr(
+                    inp_node.args[0].graph.owning_module,
+                    inp_node.args[0].all_input_nodes[0].name,
+                )
+            )
+            output_node = [
+                node for node in subgraph.graph.nodes if node.name == "output"
+            ][0]
+            call_submodule_inputs.append(output_node.all_input_nodes[inp_node.args[1]])
+        else:
+            call_submodule_inputs.append(inp_node)
     # Preserve input order as user_inputs
     for inp_name in submodule_program.graph_signature.user_inputs:
-        for inp_node in call_submodule_node.all_input_nodes:
+        for i, inp_node in enumerate(call_submodule_inputs):
             if inp_node.name == inp_name:
-                call_delegate_args.append(inp_node)
+                call_delegate_args.append(call_submodule_node.all_input_nodes[i])
                 break
 
     def generate_debug_handle(ep: ExportedProgram) -> int:
@@ -325,6 +351,9 @@ def _partition_and_lower_one_graph_module(
             toplevel_output_specs_to_delete,
         )
 
+    # perform validation here to make sure all the delegated submodules are gone
+    # validate inside _insert_lowered_submodule will break multi-method scenario
+    owning_program._validate()
     return tagged_graph_module
 
 
@@ -569,7 +598,11 @@ def lower_all_submodules_to_backend(
     # The created exported program for the submodules are in the call_module node's meta data
     # We just map the method_to_submodule_nodes directly to the method_to_partitioned_exported_programs
     method_to_partitioned_program = {
-        method_name: [node.meta["submodule_program"] for node in call_submodule_nodes]
+        method_name: [
+            # perform deep copy here in case backends change graph inside preprocess method
+            copy.deepcopy(node.meta["submodule_program"])
+            for node in call_submodule_nodes
+        ]
         for method_name, call_submodule_nodes in method_to_submodules_nodes.items()
     }
     method_to_compile_specs = {
@@ -626,6 +659,10 @@ def lower_all_submodules_to_backend(
                 toplevel_input_specs_to_delete,
                 toplevel_output_specs_to_delete,
             )
+
+        # perform validation here to make sure all the delegated submodules are gone
+        # validate inside _insert_lowered_submodule will break multi-method scenario
+        owning_program._validate()
 
 
 @dataclass

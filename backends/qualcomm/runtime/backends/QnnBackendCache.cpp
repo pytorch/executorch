@@ -81,11 +81,10 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary(
   return Error::Ok;
 }
 
-Error QnnBackendCache::Configure() {
+Error QnnBackendCache::Configure(const std::vector<std::string>& graph_names) {
   if (qnn_context_blob_.buffer == nullptr) {
+    graph_names_ = graph_names;
     state_ = SERIALIZE;
-    // use aot_graph_name if we're lowering graph on host side
-    graph_names_.push_back(aot_graph_name_);
     QNN_EXECUTORCH_LOG_INFO("Caching: Caching is in SAVE MODE.");
     return Error::Ok;
   }

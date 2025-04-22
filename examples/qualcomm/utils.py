@@ -58,8 +58,6 @@ class SimpleADB:
         runner (str): Runtime executor binary
         expected_input_shape (Tuple[torch.Size]): input shape of dynamic graph
         expected_output_shape (Tuple[torch.Size]): output shape of dynamic graph
-        expected_input_dtype (Tuple[torch.dtype]): input dtype
-        expected_output_sdtype (Tuple[torch.dtype]): output dtype
     """
 
     def __init__(

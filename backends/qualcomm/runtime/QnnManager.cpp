@@ -59,7 +59,9 @@ QnnManager::QnnManager(
         EnumNameQcomChipset(options_->soc_info()->soc_model()));
     QNN_EXECUTORCH_LOG_INFO(
         "backend_type: %s", EnumNameQnnExecuTorchBackendType(backend_type));
-    QNN_EXECUTORCH_LOG_INFO("graph_name: %s", options_->graph_name()->c_str());
+    for (auto name : *options_->graph_name()) {
+      QNN_EXECUTORCH_LOG_INFO("graph_name: %s", name->c_str());
+    }
     QNN_EXECUTORCH_LOG_INFO("library_path: %s", library_path.c_str());
     QNN_EXECUTORCH_LOG_INFO("dump intermediate outputs: %s", IsTensorDump());
     QNN_EXECUTORCH_LOG_INFO(
@@ -281,6 +283,10 @@ Error QnnManager::Init() {
       LoadQnnLibrary() == Error::Ok, Internal, "Fail to load Qnn library");
   logger_ = std::make_unique<QnnLogger>(
       qnn_loaded_backend_, LoggingCallback, options_->log_level());
+  std::vector<std::string> graph_names;
+  for (auto name : *options_->graph_name()) {
+    graph_names.emplace_back(name->str());
+  }
   if (backend_params_ptr_->backend_init_state_ ==
       BackendInitializeState::UNINITIALIZED) {
     QNN_EXECUTORCH_LOG_INFO(
@@ -298,7 +304,8 @@ Error QnnManager::Init() {
         Internal,
         "Failed to load Qnn backend.");
     ET_CHECK_OR_RETURN_ERROR(
-        backend_params_ptr_->qnn_backend_cache_ptr_->Configure() == Error::Ok,
+        backend_params_ptr_->qnn_backend_cache_ptr_->Configure(graph_names) ==
+            Error::Ok,
         Internal,
         "Fail to configure Qnn backend cache");
     ET_CHECK_OR_RETURN_ERROR(

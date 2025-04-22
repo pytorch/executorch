@@ -57,10 +57,6 @@ class QnnManager {
     return options_->online_prepare();
   }
 
-  bool IsMultipleGraphs() {
-    return options_->multiple_graphs();
-  }
-
   bool IsTensorDump() {
     return options_->dump_intermediate_outputs();
   }
