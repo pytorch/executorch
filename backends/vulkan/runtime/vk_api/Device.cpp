@@ -34,7 +34,6 @@ PhysicalDevice::PhysicalDevice(VkPhysicalDevice physical_device_handle)
       shader_float16_int8_types{
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR},
 #endif /* VK_KHR_shader_float16_int8 */
-      extension_features{nullptr},
       queue_families{},
       num_compute_queues(0),
       supports_int16_shader_types(false),
@@ -57,34 +56,24 @@ PhysicalDevice::PhysicalDevice(VkPhysicalDevice physical_device_handle)
 
   // Create linked list to query availability of extensions
 
+  void* extension_list_top = nullptr;
+
 #ifdef VK_KHR_16bit_storage
-  extension_features = &shader_16bit_storage;
-  features2.pNext = &shader_16bit_storage;
-#elif defined(VK_KHR_8bit_storage)
-  extension_features = &shader_8bit_storage;
-  features2.pNext = &shader_8bit_storage;
-#elif defined(VK_KHR_shader_float16_int8)
-  extension_features = &shader_float16_int8_types;
-  features2.pNext = &shader_float16_int8_types;
+  shader_16bit_storage.pNext = extension_list_top;
+  extension_list_top = &shader_16bit_storage;
 #endif /* VK_KHR_16bit_storage */
 
-#if defined(VK_KHR_16bit_storage) && defined(VK_KHR_8bit_storage)
-  shader_16bit_storage.pNext = &shader_8bit_storage;
-#elif defined(VK_KHR_16bit_storage) && defined(VK_KHR_shader_float16_int8)
-  shader_16bit_storage.pNext = &shader_float16_int8_types;
-#elif defined(VK_KHR_16bit_storage)
-  shader_16bit_storage.pNext = nullptr;
-#endif
-
-#if defined(VK_KHR_8bit_storage) && defined(VK_KHR_shader_float16_int8)
-  shader_8bit_storage.pNext = &shader_float16_int8_types;
-#elif defined(VK_KHR_8bit_storage)
-  shader_8bit_storage.pNext = nullptr;
-#endif
+#ifdef VK_KHR_8bit_storage
+  shader_8bit_storage.pNext = extension_list_top;
+  extension_list_top = &shader_8bit_storage;
+#endif /* VK_KHR_8bit_storage */
 
 #ifdef VK_KHR_shader_float16_int8
-  shader_float16_int8_types.pNext = nullptr;
-#endif
+  shader_float16_int8_types.pNext = extension_list_top;
+  extension_list_top = &shader_float16_int8_types;
+#endif /* VK_KHR_shader_float16_int8 */
+
+  features2.pNext = extension_list_top;
 
   vkGetPhysicalDeviceFeatures2(handle, &features2);
 
