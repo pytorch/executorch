@@ -5,7 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-set -exu
+set -ex
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
@@ -65,11 +65,32 @@ if [[ -z "${MODE:-}" ]]; then
   exit 1
 fi
 
+if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
+  PYTHON_EXECUTABLE=python3
+fi
+
 TARGET_LIBS=""
 
 if [[ "${MODE}" =~ .*openvino.* ]]; then
   OPENVINO=ON
   TARGET_LIBS="$TARGET_LIBS openvino_backend "
+
+  git clone https://github.com/daniil-lyakhov/openvino.git
+
+  cd openvino && git checkout dl/executorch/yolo12
+  git submodule update --init --recursive
+  sudo ./install_build_dependencies.sh
+  mkdir build && cd build
+  cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_PYTHON=ON
+  make -j$(nproc)
+
+  cd ..
+  cmake --install build --prefix dist
+
+  source dist/setupvars.sh
+  cd ../backends/openvino
+  pip install -r requirements.txt
+  cd ../../
 else
   OPENVINO=OFF
 fi
@@ -81,51 +102,70 @@ else
   XNNPACK=OFF
 fi
 
-if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
-  PYTHON_EXECUTABLE=python3
-fi
-
 which "${PYTHON_EXECUTABLE}"
 
-cmake_install_executorch_libraries() {
-    echo "Installing libexecutorch.a, libextension_module.so, libportable_ops_lib.a"
-    rm -rf cmake-out
-    mkdir cmake-out
 
-    retry cmake \
-        -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DEXECUTORCH_BUILD_OPENVINO="$OPENVINO" \
-        -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
-        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
-        -DEXECUTORCH_ENABLE_LOGGING=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-        -DEXECUTORCH_BUILD_PYBIND=ON \
-        -Bcmake-out
-    cmake --build cmake-out -j9 --target install --config "$CMAKE_BUILD_TYPE"
+DIR="examples/models/yolo12"
+$PYTHON_EXECUTABLE -m pip install -r ${DIR}/requirements.txt
+
+cmake_install_executorch_libraries() {
+    rm -rf cmake-out
+    build_dir=cmake-out
+    mkdir $build_dir
+
+
+    retry cmake -DCMAKE_INSTALL_PREFIX="${build_dir}" \
+          -DCMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE}" \
+          -DEXECUTORCH_BUILD_OPENVINO="$OPENVINO" \
+          -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
+          -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+          -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+          -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
+          -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+          -B"${build_dir}"
+
+    # Build the project
+    cmake --build ${build_dir} --target install --config ${CMAKE_BUILD_TYPE} -j$(nproc)
+
+    export CMAKE_ARGS="
+                       -DEXECUTORCH_BUILD_OPENVINO="$OPENVINO" \
+                       -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
+                       -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+                       -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+                       -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
+                       -DEXECUTORCH_ENABLE_LOGGING=ON \
+                       -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+                       -DEXECUTORCH_BUILD_PYBIND=ON"
+
+    echo $TARGET_LIBS
+    export CMAKE_BUILD_ARGS="--target $TARGET_LIBS"
+    pip install . --no-build-isolation
 }
 
 cmake_build_demo() {
     echo "Building yolo12 runner"
-    dir="examples/models/yolo12"
     retry cmake \
         -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
         -DUSE_OPENVINO_BACKEND="$OPENVINO" \
-        -DUSE_OPENVINO_BACKEND="$XNNPACK" \
-        -Bcmake-out/${dir} \
-        ${dir}
-    cmake --build cmake-out/${dir} -j9 --config "$CMAKE_BUILD_TYPE"
+        -DUSE_XNNPACK_BACKEND="$XNNPACK" \
+        -Bcmake-out/${DIR} \
+        ${DIR}
+    cmake --build cmake-out/${DIR} -j9 --config "$CMAKE_BUILD_TYPE"
 
 }
 
 cleanup_files() {
- true
+ rm $EXPORTED_MODEL_NAME
 }
 
 prepare_artifacts_upload() {
   if [ -n "${UPLOAD_DIR}" ]; then
-    true
+    echo "Preparing for uploading generated artifacs"
+    zip -j model.zip "${EXPORTED_MODEL_NAME}"
+    mkdir -p "${UPLOAD_DIR}"
+    mv model.zip "${UPLOAD_DIR}"
+    mv result.txt "${UPLOAD_DIR}"
+
   fi
 }
 
@@ -141,14 +181,14 @@ cmake_install_executorch_libraries
 $PYTHON_EXECUTABLE -m examples.models.yolo12.export_and_validate ${EXPORT_ARGS}
 
 
-RUNTIME_ARGS="--model_path=${EXPORTED_MODEL_NAME} --input_path=${INPUT_VIDEO}"
+RUNTIME_ARGS="--model_path=${EXPORTED_MODEL_NAME} --input_path=${VIDEO_PATH}"
 # Check build tool.
 cmake_build_demo
-# Run llama runner
+# Run yolo12 runner
 NOW=$(date +"%H:%M:%S")
-echo "Starting to run llama runner at ${NOW}"
+echo "Starting to run yolo12 runner at ${NOW}"
 # shellcheck source=/dev/null
-cmake-out/examples/models/yolo12/Yolo12Detection ${RUNTIME_ARGS} > result.txt
+cmake-out/examples/models/yolo12/Yolo12DetectionDemo ${RUNTIME_ARGS} > result.txt
 NOW=$(date +"%H:%M:%S")
 echo "Finished at ${NOW}"
 
