@@ -207,6 +207,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten._log_softmax.default,
             exir_ops.edge.aten.sub.Tensor,
             exir_ops.edge.aten.tanh.default,
+            exir_ops.edge.aten.upsample_bilinear2d.vec,
             exir_ops.edge.aten.upsample_nearest2d.vec,
             exir_ops.edge.aten.var.correction,
             exir_ops.edge.aten.var.dim,
@@ -365,6 +366,7 @@ class CheckProperQuantization(OperatorSupportBase):
             exir_ops.edge.aten.sigmoid.default,
             exir_ops.edge.aten.sub.Tensor,
             exir_ops.edge.aten.tanh.default,
+            exir_ops.edge.aten.upsample_bilinear2d.vec,
             exir_ops.edge.aten.upsample_nearest2d.vec,
             exir_ops.edge.aten.gelu.default,
         ):
