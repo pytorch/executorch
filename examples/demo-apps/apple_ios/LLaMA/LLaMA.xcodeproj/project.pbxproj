@@ -128,8 +128,8 @@
 		F292B07F2D88B0D200BE6839 /* result.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = result.h; sourceTree = "<group>"; };
 		F292B0812D88B0D200BE6839 /* tiktoken.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = tiktoken.h; sourceTree = "<group>"; };
 		F292B0832D88B0D200BE6839 /* tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = tokenizer.h; sourceTree = "<group>"; };
-		F292B0FF2D88B20C00BE6839 /* llama_tiktoken.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = llama_tiktoken.h; path = /Users/larryliu/CLionProjects/executorch/examples/models/llama/tokenizer/llama_tiktoken.h; sourceTree = "<absolute>"; };
-		F292B1002D88B20C00BE6839 /* llama_tiktoken.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = llama_tiktoken.cpp; path = /Users/larryliu/CLionProjects/executorch/examples/models/llama/tokenizer/llama_tiktoken.cpp; sourceTree = "<absolute>"; };
+		F292B0FF2D88B20C00BE6839 /* llama_tiktoken.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = llama_tiktoken.h; path = ../../../../../executorch/examples/models/llama/tokenizer/llama_tiktoken.h; sourceTree = "<group>"; };
+		F292B1002D88B20C00BE6839 /* llama_tiktoken.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = llama_tiktoken.cpp; path = ../../../../../executorch/examples/models/llama/tokenizer/llama_tiktoken.cpp; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -852,7 +852,7 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pytorch/executorch";
 			requirement = {
-				branch = "swiftpm-0.7.0.20250401";
+				branch = "swiftpm-0.6.0";
 				kind = branch;
 			};
 		};

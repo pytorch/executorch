@@ -43,7 +43,7 @@ Download [NeuroPilot Express SDK](https://neuropilot.mediatek.com/resources/publ
 
 Follow the steps below to setup your build environment:
 
-1. **Setup ExecuTorch Environment**: Refer to the [Setting up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup) guide for detailed instructions on setting up the ExecuTorch environment.
+1. **Setup ExecuTorch Environment**: Refer to the [Setting up ExecuTorch](https://pytorch.org/executorch/main/getting-started-setup) guide for detailed instructions on setting up the ExecuTorch environment.
 
 2. **Setup MediaTek Backend Environment**
 - Install the dependent libs. Ensure that you are inside backends/mediatek/ directory

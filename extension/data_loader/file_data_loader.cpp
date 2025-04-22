@@ -86,6 +86,9 @@ Result<FileDataLoader> FileDataLoader::from(
       "Alignment %zu is not a power of 2",
       alignment);
 
+  ET_CHECK_OR_RETURN_ERROR(
+      file_name != nullptr, InvalidArgument, "File name cannot be empty.");
+
   // Use open() instead of fopen() to avoid the layer of buffering that
   // fopen() does. We will be reading large portions of the file in one shot,
   // so buffering does not help.

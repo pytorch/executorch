@@ -10,15 +10,20 @@
 
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/executor/method.h>
+#ifdef USE_ATEN_LIB
+#define BUNDLED_PROGRAM_NAMESPACE bundled_program::aten
+#else // !USE_ATEN_LIB
+#define BUNDLED_PROGRAM_NAMESPACE bundled_program
+#endif // USE_ATEN_LIB
 
 namespace executorch {
-namespace bundled_program {
+namespace BUNDLED_PROGRAM_NAMESPACE {
 
 /**
  * An opaque pointer to a serialized bundled program.
  */
 using SerializedBundledProgram = const void;
-
+using ::executorch::ET_RUNTIME_NAMESPACE::Method;
 /**
  * Load testset_idx-th bundled input of method_idx-th Method test in
  * bundled_program_ptr to given Method.
@@ -31,7 +36,7 @@ using SerializedBundledProgram = const void;
  * execution.
  */
 ET_NODISCARD ::executorch::runtime::Error load_bundled_input(
-    ::executorch::runtime::Method& method,
+    Method& method,
     SerializedBundledProgram* bundled_program_ptr,
     size_t testset_idx);
 
@@ -49,7 +54,7 @@ ET_NODISCARD ::executorch::runtime::Error load_bundled_input(
  * execution.
  */
 ET_NODISCARD ::executorch::runtime::Error verify_method_outputs(
-    ::executorch::runtime::Method& method,
+    Method& method,
     SerializedBundledProgram* bundled_program_ptr,
     size_t testset_idx,
     double rtol = 1e-5,
@@ -94,7 +99,7 @@ ET_DEPRECATED inline bool is_bundled_program(void* file_data) {
   return is_bundled_program(file_data, 128);
 }
 
-} // namespace bundled_program
+} // namespace BUNDLED_PROGRAM_NAMESPACE
 } // namespace executorch
 
 namespace torch {
@@ -103,24 +108,24 @@ namespace bundled_program {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
 using serialized_bundled_program =
-    ::executorch::bundled_program::SerializedBundledProgram;
+    ::executorch::BUNDLED_PROGRAM_NAMESPACE::SerializedBundledProgram;
 
 ET_NODISCARD inline ::executorch::runtime::Error LoadBundledInput(
-    ::executorch::runtime::Method& method,
+    Method& method,
     serialized_bundled_program* bundled_program_ptr,
     size_t testset_idx) {
-  return ::executorch::bundled_program::load_bundled_input(
+  return ::executorch::BUNDLED_PROGRAM_NAMESPACE::load_bundled_input(
       method, bundled_program_ptr, testset_idx);
 }
 
 ET_NODISCARD inline ::executorch::runtime::Error
 VerifyResultWithBundledExpectedOutput(
-    ::executorch::runtime::Method& method,
+    Method& method,
     serialized_bundled_program* bundled_program_ptr,
     size_t testset_idx,
     double rtol = 1e-5,
     double atol = 1e-8) {
-  return ::executorch::bundled_program::verify_method_outputs(
+  return ::executorch::BUNDLED_PROGRAM_NAMESPACE::verify_method_outputs(
       method, bundled_program_ptr, testset_idx, rtol, atol);
 }
 
@@ -129,13 +134,14 @@ ET_NODISCARD inline ::executorch::runtime::Error GetProgramData(
     size_t file_data_len,
     const void** out_program_data,
     size_t* out_program_data_len) {
-  return ::executorch::bundled_program::get_program_data(
+  return ::executorch::BUNDLED_PROGRAM_NAMESPACE::get_program_data(
       file_data, file_data_len, out_program_data, out_program_data_len);
 }
 
 inline bool IsBundledProgram(void* file_data) {
   // 128 is enough data to contain the identifier in the flatbuffer header.
-  return ::executorch::bundled_program::is_bundled_program(file_data, 128);
+  return ::executorch::BUNDLED_PROGRAM_NAMESPACE::is_bundled_program(
+      file_data, 128);
 }
 } // namespace bundled_program
 } // namespace executor

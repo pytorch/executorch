@@ -34,13 +34,15 @@ import org.junit.runners.JUnit4;
 import org.apache.commons.io.FileUtils;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.InstrumentationRegistry;
+import org.json.JSONException;
+import org.json.JSONObject;
 import org.pytorch.executorch.extension.llm.LlmCallback;
 import org.pytorch.executorch.extension.llm.LlmModule;
 
 /** Unit tests for {@link org.pytorch.executorch.extension.llm.LlmModule}. */
 @RunWith(AndroidJUnit4.class)
 public class LlmModuleInstrumentationTest implements LlmCallback {
-    private static String TEST_FILE_NAME = "/tinyllama_portable_fp16_h.pte";
+    private static String TEST_FILE_NAME = "/stories.pte";
     private static String TOKENIZER_FILE_NAME = "/tokenizer.bin";
     private static String TEST_PROMPT = "Hello";
     private static int OK = 0x00;
@@ -86,7 +88,6 @@ public class LlmModuleInstrumentationTest implements LlmCallback {
 
     @Test
     public void testGenerateAndStop() throws IOException, URISyntaxException{
-        int seqLen = 32;
         mModule.generate(TEST_PROMPT, SEQ_LEN, new LlmCallback() {
             @Override
             public void onResult(String result) {
@@ -95,8 +96,8 @@ public class LlmModuleInstrumentationTest implements LlmCallback {
             }
 
             @Override
-            public void onStats(float tps) {
-                LlmModuleInstrumentationTest.this.onStats(tps);
+            public void onStats(String stats) {
+                LlmModuleInstrumentationTest.this.onStats(stats);
             }
         });
 
@@ -110,7 +111,16 @@ public class LlmModuleInstrumentationTest implements LlmCallback {
     }
 
     @Override
-    public void onStats(float tps) {
-        tokensPerSecond.add(tps);
+    public void onStats(String stats) {
+        float tps = 0;
+        try {
+            JSONObject jsonObject = new JSONObject(stats);
+            int numGeneratedTokens = jsonObject.getInt("generated_tokens");
+            int inferenceEndMs = jsonObject.getInt("inference_end_ms");
+            int promptEvalEndMs = jsonObject.getInt("prompt_eval_end_ms");
+            tps = (float) numGeneratedTokens / (inferenceEndMs - promptEvalEndMs) * 1000;
+            tokensPerSecond.add(tps);
+        } catch (JSONException e) {
+        }
     }
 }

@@ -36,7 +36,7 @@ class QuantizeAffineConfig(QDQAffineConfigs):
         try:
             import torchao.quantization.quant_primitives  # noqa
 
-            return torch.ops.quant.quantize_affine.default
+            return torch.ops.torchao.quantize_affine.default
         except:
             return None
 
@@ -48,7 +48,7 @@ class DeQuantizeAffineConfig(QDQAffineConfigs):
         try:
             import torchao.quantization.quant_primitives  # noqa
 
-            return torch.ops.quant.dequantize_affine.default
+            return torch.ops.torchao.dequantize_affine.default
         except:
             return None
 
@@ -60,6 +60,6 @@ class ChooseQParamsAffineConfig(QDQAffineConfigs):
         try:
             import torchao.quantization.quant_primitives  # noqa
 
-            return torch.ops.quant.choose_qparams_affine.default
+            return torch.ops.torchao.choose_qparams_affine.default
         except:
             return None
