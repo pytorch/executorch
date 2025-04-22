@@ -31,7 +31,7 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
   self = [super init];
   if (self) {
     [ExecuTorchLog.sharedLog addSink:self];
-    _runner = std::make_unique<example::Runner>(
+    _runner = example::Runner::create(
         modelPath.UTF8String, tokenizerPath.UTF8String);
   }
   return self;

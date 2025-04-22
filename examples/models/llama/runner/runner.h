@@ -30,18 +30,23 @@ namespace example {
 
 class ET_EXPERIMENTAL Runner : public executorch::extension::llm::IRunner {
  public:
-  explicit Runner(
+  // Static factory method to create a Runner instance
+  static std::unique_ptr<Runner> create(
       const std::string& model_path,
       const std::string& tokenizer_path,
-      std::optional<const std::string> data_path = std::nullopt);
+      std::optional<const std::string> data_path = std::nullopt,
+      float temperature = -1.0f);
 
-  [[deprecated(
-      "This constructor is deprecated. Use the constructor without temperature parameter instead.")]]
+  // Constructor with dependency injection
   explicit Runner(
-      const std::string& model_path,
-      const std::string& tokenizer_path,
-      const float temperature,
-      std::optional<const std::string> data_path = std::nullopt);
+      std::unordered_map<std::string, int64_t> metadata,
+      std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
+      std::unique_ptr<::executorch::extension::llm::TextPrefiller>
+          text_prefiller,
+      std::unique_ptr<::executorch::extension::llm::TextTokenGenerator>
+          text_token_generator,
+      std::unique_ptr<::executorch::extension::llm::Stats> stats,
+      float temperature = -1.0f);
 
   bool is_loaded() const override;
   ::executorch::runtime::Error load() override;
@@ -59,9 +64,7 @@ class ET_EXPERIMENTAL Runner : public executorch::extension::llm::IRunner {
  private:
   bool shouldStop_{false};
 
-  // model
-  std::unique_ptr<::executorch::extension::Module> module_;
-  std::string tokenizer_path_;
+  // Components
   std::unique_ptr<::tokenizers::Tokenizer> tokenizer_;
   std::unordered_map<std::string, int64_t> metadata_;
   std::unique_ptr<::executorch::extension::llm::TextDecoderRunner>
@@ -70,8 +73,8 @@ class ET_EXPERIMENTAL Runner : public executorch::extension::llm::IRunner {
   std::unique_ptr<::executorch::extension::llm::TextTokenGenerator>
       text_token_generator_;
 
-  // stats
-  ::executorch::extension::llm::Stats stats_;
+  // Stats
+  std::unique_ptr<::executorch::extension::llm::Stats> stats_;
 
   // temperature.
   // Deprecated, we should rely on the temperature in GenerationConfig instead.
