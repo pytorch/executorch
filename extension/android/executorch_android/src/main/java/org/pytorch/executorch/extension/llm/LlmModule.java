@@ -59,6 +59,17 @@ public class LlmModule {
     mHybridData = initHybrid(modelType, modulePath, tokenizerPath, temperature, null);
   }
 
+  /** Constructs a LLM Module for a model with given #LlmModuleConfig */
+  public LlmModule(LlmModuleConfig config) {
+    mHybridData =
+        initHybrid(
+            config.modelType,
+            config.modulePath,
+            config.tokenizerPath,
+            config.temperature,
+            config.dataPath);
+  }
+
   public void resetNative() {
     mHybridData.resetNative();
   }
@@ -104,6 +115,19 @@ public class LlmModule {
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    */
   public int generate(String prompt, int seqLen, LlmCallback llmCallback, boolean echo) {
+    return generate(null, 0, 0, 0, prompt, seqLen, llmCallback, echo);
+  }
+
+  /**
+   * Start generating tokens from the module.
+   *
+   * @param prompt Input prompt
+   * @param config the config for generation
+   * @param llmCallback callback object to receive results
+   */
+  public int generate(String prompt, LlmGenerationConfig config, LlmCallback llmCallback) {
+    int seqLen = config.getSeqLen();
+    boolean echo = config.isEcho();
     return generate(null, 0, 0, 0, prompt, seqLen, llmCallback, echo);
   }
 
