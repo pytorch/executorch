@@ -195,9 +195,9 @@ def _load_lib(lib_name_pattern: str, build_folder: str):
         )
 
 
-def _load_libquantized_ops_aot_lib(executorch_install_dir: str = "pip-out"):
+def _load_libquantized_ops_aot_lib():
     """
     Find and load the libquantized_ops_aot_lib shared library.
     """
-    _load_lib("_portable_lib.cpython-310*", executorch_install_dir)
-    _load_lib("libquantized_ops_aot_lib.*", executorch_install_dir)
+    _load_lib("_portable_lib.cpython-310*", "extension")
+    _load_lib("libquantized_ops_aot_lib.*", "kernels")

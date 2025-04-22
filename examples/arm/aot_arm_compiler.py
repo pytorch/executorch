@@ -513,7 +513,7 @@ def get_args():
     # Load quantized ops library.
     if args.quantize:
         logging.info("Loading lib_quantized_custom_op_lib")
-        _load_libquantized_ops_aot_lib(executorch_install_dir="pip-out")
+        _load_libquantized_ops_aot_lib()
 
     # if we have custom ops, register them before processing the model
     if args.so_library is not None:
