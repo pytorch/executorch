@@ -111,7 +111,8 @@ target_link_options_shared_lib(quantized_ops_lib)
 list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  list(APPEND link_libraries $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
+  target_link_options_shared_lib(custom_ops)
+  list(APPEND link_libraries custom_ops)
 endif()
 
 if(EXECUTORCH_BUILD_TORCHAO)

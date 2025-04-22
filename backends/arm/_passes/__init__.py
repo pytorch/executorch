@@ -20,12 +20,16 @@ from .convert_squeezes_to_view import ConvertSqueezesToViewPass  # noqa
 from .convert_to_clamp import ConvertToClampPass  # noqa
 from .decompose_batchnorm_pass import DecomposeBatchNormPass  # noqa
 from .decompose_div_pass import DecomposeDivPass  # noqa
+from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_layernorm_pass import DecomposeLayerNormPass  # noqa
+from .decompose_leaky_relu_pass import DecomposeLeakyReLUPass  # noqa
 from .decompose_linear_pass import DecomposeLinearPass  # noqa
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_select import DecomposeSelectPass  # noqa
+from .decompose_silu_pass import DecomposeSiluPass  # noqa
 from .decompose_softmax_pass import DecomposeSoftmaxPass  # noqa
 from .decompose_softmax_unstable_pass import DecomposeSoftmaxUnstablePass  # noqa
+from .decompose_sqrt_pass import DecomposeSqrtPass  # noqa
 from .decompose_var_pass import DecomposeVarPass  # noqa
 from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     FoldAndAnnotateQParamsPass,

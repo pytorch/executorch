@@ -9,7 +9,6 @@
 #pragma once
 
 #include <cstdint>
-#include <memory>
 
 #include <executorch/devtools/etdump/data_sinks/buffer_data_sink.h>
 #include <executorch/devtools/etdump/data_sinks/data_sink_base.h>
@@ -26,6 +25,7 @@ namespace executorch {
 namespace etdump {
 
 using ::executorch::runtime::DelegateDebugIntId;
+using ::executorch::runtime::EventTracerFilterBase;
 using ::executorch::runtime::Result;
 
 namespace internal {
@@ -102,7 +102,7 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
       size_t size) override;
   virtual ::executorch::runtime::AllocatorID track_allocator(
       const char* name) override;
-  virtual void log_evalue(
+  virtual Result<bool> log_evalue(
       const ::executorch::runtime::EValue& evalue,
       ::executorch::runtime::LoggedEValueType evalue_type =
           ::executorch::runtime::LoggedEValueType::kIntermediateOutput)
@@ -147,7 +147,14 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
       const char* name,
       DelegateDebugIntId delegate_debug_index,
       const double& output) override;
-  void set_debug_buffer(::executorch::runtime::Span<uint8_t> buffer);
+
+  /**
+   * Set the filter of event tracer for delegation intermediate outputs.
+   */
+  virtual void set_delegation_intermediate_output_filter(
+      EventTracerFilterBase* event_tracer_filter) override;
+
+  Result<bool> set_debug_buffer(::executorch::runtime::Span<uint8_t> buffer);
   void set_data_sink(DataSinkBase* data_sink);
   ETDumpResult get_etdump_data();
   size_t get_num_blocks();
@@ -189,6 +196,8 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
   int bundled_input_index_ = -1;
   State state_ = State::Init;
   struct internal::ETDumpStaticAllocator alloc_;
+
+  EventTracerFilterBase* filter_ = nullptr;
 };
 
 } // namespace etdump

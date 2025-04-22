@@ -81,8 +81,9 @@ class RmsNormVisitor(NodeVisitor):
             {},  # kwargs
         )
         if quant_attrs := node.meta.get(QCOM_QUANT_ATTRS):
+            quant_attrs = quant_attrs.copy()
+            quant_attrs[QCOM_ZERO_POINT] = 0
             bias_node.meta[QCOM_QUANT_ATTRS] = quant_attrs
-            bias_node.meta[QCOM_QUANT_ATTRS][QCOM_ZERO_POINT] = 0
         bias_tensor_wrapper = self.define_tensor(
             bias_node,
             node,

@@ -761,12 +761,16 @@ if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/flat_tensor)
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_MODULE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizers)
 endif()
 
-if(EXECUTORCH_BUILD_EXTENSION_MODULE)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
+if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
@@ -809,6 +813,10 @@ if(EXECUTORCH_BUILD_PYBIND)
       util
       torch
   )
+
+  if(EXECUTORCH_BUILD_TESTS)
+    list(APPEND _dep_libs test_backend_compiler_lib)
+  endif()
 
   if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     list(APPEND _dep_libs optimized_native_cpu_ops_lib)

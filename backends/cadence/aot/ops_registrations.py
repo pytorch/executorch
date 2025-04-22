@@ -139,7 +139,6 @@ lib.define(
     "int in_zero_point, bool channel_last=False) -> (Tensor out)"
 )
 lib.define("linalg_vector_norm(Tensor X) -> (Tensor Y)")
-lib.define("rms_norm(Tensor X, float eps, Tensor W) -> (Tensor Y)")
 lib.define(
     "transposed_im2row(Tensor input, int[2] kernel_size, int[2] dilation, int[2] padding, int[2] stride, "
     "int[2] output_padding, Tensor in_zero_point, bool channel_last=False) -> (Tensor out)"
@@ -211,9 +210,6 @@ lib.define(
     "fully_connected.out(Tensor input, Tensor weight, Tensor? bias=None, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define("linalg_vector_norm.out(Tensor X, *, Tensor(a!) out) -> Tensor(a!)")
-lib.define(
-    "rms_norm.out(Tensor X, float eps, Tensor W, *, Tensor(a!) out) -> Tensor(a!)"
-)
 lib.define(
     "quantized_fully_connected.out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
     "Tensor weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)"
@@ -291,6 +287,15 @@ aten_lib.define(
 jarvis_nn_lib = Library("jarvis_nn_ops", "DEF")
 jarvis_nn_lib.define(
     "attention_mask.out(Tensor input, Tensor start, Tensor stop, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+# Custom ops in aten namespace. RMSNorm is usually decomposed, so having
+# an out-variant is non-standard
+
+lib_aten = Library("aten", "FRAGMENT")
+
+lib_aten.define(
+    "rms_norm.out(Tensor input, SymInt[] normalized_shape, Tensor? weight=None, float? eps=None, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 
@@ -617,15 +622,6 @@ def linalg_vector_norm_meta(
 ) -> torch.Tensor:
     # Output of norm is a scalar, so we return a [] tensor
     return X.new_empty([], dtype=X.dtype)
-
-
-@register_fake("cadence::rms_norm")
-def rms_norm_meta(
-    X: torch.Tensor,
-    eps: float,
-    weight: torch.Tensor,
-) -> torch.Tensor:
-    return X.new_empty(X.shape, dtype=X.dtype)
 
 
 @register_fake("cadence::requantize")

@@ -15,6 +15,13 @@ QNN_OP_PACKAGE_NAME_QTI_AISW = "qti.aisw"
 
 
 @dataclass(init=False, frozen=True)
+class OpArgmin:
+    op_name: str = "Argmin"
+    param_axis: str = "axis"
+    param_keep_dims: str = "keep_dims"
+
+
+@dataclass(init=False, frozen=True)
 class OpBatchnorm:
     op_name: str = "Batchnorm"
 
@@ -48,6 +55,14 @@ class OpConv2d:
 @dataclass(init=False, frozen=True)
 class OpConvert:
     op_name: str = "Convert"
+
+
+@dataclass(init=False, frozen=True)
+class OpCumulativeSum:
+    op_name = "CumulativeSum"
+    param_axis = "axis"
+    param_exclusive = "exclusive"
+    param_reverse = "reverse"
 
 
 @dataclass(init=False, frozen=True)
@@ -204,7 +219,7 @@ class OpElementWiseSelect:
 
 
 @dataclass(init=False, frozen=True)
-class OpElementWiseSqrt:
+class OpElementWiseSquareRoot:
     op_name = "ElementWiseSquareRoot"
 
 
@@ -350,16 +365,16 @@ class OpQuantize:
 
 
 @dataclass(init=False, frozen=True)
-class OpReduceMean:
-    op_name: str = "ReduceMean"
+class OpReduceMax:
+    op_name: str = "ReduceMax"
     param_axes: str = "axes"
     param_keep_dims: str = "keep_dims"
 
 
 @dataclass(init=False, frozen=True)
-class OpArgmin:
-    op_name: str = "Argmin"
-    param_axis: str = "axis"
+class OpReduceMean:
+    op_name: str = "ReduceMean"
+    param_axes: str = "axes"
     param_keep_dims: str = "keep_dims"
 
 

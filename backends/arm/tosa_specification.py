@@ -142,7 +142,7 @@ class Tosa_1_00(TosaSpecification):
 
     available_profiles = ["INT", "FP"]
     valid_extensions = {
-        "INT": ["int16", "int4", "var", "cf"],
+        "INT": ["int16", "int4", "var", "cf", "u55"],
         "FP": ["bf16", "fp8e4m3", "fp8e5m2", "fft", "var", "cf"],
     }
 

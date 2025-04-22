@@ -41,6 +41,7 @@ class TableOps:
     # Targets that follow a straigtforward one-to-one mapping to their table op
     unary_table_ops: Dict[EdgeOpOverload, Callable[[torch.Tensor], torch.Tensor]] = {
         exir_ops.edge.aten.ceil.default: torch.ceil,
+        exir_ops.edge.aten.erf.default: torch.erf,
         exir_ops.edge.aten.exp.default: torch.exp,
         exir_ops.edge.aten.floor.default: torch.floor,
         exir_ops.edge.aten.log.default: torch.log,
@@ -55,6 +56,7 @@ class TableOps:
     # Targets that must be treated explicitly
     special_table_ops: Set[EdgeOpOverload] = {
         exir_ops.edge.aten.pow.Tensor_Scalar,
+        exir_ops.edge.aten.gelu.default,
     }
 
     def __init__(self, exported_program: ExportedProgram):
@@ -75,6 +77,19 @@ class TableOps:
                     # Exponent is a constant. Embed it into a lambda.
                     exp = cast(int, node.args[1])
                     return lambda x: torch.pow(x, exp).flatten()
+                case exir_ops.edge.aten.gelu.default:
+                    # If kwargs not present it is default "none"
+                    approximate = cast(
+                        str,
+                        (
+                            node.kwargs["approximate"]
+                            if "approximate" in node.kwargs
+                            else "none"
+                        ),
+                    )
+                    return lambda x: torch.nn.functional.gelu(
+                        x, approximate=approximate
+                    ).flatten()
                 case _:
                     # Op must be handled if it's inside self.special_ops
                     raise AssertionError("Unhandled table operation")

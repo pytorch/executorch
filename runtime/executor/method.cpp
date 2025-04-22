@@ -32,9 +32,8 @@
 #include <executorch/schema/program_generated.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 
-using deserialization::NamedData;
 using internal::PlatformMemoryAllocator;
 
 /**
@@ -1594,6 +1593,37 @@ EValue& Method::mutable_input(size_t i) {
   return mutable_value(get_input_index(i));
 }
 
+Result<executorch::aten::Tensor> Method::get_attribute(
+    executorch::aten::string_view name) {
+  auto flatbuffer_values = serialization_plan_->values();
+  size_t counter = 0;
+
+  for (size_t i = 0; i < flatbuffer_values->size(); ++i) {
+    auto serialization_value = flatbuffer_values->Get(i);
+    if (serialization_value->val_type() ==
+        executorch_flatbuffer::KernelTypes::Tensor) {
+      const auto s_tensor = static_cast<const executorch_flatbuffer::Tensor*>(
+          serialization_value->val());
+      if (s_tensor->extra_tensor_info() != nullptr &&
+          s_tensor->extra_tensor_info()->fully_qualified_name() != nullptr &&
+          strcmp(
+              s_tensor->extra_tensor_info()->fully_qualified_name()->c_str(),
+              name.data()) == 0) {
+        if (!this->values_[counter].isTensor()) {
+          ET_LOG(
+              Error,
+              "Attribute tensor not at the expected location. The .pte is likely malformed. Please file a bug report on https://github.com/pytorch/executorch/issues");
+          return Error::Internal;
+        }
+        return this->values_[counter].toTensor();
+      }
+    }
+    ++counter;
+  }
+
+  return Error::NotFound;
+}
+
 size_t Method::outputs_size() const {
   const auto* outputs = serialization_plan_->outputs();
   return outputs == nullptr ? 0 : outputs->size();
@@ -1640,5 +1670,5 @@ Method::~Method() {
   }
   // All other fields are trivially destructible.
 }
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch

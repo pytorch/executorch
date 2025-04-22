@@ -120,8 +120,10 @@ def check_and_update_submodules():
     if missing_submodules:
         logger.warning("Some required submodules are missing. Updating submodules...")
         try:
-            subprocess.check_call(["git", "submodule", "sync"])
-            subprocess.check_call(["git", "submodule", "update", "--init"])
+            subprocess.check_call(["git", "submodule", "sync", "--recursive"])
+            subprocess.check_call(
+                ["git", "submodule", "update", "--init", "--recursive"]
+            )
         except subprocess.CalledProcessError as e:
             logger.error(f"Error updating submodules: {e}")
             exit(1)
@@ -130,13 +132,10 @@ def check_and_update_submodules():
         for path, file in missing_submodules.items():
             if not check_folder(path, file):
                 logger.error(f"{file} not found in {path}.")
-                logger.error("Please run `git submodule update --init`.")
+                logger.error(
+                    "Submodule update failed. Please run `git submodule update --init --recursive` manually."
+                )
                 exit(1)
-    # Go into tokenizers submodule and install its submodules
-    tokenizers_path = get_required_submodule_paths().get("tokenizers", None)
-    if tokenizers_path:
-        with pushd(tokenizers_path):
-            subprocess.check_call(["git", "submodule", "update", "--init"])
     logger.info("All required submodules are present.")
 
 

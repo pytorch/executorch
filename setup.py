@@ -606,8 +606,8 @@ class CustomBuildPy(build_py):
         # be found in the pip package. This is the subset of headers that are
         # essential for building custom ops extensions.
         # TODO: Use cmake to gather the headers instead of hard-coding them here.
-        # For example: https://discourse.cmake.org/t/installing-headers-the-modern-
-        # way-regurgitated-and-revisited/3238/3
+        # For example:
+        # https://discourse.cmake.org/t/installing-headers-the-modern-way-regurgitated-and-revisited/3238/3
         for include_dir in [
             "runtime/core/",
             "runtime/kernel/",
@@ -718,6 +718,7 @@ class CustomBuild(build):
             # enabled. TODO(dbort): Remove this override once this option is
             # managed by cmake itself.
             "-DEXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT=OFF",
+            "-DEXECUTORCH_BUILD_TESTS=ON",
         ]
 
         build_args = [f"-j{self.parallel}"]

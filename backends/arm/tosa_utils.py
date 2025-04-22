@@ -9,20 +9,17 @@ import logging
 import os
 from typing import Any, Optional, Tuple
 
-import serializer.tosa_serializer as ts  # type: ignore
 import torch
+
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.tosa_mapping import TosaArg
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.print_program import inspect_node
-from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
+from tosa_tools.v0_80.serializer.tosa_serializer import TosaOp
 
 logger = logging.getLogger(__name__)
-TOSA_DBG_VERBOSE = os.environ.get("TOSA_DBG_VERBOSE") == "1"
-if TOSA_DBG_VERBOSE:
-    logging.basicConfig(level=logging.INFO)
-    logger.setLevel(logging.INFO)
 
 
 def dbg_node(node: torch.fx.Node, graph_module: torch.fx.GraphModule):

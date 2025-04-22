@@ -9,7 +9,7 @@ from typing import List
 
 import executorch.backends.arm.tosa_quant_utils as tqutils
 
-import serializer.tosa_serializer as ts  # type: ignore
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
@@ -20,8 +20,6 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_utils import tosa_shape
-
-from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
 
 
@@ -39,20 +37,27 @@ class MinVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        assert inputs[0].dtype == inputs[1].dtype
+        if inputs[0].dtype != inputs[1].dtype and inputs[0].dtype != output.dtype:
+            raise TypeError(
+                f"Data type of inputs and output must be the same. Got input 0 dtype: "
+                f"{inputs[0].dtype}, input 1 dtype: {inputs[1].dtype} and output "
+                f"dtype: {output.dtype}"
+            )
 
         scale_back = 1.0
         min_output = output
         if inputs[0].dtype == ts.DType.INT8:
             input_qparams = get_input_qparams(node)
-            assert (
-                len(input_qparams) == 2
-            ), f"Both inputs needs to have quantization information for {node}"
-            # insert RESCALEs to int32
-            assert (
-                input_qparams[0] == input_qparams[1]
-            ), "Both inputs must have same quantization for MIN"
+            if len(input_qparams) != 2:
+                raise ValueError(
+                    f"Both inputs need to have quantization information for {node}"
+                )
+            if input_qparams[0] != input_qparams[1]:
+                raise ValueError(
+                    "Both inputs must have the same quantization parameters for MIN"
+                )
 
+            # insert RESCALEs to int32
             operand_inputs, scale_back = tqutils.insert_rescale_ops_to_int32(
                 tosa_graph, inputs, node
             )
@@ -63,7 +68,7 @@ class MinVisitor(NodeVisitor):
             operand_inputs = inputs
 
         tosa_graph.addOperator(
-            TosaOp.Op().MINIMUM,
+            ts.TosaOp.Op().MINIMUM,
             [
                 operand_inputs[0].name,
                 operand_inputs[1].name,
