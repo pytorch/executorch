@@ -41,7 +41,15 @@ class MulVisitor_080_BI(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        assert inputs[0].dtype == inputs[1].dtype == output.dtype == ts.DType.INT8
+        if (
+            inputs[0].dtype != ts.DType.INT8
+            or inputs[1].dtype != ts.DType.INT8
+            or output.dtype != ts.DType.INT8
+        ):
+            raise ValueError(
+                f"Inputs and output for {self.target} need to be INT8, got "
+                f"{inputs[0].dtype=}, {inputs[1].dtype=} and {output.dtype=}"
+            )
 
         dim_order = (
             inputs[0].dim_order
