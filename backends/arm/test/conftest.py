@@ -3,11 +3,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import glob
 import logging
 import os
+import platform
 import random
 import shutil
-import subprocess
 import sys
 from typing import Any
 
@@ -173,25 +174,19 @@ def get_option(option: str) -> Any | None:
     return None
 
 
-def _load_lib(lib_name_pattern: str, build_folder: str):
+def _load_lib(lib_name_pattern: str):
     """
     Find and load a library by name in build_folder.
     """
-    find_lib_cmd = [
-        "find",
-        build_folder,
-        "-name",
-        f"{lib_name_pattern}",
-    ]
-    res = subprocess.run(find_lib_cmd, capture_output=True)
-    if res.returncode == 0:
-        library_paths = res.stdout.decode().strip().split("\n")
+
+    library_paths = glob.glob(lib_name_pattern, recursive=True)
+    if len(library_paths) > 0:
         import torch
 
         torch.ops.load_library(library_paths[0])
     else:
         raise RuntimeError(
-            f"Did not find any library matching {lib_name_pattern} in {build_folder}. Have you installed executorch properly?"
+            f"Did not find any library matching {lib_name_pattern}. Have you installed executorch properly?"
         )
 
 
@@ -199,5 +194,14 @@ def _load_libquantized_ops_aot_lib():
     """
     Find and load the libquantized_ops_aot_lib shared library.
     """
-    _load_lib("_portable_lib.cpython-310*", "extension")
-    _load_lib("libquantized_ops_aot_lib.*", "kernels")
+
+    so_ext = {
+        "Darwin": "dylib",
+        "Linux": "so",
+        "Windows": "dll",
+    }.get(platform.system(), None)
+
+    executorch_path = os.path.join(os.path.dirname(__file__), "..", "..", "..")
+
+    _load_lib(f"{executorch_path}/**/_portable_lib.cpython-310*{so_ext}")
+    _load_lib(f"{executorch_path}/**/libquantized_ops_aot_lib.{so_ext}")
