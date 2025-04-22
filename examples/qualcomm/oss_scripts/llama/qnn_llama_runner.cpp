@@ -34,7 +34,10 @@ DEFINE_string(
     "inference_speed.txt",
     "Records inference speed. For CI purpose.");
 DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
-DEFINE_string(prompt, "The answer to the ultimate question is", "Prompt.");
+DEFINE_string(
+    prompt,
+    "The answer to the ultimate question is",
+    "User prompts for Llama. When multiple prompts are entered, a multi-turn conversation will be initiated. Note that this feature is currently for testing purposes only.");
 DEFINE_string(
     system_prompt,
     "",
@@ -49,10 +52,8 @@ DEFINE_int32(
     "Total number of tokens to generate (prompt + output).");
 DEFINE_int32(
     eval_mode,
-    1,
+    0,
     "0: TokenGenerator(kv) / 1: HybridMode (prefill+kv)");
-DEFINE_double(logits_scale, 0.0, "Logits scale");
-DEFINE_int32(logits_offset, 0, "Logits offset");
 DEFINE_string(
     kv_updater,
     "How to update kv cache. Choose between SmartMask and ShiftPointer",
@@ -72,20 +73,46 @@ std::vector<std::string> CollectPrompts(int argc, char** argv) {
   return prompts;
 }
 
+std::string get_formatted_prompt(
+    const std::string& prompt,
+    const std::string& system_prompt,
+    example::LlamaVersion llama_version) {
+  std::string formatted_prompt;
+  switch (llama_version) {
+    case example::LlamaVersion::kLlama2:
+      formatted_prompt.append(prompt);
+      break;
+    case example::LlamaVersion::kLlama3:
+      if (!system_prompt.empty()) {
+        formatted_prompt.append(
+            "<|start_header_id|>system<|end_header_id|>\n\n");
+        formatted_prompt.append(system_prompt);
+        formatted_prompt.append("<|eot_id|>");
+      }
+      formatted_prompt.append("<|start_header_id|>user<|end_header_id|>\n\n");
+      formatted_prompt.append(prompt);
+      formatted_prompt.append(
+          "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n");
+      break;
+    default:
+      ET_CHECK_MSG(false, "unsupported llama version");
+      break;
+  }
+  return formatted_prompt;
+}
+
 int main(int argc, char** argv) {
   std::vector<std::string> prompts = CollectPrompts(argc, argv);
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   // create llama runner
   example::Runner runner(
-      {FLAGS_model_path},
+      FLAGS_model_path.c_str(),
       FLAGS_tokenizer_path.c_str(),
       FLAGS_performance_output_path.c_str(),
-      FLAGS_logits_scale,
-      FLAGS_logits_offset,
       FLAGS_temperature,
       FLAGS_eval_mode,
-      FLAGS_kv_updater,
-      FLAGS_num_iters);
+      FLAGS_kv_updater);
+  auto llama_version = runner.get_llama_version();
   std::vector<char> buf;
   buf.reserve(5 * FLAGS_seq_len); // assume each token is around 5 char
   std::ofstream fout(FLAGS_output_path.c_str());
@@ -97,8 +124,10 @@ int main(int argc, char** argv) {
   // generate tokens & store inference output
   for (int i = 0; i < FLAGS_num_iters; i++) {
     for (const auto& prompt : prompts) {
-      runner.generate(
-          FLAGS_seq_len, prompt.c_str(), FLAGS_system_prompt.c_str(), callback);
+      std::string formatted_prompt;
+      formatted_prompt = get_formatted_prompt(
+          prompt, FLAGS_system_prompt, llama_version.get());
+      runner.generate(formatted_prompt.c_str(), FLAGS_seq_len, callback);
     }
   }
   fout.write(buf.data(), buf.size());
