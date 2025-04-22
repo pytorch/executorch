@@ -12,7 +12,9 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/Exception.h>
 
+#include <algorithm>
 #include <bitset>
+#include <cctype>
 #include <cstring>
 
 namespace vkcompute {
@@ -40,7 +42,9 @@ PhysicalDevice::PhysicalDevice(VkPhysicalDevice physical_device_handle)
       has_unified_memory(false),
       has_timestamps(false),
       timestamp_period(0),
-      min_ubo_alignment(0) {
+      min_ubo_alignment(0),
+      device_name{},
+      device_type{DeviceType::UNKNOWN} {
   // Extract physical device properties
   vkGetPhysicalDeviceProperties(handle, &properties);
 
@@ -106,6 +110,24 @@ PhysicalDevice::PhysicalDevice(VkPhysicalDevice physical_device_handle)
     if (p.queueFlags & VK_QUEUE_COMPUTE_BIT) {
       num_compute_queues += p.queueCount;
     }
+  }
+
+  // Obtain device identity metadata
+  device_name = std::string(properties.deviceName);
+  std::transform(
+      device_name.begin(),
+      device_name.end(),
+      device_name.begin(),
+      [](unsigned char c) { return std::tolower(c); });
+
+  if (device_name.find("adreno") != std::string::npos) {
+    device_type = DeviceType::ADRENO;
+  } else if (device_name.find("swiftshader") != std::string::npos) {
+    device_type = DeviceType::SWIFTSHADER;
+  } else if (device_name.find("nvidia") != std::string::npos) {
+    device_type = DeviceType::NVIDIA;
+  } else if (device_name.find("mali") != std::string::npos) {
+    device_type = DeviceType::MALI;
   }
 }
 
