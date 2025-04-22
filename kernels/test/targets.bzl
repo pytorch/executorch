@@ -104,7 +104,7 @@ def define_common_targets():
         base_module = "executorch.kernels.test",
         visibility = ["//executorch/kernels/test/..."],
         deps = [
-            "fbsource//third-party/pkg_resources:pkg_resources",
+            "fbsource//third-party/pypi/setuptools:setuptools",
             "fbsource//third-party/pypi/pyyaml:pyyaml",
         ],
     )
