@@ -100,14 +100,6 @@ class ExecuTorchLlmCallbackJni
 
   void onStats(const llm::Stats& result) const {
     static auto cls = ExecuTorchLlmCallbackJni::javaClassStatic();
-    static const auto tps_method = cls->getMethod<void(jfloat)>("onStats");
-    double eval_time =
-        (double)(result.inference_end_ms - result.prompt_eval_end_ms);
-
-    float tps = result.num_generated_tokens / eval_time *
-        result.SCALING_FACTOR_UNITS_PER_SECOND;
-    tps_method(self(), tps);
-
     static const auto on_stats_method =
         cls->getMethod<void(facebook::jni::local_ref<jstring>)>("onStats");
     on_stats_method(
@@ -120,6 +112,7 @@ class ExecuTorchLlmCallbackJni
 class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
  private:
   friend HybridBase;
+  float temperature_;
   int model_type_category_;
   std::unique_ptr<llm::IRunner> runner_;
   std::unique_ptr<llm::MultimodalRunner> multi_modal_runner_;
@@ -175,20 +168,17 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         runner_ = std::make_unique<example::Runner>(
             model_path->toStdString().c_str(),
             tokenizer_path->toStdString().c_str(),
-            temperature,
             data_path->toStdString().c_str());
       } else {
         runner_ = std::make_unique<example::Runner>(
             model_path->toStdString().c_str(),
-            tokenizer_path->toStdString().c_str(),
-            temperature);
+            tokenizer_path->toStdString().c_str());
       }
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
     } else if (model_type_category == MODEL_TYPE_MEDIATEK_LLAMA) {
       runner_ = std::make_unique<MTKLlamaRunner>(
           model_path->toStdString().c_str(),
-          tokenizer_path->toStdString().c_str(),
-          temperature);
+          tokenizer_path->toStdString().c_str());
       // Interpret the model type as LLM
       model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
 #endif
@@ -228,6 +218,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       executorch::extension::llm::GenerationConfig config{
           .echo = static_cast<bool>(echo),
           .seq_len = seq_len,
+          .temperature = temperature_,
       };
       runner_->generate(
           prompt->toStdString(),

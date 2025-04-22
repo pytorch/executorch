@@ -6,7 +6,7 @@
 import pytest
 
 import torch
-from executorch.backends.arm.quantizer.arm_quantizer import (
+from executorch.backends.arm.quantizer import (
     get_symmetric_quantization_config,
     TOSAQuantizer,
 )

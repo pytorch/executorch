@@ -10,8 +10,6 @@
 import math
 from typing import cast, List, NamedTuple, Tuple
 
-import executorch.backends.arm.tosa_mapping
-
 import torch.fx
 import torch.fx.node
 
@@ -234,7 +232,7 @@ def build_rescale(
 
 def build_rescale_to_int32(
     tosa_fb: ts.TosaSerializer,
-    input_arg: executorch.backends.arm.tosa_mapping.TosaArg,
+    input_arg: TosaArg,
     input_zp: int,
     rescale_scale: list[float],
     is_scale32: bool = True,
