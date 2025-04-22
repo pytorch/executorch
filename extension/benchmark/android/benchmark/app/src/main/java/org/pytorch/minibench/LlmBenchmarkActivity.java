@@ -21,8 +21,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallback {
   ModelRunner mModelRunner;
@@ -80,7 +80,17 @@ public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallbac
 
   @Override
   public void onStats(String stats) {
-    mStatsInfo.tokens = stats;
+    float tps = 0;
+    try {
+      JSONObject jsonObject = new JSONObject(stats);
+      int numGeneratedTokens = jsonObject.getInt("generated_tokens");
+      int inferenceEndMs = jsonObject.getInt("inference_end_ms");
+      int promptEvalEndMs = jsonObject.getInt("prompt_eval_end_ms");
+      tps = (float) numGeneratedTokens / (inferenceEndMs - promptEvalEndMs) * 1000;
+      mStatsInfo.tps = tps;
+    } catch (JSONException e) {
+      Log.e("LLM", "Error parsing JSON: " + e.getMessage());
+    }
   }
 
   @Override
@@ -108,23 +118,13 @@ public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallbac
             (mStatsInfo.generateEnd - mStatsInfo.generateStart) * 1e-6,
             0.0f));
     // Token per second
-    results.add(
-        new BenchmarkMetric(benchmarkModel, "token_per_sec", extractTPS(mStatsInfo.tokens), 0.0f));
+    results.add(new BenchmarkMetric(benchmarkModel, "token_per_sec", mStatsInfo.tps, 0.0f));
 
     try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.json")) {
       Gson gson = new Gson();
       writer.write(gson.toJson(results));
     } catch (IOException e) {
       e.printStackTrace();
-    }
-  }
-
-  private double extractTPS(final String tokens) {
-    final Matcher m = Pattern.compile("\\d+\\.?\\d*").matcher(tokens);
-    if (m.find()) {
-      return Double.parseDouble(m.group());
-    } else {
-      return 0.0f;
     }
   }
 }
@@ -135,7 +135,7 @@ class StatsInfo {
   long loadEnd;
   long generateStart;
   long generateEnd;
-  String tokens;
+  float tps;
   String modelName;
 
   @Override
@@ -149,6 +149,6 @@ class StatsInfo {
         + "\ngenerateEnd: "
         + generateEnd
         + "\n"
-        + tokens;
+        + tps;
   }
 }

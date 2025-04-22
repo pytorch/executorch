@@ -43,6 +43,7 @@ ExecuTorch provides support for:
 #### Examples
 - [Android Demo Apps](https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app)
 - [iOS Demo Apps](demo-apps-ios.md)
+- [Hugging Face Models](https://github.com/huggingface/optimum-executorch/blob/main/README.md)
 #### Backends
 - [Overview](backends-overview)
 - [XNNPACK](backends-xnnpack)
@@ -86,11 +87,11 @@ ExecuTorch provides support for:
 - [Custom ATen Kernel](kernel-library-custom-aten-kernel)
 - [Selective Build](kernel-library-selective-build)
 #### Working with LLMs
-- [Llama](llm/llama)
-- [Llama on Android](llm/llama-demo-android)
-- [Llama on iOS](llm/llama-demo-ios)
-- [Llama on Android via Qualcomm backend](llm/build-run-llama3-qualcomm-ai-engine-direct-backend)
-- [Intro to LLMs in Executorch](llm/getting-started)
+- [Llama](llm/llama.md)
+- [Llama on Android](llm/llama-demo-android.md)
+- [Llama on iOS](llm/llama-demo-ios.md)
+- [Llama on Android via Qualcomm backend](llm/build-run-llama3-qualcomm-ai-engine-direct-backend.md)
+- [Intro to LLMs in Executorch](llm/getting-started.md)
 #### Backend Development
 - [Delegates Integration](backend-delegates-integration)
 - [XNNPACK Reference](backend-delegates-xnnpack-reference)

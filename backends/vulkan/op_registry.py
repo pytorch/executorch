@@ -276,6 +276,8 @@ def register_binary_op(features: OpFeatures):
         exir_ops.edge.aten.sqrt.default,
         exir_ops.edge.aten.rsqrt.default,
         exir_ops.edge.aten.tanh.default,
+        exir_ops.edge.aten.round.default,
+        exir_ops.edge.aten.leaky_relu.default,
     ]
 )
 def register_unary_op(features: OpFeatures):
@@ -391,6 +393,7 @@ def register_int8_mm_op(features: OpFeatures):
 
 @update_features(exir_ops.edge.et_vk.linear_weight_int4.default)
 def register_int4_mm_op(features: OpFeatures):
+    features.buffer_impl = True
     features.texture_impl = TextureImplFeatures(
         uses_axis_map=False,
         valid_packed_dims={PackedDim.WIDTH},
@@ -399,6 +402,7 @@ def register_int4_mm_op(features: OpFeatures):
     features.optimal_storage = VkStorageType.TEXTURE_3D
     features.optimal_layout = VkMemoryLayout.TENSOR_WIDTH_PACKED
     features.handles_own_prepacking = True
+    features.skip_limits_check = {1}
     return features
 
 
@@ -536,6 +540,7 @@ def register_view_op(features: OpFeatures):
         exir_ops.edge.aten.ones.default,
         exir_ops.edge.aten.ones_like.default,
         exir_ops.edge.aten.upsample_nearest2d.vec,
+        exir_ops.edge.aten.upsample_bilinear2d.vec,
         exir_ops.edge.aten.zeros.default,
         exir_ops.edge.aten.zeros_like.default,
         exir_ops.edge.et_vk.grid_priors.default,
@@ -576,12 +581,25 @@ def register_ported_op_all_packed_dims(features: OpFeatures):
     [
         exir_ops.edge.aten.embedding.default,
         exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
-        exir_ops.edge.aten.native_layer_norm.default,
     ]
 )
 def register_ported_ops_with_prepacking(features: OpFeatures):
     features.texture_impl = TextureImplFeatures(
         valid_packed_dims={PackedDim.CHANNELS},
+    )
+    features.handles_own_prepacking = True
+    return features
+
+
+# Ported ops that support their own prepacking.
+@update_features(
+    [
+        exir_ops.edge.aten.native_layer_norm.default,
+    ]
+)
+def register_ported_ops_with_prepacking_all_dims(features: OpFeatures):
+    features.texture_impl = TextureImplFeatures(
+        valid_packed_dims=all_packed_dims,
     )
     features.handles_own_prepacking = True
     return features

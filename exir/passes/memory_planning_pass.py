@@ -17,7 +17,7 @@ from executorch.exir.memory_planning import (
     _is_out_var_node,
     apply_algo,
     get_node_tensor_specs,
-    memory_planning_algorithm_suite,
+    MemoryPlanningAlgorithmSuite,
     Verifier,
 )
 from executorch.exir.operator.convert import get_out_args_from_opoverload
@@ -40,12 +40,11 @@ def _callable_name(any_callable: Callable[..., Any]) -> str:
 class MemoryPlanningPass(PassBase):
     def __init__(
         self,
-        memory_planning_algo: Callable[
-            ..., List[int]
-        ] = memory_planning_algorithm_suite,
+        memory_planning_algo: Optional[Callable[..., List[int]]] = None,
         allow_lifetime_and_storage_overlap: bool = False,
         alloc_graph_input: bool = True,
         alloc_graph_output: bool = True,
+        alloc_mutable_buffers: bool = True,
         alignment: int = ALIGNMENT,
     ) -> None:
         r"""
@@ -54,10 +53,13 @@ class MemoryPlanningPass(PassBase):
         the graph input/output. The default behavior is the algorithm will allocate
         memory for both graph input and output.
         """
-        self.memory_planning_algo = memory_planning_algo
+        if memory_planning_algo is None:
+            memory_planning_algo = MemoryPlanningAlgorithmSuite()
+        self.memory_planning_algo: Callable[..., List[int]] = memory_planning_algo
         self.allow_lifetime_and_storage_overlap = allow_lifetime_and_storage_overlap
         self.alloc_graph_input = alloc_graph_input
         self.alloc_graph_output = alloc_graph_output
+        self.alloc_mutable_buffers = alloc_mutable_buffers
         self.alignment = alignment
 
     def _set_alloc_node_spec(self, graph_module: torch.fx.GraphModule) -> None:
@@ -124,6 +126,7 @@ class MemoryPlanningPass(PassBase):
         # customized fields. Using the graph_module object to convey information across
         # passes/stages is quite natural and avoid yet another 'context' data structure
         # to do the job.
+
         _ = apply_algo(
             self.memory_planning_algo,
             graph_module,
@@ -131,6 +134,7 @@ class MemoryPlanningPass(PassBase):
             graph_signature,
             self.alloc_graph_input,
             self.alloc_graph_output,
+            self.alloc_mutable_buffers,
         )
 
         # TODO: make the verifier do the work recursively to handle
@@ -139,6 +143,7 @@ class MemoryPlanningPass(PassBase):
             graph_module,
             self.alloc_graph_input,
             self.alloc_graph_output,
+            self.alloc_mutable_buffers,
             graph_signature,
         )
 

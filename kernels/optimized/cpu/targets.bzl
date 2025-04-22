@@ -15,6 +15,7 @@ _OPTIMIZED_ATEN_OPS = (
         name = "op_bmm",
         deps = [
             "//executorch/kernels/optimized:libblas",
+            "//executorch/kernels/portable/cpu/util:matmul_ops_util",
         ],
     ),
     op_target(
@@ -25,14 +26,30 @@ _OPTIMIZED_ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:broadcast_util",
         ],
     ),
+    op_target(
+        name = "op_elu",
+        deps = [
+            "//executorch/extension/threadpool:threadpool",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
+        ],
+    ),
     op_target(name = "op_exp"),
+    op_target(
+        name = "op_fft_c2r",
+        compiler_flags = [] if runtime.is_oss else [
+            "-Wno-global-constructors",
+            "-Wno-shadow",
+        ],
+        deps = [":fft_utils"],
+    ),
     op_target(
         name = "op_fft_r2c",
         compiler_flags = [] if runtime.is_oss else [
             "-Wno-global-constructors",
             "-Wno-shadow",
         ],
-        deps = [] if runtime.is_oss else ["fbsource//third-party/pocket_fft:pocketfft"],
+        deps = [":fft_utils"],
     ),
     op_target(name = "op_sigmoid"),
     op_target(
@@ -99,8 +116,8 @@ _OPTIMIZED_ATEN_OPS = (
     op_target(
         name = "op_where",
         deps = [
+            "//executorch/extension/threadpool:threadpool",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
-            "//executorch/runtime/kernel:thread_parallel_interface",
         ],
     ),
 )
@@ -135,6 +152,14 @@ def define_common_targets():
             "//executorch/runtime/core:core",
             "//executorch/kernels/portable/cpu/util:broadcast_indexes_range",
         ],
+    )
+
+    runtime.cxx_library(
+        name = "fft_utils",
+        srcs = [],
+        exported_headers = ["fft_utils.h"],
+        visibility = ["//executorch/kernels/optimized/cpu/..."],
+        exported_deps = [] if runtime.is_oss else ["fbsource//third-party/pocket_fft:pocketfft"],
     )
 
     runtime.cxx_library(

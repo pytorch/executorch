@@ -575,8 +575,7 @@ class CustomBuildPy(build_py):
             # In editable mode, the package directory is the original source directory
             dst_root = self.get_package_dir(".")
         else:
-            dst_root = os.path.join(self.build_lib, self.get_package_dir("executorch"))
-
+            dst_root = os.path.join(self.build_lib, "executorch")
         # Create the version file.
         Version.write_to_python_file(os.path.join(dst_root, "version.py"))
 
@@ -607,8 +606,8 @@ class CustomBuildPy(build_py):
         # be found in the pip package. This is the subset of headers that are
         # essential for building custom ops extensions.
         # TODO: Use cmake to gather the headers instead of hard-coding them here.
-        # For example: https://discourse.cmake.org/t/installing-headers-the-modern-
-        # way-regurgitated-and-revisited/3238/3
+        # For example:
+        # https://discourse.cmake.org/t/installing-headers-the-modern-way-regurgitated-and-revisited/3238/3
         for include_dir in [
             "runtime/core/",
             "runtime/kernel/",
@@ -719,6 +718,7 @@ class CustomBuild(build):
             # enabled. TODO(dbort): Remove this override once this option is
             # managed by cmake itself.
             "-DEXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT=OFF",
+            "-DEXECUTORCH_BUILD_TESTS=ON",
         ]
 
         build_args = [f"-j{self.parallel}"]

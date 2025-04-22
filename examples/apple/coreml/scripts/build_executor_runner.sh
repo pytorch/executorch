@@ -5,10 +5,32 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+set -e
+
+MODE="Release"
+
+usage() {
+  echo "Builds Core ML executor runner"
+  echo "Options:"
+  echo "  --Debug              Use Debug build mode. Default: 'Release'"
+  echo "Example:"
+  echo "  $0 --Debug"
+  exit 0
+}
+
+for arg in "$@"; do
+  case $arg in
+      -h|--help) usage ;;
+      --Debug) MODE="Debug" ;;
+      *)
+  esac
+done
+
 SCRIPT_DIR_PATH="$(
     cd -- "$(dirname "$0")" >/dev/null 2>&1
     pwd -P
 )"
+
 
 EXECUTORCH_ROOT_PATH=$(realpath "$SCRIPT_DIR_PATH/../../../../")
 COREML_DIR_PATH="$EXECUTORCH_ROOT_PATH/backends/apple/coreml"
@@ -23,13 +45,13 @@ cd "$EXECUTORCH_ROOT_PATH"
 
 echo "ExecuTorch: Building executor_runner"
 
-echo "ExecuTorch: Removing build directory $CMAKE_BUILD_DIR"
+echo "ExecuTorch: Removing build directory $CMAKE_BUILD_DIR_PATH"
 rm -rf "$CMAKE_BUILD_DIR_PATH"
 
 # Build executorch
 echo "ExecuTorch: Building executorch"
 cmake "$EXECUTORCH_ROOT_PATH" -B"$CMAKE_BUILD_DIR_PATH" \
--DCMAKE_BUILD_TYPE=Release \
+-DCMAKE_BUILD_TYPE="$MODE" \
 -DCMAKE_TOOLCHAIN_FILE="$IOS_TOOLCHAIN_PATH" \
 -DPLATFORM=MAC_UNIVERSAL \
 -DDEPLOYMENT_TARGET=13.0 \

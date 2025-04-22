@@ -12,7 +12,7 @@ Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup#
 
 ### Exporting to Core ML
 
-Make sure to install the [required dependencies](https://pytorch.org/executorch/main/build-run-coreml.html#setting-up-your-developer-environment) for Core ML export.
+Make sure to install the [required dependencies](https://pytorch.org/executorch/main/backends-coreml#development-requirements) for Core ML export.
 
 To export the model to Core ML, run the following command:
 
@@ -32,7 +32,7 @@ python -m examples.xnnpack.aot_compiler -m efficient_sam
 
 # Performance
 
-Tests were conducted on an Apple M1 Pro chip using the instructions for building and running Executorch with [Core ML](https://pytorch.org/executorch/main/build-run-coreml.html#runtime) and [XNNPACK](https://pytorch.org/executorch/main/tutorial-xnnpack-delegate-lowering.html#running-the-xnnpack-model-with-cmake) backends.
+Tests were conducted on an Apple M1 Pro chip using the instructions for building and running Executorch with [Core ML](https://pytorch.org/executorch/main/backends-coreml#runtime-integration) and [XNNPACK](https://pytorch.org/executorch/main/tutorial-xnnpack-delegate-lowering#running-the-xnnpack-model-with-cmake) backends.
 
 | Backend Configuration  | Average Inference Time (seconds) |
 | ---------------------- | -------------------------------- |
@@ -46,4 +46,4 @@ All models were tested with `float32` precision.
 
 # Licensing
 
-The code in the `efficient_sam_core` directory is licensed under the [Apache License 2.0](./efficient_sam_core/LICENSE.txt).
+The code in the `efficient_sam_core` directory is licensed under the [Apache License 2.0](efficient_sam_core/LICENSE.txt).

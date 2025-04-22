@@ -15,7 +15,7 @@
 //
 // For details on building frameworks locally or using prebuilt binaries,
 // see the documentation:
-// https://pytorch.org/executorch/main/using-executorch-ios.html
+// https://pytorch.org/executorch/main/using-executorch-ios
 
 import PackageDescription
 
