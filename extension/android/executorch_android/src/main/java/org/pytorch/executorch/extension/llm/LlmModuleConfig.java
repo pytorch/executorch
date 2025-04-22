@@ -95,9 +95,20 @@ public class LlmModuleConfig {
     Builder() {}
 
     /**
-     * Sets the path to the tokenizer resources.
+     * Sets the path to the module.
      *
-     * @param tokenizerPath Path to tokenizer files/directory
+     * @param modulePath Path to module
+     * @return This builder instance for method chaining
+     */
+    public Builder modulePath(String modulePath) {
+      this.modulePath = modulePath;
+      return this;
+    }
+
+    /**
+     * Sets the path to the tokenizer.
+     *
+     * @param tokenizerPath Path to tokenizer
      * @return This builder instance for method chaining
      */
     public Builder tokenizerPath(String tokenizerPath) {
