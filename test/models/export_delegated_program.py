@@ -90,6 +90,18 @@ class ModuleSubLarge(nn.Module):
         return (torch.ones(n, n, n), 2 * torch.ones(n, n, n), 3 * torch.ones(n, n, n))
 
 
+class ModuleLinear(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(3, 3)
+
+    def forward(self, x: torch.Tensor):
+        return self.linear(x)
+
+    def get_random_inputs(self):
+        return (torch.randn(3),)
+
+
 #
 # Backends
 #
@@ -116,7 +128,7 @@ def export_module_to_program(
     extract_delegate_segments: bool,
     constant_tensor_alignment: Optional[int] = None,
     delegate_alignment: Optional[int] = None,
-    method: str = "forward",
+    method_name: str = "forward",
 ) -> ExecutorchProgramManager:
     eager_module = module_class().eval()
     inputs = ()
@@ -124,16 +136,15 @@ def export_module_to_program(
         inputs = eager_module.get_random_inputs()  # type: ignore[operator]
 
     class WrapperModule(torch.nn.Module):
-        def __init__(self, fn):
+        def __init__(self, fn, method_name=method_name):
             super().__init__()
             self.fn = fn
+            self.method_name = method_name
 
         def forward(self, *args, **kwargs):
-            return self.fn(*args, **kwargs)
+            return getattr(self.fn, self.method_name)(*args, **kwargs)
 
-    exported_program = export(
-        WrapperModule(getattr(eager_module, method)), args=inputs, strict=True
-    )
+    exported_program = export(WrapperModule(eager_module), args=inputs, strict=True)
 
     edge_config = EdgeCompileConfig(_check_ir_validity=False)
     et_config = exir.ExecutorchBackendConfig(
