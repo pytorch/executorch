@@ -74,17 +74,18 @@ int32_t main(int32_t argc, char** argv) {
 #endif
   // create llama runner
   // @lint-ignore CLANGTIDY facebook-hte-Deprecated
-  example::Runner runner(model_path, tokenizer_path);
+  std::unique_ptr<example::Runner> runner =
+      example::Runner::create(model_path, tokenizer_path);
 
   if (warmup) {
     // @lint-ignore CLANGTIDY facebook-hte-Deprecated
-    runner.warmup(prompt, /*max_new_tokens=*/seq_len);
+    runner->warmup(prompt, /*max_new_tokens=*/seq_len);
   }
   // generate
   executorch::extension::llm::GenerationConfig config{
       .seq_len = seq_len, .temperature = temperature};
   // @lint-ignore CLANGTIDY facebook-hte-Deprecated
-  runner.generate(prompt, config);
+  runner->generate(prompt, config);
 
   return 0;
 }
