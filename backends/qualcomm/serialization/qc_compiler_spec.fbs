@@ -168,7 +168,8 @@ table QnnExecuTorchOptions {
   backend_options:QnnExecuTorchBackendOptions;
 
   /// Optional parameter to create qnn graph if QNN context blob is not given
-  graph_name:string;
+  /// It could be a list of names only when doing weight-sharing lowering
+  graph_name:[string];
 
   /// Optional parameter to override the QNN backend library.
   library_path:string;
@@ -191,9 +192,6 @@ table QnnExecuTorchOptions {
 
   /// Is model from qnn context binary
   is_from_context_binary:bool;
-
-  /// True if there exists multiple graphs in one .pte file.
-  multiple_graphs:bool;
 
   // Enable this option to record all QNN API calls for debugging purpose
   saver:bool;
