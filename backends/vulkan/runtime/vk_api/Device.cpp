@@ -12,6 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/Exception.h>
 
+#include <algorithm>
 #include <bitset>
 #include <cctype>
 #include <cstring>
