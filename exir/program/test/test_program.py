@@ -22,6 +22,7 @@ from executorch.exir.lowered_backend_module import get_lowered_submodules
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.program._program import (
+    _transform,
     EdgeProgramManager,
     ExecutorchProgramManager,
     to_edge,
@@ -34,6 +35,7 @@ from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
+from torch._export.verifier import Verifier
 from torch.export import Dim, export, ExportedProgram
 from torch.export._trace import _export
 
@@ -273,7 +275,6 @@ class TestProgramManagers(unittest.TestCase):
             for output_val in method.outputs:
                 evalue = method.values[output_val]
                 self.assertNotEqual(evalue.val.allocation_info, None)
-        else:
             for input_val in method.inputs:
                 evalue = method.values[input_val]
                 self.assertEqual(evalue.val.allocation_info, None)
@@ -847,3 +848,23 @@ class TestProgramManagers(unittest.TestCase):
         et = edge.to_executorch()
         with self.assertRaises(ValueError):
             _ = et.save("/tmp/test_save.pt")
+
+    def test__transform_override_verifiers(self):
+        """Test that _transform can override verifiers in the exported program."""
+
+        class MyVerifier(Verifier):
+            dialect: str = "MY_DIALECT"
+
+            def __init__(self):
+                super().__init__()
+
+        model = TestLinear()
+        program = torch.export.export(model, model._get_random_inputs(), strict=True)
+        self.assertFalse(issubclass(program.verifiers[0], MyVerifier))
+
+        # Apply transformation with custom verifier
+        transformed = _transform(
+            program, AddToMulPassEdge(), override_verifiers=[MyVerifier]
+        )
+        self.assertTrue(issubclass(transformed.verifiers[0], MyVerifier))
+        self.assertFalse(issubclass(program.verifiers[0], MyVerifier))
