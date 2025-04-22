@@ -56,7 +56,7 @@ class AddQuantizer(Quantizer):
             output_activation=qspec,
         )
 
-    def annotate(self, model: GraphModule) -> torch.fx.GraphModule:
+    def annotate(self, model: GraphModule):
         config = self._get_qconfig()
         annotated_partitions = []
 
