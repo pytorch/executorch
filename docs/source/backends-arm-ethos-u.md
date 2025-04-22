@@ -95,7 +95,7 @@ A fully integer model is required for using the Arm Ethos-U backend. As discusse
 To run the model on-device, build the executorch library and EthosUDelegate using the script
 `executorch/backends/arm/scripts/build_executorch.sh`.
 Then build the arm executorch runtime using the script
-`executorch/backends/arm/scripts/build_executorch_runner.sh --pte=mv2_arm_ethos_u55.pte --target=ethos-u55-128`.
+`executorch/backends/arm/scripts/build_executor_runner.sh --pte=mv2_arm_ethos_u55.pte --target=ethos-u55-128`.
 
 Finally, run the elf file on FVP using the script
 `executorch/backends/arm/scripts/run_fvp.sh --elf=executorch/mv2_arm_ethos_u55/cmake-out/arm_executor_runner --target=ethos-u55-128`.

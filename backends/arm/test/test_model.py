@@ -188,7 +188,7 @@ def build_ethosu_runtime(
     run_external_cmd(
         [
             "bash",
-            os.path.join(script_path, "build_executorch_runner.sh"),
+            os.path.join(script_path, "build_executor_runner.sh"),
             f"--et_build_root={et_build_root}",
             f"--pte={pte_file}",
             "--bundleio",
