@@ -162,8 +162,12 @@ void add_q_8w_linear_tiled_node(
   ValueRef q_mat2 = prepack_standard_hw_transposed(
       graph, q_mat2_data, q_mat2_storage, utils::kWidthPacked);
 
+  utils::StorageType scales_storage = utils::kTexture2D;
+  if (N > max_extent) {
+    scales_storage = utils::kBuffer;
+  }
   ValueRef scales =
-      prepack_standard(graph, scales_data, utils::kBuffer, utils::kWidthPacked);
+      prepack_standard(graph, scales_data, scales_storage, utils::kWidthPacked);
 
   std::string kernel_name =
       use_coop_algorithm ? "q_8w_linear_coop" : "q_8w_linear_tiled";
@@ -171,6 +175,7 @@ void add_q_8w_linear_tiled_node(
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(mat1));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(q_mat2));
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(scales));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   std::vector<int64_t> mat1_sizes = graph.sizes_of(mat1);
@@ -179,6 +184,9 @@ void add_q_8w_linear_tiled_node(
   if (M % 6 == 0) {
     kernel_name += "_o4x6";
     out_tile_nrows = 6;
+  } else if (M % 4 == 0) {
+    kernel_name += "_o4x4";
+    out_tile_nrows = 4;
   } else if (M % 1 == 0) {
     kernel_name += "_o4x1";
     out_tile_nrows = 1;
@@ -255,6 +263,13 @@ bool can_use_tiled_impl(
 }
 
 bool can_use_coop_impl(ComputeGraph& graph, const ValueRef mat1) {
+  // Do not use coop algorithm for Adreno 702; manual experimentation shows that
+  // it performs worse than the tiled algorithm.
+  // TODO(ssjia): Determine a more robust heuristic to determine when the coop
+  // algorithm should be used, instead of depending on specific device identity.
+  if (graph.device_is_adreno() && graph.device_name_contains("702")) {
+    return false;
+  }
   // Check that the computation is vector * matrix
   return (graph.size_at<int>(-2, mat1) == 1);
 }

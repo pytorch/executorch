@@ -60,7 +60,7 @@ void main() {
   $if SCALES_STORAGE == "buffer":
     const VEC4_T scales = VEC4_T(t_scales[out_col >> 2]);
   $else:
-    const VEC4_T scales = VEC4_T(texelFetch(t_scales, ivec3(out_col >> 2, 0, 0), 0));
+    const VEC4_T scales = VEC4_T(texelFetch(t_scales, ivec2(out_col >> 2, 0), 0));
 
   [[unroll]] for (int i = 0; i < TILE_ROWS; ++i) {
     partial_c[gid][wid][i] = VEC4_T(0.0);
