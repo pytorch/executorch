@@ -10,10 +10,9 @@ package org.pytorch.minibench;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.os.AsyncTask;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.HandlerThread;
-import android.os.Looper;
+import android.os.Debug;
 import android.system.ErrnoException;
 import android.system.Os;
 import com.google.gson.Gson;
@@ -22,22 +21,12 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
+import org.pytorch.executorch.Module;
 
 public class BenchmarkActivity extends Activity {
-
-  File mModel;
-  int mNumIter;
-  int mNumWarmupIter;
-  String mTokenizerPath;
-  float mTemperature;
-  String mPrompt;
-
-  HandlerThread mHandlerThread;
-  BenchmarkHandler mHandler;
-
-  List<BenchmarkMetric> mResult;
-
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
@@ -58,79 +47,95 @@ public class BenchmarkActivity extends Activity {
 
     int numIter = intent.getIntExtra("num_iter", 50);
     int numWarmupIter = intent.getIntExtra("num_warm_up_iter", 10);
-    String tokenizerPath = intent.getStringExtra("tokenizer_path");
-    float temperature = intent.getFloatExtra("temperature", 0.8f);
-    String prompt = intent.getStringExtra("prompt");
 
-    mModel = model;
-    mNumIter = numIter;
-    mNumWarmupIter = numWarmupIter;
-    mTokenizerPath = tokenizerPath;
-    mTemperature = temperature;
-    mPrompt = prompt;
-    if (mPrompt == null) {
-      mPrompt = "The ultimate answer";
-    }
-    mResult = new ArrayList<>();
+    long pssIdle = Debug.getPss();
 
-    mHandlerThread = new HandlerThread("ModelRunner");
-    mHandlerThread.start();
-    mHandler = new BenchmarkHandler(mHandlerThread.getLooper(), this);
+    // TODO: Format the string with a parsable format
+    Stats stats = new Stats();
 
-    mHandler.sendEmptyMessage(BenchmarkHandler.MESSAGE_RUN_BENCHMARK);
-  }
+    new AsyncTask<Void, Void, Void>() {
+      @Override
+      protected Void doInBackground(Void... voids) {
 
-  void writeResult() {
-    try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.json")) {
-      Gson gson = new Gson();
-      writer.write(gson.toJson(mResult));
-    } catch (IOException e) {
-      e.printStackTrace();
-    } finally {
-      finish();
-    }
+        // Record the time it takes to load the model and the forward method
+        stats.loadStart = System.nanoTime();
+        Module module = Module.load(model.getPath());
+        stats.errorCode = module.loadMethod("forward");
+        stats.loadEnd = System.nanoTime();
+
+        for (int i = 0; i < numWarmupIter; i++) {
+          module.forward();
+        }
+
+        for (int i = 0; i < numIter; i++) {
+          long start = System.nanoTime();
+          module.forward();
+          double forwardMs = (System.nanoTime() - start) * 1e-6;
+          stats.latency.add(forwardMs);
+        }
+        return null;
+      }
+
+      @Override
+      protected void onPostExecute(Void aVoid) {
+
+        final BenchmarkMetric.BenchmarkModel benchmarkModel =
+            BenchmarkMetric.extractBackendAndQuantization(model.getName().replace(".pte", ""));
+        final List<BenchmarkMetric> results = new ArrayList<>();
+        // The list of metrics we have atm includes:
+        // Avg inference latency after N iterations
+        // Currently the result has large variance from outliers, so only use
+        // 80% samples in the middle (trimmean 0.2)
+        Collections.sort(stats.latency);
+        int resultSize = stats.latency.size();
+        List<Double> usedLatencyResults =
+            stats.latency.subList(resultSize / 10, resultSize * 9 / 10);
+
+        results.add(
+            new BenchmarkMetric(
+                benchmarkModel,
+                "avg_inference_latency(ms)",
+                stats.latency.stream().mapToDouble(l -> l).average().orElse(0.0f),
+                0.0f));
+        results.add(
+            new BenchmarkMetric(
+                benchmarkModel,
+                "trimmean_inference_latency(ms)",
+                usedLatencyResults.stream().mapToDouble(l -> l).average().orElse(0.0f),
+                0.0f));
+        // Model load time
+        results.add(
+            new BenchmarkMetric(
+                benchmarkModel,
+                "model_load_time(ms)",
+                (stats.loadEnd - stats.loadStart) * 1e-6,
+                0.0f));
+        // Load status
+        results.add(new BenchmarkMetric(benchmarkModel, "load_status", stats.errorCode, 0));
+        // RAM PSS usage
+        results.add(
+            new BenchmarkMetric(
+                benchmarkModel, "ram_pss_usage(mb)", (Debug.getPss() - pssIdle) / 1024, 0));
+
+        try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.json")) {
+          Gson gson = new Gson();
+          writer.write(gson.toJson(results));
+        } catch (IOException e) {
+          e.printStackTrace();
+        }
+      }
+    }.execute();
   }
 }
 
-class BenchmarkHandler extends Handler {
-  public static int MESSAGE_RUN_BENCHMARK = 1;
-  public static int MESSAGE_LLM_RUN_BENCHMARK = 2;
-
-  ModelRunner mModelRunner;
-  BenchmarkActivity mBenchmarkActivity;
-
-  LlmModelRunner mLlmModelRunner;
-  LlmBenchmark mLlmBenchmark;
-
-  public BenchmarkHandler(Looper looper, BenchmarkActivity benchmarkActivity) {
-    super(looper);
-    mModelRunner = new ModelRunner();
-    mBenchmarkActivity = benchmarkActivity;
-  }
+class Stats {
+  long loadStart;
+  long loadEnd;
+  List<Double> latency = new ArrayList<>();
+  int errorCode = 0;
 
   @Override
-  public void handleMessage(android.os.Message msg) {
-    if (msg.what == MESSAGE_RUN_BENCHMARK) {
-      mModelRunner.runBenchmark(
-          mBenchmarkActivity.mModel,
-          mBenchmarkActivity.mNumWarmupIter,
-          mBenchmarkActivity.mNumIter,
-          mBenchmarkActivity.mResult);
-
-      if (mBenchmarkActivity.mTokenizerPath == null) {
-        mBenchmarkActivity.writeResult();
-      } else {
-        this.sendEmptyMessage(MESSAGE_LLM_RUN_BENCHMARK);
-      }
-    } else if (msg.what == MESSAGE_LLM_RUN_BENCHMARK) {
-      mLlmBenchmark =
-          new LlmBenchmark(
-              mBenchmarkActivity,
-              mBenchmarkActivity.mModel.getPath(),
-              mBenchmarkActivity.mTokenizerPath,
-              mBenchmarkActivity.mPrompt,
-              mBenchmarkActivity.mTemperature,
-              mBenchmarkActivity.mResult);
-    }
+  public String toString() {
+    return "latency: " + latency.stream().map(Object::toString).collect(Collectors.joining(""));
   }
 }
