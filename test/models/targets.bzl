@@ -222,6 +222,7 @@ def define_common_targets():
         default_outs = ["."],
         visibility = [
             "//executorch/runtime/executor/test/...",
+            "//executorch/extension/flat_tensor/test/...",
             "//executorch/test/...",
         ],
     )
