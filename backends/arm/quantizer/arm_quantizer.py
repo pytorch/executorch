@@ -19,7 +19,7 @@ from typing import Any, Callable, Dict, List, Optional
 import torch
 from executorch.backends.arm._passes import ArmPassManager
 
-from executorch.backends.arm.quantizer import arm_quantizer_utils
+from executorch.backends.arm.quantizer import arm_quantizer_utils, QuantizationConfig
 from executorch.backends.arm.quantizer.arm_quantizer_utils import (  # type: ignore[attr-defined]
     mark_node_as_annotated,
 )
@@ -27,7 +27,6 @@ from executorch.backends.arm.quantizer.quantization_annotator import (  # type: 
     annotate_graph,
 )
 
-from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.arm.arm_backend import (
     get_tosa_spec,

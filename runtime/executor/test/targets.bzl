@@ -234,9 +234,9 @@ def define_common_targets(is_fbcode = False):
                 # Uses an fbcode target path because the authoring/export tools
                 # intentionally don't work in xplat (since they're host-only
                 # tools).
-                "ET_MODULE_ADD_MUL_NOSEGMENTS_DA1024_PATH": "$(location fbcode//executorch/test/models:exported_delegated_programs[ModuleAddMul-nosegments-da1024.pte])",
-                "ET_MODULE_ADD_MUL_NOSEGMENTS_PATH": "$(location fbcode//executorch/test/models:exported_delegated_programs[ModuleAddMul-nosegments.pte])",
-                "ET_MODULE_ADD_MUL_PATH": "$(location fbcode//executorch/test/models:exported_delegated_programs[ModuleAddMul.pte])",
+                "ET_MODULE_ADD_MUL_NOSEGMENTS_DA1024_PATH": "$(location fbcode//executorch/test/models:exported_delegated_add_mul[ModuleAddMul-nosegments-da1024.pte])",
+                "ET_MODULE_ADD_MUL_NOSEGMENTS_PATH": "$(location fbcode//executorch/test/models:exported_delegated_add_mul[ModuleAddMul-nosegments.pte])",
+                "ET_MODULE_ADD_MUL_PATH": "$(location fbcode//executorch/test/models:exported_delegated_add_mul[ModuleAddMul.pte])",
             },
         )
 
