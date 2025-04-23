@@ -630,6 +630,27 @@ public abstract class Tensor {
     }
   }
 
+  static class Tensor_unknown extends Tensor {
+    private final ByteBuffer data;
+    private final DType myDtype;
+
+    private Tensor_raw_data_16b(ByteBuffer data, long[] shape, DType dtype) {
+      super(shape);
+      this.data = data;
+      this.myDtype = dtype;
+    }
+
+    @Override
+    public DType dtype() {
+      return myDtype;
+    }
+
+    @Override
+    public String toString() {
+      return String.format("Tensor(%s, dtype=%d)", Arrays.toString(shape), this.myDtype);
+    }
+  }
+
   // region checks
   private static void checkArgument(boolean expression, String errorMessage, Object... args) {
     if (!expression) {
@@ -675,7 +696,7 @@ public abstract class Tensor {
     } else if (DType.INT8.jniCode == dtype) {
       tensor = new Tensor_int8(data, shape);
     } else {
-      throw new IllegalArgumentException("Unknown Tensor dtype");
+      tensor = new Tensor_unknown(data, shape, dtype);
     }
     tensor.mHybridData = hybridData;
     return tensor;
