@@ -714,7 +714,7 @@ public abstract class Tensor {
       tensor = new Tensor_int8(data, shape);
     } else if (DType.HALF.jniCode == dtype) {
       tensor = new Tensor_raw_data_16b(data, shape, DType.HALF);
-    } else if (DType.HALF.jniCode == dtype) {
+    } else if (DType.BFLOAT16.jniCode == dtype) {
       tensor = new Tensor_raw_data_16b(data, shape, DType.BFLOAT16);
     } else {
       throw new IllegalArgumentException("Unknown Tensor dtype");
