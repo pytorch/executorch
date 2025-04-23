@@ -766,7 +766,7 @@ int main(int argc, const char* argv[]) {
       encoded_buf[encoded_len] = 0x00; // Ensure null termination
       ET_LOG(Info, "Writing etdump.bin [base64]");
       printf(
-          "#---\nbase64 -i -d <<<\"\\\n%s\\\n\" >etdump.bin\npython3 -m devtools.inspector.inspector_cli --etdump_path etdump.bin  --source_time_scale cycles --target_time_scale cycles\n#---\n",
+          "#---\necho \"%s\" | base64 -d >etdump.bin\npython3 -m devtools.inspector.inspector_cli --etdump_path etdump.bin  --source_time_scale cycles --target_time_scale cycles\n#---\n",
           encoded_buf);
     } else {
       ET_LOG(
