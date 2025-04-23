@@ -29,7 +29,6 @@ from executorch.backends.arm.quantizer import (
     get_symmetric_quantization_config,
     TOSAQuantizer,
 )
-from executorch.backends.arm.test.conftest import _load_libquantized_ops_aot_lib
 from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
 from executorch.backends.arm.tosa_specification import TosaSpecification
 
@@ -509,11 +508,6 @@ def get_args():
 
     if args.debug:
         logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
-
-    # Load quantized ops library.
-    if args.quantize:
-        logging.info("Loading lib_quantized_custom_op_lib")
-        _load_libquantized_ops_aot_lib()
 
     # if we have custom ops, register them before processing the model
     if args.so_library is not None:

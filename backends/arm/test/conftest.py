@@ -3,10 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import glob
 import logging
 import os
-import platform
 import random
 import shutil
 import sys
@@ -81,8 +79,7 @@ def pytest_addoption(parser):
 
 
 def pytest_sessionstart(session):
-    if not session.config.option.collectonly:
-        _load_libquantized_ops_aot_lib()
+    pass
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -172,36 +169,3 @@ def get_option(option: str) -> Any | None:
     if option in pytest._test_options:  # type: ignore[attr-defined]
         return pytest._test_options[option]  # type: ignore[attr-defined]
     return None
-
-
-def _load_lib(lib_name_pattern: str):
-    """
-    Find and load a library by name in build_folder.
-    """
-
-    library_paths = glob.glob(lib_name_pattern, recursive=True)
-    if len(library_paths) > 0:
-        import torch
-
-        torch.ops.load_library(library_paths[0])
-    else:
-        raise RuntimeError(
-            f"Did not find any library matching {lib_name_pattern}. Have you installed executorch properly?"
-        )
-
-
-def _load_libquantized_ops_aot_lib():
-    """
-    Find and load the libquantized_ops_aot_lib shared library.
-    """
-
-    so_ext = {
-        "Darwin": "dylib",
-        "Linux": "so",
-        "Windows": "dll",
-    }.get(platform.system(), None)
-
-    executorch_path = os.path.join(os.path.dirname(__file__), "..", "..", "..")
-
-    _load_lib(f"{executorch_path}/**/_portable_lib.cpython-310*{so_ext}")
-    _load_lib(f"{executorch_path}/**/libquantized_ops_aot_lib.{so_ext}")
