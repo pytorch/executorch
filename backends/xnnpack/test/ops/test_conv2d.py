@@ -18,6 +18,10 @@ try:
 except:
     has_quantized_ops = False
 
+from executorch.backends.xnnpack.partition.config.xnnpack_config import (
+    ConfigPrecisionType,
+)
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
 )
@@ -26,7 +30,7 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
 )
 from executorch.backends.xnnpack.test.test_xnnpack_utils import randomize_bn
 from executorch.backends.xnnpack.test.tester import Quantize, Tester
-
+from executorch.backends.xnnpack.test.tester.tester import ToEdgeTransformAndLower
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
@@ -169,6 +173,43 @@ class Conv2dPermute(torch.nn.Module):
         return (torch.randn(2, 2, 4, 4),)
 
 
+class Conv2dDQSeq(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.first = torch.nn.Conv2d(
+            in_channels=3, out_channels=8, kernel_size=3, padding=1
+        )
+        self.second = torch.nn.Conv2d(
+            in_channels=8, out_channels=10, kernel_size=3, padding=1
+        )
+
+    def forward(self, x):
+        y = self.first(x)
+        return self.second(y)
+
+    def get_inputs(self):
+        return (torch.randn(1, 3, 8, 8),)
+
+
+class Conv2dDQParallel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.first = torch.nn.Conv2d(
+            in_channels=3, out_channels=8, kernel_size=3, padding=1
+        )
+        self.second = torch.nn.Conv2d(
+            in_channels=3, out_channels=8, kernel_size=3, padding=1
+        )
+
+    def forward(self, x):
+        first = self.first(x)
+        second = self.second(x)
+        return first, second
+
+    def get_inputs(self):
+        return (torch.randn(1, 3, 8, 8),)
+
+
 class TestConv2d(unittest.TestCase):
     def setUp(self):
         torch._dynamo.reset()
@@ -222,6 +263,37 @@ class TestConv2d(unittest.TestCase):
                     .serialize()
                     .run_method_and_compare_outputs(qtol=1)
                 )
+
+    def _test_dq(
+        self,
+        m: torch.nn.Module,
+        conv_count=1,
+        dynamic_shapes=None,
+    ):
+        quant_config = get_symmetric_quantization_config(
+            is_per_channel=True,
+            is_dynamic=True,
+        )
+
+        DynamicallyQuantizedPartitioner = XnnpackPartitioner(
+            config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
+            per_op_mode=True,
+        )
+
+        tester = Tester(m, m.get_inputs(), dynamic_shapes=dynamic_shapes)
+        tester.quantize(Quantize(quantization_config=quant_config))
+        tester.export()
+        tester.check(["torch.ops.quantized_decomposed.choose_qparams"])
+        tester.to_edge_transform_and_lower(
+            ToEdgeTransformAndLower([DynamicallyQuantizedPartitioner])
+        )
+        tester.check_count(
+            {"torch.ops.higher_order.executorch_call_delegate": conv_count}
+        )
+        tester.check_not(["executorch_exir_dialects_edge__ops_aten_conv2d_default"])
+        tester.to_executorch()
+        tester.serialize()
+        tester.run_method_and_compare_outputs(qtol=1)
 
     def test_fp16_conv2d(self) -> None:
         for transpose in (True, False):
@@ -699,3 +771,26 @@ class TestConv2d(unittest.TestCase):
             .serialize()
             .run_method_and_compare_outputs(qtol=1)
         )
+
+    def test_dq_conv2d(self) -> None:
+        model = Conv2d(
+            in_channels=3,
+            out_channels=10,
+            kernel_size=(3, 3),
+            stride=(1, 1),
+            padding=(0, 0),
+            batches=1,
+            width=8,
+            height=8,
+        )
+        self._test_dq(model)
+
+    def test_dq_conv2d_seq(self) -> None:
+        model = Conv2dDQSeq()
+        conv_count = sum(1 for m in model.modules() if type(m) is torch.nn.Conv2d)
+        self._test_dq(model, conv_count)
+
+    def test_dq_conv2d_parallel(self) -> None:
+        model = Conv2dDQParallel()
+        conv_count = sum(1 for m in model.modules() if type(m) is torch.nn.Conv2d)
+        self._test_dq(model, conv_count)

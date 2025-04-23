@@ -114,11 +114,11 @@ phases:
         adb -s $DEVICEFARM_DEVICE_UDID shell sleep 180
 
         if [ -n "$BIN_FOUND" ]; then
-          adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.LlmBenchmarkActivity \
+          adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.BenchmarkActivity \
             --es "model_dir" "/data/local/tmp/minibench" \
             --es "tokenizer_path" "/data/local/tmp/minibench/tokenizer.bin"
         elif [ -n "$MODEL_FOUND" ]; then
-          adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.LlmBenchmarkActivity \
+          adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.BenchmarkActivity \
             --es "model_dir" "/data/local/tmp/minibench" \
             --es "tokenizer_path" "/data/local/tmp/minibench/tokenizer.model"
         else
