@@ -145,6 +145,7 @@ using-executorch-faqs
 
 Building an ExecuTorch Android Demo App <https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app>
 demo-apps-ios.md
+tutorial-arm-ethos-u.md
 ```
 
 ```{toctree}

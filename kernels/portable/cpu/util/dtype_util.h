@@ -228,7 +228,7 @@ enum class SupportedTensorDtypes {
 namespace internal {
 
 template <typename CTYPE_COMPUTE, const char* op_name>
-load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_impl(
+load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn(
     const Tensor& t,
     SupportedTensorDtypes dtypes) {
   switch (dtypes) {
@@ -252,7 +252,7 @@ load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_impl(
 }
 
 template <typename CTYPE_COMPUTE, const char* op_name>
-store_compute_to_tensor_fn<CTYPE_COMPUTE> get_store_compute_to_tensor_fn_impl(
+store_compute_to_tensor_fn<CTYPE_COMPUTE> get_store_compute_to_tensor_fn(
     const Tensor& t,
     SupportedTensorDtypes dtypes) {
   switch (dtypes) {
@@ -285,41 +285,6 @@ store_compute_to_tensor_fn<CTYPE_COMPUTE> get_store_compute_to_tensor_fn_impl(
   return nullptr;
 }
 
-#ifndef EXECUTORCH_SELECTIVE_BUILD_DTYPE
-constexpr const char kGenericElementwiseOpName[] = "generic_elementwise_op";
-#endif // EXECUTORCH_SELECTIVE_BUILD_DTYPE
-
-template <typename CTYPE_COMPUTE, const char* op_name>
-load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn(
-    const Tensor& t,
-    SupportedTensorDtypes dtypes) {
-  // NOTE: Selective build relies on the operator name being passed
-  // here. When it's *not* active, using the same operator name
-  // everywhere saves on size because we don't require a new template
-  // instantiation for every operator.
-  return get_load_to_compute_fn_impl<
-      CTYPE_COMPUTE,
-#ifdef EXECUTORCH_SELECTIVE_BUILD_DTYPE
-      op_name
-#else // EXECUTORCH_SELECTIVE_BUILD_DTYPE
-      kGenericElementwiseOpName
-#endif // EXECUTORCH_SELECTIVE_BUILD_DTYPE
-      >(t, dtypes);
-}
-
-template <typename CTYPE_COMPUTE, const char* op_name>
-store_compute_to_tensor_fn<CTYPE_COMPUTE> get_store_compute_to_tensor_fn(
-    const Tensor& t,
-    SupportedTensorDtypes dtypes) {
-  return get_store_compute_to_tensor_fn_impl<
-      CTYPE_COMPUTE,
-#ifdef EXECUTORCH_SELECTIVE_BUILD_DTYPE
-      op_name
-#else // EXECUTORCH_SELECTIVE_BUILD_DTYPE
-      kGenericElementwiseOpName
-#endif // EXECUTORCH_SELECTIVE_BUILD_DTYPE
-      >(t, dtypes);
-}
 bool check_tensor_dtype(
     const Tensor t,
     SupportedTensorDtypes dtypes,

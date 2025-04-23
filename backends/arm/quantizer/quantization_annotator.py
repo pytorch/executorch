@@ -10,7 +10,8 @@ from typing import Callable, List, Optional
 
 import torch
 import torch.fx
-from executorch.backends.arm.quantizer import arm_quantizer_utils, QuantizationConfig
+from executorch.backends.arm.quantizer import arm_quantizer_utils
+from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.arm.tosa_utils import get_node_debug_info
 from torch.ao.quantization.quantizer import QuantizationSpecBase, SharedQuantizationSpec
 from torch.ao.quantization.quantizer.utils import (

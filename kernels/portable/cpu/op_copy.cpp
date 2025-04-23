@@ -47,17 +47,15 @@ Tensor& copy_out(
   static constexpr const char op_name[] = "copy.out";
 
   ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "copy.out", CTYPE, [&]() {
-    utils::apply_bitensor_elementwise_fn<
-        CTYPE,
-        op_name,
-        utils::SupportedTensorDtypes::REALHBBF16>(
-        [](ET_UNUSED const auto _, const auto val_src) { return val_src; },
+    utils::apply_bitensor_elementwise_fn<CTYPE, op_name>(
+        [](ET_UNUSED const CTYPE _, const CTYPE val_src) { return val_src; },
         ctx,
         in,
         utils::SupportedTensorDtypes::REALHBBF16,
         src,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out);
+        out,
+        utils::SupportedTensorDtypes::REALHBBF16);
   });
 
   return out;
@@ -82,17 +80,15 @@ Tensor& copy_(
   static constexpr const char op_name[] = "copy_";
 
   ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "copy_", CTYPE, [&]() {
-    utils::apply_bitensor_elementwise_fn<
-        CTYPE,
-        op_name,
-        utils::SupportedTensorDtypes::REALHBBF16>(
-        [](ET_UNUSED const auto _, const auto val_src) { return val_src; },
+    utils::apply_bitensor_elementwise_fn<CTYPE, op_name>(
+        [](ET_UNUSED const CTYPE _, const CTYPE val_src) { return val_src; },
         ctx,
         in,
         utils::SupportedTensorDtypes::REALHBBF16,
         src,
         utils::SupportedTensorDtypes::REALHBBF16,
-        in);
+        in,
+        utils::SupportedTensorDtypes::REALHBBF16);
   });
 
   return in;
