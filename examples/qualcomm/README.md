@@ -44,11 +44,22 @@ commands in the `SimpleADB` class inside [utils.py](utils.py).
 
 ## Please use python xxx.py --help for information of each examples.
 
-Some CLI examples here. Please adjust according to your environment:
+Some CLI examples here. Please adjust according to your environment. If you want to export the model without running it, please add `-compile_only` to the command.:
 
 #### First switch to following folder
 ```bash
 cd $EXECUTORCH_ROOT/examples/qualcomm/scripts
+```
+
+## Simple Examples to Verify the Backend is Working
+```bash
+python export_example.py -m add -g
+```
+
+It will generate a simple add model targeting for "SM8550". You can manually push the `add.pte` file to the device following https://pytorch.org/executorch/stable/build-run-qualcomm-ai-engine-direct-backend.html and run it with
+
+```bash
+./qnn_executor_runner --model_path add.pte
 ```
 
 #### For MobileNet_v2

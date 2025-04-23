@@ -169,7 +169,7 @@ def export_module_to_program(
             partial_function = partial(
                 delegate_external_constants_pass,
                 ep=exported_program,
-                filter_fn=lambda x: module_class.__name__,
+                gen_tag_fn=lambda x: module_class.__name__,
             )
             transform_passes.append(partial_function)
         executorch_program = to_edge_transform_and_lower(
@@ -268,7 +268,7 @@ def main() -> None:
         if args.delegate_alignment is not None:
             suffix += f"-da{args.delegate_alignment}"
         if args.external_constants:
-            suffix += f"-e"
+            suffix += "-e"
         outfile = os.path.join(args.outdir, f"{module_name}{suffix}.pte")
         executorch_program = export_module_to_program(
             module_class,

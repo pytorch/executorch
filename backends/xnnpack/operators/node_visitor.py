@@ -6,6 +6,7 @@
 
 import ctypes
 import hashlib
+import logging
 
 from typing import cast, Dict, List, Optional, Tuple
 
@@ -594,6 +595,9 @@ class NodeVisitor:
         )
 
         external_tag = tensor.meta.get("delegate_constant_tag", None)
+        logging.info(
+            f"Adding constant data with name {tensor.name}, key {named_key} and external_tag {external_tag} to named_data_store"
+        )
         self._named_data_store.add_named_data(
             named_key,
             bytes(array),
