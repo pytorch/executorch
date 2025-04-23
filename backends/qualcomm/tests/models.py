@@ -14,12 +14,11 @@ import torch
 class Alias(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc = torch.nn.Linear(10, 10)
+        self.relu = torch.nn.ReLU()
 
     def forward(self, x):
         alias_x = torch.ops.aten.alias.default(x)
-        out = self.fc(alias_x)
-        return out
+        return self.relu(alias_x)
 
 
 class And(torch.nn.Module):
