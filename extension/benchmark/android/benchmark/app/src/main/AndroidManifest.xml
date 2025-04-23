@@ -21,6 +21,14 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".LlmBenchmarkActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="org.pytorch.minibench.BENCHMARK" />
+            </intent-filter>
+        </activity>
+
     </application>
 
 </manifest>

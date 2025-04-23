@@ -6,21 +6,19 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-
-package org.pytorch.minibench
-
+package org.pytorch.minibench;
 
 /**
  * A helper interface within the app for MainActivity and Benchmarking to handle callback from
  * ModelRunner.
  */
-interface LlmModelRunnerCallback {
+public interface ModelRunnerCallback {
 
-    fun onModelLoaded(status: Int)
+  void onModelLoaded(int status);
 
-    fun onTokenGenerated(token: String)
+  void onTokenGenerated(String token);
 
-    fun onStats(result: String)
+  void onStats(String result);
 
-    fun onGenerationStopped()
+  void onGenerationStopped();
 }
