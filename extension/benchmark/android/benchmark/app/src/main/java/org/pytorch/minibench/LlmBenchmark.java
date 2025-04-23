@@ -32,7 +32,7 @@ public class LlmBenchmark implements LlmModelRunnerCallback {
     mResults = results;
     mActivity = activity;
     mStatsInfo = new StatsInfo();
-    mStatsInfo.modelName = modelFile.replace(".pte", "");
+    mStatsInfo.modelName = modelFile.substring(modelFile.lastIndexOf('/') + 1).replace(".pte", "");
     mPrompt = prompt;
     mLlmModelRunner = new LlmModelRunner(modelFile, tokenizerPath, temperature, this);
     mStatsInfo.loadStart = System.nanoTime();

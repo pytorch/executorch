@@ -9,7 +9,6 @@
 package org.pytorch.minibench;
 
 import android.os.Debug;
-import android.util.Log;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;

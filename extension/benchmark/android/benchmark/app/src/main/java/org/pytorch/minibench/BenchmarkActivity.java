@@ -16,7 +16,6 @@ import android.os.HandlerThread;
 import android.os.Looper;
 import android.system.ErrnoException;
 import android.system.Os;
-import android.util.Log;
 import com.google.gson.Gson;
 import java.io.File;
 import java.io.FileWriter;
@@ -127,7 +126,7 @@ class BenchmarkHandler extends Handler {
       mLlmBenchmark =
           new LlmBenchmark(
               mBenchmarkActivity,
-              mBenchmarkActivity.mModel.getName(),
+              mBenchmarkActivity.mModel.getPath(),
               mBenchmarkActivity.mTokenizerPath,
               mBenchmarkActivity.mPrompt,
               mBenchmarkActivity.mTemperature,
