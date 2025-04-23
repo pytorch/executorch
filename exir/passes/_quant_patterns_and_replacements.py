@@ -39,7 +39,7 @@ def _pack_embedding_weight(weight: Tensor, bitwidth: int) -> Tensor:
         weight_1 = weight_view[:, :, 1] << 2
         weight_2 = weight_view[:, :, 2] << 4
         weight_3 = weight_view[:, :, 3] << 6
-        packed_weight = weight_0 + weight_1 + weight_2 + weight_3
+        packed_weight = weight_0 | weight_1 | weight_2 | weight_3
         return packed_weight
     elif bitwidth == 4:
         assert embedding_dim % 2 == 0, "embedding_dim must be divisible by 2"
@@ -47,9 +47,9 @@ def _pack_embedding_weight(weight: Tensor, bitwidth: int) -> Tensor:
         weight_view = weight_range_shifted.view(
             weight.shape[0], weight.shape[1] // 2, 2
         )
-        weight_even = weight_view[:, :, 0] * 16  # left shift 4
+        weight_even = weight_view[:, :, 0] << 4
         weight_odd = weight_view[:, :, 1]
-        packed_weight = weight_even + weight_odd
+        packed_weight = weight_even | weight_odd
         return packed_weight
     elif bitwidth == 8:
         return weight

@@ -378,17 +378,17 @@ class TestQuantFusionPass(unittest.TestCase):
             # )
 
     def test_embedding_torchao(self) -> None:
-        for bit_width, test_dtype_variant, test_per_group in zip(
+        for bit_width, use_dtype_variant, test_per_group in zip(
             [2, 4, 8], [True, False], [True, False]
         ):
-            self._test_embedding_torchao(bit_width, test_dtype_variant, test_per_group)
+            self._test_embedding_torchao(bit_width, use_dtype_variant, test_per_group)
 
     def _test_embedding_torchao(
-        self, bit_width: int, test_dtype_variant: bool, test_per_group: bool
+        self, bit_width: int, use_dtype_variant: bool, test_per_group: bool
     ) -> None:
         assert bit_width in [2, 4, 8]
         embedding_suffix = f"{bit_width}bit" if bit_width < 8 else "byte"
-        if test_dtype_variant:
+        if use_dtype_variant:
             embedding_suffix = f"{embedding_suffix}_dtype"
 
         indices = torch.tensor([1, 2, 3], dtype=torch.int64)
@@ -399,7 +399,7 @@ class TestQuantFusionPass(unittest.TestCase):
 
         # torchao adds a dtype cast to match embeddings original weight type
         # this does not happen for float32 because it is the default dtype
-        model = model.to(torch.float16) if test_dtype_variant else model
+        model = model.to(torch.float16) if use_dtype_variant else model
 
         # quantize the model
         granularity = PerGroup(32) if test_per_group else PerAxis(0)
