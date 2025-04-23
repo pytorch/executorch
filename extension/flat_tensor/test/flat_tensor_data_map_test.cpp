@@ -28,32 +28,36 @@ using torch::executor::util::FileDataLoader;
 
 class FlatTensorDataMapTest : public ::testing::Test {
  protected:
+  void create_loader(const char* path, const char* module_name) {
+    // Create a loader for the serialized data map.
+    Result<FileDataLoader> loader = FileDataLoader::from(path);
+    ASSERT_EQ(loader.error(), Error::Ok);
+    loaders_.insert(
+        {module_name,
+         std::make_unique<FileDataLoader>(std::move(loader.get()))});
+  }
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
     executorch::runtime::runtime_init();
 
-    // Load data map. The eager linear model is defined at:
-    // //executorch/test/models/linear_model.py
-    const char* path = std::getenv("ET_MODULE_LINEAR_DATA_PATH");
-    Result<FileDataLoader> loader = FileDataLoader::from(path);
-    ASSERT_EQ(loader.error(), Error::Ok);
-
-    data_map_loader_ =
-        std::make_unique<FileDataLoader>(std::move(loader.get()));
+    // Model defined in //executorch/test/models/linear_model.py
+    create_loader(std::getenv("ET_MODULE_LINEAR_DATA_PATH"), "linear");
+    // Model defined in //executorch/test/models/export_delegated_program.py
+    create_loader(std::getenv("ET_MODULE_LINEAR_XNN_DATA_PATH"), "linear_xnn");
   }
-  std::unique_ptr<FileDataLoader> data_map_loader_;
+  std::unordered_map<std::string, std::unique_ptr<FileDataLoader>> loaders_;
 };
 
 TEST_F(FlatTensorDataMapTest, LoadFlatTensorDataMap) {
   Result<FlatTensorDataMap> data_map =
-      FlatTensorDataMap::load(data_map_loader_.get());
+      FlatTensorDataMap::load(loaders_["linear"].get());
   EXPECT_EQ(data_map.error(), Error::Ok);
 }
 
 TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_GetMetadata) {
   Result<FlatTensorDataMap> data_map =
-      FlatTensorDataMap::load(data_map_loader_.get());
+      FlatTensorDataMap::load(loaders_["linear"].get());
   EXPECT_EQ(data_map.error(), Error::Ok);
 
   // Check tensor layouts are correct.
@@ -95,7 +99,7 @@ TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_GetMetadata) {
 
 TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_GetData) {
   Result<FlatTensorDataMap> data_map =
-      FlatTensorDataMap::load(data_map_loader_.get());
+      FlatTensorDataMap::load(loaders_["linear"].get());
   EXPECT_EQ(data_map.error(), Error::Ok);
 
   // Check tensor data sizes are correct.
@@ -116,7 +120,7 @@ TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_GetData) {
 
 TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_Keys) {
   Result<FlatTensorDataMap> data_map =
-      FlatTensorDataMap::load(data_map_loader_.get());
+      FlatTensorDataMap::load(loaders_["linear"].get());
   EXPECT_EQ(data_map.error(), Error::Ok);
 
   // Check num tensors is 2.
@@ -140,7 +144,7 @@ TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_Keys) {
 
 TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_LoadInto) {
   Result<FlatTensorDataMap> data_map =
-      FlatTensorDataMap::load(data_map_loader_.get());
+      FlatTensorDataMap::load(loaders_["linear"].get());
   EXPECT_EQ(data_map.error(), Error::Ok);
 
   // get the metadata
@@ -159,4 +163,63 @@ TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_LoadInto) {
     EXPECT_EQ(data_a[i], 3.0);
   }
   free(data);
+}
+
+TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_GetData_Xnnpack) {
+  Result<FlatTensorDataMap> data_map =
+      FlatTensorDataMap::load(loaders_["linear_xnn"].get());
+  EXPECT_EQ(data_map.error(), Error::Ok);
+
+  // Check tensor data sizes are correct.
+  // 64eec129c8d3f58ee6b7ca145b25e312fa82d3d276db5adaedb59aaebb824885 is the
+  // hash of the 3*3 identity matrix
+  Result<FreeableBuffer> data_weight_res = data_map->get_data(
+      "64eec129c8d3f58ee6b7ca145b25e312fa82d3d276db5adaedb59aaebb824885");
+  ASSERT_EQ(Error::Ok, data_weight_res.error());
+  FreeableBuffer data_a = std::move(data_weight_res.get());
+  EXPECT_EQ(data_a.size(), 36); // 3*3*4 (3*3 matrix, 4 bytes per float)
+
+  // 15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b is the
+  // hash of the 3*1 vector [1, 1, 1]
+  Result<FreeableBuffer> data_bias_res = data_map->get_data(
+      "15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b");
+  ASSERT_EQ(Error::Ok, data_bias_res.error());
+  FreeableBuffer data_b = std::move(data_bias_res.get());
+  EXPECT_EQ(data_b.size(), 12); // 3*4 (3*1 vector, 4 bytes per float)
+
+  // Check get_data fails when key is not found.
+  Result<FreeableBuffer> data_c_res = data_map->get_data("c");
+  EXPECT_EQ(data_c_res.error(), Error::NotFound);
+}
+
+TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_Keys_Xnnpack) {
+  Result<FlatTensorDataMap> data_map =
+      FlatTensorDataMap::load(loaders_["linear_xnn"].get());
+  EXPECT_EQ(data_map.error(), Error::Ok);
+
+  // Check num tensors is 2.
+  Result<size_t> num_tensors_res = data_map->get_num_keys();
+  ASSERT_EQ(Error::Ok, num_tensors_res.error());
+  EXPECT_EQ(num_tensors_res.get(), 2);
+
+  // Check get_key returns the correct keys.
+  Result<const char*> key0_res = data_map->get_key(0);
+  ASSERT_EQ(Error::Ok, key0_res.error());
+  EXPECT_EQ(
+      strcmp(
+          key0_res.get(),
+          "64eec129c8d3f58ee6b7ca145b25e312fa82d3d276db5adaedb59aaebb824885"),
+      0);
+
+  Result<const char*> key1_res = data_map->get_key(1);
+  ASSERT_EQ(Error::Ok, key1_res.error());
+  EXPECT_EQ(
+      strcmp(
+          key1_res.get(),
+          "15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b"),
+      0);
+
+  // Check get_key fails when out of bounds.
+  Result<const char*> key2_res = data_map->get_key(2);
+  EXPECT_EQ(key2_res.error(), Error::InvalidArgument);
 }
