@@ -290,6 +290,25 @@ bool check_tensor_dtype(
     SupportedTensorDtypes dtypes,
     const ScalarType compute_type);
 
+/// Return the one output type we are willing to emit specialized code
+/// to handle, given a compute type of CTYPE_COMMON and supported
+/// output types of out_dtypes.
+template <typename CTYPE_COMPUTE>
+inline constexpr ScalarType specialized_output_scalar_type(
+    SupportedTensorDtypes out_dtypes) {
+  switch (out_dtypes) {
+    case SupportedTensorDtypes::BOOL_OR_BYTE:
+      return ScalarType::Bool;
+    case SupportedTensorDtypes::REALHBBF16:
+    case SupportedTensorDtypes::REALHBF16:
+    case SupportedTensorDtypes::FLOATHBF16:
+    case SupportedTensorDtypes::INTB:
+    case SupportedTensorDtypes::SAME_AS_COMPUTE:
+    case SupportedTensorDtypes::SAME_AS_COMMON:
+      return CppTypeToScalarType<CTYPE_COMPUTE>::value;
+  }
+}
+
 } // namespace internal
 } // namespace utils
 } // namespace native
