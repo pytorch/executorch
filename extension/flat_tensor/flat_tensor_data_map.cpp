@@ -70,6 +70,9 @@ Result<const flat_tensor_flatbuffer::NamedData*> get_named_data(
     const flatbuffers::Vector<
         flatbuffers::Offset<flat_tensor_flatbuffer::NamedData>>* named_data) {
   // Linear search by name.
+  if (named_data == nullptr) {
+    return Error::NotFound;
+  }
   for (int i = 0; i < named_data->size(); i++) {
     if (std::strcmp(named_data->Get(i)->key()->c_str(), key) == 0) {
       const auto* metadata = named_data->Get(i);
@@ -239,7 +242,8 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
     size_t index) const {
   // TODO(lfq): consolidate named_data and tensors.
   // Currently, this assumes we either have tensors or named_data, but not both.
-  if (flat_tensor_->tensors()->size() > 0 && flat_tensor_->named_data()->size() > 0) {
+  if (flat_tensor_->tensors()->size() > 0 &&
+      flat_tensor_->named_data()->size() > 0) {
     return Error::NotImplemented;
   }
   if (index < 0) {

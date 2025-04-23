@@ -6,13 +6,23 @@
 
 # pyre-strict
 
-from typing import List, Optional
+from typing import Callable, Optional
 
 import torch
 from executorch.exir.pass_base import PassResult
 from executorch.exir.tensor import TensorSpec
+
+from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.export.exported_program import ExportedProgram, OutputKind
 from torch.fx import GraphModule
+
+
+def is_param_node(exp_prog: ExportedProgram, node: torch.fx.Node) -> bool:
+    return (
+        is_param(exp_prog, node)
+        or is_buffer(exp_prog, node)
+        or is_lifted_tensor_constant(exp_prog, node)
+    )
 
 
 def external_constants_pass(
@@ -78,17 +88,21 @@ def external_mutable_weights_pass(
     return PassResult(gm, mutated)
 
 
-def xnnpack_external_constants_pass(
+def delegate_external_constants_pass(
     gm: GraphModule,
-    names: Optional[List[str]] = None,
+    ep: ExportedProgram,
+    gen_tag_fn: Optional[Callable[[torch.fx.Node], str]] = None,
 ) -> PassResult:
     """
-    Tag external constants before to_backend. Tagged constants will be saved
-    to an external file.
+    Tag external constants before to_backend.
+
+    Note: this pass must be run after run_decompositions(), as tags on
+    constants are removed then.
 
     Args:
         gm: GraphModule to tag.
-        names: List of constant names to tag. If None, tag all constants.
+        ep: ExportedProgram, to distinguish if a node is a constant.
+        gen_tag_fn: node -> str callable indicating the tag for the node.
     Returns:
         PassResult: The resulting gm, and if it was mutated or not.
     """
@@ -97,9 +111,8 @@ def xnnpack_external_constants_pass(
         if not isinstance(module, torch.fx.GraphModule):
             continue
         for node in module.graph.nodes:
-            if node.op == "placeholder":
-                # Move specified constants to external file. If none, move all constants.
-                if names is None or node.name in names:
-                    node.meta["delegate_constant_tag"] = "_default_external_constant"
+            if node.op == "placeholder" and is_param_node(ep, node):
+                if gen_tag_fn is not None:
+                    node.meta["delegate_constant_tag"] = gen_tag_fn(node)
                     mutated = True
     return PassResult(gm, mutated)

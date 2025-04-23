@@ -430,21 +430,34 @@ def get_native_layer_norm_inputs():
     return test_suite
 
 
-@register_test_suite("aten.upsample_nearest2d.vec")
 def get_upsample_inputs():
-    test_suite = VkTestSuite(
-        [
-            # (input tensor shape, output 2D image size (H, W), output scaling factors)
-            ((2, 2, 2, 2), None, [1, 1]),
-            ((1, 1, 2, 2), None, [2, 2]),
-            ((1, 1, 2, 2), None, [2, 4]),
-            ((1, 1, 2, 2), None, [4, 2]),
-            ((1, 1, 2, 2), [2, 2], None),
-            ((1, 1, 2, 2), [2, 4], None),
-            ((1, 1, 2, 2), [3, 2], None),
-        ]
-    )
-    return test_suite
+    inputs_list = [
+        # (input tensor shape, output 2D image size (H, W), output scaling factors)
+        ((2, 2, 2, 2), None, [1, 1]),
+        ((1, 1, 2, 2), None, [2, 2]),
+        ((1, 1, 2, 2), None, [2, 4]),
+        ((1, 1, 2, 2), None, [4, 2]),
+        ((1, 1, 2, 2), [2, 2], None),
+        ((1, 1, 2, 2), [2, 4], None),
+        ((1, 1, 2, 2), [3, 2], None),
+    ]
+    return inputs_list
+
+
+@register_test_suite("aten.upsample_nearest2d.vec")
+def get_upsample_nearest2d_inputs():
+    inputs_list = get_upsample_inputs()
+    return VkTestSuite(inputs_list)
+
+
+@register_test_suite("aten.upsample_bilinear2d.vec")
+def get_upsample_bilinear2d_inputs():
+    base_inputs_list = get_upsample_inputs()
+    inputs_list = []
+    for input_case in base_inputs_list:
+        inputs_list.append((input_case[0], input_case[1], False, input_case[2]))
+        inputs_list.append((input_case[0], input_case[1], True, input_case[2]))
+    return VkTestSuite(inputs_list)
 
 
 @register_test_suite(["aten.full.default", "aten.full_like.default"])

@@ -36,7 +36,7 @@ def define_common_targets(is_fbcode=False):
             # an fbcode target path because the authoring/export tools
             # intentionally don't work in xplat (since they're host-only tools).
             "ET_MODULE_LINEAR_DATA_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleLinear.ptd])",
-            "ET_MODULE_LINEAR_XNN_DATA_PATH": "$(location fbcode//executorch/test/models:exported_program_data[ModuleLinear-e.ptd])",
+            "ET_MODULE_LINEAR_XNN_DATA_PATH": "$(location fbcode//executorch/test/models:exported_xnnpack_program_and_data[ModuleLinear.ptd])",
         }
 
         runtime.cxx_test(

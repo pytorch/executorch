@@ -46,6 +46,7 @@ from . import (  # noqa
     op_to_copy,
     op_to_dim_order_copy,
     op_transpose,
+    op_upsample_bilinear2d,
     op_upsample_nearest2d,
     op_view,
     op_where,
