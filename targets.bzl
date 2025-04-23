@@ -28,9 +28,6 @@ def define_common_targets():
         srcs = ["src/regex.cpp"] + glob([
             "src/*_regex.cpp",
         ]),
-        deps = [
-            "fbsource//third-party/pcre2:pcre2-8",
-        ],
         exported_headers = subdir_glob([
             ("include", "pytorch/tokenizers/regex.h"),
             ("include", "pytorch/tokenizers/*_regex.h"),
@@ -39,6 +36,7 @@ def define_common_targets():
             ":headers",
         ],
         exported_external_deps = [
+            "pcre2",
             "re2",
         ],
         visibility = ["//pytorch/tokenizers/..."],
