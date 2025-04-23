@@ -536,7 +536,9 @@ def extract_benchmark_result_from_artifact(
         )
     if not benchmark_results:
         return []
-    return transform(app_type, benchmark_results, benchmark_config, job_name, job_report)
+    return transform(
+        app_type, benchmark_results, benchmark_config, job_name, job_report
+    )
 
 
 def get_app_type(type: str):
@@ -678,7 +680,7 @@ def process_benchmark_results(content: Any, app: str, benchmark_configs: str):
             for job_artifact in job_artifacts:
                 # generate result for each schema
                 results = extract_benchmark_result_from_artifact(
-                    job_artifact, benchmark_config,job_report
+                    job_artifact, benchmark_config, job_report
                 )
                 all_benchmark_results.extend(results)
     return all_benchmark_results
