@@ -634,7 +634,7 @@ public abstract class Tensor {
     private final ByteBuffer data;
     private final DType myDtype;
 
-    private Tensor_raw_data_16b(ByteBuffer data, long[] shape, DType dtype) {
+    private Tensor_unknown(ByteBuffer data, long[] shape, DType dtype) {
       super(shape);
       this.data = data;
       this.myDtype = dtype;
