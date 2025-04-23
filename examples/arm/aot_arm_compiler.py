@@ -17,17 +17,19 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 from examples.devtools.scripts.export_bundled_program import save_bundled_program
-from executorch.backends.arm import (
+from executorch.backends.arm.arm_backend import (
     ArmCompileSpecBuilder,
-    EthosUPartitioner,
-    TOSAPartitioner,
+    get_tosa_spec,
+    is_ethosu,
+    is_tosa,
 )
-from executorch.backends.arm.arm_backend import get_tosa_spec, is_ethosu, is_tosa
-from executorch.backends.arm.quantizer import (
+from executorch.backends.arm.ethosu_partitioner import EthosUPartitioner
+from executorch.backends.arm.quantizer.arm_quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
     TOSAQuantizer,
 )
+from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
 from executorch.backends.arm.tosa_specification import TosaSpecification
 
 from executorch.backends.arm.util.arm_model_evaluator import (
