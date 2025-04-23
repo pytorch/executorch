@@ -161,14 +161,19 @@ void add_q_8w_linear_tiled_node(
   ValueRef q_mat2 = prepack_standard_hw_transposed(
       graph, q_mat2_data, q_mat2_storage, utils::kWidthPacked);
 
+  utils::StorageType scales_storage = utils::kTexture2D;
+  if (N > max_extent) {
+    scales_storage = utils::kBuffer;
+  }
   ValueRef scales =
-      prepack_standard(graph, scales_data, utils::kBuffer, utils::kWidthPacked);
+      prepack_standard(graph, scales_data, scales_storage, utils::kWidthPacked);
 
   std::string kernel_name = "q_8w_linear_tiled";
   kernel_name.reserve(kShaderNameReserve);
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(mat1));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(q_mat2));
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(scales));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   std::vector<int64_t> mat1_sizes = graph.sizes_of(mat1);
@@ -177,6 +182,9 @@ void add_q_8w_linear_tiled_node(
   if (M % 6 == 0) {
     kernel_name += "_o4x6";
     out_tile_nrows = 6;
+  } else if (M % 4 == 0) {
+    kernel_name += "_o4x4";
+    out_tile_nrows = 4;
   } else if (M % 1 == 0) {
     kernel_name += "_o4x1";
     out_tile_nrows = 1;
