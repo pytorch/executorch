@@ -10,8 +10,7 @@ from typing import Callable, List, Optional
 
 import torch
 import torch.fx
-from executorch.backends.arm.quantizer import arm_quantizer_utils
-from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
+from executorch.backends.arm.quantizer import arm_quantizer_utils, QuantizationConfig
 from executorch.backends.arm.tosa_utils import get_node_debug_info
 from torch.ao.quantization.quantizer import QuantizationSpecBase, SharedQuantizationSpec
 from torch.ao.quantization.quantizer.utils import (
@@ -215,6 +214,7 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.flip.default,
     torch.ops.aten.chunk.default,
     torch.ops.aten.contiguous.default,
+    torch.ops.aten.upsample_bilinear2d.vec,
     torch.ops.aten.upsample_nearest2d.vec,
     torch.ops.aten.pad.default,
     torch.ops.aten.amax.default,
