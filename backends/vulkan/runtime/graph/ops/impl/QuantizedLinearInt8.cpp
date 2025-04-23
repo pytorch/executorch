@@ -142,6 +142,7 @@ void add_q_8w_linear_node(
 
 void add_q_8w_linear_tiled_node(
     ComputeGraph& graph,
+    const bool use_coop_algorithm,
     const ValueRef mat1,
     const ValueRef q_mat2_data,
     const ValueRef scales_data,
@@ -168,7 +169,8 @@ void add_q_8w_linear_tiled_node(
   ValueRef scales =
       prepack_standard(graph, scales_data, scales_storage, utils::kWidthPacked);
 
-  std::string kernel_name = "q_8w_linear_tiled";
+  std::string kernel_name =
+      use_coop_algorithm ? "q_8w_linear_coop" : "q_8w_linear_tiled";
   kernel_name.reserve(kShaderNameReserve);
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(mat1));
@@ -197,6 +199,9 @@ void add_q_8w_linear_tiled_node(
   global_wg_size[1] = global_wg_size[1] / out_tile_nrows;
 
   utils::uvec3 local_wg_size{64, 1, 1};
+  if (use_coop_algorithm) {
+    local_wg_size = {8, 1, 8};
+  }
 
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
@@ -257,13 +262,26 @@ bool can_use_tiled_impl(
   return true;
 }
 
+bool can_use_coop_impl(ComputeGraph& graph, const ValueRef mat1) {
+  // Do not use coop algorithm for Adreno 702; manual experimentation shows that
+  // it performs worse than the tiled algorithm.
+  // TODO(ssjia): Determine a more robust heuristic to determine when the coop
+  // algorithm should be used, instead of depending on specific device identity.
+  if (graph.device_is_adreno() && graph.device_name_contains("702")) {
+    return false;
+  }
+  // Check that the computation is vector * matrix
+  return (graph.size_at<int>(-2, mat1) == 1);
+}
+
 void weight_int8pack_mm(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
   check_q_8w_linear_args(graph, args[0], args[1], args[2], args[3]);
   if (can_use_tiled_impl(graph, args[0], args[1], args[2], args[3])) {
+    bool use_coop_algorithm = can_use_coop_impl(graph, args[0]);
     return add_q_8w_linear_tiled_node(
-        graph, args[0], args[1], args[2], args[3]);
+        graph, use_coop_algorithm, args[0], args[1], args[2], args[3]);
   }
   return add_q_8w_linear_node(graph, args[0], args[1], args[2], args[3]);
 }
