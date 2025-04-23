@@ -57,14 +57,14 @@ void main() {
   VEC4_T b[4];
   VEC4_T local_c[TILE_ROWS];
 
+  [[unroll]] for (int i = 0; i < TILE_ROWS; ++i) {
+    local_c[i] = VEC4_T(0.0);
+  }
+
   $if SCALES_STORAGE == "buffer":
     const VEC4_T scales = VEC4_T(t_scales[out_col >> 2]);
   $else:
     const VEC4_T scales = VEC4_T(texelFetch(t_scales, ivec2(out_col >> 2, 0), 0));
-
-  [[unroll]] for (int i = 0; i < TILE_ROWS; ++i) {
-    partial_c[gid][wid][i] = VEC4_T(0.0);
-  }
 
   for (int pos = 4 * wid; pos < in_sizes.x; pos += (4 * NWORKERS)) {
     // Preload t_weight
@@ -77,17 +77,17 @@ void main() {
     // Preload t_in
     for (int i = 0; i < TILE_ROWS; i++) {
       $if IN_STORAGE == "buffer":
-        a[i] = t_in[((out_row + i) * in_sizes.x + ((pos)) >> 2)];
+        a[i] = t_in[((out_row + i) * in_sizes.x + pos) >> 2];
       $else:
         a[i] = VEC4_T(texelFetch(t_in, ivec3(pos >> 2, out_row + i, 0), 0));
     }
 
-    // Compute t_out...?
+    // Accumulate partial output
     [[unroll]] for (int i = 0; i < TILE_ROWS; ++i) {
-        local_c[i] += a[i].x * b[0]
-                    + a[i].y * b[1]
-                    + a[i].z * b[2]
-                    + a[i].w * b[3];
+        local_c[i] += a[i].x * b[0] +
+                      a[i].y * b[1] +
+                      a[i].z * b[2] +
+                      a[i].w * b[3];
     }
   }
 
