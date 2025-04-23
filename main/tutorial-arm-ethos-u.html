@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Arm Ethos-U Backend &mdash; ExecuTorch main documentation</title>
+  <title>Arm Ethos-U Backend Tutorial &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -42,6 +42,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Backend Overview" href="backends-overview.html" />
+    <link rel="prev" title="Building an ExecuTorch iOS Demo App" href="demo-apps-ios.html" />
 
 
   <!-- Google Tag Manager -->
@@ -336,9 +338,10 @@
 <li class="toctree-l1"><a class="reference internal" href="using-executorch-faqs.html">Frequently Asked Questions</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Examples</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Arm Ethos-U Backend Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
 <ul>
@@ -464,7 +467,7 @@
       </li>
 
         
-      <li>Arm Ethos-U Backend</li>
+      <li>Arm Ethos-U Backend Tutorial</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
@@ -503,8 +506,8 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <!---- Name is a WIP - this reflects better what it can do today ----->
-<div class="section" id="arm-ethos-u-backend">
-<h1>Arm Ethos-U Backend<a class="headerlink" href="#arm-ethos-u-backend" title="Permalink to this heading">¶</a></h1>
+<div class="section" id="arm-ethos-u-backend-tutorial">
+<h1>Arm Ethos-U Backend Tutorial<a class="headerlink" href="#arm-ethos-u-backend-tutorial" title="Permalink to this heading">¶</a></h1>
 <!----This will show a grid card on the page----->
 <div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
 <div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
@@ -764,7 +767,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out-aot-lib<sp
 <div class="section" id="getting-a-bare-metal-executable">
 <h2>Getting a Bare-Metal Executable<a class="headerlink" href="#getting-a-bare-metal-executable" title="Permalink to this heading">¶</a></h2>
 <p>In this section, you will go over steps that you need to go through to build the runtime application. This then run on the target device. In the executorch repository you have a functioning script which does the exact same steps. It is located at <code class="docutils literal notranslate"><span class="pre">executorch/examples/arm/run.sh</span></code>. You will use that to build necessary pieces and finally run the previously generated PTE file on an FVP.</p>
-<p>By default the <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> will use <code class="docutils literal notranslate"><span class="pre">arm_test/</span></code> as an build and output folder and you will find the build artifacts under it. This can be contolled/overrided with the <code class="docutils literal notranslate"><span class="pre">--et_build_root</span></code> and the <code class="docutils literal notranslate"><span class="pre">--output</span></code> flags if needed.</p>
+<p>By default the <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> will use <code class="docutils literal notranslate"><span class="pre">arm_test/</span></code> as an build and output folder and you will find the build artifacts under it. This can be controlled/overrided with the <code class="docutils literal notranslate"><span class="pre">--et_build_root</span></code> and the <code class="docutils literal notranslate"><span class="pre">--output</span></code> flags if needed.</p>
 <p>e.g. running <code class="docutils literal notranslate"><span class="pre">examples/arm/run.sh</span> <span class="pre">--model_name=add</span> <span class="pre">--target=ethos-u85-128</span></code> will produce a pte and elf file like this:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>arm_test/add/add_arm_delegate_ethos-u85-128.pte
 arm_test/add/cmake-out/arm_executor_runner
@@ -909,6 +912,15 @@ Describe what common errors users may see and how to resolve them.
             </div>
             <footer>
   
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="backends-overview.html" class="btn btn-neutral float-right" title="Backend Overview" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+      
+      
+        <a href="demo-apps-ios.html" class="btn btn-neutral" title="Building an ExecuTorch iOS Demo App" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+      
+    </div>
+  
 
   
 
@@ -939,7 +951,7 @@ Describe what common errors users may see and how to resolve them.
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Arm Ethos-U Backend</a><ul>
+<li><a class="reference internal" href="#">Arm Ethos-U Backend Tutorial</a><ul>
 <li><a class="reference internal" href="#prerequisites">Prerequisites</a><ul>
 <li><a class="reference internal" href="#hardware">Hardware</a></li>
 <li><a class="reference internal" href="#software">Software</a></li>
