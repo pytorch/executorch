@@ -23,6 +23,7 @@ if [ ! -d "$dir1" ] || [ ! -d "$dir2" ]; then
     exit 1
 fi
 
+exit_status=0
 while IFS= read -r -d '' file; do
     base=$(basename "$file")
     case "$base" in
@@ -45,9 +46,9 @@ while IFS= read -r -d '' file; do
     if [ -n "$differences" ]; then
         echo "Error: Mismatch detected in file '$file':" >&2
         echo "$differences" >&2
-        exit 1
+        exit_status=1
     fi
     set -x
 done < <(find "$dir1" -type f -print0)
-# If no mismatches were found, exit with success status
-exit 0
+
+exit $exit_status
