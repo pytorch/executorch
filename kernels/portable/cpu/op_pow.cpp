@@ -53,12 +53,8 @@ Tensor& pow_Tensor_Tensor_out(
   static constexpr const char op_name[] = "pow.Tensor_Tensor_out";
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_bitensor_elementwise_fn<
-        CTYPE_COMPUTE,
-        op_name,
-        utils::SupportedTensorDtypes::REALHBF16>(
+    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
         [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
-          // TODO: rewrite this to be vectorization-capable.
           return std::pow(val_a, val_b);
         },
         ctx,
@@ -66,7 +62,8 @@ Tensor& pow_Tensor_Tensor_out(
         utils::SupportedTensorDtypes::REALHBBF16,
         b,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out);
+        out,
+        utils::SupportedTensorDtypes::REALHBF16);
   });
 
   return out;
@@ -107,16 +104,13 @@ Tensor& pow_Tensor_Scalar_out(
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
-    utils::apply_unitensor_elementwise_fn<
-        CTYPE_COMPUTE,
-        op_name,
-        utils::SupportedTensorDtypes::REALHBF16>(
-        // TODO: rewrite this to be vectorization-capable.
+    utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
         [val_b](const CTYPE_COMPUTE val_a) { return std::pow(val_a, val_b); },
         ctx,
         a,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out);
+        out,
+        utils::SupportedTensorDtypes::REALHBF16);
   });
 
   return out;
@@ -157,16 +151,13 @@ Tensor& pow_Scalar_out(
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     const CTYPE_COMPUTE val_a = utils::scalar_to<CTYPE_COMPUTE>(a);
-    utils::apply_unitensor_elementwise_fn<
-        CTYPE_COMPUTE,
-        op_name,
-        utils::SupportedTensorDtypes::REALHBF16>(
-        // TODO: rewrite this to be vectorization-capable.
+    utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
         [val_a](const CTYPE_COMPUTE val_b) { return std::pow(val_a, val_b); },
         ctx,
         b,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out);
+        out,
+        utils::SupportedTensorDtypes::REALHBF16);
   });
 
   return out;

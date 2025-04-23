@@ -45,12 +45,8 @@ Tensor& minimum_out(
   static constexpr const char op_name[] = "minimum.out";
 
   ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_bitensor_elementwise_fn<
-        CTYPE_COMPUTE,
-        op_name,
-        utils::SupportedTensorDtypes::REALHBBF16>(
+    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
         [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
-          // TODO: rewrite this to be vectorization-capable.
           return utils::min_override(val_a, val_b);
         },
         ctx,
@@ -58,7 +54,8 @@ Tensor& minimum_out(
         utils::SupportedTensorDtypes::REALHBBF16,
         b,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out);
+        out,
+        utils::SupportedTensorDtypes::REALHBBF16);
   });
 
   return out;

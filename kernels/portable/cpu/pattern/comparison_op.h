@@ -91,18 +91,15 @@ Tensor& comparison_tensor_out(
   ScalarType compute_type = utils::get_compute_type(common_type);
 
   ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_bitensor_elementwise_fn<
-        CTYPE_COMPUTE,
-        op_name,
-        utils::SupportedTensorDtypes::REALHBBF16>(
-        // TODO: rewrite this to be vectorization-capable.
+    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
         ComparisonFnForOp<CTYPE_COMPUTE, op_name>::value,
         ctx,
         a,
         utils::SupportedTensorDtypes::REALHBBF16,
         b,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out);
+        out,
+        utils::SupportedTensorDtypes::REALHBBF16);
   });
 
   return out;
@@ -130,18 +127,15 @@ Tensor& comparison_scalar_out(
 
   ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
-    utils::apply_unitensor_elementwise_fn<
-        CTYPE_COMPUTE,
-        op_name,
-        utils::SupportedTensorDtypes::REALHBBF16>(
+    utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
         [val_b](const CTYPE_COMPUTE val_a) {
-          // TODO: rewrite this to be vectorization-capable.
           return ComparisonFnForOp<CTYPE_COMPUTE, op_name>::value(val_a, val_b);
         },
         ctx,
         a,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out);
+        out,
+        utils::SupportedTensorDtypes::REALHBBF16);
   });
 
   return out;
