@@ -265,7 +265,6 @@ class XNNPACKQuantizer(Quantizer):
 
     DYNAMIC_OPS = [
         "linear",
-        "conv",
     ]
 
     def __init__(self) -> None:

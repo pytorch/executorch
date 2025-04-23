@@ -512,6 +512,11 @@ Error defineTensor(
             buffer_ptr == nullptr,
             Internal,
             "Dynamically quantized tensor should not have constant data but found non-nullptr");
+        // TODO(T179441835): Dynamic Quantization with num_nonbatch_dims > 1
+        ET_CHECK_OR_RETURN_ERROR(
+            qparams->num_nonbatch_dims() == 1,
+            Internal,
+            "Dynamically Quantized Tensors currently only support per token quantization");
         status = xnn_define_dynamically_quantized_tensor_value(
             /*subgraph=*/subgraph_ptr,
             /*datatype=*/getDataType(tensor_value->datatype()),
@@ -1167,7 +1172,7 @@ Error defineStaticTransposeNode(
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
       Internal,
-      "Failed to create static transpose node %i with code: %s",
+      "Failed to create sigmoid node %i with code: %s",
       node->debug_handle(),
       xnn_status_to_string(status));
 
