@@ -43,13 +43,13 @@ adb push tokenizer.bin /data/local/tmp/minibench
 
 ### Generic model
 ```
-adb shell am start -W -S -n org.pytorch.minibench/org.pytorch.minibench.BenchmarkActivity \
+adb shell am start -W -S -n org.pytorch.minibench/org.pytorch.minibench.LlmBenchmarkActivity \
  --es model_dir /data/local/tmp/minibench
 ```
 
 ### LLM
 ```
-adb shell am start -W -S -n org.pytorch.minibench/org.pytorch.minibench.BenchmarkActivity \
+adb shell am start -W -S -n org.pytorch.minibench/org.pytorch.minibench.LlmBenchmarkActivity \
  --es model_dir /data/local/tmp/minibench --es tokenizer_path /data/local/tmp/minibench/tokenizer.bin
 ```
 
