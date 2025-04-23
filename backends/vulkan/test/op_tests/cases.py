@@ -152,6 +152,9 @@ def get_linear_inputs():
 @register_test_suite("aten._weight_int8pack_mm.default")
 def get_weight_int8pack_mm_inputs():
     MKN_list = [
+        [1, 480, 256],
+        [1, 1024, 1024],
+        [1, 1024, 256],
         [3, 480, 256],
         [6, 480, 256],
         [6, 256, 1024],
