@@ -102,10 +102,7 @@ def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
     from transformers import get_linear_schedule_with_warmup
 
     # grab dataset
-    url = (
-        "https://raw.githubusercontent.com/susanli2016/NLP-with-Python"
-        "/master/data/title_conference.csv"
-    )
+    url = "https://raw.githubusercontent.com/susanli2016/NLP-with-Python/master/data/title_conference.csv"
     content = requests.get(url, allow_redirects=True).content
     data = pd.read_csv(BytesIO(content))
 

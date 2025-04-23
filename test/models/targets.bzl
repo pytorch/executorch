@@ -208,7 +208,7 @@ def define_common_targets():
     )
 
     runtime.genrule(
-        name = "exported_program_data",
+        name = "exported_xnnpack_program_and_data",
         cmd = "$(exe :export_delegated_program)" +
             " --modules ModuleLinear" + 
             " --backend_id XnnpackBackend" +
@@ -217,7 +217,7 @@ def define_common_targets():
         
         outs = {
             "ModuleLinear-e.pte": ["ModuleLinear-e.pte"],
-            "ModuleLinear-e.ptd": ["ModuleLinear-e.ptd"],
+            "ModuleLinear.ptd": ["ModuleLinear.ptd"],
         },
         default_outs = ["."],
         visibility = [

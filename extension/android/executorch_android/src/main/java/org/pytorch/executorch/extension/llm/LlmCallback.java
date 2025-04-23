@@ -31,22 +31,10 @@ public interface LlmCallback {
   /**
    * Called when the statistics for the generate() is available.
    *
-   * Note: This is a deprecated API and will be removed in the future. Please use onStats(String stats)
-   *
-   * @param tps Tokens/second for generated tokens.
-   */
-  @Deprecated
-  @DoNotStrip
-  default public void onStats(float tps) {}
-
-  /**
-   * Called when the statistics for the generate() is available.
-   *
-   * The result will be a JSON string. See extension/llm/stats.h for the field
-   * definitions.
+   * <p>The result will be a JSON string. See extension/llm/stats.h for the field definitions.
    *
    * @param stats JSON string containing the statistics for the generate()
    */
   @DoNotStrip
-  default public void onStats(String stats) {}
+  default void onStats(String stats) {}
 }

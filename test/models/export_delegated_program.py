@@ -24,7 +24,7 @@ from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
 from executorch.exir.passes.external_constants_pass import (
-    xnnpack_external_constants_pass,
+    delegate_external_constants_pass,
 )
 from executorch.exir.program import ExecutorchProgramManager
 from torch import nn
@@ -166,7 +166,11 @@ def export_module_to_program(
 
         transform_passes = []
         if external_constants:
-            partial_function = partial(xnnpack_external_constants_pass, names=None)
+            partial_function = partial(
+                delegate_external_constants_pass,
+                ep=exported_program,
+                gen_tag_fn=lambda x: module_class.__name__,
+            )
             transform_passes.append(partial_function)
         executorch_program = to_edge_transform_and_lower(
             exported_program,
@@ -264,7 +268,7 @@ def main() -> None:
         if args.delegate_alignment is not None:
             suffix += f"-da{args.delegate_alignment}"
         if args.external_constants:
-            suffix += f"-e"
+            suffix += "-e"
         outfile = os.path.join(args.outdir, f"{module_name}{suffix}.pte")
         executorch_program = export_module_to_program(
             module_class,
@@ -277,12 +281,8 @@ def main() -> None:
             fp.write(executorch_program.buffer)
         print(f"Exported {module_name} and wrote program data to {outfile}")
         if args.external_constants:
-            # current infra doesnt easily allow renaming this file, so just hackily do it here.
-            executorch_program._tensor_data[f"{module_name}{suffix}"] = (
-                executorch_program._tensor_data.pop("_default_external_constant")
-            )
-            print(f"Saving external constants to {module_name}{suffix}.ptd")
-        executorch_program.write_tensor_data_to_file(args.outdir)
+            print(f"Saving external constants to {module_name}.ptd")
+            executorch_program.write_tensor_data_to_file(args.outdir)
 
 
 if __name__ == "__main__":

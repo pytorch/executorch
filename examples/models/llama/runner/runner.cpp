@@ -99,6 +99,7 @@ Error Runner::load() {
         "Failed to load %s as a Tiktoken artifact, trying BPE tokenizer",
         tokenizer_path_.c_str());
     tokenizer_.reset();
+    // @lint-ignore CLANGTIDY facebook-hte-Deprecated
     tokenizer_ = std::make_unique<::tokenizers::Llama2cTokenizer>();
     err = tokenizer_->load(tokenizer_path_);
     ET_CHECK_TK_OK_OR_RETURN_ERROR(
