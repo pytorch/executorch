@@ -8,6 +8,7 @@
 
 package org.pytorch.executorch;
 
+import android.util.Log;
 import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
 import java.nio.Buffer;
@@ -630,14 +631,17 @@ public abstract class Tensor {
     }
   }
 
-  static class Tensor_unknown extends Tensor {
+  static class Tensor_unsupported extends Tensor {
     private final ByteBuffer data;
     private final DType myDtype;
 
-    private Tensor_unknown(ByteBuffer data, long[] shape, DType dtype) {
+    private Tensor_unsupported(ByteBuffer data, long[] shape, DType dtype) {
       super(shape);
       this.data = data;
       this.myDtype = dtype;
+      Log.e(
+          "ExecuTorch",
+          toString() + " in Java. Please consider re-export the model with proper return type");
     }
 
     @Override
@@ -647,7 +651,8 @@ public abstract class Tensor {
 
     @Override
     public String toString() {
-      return String.format("Tensor(%s, dtype=%d)", Arrays.toString(shape), this.myDtype);
+      return String.format(
+          "Unsupported tensor(%s, dtype=%d)", Arrays.toString(shape), this.myDtype);
     }
   }
 
@@ -696,7 +701,7 @@ public abstract class Tensor {
     } else if (DType.INT8.jniCode == dtype) {
       tensor = new Tensor_int8(data, shape);
     } else {
-      tensor = new Tensor_unknown(data, shape, dtype);
+      tensor = new Tensor_unsupported(data, shape, DType.fromJniCode(dtype));
     }
     tensor.mHybridData = hybridData;
     return tensor;
