@@ -13,11 +13,11 @@ from executorch.backends.arm.arm_backend import (
     get_tosa_spec,
     is_tosa,
 )  # usort: skip
+from executorch.backends.arm import TOSABackend
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     tosa_support_factory,
 )
-from executorch.backends.arm.tosa_backend import TOSABackend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
@@ -170,6 +170,7 @@ class TOSAPartitioner(Partitioner):
 
         ops_to_not_decompose = [
             torch.ops.aten.linear.default,
+            torch.ops.aten.upsample_bilinear2d.vec,
             torch.ops.aten.upsample_nearest2d.vec,
             torch.ops.aten.eye.default,
             torch.ops.aten.linspace.default,

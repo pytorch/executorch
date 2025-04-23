@@ -6,6 +6,7 @@
 
 # pyre-unsafe
 
+import operator
 import unittest
 from typing import Any, Callable, cast, List, Optional, Sequence, Tuple, Union
 
@@ -29,6 +30,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceEmptyTensorsWithFullPass,
     ReplaceFunctionallyEquivalentOpTargets,
     ReplaceGeluWithApproximateGeluPass,
+    ReplacePowWithMullPass,
     ReplaceIm2RowWithViewPass,
     ReplaceLinearWithFullyConnectedOpPass,
     ReplaceMMWithAddMMPass,
@@ -40,6 +42,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceScalarWithTensorArgPass,
     ReplaceSelectWithViewOpPass,
     ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass,
+    ReplaceSplitWithSlicePass,
     ReplaceSqueezeAndUnsqueezeWithViewPass,
     ReplaceTCopyWithTransposePass,
     ReplaceTransposedConvWithLinearPass,
@@ -1304,6 +1307,61 @@ class TestReplaceOpsPasses(unittest.TestCase):
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.mul.Tensor),
             6,
+        )
+
+    def test_replace_split_with_sizes_with_slice(self):
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 16, 8, 4))
+        split = builder.call_operator(
+            exir_ops.edge.aten.split_with_sizes_copy.default, (x, [8, 8], 1)
+        )
+        # We need the outputs to be gathered by getitem ops
+        out0 = builder.call_operator(operator.getitem, (split, 0))
+        out1 = builder.call_operator(operator.getitem, (split, 1))
+        builder.output([out0, out1])
+        graph_module = builder.get_graph_module()
+
+        p = ReplaceSplitWithSlicePass()
+        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+
+        self.assertEqual(
+            count_node(
+                graph_after_passes, exir_ops.edge.aten.split_with_sizes_copy.default
+            ),
+            0,
+        )
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.slice_copy.Tensor),
+            2,
+        )
+
+    def test_replace_pow_with_mul(self):
+        class Pow(torch.nn.Module):
+            def forward(self, input):
+                return  torch.ops.aten.pow.Scalar(2, input)
+
+        input = torch.randn(2, 1, 64)
+
+        graph_module = export_to_edge(Pow(), (input,)).exported_program().graph_module
+
+        p = ReplacePowWithMullPass()
+        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+
+
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.aten.pow.Scalar,
+            ),
+            0,
+        )
+
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.aten.mul.Tensor,
+            ),
+            1,
         )
 
 
