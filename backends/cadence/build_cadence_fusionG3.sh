@@ -40,6 +40,7 @@ if $STEPWISE_BUILD; then
         -DCMAKE_TOOLCHAIN_FILE=/home/zonglinpeng/ws/zonglinpeng/executorch/backends/cadence/cadence.cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON \
         -DEXECUTORCH_BUILD_PTHREADPOOL=OFF \
         -DEXECUTORCH_BUILD_CADENCE=ON \
         -DEXECUTORCH_ENABLE_LOGGING=ON \
