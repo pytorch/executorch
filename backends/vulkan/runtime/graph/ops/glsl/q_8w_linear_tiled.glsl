@@ -71,18 +71,18 @@ void main() {
     // Preload input tensor
     [[unroll]] for (int i = 0; i < TILE_ROWS; i++) {
       $if IN_STORAGE == "buffer":
-        a[i] = t_in[((out_row + i) * in_sizes.x + (pos)) >> 2];
+        a[i] = t_in[((out_row + i) * in_sizes.x + pos) >> 2];
       $else:
         a[i] = VEC4_T(texelFetch(t_in, ivec3(pos >> 2, out_row + i, 0), 0));
     }
 
-    // Compute partial output
+    // Accumulate output
     [[unroll]] for (int i = 0; i < TILE_ROWS; ++i) {
         c[i] += a[i].x * b[0] + a[i].y * b[1] + a[i].z * b[2] + a[i].w * b[3];
     }
   }
 
-  // Store output tensor
+  // Store to output tensor
   [[unroll]] for (int i = 0; i < TILE_ROWS; ++i) {
     $if OUT_STORAGE == "buffer":
       if (out_row + i < out_sizes.y) {
