@@ -399,7 +399,7 @@ jobs:
         size=${arr[4]}
         # threshold=48120 on devserver with gcc11.4
         # todo(lfq): update once binary size is below 50kb.
-        threshold="51504"
+        threshold="51408"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
         else
@@ -436,7 +436,7 @@ jobs:
         size=${arr[4]}
         # threshold=48120 on devserver with gcc11.4
         # todo(lfq): update once binary size is below 50kb.
-        threshold="51784"
+        threshold="47552"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
         else
