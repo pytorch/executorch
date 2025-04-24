@@ -590,25 +590,25 @@ swift<span class="w"> </span>build
 <ol class="arabic simple" start="2">
 <li><p>Clone ExecuTorch:</p></li>
 </ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>-b<span class="w"> </span>release/0.6<span class="w"> </span>https://github.com/pytorch/executorch.git<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>executorch
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>-b<span class="w"> </span>release/0.6<span class="w"> </span>https://github.com/pytorch/executorch.git<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>--recurse-submodules<span class="w"> </span>--shallow-submodules<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>executorch
 </pre></div>
 </div>
 <ol class="arabic simple" start="3">
 <li><p>Set up <a class="reference external" href="https://www.python.org/downloads/macos/">Python</a> 3.10+ and activate a virtual environment:</p></li>
 </ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">source</span><span class="w"> </span>.venv/bin/activate<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>./install_requirements.sh
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">source</span><span class="w"> </span>.venv/bin/activate<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>pip
 </pre></div>
 </div>
 <ol class="arabic simple" start="4">
-<li><p>Install the required dependencies, including those needed for the backends like <a class="reference internal" href="backends-coreml.html"><span class="doc std std-doc">Core ML</span></a> or <a class="reference internal" href="backends-mps.html"><span class="doc std std-doc">MPS</span></a>. Choose one, or both:</p></li>
+<li><p>Install the required dependencies, including those needed for the backends like <a class="reference internal" href="backends-coreml.html"><span class="doc std std-doc">Core ML</span></a> or <a class="reference internal" href="backends-mps.html"><span class="doc std std-doc">MPS</span></a>, if you plan to build them later:</p></li>
 </ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># ExecuTorch with xnnpack and CoreML backend</span>
-./backends/apple/coreml/scripts/install_requirements.sh
-./install_executorch.sh<span class="w"> </span>--pybind<span class="w"> </span>coreml<span class="w"> </span>xnnpack
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_requirements.sh
 
-<span class="c1"># ExecuTorch with xnnpack and MPS backend</span>
+<span class="c1"># CoreML-only requirements:</span>
+./backends/apple/coreml/scripts/install_requirements.sh
+
+<span class="c1"># MPS-only requirements:</span>
 ./backends/apple/mps/install_requirements.sh
-./install_executorch.sh<span class="w"> </span>--pybind<span class="w"> </span>mps<span class="w"> </span>xnnpack
 </pre></div>
 </div>
 <ol class="arabic simple" start="5">
