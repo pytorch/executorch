@@ -63,11 +63,11 @@ public class LlmModule {
   public LlmModule(LlmModuleConfig config) {
     mHybridData =
         initHybrid(
-            config.modelType,
-            config.modulePath,
-            config.tokenizerPath,
-            config.temperature,
-            config.dataPath);
+            config.getModelType(),
+            config.getModulePath(),
+            config.getTokenizerPath(),
+            config.getTemperature(),
+            config.getDataPath());
   }
 
   public void resetNative() {
