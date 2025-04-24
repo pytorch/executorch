@@ -36,6 +36,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceNopTransposeOrPermuteWithViewPass,
     ReplacePadWithCatPass,
     ReplacePermuteWithTransposePass,
+    ReplacePowWithMullPass,
     ReplaceRepeatWithCatPass,
     ReplaceScalarTensorWithFullPass,
     ReplaceScalarWithTensorArgPass,
@@ -1332,6 +1333,34 @@ class TestReplaceOpsPasses(unittest.TestCase):
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.slice_copy.Tensor),
             2,
+        )
+
+    def test_replace_pow_with_mul(self):
+        class Pow(torch.nn.Module):
+            def forward(self, input):
+                return torch.ops.aten.pow.Scalar(2, input)
+
+        input = torch.randn(2, 1, 64)
+
+        graph_module = export_to_edge(Pow(), (input,)).exported_program().graph_module
+
+        p = ReplacePowWithMullPass()
+        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.aten.pow.Scalar,
+            ),
+            0,
+        )
+
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.aten.mul.Tensor,
+            ),
+            1,
         )
 
 

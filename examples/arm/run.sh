@@ -20,7 +20,9 @@ et_root_dir=$(realpath ${et_root_dir})
 model_name=""
 model_input_set=false
 model_input=""
-aot_arm_compiler_flags="--delegate --quantize"
+aot_arm_compiler_flag_delegate="--delegate"
+aot_arm_compiler_flag_quantize="--quantize"
+aot_arm_compiler_flags=""
 portable_kernels="aten::_softmax.out"
 target="ethos-u55-128"
 output_folder_set=false
@@ -41,7 +43,9 @@ function help() {
     echo "  --model_name=<MODEL>                   Model file .py/.pth/.pt, builtin model or a model from examples/models. Passed to aot_arm_compiler"
     echo "  --model_input=<INPUT>                  Provide model input .pt file to override the input in the model file. Passed to aot_arm_compiler"
     echo "                                           NOTE: Inference in FVP is done with a dummy input full of ones. Use bundleio flag to run the model in FVP with the custom input or the input from the model file."
-    echo "  --aot_arm_compiler_flags=<FLAGS>       Only used if --model_name is used Default: ${aot_arm_compiler_flags}"
+    echo "  --aot_arm_compiler_flags=<FLAGS>       Extra flags to pass to aot compiler"
+    echo "  --no_delegate                          Do not delegate the model (can't override builtin models)"
+    echo "  --no_quantize                          Do not quantize the model (can't override builtin models)"
     echo "  --portable_kernels=<OPS>               Comma separated list of portable (non delagated) kernels to include Default: ${portable_kernels}"
     echo "  --target=<TARGET>                      Target to build and run for Default: ${target}"
     echo "  --output=<FOLDER>                      Target build output folder Default: ${output_folder}"
@@ -64,6 +68,8 @@ for arg in "$@"; do
       --model_name=*) model_name="${arg#*=}";;
       --model_input=*) model_input="${arg#*=}" ; model_input_set=true  ;;
       --aot_arm_compiler_flags=*) aot_arm_compiler_flags="${arg#*=}";;
+      --no_delegate) aot_arm_compiler_flag_delegate="" ;;
+      --no_quantize) aot_arm_compiler_flag_quantize="" ;;
       --portable_kernels=*) portable_kernels="${arg#*=}";;
       --target=*) target="${arg#*=}";;
       --output=*) output_folder="${arg#*=}" ; output_folder_set=true ;;
@@ -160,7 +166,7 @@ if [[ -z "$model_name" ]]; then
     model_compiler_flags=( "" "--delegate" "--delegate" "--delegate --quantize" )
 else
     test_model=( "$model_name" )
-    model_compiler_flags=( "$aot_arm_compiler_flags" )
+    model_compiler_flags=( "$aot_arm_compiler_flag_delegate $aot_arm_compiler_flag_quantize $aot_arm_compiler_flags" )
 fi
 
 # loop over running the AoT flow and executing the model on device

@@ -45,10 +45,7 @@ Tensor& maximum_out(
   static constexpr const char op_name[] = "maximum.out";
 
   ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_bitensor_elementwise_fn<
-        CTYPE_COMPUTE,
-        op_name,
-        utils::SupportedTensorDtypes::REALHBBF16>(
+    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
         [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
           return utils::max_override(val_a, val_b);
         },
@@ -57,7 +54,8 @@ Tensor& maximum_out(
         utils::SupportedTensorDtypes::REALHBBF16,
         b,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out);
+        out,
+        utils::SupportedTensorDtypes::REALHBBF16);
   });
 
   return out;

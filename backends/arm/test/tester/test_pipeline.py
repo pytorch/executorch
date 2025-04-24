@@ -8,7 +8,7 @@ from typing import Callable, Dict, Generic, List, Optional, Type, TypeVar
 
 import torch
 
-from executorch.backends.arm.quantizer import (
+from executorch.backends.arm.quantizer.arm_quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
     TOSAQuantizer,
