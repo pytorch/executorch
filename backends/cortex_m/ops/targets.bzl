@@ -24,6 +24,7 @@ def define_operator_target(name: str):
 
 OPERATORS = [
     "quantize_per_tensor",
+    "dequantize_per_tensor",
 ]
 
 def define_common_targets():
