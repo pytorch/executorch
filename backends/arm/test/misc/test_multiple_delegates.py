@@ -20,7 +20,7 @@ class TestMultipleDelegates(unittest.TestCase):
 
         def forward(self, x: torch.Tensor, y: torch.Tensor):
             z = x + y
-            s = torch.tan(z)
+            s = torch.sin(z)
             return s * z
 
     def test_tosa_MI(self):
