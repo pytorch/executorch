@@ -19,7 +19,7 @@ TEST(Base64Test, TestDecodeSmoke) {
 }
 
 TEST(Base64Test, TestDecodeEmptyStringReturnsError) {
-  std::string text = "";
+  std::string text;
   auto result = base64::decode(text);
   EXPECT_FALSE(result.ok());
   EXPECT_EQ(result.error(), Error::Base64DecodeFailure);
