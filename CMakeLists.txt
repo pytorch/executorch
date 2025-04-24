@@ -18,33 +18,56 @@ project(Tokenizers)
 
 option(TOKENIZERS_BUILD_TEST "Build tests" OFF)
 option(TOKENIZERS_BUILD_TOOLS "Build tools" OFF)
+option(SUPPORT_REGEX_LOOKAHEAD
+    "Support regex lookahead patterns (requires PCRE2)" OFF)
 
 # Ignore weak attribute warning
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-attributes")
 
 set(ABSL_ENABLE_INSTALL ON)
 set(ABSL_PROPAGATE_CXX_STD ON)
+
 set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/abseil-cpp)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/re2)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/sentencepiece)
 
 # Configure PCRE2
-set(PCRE2_BUILD_PCRE2_8 ON)
-set(PCRE2_BUILD_PCRE2_16 OFF)
-set(PCRE2_BUILD_PCRE2_32 OFF)
-set(PCRE2_BUILD_TESTS OFF)
-set(PCRE2_BUILD_PCRE2GREP OFF)
-set(PCRE2_BUILD_PCRE2TEST OFF)
-set(PCRE2_BUILD_PCRE2GPERF OFF)
-set(PCRE2_BUILD_DOCS OFF)
-set(PCRE2_BUILD_LIBPCRE2_PDB OFF)
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pcre2)
+if(SUPPORT_REGEX_LOOKAHEAD OR TOKENIZERS_BUILD_TEST)
+    set(PCRE2_BUILD_PCRE2_8 ON)
+    set(PCRE2_BUILD_PCRE2_16 OFF)
+    set(PCRE2_BUILD_PCRE2_32 OFF)
+    set(PCRE2_BUILD_TESTS OFF)
+    set(PCRE2_BUILD_PCRE2GREP OFF)
+    set(PCRE2_BUILD_PCRE2TEST OFF)
+    set(PCRE2_BUILD_PCRE2GPERF OFF)
+    set(PCRE2_BUILD_DOCS OFF)
+    set(PCRE2_BUILD_LIBPCRE2_PDB OFF)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pcre2)
+endif()
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 
 file(GLOB tokenizers_source_files ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
+set(tokenizers_source_files
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/bpe_tokenizer_base.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/hf_tokenizer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/llama2c_tokenizer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/pre_tokenizer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/re2_regex.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/regex.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/sentencepiece.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/tiktoken.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/token_decoder.cpp
+)
+if(SUPPORT_REGEX_LOOKAHEAD OR TOKENIZERS_BUILD_TEST)
+    list(APPEND
+        tokenizers_source_files
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/pcre2_regex.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/std_regex.cpp)
+endif()
 file(GLOB unicode_source_files
      ${CMAKE_CURRENT_SOURCE_DIR}/third-party/llama.cpp-unicode/src/*.cpp)
 add_library(tokenizers STATIC ${tokenizers_source_files}
@@ -58,10 +81,16 @@ target_include_directories(
          ${CMAKE_CURRENT_SOURCE_DIR}/third-party/sentencepiece/src
          ${CMAKE_CURRENT_SOURCE_DIR}/third-party/re2
          ${CMAKE_CURRENT_SOURCE_DIR}/third-party/json/single_include
-         ${CMAKE_CURRENT_SOURCE_DIR}/third-party/llama.cpp-unicode/include
-         ${CMAKE_CURRENT_SOURCE_DIR}/third-party/pcre2/src)
+         ${CMAKE_CURRENT_SOURCE_DIR}/third-party/llama.cpp-unicode/include)
+target_link_libraries(tokenizers PUBLIC sentencepiece-static re2::re2)
 
-target_link_libraries(tokenizers PUBLIC sentencepiece-static re2::re2 pcre2-8)
+if(SUPPORT_REGEX_LOOKAHEAD OR TOKENIZERS_BUILD_TEST)
+    target_include_directories(tokenizers
+        PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/pcre2/src)
+    target_link_libraries(tokenizers PUBLIC pcre2-8)
+    target_compile_definitions(tokenizers PUBLIC SUPPORT_REGEX_LOOKAHEAD)
+endif()
 
 # Build test
 if(TOKENIZERS_BUILD_TEST)

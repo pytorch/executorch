@@ -14,7 +14,7 @@ def define_common_targets():
         name = "headers",
         exported_headers = subdir_glob([
             ("include", "pytorch/tokenizers/*.h"),
-        ]),
+        ], exclude = ["pcre2_regex.h", "std_regex.h"]),
         visibility = [
             "@EXECUTORCH_CLIENTS",
             "//pytorch/tokenizers/...",
@@ -23,20 +23,19 @@ def define_common_targets():
         platforms = PLATFORMS,
     )
 
+    # TODO: add target for regex which does lookahed with pcre2
+    # by adding "-DSUPPORT_REGEX_LOOKAHEAD" as a compiler flag
+    # and including pcre2 dependencies.
     runtime.cxx_library(
         name = "regex",
-        srcs = ["src/regex.cpp"] + glob([
-            "src/*_regex.cpp",
-        ]),
-        exported_headers = subdir_glob([
-            ("include", "pytorch/tokenizers/regex.h"),
-            ("include", "pytorch/tokenizers/*_regex.h"),
-        ]),
+        srcs = [
+            "src/regex.cpp",
+            "src/re2_regex.cpp",
+        ],
         exported_deps = [
             ":headers",
         ],
         exported_external_deps = [
-            "pcre2",
             "re2",
         ],
         visibility = ["//pytorch/tokenizers/..."],
