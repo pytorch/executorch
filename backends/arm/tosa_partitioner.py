@@ -170,6 +170,7 @@ class TOSAPartitioner(Partitioner):
 
         ops_to_not_decompose = [
             torch.ops.aten.linear.default,
+            torch.ops.aten.upsample_bilinear2d.vec,
             torch.ops.aten.upsample_nearest2d.vec,
             torch.ops.aten.eye.default,
             torch.ops.aten.linspace.default,

@@ -6,6 +6,7 @@
 
 # pyre-unsafe
 
+import operator
 import unittest
 from typing import Any, Callable, cast, List, Optional, Sequence, Tuple, Union
 
@@ -23,7 +24,6 @@ from executorch.backends.cadence.aot.replace_ops import (
     MakeSliceAndCatDimOutermostPass,
     ReplaceAddMMWithLinearPass,
     ReplaceAtenConvolutionWithJarvisConvolutionPass,
-    ReplaceAtenLinalgVectorNormWithCadenceLinalgVectorNormPass,
     ReplaceConstantPadNdWithSlicePass,
     ReplaceConvolutionOptionalArgsWithConcreteArgsPass,
     ReplaceConvWithIm2RowAndLinear,
@@ -36,11 +36,13 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceNopTransposeOrPermuteWithViewPass,
     ReplacePadWithCatPass,
     ReplacePermuteWithTransposePass,
+    ReplacePowWithMullPass,
     ReplaceRepeatWithCatPass,
     ReplaceScalarTensorWithFullPass,
     ReplaceScalarWithTensorArgPass,
     ReplaceSelectWithViewOpPass,
     ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass,
+    ReplaceSplitWithSlicePass,
     ReplaceSqueezeAndUnsqueezeWithViewPass,
     ReplaceTCopyWithTransposePass,
     ReplaceTransposedConvWithLinearPass,
@@ -1189,36 +1191,6 @@ class TestReplaceOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.transpose_copy.int), 0
         )
 
-    def test_replace_aten_linalg_vector_norm_with_cadence_linalg_vector_norm(self):
-        class LinalgVectorNorm(torch.nn.Module):
-            def forward(self, x: torch.Tensor):
-                return torch.linalg.vector_norm(x)
-
-        x = torch.randn(32)
-
-        graph_module = (
-            export_to_edge(LinalgVectorNorm(), (x,)).exported_program().graph_module
-        )
-
-        p = ReplaceAtenLinalgVectorNormWithCadenceLinalgVectorNormPass()
-        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
-
-        # Assert that aten.linalg_vector_norm op was replaced by a
-        # cadence.linalg_vector_norm op
-        self.assertEqual(
-            count_node(
-                graph_after_passes,
-                exir_ops.edge.aten.linalg_vector_norm.default,
-            ),
-            0,
-        )
-        self.assertEqual(
-            count_node(
-                graph_after_passes, exir_ops.edge.cadence.linalg_vector_norm.default
-            ),
-            1,
-        )
-
     def test_replace_aten_where_with_cadence_where_Scalar(self):
         class WhereScalarModel(torch.nn.Module):
             def forward(self, cond: torch.Tensor):
@@ -1335,6 +1307,60 @@ class TestReplaceOpsPasses(unittest.TestCase):
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.mul.Tensor),
             6,
+        )
+
+    def test_replace_split_with_sizes_with_slice(self):
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 16, 8, 4))
+        split = builder.call_operator(
+            exir_ops.edge.aten.split_with_sizes_copy.default, (x, [8, 8], 1)
+        )
+        # We need the outputs to be gathered by getitem ops
+        out0 = builder.call_operator(operator.getitem, (split, 0))
+        out1 = builder.call_operator(operator.getitem, (split, 1))
+        builder.output([out0, out1])
+        graph_module = builder.get_graph_module()
+
+        p = ReplaceSplitWithSlicePass()
+        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+
+        self.assertEqual(
+            count_node(
+                graph_after_passes, exir_ops.edge.aten.split_with_sizes_copy.default
+            ),
+            0,
+        )
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.slice_copy.Tensor),
+            2,
+        )
+
+    def test_replace_pow_with_mul(self):
+        class Pow(torch.nn.Module):
+            def forward(self, input):
+                return torch.ops.aten.pow.Scalar(2, input)
+
+        input = torch.randn(2, 1, 64)
+
+        graph_module = export_to_edge(Pow(), (input,)).exported_program().graph_module
+
+        p = ReplacePowWithMullPass()
+        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.aten.pow.Scalar,
+            ),
+            0,
+        )
+
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.aten.mul.Tensor,
+            ),
+            1,
         )
 
 

@@ -104,7 +104,7 @@ def define_common_targets():
         base_module = "executorch.kernels.test",
         visibility = ["//executorch/kernels/test/..."],
         deps = [
-            "fbsource//third-party/pkg_resources:pkg_resources",
+            "fbsource//third-party/pypi/setuptools:setuptools",
             "fbsource//third-party/pypi/pyyaml:pyyaml",
         ],
     )
@@ -223,6 +223,7 @@ def define_common_targets():
     _common_op_test("op_exp_test", ["aten", "portable", "optimized"])
     _common_op_test("op_expand_copy_test", ["aten", "portable"])
     _common_op_test("op_expm1_test", ["aten", "portable"])
+    _common_op_test("op_fft_c2r_test", ["aten", "optimized"])
     _common_op_test("op_fft_r2c_test", ["aten", "optimized"])
     _common_op_test("op_fill_test", ["aten", "portable"])
     _common_op_test("op_flip_test", ["aten", "portable"])
@@ -331,6 +332,7 @@ def define_common_targets():
     _common_op_test("op_upsample_bilinear2d_test", ["aten", "portable"])
     _common_op_test("op_upsample_nearest2d_test", ["aten", "portable"])
     _common_op_test("op_var_test", ["aten", "portable"])
+    _common_op_test("op_view_as_real_copy_test", ["aten", "portable"])
     _common_op_test("op_view_copy_test", ["aten", "portable"])
     _common_op_test("op_where_test", ["aten", "portable"])
     _common_op_test("op_zeros_test", ["aten", "portable"])

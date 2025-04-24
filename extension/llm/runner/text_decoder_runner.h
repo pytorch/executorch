@@ -14,7 +14,6 @@
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/platform/compiler.h>
-#include <functional>
 
 namespace executorch {
 namespace extension {
@@ -94,7 +93,13 @@ class ET_EXPERIMENTAL TextDecoderRunner {
   }
 
  protected:
-  // TODO: use shared_ptr for module
+  /**
+   * Note: TextDecoderRunner does not own the Module instance. It is expected
+   * that the outer class (likely Runner) manages the lifecycle of the Module.
+   * This means that the responsibility for creating, maintaining, and
+   * destroying the Module lies outside of TextDecoderRunner. Ensure that the
+   * Module remains valid for the duration of TextDecoderRunner's usage.
+   */
   Module* module_;
   bool use_kv_cache_;
   bool should_stop_{false};

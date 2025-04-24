@@ -35,8 +35,8 @@ class CadencePassAttribute:
 ALL_CADENCE_PASSES: dict[ExportPass, CadencePassAttribute] = {}
 
 
-def get_cadence_pass_attribute(p: ExportPass) -> CadencePassAttribute:
-    return ALL_CADENCE_PASSES[p]
+def get_cadence_pass_attribute(p: ExportPass) -> Optional[CadencePassAttribute]:
+    return ALL_CADENCE_PASSES.get(p, None)
 
 
 # A decorator that registers a pass.
@@ -61,7 +61,8 @@ def create_cadence_pass_filter(
     def _filter(p: ExportPass) -> bool:
         pass_attribute = get_cadence_pass_attribute(p)
         return (
-            pass_attribute.opt_level is not None
+            pass_attribute is not None
+            and pass_attribute.opt_level is not None
             and pass_attribute.opt_level <= opt_level
             and (not pass_attribute.debug_pass or debug)
         )

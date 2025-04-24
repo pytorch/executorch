@@ -17,17 +17,17 @@
 
 ${define_required_extensions(DTYPE)}
 
-$if STORAGE == "buffer":
+$if WEIGHT_STORAGE == "buffer":
   ${define_required_extensions("int8")}
 
 #extension GL_EXT_control_flow_attributes : require
 
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_weight", "int8", STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_scales", DTYPE, STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "w", "t_out", DTYPE, OUT_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_in", DTYPE, IN_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_weight", "int8", WEIGHT_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_scales", DTYPE, SCALES_STORAGE, is_scalar_array=False)}
 
 
 layout(push_constant) uniform restrict Block {
@@ -50,10 +50,10 @@ void main() {
   VEC4_T b[4];
   VEC4_T c[TILE_ROWS];
 
-  $if STORAGE == "buffer":
+  $if SCALES_STORAGE == "buffer":
     const VEC4_T scales = VEC4_T(t_scales[out_col >> 2]);
   $else:
-    const VEC4_T scales = VEC4_T(texelFetch(t_scales, ivec3(out_col >> 2, 0, 0), 0));
+    const VEC4_T scales = VEC4_T(texelFetch(t_scales, ivec2(out_col >> 2, 0), 0));
 
   [[unroll]] for (int i = 0; i < TILE_ROWS; ++i) {
     c[i] = VEC4_T(0.0);
@@ -62,30 +62,32 @@ void main() {
   for (int pos = 0; pos < in_sizes.x; pos += 4) {
     // Preload weight tensor
     [[unroll]] for (int i = 0; i < 4; i++) {
-      $if STORAGE == "buffer":
-        b[i] = t_weight[((pos + i) * B_sizes.x + out_col) >> 2];
+      $if WEIGHT_STORAGE == "buffer":
+        b[i] = t_weight[((pos + i) * out_sizes.x + out_col) >> 2];
       $else:
-        b[i] = VEC4_T(texelFetch(t_weight, ivec3(out_col >> 2, pos + i, 0), 0));
+        b[i] = VEC4_T(texelFetch(t_weight, ivec2(out_col >> 2, pos + i), 0));
     }
 
     // Preload input tensor
     [[unroll]] for (int i = 0; i < TILE_ROWS; i++) {
-      $if STORAGE == "buffer":
-        a[i] = t_in[((out_row + i) * in_sizes.x + (pos)) >> 2];
+      $if IN_STORAGE == "buffer":
+        a[i] = t_in[((out_row + i) * in_sizes.x + pos) >> 2];
       $else:
         a[i] = VEC4_T(texelFetch(t_in, ivec3(pos >> 2, out_row + i, 0), 0));
     }
 
-    // Compute partial output
+    // Accumulate output
     [[unroll]] for (int i = 0; i < TILE_ROWS; ++i) {
         c[i] += a[i].x * b[0] + a[i].y * b[1] + a[i].z * b[2] + a[i].w * b[3];
     }
   }
 
-  // Store output tensor
+  // Store to output tensor
   [[unroll]] for (int i = 0; i < TILE_ROWS; ++i) {
-    $if STORAGE == "buffer":
-      t_out[((out_row + i) * out_sizes.x + out_col) >> 2] = c[i] * scales;
+    $if OUT_STORAGE == "buffer":
+      if (out_row + i < out_sizes.y) {
+        t_out[((out_row + i) * out_sizes.x + out_col) >> 2] = c[i] * scales;
+      }
     $else:
       imageStore(t_out, ivec3(out_col >> 2, out_row + i, 0), c[i] * scales);
   }

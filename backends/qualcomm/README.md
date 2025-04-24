@@ -13,7 +13,7 @@ A website version of the tutorial is [here](https://pytorch.org/executorch/main/
 ## Delegate Options
 
 Please check `generate_qnn_executorch_compiler_spec()` in
-[utils.py](./utils/utils.py) for supported SoC and inference type.
+[utils.py](utils/utils.py) for supported SoC and inference type.
 
 ### Supported Chipset
 - Snapdragon 8 Gen 1

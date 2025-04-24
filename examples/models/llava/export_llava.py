@@ -92,7 +92,6 @@ def export_text_model(llava, embeddings, dynamic_shapes):
         use_kv_cache=True,
         example_inputs=(torch.tensor([0], dtype=torch.int64), embeddings),
         dynamic_shapes=dynamic_shapes,
-        args=llava.text_model_args,
     )
 
     dtype_override = DType.fp32
@@ -161,7 +160,6 @@ def export_image_encoder(llava, resized, dynamic_shapes):
             use_kv_cache=True,
             example_inputs=(resized,),
             dynamic_shapes=dynamic_shapes,
-            args=None,
         )
         .export()
         .pt2e_quantize([quantizer])

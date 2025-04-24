@@ -1269,6 +1269,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_view_as_real_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_view_copy",
         deps = [
             "//executorch/kernels/portable/cpu/util:copy_ops_util",

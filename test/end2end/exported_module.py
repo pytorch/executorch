@@ -70,6 +70,7 @@ class ExportedModule:
         skip_type_promotion: bool = False,
         export_joint_graph: bool = False,
         external_constants: bool = False,
+        export_state_names: bool = False,
     ) -> "ExportedModule":
         """
         Creates a new ExportedModule for the specified module class.
@@ -148,7 +149,9 @@ class ExportedModule:
             for method in methods:
                 method_name_to_dynamic_shapes[method] = trace_dynamic_shapes
 
-        memory_planning_pass = MemoryPlanningPass()
+        memory_planning_pass = MemoryPlanningPass(
+            alloc_mutable_buffers=not export_state_names
+        )
         if hasattr(eager_module, "get_memory_planning_pass"):
             memory_planning_pass = eager_module.get_memory_planning_pass()  # type: ignore[operator]
 
@@ -208,6 +211,7 @@ class ExportedModule:
                 memory_planning_pass=memory_planning_pass,
                 to_out_var_pass=ToOutVarPass(ignore_to_out_var_failure),
                 external_constants=external_constants,
+                emit_mutable_buffer_names=export_state_names,
             )
         )
 

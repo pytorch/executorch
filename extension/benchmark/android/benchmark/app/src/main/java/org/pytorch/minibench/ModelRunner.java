@@ -68,8 +68,8 @@ public class ModelRunner implements LlmCallback {
   }
 
   @Override
-  public void onStats(float tps) {
-    mCallback.onStats("tokens/second: " + tps);
+  public void onStats(String result) {
+    mCallback.onStats(result);
   }
 }
 
