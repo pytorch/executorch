@@ -531,18 +531,17 @@ class BundledModule : public Module {
   BundledModule& operator=(BundledModule&&) = delete;
 
   /**
-   * Execute a specific method with the input value at the given testset_idx
-   * from the program bundle.
+   * Load a specific method with the input value at the given `testset_idx` from
+   * the bundle to the method.
    *
-   * Before execution, this function loads the program and method with
-   * load_bundled_input in bundled_program.
+   * This function is a wrapper of `load_bundled_input` in `bundled_program`.
    *
    * @param[in] method_name The name of the method to execute.
-   * @param[in] testset_idx The index of the input value to be passed to
-   * the method.
+   * @param[in] testset_idx The index of the input value to be passed to the
+   * method.
    *
-   * @returns A Result object containing either a vector of output values
-   *          from the method or an error to indicate failure.
+   * @returns Return Error::Ok on a successful load, or the error happens during
+   * execution.
    */
   ET_NODISCARD
   runtime::Error load_bundled_input(
@@ -551,9 +550,9 @@ class BundledModule : public Module {
 
   /**
    * Verify the output of a specific method with the expected output from the
-   * program bundle at the given testset_idx.
+   * program bundle at the given `testset_idx`.
    *
-   * This function is a wrapper of verify_method_outputs in bundled_program.
+   * This function is a wrapper of `verify_method_outputs` in `bundled_program`.
    *
    * @param[in] method_name The name of the method to extract outputs from.
    * @param[in] testset_idx  The index of expected output needs to be compared.
