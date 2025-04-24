@@ -8,6 +8,9 @@
 
 #include <executorch/extension/module/module.h>
 
+#include <executorch/devtools/bundled_program/bundled_program.h>
+#include <executorch/devtools/bundled_program/schema/bundled_program_schema_generated.h>
+#include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
@@ -302,14 +305,57 @@ runtime::Error Module::set_output(
       output_tensor.mutable_data_ptr(), output_tensor.nbytes(), output_index);
 }
 
-ET_NODISCARD inline runtime::Result<Method*> Module::get_method(
-    const std::string& method_name) {
-  ET_CHECK_OR_RETURN_ERROR(
-      methods_.count(method_name) > 0,
-      InvalidArgument,
-      "no such method in program: %s",
-      method_name.c_str());
-  return methods_[method_name].method.get();
+namespace {
+std::unique_ptr<BufferDataLoader> program_data_loader(
+    const void* bundled_program_ptr) {
+  auto bundled_program =
+      bundled_program_flatbuffer::GetBundledProgram(bundled_program_ptr);
+  // the program inside the bundled program
+  auto program = bundled_program->program();
+  return std::make_unique<BufferDataLoader>(program->data(), program->size());
+}
+} // namespace
+
+BundledModule::BundledModule(
+    const void* bundled_program_ptr,
+    std::unique_ptr<runtime::MemoryAllocator> memory_allocator,
+    std::unique_ptr<runtime::MemoryAllocator> temp_allocator,
+    std::unique_ptr<runtime::EventTracer> event_tracer,
+    std::unique_ptr<runtime::DataLoader> data_map_loader)
+    : Module(
+          program_data_loader(bundled_program_ptr),
+          std::move(memory_allocator),
+          std::move(temp_allocator),
+          std::move(event_tracer),
+          std::move(data_map_loader)),
+      bundled_program_ptr_(bundled_program_ptr) {}
+
+runtime::Error BundledModule::load_bundled_input(
+    const std::string& method_name,
+    const size_t testset_idx) {
+  ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
+  auto& method = methods_.at(method_name).method;
+  auto& inputs = methods_.at(method_name).inputs;
+
+  auto status = executorch::BUNDLED_PROGRAM_NAMESPACE::load_bundled_input(
+      *method, bundled_program_ptr_, testset_idx);
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      status,
+      "Bundled Program's load_bundled_input failed with status 0x%" PRIx32,
+      static_cast<uint32_t>(status));
+
+  return method->get_inputs(inputs.data(), inputs.size());
+}
+
+runtime::Error BundledModule::verify_method_outputs(
+    const std::string& method_name,
+    const size_t testset_idx,
+    double rtol,
+    double atol) {
+  ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
+  auto& method = methods_.at(method_name).method;
+  return executorch::BUNDLED_PROGRAM_NAMESPACE::verify_method_outputs(
+      *method, bundled_program_ptr_, testset_idx, rtol, atol);
 }
 
 } // namespace extension

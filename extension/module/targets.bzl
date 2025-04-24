@@ -22,6 +22,9 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
             deps = [
+                "//executorch/extension/data_loader:buffer_data_loader",
+                "//executorch/devtools/bundled_program:runtime",
+                "//executorch/devtools/bundled_program/schema:bundled_program_schema_fbs",
                 "//executorch/extension/memory_allocator:malloc_memory_allocator",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/extension/data_loader:mmap_data_loader",

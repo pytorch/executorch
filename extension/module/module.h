@@ -493,19 +493,85 @@ class Module {
   std::unique_ptr<NamedDataMap> data_map_;
 
  protected:
-  /**
-   * Get a method by method name.
-   *
-   * @param[in] method_name The name of the method to get.
-   *
-   * @returns A Result object containing either a pointer to the requested
-   *          method or an error to indicate failure.
-   */
-  ET_NODISCARD inline runtime::Result<Method*> get_method(
-      const std::string& method_name);
   std::unordered_map<std::string, MethodHolder> methods_;
 
   friend class ExecuTorchJni;
+};
+
+/**
+ * A facade class for loading bundled programs and executing methods within
+ * them.
+ */
+class BundledModule : public Module {
+ public:
+  /**
+   * Constructs an instance with the bundled program buffer pointer.
+   *
+   * This constructor reads the program from bundled program buffer to load the
+   * module with data loader. The bundled program pointer is preserved so that
+   * the portion outside of program is accessible.
+   *
+   * @param[in] bundled_program_ptr A DataLoader used for loading program data.
+   * @param[in] memory_allocator A MemoryAllocator used for memory management.
+   * @param[in] temp_allocator A MemoryAllocator to use when allocating
+   * temporary data during kernel or delegate execution.
+   * @param[in] event_tracer A EventTracer used for tracking and logging events.
+   * @param[in] data_map_loader A DataLoader used for loading external weights.
+   */
+  explicit BundledModule(
+      const void* bundled_program_ptr,
+      std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
+      std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr,
+      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr,
+      std::unique_ptr<runtime::DataLoader> data_map_loader = nullptr);
+
+  BundledModule(const BundledModule&) = delete;
+  BundledModule& operator=(const BundledModule&) = delete;
+  BundledModule(Module&&) = delete;
+  BundledModule& operator=(BundledModule&&) = delete;
+
+  /**
+   * Execute a specific method with the input value at the given testset_idx
+   * from the program bundle.
+   *
+   * Before execution, this function loads the program and method with
+   * load_bundled_input in bundled_program.
+   *
+   * @param[in] method_name The name of the method to execute.
+   * @param[in] testset_idx The index of the input value to be passed to
+   * the method.
+   *
+   * @returns A Result object containing either a vector of output values
+   *          from the method or an error to indicate failure.
+   */
+  ET_NODISCARD
+  runtime::Error load_bundled_input(
+      const std::string& method_name,
+      const size_t testset_idx);
+
+  /**
+   * Verify the output of a specific method with the expected output from the
+   * program bundle at the given testset_idx.
+   *
+   * This function is a wrapper of verify_method_outputs in bundled_program.
+   *
+   * @param[in] method_name The name of the method to extract outputs from.
+   * @param[in] testset_idx  The index of expected output needs to be compared.
+   * @param[in] rtol Relative tolerance used for data comparsion.
+   * @param[in] atol Absolute tolerance used for data comparsion.
+   *
+   * @returns Return Error::Ok if two outputs match, or the error happens during
+   * execution.
+   */
+  ET_NODISCARD
+  runtime::Error verify_method_outputs(
+      const std::string& method_name,
+      const size_t testset_idx,
+      double rtol = 1e-5,
+      double atol = 1e-8);
+
+ private:
+  const void* bundled_program_ptr_;
 };
 
 } // namespace extension
