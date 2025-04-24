@@ -136,8 +136,6 @@ In this tutorial, an example model (shown below) is used to demonstrate.
       torch._C._set_onednn_allow_tf32(_allow_tf32)
     /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
       torch._C._set_onednn_allow_tf32(_allow_tf32)
-    <class 'function'>
-    <class 'function'>
 
 
 
@@ -220,8 +218,6 @@ In this tutorial, a `Bundled Program` is created from the example model above.
       torch._C._set_onednn_allow_tf32(_allow_tf32)
     /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
       torch._C._set_onednn_allow_tf32(_allow_tf32)
-    <class 'function'>
-    <class 'function'>
 
 
 
@@ -430,7 +426,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 2.102 seconds)
+   **Total running time of the script:** (0 minutes 2.247 seconds)
 
 
 .. _sphx_glr_download_tutorials_devtools-integration-tutorial.py:
