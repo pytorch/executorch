@@ -852,7 +852,7 @@ struct PyModule final {
 
     THROW_IF_ERROR(
         outputs.error(),
-        "load_bundled_input failed with status 0x%" PRIx32,
+        "Execution failed with status 0x%" PRIx32,
         static_cast<uint32_t>(outputs.error()));
 
     status = m.verify_method_outputs(method_name, testset_idx, rtol, atol);
