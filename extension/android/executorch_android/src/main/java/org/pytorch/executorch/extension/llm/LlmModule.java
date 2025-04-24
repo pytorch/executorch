@@ -59,7 +59,7 @@ public class LlmModule {
     mHybridData = initHybrid(modelType, modulePath, tokenizerPath, temperature, null);
   }
 
-  /** Constructs a LLM Module for a model with given #LlmModuleConfig */
+  /** Constructs a LLM Module for a model with the given LlmModuleConfig */
   public LlmModule(LlmModuleConfig config) {
     mHybridData =
         initHybrid(
