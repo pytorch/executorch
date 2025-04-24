@@ -633,12 +633,12 @@ public abstract class Tensor {
 
   static class Tensor_unsupported extends Tensor {
     private final ByteBuffer data;
-    private final DType myDtype;
+    private final DType mDtype;
 
     private Tensor_unsupported(ByteBuffer data, long[] shape, DType dtype) {
       super(shape);
       this.data = data;
-      this.myDtype = dtype;
+      this.mDtype = dtype;
       Log.e(
           "ExecuTorch",
           toString() + " in Java. Please consider re-export the model with proper return type");
@@ -646,13 +646,13 @@ public abstract class Tensor {
 
     @Override
     public DType dtype() {
-      return myDtype;
+      return mDtype;
     }
 
     @Override
     public String toString() {
       return String.format(
-          "Unsupported tensor(%s, dtype=%d)", Arrays.toString(shape), this.myDtype);
+          "Unsupported tensor(%s, dtype=%d)", Arrays.toString(shape), this.mDtype);
     }
   }
 
