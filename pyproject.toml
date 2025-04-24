@@ -66,6 +66,9 @@ dependencies=[
   "ruamel.yaml",
   "sympy",
   "tabulate",
+  "torch==2.7.0",
+  "torchaudio==2.7.0",
+  "torchvision==0.22.0",
   "torchao==0.10.0",
   "typing-extensions",
   # Keep this version in sync with: ./backends/apple/coreml/scripts/install_requirements.sh
