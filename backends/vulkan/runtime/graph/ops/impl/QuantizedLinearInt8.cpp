@@ -142,36 +142,66 @@ void add_q_8w_linear_node(
 
 void add_q_8w_linear_tiled_node(
     ComputeGraph& graph,
+    const bool use_coop_algorithm,
     const ValueRef mat1,
     const ValueRef q_mat2_data,
     const ValueRef scales_data,
     const ValueRef out) {
-  utils::StorageType stype = graph.storage_type_of(out);
-  ValueRef q_mat2 = prepack_standard_hw_transposed(
-      graph, q_mat2_data, stype, utils::kWidthPacked);
-  ValueRef scales =
-      prepack_standard(graph, scales_data, stype, utils::kWidthPacked);
+  utils::StorageType q_mat2_storage = utils::kTexture2D;
 
-  std::string kernel_name = "q_8w_linear_tiled";
+  uint32_t max_extent = graph.context()->adapter_ptr()->max_texture2d_dim();
+  std::vector<int64_t> qmat2_orig_sizes = graph.sizes_of(q_mat2_data);
+  const int64_t ndim = graph.dim_of(q_mat2_data);
+  const int64_t K = qmat2_orig_sizes.at(ndim - 1);
+  const int64_t N = qmat2_orig_sizes.at(ndim - 2);
+
+  if (N > max_extent * 4 || K > max_extent) {
+    q_mat2_storage = utils::kBuffer;
+  }
+
+  ValueRef q_mat2 = prepack_standard_hw_transposed(
+      graph, q_mat2_data, q_mat2_storage, utils::kWidthPacked);
+
+  utils::StorageType scales_storage = utils::kTexture2D;
+  if (N > max_extent) {
+    scales_storage = utils::kBuffer;
+  }
+  ValueRef scales =
+      prepack_standard(graph, scales_data, scales_storage, utils::kWidthPacked);
+
+  std::string kernel_name =
+      use_coop_algorithm ? "q_8w_linear_coop" : "q_8w_linear_tiled";
   kernel_name.reserve(kShaderNameReserve);
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(mat1));
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(q_mat2));
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(scales));
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
+
   std::vector<int64_t> mat1_sizes = graph.sizes_of(mat1);
   const int64_t M = utils::val_at(-2, mat1_sizes);
   int out_tile_nrows = 4;
   if (M % 6 == 0) {
     kernel_name += "_o4x6";
     out_tile_nrows = 6;
+  } else if (M % 4 == 0) {
+    kernel_name += "_o4x4";
+    out_tile_nrows = 4;
+  } else if (M % 1 == 0) {
+    kernel_name += "_o4x1";
+    out_tile_nrows = 1;
   } else {
     kernel_name += "_o4x4";
     out_tile_nrows = 4;
   }
 
-  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
-  add_dtype_suffix(kernel_name, graph.dtype_of(out));
-
   utils::uvec3 global_wg_size = graph.logical_limits_of(out);
   global_wg_size[1] = global_wg_size[1] / out_tile_nrows;
 
   utils::uvec3 local_wg_size{64, 1, 1};
+  if (use_coop_algorithm) {
+    local_wg_size = {8, 1, 8};
+  }
 
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
@@ -209,18 +239,13 @@ bool can_use_tiled_impl(
   if (graph.size_at<int>(-1, mat1) % 4 != 0) {
     return false;
   }
-  // Check that M is a multiple of 4 or 6
-  if (graph.size_at<int>(-2, mat1) % 4 != 0 &&
-      graph.size_at<int>(-2, mat1) % 6 != 0) {
-    return false;
-  }
-  // Check that the storage type is texture
-  // TODO(ssjia): Add support for buffer storage in the tiled impl
-  if (graph.storage_type_of(out) != utils::kTexture3D) {
+  // Check that N is a multiple of 4
+  if (graph.size_at<int>(-1, out) % 4 != 0) {
     return false;
   }
   // Check that the packed dim is the width dim
-  if (graph.packed_dim_of(mat1) != WHCN::kWidthDim) {
+  if (graph.packed_dim_of(mat1) != WHCN::kWidthDim &&
+      graph.packed_dim_of(out) != WHCN::kWidthDim) {
     return false;
   }
   // Check that no special axis mapping is used for the input
@@ -237,13 +262,26 @@ bool can_use_tiled_impl(
   return true;
 }
 
+bool can_use_coop_impl(ComputeGraph& graph, const ValueRef mat1) {
+  // Do not use coop algorithm for Adreno 702; manual experimentation shows that
+  // it performs worse than the tiled algorithm.
+  // TODO(ssjia): Determine a more robust heuristic to determine when the coop
+  // algorithm should be used, instead of depending on specific device identity.
+  if (graph.device_is_adreno() && graph.device_name_contains("702")) {
+    return false;
+  }
+  // Check that the computation is vector * matrix
+  return (graph.size_at<int>(-2, mat1) == 1);
+}
+
 void weight_int8pack_mm(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
   check_q_8w_linear_args(graph, args[0], args[1], args[2], args[3]);
   if (can_use_tiled_impl(graph, args[0], args[1], args[2], args[3])) {
+    bool use_coop_algorithm = can_use_coop_impl(graph, args[0]);
     return add_q_8w_linear_tiled_node(
-        graph, args[0], args[1], args[2], args[3]);
+        graph, use_coop_algorithm, args[0], args[1], args[2], args[3]);
   }
   return add_q_8w_linear_node(graph, args[0], args[1], args[2], args[3]);
 }

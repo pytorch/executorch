@@ -42,7 +42,7 @@ ExecuTorch provides support for:
 - [FAQs](using-executorch-faqs)
 #### Examples
 - [Android Demo Apps](https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app)
-- [iOS Demo Apps](demo-apps-ios.md)
+- [iOS Demo Apps](https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo)
 - [Hugging Face Models](https://github.com/huggingface/optimum-executorch/blob/main/README.md)
 #### Backends
 - [Overview](backends-overview)
@@ -144,7 +144,8 @@ using-executorch-faqs
 :hidden:
 
 Building an ExecuTorch Android Demo App <https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app>
-demo-apps-ios.md
+Building an ExecuTorch iOS Demo App <https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo>
+tutorial-arm-ethos-u.md
 ```
 
 ```{toctree}

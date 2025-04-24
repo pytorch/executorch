@@ -1,5 +1,5 @@
 <!---- Name is a WIP - this reflects better what it can do today ----->
-# Arm Ethos-U Backend
+# Arm Ethos-U Backend Tutorial
 
 <!----This will show a grid card on the page----->
 ::::{grid} 2
@@ -283,7 +283,7 @@ Now let's try to run these `.pte` files on a Corstone-300 and Corstone-320 platf
 
 In this section, you will go over steps that you need to go through to build the runtime application. This then run on the target device. In the executorch repository you have a functioning script which does the exact same steps. It is located at `executorch/examples/arm/run.sh`. You will use that to build necessary pieces and finally run the previously generated PTE file on an FVP.
 
-By default the `run.sh` will use `arm_test/` as an build and output folder and you will find the build artifacts under it. This can be contolled/overrided with the `--et_build_root` and the `--output` flags if needed.
+By default the `run.sh` will use `arm_test/` as an build and output folder and you will find the build artifacts under it. This can be controlled/overrided with the `--et_build_root` and the `--output` flags if needed.
 
 e.g. running `examples/arm/run.sh --model_name=add --target=ethos-u85-128` will produce a pte and elf file like this:
 

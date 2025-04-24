@@ -10,7 +10,8 @@ from typing import Callable, List, Optional
 
 import torch
 import torch.fx
-from executorch.backends.arm.quantizer import arm_quantizer_utils, QuantizationConfig
+from executorch.backends.arm.quantizer import arm_quantizer_utils
+from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.arm.tosa_utils import get_node_debug_info
 from torch.ao.quantization.quantizer import QuantizationSpecBase, SharedQuantizationSpec
 from torch.ao.quantization.quantizer.utils import (
@@ -170,6 +171,8 @@ _one_to_one = [
     torch.ops.aten.reciprocal.default,
     torch.ops.aten.rsqrt.default,
     torch.ops.aten.sigmoid.default,
+    torch.ops.aten.cos.default,
+    torch.ops.aten.sin.default,
     torch.ops.aten.tanh.default,
     torch.ops.aten.sum.dim_IntList,
     torch.ops.aten.hardsigmoid.default,
