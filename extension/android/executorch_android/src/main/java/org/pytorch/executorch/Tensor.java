@@ -651,8 +651,7 @@ public abstract class Tensor {
 
     @Override
     public String toString() {
-      return String.format(
-          "Unsupported tensor(%s, dtype=%d)", Arrays.toString(shape), this.mDtype);
+      return String.format("Unsupported tensor(%s, dtype=%d)", Arrays.toString(shape), this.mDtype);
     }
   }
 
