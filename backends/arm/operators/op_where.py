@@ -3,7 +3,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, List, Sequence
+from typing import List, Sequence
+
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
+import tosa_tools.v0_80.tosa.Op as TosaOp  # type: ignore
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -14,8 +17,38 @@ from executorch.backends.arm.tosa_specification import TosaSpecification
 from torch.fx import Node
 
 
+def _add_node_to_tosa_graph(
+    tosa_graph: ts.TosaSerializer,
+    inputs: List[TosaArg],
+    output: TosaArg,
+    supported_dtypes: Sequence,
+) -> None:
+    if len(inputs) != 3:
+        raise ValueError(f"aten.where.self expects 3 arguments, got {len(inputs)}")
+
+    if inputs[0].dtype is not ts.DType.BOOL:
+        raise ValueError("Input 0 needs to have dtype BOOL")
+    if inputs[1].dtype != inputs[2].dtype:
+        raise ValueError(
+            "Non-condition tensors must have same data type, got "
+            f"{inputs[1].dtype} and {inputs[2].dtype}"
+        )
+    for input_ in inputs[1:]:
+        if input_.dtype not in supported_dtypes:
+            raise ValueError(
+                f"Input needs to be of torch dtype {supported_dtypes}, got {input_.dtype}"
+            )
+
+    tosa_graph.addOperator(
+        TosaOp.Op().SELECT,
+        [inputs[0].name, inputs[1].name, inputs[2].name],
+        [output.name],
+        None,
+    )
+
+
 @register_node_visitor
-class WhereVisitor_0_80_BI(NodeVisitor):
+class WhereVisitor_080_BI(NodeVisitor):
     target = "aten.where.self"
 
     tosa_specs = [
@@ -25,46 +58,13 @@ class WhereVisitor_0_80_BI(NodeVisitor):
     def __init__(self, *args):
         super().__init__(*args)
 
-    def _add_node_to_tosa_graph(
-        self,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-        supported_dtypes: Sequence,
-    ) -> None:
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-
-        if len(inputs) != 3:
-            raise ValueError(f"aten.where.self expects 3 arguments, got {len(inputs)}")
-
-        if inputs[0].dtype is not ts.DType.BOOL:
-            raise ValueError("Input 0 needs to have dtype BOOL")
-        if inputs[1].dtype != inputs[2].dtype:
-            raise ValueError(
-                "Non-condition tensors must have same data type, got "
-                f"{inputs[1].dtype} and {inputs[2].dtype}"
-            )
-        for input_ in inputs[1:]:
-            if input_.dtype not in supported_dtypes:
-                raise ValueError(
-                    f"Input needs to be of torch dtype {supported_dtypes}, got {input_.dtype}"
-                )
-
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().SELECT,
-            [inputs[0].name, inputs[1].name, inputs[2].name],
-            [output.name],
-            None,
-        )
-
     def define_node(
         self,
         node: Node,
-        tosa_graph: Any,
+        tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         bi_supported_dtypes = [
             ts.DType.INT8,
@@ -72,11 +72,11 @@ class WhereVisitor_0_80_BI(NodeVisitor):
             ts.DType.INT32,
             ts.DType.BOOL,
         ]
-        self._add_node_to_tosa_graph(tosa_graph, inputs, output, bi_supported_dtypes)
+        _add_node_to_tosa_graph(tosa_graph, inputs, output, bi_supported_dtypes)
 
 
 @register_node_visitor
-class WhereVisitor_0_80_MI(WhereVisitor_0_80_BI):
+class WhereVisitor_080_MI(WhereVisitor_080_BI):
 
     tosa_specs = [
         TosaSpecification.create_from_string("TOSA-0.80+MI"),
@@ -88,12 +88,10 @@ class WhereVisitor_0_80_MI(WhereVisitor_0_80_BI):
     def define_node(
         self,
         node: Node,
-        tosa_graph: Any,
+        tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-
         mi_supported_dtypes = [
             ts.DType.FP16,
             ts.DType.FP32,
@@ -102,95 +100,4 @@ class WhereVisitor_0_80_MI(WhereVisitor_0_80_BI):
             ts.DType.INT32,
             ts.DType.BOOL,
         ]
-        self._add_node_to_tosa_graph(tosa_graph, inputs, output, mi_supported_dtypes)
-
-
-@register_node_visitor
-class WhereVisitor_INT(NodeVisitor):
-    target = "aten.where.self"
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
-    ]
-
-    def __init__(self, *args):
-        super().__init__(*args)
-
-    def _add_node_to_tosa_graph(
-        self,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-        supported_dtypes: Sequence,
-    ) -> None:
-        import serializer.tosa_serializer as ts
-
-        if len(inputs) != 3:
-            raise ValueError(f"aten.where.self expects 3 arguments, got {len(inputs)}")
-
-        if inputs[0].dtype is not ts.DType.BOOL:
-            raise ValueError("Input 0 needs to have dtype BOOL")
-        if inputs[1].dtype != inputs[2].dtype:
-            raise ValueError(
-                "Non-condition tensors must have same data type, got "
-                f"{inputs[1].dtype} and {inputs[2].dtype}"
-            )
-        for input_ in inputs[1:]:
-            if input_.dtype not in supported_dtypes:
-                raise ValueError(
-                    f"Input needs to be of torch dtype {supported_dtypes}, got {input_.dtype}"
-                )
-
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().SELECT,
-            [inputs[0].name, inputs[1].name, inputs[2].name],
-            [output.name],
-            None,
-        )
-
-    def define_node(
-        self,
-        node: Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-        import serializer.tosa_serializer as ts
-
-        bi_supported_dtypes = [
-            ts.DType.INT8,
-            ts.DType.INT16,
-            ts.DType.INT32,
-            ts.DType.BOOL,
-        ]
-        self._add_node_to_tosa_graph(tosa_graph, inputs, output, bi_supported_dtypes)
-
-
-@register_node_visitor
-class WhereVisitor_FP(WhereVisitor_INT):
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
-
-    def __init__(self, *args):
-        super().__init__(*args)
-
-    def define_node(
-        self,
-        node: Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-        import serializer.tosa_serializer as ts
-
-        mi_supported_dtypes = [
-            ts.DType.FP16,
-            ts.DType.FP32,
-            ts.DType.INT8,
-            ts.DType.INT16,
-            ts.DType.INT32,
-            ts.DType.BOOL,
-        ]
-        self._add_node_to_tosa_graph(tosa_graph, inputs, output, mi_supported_dtypes)
+        _add_node_to_tosa_graph(tosa_graph, inputs, output, mi_supported_dtypes)
