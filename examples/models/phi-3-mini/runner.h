@@ -15,9 +15,9 @@
 #include <string>
 
 #include <executorch/extension/llm/sampler/sampler.h>
-#include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <pytorch/tokenizers/tokenizer.h>
 
 namespace example {
 
@@ -38,12 +38,12 @@ class Runner {
   void generate(const std::string& prompt, std::size_t max_seq_len);
 
  private:
-  uint64_t logits_to_token(const exec_aten::Tensor& logits_tensor);
+  uint64_t logits_to_token(const executorch::aten::Tensor& logits_tensor);
   uint64_t prefill(std::vector<uint64_t>& tokens);
   uint64_t run_model_step(uint64_t token);
 
   std::unique_ptr<executorch::extension::Module> module_;
-  std::unique_ptr<executorch::extension::llm::Tokenizer> tokenizer_;
+  std::unique_ptr<tokenizers::Tokenizer> tokenizer_;
   std::unique_ptr<executorch::extension::llm::Sampler> sampler_;
 };
 

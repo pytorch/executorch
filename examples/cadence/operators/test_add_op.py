@@ -1,4 +1,10 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# pyre-unsafe
 
 import unittest
 from typing import Tuple
@@ -13,6 +19,7 @@ from executorch.backends.cadence.aot.export_example import export_model
 
 
 class ATenOpTestCases(unittest.TestCase):
+    # pyre-fixme[16]: Module `parameterized.parameterized` has no attribute `expand`.
     @parameterized.expand(
         [
             [(7, 5, 6), (7, 5, 6)],
@@ -61,6 +68,7 @@ class ATenOpTestCases(unittest.TestCase):
             model, (X, Y), file_name=self._testMethodName, run_and_compare=False
         )
 
+    # pyre-fixme[16]: Module `parameterized.parameterized` has no attribute `expand`.
     @parameterized.expand(
         [
             [(7, 5, 6), (7, 5, 6)],

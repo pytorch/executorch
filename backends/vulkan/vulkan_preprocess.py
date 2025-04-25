@@ -6,6 +6,8 @@
 
 # pyre-strict
 
+from functools import partial
+
 from typing import Any, Dict, final, List
 
 import executorch.backends.vulkan.utils as utils
@@ -17,11 +19,14 @@ from executorch.backends.transforms.fuse_batch_norm_with_conv import (
 from executorch.backends.transforms.fuse_conv_with_clamp import FuseClampPass
 from executorch.backends.transforms.fuse_dequant_linear import FuseDequantLinearPass
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
-from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
-
+from executorch.backends.transforms.view_copy_to_squeeze_unsqueeze import (
+    ViewCopyToSqueezeUnsqueezePass,
+)
 from executorch.backends.vulkan._passes import (
     insert_prepack_nodes,
     RemoveLocalScalarDenseOpsTransform,
+    RemoveRedundantOpsTransform,
+    SqueezeUnsqueezeInputs,
     TagMemoryMetaPass,
 )
 
@@ -41,6 +46,8 @@ from executorch.exir.backend.backend_details import (
     PreprocessResult,
 )
 from executorch.exir.backend.utils import DelegateMappingBuilder
+
+from executorch.exir.memory_planning import greedy, MemoryPlanningAlgorithmSuite
 from executorch.exir.pass_base import ExportPass, PassBase
 
 from executorch.exir.passes import MemoryPlanningPass, SpecPropPass
@@ -143,10 +150,12 @@ class VulkanBackend(BackendDetails):
         program = apply_passes(
             program,
             [
-                RemoveCloneOpsTransform(),
+                RemoveRedundantOpsTransform(),
                 AddmmToLinearTransform(),
                 FuseDequantLinearPass(),
+                SqueezeUnsqueezeInputs(),
                 FuseViewCopyTransform(),
+                ViewCopyToSqueezeUnsqueezePass(),
                 FuseBatchNormWithConvPass(program),
                 FuseClampPass(),
             ],
@@ -189,11 +198,15 @@ class VulkanBackend(BackendDetails):
 
         # Finally, apply dynamic shape passes and memory planning pass. These passes
         # must be applied only when the graph structure is finalized.
+        greedy_memory_planning = partial(greedy, allow_overlapping_allocations=False)
+        mem_planning_suite = MemoryPlanningAlgorithmSuite(
+            algo_list=[greedy_memory_planning]
+        )
         program = apply_passes(
             program,
             [
                 ConstraintBasedSymShapeEvalPass(),
-                MemoryPlanningPass(),
+                MemoryPlanningPass(memory_planning_algo=mem_planning_suite),
             ],
         )
 

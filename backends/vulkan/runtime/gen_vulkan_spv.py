@@ -12,9 +12,11 @@ import array
 import codecs
 import copy
 import glob
+import hashlib
 import io
 import os
 import re
+import shutil
 import sys
 from itertools import product
 from multiprocessing.pool import ThreadPool
@@ -123,6 +125,8 @@ def buffer_gvec_type(dtype: str, n: int) -> str:
 
     if dtype == "float":
         return f"vec{n}"
+    if dtype == "uint":
+        return f"uvec{n}"
     elif dtype == "half":
         return f"f16vec{n}"
     elif dtype == "int":
@@ -549,7 +553,12 @@ class SPVGenerator:
 
         self.env = env
         self.glslc_path = glslc_path
-        self.glslc_flags = glslc_flags
+        self.glslc_flags = glslc_flags.split()
+        self.glslc_flags_no_opt = self.glslc_flags.copy()
+        if "-O" in self.glslc_flags_no_opt:
+            self.glslc_flags_no_opt.remove("-O")
+        if "-Os" in self.glslc_flags_no_opt:
+            self.glslc_flags_no_opt.remove("-Os")
         self.replace_u16vecn = replace_u16vecn
 
         self.glsl_src_files: Dict[str, str] = {}
@@ -720,11 +729,37 @@ class SPVGenerator:
         if "codegen-nosub" in input_text:
             return input_text
 
+        # Remove extension requirement so that generated ShaderInfo does not mark it
+        input_text = input_text.replace(
+            "#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require", ""
+        )
         input_text = input_text.replace("u16vec", "ivec")
         input_text = input_text.replace("uint16_t", "int")
         return input_text
 
-    def generateSPV(self, output_dir: str) -> Dict[str, str]:
+    def get_md5_checksum(self, file_path: str) -> str:
+        # Use a reasonably sized buffer for better performance with large files
+        BUF_SIZE = 65536  # 64kb chunks
+
+        md5 = hashlib.md5()
+
+        with open(file_path, "rb") as f:
+            while True:
+                data = f.read(BUF_SIZE)
+                if not data:
+                    break
+                md5.update(data)
+
+        # Get the hexadecimal digest and compare
+        file_md5 = md5.hexdigest()
+        return file_md5
+
+    def generateSPV(  # noqa: C901
+        self,
+        output_dir: str,
+        cache_dir: Optional[str] = None,
+        force_rebuild: bool = False,
+    ) -> Dict[str, str]:
         output_file_map = {}
 
         def process_shader(shader_paths_pair):
@@ -733,39 +768,81 @@ class SPVGenerator:
             source_glsl = shader_paths_pair[1][0]
             shader_params = shader_paths_pair[1][1]
 
+            glsl_out_path = os.path.join(output_dir, f"{shader_name}.glsl")
+            spv_out_path = os.path.join(output_dir, f"{shader_name}.spv")
+
+            if cache_dir is not None:
+                cached_source_glsl = os.path.join(
+                    cache_dir, os.path.basename(source_glsl) + ".t"
+                )
+                cached_glsl_out_path = os.path.join(cache_dir, f"{shader_name}.glsl")
+                cached_spv_out_path = os.path.join(cache_dir, f"{shader_name}.spv")
+                if (
+                    not force_rebuild
+                    and os.path.exists(cached_source_glsl)
+                    and os.path.exists(cached_glsl_out_path)
+                    and os.path.exists(cached_spv_out_path)
+                ):
+                    current_checksum = self.get_md5_checksum(source_glsl)
+                    cached_checksum = self.get_md5_checksum(cached_source_glsl)
+                    # If the cached source GLSL template is the same as the current GLSL
+                    # source file, then assume that the generated GLSL and SPIR-V will
+                    # not have changed. In that case, just copy over the GLSL and SPIR-V
+                    # files from the cache.
+                    if current_checksum == cached_checksum:
+                        shutil.copyfile(cached_spv_out_path, spv_out_path)
+                        shutil.copyfile(cached_glsl_out_path, glsl_out_path)
+                        return (spv_out_path, glsl_out_path)
+
             with codecs.open(source_glsl, "r", encoding="utf-8") as input_file:
                 input_text = input_file.read()
                 input_text = self.maybe_replace_u16vecn(input_text)
                 output_text = preprocess(input_text, shader_params)
 
-            glsl_out_path = os.path.join(output_dir, f"{shader_name}.glsl")
             with codecs.open(glsl_out_path, "w", encoding="utf-8") as output_file:
                 output_file.write(output_text)
+
+            if cache_dir is not None:
+                # Otherwise, store the generated GLSL files in the cache
+                shutil.copyfile(glsl_out_path, cached_glsl_out_path)
 
             # If no GLSL compiler is specified, then only write out the generated GLSL shaders.
             # This is mainly for testing purposes.
             if self.glslc_path is not None:
-                spv_out_path = os.path.join(output_dir, f"{shader_name}.spv")
+                cmd_base = [
+                    self.glslc_path,
+                    "-fshader-stage=compute",
+                    glsl_out_path,
+                    "-o",
+                    spv_out_path,
+                    "--target-env=vulkan1.1",
+                    "-Werror",
+                ] + [
+                    arg
+                    for src_dir_path in self.src_dir_paths
+                    for arg in ["-I", src_dir_path]
+                ]
+                cmd = cmd_base + self.glslc_flags
 
-                cmd = (
-                    [
-                        self.glslc_path,
-                        "-fshader-stage=compute",
-                        glsl_out_path,
-                        "-o",
-                        spv_out_path,
-                        "--target-env=vulkan1.1",
-                        "-Werror",
-                    ]
-                    + [
-                        arg
-                        for src_dir_path in self.src_dir_paths
-                        for arg in ["-I", src_dir_path]
-                    ]
-                    + self.glslc_flags.split()
-                )
+                try:
+                    subprocess.run(cmd, check=True, capture_output=True, text=True)
+                except subprocess.CalledProcessError as e:
+                    opt_fail = "compilation succeeded but failed to optimize"
+                    err_msg_base = f"Failed to compile {os.getcwd()}/{glsl_out_path}: "
+                    if opt_fail in e.stderr or opt_fail in e.stdout:
+                        cmd_no_opt = cmd_base + self.glslc_flags_no_opt
+                        try:
+                            subprocess.run(cmd_no_opt, check=True, capture_output=True)
+                        except subprocess.CalledProcessError as e_no_opt:
+                            raise RuntimeError(
+                                f"{err_msg_base} {e_no_opt.stderr}"
+                            ) from e_no_opt
 
-                subprocess.check_call(cmd)
+                    else:
+                        raise RuntimeError(f"{err_msg_base} {e.stderr}") from e
+
+                if cache_dir is not None:
+                    shutil.copyfile(spv_out_path, cached_spv_out_path)
 
                 return (spv_out_path, glsl_out_path)
 
@@ -775,6 +852,15 @@ class SPVGenerator:
                 process_shader, self.output_shader_map.items()
             ):
                 output_file_map[spv_out_path] = glsl_out_path
+
+        # Save all source GLSL files to the cache. Only do this at the very end since
+        # multiple variants may use the same source file.
+        if cache_dir is not None:
+            for _, source_glsl in self.glsl_src_files.items():
+                cached_source_glsl = os.path.join(
+                    cache_dir, os.path.basename(source_glsl) + ".t"
+                )
+                shutil.copyfile(source_glsl, cached_source_glsl)
 
         return output_file_map
 
@@ -791,6 +877,9 @@ class ShaderInfo:
     weight_storage_type: str = ""
     bias_storage_type: str = ""
     register_for: Optional[Tuple[str, List[str]]] = None
+    requires_shader_int16_ext: bool = False
+    requires_16bit_storage_ext: bool = False
+    requires_8bit_storage_ext: bool = False
 
 
 def getName(filePath: str) -> str:
@@ -858,6 +947,11 @@ def findRegisterFor(lineStr: str) -> Tuple[str, List[str]]:
     return (matches_list[0], matches_list[1:])
 
 
+def isExtensionRequireLine(lineStr: str) -> bool:
+    extension_require_id = r"^#extension ([A-Za-z0-9_]+)\s*:\s*require"
+    return re.search(extension_require_id, lineStr) is not None
+
+
 typeIdMapping = {
     r"image[123]D\b": "VK_DESCRIPTOR_TYPE_STORAGE_IMAGE",
     r"sampler[123]D\b": "VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER",
@@ -889,6 +983,13 @@ def getShaderInfo(srcFilePath: str) -> ShaderInfo:
                 shader_info.bias_storage_type = getBiasStorageType(line)
             if isRegisterForLine(line):
                 shader_info.register_for = findRegisterFor(line)
+            if isExtensionRequireLine(line):
+                if "GL_EXT_shader_explicit_arithmetic_types_int16" in line:
+                    shader_info.requires_shader_int16_ext = True
+                if "GL_EXT_shader_16bit_storage" in line:
+                    shader_info.requires_16bit_storage_ext = True
+                if "GL_EXT_shader_8bit_storage" in line:
+                    shader_info.requires_8bit_storage_ext = True
 
     return shader_info
 
@@ -952,12 +1053,18 @@ def generateShaderInfoStr(shader_info: ShaderInfo, name: str, sizeBytes: int) ->
 
     shader_info_layouts = "{{{}}}".format(",\n ".join(shader_info.layouts))
 
+    def to_cpp_str(val: bool):
+        return "true" if val else "false"
+
     shader_info_args = [
         f'"{name}"',
         f"{name}_bin",
         str(sizeBytes),
         shader_info_layouts,
         tile_size,
+        to_cpp_str(shader_info.requires_shader_int16_ext),
+        to_cpp_str(shader_info.requires_16bit_storage_ext),
+        to_cpp_str(shader_info.requires_8bit_storage_ext),
     ]
 
     shader_info_str = textwrap.indent(
@@ -1047,11 +1154,15 @@ def main(argv: List[str]) -> int:
         default=["."],
     )
     parser.add_argument("-c", "--glslc-path", required=True, help="")
-    parser.add_argument("-t", "--tmp-dir-path", required=True, help="/tmp")
+    parser.add_argument(
+        "-t", "--tmp-dir-path", required=True, help="/tmp/vulkan_shaders/"
+    )
     parser.add_argument("-o", "--output-path", required=True, help="")
+    parser.add_argument("-f", "--force-rebuild", action="store_true", default=False)
     parser.add_argument("--replace-u16vecn", action="store_true", default=False)
     parser.add_argument("--optimize_size", action="store_true", help="")
     parser.add_argument("--optimize", action="store_true", help="")
+    parser.add_argument("--spv_debug", action="store_true", default=False)
     parser.add_argument(
         "--env", metavar="KEY=VALUE", nargs="*", help="Set a number of key-value pairs"
     )
@@ -1070,20 +1181,27 @@ def main(argv: List[str]) -> int:
     if not os.path.exists(options.tmp_dir_path):
         os.makedirs(options.tmp_dir_path)
 
-    glslc_flags = ""
+    glslc_flags = []
     if options.optimize_size:
-        glslc_flags += "-Os"
+        glslc_flags.append("-Os")
     elif options.optimize:
-        glslc_flags += "-O"
+        glslc_flags.append("-O")
+
+    if options.spv_debug:
+        glslc_flags.append("-g")
+
+    glslc_flags_str = " ".join(glslc_flags)
 
     shader_generator = SPVGenerator(
         options.glsl_paths,
         env,
         options.glslc_path,
-        glslc_flags=glslc_flags,
+        glslc_flags=glslc_flags_str,
         replace_u16vecn=options.replace_u16vecn,
     )
-    output_spv_files = shader_generator.generateSPV(options.tmp_dir_path)
+    output_spv_files = shader_generator.generateSPV(
+        options.output_path, options.tmp_dir_path, options.force_rebuild
+    )
 
     genCppFiles(
         output_spv_files,

@@ -16,10 +16,10 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
 using executorch::aten::RuntimeContext;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::can_cast;
 using executorch::runtime::CppTypeToScalarType;
 using torch::executor::Error;
@@ -133,8 +133,22 @@ Tensor& sub_out(
   if ((out_type != ScalarType::Float) || (alpha_val != 1.0))
     optimized = 0;
 
-  if ((a_dim == 0) || (b_dim == 0))
-    optimized = 0;
+  bool float_types =
+      (a_type == ScalarType::Float) && (b_type == ScalarType::Float);
+
+  if ((a_dim == 0) && float_types) {
+    for (int i = 0; i < b.numel(); i++)
+      out.mutable_data_ptr<float>()[i] =
+          a.const_data_ptr<float>()[0] - b.const_data_ptr<float>()[i];
+    return out;
+  }
+  if ((b_dim == 0) && float_types) {
+    // Precompute the value of b * alpha since it's a constant.
+    const float val_b = alpha_val * b.const_data_ptr<float>()[0];
+    for (int i = 0; i < a.numel(); i++)
+      out.mutable_data_ptr<float>()[i] = a.const_data_ptr<float>()[i] - val_b;
+    return out;
+  }
 
   if ((broadcast == 1) && (max_dim > kNnlibMaxDim))
     optimized = 0;

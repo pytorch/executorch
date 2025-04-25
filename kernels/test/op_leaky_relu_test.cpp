@@ -15,9 +15,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpLeakyReluTest : public OperatorTest {
@@ -29,15 +29,21 @@ class OpLeakyReluTest : public OperatorTest {
     return torch::executor::aten::leaky_relu_outf(
         context_, in, negative_slope, out);
   }
+  template <ScalarType DTYPE>
+  void test_leaky_relu_dtype() {
+    TensorFactory<DTYPE> tf;
+    Tensor in = tf.ones({2, 2});
+    Tensor out = tf.zeros({2, 2});
+
+    Tensor ret = op_leaky_relu_out(in, -0.01, out);
+
+    EXPECT_TENSOR_EQ(out, ret);
+    EXPECT_TENSOR_EQ(out, tf.ones({2, 2}));
+  }
 };
 
 TEST_F(OpLeakyReluTest, SanityCheck) {
-  TensorFactory<ScalarType::Float> tf;
-  Tensor in = tf.ones({2, 2});
-  Tensor out = tf.zeros({2, 2});
-
-  Tensor ret = op_leaky_relu_out(in, -0.01, out);
-
-  EXPECT_TENSOR_EQ(out, ret);
-  EXPECT_TENSOR_EQ(out, tf.ones({2, 2}));
+#define TEST_ENTRY(ctype, dtype) test_leaky_relu_dtype<ScalarType::dtype>();
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
 }

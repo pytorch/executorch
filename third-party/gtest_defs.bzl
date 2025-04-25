@@ -1,12 +1,11 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options")
 # Copied from fbsource/third-party/googletest
 
 COMPILER_FLAGS = [
     "-std=c++17",
 ]
 COMPILER_FLAGS_ATEN = [
-    "-std=c++17",
-    "-D_GLIBCXX_USE_CXX11_ABI=0",  # `libtorch` is built without CXX11_ABI so gtest needs to be compiled in the same way
-]
+    "-std=c++17",]
 
 # define_gtest_targets
 def define_gtest_targets():
@@ -19,7 +18,7 @@ def define_gtest_targets():
         visibility = ["PUBLIC"],
     )
 
-    for aten_mode in (True, False):
+    for aten_mode in get_aten_mode_options():
         aten_suffix = "_aten" if aten_mode else ""
 
         # # Google Test

@@ -75,14 +75,14 @@ def is_graph_input(
     return tensor.op == "placeholder" and not is_parameter(tensor, edge_program)
 
 
-def is_graph_output(tensor: torch.fx.Node) -> bool:
+def is_graph_output(node: torch.fx.Node) -> bool:
     """
     Check if the given tensor is used as a graph output
 
     Args:
         tensor: EdgeIR Tensor that is being checked for graph input
     """
-    for user in tensor.users.keys():
+    for user in node.users.keys():
         # getitem node is skiped, check the op_skip_ops.py
         if user.op == "output" or (
             user.target.__name__ == "getitem" and is_graph_output(user)

@@ -10,17 +10,19 @@ import argparse
 from typing import Optional, Union
 
 import torch
+
+from datasets import load_dataset
 from executorch.examples.models.llama.export_llama_lib import (
     get_quantizer_and_quant_params,
 )
-from executorch.examples.models.llama.tokenizer.tiktoken import Tokenizer as Tiktoken
 
 from executorch.extension.llm.export.builder import LLMEdgeManager
-from executorch.extension.llm.tokenizer.tokenizer import (
-    Tokenizer as SentencePieceTokenizer,
-)
-from executorch.extension.llm.tokenizer.utils import get_tokenizer
 from lm_eval.evaluator import simple_evaluate
+from pytorch_tokenizers import get_tokenizer
+from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
+from pytorch_tokenizers.tiktoken import TiktokenTokenizer as Tiktoken
+from torch.nn import CrossEntropyLoss
+from tqdm import tqdm
 
 from .evaluate.eager_eval import EagerEvalWrapper
 
@@ -61,7 +63,9 @@ class GraphModuleEvalWrapper(EagerEvalWrapper):
                 result_logits = []
                 for pos in range(inps.shape[-1]):
                     pos_tensor = torch.tensor([pos], dtype=torch.int64)
-                    logits = self._model(inps[:, pos : pos + 1], pos_tensor)
+                    logits = self._model(
+                        inps[:, pos : pos + 1], {"input_pos": pos_tensor}
+                    )
                     result_logits.append(logits)
                 if self._generate_full_logits:
                     return torch.cat(result_logits, dim=1)
@@ -70,7 +74,9 @@ class GraphModuleEvalWrapper(EagerEvalWrapper):
             else:
                 pos_tensor = torch.tensor([0], dtype=torch.int64, device=self.device)
                 # Batch process the whole sequence.
-                logits = self._model(inps[:, : self._max_seq_length], pos_tensor)
+                logits = self._model(
+                    inps[:, : self._max_seq_length], {"input_pos": pos_tensor}
+                )
                 return logits
 
         else:
@@ -102,7 +108,7 @@ class ETPybindEvalWrapper(EagerEvalWrapper):
 
         # Note: import this after portable_lib
         from executorch.extension.llm.custom_ops import (  # noqa
-            sdpa_with_kv_cache,  # usort: skip
+            custom_ops,  # usort: skip
         )
         from executorch.kernels import quantized  # noqa
 
@@ -280,6 +286,9 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Save the checkpoint after source transformations, for other evaluation platform to run the same checkpoint.",
     )
 
+    # Set of parameters secpific to AttentionSink.
+    parser.add_argument("--attention_sink_eval_tokens", type=int, default=0)
+
     return parser
 
 
@@ -309,3 +318,60 @@ def eval_llama(
 
     for task, res in eval_results["results"].items():
         print(f"{task}: {res}")
+
+
+def eval_llama_with_attention_sink(model_name: str, args: argparse.ArgumentParser):
+    """
+    Evaluate the model's perplexity when AttentionSink is enabled.
+
+    This is mostly copied from https://github.com/mit-han-lab/streaming-llm/blob/main/examples/eval_long_ppl.py
+    """
+    assert args.use_attention_sink is not None  # pyre-ignore [16]
+    assert args.attention_sink_eval_tokens > 0  # pyre-ignore [16]
+    attention_sink_params = args.use_attention_sink.split(",")
+    assert len(attention_sink_params) == 3
+    sink_size = int(attention_sink_params[0])
+    window_size = int(attention_sink_params[1])
+
+    assert args.max_seq_length == sink_size + window_size  # pyre-ignore [16]
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    manager: LLMEdgeManager = _prepare_for_llama_export(args)
+    model = manager.model.eval().to(device=device)
+    tokenizer = get_tokenizer(args.tokenizer_path)  # pyre-ignore [16]
+
+    eval_data = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
+
+    nlls = []
+    loss_fn = CrossEntropyLoss(reduction="none")
+    progress_bar = tqdm(total=args.attention_sink_eval_tokens)
+    input_pos = 0
+    while input_pos < args.attention_sink_eval_tokens:
+        for text in eval_data["text"]:  # pyre-ignore [16]
+            tokens = tokenizer.encode(text, bos=False, eos=False)
+            if len(tokens) <= 0:
+                continue
+            with torch.no_grad():
+                num_tokens = min(
+                    len(tokens) - 1, args.attention_sink_eval_tokens - input_pos
+                )
+                logits = model(
+                    torch.tensor(
+                        [tokens[:num_tokens]], dtype=torch.int64, device=device
+                    ),
+                    torch.tensor([input_pos], dtype=torch.int64, device=device),
+                ).squeeze(dim=0)
+                neg_log_likelihood = loss_fn(
+                    logits,
+                    torch.tensor(
+                        [tokens[1 : num_tokens + 1]], dtype=torch.int64, device=device
+                    ).view(-1),
+                )
+                nlls.append(neg_log_likelihood)
+                input_pos += num_tokens
+                progress_bar.update(num_tokens)
+            if input_pos >= args.attention_sink_eval_tokens:
+                break
+    ppl = torch.exp(torch.cat(nlls).mean())
+    print(f"Perplexity: {ppl.item()}")
+    return ppl.item()

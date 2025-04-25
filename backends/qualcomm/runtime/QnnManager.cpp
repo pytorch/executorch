@@ -7,11 +7,11 @@
  */
 
 #include <executorch/backends/qualcomm/aot/ir/qcir_utils.h>
-#include <executorch/backends/qualcomm/qc_binary_info_generated.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/runtime/SharedBuffer.h>
 #include <executorch/backends/qualcomm/runtime/Utils.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <algorithm>
@@ -154,8 +154,9 @@ Error QnnManager::RegisterMem(
     const std::shared_ptr<TensorWrapper>& tensor_wrapper) {
   SharedBuffer& shared_buffer_manager = SharedBuffer::GetSharedBufferManager();
   // Not enable shared buffer
-  if (!options_->shared_buffer())
+  if (!options_->shared_buffer()) {
     return Error::Internal;
+  }
 
   if (backend_params_ptr_->qnn_mem_manager_ptr_ == nullptr) {
     QNN_EXECUTORCH_LOG_WARN(
@@ -287,7 +288,9 @@ Error QnnManager::Init() {
     backend_params_ptr_ = QnnBackendFactory().Create(
         qnn_loaded_backend_, logger_.get(), qnn_context_blob_, options_);
     ET_CHECK_OR_RETURN_ERROR(
-        backend_params_ptr_ != nullptr, Internal, "Failed to load Qnn backend.")
+        backend_params_ptr_ != nullptr,
+        Internal,
+        "Failed to load Qnn backend.");
     ET_CHECK_OR_RETURN_ERROR(
         backend_params_ptr_->qnn_backend_cache_ptr_->Configure() == Error::Ok,
         Internal,
@@ -312,6 +315,7 @@ Error QnnManager::Init() {
           Internal,
           "Fail to configure Qnn graph");
     }
+
     backend_params_ptr_->backend_init_state_ =
         BackendInitializeState::INITIALIZED;
   }
@@ -400,19 +404,20 @@ Error QnnManager::Execute(
          ++out_idx) {
       const Qnn_Tensor_t& output_tensor = output_tensor_structs[out_idx];
       std::vector<executorch::aten::SizesType> sizes(
-          QNN_VER_PTR(output_tensor)->dimensions,
-          QNN_VER_PTR(output_tensor)->dimensions +
-              QNN_VER_PTR(output_tensor)->rank);
+          QNN_TENSOR_VER_PTR(output_tensor)->dimensions,
+          QNN_TENSOR_VER_PTR(output_tensor)->dimensions +
+              QNN_TENSOR_VER_PTR(output_tensor)->rank);
 
       auto dump_tensor = executorch::extension::from_blob(
-          QNN_VER_PTR(output_tensor)->clientBuf.data,
+          QNN_TENSOR_VER_PTR(output_tensor)->clientBuf.data,
           sizes,
-          qnn_dtype_to_scalar_type_[QNN_VER_PTR(output_tensor)->dataType]);
+          qnn_dtype_to_scalar_type_[QNN_TENSOR_VER_PTR(output_tensor)
+                                        ->dataType]);
 
       executorch::runtime::event_tracer_log_output_delegate<
           executorch::aten::Tensor>(
           event_tracer,
-          QNN_VER_PTR(output_tensor)->name,
+          QNN_TENSOR_VER_PTR(output_tensor)->name,
           /*delegate_debug_id=*/
           static_cast<executorch::runtime::DebugHandle>(-1),
           *dump_tensor);
@@ -488,29 +493,24 @@ Error QnnManager::GetContextBinary(
 }
 
 Error QnnManager::CompileQcir() {
-  flatbuffers::Verifier verifier_binary_info(
-      static_cast<const uint8_t* const>(qnn_context_blob_.buffer),
-      qnn_context_blob_.nbytes);
-  if (!qnn_delegate::VerifyBinaryInfoBuffer(verifier_binary_info)) {
-    QNN_EXECUTORCH_LOG_ERROR("Fail to verify binary info");
+  QnnQcirCustomProtocol qnn_qcir_custom_protocol;
+  auto [status, qcir_fbs_size, tensor_size, qcir_fbs_ptr, tensor_ptr] =
+      qnn_qcir_custom_protocol.DeserializeQcirCustomBuffer(
+          qnn_context_blob_.buffer);
+
+  if (status != Error::Ok) {
+    QNN_EXECUTORCH_LOG_ERROR("Failed to verify QnnQcirCustomProtocol");
     return Error::Internal;
   }
 
-  auto binary_info = qnn_delegate::GetBinaryInfo(qnn_context_blob_.buffer);
-  flatbuffers::Verifier verifier_qcir(
-      binary_info->data()->data(), binary_info->data()->size());
-  if (!qcir::VerifyContextBuffer(verifier_qcir)) {
-    QNN_EXECUTORCH_LOG_ERROR("Fail to verify qcir format");
-    return Error::Internal;
-  }
-
-  auto context = qcir::GetContext(binary_info->data()->data());
+  auto context = qcir::GetContext(qcir_fbs_ptr);
   for (const auto& graph : *context->graphs()) {
     // qcir tensors to TensorWrapper
     std::vector<std::shared_ptr<TensorWrapper>> graph_inputs, graph_outputs,
         tensors;
     for (const auto& tensor : *graph->tensors()) {
-      tensors.emplace_back(CreateTensorWrapper(ToTensor(tensor)));
+      tensors.emplace_back(CreateTensorWrapper(ToTensor(
+          tensor, static_cast<uint8_t*>(tensor_ptr) + tensor->offset())));
       if (tensor->type() == qcir::TensorType::WRITE) {
         graph_inputs.push_back(tensors.back());
       } else if (tensor->type() == qcir::TensorType::READ) {
@@ -544,6 +544,8 @@ Error QnnManager::CompileQcir() {
         const auto& tensor = graph->tensors()->Get(index);
         std::string name = tensor->name()->str();
         Qnn_DataType_t dtype = ToDataType(tensor->dtype());
+        const uint8_t* data_ptr =
+            static_cast<uint8_t*>(tensor_ptr) + tensor->offset();
         if (tensor->shape()->size() != 0) {
           // add tensor param
           op->AddTensorParam(
@@ -551,50 +553,39 @@ Error QnnManager::CompileQcir() {
               dtype,
               tensor->shape()->size(),
               tensor->shape()->data(),
-              tensor->data()->data());
+              data_ptr);
         } else {
           // add scalar param
           switch (dtype) {
             case Qnn_DataType_t::QNN_DATATYPE_INT_32:
               op->AddScalarParam(
-                  name,
-                  dtype,
-                  *reinterpret_cast<const int32_t*>(tensor->data()->Data()));
+                  name, dtype, *reinterpret_cast<const int32_t*>(data_ptr));
               break;
             case Qnn_DataType_t::QNN_DATATYPE_INT_16:
               op->AddScalarParam(
-                  name,
-                  dtype,
-                  *reinterpret_cast<const int16_t*>(tensor->data()->Data()));
+                  name, dtype, *reinterpret_cast<const int16_t*>(data_ptr));
               break;
             case Qnn_DataType_t::QNN_DATATYPE_INT_8:
-              op->AddScalarParam(
-                  name, dtype, static_cast<int8_t>(*tensor->data()->Data()));
+              op->AddScalarParam(name, dtype, static_cast<int8_t>(*data_ptr));
               break;
             case Qnn_DataType_t::QNN_DATATYPE_UINT_32:
               op->AddScalarParam(
-                  name,
-                  dtype,
-                  *reinterpret_cast<const uint32_t*>(tensor->data()->Data()));
+                  name, dtype, *reinterpret_cast<const uint32_t*>(data_ptr));
               break;
             case Qnn_DataType_t::QNN_DATATYPE_UINT_16:
               op->AddScalarParam(
-                  name,
-                  dtype,
-                  *reinterpret_cast<const uint16_t*>(tensor->data()->Data()));
+                  name, dtype, *reinterpret_cast<const uint16_t*>(data_ptr));
               break;
             case Qnn_DataType_t::QNN_DATATYPE_UINT_8:
-              op->AddScalarParam(name, dtype, *tensor->data()->Data());
+              op->AddScalarParam(name, dtype, *data_ptr);
               break;
             case Qnn_DataType_t::QNN_DATATYPE_FLOAT_32:
             case Qnn_DataType_t::QNN_DATATYPE_FLOAT_16:
               op->AddScalarParam(
-                  name,
-                  dtype,
-                  *reinterpret_cast<const float*>(tensor->data()->Data()));
+                  name, dtype, *reinterpret_cast<const float*>(data_ptr));
               break;
             case Qnn_DataType_t::QNN_DATATYPE_BOOL_8:
-              op->AddScalarParam(name, dtype, *tensor->data()->Data());
+              op->AddScalarParam(name, dtype, *data_ptr);
               break;
             default:
               QNN_EXECUTORCH_LOG_ERROR(
@@ -603,15 +594,13 @@ Error QnnManager::CompileQcir() {
           }
         }
       }
-      op_wrappers.push_back(std::move(op));
+      op_wrappers.emplace_back(std::move(op));
     }
-
     ET_CHECK_OR_RETURN_ERROR(
         Compile(graph->name()->str(), op_wrappers) == Error::Ok,
         Internal,
         "Fail to compile graph from qcir with graph_name: %s",
         graph->name()->str().c_str());
-
     ET_CHECK_OR_RETURN_ERROR(
         AllocateTensor(graph->name()->str(), graph_inputs, graph_outputs) ==
             Error::Ok,
@@ -672,7 +661,6 @@ Error QnnManager::Compile(
       return Error::Internal;
     }
   }
-
   error = backend_params_ptr_->qnn_graph_ptr_->GraphFinalize(graph_name);
   if (error != QNN_SUCCESS) {
     QNN_EXECUTORCH_LOG_ERROR(
@@ -682,15 +670,6 @@ Error QnnManager::Compile(
   }
 
   return Error::Ok;
-}
-
-std::string QnnManager::GetBinarySignature() {
-  flatbuffers::Verifier verifier(
-      static_cast<const uint8_t* const>(qnn_context_blob_.buffer),
-      qnn_context_blob_.nbytes);
-  return VerifyBinaryInfoBuffer(verifier)
-      ? GetBinaryInfo(qnn_context_blob_.buffer)->signature()->str()
-      : "";
 }
 
 } // namespace qnn

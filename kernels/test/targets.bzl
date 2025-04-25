@@ -1,5 +1,5 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load("@fbsource//xplat/executorch/kernels/test:util.bzl", "codegen_function_header_wrapper", "generated_op_test", "op_test")
+load("@fbsource//xplat/executorch/kernels/test:util.bzl", "codegen_function_header_wrapper", "op_test")
 
 def _common_op_test(name, kernels):
     """
@@ -9,28 +9,6 @@ def _common_op_test(name, kernels):
     for kernel in kernels:
         deps = [":function_header_wrapper_{}".format(kernel)]
         op_test(name, kernel_name = kernel, use_kernel_prefix = True, deps = deps)
-
-def make_example_generated_op_test_target():
-    """
-    Makes a test for kernels/test/util generated_op_test() helper
-    Here we use portable kernel. Try with `buck test xplat/executorch/kernels/test:op_<>_test`
-    """
-    op_test_cpp_files = native.glob(
-        ["op_*_test.cpp"],
-        # linear has no portable op.
-        exclude = ["op_linear_test.cpp"],
-    )
-
-    # The op name is from the beginning to the part without `_test.cpp` (:-9)
-    op_to_test = [f[:-9] for f in op_test_cpp_files]
-    for op_name in op_to_test:
-        generated_op_test(
-            op_name + "_test",
-            "//executorch/kernels/portable/cpu:{}".format(op_name),
-            "//executorch/kernels/portable:generated_lib_headers",
-            "//executorch/kernels/portable/test:supported_features",
-            "//executorch/kernels/test:function_header_wrapper_portable",
-        )
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -42,6 +20,29 @@ def define_common_targets():
     for aten_kernel in (True, False):
         aten_suffix = "_aten" if aten_kernel else ""
         runtime.cxx_library(
+            name = "gtest_utils" + aten_suffix,
+            exported_headers=[
+                "TestUtil.h",
+            ],
+            visibility = [
+                "//executorch/kernels/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_kernel else [],
+            exported_deps = [
+                "//executorch/runtime/core:core",
+                "//executorch/runtime/kernel:kernel_includes",
+                "//executorch/test/utils:utils" + aten_suffix,
+                "//executorch/runtime/platform:pal_interface",
+            ],
+            fbcode_exported_deps = [
+                "//common/gtest:gtest",
+            ] if not runtime.is_oss else [],
+            xplat_exported_deps = [
+                "//third-party/googletest:gtest_main",
+            ],
+        )
+        runtime.cxx_library(
             name = "test_util" + aten_suffix,
             srcs = [
                 "BinaryLogicalOpTest.cpp",
@@ -49,7 +50,6 @@ def define_common_targets():
             ],
             exported_headers = [
                 "BinaryLogicalOpTest.h",
-                "TestUtil.h",
                 "UnaryUfuncRealHBBF16ToFloatHBF16Test.h",
             ],
             visibility = [
@@ -59,6 +59,7 @@ def define_common_targets():
             preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_kernel else [],
             exported_deps = [
                 ":supported_features_header",
+                ":gtest_utils",
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,
                 "//executorch/runtime/kernel:kernel_includes",
@@ -67,7 +68,7 @@ def define_common_targets():
             fbcode_exported_deps = [
                 "//common/init:init",
                 "//common/gtest:gtest",
-            ],
+            ] if not runtime.is_oss else [],
             xplat_exported_deps = [
                 "//xplat/folly:init_init",
                 "//third-party/googletest:gtest_main",
@@ -103,7 +104,7 @@ def define_common_targets():
         base_module = "executorch.kernels.test",
         visibility = ["//executorch/kernels/test/..."],
         deps = [
-            "fbsource//third-party/pkg_resources:pkg_resources",
+            "fbsource//third-party/pypi/setuptools:setuptools",
             "fbsource//third-party/pypi/pyyaml:pyyaml",
         ],
     )
@@ -174,6 +175,7 @@ def define_common_targets():
     codegen_function_header_wrapper("executorch/kernels/test/custom_kernel_example", "custom_kernel_example")
 
     _common_op_test("op__to_dim_order_copy_test", ["aten", "portable"])
+    _common_op_test("op__empty_dim_order_test", ["aten", "portable"])
     _common_op_test("op_abs_test", ["aten", "portable"])
     _common_op_test("op_acos_test", ["aten", "portable"])
     _common_op_test("op_acosh_test", ["aten", "portable"])
@@ -213,6 +215,7 @@ def define_common_targets():
     _common_op_test("op_detach_copy_test", ["aten", "portable"])
     _common_op_test("op_diagonal_copy_test", ["aten", "portable"])
     _common_op_test("op_div_test", ["aten", "portable", "optimized"])
+    _common_op_test("op_elu_test", ["aten", "portable", "optimized"])
     _common_op_test("op_embedding_test", ["aten", "portable"])
     _common_op_test("op_empty_test", ["aten", "portable"])
     _common_op_test("op_eq_test", ["aten", "portable"])
@@ -220,6 +223,8 @@ def define_common_targets():
     _common_op_test("op_exp_test", ["aten", "portable", "optimized"])
     _common_op_test("op_expand_copy_test", ["aten", "portable"])
     _common_op_test("op_expm1_test", ["aten", "portable"])
+    _common_op_test("op_fft_c2r_test", ["aten", "optimized"])
+    _common_op_test("op_fft_r2c_test", ["aten", "optimized"])
     _common_op_test("op_fill_test", ["aten", "portable"])
     _common_op_test("op_flip_test", ["aten", "portable"])
     _common_op_test("op_floor_divide_test", ["aten", "portable"])
@@ -258,6 +263,7 @@ def define_common_targets():
     _common_op_test("op_masked_select_test", ["aten", "portable"])
     _common_op_test("op_max_test", ["aten", "portable"])
     _common_op_test("op_max_pool2d_with_indices_test", ["aten", "portable"])
+    _common_op_test("op_max_pool2d_with_indices_backward_test", ["aten", "portable"])
     _common_op_test("op_maximum_test", ["aten", "portable"])
     _common_op_test("op_mean_test", ["aten", "portable"])
     _common_op_test("op_min_test", ["aten", "portable"])
@@ -282,6 +288,7 @@ def define_common_targets():
     _common_op_test("op_relu_test", ["aten", "portable"])
     _common_op_test("op_remainder_test", ["aten", "portable"])
     _common_op_test("op_repeat_test", ["aten", "portable"])
+    _common_op_test("op_repeat_interleave_test", ["aten", "portable"])
     _common_op_test("op_reflection_pad1d_test", ["aten", "portable"])
     _common_op_test("op_reflection_pad2d_test", ["aten", "portable"])
     _common_op_test("op_reflection_pad3d_test", ["aten", "portable"])
@@ -320,10 +327,12 @@ def define_common_targets():
     _common_op_test("op_tril_test", ["aten", "portable"])
     _common_op_test("op_trunc_test", ["aten", "portable"])
     _common_op_test("op_unbind_copy_test", ["aten", "portable"])
+    _common_op_test("op_unfold_copy_test", ["aten", "portable"])
     _common_op_test("op_unsqueeze_copy_test", ["aten", "portable"])
+    _common_op_test("op_upsample_bilinear2d_test", ["aten", "portable"])
+    _common_op_test("op_upsample_nearest2d_test", ["aten", "portable"])
     _common_op_test("op_var_test", ["aten", "portable"])
+    _common_op_test("op_view_as_real_copy_test", ["aten", "portable"])
     _common_op_test("op_view_copy_test", ["aten", "portable"])
     _common_op_test("op_where_test", ["aten", "portable"])
     _common_op_test("op_zeros_test", ["aten", "portable"])
-
-    make_example_generated_op_test_target()

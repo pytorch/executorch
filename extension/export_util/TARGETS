@@ -12,6 +12,7 @@ runtime.python_library(
         "//bento/...",
         "//bento_kernels/...",
         "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
     ],
     deps = [
         "//caffe2:torch",

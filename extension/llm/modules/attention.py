@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-ignore-all-errors
+
 import logging
 from typing import Optional
 
@@ -284,13 +286,13 @@ class MultiHeadAttention(nn.Module):
 
         def true_fn(y):
             kv_cache = self.kv_cache.clone()
-            return kv_cache.k_cache, kv_cache.v_cache, kv_cache.cache_pos
+            return kv_cache.k_cache, kv_cache.v_cache, kv_cache.kv_cache_pos
 
         def false_fn(y):
             k, v = calculate_kv(y)
             kv_cache = self.kv_cache.clone()
             kv_cache.update(k, v)
-            return kv_cache.k_cache, kv_cache.v_cache, kv_cache.cache_pos
+            return kv_cache.k_cache, kv_cache.v_cache, kv_cache.kv_cache_pos
 
         # If kv cache is None, we expect y to be provided
         if self.kv_cache is None:
@@ -308,7 +310,7 @@ class MultiHeadAttention(nn.Module):
             # Update key-value cache
             self.kv_cache.k_cache.copy_(k)
             self.kv_cache.v_cache.copy_(v)
-            self.kv_cache.cache_pos.copy_(cache_pos)
+            self.kv_cache.kv_cache_pos.copy_(cache_pos)
 
         output = self._sdpa(q, k, v, b, s_x, mask=mask)
         return self.output_proj(output)

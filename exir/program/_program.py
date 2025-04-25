@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,20 +10,28 @@
 import copy
 import io
 import logging
-from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Tuple, Union
+import os
+from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Tuple, Type, Union
 
 import torch
 import torch._export
-from executorch.exir._serialize import _serialize_pte_binary
 from executorch.exir._serialize._cord import Cord
+from executorch.exir._serialize._named_data_store import (
+    NamedDataStore,
+    NamedDataStoreOutput,
+)
+from executorch.exir._serialize._serialize import serialize_for_executorch
+from executorch.exir._serialize.data_serializer import DataSerializer
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
+from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
 from executorch.exir.emit import emit_program, EmitterOutput
 from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
 from executorch.exir.error import ExportError
 from executorch.exir.graph_module import get_control_flow_submodules
+from executorch.exir.operator.convert import _pybind_schema_to_native_schema
 from executorch.exir.pass_base import PassBase
 from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import (
@@ -33,13 +42,20 @@ from executorch.exir.passes import (
     MemoryFormatOpsPass,
     OpReplacePass,
 )
+from executorch.exir.passes.external_constants_pass import (
+    external_constants_pass,
+    external_mutable_weights_pass,
+)
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     insert_write_back_for_buffers_pass,
 )
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
-from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
+from executorch.exir.passes.remove_graph_asserts_pass import (
+    RemoveGraphAssertsPass,
+    RemoveNonCoreAtenOpGraphAssertsPass,
+)
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.replace_aten_with_edge_pass import aten_to_edge
 from executorch.exir.passes.replace_view_copy_with_view_pass import (
@@ -55,7 +71,9 @@ from executorch.exir.verification.verifier import (
     EXIREdgeDialectVerifier,
     get_aten_verifier,
 )
+from executorch.extension.flat_tensor.serialize.serialize import FlatTensorSerializer
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
+from torch._export.verifier import Verifier
 from torch.export import ExportedProgram
 from torch.export._remove_auto_functionalized_pass import (
     unsafe_remove_auto_functionalized_pass,
@@ -75,7 +93,23 @@ from torch.utils import _pytree as pytree
 
 Val = Any
 
+from typing import Any, Callable
+
 from torch.library import Library
+
+try:
+    from executorch.exir.program.fb.logger import et_logger
+except ImportError:
+    # Define a stub decorator that does nothing
+    def et_logger(api_name: str) -> Callable[[Any], Any]:
+        def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+            def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+                return func(self, *args, **kwargs)
+
+            return wrapper
+
+        return decorator
+
 
 # This is the reserved namespace that is used to register ops to that will
 # be prevented from being decomposed during to_edge_transform_and_lower.
@@ -178,7 +212,28 @@ def _get_updated_graph_signature(
     return new_signature
 
 
-def _transform(self, *passes: PassType) -> "ExportedProgram":
+def _transform(
+    self,
+    *passes: PassType,
+    override_verifiers: None | list[Type[Verifier]] = None,
+) -> "ExportedProgram":
+    """
+    Transforms the program according to the provided passes.
+
+    Args:
+        self: The ExportedProgram instance to transform
+        *passes: A sequence of passes to apply to the program
+        override_verifiers: Optional list of verifier classes to use instead of the default verifiers.
+            This is needed if the transforms yields illegal graph that the default verifier cannot handle.
+
+    Returns:
+        ExportedProgram: A new ExportedProgram with the transformations applied, or self if no changes were made
+    """
+    # A user friendly check to avoid vararg surprises, PEP 3102
+    assert not any(
+        isinstance(p, (list, Verifier)) for p in passes
+    ), f"Expected all passes to be of PassType, not list or Verifier. Use override_verifiers kwarg instead. Got: {list(passes)}"
+
     pm = PassManager(list(passes))
     res = pm(self.graph_module)
     transformed_gm = res.graph_module if res is not None else self.graph_module
@@ -187,21 +242,31 @@ def _transform(self, *passes: PassType) -> "ExportedProgram":
     if transformed_gm is self.graph_module and not res.modified:
         return self
 
-    transformed_ep = ExportedProgram(
-        root=transformed_gm,
-        graph=transformed_gm.graph,
-        graph_signature=_get_updated_graph_signature(
-            self.graph_signature, transformed_gm
-        ),
-        state_dict=self.state_dict,
-        range_constraints=_get_updated_range_constraints(transformed_gm),
-        module_call_graph=copy.deepcopy(self._module_call_graph),
-        example_inputs=self.example_inputs,
-        constants=self.constants,
-        verifiers=[self.verifier],
+    return _update_exported_program_graph_module(
+        self, transformed_gm, override_verifiers
     )
-    transformed_ep.graph_module.meta.update(self.graph_module.meta)
-    transformed_ep.graph_module.meta.update(res.graph_module.meta)
+
+
+def _update_exported_program_graph_module(
+    exported_program: ExportedProgram,
+    gm: torch.fx.GraphModule,
+    override_verifiers: None | list[Type[Verifier]] = None,
+) -> "ExportedProgram":
+    transformed_ep = ExportedProgram(
+        root=gm,
+        graph=gm.graph,
+        graph_signature=_get_updated_graph_signature(
+            exported_program.graph_signature, gm
+        ),
+        state_dict=exported_program.state_dict,
+        range_constraints=_get_updated_range_constraints(gm),
+        module_call_graph=copy.deepcopy(exported_program._module_call_graph),
+        example_inputs=exported_program.example_inputs,
+        constants=exported_program.constants,
+        verifiers=override_verifiers or [exported_program.verifier],
+    )
+    transformed_ep.graph_module.meta.update(exported_program.graph_module.meta)
+    transformed_ep.graph_module.meta.update(gm.meta)
     return transformed_ep
 
 
@@ -280,6 +345,8 @@ def lift_constant_tensor_pass(ep):
             new_input_specs.extend(lifted_constants)
             lifted_constants.clear()
         new_input_specs.append(s)
+    if len(lifted_constants) > 0:
+        new_input_specs = lifted_constants + new_input_specs
     ep.graph_signature.input_specs = new_input_specs
     ep.graph_module.recompile()
     return ep
@@ -477,6 +544,7 @@ class ExecutorchProgram:
             )
         self.exported_program = exir_exported_program.exported_program
         self._pte_data: Optional[Cord] = None
+        self._tensor_data: Optional[Dict[str, Cord]] = None
         self._buffer: Optional[bytes] = None
         self._emitter_output: Optional[EmitterOutput] = None
         self._emit_stacktrace: bool = emit_stacktrace
@@ -484,16 +552,28 @@ class ExecutorchProgram:
         self._segment_alignment: int = segment_alignment
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
+        self._data_serializer: DataSerializer = FlatTensorSerializer()
+
+    def _get_emitter_output(self) -> EmitterOutput:
+        if self._emitter_output is None:
+            self._emitter_output = emit_program(
+                self.exported_program, self._emit_stacktrace
+            )
+        return self._emitter_output
 
     def _get_pte_data(self) -> Cord:
         if self._pte_data is None:
-            self._pte_data = _serialize_pte_binary(
-                program=self.program,
-                extract_delegate_segments=self._extract_delegate_segments,
-                segment_alignment=self._segment_alignment,
-                constant_tensor_alignment=self._constant_tensor_alignment,
-                delegate_alignment=self._delegate_alignment,
+            self._pte_data, self._tensor_data = serialize_for_executorch(
+                self._get_emitter_output(),
+                ExecutorchBackendConfig(
+                    extract_delegate_segments=self._extract_delegate_segments,
+                    segment_alignment=self._segment_alignment,
+                    constant_tensor_alignment=self._constant_tensor_alignment,
+                    delegate_alignment=self._delegate_alignment,
+                ),
+                self._data_serializer,
             )
+        assert self._pte_data is not None
         return self._pte_data
 
     @property
@@ -512,11 +592,7 @@ class ExecutorchProgram:
 
     @property
     def program(self) -> Program:
-        if self._emitter_output is None:
-            self._emitter_output = emit_program(
-                self.exported_program, self._emit_stacktrace
-            )
-        return self._emitter_output.program
+        return self._get_emitter_output().program
 
     @property
     def debug_handle_map(self) -> Dict[int, Union[int, List[int]]]:
@@ -550,6 +626,17 @@ class ExecutorchProgram:
         reducing the peak memory usage.
         """
         self._get_pte_data().write_to_file(open_file)
+
+    def write_tensor_data_to_file(self, outdir) -> None:
+        """
+        Writes the serialized ExecuTorch data files to the directory at `outdir`.
+        """
+        assert self._tensor_data is not None
+        # pyre-ignore[16]: `Optional` has no attribute `items`.
+        for filename, cord in self._tensor_data.items():
+            with open(os.path.join(outdir, f"{filename}.ptd"), "wb") as f:
+                logging.info(f"Writing data file to {filename}.ptd")
+                cord.write_to_file(f)
 
 
 def _get_aten_to_edge_passes(config: EdgeCompileConfig):
@@ -705,13 +792,20 @@ def _generate_edge_program(
     program: ExportedProgram,
     ops_set_to_not_decompose: Optional[List[torch._ops.OpOverload]] = None,
 ) -> ExportedProgram:
+
+    # Remove invalid assert ops, such as _assert_tensor_metadata
+    gm = program.graph_module
+    gm_res = RemoveNonCoreAtenOpGraphAssertsPass()(gm)
+    assert gm_res is not None
+    gm = gm_res.graph_module
+
     if config._check_ir_validity:
         try:
             EXIRATenDialectVerifier(
                 edge_compile_config=config,
                 class_only=False,
                 exception_list=ops_set_to_not_decompose,
-            )(program.graph_module)
+            )(gm)
         except ExportError as e:
             logging.info(f"Input program {name} is not in ATen dialect.")
             raise e
@@ -728,7 +822,6 @@ def _generate_edge_program(
         if not config._skip_dim_order:
             passes.append(MemoryFormatOpsPass())
 
-    gm = program.graph_module
     for p in passes:
         gm_res = p(gm)
         assert gm_res is not None
@@ -773,6 +866,9 @@ def _replace_aten_ops_with_transformed_ops(
     for partitioner in partitioners:
         ops_set_to_not_decompose, check_op_support = partitioner.ops_to_not_decompose(
             program
+        )
+        ops_set_to_not_decompose = _remove_invalid_ops_for_not_decompose(
+            ops_set_to_not_decompose
         )
 
         for op_aten in ops_set_to_not_decompose:
@@ -864,9 +960,10 @@ def _sanity_check_graph_for_non_decomp_ops(
     generate_error=False,
     partitioner_name=None,
 ):
-    warning_str = f"Found {ops_set_to_not_decompose} in edge dialect program {name}."
+    warning_str_end = ""
     if partitioner_name is not None:
-        warning_str += f" This op was registered by the partitioner {partitioner_name} to not be decomposed."
+        warning_str_end += f"This op was registered by the partitioner {partitioner_name} to not be decomposed.\n"
+    warning_str_end += f"The following ops: {ops_set_to_not_decompose} were specified to not be decomposed in {name}."
 
     # Check that the ops that were registered to not be decomposed are not present in the
     # graph anymore as the transform passes and backends should have consumed them by now.
@@ -878,6 +975,10 @@ def _sanity_check_graph_for_non_decomp_ops(
         if (
             node.op == "call_function" and node.target in ops_set_to_not_decompose
         ) and is_op_supported:
+            warning_str = (
+                f"Node {node} with op {node.target} was not decomposed or delegated.\n"
+                + warning_str_end
+            )
             if generate_error:
                 raise RuntimeError(warning_str)
             else:
@@ -888,10 +989,76 @@ def _sanity_check_graph_for_non_decomp_ops(
             if (
                 node.op == "call_function" and node.target in ops_set_to_not_decompose
             ) and is_op_supported:
+                warning_str = (
+                    f"Node {node} with op {node.target} was not decomposed or delegated.\n"
+                    + warning_str_end
+                )
                 if generate_error:
                     raise RuntimeError(warning_str)
                 else:
                     logging.warning(warning_str)
+
+
+def _remove_invalid_ops_for_not_decompose(
+    ops_to_not_decompose: List[torch._ops.OpOverload],
+) -> List[torch._ops.OpOverload]:
+    # To address https://github.com/pytorch/executorch/issues/8781
+    def keep(op):
+        # Explicit allow list
+        allow_list = []
+        try:
+            # Ops in torch.ops.quant are not always loaded, so we use try/except
+            # Aliases output, but we need to allow it for XNNPACK
+            allow_list.append(torch.ops.torchao.choose_qparams_affine.default)
+        except:
+            pass
+
+        if op in allow_list:
+            return True
+
+        schema = op._schema
+        native_schema = _pybind_schema_to_native_schema(schema)
+        if native_schema is None:
+            logging.warn(
+                f"Torchgen is not able to parse the schema of {op._schema}.  This is not fatal."
+            )
+        else:
+            if native_schema.is_mutable:
+                logging.warn(
+                    f"Op {op} was requested for preservation by partitioner.  This request is ignored because it is mutable."
+                )
+                return False
+
+            if native_schema.aliased_return_names() != [None]:
+                logging.warn(
+                    f"Op {op} was requested for preservation by partitioner.  This request is ignored because it aliases output."
+                )
+                return False
+
+        # Explicit block list of ops that don't work if asked for
+        # preservation
+        if op in [
+            # Hits infinte recursion error when op is in
+            # EDGE_DO_NOT_DECOMP namespace
+            torch.ops.aten._to_copy.default,
+            # scalar to tensor type promotion does not work on ops
+            # in EDGE_DO_NOT_DECOMP namespace
+            torch.ops.aten.mul.Tensor,
+            torch.ops.aten.add.Tensor,
+            torch.ops.aten.sub.Tensor,
+            torch.ops.aten.div.Tensor,
+            torch.ops.aten.item.default,
+            torch.ops.aten._local_scalar_dense.default,
+            torch.ops.aten.unbind.int,
+            torch.ops.aten.split_with_sizes.default,
+        ]:
+            logging.warn(
+                f"Op {op} was requested for preservation by partitioner.  This request is ignored because it is in a blocklist."
+            )
+            return False
+        return True
+
+    return list(filter(keep, ops_to_not_decompose))
 
 
 def _gen_edge_manager_for_partitioners(
@@ -921,6 +1088,9 @@ def _gen_edge_manager_for_partitioners(
             all_ops_no_decomp = set()
             for curr_partitioner in partitioner.get(name, []):
                 curr_ops_no_decomp, _ = curr_partitioner.ops_to_not_decompose(program)
+                curr_ops_no_decomp = _remove_invalid_ops_for_not_decompose(
+                    curr_ops_no_decomp
+                )
                 all_ops_no_decomp |= set(curr_ops_no_decomp)
 
             table = _default_decomposition_table()
@@ -957,6 +1127,34 @@ def _gen_edge_manager_for_partitioners(
     return edge_manager
 
 
+def collect_named_data_store_from_exported_program(
+    exported_program: ExportedProgram,
+    named_data_store: NamedDataStore,
+) -> None:
+    """
+    Collects all the named data store outputs found within the exported program
+    and adds them to named_data_store.
+    """
+
+    # collected all the named data into the named data store for deduplication
+    def collect_named_data_store_outputs(
+        graph_module: torch.fx.GraphModule,
+    ) -> None:
+        for node in graph_module.graph.nodes:
+            if node.target == executorch_call_delegate:
+                lbm = getattr(graph_module, node.args[0].target)
+                assert is_lowered_module(lbm)
+                data_store_output = lbm.named_data_store_output
+                if data_store_output is not None:
+                    named_data_store.merge_named_data_store(data_store_output)
+
+        for _, submod, _ in get_control_flow_submodules(graph_module):
+            collect_named_data_store_outputs(submod)
+
+    collect_named_data_store_outputs(exported_program.graph_module)
+
+
+@et_logger("to_edge_transform_and_lower")
 def to_edge_transform_and_lower(
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     transform_passes: Optional[
@@ -1041,6 +1239,7 @@ def to_edge_transform_and_lower(
             curr_op_set, check_op_support = curr_partitioner.ops_to_not_decompose(
                 program
             )
+            curr_op_set = _remove_invalid_ops_for_not_decompose(curr_op_set)
             ops_set_to_not_decompose = ops_set_to_not_decompose.union(curr_op_set)
             _sanity_check_graph_for_non_decomp_ops(
                 name,
@@ -1110,6 +1309,7 @@ def to_edge_with_preserved_ops(
     )
 
 
+@et_logger("to_edge")
 def to_edge(
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     constant_methods: Optional[Dict[str, Any]] = None,
@@ -1149,7 +1349,7 @@ def to_edge(
 class EdgeProgramManager:
     """
     Package of one or more `ExportedPrograms` in Edge dialect. Designed to simplify
-    lowering to ExecuTorch. See: https://pytorch.org/executorch/stable/ir-exir.html
+    lowering to ExecuTorch. See: https://pytorch.org/executorch/main/ir-exir
 
     Allows easy applications of transforms across a collection of exported programs
     including the delegation of subgraphs.
@@ -1186,6 +1386,12 @@ class EdgeProgramManager:
         self._edge_programs: Dict[str, ExportedProgram] = edge_programs
         self._config_methods = constant_methods
 
+        self._named_data_store = NamedDataStore()
+        for _, program in self._edge_programs.items():
+            collect_named_data_store_from_exported_program(
+                program, self._named_data_store
+            )
+
     @property
     def methods(self) -> Set[str]:
         """
@@ -1204,8 +1410,10 @@ class EdgeProgramManager:
         """
         Returns the ExportedProgram specified by 'method_name'.
         """
+
         return self._edge_programs[method_name]
 
+    @et_logger("transform")
     def transform(
         self,
         passes: Union[Sequence[PassType], Dict[str, Sequence[PassType]]],
@@ -1253,6 +1461,7 @@ class EdgeProgramManager:
             new_programs, copy.deepcopy(self._config_methods), compile_config
         )
 
+    @et_logger("to_backend")
     def to_backend(
         self, partitioner: Union[Partitioner, Dict[str, Partitioner]]
     ) -> "EdgeProgramManager":
@@ -1293,9 +1502,12 @@ class EdgeProgramManager:
 
         config = EdgeCompileConfig(_check_ir_validity=False)
         return EdgeProgramManager(
-            new_edge_programs, copy.deepcopy(self._config_methods), config
+            new_edge_programs,
+            copy.deepcopy(self._config_methods),
+            config,
         )
 
+    @et_logger("to_executorch")
     def to_executorch(
         self,
         config: Optional[ExecutorchBackendConfig] = None,
@@ -1336,6 +1548,14 @@ class EdgeProgramManager:
                     # TODO(who?)
                     p.update_placeholder_tensor_specs(program, new_gm)
 
+            # Extract constants if the config says too.
+            if config.external_constants:
+                new_gm_res = external_constants_pass(new_gm)
+                new_gm = new_gm_res.graph_module
+            elif config.external_mutable_weights:
+                new_gm_res = external_mutable_weights_pass(new_gm, program)
+                new_gm = new_gm_res.graph_module
+
             if isinstance(config.memory_planning_pass, dict):
                 memory_planning_pass = config.memory_planning_pass.get(
                     name, ExecutorchBackendConfig().memory_planning_pass
@@ -1349,6 +1569,9 @@ class EdgeProgramManager:
                 )
             else:
                 new_gm_res = memory_planning_pass(new_gm)  # pyre-ignore[29]
+
+            # WARNING: DO NOT ADD ANY MORE PASSES AFTER MEMORY PLANNING PASS.
+            # THERE ARE A LOT OF ASSUMPTIONS IN THE STACK THAT MEMORY PLANNING IS THE LAST PASS BEFORE THE EMITTER.
             assert new_gm_res is not None
             new_gm = new_gm_res.graph_module
 
@@ -1356,14 +1579,17 @@ class EdgeProgramManager:
             execution_programs[name] = program
 
         return ExecutorchProgramManager(
-            execution_programs, self._config_methods, config
+            execution_programs,
+            self._config_methods,
+            config,
+            self._named_data_store.get_named_data_store_output(),
         )
 
 
 class ExecutorchProgramManager:
     """
     Package of one or more `ExportedPrograms` in Execution dialect. Designed to simplify
-    lowering to ExecuTorch. See: https://pytorch.org/executorch/stable/ir-exir.html
+    lowering to ExecuTorch. See: https://pytorch.org/executorch/main/ir-exir
 
     When the ExecutorchProgramManager is constructed the ExportedPrograms in execution dialect
     are used to form the executorch binary (in a process called emission) and then serialized
@@ -1377,6 +1603,7 @@ class ExecutorchProgramManager:
         execution_programs: Dict[str, ExportedProgram],
         config_methods: Optional[Dict[str, Any]] = None,
         backend_config: Optional[ExecutorchBackendConfig] = None,
+        named_data: Optional[NamedDataStoreOutput] = None,
     ):
         """
         End users should not call this constructor directly. Instead, they should use
@@ -1399,6 +1626,9 @@ class ExecutorchProgramManager:
         self._execution_programs: Dict[str, ExportedProgram] = execution_programs
         self._config_methods: Optional[Dict[str, Any]] = config_methods
 
+        # Named data from EdgeProgramManager
+        self._named_data: Optional[NamedDataStoreOutput] = named_data
+
         backend_config = backend_config or ExecutorchBackendConfig()
 
         # Emit methods
@@ -1406,16 +1636,16 @@ class ExecutorchProgramManager:
             self._execution_programs,
             backend_config.emit_stacktrace,
             self._config_methods,
+            backend_config.emit_mutable_buffer_names,
         )
 
         # Serialize emitter output, ready to be written to a file.
-        self._pte_data: Cord = _serialize_pte_binary(
-            program=self._emitter_output.program,
-            mutable_data=self._emitter_output.mutable_data,
-            extract_delegate_segments=backend_config.extract_delegate_segments,
-            segment_alignment=backend_config.segment_alignment,
-            constant_tensor_alignment=backend_config.constant_tensor_alignment,
-            delegate_alignment=backend_config.delegate_alignment,
+        self._data_serializer = FlatTensorSerializer()
+        self._pte_data, self._tensor_data = serialize_for_executorch(
+            self._emitter_output,
+            backend_config,
+            self._data_serializer,
+            self._named_data,
         )
         self._buffer: Optional[bytes] = None
 
@@ -1497,3 +1727,27 @@ class ExecutorchProgramManager:
         reducing the peak memory usage.
         """
         self._pte_data.write_to_file(open_file)
+
+    def write_tensor_data_to_file(self, outdir) -> None:
+        """
+        Writes the serialized ExecuTorch data files to the directory at `outdir`.
+        """
+        assert self._tensor_data is not None
+        for filename, cord in self._tensor_data.items():
+            with open(os.path.join(outdir, f"{filename}.ptd"), "wb") as f:
+                logging.info(f"Writing data file to {filename}")
+                cord.write_to_file(f)
+
+    def save(self, path: str) -> None:
+        """
+        Saves the serialized ExecuTorch binary to the file at `path`.
+        """
+        if path[-4:] != ".pte":
+            logging.error(f"Path {path} does not end with .pte")
+            raise ValueError(f"Path {path} does not end with .pte")
+        try:
+            with open(path, "wb") as file:
+                self.write_to_file(file)
+                logging.info(f"Saved exported program to {path}")
+        except Exception as e:
+            logging.error(f"Error while saving to {path}: {e}")

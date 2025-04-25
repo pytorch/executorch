@@ -101,6 +101,15 @@ TEST_F(VulkanComputeAPITest, print_adapter) {
   std::cout << *(context()->adapter_ptr()) << std::endl;
 }
 
+#if defined(VULKAN_DEBUG) && defined(VK_KHR_pipeline_executable_properties)
+
+TEST_F(VulkanComputeAPITest, print_shader_executable_properties) {
+  context()->print_shader_executable_properties(
+      VK_KERNEL(binary_add_nobroadcast__test_half), {0});
+}
+
+#endif // VULKAN_DEBUG && VK_KHR_pipeline_executable_properties
+
 std::vector<int64_t> get_reference_strides(
     const std::vector<int64_t>& sizes,
     const utils::GPUMemoryLayout layout,
@@ -1087,8 +1096,8 @@ TEST_F(VulkanComputeAPITest, print_object_sizes) {
 
   // Current known size on 64 bit system: 1040 B
   EXPECT_TRUE(sizeof(vTensor) < 1200);
-  // Current known size on 64 bit system: 1056 B
-  EXPECT_TRUE(sizeof(Value) < 1200);
+  // Current known size on 64 bit system: 48 B
+  EXPECT_TRUE(sizeof(Value) < 56);
   // Current known size on 64 bit system: 120 B
   EXPECT_TRUE(sizeof(StagingBuffer) < 500);
   // Current known size on 64 bit system: 384 B
@@ -1601,9 +1610,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   auto addFn = VK_GET_OP_FN("aten.add.Tensor");
   addFn(graph, {a.value, b.value, kDummyValueRef, c});
 
-  // +2: alpha UBO, broadcast UBO for arithmetic shader
-  // +1: t.sizes_ubo() for arithmetic shader output c
-  expected_vma_allocation_count += 3;
+  // no new allocations if binary op uses push constants
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   IOValueRef d = graph.add_input_tensor(
@@ -1624,17 +1631,16 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   auto mulFn = VK_GET_OP_FN("aten.mul.Tensor");
   mulFn(graph, {c, d.value, e});
 
-  // +2: alpha UBO, broadcast UBO for arithmetic shader
-  // +1: t.sizes_ubo() for arithmetic shader output e
-  expected_vma_allocation_count += 3;
+  // no new allocations if binary op uses push constants
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   IOValueRef out = {};
   out.value = e;
   out.staging = graph.set_output_tensor(out.value);
 
+  // +1: staging buffer input tensor
   // +1: staging buffer for the output tensor
-  expected_vma_allocation_count += 1;
+  expected_vma_allocation_count += 2;
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   graph.prepare();

@@ -14,9 +14,9 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using SizesType = exec_aten::SizesType;
-using StridesType = exec_aten::StridesType;
-using Tensor = exec_aten::Tensor;
+using SizesType = executorch::aten::SizesType;
+using StridesType = executorch::aten::StridesType;
+using Tensor = executorch::aten::Tensor;
 
 /**
  * Expects input to be <= 2-D tensor and transposes dimensions 0 and 1.

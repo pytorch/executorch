@@ -14,14 +14,14 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 // clone.out(Tensor self, *, MemoryFormat? memory_format=None, Tensor(a!) out)
 // -> Tensor(a!)
 Tensor& clone_out(
     KernelRuntimeContext& context,
     const Tensor& self,
-    exec_aten::optional<exec_aten::MemoryFormat> memory_format,
+    executorch::aten::optional<executorch::aten::MemoryFormat> memory_format,
     Tensor& out) {
   (void)context;
 

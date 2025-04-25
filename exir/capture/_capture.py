@@ -210,10 +210,11 @@ def capture(  # noqa: C901
                         cast(torch.nn.Module, f.__self__),
                         args,
                         dynamic_shapes=dynamic_shapes,
+                        strict=True,
                     )
             else:
                 mod = f if isinstance(f, torch.nn.Module) else WrapperModule(f)
-                ep = export(mod, args, dynamic_shapes=dynamic_shapes)
+                ep = export(mod, args, dynamic_shapes=dynamic_shapes, strict=True)
 
             ep = ep.run_decompositions(_default_decomposition_table())
             ep = _transform(ep, ReplaceViewOpsWithViewCopyOpsPass())

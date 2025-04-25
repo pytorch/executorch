@@ -1,10 +1,9 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
 import os
 import shutil
 import tempfile
@@ -14,9 +13,6 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 class Linear(torch.nn.Module):
@@ -48,12 +44,11 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
         (
             ArmTester(
                 module,
-                example_inputs=module.get_inputs(),
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                example_inputs=module.get_inputs(),  # type: ignore[operator]
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
-            .to_edge()
-            .partition()
+            .to_edge_transform_and_lower()
             .dump_artifact(dump_file)
             .dump_artifact()
         )
@@ -62,8 +57,8 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
         (
             ArmTester(
                 module,
-                example_inputs=module.get_inputs(),
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                example_inputs=module.get_inputs(),  # type: ignore[operator]
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -80,7 +75,9 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
 
     def test_MI_artifact(self):
         model = Linear(20, 30)
-        tmp_file = os.path.join(tempfile.mkdtemp(), "tosa_dump_MI.txt")
+        tmp_file = common.get_time_formatted_path(
+            tempfile.mkdtemp(), self._testMethodName
+        )
         self._tosa_MI_pipeline(model, dump_file=tmp_file)
         assert os.path.exists(tmp_file), f"File {tmp_file} was not created"
         if self._is_tosa_marker_in_file(tmp_file):
@@ -89,7 +86,9 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
 
     def test_BI_artifact(self):
         model = Linear(20, 30)
-        tmp_file = os.path.join(tempfile.mkdtemp(), "tosa_dump_BI.txt")
+        tmp_file = common.get_time_formatted_path(
+            tempfile.mkdtemp(), self._testMethodName
+        )
         self._tosa_BI_pipeline(model, dump_file=tmp_file)
         assert os.path.exists(tmp_file), f"File {tmp_file} was not created"
         if self._is_tosa_marker_in_file(tmp_file):
@@ -107,7 +106,8 @@ class TestNumericalDiffPrints(unittest.TestCase):
                 model,
                 example_inputs=model.get_inputs(),
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+MI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+MI",
+                    custom_path=tempfile.mkdtemp("diff_print_test"),
                 ),
             )
             .export()
@@ -132,7 +132,7 @@ def test_dump_ops_and_dtypes():
         ArmTester(
             model,
             example_inputs=model.get_inputs(),
-            compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+            compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
         )
         .quantize()
         .dump_dtype_distribution()
@@ -153,7 +153,7 @@ def test_dump_ops_and_dtypes_parseable():
         ArmTester(
             model,
             example_inputs=model.get_inputs(),
-            compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+            compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
         )
         .quantize()
         .dump_dtype_distribution(print_table=False)
@@ -181,36 +181,32 @@ class TestCollateTosaTests(unittest.TestCase):
             ArmTester(
                 model,
                 example_inputs=model.get_inputs(),
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
             .to_edge_transform_and_lower()
             .to_executorch()
         )
+
+        test_collate_dir = "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests"
         # test that the output directory is created and contains the expected files
-        assert os.path.exists(
-            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests"
-        )
-        assert os.path.exists(
-            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/output_tag5.tosa"
-        )
-        assert os.path.exists(
-            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/desc_tag5.json"
-        )
+        assert os.path.exists(test_collate_dir)
+
+        for file in os.listdir(test_collate_dir):
+            assert file.endswith(("TOSA-0.80+BI.json", "TOSA-0.80+BI.tosa"))
 
         os.environ.pop("TOSA_TESTCASES_BASE_PATH")
         shutil.rmtree("test_collate_tosa_tests", ignore_errors=True)
 
 
 def test_dump_tosa_ops(caplog):
-    caplog.set_level(logging.INFO)
     model = Linear(20, 30)
     (
         ArmTester(
             model,
             example_inputs=model.get_inputs(),
-            compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+            compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
         )
         .quantize()
         .export()
@@ -221,7 +217,6 @@ def test_dump_tosa_ops(caplog):
 
 
 def test_fail_dump_tosa_ops(caplog):
-    caplog.set_level(logging.INFO)
 
     class Add(torch.nn.Module):
         def forward(self, x):

@@ -10,7 +10,10 @@
 
 #include <cstdint>
 
+#include <executorch/devtools/etdump/data_sinks/buffer_data_sink.h>
+#include <executorch/devtools/etdump/data_sinks/data_sink_base.h>
 #include <executorch/runtime/core/event_tracer.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/platform/platform.h>
 
@@ -20,6 +23,10 @@ struct flatcc_builder;
 
 namespace executorch {
 namespace etdump {
+
+using ::executorch::runtime::DelegateDebugIntId;
+using ::executorch::runtime::EventTracerFilterBase;
+using ::executorch::runtime::Result;
 
 namespace internal {
 struct ETDumpStaticAllocator {
@@ -31,8 +38,11 @@ struct ETDumpStaticAllocator {
     data_size = alloc_buf_size;
     allocated = 0;
     out_size = total_buf_size - alloc_buf_size;
-    front_cursor = &buffer[alloc_buf_size];
-    front_left = out_size / 2;
+    // The front of the buffer is the end of the allocation buffer.
+    // We start writing from the end of the allocation buffer, and
+    // move backwards.
+    front_cursor = &buffer[alloc_buf_size + out_size];
+    front_left = out_size;
   }
 
   // Pointer to backing buffer to allocate from.
@@ -75,14 +85,14 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
       ::executorch::runtime::EventTracerEntry prof_entry) override;
   virtual ::executorch::runtime::EventTracerEntry start_profiling_delegate(
       const char* name,
-      ::executorch::runtime::DebugHandle delegate_debug_index) override;
+      DelegateDebugIntId delegate_debug_index) override;
   virtual void end_profiling_delegate(
       ::executorch::runtime::EventTracerEntry prof_entry,
       const void* metadata,
       size_t metadata_len) override;
   virtual void log_profiling_delegate(
       const char* name,
-      ::executorch::runtime::DebugHandle delegate_debug_index,
+      DelegateDebugIntId delegate_debug_index,
       et_timestamp_t start_time,
       et_timestamp_t end_time,
       const void* metadata,
@@ -92,7 +102,7 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
       size_t size) override;
   virtual ::executorch::runtime::AllocatorID track_allocator(
       const char* name) override;
-  virtual void log_evalue(
+  virtual Result<bool> log_evalue(
       const ::executorch::runtime::EValue& evalue,
       ::executorch::runtime::LoggedEValueType evalue_type =
           ::executorch::runtime::LoggedEValueType::kIntermediateOutput)
@@ -100,45 +110,55 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
   /**
    * Log an intermediate tensor output from a delegate.
    */
-  virtual void log_intermediate_output_delegate(
+  virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
-      ::executorch::runtime::DebugHandle delegate_debug_index,
-      const exec_aten::Tensor& output) override;
+      DelegateDebugIntId delegate_debug_index,
+      const executorch::aten::Tensor& output) override;
 
   /**
    * Log an intermediate tensor array output from a delegate.
    */
-  virtual void log_intermediate_output_delegate(
+  virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
-      ::executorch::runtime::DebugHandle delegate_debug_index,
-      const ::executorch::runtime::ArrayRef<exec_aten::Tensor> output) override;
+      DelegateDebugIntId delegate_debug_index,
+      const ::executorch::runtime::ArrayRef<executorch::aten::Tensor> output)
+      override;
 
   /**
    * Log an intermediate int output from a delegate.
    */
-  virtual void log_intermediate_output_delegate(
+  virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
-      ::executorch::runtime::DebugHandle delegate_debug_index,
+      DelegateDebugIntId delegate_debug_index,
       const int& output) override;
 
   /**
    * Log an intermediate bool output from a delegate.
    */
-  virtual void log_intermediate_output_delegate(
+  virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
-      ::executorch::runtime::DebugHandle delegate_debug_index,
+      DelegateDebugIntId delegate_debug_index,
       const bool& output) override;
 
   /**
    * Log an intermediate double output from a delegate.
    */
-  virtual void log_intermediate_output_delegate(
+  virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
-      ::executorch::runtime::DebugHandle delegate_debug_index,
+      DelegateDebugIntId delegate_debug_index,
       const double& output) override;
-  void set_debug_buffer(::executorch::runtime::Span<uint8_t> buffer);
+
+  /**
+   * Set the filter of event tracer for delegation intermediate outputs.
+   */
+  virtual void set_delegation_intermediate_output_filter(
+      EventTracerFilterBase* event_tracer_filter) override;
+
+  Result<bool> set_debug_buffer(::executorch::runtime::Span<uint8_t> buffer);
+  void set_data_sink(DataSinkBase* data_sink);
   ETDumpResult get_etdump_data();
   size_t get_num_blocks();
+  DataSinkBase* get_data_sink();
   bool is_static_etdump();
   void reset();
 
@@ -153,25 +173,31 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
 
   void check_ready_to_add_events();
   int64_t create_string_entry(const char* name);
-  size_t copy_tensor_to_debug_buffer(exec_aten::Tensor tensor);
 
   /**
    * Templated helper function used to log various types of intermediate output.
    * Supported types include tensor, tensor array, int, bool and double.
    */
   template <typename T>
-  void log_intermediate_output_delegate_helper(
+  Result<bool> log_intermediate_output_delegate_helper(
       const char* name,
-      ::executorch::runtime::DebugHandle delegate_debug_index,
+      DelegateDebugIntId delegate_debug_index,
       const T& output);
+
+  long write_tensor_or_raise_error(executorch::aten::Tensor tensor);
 
   struct flatcc_builder* builder_;
   size_t num_blocks_ = 0;
-  ::executorch::runtime::Span<uint8_t> debug_buffer_;
-  size_t debug_buffer_offset_ = 0;
+  DataSinkBase* data_sink_;
+
+  // It is only for set_debug_buffer function.
+  BufferDataSink buffer_data_sink_;
+
   int bundled_input_index_ = -1;
   State state_ = State::Init;
   struct internal::ETDumpStaticAllocator alloc_;
+
+  EventTracerFilterBase* filter_ = nullptr;
 };
 
 } // namespace etdump

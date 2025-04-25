@@ -42,3 +42,15 @@ vec4 hardsigmoid(vec4 tex) {
       hardsigmoid(tex.z),
       hardsigmoid(tex.w));
 }
+
+float leaky_relu(float x, float negative_slope) {
+  return x * (float(x > 0.0) + negative_slope * float(x <= 0.0));
+}
+
+vec4 leaky_relu(vec4 tex, float negative_slope) {
+  return vec4(
+      leaky_relu(tex.x, negative_slope),
+      leaky_relu(tex.y, negative_slope),
+      leaky_relu(tex.z, negative_slope),
+      leaky_relu(tex.w, negative_slope));
+}

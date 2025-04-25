@@ -14,14 +14,17 @@ import executorch.exir as exir
 
 import torch
 from executorch.exir import ExecutorchBackendConfig, to_edge
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.memory_planning import (
     filter_nodes,
     get_node_tensor_specs,
     greedy,
+    MemoryAlgoResult,
+    MemoryPlanningAlgorithmSuite,
     naive,
     Verifier,
 )
-from executorch.exir.pass_base import PassResult
+from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import (  # noqa
     MemoryPlanningPass,
@@ -48,6 +51,7 @@ from torch.ao.quantization.quantize_fx import (
     prepare_fx,
 )
 from torch.export import export
+from torch.export.experimental import _export_forward_backward
 from torch.export.exported_program import ExportGraphSignature
 from torch.fx import Graph, GraphModule, Node
 from torch.nn import functional as F
@@ -103,6 +107,28 @@ class ModelWithDifferentTensorSizes(torch.nn.Module):
 
     def get_random_inputs(self) -> Tuple[torch.Tensor, ...]:
         return (torch.randn(2),)
+
+
+class LinearsWithDifferentSizeAndViewOps(torch.nn.Module):
+    def __init__(self) -> None:
+        super(LinearsWithDifferentSizeAndViewOps, self).__init__()
+        self.linears = torch.nn.ModuleList()
+        for x in [8, 16, 32, 64]:
+            self.linears.append(torch.nn.Linear(x, x * 2))
+
+    def forward(self, i: torch.Tensor) -> torch.Tensor:
+        o1 = i
+        for linear in self.linears:
+            o1 = linear(o1)
+        o1 = o1.view(-1, 64, 2)
+        o1 = o1 + 1
+        o2 = i
+        for linear in self.linears:
+            o2 = linear(o2)
+        return o1.view(-1, 128) + o2
+
+    def get_random_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(3, 8),)
 
 
 class ModuleReturnTwo(nn.Module):
@@ -210,11 +236,12 @@ class MultiplePoolsToyModel(torch.nn.Module):
 
 def maketest(
     module_cls: Type[torch.nn.Module],
-    criteria: Optional[List[Tuple[Callable[..., List[int]], bool]]] = None,
+    criteria: Optional[List[Tuple[Callable[..., MemoryAlgoResult], bool]]] = None,
     extra_check: Optional[Callable[..., None]] = None,
     use_functionalization: bool = True,
     alloc_graph_input: bool = True,
     alloc_graph_output: bool = True,
+    alloc_mutable_buffer: bool = True,
     has_unused_graph_input: bool = False,
 ) -> Callable[..., None]:
     # parameterized.expand is not compatible with maketest. I'll just loop thru
@@ -238,22 +265,17 @@ def maketest(
             #  torch._tensor.Tensor]` is not a function.
             inputs = eager_module.get_random_inputs()
             graph_module = (
-                to_edge(
-                    export(
-                        eager_module,
-                        inputs,
-                    )
-                )
+                to_edge(export(eager_module, inputs, strict=True))
                 .exported_program()
                 .graph_module
             )
-
+            mem_algo = MemoryPlanningAlgorithmSuite(algo_list=[algo])
             graph_module = PassManager(
                 passes=[
                     SpecPropPass(),
                     ToOutVarPass(),
                     MemoryPlanningPass(
-                        algo,
+                        mem_algo,
                         alloc_graph_input=alloc_graph_input,
                         alloc_graph_output=alloc_graph_output,
                     ),
@@ -261,10 +283,17 @@ def maketest(
             )(graph_module).graph_module
 
             self.verify_reuse(
-                graph_module, expect_reuse, alloc_graph_input, alloc_graph_output
+                graph_module,
+                expect_reuse,
+                alloc_graph_input,
+                alloc_graph_output,
+                alloc_mutable_buffer,
             )
             self.verify_graph_input_output(
-                graph_module, alloc_graph_input, alloc_graph_output
+                graph_module,
+                alloc_graph_input,
+                alloc_graph_output,
+                alloc_mutable_buffer,
             )
 
             self.verify_overlap_placeholders(has_unused_graph_input, graph_module)
@@ -285,6 +314,7 @@ class TestMemoryPlanning(unittest.TestCase):
         expect_reuse: bool,
         alloc_graph_input: bool,
         alloc_graph_output: bool,
+        alloc_mutable_buffer: bool,
     ) -> None:
         r"""
         Do sanity check and verify tensor storage reuse.
@@ -300,6 +330,7 @@ class TestMemoryPlanning(unittest.TestCase):
             graph_module,
             alloc_graph_input=alloc_graph_input,
             alloc_graph_output=alloc_graph_output,
+            alloc_mutable_buffers=alloc_mutable_buffer,
         ).verify_storage_reuse()
 
         print(f"num_reuse_pairs is {num_reuse_pairs}")
@@ -313,9 +344,10 @@ class TestMemoryPlanning(unittest.TestCase):
         graph_module: torch.fx.GraphModule,
         alloc_graph_input: bool,
         alloc_graph_output: bool,
+        alloc_mutable_buffers: bool,
     ) -> None:
         Verifier(
-            graph_module, alloc_graph_input, alloc_graph_output
+            graph_module, alloc_graph_input, alloc_graph_output, alloc_mutable_buffers
         ).verify_graph_input_output()
 
     def verify_overlap_placeholders(
@@ -364,6 +396,13 @@ class TestMemoryPlanning(unittest.TestCase):
         ],
     )
 
+    test_linear_with_view: Callable[..., None] = maketest(
+        LinearsWithDifferentSizeAndViewOps,
+        criteria=[
+            (greedy, True),
+        ],
+    )
+
     # greedy algorithm will reuse memory if we let the algorithm allocate
     # memory for both graph input and output.
     test_list_arg: Callable[..., None] = maketest(
@@ -376,13 +415,16 @@ class TestMemoryPlanning(unittest.TestCase):
     )
 
     def test_graph_input_output(self) -> None:
-        for alloc_graph_input, alloc_graph_output in itertools.product(
-            [True, False], [True, False]
-        ):
+        for (
+            alloc_graph_input,
+            alloc_graph_output,
+            alloc_mutable_buffers,
+        ) in itertools.product([True, False], [True, False], [True, False]):
             case = maketest(
                 ModelWithDifferentTensorSizes,
                 alloc_graph_input=alloc_graph_input,
                 alloc_graph_output=alloc_graph_output,
+                alloc_mutable_buffer=alloc_mutable_buffers,
             )
             case(self)
 
@@ -468,7 +510,6 @@ class TestMisc(unittest.TestCase):
         )
         return quantized_model
 
-    # pyre-ignore
     @parameterized.expand(
         [
             (
@@ -485,21 +526,19 @@ class TestMisc(unittest.TestCase):
     )
     def test_multiple_pools(
         self,
-        algo: Callable[..., List[int]],
+        algo: Callable[..., MemoryAlgoResult],
         expected_allocs: List[Tuple[int, int]],
         expected_bufsizes: List[int],
     ) -> None:
         edge_program = to_edge(
-            export(
-                MultiplePoolsToyModel(),
-                (torch.ones(1),),
-            )
+            export(MultiplePoolsToyModel(), (torch.ones(1),), strict=True)
         )
 
+        mem_algo = MemoryPlanningAlgorithmSuite(algo_list=[algo])
         edge_program.to_executorch(
             exir.ExecutorchBackendConfig(
                 memory_planning_pass=CustomPoolMemoryPlanningPass(
-                    memory_planning_algo=algo,
+                    memory_planning_algo=mem_algo,
                     alignment=1,
                 ),
             )
@@ -510,21 +549,66 @@ class TestMisc(unittest.TestCase):
             graph_module,
             alloc_graph_input=True,
             alloc_graph_output=True,
+            alloc_mutable_buffers=True,
         )
         verifier.verify_storage_reuse()
         verifier.verify_graph_input_output()
 
         idx = 0
+        reference_output = {}
+        actual_output = {}
         for node in graph_module.graph.nodes:
             if node.op == "placeholder" or (
                 node.op == "call_function"
                 and node.target in (torch.ops.aten.add.out, torch.ops.aten.mul.out)
             ):
                 mem_id, mem_offset = expected_allocs[idx]
-                self.assertEqual(node.meta["spec"].mem_id, mem_id)
-                self.assertEqual(node.meta["spec"].mem_offset, mem_offset)
+                actual_mem_id, actual_mem_offset = (
+                    node.meta["spec"].mem_id,
+                    node.meta["spec"].mem_offset,
+                )
+                if (mem_id, mem_offset) not in reference_output:
+                    reference_output[(mem_id, mem_offset)] = 1
+                    actual_output[(actual_mem_id, actual_mem_offset)] = 1
+                else:
+                    reference_output[(mem_id, mem_offset)] += 1
+                    actual_output[(actual_mem_id, actual_mem_offset)] += 1
                 idx += 1
+        self.assertEqual(reference_output, actual_output)
         self.assertEqual(graph_module.meta["non_const_buffer_sizes"], expected_bufsizes)
+
+    def test_mutation_not_double_allocated(self) -> None:
+        class Simple(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("constant", torch.ones(5, 5))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.constant.add_(1)
+                return x - self.constant
+
+        model = Simple()
+        inputs = (torch.ones(5, 5),)
+
+        et = to_edge(export(model, inputs, strict=True)).to_executorch()
+
+        # 0 and 11 should refer to the same tensor. 0 is the input, 11 is the output of copy_
+        self.assertEqual(
+            et.executorch_program.execution_plan[0]
+            .values[0]
+            .val.allocation_info.memory_offset_low,
+            et.executorch_program.execution_plan[0]
+            .values[11]
+            .val.allocation_info.memory_offset_low,
+        )
+        self.assertEqual(
+            et.executorch_program.execution_plan[0]
+            .values[0]
+            .val.allocation_info.memory_offset_high,
+            et.executorch_program.execution_plan[0]
+            .values[11]
+            .val.allocation_info.memory_offset_high,
+        )
 
     def test_constants_not_memory_planned(self) -> None:
         class Simple(torch.nn.Module):
@@ -537,7 +621,8 @@ class TestMisc(unittest.TestCase):
                 return torch.nn.functional.sigmoid(self.linear(x) + self.constant + 1)
 
         def count_planned_inputs(
-            nodes: List[Node], graph_signature: Any  # pyre-ignore
+            nodes: List[Node],
+            graph_signature: Any,  # pyre-ignore
         ) -> Tuple[int, int]:
             num_mem_planned_placeholders = 0
             num_placeholders = 0
@@ -554,7 +639,9 @@ class TestMisc(unittest.TestCase):
         model = Simple()
         inputs = (torch.randn(5, 5),)
 
-        ep_no_input_planning = to_edge(export(model, inputs)).to_executorch(
+        ep_no_input_planning = to_edge(
+            export(model, inputs, strict=True)
+        ).to_executorch(
             config=ExecutorchBackendConfig(
                 memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
@@ -574,7 +661,7 @@ class TestMisc(unittest.TestCase):
             5,  # x, self.constant, linear weight, linear bias, '1' scalar promoted to tensor
         )
 
-        ep_input_planning = to_edge(export(model, inputs)).to_executorch(
+        ep_input_planning = to_edge(export(model, inputs, strict=True)).to_executorch(
             config=ExecutorchBackendConfig(
                 memory_planning_pass=MemoryPlanningPass(alloc_graph_input=True),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
@@ -592,4 +679,112 @@ class TestMisc(unittest.TestCase):
         self.assertEqual(
             num_placeholders,
             5,
+        )
+
+    def test_placeholder_lifetime(self) -> None:
+        class TestModel(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.linear = torch.nn.Linear(5, 5)
+
+            def forward(self, a, b, x):
+                a = a + b
+                b = a + b
+                y = self.linear(x)
+                return a, b, y
+
+        model = TestModel()
+        example_inputs = (torch.rand(1, 6, 2), torch.rand(1, 6, 2), torch.randn(5, 5))
+        exported_model = torch.export.export(model, example_inputs, strict=True)
+        edge = to_edge(exported_model)
+
+        class TestPass(ExportPass):
+            def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+                permute_dims = [1, 0, 2]
+                for node in graph_module.graph.nodes:
+                    if node.op == "placeholder" and str(node) == "a":
+                        inverse_dims = [
+                            permute_dims.index(x) for x in range(len(permute_dims))
+                        ]
+
+                        with graph_module.graph.inserting_after(node):
+                            permute = graph_module.graph.call_function(
+                                exir_ops.edge.aten.permute_copy.default,
+                                args=(node, inverse_dims),
+                            )
+                            permute.meta = node.meta.copy()
+                            node.meta["val"] = node.meta["val"].permute(permute_dims)
+                            node.replace_all_uses_with(
+                                permute, lambda x, permute=permute: x is not permute
+                            )
+                            break
+                return PassResult(graph_module, True)
+
+        edge = edge.transform([TestPass()])
+        et = edge.to_executorch()
+        et_program = et.executorch_program
+        inputs = et_program.execution_plan[0].inputs
+        self.assertNotEqual(
+            et_program.execution_plan[0]
+            .values[inputs[0]]
+            .val.allocation_info.memory_offset_low,
+            et_program.execution_plan[0]
+            .values[inputs[1]]
+            .val.allocation_info.memory_offset_low,
+        )
+
+        constants = 0
+        for node in et.exported_program().graph_module.graph.nodes:
+            if node.op == "placeholder" and node.meta.get("spec"):
+                meta_spec = node.meta["spec"]
+                if meta_spec.const is True:
+                    constants += 1
+                    self.assertIsNone(node.meta["spec"].mem_offset)
+                    self.assertIsNone(node.meta["spec"].mem_id)
+        self.assertEqual(constants, 2)
+
+    def test_none_output(self) -> None:
+        class Net(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv1 = nn.Conv2d(6, 6, 5)
+                self.linear = nn.Linear(6, 2)
+
+            def forward(self, x):
+                return self.linear(self.conv1(x).flatten(1))
+
+        class TrainingNet(nn.Module):
+            def __init__(self, net):
+                super().__init__()
+                self.net = net
+                self.loss = nn.CrossEntropyLoss()
+
+            def forward(self, input, label):
+                pred = self.net(input)
+                return self.loss(pred, label)
+
+        net = TrainingNet(Net())
+        inputs = (torch.randn(1, 6, 5, 5), torch.ones(1, dtype=torch.int64))
+
+        ep = export(net, inputs, strict=True)
+        ep = _export_forward_backward(ep)
+        ep = to_edge(ep)
+        ep = ep.to_executorch()
+
+        ep.dump_executorch_program(True)
+
+        # 147 just so happens to be the index of the user_grad output arg of
+        # convolution_backward.out. This is fairly fragile.
+        # Check that the None output is not memory planned.
+        self.assertEqual(
+            ep.executorch_program.execution_plan[0]
+            .values[147]
+            .val.data_buffer_idx,  # pyright: ignore
+            0,
+        )
+        self.assertEqual(
+            ep.executorch_program.execution_plan[0]
+            .values[147]
+            .val.allocation_info,  # pyright: ignore
+            None,
         )

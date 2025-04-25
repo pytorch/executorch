@@ -13,12 +13,18 @@ cmake_minimum_required(VERSION 3.19)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+set(_flatcc_source_dir ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/flatcc)
+
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
 if(NOT FLATCC_EXECUTABLE)
-  set(FLATCC_EXECUTABLE flatcc)
+  if(WIN32)
+    set(FLATCC_EXECUTABLE ${_flatcc_source_dir}/bin/${CMAKE_BUILD_TYPE}/flatcc)
+  else()
+    set(FLATCC_EXECUTABLE ${_flatcc_source_dir}/bin/flatcc)
+  endif()
 endif()
 
 # Source root directory for executorch.
@@ -26,14 +32,10 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
-endif()
-
-if(NOT FLATC_EXECUTABLE)
-  set(FLATC_EXECUTABLE flatc)
 endif()
 
 # Paths to headers generated from the .fbs files. set(_etdump_schemas
@@ -66,7 +68,7 @@ set(FLATCC_DEBUG_CLANG_SANITIZE
     OFF
     CACHE BOOL ""
 )
-set(_flatcc_source_dir ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/flatcc)
+
 add_subdirectory(${_flatcc_source_dir} ${CMAKE_BINARY_DIR}/third-party/flatcc)
 
 # Fix for "relocation R_X86_64_32 against `.rodata' can not be used when making
@@ -157,23 +159,35 @@ file(MAKE_DIRECTORY
      ${_program_schema__include_dir}/executorch/devtools/bundled_program
 )
 
+if(WIN32)
+  set(RM_COMMAND rmdir /s /q)
+else()
+  set(RM_COMMAND rm -rf)
+endif()
+
 add_custom_command(
   OUTPUT ${_etdump_schema__outputs}
   COMMAND
     # Note that the flatcc project actually writes its outputs into the source
     # tree instead of under the binary directory, and there's no way to change
     # that behavior.
-    ${_flatcc_source_dir}/bin/flatcc -cwr -o
+    ${FLATCC_EXECUTABLE} -cwr -o
     ${_program_schema__include_dir}/executorch/devtools/etdump
     ${_etdump_schema__srcs}
-  COMMAND rm -f ${_etdump_schema_cleanup_paths}
+  COMMAND ${RM_COMMAND} ${_etdump_schema_cleanup_paths}
   DEPENDS ${_etdump_schema_gen_dep}
   COMMENT "Generating etdump headers"
 )
 
+unset(RM_COMMAND)
+
 add_library(
   etdump ${CMAKE_CURRENT_SOURCE_DIR}/etdump/etdump_flatcc.cpp
          ${CMAKE_CURRENT_SOURCE_DIR}/etdump/emitter.cpp
+         ${CMAKE_CURRENT_SOURCE_DIR}/etdump/data_sinks/buffer_data_sink.cpp
+         ${CMAKE_CURRENT_SOURCE_DIR}/etdump/data_sinks/buffer_data_sink.h
+         ${CMAKE_CURRENT_SOURCE_DIR}/etdump/data_sinks/file_data_sink.cpp
+         ${CMAKE_CURRENT_SOURCE_DIR}/etdump/data_sinks/file_data_sink.h
 )
 
 target_link_libraries(
@@ -189,7 +203,7 @@ add_custom_command(
     "${_bundled_schema__include_dir}/executorch/devtools/bundled_program/schema"
     ${_bundled_program_schema__srcs}
   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/devtools
-  DEPENDS ${FLATC_EXECUTABLE} ${_bundled_program_schema__srcs}
+  DEPENDS flatc ${_bundled_program_schema__srcs}
   COMMENT "Generating bundled_program headers"
   VERBATIM
 )
@@ -218,3 +232,8 @@ install(
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
+
+if(BUILD_TESTING)
+  # TODO: This is currently not working!
+  # add_subdirectory(etdump/tests)
+endif()

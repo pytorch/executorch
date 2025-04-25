@@ -1,5 +1,17 @@
 { "tests": [
     {
+        "directory": "extension/llm/custom_ops/spinquant/test",
+        "sources": [
+            "fast_hadamard_transform_test.cpp",
+            "fast_hadamard_transform_test_impl.cpp",
+            "op_fast_hadamard_transform_test.cpp"
+        ],
+        "additional_libs": [
+            "custom_ops",
+            "dumb_fht"
+        ]
+    },
+    {
         "directory": "extension/data_loader/test",
         "sources": [
             "buffer_data_loader_test.cpp",
@@ -31,34 +43,10 @@
         ]
     },
     {
-        "directory": "extension/module/test",
-        "sources": [
-            "module_test.cpp"
-        ],
-        "additional_libs": [
-            "extension_data_loader",
-            "extension_module",
-            "portable_kernels",
-            "portable_ops_lib"
-        ]
-    },
-    {
         "directory": "extension/pytree/test",
         "sources": [
             "function_ref_test.cpp",
             "test_pytree.cpp"
-        ]
-    },
-    {
-        "directory": "extension/runner_util/test",
-        "sources": [
-            "inputs_test.cpp"
-        ],
-        "additional_libs": [
-            "extension_data_loader",
-            "extension_runner_util",
-            "portable_kernels",
-            "portable_ops_lib"
         ]
     },
     {
@@ -72,8 +60,19 @@
         ]
     },
     {
+        "directory": "extension/threadpool/test",
+        "sources": [
+            "thread_parallel_test.cpp",
+            "threadpool_test.cpp"
+        ],
+        "additional_libs": [
+            "extension_threadpool"
+        ]
+    },
+    {
         "directory": "kernels/portable/cpu/util/test",
         "sources": [
+            "broadcast_indexes_range_test.cpp",
             "broadcast_test.cpp",
             "reduce_test.cpp"
         ],
@@ -85,11 +84,13 @@
     {
         "directory": "runtime/core/portable_type/test",
         "sources": [
-            "optional_test.cpp",
-            "tensor_test.cpp",
+            "bfloat16_test.cpp",
+            "dont_shadow_complex_test.c",
             "half_test.cpp",
+            "optional_test.cpp",
             "scalar_test.cpp",
-            "tensor_impl_test.cpp"
+            "tensor_impl_test.cpp",
+            "tensor_test.cpp"
         ]
     },
     {
@@ -108,10 +109,11 @@
     {
         "directory": "runtime/core/exec_aten/util/test",
         "sources": [
-            "tensor_util_test.cpp",
-            "scalar_type_util_test.cpp",
+            "dim_order_util_test.cpp",
             "operator_impl_example_test.cpp",
-            "dim_order_util_test.cpp"
+            "scalar_type_util_test.cpp",
+            "tensor_shape_to_c_string_test.cpp",
+            "tensor_util_test.cpp"
         ]
     },
     {

@@ -15,7 +15,7 @@
 namespace torch {
 namespace executor {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 //
 // Helper Functions
@@ -33,8 +33,9 @@ inline size_t _normalize_non_neg_d(ssize_t d, ssize_t in_dim) {
 }
 
 ET_NODISCARD bool check_dim_list_is_valid(
-    const exec_aten::Tensor& in,
-    const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list) {
+    const executorch::aten::Tensor& in,
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list) {
   if (dim_list.has_value() && dim_list.value().size() != 0) {
     const auto& reduce_dims = dim_list.value();
     bool dim_exist[kTensorDimensionLimit];
@@ -47,10 +48,9 @@ ET_NODISCARD bool check_dim_list_is_valid(
       }
 
       const size_t non_neg_d = _normalize_non_neg_d(d, in.dim());
-      ET_LOG_AND_RETURN_IF_FALSE(
-          non_neg_d < kTensorDimensionLimit && non_neg_d >= 0);
+      ET_LOG_AND_RETURN_IF_FALSE(non_neg_d < kTensorDimensionLimit);
 
-      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      ET_CHECK_OR_RETURN_FALSE(
           dim_exist[non_neg_d] == false,
           "dim %zd appears multiple times in the list of dims",
           non_neg_d);
@@ -64,7 +64,7 @@ ET_NODISCARD bool check_dim_list_is_valid(
 bool check_dim_in_dim_list(
     const size_t dim,
     const size_t max_dim,
-    const exec_aten::ArrayRef<int64_t>& dim_list) {
+    const executorch::aten::ArrayRef<int64_t>& dim_list) {
   for (const auto& d : dim_list) {
     const size_t non_neg_dim = _normalize_non_neg_d(d, max_dim);
     if (dim == non_neg_dim) {
@@ -79,16 +79,12 @@ bool check_dim_in_dim_list(
  */
 size_t get_reduced_dim_product(
     const Tensor& in,
-    const exec_aten::optional<int64_t>& dim) {
+    const executorch::aten::optional<int64_t>& dim) {
   if (in.dim() == 0) {
     return 1;
   }
-  size_t dim_product = 1;
   if (!dim.has_value()) {
-    for (size_t i = 0; i < in.dim(); ++i) {
-      dim_product *= in.size(i);
-    }
-    return dim_product;
+    return in.numel();
   }
   const size_t d = _normalize_non_neg_d(dim.value(), in.dim());
   return in.size(d);
@@ -99,20 +95,17 @@ size_t get_reduced_dim_product(
  */
 size_t get_reduced_dim_product(
     const Tensor& in,
-    const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list) {
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list) {
   if (in.dim() == 0) {
     return 1;
   }
-  size_t dim_product = 1;
-  const size_t in_dim = in.dim();
   if (!dim_list.has_value() || dim_list.value().size() == 0) {
-    for (size_t i = 0; i < in.dim(); ++i) {
-      dim_product *= in.size(i);
-    }
-    return dim_product;
+    return in.numel();
   }
+  size_t dim_product = 1;
   for (const auto& d : dim_list.value()) {
-    const size_t non_neg_d = _normalize_non_neg_d(d, in_dim);
+    const size_t non_neg_d = _normalize_non_neg_d(d, in.dim());
     dim_product *= in.size(non_neg_d);
   }
   return dim_product;
@@ -124,7 +117,7 @@ size_t get_reduced_dim_product(
  */
 size_t get_out_numel(
     const Tensor& in,
-    const exec_aten::optional<int64_t>& dim) {
+    const executorch::aten::optional<int64_t>& dim) {
   size_t out_numel = 1;
   if (dim.has_value()) {
     const auto dim_val = dim.value();
@@ -134,7 +127,7 @@ size_t get_out_numel(
       ET_CHECK_VALID_DIM(dim_val, in.dim());
     }
     const size_t non_neg_dim = _normalize_non_neg_d(dim_val, in.dim());
-    for (size_t d = 0; d < in.dim(); ++d) {
+    for (size_t d = 0; d < static_cast<size_t>(in.dim()); ++d) {
       if (d != non_neg_dim) {
         out_numel *= in.size(d);
       }
@@ -149,10 +142,11 @@ size_t get_out_numel(
  */
 size_t get_out_numel(
     const Tensor& in,
-    const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list) {
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list) {
   size_t out_numel = 1;
   if (dim_list.has_value() && dim_list.value().size() != 0) {
-    for (size_t d = 0; d < in.dim(); ++d) {
+    for (size_t d = 0; d < static_cast<size_t>(in.dim()); ++d) {
       if (!check_dim_in_dim_list(d, in.dim(), dim_list.value())) {
         out_numel *= in.size(d);
       }
@@ -167,7 +161,7 @@ size_t get_out_numel(
  */
 size_t get_init_index(
     const Tensor& in,
-    const exec_aten::optional<int64_t>& dim,
+    const executorch::aten::optional<int64_t>& dim,
     const size_t out_ix) {
   if (!dim.has_value()) {
     return 0;
@@ -183,7 +177,7 @@ size_t get_init_index(
   size_t mutable_out_ix = out_ix;
   auto strides = in.strides();
   for (int64_t d = in.dim() - 1; d >= 0; d--) {
-    if (d != non_neg_dim) {
+    if (d != static_cast<int64_t>(non_neg_dim)) {
       init_ix += (mutable_out_ix % in.size(d)) * strides[d];
       mutable_out_ix /= in.size(d);
     }
@@ -198,7 +192,8 @@ size_t get_init_index(
  */
 size_t get_init_index(
     const Tensor& in,
-    const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list,
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list,
     const size_t out_ix) {
   if (!dim_list.has_value() || dim_list.value().size() == 0) {
     return 0;
@@ -221,16 +216,16 @@ size_t get_init_index(
 
 size_t compute_reduced_out_size(
     const Tensor& in,
-    const exec_aten::optional<int64_t>& dim,
+    const executorch::aten::optional<int64_t>& dim,
     bool keepdim,
-    exec_aten::SizesType* sizes_arr) {
+    executorch::aten::SizesType* sizes_arr) {
   const auto in_dim = in.dim();
   size_t out_dim = in_dim;
 
   if (dim.has_value()) {
     const auto dim_val = dim.value();
     const size_t non_neg_dim = _normalize_non_neg_d(dim_val, in_dim);
-    for (ssize_t i = 0; i < non_neg_dim; ++i) {
+    for (size_t i = 0; i < non_neg_dim; ++i) {
       sizes_arr[i] = in.size(i);
     }
     if (keepdim) {
@@ -246,7 +241,7 @@ size_t compute_reduced_out_size(
     }
   } else {
     if (keepdim) {
-      for (size_t i = 0; i < in_dim; ++i) {
+      for (size_t i = 0; i < static_cast<size_t>(in_dim); ++i) {
         sizes_arr[i] = 1;
       }
     } else {
@@ -258,10 +253,13 @@ size_t compute_reduced_out_size(
 
 size_t compute_reduced_out_size(
     const Tensor& in,
-    const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list,
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list,
     bool keepdim,
-    exec_aten::SizesType* sizes_arr) {
-  const auto in_dim = in.dim();
+    executorch::aten::SizesType* sizes_arr) {
+  // check_dim_in_dim_list and later comparisons
+  // expect in_dim to be size_t, so cast it here
+  const size_t in_dim = static_cast<size_t>(in.dim());
   size_t out_dim = in_dim;
 
   if (dim_list.has_value() && dim_list.value().size() != 0) {
@@ -298,25 +296,26 @@ size_t compute_reduced_out_size(
 
 Error resize_reduction_out(
     const Tensor& in,
-    const exec_aten::optional<int64_t>& dim,
+    const executorch::aten::optional<int64_t>& dim,
     bool keepdim,
     Tensor& out) {
-  exec_aten::SizesType sizes_arr[kTensorDimensionLimit];
+  executorch::aten::SizesType sizes_arr[kTensorDimensionLimit];
   const auto out_dim = compute_reduced_out_size(in, dim, keepdim, sizes_arr);
-  exec_aten::ArrayRef<exec_aten::SizesType> out_size{
+  executorch::aten::ArrayRef<executorch::aten::SizesType> out_size{
       sizes_arr, static_cast<size_t>(out_dim)};
   return resize_tensor(out, out_size);
 }
 
 Error resize_reduction_out(
     const Tensor& in,
-    const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list,
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list,
     bool keepdim,
     Tensor& out) {
-  exec_aten::SizesType sizes_arr[kTensorDimensionLimit];
+  executorch::aten::SizesType sizes_arr[kTensorDimensionLimit];
   const auto out_dim =
       compute_reduced_out_size(in, dim_list, keepdim, sizes_arr);
-  exec_aten::ArrayRef<exec_aten::SizesType> out_size{
+  executorch::aten::ArrayRef<executorch::aten::SizesType> out_size{
       sizes_arr, static_cast<size_t>(out_dim)};
   return resize_tensor(out, out_size);
 }
@@ -386,6 +385,7 @@ bool check_mean_dim_args(
       check_reduction_args(in, dim_list, keepdim, dtype, out));
 
   if (dtype) {
+    ET_LOG(Info, "dtype is %hhd", static_cast<int8_t>(dtype.value()));
     ET_LOG_AND_RETURN_IF_FALSE(torch::executor::isFloatingType(dtype.value()));
     ET_LOG_AND_RETURN_IF_FALSE(out.scalar_type() == dtype.value());
   } else {

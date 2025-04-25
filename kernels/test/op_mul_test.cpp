@@ -417,16 +417,6 @@ TEST_F(OpMulOutTest, BroadcastA2BTest) {
   test_broadcast_a2b<ScalarType::Int>();
   test_broadcast_a2b<ScalarType::Half>();
   test_broadcast_a2b<ScalarType::BFloat16>();
-
-  // Test 3D tensors
-  test_broadcast_3D<ScalarType::Float>();
-  test_broadcast_3D<ScalarType::Half>();
-  test_broadcast_3D<ScalarType::BFloat16>();
-
-  // Test 4D tensors
-  test_broadcast_4D<ScalarType::Float>();
-  test_broadcast_4D<ScalarType::Half>();
-  test_broadcast_4D<ScalarType::BFloat16>();
 }
 
 // Broadcast tensor a's size to tensor b's size
@@ -447,13 +437,6 @@ TEST_F(OpMulOutTest, BroadcastNDTest) {
   test_broadcast_4D<ScalarType::Half>();
   test_broadcast_4D<ScalarType::BFloat16>();
 
-  // Test broadcasting on the last dimension
-  test_broadcast_last_dim<ScalarType::Float>();
-  test_broadcast_last_dim<ScalarType::Half>();
-  test_broadcast_last_dim<ScalarType::BFloat16>();
-}
-
-TEST_F(OpMulOutTest, BroadcastLastDimTest) {
   // Test broadcasting on the last dimension
   test_broadcast_last_dim<ScalarType::Float>();
   test_broadcast_last_dim<ScalarType::Half>();

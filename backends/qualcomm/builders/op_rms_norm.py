@@ -12,7 +12,11 @@ import numpy as np
 
 import torch
 from executorch.backends.qualcomm.builders.utils import get_parameter
-from executorch.backends.qualcomm.utils.constants import QCOM_DATA, QCOM_QUANT_ATTRS
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_DATA,
+    QCOM_QUANT_ATTRS,
+    QCOM_ZERO_POINT,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from .node_visitor import NodeVisitor, register_node_visitor
@@ -36,10 +40,10 @@ class RmsNormVisitor(NodeVisitor):
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
 
         # should be a immutable list
@@ -60,13 +64,13 @@ class RmsNormVisitor(NodeVisitor):
         weight_tensor = get_parameter(weight_node, self.edge_program)
         weight_tensor_wrapper = self.define_tensor(
             weight_node,
+            node,
             weight_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
 
-        # Fake node, nn moudle seems to be inconsistant with document
+        # Fake node, nn module seems to be inconsistent with document
         bias_tensor = torch.zeros(weight_tensor.shape)
         bias_node = torch.fx.Node(
             node.graph,
@@ -77,31 +81,25 @@ class RmsNormVisitor(NodeVisitor):
             {},  # kwargs
         )
         if quant_attrs := node.meta.get(QCOM_QUANT_ATTRS):
+            quant_attrs = quant_attrs.copy()
+            quant_attrs[QCOM_ZERO_POINT] = 0
             bias_node.meta[QCOM_QUANT_ATTRS] = quant_attrs
         bias_tensor_wrapper = self.define_tensor(
             bias_node,
+            node,
             bias_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
 
         epsilon = node.args[3]
-        if isinstance(epsilon, torch.fx.Node):
-            epsilon = get_parameter(epsilon, self.edge_program)
-            epsilon = (
-                epsilon
-                if isinstance(epsilon, float)
-                else torch.finfo(epsilon.dtype).eps
-            )
-
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
+            node,
             node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
 
         rms_nrom_op = PyQnnWrapper.PyQnnOpWrapper(

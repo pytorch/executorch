@@ -18,10 +18,10 @@
 #include <cmath>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::optional;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::optional;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpSumOutTest : public OperatorTest {
@@ -302,9 +302,9 @@ TEST_F(OpSumOutTest, AllRealInputRealOutputPasses) {
   test_sum_dim_out_dtype<ScalarType::INPUT_DTYPE, ScalarType::OUTPUT_DTYPE>();
 
 #define TEST_ENTRY(INPUT_CTYPE, INPUT_DTYPE) \
-  ET_FORALL_REAL_TYPES_WITH2(INPUT_CTYPE, INPUT_DTYPE, TEST_KERNEL);
+  ET_FORALL_REALHBF16_TYPES_WITH2(INPUT_CTYPE, INPUT_DTYPE, TEST_KERNEL);
 
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 #undef TEST_KERNEL
 }

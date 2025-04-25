@@ -3,7 +3,7 @@ load(
     "ANDROID",
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_verision")
+load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -24,13 +24,13 @@ def define_common_targets():
         platforms = [ANDROID],
         visibility = ["@EXECUTORCH_CLIENTS"],
         deps = [
-            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
+            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
+            "fbsource//third-party/qualcomm/qnn/qnn-{0}:app_sources".format(get_qnn_library_version()),
             "//executorch/runtime/backend:interface",
         ],
         exported_deps = [
             "fbsource//third-party/toolchains:log",
             "//executorch/backends/qualcomm:schema",
-            "//executorch/backends/qualcomm:qc_binary_info_schema",
             "//executorch/runtime/core:core",
         ],
     )
@@ -44,15 +44,18 @@ def define_common_targets():
                 [
                     "*.cpp",
                     "backends/*.cpp",
+                    "backends/irbackend/*.cpp",
                     "backends/htpbackend/*.cpp",
-                    "backends/htpbackend/aarch64/*.cpp",
-                ],
+                ] + (["backends/htpbackend/x86_64/*.cpp"] if include_aot_qnn_lib else ["backends/htpbackend/aarch64/*.cpp"]) + (
+                    ["backends/irbackend/x86_64/*.cpp"] if include_aot_qnn_lib else ["backends/irbackend/aarch64/*.cpp"]
+                ),
                 exclude = ["Logging.cpp"],
             ),
             exported_headers = glob(
                 [
                     "*.h",
                     "backends/*.h",
+                    "backends/irbackend/*.h",
                     "backends/htpbackend/*.h",
                 ],
                 exclude = ["Logging.h"],
@@ -62,14 +65,14 @@ def define_common_targets():
             platforms = [ANDROID],
             visibility = ["@EXECUTORCH_CLIENTS"],
             resources = ({
-                "qnn_lib": "fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs".format(get_qnn_library_verision()),
+                "qnn_lib": "fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs".format(get_qnn_library_version()),
                 } if include_aot_qnn_lib else {
             }),
             deps = [
-                "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
+                "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
+                "fbsource//third-party/qualcomm/qnn/qnn-{0}:app_sources".format(get_qnn_library_version()),
                 ":logging",
                 "//executorch/backends/qualcomm:schema",
-                "//executorch/backends/qualcomm:qc_binary_info_schema",
                 "//executorch/backends/qualcomm/aot/ir:qcir_utils",
                 "//executorch/backends/qualcomm/aot/wrappers:wrappers",
                 "//executorch/runtime/backend:interface",

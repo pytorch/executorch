@@ -12,14 +12,10 @@
 #
 
 cmake_minimum_required(VERSION 3.19)
-project(sdk_etdump_tests)
-
-# Use C++17 for test.
-set(CMAKE_CXX_STANDARD 17)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
-include(${EXECUTORCH_ROOT}/build/Test.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
 set(_test_srcs etdump_test.cpp)
 
@@ -30,7 +26,7 @@ et_cxx_test(
   EXTRA_LIBS
   bundled_program
   etdump
-  flatccrt_d
+  flatccrt
 )
 target_include_directories(
   sdk_etdump_tests PRIVATE ${CMAKE_INSTALL_PREFIX}/sdk/include

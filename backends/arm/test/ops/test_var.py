@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -11,13 +11,15 @@
 import unittest
 
 import torch
-from executorch.backends.arm.quantizer.arm_quantizer import (
-    ArmQuantizer,
+from executorch.backends.arm.quantizer import (
+    EthosUQuantizer,
     get_symmetric_quantization_config,
+    TOSAQuantizer,
 )
-
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+
+from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.backend.backend_details import CompileSpec
 
@@ -29,35 +31,51 @@ class TestVar(unittest.TestCase):
     class Var(torch.nn.Module):
         test_parameters = [
             (torch.randn(1, 50, 10, 20), True, 0),
-            (torch.rand(1, 50, 10), True, 0),
+            (torch.rand(1, 50, 10), False, 0),
             (torch.randn(1, 30, 15, 20), True, 1),
-            (torch.rand(1, 50, 10, 20), True, 0.5),
+            (torch.rand(1, 50, 10, 20), False, 0.5),
         ]
+
+        def __init__(self, keepdim: bool = True, correction: int = 0):
+            super().__init__()
+            self.keepdim = keepdim
+            self.correction = correction
 
         def forward(
             self,
             x: torch.Tensor,
-            keepdim: bool = True,
-            correction: int = 0,
         ):
-            return x.var(keepdim=keepdim, correction=correction)
+            return x.var(keepdim=self.keepdim, correction=self.correction)
 
     class VarDim(torch.nn.Module):
         test_parameters = [
             (torch.randn(1, 50, 10, 20), 1, True, False),
-            (torch.rand(1, 50, 10), -2, True, False),
+            (torch.rand(1, 50, 10), -2, False, False),
             (torch.randn(1, 30, 15, 20), -3, True, True),
+            (torch.rand(1, 50, 10, 20), -1, False, True),
+        ]
+
+        test_parameters_u55 = [
+            (torch.randn(1, 50, 10, 20), 1, True, False),
+            (torch.randn(1, 30, 15, 20), -3, True, True),
+        ]
+
+        test_parameters_u55_xfails = [
+            (torch.rand(1, 50, 10), -2, True, False),
             (torch.rand(1, 50, 10, 20), -1, True, True),
         ]
+
+        def __init__(self, dim: int = -1, keepdim: bool = True, unbiased: bool = False):
+            super().__init__()
+            self.dim = dim
+            self.keepdim = keepdim
+            self.unbiased = unbiased
 
         def forward(
             self,
             x: torch.Tensor,
-            dim: int = -1,
-            keepdim: bool = True,
-            unbiased: bool = False,
         ):
-            return x.var(dim=dim, keepdim=keepdim, unbiased=unbiased)
+            return x.var(dim=self.dim, keepdim=self.keepdim, unbiased=self.unbiased)
 
     class VarCorrection(torch.nn.Module):
         test_parameters = [
@@ -67,14 +85,19 @@ class TestVar(unittest.TestCase):
             (torch.rand(1, 50, 10, 20), (-1, -2), True, 0.5),
         ]
 
+        def __init__(
+            self, dim: int = -1, keepdim: bool = True, correction: bool = False
+        ):
+            super().__init__()
+            self.dim = dim
+            self.keepdim = keepdim
+            self.correction = correction
+
         def forward(
             self,
             x: torch.Tensor,
-            dim: int | tuple[int] = -1,
-            keepdim: bool = True,
-            correction: int = 0,
         ):
-            return x.var(dim=dim, keepdim=keepdim, correction=correction)
+            return x.var(dim=self.dim, keepdim=self.keepdim, correction=self.correction)
 
     def _test_var_tosa_MI_pipeline(
         self,
@@ -86,7 +109,7 @@ class TestVar(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .to_edge()
@@ -102,13 +125,11 @@ class TestVar(unittest.TestCase):
         test_data: torch.Tensor,
         target_str: str = None,
     ):
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
+        tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
+        compile_spec = common.get_tosa_compile_spec(tosa_spec)
+        quantizer = TOSAQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
         (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
-            )
+            ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
             .to_edge()
@@ -125,8 +146,10 @@ class TestVar(unittest.TestCase):
         test_data: torch.Tensor,
         target_str: str = None,
     ):
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
-        (
+        quantizer = EthosUQuantizer(compile_spec).set_io(
+            get_symmetric_quantization_config()
+        )
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -138,58 +161,61 @@ class TestVar(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .serialize()
         )
+        if conftest.is_option_enabled("corstone_fvp"):
+            tester.run_method_and_compare_outputs(inputs=test_data, qtol=1)
 
     @parameterized.expand(Var.test_parameters)
     def test_var_tosa_MI(self, test_tensor: torch.Tensor, keepdim, correction):
-        self._test_var_tosa_MI_pipeline(self.Var(), (test_tensor, keepdim, correction))
+        self._test_var_tosa_MI_pipeline(self.Var(keepdim, correction), (test_tensor,))
 
     @parameterized.expand(Var.test_parameters)
     def test_var_tosa_BI(self, test_tensor: torch.Tensor, keepdim, correction):
-        self._test_var_tosa_BI_pipeline(self.Var(), (test_tensor, keepdim, correction))
+        self._test_var_tosa_BI_pipeline(self.Var(keepdim, correction), (test_tensor,))
 
     @parameterized.expand(Var.test_parameters)
     def test_var_u55_BI(self, test_tensor: torch.Tensor, keepdim, correction):
         self._test_var_ethosu_BI_pipeline(
-            self.Var(),
+            self.Var(keepdim, correction),
             common.get_u55_compile_spec(),
-            (test_tensor, keepdim, correction),
+            (test_tensor,),
         )
 
     @parameterized.expand(Var.test_parameters)
     def test_var_u85_BI(self, test_tensor: torch.Tensor, keepdim, correction):
         self._test_var_ethosu_BI_pipeline(
-            self.Var(),
+            self.Var(keepdim, correction),
             common.get_u85_compile_spec(),
-            (test_tensor, keepdim, correction),
+            (test_tensor,),
         )
 
     @parameterized.expand(VarDim.test_parameters)
-    def test_var_dim_tosa_MI(self, test_tensor: torch.Tensor, dim, keepdim, correction):
+    def test_var_dim_tosa_MI(self, test_tensor: torch.Tensor, dim, keepdim, unbiased):
         self._test_var_tosa_MI_pipeline(
-            self.VarDim(), (test_tensor, dim, keepdim, correction)
+            self.VarDim(dim, keepdim, unbiased), (test_tensor,)
         )
 
     @parameterized.expand(VarDim.test_parameters)
-    def test_var_dim_tosa_BI(self, test_tensor: torch.Tensor, dim, keepdim, correction):
+    def test_var_dim_tosa_BI(self, test_tensor: torch.Tensor, dim, keepdim, unbiased):
         self._test_var_tosa_BI_pipeline(
-            self.VarDim(), (test_tensor, dim, keepdim, correction)
+            self.VarDim(dim, keepdim, unbiased), (test_tensor,)
         )
 
-    @parameterized.expand(VarDim.test_parameters)
-    def test_var_dim_u55_BI(self, test_tensor: torch.Tensor, dim, keepdim, correction):
+    @parameterized.expand(VarDim.test_parameters_u55)
+    def test_var_dim_u55_BI(self, test_tensor: torch.Tensor, dim, keepdim, unbiased):
         self._test_var_ethosu_BI_pipeline(
-            self.VarDim(),
+            self.VarDim(dim, keepdim, unbiased),
             common.get_u55_compile_spec(),
-            (test_tensor, dim, keepdim, correction),
+            (test_tensor,),
         )
 
     @parameterized.expand(VarDim.test_parameters)
-    def test_var_dim_u85_BI(self, test_tensor: torch.Tensor, dim, keepdim, correction):
+    def test_var_dim_u85_BI(self, test_tensor: torch.Tensor, dim, keepdim, unbiased):
         self._test_var_ethosu_BI_pipeline(
-            self.VarDim(),
+            self.VarDim(dim, keepdim, unbiased),
             common.get_u85_compile_spec(),
-            (test_tensor, dim, keepdim, correction),
+            (test_tensor,),
         )
 
     @parameterized.expand(VarCorrection.test_parameters)
@@ -197,7 +223,7 @@ class TestVar(unittest.TestCase):
         self, test_tensor: torch.Tensor, dim, keepdim, correction
     ):
         self._test_var_tosa_MI_pipeline(
-            self.VarCorrection(), (test_tensor, dim, keepdim, correction)
+            self.VarCorrection(dim, keepdim, correction), (test_tensor,)
         )
 
     @parameterized.expand(VarCorrection.test_parameters)
@@ -205,7 +231,7 @@ class TestVar(unittest.TestCase):
         self, test_tensor: torch.Tensor, dim, keepdim, correction
     ):
         self._test_var_tosa_BI_pipeline(
-            self.VarCorrection(), (test_tensor, dim, keepdim, correction)
+            self.VarCorrection(dim, keepdim, correction), (test_tensor,)
         )
 
     @parameterized.expand(VarCorrection.test_parameters)
@@ -213,9 +239,9 @@ class TestVar(unittest.TestCase):
         self, test_tensor: torch.Tensor, dim, keepdim, correction
     ):
         self._test_var_ethosu_BI_pipeline(
-            self.VarCorrection(),
+            self.VarCorrection(dim, keepdim, correction),
             common.get_u55_compile_spec(),
-            (test_tensor, dim, keepdim, correction),
+            (test_tensor,),
         )
 
     @parameterized.expand(VarCorrection.test_parameters)
@@ -223,7 +249,7 @@ class TestVar(unittest.TestCase):
         self, test_tensor: torch.Tensor, dim, keepdim, correction
     ):
         self._test_var_ethosu_BI_pipeline(
-            self.VarCorrection(),
+            self.VarCorrection(dim, keepdim, correction),
             common.get_u85_compile_spec(),
-            (test_tensor, dim, keepdim, correction),
+            (test_tensor,),
         )

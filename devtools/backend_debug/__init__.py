@@ -7,6 +7,7 @@
 from executorch.devtools.backend_debug.delegation_info import (
     DelegationBreakdown,
     get_delegation_info,
+    print_delegation_info,
 )
 
-__all__ = ["DelegationBreakdown", "get_delegation_info"]
+__all__ = ["DelegationBreakdown", "get_delegation_info", "print_delegation_info"]

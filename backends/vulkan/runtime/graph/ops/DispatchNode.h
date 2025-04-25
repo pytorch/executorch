@@ -10,6 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
+#include <executorch/backends/vulkan/runtime/graph/containers/PushConstantData.h>
 #include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
@@ -34,7 +35,8 @@ class DispatchNode final : public ExecuteNode {
       const vkapi::ParamsBindList& params,
       const vkapi::SpecVarList& spec_vars = {},
       const ResizeFunction& resize_fn = nullptr,
-      const std::vector<ValueRef>& resize_args = {});
+      const std::vector<ValueRef>& resize_args = {},
+      const std::vector<PushConstantDataInfo>& push_constants = {});
 
   ~DispatchNode() override = default;
 
@@ -43,9 +45,10 @@ class DispatchNode final : public ExecuteNode {
  protected:
   const vkapi::ShaderInfo shader_;
   const utils::uvec3 global_workgroup_size_;
-  const utils::uvec3 local_workgroup_size_;
+  const utils::WorkgroupSize local_workgroup_size_;
   const vkapi::ParamsBindList params_;
   const vkapi::SpecVarList spec_vars_;
+  const std::vector<PushConstantDataInfo> push_constants_;
 
  public:
   operator bool() const {

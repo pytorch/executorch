@@ -15,6 +15,9 @@
 namespace executorch {
 namespace extension {
 
+using ::executorch::ET_RUNTIME_NAMESPACE::Method;
+using ::executorch::ET_RUNTIME_NAMESPACE::TensorInfo;
+
 /**
  * RAII helper that frees a set of buffers when destroyed. Movable.
  */
@@ -51,18 +54,37 @@ class BufferCleanup final {
   executorch::runtime::Span<void*> buffers_;
 };
 
+/// Defines options for `prepare_input_tensors()`.
+struct PrepareInputTensorsOptions {
+  /**
+   * The maximum total size in bytes of all input tensors. If the total size of
+   * all inputs exceeds this, an error is returned. This prevents allocating too
+   * much memory if the PTE file is malformed.
+   */
+  size_t max_total_allocation_size = 1024 * 1024 * 1024;
+
+  /**
+   * The maximum number of inputs to allocate. If the number of inputs exceeds
+   * this, an error is returned. This prevents allocating too much memory if the
+   * PTE file is malformed.
+   */
+  size_t max_inputs = 1024;
+};
+
 /**
  * Allocates input tensors for the provided Method, filling them with ones. Does
  * not modify inputs that are not Tensors.
  *
  * @param[in] method The Method that owns the inputs to prepare.
+ * @param[in] options Extra options for preparing the inputs.
  *
  * @returns On success, an object that owns any allocated tensor memory. It must
  *     remain alive when calling `method->execute()`.
  * @returns An error on failure.
  */
 executorch::runtime::Result<BufferCleanup> prepare_input_tensors(
-    executorch::runtime::Method& method);
+    Method& method,
+    PrepareInputTensorsOptions options = {});
 
 namespace internal {
 /**
@@ -70,8 +92,8 @@ namespace internal {
  * fills it with ones, and sets the input at `input_index`.
  */
 executorch::runtime::Error fill_and_set_input(
-    executorch::runtime::Method& method,
-    executorch::runtime::TensorInfo& tensor_meta,
+    Method& method,
+    TensorInfo& tensor_meta,
     size_t input_index,
     void* data_ptr);
 } // namespace internal

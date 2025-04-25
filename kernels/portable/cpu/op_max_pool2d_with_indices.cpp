@@ -16,9 +16,9 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
-using IntArrayRef = exec_aten::ArrayRef<int64_t>;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
+using IntArrayRef = executorch::aten::ArrayRef<int64_t>;
 
 std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
     KernelRuntimeContext& ctx,
@@ -40,7 +40,7 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
       ret_val);
 
   size_t output_ndim = 0;
-  exec_aten::SizesType output_sizes[kTensorDimensionLimit];
+  executorch::aten::SizesType output_sizes[kTensorDimensionLimit];
   get_max_pool2d_with_indices_out_target_size(
       in,
       kernel_size,
@@ -70,7 +70,7 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
       ret_val);
 
   ScalarType in_type = in.scalar_type();
-  ET_SWITCH_REAL_TYPES(
+  ET_SWITCH_REALHBF16_TYPES(
       in_type, ctx, "max_pool2d_with_indices.out", CTYPE, [&]() {
         apply_kernel_2d_reduce_then_map_fn<CTYPE>(
             [](const CTYPE in_val,

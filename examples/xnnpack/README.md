@@ -1,8 +1,8 @@
 # XNNPACK Backend
 
 [XNNPACK](https://github.com/google/XNNPACK) is a library of optimized neural network operators for ARM and x86 CPU platforms. Our delegate lowers models to run using these highly optimized CPU operators. You can try out lowering and running some example models in the demo. Please refer to the following docs for information on the XNNPACK Delegate
-- [XNNPACK Backend Delegate Overview](https://pytorch.org/executorch/stable/native-delegates-executorch-xnnpack-delegate.html)
-- [XNNPACK Delegate Export Tutorial](https://pytorch.org/executorch/stable/tutorial-xnnpack-delegate-lowering.html)
+- [XNNPACK Backend Delegate Overview](https://pytorch.org/executorch/main/backends-xnnpack)
+- [XNNPACK Delegate Export Tutorial](https://pytorch.org/executorch/main/tutorial-xnnpack-delegate-lowering)
 
 
 ## Directory structure
@@ -31,7 +31,7 @@ Once we have the model binary (pte) file, then let's run it with ExecuTorch runt
 cd executorch
 
 # Get a clean cmake-out directory
-rm -rf cmake-out
+./install_executorch.sh --clean
 mkdir cmake-out
 
 # Configure cmake
@@ -60,7 +60,7 @@ Now finally you should be able to run this model with the following command
 ```
 
 ## Quantization
-First, learn more about the generic PyTorch 2 Export Quantization workflow in the [Quantization Flow Docs](https://pytorch.org/executorch/stable/quantization-overview.html), if you are not familiar already.
+First, learn more about the generic PyTorch 2 Export Quantization workflow in the [Quantization Flow Docs](https://pytorch.org/executorch/main/quantization-overview), if you are not familiar already.
 
 Here we will discuss quantizing a model suitable for XNNPACK delegation using XNNPACKQuantizer.
 
@@ -86,7 +86,7 @@ After exporting the XNNPACK Delegated model, we can now try running it with exam
 cd executorch
 
 # Get a clean cmake-out directory
-rm -rf cmake-out
+./install_executorch.sh --clean
 mkdir cmake-out
 
 # Configure cmake

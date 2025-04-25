@@ -10,7 +10,11 @@ import logging
 
 import torch
 
-from .eval_llama_lib import build_args_parser, eval_llama
+from .eval_llama_lib import (
+    build_args_parser,
+    eval_llama,
+    eval_llama_with_attention_sink,
+)
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -24,7 +28,10 @@ def main() -> None:
     args = parser.parse_args()
     # Overrides this arg, because evaluation requires full logits.
     args.generate_full_logits = True
-    eval_llama(modelname, args)  # pyre-ignore
+    if args.use_attention_sink:
+        eval_llama_with_attention_sink(modelname, args)  # pyre-ignore
+    else:
+        eval_llama(modelname, args)  # pyre-ignore
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@
  */
 
 #pragma once
+#include <c10/util/irange.h>
 
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <string.h>
@@ -14,8 +15,8 @@
 namespace torch {
 namespace executor {
 
-using SizesType = exec_aten::SizesType;
-using StridesType = exec_aten::StridesType;
+using SizesType = executorch::aten::SizesType;
+using StridesType = executorch::aten::StridesType;
 
 /**
  * Returns a tensor that is a transposed version of input in out.
@@ -66,7 +67,7 @@ inline void increment_index_and_offset(
     // Impossible to happen at i = 0 due to precondition check before this
     // function is called
     offset += new_strides[i];
-    if (index[i] == new_sizes[i]) {
+    if (static_cast<SizesType>(index[i]) == new_sizes[i]) {
       offset -= new_sizes[i] * new_strides[i];
       index[i] = 0;
     } else {
@@ -118,7 +119,7 @@ void transpose_tensors(
   // tensor in output tensor order.
   size_t non_1_dim_indices[kTensorDimensionLimit];
   size_t num_non_1_dim_indices = 0;
-  for (size_t cur_dim = 0; cur_dim < dim; cur_dim++) {
+  for (const auto cur_dim : c10::irange(dim)) {
     if (new_sizes[cur_dim] != 1) {
       non_1_dim_indices[num_non_1_dim_indices++] = cur_dim;
     }
@@ -128,7 +129,7 @@ void transpose_tensors(
 
   // Loop over and copy input elements into output
   size_t a_offset = 0;
-  for (ssize_t out_offset = 0; out_offset < a.numel(); out_offset++) {
+  for (const auto out_offset : c10::irange(a.numel())) {
     data_out[out_offset] = data_a[a_offset];
     increment_index_and_offset(
         out_index, new_sizes, new_strides, indices, a_offset);
@@ -164,7 +165,7 @@ inline void get_transpose_out_target_size(
     return;
   }
 
-  for (size_t i = 0; i < in.dim(); ++i) {
+  for (const auto i : c10::irange(in.dim())) {
     out_sizes[i] = in.size(i);
   }
   out_sizes[dim0] = in.size(dim1);

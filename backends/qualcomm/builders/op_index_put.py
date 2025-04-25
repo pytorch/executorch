@@ -24,10 +24,10 @@ class IndexPutVisitor(NodeVisitor):
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
         indicies_node = node.args[1]
         indices_list = [
@@ -45,10 +45,10 @@ class IndexPutVisitor(NodeVisitor):
 
         indices_tensor_wrapper = self.define_tensor(
             indice_node[0],
+            node,
             indices_qnn,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
         value_node = node.args[2]
 
@@ -56,18 +56,18 @@ class IndexPutVisitor(NodeVisitor):
 
         value_tensor_wrapper = self.define_tensor(
             value_node,
+            node,
             value_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
 
         index_put_op = PyQnnWrapper.PyQnnOpWrapper(

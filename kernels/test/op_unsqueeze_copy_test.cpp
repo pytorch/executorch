@@ -19,8 +19,8 @@
 #include <cstdio>
 
 using namespace ::testing;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpUnsqueezeTest : public OperatorTest {
@@ -82,7 +82,7 @@ class OpUnsqueezeTest : public OperatorTest {
 #ifdef USE_ATEN_LIB
       const c10::IntArrayRef& size_in,
 #else
-      const exec_aten::ArrayRef<int32_t>& size_in,
+      const executorch::aten::ArrayRef<int32_t>& size_in,
 #endif
       int64_t dim) {
     std::vector<int32_t> size_out(size_in.size() + 1);

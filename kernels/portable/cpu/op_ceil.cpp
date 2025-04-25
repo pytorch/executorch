@@ -14,10 +14,10 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using exec_aten::Tensor;
+using executorch::aten::Tensor;
 
 Tensor& ceil_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
-  return internal::unary_ufunc_realh(std::ceil, ctx, in, out);
+  return internal::unary_ufunc_realhbf16(std::ceil, ctx, in, out);
 }
 
 } // namespace native

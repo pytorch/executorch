@@ -11,7 +11,7 @@ from typing import Dict
 
 import pandas as pd
 import torch
-
+from tabulate import tabulate
 
 # Column names of the DataFrame returned by DelegationInfo.get_operator_delegation_dataframe()
 # which describes the summarized delegation information grouped by each operator type
@@ -174,3 +174,10 @@ def get_delegation_info(
         num_delegated_subgraphs=delegated_subgraph_counter,
         delegation_by_operator=op_occurrences_dict,
     )
+
+
+def print_delegation_info(graph_module: torch.fx.GraphModule):
+    delegation_info = get_delegation_info(graph_module)
+    print(delegation_info.get_summary())
+    df = delegation_info.get_operator_delegation_dataframe()
+    print(tabulate(df, headers="keys", tablefmt="fancy_grid"))

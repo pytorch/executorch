@@ -5,15 +5,17 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import glob
 import json
 import logging
 import os
 import re
+import sys
 import zipfile
 from argparse import Action, ArgumentParser, Namespace
 from io import BytesIO
 from logging import info, warning
-from typing import Any, Dict, List, Optional
+from typing import Any, DefaultDict, Dict, List, Optional
 from urllib import error, request
 
 
@@ -22,6 +24,7 @@ logging.basicConfig(level=logging.INFO)
 
 BENCHMARK_RESULTS_FILENAME = "benchmark_results.json"
 ARTIFACTS_FILENAME_REGEX = re.compile(r"(android|ios)-artifacts-(?P<job_id>\d+).json")
+BENCHMARK_CONFIG_REGEX = re.compile(r"The benchmark config is (?P<benchmark_config>.+)")
 
 # iOS-related regexes and variables
 IOS_TEST_SPEC_REGEX = re.compile(
@@ -51,7 +54,7 @@ class ValidateArtifacts(Action):
         parser.error(f"{values} is not a valid JSON file (*.json)")
 
 
-class ValidateOutputDir(Action):
+class ValidateDir(Action):
     def __call__(
         self,
         parser: ArgumentParser,
@@ -81,46 +84,29 @@ def parse_args() -> Any:
         "--output-dir",
         type=str,
         required=True,
-        action=ValidateOutputDir,
+        action=ValidateDir,
         help="the directory to keep the benchmark results",
     )
     parser.add_argument(
-        "--repo",
+        "--benchmark-configs",
         type=str,
         required=True,
-        help="which GitHub repo this workflow run belongs to",
+        action=ValidateDir,
+        help="the directory to keep the benchmark configs",
     )
+
     parser.add_argument(
-        "--head-branch",
+        "--app",
         type=str,
         required=True,
-        help="the head branch that runs",
-    )
-    parser.add_argument(
-        "--workflow-name",
-        type=str,
-        required=True,
-        help="the name of the benchmark workflow",
-    )
-    parser.add_argument(
-        "--workflow-run-id",
-        type=int,
-        required=True,
-        help="the id of the benchmark workflow",
-    )
-    parser.add_argument(
-        "--workflow-run-attempt",
-        type=int,
-        required=True,
-        help="which retry of the workflow this is",
+        choices=["android", "ios"],
+        help="the type of app, ios or android, this is mainly used to generate default record when a failed job happens",
     )
 
     return parser.parse_args()
 
 
-def extract_android_benchmark_results(
-    job_name: str, artifact_type: str, artifact_s3_url: str
-) -> List:
+def extract_android_benchmark_results(artifact_type: str, artifact_s3_url: str) -> List:
     """
     The benchmark results from Android have already been stored in CUSTOMER_ARTIFACT
     artifact, so we will just need to get it
@@ -144,9 +130,10 @@ def extract_android_benchmark_results(
         # This is to handle the case where there is no benchmark results
         warning(f"Fail to load the benchmark results from {artifact_s3_url}")
         return []
+    return []
 
 
-def initialize_ios_metadata(test_name: str) -> Dict[str, any]:
+def initialize_ios_metadata(test_name: str) -> Dict[str, Any]:
     """
     Extract the benchmark metadata from the test name, for example:
         test_forward_llama2_pte_iOS_17_2_1_iPhone15_4
@@ -220,11 +207,7 @@ def extract_ios_metric(
 
     elif method == "forward":
         if metric_name == "Clock Monotonic Time, s":
-            benchmark_result["metric"] = (
-                "generate_time(ms)"
-                if "llama" in test_name
-                else "avg_inference_latency(ms)"
-            )
+            benchmark_result["metric"] = "avg_inference_latency(ms)"
             benchmark_result["actualValue"] = metric_value * 1000
 
         elif metric_name == "Memory Peak Physical, kB":
@@ -232,16 +215,19 @@ def extract_ios_metric(
             benchmark_result["metric"] = "peak_inference_mem_usage(mb)"
             benchmark_result["actualValue"] = metric_value / 1024
 
-    elif method == "generate" and metric_name == "Tokens Per Second, t/s":
-        benchmark_result["metric"] = "token_per_sec"
-        benchmark_result["actualValue"] = metric_value
+    elif method == "generate":
+        if metric_name == "Clock Monotonic Time, s":
+            benchmark_result["metric"] = "generate_time(ms)"
+            benchmark_result["actualValue"] = metric_value * 1000
+
+        elif metric_name == "Tokens Per Second, t/s":
+            benchmark_result["metric"] = "token_per_sec"
+            benchmark_result["actualValue"] = metric_value
 
     return benchmark_result
 
 
-def extract_ios_benchmark_results(
-    job_name: str, artifact_type: str, artifact_s3_url: str
-) -> List:
+def extract_ios_benchmark_results(artifact_type: str, artifact_s3_url: str) -> List:
     """
     The benchmark results from iOS are currently from xcresult, which could either
     be parsed from CUSTOMER_ARTIFACT or get from the test spec output. The latter
@@ -300,16 +286,62 @@ def extract_job_id(artifacts_filename: str) -> int:
     return int(m.group("job_id"))
 
 
+def read_all_benchmark_configs() -> Dict[str, Dict[str, str]]:
+    """
+    Read all the benchmark configs that we can find
+    """
+    benchmark_configs = {}
+
+    for file in glob.glob(f"{benchmark_configs}/*.json"):
+        filename = os.path.basename(file)
+        with open(file) as f:
+            try:
+                benchmark_configs[filename] = json.load(f)
+            except json.JSONDecodeError as e:
+                warning(f"Fail to load benchmark config {file}: {e}")
+
+    return benchmark_configs
+
+
+def read_benchmark_config(
+    artifact_s3_url: str, benchmark_configs_dir: str
+) -> Dict[str, str]:
+    """
+    Get the correct benchmark config for this benchmark run
+    """
+    try:
+        with request.urlopen(artifact_s3_url) as data:
+            for line in data.read().decode("utf8").splitlines():
+                m = BENCHMARK_CONFIG_REGEX.match(line)
+                if not m:
+                    continue
+
+                benchmark_config = m.group("benchmark_config")
+                filename = os.path.join(
+                    benchmark_configs_dir, f"{benchmark_config}.json"
+                )
+
+                if not os.path.exists(filename):
+                    warning(f"There is no benchmark config {filename}")
+                    continue
+
+                with open(filename) as f:
+                    try:
+                        return json.load(f)
+                    except json.JSONDecodeError as e:
+                        warning(f"Fail to load benchmark config {filename}: {e}")
+    except error.HTTPError:
+        warning(f"Fail to read the test spec output at {artifact_s3_url}")
+
+    return {}
+
+
 def transform(
     app_type: str,
     benchmark_results: List,
-    repo: str,
-    head_branch: str,
-    workflow_name: str,
-    workflow_run_id: int,
-    workflow_run_attempt: int,
+    benchmark_config: Dict[str, str],
     job_name: str,
-    job_id: int,
+    job_report: Any = {},
 ) -> List:
     """
     Transform the benchmark results into the format writable into the benchmark database
@@ -319,88 +351,354 @@ def transform(
     for r in benchmark_results:
         r["deviceInfo"]["device"] = job_name
 
-    # TODO (huydhn): This is the current schema of the database oss_ci_benchmark_v2,
-    # and I'm trying to fit ET benchmark results into it, which is kind of awkward.
-    # However, the schema is going to be updated soon
+    # From https://github.com/pytorch/pytorch/wiki/How-to-integrate-with-PyTorch-OSS-benchmark-database
     return [
         {
-            # GH-info to identify where the benchmark is run
-            "repo": repo,
-            "head_branch": head_branch,
-            "workflow_id": workflow_run_id,
-            "run_attempt": workflow_run_attempt,
-            "job_id": job_id,
-            # The model
-            "name": f"{r['benchmarkModel']['name']} {r['benchmarkModel'].get('backend', '')}".strip(),
-            "dtype": (
-                r["benchmarkModel"]["quantization"]
-                if r["benchmarkModel"]["quantization"]
-                else "unknown"
-            ),
-            # The metric value
-            "metric": r["metric"],
-            "actual": r["actualValue"],
-            "target": r["targetValue"],
-            # The device
-            "device": r["deviceInfo"]["device"],
-            "arch": r["deviceInfo"].get("os", ""),
-            # Not used here, just set it to something unique here
-            "filename": workflow_name,
-            "test_name": app_type,
-            "runner": job_name,
+            "benchmark": {
+                "name": "ExecuTorch",
+                "mode": "inference",
+                "extra_info": {
+                    "app_type": app_type,
+                    # Just keep a copy of the benchmark config here
+                    "benchmark_config": json.dumps(benchmark_config),
+                    "job_conclusion": "SUCCESS",
+                    "job_arn": job_report.get("arn", ""),
+                },
+            },
+            "model": {
+                "name": benchmark_config.get("model", r["benchmarkModel"]["name"]),
+                "type": "OSS model",
+                "backend": benchmark_config.get(
+                    "config", r["benchmarkModel"].get("backend", "")
+                ),
+            },
+            "metric": {
+                "name": r["metric"],
+                "benchmark_values": [r["actualValue"]],
+                "target_value": r["targetValue"],
+                "extra_info": {
+                    "method": r.get("method", ""),
+                },
+            },
+            "runners": [
+                {
+                    "name": r["deviceInfo"]["device"],
+                    "type": r["deviceInfo"]["os"],
+                    "avail_mem_in_gb": r["deviceInfo"].get("availMem", ""),
+                    "total_mem_in_gb": r["deviceInfo"].get("totalMem", ""),
+                }
+            ],
         }
         for r in benchmark_results
     ]
 
 
-def main() -> None:
-    args = parse_args()
+def extract_model_info(git_job_name: str) -> Dict[str, str]:
+    """
+    Get model infomation form git_job_name.
+    CHANGE IF CHANGE:
+        - get_benchmark_configs() in executorch/.ci/scripts/gather_benchmark_configs.py
+        - job name benchmark-on-device in executorch/.github/workflows/android-perf.yml
+        - job name benchmark-on-device in executorch/.github/workflows/apple-perf.yml
+    for example:
+        benchmark-on-device (ic4, qnn_q8, samsung_galaxy_s24, arn:aws:devicefarm:us-west-2:308535385114:d... / mobile-job (android)
+        benchmark-on-device (llama, xnnpack_q8, apple_iphone_15, arn:aws:devicefarm:us-west-2:30853538511... / mobile-job (ios)
+    """
+    # Extract content inside the first parentheses,
+    pattern = r"benchmark-on-device \((.+)"
+    match = re.search(pattern, git_job_name)
+    if not match:
+        raise ValueError(
+            f"regex pattern not found from git_job_name: pattern: `{pattern}`, git_job_name: `{git_job_name}`. please check if pattern is in sync with executorch/.ci/scripts/gather_benchmark_configs.py and the job name from previous step"
+        )
 
-    # Across all devices
+    extracted_content = match.group(1)  # Get content after the opening parenthesis
+    items = extracted_content.split(",")
+    if len(items) < 3:
+        raise ValueError(
+            f"expect at least 3 items extrac from git_job_name {git_job_name}, but got {items}. please check if pattern is in sync with executorch/.ci/scripts/gather_benchmark_configs.py"
+        )
+
+    return {
+        "model_name": items[0].strip(),
+        "model_backend": items[1].strip(),
+        "device_pool_name": items[2].strip(),
+    }
+
+
+def transform_failure_record(
+    app_type: str,
+    level: str,
+    model_name: str,
+    model_backend: str,
+    device_name: str,
+    device_os: str,
+    result: str,
+    report: Any = {},
+) -> Any:
+    """
+    Transform the benchmark results into the format writable into the benchmark database for job failures
+    """
+    # From https://github.com/pytorch/pytorch/wiki/How-to-integrate-with-PyTorch-OSS-benchmark-database
+    return {
+        "benchmark": {
+            "name": "ExecuTorch",
+            "mode": "inference",
+            "extra_info": {
+                "app_type": app_type,
+                "job_conclusion": result,
+                "failure_type": level,
+                "job_arn": report.get("arn", ""),
+                "job_report": json.dumps(report),
+            },
+        },
+        "model": {
+            "name": model_name,
+            "type": "OSS model",
+            "backend": model_backend,
+        },
+        "metric": {
+            "name": "FAILURE_REPORT",
+            "benchmark_values": [0],
+            "target_value": 0,
+            "extra_info": {
+                "method": "",
+            },
+        },
+        "runners": [
+            {
+                "name": device_name,
+                "type": device_os,
+            }
+        ],
+    }
+
+
+def to_job_report_map(job_reports) -> Dict[str, Any]:
+    return {job_report["arn"]: job_report for job_report in job_reports}
+
+
+def group_by_arn(artifacts: List) -> Dict[str, List]:
+    """
+    Group the artifacts by the job ARN
+    """
+    arn_to_artifacts = DefaultDict(list)
+    for artifact in artifacts:
+        job_arn = artifact.get("job_arn", "")
+        app_type = artifact.get("app_type", "")
+        if not app_type or app_type not in ["ANDROID_APP", "IOS_APP"]:
+            info(
+                f"App type {app_type} is not recognized in artifact {json.dumps(artifact)}"
+            )
+            continue
+        if not job_arn:
+            info(f"missing job_arn in artifact {json.dumps(artifact)}")
+            continue
+        arn_to_artifacts[job_arn].append(artifact)
+    return arn_to_artifacts
+
+
+# get the benchmark config from TestSpec file if any exist
+def get_benchmark_config(
+    artifacts: List[Dict[str, Any]], benchmark_configs: str
+) -> Dict[str, str]:
+    result = next(
+        (artifact for artifact in artifacts if artifact["type"] == "TESTSPEC_OUTPUT"),
+        None,
+    )
+    if not result:
+        return {}
+    artifact_s3_url = result["s3_url"]
+    return read_benchmark_config(artifact_s3_url, benchmark_configs)
+
+
+def extract_benchmark_result_from_artifact(
+    artifact: Dict[str, Any],
+    benchmark_config: Dict[str, str],
+    job_report: Any,
+) -> List[Any]:
+    job_name = artifact.get("job_name", "")
+    artifact_type = artifact.get("type", "")
+    artifact_s3_url = artifact.get("s3_url", "")
+    app_type = artifact.get("app_type", "")
+
+    info(
+        f"Processing {app_type} artifact: {job_name} {artifact_type} {artifact_s3_url}"
+    )
+    benchmark_results = []
+    if app_type == "ANDROID_APP":
+        benchmark_results = extract_android_benchmark_results(
+            artifact_type, artifact_s3_url
+        )
+    if app_type == "IOS_APP":
+        benchmark_results = extract_ios_benchmark_results(
+            artifact_type, artifact_s3_url
+        )
+    if not benchmark_results:
+        return []
+    return transform(
+        app_type, benchmark_results, benchmark_config, job_name, job_report
+    )
+
+
+def get_app_type(type: str):
+    match type:
+        case "ios":
+            return "IOS_APP"
+        case "android":
+            return "ANDROID_APP"
+        case _:
+            raise ValueError(
+                f"unknown device type detected: {type}, currently we only support `ios` and `android`"
+            )
+
+
+def get_device_os_type(type: str):
+    match type:
+        case "ios":
+            return "iOS"
+        case "android":
+            return "Android"
+        case _:
+            raise ValueError(
+                f"unknown device type detected: {type}, currently we only support `ios` and `android`"
+            )
+
+
+def generate_git_job_level_failure_record(git_job_name: str, app: str) -> Any:
+    """
+    generates benchmark record for GIT_JOB level failure, this is mainly used as placeholder in UI to indicate job failures.
+    """
+    level = "GIT_JOB"
+
+    app_type = get_app_type(app)
+    device_prefix = get_device_os_type(app)
+
+    model_infos = extract_model_info(git_job_name)
+
+    model_name = model_infos["model_name"]
+    model_backend = model_infos["model_backend"]
+    device_pool_name = model_infos["device_pool_name"]
+
+    return transform_failure_record(
+        app_type,
+        level,
+        model_name,
+        model_backend,
+        device_pool_name,
+        device_prefix,
+        "FAILURE",
+    )
+
+
+def generate_device_level_failure_record(
+    git_job_name: str, job_report: Any, app: str
+) -> Any:
+    """
+    generates benchmark record for DEVICE_JOB level failure, this is mainly used as placeholder in UI to indicate job failures.
+    """
+    level = "DEVICE_JOB"
+
+    model_infos = extract_model_info(git_job_name)
+
+    model_name = model_infos["model_name"]
+    model_backend = model_infos["model_backend"]
+
+    osPrefix = get_device_os_type(app)
+    job_report_os = job_report["os"]
+
+    # make sure the device os name has prefix iOS and Android
+    device_os = job_report_os
+    if not job_report_os.startswith(osPrefix):
+        device_os = f"{osPrefix} {job_report_os}"
+
+    return transform_failure_record(
+        job_report["app_type"],
+        level,
+        model_name,
+        model_backend,
+        job_report["name"],
+        device_os,
+        job_report["result"],
+        job_report,
+    )
+
+
+def process_benchmark_results(content: Any, app: str, benchmark_configs: str):
+    """
+    main code to run to extract benchmark results from artifacts.
+    Job can be failed at two levels: GIT_JOB and DEVICE_JOB. If any job fails, generate failure benchmark record.
+
+    this function is mainly used in android-perf and apple-perf workflow.
+    """
+    artifacts = content.get("artifacts")
+    git_job_name = content["git_job_name"]
+
+    # this indicated that the git job fails, generate a failure record
+    if not artifacts:
+        info(f"job failed at GIT_JOB level with git job name {git_job_name}")
+        try:
+            failure_record = generate_git_job_level_failure_record(git_job_name, app)
+        except Exception as e:
+            raise ValueError(
+                f"Fail to generate record for GIT_JOB level failure for {git_job_name}: {e}"
+            )
+        return [failure_record]
+
+    arn_to_artifacts = group_by_arn(artifacts)
+    job_reports = content["job_reports"]
+    arn_to_job_report = to_job_report_map(job_reports)
+
     all_benchmark_results = []
 
+    # process mobile job's benchmark results. Each job represent one device+os in device pool
+    for job_arn, job_artifacts in arn_to_artifacts.items():
+        job_report = arn_to_job_report.get(job_arn)
+
+        if not job_report:
+            info(
+                f"job arn {job_arn} is not recognized in job_reports list {json.dumps(job_reports)}, skip the process"
+            )
+            continue
+
+        result = job_report.get("result", "")
+        if result != "PASSED":
+            arn = job_report["arn"]
+            info(f"job {arn} failed at DEVICE_JOB level with result {result}")
+            # device test failed, generate a failure record instead
+            try:
+                failure_record = generate_device_level_failure_record(
+                    git_job_name, job_report, app
+                )
+            except Exception as e:
+                raise ValueError(
+                    f"Fail to generate record for DEVICE_JOB level failure for job {job_arn}: {e}"
+                )
+            all_benchmark_results.append(failure_record)
+        else:
+            benchmark_config = get_benchmark_config(job_artifacts, benchmark_configs)
+            for job_artifact in job_artifacts:
+                # generate result for each schema
+                results = extract_benchmark_result_from_artifact(
+                    job_artifact, benchmark_config, job_report
+                )
+                all_benchmark_results.extend(results)
+    return all_benchmark_results
+
+
+def main() -> None:
+    args = parse_args()
     with open(args.artifacts) as f:
-        for artifact in json.load(f):
-            app_type = artifact.get("app_type", "")
-            # We expect this to be set to either ANDROID_APP or IOS_APP
-            if not app_type or app_type not in ["ANDROID_APP", "IOS_APP"]:
-                info(
-                    f"App type {app_type} is not recognized in artifact {json.dumps(artifact)}"
-                )
-                continue
-
-            job_name = artifact["job_name"]
-            artifact_type = artifact["type"]
-            artifact_s3_url = artifact["s3_url"]
-
-            if app_type == "ANDROID_APP":
-                benchmark_results = extract_android_benchmark_results(
-                    job_name, artifact_type, artifact_s3_url
-                )
-
-            if app_type == "IOS_APP":
-                benchmark_results = extract_ios_benchmark_results(
-                    job_name, artifact_type, artifact_s3_url
-                )
-
-            if benchmark_results:
-                benchmark_results = transform(
-                    app_type,
-                    benchmark_results,
-                    args.repo,
-                    args.head_branch,
-                    args.workflow_name,
-                    args.workflow_run_id,
-                    args.workflow_run_attempt,
-                    job_name,
-                    extract_job_id(args.artifacts),
-                )
-                all_benchmark_results.extend(benchmark_results)
-
-    if all_benchmark_results:
-        output_file = os.path.basename(args.artifacts)
-        with open(f"{args.output_dir}/{output_file}", "w") as f:
-            json.dump(all_benchmark_results, f)
+        content = json.load(f)
+        all_benchmark_results = process_benchmark_results(
+            content, args.app, args.benchmark_configs
+        )
+    # add v3 in case we have higher version of schema
+    output_dir = os.path.join(args.output_dir, "v3")
+    os.makedirs(output_dir, exist_ok=True)
+    output_file = os.path.basename(args.artifacts)
+    with open(f"{output_dir}/{output_file}", "w") as f:
+        json.dump(all_benchmark_results, f)
 
 
 if __name__ == "__main__":

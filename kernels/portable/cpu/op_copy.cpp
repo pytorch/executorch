@@ -16,7 +16,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 // copy.out(const Tensor& in, const Tensor& src, bool non_blocking, Tensor(a!)
 // out) -> Tensor(a!), see caffe2/aten/src/ATen/native/Copy.cpp

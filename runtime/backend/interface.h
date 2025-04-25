@@ -17,11 +17,12 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/freeable_buffer.h>
 #include <executorch/runtime/core/memory_allocator.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 
 struct SizedBuffer {
   void* buffer;
@@ -139,19 +140,30 @@ struct Backend {
  */
 ET_NODISCARD Error register_backend(const Backend& backend);
 
-} // namespace runtime
+/**
+ * Returns the number of registered backends.
+ */
+size_t get_num_registered_backends();
+
+/**
+ * Returns the backend name at the given index.
+ */
+Result<const char*> get_backend_name(size_t index);
+
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
 
 namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::Backend;
-using ::executorch::runtime::CompileSpec;
-using ::executorch::runtime::DelegateHandle;
-using ::executorch::runtime::get_backend_class;
-using ::executorch::runtime::register_backend;
-using ::executorch::runtime::SizedBuffer;
-using PyTorchBackendInterface = ::executorch::runtime::BackendInterface;
+using ::executorch::ET_RUNTIME_NAMESPACE::Backend;
+using ::executorch::ET_RUNTIME_NAMESPACE::CompileSpec;
+using ::executorch::ET_RUNTIME_NAMESPACE::DelegateHandle;
+using ::executorch::ET_RUNTIME_NAMESPACE::get_backend_class;
+using ::executorch::ET_RUNTIME_NAMESPACE::register_backend;
+using ::executorch::ET_RUNTIME_NAMESPACE::SizedBuffer;
+using PyTorchBackendInterface =
+    ::executorch::ET_RUNTIME_NAMESPACE::BackendInterface;
 } // namespace executor
 } // namespace torch

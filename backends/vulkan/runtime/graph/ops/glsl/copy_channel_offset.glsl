@@ -18,17 +18,16 @@ ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
 ${layout_declare_tensor(B, "r", "existing_out", DTYPE, STORAGE)}
 ${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
 
-${layout_declare_ubo(B, "ivec4", "out_sizes")}
-${layout_declare_ubo(B, "ivec4", "in_sizes")}
-
-layout(set = 0, binding = 5) uniform PRECISION restrict CopyArgs {
+layout(push_constant) uniform restrict Block {
+  ivec4 out_sizes;
+  ivec4 in_sizes;
   // Operates on (x, y, z) logical extents.
-  ivec3 range;
+  // channel_range is stored in range.w
+  ivec4 range;
   // Analogus to range variable in copy. It defines the # of channel being
   // copied.
-  int channel_range;
-  ivec3 dst_offset;
-  int dst_channel_offset;
+  // dst channel offset is stored in dst_offset.w
+  ivec4 dst_offset;
   int src_channel_offset;
 };
 
@@ -47,11 +46,11 @@ void main() {
   // Note: Unlike other shaders, the range is often not equal to the destination
   // texture extent.
   const ivec3 lpos = ivec3(gl_GlobalInvocationID);
-  if (any(greaterThanEqual(lpos, range))) {
+  if (any(greaterThanEqual(lpos, range.xyz))) {
     return;
   }
 
-  const ivec3 out_lpos = lpos + dst_offset;
+  const ivec3 out_lpos = lpos + dst_offset.xyz;
 
   const ivec4 out_tidx = lpos_to_tidx(out_lpos, out_sizes, out_axis_map.w, packed_dim);
 
@@ -61,12 +60,12 @@ void main() {
   ivec4 in_tidx = out_tidx;
   for (int i=0; i<4; i++) {
 
-    in_tidx[packed_dim] = out_tidx[packed_dim] - dst_channel_offset + i;
+    in_tidx[packed_dim] = out_tidx[packed_dim] - dst_offset.w + i;
 
     // Handle the partial update for begining of channel in an existing tensor.
     // If the source channel index is below zero or exceeds the range, we skip
     // updating the element to avoid overwriting existing data.
-    if ((in_tidx[packed_dim] < 0) || (in_tidx[packed_dim] >= channel_range)) {
+    if ((in_tidx[packed_dim] < 0) || (in_tidx[packed_dim] >= range.w)) {
       continue;
     }
 

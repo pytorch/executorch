@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cmath>
 #include <cstring>
 
@@ -17,16 +18,16 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
-using SizesType = exec_aten::SizesType;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
+using SizesType = executorch::aten::SizesType;
 
 namespace {
 
 void increment_index(size_t* index, const ArrayRef<SizesType> sizes) {
   for (ssize_t i = sizes.size() - 1; i >= 0; --i) {
     index[i]++;
-    if (index[i] == sizes[i]) {
+    if (static_cast<ssize_t>(index[i]) == sizes[i]) {
       index[i] = 0;
     } else {
       return;
@@ -45,7 +46,7 @@ void nonzero(KernelRuntimeContext& ctx, const Tensor& input, Tensor& output) {
   int32_t num_nonzero = 0;
 
   // Count number of non zeros
-  for (size_t i = 0; i < lim; ++i) {
+  for (const auto i : c10::irange(lim)) {
     if (in_data[i] != 0) {
       num_nonzero++;
     }
@@ -56,7 +57,8 @@ void nonzero(KernelRuntimeContext& ctx, const Tensor& input, Tensor& output) {
       static_cast<SizesType>(num_nonzero), static_cast<SizesType>(input.dim())};
   ET_KERNEL_CHECK(
       ctx,
-      resize_tensor(output, ArrayRef<exec_aten::SizesType>(out_shape, 2)) ==
+      resize_tensor(
+          output, ArrayRef<executorch::aten::SizesType>(out_shape, 2)) ==
           Error::Ok,
       InvalidArgument, );
 
@@ -67,9 +69,9 @@ void nonzero(KernelRuntimeContext& ctx, const Tensor& input, Tensor& output) {
   size_t out_idx = 0;
 
   // Loop again and this time write the proper indices into out
-  for (size_t i = 0; i < lim; i++) {
+  for (const auto i : c10::irange(lim)) {
     if (in_data[i] != 0) {
-      for (size_t j = 0; j < input.dim(); j++) {
+      for (const auto j : c10::irange(input.dim())) {
         out_data[out_idx++] = index[j];
       }
     }
@@ -88,10 +90,9 @@ Tensor& nonzero_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
   ET_KERNEL_CHECK(ctx, check_nonzero_args(in, out), InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, in.scalar_type(), ctx, "nonzero.out", CTYPE, [&] {
-        nonzero<CTYPE>(ctx, in, out);
-      });
+  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "nonzero.out", CTYPE, [&] {
+    nonzero<CTYPE>(ctx, in, out);
+  });
 
   return out;
 }

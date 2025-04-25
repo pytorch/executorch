@@ -2,14 +2,13 @@
 This Python module, named `portable_lib`, provides a set of functions and classes for loading and executing bundled programs. To install it, run the fullowing command:
 
 ```bash
-EXECUTORCH_BUILD_PYBIND=ON \
-pip install . --no-build-isolation
+CMAKE_ARGS="-DEXECUTORCH_BUILD_XNNPACK=ON" pip install . --no-build-isolation
 ```
 
 Or when installing the rest of dependencies:
 
 ```bash
-install_requirements.sh --pybind
+install_executorch.sh --pybind
 ```
 
 # Link Backends
@@ -17,15 +16,14 @@ install_requirements.sh --pybind
 You can link the runtime against some backends to make sure a delegated or partitioned model can still run by Python module successfully:
 
 ```bash
-EXECUTORCH_BUILD_PYBIND=ON \
-CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON -DEXECUTORCH_BUILD_XNNPACK=ON" \
-pip install . --no-build-isolation
+CMAKE_ARGS="-DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON" \
+  pip install . --no-build-isolation
 ```
 
 Similarly, when installing the rest of dependencies:
 
 ```bash
-install_requirements.sh --pybind coreml mps xnnpack
+install_executorch.sh --pybind xnnpack coreml mps
 ```
 
 ## Functions

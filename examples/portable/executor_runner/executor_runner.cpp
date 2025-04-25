@@ -1,5 +1,6 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * Copyright 2024-2025 Arm Limited and/or its affiliates.
  * All rights reserved.
  *
  * This source code is licensed under the BSD-style license found in the
@@ -25,21 +26,42 @@
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/runner_util/inputs.h>
+#include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
+#include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
+#ifdef ET_EVENT_TRACER_ENABLED
+#include <executorch/devtools/etdump/etdump_flatcc.h>
+#endif // ET_EVENT_TRACER_ENABLED
+
+#if defined(ET_USE_THREADPOOL)
+#include <executorch/extension/threadpool/cpuinfo_utils.h>
+#include <executorch/extension/threadpool/threadpool.h>
+#endif
 
 static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4 MB
+
+static uint8_t temp_allocator_pool[1024U * 1024U];
 
 DEFINE_string(
     model_path,
     "model.pte",
     "Model serialized in flatbuffer format.");
+DEFINE_uint32(num_executions, 1, "Number of times to run the model.");
+#ifdef ET_EVENT_TRACER_ENABLED
+DEFINE_string(etdump_path, "model.etdump", "Write ETDump data to this path.");
+#endif // ET_EVENT_TRACER_ENABLED
+DEFINE_int32(
+    cpu_threads,
+    -1,
+    "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
 
 using executorch::extension::FileDataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
+using executorch::runtime::EventTracer;
 using executorch::runtime::HierarchicalAllocator;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::MemoryManager;
@@ -48,6 +70,56 @@ using executorch::runtime::MethodMeta;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
+
+/// Helper to manage resources for ETDump generation
+class EventTraceManager {
+ public:
+  EventTraceManager() : event_tracer_ptr_(nullptr) {
+#ifdef ET_EVENT_TRACER_ENABLED
+    event_tracer_ptr_ = std::make_shared<executorch::etdump::ETDumpGen>();
+#endif // ET_EVENT_TRACER_ENABLED
+  }
+
+  EventTracer* get_event_tracer() const {
+    return event_tracer_ptr_.get();
+  };
+
+  Error write_etdump_to_file() const {
+    EventTracer* const event_tracer_ptr = get_event_tracer();
+    if (!event_tracer_ptr) {
+      return Error::NotSupported;
+    }
+
+#ifdef ET_EVENT_TRACER_ENABLED
+    executorch::etdump::ETDumpGen* const etdump_ptr =
+        static_cast<executorch::etdump::ETDumpGen*>(event_tracer_ptr);
+
+    const char* filename = FLAGS_etdump_path.c_str();
+
+    std::unique_ptr<FILE, decltype(&fclose)> etdump_file(
+        fopen(filename, "w+"), fclose);
+    if (!etdump_file) {
+      ET_LOG(Error, "Failed to open ETDump file at %s.", filename);
+      return Error::AccessFailed;
+    }
+
+    executorch::etdump::ETDumpResult result = etdump_ptr->get_etdump_data();
+    if (result.buf != nullptr && result.size > 0) {
+      fwrite((uint8_t*)result.buf, 1, result.size, etdump_file.get());
+      free(result.buf);
+      ET_LOG(Info, "ETDump written to file '%s'.", filename);
+    } else {
+      ET_LOG(Error, "No ETDump data available!");
+      return Error::NotFound;
+    }
+#endif // ET_EVENT_TRACER_ENABLED
+
+    return Error::Ok;
+  }
+
+ private:
+  std::shared_ptr<EventTracer> event_tracer_ptr_;
+};
 
 int main(int argc, char** argv) {
   executorch::runtime::runtime_init();
@@ -62,6 +134,18 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+#if defined(ET_USE_THREADPOOL)
+  auto cpu_threads = FLAGS_cpu_threads;
+  uint32_t num_performant_cores = cpu_threads == -1
+      ? ::executorch::extension::cpuinfo::get_num_performant_cores()
+      : static_cast<uint32_t>(cpu_threads);
+  ET_LOG(
+      Info, "Resetting threadpool with num threads = %d", num_performant_cores);
+  if (num_performant_cores > 0) {
+    ::executorch::extension::threadpool::get_threadpool()
+        ->_unsafe_reset_threadpool(num_performant_cores);
+  }
+#endif // ET_USE_THREADPOOL
   // Create a loader to get the data of the program file. There are other
   // DataLoaders that use mmap() or point to data that's already in memory, and
   // users can create their own DataLoaders to load from arbitrary sources.
@@ -120,6 +204,10 @@ int main(int argc, char** argv) {
   MemoryAllocator method_allocator{
       MemoryAllocator(sizeof(method_allocator_pool), method_allocator_pool)};
 
+  // Temporary memory required by kernels
+  MemoryAllocator temp_allocator{
+      MemoryAllocator(sizeof(temp_allocator_pool), temp_allocator_pool)};
+
   // The memory-planned buffers will back the mutable tensors used by the
   // method. The sizes of these buffers were determined ahead of time during the
   // memory-planning pasees.
@@ -144,15 +232,17 @@ int main(int argc, char** argv) {
 
   // Assemble all of the allocators into the MemoryManager that the Executor
   // will use.
-  MemoryManager memory_manager(&method_allocator, &planned_memory);
+  MemoryManager memory_manager(
+      &method_allocator, &planned_memory, &temp_allocator);
 
   //
   // Load the method from the program, using the provided allocators. Running
   // the method can mutate the memory-planned buffers, so the method should only
   // be used by a single thread at at time, but it can be reused.
   //
-
-  Result<Method> method = program->load_method(method_name, &memory_manager);
+  EventTraceManager tracer;
+  Result<Method> method = program->load_method(
+      method_name, &memory_manager, tracer.get_event_tracer());
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
@@ -160,34 +250,60 @@ int main(int argc, char** argv) {
       (uint32_t)method.error());
   ET_LOG(Info, "Method loaded.");
 
-  // Allocate input tensors and set all of their elements to 1. The `inputs`
-  // variable owns the allocated memory and must live past the last call to
-  // `execute()`.
-  auto inputs = executorch::extension::prepare_input_tensors(*method);
-  ET_CHECK_MSG(
-      inputs.ok(),
-      "Could not prepare inputs: 0x%" PRIx32,
-      (uint32_t)inputs.error());
-  ET_LOG(Info, "Inputs prepared.");
-
+  et_timestamp_t time_spent_executing = 0;
   // Run the model.
-  Error status = method->execute();
-  ET_CHECK_MSG(
-      status == Error::Ok,
-      "Execution of method %s failed with status 0x%" PRIx32,
-      method_name,
-      (uint32_t)status);
-  ET_LOG(Info, "Model executed successfully.");
+  for (uint32_t i = 0; i < FLAGS_num_executions; i++) {
+    ET_LOG(Debug, "Preparing inputs.");
+    // Allocate input tensors and set all of their elements to 1. The `inputs`
+    // variable owns the allocated memory and must live past the last call to
+    // `execute()`.
+    //
+    // NOTE: we have to re-prepare input tensors on every execution
+    // because inputs whose space gets reused by memory planning (if
+    // any such inputs exist) will not be preserved for the next
+    // execution.
+    auto inputs = executorch::extension::prepare_input_tensors(*method);
+    ET_CHECK_MSG(
+        inputs.ok(),
+        "Could not prepare inputs: 0x%" PRIx32,
+        (uint32_t)inputs.error());
+    ET_LOG(Debug, "Inputs prepared.");
+
+    const et_timestamp_t before_execute = et_pal_current_ticks();
+    Error status = method->execute();
+    const et_timestamp_t after_execute = et_pal_current_ticks();
+    time_spent_executing += after_execute - before_execute;
+    ET_CHECK_MSG(
+        status == Error::Ok,
+        "Execution of method %s failed with status 0x%" PRIx32,
+        method_name,
+        (uint32_t)status);
+  }
+  const auto tick_ratio = et_pal_ticks_to_ns_multiplier();
+  constexpr auto NANOSECONDS_PER_MILLISECOND = 1000000;
+  ET_LOG(
+      Info,
+      "Model executed successfully %" PRIu32 " time(s) in %f ms.",
+      FLAGS_num_executions,
+      static_cast<double>(time_spent_executing) * tick_ratio.numerator /
+          tick_ratio.denominator / NANOSECONDS_PER_MILLISECOND);
 
   // Print the outputs.
   std::vector<EValue> outputs(method->outputs_size());
   ET_LOG(Info, "%zu outputs: ", outputs.size());
-  status = method->get_outputs(outputs.data(), outputs.size());
+  Error status = method->get_outputs(outputs.data(), outputs.size());
   ET_CHECK(status == Error::Ok);
   // Print the first and last 100 elements of long lists of scalars.
   std::cout << executorch::extension::evalue_edge_items(100);
   for (int i = 0; i < outputs.size(); ++i) {
     std::cout << "Output " << i << ": " << outputs[i] << std::endl;
+  }
+
+  if (tracer.get_event_tracer()) {
+    // Dump ETDump data containing profiling/debugging data to file specified in
+    // command line flag.
+    status = tracer.write_etdump_to_file();
+    ET_CHECK_MSG(status == Error::Ok, "Failed to save ETDump file.");
   }
 
   return 0;

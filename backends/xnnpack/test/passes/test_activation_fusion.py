@@ -16,6 +16,9 @@ from executorch.exir.dialects._ops import ops as exir_ops
 class TestActivationFusion(unittest.TestCase):
     PassStage = RunPasses([ConvertToLinearPass, FuseActivationPass])
 
+    def setUp(self):
+        torch._dynamo.reset()
+
     def check_node_has_tag(self, graph_module, node_target, tag):
         for n in graph_module.graph.nodes:
             if n.op == "call_function" and n.target == node_target:
@@ -72,6 +75,20 @@ class TestActivationFusion(unittest.TestCase):
         )
         self._test_op_activation_case(
             torch.nn.Conv2d(1, 1, (4, 4)),
+            exir_ops.edge.aten.convolution.default,
+            inputs,
+            quantize=True,
+        )
+
+    def test_activation_fusion_conv_transpose_relu(self):
+        inputs = (torch.randn(1, 1, 8, 8),)
+        self._test_op_activation_case(
+            torch.nn.ConvTranspose2d(1, 1, (4, 4)),
+            exir_ops.edge.aten.convolution.default,
+            inputs,
+        )
+        self._test_op_activation_case(
+            torch.nn.ConvTranspose2d(1, 1, (4, 4)),
             exir_ops.edge.aten.convolution.default,
             inputs,
             quantize=True,
@@ -147,6 +164,23 @@ class TestActivationFusion(unittest.TestCase):
         )
         self._test_op_activation_case(
             torch.nn.Conv2d(1, 1, (4, 4)),
+            exir_ops.edge.aten.convolution.default,
+            inputs,
+            activation=torch.nn.Hardtanh(min_val=-1.0, max_val=1.0),
+            activation_name="executorch_exir_dialects_edge__ops_aten_hardtanh_default",
+        )
+
+    def test_activation_fusion_conv_transpose_hardtanh(self):
+        inputs = (torch.randn(1, 1, 8, 8),)
+        self._test_op_activation_case(
+            torch.nn.ConvTranspose2d(1, 1, (4, 4)),
+            exir_ops.edge.aten.convolution.default,
+            inputs,
+            activation=torch.nn.Hardtanh(min_val=-1.0, max_val=1.0),
+            activation_name="executorch_exir_dialects_edge__ops_aten_hardtanh_default",
+        )
+        self._test_op_activation_case(
+            torch.nn.ConvTranspose2d(1, 1, (4, 4)),
             exir_ops.edge.aten.convolution.default,
             inputs,
             activation=torch.nn.Hardtanh(min_val=-1.0, max_val=1.0),

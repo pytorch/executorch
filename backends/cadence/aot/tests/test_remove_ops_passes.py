@@ -1,4 +1,10 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# pyre-unsafe
 
 
 import unittest
@@ -11,10 +17,12 @@ import torch.nn.functional as F
 from executorch.backends.cadence.aot import compiler
 from executorch.backends.cadence.aot.compiler import export_to_edge
 
-from executorch.backends.cadence.aot.pass_utils import count_node
-from executorch.backends.cadence.aot.quantizer.quantizer import CadenceQuantizer
+from executorch.backends.cadence.aot.pass_utils import count_node, op_counts_match
+from executorch.backends.cadence.aot.quantizer.quantizer import CadenceDefaultQuantizer
 from executorch.backends.cadence.aot.remove_ops import (
     RemoveAliasCopyOpPass,
+    RemoveBranchedQuantDequant,
+    RemoveCatFromSliceCopyPass,
     RemoveCloneOpPass,
     RemoveContiguousOpPass,
     RemoveDetachCopyPass,
@@ -465,8 +473,8 @@ class TestRemoveOpsPasses(unittest.TestCase):
 
         # Run the standard quant/convert steps, but without fusing
         # this leaves two redundant quant/dequant pairs to test with
-        quantizer = CadenceQuantizer()
-        model_exp = export_for_training(M(), (inp,)).module()
+        quantizer = CadenceDefaultQuantizer()
+        model_exp = export_for_training(M(), (inp,), strict=True).module()
         prepared_model = prepare_pt2e(model_exp, quantizer)
         prepared_model(inp)
         converted_model = convert_pt2e(prepared_model)
@@ -649,6 +657,37 @@ class TestRemoveOpsPasses(unittest.TestCase):
         ][0]
         self.assertEqual(cat.args[1], 3)
 
+    def test_remove_permutes_around_concat_with_views(self) -> None:
+        class M(torch.nn.Module):
+            def forward(self, x, y):
+                # Mix and match views that are permutes and actual permutes. Both
+                # should be removed.
+                x = x.view(1, 1, 4, 4)
+                y = torch.permute(y, [0, 3, 1, 2])
+                z = torch.cat((x, y), 1)
+                return z.view(1, 4, 4, 8)
+
+        inputs = (torch.randn(1, 4, 4, 1), torch.randn(1, 4, 4, 7))
+        graph_module = export_to_edge(M(), inputs).exported_program().graph_module
+        p = RemovePermutesAroundElementwiseOps()
+        graph_module = cast(PassResult, p(graph_module)).graph_module
+
+        # Expect 0 permutes and views to remain.
+        self.assertEqual(
+            count_node(graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        self.assertEqual(
+            count_node(graph_module, exir_ops.edge.aten.view_copy.default), 0
+        )
+
+        # verify that cat was updated correctly
+        cat = [
+            n
+            for n in graph_module.graph.nodes
+            if n.target == exir_ops.edge.aten.cat.default
+        ][0]
+        self.assertEqual(cat.args[1], 3)
+
     def test_remove_permutes_around_elemwise_ops_noop(self) -> None:
         class M(torch.nn.Module):
             def __init__(self):
@@ -672,3 +711,85 @@ class TestRemoveOpsPasses(unittest.TestCase):
         self.assertEqual(
             count_node(graph_module, exir_ops.edge.aten.permute_copy.default), 2
         )
+
+    def test_remove_dequant_on_branch(self):
+        class M(torch.nn.Module):
+            def forward(self, x):
+                x = torch.abs(x)
+                x0 = torch.ops.quantized_decomposed.quantize_per_tensor(
+                    x, 1.2, 3, 0, 127, torch.int8
+                )
+                x1 = torch.abs(x0)
+                y0 = torch.ops.quantized_decomposed.dequantize_per_tensor(
+                    x0, 1.2, 3, 0, 127, torch.int8
+                )
+                y1 = y0.view(-1)
+                return x1, y1
+
+        inputs = torch.rand(1, 8, 4, 6)
+        model = M()
+        graph_module = export_to_edge(model, (inputs,)).exported_program().graph_module
+
+        graph_module = RemoveBranchedQuantDequant()(graph_module).graph_module
+        self.assertTrue(
+            op_counts_match(
+                graph_module,
+                expected_op_counts={
+                    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: 1,
+                    # we expect the pass to remove the dequantize node
+                    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: 0,
+                    exir_ops.edge.aten.abs.default: 2,
+                },
+            )
+        )
+
+    def test_remove_cat_from_slice_copy_all_removal(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                x1 = torch.cat((x, y), 0)  # (2, 4)
+                return torch.slice_copy(x1, dim=0, start=0, end=1)
+
+        inputs = tuple(torch.randn(2, 4) for _ in range(2))
+        graph_module = export_to_edge(M(), inputs).exported_program().graph_module
+        p = RemoveCatFromSliceCopyPass()
+        graph_module = cast(PassResult, p(graph_module)).graph_module
+
+        # Ensure both cat nodes were removed
+        self.assertEqual(count_node(graph_module, exir_ops.edge.aten.cat.default), 0)
+
+    def test_remove_cat_from_slice_copy_no_removal(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                x1 = torch.cat((x, y), 0)  # (2, 4)
+                return torch.slice_copy(x1, dim=0, start=0, end=3)
+
+        inputs = tuple(torch.randn(2, 4) for _ in range(2))
+        graph_module = export_to_edge(M(), inputs).exported_program().graph_module
+        p = RemoveCatFromSliceCopyPass()
+        graph_module = cast(PassResult, p(graph_module)).graph_module
+
+        # Ensure both cat nodes were removed
+        self.assertEqual(count_node(graph_module, exir_ops.edge.aten.cat.default), 1)
+
+    def test_remove_cat_from_slice_copy_zero_range(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                x1 = torch.cat((x, y), 0)  # (2, 4)
+                return torch.slice_copy(x1, dim=0, start=0, end=0)
+
+        inputs = tuple(torch.randn(2, 4) for _ in range(2))
+        graph_module = export_to_edge(M(), inputs).exported_program().graph_module
+        p = RemoveCatFromSliceCopyPass()
+        graph_module = cast(PassResult, p(graph_module)).graph_module
+
+        # Ensure both cat nodes were removed
+        self.assertEqual(count_node(graph_module, exir_ops.edge.aten.cat.default), 0)

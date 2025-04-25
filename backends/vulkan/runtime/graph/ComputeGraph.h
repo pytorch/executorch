@@ -20,6 +20,7 @@
 #include <executorch/backends/vulkan/runtime/graph/containers/SharedObject.h>
 #include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/DispatchNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/PrepackNode.h>
 
@@ -350,6 +351,28 @@ class ComputeGraph final {
     return values_.at(idx).toTensor().logical_limits_ubo();
   }
 
+  inline PushConstantDataInfo sizes_pc_of(const ValueRef idx) const {
+    return PushConstantDataInfo(
+        values_.at(idx).toConstTensor().get_uniform_data(), api::kTensorSizes);
+  }
+
+  inline PushConstantDataInfo strides_pc_of(const ValueRef idx) const {
+    return PushConstantDataInfo(
+        values_.at(idx).toConstTensor().get_uniform_data(),
+        api::kTensorStrides);
+  }
+
+  inline PushConstantDataInfo logical_limits_pc_of(const ValueRef idx) const {
+    return PushConstantDataInfo(
+        values_.at(idx).toConstTensor().get_uniform_data(),
+        api::kTensorLogicalLimits);
+  }
+
+  inline PushConstantDataInfo numel_pc_of(const ValueRef idx) const {
+    return PushConstantDataInfo(
+        values_.at(idx).toConstTensor().get_uniform_data(), api::kTensorNumel);
+  }
+
   //
   // Scalar Value Extraction
   //
@@ -420,6 +443,15 @@ class ComputeGraph final {
   utils::GPUMemoryLayout suggested_memory_layout(
       const std::vector<int64_t>& sizes);
 
+  inline bool device_is_adreno() {
+    return context_->adapter_ptr()->device_type() == vkapi::DeviceType::ADRENO;
+  }
+  const std::string& device_name() {
+    return context()->adapter_ptr()->device_name();
+  }
+
+  bool device_name_contains(const char* substr);
+
   //
   // Graph Building
   //
@@ -438,7 +470,8 @@ class ComputeGraph final {
       const vkapi::ScalarType dtype,
       const utils::StorageType storage_type,
       const utils::GPUMemoryLayout memory_layout,
-      const int64_t shared_object_idx = -1);
+      const int64_t shared_object_idx = -1,
+      const utils::AxisMapLayout axis_map_layout = utils::kDefaultAxisMap);
 
   /*
    * Add a `api::vTensor` value to the graph with the specified properties. The
@@ -448,7 +481,8 @@ class ComputeGraph final {
       const std::vector<int64_t>& sizes,
       const vkapi::ScalarType dtype,
       const utils::StorageType storage_type,
-      const int64_t shared_object_idx = -1);
+      const int64_t shared_object_idx = -1,
+      const utils::AxisMapLayout axis_map_layout = utils::kDefaultAxisMap);
 
   /*
    * Add a `api::vTensor` value to the graph with the specified properties. The
@@ -458,7 +492,8 @@ class ComputeGraph final {
       const std::vector<int64_t>& sizes,
       const vkapi::ScalarType dtype,
       const utils::GPUMemoryLayout memory_layout,
-      const int64_t shared_object_idx = -1);
+      const int64_t shared_object_idx = -1,
+      const utils::AxisMapLayout axis_map_layout = utils::kDefaultAxisMap);
 
   /*
    * Add a `api::vTensor` value to the graph with the specified properties. The
@@ -468,7 +503,8 @@ class ComputeGraph final {
   ValueRef add_tensor(
       const std::vector<int64_t>& sizes,
       const vkapi::ScalarType dtype,
-      const int64_t shared_object_idx = -1);
+      const int64_t shared_object_idx = -1,
+      const utils::AxisMapLayout axis_map_layout = utils::kDefaultAxisMap);
 
   /*
    * Add a `api::vTensor` value to the graph with the specified image.
@@ -481,7 +517,8 @@ class ComputeGraph final {
   ValueRef add_tensor_like(
       const ValueRef vref,
       const utils::StorageType storage_type,
-      const utils::GPUMemoryLayout memory_layout);
+      const utils::GPUMemoryLayout memory_layout,
+      const utils::AxisMapLayout axis_map_layout = utils::kDefaultAxisMap);
 
   /*
    * Add a `api::vTensor` value to the graph with the properties of `vref`. The
@@ -489,7 +526,8 @@ class ComputeGraph final {
    */
   ValueRef add_tensor_like(
       const ValueRef vref,
-      const utils::GPUMemoryLayout memory_layout);
+      const utils::GPUMemoryLayout memory_layout,
+      const utils::AxisMapLayout axis_map_layout = utils::kDefaultAxisMap);
 
   /*
    * Use the copy constructor of `api::vTensor` to create a "view" of the

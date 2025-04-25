@@ -23,17 +23,17 @@
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/platform/log.h>
 
-using exec_aten::ArrayRef;
-using exec_aten::Half;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::Half;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using ::executorch::ET_RUNTIME_NAMESPACE::Method;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
-using ::executorch::runtime::Method;
 using ::executorch::runtime::Result;
 
 namespace executorch {
-namespace bundled_program {
+namespace BUNDLED_PROGRAM_NAMESPACE {
 
 namespace {
 
@@ -67,16 +67,16 @@ TensorImpl impl_like(bundled_program_flatbuffer::Tensor* bundled_tensor) {
   ScalarType scalar_type =
       static_cast<ScalarType>(bundled_tensor->scalar_type());
   ssize_t dim = bundled_tensor->sizes()->size();
-  exec_aten::SizesType* sizes = bundled_tensor->mutable_sizes()->data();
+  executorch::aten::SizesType* sizes = bundled_tensor->mutable_sizes()->data();
   void* data = bundled_tensor->mutable_data()->data();
-  exec_aten::DimOrderType* dim_order =
+  executorch::aten::DimOrderType* dim_order =
       bundled_tensor->mutable_dim_order()->data();
 
   // The strides of created tensorimpl will only be actually used when
   // comparsion (`tensor_are_close` below). To eliminate the usage of memory
   // allocator, here we set the initial strides as null and reconstruct the
   // stride array as temporary varible when comparsion.
-  exec_aten::StridesType* strides = nullptr;
+  executorch::aten::StridesType* strides = nullptr;
   return TensorImpl(scalar_type, dim, sizes, data, dim_order, strides);
 }
 #endif
@@ -165,7 +165,7 @@ bool tensors_are_close(
 
   // Contruct stride array for bundled tensor based on its dim order since
   // strides of bundled_tensor in lean mode is null.
-  exec_aten::StridesType strides[kMaxDim] = {0};
+  executorch::aten::StridesType strides[kMaxDim] = {0};
   auto status = torch::executor::dim_order_to_stride(
       bundled_tensor.sizes().data(),
       bundled_tensor.dim_order().data(),
@@ -176,7 +176,7 @@ bool tensors_are_close(
 
   // TODO(T132992348): support comparison between tensors of different strides
   ET_CHECK_MSG(
-      ArrayRef<exec_aten::StridesType>(strides, bundled_tensor.dim()) ==
+      ArrayRef<executorch::aten::StridesType>(strides, bundled_tensor.dim()) ==
           method_output_tensor.strides(),
       "The two inputs of `tensors_are_close` function shall have same strides");
 #endif
@@ -332,8 +332,9 @@ ET_NODISCARD Error load_bundled_input(
         static_cast<uint32_t>(status));
   }
 
-  ::executorch::runtime::internal::event_tracer_set_bundled_input_index(
-      method.get_event_tracer(), testset_idx);
+  ::executorch::ET_RUNTIME_NAMESPACE::internal::
+      event_tracer_set_bundled_input_index(
+          method.get_event_tracer(), testset_idx);
 
   return Error::Ok;
 }
@@ -360,6 +361,11 @@ ET_NODISCARD Error verify_method_outputs(
 
   auto bundled_expected_outputs =
       method_test.get()->test_cases()->Get(testset_idx)->expected_outputs();
+
+  if (bundled_expected_outputs->size() == 0) {
+    // No bundled expected outputs, so we can't verify the method outputs.
+    return Error::NotSupported;
+  }
 
   for (size_t output_idx = 0; output_idx < method.outputs_size();
        output_idx++) {
@@ -427,5 +433,5 @@ bool is_bundled_program(void* file_data, ET_UNUSED size_t file_data_len) {
       file_data);
 }
 
-} // namespace bundled_program
+} // namespace BUNDLED_PROGRAM_NAMESPACE
 } // namespace executorch

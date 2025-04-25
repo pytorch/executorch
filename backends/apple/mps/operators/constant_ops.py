@@ -80,6 +80,25 @@ class ConstantOpVisitor(NodeVisitor):
 
 
 @register_node_visitor
+class ToDimOrderEmptyVisitor(NodeVisitor):
+    target = ["dim_order_ops._empty_dim_order.default"]
+
+    def __init__(self, *args) -> None:
+        super().__init__(*args)
+
+    def define_node(
+        self,
+        node: torch.fx.Node,
+        mps_graph: MPSGraph,
+    ) -> None:
+        # We should never get here, because DimOrderOpsRevertPass replaces this with an aten.empty.memory_format op
+        # But if we do, we can't handle it ATM, so raise an exception
+        raise NotImplementedError(
+            "dim_order_ops._empty_dim_order.default is not supported yet"
+        )
+
+
+@register_node_visitor
 class FullLikeVisitor(NodeVisitor):
     target = "aten.full_like.default"
 

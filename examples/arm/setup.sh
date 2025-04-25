@@ -2,47 +2,20 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-set -eu
-
-if [[ "${1:-'.'}" == "-h" || "${#}" -gt 2 ]]; then
-    echo "Usage: $(basename $0) <--i-agree-to-the-contained-eula> [path-to-a-scratch-dir]"
-    echo "Supplied args: $*"
-    exit 1
-fi
-
-
-########
-### Helper functions
-########
-ARCH="$(uname -m)"
-OS="$(uname -s)"
-
-function verify_md5() {
-    [[ $# -ne 2 ]]  \
-        && { echo "[${FUNCNAME[0]}] Invalid number of args, expecting 2, but got $#"; exit 1; }
-    local ref_checksum="${1}"
-    local file="${2}"
-
-    if [[ "${OS}" == "Darwin" ]]; then
-        local file_checksum="$(md5 -q $file)"
-    else
-        local file_checksum="$(md5sum $file | awk '{print $1}')"
-    fi
-    if [[ ${ref_checksum} != ${file_checksum} ]]; then
-        echo "Mismatched MD5 checksum for file: ${file}. Expecting ${ref_checksum} but got ${file_checksum}. Exiting."
-        exit 1
-    fi
-}
+set -u
 
 ########
 ### Hardcoded constants
 ########
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
+et_dir=$(realpath $script_dir/../..)
+ARCH="$(uname -m)"
+OS="$(uname -s)"
 
 if [[ "${ARCH}" == "x86_64" ]]; then
     # FVPs
@@ -55,9 +28,9 @@ if [[ "${ARCH}" == "x86_64" ]]; then
     corstone320_md5_checksum="3deb3c68f9b2d145833f15374203514d"
 
     # toochain
-    toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi.tar.xz"
-    toolchain_dir="arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi"
-    toolchain_md5_checksum="00ebb1b70b1f88906c61206457eacb61"
+    toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz"
+    toolchain_dir="arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi"
+    toolchain_md5_checksum="0601a9588bc5b9c99ad2b56133b7f118"
 elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
     # FVPs
     corstone300_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64_armv8l.tgz?rev=9cc6e9a32bb947ca9b21fa162144cb01&hash=7657A4CF27D42E892E3F08D452AAB073"
@@ -70,58 +43,62 @@ elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
 
     # toochain
     if [[ "${OS}" == "Darwin" ]]; then
-        toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-darwin-arm64-arm-none-eabi.tar.xz"
-        toolchain_dir="arm-gnu-toolchain-12.3.rel1-darwin-arm64-arm-none-eabi"
-        toolchain_md5_checksum="53d034e9423e7f470acc5ed2a066758e"
+        toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-darwin-arm64-arm-none-eabi.tar.xz"
+        toolchain_dir="arm-gnu-toolchain-13.3.rel1-darwin-arm64-arm-none-eabi"
+        toolchain_md5_checksum="f1c18320bb3121fa89dca11399273f4e"
     elif [[ "${OS}" == "Linux" ]]; then
-        toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi.tar.xz"
-        toolchain_dir="arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi"
-        toolchain_md5_checksum="02c9b0d3bb1110575877d8eee1f223f2"
+        toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi.tar.xz"
+        toolchain_dir="arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi"
+        toolchain_md5_checksum="303102d97b877ebbeb36b3158994b218"
     fi
 else
     echo "[main] Error: only x86-64 & aarch64/arm64 architecture is supported for now!"; exit 1;
 fi
 
-# ethos-u
-ethos_u_repo_url="https://review.mlplatform.org/ml/ethos-u/ethos-u"
-ethos_u_base_rev="24.08"
-
-# tosa reference model
-tosa_reference_model_url="https://review.mlplatform.org/tosa/reference_model"
-tosa_reference_model_rev="f9ea4ab7da19318fe36b1c34d68a3e40fd6e56c5"
- 
-########
-### Mandatory user args
-########
-eula_acceptance="${1:-'.'}"
-if [[ "${eula_acceptance}" != "--i-agree-to-the-contained-eula" ]]; then
-    if [[ ${ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA} != "True" ]]; then
-	echo "Must pass first positional argument '--i-agree-to-the-contained-eula' to agree to EULA associated with downloading the FVP. Exiting!"
-	exit 1
-    else
-	echo "Arm EULA for FVP agreed to with ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA=True environment variable"
-    fi
-else
-    shift; # drop this arg
-fi
+# vela
+vela_repo_url="https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela"
+vela_rev="425541302c7e4b6fbeca7c0061286b131ee507c3"
 
 ########
 ### Optional user args
 ########
-root_dir=${1:-"${script_dir}/ethos-u-scratch"}
+root_dir=${2:-"${script_dir}/ethos-u-scratch"}
 mkdir -p ${root_dir}
 root_dir=$(realpath ${root_dir})
+setup_path_script="${root_dir}/setup_path.sh"
+
 
 ########
 ### Functions
 ########
 
 function setup_fvp() {
+
+    # Mandatory user arg --i-agree-to-the-contained-eula
+    eula_acceptance="${1:-'.'}"
+    eula_acceptance_by_variable="${ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA:-False}"
+
+    if [[ "${eula_acceptance}" != "--i-agree-to-the-contained-eula" ]]; then
+        if [[ ${eula_acceptance_by_variable} != "True" ]]; then
+        echo "Must pass first positional argument '--i-agree-to-the-contained-eula' to agree to EULA associated with downloading the FVP. Exiting!"
+        exit 1
+        else
+        echo "Arm EULA for FVP agreed to with ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA=True environment variable"
+        fi
+    else
+        shift; # drop this arg
+    fi
     if [[ "${OS}" != "Linux" ]]; then
-        echo "[${FUNCNAME[0]}] Warning: FVP only supported with Linux OS, skipping FVP setup..."
-        echo "[${FUNCNAME[0]}] Warning: For MacOS, using https://github.com/Arm-Examples/FVPs-on-Mac is recommended."
-        echo "[${FUNCNAME[0]}] Warning:   Follow the instructions and make sure the path is set correctly." 
-        return 1
+        # Check if FVP is callable
+        if command -v FVP_Corstone_SSE-300_Ethos-U55 &> /dev/null; then
+            echo "[${FUNCNAME[0]}] Info: FVP for MacOS seem to be installed. Continuing..."
+            return 0  # If true exit gracefully and proceed with setup
+        else
+            echo "[${FUNCNAME[0]}] Warning: FVP only supported with Linux OS, skipping FVP setup..."
+            echo "[${FUNCNAME[0]}] Warning: For MacOS, using https://github.com/Arm-Examples/FVPs-on-Mac is recommended."
+            echo "[${FUNCNAME[0]}] Warning:   Follow the instructions and make sure the path is set correctly."
+            return 1  # Throw error. User need to install FVP according to ^^^
+        fi
     fi
 
     # Download and install the Corstone 300 FVP simulator platform
@@ -136,7 +113,7 @@ function setup_fvp() {
             curl --output "FVP_${fvp}.tgz" "${fvp_url}"
             md5_variable=${fvp}_md5_checksum
             fvp_md5_checksum=${!md5_variable}
-            verify_md5 ${fvp_md5_checksum} FVP_${fvp}.tgz
+            verify_md5 ${fvp_md5_checksum} FVP_${fvp}.tgz || exit 1
         fi
 
         echo "[${FUNCNAME[0]}] Installing FVP ${fvp}..."
@@ -158,167 +135,99 @@ function setup_fvp() {
                 exit 1
                 ;;
         esac
-
-        model_dir_variable=${fvp}_model_dir
-        fvp_model_dir=${!model_dir_variable}
-        fvp_bin_path="$(cd models/${fvp_model_dir} && pwd)"
-        export PATH=${PATH}:${fvp_bin_path}
-
-        echo "export PATH=\${PATH}:${fvp_bin_path}" >> ${setup_path_script}
     done
-
-    # Fixup for Corstone-320 python dependency
-    echo "export LD_LIBRARY_PATH=${root_dir}/FVP-corstone320/python/lib/" >> ${setup_path_script}
 }
 
 function setup_toolchain() {
     # Download and install the arm-none-eabi toolchain
     cd "${root_dir}"
-    if [[ ! -e gcc.tar.xz ]]; then
+    if [[ ! -e "${toolchain_dir}.tar.xz" ]]; then
         echo "[${FUNCNAME[0]}] Downloading toolchain ..."
-        curl --output gcc.tar.xz "${toolchain_url}"
-        verify_md5 ${toolchain_md5_checksum} gcc.tar.xz
+        curl --output "${toolchain_dir}.tar.xz" "${toolchain_url}"
+        verify_md5 ${toolchain_md5_checksum} "${toolchain_dir}.tar.xz" || exit 1
     fi
 
     echo "[${FUNCNAME[0]}] Installing toolchain ..."
     rm -rf "${toolchain_dir}"
-    tar xf gcc.tar.xz
-    toolchain_bin_path="$(cd ${toolchain_dir}/bin && pwd)"
-    export PATH=${PATH}:${toolchain_bin_path}
-    hash arm-none-eabi-gcc
-    echo "export PATH=\${PATH}:${toolchain_bin_path}" >> ${setup_path_script}
-}
-
-function setup_ethos_u() {
-    # This is the main dir which will pull more repos to do baremetal software dev for cs300
-    echo "[${FUNCNAME[0]}] Setting up the repo"
-    cd "${root_dir}"
-    [[ ! -d ethos-u ]] && \
-        git clone ${ethos_u_repo_url}
-    cd ethos-u
-    git reset --hard ${ethos_u_base_rev}
-    python3 ./fetch_externals.py -c ${ethos_u_base_rev}.json fetch
-    pip install pyelftools
-    echo "[${FUNCNAME[0]}] Done @ $(git describe --all --long 3> /dev/null) in ${root_dir}/ethos-u dir."
-}
-
-function patch_repo() {
-    # This is a temporary hack until it finds a better home in one for the ARM Ml repos
-    name="$(basename $repo_dir)"
-    echo -e "[${FUNCNAME[0]}] Preparing ${name}..."
-    cd $repo_dir
-    git fetch
-    git reset --hard ${base_rev}
-
-    patch_dir=${script_dir}/ethos-u-setup/${name}/patches/
-    [[ -e ${patch_dir} && $(ls -A ${patch_dir}) ]] && \
-        git am -3 ${patch_dir}/*.patch
-
-    echo -e "[${FUNCNAME[0]}] Patched ${name} @ $(git describe --all --long 2> /dev/null) in ${repo_dir} dir.\n"
-}
-
-function setup_tosa_reference_model() {
-    # The debug flow on the host includes running on a reference implementation of TOSA
-    # This is useful primarily for debug of quantization accuracy, but also for internal
-    # errors for the early codebase
-    cd "${root_dir}"
-    if [[ ! -e reference_model ]]; then
-        git clone ${tosa_reference_model_url}
-        cd reference_model
-        git checkout ${tosa_reference_model_rev}
-        git submodule update --init --recursive
-        cd ..
-    fi
-    cd reference_model
-    mkdir -p build
-    cd build
-    cmake ..
-
-    # make use of half the cores for building
-    if [[ "${OS}" == "Linux" ]]; then
-        n=$(( $(nproc) / 2 ))
-    elif [[ "${OS}" == "Darwin" ]]; then
-        n=$(( $(sysctl -n hw.logicalcpu) / 2 ))
-    else
-        n=1
-    fi
-
-    if [[ "$n" -lt 1 ]]; then
-        n=1
-    fi
-
-    make -j"${n}"
-    cd reference_model
-    tosa_bin_path=`pwd`
-    echo "export PATH=\${PATH}:${tosa_bin_path}" >> "${setup_path_script}"
+    tar xf "${toolchain_dir}.tar.xz"
 }
 
 function setup_vela() {
-    #
-    # Prepare the Vela compiler for AoT to Ethos-U compilation
-    #
-    cd "${root_dir}"
-    if [[ ! -e ethos-u-vela ]]; then
-        git clone https://review.mlplatform.org/ml/ethos-u/ethos-u-vela
-        repo_dir="${root_dir}/ethos-u-vela"
-        base_rev=57ce18c89ccc6f6309333dccb24ed30dc68b571f
-        patch_repo
-    fi
-    cd "${root_dir}/ethos-u-vela"
+    pip install ethos-u-vela@git+${vela_repo_url}@${vela_rev}
+}
 
-    # different command for conda vs venv
-    VNV=$(python3 -c "import sys; print('venv') if (sys.prefix != sys.base_prefix) else print('not_venv')")
-    if [ ${VNV} == "venv" ]; then
-	pip install .
-    else
-       # if not venv, we need the site-path where the vela
-       vela_path=$(python -c "import site; print(site.USER_BASE+'/bin')")
-       echo "export PATH=\${PATH}:${vela_path}" >> ${setup_path_script}
-       pip install . --user
-    fi
+function setup_path() {
+    echo $setup_path_script
+}
+
+function create_setup_path(){
+    echo "" > "${setup_path_script}"
+    fvps=("corstone300" "corstone320")
+    for fvp in "${fvps[@]}"; do
+        model_dir_variable=${fvp}_model_dir
+        fvp_model_dir=${!model_dir_variable}
+        fvp_bin_path="${root_dir}/FVP-${fvp}/models/${fvp_model_dir}"
+        echo "export PATH=\${PATH}:${fvp_bin_path}" >> ${setup_path_script}
+    done
+
+    # Fixup for Corstone-320 python dependency
+    echo "export LD_LIBRARY_PATH=${root_dir}/FVP-corstone320/python/lib/" >> ${setup_path_script}
+
+    toolchain_bin_path="$(cd ${toolchain_dir}/bin && pwd)"
+    echo "export PATH=\${PATH}:${toolchain_bin_path}" >> ${setup_path_script}
+
+    echo "hash FVP_Corstone_SSE-300_Ethos-U55" >> ${setup_path_script}
+    echo "hash FVP_Corstone_SSE-300_Ethos-U65" >> ${setup_path_script}
+    echo "hash FVP_Corstone_SSE-320" >> ${setup_path_script}
 }
 
 ########
 ### main
 ########
-# do basic checks
-# Make sure we are on a supported platform
-if [[ "${ARCH}" != "x86_64" ]] && [[ "${ARCH}" != "aarch64" ]] \
-    && [[ "${ARCH}" != "arm64" ]]; then
-    echo "[main] Error: only x86-64 & aarch64 architecture is supported for now!"
-    exit 1
+# Only run this if script is executed, not if it is sourced
+(return 0 2>/dev/null) && is_script_sourced=1 || is_script_sourced=0
+if [[ $is_script_sourced -eq 0 ]]
+    then
+    set -e
+    if [[ "${ARCH}" != "x86_64" ]] && [[ "${ARCH}" != "aarch64" ]] \
+        && [[ "${ARCH}" != "arm64" ]]; then
+        echo "[main] Error: only x86-64 & aarch64 architecture is supported for now!"
+        exit 1
+    fi
+
+    # Make sure we are on a supported platform
+    if [[ "${1:-'.'}" == "-h" || "${#}" -gt 2 ]]; then
+        echo "Usage: $(basename $0) <--i-agree-to-the-contained-eula> [path-to-a-scratch-dir]"
+        echo "Supplied args: $*"
+        exit 1
+    fi
+
+    cd "${script_dir}"
+
+    # Setup the root dir
+    cd "${root_dir}"
+    echo "[main] Using root dir ${root_dir}"
+
+    # Import utils
+    source $et_dir/backends/arm/scripts/utils.sh
+
+    # Setup FVP
+    setup_fvp ${1:-'.'}
+
+    # Setup toolchain
+    setup_toolchain
+
+    # Create new setup_path script only if fvp and toolchain setup went well.
+    create_setup_path
+
+    # Setup the tosa_reference_model
+    $et_dir/backends/arm/scripts/install_reference_model.sh ${root_dir}
+
+    # Setup vela and patch in codegen fixes
+    setup_vela
+
+    echo "[main] update path by doing 'source ${setup_path_script}'"
+
+    echo "[main] success!"
+    exit 0
 fi
-
-cd "${script_dir}"
-
-# Setup the root dir
-cd "${root_dir}"
-echo "[main] Using root dir ${root_dir}"
-
-setup_path_script="${root_dir}/setup_path.sh"
-echo "" > "${setup_path_script}"
-
-# Setup toolchain
-setup_toolchain
-
-# Setup the ethos-u dev environment
-setup_ethos_u
-
-# Patch the ethos-u dev environment to include executorch application
-repo_dir="${root_dir}/ethos-u/core_platform"
-base_rev=b728c774158248ba2cad8e78a515809e1eb9b77f
-patch_repo
-
-# Setup the tosa_reference_model
-setup_tosa_reference_model
-
-# Setup vela and patch in codegen fixes
-setup_vela
-
-# Setup FVP
-setup_fvp
-
-echo "[main] update path by doing 'source ${setup_path_script}'"
-
-echo "[main] success!"
-exit 0

@@ -31,20 +31,20 @@ class Softmax(NodeVisitor):
         input_tensor = self.get_tensor(input_node, node)
         softmax_inp_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
         softmax_input_tensors = [softmax_inp_tensor_wrapper]
 
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
         softmax_output_tensors = [output_tensor_wrapper]
 

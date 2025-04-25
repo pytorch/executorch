@@ -42,7 +42,7 @@ def define_xnnpack():
             "XNNPACK/src/mutex.c",
             "XNNPACK/src/normalization.c",
             "XNNPACK/src/operator-utils.c",
-            "XNNPACK/src/packing.cc",
+            "XNNPACK/src/reference/packing.cc",
         ],
         headers = get_xnnpack_headers(),
         header_namespace = "",
@@ -67,7 +67,7 @@ def define_xnnpack():
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     native.cxx_library(
         name = "subgraph",
-        srcs = SUBGRAPH_SRCS,
+        srcs = SUBGRAPH_SRCS + ["XNNPACK/src/datatype.c"],
         compiler_flags = [
             "-Wno-error=missing-braces",  # required since the SGX toolchain does not have this by default
         ],
@@ -1076,6 +1076,8 @@ def define_xnnpack():
             "XNNPACK/src/configs/hardware-config.c",
             "XNNPACK/src/microparams-init.c",
             "XNNPACK/src/microkernel-utils.c",
+            "XNNPACK/src/reference/binary-elementwise.cc",
+            "XNNPACK/src/reference/unary-elementwise.cc",
         ],
         headers = get_xnnpack_headers(),
         exported_headers = {

@@ -66,7 +66,6 @@ test_buck2_select_ops_in_dict() {
     # select ops and their dtypes using the dictionary API.
     $BUCK run //examples/selective_build:selective_build_test \
         --config=executorch.select_ops=dict \
-        --config=executorch.dtype_selective_build_lib=//examples/selective_build:select_ops_in_dict_lib \
         -- --model_path=./add_mul.pte
 
     echo "Removing add_mul.pte"

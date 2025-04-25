@@ -18,7 +18,7 @@
 // dummy implementation
 inline constexpr bool should_include_kernel_dtype(
     const char* /*operator_name*/,
-    exec_aten::ScalarType /*scalar_type*/
+    executorch::aten::ScalarType /*scalar_type*/
 ) {
   return true;
 }

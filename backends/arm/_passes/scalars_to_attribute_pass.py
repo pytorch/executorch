@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -54,7 +54,7 @@ class ScalarsToAttributePass(ExportPass):
                 if isinstance(arg, int) and not torch.is_floating_point(
                     get_first_fake_tensor(n)
                 ):
-                    new_args.append(arg)
+                    new_args.append(arg)  # type: ignore[arg-type]
                     continue
 
                 prefix = "_tensor_constant_"
@@ -76,5 +76,17 @@ class ScalarsToAttributePass(ExportPass):
                     new_args.append(get_attr_node)
             n.args = tuple(new_args)
 
+            # Replace rsub.Scalar with sub.Tensor as retracing will fail otherwise
+            if n.target == torch.ops.aten.rsub.Scalar:
+                with graph_module.graph.inserting_after(n):
+                    reversed_args = (n.args[1], n.args[0])
+                    sub = graph_module.graph.create_node(
+                        "call_function", torch.ops.aten.sub.Tensor, reversed_args, {}
+                    )
+                    n.replace_all_uses_with(sub)
+                    sub.meta["val"] = n.meta["val"]
+                graph_module.graph.erase_node(n)
+
         graph_module.recompile()
+        graph_module = super().call(graph_module).graph_module
         return PassResult(graph_module, True)

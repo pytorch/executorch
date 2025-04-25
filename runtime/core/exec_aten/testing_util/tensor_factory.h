@@ -133,7 +133,7 @@ inline bool check_dim_order(
   size_t gauss_sum = 0;
   std::vector<int> count(dim_order.size(), 0);
   for (int i = 0; i < dim_order.size(); i++) {
-    if (dim_order[i] < 0 || dim_order[i] >= sizes.size()) {
+    if (dim_order[i] >= sizes.size()) {
       return false;
     }
     gauss_sum += static_cast<size_t>(dim_order[i]) + 1;
@@ -279,7 +279,10 @@ class TensorFactory {
       t = empty_strided(sizes, strides);
     }
     if (t.nbytes() > 0) {
-      memcpy(t.template data<true_ctype>(), data.data(), t.nbytes());
+      std::transform(
+          data.begin(), data.end(), t.template data<true_ctype>(), [](auto x) {
+            return static_cast<true_ctype>(x);
+          });
     }
     return t;
   }
@@ -319,7 +322,10 @@ class TensorFactory {
       t = empty_strided(sizes, strides);
     }
     if (t.nbytes() > 0) {
-      memcpy(t.template data<true_ctype>(), data.data(), t.nbytes());
+      std::transform(
+          data.begin(), data.end(), t.template data<true_ctype>(), [](auto x) {
+            return static_cast<true_ctype>(x);
+          });
     }
     return t;
   }
@@ -446,8 +452,8 @@ class TensorFactory {
   }
 
   /**
-   * Returns a new Tensor with the specified shape, containing contiguous data
-   * with all `0` elements.
+   * Returns a new Tensor with the specified shape, containing channels-last
+   * contiguous data with all `0` elements.
    *
    * @param[in] sizes The sizes of the dimensions of the Tensor.
    * @return A new Tensor with the specified shape.
@@ -458,6 +464,22 @@ class TensorFactory {
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
     auto sizes64 = vec_32_to_64(sizes);
     return at::zeros(at::IntArrayRef(sizes64), at::dtype(DTYPE));
+  }
+
+  /**
+   * Returns a new Tensor with the specified shape, containing contiguous data
+   * with all `0` elements.
+   *
+   * @param[in] sizes The sizes of the dimensions of the Tensor.
+   * @return A new Tensor with the specified shape.
+   */
+  at::Tensor zeros_channels_last(
+      const std::vector<int32_t>& sizes,
+      ET_UNUSED TensorShapeDynamism dynamism =
+          TensorShapeDynamism::DYNAMIC_UNBOUND) {
+    auto sizes64 = vec_32_to_64(sizes);
+    return at::zeros(at::IntArrayRef(sizes64), at::dtype(DTYPE))
+        .to(at::MemoryFormat::ChannelsLast);
   }
 
   /**
@@ -720,6 +742,13 @@ class TensorFactory {
    * `ScalarType::Float`.
    */
   using ctype = typename internal::ScalarTypeToCppTypeWrapper<DTYPE>::ctype;
+
+  /**
+   * The official C type for the scalar type. Used when accessing elements
+   * of a constructed Tensor.
+   */
+  using true_ctype =
+      typename executorch::runtime::ScalarTypeToCppType<DTYPE>::type;
 
   TensorFactory() = default;
 
@@ -1019,7 +1048,14 @@ class TensorFactory {
               data_.data(),
               dim_order_.data(),
               strides_.data(),
-              dynamism) {}
+              dynamism) {
+      // The only valid values for bool are 0 and 1; coerce!
+      if constexpr (std::is_same_v<true_ctype, bool>) {
+        for (auto& x : data_) {
+          x = static_cast<true_ctype>(x);
+        }
+      }
+    }
 
     std::vector<int32_t> sizes_;
     std::vector<ctype> data_;

@@ -61,7 +61,10 @@ struct ShaderInfo final {
   ShaderLayout::Signature kernel_layout{};
 
   // Shader Metadata
-  utils::uvec3 out_tile_size{1u, 1u, 1u};
+  utils::WorkgroupSize out_tile_size{1u, 1u, 1u};
+  bool requires_shader_int16 = false;
+  bool requires_16bit_storage = false;
+  bool requires_8bit_storage = false;
 
   explicit ShaderInfo();
 
@@ -70,7 +73,10 @@ struct ShaderInfo final {
       const uint32_t*,
       const uint32_t,
       std::vector<VkDescriptorType>,
-      const utils::uvec3 tile_size);
+      const utils::uvec3 tile_size,
+      const bool requires_shader_int16_ext,
+      const bool requires_16bit_storage_ext,
+      const bool requires_8bit_storage_ext);
 
   operator bool() const {
     return src_code.bin != nullptr;

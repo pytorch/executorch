@@ -87,10 +87,7 @@ def to_core_aten(
     module: torch.nn.Module,
     example_inputs: Tuple[Value, ...],
 ) -> ExportedProgram:
-    core_aten_program = export(
-        mod=module,
-        args=example_inputs,
-    )
+    core_aten_program = export(mod=module, args=example_inputs, strict=True)
     return core_aten_program
 
 

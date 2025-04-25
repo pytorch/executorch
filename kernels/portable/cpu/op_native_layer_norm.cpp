@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <c10/util/irange.h>
 
 #include <executorch/kernels/portable/cpu/util/normalization_ops_util.h>
 #include <executorch/kernels/portable/cpu/vec_ops.h>
@@ -16,7 +17,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 namespace {
 
@@ -45,7 +46,7 @@ void layer_norm(
   CTYPE* rstd_data = rstd.mutable_data_ptr<CTYPE>();
 
   if (normalized == 0) {
-    for (int i = 0; i < leading; ++i) {
+    for (const auto i : c10::irange(leading)) {
       mean_data[i] = static_cast<CTYPE>(0);
       rstd_data[i] = static_cast<CTYPE>(NAN);
     }
@@ -66,19 +67,20 @@ void layer_norm(
     bias_data = nullptr;
   }
 
-  for (int i = 0; i < leading; ++i) {
+  const CTYPE ct_normalized = static_cast<CTYPE>(normalized);
+  for (const auto i : c10::irange(leading)) {
     const CTYPE* x = input_data + i * normalized;
     CTYPE* y = out_data + i * normalized;
 
     // compute E[X] and Var[x] = E[x^2] - E[x]^2
-    CTYPE sum = reduce_add(x, normalized);
-    CTYPE sq_sum = vec_powerf(x, normalized);
-    CTYPE mean_value = sum / normalized;
-    CTYPE variance = sq_sum / normalized - mean_value * mean_value;
+    CTYPE sum = reduce_add(x, ct_normalized);
+    CTYPE sq_sum = vec_powerf(x, ct_normalized);
+    CTYPE mean_value = sum / ct_normalized;
+    CTYPE variance = sq_sum / ct_normalized - mean_value * mean_value;
     CTYPE std = std::sqrt(variance + eps);
 
     // Calculate the elements of output
-    for (int j = 0; j < normalized; ++j) {
+    for (const auto j : c10::irange(normalized)) {
       CTYPE w = weight_data ? weight_data[j] : static_cast<CTYPE>(1);
       CTYPE b = bias_data ? bias_data[j] : static_cast<CTYPE>(0);
       y[j] = (x[j] - mean_value) / std * w + b;
@@ -100,8 +102,8 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
     KernelRuntimeContext& ctx,
     const Tensor& input,
     IntArrayRef normalized_shape,
-    const exec_aten::optional<Tensor>& weight,
-    const exec_aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& weight,
+    const executorch::aten::optional<Tensor>& bias,
     double eps,
     Tensor& out,
     Tensor& mean_out,
@@ -167,7 +169,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
       InvalidArgument,
       ret_val);
 
-  ET_SWITCH_FLOAT_TYPES(
+  ET_SWITCH_FLOATHBF16_TYPES(
       input.scalar_type(), ctx, "native_layer_norm.out", CTYPE, [&]() {
         layer_norm<CTYPE>(
             input,

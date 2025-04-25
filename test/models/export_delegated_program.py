@@ -4,21 +4,29 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import argparse
 import inspect
 import os
 import sys
+
+from functools import partial
 from typing import Dict, final, Optional, Sequence, Type
 
 import executorch.exir as exir
 
 import torch
-from executorch.exir import to_edge
+from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
+from executorch.exir.passes.external_constants_pass import (
+    delegate_external_constants_pass,
+)
+from executorch.exir.program import ExecutorchProgramManager
 from torch import nn
 from torch.export import export
 
@@ -52,6 +60,53 @@ class ModuleAddMul(nn.Module):
         return (torch.ones(2, 2), 2 * torch.ones(2, 2), 3 * torch.ones(2, 2))
 
 
+class ModuleAddLarge(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(
+        self, a: torch.Tensor, b: torch.Tensor, c: torch.Tensor
+    ) -> torch.Tensor:
+        x: torch.Tensor = torch.add(a, b)
+        y: torch.Tensor = torch.add(x, c)
+        z: torch.Tensor = torch.add(x, y)
+        return z
+
+    def get_random_inputs(self) -> Sequence[torch.Tensor]:
+        n = 10  # to create a large tensor
+        return (torch.ones(n, n, n), 2 * torch.ones(n, n, n), 3 * torch.ones(n, n, n))
+
+
+class ModuleSubLarge(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(
+        self, a: torch.Tensor, b: torch.Tensor, c: torch.Tensor
+    ) -> torch.Tensor:
+        x: torch.Tensor = torch.sub(a, b)
+        y: torch.Tensor = torch.sub(x, c)
+        z: torch.Tensor = torch.sub(x, y)
+        w: torch.Tensor = torch.sub(z, c)
+        return w
+
+    def get_random_inputs(self) -> Sequence[torch.Tensor]:
+        n = 10  # to create a large tensor
+        return (torch.ones(n, n, n), 2 * torch.ones(n, n, n), 3 * torch.ones(n, n, n))
+
+
+class ModuleLinear(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(3, 3)
+
+    def forward(self, x: torch.Tensor):
+        return self.linear(x)
+
+    def get_random_inputs(self):
+        return (torch.randn(3),)
+
+
 #
 # Backends
 #
@@ -76,51 +131,75 @@ def export_module_to_program(
     *,
     backend_id: str,
     extract_delegate_segments: bool,
-    constant_tensor_alignemnt: Optional[int] = None,
+    constant_tensor_alignment: Optional[int] = None,
     delegate_alignment: Optional[int] = None,
-    method: str = "forward",
-) -> bytes:
+    method_name: str = "forward",
+    external_constants: bool = False,
+) -> ExecutorchProgramManager:
     eager_module = module_class().eval()
     inputs = ()
     if hasattr(eager_module, "get_random_inputs"):
-        # pyre-fixme[29]: `Union[nn.modules.module.Module, torch._tensor.Tensor]` is
-        #  not a function.
-        inputs = eager_module.get_random_inputs()
+        inputs = eager_module.get_random_inputs()  # type: ignore[operator]
 
     class WrapperModule(torch.nn.Module):
-        def __init__(self, fn):
+        def __init__(self, fn, method_name=method_name):
             super().__init__()
             self.fn = fn
+            self.method_name = method_name
 
         def forward(self, *args, **kwargs):
-            return self.fn(*args, **kwargs)
+            return getattr(self.fn, self.method_name)(*args, **kwargs)
 
-    edge: exir.EdgeProgramManager = to_edge(
-        export(WrapperModule(getattr(eager_module, method)), args=inputs)
+    exported_program = export(WrapperModule(eager_module), args=inputs, strict=True)
+
+    edge_config = EdgeCompileConfig(_check_ir_validity=False)
+    et_config = exir.ExecutorchBackendConfig(
+        extract_delegate_segments=extract_delegate_segments,
+        constant_tensor_alignment=constant_tensor_alignment,
+        delegate_alignment=delegate_alignment,
     )
 
-    lowered_module = to_backend(backend_id, edge.exported_program(), compile_specs=[])
-
-    class CompositeModule(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.lowered_module = lowered_module
-
-        def forward(self, *args, **kwargs):
-            return self.lowered_module(*args, **kwargs)
-
-    composite_module = CompositeModule()
-    composite_module(*inputs)
-
-    executorch_program = to_edge(export(composite_module, args=inputs)).to_executorch(
-        config=exir.ExecutorchBackendConfig(
-            extract_delegate_segments=extract_delegate_segments,
-            constant_tensor_alignment=constant_tensor_alignemnt,
-            delegate_alignment=delegate_alignment,
+    if backend_id == "XnnpackBackend":
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackPartitioner,
         )
-    )
 
-    return executorch_program.buffer
+        transform_passes = []
+        if external_constants:
+            partial_function = partial(
+                delegate_external_constants_pass,
+                ep=exported_program,
+                gen_tag_fn=lambda x: module_class.__name__,
+            )
+            transform_passes.append(partial_function)
+        executorch_program = to_edge_transform_and_lower(
+            exported_program,
+            transform_passes=transform_passes,
+            compile_config=edge_config,
+            partitioner=[XnnpackPartitioner()],
+        ).to_executorch(config=et_config)
+    else:
+        edge: exir.EdgeProgramManager = to_edge(exported_program)
+        lowered_module = to_backend(  # type: ignore[call-arg]
+            backend_id, edge.exported_program(), compile_specs=[]
+        )
+
+        class CompositeModule(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered_module = lowered_module
+
+            def forward(self, *args, **kwargs):
+                return self.lowered_module(*args, **kwargs)
+
+        composite_module = CompositeModule()
+        composite_module(*inputs)
+
+        executorch_program = to_edge(
+            export(composite_module, args=inputs, strict=True)
+        ).to_executorch(config=et_config)
+
+    return executorch_program
 
 
 def main() -> None:
@@ -150,6 +229,19 @@ def main() -> None:
         + f"one of {known_backend_ids}",
     )
     parser.add_argument(
+        "--inline_delegate_segments",
+        action="store_true",
+        help="Store delegate data inside the flatbuffer.",
+    )
+    parser.add_argument(
+        "--delegate_alignment", type=int, default=None, help="Delegate alignment."
+    )
+    parser.add_argument(
+        "--external_constants",
+        action="store_true",
+        help="Export the model with all constants saved to an external file.",
+    )
+    parser.add_argument(
         "--outdir",
         type=str,
         required=True,
@@ -169,25 +261,28 @@ def main() -> None:
 
     # Export and write to the output files.
     os.makedirs(args.outdir, exist_ok=True)
+    suffix = ""
     for module_name, module_class in module_names_to_classes.items():
-        for extract_delegate_segments in (True, False):
-            suffix = "" if extract_delegate_segments else "-nosegments"
-            # Create files with the default alignment, and a large alignment.
-            # This alignment should be so large that it's extremely unlikely for
-            # the data to accidentally be aligned to it in the default case.
-            for delegate_alignment in (None, 1024):
-                suffix += f"-da{delegate_alignment}" if delegate_alignment else ""
-                outfile = os.path.join(args.outdir, f"{module_name}{suffix}.pte")
-                with open(outfile, "wb") as fp:
-                    fp.write(
-                        export_module_to_program(
-                            module_class,
-                            backend_id=args.backend_id,
-                            extract_delegate_segments=extract_delegate_segments,
-                            delegate_alignment=delegate_alignment,
-                        )
-                    )
-                print(f"Exported {module_name} and wrote program data to {outfile}")
+        if args.inline_delegate_segments:
+            suffix += "-nosegments"
+        if args.delegate_alignment is not None:
+            suffix += f"-da{args.delegate_alignment}"
+        if args.external_constants:
+            suffix += "-e"
+        outfile = os.path.join(args.outdir, f"{module_name}{suffix}.pte")
+        executorch_program = export_module_to_program(
+            module_class,
+            backend_id=args.backend_id,
+            extract_delegate_segments=not args.inline_delegate_segments,
+            delegate_alignment=args.delegate_alignment,
+            external_constants=args.external_constants,
+        )
+        with open(outfile, "wb") as fp:
+            fp.write(executorch_program.buffer)
+        print(f"Exported {module_name} and wrote program data to {outfile}")
+        if args.external_constants:
+            print(f"Saving external constants to {module_name}.ptd")
+            executorch_program.write_tensor_data_to_file(args.outdir)
 
 
 if __name__ == "__main__":

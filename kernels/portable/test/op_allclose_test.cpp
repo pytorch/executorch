@@ -17,16 +17,50 @@
 #include <cmath>
 
 using namespace ::testing;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::native::allclose_out;
-using torch::executor::testing::IsCloseTo;
 using torch::executor::testing::TensorFactory;
 
 const double default_atol{1e-08};
 const double default_rtol{1e-05};
 
-TEST(OpAllCloseTest, IdenticalFloatTensors) {
+class OpAllCloseTest : public OperatorTest {
+ protected:
+  template <typename CTYPE, ScalarType DTYPE>
+  void test_tensors_vary_tolerance(
+      double rtol,
+      double rdiff,
+      double atol,
+      double adiff,
+      bool should_match) {
+    TensorFactory<DTYPE> tf;
+    Tensor a = tf.ones(/*sizes=*/{2, 2});
+    Tensor b = tf.ones(/*sizes=*/{2, 2});
+
+    auto a_data = a.data_ptr<CTYPE>();
+    auto b_data = b.data_ptr<CTYPE>();
+    b_data[0] = a_data[0] + adiff + a_data[0] * rdiff;
+
+    TensorFactory<ScalarType::Bool> tf_bool;
+    Tensor out = tf_bool.zeros(/*sizes=*/{1});
+
+    allclose_out(
+        a,
+        b,
+        rtol,
+        atol,
+        /*equal_nan=*/false,
+        /*dummy_param=*/false,
+        out);
+
+    auto out_data = out.data_ptr<bool>();
+    EXPECT_EQ(out_data[0], should_match)
+        << a_data[0] << " doesn't match " << b_data[0] << "; dtype " << DTYPE;
+  }
+};
+
+TEST_F(OpAllCloseTest, IdenticalFloatTensors) {
   TensorFactory<ScalarType::Float> tf_float;
   Tensor a = tf_float.ones(/*sizes=*/{2, 2});
   Tensor b = tf_float.ones(/*sizes=*/{2, 2});
@@ -46,7 +80,7 @@ TEST(OpAllCloseTest, IdenticalFloatTensors) {
   EXPECT_EQ(out_data[0], true);
 }
 
-TEST(OpAllCloseTest, IdenticalDoubleTensors) {
+TEST_F(OpAllCloseTest, IdenticalDoubleTensors) {
   TensorFactory<ScalarType::Double> tf_double;
   Tensor a = tf_double.ones(/*sizes=*/{2, 2});
   Tensor b = tf_double.ones(/*sizes=*/{2, 2});
@@ -66,7 +100,7 @@ TEST(OpAllCloseTest, IdenticalDoubleTensors) {
   EXPECT_EQ(out_data[0], true);
 }
 
-TEST(OpAllCloseTest, NonEqualFloatTensors) {
+TEST_F(OpAllCloseTest, NonEqualFloatTensors) {
   TensorFactory<ScalarType::Float> tf_float;
   Tensor a = tf_float.make(/*sizes=*/{2, 2}, /*data=*/{1., 2., 3., 4.});
   Tensor b = tf_float.make(/*sizes=*/{2, 2}, /*data=*/{5., 6., 7., 8.});
@@ -86,7 +120,7 @@ TEST(OpAllCloseTest, NonEqualFloatTensors) {
   EXPECT_EQ(out_data[0], false);
 }
 
-TEST(OpAllCloseTest, NonEqualDoubleTensors) {
+TEST_F(OpAllCloseTest, NonEqualDoubleTensors) {
   TensorFactory<ScalarType::Double> tf_double;
   Tensor a = tf_double.make(/*sizes=*/{2, 2}, /*data=*/{1., 2., 3., 4.});
   Tensor b = tf_double.make(/*sizes=*/{2, 2}, /*data=*/{5., 6., 7., 8.});
@@ -106,7 +140,7 @@ TEST(OpAllCloseTest, NonEqualDoubleTensors) {
   EXPECT_EQ(out_data[0], false);
 }
 
-TEST(OpAllCloseTest, IdenticalIntTensors) {
+TEST_F(OpAllCloseTest, IdenticalIntTensors) {
   TensorFactory<ScalarType::Int> tf_int;
   Tensor a = tf_int.ones(/*sizes=*/{2, 2});
   Tensor b = tf_int.ones(/*sizes=*/{2, 2});
@@ -125,7 +159,7 @@ TEST(OpAllCloseTest, IdenticalIntTensors) {
   EXPECT_EQ(out_data[0], true);
 }
 
-TEST(OpAllCloseTest, NonEqualIntTensors) {
+TEST_F(OpAllCloseTest, NonEqualIntTensors) {
   TensorFactory<ScalarType::Int> tf_int;
   Tensor a = tf_int.make(/*sizes=*/{2, 2}, /*data=*/{1, 2, 3, 4});
   Tensor b = tf_int.make(/*sizes=*/{2, 2}, /*data=*/{5, 6, 7, 8});
@@ -144,7 +178,7 @@ TEST(OpAllCloseTest, NonEqualIntTensors) {
   EXPECT_EQ(out_data[0], false);
 }
 
-TEST(OpAllCloseTest, IdenticalBoolTensors) {
+TEST_F(OpAllCloseTest, IdenticalBoolTensors) {
   TensorFactory<ScalarType::Bool> tf_bool;
   Tensor a = tf_bool.ones(/*sizes=*/{2, 2});
   Tensor b = tf_bool.ones(/*sizes=*/{2, 2});
@@ -162,7 +196,7 @@ TEST(OpAllCloseTest, IdenticalBoolTensors) {
   EXPECT_EQ(out_data[0], true);
 }
 
-TEST(OpAllCloseTest, NonEqualBoolTensors) {
+TEST_F(OpAllCloseTest, NonEqualBoolTensors) {
   TensorFactory<ScalarType::Bool> tf_bool;
   Tensor a = tf_bool.ones(/*sizes=*/{2, 2});
   Tensor b = tf_bool.ones(/*sizes=*/{2, 2});
@@ -182,7 +216,7 @@ TEST(OpAllCloseTest, NonEqualBoolTensors) {
   EXPECT_EQ(out_data[0], false);
 }
 
-TEST(OpAllCloseTest, MismatchedInputShapesDeath) {
+TEST_F(OpAllCloseTest, MismatchedInputShapesDeath) {
   TensorFactory<ScalarType::Int> tf_int;
   Tensor a = tf_int.ones(/*sizes=*/{2, 1});
   Tensor b = tf_int.ones(/*sizes=*/{2, 2});
@@ -201,7 +235,7 @@ TEST(OpAllCloseTest, MismatchedInputShapesDeath) {
       "");
 }
 
-TEST(OpAllCloseTest, MismatchedInputDtypesDeath) {
+TEST_F(OpAllCloseTest, MismatchedInputDtypesDeath) {
   TensorFactory<ScalarType::Float> tf_float;
   Tensor a = tf_float.ones(/*sizes=*/{2, 2});
 
@@ -223,7 +257,7 @@ TEST(OpAllCloseTest, MismatchedInputDtypesDeath) {
       "");
 }
 
-TEST(OpAllCloseTest, IncorrectOutputDtypeDeath) {
+TEST_F(OpAllCloseTest, IncorrectOutputDtypeDeath) {
   TensorFactory<ScalarType::Float> tf_float;
   Tensor a = tf_float.ones(/*sizes=*/{2, 2});
   Tensor b = tf_float.ones(/*sizes=*/{2, 2});
@@ -241,7 +275,7 @@ TEST(OpAllCloseTest, IncorrectOutputDtypeDeath) {
       "");
 }
 
-TEST(OpAllCloseTest, IncorrectOutputShapeDeath) {
+TEST_F(OpAllCloseTest, IncorrectOutputShapeDeath) {
   TensorFactory<ScalarType::Float> tf_float;
   Tensor a = tf_float.ones(/*sizes=*/{2, 2});
   Tensor b = tf_float.ones(/*sizes=*/{2, 2});
@@ -260,219 +294,39 @@ TEST(OpAllCloseTest, IncorrectOutputShapeDeath) {
       "");
 }
 
-TEST(OpAllCloseTest, FloatTensorsVaryWithinRelativeTolerance) {
-  const double rtol = 1e-05;
-  const double rdiff = 1e-06;
-
-  TensorFactory<ScalarType::Float> tf_float;
-  Tensor a = tf_float.ones(/*sizes=*/{2, 2});
-  Tensor b = tf_float.ones(/*sizes=*/{2, 2});
-
-  auto a_data = a.data_ptr<float>();
-  auto b_data = b.data_ptr<float>();
-  b_data[0] = a_data[0] * (1. + rdiff);
-
-  TensorFactory<ScalarType::Bool> tf_bool;
-  Tensor out = tf_bool.zeros(/*sizes=*/{1});
-
-  allclose_out(
-      a, b, rtol, /*atol=*/0., /*equal_nan=*/false, /*dummy_param=*/false, out);
-
-  auto out_data = out.data_ptr<bool>();
-  EXPECT_EQ(out_data[0], true);
+TEST_F(OpAllCloseTest, TensorsVaryWithinRelativeTolerance) {
+#define TEST_ENTRY(ctype, dtype)                         \
+  test_tensors_vary_tolerance<ctype, ScalarType::dtype>( \
+      1e-01, 1e-02, 0, 0, true);
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
 }
 
-TEST(OpAllCloseTest, DoubleTensorsVaryWithinRelativeTolerance) {
-  const double rtol = 1e-05;
-  const double rdiff = 1e-06;
-
-  TensorFactory<ScalarType::Double> tf_double;
-  Tensor a = tf_double.ones(/*sizes=*/{2, 2});
-  Tensor b = tf_double.ones(/*sizes=*/{2, 2});
-
-  auto a_data = a.data_ptr<double>();
-  auto b_data = b.data_ptr<double>();
-  b_data[0] = a_data[0] * (1. + rdiff);
-  TensorFactory<ScalarType::Bool> tf_bool;
-  Tensor out = tf_bool.zeros(/*sizes=*/{1});
-
-  allclose_out(
-      a, b, rtol, /*atol=*/0., /*equal_nan=*/false, /*dummy_param=*/false, out);
-
-  auto out_data = out.data_ptr<bool>();
-  EXPECT_EQ(out_data[0], true);
+TEST_F(OpAllCloseTest, TensorsVaryOutsideRelativeTolerance) {
+#define TEST_ENTRY(ctype, dtype) \
+  test_tensors_vary_tolerance<ctype, ScalarType::dtype>(1e-01, 1, 0, 0, false);
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
 }
 
-TEST(OpAllCloseTest, FloatTensorsVaryOutsideRelativeTolerance) {
-  const double rtol = 1e-05;
-  const double rdiff = 1e-04;
-
-  TensorFactory<ScalarType::Float> tf_float;
-  Tensor a = tf_float.ones(/*sizes=*/{2, 2});
-  Tensor b = tf_float.ones(/*sizes=*/{2, 2});
-
-  auto a_data = a.data_ptr<float>();
-  auto b_data = b.data_ptr<float>();
-  b_data[0] = a_data[0] * (1. + rdiff);
-  TensorFactory<ScalarType::Bool> tf_bool;
-  Tensor out = tf_bool.zeros(/*sizes=*/{1});
-
-  allclose_out(
-      a, b, rtol, /*atol=*/0., /*equal_nan=*/false, /*dummy_param=*/false, out);
-
-  auto out_data = out.data_ptr<bool>();
-  EXPECT_EQ(out_data[0], false);
+TEST_F(OpAllCloseTest, TensorsVaryWithinAbsoluteTolerance) {
+#define TEST_ENTRY(ctype, dtype)                         \
+  test_tensors_vary_tolerance<ctype, ScalarType::dtype>( \
+      0, 0, 1e-01, 1e-02, true);
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
 }
 
-TEST(OpAllCloseTest, DoubleTensorsVaryOutsideRelativeTolerance) {
-  const double rtol = 1e-05;
-  const double rdiff = 1e-04;
-
-  TensorFactory<ScalarType::Double> tf_double;
-  Tensor a = tf_double.ones(/*sizes=*/{2, 2});
-  Tensor b = tf_double.ones(/*sizes=*/{2, 2});
-
-  auto a_data = a.data_ptr<double>();
-  auto b_data = b.data_ptr<double>();
-  b_data[0] = a_data[0] * (1. + rdiff);
-  TensorFactory<ScalarType::Bool> tf_bool;
-  Tensor out = tf_bool.zeros(/*sizes=*/{1});
-
-  allclose_out(
-      a, b, rtol, /*atol=*/0., /*equal_nan=*/false, /*dummy_param=*/false, out);
-
-  auto out_data = out.data_ptr<bool>();
-  EXPECT_EQ(out_data[0], false);
+TEST_F(OpAllCloseTest, TensorsVaryOutsideAbsoluteTolerance) {
+#define TEST_ENTRY(ctype, dtype) \
+  test_tensors_vary_tolerance<ctype, ScalarType::dtype>(0, 0, 1e-01, 1, false);
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
 }
 
-TEST(OpAllCloseTest, FloatTensorsVaryWithinAbsoluteTolerance) {
-  const double atol = 1e-08;
-  const double adiff = 1e-09;
-
-  TensorFactory<ScalarType::Float> tf_float;
-  Tensor a = tf_float.ones(/*sizes=*/{2, 2});
-  Tensor b = tf_float.ones(/*sizes=*/{2, 2});
-
-  auto a_data = a.data_ptr<float>();
-  auto b_data = b.data_ptr<float>();
-  b_data[0] = a_data[0] + adiff;
-  TensorFactory<ScalarType::Bool> tf_bool;
-  Tensor out = tf_bool.zeros(/*sizes=*/{1});
-
-  allclose_out(
-      a, b, /*rtol=*/0., atol, /*equal_nan=*/false, /*dummy_param=*/false, out);
-
-  auto out_data = out.data_ptr<bool>();
-  EXPECT_EQ(out_data[0], true);
-}
-
-TEST(OpAllCloseTest, DoubleTensorsVaryWithinAbsoluteTolerance) {
-  const double atol = 1e-08;
-  const double adiff = 1e-09;
-
-  TensorFactory<ScalarType::Double> tf_double;
-  Tensor a = tf_double.ones(/*sizes=*/{2, 2});
-  Tensor b = tf_double.ones(/*sizes=*/{2, 2});
-
-  auto a_data = a.data_ptr<double>();
-  auto b_data = b.data_ptr<double>();
-  b_data[0] = a_data[0] + adiff;
-  TensorFactory<ScalarType::Bool> tf_bool;
-  Tensor out = tf_bool.zeros(/*sizes=*/{1});
-
-  allclose_out(
-      a, b, /*rtol=*/0., atol, /*equal_nan=*/false, /*dummy_param=*/false, out);
-
-  auto out_data = out.data_ptr<bool>();
-  EXPECT_EQ(out_data[0], true);
-}
-
-TEST(OpAllCloseTest, FloatTensorsVaryOutsideAbsoluteTolerance) {
-  const double atol = 1e-08;
-  const double adiff = 1e-07;
-
-  TensorFactory<ScalarType::Float> tf_float;
-  Tensor a = tf_float.ones(/*sizes=*/{2, 2});
-  Tensor b = tf_float.ones(/*sizes=*/{2, 2});
-
-  auto a_data = a.data_ptr<float>();
-  auto b_data = b.data_ptr<float>();
-  b_data[0] = a_data[0] + adiff;
-  TensorFactory<ScalarType::Bool> tf_bool;
-  Tensor out = tf_bool.zeros(/*sizes=*/{1});
-
-  allclose_out(
-      a, b, /*rtol=*/0., atol, /*equal_nan=*/false, /*dummy_param=*/false, out);
-
-  auto out_data = out.data_ptr<bool>();
-  EXPECT_EQ(out_data[0], false);
-}
-
-TEST(OpAllCloseTest, DoubleTensorsVaryOutsideAbsoluteTolerance) {
-  const double atol = 1e-08;
-  const double adiff = 1e-07;
-
-  TensorFactory<ScalarType::Float> tf_double;
-  Tensor a = tf_double.ones(/*sizes=*/{2, 2});
-  Tensor b = tf_double.ones(/*sizes=*/{2, 2});
-
-  auto a_data = a.data_ptr<double>();
-  auto b_data = b.data_ptr<double>();
-  b_data[0] = a_data[0] + adiff;
-  TensorFactory<ScalarType::Bool> tf_bool;
-  Tensor out = tf_bool.zeros(/*sizes=*/{1});
-
-  allclose_out(
-      a, b, /*rtol=*/0., atol, /*equal_nan=*/false, /*dummy_param=*/false, out);
-
-  auto out_data = out.data_ptr<bool>();
-  EXPECT_EQ(out_data[0], false);
-}
-
-TEST(OpAllCloseTest, FloatTensorsVaryWithZeroTolerance) {
-  TensorFactory<ScalarType::Float> tf_float;
-  Tensor a = tf_float.ones(/*sizes=*/{2, 2});
-  Tensor b = tf_float.ones(/*sizes=*/{2, 2});
-
-  auto a_data = a.data_ptr<float>();
-  auto b_data = b.data_ptr<float>();
-  b_data[0] = a_data[0] + 1e-07;
-  TensorFactory<ScalarType::Bool> tf_bool;
-  Tensor out = tf_bool.zeros(/*sizes=*/{1});
-
-  allclose_out(
-      a,
-      b,
-      /*rtol=*/0.,
-      /*atol=*/0,
-      /*equal_nan=*/false,
-      /*dummy_param=*/false,
-      out);
-
-  auto out_data = out.data_ptr<bool>();
-  EXPECT_EQ(out_data[0], false);
-}
-
-TEST(OpAllCloseTest, DoubleTensorsVaryWithZeroTolerance) {
-  TensorFactory<ScalarType::Double> tf_double;
-  Tensor a = tf_double.ones(/*sizes=*/{2, 2});
-  Tensor b = tf_double.ones(/*sizes=*/{2, 2});
-
-  auto a_data = a.data_ptr<double>();
-  auto b_data = b.data_ptr<double>();
-  b_data[0] = a_data[0] + 1e-09;
-  TensorFactory<ScalarType::Bool> tf_bool;
-  Tensor out = tf_bool.zeros(/*sizes=*/{1});
-
-  allclose_out(
-      a,
-      b,
-      /*rtol=*/0.,
-      /*atol=*/0.,
-      /*equal_nan=*/false,
-      /*dummy_param=*/false,
-      out);
-
-  auto out_data = out.data_ptr<bool>();
-  EXPECT_EQ(out_data[0], false);
+TEST_F(OpAllCloseTest, TensorsVaryWithZeroTolerance) {
+#define TEST_ENTRY(ctype, dtype) \
+  test_tensors_vary_tolerance<ctype, ScalarType::dtype>(0, 0, 0, 1e-01, false);
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
 }

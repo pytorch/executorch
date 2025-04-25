@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -7,20 +7,20 @@
 # pyre-unsafe
 from typing import List
 
-import serializer.tosa_serializer as ts
-import torch.fx
+import torch
+
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
+
+from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+    get_input_qparams,
+    get_output_qparams,
+)
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_quant_utils import (
-    build_rescale,
-    get_quant_arg_downstream,
-    get_quant_arg_upstream,
-)
-from executorch.backends.arm.tosa_utils import get_two_inputs
-from serializer.tosa_serializer import TosaOp
+from executorch.backends.arm.tosa_quant_utils import build_rescale
 
 
 @register_node_visitor
@@ -36,54 +36,62 @@ class BMMVisitor(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
-        input0, input1 = get_two_inputs(node)
+        if inputs[0].dtype != inputs[1].dtype or inputs[0].dtype != output.dtype:
+            raise TypeError(
+                f"All IO needs to have the same data type, got: "
+                f"{inputs[0].dtype=}, {inputs[1].dtype=} and {output.dtype=}"
+            )
+
+        # NOTE: For now, only INT8 & FP32 is supported
+        supported_dtypes = [ts.DType.INT8, ts.DType.FP32]
+        for input in inputs:
+            if input.dtype not in supported_dtypes:
+                raise TypeError(
+                    f'IO data type needs to be {supported_dtypes}, got "{input.dtype}"'
+                )
 
         # aten.bmm maps directly to MATMUL
-        # NOTE: For now, only INT8 & FP32 is supported
 
         # For INT8, we need to get the zero points and add an intermediate tensor
         # for a later rescale.
-        if is_quant_node:
-            input0_q_params = get_quant_arg_upstream(input0)
-            input1_q_params = get_quant_arg_upstream(input1)
-            input0_zp = input0_q_params.zp
-            input1_zp = input1_q_params.zp
+        if inputs[0].dtype == ts.DType.INT8:
+            input_qparams = get_input_qparams(node)
+            input0_zp = input_qparams[0].zp
+            input1_zp = input_qparams[1].zp
             bmm_result = tosa_graph.addIntermediate(output.shape, ts.DType.INT32)
             bmm_output_name = bmm_result.name
         else:
-            input0_zp, input1_zp = 0, 0
             bmm_output_name = output.name
+            input0_zp, input1_zp = 0, 0
 
         # Add the MATMUL to the TOSA graph.
         attr = ts.TosaSerializerAttribute()
         attr.MatMulAttribute(A_zp=input0_zp, B_zp=input1_zp)
 
         tosa_graph.addOperator(
-            TosaOp.Op().MATMUL,
-            [input0.name, input1.name],
+            ts.TosaOp.Op().MATMUL,
+            [inputs[0].name, inputs[1].name],
             [bmm_output_name],
             attr,
         )
 
         # As INT8 accumulates into INT32, we need to rescale it back to INT8
-        if is_quant_node:
-            output_q_params = get_quant_arg_downstream(list(node.users)[0])
-
+        if output.dtype == ts.DType.INT8:
+            output_qparams = get_output_qparams(node)[0]
             final_output_scale = (
-                input0_q_params.scale * input1_q_params.scale
-            ) / output_q_params.scale
+                input_qparams[0].scale * input_qparams[1].scale  # type: ignore[possibly-undefined]  # pyre-ignore[61]
+            ) / output_qparams.scale
 
             build_rescale(
                 tosa_fb=tosa_graph,
-                scale=final_output_scale,
+                scale=[final_output_scale],
                 # pyre-ignore[61]: Uninitialized local [61]: Local variable `bmm_result` is undefined, or not always defined.
-                input_node=bmm_result,
+                input_node=bmm_result,  # type: ignore[possibly-undefined]
                 output_name=output.name,
                 output_type=ts.DType.INT8,
                 output_shape=bmm_result.shape,
                 input_zp=0,
-                output_zp=output_q_params.zp,
+                output_zp=output_qparams.zp,
                 is_double_round=False,
             )

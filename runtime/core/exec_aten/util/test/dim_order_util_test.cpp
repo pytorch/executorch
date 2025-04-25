@@ -22,16 +22,16 @@ using executorch::runtime::stride_to_dim_order;
 
 namespace {
 void check_strides_eq(
-    exec_aten::ArrayRef<exec_aten::StridesType> strides_a,
-    exec_aten::ArrayRef<exec_aten::StridesType> strides_b) {
+    executorch::aten::ArrayRef<executorch::aten::StridesType> strides_a,
+    executorch::aten::ArrayRef<executorch::aten::StridesType> strides_b) {
   for (int32_t i = 0; i < strides_a.size(); ++i) {
     EXPECT_EQ(strides_a[i], strides_b[i]);
   }
 }
 
 void check_dim_order_eq(
-    exec_aten::ArrayRef<exec_aten::DimOrderType> dim_order_a,
-    exec_aten::ArrayRef<exec_aten::DimOrderType> dim_order_b) {
+    executorch::aten::ArrayRef<executorch::aten::DimOrderType> dim_order_a,
+    executorch::aten::ArrayRef<executorch::aten::DimOrderType> dim_order_b) {
   for (int32_t i = 0; i < dim_order_a.size(); ++i) {
     EXPECT_EQ(dim_order_a[i], dim_order_b[i]);
   }
@@ -39,18 +39,18 @@ void check_dim_order_eq(
 } // namespace
 
 TEST(DimOrderUtilTest, DimOrderToStride) {
-  exec_aten::SizesType sizes_1[1] = {5};
-  exec_aten::SizesType dim_order_1[1] = {0};
-  exec_aten::SizesType strides_1[1] = {0};
-  exec_aten::SizesType expected_strides_1[1] = {1};
+  executorch::aten::SizesType sizes_1[1] = {5};
+  executorch::aten::SizesType dim_order_1[1] = {0};
+  executorch::aten::SizesType strides_1[1] = {0};
+  executorch::aten::SizesType expected_strides_1[1] = {1};
   auto error = dim_order_to_stride(sizes_1, dim_order_1, 1, strides_1);
   EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_1, 1}, {expected_strides_1, 1});
 
-  exec_aten::SizesType sizes_2[2] = {2, 5};
-  exec_aten::SizesType dim_order_2[2] = {0, 1};
-  exec_aten::SizesType strides_2[2] = {0, 0};
-  exec_aten::SizesType expected_strides_2[2] = {5, 1};
+  executorch::aten::SizesType sizes_2[2] = {2, 5};
+  executorch::aten::SizesType dim_order_2[2] = {0, 1};
+  executorch::aten::SizesType strides_2[2] = {0, 0};
+  executorch::aten::SizesType expected_strides_2[2] = {5, 1};
   error = dim_order_to_stride(sizes_2, dim_order_2, 2, strides_2);
   EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_2, 2}, {expected_strides_2, 2});
@@ -63,10 +63,10 @@ TEST(DimOrderUtilTest, DimOrderToStride) {
   EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_2, 2}, {expected_strides_2, 2});
 
-  exec_aten::SizesType sizes_3[3] = {2, 5, 7};
-  exec_aten::SizesType dim_order_3[3] = {0, 1, 2};
-  exec_aten::SizesType strides_3[3] = {0, 0, 0};
-  exec_aten::SizesType expected_strides_3[3] = {35, 7, 1};
+  executorch::aten::SizesType sizes_3[3] = {2, 5, 7};
+  executorch::aten::SizesType dim_order_3[3] = {0, 1, 2};
+  executorch::aten::SizesType strides_3[3] = {0, 0, 0};
+  executorch::aten::SizesType expected_strides_3[3] = {35, 7, 1};
   error = dim_order_to_stride(sizes_3, dim_order_3, 3, strides_3);
   EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_3, 3}, {expected_strides_3, 3});
@@ -90,10 +90,10 @@ TEST(DimOrderUtilTest, DimOrderToStride) {
   EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_3, 3}, {expected_strides_3, 3});
 
-  exec_aten::SizesType sizes_4[4] = {2, 5, 7, 8};
-  exec_aten::SizesType dim_order_4[4] = {0, 1, 2, 3};
-  exec_aten::SizesType strides_4[4] = {0, 0, 0, 0};
-  exec_aten::SizesType expected_strides_4[4] = {280, 56, 8, 1};
+  executorch::aten::SizesType sizes_4[4] = {2, 5, 7, 8};
+  executorch::aten::SizesType dim_order_4[4] = {0, 1, 2, 3};
+  executorch::aten::SizesType strides_4[4] = {0, 0, 0, 0};
+  executorch::aten::SizesType expected_strides_4[4] = {280, 56, 8, 1};
   error = dim_order_to_stride(sizes_4, dim_order_4, 4, strides_4);
   EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_4, 4}, {expected_strides_4, 4});
@@ -128,10 +128,10 @@ TEST(DimOrderUtilTest, DimOrderToStride) {
   EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_4, 4}, {expected_strides_4, 4});
 
-  exec_aten::SizesType sizes_5[5] = {2, 5, 7, 8, 9};
-  exec_aten::SizesType dim_order_5[5] = {0, 1, 2, 3, 4};
-  exec_aten::SizesType strides_5[5] = {0, 0, 0, 0, 0};
-  exec_aten::SizesType expected_strides_5[5] = {2520, 504, 72, 9, 1};
+  executorch::aten::SizesType sizes_5[5] = {2, 5, 7, 8, 9};
+  executorch::aten::SizesType dim_order_5[5] = {0, 1, 2, 3, 4};
+  executorch::aten::SizesType strides_5[5] = {0, 0, 0, 0, 0};
+  executorch::aten::SizesType expected_strides_5[5] = {2520, 504, 72, 9, 1};
   error = dim_order_to_stride(sizes_5, dim_order_5, 5, strides_5);
   EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_5, 5}, {expected_strides_5, 5});
@@ -171,10 +171,10 @@ TEST(DimOrderUtilTest, DimOrderToStride) {
   check_strides_eq({strides_5, 5}, {expected_strides_5, 5});
 
   // Check 0 sized dims
-  exec_aten::SizesType sizes_3_zero[3] = {2, 5, 0};
-  exec_aten::SizesType dim_order_3_zero[3] = {0, 1, 2};
-  exec_aten::SizesType strides_3_zero[3] = {0, 0, 0};
-  exec_aten::SizesType expected_strides_3_zero[3] = {5, 1, 1};
+  executorch::aten::SizesType sizes_3_zero[3] = {2, 5, 0};
+  executorch::aten::SizesType dim_order_3_zero[3] = {0, 1, 2};
+  executorch::aten::SizesType strides_3_zero[3] = {0, 0, 0};
+  executorch::aten::SizesType expected_strides_3_zero[3] = {5, 1, 1};
   error =
       dim_order_to_stride(sizes_3_zero, dim_order_3_zero, 3, strides_3_zero);
   EXPECT_EQ(error, Error::Ok);
@@ -204,31 +204,31 @@ TEST(DimOrderUtilTest, DimOrderToStride) {
 }
 
 TEST(DimOrderUtilTest, StrideToDimOrder) {
-  exec_aten::SizesType strides[3] = {5, 1, 15};
-  exec_aten::DimOrderType dim_order[3] = {0, 0, 0};
+  executorch::aten::SizesType strides[3] = {5, 1, 15};
+  executorch::aten::DimOrderType dim_order[3] = {0, 0, 0};
 
   auto error = stride_to_dim_order(strides, 3, dim_order);
 
   EXPECT_EQ(error, Error::Ok);
 
-  exec_aten::DimOrderType expected_dim_order[3] = {2, 0, 1};
+  executorch::aten::DimOrderType expected_dim_order[3] = {2, 0, 1};
   check_dim_order_eq(dim_order, expected_dim_order);
 }
 
 TEST(DimOrderUtilTest, StrideToDimOrderSameStrides) {
-  exec_aten::SizesType strides[4] = {4, 3, 1, 1};
-  exec_aten::DimOrderType dim_order[4] = {0, 0, 0, 0};
+  executorch::aten::SizesType strides[4] = {4, 3, 1, 1};
+  executorch::aten::DimOrderType dim_order[4] = {0, 0, 0, 0};
 
   auto error = stride_to_dim_order(strides, 4, dim_order);
   EXPECT_EQ(error, Error::Ok);
 
-  exec_aten::DimOrderType expected_dim_order[4] = {0, 1, 2, 3};
+  executorch::aten::DimOrderType expected_dim_order[4] = {0, 1, 2, 3};
   check_dim_order_eq(dim_order, expected_dim_order);
 }
 
 TEST(DimOrderUtilTest, IsDefaultDimOrderTest) {
   for (int i = 1; i < 7; ++i) {
-    std::vector<exec_aten::DimOrderType> dim_order(i);
+    std::vector<executorch::aten::DimOrderType> dim_order(i);
     std::iota(dim_order.begin(), dim_order.end(), 0);
 
     EXPECT_TRUE(is_contiguous_dim_order(dim_order.data(), dim_order.size()));
@@ -242,7 +242,7 @@ TEST(DimOrderUtilTest, IsDefaultDimOrderTest) {
 TEST(DimOrderUtilTest, IsDefaultDimOrderFailCasesTest) {
   // Dims is default order but have two elements swapped
   for (int i = 3; i < 8; ++i) {
-    std::vector<exec_aten::DimOrderType> dim_order(i);
+    std::vector<executorch::aten::DimOrderType> dim_order(i);
     std::iota(dim_order.begin(), dim_order.end(), 0);
     std::swap(dim_order[0], dim_order[1]);
 
@@ -251,7 +251,7 @@ TEST(DimOrderUtilTest, IsDefaultDimOrderFailCasesTest) {
 
   // Dims is default order but shifted by 1
   for (int i = 3; i < 8; ++i) {
-    std::vector<exec_aten::DimOrderType> dim_order(i);
+    std::vector<executorch::aten::DimOrderType> dim_order(i);
     for (int d = 0; d < i; ++d) {
       dim_order[d] = (d + 1) % i;
     }
@@ -261,8 +261,8 @@ TEST(DimOrderUtilTest, IsDefaultDimOrderFailCasesTest) {
 }
 
 TEST(DimOrderUtilTest, IsChannelsLastDimOrderTest) {
-  exec_aten::DimOrderType dim_order_4d[4] = {0, 2, 3, 1};
-  exec_aten::DimOrderType dim_order_5d[5] = {0, 2, 3, 4, 1};
+  executorch::aten::DimOrderType dim_order_4d[4] = {0, 2, 3, 1};
+  executorch::aten::DimOrderType dim_order_5d[5] = {0, 2, 3, 4, 1};
 
   EXPECT_TRUE(is_channels_last_dim_order(dim_order_4d, 4));
   EXPECT_TRUE(is_channels_last_dim_order(dim_order_5d, 5));
@@ -274,14 +274,14 @@ TEST(DimOrderUtilTest, IsChannelsLastDimOrderTest) {
 
 TEST(DimOrderUtilTest, IsChannelsLastDimOrderFailCasesTest) {
   // Non 4D and 5D dim order returns false
-  exec_aten::DimOrderType dim_order_3d[4] = {1, 2, 0};
-  exec_aten::DimOrderType dim_order_6d[6] = {0, 2, 3, 4, 5, 1};
+  executorch::aten::DimOrderType dim_order_3d[4] = {1, 2, 0};
+  executorch::aten::DimOrderType dim_order_6d[6] = {0, 2, 3, 4, 5, 1};
 
   EXPECT_FALSE(is_channels_last_dim_order(dim_order_3d, 3));
   EXPECT_FALSE(is_channels_last_dim_order(dim_order_6d, 6));
 
-  exec_aten::DimOrderType dim_order_4d[4] = {0, 3, 2, 1};
-  exec_aten::DimOrderType dim_order_5d[5] = {4, 3, 2, 0, 1};
+  executorch::aten::DimOrderType dim_order_4d[4] = {0, 3, 2, 1};
+  executorch::aten::DimOrderType dim_order_5d[5] = {4, 3, 2, 0, 1};
 
   EXPECT_FALSE(is_channels_last_dim_order(dim_order_4d, 4));
   EXPECT_FALSE(is_channels_last_dim_order(dim_order_5d, 5));

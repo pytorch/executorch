@@ -8,11 +8,11 @@
 set -exu
 # shellcheck source=/dev/null
 
-BUILD_TYPE=${1:-Debug}
 TARGET_OS=${2:-Native}
 BUILD_DIR=${3:-cmake-out}
+CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-Release}
 
-echo "Building with BUILD_TYPE: $BUILD_TYPE, TARGET_OS: $TARGET_OS, BUILD_DIR: $BUILD_DIR"
+echo "Building with CMAKE_BUILD_TYPE: $CMAKE_BUILD_TYPE, TARGET_OS: $TARGET_OS, BUILD_DIR: $BUILD_DIR"
 
 if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
     PYTHON_EXECUTABLE=python3
@@ -30,9 +30,10 @@ fi
 NPROC=8
 if hash nproc &> /dev/null; then NPROC=$(nproc); fi
 
+python_lib=$($PYTHON_EXECUTABLE -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')
 EXECUTORCH_COMMON_CMAKE_ARGS="                      \
         -DCMAKE_INSTALL_PREFIX=${BUILD_DIR}         \
-        -DCMAKE_BUILD_TYPE=${BUILD_TYPE}            \
+        -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}      \
         -DEXECUTORCH_ENABLE_LOGGING=ON              \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON      \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
@@ -41,7 +42,6 @@ EXECUTORCH_COMMON_CMAKE_ARGS="                      \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON     \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON     \
         -DEXECUTORCH_BUILD_XNNPACK=ON               \
-        -DEXECUTORCH_DO_NOT_USE_CXX11_ABI=ON        \
         -DEXECUTORCH_XNNPACK_SHARED_WORKSPACE=ON"
 
 cmake_install_executorch_libraries() {
@@ -49,7 +49,7 @@ cmake_install_executorch_libraries() {
         ${EXECUTORCH_COMMON_CMAKE_ARGS} \
         -B${BUILD_DIR} .
 
-    cmake --build ${BUILD_DIR} -j${NPROC} --target install --config ${BUILD_TYPE}
+    cmake --build ${BUILD_DIR} -j${NPROC} --target install --config ${CMAKE_BUILD_TYPE}
 }
 
 cmake_install_executorch_libraries_for_android() {
@@ -59,14 +59,14 @@ cmake_install_executorch_libraries_for_android() {
         ${EXECUTORCH_COMMON_CMAKE_ARGS}                                         \
         -B${BUILD_DIR} .
 
-    cmake --build ${BUILD_DIR} -j${NPROC} --target install --config ${BUILD_TYPE}
+    cmake --build ${BUILD_DIR} -j${NPROC} --target install --config ${CMAKE_BUILD_TYPE}
 }
 
 
 LLAVA_COMMON_CMAKE_ARGS="                        \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -DCMAKE_INSTALL_PREFIX=${BUILD_DIR}      \
-        -DCMAKE_BUILD_TYPE=${BUILD_TYPE}         \
+        -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}         \
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON     \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON  \
         -DEXECUTORCH_BUILD_XNNPACK=ON"
@@ -81,7 +81,7 @@ cmake_build_llava_runner() {
         -B${BUILD_DIR}/${dir}             \
         ${dir}
 
-    cmake --build ${BUILD_DIR}/${dir} -j${NPROC} --config ${BUILD_TYPE}
+    cmake --build ${BUILD_DIR}/${dir} -j${NPROC} --config ${CMAKE_BUILD_TYPE}
 }
 
 
@@ -93,12 +93,12 @@ cmake_build_llava_runner_for_android() {
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
         -DANDROID_ABI=arm64-v8a                                                 \
         ${LLAVA_COMMON_CMAKE_ARGS}                                              \
-        -DCMAKE_PREFIX_PATH="$python_lib"                                       \
+        -DCMAKE_PREFIX_PATH="$python_lib"                  \
         -DLLAVA_RUNNER_NO_TORCH_DUMMY_IMAGE=ON                                  \
         -B${BUILD_DIR}/${dir}                                                   \
         ${dir}
 
-    cmake --build ${BUILD_DIR}/${dir} -j${NPROC} --config ${BUILD_TYPE}
+    cmake --build ${BUILD_DIR}/${dir} -j${NPROC} --config ${CMAKE_BUILD_TYPE}
 }
 
 # only export the one without custom op for now since it's
@@ -154,7 +154,7 @@ run_and_verify() {
         EXPECTED_PREFIX="ASSISTANT: image captures a basketball game in progress, with several players on the court. One of the players is dribbling the ball, while the others are in various"
     else
         # set the expected prefix to be the same as prompt because there's a bug in sdpa_with_kv_cache that causes <unk> tokens.
-        EXPECTED_PREFIX="ASSISTANT:"
+        EXPECTED_PREFIX="ASSISTANT: image"
     fi
     if [[ "${RESULT}" == *"${EXPECTED_PREFIX}"* ]]; then
         echo "Expected result prefix: ${EXPECTED_PREFIX}"

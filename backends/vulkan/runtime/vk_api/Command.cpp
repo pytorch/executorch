@@ -81,7 +81,7 @@ void CommandBuffer::end() {
 void CommandBuffer::bind_pipeline(
     VkPipeline pipeline,
     VkPipelineLayout pipeline_layout,
-    const utils::uvec3 local_workgroup_size) {
+    const utils::WorkgroupSize local_workgroup_size) {
   VK_CHECK_COND(
       state_ == CommandBuffer::State::RECORDING,
       "Vulkan CommandBuffer: called bind_pipeline() on a command buffer whose state "
@@ -120,6 +120,21 @@ void CommandBuffer::bind_descriptors(VkDescriptorSet descriptors) {
   bound_.descriptors = descriptors;
 
   state_ = CommandBuffer::State::DESCRIPTORS_BOUND;
+}
+
+void CommandBuffer::set_push_constants(
+    VkPipelineLayout pipeline_layout,
+    const void* push_constants_data,
+    uint32_t push_constants_size) {
+  if (push_constants_data != nullptr && push_constants_size > 0) {
+    vkCmdPushConstants(
+        handle_,
+        pipeline_layout,
+        VK_SHADER_STAGE_COMPUTE_BIT,
+        0,
+        push_constants_size,
+        push_constants_data);
+  }
 }
 
 void CommandBuffer::insert_barrier(PipelineBarrier& pipeline_barrier) {

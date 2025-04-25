@@ -10,7 +10,6 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnLogger.h>
 
-#include <iostream>
 #include <memory>
 
 #include "QnnLog.h"

@@ -17,10 +17,10 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::optional;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::optional;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpSliceCopyTensorOutTest : public OperatorTest {
@@ -36,7 +36,7 @@ class OpSliceCopyTensorOutTest : public OperatorTest {
         context_, self, dim, start, end, step, out);
   }
 
-  template <class CTYPE, exec_aten::ScalarType DTYPE>
+  template <class CTYPE, executorch::aten::ScalarType DTYPE>
   void test_dtype() {
     TensorFactory<DTYPE> tf;
 
@@ -568,7 +568,7 @@ TEST_F(OpSliceCopyTensorOutTest, DefaultStartValSupported) {
   Tensor ret_default_start = op_slice_copy_tensor_out(
       input,
       /*dim=*/0,
-      /*start=*/exec_aten::nullopt,
+      /*start=*/executorch::aten::nullopt,
       /*end=*/2,
       /*step=*/1,
       out);
@@ -588,7 +588,7 @@ TEST_F(OpSliceCopyTensorOutTest, DefaultEndValSupported) {
       input,
       /*dim=*/0,
       /*start=*/0,
-      /*end=*/exec_aten::nullopt,
+      /*end=*/executorch::aten::nullopt,
       /*step=*/1,
       out);
   EXPECT_TENSOR_EQ(ret_default_end, out);

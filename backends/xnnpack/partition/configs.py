@@ -63,6 +63,7 @@ SUPPORTED_OPS = [
     exir_ops.edge.aten.avg_pool2d.default,
     exir_ops.edge.aten.leaky_relu.default,
     exir_ops.edge.aten.addmm.default,  # TODO(T163877189) add constraint for addmm
+    exir_ops.edge.aten.rsqrt.default,
 ]
 
 SUPPORTED_MODULES = [
@@ -73,6 +74,7 @@ SUPPORTED_MODULES = [
     torch.nn.BatchNorm2d,
     torch.nn.BatchNorm1d,
     torch.nn.Conv2d,
+    torch.nn.ConvTranspose2d,
     torch.nn.Linear,
     torch.nn.functional.linear,
     torch.nn.PReLU,  # Without this, the PReLU weight becomes not a get_attr

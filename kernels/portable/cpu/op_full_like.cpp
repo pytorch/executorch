@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <c10/util/irange.h>
 
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -13,8 +14,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
 
 Tensor& full_like_out(
     KernelRuntimeContext& ctx,
@@ -54,12 +55,13 @@ Tensor& full_like_out(
 
   ET_SWITCH_REALB_TYPES(val_type, ctx, name, CTYPE_VAL, [&] {
     CTYPE_VAL val;
-    utils::extract_scalar(fill_value, &val);
+    ET_KERNEL_CHECK(
+        ctx, utils::extract_scalar(fill_value, &val), InvalidArgument, );
 
-    ET_SWITCH_REALHB_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {
+    ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {
       CTYPE_OUT val_casted = static_cast<CTYPE_OUT>(val);
       auto data_out = out.mutable_data_ptr<CTYPE_OUT>();
-      for (size_t i = 0; i < out.numel(); ++i) {
+      for (const auto i : c10::irange(out.numel())) {
         data_out[i] = val_casted;
       }
     });

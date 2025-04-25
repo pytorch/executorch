@@ -90,6 +90,18 @@ def _fuse_quantized_cat(model: GraphModule) -> None:
         model.graph.erase_node(qnode)
 
 
+def _remove_dtype_getattr_nodes(model: GraphModule) -> None:
+    for n in model.graph.nodes:
+        if n.op == "call_function" and n.target == getattr:
+            if isinstance(n.args[0], torch.fx.Node) and n.args[1] == "dtype":
+                dtype = n.args[0].meta["val"].dtype
+                n.replace_all_uses_with(dtype)
+                model.graph.erase_node(n)
+    model.graph.eliminate_dead_code()
+    model.graph.lint()
+    model.recompile()
+
+
 class QuantFusionPass(ExportPass):
     def __init__(self, _fix_node_meta_val=False):
         super().__init__()
@@ -123,6 +135,7 @@ class QuantFusionPass(ExportPass):
                         torch.fx.Node, lambda x: x.meta["val"], (n.args, n.kwargs)
                     )
                     n.meta["val"] = n.target(*args, **kwargs)
+        _remove_dtype_getattr_nodes(graph_module)
         graph_module.graph.lint()
         graph_module.graph.eliminate_dead_code()
         return PassResult(graph_module, True)

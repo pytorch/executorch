@@ -1,0 +1,32 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+q_8w_linear_tiled:
+  parameter_names_with_default_values:
+    DTYPE: float
+    IN_STORAGE: texture3d
+    OUT_STORAGE: texture3d
+    WEIGHT_STORAGE: texture2d
+    SCALES_STORAGE: texture2d
+    TILE_ROWS: 4
+  generate_variant_forall:
+    TILE_ROWS:
+      - VALUE: 1
+        SUFFIX: o4x1
+      - VALUE: 4
+        SUFFIX: o4x4
+      - VALUE: 6
+        SUFFIX: o4x6
+  shader_variants:
+    - NAME: q_8w_linear_tiled_texture3d_texture3d_texture2d_texture2d_float
+    - NAME: q_8w_linear_tiled_buffer_buffer_texture2d_texture2d_float
+      IN_STORAGE: buffer
+      OUT_STORAGE: buffer
+    - NAME: q_8w_linear_tiled_buffer_buffer_buffer_buffer_float
+      IN_STORAGE: buffer
+      OUT_STORAGE: buffer
+      WEIGHT_STORAGE: buffer
+      SCALES_STORAGE: buffer

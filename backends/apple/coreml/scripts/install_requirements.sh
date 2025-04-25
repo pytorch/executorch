@@ -10,6 +10,10 @@ SCRIPT_DIR_PATH="$(
     pwd -P
 )"
 
+# TODO(jathu): remove the need to fetch coremltools to build deps for coreml_executor_runner.
+# Keep this version in sync with: pyproject.toml
+COREMLTOOLS_VERSION="8.2"
+
 red=`tput setaf 1`
 green=`tput setaf 2`
 
@@ -24,7 +28,7 @@ rm -rf "$COREML_DIR_PATH/third-party"
 mkdir "$COREML_DIR_PATH/third-party"
 
 echo "${green}ExecuTorch: Cloning coremltools."
-git clone --depth 1 --branch 8.1 "https://github.com/apple/coremltools.git" $COREMLTOOLS_DIR_PATH
+git clone --depth 1 --branch "${COREMLTOOLS_VERSION}" "https://github.com/apple/coremltools.git" $COREMLTOOLS_DIR_PATH
 cd $COREMLTOOLS_DIR_PATH
 
 STATUS=$?
@@ -43,20 +47,7 @@ fi
 
 mkdir "$COREMLTOOLS_DIR_PATH/build"
 cmake -S "$COREMLTOOLS_DIR_PATH" -B "$COREMLTOOLS_DIR_PATH/build"
-cmake --build "$COREMLTOOLS_DIR_PATH/build" --parallel
-
-echo "${green}ExecuTorch: Installing coremltools."
-pip install "$COREMLTOOLS_DIR_PATH"
-# CoreMLTools have started supporting numpy 2.0,
-# but ExecuTorch example model test env is still using older transformers,
-# so for now we will need to downgrade numpy to 1.x
-# TODO: Remove this numpy downgrade once later transformers starts to be used
-pip install numpy==1.26.4
-STATUS=$?
-if [ $STATUS -ne 0 ]; then
-    echo "${red}ExecuTorch: Failed to install coremltools."
-    exit 1
-fi
+cmake --build "$COREMLTOOLS_DIR_PATH/build" --parallel --target mlmodel
 
 echo "${green}ExecuTorch: Cloning nlohmann."
 git clone https://github.com/nlohmann/json.git "$COREML_DIR_PATH/third-party/nlohmann_json"
@@ -65,8 +56,6 @@ if [ $STATUS -ne 0 ]; then
     echo "${red}ExecuTorch: Failed to clone nlohmann."
     exit 1
 fi
-
-sh "$COREML_DIR_PATH/scripts/install_inmemoryfs.sh"
 
 echo "${green}ExecuTorch: Copying protobuf files."
 mkdir -p "$COREML_DIR_PATH/runtime/sdk/format/"

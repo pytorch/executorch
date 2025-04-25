@@ -16,10 +16,10 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::optional;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::optional;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpConvOutTest : public OperatorTest {
@@ -164,12 +164,12 @@ TEST_F(OpConvCorrectnessTest, GenericSmokeTest) {
   op_convolution_out(
       input,
       weight,
-      exec_aten::optional<Tensor>(bias),
-      exec_aten::ArrayRef<int64_t>{stride, 1},
-      exec_aten::ArrayRef<int64_t>{padding, 1},
-      exec_aten::ArrayRef<int64_t>{dilation, 1},
+      executorch::aten::optional<Tensor>(bias),
+      executorch::aten::ArrayRef<int64_t>{stride, 1},
+      executorch::aten::ArrayRef<int64_t>{padding, 1},
+      executorch::aten::ArrayRef<int64_t>{dilation, 1},
       false,
-      exec_aten::ArrayRef<int64_t>{output_padding, 1},
+      executorch::aten::ArrayRef<int64_t>{output_padding, 1},
       int64_t(1),
       out);
   EXPECT_TENSOR_CLOSE(out, expected);
@@ -492,12 +492,12 @@ TEST_F(OpConvCorrectnessTest, InvalidInputShape) {
       op_convolution_out(
           input,
           weight,
-          exec_aten::optional<Tensor>(bias),
-          exec_aten::ArrayRef<int64_t>{stride, 1},
-          exec_aten::ArrayRef<int64_t>{padding, 1},
-          exec_aten::ArrayRef<int64_t>{dilation, 1},
+          executorch::aten::optional<Tensor>(bias),
+          executorch::aten::ArrayRef<int64_t>{stride, 1},
+          executorch::aten::ArrayRef<int64_t>{padding, 1},
+          executorch::aten::ArrayRef<int64_t>{dilation, 1},
           false,
-          exec_aten::ArrayRef<int64_t>{output_padding, 1},
+          executorch::aten::ArrayRef<int64_t>{output_padding, 1},
           groups,
           out));
 
@@ -506,12 +506,12 @@ TEST_F(OpConvCorrectnessTest, InvalidInputShape) {
       op_convolution_out(
           input,
           weight,
-          exec_aten::optional<Tensor>(bias),
-          exec_aten::ArrayRef<int64_t>{stride, 1},
-          exec_aten::ArrayRef<int64_t>{padding, 1},
-          exec_aten::ArrayRef<int64_t>{dilation, 1},
+          executorch::aten::optional<Tensor>(bias),
+          executorch::aten::ArrayRef<int64_t>{stride, 1},
+          executorch::aten::ArrayRef<int64_t>{padding, 1},
+          executorch::aten::ArrayRef<int64_t>{dilation, 1},
           true,
-          exec_aten::ArrayRef<int64_t>{output_padding, 1},
+          executorch::aten::ArrayRef<int64_t>{output_padding, 1},
           groups,
           out));
 }
@@ -538,12 +538,12 @@ TEST_F(OpConvCorrectnessTest, TransposedDefaultParams) {
   op_convolution_out(
       input,
       weight,
-      exec_aten::optional<Tensor>(bias),
-      exec_aten::ArrayRef<int64_t>{stride, 1},
-      exec_aten::ArrayRef<int64_t>{padding, 1},
-      exec_aten::ArrayRef<int64_t>{dilation, 1},
+      executorch::aten::optional<Tensor>(bias),
+      executorch::aten::ArrayRef<int64_t>{stride, 1},
+      executorch::aten::ArrayRef<int64_t>{padding, 1},
+      executorch::aten::ArrayRef<int64_t>{dilation, 1},
       transposed,
-      exec_aten::ArrayRef<int64_t>{output_padding, 1},
+      executorch::aten::ArrayRef<int64_t>{output_padding, 1},
       groups,
       out);
 
@@ -575,12 +575,12 @@ TEST_F(OpConvCorrectnessTest, TransposedNonDefaultParams) {
   op_convolution_out(
       input,
       weight,
-      exec_aten::optional<Tensor>(bias),
-      exec_aten::ArrayRef<int64_t>{stride, 1},
-      exec_aten::ArrayRef<int64_t>{padding, 1},
-      exec_aten::ArrayRef<int64_t>{dilation, 1},
+      executorch::aten::optional<Tensor>(bias),
+      executorch::aten::ArrayRef<int64_t>{stride, 1},
+      executorch::aten::ArrayRef<int64_t>{padding, 1},
+      executorch::aten::ArrayRef<int64_t>{dilation, 1},
       transposed,
-      exec_aten::ArrayRef<int64_t>{output_padding, 1},
+      executorch::aten::ArrayRef<int64_t>{output_padding, 1},
       groups,
       out);
 
@@ -643,12 +643,12 @@ TEST_F(OpConvCorrectnessTest, TransposedDefaultParamsChannelsLast) {
   op_convolution_out(
       input,
       weight,
-      exec_aten::optional<Tensor>(bias),
-      exec_aten::ArrayRef<int64_t>{stride, 1},
-      exec_aten::ArrayRef<int64_t>{padding, 1},
-      exec_aten::ArrayRef<int64_t>{dilation, 1},
+      executorch::aten::optional<Tensor>(bias),
+      executorch::aten::ArrayRef<int64_t>{stride, 1},
+      executorch::aten::ArrayRef<int64_t>{padding, 1},
+      executorch::aten::ArrayRef<int64_t>{dilation, 1},
       transposed,
-      exec_aten::ArrayRef<int64_t>{output_padding, 1},
+      executorch::aten::ArrayRef<int64_t>{output_padding, 1},
       groups,
       out);
 
@@ -687,12 +687,12 @@ TEST_F(OpConvCorrectnessTest, TransposedNonDefaultParamsChannelsLast) {
   op_convolution_out(
       input,
       weight,
-      exec_aten::optional<Tensor>(bias),
-      exec_aten::ArrayRef<int64_t>{stride, 1},
-      exec_aten::ArrayRef<int64_t>{padding, 1},
-      exec_aten::ArrayRef<int64_t>{dilation, 1},
+      executorch::aten::optional<Tensor>(bias),
+      executorch::aten::ArrayRef<int64_t>{stride, 1},
+      executorch::aten::ArrayRef<int64_t>{padding, 1},
+      executorch::aten::ArrayRef<int64_t>{dilation, 1},
       transposed,
-      exec_aten::ArrayRef<int64_t>{output_padding, 1},
+      executorch::aten::ArrayRef<int64_t>{output_padding, 1},
       groups,
       out);
 
@@ -719,12 +719,12 @@ TEST_F(OpConvCorrectnessTest, InvalidOutputPadding) {
       op_convolution_out(
           input,
           weight,
-          exec_aten::optional<Tensor>(bias),
-          exec_aten::ArrayRef<int64_t>{stride, 1},
-          exec_aten::ArrayRef<int64_t>{padding, 1},
-          exec_aten::ArrayRef<int64_t>{dilation, 1},
+          executorch::aten::optional<Tensor>(bias),
+          executorch::aten::ArrayRef<int64_t>{stride, 1},
+          executorch::aten::ArrayRef<int64_t>{padding, 1},
+          executorch::aten::ArrayRef<int64_t>{dilation, 1},
           transposed,
-          exec_aten::ArrayRef<int64_t>{output_padding, 1},
+          executorch::aten::ArrayRef<int64_t>{output_padding, 1},
           groups,
           out));
 }

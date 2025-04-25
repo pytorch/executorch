@@ -55,7 +55,7 @@ def export_phi3_mini_lora(model) -> None:
     tokens = randint(0, vocab_size, (batch_size, seq_len), dtype=long)
     example_args = (tokens,)
     with sdpa_kernel([SDPBackend.MATH]):
-        aten_dialect: ExportedProgram = export(model, example_args)
+        aten_dialect: ExportedProgram = export(model, example_args, strict=True)
 
         # 2. to_edge: Make optimizations for Edge devices.
         print("Lowering to edge dialect")
@@ -93,7 +93,7 @@ def export_phi3_mini_lora_training(model) -> None:
     labels = tokens
     example_args = (tokens, labels)
     with sdpa_kernel([SDPBackend.MATH]):
-        exported_graph: ExportedProgram = export(model, example_args)
+        exported_graph: ExportedProgram = export(model, example_args, strict=True)
         print("Creating a joint forward-backwards graph for training")
         joint_graph = _export_forward_backward(exported_graph)
 

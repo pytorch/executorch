@@ -179,6 +179,11 @@ utils::GPUMemoryLayout ComputeGraph::suggested_memory_layout(
   return utils::kChannelsPacked;
 }
 
+bool ComputeGraph::device_name_contains(const char* substr) {
+  return context_->adapter_ptr()->device_name().find(substr) !=
+      std::string::npos;
+}
+
 void ComputeGraph::check_no_active_value_ptrs() {
   VK_CHECK_COND(
       values_in_use_ == 0,
@@ -239,13 +244,20 @@ ValueRef ComputeGraph::add_tensor(
     const vkapi::ScalarType dtype,
     const utils::StorageType storage_type,
     const utils::GPUMemoryLayout memory_layout,
-    const int64_t shared_object_idx) {
+    const int64_t shared_object_idx,
+    const utils::AxisMapLayout axis_map_layout) {
   bool allocate_memory = shared_object_idx < 0;
 
   ValueRef idx(static_cast<int>(values_.size()));
   check_no_active_value_ptrs();
   values_.emplace_back(api::vTensor(
-      context(), sizes, dtype, storage_type, memory_layout, allocate_memory));
+      context(),
+      sizes,
+      dtype,
+      storage_type,
+      memory_layout,
+      allocate_memory,
+      axis_map_layout));
 
   if (!allocate_memory) {
     get_shared_object(shared_object_idx).add_user(this, idx);
@@ -257,44 +269,70 @@ ValueRef ComputeGraph::add_tensor(
     const std::vector<int64_t>& sizes,
     const vkapi::ScalarType dtype,
     const utils::StorageType storage_type,
-    const int64_t shared_object_idx) {
+    const int64_t shared_object_idx,
+    const utils::AxisMapLayout axis_map_layout) {
   return add_tensor(
       sizes,
       dtype,
       storage_type,
       suggested_memory_layout(sizes),
-      shared_object_idx);
+      shared_object_idx,
+      axis_map_layout);
 }
 
 ValueRef ComputeGraph::add_tensor(
     const std::vector<int64_t>& sizes,
     const vkapi::ScalarType dtype,
     const utils::GPUMemoryLayout memory_layout,
-    const int64_t shared_object_idx) {
+    const int64_t shared_object_idx,
+    const utils::AxisMapLayout axis_map_layout) {
   return add_tensor(
-      sizes, dtype, suggested_storage_type(), memory_layout, shared_object_idx);
+      sizes,
+      dtype,
+      suggested_storage_type(),
+      memory_layout,
+      shared_object_idx,
+      axis_map_layout);
 }
 
 ValueRef ComputeGraph::add_tensor_like(
     const ValueRef idx,
     const utils::StorageType storage_type,
-    const utils::GPUMemoryLayout memory_layout) {
-  return add_tensor(sizes_of(idx), dtype_of(idx), storage_type, memory_layout);
+    const utils::GPUMemoryLayout memory_layout,
+    const utils::AxisMapLayout axis_map_layout) {
+  return add_tensor(
+      sizes_of(idx),
+      dtype_of(idx),
+      storage_type,
+      memory_layout,
+      -1,
+      axis_map_layout);
 }
 
 ValueRef ComputeGraph::add_tensor_like(
     const ValueRef idx,
-    const utils::GPUMemoryLayout memory_layout) {
+    const utils::GPUMemoryLayout memory_layout,
+    const utils::AxisMapLayout axis_map_layout) {
   return add_tensor(
-      sizes_of(idx), dtype_of(idx), storage_type_of(idx), memory_layout);
+      sizes_of(idx),
+      dtype_of(idx),
+      storage_type_of(idx),
+      memory_layout,
+      -1,
+      axis_map_layout);
 }
 
 ValueRef ComputeGraph::add_tensor(
     const std::vector<int64_t>& sizes,
     const vkapi::ScalarType dtype,
-    const int64_t shared_object_idx) {
+    const int64_t shared_object_idx,
+    const utils::AxisMapLayout axis_map_layout) {
   return add_tensor(
-      sizes, dtype, suggested_memory_layout(sizes), shared_object_idx);
+      sizes,
+      dtype,
+      suggested_memory_layout(sizes),
+      shared_object_idx,
+      axis_map_layout);
 }
 
 ValueRef ComputeGraph::add_tensor(const vkapi::VulkanImage& image) {

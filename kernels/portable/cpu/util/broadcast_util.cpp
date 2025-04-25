@@ -6,17 +6,18 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/repeat_util.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
-#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_shape_to_c_string.h>
 #include <string.h>
 
 namespace torch {
 namespace executor {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
 
 void free_broadcast_tensor(const Tensor& broadcast_tensor) {
   free((void*)broadcast_tensor.const_data_ptr());
@@ -76,8 +77,8 @@ Tensor make_tensor(
 } // namespace
 
 bool tensor_is_broadcastable_to(
-    const exec_aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
-    const exec_aten::ArrayRef<Tensor::SizesType> broadcast_to_shape) {
+    const executorch::aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
+    const executorch::aten::ArrayRef<Tensor::SizesType> broadcast_to_shape) {
   bool feasible_bcast = true;
 
   if (broadcast_to_shape.size() < broadcast_from_shape.size()) {
@@ -108,8 +109,8 @@ bool tensor_is_broadcastable_to(
 }
 
 bool tensors_are_broadcastable_between(
-    const exec_aten::ArrayRef<Tensor::SizesType> a_shape,
-    const exec_aten::ArrayRef<Tensor::SizesType> b_shape) {
+    const executorch::aten::ArrayRef<Tensor::SizesType> a_shape,
+    const executorch::aten::ArrayRef<Tensor::SizesType> b_shape) {
   auto a_dim = a_shape.size();
   auto b_dim = b_shape.size();
 
@@ -208,15 +209,25 @@ Tensor broadcast_tensor(
 }
 
 ET_NODISCARD Error get_broadcast_target_size(
-    const exec_aten::ArrayRef<Tensor::SizesType> a_size,
-    const exec_aten::ArrayRef<Tensor::SizesType> b_size,
+    const executorch::aten::ArrayRef<Tensor::SizesType> a_size,
+    const executorch::aten::ArrayRef<Tensor::SizesType> b_size,
     Tensor::SizesType* out_sizes,
     const size_t out_sizes_len,
     size_t* out_dim) {
-  ET_CHECK_OR_RETURN_ERROR(
-      tensors_are_broadcastable_between(a_size, b_size),
-      InvalidArgument,
-      "Two input tensors should be broadcastable.\n");
+  if ET_UNLIKELY (!tensors_are_broadcastable_between(a_size, b_size)) {
+#if ET_LOG_ENABLED
+    executorch::runtime::Span<const Tensor::SizesType> a_size_span(
+        a_size.data(), a_size.size());
+    executorch::runtime::Span<const Tensor::SizesType> b_size_span(
+        b_size.data(), b_size.size());
+    ET_LOG(
+        Error,
+        "Two input tensors should be broadcastable but got shapes %s and %s.",
+        tensor_shape_to_c_string(a_size_span).data(),
+        tensor_shape_to_c_string(b_size_span).data());
+#endif
+    return executorch::runtime::Error::InvalidArgument;
+  }
 
   auto a_dim = a_size.size();
   auto b_dim = b_size.size();
@@ -258,33 +269,11 @@ ET_NODISCARD Error get_broadcast_target_size(
       a.sizes(), b.sizes(), out_sizes, out_sizes_len, out_dim);
 }
 
-void delinearize_index(
-    size_t linear_index,
-    exec_aten::ArrayRef<Tensor::SizesType> shape,
-    size_t* out_indexes,
-    const size_t out_indexes_len) {
-  ET_CHECK(shape.size() <= out_indexes_len);
-  for (auto i = 0; i < shape.size(); ++i) {
-    auto dim = shape.size() - 1 - i;
-    auto dim_size = shape[dim];
-    out_indexes[dim] = linear_index % dim_size;
-    linear_index /= dim_size;
-  }
-}
-
-void delinearize_index(
-    size_t linear_index,
-    const Tensor& t,
-    size_t* out_indexes,
-    const size_t out_indexes_len) {
-  delinearize_index(linear_index, t.sizes(), out_indexes, out_indexes_len);
-}
-
 size_t linearize_access_indexes(
     ArrayRef<size_t> indexes_broadcast_to,
     ssize_t broadcast_to_ndim,
-    exec_aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
-    exec_aten::ArrayRef<Tensor::StridesType> broadcast_from_strides) {
+    executorch::aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
+    executorch::aten::ArrayRef<Tensor::StridesType> broadcast_from_strides) {
   size_t num_skip_dims = broadcast_to_ndim - broadcast_from_shape.size();
   ArrayRef<size_t> indexes_broadcast_from = indexes_broadcast_to.slice(
       num_skip_dims, broadcast_to_ndim - num_skip_dims);
@@ -294,7 +283,8 @@ size_t linearize_access_indexes(
   size_t linear_index = 0;
   for (size_t i = 0; i < indexes_broadcast_from.size(); ++i) {
     // If this dimension is broadcasted, add zero to the linear address.
-    if (indexes_broadcast_from[i] >= broadcast_from_shape[i]) {
+    if (indexes_broadcast_from[i] >=
+        static_cast<size_t>(broadcast_from_shape[i])) {
       ET_CHECK_MSG(
           broadcast_from_shape[i] == 1,
           "Expected dim size == 1 if broadcasted, but actual dim size is %zu",

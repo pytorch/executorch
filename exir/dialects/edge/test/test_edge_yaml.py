@@ -187,6 +187,7 @@ class TestEdgeYaml(unittest.TestCase):
                     "Int",
                     "Long",
                     "Short",
+                    "UInt16",
                 )
             ],
         )

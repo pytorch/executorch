@@ -11,7 +11,7 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ScalarType;
+using executorch::aten::ScalarType;
 using torch::executor::ScalarTypeToCppType;
 
 TEST(DtypeSelectiveBuildTest, UnknownOp) {
@@ -19,7 +19,7 @@ TEST(DtypeSelectiveBuildTest, UnknownOp) {
       ET_SWITCH_TWO_TYPES(
           Float,
           Int,
-          exec_aten::ScalarType::Float,
+          executorch::aten::ScalarType::Float,
           ctx,
           "unknown.out",
           // @lint-ignore CLANGTIDY clang-diagnostic-unused-local-typedef
@@ -33,7 +33,7 @@ TEST(DtypeSelectiveBuildTest, OpWithoutDtype) {
       ET_SWITCH_TWO_TYPES(
           Float,
           Int,
-          exec_aten::ScalarType::Int,
+          executorch::aten::ScalarType::Int,
           ctx,
           "add.out",
           // @lint-ignore CLANGTIDY clang-diagnostic-unused-local-typedef
@@ -47,7 +47,7 @@ TEST(DtypeSelectiveBuildTest, OpWithDtype) {
       ET_SWITCH_TWO_TYPES(
           Float,
           Int,
-          exec_aten::ScalarType::Float,
+          executorch::aten::ScalarType::Float,
           ctx,
           "add.out",
           // @lint-ignore CLANGTIDY clang-diagnostic-unused-local-typedef

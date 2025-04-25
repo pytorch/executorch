@@ -372,13 +372,15 @@ def plot_metric(result: List[float], metric_name: str):
 
 def calculate_mse(ref_values: ProgramOutput, values: ProgramOutput):
     def mean_squared_error(a: torch.Tensor, b: torch.Tensor):
-        return round((torch.pow((a - b).to(torch.float32), 2)).mean().item(), 2)
+        return round((torch.pow((a - b), 2)).mean().item(), 2)
 
     results = []
     for ref_value, value in zip(ref_values, values):
         # TODO T171811011: extend the implementation of each metrics function to support value types other than tensor type
         if isinstance(ref_value, torch.Tensor) and isinstance(value, torch.Tensor):
-            results.append(mean_squared_error(ref_value, value))
+            results.append(
+                mean_squared_error(ref_value.to(torch.float32), value.to(torch.float32))
+            )
         else:
             results.append(None)
 
@@ -387,8 +389,6 @@ def calculate_mse(ref_values: ProgramOutput, values: ProgramOutput):
 
 def calculate_snr(ref_values: ProgramOutput, values: ProgramOutput):
     def signal_to_noise(signal: torch.Tensor, noise: torch.Tensor):
-        signal = signal.type(torch.float32)
-        noise = noise.type(torch.float32)
         signal_power = torch.mean(torch.pow(signal, 2))
         noise_power = torch.mean(torch.pow(noise, 2))
         snr = 10 * torch.log10(signal_power / noise_power)
@@ -398,8 +398,10 @@ def calculate_snr(ref_values: ProgramOutput, values: ProgramOutput):
     for ref_value, value in zip(ref_values, values):
         # TODO T171811011: extend the implementation of each metrics function to support value types other than tensor type
         if isinstance(ref_value, torch.Tensor) and isinstance(value, torch.Tensor):
-            diff = ref_value - value
-            snr = signal_to_noise(ref_value, diff)
+            ref_value_fp = ref_value.to(torch.float32)
+            value_fp = value.to(torch.float32)
+            diff = ref_value_fp - value_fp
+            snr = signal_to_noise(ref_value_fp, diff)
             results.append(snr)
         else:
             results.append(None)
@@ -429,7 +431,9 @@ def calculate_cosine_similarity(ref_values: ProgramOutput, values: ProgramOutput
     for ref_value, value in zip(ref_values, values):
         # TODO T171811011: extend the implementation of each metrics function to support value types other than tensor type
         if isinstance(ref_value, torch.Tensor) and isinstance(value, torch.Tensor):
-            results.append(cosine_similarity(ref_value, value))
+            results.append(
+                cosine_similarity(ref_value.to(torch.float32), value.to(torch.float32))
+            )
         else:
             results.append(None)
 

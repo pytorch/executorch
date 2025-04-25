@@ -8,12 +8,10 @@
 from typing import Optional, Union
 
 import torch
-from executorch.examples.models.llama.tokenizer.tiktoken import Tokenizer as Tiktoken
-from executorch.extension.llm.tokenizer.tokenizer import (
-    Tokenizer as SentencePieceTokenizer,
-)
 
 from lm_eval.models.huggingface import HFLM as eval_wrapper
+from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
+from pytorch_tokenizers.tiktoken import TiktokenTokenizer as Tiktoken
 
 from torch import nn
 
@@ -77,7 +75,9 @@ class EagerEvalWrapper(eval_wrapper):
         if self._use_kv_cache:
             pos_tensor = torch.tensor([0], dtype=torch.int64, device=self.device)
             # Batch process the whole sequence.
-            logits = self._model(inps[:, : self._max_seq_length], pos_tensor)
+            logits = self._model(
+                inps[:, : self._max_seq_length], {"input_pos": pos_tensor}
+            )
             return logits
         else:
             return self._model(inps)

@@ -11,9 +11,9 @@
 namespace custom {
 namespace native {
 
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
-using executorch::runtime::KernelRuntimeContext;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext;
 
 namespace {
 void check_preconditions(const Tensor& in, Tensor& out) {

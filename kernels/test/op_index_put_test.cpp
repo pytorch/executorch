@@ -17,10 +17,10 @@
 #include <sys/types.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::optional;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::optional;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 using OptTensorArrayRef = ArrayRef<optional<Tensor>>;
@@ -44,8 +44,8 @@ class OpIndexPutOutTest : public OperatorTest {
   }
 
   template <
-      exec_aten::ScalarType INPUT_DTYPE,
-      exec_aten::ScalarType INDICES_DTYPE>
+      executorch::aten::ScalarType INPUT_DTYPE,
+      executorch::aten::ScalarType INDICES_DTYPE>
   void test_dtype() {
     TensorFactory<INPUT_DTYPE> tf;
     TensorFactory<INDICES_DTYPE> tfl;

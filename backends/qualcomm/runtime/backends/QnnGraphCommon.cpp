@@ -108,7 +108,7 @@ Error QnnGraph::EnsureTensorInQnnGraph(
       std::string new_name =
           old_name + "_" + std::to_string(name_conflict_count);
       tensor_wrapper->SetName(new_name);
-      QNN_VER_PTR(tensor)->name = new_name.c_str();
+      QNN_TENSOR_VER_PTR(tensor)->name = new_name.c_str();
 
       QNN_EXECUTORCH_LOG_INFO(
           "tensor name %s hash collision, change to %s",

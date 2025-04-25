@@ -22,6 +22,7 @@ import distutils.file_util
 import glob
 import os
 import sys
+from typing import Any
 
 import pytorch_sphinx_theme
 
@@ -43,6 +44,8 @@ author = "ExecuTorch Contributors"
 import os
 import sys
 
+FBCODE = "fbcode" in os.getcwd()
+
 extensions = [
     "breathe",
     "sphinx.ext.autodoc",
@@ -59,8 +62,13 @@ extensions = [
     "myst_parser",
     "sphinx_design",
     "sphinx_gallery.gen_gallery",
-    "executorch_custom_versions",
+    "sphinx_reredirects",
 ]
+
+if not FBCODE:
+    extensions += [
+        "executorch_custom_versions",
+    ]
 
 this_file_dir = os.path.abspath(os.path.dirname(__file__))
 doxygen_xml_dir = os.path.join(
@@ -103,7 +111,7 @@ myst_enable_extensions = [
 
 myst_heading_anchors = 4
 
-sphinx_gallery_conf = {
+sphinx_gallery_conf: dict[str, Any] = {
     "examples_dirs": ["tutorials_source"],
     "ignore_pattern": "template_tutorial.py",
     "gallery_dirs": ["tutorials"],
@@ -184,20 +192,37 @@ html_js_files = ["js/progress-bar.js"]
 # Example configuration for intersphinx: refer to the Python standard library.
 intersphinx_mapping = {
     "python": ("https://docs.python.org/", None),
-    "numpy": ("https://docs.scipy.org/doc/numpy/", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
     "torch": ("https://pytorch.org/docs/stable/", None),
+}
+
+# Redirects for moved pages
+redirects = {
+    "getting-started-setup": "getting-started.html",
+    "export-overview": "using-executorch-export.html",
+    "runtime-build-and-cross-compilation": "using-executorch-building-from-source.html",
+    "tutorials/export-to-executorch-tutorial": "../using-executorch-export.html",
+    "running-a-model-cpp-tutorial": "using-executorch-cpp.html",
+    "build-run-vulkan": "backends-vulkan.html",
+    "executorch-arm-delegate-tutorial": "backends-arm-ethos-u.html",
+    "build-run-coreml": "backends-coreml.html",
+    "build-run-mediatek-backend": "backends-mediatek.html",
+    "build-run-mps": "backends-mps.html",
+    "build-run-qualcomm-ai-engine-direct-backend": "backends-qualcomm.html",
+    "build-run-xtensa": "backends-cadence.html",
+    "apple-runtime": "using-executorch-ios.html",
 }
 
 # Custom directives defintions to create cards on main landing page
 
-from custom_directives import (
+from custom_directives import (  # type: ignore[import-not-found]
     CustomCardEnd,
     CustomCardItem,
     CustomCardStart,
     SupportedDevices,
     SupportedProperties,
 )
-from docutils.parsers import rst
+from docutils.parsers import rst  # type: ignore[import-untyped]
 
 # Register custom directives
 

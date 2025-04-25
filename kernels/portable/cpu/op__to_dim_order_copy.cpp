@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
+
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
@@ -15,16 +17,17 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using SizesArrayRef = exec_aten::ArrayRef<exec_aten::SizesType>;
-using DimOrderArrayRef = exec_aten::ArrayRef<exec_aten::DimOrderType>;
-using MemoryFormat = exec_aten::MemoryFormat;
+using Tensor = executorch::aten::Tensor;
+using SizesArrayRef = executorch::aten::ArrayRef<executorch::aten::SizesType>;
+using DimOrderArrayRef =
+    executorch::aten::ArrayRef<executorch::aten::DimOrderType>;
+using MemoryFormat = executorch::aten::MemoryFormat;
 
 template <typename T>
-using OptionalArrayRef = exec_aten::OptionalArrayRef<T>;
+using OptionalArrayRef = executorch::aten::OptionalArrayRef<T>;
 
 template <typename T>
-using Optional = exec_aten::optional<T>;
+using Optional = executorch::aten::optional<T>;
 
 namespace {
 
@@ -34,13 +37,13 @@ int64_t coordinateToIndexWithDimOrder(
     const Tensor& self,
     const size_t* cur_indices) {
   int64_t index = 0;
-  exec_aten::StridesType strides[kTensorDimensionLimit];
+  executorch::aten::StridesType strides[kTensorDimensionLimit];
   SizesArrayRef sizes = self.sizes();
   DimOrderArrayRef dim_order = self.dim_order();
 
   dim_order_to_stride_nocheck(
       sizes.data(), dim_order.data(), sizes.size(), strides);
-  for (size_t i = 0; i < self.dim(); ++i) {
+  for (const auto i : c10::irange(self.dim())) {
     index += cur_indices[i] * strides[i];
   }
   return index;
@@ -58,7 +61,7 @@ void _to_dim_order_copy_impl(const Tensor& self, Tensor& out) {
   for (ssize_t i = 0; i < self.numel(); i++) {
     // Update the current indices.
     for (ssize_t j = self.dim() - 1; j >= 0; j--) {
-      if (coordinate[j] + 1 < self.size(j)) {
+      if (coordinate[j] + 1 < static_cast<size_t>(self.size(j))) {
         coordinate[j]++;
         break;
       } else {
@@ -96,13 +99,17 @@ Tensor& _to_dim_order_copy_out(
       InvalidArgument,
       out);
 
-  ET_SWITCH_REALHB_TYPES(
+  if (self.numel() == 0) {
+    return out;
+  }
+
+  ET_SWITCH_REALHBBF16_TYPES(
       self.scalar_type(),
       ctx,
       "dim_order_ops::_to_dim_order_copy.out",
       CTYPE_IN,
       [&] {
-        ET_SWITCH_REALHB_TYPES(
+        ET_SWITCH_REALHBBF16_TYPES(
             out.scalar_type(),
             ctx,
             "dim_order_ops::_to_dim_order_copy.out",
@@ -118,7 +125,7 @@ Tensor& _to_dim_order_copy_out(
     bool non_blocking,
     OptionalArrayRef<int64_t> dim_order,
     Tensor& out) {
-  executorch::runtime::KernelRuntimeContext context{};
+  executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext context{};
   return _to_dim_order_copy_out(context, self, non_blocking, dim_order, out);
 }
 

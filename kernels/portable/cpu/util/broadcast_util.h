@@ -8,6 +8,9 @@
 
 #pragma once
 
+#include <c10/util/irange.h>
+#include <executorch/kernels/portable/cpu/util/broadcast_indexes_range.h>
+#include <executorch/kernels/portable/cpu/util/delinearize_index.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
@@ -24,8 +27,8 @@ namespace executor {
  *
  */
 bool tensor_is_broadcastable_to(
-    const exec_aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
-    const exec_aten::ArrayRef<Tensor::SizesType> broadcast_to_shape);
+    const executorch::aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
+    const executorch::aten::ArrayRef<Tensor::SizesType> broadcast_to_shape);
 
 /**
  * Check whether or not the broadcast_from tensor should and can be broadcasted
@@ -50,8 +53,8 @@ bool tensor_is_broadcastable_to(
  * @returns true if the tensors are broadcastable, false otherwise.
  */
 bool tensors_are_broadcastable_between(
-    const exec_aten::ArrayRef<Tensor::SizesType> a_shape,
-    const exec_aten::ArrayRef<Tensor::SizesType> b_shape);
+    const executorch::aten::ArrayRef<Tensor::SizesType> a_shape,
+    const executorch::aten::ArrayRef<Tensor::SizesType> b_shape);
 
 /**
  * Convenience overload of the above function to accept Tensor inputs.
@@ -77,9 +80,9 @@ bool tensors_are_broadcastable_between(const Tensor& a, const Tensor& b);
  * repeated as appropriate. This tensor contains dynamically allocated memory
  * and must be freed using free_broadcast_tensor.
  */
-ET_DEPRECATED exec_aten::Tensor broadcast_tensor(
-    const exec_aten::Tensor& broadcast_from,
-    const exec_aten::Tensor& broadcast_to);
+ET_DEPRECATED executorch::aten::Tensor broadcast_tensor(
+    const executorch::aten::Tensor& broadcast_from,
+    const executorch::aten::Tensor& broadcast_to);
 
 /**
  * Get the size of the target tensor that two input tensors would be broadcasted
@@ -98,8 +101,8 @@ ET_DEPRECATED exec_aten::Tensor broadcast_tensor(
  * tensor
  */
 ET_NODISCARD Error get_broadcast_target_size(
-    const exec_aten::ArrayRef<Tensor::SizesType> a_size,
-    const exec_aten::ArrayRef<Tensor::SizesType> b_size,
+    const executorch::aten::ArrayRef<Tensor::SizesType> a_size,
+    const executorch::aten::ArrayRef<Tensor::SizesType> b_size,
     Tensor::SizesType* out_sizes,
     const size_t out_sizes_len,
     size_t* out_dim);
@@ -203,37 +206,7 @@ ET_NODISCARD inline Error resize_to_broadcast_target_size(
  * @returns void
  */
 ET_DEPRECATED void free_broadcast_tensor(
-    const exec_aten::Tensor& broadcast_tensor);
-
-/**
- * Delinearize a flattened index to per-dimension indexes.
- *
- * @param[in] linear_index The flattened index
- * @param[in] shape The tensor shape
- * @param[out] out_indexes The per-dimension indexes
- * @param[in] out_indexes_len The maximum size of the out_indexes array
- * @returns void
- */
-void delinearize_index(
-    size_t linear_index,
-    exec_aten::ArrayRef<Tensor::SizesType> shape,
-    size_t* out_indexes,
-    const size_t out_indexes_len);
-
-/**
- * Delinearize a flattened index to per-dimension indexes.
- *
- * @param[in] linear_index The flattened index
- * @param[in] t The tensor object
- * @param[out] out_indexes The per-dimension indexes
- * @param[in] out_indexes_len The maximum size of the out_indexes array
- * @returns void
- */
-void delinearize_index(
-    size_t linear_index,
-    const Tensor& t,
-    size_t* out_indexes,
-    const size_t out_indexes_len);
+    const executorch::aten::Tensor& broadcast_tensor);
 
 /**
  * Return the linear index for broatcast_from tensor, given the indexes and
@@ -249,8 +222,8 @@ void delinearize_index(
 size_t linearize_access_indexes(
     ArrayRef<size_t> indexes_broadcast_to,
     ssize_t broadcast_to_ndim,
-    exec_aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
-    exec_aten::ArrayRef<Tensor::StridesType> broadcast_from_strides);
+    executorch::aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
+    executorch::aten::ArrayRef<Tensor::StridesType> broadcast_from_strides);
 
 /**
  * Return the linear index for broatcast_from tensor, given the indexes of
@@ -281,31 +254,13 @@ inline void apply_binary_elementwise_fn(
     const Tensor& a,
     const Tensor& b,
     const Tensor& out) {
-  const bool a_is_broadcasted = !out.sizes().equals(a.sizes());
-  const bool b_is_broadcasted = !out.sizes().equals(b.sizes());
-  const bool any_is_broadcasted = (a_is_broadcasted || b_is_broadcasted);
-
   const CTYPE_A* const data_a = a.const_data_ptr<CTYPE_A>();
   const CTYPE_B* const data_b = b.const_data_ptr<CTYPE_B>();
   CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
 
-  for (size_t i = 0; i < out.numel(); ++i) {
-    size_t a_linear_index = i;
-    size_t b_linear_index = i;
-
-    if (any_is_broadcasted) {
-      size_t out_indexes[kTensorDimensionLimit];
-      delinearize_index(i, out, out_indexes, kTensorDimensionLimit);
-
-      if (a_is_broadcasted) {
-        a_linear_index = linearize_access_indexes(out_indexes, out.dim(), a);
-      }
-      if (b_is_broadcasted) {
-        b_linear_index = linearize_access_indexes(out_indexes, out.dim(), b);
-      }
-    }
-
-    data_out[i] = compute_fun(data_a[a_linear_index], data_b[b_linear_index]);
+  for (const auto [out_index, a_index, b_index] :
+       BroadcastIndexesRange<2>(out, a, b)) {
+    data_out[out_index] = compute_fun(data_a[a_index], data_b[b_index]);
   }
 }
 
@@ -326,39 +281,15 @@ inline void apply_ternary_elementwise_fn(
     const Tensor& b,
     const Tensor& c,
     const Tensor& out) {
-  const bool a_is_broadcasted = !out.sizes().equals(a.sizes());
-  const bool b_is_broadcasted = !out.sizes().equals(b.sizes());
-  const bool c_is_broadcasted = !out.sizes().equals(c.sizes());
-  const bool any_is_broadcasted =
-      (a_is_broadcasted || b_is_broadcasted || c_is_broadcasted);
-
   const CTYPE_A* const data_a = a.const_data_ptr<CTYPE_A>();
   const CTYPE_B* const data_b = b.const_data_ptr<CTYPE_B>();
   const CTYPE_C* const data_c = c.const_data_ptr<CTYPE_C>();
   CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
 
-  for (size_t i = 0; i < out.numel(); ++i) {
-    size_t a_linear_index = i;
-    size_t b_linear_index = i;
-    size_t c_linear_index = i;
-
-    if (any_is_broadcasted) {
-      size_t out_indexes[kTensorDimensionLimit];
-      delinearize_index(i, out, out_indexes, kTensorDimensionLimit);
-
-      if (a_is_broadcasted) {
-        a_linear_index = linearize_access_indexes(out_indexes, out.dim(), a);
-      }
-      if (b_is_broadcasted) {
-        b_linear_index = linearize_access_indexes(out_indexes, out.dim(), b);
-      }
-      if (c_is_broadcasted) {
-        c_linear_index = linearize_access_indexes(out_indexes, out.dim(), c);
-      }
-    }
-
-    data_out[i] = compute_fun(
-        data_a[a_linear_index], data_b[b_linear_index], data_c[c_linear_index]);
+  for (const auto [out_index, a_index, b_index, c_index] :
+       BroadcastIndexesRange<3>(out, a, b, c)) {
+    data_out[out_index] =
+        compute_fun(data_a[a_index], data_b[b_index], data_c[c_index]);
   }
 }
 

@@ -74,7 +74,8 @@ TEST(XNNExecutorTest, ArgumentWithTooManyDimensions) {
           },
           {
               1,
-          }),
+          },
+          {}),
       Error::Ok);
   TensorFactory<executorch::aten::ScalarType::Int> tf;
   auto input_tensor = tf.make({1, 1, 1, 1, 1, 1, 1, 1, 1}, {42});

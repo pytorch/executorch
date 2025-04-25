@@ -1,4 +1,4 @@
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,8 +11,11 @@
 # the standardised TOSA representation.
 #
 
-import serializer.tosa_serializer as ts
+from typing import Any, Sequence
+
 import torch
+
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
 
 UNSUPPORTED_DTYPES = (
@@ -42,9 +45,11 @@ DTYPE_MAP = {
 }
 
 
-def map_dtype(data_type):
-    assert data_type not in UNSUPPORTED_DTYPES, f"Unsupported type: {data_type}"
-    assert data_type in DTYPE_MAP, f"Unknown type: {data_type}"
+def map_dtype(data_type: torch.dtype) -> ts.DType:
+    if data_type in UNSUPPORTED_DTYPES:
+        raise ValueError(f"Unsupported type: {data_type}")
+    if data_type not in DTYPE_MAP:
+        raise ValueError(f"Unknown type: {data_type}")
     return DTYPE_MAP[data_type]
 
 
@@ -58,7 +63,10 @@ def extract_tensor_meta(meta):
         # TODO: should use first concrete representation
         val = val[0]
 
-    assert torch._subclasses.fake_tensor.FakeTensor == type(val)
+    if not isinstance(val, torch._subclasses.fake_tensor.FakeTensor):
+        raise ValueError(
+            f"Expected first value in node.meta['val'] to be FakeTensor, got {val.__class__}"
+        )
     dtype = map_dtype(val.dtype)
     shape = tuple(val.size())
 
@@ -71,40 +79,50 @@ def extract_tensor_meta(meta):
 
 # Class to capture arguments and turn into tensor references for TOSA OPs
 class TosaArg:
-    def __process_node(self, argument):
-        assert isinstance(argument, torch.fx.node.Node)
-        self.name = argument.name
+    def __process_node(self, argument: torch.fx.Node):
+        self.name: str = argument.name
         self.dtype, self.shape, self.dim_order = extract_tensor_meta(argument.meta)
 
     def __process_list(self, argument):
-        self.special = list(argument)
+        self.special: list = list(argument)
 
-    def __process_number(self, argument):
-        self.number = argument
+    def __process_number(self, argument: float | int):
+        self.number: float | int = argument
 
-    def __init__(self, argument) -> None:
-        self.name = None
-        self.dtype = None
-        self.shape = None
-        self.dim_order = None
-        self.special = None
-
+    def __init__(self, argument: Any) -> None:
         if argument is None:
             return
 
-        if isinstance(argument, torch.fx.node.Node):
+        if isinstance(argument, torch.fx.Node):
             self.__process_node(argument)
             return
-        if isinstance(argument, list):
+        if isinstance(argument, Sequence):
             self.__process_list(argument)
             return
-        if isinstance(argument, int):
+        if isinstance(argument, (int, float)):
             self.__process_number(argument)
             return
-        if isinstance(argument, float):
-            self.__process_number(argument)
+        if isinstance(argument, torch.dtype):
+            # Dtype is parsed from fake tensor
             return
 
-        RuntimeError(
+        raise RuntimeError(
             f"Unhandled node input argument: {argument}, of type {type(argument)}"
         )
+
+    def __repr__(self):
+        attrs = []
+        if hasattr(self, "name"):
+            if self.name is not None:
+                attrs.append(f"name={self.name!r}")
+            if self.dtype is not None:
+                attrs.append(f"dtype={ts.DTypeNames[self.dtype]}")
+            if self.shape is not None:
+                attrs.append(f"shape={self.shape!r}")
+            if self.dim_order is not None:
+                attrs.append(f"dim_order={self.dim_order!r}")
+        if hasattr(self, "special") and self.special is not None:
+            attrs.append(f"special={self.special!r}")
+        if hasattr(self, "number") and self.number is not None:
+            attrs.append(f"number={self.number!r}")
+        return f"{self.__class__.__name__}({', '.join(attrs)})"

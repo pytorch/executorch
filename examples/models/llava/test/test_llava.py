@@ -18,7 +18,7 @@ from executorch.examples.models.llava.model import LlavaModel
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
-from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa # usort: skip
+from executorch.extension.llm.custom_ops import custom_ops  # noqa # usort: skip
 from executorch.kernels import quantized  # noqa # usort: skip
 
 logging.basicConfig(level=logging.INFO)
@@ -131,7 +131,7 @@ class TestLlava(unittest.TestCase):
         # being tested, using llama_transformer
         new_tokens = [torch.argmax(pte_prefill_after_img).item()]
         # TODO: uncomment this line
-        # self.assertEquals(new_tokens[0], 1932)  # When
+        # self.assertEqual(new_tokens[0], 1932)  # When
         for i in range(4):
             print(i, llava_model.tokenizer.decode(new_tokens[i]))
             token_embeds = llava_module.run_method(

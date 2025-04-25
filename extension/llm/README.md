@@ -38,7 +38,7 @@ A sampler class in C++ to sample the logistics given some hyperparameters.
 ## custom_ops
 Contains custom op, such as:
 - custom sdpa: implements CPU flash attention and avoids copies by taking the kv cache as one of its arguments.
-  - _sdpa_with_kv_cache.py_, _op_sdpa_aot.cpp_: custom op definition in PyTorch with C++ registration.
+  - _custom_ops.py_, _op_sdpa_aot.cpp_: custom op definition in PyTorch with C++ registration.
   - _op_sdpa.cpp_: the optimized operator implementation and registration of _sdpa_with_kv_cache.out_.
 
 ## runner

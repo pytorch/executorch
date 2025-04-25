@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pye-strict
+# pyre-unsafe
 
 import copy
 import unittest
@@ -22,6 +22,7 @@ from executorch.exir.lowered_backend_module import get_lowered_submodules
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.program._program import (
+    _transform,
     EdgeProgramManager,
     ExecutorchProgramManager,
     to_edge,
@@ -34,6 +35,7 @@ from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
+from torch._export.verifier import Verifier
 from torch.export import Dim, export, ExportedProgram
 from torch.export._trace import _export
 
@@ -166,11 +168,9 @@ def get_exported_programs() -> Dict[str, ExportedProgram]:
             torch.ones(1),
             torch.zeros(1),
         ),
+        strict=True,
     ).run_decompositions()
-    programs["foo"] = export(
-        foo,
-        (torch.ones(1),),
-    ).run_decompositions()
+    programs["foo"] = export(foo, (torch.ones(1),), strict=True).run_decompositions()
     return programs
 
 
@@ -275,7 +275,6 @@ class TestProgramManagers(unittest.TestCase):
             for output_val in method.outputs:
                 evalue = method.values[output_val]
                 self.assertNotEqual(evalue.val.allocation_info, None)
-        else:
             for input_val in method.inputs:
                 evalue = method.values[input_val]
                 self.assertEqual(evalue.val.allocation_info, None)
@@ -289,12 +288,11 @@ class TestProgramManagers(unittest.TestCase):
                 return x * 3.14
 
         mul = Mul()
-        ep = to_edge(torch.export.export(mul, (torch.ones(1),))).exported_program()
+        ep = to_edge(
+            torch.export.export(mul, (torch.ones(1),), strict=True)
+        ).exported_program()
         for node in ep.graph.nodes:
             self.assertNotEqual(node.op, "get_attr")
-        self.assertEqual(
-            len([node for node in ep.graph.nodes if node.op == "placeholder"]), 2
-        )
 
     def test_constraint_present_after_dce(self):
         import executorch.exir as exir
@@ -306,12 +304,51 @@ class TestProgramManagers(unittest.TestCase):
                 torch._check(z < 4)
                 return x[z : z + y.shape[0]]
 
-        ep = torch.export.export(M(), (torch.randn(10), torch.tensor([3])))
+        ep = torch.export.export(M(), (torch.randn(10), torch.tensor([3])), strict=True)
 
         edge_manager = to_edge(
             ep, compile_config=exir.EdgeCompileConfig(_check_ir_validity=False)
         )
         edge_manager.to_executorch()
+
+    def test_data_dependent(self):
+        with torch.library._scoped_library("mylib", "FRAGMENT") as lib:
+            torch.library.define(
+                "mylib::foo1",
+                "(Tensor a, Tensor b) -> Tensor",
+                tags=torch.Tag.pt2_compliant_tag,
+                lib=lib,
+            )
+
+            @torch.library.impl("mylib::foo1", "cpu", lib=lib)
+            def foo_impl(a, b):
+                return a + b
+
+            @torch.library.register_fake("mylib::foo1", lib=lib)
+            def mylib_foo_default_fake(*args, **kwargs):
+                ctx = torch.library.get_ctx()
+                fake_shape = ctx.new_dynamic_size()
+                return torch.empty(fake_shape, dtype=torch.float32, device="cpu")
+
+            class M(torch.nn.Module):
+                def forward(self, a, b, c):
+                    res = torch.ops.mylib.foo1(a, b)
+
+                    c_item = c.item()
+                    torch._check_is_size(c_item)
+                    torch._check(c_item < res.shape[0])
+                    return res[:c_item]
+
+            inp = (torch.randn(10), torch.randn(10), torch.tensor(3))
+
+            ep = export(M(), inp, strict=True)
+            edge = to_edge(ep)
+            self.assertTrue(
+                torch.allclose(
+                    edge.exported_program().module()(*inp),
+                    M()(*inp),
+                )
+            )
 
     def test_edge_manager_transform(self):
         edge_manager: EdgeProgramManager = to_edge(
@@ -350,7 +387,6 @@ class TestProgramManagers(unittest.TestCase):
         )
 
     def test_issue_3659(self):
-
         class Mul(torch.nn.Module):
             def __init__(self):
                 super(Mul, self).__init__()
@@ -371,7 +407,10 @@ class TestProgramManagers(unittest.TestCase):
 
         model = Mul()
         ep = torch.export.export(
-            model, model.get_example_inputs(), dynamic_shapes=model.get_dynamic_shapes()
+            model,
+            model.get_example_inputs(),
+            dynamic_shapes=model.get_dynamic_shapes(),
+            strict=True,
         )
 
         to_edge(
@@ -549,7 +588,7 @@ class TestProgramManagers(unittest.TestCase):
         if not isinstance(callable, torch.nn.Module):
             callable = WrapperModule(callable)
 
-        exported_foo = export(callable, inputs)
+        exported_foo = export(callable, inputs, strict=True)
         _ = to_edge(exported_foo, compile_config=edge_compile_config)
 
     def test_edge_dialect_custom_op(self):
@@ -687,17 +726,17 @@ class TestProgramManagers(unittest.TestCase):
         )
 
     def test_edge_dialect_non_core_aten_ops(self):
-        class LinalgNorm(torch.nn.Module):
+        class LinalgRank(torch.nn.Module):
             def __init__(self):
                 super().__init__()
 
             def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return torch.linalg.norm(x)
+                return torch.linalg.matrix_rank(x)
 
         from torch._export.verifier import SpecViolationError
 
-        input = torch.arange(9, dtype=torch.float) - 4
-        ep = torch.export.export(LinalgNorm(), (input,))
+        input = torch.ones((9, 9, 9), dtype=torch.float)
+        ep = torch.export.export(LinalgRank(), (input,), strict=True)
 
         # aten::linalg_norm is not a core op, so it should error out
         with self.assertRaises(SpecViolationError):
@@ -710,9 +749,7 @@ class TestProgramManagers(unittest.TestCase):
                 ep,
                 compile_config=EdgeCompileConfig(
                     _check_ir_validity=True,
-                    _core_aten_ops_exception_list=[
-                        torch.ops.aten.linalg_vector_norm.default
-                    ],
+                    _core_aten_ops_exception_list=[torch.ops.aten._linalg_svd.default],
                 ),
             )
         except SpecViolationError:
@@ -744,7 +781,7 @@ class TestProgramManagers(unittest.TestCase):
 
     def test_to_edge_with_single_preserved_op(self):
         model = TestLinear()
-        program = torch.export.export(model, model._get_random_inputs())
+        program = torch.export.export(model, model._get_random_inputs(), strict=True)
 
         ops_not_to_decompose = [
             torch.ops.aten.linear.default,
@@ -759,7 +796,7 @@ class TestProgramManagers(unittest.TestCase):
 
     def test_to_edge_with_partial_ops_preserved(self):
         model = TestLinearSDPACombined()
-        program = torch.export.export(model, model._get_random_inputs())
+        program = torch.export.export(model, model._get_random_inputs(), strict=True)
 
         ops_not_to_decompose = [
             torch.ops.aten.linear.default,
@@ -774,7 +811,7 @@ class TestProgramManagers(unittest.TestCase):
 
     def test_to_edge_with_multiple_ops_preserved(self):
         model = TestLinearSDPACombined()
-        program = torch.export.export(model, model._get_random_inputs())
+        program = torch.export.export(model, model._get_random_inputs(), strict=True)
 
         ops_not_to_decompose = [
             torch.ops.aten.linear.default,
@@ -791,7 +828,7 @@ class TestProgramManagers(unittest.TestCase):
 
     def test_to_edge_with_preserved_ops_not_in_model(self):
         model = TestSDPA()
-        program = torch.export.export(model, model._get_random_inputs())
+        program = torch.export.export(model, model._get_random_inputs(), strict=True)
 
         ops_not_to_decompose = [
             torch.ops.aten.linear.default,
@@ -803,3 +840,31 @@ class TestProgramManagers(unittest.TestCase):
         self._test_to_edge_with_preserved_ops(
             program, ops_not_to_decompose, expected_non_decomposed_edge_ops
         )
+
+    def test_save_fails(self):
+        model = TestLinear()
+        program = torch.export.export(model, model._get_random_inputs(), strict=True)
+        edge = to_edge(program)
+        et = edge.to_executorch()
+        with self.assertRaises(ValueError):
+            _ = et.save("/tmp/test_save.pt")
+
+    def test__transform_override_verifiers(self):
+        """Test that _transform can override verifiers in the exported program."""
+
+        class MyVerifier(Verifier):
+            dialect: str = "MY_DIALECT"
+
+            def __init__(self):
+                super().__init__()
+
+        model = TestLinear()
+        program = torch.export.export(model, model._get_random_inputs(), strict=True)
+        self.assertFalse(issubclass(program.verifiers[0], MyVerifier))
+
+        # Apply transformation with custom verifier
+        transformed = _transform(
+            program, AddToMulPassEdge(), override_verifiers=[MyVerifier]
+        )
+        self.assertTrue(issubclass(transformed.verifiers[0], MyVerifier))
+        self.assertFalse(issubclass(program.verifiers[0], MyVerifier))

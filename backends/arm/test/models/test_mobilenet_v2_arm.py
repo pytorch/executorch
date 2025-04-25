@@ -1,120 +1,86 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
-import unittest
+from typing import Tuple
+
+import pytest
 
 import torch
 from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineBI,
+    EthosU85PipelineBI,
+    TosaPipelineBI,
+    TosaPipelineMI,
+)
 
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.exir import EdgeCompileConfig
-from torchvision import models, transforms
-from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
+from torchvision import models, transforms  # type: ignore[import-untyped]
+from torchvision.models.mobilenetv2 import (  # type: ignore[import-untyped]
+    MobileNet_V2_Weights,
+)
 
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+mv2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT)
+mv2 = mv2.eval()
+normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
+model_inputs = (normalize(torch.rand((1, 3, 224, 224))),)
+input_t = Tuple[torch.Tensor]
 
 
-class TestMobileNetV2(unittest.TestCase):
-    """Tests MobileNetV2."""
-
-    mv2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT)
-    mv2 = mv2.eval()
-    normalize = transforms.Normalize(
-        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+def test_mv2_tosa_MI():
+    pipeline = TosaPipelineMI[input_t](
+        mv2, model_inputs, aten_op=[], exir_op=[], use_to_edge_transform_and_lower=True
     )
-    model_inputs = (normalize(torch.randn((1, 3, 224, 224))),)
+    pipeline.run()
 
-    all_operators = {
-        "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default",
-        "executorch_exir_dialects_edge__ops_aten_add_Tensor",
-        "executorch_exir_dialects_edge__ops_aten_permute_copy_default",
-        "executorch_exir_dialects_edge__ops_aten_addmm_default",
-        "executorch_exir_dialects_edge__ops_aten_mean_dim",
-        "executorch_exir_dialects_edge__ops_aten_hardtanh_default",
-        "executorch_exir_dialects_edge__ops_aten_convolution_default",
-    }
 
-    operators_after_quantization = all_operators - {
-        "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default",
-    }
-
-    _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
-        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
+def test_mv2_tosa_BI():
+    pipeline = TosaPipelineBI[input_t](
+        mv2,
+        model_inputs,
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        atol=0.25,
+        qtol=1,
     )
+    pipeline.run()
 
-    def test_mv2_tosa_MI(self):
-        (
-            ArmTester(
-                self.mv2,
-                example_inputs=self.model_inputs,
-                compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+MI", permute_memory_to_nhwc=True
-                ),
-            )
-            .export()
-            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=self.model_inputs)
-        )
 
-    def test_mv2_tosa_BI(self):
-        (
-            ArmTester(
-                self.mv2,
-                example_inputs=self.model_inputs,
-                compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+BI", permute_memory_to_nhwc=True
-                ),
-            )
-            .quantize()
-            .export()
-            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
-            .to_executorch()
-            # atol=1.0 is a defensive upper limit
-            # TODO MLETROCH-72
-            # TODO MLETROCH-149
-            .run_method_and_compare_outputs(atol=1.0, qtol=1, inputs=self.model_inputs)
-        )
+@pytest.mark.slow
+@pytest.mark.corstone_fvp
+@common.XfailIfNoCorstone300
+def test_mv2_u55_BI():
+    pipeline = EthosU55PipelineBI[input_t](
+        mv2,
+        model_inputs,
+        aten_ops=[],
+        exir_ops=[],
+        run_on_fvp=True,
+        use_to_edge_transform_and_lower=True,
+        atol=0.25,
+        qtol=1,
+    )
+    pipeline.run()
 
-    def test_mv2_u55_BI(self):
-        tester = (
-            ArmTester(
-                self.mv2,
-                example_inputs=self.model_inputs,
-                compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=True),
-            )
-            .quantize()
-            .export()
-            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
-            .to_executorch()
-            .serialize()
-        )
-        if common.is_option_enabled("corstone300"):
-            tester.run_method_and_compare_outputs(
-                atol=1.0, qtol=1, inputs=self.model_inputs, target_board="corstone-300"
-            )
 
-    def test_mv2_u85_BI(self):
-        tester = (
-            ArmTester(
-                self.mv2,
-                example_inputs=self.model_inputs,
-                compile_spec=common.get_u85_compile_spec(permute_memory_to_nhwc=True),
-            )
-            .quantize()
-            .export()
-            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
-            .to_executorch()
-            .serialize()
-        )
-        if common.is_option_enabled("corstone300"):
-            tester.run_method_and_compare_outputs(
-                atol=1.0, qtol=1, inputs=self.model_inputs, target_board="corstone-320"
-            )
+@pytest.mark.slow
+@pytest.mark.corstone_fvp
+@common.XfailIfNoCorstone320
+def test_mv2_u85_BI():
+    pipeline = EthosU85PipelineBI[input_t](
+        mv2,
+        model_inputs,
+        aten_ops=[],
+        exir_ops=[],
+        run_on_fvp=True,
+        use_to_edge_transform_and_lower=True,
+        atol=0.25,
+        qtol=1,
+    )
+    pipeline.run()

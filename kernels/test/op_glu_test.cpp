@@ -17,15 +17,28 @@
 #include <cmath>
 
 using namespace ::testing;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpGluOutTest : public OperatorTest {
  protected:
   Tensor& op_glu_out(const Tensor& self, int64_t dim, Tensor& out) {
     return torch::executor::aten::glu_outf(context_, self, dim, out);
+  }
+
+  template <ScalarType DTYPE>
+  void expect_tensor_close(Tensor actual, Tensor expected) {
+    if (DTYPE == ScalarType::Half || DTYPE == ScalarType::BFloat16) {
+      EXPECT_TENSOR_CLOSE_WITH_TOL(
+          actual,
+          expected,
+          1e-2,
+          executorch::runtime::testing::internal::kDefaultAtol);
+    } else {
+      EXPECT_TENSOR_CLOSE(actual, expected);
+    }
   }
 
   // Common testing for glu operator
@@ -41,14 +54,14 @@ class OpGluOutTest : public OperatorTest {
     Tensor in = tf.ones(sizes);
     Tensor out = tf_out.zeros(out_sizes_1);
     op_glu_out(in, 0, out);
-    EXPECT_TENSOR_CLOSE(
+    expect_tensor_close<DTYPE>(
         out,
         tf_out.make(
             out_sizes_1, /*data=*/{0.731059, 0.731059, 0.731059, 0.731059}));
     const std::vector<int32_t> out_sizes_2 = {4, 1};
     out = tf_out.zeros(out_sizes_2);
     op_glu_out(in, 1, out);
-    EXPECT_TENSOR_CLOSE(
+    expect_tensor_close<DTYPE>(
         out,
         tf_out.make(
             out_sizes_2, /*data=*/{0.731059, 0.731059, 0.731059, 0.731059}));
@@ -117,14 +130,28 @@ class OpGluOutTest : public OperatorTest {
 TEST_F(OpGluOutTest, AllInputFloatOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_glu_out<ScalarType::dtype, ScalarType::Float>();
-  ET_FORALL_FLOAT_TYPES(TEST_ENTRY);
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
 TEST_F(OpGluOutTest, AllInputDoubleOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_glu_out<ScalarType::dtype, ScalarType::Double>();
-  ET_FORALL_FLOAT_TYPES(TEST_ENTRY);
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
+TEST_F(OpGluOutTest, AllInputHalfOutputSupport) {
+#define TEST_ENTRY(ctype, dtype) \
+  test_glu_out<ScalarType::dtype, ScalarType::Half>();
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
+TEST_F(OpGluOutTest, AllInputBFloat16OutputSupport) {
+#define TEST_ENTRY(ctype, dtype) \
+  test_glu_out<ScalarType::dtype, ScalarType::BFloat16>();
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 

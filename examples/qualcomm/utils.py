@@ -4,28 +4,33 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# TODO: reenable pyre after fixing the issues
+# pyre-ignore-all-errors
+
 import argparse
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
 import numpy as np
 
 import torch
-from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
-from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
+from executorch.backends.qualcomm.quantizer.quantizer import (
+    ModuleQConfig,
+    QnnQuantizer,
+    QuantDtype,
+)
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.utils import (
-    capture_program,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     get_soc_to_arch_map,
+    to_edge_transform_and_lower_to_qnn,
 )
-from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
-from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from torch.ao.quantization.observer import MovingAverageMinMaxObserver
@@ -51,6 +56,10 @@ class SimpleADB:
         error_only (bool): Redirect stdio and leave error messages only
         shared_buffer (bool): Apply zero-copy mechanism in runtime
         runner (str): Runtime executor binary
+        expected_input_shape (Tuple[torch.Size]): input shape of dynamic graph
+        expected_output_shape (Tuple[torch.Size]): output shape of dynamic graph
+        expected_input_dtype (Tuple[torch.dtype]): input dtype
+        expected_output_sdtype (Tuple[torch.dtype]): output dtype
     """
 
     def __init__(
@@ -66,6 +75,8 @@ class SimpleADB:
         shared_buffer=False,
         dump_intermediate_outputs=False,
         runner="examples/qualcomm/executor_runner/qnn_executor_runner",
+        expected_input_shape=None,
+        expected_output_shape=None,
     ):
         self.qnn_sdk = qnn_sdk
         self.build_path = build_path
@@ -83,6 +94,9 @@ class SimpleADB:
         self.error_only = error_only
         self.shared_buffer = shared_buffer
         self.runner = runner
+        self.expected_input_shape = expected_input_shape
+        self.expected_output_shape = expected_output_shape
+        self.extra_cmds = ""
 
     def _adb(self, cmd):
         if not self.host_id:
@@ -131,6 +145,20 @@ class SimpleADB:
         for file_name in input_files:
             self._adb(["push", file_name, self.workspace])
 
+        # dynamic shape related
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            if self.expected_input_shape and self.expected_output_shape:
+                shape_info = {
+                    "input_shape": self.expected_input_shape,
+                    "output_shape": self.expected_output_shape,
+                }
+                for name, shapes in shape_info.items():
+                    with open(f"{tmp_dir}/{name}.txt", "w") as f:
+                        for s in shapes:
+                            f.write(str(tuple(s)).strip("()") + "\n")
+                    self._adb(["push", f"{tmp_dir}/{name}.txt", self.workspace])
+                    self.extra_cmds += f" --{name}_path {name}.txt"
+
         # custom files
         if files is not None:
             for file_name in files:
@@ -140,25 +168,29 @@ class SimpleADB:
         self._adb(["shell", f"mkdir -p {self.output_folder}"])
         # run the delegation
         if custom_runner_cmd is None:
-            qnn_executor_runner_args = " ".join(
-                [
-                    f"--model_path {os.path.basename(self.pte_path[0])}",
-                    f"--output_folder_path {self.output_folder}",
-                    f"--input_list_path {self.input_list_filename}",
-                    f"--etdump_path {self.etdump_path}",
-                    "--shared_buffer" if self.shared_buffer else "",
-                    f"--debug_output_path {self.debug_output_path}",
-                    (
-                        "--dump_intermediate_outputs"
-                        if self.dump_intermediate_outputs
-                        else ""
-                    ),
-                    f"--method_index {method_index}",
-                ]
+            qnn_executor_runner_args = (
+                " ".join(
+                    [
+                        f"--model_path {os.path.basename(self.pte_path[0])}",
+                        f"--output_folder_path {self.output_folder}",
+                        f"--input_list_path {self.input_list_filename}",
+                        f"--etdump_path {self.etdump_path}",
+                        "--shared_buffer" if self.shared_buffer else "",
+                        f"--debug_output_path {self.debug_output_path}",
+                        (
+                            "--dump_intermediate_outputs"
+                            if self.dump_intermediate_outputs
+                            else ""
+                        ),
+                        f"--method_index {method_index}",
+                    ]
+                )
+                + self.extra_cmds
             )
             qnn_executor_runner_cmds = " ".join(
                 [
                     f"cd {self.workspace} &&",
+                    "chmod +x ./qnn_executor_runner &&",
                     f"./qnn_executor_runner {qnn_executor_runner_args}",
                 ]
             )
@@ -230,12 +262,19 @@ def make_quantizer(
     per_channel_linear=False,
     act_observer=MovingAverageMinMaxObserver,
     is_qat=False,
+    submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
 ):
     quantizer = QnnQuantizer()
     quantizer.add_custom_quant_annotations(custom_annotations)
-    quantizer.set_per_channel_conv_quant(per_channel_conv)
-    quantizer.set_per_channel_linear_quant(per_channel_linear)
-    quantizer.set_quant_config(quant_dtype, is_qat, act_observer)
+    quantizer.set_default_quant_config(
+        quant_dtype,
+        is_qat=is_qat,
+        is_conv_per_channel=per_channel_conv,
+        is_linear_per_channel=per_channel_linear,
+        act_observer=act_observer,
+    )
+    submodule_qconfig_list = submodule_qconfig_list or []
+    quantizer.set_submodule_qconfig_list(submodule_qconfig_list)
     return quantizer
 
 
@@ -249,15 +288,45 @@ def build_executorch_binary(
     skip_node_id_set=None,
     skip_node_op_set=None,
     quant_dtype: Optional[QuantDtype] = None,
-    custom_quantizer=None,
+    custom_quantizer: Optional[QnnQuantizer] = None,
     shared_buffer=False,
     metadata=None,
     dump_intermediate_outputs=False,
-    custom_pass_config=frozenset(),
+    passes_job=None,
     qat_training_data=None,
 ):
-    if quant_dtype is not None:
-        captured_model = torch.export.export(model, inputs).module()
+    """
+    A function to generate an ExecuTorch binary for Qualcomm platforms.
+
+    Attributes:
+        model (torch.nn.Module): The model to be converted into an ExecuTorch binary.
+        inputs (torch.Tensor): Sample input tensors required for model export.
+        soc_model (QcomChipset): The target Qualcomm System on Chip (SoC) model.
+        file_name (str): Name for the output binary file (.pte).
+        dataset (List[torch.Tensor] | Callable): A dataset for quantization calibration.
+        skip_node_id_set (set, optional): Set of node IDs to be skipped during partition.
+        skip_node_op_set (set, optional): Set of operation node  to be skipped during partition.
+        quant_dtype (QuantDtype, optional): Data type for quantization.
+        custom_quantizer (Callable, optional): Custom quantizer.
+        shared_buffer (bool, optional): Applies zero-copy mechanism to optimize runtime memory allocation.
+        metadata (dict, optional): An optional dictionary that maps each method name to a constant value in eager mode.
+        dump_intermediate_outputs (bool, optional): Enables dumping model intermediate outputs.
+        custom_pass_config (frozenset, optional): Set of custom passes for model processing.
+
+    Returns:
+        None: The function writes the output to a specified .pte file.
+    """
+    backend_options = generate_htp_compiler_spec(
+        use_fp16=False if quant_dtype else True
+    )
+    compile_spec = generate_qnn_executorch_compiler_spec(
+        soc_model=getattr(QcomChipset, soc_model),
+        backend_options=backend_options,
+        shared_buffer=shared_buffer,
+        dump_intermediate_outputs=dump_intermediate_outputs,
+    )
+    if quant_dtype is not None or custom_quantizer is not None:
+        captured_model = torch.export.export(model, inputs, strict=False).module()
         if qat_training_data:
             quantizer = custom_quantizer or make_quantizer(
                 quant_dtype=quant_dtype, is_qat=True
@@ -272,23 +341,25 @@ def build_executorch_binary(
             annotated_model = ptq_calibrate(captured_model, quantizer, dataset)
 
         quantized_model = convert_pt2e(annotated_model)
-        edge_prog = capture_program(quantized_model, inputs, custom_pass_config)
+        edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+            quantized_model,
+            inputs,
+            compile_spec,
+            constant_methods=metadata,
+            passes_job=passes_job,
+            skip_node_id_set=skip_node_id_set,
+            skip_node_op_set=skip_node_op_set,
+        )
     else:
-        edge_prog = capture_program(model, inputs, custom_pass_config)
-
-    backend_options = generate_htp_compiler_spec(
-        use_fp16=False if quant_dtype else True
-    )
-    qnn_partitioner = QnnPartitioner(
-        generate_qnn_executorch_compiler_spec(
-            soc_model=getattr(QcomChipset, soc_model),
-            backend_options=backend_options,
-            shared_buffer=shared_buffer,
-            dump_intermediate_outputs=dump_intermediate_outputs,
-        ),
-        skip_node_id_set,
-        skip_node_op_set,
-    )
+        edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+            model,
+            inputs,
+            compile_spec,
+            constant_methods=metadata,
+            passes_job=passes_job,
+            skip_node_id_set=skip_node_id_set,
+            skip_node_op_set=skip_node_op_set,
+        )
 
     executorch_config = ExecutorchBackendConfig(
         # For shared buffer, user must pass the memory address
@@ -300,24 +371,10 @@ def build_executorch_binary(
             alloc_graph_output=not shared_buffer,
         ),
     )
-
-    if metadata is None:
-        exported_program = to_backend(edge_prog.exported_program, qnn_partitioner)
-        exported_program.graph_module.graph.print_tabular()
-        exec_prog = to_edge(exported_program).to_executorch(config=executorch_config)
-        with open(f"{file_name}.pte", "wb") as file:
-            file.write(exec_prog.buffer)
-    else:
-        edge_prog_mgr = EdgeProgramManager(
-            edge_programs={"forward": edge_prog.exported_program},
-            constant_methods=metadata,
-            compile_config=EdgeCompileConfig(_check_ir_validity=False),
-        )
-
-        edge_prog_mgr = edge_prog_mgr.to_backend(qnn_partitioner)
-        exec_prog_mgr = edge_prog_mgr.to_executorch(config=executorch_config)
-        with open(f"{file_name}.pte", "wb") as file:
-            file.write(exec_prog_mgr.buffer)
+    pte_name = f"{file_name}.pte"
+    exec_prog_mgr = edge_prog_mgr.to_executorch(config=executorch_config)
+    with open(pte_name, "wb") as file:
+        exec_prog_mgr.write_to_file(file)
 
 
 def make_output_dir(path: str):
@@ -369,6 +426,15 @@ def segmentation_metrics(predictions, targets, classes):
     miou = np.mean(iou)
     cls_iou = dict(zip(classes, iou))
     return (pa, mpa, miou, cls_iou)
+
+
+def class_agnostic_mIoU(predictions, targets):
+    total_iou = 0
+    for pred, tar in zip(predictions, targets):
+        inter = np.count_nonzero(pred & tar)
+        union = np.count_nonzero(pred | tar)
+        total_iou += inter / (union + 1e-10)
+    return total_iou / len(predictions)
 
 
 def get_imagenet_dataset(
@@ -500,6 +566,13 @@ def setup_common_args_and_variables():
         default=False,
     )
 
+    parser.add_argument(
+        "-x",
+        "--enable_x86_64",
+        help="Enable unittest to be executed on x86_64 platform",
+        action="store_true",
+    )
+
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.
     # So maybe it's fine to just use the environment.
     if "QNN_SDK_ROOT" not in os.environ:
@@ -540,6 +613,8 @@ def generate_inputs(dest_path: str, file_name: str, inputs=None, input_list=None
         for idx, data in enumerate(inputs):
             for i, d in enumerate(data):
                 file_name = f"{dest_path}/input_{idx}_{i}.raw"
+                if not isinstance(d, torch.Tensor):
+                    d = torch.tensor(d)
                 d.detach().numpy().tofile(file_name)
                 input_files.append(file_name)
 

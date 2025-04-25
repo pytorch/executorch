@@ -78,5 +78,26 @@ class Error : public std::exception {
   }
 };
 
+enum class VulkanExtension : uint8_t {
+  SHADER_INT16,
+  INT16_STORAGE,
+  INT8_STORAGE,
+};
+
+class ShaderNotSupportedError : public std::exception {
+ public:
+  ShaderNotSupportedError(std::string shader_name, VulkanExtension extension);
+
+ private:
+  std::string shader_name_;
+  VulkanExtension extension_;
+  std::string what_;
+
+ public:
+  const char* what() const noexcept override {
+    return what_.c_str();
+  }
+};
+
 } // namespace vkapi
 } // namespace vkcompute

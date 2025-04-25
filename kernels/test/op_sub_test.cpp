@@ -99,6 +99,109 @@ class OpSubOutTest : public OperatorTest {
     EXPECT_TENSOR_CLOSE(out, tf.make(sizes, /*data=*/{0.1, 1.2, 3.4, 7.8}));
   }
 
+  template <ScalarType DTYPE>
+  void test_broadcast_3D() {
+    TensorFactory<DTYPE> tf_a;
+
+    Tensor a =
+        tf_a.make({2, 2, 3}, /*data=*/{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+    Tensor b = tf_a.make({2, 1, 3}, /*data=*/{2, 3, 4, 5, 6, 7});
+
+    // Destination for output of mul.
+    Tensor out =
+        tf_a.make({2, 2, 3}, /*data=*/{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+    Tensor expected =
+        tf_a.make({2, 2, 3}, /*data=*/{-1, -1, -1, 2, 2, 2, 2, 2, 2, 5, 5, 5});
+
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_CLOSE(op_sub_out(a, b, 1.0, out), expected);
+    // b - a * 1.5 output should be
+    expected = tf_a.make(
+        {2, 2, 3},
+        /*data=*/
+        {0.5,
+         0.0,
+         -0.5,
+         -4.0,
+         -4.5,
+         -5.0,
+         -5.5,
+         -6.0,
+         -6.5,
+         -10.0,
+         -10.5,
+         -11.0});
+    EXPECT_TENSOR_CLOSE(op_sub_out(b, a, 1.5, out), expected);
+  }
+
+  template <ScalarType DTYPE>
+  void test_broadcast_4D() {
+    TensorFactory<DTYPE> tf_a;
+
+    Tensor a = tf_a.make(
+        {2, 2, 3, 5},
+        /*data=*/{1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15,
+                  16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+                  31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+                  46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60});
+    Tensor b = tf_a.make(
+        {2, 1, 3, 5},
+        /*data=*/{1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15,
+                  16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30});
+
+    // Destination for output of mul.
+    Tensor out = tf_a.zeros({2, 2, 3, 5});
+    Tensor expected = tf_a.make(
+        {2, 2, 3, 5},
+        /*data=*/{0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+                  15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+                  15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+                  30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30});
+
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_CLOSE(op_sub_out(a, b, 1.0, out), expected);
+    expected = tf_a.make(
+        {2, 2, 3, 5},
+        /*data=*/{0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+                  0,   0,   0,   -15, -15, -15, -15, -15, -15, -15, -15, -15,
+                  -15, -15, -15, -15, -15, -15, -15, -15, -15, -15, -15, -15,
+                  -15, -15, -15, -15, -15, -15, -15, -15, -15, -30, -30, -30,
+                  -30, -30, -30, -30, -30, -30, -30, -30, -30, -30, -30, -30});
+    EXPECT_TENSOR_CLOSE(op_sub_out(b, a, 1.0, out), expected);
+
+    b = tf_a.make(
+        {2, 2, 1, 5}, /*data=*/{1,  2,  3,  4,  5,  6,  7,  8,  9,  10,
+                                11, 12, 13, 14, 15, 16, 17, 18, 19, 20});
+    out = tf_a.zeros({2, 2, 3, 5});
+    expected = tf_a.make(
+        {2, 2, 3, 5},
+        /*data=*/{0,  0,  0,  0,  0,  5,  5,  5,  5,  5,  10, 10, 10, 10, 10,
+                  10, 10, 10, 10, 10, 15, 15, 15, 15, 15, 20, 20, 20, 20, 20,
+                  20, 20, 20, 20, 20, 25, 25, 25, 25, 25, 30, 30, 30, 30, 30,
+                  30, 30, 30, 30, 30, 35, 35, 35, 35, 35, 40, 40, 40, 40, 40});
+
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_CLOSE(op_sub_out(a, b, 1.0, out), expected);
+    expected = tf_a.make(
+        {2, 2, 3, 5},
+        /*data=*/{-0.5000,  -1.0000,  -1.5000,  -2.0000,  -2.5000,
+                  -8.0000,  -8.5000,  -9.0000,  -9.5000,  -10.0000,
+                  -15.5000, -16.0000, -16.5000, -17.0000, -17.5000,
+
+                  -18.0000, -18.5000, -19.0000, -19.5000, -20.0000,
+                  -25.5000, -26.0000, -26.5000, -27.0000, -27.5000,
+                  -33.0000, -33.5000, -34.0000, -34.5000, -35.0000,
+
+                  -35.5000, -36.0000, -36.5000, -37.0000, -37.5000,
+                  -43.0000, -43.5000, -44.0000, -44.5000, -45.0000,
+                  -50.5000, -51.0000, -51.5000, -52.0000, -52.5000,
+
+                  -53.0000, -53.5000, -54.0000, -54.5000, -55.0000,
+                  -60.5000, -61.0000, -61.5000, -62.0000, -62.5000,
+                  -68.0000, -68.5000, -69.0000, -69.5000, -70.0000});
+    EXPECT_TENSOR_CLOSE(op_sub_out(b, a, 1.5, out), expected);
+  }
+
   void test_sub_enumerate_a_types() {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_sub_enumerate_b_types<ScalarType::dtype>();
@@ -235,6 +338,19 @@ TEST_F(OpSubOutTest, BroadcastScalarRank0Supported) {
 
   ret = tf.make({1}, {-3});
   EXPECT_TENSOR_EQ(out, ret);
+}
+
+TEST_F(OpSubOutTest, BroadcastNDTest) {
+  // Test 3D tensors
+  test_broadcast_3D<ScalarType::Float>();
+  test_broadcast_3D<ScalarType::Half>();
+  // Sub doesnt yet support BFloat16
+  // test_broadcast_3D<ScalarType::BFloat16>();
+
+  // Test 4D tensors
+  test_broadcast_4D<ScalarType::Float>();
+  test_broadcast_4D<ScalarType::Half>();
+  // test_broadcast_4D<ScalarType::BFloat16>();
 }
 
 //
@@ -575,13 +691,14 @@ TEST_F(OpSubScalarOutTest, OptimizedSanityCheck) {
 }
 
 TEST_F(OpSubScalarOutTest, DtypeTest_float16_float_int_float16) {
-  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Half> tfHalf;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Half>
+      tfHalf;
 
-  exec_aten::Tensor self = tfHalf.ones({2, 2});
-  exec_aten::Scalar other = exec_aten::Scalar(-1.0);
-  exec_aten::Scalar alpha = exec_aten::Scalar(1);
-  exec_aten::Tensor out = tfHalf.zeros({2, 2});
-  exec_aten::Tensor out_expected = tfHalf.full({2, 2}, 2.0);
+  executorch::aten::Tensor self = tfHalf.ones({2, 2});
+  executorch::aten::Scalar other = executorch::aten::Scalar(-1.0);
+  executorch::aten::Scalar alpha = executorch::aten::Scalar(1);
+  executorch::aten::Tensor out = tfHalf.zeros({2, 2});
+  executorch::aten::Tensor out_expected = tfHalf.full({2, 2}, 2.0);
   op_sub_scalar_out(self, other, alpha, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }

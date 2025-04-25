@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <executorch/runtime/core/defines.h>
+#include <executorch/runtime/platform/compiler.h>
 #include <cstdint>
 
 namespace executorch {
@@ -35,6 +37,41 @@ enum class Tag : uint32_t {
   EXECUTORCH_FORALL_TAGS(DEFINE_TAG)
 #undef DEFINE_TAG
 };
+
+#if ET_ENABLE_ENUM_STRINGS
+inline const char* tag_to_string(Tag tag) {
+  switch (tag) {
+#define CASE_TAG(x) \
+  case Tag::x:      \
+    return #x;
+    EXECUTORCH_FORALL_TAGS(CASE_TAG)
+#undef CASE_TAG
+    default:
+      return "Unknown";
+  }
+}
+#endif // ET_ENABLE_ENUM_STRINGS
+
+/**
+ * Convert a tag value to a string representation. If ET_ENABLE_ENUM_STRINGS is
+ * set (it is on by default), this will return a string name (for example,
+ * "Tensor"). Otherwise, it will return a string representation of the index
+ * value ("1").
+ *
+ * If the user buffer is not large enough to hold the string representation, the
+ * string will be truncated.
+ *
+ * The return value is the number of characters written, or in the case of
+ * truncation, the number of characters that would be written if the buffer was
+ * large enough.
+ */
+size_t tag_to_string(Tag tag, char* buffer, size_t buffer_size);
+
+/* The size of the buffer needed to hold the longest tag string, including the
+ * null terminator. This value is expected to be updated manually, but it
+ * checked in test_tag.cpp.
+ */
+constexpr size_t kTagNameBufferSize = 19;
 
 } // namespace runtime
 } // namespace executorch

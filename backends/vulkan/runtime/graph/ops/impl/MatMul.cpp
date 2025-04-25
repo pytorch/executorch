@@ -166,9 +166,14 @@ void add_matmul_optimized_node(
       /*passthrough = */ true);
 
   // Ensure mat1 is width packed
-  ValueRef mat1_W_packed = graph.add_tensor_like(mat1, utils::kWidthPacked);
+  TmpTensor mat1_tmp(
+      &graph, graph.sizes_of(mat1), graph.dtype_of(mat1), utils::kWidthPacked);
+  ValueRef mat1_W_packed = mat1;
   auto viewFn = VK_GET_OP_FN("aten.view_copy.default");
-  viewFn(graph, {mat1, graph.add_none(), mat1_W_packed});
+  if (graph.packed_dim_of(mat1) != WHCN::kWidthDim) {
+    mat1_W_packed = mat1_tmp;
+    viewFn(graph, {mat1, graph.add_none(), mat1_W_packed});
+  }
 
   const bool mat2_is_transposed_val = graph.get_bool(mat2_is_transposed);
 
@@ -176,8 +181,10 @@ void add_matmul_optimized_node(
   ValueRef mat2_packed = mat2;
   const utils::GPUMemoryLayout mat2_layout =
       mat2_is_transposed_val ? utils::kWidthPacked : utils::kHeightPacked;
+  TmpTensor mat2_tmp(
+      &graph, graph.sizes_of(mat2), graph.dtype_of(mat2), mat2_layout);
   if (graph.estimate_memory_layout_of(mat2) != mat2_layout) {
-    mat2_packed = graph.add_tensor_like(mat2, mat2_layout);
+    mat2_packed = mat2_tmp;
     viewFn(graph, {mat2, graph.add_none(), mat2_packed});
   }
 

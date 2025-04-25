@@ -6,12 +6,15 @@
 
 # pyre-strict
 
+from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 
 import torch
 from executorch.backends.cadence.aot.quantizer.patterns import (
     AddmmPattern,
+    AddPattern,
     BmmPattern,
+    CatPattern,
     Conv1dPattern,
     Conv2dPattern,
     LayerNormPattern,
@@ -26,39 +29,62 @@ from executorch.backends.cadence.aot.quantizer.utils import (
     is_annotated,
     no_outside_users,
 )
-
-from torch import fx
-
-from torch.ao.quantization.observer import HistogramObserver, MinMaxObserver
-from torch.ao.quantization.quantizer import DerivedQuantizationSpec, Quantizer
-from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
-from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import (
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
     OperatorConfig,
     QuantizationAnnotation,
     QuantizationConfig,
     QuantizationSpec,
 )
 
+from torch import fx
 
-act_qspec = QuantizationSpec(
-    dtype=torch.uint8,
-    quant_min=0,
-    quant_max=255,
+from torch.ao.quantization.observer import HistogramObserver, MinMaxObserver
+from torch.ao.quantization.quantizer import DerivedQuantizationSpec, Quantizer
+from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
+
+
+act_qspec_asym8s = QuantizationSpec(
+    dtype=torch.int8,
+    quant_min=-128,
+    quant_max=127,
     qscheme=torch.per_tensor_affine,
     is_dynamic=False,
     observer_or_fake_quant_ctr=HistogramObserver.with_args(eps=2**-12),
 )
 
-wgt_qspec = QuantizationSpec(
-    dtype=torch.uint8,
-    quant_min=0,
-    quant_max=255,
+wgt_qspec_asym8s = QuantizationSpec(
+    dtype=torch.int8,
+    quant_min=-128,
+    quant_max=127,
     qscheme=torch.per_tensor_affine,
     is_dynamic=False,
     observer_or_fake_quant_ctr=MinMaxObserver,
 )
 
+wgt_qspec_sym8s = QuantizationSpec(
+    dtype=torch.int8,
+    quant_min=-128,
+    quant_max=127,
+    qscheme=torch.per_tensor_symmetric,
+    is_dynamic=False,
+    observer_or_fake_quant_ctr=MinMaxObserver,
+)
+
 bias_qspec: Optional[QuantizationSpec] = None
+
+qconfig_A8W8 = QuantizationConfig(
+    act_qspec_asym8s,
+    act_qspec_asym8s,
+    wgt_qspec_asym8s,
+    None,
+)
+
+qconfig_A8W8sym = QuantizationConfig(
+    act_qspec_asym8s,
+    act_qspec_asym8s,
+    wgt_qspec_sym8s,
+    None,
+)
 
 
 class CadenceAtenQuantizer(Quantizer):
@@ -85,7 +111,7 @@ class CadenceAtenQuantizer(Quantizer):
                 continue
 
             anchors = self.pattern.get_anchors(model, fused_partition)
-            if not anchors:
+            if not anchors or anchors.empty:
                 continue
             if is_annotated(
                 [
@@ -119,17 +145,38 @@ class CadenceAtenQuantizer(Quantizer):
                         "quantization_annotation",
                         QuantizationAnnotation(_annotated=True),
                     )
-                    # pyre-ignore[16]: no attribute
-                    annotation.input_qspec_map[node.args[idx]] = (
+                    arg = (
+                        # pyre-ignore[16]: no attribute
+                        node.args[idx]
+                        if isinstance(idx, int)
+                        # pyre-ignore[16]: no attribute
+                        else node.args[idx[0]][idx[1]]
+                    )
+                    annotation.input_qspec_map[arg] = (
                         custom_spec[0] if custom_spec else spec
                     )
                     # pyre-ignore[16]: no attribute
                     node.meta["quantization_annotation"] = annotation
 
-            annotate_inputs(anchors.inputs, input_act_qspec)
-            annotate_inputs(anchors.weights, weight_qspec)
+            def annotate_weights_or_biases(
+                weights_or_biases: List[Tuple[fx.Node, int]],
+                spec: Optional[QuantizationSpec],
+            ) -> None:
+                for node, idx, *custom_spec in weights_or_biases:
+                    annotation = node.meta.get(
+                        "quantization_annotation",
+                        QuantizationAnnotation(_annotated=True),
+                    )
+                    annotation.input_qspec_map[node.args[idx]] = (
+                        custom_spec[0] if custom_spec else spec
+                    )
+                    node.meta["quantization_annotation"] = annotation
+
             # pyre-ignore[6]: incompatible parameter type
-            annotate_inputs(anchors.biases, bias_qspec)
+            annotate_inputs(anchors.inputs, input_act_qspec)
+            annotate_weights_or_biases(anchors.weights, weight_qspec)
+            # pyre-ignore[6]: incompatible parameter type
+            annotate_weights_or_biases(anchors.biases, bias_qspec)
         return model
 
     def validate(self, model: fx.GraphModule) -> None:
@@ -140,31 +187,74 @@ class CadenceAtenQuantizer(Quantizer):
         return []
 
 
-class CadenceQuantizer(ComposableQuantizer):
-    def __init__(
-        self, quantization_config: Optional[QuantizationConfig] = None
-    ) -> None:
-        static_qconfig = (
-            QuantizationConfig(
-                act_qspec,
-                act_qspec,
-                wgt_qspec,
-                None,
-            )
-            if not quantization_config
-            else quantization_config
-        )
+def get_cadence_default_quantizers() -> List[Quantizer]:
+    return [
+        CadenceAtenQuantizer(AddmmPattern(), qconfig_A8W8),
+        CadenceAtenQuantizer(BmmPattern(), qconfig_A8W8),
+        CadenceAtenQuantizer(Conv1dPattern(), qconfig_A8W8sym),
+        CadenceAtenQuantizer(Conv2dPattern(), qconfig_A8W8sym),
+        CadenceAtenQuantizer(LinearPattern(), qconfig_A8W8),
+        CadenceAtenQuantizer(MatmulPattern(), qconfig_A8W8),
+        CadenceAtenQuantizer(ReluPattern0(), qconfig_A8W8),
+        CadenceAtenQuantizer(ReluPattern1(), qconfig_A8W8),
+    ]
 
-        super().__init__(
-            [
-                CadenceAtenQuantizer(AddmmPattern(), static_qconfig),
-                CadenceAtenQuantizer(BmmPattern(), static_qconfig),
-                CadenceAtenQuantizer(Conv1dPattern(), static_qconfig),
-                CadenceAtenQuantizer(Conv2dPattern(), static_qconfig),
-                CadenceAtenQuantizer(LayerNormPattern(), static_qconfig),
-                CadenceAtenQuantizer(LinearPattern(), static_qconfig),
-                CadenceAtenQuantizer(MatmulPattern(), static_qconfig),
-                CadenceAtenQuantizer(ReluPattern0(), static_qconfig),
-                CadenceAtenQuantizer(ReluPattern1(), static_qconfig),
-            ]
-        )
+
+# Note: need dataclass to be used in CI configs through OmegaConf and Hydra
+@dataclass
+class CadenceQuantizer(ComposableQuantizer):
+    """
+    Generic CadenceQuantizer. Although it can be used directly, it is typically a base
+    class for explicitly defined quantizers (like CadenceDefaultQuantizer).
+    """
+
+    def __init__(self, quantizers: List[Quantizer]) -> None:
+        super().__init__(quantizers)
+
+
+class CadenceDefaultQuantizer(CadenceQuantizer):
+    """
+    Default quantizer for Cadence backend.
+    """
+
+    def __init__(self, quantizers: Optional[list[Quantizer]] = None) -> None:
+        if quantizers is None:
+            quantizers = get_cadence_default_quantizers()
+        super().__init__(quantizers)
+
+
+# Nop quantizer, used to run fp32 cases
+# Calls an empty list of quantizers (no quantization). Note
+# that we do not strictly need that class since we could call
+# CadenceQuantizer([]), but this is more explicit and
+# does not require knowledge of the internals of the base class.
+class CadenceNopQuantizer(CadenceQuantizer):
+    def __init__(
+        self,
+    ) -> None:
+        super().__init__([])
+
+
+class CadenceWithLayerNormQuantizer(CadenceQuantizer):
+    """
+    Quantizer including layer norm
+    """
+
+    def __init__(self, quantizers: Optional[list[Quantizer]] = None) -> None:
+        if quantizers is None:
+            quantizers = get_cadence_default_quantizers()
+        quantizers.append(CadenceAtenQuantizer(LayerNormPattern(), qconfig_A8W8))
+        super().__init__(quantizers)
+
+
+class CadenceWakeWordQuantizer(CadenceQuantizer):
+    """
+    Quantizer for WakeWord, including add and cat
+    """
+
+    def __init__(self, quantizers: Optional[list[Quantizer]] = None) -> None:
+        if quantizers is None:
+            quantizers = get_cadence_default_quantizers()
+        quantizers.append(CadenceAtenQuantizer(AddPattern(), qconfig_A8W8))
+        quantizers.append(CadenceAtenQuantizer(CatPattern(), qconfig_A8W8))
+        super().__init__(quantizers)

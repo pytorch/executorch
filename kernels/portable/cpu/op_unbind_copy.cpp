@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cstdint>
 #include <cstring>
 
@@ -16,8 +17,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using TensorList = exec_aten::TensorList;
+using Tensor = executorch::aten::Tensor;
+using TensorList = executorch::aten::TensorList;
 
 /**
  * unbind_copy.int_out(Tensor input, int dim=0, *, Tensor(a!)[] out) -> ()
@@ -36,7 +37,7 @@ void unbind_copy_int_out(
   ET_KERNEL_CHECK(
       ctx, check_unbind_copy_args(input, dim, out), InvalidArgument, );
 
-  for (int i = 0; i < out.size(); ++i) {
+  for (const auto i : c10::irange(out.size())) {
     ET_KERNEL_CHECK(
         ctx, tensors_have_same_dim_order(input, out[i]), InvalidArgument, );
   }
@@ -54,18 +55,19 @@ void unbind_copy_int_out(
   ScalarType in_type = input.scalar_type();
   ScalarType out_type = out[0].scalar_type();
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, in_type, ctx, "unbind_copy.int_out", CTYPE_IN, [&]() {
-        ET_SWITCH_REAL_TYPES_AND(
-            Bool, out_type, ctx, "unbind_copy.int_out", CTYPE_OUT, [&]() {
+  ET_SWITCH_REALHBF16_TYPES(
+      in_type, ctx, "unbind_copy.int_out", CTYPE_IN, [&]() {
+        ET_SWITCH_REALHBF16_TYPES(
+            out_type, ctx, "unbind_copy.int_out", CTYPE_OUT, [&]() {
               const CTYPE_IN* const input_data =
                   input.const_data_ptr<CTYPE_IN>();
               for (size_t i = 0, e = out.size(); i < e; ++i) {
                 size_t input_offset = i * trailing_dims;
                 CTYPE_OUT* const dest = out[i].mutable_data_ptr<CTYPE_OUT>();
                 size_t dest_offset = 0;
-                for (size_t j = 0; j < leading_dims; ++j) {
-                  for (size_t k = 0; k < trailing_dims; ++k) {
+                for ([[maybe_unused]] const auto j :
+                     c10::irange(leading_dims)) {
+                  for (const auto k : c10::irange(trailing_dims)) {
                     dest[dest_offset + k] = convert<CTYPE_OUT, CTYPE_IN>(
                         input_data[input_offset + k]);
                   }

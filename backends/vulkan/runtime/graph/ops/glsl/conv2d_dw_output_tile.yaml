@@ -10,6 +10,8 @@ conv2d_dw_output_tile:
     NDIM: 3
     DTYPE: float
     TILE_SIZE: 3
+    BATCH_SIZE_X: 4
+    BATCH_SIZE_Y: 2
   generate_variant_forall:
     DTYPE:
       - VALUE: half

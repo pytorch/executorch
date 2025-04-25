@@ -21,16 +21,16 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::IntArrayRef;
-using exec_aten::nullopt;
-using exec_aten::optional;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::IntArrayRef;
+using executorch::aten::nullopt;
+using executorch::aten::optional;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-using OptScalar = exec_aten::optional<Scalar>;
+using OptScalar = executorch::aten::optional<Scalar>;
 
 class OpNativeLayerNormTest : public OperatorTest {
  protected:
@@ -88,14 +88,22 @@ class OpNativeLayerNormTest : public OperatorTest {
           test_case.sizes, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
       auto normalized_shape_vec = std::vector<int64_t>(
           test_case.normalized_shape.begin(), test_case.normalized_shape.end());
-      auto normalized_shape = exec_aten::ArrayRef<int64_t>(
+      auto normalized_shape = executorch::aten::ArrayRef<int64_t>(
           normalized_shape_vec.data(), normalized_shape_vec.size());
       auto result = op_native_layer_norm_out(
           in, normalized_shape, weight, bias, test_case.eps, out0, out1, out2);
       EXPECT_TENSOR_CLOSE(out0, std::get<0>(result));
 
       Tensor expected = tf.make(test_case.sizes, test_case.expected_data);
-      EXPECT_TENSOR_CLOSE(out0, expected);
+      if constexpr (DTYPE == ScalarType::BFloat16) {
+        EXPECT_TENSOR_CLOSE_WITH_TOL(
+            out0,
+            expected,
+            1e-2,
+            executorch::runtime::testing::internal::kDefaultBFloat16Atol);
+      } else {
+        EXPECT_TENSOR_CLOSE(out0, expected);
+      }
     }
   }
 
@@ -241,7 +249,7 @@ class OpNativeLayerNormTest : public OperatorTest {
       SCOPED_TRACE(test_case.title); // Printed if the test fails
 
       Tensor in = tf.make(test_case.sizes, test_case.input_data);
-      exec_aten::optional<Tensor> weight, bias;
+      executorch::aten::optional<Tensor> weight, bias;
       if (!test_case.weight_data.empty()) {
         weight = tf.make(test_case.normalized_shape, test_case.weight_data);
       }
@@ -253,7 +261,7 @@ class OpNativeLayerNormTest : public OperatorTest {
       Tensor out2 = tf.zeros(test_case.sizes);
       auto normalized_shape_vec = std::vector<int64_t>(
           test_case.normalized_shape.begin(), test_case.normalized_shape.end());
-      auto normalized_shape = exec_aten::ArrayRef<int64_t>(
+      auto normalized_shape = executorch::aten::ArrayRef<int64_t>(
           normalized_shape_vec.data(), normalized_shape_vec.size());
       ET_EXPECT_KERNEL_FAILURE(
           context_,
@@ -393,6 +401,8 @@ std::vector<int64_t> vector_32_to_64(std::vector<int32_t> vector_32) {
 TEST_F(OpNativeLayerNormTest, FloatTensors) {
   run_floating_point_test_cases<ScalarType::Float>();
   run_floating_point_test_cases<ScalarType::Double>();
+  run_floating_point_test_cases<ScalarType::Half>();
+  run_floating_point_test_cases<ScalarType::BFloat16>();
 }
 
 TEST_F(OpNativeLayerNormTest, IntTensorsDies) {

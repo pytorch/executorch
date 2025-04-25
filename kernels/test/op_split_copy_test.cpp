@@ -17,10 +17,10 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
-using exec_aten::TensorList;
+using executorch::aten::ArrayRef;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::aten::TensorList;
 using torch::executor::testing::TensorFactory;
 using torch::executor::testing::TensorListFactory;
 
@@ -298,7 +298,7 @@ TEST_F(OpSplitCopyTensorOutTest, LargerSplitSizeDoesNothing) {
 
 TEST_F(OpSplitCopyTensorOutTest, AllDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
+  ET_FORALL_REALHBBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
   // TODO: Also add tests for half, complex, quantized, and other types. Easiest
   // way to do that would be to make TensorFactory support zeros() and ones()
