@@ -7,7 +7,8 @@
 
 set -exu
 ls pytorch/.git || git clone https://github.com/pytorch/pytorch.git
+pytorch_pin="$(< .ci/docker/ci_commit_pins/pytorch.txt)"
 pushd pytorch
-git checkout "$(< ../.ci/docker/ci_commit_pins/pytorch.txt)"
+git checkout "$pytorch_pin"
 popd
-"$(dirname "${BASH_SOURCE[0]}")"/diff_c10_mirror_with_pytorch.sh
+"$(dirname "${BASH_SOURCE[0]}")"/compare_dirs.sh runtime/core/portable_type/c10/c10 pytorch/c10

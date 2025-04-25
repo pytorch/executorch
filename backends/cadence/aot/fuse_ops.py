@@ -528,7 +528,9 @@ class FuseCascadedViewOps(ExportPass):
 
     def fuse_cascaded_view_ops(self, graph_module: torch.fx.GraphModule):
         view_target = exir_ops.edge.aten.view_copy.default
-        for view_node in graph_module.graph.find_nodes(op="call_function", target=view_target, sort=True):
+        for view_node in graph_module.graph.find_nodes(
+            op="call_function", target=view_target, sort=True
+        ):
             input_view = view_node.args[0]
             if input_view.op != "call_function" or input_view.target != view_target:
                 continue

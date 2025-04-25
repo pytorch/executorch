@@ -234,8 +234,6 @@ def _transform(
         isinstance(p, (list, Verifier)) for p in passes
     ), f"Expected all passes to be of PassType, not list or Verifier. Use override_verifiers kwarg instead. Got: {list(passes)}"
 
-    for p in list(passes):
-        print(type(p))
     pm = PassManager(list(passes))
     res = pm(self.graph_module)
     transformed_gm = res.graph_module if res is not None else self.graph_module

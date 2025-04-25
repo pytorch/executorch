@@ -56,11 +56,8 @@ Tensor& sub_out(
 
   ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     const CTYPE_COMPUTE val_alpha = utils::scalar_to<CTYPE_COMPUTE>(alpha);
-    utils::apply_bitensor_elementwise_fn<
-        CTYPE_COMPUTE,
-        op_name,
-        utils::SupportedTensorDtypes::REALHBF16>(
-        [val_alpha](const auto val_a, const auto val_b) {
+    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [val_alpha](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
           return val_a - val_alpha * val_b;
         },
         ctx,
@@ -68,7 +65,8 @@ Tensor& sub_out(
         utils::SupportedTensorDtypes::REALHBF16,
         b,
         utils::SupportedTensorDtypes::REALHBF16,
-        out);
+        out,
+        utils::SupportedTensorDtypes::REALHBF16);
   });
 
   return out;
@@ -112,17 +110,15 @@ Tensor& sub_scalar_out(
   ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
     const CTYPE_COMPUTE val_alpha = utils::scalar_to<CTYPE_COMPUTE>(alpha);
-    utils::apply_unitensor_elementwise_fn<
-        CTYPE_COMPUTE,
-        op_name,
-        utils::SupportedTensorDtypes::SAME_AS_COMMON>(
-        [val_b, val_alpha](const auto val_a) {
+    utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [val_b, val_alpha](const CTYPE_COMPUTE val_a) {
           return val_a - val_alpha * val_b;
         },
         ctx,
         a,
         utils::SupportedTensorDtypes::REALHBF16,
-        out);
+        out,
+        utils::SupportedTensorDtypes::SAME_AS_COMMON);
   });
 
   return out;

@@ -10,6 +10,8 @@ import argparse
 import inspect
 import os
 import sys
+
+from functools import partial
 from typing import Dict, final, Optional, Sequence, Type
 
 import executorch.exir as exir
@@ -20,6 +22,9 @@ from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
+)
+from executorch.exir.passes.external_constants_pass import (
+    delegate_external_constants_pass,
 )
 from executorch.exir.program import ExecutorchProgramManager
 from torch import nn
@@ -129,6 +134,7 @@ def export_module_to_program(
     constant_tensor_alignment: Optional[int] = None,
     delegate_alignment: Optional[int] = None,
     method_name: str = "forward",
+    external_constants: bool = False,
 ) -> ExecutorchProgramManager:
     eager_module = module_class().eval()
     inputs = ()
@@ -158,8 +164,17 @@ def export_module_to_program(
             XnnpackPartitioner,
         )
 
+        transform_passes = []
+        if external_constants:
+            partial_function = partial(
+                delegate_external_constants_pass,
+                ep=exported_program,
+                gen_tag_fn=lambda x: module_class.__name__,
+            )
+            transform_passes.append(partial_function)
         executorch_program = to_edge_transform_and_lower(
             exported_program,
+            transform_passes=transform_passes,
             compile_config=edge_config,
             partitioner=[XnnpackPartitioner()],
         ).to_executorch(config=et_config)
@@ -222,6 +237,11 @@ def main() -> None:
         "--delegate_alignment", type=int, default=None, help="Delegate alignment."
     )
     parser.add_argument(
+        "--external_constants",
+        action="store_true",
+        help="Export the model with all constants saved to an external file.",
+    )
+    parser.add_argument(
         "--outdir",
         type=str,
         required=True,
@@ -247,16 +267,22 @@ def main() -> None:
             suffix += "-nosegments"
         if args.delegate_alignment is not None:
             suffix += f"-da{args.delegate_alignment}"
+        if args.external_constants:
+            suffix += "-e"
         outfile = os.path.join(args.outdir, f"{module_name}{suffix}.pte")
         executorch_program = export_module_to_program(
             module_class,
             backend_id=args.backend_id,
             extract_delegate_segments=not args.inline_delegate_segments,
             delegate_alignment=args.delegate_alignment,
+            external_constants=args.external_constants,
         )
         with open(outfile, "wb") as fp:
             fp.write(executorch_program.buffer)
         print(f"Exported {module_name} and wrote program data to {outfile}")
+        if args.external_constants:
+            print(f"Saving external constants to {module_name}.ptd")
+            executorch_program.write_tensor_data_to_file(args.outdir)
 
 
 if __name__ == "__main__":
