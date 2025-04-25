@@ -290,7 +290,8 @@ store_compute_to_tensor_fn<CTYPE_COMPUTE> get_store_compute_to_tensor_fn(
 }
 
 #ifndef EXECUTORCH_SELECTIVE_BUILD_DTYPE
-inline constexpr const char kGenericElementwiseOpName[] = "generic_elementwise_op";
+inline constexpr const char kGenericElementwiseOpName[] =
+    "generic_elementwise_op";
 #endif // EXECUTORCH_SELECTIVE_BUILD_DTYPE
 
 template <typename CTYPE_COMPUTE, const char* op_name>
