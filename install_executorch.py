@@ -199,64 +199,6 @@ def main(args):
     if not python_is_compatible():
         sys.exit(1)
 
-    print("Doing some gh action machine filesystem exploration")
-
-    # 1. Print current working directory
-    import os
-
-    cwd = os.getcwd()
-    print("Current working directory:", cwd)
-
-    # 2. Print everything in current working directory
-    print("\nContents of cwd:")
-    for item in os.listdir(cwd):
-        print(item)
-
-    print()
-    cwd = os.path.join(cwd, "extension")
-    print("Current working directory:", cwd)
-    for item in os.listdir(cwd):
-        print(item)
-
-    print()
-    cwd = os.path.join(cwd, "llm")
-    print("Current working directory:", cwd)
-    for item in os.listdir(cwd):
-        print(item)
-
-    print()
-    cwd = os.path.join(cwd, "tokenizers")
-    print("Current working directory:", cwd)
-    for item in os.listdir(cwd):
-        print(item)
-
-    print()
-    cwd = os.path.join(cwd, "third-party")
-    print("Current working directory:", cwd)
-    for item in os.listdir(cwd):
-        print(item)
-
-    print()
-    pcre2 = os.path.join(cwd, "pcre2")
-    print("Current working directory:", pcre2)
-    for item in os.listdir(pcre2):
-        print(item)
-
-    print()
-    re2 = os.path.join(cwd, "re2")
-    print("Current working directory:", re2)
-    for item in os.listdir(re2):
-        print(item)
-
-    # # 3. Print everything in ./extension/llm/tokenizers/third-party/pcre2/src
-    # target_path = os.path.join(cwd, "extension", "llm", "tokenizers", "third-party", "pcre2", "src")
-    # print(f"\nContents of {target_path}:")
-    # if os.path.exists(target_path):
-    #     for item in os.listdir(target_path):
-    #         print(item)
-    # else:
-    #     print("Target path does not exist.")
-
     parser = build_args_parser()
     args = parser.parse_args()
 
