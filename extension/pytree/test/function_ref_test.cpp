@@ -15,21 +15,6 @@ using namespace ::testing;
 using ::executorch::extension::pytree::FunctionRef;
 
 namespace {
-class Item {
- private:
-  int32_t val_;
-  FunctionRef<void(int32_t&)> ref_;
-
- public:
-  /* implicit */ Item(int32_t val, FunctionRef<void(int32_t&)> ref)
-      : val_(val), ref_(ref) {}
-
-  int32_t get() {
-    ref_(val_);
-    return val_;
-  }
-};
-
 void one(int32_t& i) {
   i = 1;
 }
@@ -39,8 +24,9 @@ void one(int32_t& i) {
 TEST(FunctionRefTest, CapturingLambda) {
   auto one = 1;
   auto f = [&](int32_t& i) { i = one; };
-  Item item(0, FunctionRef<void(int32_t&)>{f});
-  EXPECT_EQ(item.get(), 1);
+  int32_t val = 0;
+  FunctionRef<void(int32_t&)>{f}(val);
+  EXPECT_EQ(val, 1);
   // ERROR:
   // Item item1(0, f);
   // Item item2(0, [&](int32_t& i) { i = 2; });
@@ -58,16 +44,6 @@ TEST(FunctionRefTest, NonCapturingLambda) {
   FunctionRef<void(int32_t&)> ref1(lambda);
   ref1(val);
   EXPECT_EQ(val, 1);
-
-  Item item(0, [](int32_t& i) { i = 1; });
-  EXPECT_EQ(item.get(), 1);
-
-  auto f = [](int32_t& i) { i = 1; };
-  Item item1(0, f);
-  EXPECT_EQ(item1.get(), 1);
-
-  Item item2(0, std::move(f));
-  EXPECT_EQ(item2.get(), 1);
 }
 
 TEST(FunctionRefTest, FunctionPointer) {
@@ -76,9 +52,8 @@ TEST(FunctionRefTest, FunctionPointer) {
   ref(val);
   EXPECT_EQ(val, 1);
 
-  Item item(0, one);
-  EXPECT_EQ(item.get(), 1);
-
-  Item item1(0, &one);
-  EXPECT_EQ(item1.get(), 1);
+  val = 0;
+  FunctionRef<void(int32_t&)> ref2(one);
+  ref2(val);
+  EXPECT_EQ(val, 1);
 }
