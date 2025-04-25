@@ -6,13 +6,13 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/extension/pytree/function_ref.h>
+#include <executorch/runtime/core/function_ref.h>
 
 #include <gtest/gtest.h>
 
 using namespace ::testing;
 
-using ::executorch::extension::pytree::FunctionRef;
+using ::executorch::runtime::FunctionRef;
 
 namespace {
 void one(int32_t& i) {
