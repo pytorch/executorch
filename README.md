@@ -40,7 +40,6 @@ release version. For example:
 git checkout gh-pages # checkout the gh-pages branch
 git checkout -b update-symlink-<NEW_VERSION> # create a branch from the gh-pages
 NEW_VERSION=0.1   # substitute the correct version number here
-git checkout gh-pages
 rm stable # remove the existing symlink. **Do not** edit!
 ln -s "${NEW_VERSION}" stable
 git add stable
