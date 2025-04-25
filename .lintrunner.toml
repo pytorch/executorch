@@ -220,6 +220,13 @@ exclude_patterns = [
     'extension/**',
     'kernels/optimized/**',
     # Justified <functional> include.
+    'kernels/portable/cpu/op_bitwise*.cpp',
+    'kernels/portable/cpu/op_eq.cpp',
+    'kernels/portable/cpu/op_ge.cpp',
+    'kernels/portable/cpu/op_gt.cpp',
+    'kernels/portable/cpu/op_le.cpp',
+    'kernels/portable/cpu/op_lt.cpp',
+    'kernels/portable/cpu/op_ne.cpp',
     'runtime/kernel/thread_parallel_interface.h',
     'scripts/**',
     'third-party/**',
