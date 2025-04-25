@@ -690,15 +690,16 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
                 loggingOptions:(const executorchcoreml::ModelLoggingOptions&)loggingOptions
                    eventLogger:(const executorchcoreml::ModelEventLogger* _Nullable)eventLogger
                          error:(NSError * __autoreleasing *)error {
+    BOOL result = NO;
     id<ETCoreMLModelExecutor> executor = [self executorWithHandle:handle];
     if (!executor) {
         ETCoreMLLogErrorAndSetNSError(error,
                                       0,
                                       "%@: Model is already unloaded.",
                                       NSStringFromClass(self.class));
-        return NO;
+        return result;
     }
-    
+
     ETCoreMLModel *model = executor.model;
     if (args.count != model.orderedInputNames.count + model.orderedOutputNames.count) {
         ETCoreMLLogErrorAndSetNSError(error,
@@ -707,10 +708,9 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
                                       NSStringFromClass(self.class),
                                       static_cast<unsigned long>(model.orderedInputNames.count + model.orderedOutputNames.count),
                                       args.count);
-        return NO;
+        return result;
     }
     NSError *localError = nil;
-    NSArray<MLMultiArray *> *modelOutputs = nil;
     @autoreleasepool {
         NSArray<MLMultiArray *> *inputs = [args subarrayWithRange:NSMakeRange(0, model.orderedInputNames.count)];
         NSArray<MLMultiArray *> *outputs = [args subarrayWithRange:NSMakeRange(model.orderedInputNames.count, args.count - model.orderedInputNames.count)];
@@ -718,24 +718,23 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
         if (executor.ignoreOutputBackings == NO) {
             outputBackings = outputs;
         }
-        
-        modelOutputs = [self executeModelUsingExecutor:executor
-                                                inputs:inputs
-                                        outputBackings:outputBackings
-                                        loggingOptions:loggingOptions
-                                           eventLogger:eventLogger
-                                                 error:error];
+        NSArray<MLMultiArray *> *modelOutputs = [self executeModelUsingExecutor:executor
+                                                                         inputs:inputs
+                                                                 outputBackings:outputBackings
+                                                                 loggingOptions:loggingOptions
+                                                                    eventLogger:eventLogger
+                                                                          error:&localError];
         if (modelOutputs) {
             ::set_outputs(outputs, modelOutputs);
+            result = YES;
         }
     }
-    if (!modelOutputs) {
+    if (!result) {
         if (error) {
             *error = localError;
         }
-        return NO;
     }
-    return YES;
+    return result;
 }
 
 - (BOOL)executeModelWithHandle:(ModelHandle *)handle
@@ -743,15 +742,15 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
                 loggingOptions:(const executorchcoreml::ModelLoggingOptions&)loggingOptions
                    eventLogger:(const executorchcoreml::ModelEventLogger* _Nullable)eventLogger
                          error:(NSError * __autoreleasing *)error {
+    BOOL result = NO;
     id<ETCoreMLModelExecutor> executor = [self executorWithHandle:handle];
     if (!executor) {
         ETCoreMLLogErrorAndSetNSError(error,
                                       0,
                                       "%@: Model is already unloaded.",
                                       NSStringFromClass(self.class));
-        return NO;
+        return result;
     }
-    
     ETCoreMLModel *model = executor.model;
     if (argsVec.size() != model.orderedInputNames.count + model.orderedOutputNames.count) {
         ETCoreMLLogErrorAndSetNSError(error,
@@ -760,28 +759,26 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
                                       NSStringFromClass(self.class),
                                       static_cast<unsigned long>(model.orderedInputNames.count + model.orderedOutputNames.count),
                                       argsVec.size());
-        return NO;
+        return result;
     }
-    
     std::vector<executorchcoreml::MultiArray> inputArgs(argsVec.begin(), argsVec.begin() + model.orderedInputNames.count);
     std::vector<executorchcoreml::MultiArray> outputArgs(argsVec.begin() + model.orderedInputNames.count, argsVec.end());
     NSError *localError = nil;
-    NSArray<MLMultiArray *> *modelOutputs = nil;
     @autoreleasepool {
-        NSArray<MLMultiArray *> *inputs = [model prepareInputs:inputArgs error:error];
+        NSArray<MLMultiArray *> *inputs = [model prepareInputs:inputArgs error:&localError];
         if (inputs) {
             NSArray<MLMultiArray *> *outputBackings = @[];
             if (executor.ignoreOutputBackings == NO) {
-                outputBackings = [model prepareOutputBackings:outputArgs error:error];
+                outputBackings = [model prepareOutputBackings:outputArgs error:&localError];
             }
             if (outputBackings) {
-                modelOutputs = [self executeModelUsingExecutor:executor
-                                                        inputs:inputs
-                                                outputBackings:outputBackings
-                                                loggingOptions:loggingOptions
-                                                   eventLogger:eventLogger
-                                                         error:error];
-                if (!modelOutputs) {
+                NSArray<MLMultiArray *> *modelOutputs = [self executeModelUsingExecutor:executor
+                                                                                 inputs:inputs
+                                                                         outputBackings:outputBackings
+                                                                         loggingOptions:loggingOptions
+                                                                            eventLogger:eventLogger
+                                                                                  error:&localError];
+                if (modelOutputs) {
                     // Resize for dynamic shapes
                     for (int i = 0; i < outputArgs.size(); i++) {
                         auto new_size = to_vector<size_t>(modelOutputs[i].shape);
@@ -789,17 +786,17 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
                         argsVec[model.orderedInputNames.count + i].resize(new_size);
                     }
                     ::set_outputs(outputArgs, modelOutputs);
+                    result = YES;
                 }
             }
         }
     }
-    if (!modelOutputs) {
+    if (!result) {
         if (error) {
             *error = localError;
         }
-        return NO;
     }
-    return YES;
+    return result;
 }
 
 - (BOOL)unloadModelWithHandle:(ModelHandle *)handle {
