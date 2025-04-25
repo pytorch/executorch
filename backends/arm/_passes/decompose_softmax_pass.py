@@ -8,7 +8,11 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 # For BI case
-torch_softmax = (torch.ops.aten.softmax.int, torch.ops.aten.log_softmax.int)
+torch_softmax = (
+    torch.ops.aten.softmax.int,
+    torch.ops.aten._safe_softmax.default,
+    torch.ops.aten.log_softmax.int,
+)
 # For MI case
 edge_softmax = (
     exir_ops.edge.aten._softmax.default,
