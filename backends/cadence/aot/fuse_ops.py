@@ -526,34 +526,16 @@ class FuseCascadedViewOps(ExportPass):
     Fuse a cascaded chain of view ops
     """
 
-    # Find a chain of view ops, and fuse them into a single permute op.
-
     def fuse_cascaded_view_ops(self, graph_module: torch.fx.GraphModule):
-        graph = graph_module.graph
-        for node in graph.nodes:
-            # We are only interested in view ops
-            if node.target != exir_ops.edge.aten.view_copy.default:
+        view_target = exir_ops.edge.aten.view_copy.default
+        for view_node in graph_module.graph.find_nodes(
+            op="call_function", target=view_target, sort=True
+        ):
+            input_view = view_node.args[0]
+            if input_view.op != "call_function" or input_view.target != view_target:
                 continue
 
-            # Get the cascaded chain of view ops starting at node
-            cascaded_view_ops = get_cascaded_ops(
-                [node], [exir_ops.edge.aten.view_copy.default]
-            )
-            # The chain must have more than 1 node
-            if len(cascaded_view_ops) == 1:
-                continue
-
-            last_view_node = cascaded_view_ops[-1]
-            with graph.inserting_before(last_view_node):
-                new_view = graph.call_function(
-                    exir_ops.edge.aten.view_copy.default,
-                    args=(node.args[0], last_view_node.args[1]),
-                )
-                last_view_node.replace_all_uses_with(new_view)
-
-            # Now erase the chain
-            for v in reversed(cascaded_view_ops):
-                graph.erase_node(v)
+            view_node.replace_input_with(input_view, input_view.args[0])
 
         graph_module.recompile()
 
@@ -901,9 +883,7 @@ class FuseMulIntoDequantPass(ExportPass):
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseTransposeOpPairsPass(FuseOpPairsAcrossBranchesPass):
     """
-    Fuse dequantize-quantize op pairs to a single requantize op.
-    For the special case where quant params match, this will remove
-    both dequant and quant ops.
+    Fuse transpose op pairs to a single view op.
     """
 
     # A list of ops that can be bypassed when looking for a
@@ -915,6 +895,7 @@ class FuseTransposeOpPairsPass(FuseOpPairsAcrossBranchesPass):
         exir_ops.edge.cadence.dequantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        exir_ops.edge.cadence.quantized_relu.per_tensor,
     }
 
     def can_fuse_for_chain(

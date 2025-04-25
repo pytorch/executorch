@@ -144,6 +144,18 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
 
     EXECUTORCH_PROF_SCOPE(event_tracer, "EthosUBackend::execute()");
 
+    // CollectArm_CPU_Cycles is just used to save the numbers of CPU cycles
+    // used, If etdump is used the EXECUTORCH_PROF_SCOPE() above will do the
+    // same. If not, this is a cheap way of getting some stats and the
+    // CollectArm_CPU_Cycles object can safely be removed in production code.
+    //
+    // The EthosUBackendExecuteCallbacks class uses the C++
+    // constructor/destructor to make sure that EthosUBackend_execute_begin()
+    // and EthosUBackend_execute_end() is called while CollectArm_CPU_Cycles is
+    // in scope. e.g. We meassure from now until we exit this metod (in any way
+    // we might do it).
+    EthosUBackendExecuteCallbacks CollectArm_CPU_Cycles;
+
     ExecutionHandle* execution_handle = (ExecutionHandle*)input_handle;
     VelaHandles handles;
 

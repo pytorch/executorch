@@ -12,10 +12,10 @@ The MPS backend device maps machine learning computational graphs and primitives
 :::
 :::{grid-item-card}  Tutorials we recommend you complete before this:
 :class-card: card-prerequisites
-* [Introduction to ExecuTorch](./intro-how-it-works.md)
-* [Getting Started](./getting-started.md)
-* [Building ExecuTorch with CMake](./using-executorch-building-from-source.md)
-* [ExecuTorch iOS Demo App](demo-apps-ios.md)
+* [Introduction to ExecuTorch](intro-how-it-works.md)
+* [Getting Started](getting-started.md)
+* [Building ExecuTorch with CMake](using-executorch-building-from-source.md)
+* [ExecuTorch iOS Demo App](https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo)
 * [ExecuTorch iOS LLaMA Demo App](llm/llama-demo-ios.md)
 :::
 ::::
@@ -111,12 +111,12 @@ python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3" --no-use_fp
 ```
 
 ### Profiling:
-1. [Optional] Generate an [ETRecord](./etrecord.rst) while you're exporting your model.
+1. [Optional] Generate an [ETRecord](etrecord.rst) while you're exporting your model.
 ```bash
 cd executorch
 python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3" --generate_etrecord -b
 ```
-2. Run your Program on the ExecuTorch runtime and generate an [ETDump](./etdump.md).
+2. Run your Program on the ExecuTorch runtime and generate an [ETDump](etdump.md).
 ```
 ./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3_mps_bundled_fp16.pte --bundled_program --dump-outputs
 ```

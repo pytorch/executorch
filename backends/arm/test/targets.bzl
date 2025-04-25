@@ -19,6 +19,11 @@ def define_arm_tests():
         "ops/test_tanh.py",
     ]
 
+    # Quantization
+    test_files += [
+        "quantizer/test_generic_annotater.py",
+    ]
+
     TESTS = {}
 
     for test_file in test_files:

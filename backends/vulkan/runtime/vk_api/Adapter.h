@@ -122,6 +122,15 @@ class Adapter final {
     return physical_device_.timestamp_period;
   }
 
+  // Device Identity
+  inline const std::string& device_name() const {
+    return physical_device_.device_name;
+  }
+
+  inline vkapi::DeviceType device_type() const {
+    return physical_device_.device_type;
+  }
+
   // Queue Management
 
   Queue request_queue();

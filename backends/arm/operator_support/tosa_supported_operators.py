@@ -185,6 +185,8 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.lt.Tensor,
             exir_ops.edge.aten.lt.Scalar,
             exir_ops.edge.aten.mul.Tensor,
+            exir_ops.edge.aten.ne.Tensor,
+            exir_ops.edge.aten.ne.Scalar,
             exir_ops.edge.aten.add.Scalar,
             exir_ops.edge.aten.sub.Scalar,
             exir_ops.edge.aten.mul.Scalar,
@@ -207,6 +209,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten._log_softmax.default,
             exir_ops.edge.aten.sub.Tensor,
             exir_ops.edge.aten.tanh.default,
+            exir_ops.edge.aten.upsample_bilinear2d.vec,
             exir_ops.edge.aten.upsample_nearest2d.vec,
             exir_ops.edge.aten.var.correction,
             exir_ops.edge.aten.var.dim,
@@ -268,6 +271,8 @@ class NeedsDecompositionCheck(OperatorSupportBase):
                 exir_ops.edge.aten.sqrt.default,
                 exir_ops.edge.aten.sub.Scalar,
                 exir_ops.edge.aten.mul.Scalar,
+                exir_ops.edge.aten.ne.Tensor,
+                exir_ops.edge.aten.ne.Scalar,
                 exir_ops.edge.aten.div.Scalar,
                 exir_ops.edge.aten.leaky_relu.default,
             ]
@@ -365,6 +370,7 @@ class CheckProperQuantization(OperatorSupportBase):
             exir_ops.edge.aten.sigmoid.default,
             exir_ops.edge.aten.sub.Tensor,
             exir_ops.edge.aten.tanh.default,
+            exir_ops.edge.aten.upsample_bilinear2d.vec,
             exir_ops.edge.aten.upsample_nearest2d.vec,
             exir_ops.edge.aten.gelu.default,
         ):
