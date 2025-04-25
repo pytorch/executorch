@@ -13,7 +13,10 @@ from typing import Any, Callable, cast, List, Optional, Sequence, Tuple, Union
 import torch
 import torch.nn.functional as F
 from executorch.backends.cadence.aot import compiler
-from executorch.backends.cadence.aot.compiler import export_to_edge, quantize_pt2
+from executorch.backends.cadence.aot.compiler import (
+    export_to_edge,
+    quantize_and_export_to_edge,
+)
 from executorch.backends.cadence.aot.graph_builder import (
     GraphBuilder,
     single_op_builder,
@@ -851,9 +854,8 @@ class TestReplaceOpsPasses(unittest.TestCase):
 
         inputs = (x,)
         model = torch.nn.Linear(in_features=in_features, out_features=out_features)
-        quantized_model = quantize_pt2(model, inputs)
 
-        exported_program = export_to_edge(quantized_model, inputs).exported_program()
+        exported_program = quantize_and_export_to_edge(model, inputs).exported_program()
 
         # By default, the quantized linear op should have constant scalar attributes.
         self.assertTargetCountsEqual(
@@ -898,9 +900,8 @@ class TestReplaceOpsPasses(unittest.TestCase):
 
         inputs = (x,)
         model = torch.nn.Linear(in_features=in_features, out_features=out_features)
-        quantized_model = quantize_pt2(model, inputs)
 
-        exported_program = export_to_edge(quantized_model, inputs).exported_program()
+        exported_program = quantize_and_export_to_edge(model, inputs).exported_program()
 
         # By default, the quantized linear op should have constant scalar attributes.
         self.assertTargetCountsEqual(
