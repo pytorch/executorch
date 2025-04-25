@@ -106,7 +106,7 @@ TEST_F(HiFiQuantizePerTensorTest, ThrowKernelFailureForQuantMaxLessThanLimit) {
           out));
 }
 
-TEST_F(HiFiQuantizePerTensorTest, CheckSingleElementQuantize) {
+TEST_F(HiFiQuantizePerTensorTest, CheckSingleElementIntQuantize) {
   TensorFactory<ScalarType::Float> tf;
   const std::vector<int> sizes{1};
   constexpr ScalarType kOutDtype = ScalarType::Int;
@@ -120,6 +120,32 @@ TEST_F(HiFiQuantizePerTensorTest, CheckSingleElementQuantize) {
   constexpr float kInputValue = 100.0f;
   constexpr int32_t kExpectedOutputValue =
       static_cast<int32_t>(kInputValue / kScale + kZeroPoint);
+
+  quantize_per_tensor_out(
+      tf.make(sizes, {kInputValue}),
+      kScale,
+      kZeroPoint,
+      kQuantMin,
+      kQuantMax,
+      kOutDtype,
+      out);
+  EXPECT_TENSOR_EQ(out, tf_out.make(sizes, {kExpectedOutputValue}));
+}
+
+TEST_F(HiFiQuantizePerTensorTest, CheckSingleElementUInt16Quantize) {
+  TensorFactory<ScalarType::Float> tf;
+  const std::vector<int> sizes{1};
+  constexpr ScalarType kOutDtype = ScalarType::UInt16;
+  TensorFactory<kOutDtype> tf_out;
+  Tensor out = tf_out.zeros(sizes);
+  // Some arbitrary values for scalar args.
+  constexpr double kScale = 0.01;
+  constexpr int64_t kZeroPoint = 32768;
+  constexpr int64_t kQuantMin = std::numeric_limits<uint16_t>::min();
+  constexpr int64_t kQuantMax = std::numeric_limits<uint16_t>::max();
+  constexpr float kInputValue = 100.0f;
+  constexpr uint16_t kExpectedOutputValue =
+      static_cast<uint16_t>(kInputValue / kScale + kZeroPoint);
 
   quantize_per_tensor_out(
       tf.make(sizes, {kInputValue}),
