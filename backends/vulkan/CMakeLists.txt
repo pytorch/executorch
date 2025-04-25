@@ -109,14 +109,19 @@ file(GLOB vulkan_backend_cpp ${RUNTIME_PATH}/*.cpp)
 list(APPEND vulkan_backend_cpp ${vulkan_graph_cpp})
 list(APPEND vulkan_backend_cpp ${vulkan_standard_shaders_cpp})
 
-add_library(vulkan_backend STATIC ${vulkan_backend_cpp})
+if (ANDROID)
+  add_library(vulkan_backend SHARED ${vulkan_backend_cpp})
+else()
+    message(FATAL_ERROR "USE_VULKAN glslc not found")
+  add_library(vulkan_backend STATIC ${vulkan_backend_cpp})
+endif()
 target_include_directories(
   vulkan_backend PRIVATE ${SCHEMA_INCLUDE_DIR} ${COMMON_INCLUDES}
 )
 target_link_libraries(vulkan_backend PRIVATE vulkan_schema executorch)
 target_compile_options(vulkan_backend PRIVATE ${VULKAN_CXX_FLAGS})
 # Link this library with --whole-archive due to dynamic backend registration
-target_link_options_shared_lib(vulkan_backend)
+# target_link_options_shared_lib(vulkan_backend)
 
 set_property(TARGET vulkan_backend PROPERTY CXX_STANDARD 17)
 

@@ -107,7 +107,7 @@ endif()
 
 if(TARGET vulkan_backend)
   target_link_options_shared_lib(vulkan_backend)
-  list(APPEND link_libraries vulkan_backend)
+  # list(APPEND link_libraries vulkan_backend)
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
