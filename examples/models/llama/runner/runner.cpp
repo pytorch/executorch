@@ -133,7 +133,7 @@ Error Runner::load() {
     tokenizer_.reset();
     // @lint-ignore CLANGTIDY facebook-hte-Deprecated
     tokenizer_ = std::make_unique<::tokenizers::Llama2cTokenizer>();
-    err = tokenizer_->load(tokenizer_path_);
+    auto err = tokenizer_->load(tokenizer_path_);
     ET_CHECK_TK_OK_OR_RETURN_ERROR(
         err,
         "Failed to load %s as a llama2.c tokenizer artifact",
