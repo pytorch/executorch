@@ -167,7 +167,7 @@ jobs:
       # NB: Need to use our AWS MacOS runner to upload large models to S3
       runner: macos-m1-stable
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       timeout: 60
       upload-artifact: ios-models
       upload-artifact-to-s3: true
