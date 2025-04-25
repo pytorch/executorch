@@ -57,4 +57,5 @@ from .scalars_to_attribute_pass import ScalarsToAttributePass  # noqa
 from .size_adjust_conv2d_pass import SizeAdjustConv2DPass  # noqa
 from .unsqueeze_before_repeat_pass import UnsqueezeBeforeRepeatPass  # noqa
 from .unsqueeze_scalar_placeholders_pass import UnsqueezeScalarPlaceholdersPass  # noqa
+from .replace_inf_values_pass import ReplaceInfValues  # noqa  # usort: skip
 from .arm_pass_manager import ArmPassManager  # noqa  # usort: skip
