@@ -101,12 +101,7 @@ def test_select_int_tosa_INT(test_data: Tuple):
     pipeline.run()
 
 
-x_fails = {
-    "select4d_0_dim_2_index": "AssertionError: Output 0 does not match reference output."
-}
-
-
-@common.parametrize("test_data", test_data_suite, x_fails)
+@common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 def test_select_int_u55_INT_copy(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
@@ -120,7 +115,7 @@ def test_select_int_u55_INT_copy(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite, x_fails)
+@common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 def test_select_int_u55_INT(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
@@ -147,7 +142,7 @@ def test_select_int_u55_INT_not_delegated(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite, x_fails)
+@common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
 def test_select_int_u85_INT_copy(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](
@@ -161,7 +156,7 @@ def test_select_int_u85_INT_copy(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite, x_fails)
+@common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
 def test_select_int_u85_INT(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](

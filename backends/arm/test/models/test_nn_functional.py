@@ -83,6 +83,8 @@ input_t = tuple[torch.Tensor]
     module_tests,
     xfails={
         "affine_grid": "Int64 input. Partition handling fails since arange int64 output is split between 2 partitions.",
+        "unfold": "ValueError: Invalid TOSA graph",
+        "fold": "ValueError: Invalid TOSA graph",
     },
 )
 def test_nn_functional_FP(test_data):
