@@ -54,6 +54,6 @@ TEST(FunctionRefTest, FunctionPointer) {
 
   val = 0;
   FunctionRef<void(int32_t&)> ref2(one);
-  ref(val);
+  ref2(val);
   EXPECT_EQ(val, 1);
 }
