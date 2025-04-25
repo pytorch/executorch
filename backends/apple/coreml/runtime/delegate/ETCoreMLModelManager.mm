@@ -728,6 +728,8 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
                                       args.count);
         return NO;
     }
+    NSError *localError = nil;
+    NSArray<MLMultiArray *> *modelOutputs = nil;
     @autoreleasepool {
         NSArray<MLMultiArray *> *inputs = [args subarrayWithRange:NSMakeRange(0, model.orderedInputNames.count)];
         NSArray<MLMultiArray *> *outputs = [args subarrayWithRange:NSMakeRange(model.orderedInputNames.count, args.count - model.orderedInputNames.count)];
@@ -736,19 +738,22 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
             outputBackings = outputs;
         }
         
-        NSArray<MLMultiArray *> *modelOutputs = [self executeModelUsingExecutor:executor
-                                                                         inputs:inputs
-                                                                 outputBackings:outputBackings
-                                                                 loggingOptions:loggingOptions
-                                                                    eventLogger:eventLogger
-                                                                          error:error];
-        if (!modelOutputs) {
-            return NO;
+        modelOutputs = [self executeModelUsingExecutor:executor
+                                                inputs:inputs
+                                        outputBackings:outputBackings
+                                        loggingOptions:loggingOptions
+                                           eventLogger:eventLogger
+                                                 error:error];
+        if (modelOutputs) {
+            ::set_outputs(outputs, modelOutputs);
         }
-        
-        ::set_outputs(outputs, modelOutputs);
     }
-    
+    if (!modelOutputs) {
+        if (error) {
+            *error = localError;
+        }
+        return NO;
+    }
     return YES;
 }
 
@@ -777,40 +782,41 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
     
     std::vector<executorchcoreml::MultiArray> inputArgs(argsVec.begin(), argsVec.begin() + model.orderedInputNames.count);
     std::vector<executorchcoreml::MultiArray> outputArgs(argsVec.begin() + model.orderedInputNames.count, argsVec.end());
+    NSError *localError = nil;
+    NSArray<MLMultiArray *> *modelOutputs = nil;
     @autoreleasepool {
         NSArray<MLMultiArray *> *inputs = [model prepareInputs:inputArgs error:error];
-        if (!inputs) {
-            return NO;
+        if (inputs) {
+            NSArray<MLMultiArray *> *outputBackings = @[];
+            if (executor.ignoreOutputBackings == NO) {
+                outputBackings = [model prepareOutputBackings:outputArgs error:error];
+            }
+            if (outputBackings) {
+                modelOutputs = [self executeModelUsingExecutor:executor
+                                                        inputs:inputs
+                                                outputBackings:outputBackings
+                                                loggingOptions:loggingOptions
+                                                   eventLogger:eventLogger
+                                                         error:error];
+                if (!modelOutputs) {
+                    // Resize for dynamic shapes
+                    for (int i = 0; i < outputArgs.size(); i++) {
+                        auto new_size = to_vector<size_t>(modelOutputs[i].shape);
+                        outputArgs[i].resize(new_size);
+                        argsVec[model.orderedInputNames.count + i].resize(new_size);
+                    }
+                    ::set_outputs(outputArgs, modelOutputs);
+                }
+            }
         }
-        
-        NSArray<MLMultiArray *> *outputBackings = @[];
-        if (executor.ignoreOutputBackings == NO) {
-            outputBackings = [model prepareOutputBackings:outputArgs error:error];
-        }
-        
-        if (!outputBackings) {
-            return NO;
-        }
-        
-        NSArray<MLMultiArray *> *modelOutputs = [self executeModelUsingExecutor:executor
-                                                                         inputs:inputs
-                                                                 outputBackings:outputBackings
-                                                                 loggingOptions:loggingOptions
-                                                                    eventLogger:eventLogger
-                                                                          error:error];
-        if (!modelOutputs) {
-            return NO;
-        }
-        
-        // Resize for dynamic shapes
-        for (int i = 0; i < outputArgs.size(); i++) {
-            auto new_size = to_vector<size_t>(modelOutputs[i].shape);
-            outputArgs[i].resize(new_size);
-            argsVec[model.orderedInputNames.count + i].resize(new_size);
-        }
-        ::set_outputs(outputArgs, modelOutputs);
-        return YES;
     }
+    if (!modelOutputs) {
+        if (error) {
+            *error = localError;
+        }
+        return NO;
+    }
+    return YES;
 }
 
 - (BOOL)unloadModelWithHandle:(ModelHandle *)handle {
