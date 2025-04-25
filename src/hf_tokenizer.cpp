@@ -57,7 +57,7 @@ Error HFTokenizer::load(const std::string& path) {
   try {
     parsed_json = json::parse(contents);
   } catch (const json::exception& e) {
-    std::cout << "Error parsing json file: " << e.what() << std::endl;
+    std::cerr << "Error parsing json file: " << e.what() << std::endl;
     return Error::LoadFailure;
   }
 
@@ -135,7 +135,7 @@ Error HFTokenizer::load(const std::string& path) {
     try {
       parsed_config_json = json::parse(config_contents);
     } catch (const json::exception& e) {
-      std::cout << "Error parsing model config json json file: " << e.what()
+      std::cerr << "Error parsing model config json json file: " << e.what()
                 << std::endl;
       return Error::LoadFailure;
     }
