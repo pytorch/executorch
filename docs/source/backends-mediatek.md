@@ -25,6 +25,7 @@ MediaTek backend empowers ExecuTorch to speed up PyTorch models on edge devices 
 
 ### Supported Chips:
 - MediaTek Dimensity 9300 (D9300)
+- MediaTek Dimensity 9400 (D9400)
 
 ### Software:
 
@@ -37,19 +38,19 @@ Follow the steps below to setup your build environment:
 1. **Setup ExecuTorch Environment**: Refer to the [Getting Started](getting-started.md) guide for detailed instructions on setting up the ExecuTorch environment.
 
 2. **Setup MediaTek Backend Environment**
-- Install the dependent libs. Ensure that you are inside `backends/mediatek/` directory
    ```bash
    pip3 install -r requirements.txt
    ```
 - Install the two .whl downloaded from NeuroPilot Portal
    ```bash
-   pip3 install mtk_neuron-8.2.13-py3-none-linux_x86_64.whl
-   pip3 install mtk_converter-8.9.1+public-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+   pip3 install mtk_neuron-8.2.19-py3-none-linux_x86_64.whl
+   pip3 install mtk_converter-8.13.0+public-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
    ```
 - Set evironment variables for building backend
    ```bash
-   export NEURON_BUFFER_ALLOCATOR_LIB=<path_to_buffer_allocator.so>
+   export NEURON_BUFFER_ALLOCATOR_LIB=<path_to_buffer_allocator>
    ```
+Additionally, make sure to copy `NeuronAdapter.h` to the following directory: `backends/mediatek/runtime/include/api/`.
 
 ## Build
 
