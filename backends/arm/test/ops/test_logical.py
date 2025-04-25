@@ -80,6 +80,9 @@ class Not(torch.nn.Module):
         return torch.logical_not(tensor)
 
 
+xfails = {"rand_rank4": "MLBEDSW-11031: Output diff on u85 bool transpose."}
+
+
 @common.parametrize("test_data", And().test_data)
 def test_logical_and_tosa_MI(test_data: input_t2):
     pipeline = TosaPipelineMI[input_t2](
@@ -123,7 +126,7 @@ def test_logical_and_u55_BI_not_delegated(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", And().test_data)
+@common.parametrize("test_data", And().test_data, xfails=xfails)
 @common.XfailIfNoCorstone320
 def test_logical_and_u85_BI(test_data: input_t2):
     pipeline = EthosU85PipelineBI[input_t2](
@@ -184,7 +187,7 @@ def test_logical_xor_u55_BI_not_delegated(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Xor().test_data)
+@common.parametrize("test_data", Xor().test_data, xfails=xfails)
 @common.XfailIfNoCorstone320
 def test_logical_xor_u85_BI(test_data: input_t2):
     pipeline = EthosU85PipelineBI[input_t2](
@@ -245,7 +248,7 @@ def test_logical_or_u55_BI_not_delegated(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Or().test_data)
+@common.parametrize("test_data", Or().test_data, xfails=xfails)
 @common.XfailIfNoCorstone320
 def test_logical_or_u85_BI(test_data: input_t2):
     pipeline = EthosU85PipelineBI[input_t2](
@@ -306,7 +309,7 @@ def test_logical_not_u55_BI_not_delegated(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Not().test_data)
+@common.parametrize("test_data", Not().test_data, xfails=xfails)
 @common.XfailIfNoCorstone320
 def test_logical_not_u85_BI(test_data: input_t2):
     pipeline = EthosU85PipelineBI[input_t2](

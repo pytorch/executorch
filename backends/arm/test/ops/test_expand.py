@@ -69,14 +69,7 @@ def test_expand_tosa_BI(test_data: Tuple):
     pipeline.run()
 
 
-x_fails = {
-    "rand_batch_2": "AssertionError: Output 0 does not match reference output.",
-    "rand_mix_neg": "AssertionError: Output 0 does not match reference output.",
-    "rand_small_neg": "AssertionError: Output 0 does not match reference output.",
-}
-
-
-@common.parametrize("test_data", Expand.test_parameters, x_fails)
+@common.parametrize("test_data", Expand.test_parameters)
 @common.XfailIfNoCorstone300
 def test_expand_u55_BI(test_data: Tuple):
     pipeline = EthosU55PipelineBI[input_t1](
@@ -89,7 +82,7 @@ def test_expand_u55_BI(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", Expand.test_parameters, x_fails)
+@common.parametrize("test_data", Expand.test_parameters)
 @common.XfailIfNoCorstone320
 def test_expand_u85_BI(test_data: Tuple):
     pipeline = EthosU85PipelineBI[input_t1](

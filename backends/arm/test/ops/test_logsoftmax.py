@@ -67,7 +67,7 @@ def test_log_softmax_tosa_BI(test_data):
     "test_data",
     LogSoftmax.test_data,
     xfails={
-        "randn_mult_batches": "MLETORCH-433: Multiple batches not supported on FVP"
+        "randn_neg_dim": "MLBEDSW-11032: ILLEGAL_OFM_BASE error: Base addresses must be aligned to brick depth on u55."
     },
 )
 @common.XfailIfNoCorstone300()
@@ -84,13 +84,7 @@ def test_log_softmax_u55_BI(test_data):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    LogSoftmax.test_data,
-    xfails={
-        "randn_mult_batches": "MLETORCH-433: Multiple batches not supported on FVP"
-    },
-)
+@common.parametrize("test_data", LogSoftmax.test_data)
 @common.XfailIfNoCorstone320
 def test_log_softmax_u85_BI(test_data):
     data, dim = test_data()

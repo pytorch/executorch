@@ -198,7 +198,7 @@ test_data_conv1d_BI = {
 
 
 @common.parametrize("test_data", test_data_conv1d_MI | test_data_conv2d_MI)
-def test_depthwise_convolution_2d_tosa_MI(test_data: torch.nn.Module):
+def test_convolution_2d_tosa_MI_depthwise(test_data: torch.nn.Module):
     pipeline = TosaPipelineMI[input_t](
         test_data(),
         test_data().get_inputs(),
@@ -210,7 +210,7 @@ def test_depthwise_convolution_2d_tosa_MI(test_data: torch.nn.Module):
 
 @pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness (MLTORCH-307)
 @common.parametrize("test_data", test_data_conv1d_BI | test_data_conv2d_BI)
-def test_depthwise_convolution_2d_tosa_BI(test_data):
+def test_convolution_2d_tosa_BI_depthwise(test_data):
     model, per_channel_quantization = test_data()
     pipeline = TosaPipelineBI[input_t](
         model,
@@ -222,19 +222,9 @@ def test_depthwise_convolution_2d_tosa_BI(test_data):
     pipeline.run()
 
 
-x_fails = {
-    f"{k},per_channel_quant={q}": reason
-    for k, reason in {
-        "3x3_2x8x198x198_gp8_st3": "MLETORCH-517: Operators fail with batches > 1",
-        "two_dw_conv2d": "MLETORCH-517: Operators fail with batches > 1",
-    }.items()
-    for q in [True, False]
-}
-
-
 @common.XfailIfNoCorstone300  # TODO: MLETORCH-516
-@common.parametrize("test_data", test_data_conv2d_BI, x_fails)
-def test_depthwise_convolution_2d_u55_BI(test_data):
+@common.parametrize("test_data", test_data_conv2d_BI)
+def test_convolution_2d_u55_BI_depthwise(test_data):
     model, per_channel_quantization = test_data()
     pipeline = EthosU55PipelineBI[input_t](
         model,
@@ -249,7 +239,7 @@ def test_depthwise_convolution_2d_u55_BI(test_data):
 
 @common.XfailIfNoCorstone300  # TODO: MLETORCH-516
 @common.parametrize("test_data", test_data_conv1d_BI)
-def test_depthwise_convolution_1d_u55_BI(test_data):
+def test_convolution_1d_u55_BI_depthwise(test_data):
     model, per_channel_quantization = test_data()
     pipeline = EthosU55PipelineBI[input_t](
         model,
@@ -263,8 +253,8 @@ def test_depthwise_convolution_1d_u55_BI(test_data):
 
 
 @common.XfailIfNoCorstone320  # TODO: MLETORCH-516
-@common.parametrize("test_data", test_data_conv2d_BI, x_fails)
-def test_depthwise_convolution_2d_u85_BI(test_data):
+@common.parametrize("test_data", test_data_conv2d_BI)
+def test_convolution_2d_u85_BI_depthwise(test_data):
     model, per_channel_quantization = test_data()
     pipeline = EthosU85PipelineBI[input_t](
         model,
@@ -278,8 +268,8 @@ def test_depthwise_convolution_2d_u85_BI(test_data):
 
 
 @common.XfailIfNoCorstone320  # TODO: MLETORCH-516
-@common.parametrize("test_data", test_data_conv1d_BI, x_fails)
-def test_depthwise_convolution_1d_u85_BI(test_data):
+@common.parametrize("test_data", test_data_conv1d_BI)
+def test_convolution_1d_u85_BI_depthwise(test_data):
     model, per_channel_quantization = test_data()
     pipeline = EthosU85PipelineBI[input_t](
         model,

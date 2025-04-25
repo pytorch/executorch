@@ -387,15 +387,6 @@ test_data_BI = {
     for q in [True, False]
 }
 
-fvp_xfails = {
-    f"{k},per_channel_quant={q}": reason
-    for k, reason in {
-        "2x2_3x2x40x40_nobias": "MLETORCH-520: Numerical issues on FVP.",
-        "5x5_3x2x128x128_st1": "MLETORCH-520: Numerical issues on FVP.",
-    }.items()
-    for q in [True, False]
-}
-
 input_t = Tuple[torch.Tensor]
 
 
@@ -425,7 +416,7 @@ def test_convolution_2d_tosa_BI(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_BI, fvp_xfails)
+@common.parametrize("test_data", test_data_BI)
 @common.XfailIfNoCorstone300
 def test_convolution_2d_u55_BI(test_data):
     model, per_channel_quantization = test_data()
@@ -440,7 +431,7 @@ def test_convolution_2d_u55_BI(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_BI, fvp_xfails)
+@common.parametrize("test_data", test_data_BI)
 @common.XfailIfNoCorstone320
 def test_convolution_u85_BI(test_data):
     model, per_channel_quantization = test_data()

@@ -39,11 +39,6 @@ class Sqrt(torch.nn.Module):
     }
 
 
-fvp_xfails = {
-    "sqrt_tensor_rank4_multibatch": "MLETORCH-517 : Multiple batches not supported",
-}
-
-
 @common.parametrize("test_data", Sqrt.test_data)
 def test_sqrt_tosa_MI(test_data: Sqrt.input_t):
     pipeline = TosaPipelineMI[Sqrt.input_t](
@@ -66,7 +61,7 @@ def test_sqrt_tosa_BI(test_data: Sqrt.input_t):
     pipeline.run()
 
 
-@common.parametrize("test_data", Sqrt.test_data, fvp_xfails)
+@common.parametrize("test_data", Sqrt.test_data)
 @common.XfailIfNoCorstone300
 def test_sqrt_u55_BI(test_data: Sqrt.input_t):
     pipeline = EthosU55PipelineBI[Sqrt.input_t](
@@ -79,7 +74,7 @@ def test_sqrt_u55_BI(test_data: Sqrt.input_t):
     pipeline.run()
 
 
-@common.parametrize("test_data", Sqrt.test_data, fvp_xfails)
+@common.parametrize("test_data", Sqrt.test_data)
 @common.XfailIfNoCorstone320
 def test_sqrt_u85_BI(test_data: Sqrt.input_t):
     pipeline = EthosU85PipelineBI[Sqrt.input_t](

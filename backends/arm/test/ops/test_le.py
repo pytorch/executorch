@@ -154,9 +154,6 @@ def test_le_scalar_u55_BI_not_delegated(test_module):
 @common.parametrize(
     "test_module",
     test_data_tensor,
-    xfails={
-        "le_tensor_rank4_randn": "4D fails because boolean Tensors can't be subtracted"
-    },
 )
 @common.XfailIfNoCorstone320
 def test_le_tensor_u85_BI(test_module):
@@ -174,9 +171,6 @@ def test_le_tensor_u85_BI(test_module):
 @common.parametrize(
     "test_module",
     test_data_scalar,
-    xfails={
-        "le_scalar_rank4_randn": "4D fails because boolean Tensors can't be subtracted"
-    },
 )
 @common.XfailIfNoCorstone320
 def test_le_scalar_u85_BI(test_module):
