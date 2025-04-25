@@ -6,13 +6,13 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/extension/pytree/function_ref.h>
+#include <executorch/runtime/core/function_ref.h>
 
 #include <gtest/gtest.h>
 
 using namespace ::testing;
 
-using ::executorch::extension::pytree::FunctionRef;
+using ::executorch::runtime::FunctionRef;
 
 namespace {
 void one(int32_t& i) {
@@ -54,6 +54,6 @@ TEST(FunctionRefTest, FunctionPointer) {
 
   val = 0;
   FunctionRef<void(int32_t&)> ref2(one);
-  ref(val);
+  ref2(val);
   EXPECT_EQ(val, 1);
 }

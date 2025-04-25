@@ -34,7 +34,6 @@
 // - removed LLVM_GSL_POINTER and LLVM_LIFETIME_BOUND macro uses
 // - use namespaced internal::remove_cvref_t
 
-
 #pragma once
 
 #include <cstdint>
@@ -65,40 +64,44 @@ class FunctionRef;
 
 template <typename Ret, typename... Params>
 class FunctionRef<Ret(Params...)> {
-  Ret (*callback)(intptr_t callable, Params ...params) = nullptr;
+  Ret (*callback)(intptr_t callable, Params... params) = nullptr;
   intptr_t callable;
 
-  template<typename Callable>
-  static Ret callback_fn(intptr_t callable, Params ...params) {
+  template <typename Callable>
+  static Ret callback_fn(intptr_t callable, Params... params) {
     return (*reinterpret_cast<Callable*>(callable))(
         std::forward<Params>(params)...);
   }
 
-public:
+ public:
   FunctionRef() = default;
   FunctionRef(std::nullptr_t) {}
 
   template <typename Callable>
   FunctionRef(
-      Callable &&callable,
+      Callable&& callable,
       // This is not the copy-constructor.
-      std::enable_if_t<!std::is_same<internal::remove_cvref_t<Callable>,
-                                     FunctionRef>::value> * = nullptr,
+      std::enable_if_t<!std::is_same<
+          internal::remove_cvref_t<Callable>,
+          FunctionRef>::value>* = nullptr,
       // Functor must be callable and return a suitable type.
-      std::enable_if_t<std::is_void<Ret>::value ||
-                       std::is_convertible<decltype(std::declval<Callable>()(
-                                               std::declval<Params>()...)),
-                                           Ret>::value> * = nullptr)
+      std::enable_if_t<
+          std::is_void<Ret>::value ||
+          std::is_convertible<
+              decltype(std::declval<Callable>()(std::declval<Params>()...)),
+              Ret>::value>* = nullptr)
       : callback(callback_fn<std::remove_reference_t<Callable>>),
         callable(reinterpret_cast<intptr_t>(&callable)) {}
 
-  Ret operator()(Params ...params) const {
+  Ret operator()(Params... params) const {
     return callback(callable, std::forward<Params>(params)...);
   }
 
-  explicit operator bool() const { return callback; }
+  explicit operator bool() const {
+    return callback;
+  }
 
-  bool operator==(const FunctionRef<Ret(Params...)> &Other) const {
+  bool operator==(const FunctionRef<Ret(Params...)>& Other) const {
     return callable == Other.callable;
   }
 };
