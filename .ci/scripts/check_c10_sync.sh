@@ -5,7 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-set -exu
+set -eux
 ls pytorch/.git || git clone https://github.com/pytorch/pytorch.git
 pytorch_pin="$(< .ci/docker/ci_commit_pins/pytorch.txt)"
 pushd pytorch

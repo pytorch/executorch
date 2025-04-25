@@ -5,7 +5,7 @@ on:
     paths:
       - .ci/docker/ci_commit_pins/pytorch.txt
       - .ci/scripts/compare_dirs.sh
-      - .ci/scripts/diff_c10_mirror_with_pytorch.sh
+      - runtime/core/portable_type/c10/**
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
