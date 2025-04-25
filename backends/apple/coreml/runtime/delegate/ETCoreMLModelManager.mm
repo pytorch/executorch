@@ -715,9 +715,8 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
     id<ETCoreMLModelExecutor> executor = [self executorWithHandle:handle];
     if (!executor) {
         ETCoreMLLogErrorAndSetNSError(error,
-                                      0,
-                                      "%@: Model is already unloaded.",
-                                      NSStringFromClass(self.class));
+                                      ETCoreMLErrorInternalError,
+                                      "Model is already unloaded.");
         return result;
     }
 
@@ -725,8 +724,7 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
     if (args.count != model.orderedInputNames.count + model.orderedOutputNames.count) {
         ETCoreMLLogErrorAndSetNSError(error,
                                       ETCoreMLErrorCorruptedModel,
-                                      "%@: Model is invalid, expected args count to be %lu but got %lu.",
-                                      NSStringFromClass(self.class),
+                                      "Model is invalid, expected args count to be %lu but got %lu.",
                                       static_cast<unsigned long>(model.orderedInputNames.count + model.orderedOutputNames.count),
                                       args.count);
         return result;
@@ -767,17 +765,15 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
     id<ETCoreMLModelExecutor> executor = [self executorWithHandle:handle];
     if (!executor) {
         ETCoreMLLogErrorAndSetNSError(error,
-                                      0,
-                                      "%@: Model is already unloaded.",
-                                      NSStringFromClass(self.class));
+                                      ETCoreMLErrorInternalError,
+                                      "Model is already unloaded.");
         return result;
     }
     ETCoreMLModel *model = executor.model;
     if (argsVec.size() != model.orderedInputNames.count + model.orderedOutputNames.count) {
         ETCoreMLLogErrorAndSetNSError(error,
                                       ETCoreMLErrorCorruptedModel,
-                                      "%@: Model is invalid, expected args count to be %lu but got %lu.",
-                                      NSStringFromClass(self.class),
+                                      "Model is invalid, expected args count to be %lu but got %lu.",
                                       static_cast<unsigned long>(model.orderedInputNames.count + model.orderedOutputNames.count),
                                       argsVec.size());
         return result;
