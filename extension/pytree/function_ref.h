@@ -10,7 +10,8 @@
 
 #include <executorch/runtime/core/function_ref.h>
 
-/// This header is DEPRECATED; use executorch/runtime/core/function_ref.h directly instead.
+/// This header is DEPRECATED; use executorch/runtime/core/function_ref.h
+/// directly instead.
 
 namespace executorch::extension::pytree {
 using executorch::runtime::FunctionRef;

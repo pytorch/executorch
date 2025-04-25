@@ -27,7 +27,7 @@ from executorch.backends.arm.arm_backend import (
     is_tosa,
 )
 from executorch.backends.arm.ethosu_partitioner import EthosUPartitioner
-from executorch.backends.arm.quantizer.arm_quantizer import (
+from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
     TOSAQuantizer,
