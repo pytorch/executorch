@@ -28,7 +28,7 @@ from executorch.backends.nxp.neutron_node_extraction import (
     NeutronNodeArtifacts,
 )
 from executorch.backends.nxp.neutron_pass_manager import NeutronPassManager
-from executorch.backends.xnnpack._passes import RemoveGetItemPass
+from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier

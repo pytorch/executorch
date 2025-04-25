@@ -10,12 +10,12 @@ from executorch.backends.nxp.backend.node_format_inference import (
     NodeFormat,
     NodeFormatInference,
 )
+from executorch.backends.nxp.neutron_pass_manager import NeutronPassManager
 from executorch.backends.nxp.tests.models import (
     Conv2dModule,
     MaxPool2dModule,
     SoftmaxModule,
 )
-from executorch.backends.nxp.neutron_pass_manager import NeutronPassManager
 from executorch.backends.xnnpack._passes import RemoveGetItemPass
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 

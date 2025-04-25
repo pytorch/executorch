@@ -10,6 +10,7 @@ import torch
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
+from executorch.backends.nxp.neutron_pass_manager import NeutronPassManager
 from executorch.backends.nxp.tests.executorch_pipeline import (
     to_edge_program,
     to_quantized_edge_program,
@@ -20,7 +21,6 @@ from executorch.backends.nxp.tests.executors import (
     ToNHWCPreprocess,
 )
 from executorch.backends.nxp.tests.models import MaxPool2dConvModule, MaxPool2dModule
-from executorch.backends.nxp.neutron_pass_manager import NeutronPassManager
 from executorch.backends.xnnpack._passes import RemoveGetItemPass
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 from torch.export import ExportedProgram
