@@ -135,7 +135,7 @@ phases:
       - |
         BENCHMARK_RESULTS=$(adb -s $DEVICEFARM_DEVICE_UDID shell run-as org.pytorch.minibench cat files/benchmark_results.json)
         ATTEMPT=0
-        MAX_ATTEMPT=30
+        MAX_ATTEMPT=50
         while [ -z "${BENCHMARK_RESULTS}" ] && [ $ATTEMPT -lt $MAX_ATTEMPT ]; do
           echo "Waiting for benchmark results..."
           BENCHMARK_RESULTS=$(adb -s $DEVICEFARM_DEVICE_UDID shell run-as org.pytorch.minibench cat files/benchmark_results.json)
