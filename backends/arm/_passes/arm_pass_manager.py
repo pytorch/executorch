@@ -30,6 +30,7 @@ from executorch.backends.arm._passes import (
     DecomposeLeakyReLUPass,
     DecomposeLinearPass,
     DecomposeMeanDimPass,
+    DecomposeNotEqualPass,
     DecomposeSelectPass,
     DecomposeSiluPass,
     DecomposeSoftmaxPass,
@@ -131,6 +132,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass())
+        self.add_pass(DecomposeNotEqualPass())
         self.add_pass(ConvertMeanDimToAveragePoolPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeSoftmaxPass())
@@ -194,6 +196,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass())
+        self.add_pass(DecomposeNotEqualPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeLeakyReLUPass())
         self.add_pass(DecomposeSqrtPass())

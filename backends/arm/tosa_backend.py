@@ -125,7 +125,7 @@ class TOSABackend(BackendDetails):
                     # This will only happen if an unpartitioned graph is passed without
                     # any checking of compatibility.
                     raise RuntimeError(f"{node.name} is unsupported op {node.op}")
-            except (AssertionError, RuntimeError, ValueError):
+            except Exception:
                 dbg_fail(node, graph_module, tosa_graph, artifact_path)
                 raise
 
