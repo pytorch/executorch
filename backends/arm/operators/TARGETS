@@ -15,6 +15,7 @@ python_library(
     srcs = glob(["op_*.py", "ops_*.py"]),
     deps = [
         "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/tosa:tosa",
+        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/tosa:tosa",
         ":node_visitor",
         "//executorch/backends/arm:tosa_mapping",
         "//executorch/backends/arm:tosa_quant_utils",
