@@ -16,6 +16,7 @@ from executorch.backends.cadence.aot import compiler
 from executorch.backends.cadence.aot.compiler import (
     export_to_edge,
     quantize_and_export_to_edge,
+    quantize_pt2,
 )
 from executorch.backends.cadence.aot.graph_builder import (
     GraphBuilder,
@@ -35,6 +36,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceGeluWithApproximateGeluPass,
     ReplaceIm2RowWithViewPass,
     ReplaceLinearWithFullyConnectedOpPass,
+    ReplaceMatmulWithTransposedMatmulPass,
     ReplaceMMWithAddMMPass,
     ReplaceNopTransposeOrPermuteWithViewPass,
     ReplacePadWithCatPass,
@@ -84,6 +86,50 @@ class TestReplaceOpsPasses(unittest.TestCase):
         """Helper function to check the number of nodes of all types for a given target."""
         for target, expected_count in targets_and_counts:
             self.assertTargetCountEqual(graph_module, target, expected_count)
+
+    @parameterized.expand(
+        [
+            # Regular MM
+            [(64, 33), (33, 128)],
+            # Batched MM
+            [(2, 48, 48), (2, 48, 48)],
+        ]
+    )
+    @torch.no_grad()
+    def test_replace_matmul_with_transposed_matmul(
+        self,
+        x_shape: Tuple[int],
+        y_shape: Tuple[int],
+    ) -> None:
+        class MatMul(torch.nn.Module):
+            def __init__(self) -> None:
+                super(MatMul, self).__init__()
+
+            def forward(self, x, y):
+                return torch.matmul(x, y)
+
+        model = MatMul()
+        X = torch.randn(x_shape)
+        Y = torch.randn(y_shape)
+        p = ReplaceMatmulWithTransposedMatmulPass()
+        inputs = (X, Y)
+        quantized_model = quantize_pt2(model, inputs)
+        graph_module = (
+            export_to_edge(quantized_model, inputs).exported_program().graph_module
+        )
+        # pyre-fixme[16]: Optional type has no attribute `graph_module`
+        graph_after_passes = p(graph_module).graph_module
+
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.transpose_copy.int),
+            1,
+        )
+        self.assertEqual(
+            count_node(
+                graph_after_passes, exir_ops.edge.cadence.quantized_matmul.default
+            ),
+            1,
+        )
 
     @parameterized.expand(
         [
