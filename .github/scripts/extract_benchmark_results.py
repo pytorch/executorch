@@ -366,7 +366,7 @@ def transform(
                     "benchmark_config": json.dumps(benchmark_config),
                     "job_conclusion": "SUCCESS",
                     "job_arn": job_report.get("arn", ""),
-                    "instance_arn": job_request.get("instance_arn", ""),
+                    "instance_arn": job_report.get("instance_arn", ""),
                 },
             },
             "model": {
