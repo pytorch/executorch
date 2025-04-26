@@ -577,6 +577,13 @@ endif()
 
 add_library(executorch_core ${_executorch_core__srcs})
 
+add_library(executorch_headers INTERFACE)
+
+target_include_directories(executorch_headers INTERFACE
+    ${_common_include_directories}
+)
+target_compile_definitions(executorch_headers INTERFACE C10_USING_CUSTOM_GENERATED_MACROS)
+
 # Legacy name alias.
 add_library(executorch_no_prim_ops ALIAS executorch_core)
 

@@ -38,6 +38,7 @@ build_android_native_library() {
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${ANDROID_ABI}" \
     -DANDROID_PLATFORM=android-26 \
+    -DANDROID_ALLOW_UNDEFINED_SYMBOLS=ON \
     -DBUILD_TESTING=OFF \
     -DEXECUTORCH_ENABLE_LOGGING=ON \
     -DEXECUTORCH_LOG_LEVEL=Info \
@@ -86,6 +87,7 @@ build_android_native_library() {
   local SO_STAGE_DIR="cmake-out-android-so/${ANDROID_ABI}"
   mkdir -p ${SO_STAGE_DIR}
   cp "${CMAKE_OUT}"/extension/android/*.so "${SO_STAGE_DIR}/libexecutorch.so"
+  cp "${CMAKE_OUT}"/lib/libvulkan_backend.so "${SO_STAGE_DIR}/" || true
 
   # Copy QNN related so library
   if [ -n "$QNN_SDK_ROOT" ] && [ "$ANDROID_ABI" == "arm64-v8a" ]; then
