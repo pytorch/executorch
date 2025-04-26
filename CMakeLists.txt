@@ -577,6 +577,15 @@ endif()
 
 add_library(executorch_core ${_executorch_core__srcs})
 
+add_library(executorch_headers INTERFACE)
+
+target_include_directories(executorch_headers INTERFACE
+    ${_common_include_directories}
+)
+target_compile_definitions(executorch_headers INTERFACE C10_USING_CUSTOM_GENERATED_MACROS)
+
+add_library(executorch_jni SHARED extension/android/empty.cpp)
+
 # Legacy name alias.
 add_library(executorch_no_prim_ops ALIAS executorch_core)
 
@@ -631,12 +640,15 @@ endif()
 # Does not contain portable kernels or other full operators. Does not contain
 # any backends.
 #
-add_library(executorch ${_executorch__srcs})
-target_link_libraries(executorch PUBLIC executorch_core)
+add_library(executorch SHARED ${_executorch__srcs})
+target_link_libraries(executorch PRIVATE executorch_core)
 target_include_directories(executorch PUBLIC ${_common_include_directories})
 target_compile_definitions(executorch PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
 target_compile_options(executorch PUBLIC ${_common_compile_options})
-target_link_options_shared_lib(executorch)
+# target_link_options_shared_lib(executorch)
+target_link_options(executorch PRIVATE "-Wl,-soname,libexecutorch_jni.so")
+set_target_properties(executorch PROPERTIES NO_SONAME TRUE)
+target_link_options_shared_lib(executorch_core)
 
 #
 # portable_ops_lib: A library to register core ATen ops using portable kernels,

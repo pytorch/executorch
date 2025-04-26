@@ -23,6 +23,7 @@ class NativePeer {
   static {
     // Loads libexecutorch.so from jniLibs
     NativeLoader.loadLibrary("executorch");
+    NativeLoader.loadLibrary("vulkan_backend");
   }
 
   private final HybridData mHybridData;
