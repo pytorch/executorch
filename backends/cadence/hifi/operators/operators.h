@@ -29,6 +29,13 @@ void quantize_per_tensor_out(
     ::executorch::aten::ScalarType dtype,
     ::executorch::aten::Tensor& out);
 
+::executorch::aten::Tensor& div_out_mode(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& a,
+    const ::executorch::aten::Tensor& b,
+    ::executorch::aten::optional<::executorch::aten::string_view> mode,
+    ::executorch::aten::Tensor& out);
+
 } // namespace native
 } // namespace HiFi
 } // namespace impl
