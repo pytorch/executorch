@@ -182,8 +182,8 @@ void add_q_8w_linear_tiled_node(
   const int64_t M = utils::val_at(-2, mat1_sizes);
   int out_tile_nrows = 4;
   if (M % 6 == 0) {
-    kernel_name += "_o4x6";
-    out_tile_nrows = 6;
+    kernel_name += "_o4x2";
+    out_tile_nrows = 2;
   } else if (M % 4 == 0) {
     kernel_name += "_o4x4";
     out_tile_nrows = 4;
@@ -197,6 +197,10 @@ void add_q_8w_linear_tiled_node(
 
   utils::uvec3 global_wg_size = graph.logical_limits_of(out);
   global_wg_size[1] = global_wg_size[1] / out_tile_nrows;
+  if (!use_coop_algorithm) {
+    global_wg_size[0] *= global_wg_size[1];
+    global_wg_size[1] = 1;
+  }
 
   utils::uvec3 local_wg_size{64, 1, 1};
   if (use_coop_algorithm) {
