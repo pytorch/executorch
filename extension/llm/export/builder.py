@@ -503,16 +503,7 @@ class LLMEdgeManager:
         """
         Lower the model to executorch and get an ExecutorchProgram.
         """
-        # QuantFusionPass is not necessary because we set do_quant_fusion_and_const_prop=True
-        # in ExecutorchBackendConfig
-        to_executorch_passes = [
-            # If there are Linear operations left in the graph, let's execute
-            # them with the optimized op_linear rather than materializing a
-            # transpose followed by a regular op_mm.
-            # TODO: ConvertToLinearPass is not a sound pass and we should fix it
-            # https://github.com/pytorch/executorch/issues/10499
-            ConvertToLinearPass(),
-        ]
+        to_executorch_passes = []
         if passes:
             # pyre-fixme[6]: In call `list.extend`, for 1st positional argument,
             # expected `Iterable[Union[ConvertToLinearPass, QuantFusionPass]]` but
@@ -520,6 +511,15 @@ class LLMEdgeManager:
             to_executorch_passes.extend(passes)
 
         assert self.edge_manager, "Need to run export_to_edge() first"
+
+        # If there are Linear operations left in the graph, let's execute
+        # them with the optimized op_linear rather than materializing a
+        # transpose followed by a regular op_mm.
+        # TODO: ConvertToLinearPass is not a sound pass and must be called before
+        # const propagation.  It requires fixing:
+        # https://github.com/pytorch/executorch/issues/10499
+        self.edge_manager.transform([ConvertToLinearPass()])
+
         self.export_program = self.edge_manager.to_executorch(
             ExecutorchBackendConfig(
                 extract_delegate_segments=True,
