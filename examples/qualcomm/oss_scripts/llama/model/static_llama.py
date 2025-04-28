@@ -19,12 +19,14 @@ from executorch.examples.models.llama.rope import precompute_freqs_cis
 def apply_rotary_emb_single(
     x: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
 ) -> torch.Tensor:
-    x_r, x_i = x[..., ::2], x[..., 1::2]
-
-    # brodcast for batch_prefill mode input x
+    # The implementation of RoPE in HuggingFace processes query and key with two half instead of interleaved way.
+    # The main difference is stride in StrideSlice op. For interleaved way, stride is two which is not friendly for HTP backend.
+    # Ref: https://github.com/huggingface/transformers/issues/25199
+    x_r, x_i = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
+    # broadcast for batch_prefill mode input x
     if x.dim() == 4:
-        freqs_cos = freqs_cos[None, :, None, :]
-        freqs_sin = freqs_sin[None, :, None, :]
+        freqs_cos = freqs_cos[None, None, :, :]
+        freqs_sin = freqs_sin[None, None, :, :]
     x_out_r = x_r * freqs_cos - x_i * freqs_sin
     x_out_i = x_r * freqs_sin + x_i * freqs_cos
 
@@ -37,7 +39,7 @@ class LlamaAttention(nn.Module):
         super().__init__()
         self.dim = config.dim
         self.n_heads = config.n_heads
-        self.head_dim = config.dim // config.n_heads
+        self.head_dim = config.head_dim
         self.n_kv_heads = config.n_kv_heads
         self.num_key_value_groups = config.n_heads // self.n_kv_heads
         self.max_seq_len = config.max_seq_len
@@ -104,25 +106,33 @@ class LlamaAttention(nn.Module):
         v_caches: Optional[List[torch.Tensor]] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         bsz, seq_len, _ = hidden_states.shape
+        # In the HTP backend, the input axis order for the convolution operation is
+        # more efficient with [1, 1, seq_len, dim] compared to [1, seq_len, 1, dim].
         hidden_states = torch.reshape(
             hidden_states, (bsz, seq_len, 1, self.dim)
         ).transpose(1, 3)
         q = [
-            wq_sha(hidden_states).reshape(bsz, self.head_dim, seq_len).transpose(1, 2)
+            wq_sha(hidden_states)
+            .permute(0, 2, 3, 1)
+            .reshape(bsz, seq_len, self.head_dim)
             for wq_sha in self.wq_sha
         ]
         k = [
-            wk_sha(hidden_states).reshape(bsz, self.head_dim, seq_len).transpose(1, 2)
+            wk_sha(hidden_states)
+            .permute(0, 2, 3, 1)
+            .reshape(bsz, seq_len, self.head_dim)
             for wk_sha in self.wk_sha
         ]
         v = [
-            wv_sha(hidden_states).reshape(bsz, self.head_dim, seq_len).transpose(1, 2)
+            wv_sha(hidden_states)
+            .permute(0, 2, 3, 1)
+            .reshape(bsz, seq_len, self.head_dim)
             for wv_sha in self.wv_sha
         ]
         for i in range(len(q)):
             q[i] = apply_rotary_emb_single(q[i], freqs_cos, freqs_sin)
         for i in range(len(k)):
-            k[i] = apply_rotary_emb_single(k[i], freqs_cos, freqs_sin).permute(0, 2, 1)
+            k[i] = apply_rotary_emb_single(k[i], freqs_cos, freqs_sin).transpose(1, 2)
 
         output_y = []
         kh, vh = [], []
@@ -153,10 +163,7 @@ class LlamaAttention(nn.Module):
         y = y.reshape(bsz, seq_len, -1)
 
         if self.output_new_cache_only:
-            if k_caches and v_caches:
-                return y, k, v
-            # batch_prefill mode. Consider to remove, it's not really used
-            return y, k[-1], v[-1]
+            return y, k, v
 
         return y, kh, vh
 
@@ -252,10 +259,10 @@ class FeedForward(nn.Module):
 
     def forward_feedfoward_conv(self, x):
         bsz, _, _ = x.size()
-        x = torch.reshape(x, (bsz, -1, self.dim, 1))
-        x = x.transpose(1, 2)  # Transpose right before and after Conv
+        x = torch.reshape(x, (bsz, -1, 1, self.dim))
+        x = x.transpose(1, 3)  # Transpose right before and after Conv
         x = self.w2_conv(F.silu(self.w1_conv(x)) * self.w3_conv(x))
-        x = x.transpose(1, 2)
+        x = x.transpose(1, 3)
         x = torch.reshape(x, (bsz, -1, self.dim))
         return x
 
@@ -298,11 +305,16 @@ class LlamaDecoderLayer(nn.Module):
 
 class LlamaModel(nn.Module):
     def __init__(
-        self, config: ModelArgs, output_new_cache_only=True, use_i64_token=False
+        self,
+        config: ModelArgs,
+        ar_len=1,
+        output_new_cache_only=True,
+        output_cache=True,
+        use_i64_token=False,
     ):
         super().__init__()
         self.dim = config.dim
-        self.head_dim = config.dim // config.n_heads
+        self.head_dim = config.head_dim
         self.max_batch_size = config.max_batch_size
         self.max_seq_len = config.max_seq_len
         self.n_heads = config.n_heads
@@ -311,8 +323,10 @@ class LlamaModel(nn.Module):
         self.vocab_size = config.vocab_size
         self.rope_freq_base = config.rope_freq_base
         self.use_kv_cache = config.use_kv_cache
+        self.ar_len = ar_len
         self.output_new_cache_only = output_new_cache_only
         self.use_i64_token = use_i64_token
+        self.output_cache = output_cache
 
         self.layers = nn.ModuleList(
             [
@@ -324,9 +338,11 @@ class LlamaModel(nn.Module):
         self.output = nn.Linear(config.dim, config.vocab_size, bias=False)
         self.tok_embeddings = nn.Embedding(config.vocab_size, config.dim)
         freqs_cos, freqs_sin = precompute_freqs_cis(
-            config.dim // config.n_heads,
+            config.head_dim,
             config.max_seq_len,
             config.rope_freq_base,
+            config.use_scaled_rope,
+            config.rope_scale_factor,
         )
         self.register_buffer("freqs_cos", freqs_cos, persistent=False)
         self.register_buffer("freqs_sin", freqs_sin, persistent=False)
@@ -359,10 +375,10 @@ class LlamaModel(nn.Module):
         output_v_cache = []
         # following tensors should be invariant across batches
         freqs_cos = (
-            self.freqs_cos[input_pos][0] if self.use_kv_cache else self.freqs_cos[:-1]
+            self.freqs_cos[input_pos][0] if self.use_kv_cache else self.freqs_cos
         )
         freqs_sin = (
-            self.freqs_sin[input_pos][0] if self.use_kv_cache else self.freqs_sin[:-1]
+            self.freqs_sin[input_pos][0] if self.use_kv_cache else self.freqs_sin
         )
 
         hidden_states = self.tok_embeddings(tokens)
@@ -388,19 +404,36 @@ class LlamaModel(nn.Module):
         hidden_states = self.norm(hidden_states)
         logits = self.output(hidden_states)
 
-        return logits, output_k_cache, output_v_cache
+        if self.output_cache:
+            return logits, output_k_cache, output_v_cache
+        return logits
 
     def get_example_inputs(self, use_kv_cache=True):
         dtype = torch.int64 if self.use_i64_token else torch.int32
-        if use_kv_cache:
-            tokens = torch.randint(
-                self.vocab_size, (self.max_batch_size, 1), dtype=dtype
-            )
+        tokens = torch.randint(
+            self.vocab_size, (self.max_batch_size, self.ar_len), dtype=dtype
+        )
 
-            pos_ids = torch.zeros((self.max_batch_size, 1), dtype=torch.int32)
+        atten_mask = torch.full((self.ar_len, self.ar_len), torch.tensor(-255.0))
+        mask_cond = torch.arange(atten_mask.size(-1))
+        atten_mask.masked_fill_(
+            mask_cond < (mask_cond + 1).view(atten_mask.size(-1), 1), 0
+        )
+        if self.max_seq_len != self.ar_len:
+            atten_mask = torch.cat(
+                [
+                    torch.ones(self.ar_len, self.max_seq_len - self.ar_len) * -255.0,
+                    atten_mask,
+                ],
+                dim=-1,
+            )
+        atten_mask = atten_mask[None, :, :].expand(
+            self.max_batch_size, self.ar_len, self.max_seq_len
+        )
+        if use_kv_cache:
+            pos_ids = torch.zeros((self.max_batch_size, self.ar_len), dtype=torch.int32)
             k_cache, v_cache = [], []
-            atten_mask = torch.full((self.max_batch_size, self.max_seq_len), -255.0)
-            atten_mask[:, -1] = 0
+
             for _ in range(self.n_layers):
                 for _ in range(self.n_kv_heads):
                     # transpose first to decrease the runtime efforts
@@ -408,13 +441,13 @@ class LlamaModel(nn.Module):
                         torch.zeros(
                             self.max_batch_size,
                             self.head_dim,
-                            self.max_seq_len - 1,
+                            self.max_seq_len - self.ar_len,
                         )
                     )
                     v_cache.append(
                         torch.zeros(
                             self.max_batch_size,
-                            self.max_seq_len - 1,
+                            self.max_seq_len - self.ar_len,
                             self.head_dim,
                         )
                     )
@@ -426,10 +459,6 @@ class LlamaModel(nn.Module):
                 v_cache,
             )
 
-        max_promp = self.max_seq_len - 1
-        tokens = torch.arange(0, max_promp, 1, dtype=dtype).unsqueeze(0)
-        atten_mask = torch.triu(torch.rand((max_promp, max_promp)), 1)
-        atten_mask[atten_mask != 0] = -255
         return (
             tokens,
             atten_mask,
@@ -438,10 +467,11 @@ class LlamaModel(nn.Module):
     def get_metadata(self):
         # TODO: modify this when enabling LLAMA 7B
         return {
+            "get_ar_len": self.ar_len,
             "get_bos_id": 1,
             "get_eos_id": 2,
             "get_dim": self.dim,
-            "get_head_dim": self.dim // self.n_heads,
+            "get_head_dim": self.head_dim,
             "get_max_batch_size": self.max_batch_size,
             "get_max_seq_len": self.max_seq_len,
             "get_n_bos": 1,

@@ -16,13 +16,10 @@ CMAKE_OUTPUT_DIR=cmake-out
 
 build_cmake_quantized_aot_lib() {
   echo "Building quantized aot lib"
-  SITE_PACKAGES="$(${PYTHON_EXECUTABLE} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
-  CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
   (rm -rf ${CMAKE_OUTPUT_DIR} \
     && mkdir ${CMAKE_OUTPUT_DIR} \
     && cd ${CMAKE_OUTPUT_DIR} \
     && retry cmake -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
       -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 

@@ -10,6 +10,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpGroupNorm, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -81,12 +82,12 @@ class GroupNormVisitor(NodeVisitor):
         group_norm_op.AddScalarParam(
             OpGroupNorm.param_epsilon,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
-            {"data": np.float32(epsilon)},
+            {QCOM_DATA: np.float32(epsilon)},
         )
         group_norm_op.AddScalarParam(
             OpGroupNorm.param_group,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {"data": np.uint32(group)},
+            {QCOM_DATA: np.uint32(group)},
         )
 
         return group_norm_op

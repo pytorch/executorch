@@ -1,0 +1,93 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+plugins {
+    id "com.android.library" version "8.9.0"
+    id "com.vanniktech.maven.publish" version "0.31.0"
+}
+
+android {
+    namespace = "org.pytorch.executorch"
+    compileSdk = 34
+
+    defaultConfig {
+        minSdk = 23
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['../../../cmake-out-android-so/']
+        }
+        androidTest {
+            resources.srcDirs += [ 'src/androidTest/resources' ]
+        }
+    }
+}
+
+task copyTestRes(type: Exec) {
+  commandLine 'bash', 'android_test_setup.sh'
+}
+
+dependencies {
+    implementation 'com.facebook.fbjni:fbjni:0.5.1'
+    implementation 'com.facebook.soloader:nativeloader:0.10.5'
+    testImplementation 'junit:junit:4.12'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test:rules:1.2.0'
+    androidTestImplementation 'commons-io:commons-io:2.4'
+    androidTestImplementation 'org.json:json:20250107'
+}
+
+import com.vanniktech.maven.publish.SonatypeHost
+
+mavenPublishing {
+  publishToMavenCentral(SonatypeHost.DEFAULT)
+  signAllPublications()
+
+  coordinates("org.pytorch", "executorch-android", "0.7.0")
+
+  pom {
+    name = "ExecuTorch Android"
+    description = "ExecuTorch Android API"
+    inceptionYear = "2025"
+    url = "https://github.com/pytorch/executorch/"
+    licenses {
+      license {
+        name = "BSD 3-Clause"
+        url = "https://github.com/pytorch/executorch/blob/main/LICENSE"
+        distribution = "https://github.com/pytorch/executorch/blob/main/LICENSE"
+      }
+    }
+    developers {
+      developer {
+        id = "pytorch"
+        name = "pytorch"
+        url = "https://github.com/pytorch/executorch/"
+      }
+    }
+    scm {
+      url = "https://github.com/pytorch/executorch.git"
+      connection = "scm:git:https://github.com/pytorch/executorch"
+      developerConnection = "scm:git:git@github.com:pytorch/executorch.git"
+    }
+  }
+
+}
+
+repositories {
+    maven {
+        url "https://oss.sonatype.org/content/repositories/snapshots"
+    }
+}

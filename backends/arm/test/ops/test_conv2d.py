@@ -1,5 +1,4 @@
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,10 +8,10 @@ from typing import List, Tuple, Union
 
 import torch
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineBI,
     EthosU85PipelineBI,
+    OpNotSupportedPipeline,
     TosaPipelineBI,
     TosaPipelineMI,
 )
@@ -35,9 +34,9 @@ class Conv2d(torch.nn.Module):
         in_channels: Union[List, int, None] = None,
         out_channels: Union[List, int, None] = None,
         kernel_size: Union[List, Tuple, None] = None,
-        stride: Union[List, Tuple, None] = None,
-        padding: Union[List, Tuple, None] = None,
-        dilation: Union[List, Tuple, None] = None,
+        stride: Union[List, Tuple, int, None] = None,
+        padding: Union[List, Tuple, int, None] = None,
+        dilation: Union[List, Tuple, int, None] = None,
         groups: Union[List, int, None] = None,
         bias: Union[List, bool, None] = None,
         padding_mode: Union[List, str, None] = None,
@@ -329,7 +328,7 @@ two_conv2d = Conv2d(
 )
 
 # Shenanigan to get a nicer output when test fails. With unittest it looks like:
-# FAIL: test_conv2d_tosa_BI_2_3x3_1x3x12x12_st2_pd1
+# FAIL: test_convolution_2d_tosa_BI_2_3x3_1x3x12x12_st2_pd1
 test_modules = {
     "2x2_3x2x40x40_nobias": conv2d_2x2_3x2x40x40_nobias,
     "3x3_1x3x256x256_st1": conv2d_3x3_1x3x256x256_st1,
@@ -359,7 +358,7 @@ input_t = Tuple[torch.Tensor]
 
 
 @common.parametrize("test_module", test_modules)
-def test_conv2d_tosa_MI(test_module):
+def test_convolution_2d_tosa_MI(test_module):
     pipeline = TosaPipelineMI[input_t](
         test_module, test_module.get_inputs(), aten_op, exir_op
     )
@@ -367,7 +366,7 @@ def test_conv2d_tosa_MI(test_module):
 
 
 @common.parametrize("test_module", test_modules)
-def test_conv2d_tosa_BI(test_module):
+def test_convolution_2d_tosa_BI(test_module):
     pipeline = TosaPipelineBI[input_t](
         test_module, test_module.get_inputs(), aten_op, exir_op
     )
@@ -376,7 +375,7 @@ def test_conv2d_tosa_BI(test_module):
 
 
 @common.parametrize("test_module", test_modules)
-def test_conv2d_u55_BI(test_module):
+def test_convolution_2d_u55_BI(test_module):
     pipeline = EthosU55PipelineBI[input_t](
         test_module, test_module.get_inputs(), aten_op, exir_op, run_on_fvp=False
     )
@@ -384,7 +383,7 @@ def test_conv2d_u55_BI(test_module):
 
 
 @common.parametrize("test_module", test_modules)
-def test_conv2d_u85_BI(test_module):
+def test_convolution_2d_u85_BI(test_module):
     pipeline = EthosU85PipelineBI[input_t](
         test_module, test_module.get_inputs(), aten_op, exir_op, run_on_fvp=False
     )
@@ -393,7 +392,7 @@ def test_conv2d_u85_BI(test_module):
 
 @common.parametrize("test_module", test_modules, fvp_xfails)
 @common.SkipIfNoCorstone300
-def test_conv2d_u55_BI_on_fvp(test_module):
+def test_convolution_2d_u55_BI_on_fvp(test_module):
     pipeline = EthosU55PipelineBI[input_t](
         test_module, test_module.get_inputs(), aten_op, exir_op, run_on_fvp=True
     )
@@ -402,7 +401,7 @@ def test_conv2d_u55_BI_on_fvp(test_module):
 
 @common.parametrize("test_module", test_modules, fvp_xfails)
 @common.SkipIfNoCorstone320
-def test_conv2d_u85_BI_on_fvp(test_module):
+def test_convolution_2d_u85_BI_on_fvp(test_module):
     pipeline = EthosU85PipelineBI[input_t](
         test_module, test_module.get_inputs(), aten_op, exir_op, run_on_fvp=True
     )
@@ -444,20 +443,12 @@ reject_suite = {
 
 
 @common.parametrize("module", reject_suite)
-def test_reject_conv2d_u55_BI(
+def test_reject_convolution_2d_u55_BI(
     module: Conv2d,
 ):
-    (
-        ArmTester(
-            module,
-            example_inputs=module.get_inputs(),
-            compile_spec=common.get_u55_compile_spec(),
-        )
-        .quantize()
-        .export()
-        .check_count({"torch.ops.aten.conv2d.default": 1})
-        .check(["torch.ops.quantized_decomposed"])
-        .to_edge_transform_and_lower()
-        .check(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
-        .check_count({"torch.ops.higher_order.executorch_call_delegate": 0})
-    )
+    OpNotSupportedPipeline(
+        module,
+        module.get_inputs(),
+        "TOSA-0.80+BI+u55",
+        {"executorch_exir_dialects_edge__ops_aten_convolution_default": 1},
+    ).run()

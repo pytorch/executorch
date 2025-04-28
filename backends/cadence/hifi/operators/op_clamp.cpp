@@ -321,6 +321,16 @@ Tensor& clamp_Tensor_out(
 
   return out;
 }
+
+Tensor& clamp_tensor_out(
+    RuntimeContext& ctx,
+    const Tensor& in,
+    const executorch::aten::optional<Tensor>& min_opt,
+    const executorch::aten::optional<Tensor>& max_opt,
+    Tensor& out) {
+  return clamp_Tensor_out(ctx, in, min_opt, max_opt, out);
+}
+
 } // namespace native
 } // namespace HiFi
 } // namespace impl

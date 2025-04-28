@@ -18,7 +18,7 @@ using namespace ::testing;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using executorch::runtime::KernelRuntimeContext;
+using executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext;
 using torch::executor::testing::TensorFactory;
 
 class OpLeScalarOutTest : public OperatorTest {
@@ -173,4 +173,16 @@ TEST_F(OpLeTensorOutTest, DynamicOutShapeTest) {
 
   op_le_tensor_out(a, b, out);
   EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {false, true, true, false}));
+}
+
+TEST_F(OpLeTensorOutTest, BroadcastTest) {
+  TensorFactory<ScalarType::Int> tf;
+
+  Tensor a = tf.make(/*sizes=*/{4}, /*data=*/{2, 3, 2, 4});
+  Tensor b = tf.make({1, 1}, {3});
+
+  Tensor out = tf.zeros({1, 4});
+
+  op_le_tensor_out(a, b, out);
+  EXPECT_TENSOR_EQ(out, tf.make({1, 4}, {true, true, true, false}));
 }

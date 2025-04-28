@@ -5,7 +5,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
 import unittest
 
 from typing import Tuple
@@ -18,9 +17,6 @@ from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 test_data_suite_rank1 = [
@@ -127,7 +123,7 @@ class TestLinear(unittest.TestCase):
     def _test_linear_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -141,13 +137,14 @@ class TestLinear(unittest.TestCase):
             .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
         )
+        if conftest.is_option_enabled("tosa_ref_model"):
+            tester.run_method_and_compare_outputs(inputs=test_data)
 
     def _test_linear_tosa_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -162,8 +159,9 @@ class TestLinear(unittest.TestCase):
             .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
+        if conftest.is_option_enabled("tosa_ref_model"):
+            tester.run_method_and_compare_outputs(inputs=test_data, qtol=1)
 
     def _test_linear_tosa_ethosu_BI_pipeline(
         self,
@@ -186,9 +184,11 @@ class TestLinear(unittest.TestCase):
             .to_executorch()
             .serialize()
         )
+        # TODO: Add FVP testing support.
         return tester
 
     @parameterized.expand(test_data_suite_rank1 + test_data_suite_rank4)
+    @pytest.mark.tosa_ref_model
     def test_linear_tosa_MI(
         self,
         test_name: str,
@@ -208,6 +208,7 @@ class TestLinear(unittest.TestCase):
         )
 
     @parameterized.expand(test_data_suite_rank1 + test_data_suite_rank4)
+    @pytest.mark.tosa_ref_model
     def test_linear_tosa_BI(
         self,
         test_name: str,
@@ -249,6 +250,7 @@ class TestLinear(unittest.TestCase):
             tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(test_data_suite_rank1 + test_data_suite_rank4)
+    @pytest.mark.corstone_fvp
     def test_linear_tosa_u85_BI(
         self,
         test_name: str,

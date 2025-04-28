@@ -9,7 +9,6 @@
 #include <ATen/cpu/vec/functional.h>
 #include <ATen/cpu/vec/vec.h>
 #include <executorch/kernels/optimized/cpu/binary_ops.h>
-#include <executorch/kernels/optimized/vec/functional.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -79,14 +78,14 @@ Tensor& opt_div_out(
 
           using Vec = at::vec::Vectorized<CTYPE>;
           if (a.numel() == 1) {
-            executorch::vec::map<CTYPE>(
+            at::vec::map<CTYPE>(
                 [scalar_casted](Vec x) { return Vec(scalar_casted) / x; },
                 out.mutable_data_ptr<CTYPE>(),
                 tensor->const_data_ptr<CTYPE>(),
                 out.numel());
           } else {
             Vec inv_scalar_casted_vec(CTYPE(1) / scalar_casted);
-            executorch::vec::map<CTYPE>(
+            at::vec::map<CTYPE>(
                 [inv_scalar_casted_vec](Vec x) {
                   return x * inv_scalar_casted_vec;
                 },
@@ -113,7 +112,7 @@ Tensor& opt_div_out(
 
     ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "div.out", CTYPE, [&]() {
       using Vec = at::vec::Vectorized<CTYPE>;
-      executorch::vec::map2<CTYPE>(
+      at::vec::map2<CTYPE>(
           [](Vec x, Vec y) { return x / y; },
           out.mutable_data_ptr<CTYPE>(),
           a.const_data_ptr<CTYPE>(),
@@ -121,46 +120,22 @@ Tensor& opt_div_out(
           out.numel());
     });
   } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
-    const Tensor* lhs;
-    const Tensor* rhs;
-    if (selected_optimized_path ==
-        ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments) {
-      lhs = &b;
-      rhs = &a;
-    } else {
-      // Catch failure to update logic when subing new broadcasting possibility.
-      ET_DCHECK(
-          selected_optimized_path ==
-          ElementwiseOptimizedPath::kBroadcast2dBy1d);
-      lhs = &a;
-      rhs = &b;
-    }
-    auto error = resize_tensor(out, lhs->sizes());
-    ET_KERNEL_CHECK_MSG(
-        ctx,
-        error == Error::Ok,
-        InvalidArgument,
-        out,
-        "Failed to resize output tensor.");
-    ET_SWITCH_REALB_TYPES(out_type, ctx, "sub.out", CTYPE, [&]() {
-      using Vec = at::vec::Vectorized<CTYPE>;
+    // Reason for using alpha is becasuse handle_broadcast_elementwise
+    // is used for add and sub as well:
+    ET_SWITCH_REALB_TYPES(out_type, ctx, "div.out", CTYPE, [&]() {
       if (selected_optimized_path ==
-          ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments) {
-        executorch::vec::broadcasting_map_2d_by_1d<CTYPE>(
-            [](Vec x, Vec y) { return y / x; },
-            out.mutable_data_ptr<CTYPE>(),
-            lhs->const_data_ptr<CTYPE>(),
-            rhs->const_data_ptr<CTYPE>(),
-            lhs->sizes()[lhs->dim() - 2],
-            lhs->sizes()[lhs->dim() - 1]);
+              ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments ||
+          selected_optimized_path ==
+              ElementwiseOptimizedPath::kBroadcastLastDimReverseArguments ||
+          selected_optimized_path ==
+              ElementwiseOptimizedPath::kBroadcastNdByNdReverseArguments) {
+        auto div_lambda = [](auto x, auto y) { return y / x; };
+        return torch::executor::handle_broadcast_elementwise<CTYPE>(
+            ctx, div_lambda, a, b, out, selected_optimized_path);
       } else {
-        executorch::vec::broadcasting_map_2d_by_1d<CTYPE>(
-            [](Vec x, Vec y) { return x / y; },
-            out.mutable_data_ptr<CTYPE>(),
-            lhs->const_data_ptr<CTYPE>(),
-            rhs->const_data_ptr<CTYPE>(),
-            lhs->sizes()[lhs->dim() - 2],
-            lhs->sizes()[lhs->dim() - 1]);
+        auto div_lambda = [](auto x, auto y) { return x / y; };
+        return torch::executor::handle_broadcast_elementwise<CTYPE>(
+            ctx, div_lambda, a, b, out, selected_optimized_path);
       }
     });
   } else {
@@ -225,7 +200,7 @@ Tensor& opt_div_scalar_out(
 
             using Vec = at::vec::Vectorized<CTYPE>;
             Vec inv_b_casted_vec(CTYPE(1) / b_casted);
-            executorch::vec::map<CTYPE>(
+            at::vec::map<CTYPE>(
                 [inv_b_casted_vec](Vec x) { return x * inv_b_casted_vec; },
                 out.mutable_data_ptr<CTYPE>(),
                 a.const_data_ptr<CTYPE>(),

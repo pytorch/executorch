@@ -14,22 +14,6 @@
 
 namespace vkcompute {
 
-uint32_t PushConstantDataInfo::write(
-    void* dst,
-    const uint32_t dst_offset,
-    const uint32_t max_dst_size) const {
-  if (tensorUniformData != nullptr) {
-    return tensorUniformData->write_attribute(
-        dst, dst_offset, max_dst_size, payload_.attr);
-  }
-
-  VK_CHECK_COND(
-      (dst_offset + payload_.dataSize) <= max_dst_size,
-      "Attempting to write push constant data outside data boundary.");
-  memcpy((uint8_t*)dst + dst_offset, payload_.data, payload_.dataSize);
-  return payload_.dataSize;
-}
-
 DispatchNode::DispatchNode(
     ComputeGraph& graph,
     const vkapi::ShaderInfo& shader,

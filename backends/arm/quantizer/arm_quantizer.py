@@ -17,18 +17,18 @@ import functools
 from typing import Any, Callable, Dict, List, Optional
 
 import torch
-from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
+from executorch.backends.arm._passes import ArmPassManager
 
-from executorch.backends.arm.quantizer import arm_quantizer_utils
-from executorch.backends.arm.quantizer.arm_quantizer_utils import (  # type: ignore[attr-defined]
-    mark_node_as_annotated,
-)
-from executorch.backends.arm.quantizer.quantization_annotator import (  # type: ignore[import-not-found]
-    annotate_graph,
-)
-
-from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
+from executorch.backends.arm.quantizer import QuantizationConfig
 from executorch.backends.arm.tosa_specification import TosaSpecification
+
+from .arm_quantizer_utils import is_annotated, mark_node_as_annotated
+from .quantization_annotator import annotate_graph
+from executorch.backends.arm.arm_backend import (
+    get_tosa_spec,
+    is_ethosu,
+)  # usort: skip
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.ao.quantization.fake_quantize import (
     FakeQuantize,
     FusedMovingAvgObsFakeQuantize,
@@ -50,7 +50,8 @@ from torch.ao.quantization.quantizer.utils import (
 from torch.fx import GraphModule, Node
 
 __all__ = [
-    "ArmQuantizer",
+    "TOSAQuantizer",
+    "EthosUQuantizer",
     "get_symmetric_quantization_config",
 ]
 
@@ -185,6 +186,8 @@ def _get_module_type_filter(tp: Callable) -> NodeFilterType:
     True  # the node is from the submodule `Sub` (same for `Block` and `Linear` as well)
     """
 
+    tp_str = tp.__module__ + "." + tp.__qualname__
+
     def module_type_filter(n: Node) -> bool:
         # node_stack example: {
         #     'L__self___sub': ("L['self'].sub", <class '....Sub'>),
@@ -192,7 +195,7 @@ def _get_module_type_filter(tp: Callable) -> NodeFilterType:
         # }
         nn_module_stack = n.meta.get("nn_module_stack", {})
         types = [t for _, t in nn_module_stack.values()]
-        return tp in types
+        return tp_str in types
 
     return module_type_filter
 
@@ -209,7 +212,7 @@ def _get_not_module_type_or_name_filter(
     return not_module_type_or_name_filter
 
 
-class ArmQuantizer(Quantizer):
+class TOSAQuantizer(Quantizer):
 
     def __init__(self, tosa_spec: TosaSpecification) -> None:
         super().__init__()
@@ -219,14 +222,14 @@ class ArmQuantizer(Quantizer):
         self.module_type_config: Dict[Callable, Optional[QuantizationConfig]] = {}
         self.module_name_config: Dict[str, Optional[QuantizationConfig]] = {}
 
-    def set_global(self, quantization_config: QuantizationConfig) -> ArmQuantizer:
+    def set_global(self, quantization_config: QuantizationConfig) -> TOSAQuantizer:
         """Set quantization_config for submodules that are not already annotated by name or type filters."""
         self.global_config = quantization_config
         return self
 
     def set_module_type(
         self, module_type: Callable, quantization_config: QuantizationConfig
-    ) -> ArmQuantizer:
+    ) -> TOSAQuantizer:
         """Set quantization_config for a submodule with type: `module_type`, for example:
         quantizer.set_module_name(Sub) or quantizer.set_module_name(nn.Linear), it will quantize all supported operator/operator
         patterns in the submodule with this module type with the given `quantization_config`
@@ -236,7 +239,7 @@ class ArmQuantizer(Quantizer):
 
     def set_module_name(
         self, module_name: str, quantization_config: Optional[QuantizationConfig]
-    ) -> ArmQuantizer:
+    ) -> TOSAQuantizer:
         """Set quantization_config for a submodule with name: `module_name`, for example:
         quantizer.set_module_name("blocks.sub"), it will quantize all supported operator/operator
         patterns in the submodule with this module name with the given `quantization_config`
@@ -278,10 +281,10 @@ class ArmQuantizer(Quantizer):
         quantization_config: Optional[QuantizationConfig],
         filter_fn: Optional[Callable[[Node], bool]] = None,
     ) -> GraphModule:
-        """Loops over all STATIC_OPS and runs the corresponding registred annotator.
+        """Loops over all STATIC_OPS and runs the corresponding registered annotator.
         Args:
             model: The model to annotate statically.
-            quantization_config: Specifices the QuantizationSpecs for the model's
+            quantization_config: Specifies the QuantizationSpecs for the model's
                 input activations, output activations, weights and biases.
             filter_fn: An optional filter function that takes a node and returns whether the node should be annotated.
         Returns:
@@ -329,7 +332,7 @@ class ArmQuantizer(Quantizer):
         quantization_config: QuantizationConfig,
     ):
         for node in model.graph.nodes:
-            if arm_quantizer_utils.is_annotated(node):
+            if is_annotated(node):
                 continue
             if node.op == "placeholder" and len(node.users) > 0:
                 _annotate_output_qspec(
@@ -346,3 +349,12 @@ class ArmQuantizer(Quantizer):
 
     def validate(self, model: GraphModule) -> None:
         pass
+
+
+class EthosUQuantizer(TOSAQuantizer):
+    def __init__(self, compile_spec: list[CompileSpec]) -> None:
+        if not is_ethosu(compile_spec):
+            raise RuntimeError("compile spec is not targeting Ethos-U")
+
+        tosa_spec = get_tosa_spec(compile_spec)
+        super().__init__(tosa_spec)

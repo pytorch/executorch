@@ -55,18 +55,9 @@ else
     echo "[main] Error: only x86-64 & aarch64/arm64 architecture is supported for now!"; exit 1;
 fi
 
-# ethos-u
-ethos_u_repo_url="https://review.mlplatform.org/ml/ethos-u/ethos-u"
-ethos_u_base_rev="24.08"
-
-# tosa reference model
-tosa_reference_model_url="https://review.mlplatform.org/tosa/reference_model"
-tosa_reference_model_rev="v0.80.1"
-
 # vela
 vela_repo_url="https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela"
-vela_rev="e131bf4f528f0d461868229972e07f371dcbc881"
-
+vela_rev="425541302c7e4b6fbeca7c0061286b131ee507c3"
 
 ########
 ### Optional user args
@@ -85,8 +76,10 @@ function setup_fvp() {
 
     # Mandatory user arg --i-agree-to-the-contained-eula
     eula_acceptance="${1:-'.'}"
+    eula_acceptance_by_variable="${ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA:-False}"
+
     if [[ "${eula_acceptance}" != "--i-agree-to-the-contained-eula" ]]; then
-        if [[ ${ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA} != "True" ]]; then
+        if [[ ${eula_acceptance_by_variable} != "True" ]]; then
         echo "Must pass first positional argument '--i-agree-to-the-contained-eula' to agree to EULA associated with downloading the FVP. Exiting!"
         exit 1
         else
@@ -96,10 +89,16 @@ function setup_fvp() {
         shift; # drop this arg
     fi
     if [[ "${OS}" != "Linux" ]]; then
-        echo "[${FUNCNAME[0]}] Warning: FVP only supported with Linux OS, skipping FVP setup..."
-        echo "[${FUNCNAME[0]}] Warning: For MacOS, using https://github.com/Arm-Examples/FVPs-on-Mac is recommended."
-        echo "[${FUNCNAME[0]}] Warning:   Follow the instructions and make sure the path is set correctly."
-        return 1
+        # Check if FVP is callable
+        if command -v FVP_Corstone_SSE-300_Ethos-U55 &> /dev/null; then
+            echo "[${FUNCNAME[0]}] Info: FVP for MacOS seem to be installed. Continuing..."
+            return 0  # If true exit gracefully and proceed with setup
+        else
+            echo "[${FUNCNAME[0]}] Warning: FVP only supported with Linux OS, skipping FVP setup..."
+            echo "[${FUNCNAME[0]}] Warning: For MacOS, using https://github.com/Arm-Examples/FVPs-on-Mac is recommended."
+            echo "[${FUNCNAME[0]}] Warning:   Follow the instructions and make sure the path is set correctly."
+            return 1  # Throw error. User need to install FVP according to ^^^
+        fi
     fi
 
     # Download and install the Corstone 300 FVP simulator platform
@@ -151,14 +150,6 @@ function setup_toolchain() {
     echo "[${FUNCNAME[0]}] Installing toolchain ..."
     rm -rf "${toolchain_dir}"
     tar xf "${toolchain_dir}.tar.xz"
-}
-
-function setup_tosa_reference_model() {
-    # reference_model flatbuffers version clashes with Vela.
-    # go with Vela's since it newer.
-    # Vela's flatbuffer requirement is expected to loosen, then remove this. MLETORCH-565
-    pip install tosa-tools@git+${tosa_reference_model_url}@${tosa_reference_model_rev} --no-dependencies flatbuffers
-
 }
 
 function setup_vela() {
@@ -230,7 +221,7 @@ if [[ $is_script_sourced -eq 0 ]]
     create_setup_path
 
     # Setup the tosa_reference_model
-    setup_tosa_reference_model
+    $et_dir/backends/arm/scripts/install_reference_model.sh ${root_dir}
 
     # Setup vela and patch in codegen fixes
     setup_vela

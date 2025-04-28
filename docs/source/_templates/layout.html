@@ -2,8 +2,8 @@
 
 {% block extrahead %}
 {% if 'getting-started-setup' in pagename%}
-<link rel="stylesheet" href="_static/css/progress-bar.css">
-<script src="_static/js/progress-bar.js" defer></script>
+<link rel="stylesheet" href="../_static/css/progress-bar.css">
+<script src="../_static/js/progress-bar.js" defer></script>
 {% elif 'compiler-delegate-and-partitioner' in pagename%}
 <link rel="stylesheet" href="../_static/css/progress-bar.css">
 <script src="../_static/js/progress-bar.js" defer></script>
@@ -74,7 +74,7 @@
               <div class="local-toc">{{ toc }}</div>
          {% endif %}
 {% endblock %}
-<!-- END OF LOCAL OVERRIDE -->  
+<!-- END OF LOCAL OVERRIDE -->
 
 {% block footer %}
 {{ super() }}
@@ -131,14 +131,14 @@ for (var i = 0; i < menuItems.length; i++) {
     $(".main-menu a:contains('GitHub')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
-    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
+    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
+    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
     // Mobile
     $(".mobile-menu a:contains('Github')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
-    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
+    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
+    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
 
   });
 </script>

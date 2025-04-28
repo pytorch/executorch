@@ -31,9 +31,9 @@ bool check_quantized_mixed_mm_args(
       tensors_have_same_size_at_dims(weight_scales, 0, weight, 0));
 
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, weight_scales, out));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       weight.scalar_type() == ScalarType::Char, "weight dtype must be int8");
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       in.scalar_type() == ScalarType::Float ||
           in.scalar_type() == ScalarType::Half,
       "input dtype must be Float or Half");
@@ -46,7 +46,7 @@ bool check_quantized_mixed_mm_args(
   }
 
   // Support for non-null zero points is not implemented yet.
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       !opt_weight_zero_points.has_value(), "zero points not supported yet.");
   return true;
 }

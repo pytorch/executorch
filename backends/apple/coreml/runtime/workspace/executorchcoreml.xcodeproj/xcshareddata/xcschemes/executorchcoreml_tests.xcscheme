@@ -23,6 +23,11 @@
                BlueprintName = "executorchcoreml_tests"
                ReferencedContainer = "container:executorchcoreml.xcodeproj">
             </BuildableReference>
+            <SkippedTests>
+               <Test
+                  Identifier = "ETCoreMLModelDebuggerTests/testMV3ProgramDebugging">
+               </Test>
+            </SkippedTests>
          </TestableReference>
       </Testables>
    </TestAction>

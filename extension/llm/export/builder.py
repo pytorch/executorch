@@ -13,7 +13,7 @@
 import contextlib
 import logging
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from unittest.mock import patch
 
 import torch
@@ -21,7 +21,7 @@ from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
 from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
-from executorch.exir import EdgeProgramManager
+from executorch.exir import EdgeProgramManager, to_edge_transform_and_lower
 from executorch.exir.backend.partitioner import Partitioner
 
 from executorch.exir.backend.utils import format_delegated_graph
@@ -34,13 +34,14 @@ from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEv
 
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
 
-from executorch.extension.llm.export.export_passes import RemoveRedundantPermutes
-from executorch.extension.llm.tokenizer.utils import get_tokenizer
+from executorch.extension.llm.export.export_passes import RemoveRedundantTransposes
+from pytorch_tokenizers import get_tokenizer
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer import Quantizer
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
-from torch.export import export_for_training
+from torch.export import export_for_training, ExportedProgram
 from torch.nn.attention import SDPBackend
+from torchao.utils import unwrap_tensor_subclass
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -61,6 +62,17 @@ class DType(Enum):
             raise ValueError(f"Unsupported dtype {self}")
         return mapping[self]
 
+    @staticmethod
+    def from_torch_dtype(dtype: torch.dtype):
+        mapping = {
+            torch.float32: DType.fp32,
+            torch.float16: DType.fp16,
+            torch.bfloat16: DType.bf16,
+        }
+        if dtype not in mapping:
+            raise ValueError(f"Unsupported torch.dtype {dtype}")
+        return mapping[dtype]
+
 
 class LLMEdgeManager:
     """
@@ -69,14 +81,13 @@ class LLMEdgeManager:
 
     def __init__(
         self,
-        model,
-        modelname,
-        max_seq_len,
-        dtype,
-        use_kv_cache,
-        example_inputs,
+        model: torch.nn.Module,
+        modelname: str,
+        max_seq_len: int,
+        use_kv_cache: bool,
+        example_inputs: Tuple[torch.Tensor, ...],
+        dtype: Optional[DType] = None,
         example_kwarg_inputs: Optional[Dict] = None,
-        args: Optional[Any] = None,
         enable_dynamic_shape: bool = False,
         generate_full_logits: bool = False,
         calibration_tasks: Optional[List[str]] = None,
@@ -87,33 +98,42 @@ class LLMEdgeManager:
         verbose: bool = False,
         metadata: Optional[dict] = None,
         dynamic_shapes: Optional[Any] = None,
+        use_legacy_export: bool = False,
+        save_exported_program: bool = False,
     ):
+        # Store necessary constructor arguments.
         self.model = model
-        # graph module returned from export()
-        self.pre_autograd_graph_module: Optional[torch.fx.GraphModule] = None
         self.modelname = modelname
         self.max_seq_len = max_seq_len
-        self.dtype = dtype
-        self.example_inputs = example_inputs
-        self.example_kwarg_inputs = example_kwarg_inputs
         self.use_kv_cache = use_kv_cache
-        self.generate_full_logits = generate_full_logits
+        self.example_inputs = example_inputs
+        self.dtype = dtype
+        self.example_kwarg_inputs = example_kwarg_inputs
         self.enable_dynamic_shape = enable_dynamic_shape
-        self.verbose = verbose
-        self.metadata = metadata
-        self.applied_source_transforms = []
-        self.edge_manager: Optional[EdgeProgramManager] = None
-        self.export_program = None
-        self.output_dir = "."
-        self.dynamic_shapes = dynamic_shapes
-        self._saved_pte_filename = None
-        self.args = args
+        self.generate_full_logits = generate_full_logits
         self.calibration_tasks = calibration_tasks
         self.calibration_limit = calibration_limit
         self.calibration_seq_length = calibration_seq_length
         self.calibration_data = calibration_data
         self.tokenizer_path = tokenizer_path
-        self.canonical_passes = [RemoveRedundantPermutes()]
+        self.verbose = verbose
+        self.metadata = metadata
+        self.dynamic_shapes = dynamic_shapes
+        self.use_legacy_export = use_legacy_export
+        self.save_exported_program = save_exported_program
+
+        # Note: treat this as the source of truth for the result of
+        # torch.export'ing a model. If the overall ExportedProgram is needed,
+        # make sure to re-export this graph module to persist any changes. See
+        # https://github.com/pytorch/pytorch/blob/main/torch/export/exported_program.py#L921
+        self.pre_autograd_graph_module: Optional[torch.nn.Module] = None
+        self.edge_manager: Optional[EdgeProgramManager] = None
+        self.canonical_passes = [
+            RemoveRedundantTransposes()
+        ]  # Graph transformations optimizations.
+        self.export_program = None  # Final result of lowering to executorch.
+        self.output_dir = "."
+        self._saved_pte_filename = None
 
     def set_output_dir(self, output_dir: str) -> "LLMEdgeManager":
         """
@@ -152,10 +172,9 @@ class LLMEdgeManager:
         """
         for transform in transforms:
             self.model = transform(self.model)
-        self.applied_source_transforms.extend(transforms)
 
         if self.verbose:
-            logging.info(f"Applied source transforms: {self.applied_source_transforms}")
+            logging.info(f"Applied source transforms: {transforms}")
         logging.info(f"Model after source transforms: {self.model}")
         return self
 
@@ -164,13 +183,13 @@ class LLMEdgeManager:
             return self.dynamic_shapes
 
         dim = torch.export.Dim("token_dim", max=self.max_seq_len - 1)
-
-        if not self.use_kv_cache:
-            # Only one input argument: tokens
-            self.dynamic_shapes = ({1: dim},)
-        elif self.enable_dynamic_shape:
-            # Two input arguments: tokens and input_pos but input_pos is static shape
-            self.dynamic_shapes = ({1: dim}, {"input_pos": {0: 1}})
+        if self.enable_dynamic_shape:
+            if not self.use_kv_cache:
+                # Only one input argument: tokens
+                self.dynamic_shapes = ({1: dim},)
+            else:
+                # Two input arguments: tokens and input_pos but input_pos is static shape
+                self.dynamic_shapes = ({1: dim}, {"input_pos": {0: 1}})
         else:
             # Two input arguments: tokens and input_pos but both are of static shape
             self.dynamic_shapes = None
@@ -184,13 +203,18 @@ class LLMEdgeManager:
         )
         return edge_config
 
-    def export(self) -> "LLMEdgeManager":
+    def _export(self, module: Optional[torch.nn.Module] = None) -> ExportedProgram:
+        if module is not None:
+            unwrap_tensor_subclass(module)
+        else:
+            unwrap_tensor_subclass(self.model)
+
         dynamic_shape = self._get_dynamic_shape()
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
-            if hasattr(self.args, "qnn") and self.args.qnn:
-                # TODO: this is temporary, as qnn flow does not work with new, non-functional export IR.
+            if self.use_legacy_export:
+                # TODO: for use cases such as qnn, which does not work with new, non-functional export IR.
                 # See issue: https://github.com/pytorch/executorch/issues/7373
 
                 with patch.object(
@@ -201,29 +225,47 @@ class LLMEdgeManager:
                     # TODO: this is temporary and export_for_training doesn't work with qnn either. We need a
                     # functional graph. See issue https://github.com/pytorch/executorch/pull/4627 for more details
                     exported_module = torch.export.export(
-                        self.model,
+                        self.model if not module else module,
                         self.example_inputs,
                         self.example_kwarg_inputs,
                         dynamic_shapes=dynamic_shape,
                         strict=True,
                     )
             else:
-                logging.info("Exporting with:")
+                if module:
+                    logging.info("Re-exporting with:")
+                else:
+                    logging.info("Exporting with:")
                 logging.info(f"inputs: {self.example_inputs}")
                 logging.info(f"kwargs: {self.example_kwarg_inputs}")
                 logging.info(f"dynamic shapes: {dynamic_shape}")
                 exported_module = export_for_training(
-                    self.model,
+                    self.model if not module else module,
                     self.example_inputs,
                     kwargs=self.example_kwarg_inputs,
                     dynamic_shapes=dynamic_shape,
+                    strict=True,
                 )
-            # pyre-fixme[8]: Attribute has type `Optional[GraphModule]`; used as
-            #  `Module`.
-            self.pre_autograd_graph_module = exported_module.module()
-            if hasattr(self.args, "export_only") and self.args.export_only:
-                torch.export.save(exported_module, self.args.output_name)
+        return exported_module
 
+    def export(self) -> "LLMEdgeManager":
+        """
+        Exports the model pre-autograd. This is not a full export, since it uses
+        torch.export_for_training() to keep autograd-safe ops from getting decomposed.
+        The full torch.export() if called later on during to_edge() or
+        to_edge_transform_and_lower().
+        """
+        exported_module = self._export()
+        # Need to store the graph module to record transformation passes.
+        # Persisting those changes back to an ExportedProgram will require
+        # an additional export().
+        self.pre_autograd_graph_module = exported_module.module()
+        if self.save_exported_program:
+            export_output = f"{self.modelname}.pt2"
+            logging.info(
+                f"Saving torch.export()/export_for_training() result to {export_output}"
+            )
+            torch.export.save(exported_module, export_output)
         return self
 
     def run_canonical_optimizations(self):
@@ -330,7 +372,10 @@ class LLMEdgeManager:
                 assert (
                     self.pre_autograd_graph_module is not None
                 ), "Please run export() first"
-                m = prepare_pt2e(self.pre_autograd_graph_module, composed_quantizer)
+                m = prepare_pt2e(
+                    self.pre_autograd_graph_module,  # pyre-ignore[6]
+                    composed_quantizer,
+                )
                 logging.info(
                     f"Calibrating with tasks: {self.calibration_tasks}, limit: {self.calibration_limit}, calibration_data: {self.calibration_data}, tokenizer_path: {self.tokenizer_path}, seq_length: {self.calibration_seq_length}"
                 )
@@ -357,7 +402,10 @@ class LLMEdgeManager:
                     logging.info(
                         "No calibration provided, using dummy input to calibrate..."
                     )
-                    m(*self.example_inputs)
+                    if self.example_kwarg_inputs:
+                        m(*self.example_inputs, **self.example_kwarg_inputs)
+                    else:
+                        m(*self.example_inputs)
                 m = convert_pt2e(m)
                 DuplicateDynamicQuantChainPass()(m)
                 self.pre_autograd_graph_module = m
@@ -381,7 +429,7 @@ class LLMEdgeManager:
                 self.export()
 
             override_export_behaviour = contextlib.nullcontext()
-            if hasattr(self.args, "qnn") and self.args.qnn:
+            if self.use_legacy_export:
                 override_export_behaviour = patch.object(
                     torch._utils_internal,
                     "export_training_ir_rollout_check",
@@ -428,6 +476,26 @@ class LLMEdgeManager:
                     logging.info("No partitioner provided, passing...")
                     continue
 
+        return self
+
+    def to_edge_transform_and_lower(
+        self, partitioners: Optional[List[Partitioner]]
+    ) -> "LLMEdgeManager":
+        if partitioners is None:
+            logging.info("No partitioner provided, skipping backend lowering...")
+
+        # Need to construct ExportedProgram with the new transformed graph module.
+        exported_module = self._export(self.pre_autograd_graph_module)
+
+        edge_config = self._get_edge_config()
+        self.edge_manager = to_edge_transform_and_lower(
+            exported_module,
+            partitioner=partitioners,
+            compile_config=edge_config,
+            constant_methods=self.metadata,
+        )
+        if self.verbose:
+            logging.info(f"Exported graph:\n{self.edge_manager.exported_program()}")
         return self
 
     def to_executorch(

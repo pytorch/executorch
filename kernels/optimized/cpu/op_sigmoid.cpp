@@ -10,7 +10,6 @@
 
 #include <ATen/cpu/vec/functional.h>
 #include <ATen/cpu/vec/vec.h>
-#include <executorch/kernels/optimized/vec/functional.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -35,7 +34,7 @@ void sigmoid_data(
     const size_t numel,
     CTYPE_OUT* out_data) {
   using Vec = at::vec::Vectorized<CTYPE_IN>;
-  executorch::vec::map<CTYPE_IN>(
+  at::vec::map<CTYPE_IN>(
       [](Vec x) {
         auto one_plus_exp = x.neg().exp() + Vec(static_cast<CTYPE_IN>(1.0));
         return one_plus_exp.reciprocal();

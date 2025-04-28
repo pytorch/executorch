@@ -15,7 +15,7 @@ Minibench is usedful for giving reference performance data when developers integ
 You will need executorch AAR for Java and JNI dependencies.
 ```
 export ANDROID_NDK=<path_to_android_ndk>
-sh build/build_android_llm_demo.sh
+sh scripts/build_android_library.sh
 ```
 and copy the AAR to `app/libs`.
 ```
@@ -43,13 +43,13 @@ adb push tokenizer.bin /data/local/tmp/minibench
 
 ### Generic model
 ```
-adb shell am start -W -S -n org.pytorch.minibench/org.pytorch.minibench.LlmBenchmarkActivity \
+adb shell am start -W -S -n org.pytorch.minibench/org.pytorch.minibench.BenchmarkActivity \
  --es model_dir /data/local/tmp/minibench
 ```
 
 ### LLM
 ```
-adb shell am start -W -S -n org.pytorch.minibench/org.pytorch.minibench.LlmBenchmarkActivity \
+adb shell am start -W -S -n org.pytorch.minibench/org.pytorch.minibench.BenchmarkActivity \
  --es model_dir /data/local/tmp/minibench --es tokenizer_path /data/local/tmp/minibench/tokenizer.bin
 ```
 

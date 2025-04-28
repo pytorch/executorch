@@ -254,6 +254,17 @@ std::ostream& print_data(std::ostream& os, const T* data, size_t numel) {
   return os;
 }
 
+template <typename T>
+std::ostream&
+print_data(std::ostream& os, const etensor::complex<T>* data, size_t numel) {
+  for (auto i = 0; i < numel; i++) {
+    os << data[i].real_ << " + " << data[i].imag_ << "j";
+    if (i < numel - 1) {
+      os << ", ";
+    }
+  }
+  return os;
+}
 /**
  * Prints the elements of `data` to the stream as comma-separated strings.
  *
@@ -297,6 +308,7 @@ std::ostream& operator<<(std::ostream& os, const Tensor& t) {
 
   switch (t.scalar_type()) {
     ET_FORALL_REAL_TYPES_AND3(Half, Bool, BFloat16, PRINT_CASE)
+    ET_FORALL_COMPLEX_TYPES(PRINT_CASE)
     default:
       ET_CHECK_MSG(
           false,

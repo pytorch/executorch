@@ -13,6 +13,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 install_miniconda() {
   BASE_URL="https://repo.anaconda.com/miniconda"
   CONDA_FILE="Miniconda3-py${PYTHON_VERSION//./}_${MINICONDA_VERSION}-Linux-x86_64.sh"
+  if [[ $(uname -m) == "aarch64" ]]; then 
+    CONDA_FILE="Miniconda3-py${PYTHON_VERSION//./}_${MINICONDA_VERSION}-Linux-aarch64.sh"
+  fi
 
   mkdir -p /opt/conda
   chown ci-user:ci-user /opt/conda
@@ -31,8 +34,16 @@ install_miniconda() {
 
 install_python() {
   pushd /opt/conda
-  # Install the correct Python version
+  # Install the selected Python version for CI jobs
   as_ci_user conda create -n "py_${PYTHON_VERSION}" -y --file /opt/conda/conda-env-ci.txt python="${PYTHON_VERSION}"
+
+  # From https://github.com/pytorch/pytorch/blob/main/.ci/docker/common/install_conda.sh
+  if [[ $(uname -m) == "aarch64" ]]; then
+    conda_install "openblas==0.3.29=*openmp*" -c conda-forge
+  else
+    conda_install mkl=2022.1.0 mkl-include=2022.1.0
+  fi
+
   popd
 }
 
@@ -53,7 +64,7 @@ fix_conda_ubuntu_libstdcxx() {
   # PyTorch sev: https://github.com/pytorch/pytorch/issues/105248
   # Ref: https://github.com/pytorch/pytorch/blob/main/.ci/docker/common/install_conda.sh
   if grep -e "2[02].04." /etc/issue >/dev/null; then
-    rm "/opt/conda/envs/py_${PYTHON_VERSION}/lib/libstdc++.so.6"
+    rm /opt/conda/envs/py_${PYTHON_VERSION}/lib/libstdc++.so*
   fi
 }
 

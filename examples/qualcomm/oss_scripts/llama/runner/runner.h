@@ -19,8 +19,8 @@
 
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/io_manager.h>
 #include <executorch/extension/llm/sampler/sampler.h>
-#include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
+#include <pytorch/tokenizers/tokenizer.h>
 
 namespace example {
 
@@ -29,11 +29,13 @@ class Runner {
   explicit Runner(
       const std::vector<std::string>& models_path,
       const std::string& tokenizer_path,
+      const std::string& performance_output_path_,
       const float logits_scale,
       const int32_t logits_offset,
       const float temperature,
       const int eval_mode,
-      const std::string& kv_updator);
+      const std::string& kv_updater,
+      const int num_iters);
 
   struct Stats {
     // Scaling factor for timestamps - in this case, we use ms.
@@ -89,7 +91,10 @@ class Runner {
   std::string prompt_;
 
   // metadata
+  int32_t context_len_{0};
+  int32_t prefill_ar_len_{0};
   int32_t prefill_cache_len_{0};
+  int32_t kv_ar_len_{0};
   int32_t kv_cache_len_{0};
   int32_t vocab_size_;
   int32_t bos_id_;
@@ -98,10 +103,11 @@ class Runner {
   const int32_t n_eos_;
   std::vector<std::shared_ptr<executorch::extension::Module>> modules_;
   std::string tokenizer_path_;
+  std::string performance_output_path_;
   float logits_scale_;
   int32_t logits_offset_;
   float temperature_;
-  std::unique_ptr<executorch::extension::llm::Tokenizer> tokenizer_;
+  std::unique_ptr<tokenizers::Tokenizer> tokenizer_;
   std::unique_ptr<executorch::extension::llm::Sampler> sampler_;
   Stats stats_;
   std::unique_ptr<IoMgrBase> io_mgr_;
@@ -111,7 +117,8 @@ class Runner {
   std::string kv_forward_name_;
   std::vector<std::string> method_names_;
   LlamaVersion llama_version_;
-  std::string kv_updator_;
+  std::string kv_updater_;
+  int num_iters_;
 };
 
 } // namespace example

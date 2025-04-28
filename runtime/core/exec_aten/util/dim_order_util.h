@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <c10/util/irange.h>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -22,8 +23,8 @@ namespace runtime {
 namespace {
 template <typename DimOrderType>
 bool validate_dim_order(const DimOrderType* dim_order, const size_t dims) {
-  for (int32_t i = 0; i < dims; ++i) {
-    if (dim_order[i] >= dims) {
+  for (size_t i = 0; i < dims; ++i) {
+    if (dim_order[i] >= static_cast<DimOrderType>(dims)) {
       return false;
     }
   }
@@ -42,8 +43,8 @@ template <typename DimOrderType>
 inline bool is_contiguous_dim_order(
     const DimOrderType* dim_order,
     const size_t dims) {
-  for (int i = 0; i < dims; ++i) {
-    if (dim_order[i] != i) {
+  for (size_t i = 0; i < dims; ++i) {
+    if (dim_order[i] != static_cast<DimOrderType>(i)) {
       return false;
     }
   }
@@ -65,7 +66,7 @@ bool is_channels_last_dim_order(
     return false;
   }
   // 4-dim tensor is interpreted as NCHW, 5-dim tensor is interpreted as NCHWD
-  size_t channels_dim = 1;
+  DimOrderType channels_dim = 1;
   // Last value in the dim order should be the channels dim
   if (dim_order[dims - 1] != channels_dim) {
     return false;
@@ -74,8 +75,8 @@ bool is_channels_last_dim_order(
   if (dim_order[0] != 0) {
     return false;
   }
-  int d = 1;
-  while (d < dims - 1) {
+  DimOrderType d = 1;
+  while (d < static_cast<DimOrderType>(dims) - 1) {
     if (dim_order[d] != d + 1) {
       return false;
     }
@@ -162,8 +163,8 @@ struct StrideDimOrder {
   StridesType stride;
   DimOrderType dim_order;
 
-  StrideDimOrder(StridesType stride, DimOrderType dim_order)
-      : stride(stride), dim_order(dim_order) {}
+  StrideDimOrder(StridesType stride_, DimOrderType dim_order_)
+      : stride(stride_), dim_order(dim_order_) {}
   StrideDimOrder() = default;
   bool operator>(const StrideDimOrder& other) const {
     // descending order
@@ -254,39 +255,10 @@ ET_NODISCARD inline Error stride_to_dim_order(
 
   sorter.quick_sort(array, 0, dims - 1);
 
-  for (auto i = 0; i < dims; i++) {
+  for (const auto i : c10::irange(dims)) {
     dim_order[i] = array[i].dim_order;
   }
   return Error::Ok;
-}
-
-/**
- * Print a string representation of an ArrayRef of tensor sizes into a
- * user-provided string buffer. If the user buffer is too small, the string
- * will be truncated. The output is of the format (1,2,3,4).
- *
- * Note that we cannot use ArrayRef here due to a circular dependency (see
- * above comments).
- */
-template <class SizesType>
-inline void sizes_to_string(
-    char* output,
-    size_t output_size,
-    SizesType* sizes,
-    size_t rank) {
-  auto remaining_size = output_size;
-  for (auto i = 0; remaining_size > 0 && i < rank; i++) {
-    snprintf(
-        output,
-        remaining_size,
-        "%s%zd",
-        i == 0 ? "(" : ",",
-        static_cast<size_t>(sizes[i]));
-    auto len = strlen(output);
-    output += len;
-    remaining_size -= len;
-  }
-  snprintf(output, remaining_size, ")");
 }
 
 } // namespace runtime

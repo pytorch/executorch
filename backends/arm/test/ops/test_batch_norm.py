@@ -1,11 +1,10 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
 import unittest
 
 from typing import Tuple
@@ -15,8 +14,6 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from parameterized import parameterized
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 test_data_suite = [
     # (test_name, test_data, [num_features, affine, track_running_stats, weight, bias, running_mean, running_var,] )
@@ -647,7 +644,7 @@ class TestBatchNorm2d(unittest.TestCase):
         )
 
     @parameterized.expand(test_data_suite)
-    def test_batchnorm2d_tosa_MI(
+    def test_native_batch_norm_legit_no_training_tosa_MI(
         self,
         test_name: str,
         test_data: torch.Tensor,
@@ -665,7 +662,7 @@ class TestBatchNorm2d(unittest.TestCase):
     # Expected to fail since not inplemented
     @parameterized.expand(test_no_stats_data_suite)
     @unittest.expectedFailure
-    def test_batchnorm2d_no_stats_tosa_MI(
+    def test_native_batch_norm_legit_tosa_MI(
         self,
         test_name: str,
         test_data: torch.Tensor,
@@ -680,13 +677,13 @@ class TestBatchNorm2d(unittest.TestCase):
             self.BatchNorm2d(*model_params), (test_data,)
         )
 
-    # Expected to fail since ArmQuantizer cannot quantize a BatchNorm layer
+    # Expected to fail since TOSAQuantizer cannot quantize a BatchNorm layer
     # TODO(MLETORCH-100)
     @parameterized.expand(test_data_suite)
     @unittest.skip(
-        reason="Expected to fail since ArmQuantizer cannot quantize a BatchNorm layer"
+        reason="Expected to fail since TOSAQuantizer (for BI) cannot quantize a BatchNorm layer"
     )
-    def test_batchnorm2d_tosa_BI(
+    def test_native_batch_norm_legit_no_training_tosa_BI(
         self,
         test_name: str,
         test_data: torch.Tensor,
@@ -701,14 +698,14 @@ class TestBatchNorm2d(unittest.TestCase):
             self.BatchNorm2d(*model_params), (test_data,)
         )
 
-    # Expected to fail since ArmQuantizer cannot quantize a BatchNorm layer
+    # Expected to fail since EthosUQuantizer (TOSAQuantizer (BI)) cannot quantize a BatchNorm layer
     # TODO(MLETORCH-100)
     @parameterized.expand(test_data_suite)
     @unittest.skip(
-        reason="Expected to fail since ArmQuantizer cannot quantize a BatchNorm layer"
+        reason="Expected to fail since EthosUQuantizer cannot quantize a BatchNorm layer"
     )
     @unittest.expectedFailure
-    def test_batchnorm2d_u55_BI(
+    def test_native_batch_norm_legit_no_training_u55_BI(
         self,
         test_name: str,
         test_data: torch.Tensor,

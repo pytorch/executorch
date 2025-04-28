@@ -13,7 +13,6 @@
 #include <ATen/cpu/vec/functional.h>
 #include <ATen/cpu/vec/vec.h>
 #include <executorch/kernels/optimized/cpu/moments_utils.h>
-#include <executorch/kernels/optimized/vec/functional.h>
 #include <executorch/kernels/portable/cpu/util/normalization_ops_util.h>
 
 namespace torch {
@@ -94,7 +93,7 @@ void layer_norm(
         dst_ptr[j] = (src_ptr[j] * scale + offset) * gamma_v + beta_v;
       }
     } else {
-      executorch::vec::map3<CTYPE>(
+      at::vec::map3<CTYPE>(
           [scale, offset](Vec x, Vec gamma, Vec beta) {
             return (x * Vec(scale) + Vec(offset)) * gamma + beta;
           },

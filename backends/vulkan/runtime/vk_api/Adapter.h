@@ -122,6 +122,15 @@ class Adapter final {
     return physical_device_.timestamp_period;
   }
 
+  // Device Identity
+  inline const std::string& device_name() const {
+    return physical_device_.device_name;
+  }
+
+  inline vkapi::DeviceType device_type() const {
+    return physical_device_.device_type;
+  }
+
   // Queue Management
 
   Queue request_queue();
@@ -209,6 +218,18 @@ class Adapter final {
 
   inline size_t min_ubo_alignment() const {
     return physical_device_.min_ubo_alignment;
+  }
+
+  inline uint32_t max_texture2d_dim() const {
+    return physical_device_.properties.limits.maxImageDimension2D;
+  }
+
+  inline uint32_t max_texture3d_dim() const {
+    return physical_device_.properties.limits.maxImageDimension3D;
+  }
+
+  inline uint32_t max_buffer_numel() const {
+    return physical_device_.properties.limits.maxStorageBufferRange;
   }
 
   // Command Buffer Submission

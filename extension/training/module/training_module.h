@@ -33,13 +33,16 @@ class ET_EXPERIMENTAL TrainingModule final
       std::unique_ptr<runtime::DataLoader> data_loader,
       std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
       std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr,
-      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr)
+      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr,
+      std::unique_ptr<runtime::DataLoader> data_map_data_loader = nullptr)
       : executorch::extension::Module(
             std::move(data_loader),
             std::move(memory_allocator),
             std::move(temp_allocator),
-            std::move(event_tracer)),
-        method_named_gradients_({}) {}
+            std::move(event_tracer),
+            std::move(data_map_data_loader)),
+        method_named_gradients_({}),
+        method_named_parameters_({}) {}
 
   explicit TrainingModule(const Module&) = delete;
   TrainingModule& operator=(const Module&) = delete;
@@ -97,6 +100,11 @@ class ET_EXPERIMENTAL TrainingModule final
       std::string,
       std::map<executorch::aten::string_view, executorch::aten::Tensor>>
       method_named_gradients_;
+
+  std::unordered_map<
+      std::string,
+      std::map<executorch::aten::string_view, executorch::aten::Tensor>>
+      method_named_parameters_;
 };
 
 } // namespace training

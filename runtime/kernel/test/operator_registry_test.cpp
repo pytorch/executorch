@@ -34,7 +34,146 @@ using executorch::runtime::registry_has_op_function;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::TensorMeta;
+using executorch::runtime::internal::kKernelKeyBufSize;
 using executorch::runtime::testing::make_kernel_key;
+
+//
+// Tests for make_kernel_key_string
+//
+
+// Helper for testing make_kernel_key_string.
+void test_make_kernel_key_string(
+    const std::vector<std::pair<
+        executorch::aten::ScalarType,
+        std::vector<executorch::aten::DimOrderType>>>& tensors,
+    const char* expected_key) {
+  const size_t min_buf_size = strlen(expected_key) + 1;
+
+  // Sweep across too-small buffer sizes, exercising all possible failure
+  // checks. Rely on ASAN to detect buffer overflows.
+  for (size_t buf_size = 0; buf_size < min_buf_size; buf_size++) {
+    std::vector<char> actual_key(buf_size, 0x55);
+    Error err = make_kernel_key(
+        tensors,
+        // nullptr should be valid for buf_size == 0 because it won't be written
+        // to.
+        buf_size == 0 ? nullptr : actual_key.data(),
+        actual_key.size());
+    EXPECT_NE(err, Error::Ok);
+  }
+
+  // Demonstrate that it succeeds for buffers of exactly the right size or
+  // larger.
+  for (size_t buf_size = min_buf_size; buf_size < min_buf_size + 1;
+       buf_size++) {
+    std::vector<char> actual_key(buf_size, 0x55);
+    Error err = make_kernel_key(tensors, actual_key.data(), actual_key.size());
+    ASSERT_EQ(err, Error::Ok);
+    EXPECT_STREQ(actual_key.data(), expected_key);
+  }
+}
+
+TEST(MakeKernelKeyStringTest, ZeroTensorSuccessWithNullBuffer) {
+  Error err = make_kernel_key({}, nullptr, 0);
+  EXPECT_EQ(err, Error::Ok);
+}
+
+TEST(MakeKernelKeyStringTest, ZeroTensorSuccessMakesEmptyString) {
+  char buf = 0x55;
+  Error err = make_kernel_key({}, &buf, 1);
+  EXPECT_EQ(err, Error::Ok);
+  EXPECT_EQ(buf, '\0');
+}
+
+TEST(MakeKernelKeyStringTest, OneTensorSuccess) {
+  test_make_kernel_key_string(
+      {{ScalarType::Long, {0, 1, 2, 3}}}, "v1/4;0,1,2,3");
+}
+
+TEST(MakeKernelKeyStringTest, TwoTensorSuccess) {
+  test_make_kernel_key_string(
+      {{ScalarType::Long, {0, 1, 2, 3}}, {ScalarType::Double, {3, 2, 1, 0}}},
+      "v1/4;0,1,2,3|7;3,2,1,0");
+}
+
+TEST(MakeKernelKeyStringTest, ThreeTensorSuccess) {
+  test_make_kernel_key_string(
+      {{ScalarType::Long, {0, 1, 2, 3}},
+       {ScalarType::Double, {3, 2, 1, 0}},
+       {ScalarType::Byte, {2, 1, 3, 0}}},
+      "v1/4;0,1,2,3|7;3,2,1,0|0;2,1,3,0");
+}
+
+TEST(MakeKernelKeyStringTest, TwoDigitDimOrderSuccess) {
+  test_make_kernel_key_string(
+      {{ScalarType::Long, {0, 10, 2, 99}}}, "v1/4;0,10,2,99");
+}
+
+TEST(MakeKernelKeyStringTest, ThreeDigitDimOrderFailure) {
+  std::vector<char> actual_key(1024, 0x55); // Large enough for any key.
+  Error err = make_kernel_key(
+      // Cannot represent a dim order entry with more than two digits.
+      {{ScalarType::Long, {0, 100, 2, 255}}},
+      actual_key.data(),
+      actual_key.size());
+  EXPECT_NE(err, Error::Ok);
+}
+
+TEST(MakeKernelKeyStringTest, NegativeScalarTypeFailure) {
+  std::vector<char> actual_key(1024, 0x55); // Large enough for any key.
+  Error err = make_kernel_key(
+      // Cannot represent a ScalarType (aka int8_t) with a negative value.
+      {{(ScalarType)-1, {0, 1, 2, 3}}},
+      actual_key.data(),
+      actual_key.size());
+  EXPECT_NE(err, Error::Ok);
+}
+
+TEST(MakeKernelKeyStringTest, KeyBufSizeMeetsAssumptions) {
+  // Create the longest key that fits in the assupmtions of kKernelKeyBufSize:
+  // 16 tensors, 16 dims, with two-digit ScalarTypes.
+  std::vector<std::pair<
+      executorch::aten::ScalarType,
+      std::vector<executorch::aten::DimOrderType>>>
+      tensors;
+  tensors.reserve(16);
+  for (int i = 0; i < 16; i++) {
+    std::vector<executorch::aten::DimOrderType> dims;
+    dims.reserve(16);
+    for (int j = 0; j < 16; j++) {
+      dims.emplace_back(j);
+    }
+    tensors.emplace_back((ScalarType)10, dims);
+  }
+
+  std::vector<char> actual_key(kKernelKeyBufSize, 0x55);
+  Error err = make_kernel_key(tensors, actual_key.data(), actual_key.size());
+  ASSERT_EQ(err, Error::Ok);
+  EXPECT_STREQ(
+      actual_key.data(),
+      "v1/"
+      "10;0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15|"
+      "10;0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15|"
+      "10;0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15|"
+      "10;0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15|"
+      "10;0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15|"
+      "10;0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15|"
+      "10;0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15|"
+      "10;0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15|"
+      "10;0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15|"
+      "10;0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15|"
+      "10;0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15|"
+      "10;0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15|"
+      "10;0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15|"
+      "10;0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15|"
+      "10;0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15|"
+      "10;0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15");
+  EXPECT_LE(strlen(actual_key.data()) + 1, kKernelKeyBufSize);
+}
+
+//
+// Tests for public operator registry APIs
+//
 
 class OperatorRegistryTest : public ::testing::Test {
  public:
@@ -46,7 +185,8 @@ class OperatorRegistryTest : public ::testing::Test {
 TEST_F(OperatorRegistryTest, Basic) {
   Kernel kernels[] = {Kernel("foo", [](KernelRuntimeContext&, EValue**) {})};
   Span<const Kernel> kernels_span(kernels);
-  (void)register_kernels(kernels_span);
+  Error err = register_kernels(kernels_span);
+  ASSERT_EQ(err, Error::Ok);
   EXPECT_FALSE(registry_has_op_function("fpp"));
   EXPECT_TRUE(registry_has_op_function("foo"));
 }
@@ -59,12 +199,14 @@ TEST_F(OperatorRegistryTest, RegisterOpsMoreThanOnceDie) {
   ET_EXPECT_DEATH({ (void)register_kernels(kernels_span); }, "");
 }
 
-constexpr int BUF_SIZE = KernelKey::MAX_SIZE;
-
 TEST_F(OperatorRegistryTest, KernelKeyEquals) {
-  char buf_long_contiguous[BUF_SIZE];
-  make_kernel_key({{ScalarType::Long, {0, 1, 2, 3}}}, buf_long_contiguous);
-  KernelKey long_contiguous = KernelKey(buf_long_contiguous);
+  std::array<char, kKernelKeyBufSize> buf_long_contiguous;
+  Error err = make_kernel_key(
+      {{ScalarType::Long, {0, 1, 2, 3}}},
+      buf_long_contiguous.data(),
+      buf_long_contiguous.size());
+  ASSERT_EQ(err, Error::Ok);
+  KernelKey long_contiguous = KernelKey(buf_long_contiguous.data());
 
   KernelKey long_key_1 = KernelKey(long_contiguous);
 
@@ -72,31 +214,73 @@ TEST_F(OperatorRegistryTest, KernelKeyEquals) {
 
   EXPECT_EQ(long_key_1, long_key_2);
 
-  char buf_float_contiguous[BUF_SIZE];
-  make_kernel_key({{ScalarType::Float, {0, 1, 2, 3}}}, buf_float_contiguous);
-  KernelKey float_key = KernelKey(buf_float_contiguous);
+  std::array<char, kKernelKeyBufSize> buf_float_contiguous;
+  err = make_kernel_key(
+      {{ScalarType::Float, {0, 1, 2, 3}}},
+      buf_float_contiguous.data(),
+      buf_float_contiguous.size());
+  ASSERT_EQ(err, Error::Ok);
+  KernelKey float_key = KernelKey(buf_float_contiguous.data());
 
   EXPECT_NE(long_key_1, float_key);
 
-  char buf_channel_first[BUF_SIZE];
-  make_kernel_key({{ScalarType::Long, {0, 3, 1, 2}}}, buf_channel_first);
-  KernelKey long_key_3 = KernelKey(buf_channel_first);
+  std::array<char, kKernelKeyBufSize> buf_channel_first;
+  err = make_kernel_key(
+      {{ScalarType::Long, {0, 3, 1, 2}}},
+      buf_channel_first.data(),
+      buf_channel_first.size());
+  ASSERT_EQ(err, Error::Ok);
+  KernelKey long_key_3 = KernelKey(buf_channel_first.data());
 
   EXPECT_NE(long_key_1, long_key_3);
 }
 
+TEST_F(OperatorRegistryTest, GetOpFailsForLongKernelKey) {
+  // Looking up a way-too-long kernel key should fail with an error.
+  std::vector<std::pair<
+      executorch::aten::ScalarType,
+      std::vector<executorch::aten::DimOrderType>>>
+      tensors;
+  // 1000 is a lot of tensors.
+  tensors.reserve(1000);
+  for (int i = 0; i < 1000; i++) {
+    std::vector<executorch::aten::DimOrderType> dims;
+    dims.reserve(16);
+    for (int j = 0; j < 16; j++) {
+      dims.emplace_back(j);
+    }
+    tensors.emplace_back((ScalarType)10, dims);
+  }
+  std::vector<TensorMeta> meta;
+  for (auto& t : tensors) {
+    Span<executorch::aten::DimOrderType> dim_order(
+        t.second.data(), t.second.size());
+    meta.emplace_back(t.first, dim_order);
+  }
+  Span<const TensorMeta> metadata(meta.data(), meta.size());
+
+  auto op = get_op_function_from_registry("test::not-real", metadata);
+  EXPECT_NE(op.error(), Error::Ok);
+  EXPECT_NE(op.error(), Error::OperatorMissing);
+  // The lookup failed, but not because the operator is missing.
+}
+
 TEST_F(OperatorRegistryTest, RegisterKernels) {
-  char buf_long_contiguous[BUF_SIZE];
-  make_kernel_key({{ScalarType::Long, {0, 1, 2, 3}}}, buf_long_contiguous);
-  KernelKey key = KernelKey(buf_long_contiguous);
+  std::array<char, kKernelKeyBufSize> buf_long_contiguous;
+  Error err = make_kernel_key(
+      {{ScalarType::Long, {0, 1, 2, 3}}},
+      buf_long_contiguous.data(),
+      buf_long_contiguous.size());
+  ASSERT_EQ(err, Error::Ok);
+  KernelKey key = KernelKey(buf_long_contiguous.data());
 
   Kernel kernel_1 = Kernel(
       "test::boo", key, [](KernelRuntimeContext& context, EValue** stack) {
         (void)context;
         *(stack[0]) = Scalar(100);
       });
-  auto s1 = register_kernels({&kernel_1, 1});
-  EXPECT_EQ(s1, Error::Ok);
+  err = register_kernels({&kernel_1, 1});
+  ASSERT_EQ(err, Error::Ok);
 
   Tensor::DimOrderType dims[] = {0, 1, 2, 3};
   auto dim_order_type = Span<Tensor::DimOrderType>(dims, 4);
@@ -126,13 +310,21 @@ TEST_F(OperatorRegistryTest, RegisterKernels) {
 }
 
 TEST_F(OperatorRegistryTest, RegisterTwoKernels) {
-  char buf_long_contiguous[BUF_SIZE];
-  make_kernel_key({{ScalarType::Long, {0, 1, 2, 3}}}, buf_long_contiguous);
-  KernelKey key_1 = KernelKey(buf_long_contiguous);
+  std::array<char, kKernelKeyBufSize> buf_long_contiguous;
+  Error err = make_kernel_key(
+      {{ScalarType::Long, {0, 1, 2, 3}}},
+      buf_long_contiguous.data(),
+      buf_long_contiguous.size());
+  ASSERT_EQ(err, Error::Ok);
+  KernelKey key_1 = KernelKey(buf_long_contiguous.data());
 
-  char buf_float_contiguous[BUF_SIZE];
-  make_kernel_key({{ScalarType::Float, {0, 1, 2, 3}}}, buf_float_contiguous);
-  KernelKey key_2 = KernelKey(buf_float_contiguous);
+  std::array<char, kKernelKeyBufSize> buf_float_contiguous;
+  err = make_kernel_key(
+      {{ScalarType::Float, {0, 1, 2, 3}}},
+      buf_float_contiguous.data(),
+      buf_float_contiguous.size());
+  ASSERT_EQ(err, Error::Ok);
+  KernelKey key_2 = KernelKey(buf_float_contiguous.data());
   Kernel kernel_1 = Kernel(
       "test::bar", key_1, [](KernelRuntimeContext& context, EValue** stack) {
         (void)context;
@@ -144,7 +336,9 @@ TEST_F(OperatorRegistryTest, RegisterTwoKernels) {
         *(stack[0]) = Scalar(50);
       });
   Kernel kernels[] = {kernel_1, kernel_2};
-  auto s1 = register_kernels(kernels);
+  err = register_kernels(kernels);
+  ASSERT_EQ(err, Error::Ok);
+
   // has both kernels
   Tensor::DimOrderType dims[] = {0, 1, 2, 3};
   auto dim_order_type = Span<Tensor::DimOrderType>(dims, 4);
@@ -189,9 +383,13 @@ TEST_F(OperatorRegistryTest, RegisterTwoKernels) {
 }
 
 TEST_F(OperatorRegistryTest, DoubleRegisterKernelsDies) {
-  char buf_long_contiguous[BUF_SIZE];
-  make_kernel_key({{ScalarType::Long, {0, 1, 2, 3}}}, buf_long_contiguous);
-  KernelKey key = KernelKey(buf_long_contiguous);
+  std::array<char, kKernelKeyBufSize> buf_long_contiguous;
+  Error err = make_kernel_key(
+      {{ScalarType::Long, {0, 1, 2, 3}}},
+      buf_long_contiguous.data(),
+      buf_long_contiguous.size());
+  ASSERT_EQ(err, Error::Ok);
+  KernelKey key = KernelKey(buf_long_contiguous.data());
 
   Kernel kernel_1 = Kernel(
       "test::baz", key, [](KernelRuntimeContext& context, EValue** stack) {
@@ -205,22 +403,26 @@ TEST_F(OperatorRegistryTest, DoubleRegisterKernelsDies) {
       });
   Kernel kernels[] = {kernel_1, kernel_2};
   // clang-tidy off
-  ET_EXPECT_DEATH({ auto s1 = register_kernels(kernels); }, "");
+  ET_EXPECT_DEATH({ (void)register_kernels(kernels); }, "");
   // clang-tidy on
 }
 
 TEST_F(OperatorRegistryTest, ExecutorChecksKernel) {
-  char buf_long_contiguous[BUF_SIZE];
-  make_kernel_key({{ScalarType::Long, {0, 1, 2, 3}}}, buf_long_contiguous);
-  KernelKey key = KernelKey(buf_long_contiguous);
+  std::array<char, kKernelKeyBufSize> buf_long_contiguous;
+  Error err = make_kernel_key(
+      {{ScalarType::Long, {0, 1, 2, 3}}},
+      buf_long_contiguous.data(),
+      buf_long_contiguous.size());
+  ASSERT_EQ(err, Error::Ok);
+  KernelKey key = KernelKey(buf_long_contiguous.data());
 
   Kernel kernel_1 = Kernel(
       "test::qux", key, [](KernelRuntimeContext& context, EValue** stack) {
         (void)context;
         *(stack[0]) = Scalar(100);
       });
-  auto s1 = register_kernels({&kernel_1, 1});
-  EXPECT_EQ(s1, Error::Ok);
+  err = register_kernels({&kernel_1, 1});
+  ASSERT_EQ(err, Error::Ok);
 
   Tensor::DimOrderType dims[] = {0, 1, 2, 3};
   auto dim_order_type = Span<Tensor::DimOrderType>(dims, 4);
@@ -242,17 +444,21 @@ TEST_F(OperatorRegistryTest, ExecutorChecksKernel) {
 }
 
 TEST_F(OperatorRegistryTest, ExecutorUsesKernel) {
-  char buf_long_contiguous[BUF_SIZE];
-  make_kernel_key({{ScalarType::Long, {0, 1, 2, 3}}}, buf_long_contiguous);
-  KernelKey key = KernelKey(buf_long_contiguous);
+  std::array<char, kKernelKeyBufSize> buf_long_contiguous;
+  Error err = make_kernel_key(
+      {{ScalarType::Long, {0, 1, 2, 3}}},
+      buf_long_contiguous.data(),
+      buf_long_contiguous.size());
+  ASSERT_EQ(err, Error::Ok);
+  KernelKey key = KernelKey(buf_long_contiguous.data());
 
   Kernel kernel_1 = Kernel(
       "test::quux", key, [](KernelRuntimeContext& context, EValue** stack) {
         (void)context;
         *(stack[0]) = Scalar(100);
       });
-  auto s1 = register_kernels({&kernel_1, 1});
-  EXPECT_EQ(s1, Error::Ok);
+  err = register_kernels({&kernel_1, 1});
+  ASSERT_EQ(err, Error::Ok);
 
   Tensor::DimOrderType dims[] = {0, 1, 2, 3};
   auto dim_order_type = Span<Tensor::DimOrderType>(dims, 4);
@@ -283,8 +489,8 @@ TEST_F(OperatorRegistryTest, ExecutorUsesFallbackKernel) {
         (void)context;
         *(stack[0]) = Scalar(100);
       });
-  auto s1 = register_kernels({&kernel_1, 1});
-  EXPECT_EQ(s1, Error::Ok);
+  Error err = register_kernels({&kernel_1, 1});
+  EXPECT_EQ(err, Error::Ok);
 
   EXPECT_TRUE(registry_has_op_function("test::corge"));
   EXPECT_TRUE(registry_has_op_function("test::corge", {}));

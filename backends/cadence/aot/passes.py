@@ -6,7 +6,7 @@
 
 # pyre-strict
 
-from typing import Any, List, Optional, Type
+from typing import Any, List, Optional
 
 import torch
 import torch.fx
@@ -71,7 +71,7 @@ class FinalizePipeline(ExportPass):
 Argument = Any  # pyre-ignore
 
 
-def get_passes_in_default_order() -> List[Type[PassType]]:
+def get_passes_in_default_order() -> List[ExportPass]:
     passes = [
         InitializePipeline,
         RemoveRedundantOps.passes,
@@ -95,9 +95,8 @@ def get_cadence_passes(
     passes = get_passes_in_default_order()
     pass_filter = create_cadence_pass_filter(opt_level)
     filtered_passes = [
-        # pyre-fixme[20]: Call `torch.fx.passes.infra.pass_base.PassBase.__call__` expects argument `graph_module`.
+        # pyre-ignore[20]: Expect argument graph_module
         filtered_pass()
-        # pyre-fixme[6]: In call `filter.__new__` ... got `List[Type[typing.Callable[[GraphModule], Optional[PassResult]]]]`.
         for filtered_pass in list(filter(pass_filter, passes))
     ]
     return filtered_passes

@@ -183,6 +183,23 @@ class ModuleSimpleTrain(torch.nn.Module):
         return True
 
 
+class ModuleStateful(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("state", torch.zeros(1, dtype=torch.int32))
+
+    def forward(self, x):
+        self.state.add_(1)
+        return x + self.state
+
+    def get_random_inputs(self):
+        return (torch.ones(1),)
+
+    @staticmethod
+    def export_state_names():
+        return True
+
+
 #
 # Main logic.
 #
@@ -201,8 +218,11 @@ def export_module_to_program(
         # pyre-ignore[16]: pyre doesn't know about get_export_kwargs.
         export_kwargs = module_class.get_export_kwargs()
     export_joint = False
+    export_state_names = False
     if hasattr(module_class, "export_joint"):
         export_joint = module_class.export_joint()  # pyre-ignore
+    if hasattr(module_class, "export_state_names"):
+        export_state_names = module_class.export_state_names()
     if hasattr(module_class, "get_method_names_to_export"):
         # pyre-ignore[16]: pyre doesn't know about get_export_kwargs.
         methods = module_class.get_method_names_to_export()
@@ -214,6 +234,7 @@ def export_module_to_program(
         skip_type_promotion=skip_type_promotion,
         export_joint_graph=export_joint,
         external_constants=external_constants,
+        export_state_names=export_state_names,
         **export_kwargs,
     )
     return module.executorch_program
@@ -264,6 +285,8 @@ def main() -> None:
             # Skip type promotion to keep the model in fp16.
             # Type promotion will convert to fp32.
             skip_type_promotion = True
+        if args.external_constants:
+            module_name = f"{module_name}Program"
         outfile = os.path.join(args.outdir, f"{module_name}.pte")
         prog = export_module_to_program(
             module_class,
@@ -274,6 +297,11 @@ def main() -> None:
             prog.write_to_file(fp)
             print(f"Exported {module_name} and wrote program data to {outfile}")
 
+        if args.external_constants:
+            # current infra doesnt easily allow renaming this file, so just hackily do it here.
+            prog._tensor_data[f"{module_name}"] = prog._tensor_data.pop(
+                "_default_external_constant"
+            )
         prog.write_tensor_data_to_file(args.outdir)
 
 

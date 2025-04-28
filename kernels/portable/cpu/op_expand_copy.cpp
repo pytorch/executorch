@@ -96,7 +96,8 @@ Tensor& expand_copy_out(
 
   ET_KERNEL_CHECK(
       ctx,
-      repeat_tensor(self, {repeats, repeats_size}, out) == Error::Ok,
+      repeat_tensor(self, makeArrayRef(repeats, repeats_size), out) ==
+          Error::Ok,
       InvalidArgument,
       out);
 

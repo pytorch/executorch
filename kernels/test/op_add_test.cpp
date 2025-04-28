@@ -112,6 +112,125 @@ class OpAddOutKernelTest : public OperatorTest {
     // tests.
     EXPECT_TENSOR_CLOSE(out, tf.make(sizes, /*data=*/{2.5, 3.5, 5.75, 10.125}));
   }
+
+  template <ScalarType DTYPE>
+  void test_broadcast_3D() {
+    TensorFactory<DTYPE> tf_a;
+
+    Tensor a =
+        tf_a.make({2, 2, 3}, /*data=*/{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+    Tensor b = tf_a.make({2, 1, 3}, /*data=*/{2, 3, 4, 5, 6, 7});
+
+    // Destination for output of mul.
+    Tensor out =
+        tf_a.make({2, 2, 3}, /*data=*/{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+    Tensor expected = tf_a.make(
+        {2, 2, 3}, /*data=*/{3, 5, 7, 6, 8, 10, 12, 14, 16, 15, 17, 19});
+
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_CLOSE(op_add_out(a, b, 1.0, out), expected);
+    expected = tf_a.make(
+        {2, 2, 3},
+        /*data=*/{3.5, 6, 8.5, 8, 10.5, 13, 15.5, 18, 20.5, 20, 22.5, 25});
+    EXPECT_TENSOR_CLOSE(op_add_out(b, a, 1.5, out), expected);
+  }
+
+  template <ScalarType DTYPE>
+  void test_broadcast_4D() {
+    TensorFactory<DTYPE> tf_a;
+
+    Tensor a = tf_a.make(
+        {2, 2, 3, 5},
+        /*data=*/{1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15,
+                  16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+                  31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+                  46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60});
+    Tensor b = tf_a.make(
+        {2, 1, 3, 5},
+        /*data=*/{1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15,
+                  16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30});
+
+    // Destination for output of mul.
+    Tensor out = tf_a.zeros({2, 2, 3, 5});
+    Tensor expected = tf_a.make(
+        {2, 2, 3, 5},
+        /*data=*/{2,  4,  6,  8,  10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30,
+                  17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37, 39, 41, 43, 45,
+                  47, 49, 51, 53, 55, 57, 59, 61, 63, 65, 67, 69, 71, 73, 75,
+                  62, 64, 66, 68, 70, 72, 74, 76, 78, 80, 82, 84, 86, 88, 90});
+
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_CLOSE(op_add_out(a, b, 1.0, out), expected);
+    EXPECT_TENSOR_CLOSE(op_add_out(b, a, 1.0, out), expected);
+
+    b = tf_a.make(
+        {2, 2, 1, 5}, /*data=*/{1,  2,  3,  4,  5,  6,  7,  8,  9,  10,
+                                11, 12, 13, 14, 15, 16, 17, 18, 19, 20});
+    out = tf_a.zeros({2, 2, 3, 5});
+    expected = tf_a.make(
+        {2, 2, 3, 5},
+        /*data=*/{2,  4,  6,  8,  10, 7,  9,  11, 13, 15, 12, 14, 16, 18, 20,
+                  22, 24, 26, 28, 30, 27, 29, 31, 33, 35, 32, 34, 36, 38, 40,
+                  42, 44, 46, 48, 50, 47, 49, 51, 53, 55, 52, 54, 56, 58, 60,
+                  62, 64, 66, 68, 70, 67, 69, 71, 73, 75, 72, 74, 76, 78, 80});
+
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_CLOSE(op_add_out(a, b, 1.0, out), expected);
+    EXPECT_TENSOR_CLOSE(op_add_out(b, a, 1.0, out), expected);
+  }
+
+  template <ScalarType DTYPE>
+  void test_broadcast_last_dim() {
+    TensorFactory<DTYPE> tf_a;
+
+    Tensor a =
+        tf_a.make({4, 3}, /*data=*/{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+    Tensor b = tf_a.make({4, 1}, /*data=*/{2, 3, 4, 5});
+
+    // Destination for output of mul.
+    Tensor out = tf_a.zeros({4, 3});
+    Tensor expected =
+        tf_a.make({4, 3}, /*data=*/{3, 4, 5, 7, 8, 9, 11, 12, 13, 15, 16, 17});
+
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_CLOSE(op_add_out(a, b, 1.0, out), expected);
+    EXPECT_TENSOR_CLOSE(op_add_out(b, a, 1.0, out), expected);
+
+    a = tf_a.make({2, 2, 3}, /*data=*/{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+    b = tf_a.make({2, 2, 1}, /*data=*/{2, 3, 4, 5});
+
+    // Destination for output of mul.
+    out = tf_a.zeros({2, 2, 3});
+    expected = tf_a.make(
+        {2, 2, 3}, /*data=*/{3, 4, 5, 7, 8, 9, 11, 12, 13, 15, 16, 17});
+
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_CLOSE(op_add_out(a, b, 1.0, out), expected);
+    EXPECT_TENSOR_CLOSE(op_add_out(b, a, 1.0, out), expected);
+
+    a = tf_a.make(
+        {2, 2, 3, 5},
+        /*data=*/{1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15,
+                  16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+                  31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+                  46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60});
+    b = tf_a.make(
+        {2, 2, 3, 1},
+        /*data=*/{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+
+    // Destination for output of mul.
+    out = tf_a.zeros({2, 2, 3, 5});
+    expected = tf_a.make(
+        {2, 2, 3, 5},
+        /*data=*/{2,  3,  4,  5,  6,  8,  9,  10, 11, 12, 14, 15, 16, 17, 18,
+                  20, 21, 22, 23, 24, 26, 27, 28, 29, 30, 32, 33, 34, 35, 36,
+                  38, 39, 40, 41, 42, 44, 45, 46, 47, 48, 50, 51, 52, 53, 54,
+                  56, 57, 58, 59, 60, 62, 63, 64, 65, 66, 68, 69, 70, 71, 72});
+
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_CLOSE(op_add_out(a, b, 1.0, out), expected);
+    EXPECT_TENSOR_CLOSE(op_add_out(b, a, 1.0, out), expected);
+  }
 };
 
 class OpAddScalarOutKernelTest : public OperatorTest {
@@ -369,6 +488,23 @@ TEST_F(OpAddOutKernelTest, BroadcastOneElementRank0Tensor) {
 
   op_add_out(b, a, 1, out);
   EXPECT_TENSOR_EQ(out, ret);
+}
+
+TEST_F(OpAddOutKernelTest, BroadcastNDTest) {
+  // Test 3D tensors
+  test_broadcast_3D<ScalarType::Float>();
+  test_broadcast_3D<ScalarType::Half>();
+  test_broadcast_3D<ScalarType::BFloat16>();
+
+  // Test 4D tensors
+  test_broadcast_4D<ScalarType::Float>();
+  test_broadcast_4D<ScalarType::Half>();
+  test_broadcast_4D<ScalarType::BFloat16>();
+
+  // Test broadcasting on the last dimension
+  test_broadcast_last_dim<ScalarType::Float>();
+  test_broadcast_last_dim<ScalarType::Half>();
+  test_broadcast_last_dim<ScalarType::BFloat16>();
 }
 
 //

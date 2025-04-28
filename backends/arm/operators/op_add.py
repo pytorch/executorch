@@ -10,14 +10,13 @@ from typing import List
 import executorch.backends.arm.tosa_quant_utils as tqutils
 import executorch.backends.arm.tosa_utils as tutils
 
-import serializer.tosa_serializer as ts  # type: ignore
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
-from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
 
 
@@ -41,9 +40,24 @@ class AddVisitor_080_BI(NodeVisitor):
     ) -> None:
         # Specification (0.80) states that input and output types
         # should all be the same
-        assert inputs[0].dtype == inputs[1].dtype == output.dtype
+        if inputs[0].dtype != inputs[1].dtype or inputs[0].dtype != output.dtype:
+            raise TypeError(
+                f"All IO needs to have the same data type, got input 1: "
+                f"{inputs[0].dtype}, input 2: {inputs[1].dtype} and output: "
+                f"{output.dtype}"
+            )
         # Handle int8 (quantized) and int32
-        assert inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]
+        supported_dtypes = [ts.DType.INT8, ts.DType.INT32]
+        if inputs[0].dtype not in supported_dtypes:
+            raise TypeError(
+                f'IO data type needs to be {supported_dtypes}, got "{inputs[0].dtype}"'
+            )
+
+        dim_order = (
+            inputs[0].dim_order
+            if len(inputs[0].shape) > len(inputs[1].shape)
+            else inputs[1].dim_order
+        )
 
         if inputs[0].dtype == ts.DType.INT8:
             rescaled_inputs, scale_back = tqutils.insert_rescale_ops_to_int32(
@@ -61,13 +75,14 @@ class AddVisitor_080_BI(NodeVisitor):
             # output.dtype == ts.DType.INT32
             add_output = output
 
+        input1, input2 = tutils.reshape_for_broadcast(
+            tosa_graph, rescaled_inputs, dim_order
+        )
+
         # Do the INT32 Add
         tosa_graph.addOperator(
-            TosaOp.Op().ADD,
-            [
-                rescaled_inputs[0].name,
-                rescaled_inputs[1].name,
-            ],
+            ts.TosaOp.Op().ADD,
+            [input1.name, input2.name],
             [add_output.name],
             None,
         )
@@ -98,20 +113,29 @@ class AddVisitor_080_MI(AddVisitor_080_BI):
     ) -> None:
         # Specification (0.80) states that input and output types
         # should all be the same
-        assert inputs[0].dtype == inputs[1].dtype == output.dtype
+        if inputs[0].dtype != inputs[1].dtype or inputs[0].dtype != output.dtype:
+            raise TypeError(
+                f"All IO needs to have the same data type, got input 1: "
+                f"{inputs[0].dtype}, input 2: {inputs[1].dtype} and output: "
+                f"{output.dtype}"
+            )
 
         if inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]:
             # Call the inherited define_node for handling integers
             super().define_node(node, tosa_graph, inputs, output)
         else:
             # FP32 Add lowering
-            assert inputs[0].dtype == ts.DType.FP32
-            assert output.dtype == ts.DType.FP32
+            if inputs[0].dtype != ts.DType.FP32:
+                raise TypeError(
+                    f"Expected IO data type to be FP32, got {inputs[0].dtype}"
+                )
+
+            input1, input2 = tutils.reshape_for_broadcast(tosa_graph, inputs)
 
             # MI lowering
             tosa_graph.addOperator(
-                TosaOp.Op().ADD,
-                [inputs[0].name, inputs[1].name],
+                ts.TosaOp.Op().ADD,
+                [input1.name, input2.name],
                 [output.name],
                 None,
             )

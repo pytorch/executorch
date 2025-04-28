@@ -346,47 +346,32 @@ Check out how it uses helper macros like `ET_CHECK_SAME_SHAPE_AND_DTYPE` and
 
 Once you have your operator and corresponding tests in place, we can try it out.
 
-1. Build ExecuTorch.
+1. Build ExecuTorch with `-DEXECUTORCH_BUILD_TESTS=ON`:
 ```
 cmake . \
   -DCMAKE_INSTALL_PREFIX=cmake-out \
   -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
+  -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
   -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
   -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
   -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
   -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
   -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
   -DEXECUTORCH_BUILD_DEVTOOLS=ON \
   -DEXECUTORCH_BUILD_VULKAN=OFF \
   -DEXECUTORCH_BUILD_XNNPACK=ON \
+  -DEXECUTORCH_BUILD_TESTS=ON \
   -Bcmake-out
 
 cmake --build cmake-out -j9 --target install
 ```
-2. Build gtest.
-```
-mkdir -p third-party/googletest/build
-cd third-party/googletest/build
-cmake .. -DCMAKE_INSTALL_PREFIX=.
-make -j4
-make install
-cd ../../../
-```
-
-3. Build kernel tests.
-```
-cmake kernels/test \
-  -DCMAKE_BUILD_TYPE=Debug \
-  -DCMAKE_INSTALL_PREFIX=cmake-out \
-  -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
-  -DCMAKE_PREFIX_PATH="$(pwd)/third-party/googletest/build" \
-  -Bcmake-out/kernels/test
-cmake --build cmake-out/kernels/test -j9
-```
-4. Run tests. You should see your test here.
+2. Run tests. You should see your test here.
 ```
 ./cmake-out/kernels/test/portable_kernels_test
 ./cmake-out/kernels/test/optimized_kernels_test
+./cmake-out/kernels/test/quantized_kernels_test
 ```
 
 #### Implementation restrictions

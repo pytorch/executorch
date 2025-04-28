@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -55,9 +55,7 @@ class TestToCopy(unittest.TestCase):
                 compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
-            .dump_artifact()
             .to_edge()
-            .dump_artifact()
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()

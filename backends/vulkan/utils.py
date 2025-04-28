@@ -80,6 +80,20 @@ def is_tensor_node(node: torch.fx.Node) -> bool:
     return False
 
 
+def tensor_node_is_bool(node: torch.fx.Node) -> bool:
+    """
+    Returns true if a given node contains a tensor with bool dtype
+    """
+    if isinstance(node.meta["val"], FakeTensor):
+        return node.meta["val"].dtype == torch.bool
+    if isinstance(node.meta["val"], list) or isinstance(node.meta["val"], tuple):
+        for fake_tensor in node.meta["val"]:
+            if isinstance(fake_tensor, FakeTensor):
+                if fake_tensor.dtype == torch.bool:
+                    return True
+    return False
+
+
 ##
 ## Memory Layout, Storage Type Determination
 ##

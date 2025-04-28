@@ -13,6 +13,7 @@
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/platform/platform.h>
 #include <executorch/test/utils/DeathTest.h>
 
 #include <gtest/gtest.h>
@@ -129,6 +130,16 @@ TEST(BroadcastUtilTest, GetBroadcastTargetSize) {
   EXPECT_TRUE(
       ArrayRef<Tensor::SizesType>(expected_output_size, expected_output_dim)
           .equals(ArrayRef<Tensor::SizesType>({5, 2, 2})));
+
+  Tensor c = tf.zeros({4, 5});
+  et_pal_init();
+  err = get_broadcast_target_size(
+      a,
+      c,
+      expected_output_size,
+      torch::executor::kTensorDimensionLimit,
+      &expected_output_dim);
+  EXPECT_EQ(err, torch::executor::Error::InvalidArgument);
 }
 
 size_t linearize_indexes(size_t* indexes, size_t indexes_len, const Tensor& t) {
