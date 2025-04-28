@@ -41,7 +41,7 @@ jobs:
     with:
       runner: macos-m1-stable
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -89,7 +89,7 @@ jobs:
     with:
       runner: ${{ matrix.runner }}
       docker-image: executorch-ubuntu-22.04-gcc11-aarch64
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -116,7 +116,7 @@ jobs:
     with:
       runner: macos-m1-stable
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         BUILD_TOOL=${{ matrix.build-tool }}
@@ -138,7 +138,7 @@ jobs:
     with:
       runner: macos-m1-stable
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         BUILD_TOOL=${{ matrix.build-tool }}
@@ -164,7 +164,7 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
@@ -185,7 +185,7 @@ jobs:
     with:
       runner: linux.2xlarge.memory
       docker-image: executorch-ubuntu-22.04-arm-sdk
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -215,7 +215,7 @@ jobs:
     with:
       runner: linux.2xlarge.memory
       docker-image: executorch-ubuntu-22.04-arm-sdk
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -240,7 +240,7 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-arm-sdk
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -291,7 +291,7 @@ jobs:
     with:
       runner: macos-latest-xlarge
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -314,7 +314,7 @@ jobs:
     with:
       runner: macos-m1-stable
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 180
       script: |
@@ -333,7 +333,7 @@ jobs:
     with:
       runner: macos-m1-stable
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
@@ -355,7 +355,7 @@ jobs:
     with:
       runner: macos-m1-stable
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
@@ -407,7 +407,7 @@ jobs:
     with:
       runner: ${{ matrix.runner }}
       docker-image: ${{ matrix.docker-image }}
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
       script: |
@@ -439,7 +439,7 @@ jobs:
     with:
       runner: macos-m1-stable
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
       script: |
@@ -476,7 +476,7 @@ jobs:
   #   with:
   #     runner: macos-14-xlarge
   #     python-version: '3.11'
-  #     submodules: 'true'
+  #     submodules: 'recursive'
   #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
   #     timeout: 900
   #     script: |
@@ -510,7 +510,7 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-qnn-sdk
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
       script: |
@@ -530,7 +530,7 @@ jobs:
     with:
       runner: macos-m1-stable
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -580,7 +580,7 @@ jobs:
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: linux.2xlarge.memory
       docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -639,7 +639,7 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-qnn-sdk
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
       script: |
