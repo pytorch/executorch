@@ -805,6 +805,21 @@ Error Method::init(
       pte_data_map = pte_data_map_res.get();
     }
 
+    int named_data_map_items =
+        (named_data_map != nullptr) ? named_data_map->get_num_keys().get() : 0;
+    int pte_map_items =
+        (pte_data_map != nullptr) ? pte_data_map->get_num_keys().get() : 0;
+
+    // TODO: implement ndm merge.
+    ET_CHECK_OR_RETURN_ERROR(
+        (pte_map_items == 0 || named_data_map_items == 0),
+        NotImplemented,
+        "NamedDataMap merge not supported. Both pte_data_map and named_data_map are non-empty, don't know what to do.");
+
+    if (named_data_map_items == 0) {
+      named_data_map = pte_data_map;
+    }
+
     // n_delegate_ counts the number of successfully-initialized delegates for
     // ~Method() to clean up, and is incremented at the bottom of the loop. This
     // makes it safe for errors to return without updating any state.
@@ -816,7 +831,7 @@ Error Method::init(
           method_allocator,
           /*event_tracer=*/event_tracer_,
           /*method_name=*/serialization_plan_->name()->c_str(),
-          /*named_data_map=*/pte_data_map);
+          /*named_data_map=*/named_data_map);
       Error err = BackendDelegate::Init(
           delegate, program_, backend_init_context, &delegates_[i]);
       if (err != Error::Ok) {
