@@ -40,33 +40,23 @@ static constexpr auto kUseSDPAWithKVCache = "use_sdpa_with_kv_cache";
 
 std::unique_ptr<::tokenizers::Tokenizer> load_tokenizer(
     const std::string& tokenizer_path) {
-  std::unique_ptr<::tokenizers::Tokenizer> tokenizer = nullptr;
 
-  // First try to load as a json tokenizer.
-  {
-    auto tokenizer = std::make_unique<tokenizers::HFTokenizer>();
-    if (tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
-      ET_LOG(Info, "Loaded json tokenizer");
-      return tokenizer;
-    }
+  auto json_tokenizer = std::make_unique<tokenizers::HFTokenizer>();
+  if (json_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
+    ET_LOG(Info, "Loaded json tokenizer");
+    return json_tokenizer;
   }
 
-  // Try to load as tiktoken tokenizer.
-  {
-    auto tokenizer = get_tiktoken_for_llama();
-    if (tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
-      ET_LOG(Info, "Loaded TikToken tokenizer");
-      return tokenizer;
-    }
+  auto tiktoken_tokenizer = get_tiktoken_for_llama();
+  if (tiktoken_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
+    ET_LOG(Info, "Loaded TikToken tokenizer");
+    return tiktoken_tokenizer;
   }
 
-  // Try to load as BPE tokenizer.
-  {
-    auto tokenizer = std::make_unique<::tokenizers::Llama2cTokenizer>();
-    if (tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
-      ET_LOG(Info, "Loaded BPE tokenizer");
-      return tokenizer;
-    }
+  auto bpe_tokenizer = std::make_unique<::tokenizers::Llama2cTokenizer>();
+  if (bpe_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
+    ET_LOG(Info, "Loaded BPE tokenizer");
+    return bpe_tokenizer;
   }
 
   return nullptr;
