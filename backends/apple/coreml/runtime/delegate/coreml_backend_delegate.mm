@@ -88,6 +88,7 @@ std::optional<MultiArray> get_multi_array(EValue *eValue, ArgType argType) {
         ET_LOG(Error, "%s: DataType=%d is not supported", ETCoreMLStrings.delegateIdentifier.UTF8String, (int)tensor.scalar_type());
         return std::nullopt;
     }
+    
     std::vector<ssize_t> strides(tensor.strides().begin(), tensor.strides().end());
     std::vector<size_t> shape(tensor.sizes().begin(), tensor.sizes().end());
     
