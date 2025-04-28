@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cstring>
 
 #include <executorch/kernels/portable/cpu/util/repeat_util.h>
@@ -23,17 +24,17 @@ bool calculate_output_size(
     Tensor::SizesType* out_sizes_ptr) {
   ET_LOG_AND_RETURN_IF_FALSE(repeats.size() < kTensorDimensionLimit);
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       repeats.size() >= self_sizes.size(),
       "Repeats vector size is %zu must be >= self_sizes %zu.",
       repeats.size(),
       self_sizes.size());
 
-  int32_t i = 0;
+  size_t i = 0;
   for (; i < (repeats.size() - self_sizes.size()); ++i) {
     out_sizes_ptr[i] = static_cast<executorch::aten::SizesType>(repeats[i]);
   }
-  int32_t j = 0;
+  size_t j = 0;
   for (; i < repeats.size(); ++i) {
     out_sizes_ptr[i] =
         static_cast<executorch::aten::SizesType>(repeats[i]) * self_sizes[j];

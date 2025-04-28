@@ -31,7 +31,6 @@ NPROC=8
 if hash nproc &> /dev/null; then NPROC=$(nproc); fi
 
 python_lib=$($PYTHON_EXECUTABLE -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')
-CMAKE_PREFIX_PATH="$(python3 -c 'import torch as _; print(_.__path__[0])')"
 EXECUTORCH_COMMON_CMAKE_ARGS="                      \
         -DCMAKE_INSTALL_PREFIX=${BUILD_DIR}         \
         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}      \
@@ -48,7 +47,6 @@ EXECUTORCH_COMMON_CMAKE_ARGS="                      \
 cmake_install_executorch_libraries() {
     cmake                               \
         ${EXECUTORCH_COMMON_CMAKE_ARGS} \
-        "-DCMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}" \
         -B${BUILD_DIR} .
 
     cmake --build ${BUILD_DIR} -j${NPROC} --target install --config ${CMAKE_BUILD_TYPE}
@@ -59,7 +57,6 @@ cmake_install_executorch_libraries_for_android() {
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
         -DANDROID_ABI=arm64-v8a                                                 \
         ${EXECUTORCH_COMMON_CMAKE_ARGS}                                         \
-        "-DCMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}" \
         -B${BUILD_DIR} .
 
     cmake --build ${BUILD_DIR} -j${NPROC} --target install --config ${CMAKE_BUILD_TYPE}
@@ -80,7 +77,7 @@ cmake_build_llava_runner() {
 
     cmake                                 \
         ${LLAVA_COMMON_CMAKE_ARGS}        \
-        -DCMAKE_PREFIX_PATH="$python_lib;${CMAKE_PREFIX_PATH}" \
+        -DCMAKE_PREFIX_PATH="$python_lib" \
         -B${BUILD_DIR}/${dir}             \
         ${dir}
 
@@ -96,7 +93,7 @@ cmake_build_llava_runner_for_android() {
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
         -DANDROID_ABI=arm64-v8a                                                 \
         ${LLAVA_COMMON_CMAKE_ARGS}                                              \
-        -DCMAKE_PREFIX_PATH="$python_lib;${CMAKE_PREFIX_PATH}"                  \
+        -DCMAKE_PREFIX_PATH="$python_lib"                  \
         -DLLAVA_RUNNER_NO_TORCH_DUMMY_IMAGE=ON                                  \
         -B${BUILD_DIR}/${dir}                                                   \
         ${dir}
@@ -157,7 +154,7 @@ run_and_verify() {
         EXPECTED_PREFIX="ASSISTANT: image captures a basketball game in progress, with several players on the court. One of the players is dribbling the ball, while the others are in various"
     else
         # set the expected prefix to be the same as prompt because there's a bug in sdpa_with_kv_cache that causes <unk> tokens.
-        EXPECTED_PREFIX="ASSISTANT:"
+        EXPECTED_PREFIX="ASSISTANT: image"
     fi
     if [[ "${RESULT}" == *"${EXPECTED_PREFIX}"* ]]; then
         echo "Expected result prefix: ${EXPECTED_PREFIX}"

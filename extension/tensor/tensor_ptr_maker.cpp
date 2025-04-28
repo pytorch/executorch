@@ -140,12 +140,22 @@ TensorPtr rand_strided(
     std::vector<executorch::aten::StridesType> strides,
     executorch::aten::ScalarType type,
     executorch::aten::TensorShapeDynamism dynamism) {
+  auto upper_bound = 1.0f;
+  // Adjusts the upper bound to prevent rounding to 1.0 when converting to
+  // lower-precision types.
+  if (type == executorch::aten::ScalarType::Half) {
+    upper_bound -=
+        float(std::numeric_limits<executorch::aten::Half>::epsilon()) / 2;
+  } else if (type == executorch::aten::ScalarType::BFloat16) {
+    upper_bound -=
+        float(std::numeric_limits<executorch::aten::BFloat16>::epsilon()) / 2;
+  }
   return random_strided(
       std::move(sizes),
       std::move(strides),
       type,
       dynamism,
-      std::uniform_real_distribution<float>(0.0f, 1.0f));
+      std::uniform_real_distribution<float>(0.0f, upper_bound));
 }
 
 TensorPtr randn_strided(

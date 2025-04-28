@@ -27,7 +27,7 @@ class BuildQuantIo(ExportPass):
             return None
 
     def _build(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
-        # forcely update delegate node's meta['spec'] to get correct output
+        # Forcedly update delegate node's meta['spec'] to get correct output
         # tensor size in runtime
         call_delegate = [
             node
@@ -35,17 +35,9 @@ class BuildQuantIo(ExportPass):
             if node.op == "call_function" and node.name == "executorch_call_delegate"
         ]
         assert len(call_delegate) == 1
-        spec = []
         for n in graph_module.graph.nodes:
             if QCOM_QUANTIZED_IO in n.meta:
                 n.meta["val"] = n.meta["val"].to(dtype=n.meta[QCOM_QUANTIZED_IO])
-            if n.op == "call_function" and "getitem" in n.name:
-                fake_tensor = n.meta["val"]
-                if QCOM_QUANTIZED_IO in n.meta:
-                    fake_tensor = fake_tensor.to(dtype=n.meta[QCOM_QUANTIZED_IO])
-                spec.append(self._make_spec(fake_tensor))
-
-        call_delegate[0].meta["spec"] = tuple(spec)
 
     def call(self, graph_module: torch.fx.GraphModule):
         self._build(graph_module)

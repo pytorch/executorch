@@ -11,6 +11,7 @@ def define_common_targets():
         srcs = ["bfloat16_test.cpp"],
         deps = [
             "//executorch/runtime/core/portable_type:portable_type",
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
         ],
     )
 
@@ -52,5 +53,6 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/runtime/core/portable_type:portable_type",
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
         ],
     )

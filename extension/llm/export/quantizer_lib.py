@@ -107,10 +107,8 @@ def get_pt2e_quantizers(
                 raise RuntimeError(
                     "Need to specify shared library path to register quantized ops (and their out variants) into EXIR.\n"
                     "Follow the following steps to build the needed lib via cmake.\n"
-                    'Use `python -c "import torch as _; print(_.__path__)"` to find where torch package is installed.\n'
-                    "Set that as TORCH_PACKAGE_DIR.\n"
                     "Then from root executorch dir do the following:\n"
-                    "rm -rf cmake-out && mkdir cmake-out && (cd cmake-out && cmake -DBUCK2=<path-to-buck2> -DCMAKE_PREFIX_PATH=$TORCH_PACKAGE_DIR -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON ..) && cmake --build . -j16\n"
+                    "rm -rf cmake-out && mkdir cmake-out && (cd cmake-out && cmake -DBUCK2=<path-to-buck2> -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON ..) && cmake --build . -j16\n"
                     'To find the location of the lib: find cmake-out -name "libquantized_ops_aot_lib*"\n'
                     "Then specify the said library via -s <path to libquantized_ops_aot_lib.so\n"
                 )
@@ -160,7 +158,7 @@ def get_qnn_quantizer(
 
     except ImportError:
         raise ImportError(
-            "Please install the Qualcomm backend follwing https://pytorch.org/executorch/main/build-run-qualcomm.html"
+            "Please install the Qualcomm backend follwing https://pytorch.org/executorch/main/backends-qualcomm"
         )
 
     backend, quant_config = pt2e_quantize.split("_")
@@ -168,30 +166,39 @@ def get_qnn_quantizer(
         backend == "qnn"
     ), f"The quantization config is for backend {backend} instead of qnn."
     qnn_quantizer = QnnQuantizer()  # pyre-fixme[16]
-    qnn_quantizer.set_per_channel_conv_quant(enable=True)
-    qnn_quantizer.set_per_channel_linear_quant(enable=True)
+
     # more custom quantization are supported including 16a4w etc. default to 8bit quantized
     custom_annotations = ()
     if quant_config == "8a8w":
         quant_dtype = QuantDtype.use_8a8w  # pyre-fixme[16]
-        qnn_quantizer.set_quant_config(quant_dtype, is_qat=is_qat)
+        qnn_quantizer.set_default_quant_config(
+            quant_dtype,
+            is_qat=is_qat,
+            is_conv_per_channel=True,
+            is_linear_per_channel=True,
+        )
     elif quant_config == "16a16w":
-        quant_dtype = QuantDtype.use_16a16w  # pyre-fixme[16]
         # Due to the error with 16a16w in Qnn Htp, we need to disable per channel linear quantization when use 16a16w
         # TODO: enable it after the issue is fixed
         logging.warning(
             "Disable per channel quantization for linear and conv due to the error with QNN HTP 16a16w."
         )
-        qnn_quantizer.set_per_channel_conv_quant(enable=False)
-        qnn_quantizer.set_per_channel_linear_quant(enable=False)
-        qnn_quantizer.set_quant_config(
-            quant_dtype, is_qat=is_qat, act_observer=MinMaxObserver
+        quant_dtype = QuantDtype.use_16a16w  # pyre-fixme[16]
+        qnn_quantizer.set_default_quant_config(
+            quant_dtype,
+            is_qat=is_qat,
+            is_conv_per_channel=False,
+            is_linear_per_channel=False,
+            act_observer=MinMaxObserver,
         )
     elif quant_config == "16a4w":
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
-        quant_dtype = QuantDtype.use_16a4w
-        qnn_quantizer.set_quant_config(
-            quant_dtype, is_qat=is_qat, act_observer=MinMaxObserver
+        quant_dtype = QuantDtype.use_16a16w  # pyre-fixme[16]
+        qnn_quantizer.set_default_quant_config(
+            quant_dtype,
+            is_qat=is_qat,
+            is_conv_per_channel=True,
+            is_linear_per_channel=True,
+            act_observer=MinMaxObserver,
         )
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
         custom_annotations = (custom_annotate_llama_matmul_16a8w,)
@@ -219,7 +226,7 @@ def get_coreml_quantizer(pt2e_quantize: str):
         from executorch.backends.apple.coreml.quantizer import CoreMLQuantizer
     except ImportError:
         raise ImportError(
-            "Please install the CoreML backend follwing https://pytorch.org/executorch/main/build-run-coreml.html"
+            "Please install the CoreML backend follwing https://pytorch.org/executorch/main/backends-coreml"
         )
 
     if pt2e_quantize == "coreml_8a_c8w":

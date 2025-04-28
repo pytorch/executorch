@@ -174,6 +174,14 @@ void SpecVarList::append(const SpecVarList& other) {
   vars.insert(vars.end(), other.vars.begin(), other.vars.end());
 }
 
+void SpecVarList::reserve(const size_t size) {
+  vars.reserve(size);
+}
+
+void SpecVarList::append(const SpecVar& other) {
+  vars.push_back(other);
+}
+
 std::vector<VkSpecializationMapEntry> SpecVarList::generate_map_entries()
     const {
   std::vector<VkSpecializationMapEntry> map_entries;
@@ -267,12 +275,11 @@ ComputePipeline::ComputePipeline(
     const ComputePipeline::Descriptor& descriptor,
     VkPipelineCache pipeline_cache)
     : device_(device), handle_{VK_NULL_HANDLE} {
-  std::vector<VkSpecializationMapEntry> map_entries =
-      descriptor.specialization_constants.generate_map_entries();
+  map_entries_ = descriptor.specialization_constants.generate_map_entries();
 
   const VkSpecializationInfo specialization_info{
       descriptor.specialization_constants.size(), // mapEntryCount
-      map_entries.data(), // pMapEntries
+      map_entries_.data(), // pMapEntries
       descriptor.specialization_constants.data_nbytes(), // dataSize
       descriptor.specialization_constants.data(), // pData
   };
@@ -313,7 +320,9 @@ ComputePipeline::ComputePipeline(
 }
 
 ComputePipeline::ComputePipeline(ComputePipeline&& other) noexcept
-    : device_(other.device_), handle_(other.handle_) {
+    : device_(other.device_),
+      handle_(other.handle_),
+      map_entries_(std::move(other.map_entries_)) {
   other.handle_ = VK_NULL_HANDLE;
 }
 

@@ -6,6 +6,8 @@
 
 import unittest
 
+from executorch.backends.arm.arm_backend import get_tosa_spec
+
 from executorch.backends.arm.tosa_specification import (
     Tosa_0_80,
     Tosa_1_00,
@@ -56,9 +58,9 @@ test_invalid_strings = [
 ]
 
 test_compile_specs = [
-    ([CompileSpec("tosa_version", "TOSA-0.80+BI".encode())],),
-    ([CompileSpec("tosa_version", "TOSA-0.80+BI+u55".encode())],),
-    ([CompileSpec("tosa_version", "TOSA-1.0.0+INT".encode())],),
+    ([CompileSpec("tosa_spec", "TOSA-0.80+BI".encode())],),
+    ([CompileSpec("tosa_spec", "TOSA-0.80+BI+u55".encode())],),
+    ([CompileSpec("tosa_spec", "TOSA-1.0.0+INT".encode())],),
 ]
 
 test_compile_specs_no_version = [
@@ -99,14 +101,14 @@ class TestTosaSpecification(unittest.TestCase):
 
     @parameterized.expand(test_compile_specs)  # type: ignore[misc]
     def test_create_from_compilespec(self, compile_specs: list[CompileSpec]):
-        tosa_spec = TosaSpecification.create_from_compilespecs(compile_specs)
+        tosa_spec = get_tosa_spec(compile_specs)
         assert isinstance(tosa_spec, TosaSpecification)
 
     @parameterized.expand(test_compile_specs_no_version)  # type: ignore[misc]
     def test_create_from_invalid_compilespec(self, compile_specs: list[CompileSpec]):
         tosa_spec = None
         with self.assertRaises(ValueError):
-            tosa_spec = TosaSpecification.create_from_compilespecs(compile_specs)
+            tosa_spec = get_tosa_spec(compile_specs)
 
         assert tosa_spec is None
 

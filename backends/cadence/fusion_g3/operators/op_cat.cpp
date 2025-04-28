@@ -115,7 +115,8 @@ Tensor& cat_out(
       (out.scalar_type() == ScalarType::Char) ||
       (out.scalar_type() == ScalarType::UInt32) ||
       (out.scalar_type() == ScalarType::UInt16) ||
-      (out.scalar_type() == ScalarType::Byte)) {
+      (out.scalar_type() == ScalarType::Byte) ||
+      (out.scalar_type() == ScalarType::Float)) {
     XT_KERNEL_CHECK(
         ctx,
         out,

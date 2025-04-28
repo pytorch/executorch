@@ -22,10 +22,8 @@ NPROC=8
 if hash nproc &> /dev/null; then NPROC=$(nproc); fi
 
 cmake_install_executorch_libraries() {
-  CMAKE_PREFIX_PATH="$(python3 -c 'import torch as _; print(_.__path__[0])')"
   cmake -DPYTHON_EXECUTABLE=python \
       -DCMAKE_INSTALL_PREFIX=${BUILD_DIR} \
-      -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
       -DEXECUTORCH_ENABLE_LOGGING=1 \
       -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
       -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
@@ -41,10 +39,8 @@ cmake_install_executorch_libraries() {
 }
 
 cmake_build_phi_3_mini() {
-  CMAKE_PREFIX_PATH="$(python3 -c 'import torch as _; print(_.__path__[0])')"
   cmake -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
       -DCMAKE_INSTALL_PREFIX=${BUILD_DIR} \
-      -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
       -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
       -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
       -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
@@ -60,7 +56,7 @@ cmake_build_phi_3_mini() {
 prepare_tokenizer() {
   echo "Downloading and converting tokenizer.model"
   wget -O tokenizer.model "https://huggingface.co/microsoft/Phi-3-mini-128k-instruct/resolve/main/tokenizer.model?download=true"
-  $PYTHON_EXECUTABLE -m executorch.extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+  $PYTHON_EXECUTABLE -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokenizer.bin
 }
 
 # Export phi-3-mini model to pte

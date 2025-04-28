@@ -5,10 +5,13 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <c10/util/irange.h>
 
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
+
+#include <optional>
 
 namespace torch {
 namespace executor {
@@ -43,25 +46,31 @@ Tensor& sum_dim_out(
 
   ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
-  ET_SWITCH_REALHBBF16_TYPES(
-      in.scalar_type(), ctx, "sum.IntList_out", CTYPE_IN, [&] {
-        ET_SWITCH_REALHBBF16_TYPES(
-            out.scalar_type(), ctx, "sum.IntList_out", CTYPE_OUT, [&] {
-              CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
-              for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
-                CTYPE_OUT sum = 0;
-                if (in.numel() > 0) {
-                  sum = map_reduce_over_dim_list<CTYPE_IN, CTYPE_OUT>(
-                      [](CTYPE_IN v) { return static_cast<CTYPE_OUT>(v); },
-                      [](CTYPE_OUT outv, CTYPE_OUT acc) { return acc + outv; },
-                      in,
-                      dim_list,
-                      out_ix);
-                }
-                out_data[out_ix] = sum;
+  std::optional<MapReduceOverDimListPlan> plan;
+  if (in.numel() > 0) {
+    plan.emplace(in, dim_list);
+  }
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "sum.IntList_out";
+  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE_IN, [&] {
+    ET_SWITCH_REALHBBF16_TYPES(out.scalar_type(), ctx, op_name, CTYPE_OUT, [&] {
+      CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
+      const bool success = parallel_for_each_reduce_over_dim_list_output_index(
+          in, dim_list, out, [&](const auto begin, const auto end) {
+            for (const auto out_ix : c10::irange(begin, end)) {
+              CTYPE_OUT sum = 0;
+              if (plan.has_value()) {
+                sum = plan->execute<CTYPE_IN, CTYPE_OUT>(
+                    [](CTYPE_IN v) { return static_cast<CTYPE_OUT>(v); },
+                    [](CTYPE_OUT outv, CTYPE_OUT acc) { return acc + outv; },
+                    out_ix);
               }
-            });
-      });
+              out_data[out_ix] = sum;
+            }
+          });
+      ET_KERNEL_CHECK_MSG(ctx, success, Internal, , "parallel_for failed");
+    });
+  });
 
   return out;
 }

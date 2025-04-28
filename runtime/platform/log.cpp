@@ -92,8 +92,7 @@ void vlogf(
   }
   buf[kMaxLogMessageLength - 1] = 0;
 
-  et_pal_log_level_t pal_level =
-      (int(level) >= 0 && level < LogLevel::NumLevels)
+  et_pal_log_level_t pal_level = (level < LogLevel::NumLevels)
       ? kLevelToPal[size_t(level)]
       : et_pal_log_level_t::kUnknown;
 

@@ -13,7 +13,8 @@ from torch.fx import Node
 
 
 class FuseQuantizedActivationPass(ExportPass):
-    def _is_fuseable_quantized_activation(self, node: Node):
+    @staticmethod
+    def _is_fuseable_quantized_activation(node: Node):
         """Fuse activations that have a 0 lower bound and quantized with a qmin zero-point"""
         is_fuseable = node.target == exir_ops.edge.aten.relu.default
         if node.target == exir_ops.edge.aten.hardtanh.default:
@@ -29,7 +30,8 @@ class FuseQuantizedActivationPass(ExportPass):
         else:
             return False
 
-    def _is_fuseable_input(self, node: Node):
+    @staticmethod
+    def _is_fuseable_input(node: Node):
         return (
             node.target
             in (
@@ -45,11 +47,11 @@ class FuseQuantizedActivationPass(ExportPass):
             if node.op != "call_function":
                 continue
 
-            if not self._is_fuseable_quantized_activation(node):
+            if not FuseQuantizedActivationPass._is_fuseable_quantized_activation(node):
                 continue
 
             input_node = node.args[0]
-            if not self._is_fuseable_input(input_node):
+            if not FuseQuantizedActivationPass._is_fuseable_input(input_node):
                 continue
 
             node.replace_all_uses_with(input_node)

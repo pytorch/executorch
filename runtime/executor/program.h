@@ -7,12 +7,16 @@
  */
 
 #pragma once
+
+#ifdef __GNUC__
 // Disable -Wdeprecated-declarations, as some builds use 'Werror'.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 
 #include <cinttypes>
 #include <cstdint>
+#include <optional>
 
 #include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/core/error.h>
@@ -22,6 +26,7 @@
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/method_meta.h>
+#include <executorch/runtime/executor/pte_data_map.h>
 #include <executorch/runtime/platform/compiler.h>
 
 // Forward declare flatbuffer types. This is a public header and must not
@@ -31,8 +36,7 @@ struct Program;
 } // namespace executorch_flatbuffer
 
 namespace executorch {
-namespace runtime {
-
+namespace ET_RUNTIME_NAMESPACE {
 namespace testing {
 // Provides test access to private Program methods.
 class ProgramTestFriend;
@@ -106,6 +110,12 @@ class Program final {
       const;
 
   /**
+   * Get the named data map from the program.
+   * @return The named data map.
+   */
+  Result<const NamedDataMap*> get_named_data_map() const;
+
+  /**
    * Returns the number of methods in the program.
    */
   size_t num_methods() const;
@@ -129,13 +139,16 @@ class Program final {
    *     execution of the loaded method. If `memory_manager.temp_allocator()` is
    *     null, the runtime will allocate temp memory using `et_pal_allocate()`.
    * @param[in] event_tracer The event tracer to use for this method run.
+   * @param[in] named_data_map An optional map of {name, blob} used to resolve
+   *     data that is external to the PTE, if any.
    *
    * @returns The loaded method on success, or an error on failure.
    */
   Result<Method> load_method(
       const char* method_name,
       MemoryManager* memory_manager,
-      EventTracer* event_tracer = nullptr) const;
+      EventTracer* event_tracer = nullptr,
+      const NamedDataMap* named_data_map = nullptr) const;
 
   /**
    * Gathers metadata for the named method.
@@ -263,13 +276,15 @@ class Program final {
       size_t segment_base_offset,
       FreeableBuffer&& program_data,
       const executorch_flatbuffer::Program* internal_program,
-      FreeableBuffer&& constant_segment_data)
+      FreeableBuffer&& constant_segment_data,
+      std::optional<internal::PteDataMap>&& pte_data_map)
       : program_data_(std::move(program_data)),
         // Don't need the loader if there are no segments.
         loader_(segment_base_offset > 0 ? loader : nullptr),
         internal_program_(internal_program),
         segment_base_offset_(segment_base_offset),
-        constant_segment_data_(std::move(constant_segment_data)) {}
+        constant_segment_data_(std::move(constant_segment_data)),
+        pte_data_map_(std::move(pte_data_map)) {}
 
   // Not copyable or assignable.
   Program(const Program& rhs) = delete;
@@ -292,17 +307,22 @@ class Program final {
 
   /// Constant segment data.
   FreeableBuffer constant_segment_data_;
+
+  /// NamedDataMap holding named data from the program.
+  std::optional<internal::PteDataMap> pte_data_map_;
 };
 
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
 
 namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::Program;
+using ::executorch::ET_RUNTIME_NAMESPACE::Program;
 } // namespace executor
 } // namespace torch
 
+#ifdef __GNUC__
 #pragma GCC diagnostic pop
+#endif

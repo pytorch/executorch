@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -13,12 +13,14 @@ import pytest
 
 import torch
 
-from executorch.backends.arm.quantizer.arm_quantizer import (
-    ArmQuantizer,
+from executorch.backends.arm.quantizer import (
+    EthosUQuantizer,
     get_symmetric_quantization_config,
+    TOSAQuantizer,
 )
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.backends.arm.test.tester.test_pipeline import OpNotSupportedPipeline
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -76,7 +78,7 @@ class TestPermute(unittest.TestCase):
     ):
         tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
         compile_spec = common.get_tosa_compile_spec(tosa_spec)
-        quantizer = ArmQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
+        quantizer = TOSAQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
         (
             ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
@@ -97,8 +99,9 @@ class TestPermute(unittest.TestCase):
         compile_spec: CompileSpec,
         test_data: Tuple[torch.Tensor],
     ):
-        tosa_spec = TosaSpecification.create_from_compilespecs(compile_spec)
-        quantizer = ArmQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
+        quantizer = EthosUQuantizer(compile_spec).set_io(
+            get_symmetric_quantization_config()
+        )
         tester = (
             ArmTester(
                 module,
@@ -161,3 +164,26 @@ class TestPermute(unittest.TestCase):
         self._test_permute_ethos_BI_pipeline(
             self.Permute(dims=dims), common.get_u85_compile_spec(), (test_data,)
         )
+
+
+reject_data_suite = {
+    "int8_r3_axes_product": ([1, 700, 1000], [2, 1, 0], torch.int8),
+    "int8_r5_axes_product": ([1, 1, 1, 700, 1000], [0, 1, 2, 3, 4], torch.int8),
+    "int8_r4_NH_too_large": ([700, 100, 1, 1], [0, 1, 3, 2], torch.int8),
+    "int32_r5_no_support": ([2, 2, 2, 2, 2], [3, 4, 2, 1, 0], torch.int32),
+}
+input_t = tuple[torch.Tensor]
+
+
+@common.parametrize("test_data", reject_data_suite)
+def test_permute_u55_BI_not_delegated(test_data):
+    # Tests that we don't delegate these ops since they are not supported on U55.
+    shape, permutation, dtype = test_data
+    data = ((torch.rand(shape) * 10).to(dtype),)
+    pipeline = OpNotSupportedPipeline[input_t](
+        TestPermute.Permute(dims=permutation),
+        data,
+        "TOSA-0.80+BI+u55",
+        {"executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1},
+    )
+    pipeline.run()

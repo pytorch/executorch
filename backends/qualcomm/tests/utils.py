@@ -9,28 +9,35 @@ import os
 import subprocess
 import tempfile
 import unittest
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, OrderedDict, Tuple
 
 import numpy as np
 import torch
 
 from executorch import exir
-from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
-from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
+from executorch.backends.qualcomm.quantizer.quantizer import ModuleQConfig, QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_DTYPE,
+    QCOM_PASS_ACTIVATE_KEY,
+    QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
+    QCOM_SCALE,
+    QCOM_ZERO_POINT,
+)
 from executorch.backends.qualcomm.utils.utils import (
-    capture_program,
     get_soc_to_chipset_map,
+    to_edge_transform_and_lower_to_qnn,
 )
 from executorch.devtools import generate_etrecord, Inspector
+from executorch.devtools.inspector._inspector_utils import TimeScale
 from executorch.examples.qualcomm.utils import (
     generate_inputs,
     make_output_dir,
+    make_quantizer,
     SimpleADB,
 )
 
-from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -41,6 +48,7 @@ from torch.ao.quantization.quantize_pt2e import (
     prepare_pt2e,
     prepare_qat_pt2e,
 )
+from torch.fx.passes.infra.pass_base import PassResult
 
 
 def generate_context_binary(
@@ -108,6 +116,57 @@ def generate_context_binary(
     assert os.path.isfile(f"{artifact_dir}/model_ctx.bin"), print(result.stderr)
 
 
+def validate_context_binary(ctx_bin: bytes):
+    qnn_sdk = os.environ.get("QNN_SDK_ROOT", None)
+    assert qnn_sdk, "QNN_SDK_ROOT was not found in environment variable"
+
+    # flow of qnn tools
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        with open(f"{tmp_dir}/ctx.bin", "wb") as binary_file:
+            binary_file.write(ctx_bin)
+
+        target = "x86_64-linux-clang"
+        cmds = [
+            # qnn-context-binary-utility
+            f"{qnn_sdk}/bin/{target}/qnn-context-binary-utility",
+            "--context_binary",
+            f"{tmp_dir}/ctx.bin",
+            "--json_file",
+            f"{tmp_dir}/ctx.json",
+        ]
+        result = subprocess.run(
+            " ".join(cmds),
+            shell=True,
+            executable="/bin/bash",
+            capture_output=True,
+        )
+        assert os.path.isfile(f"{tmp_dir}/ctx.json"), print(result.stderr)
+
+
+def validate_qcir(qcir: bytes):
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        with open(f"{tmp_dir}/qcir.bin", "wb") as binary_file:
+            binary_file.write(qcir)
+
+        cmds = [
+            "flatc",
+            "-o",
+            tmp_dir,
+            "--raw-binary",
+            "-t",
+            f"{os.path.dirname(__file__)}/../aot/ir/qcir.fbs",
+            "--",
+            f"{tmp_dir}/qcir.bin",
+        ]
+        result = subprocess.run(
+            " ".join(cmds),
+            shell=True,
+            executable="/bin/bash",
+            capture_output=True,
+        )
+        assert os.path.isfile(f"{tmp_dir}/qcir.json"), print(result.stderr)
+
+
 class TestQNN(unittest.TestCase):
     rtol: float = 0
     atol: float = 0
@@ -131,6 +190,10 @@ class TestQNN(unittest.TestCase):
     use_16a4w: str = "16a4w"
     shared_buffer: bool = False
     enable_x86_64: bool = False
+    compile_only: bool = False
+    pre_gen_pte: str = ""
+    llama_artifacts: str = ""
+    dump_intermediate_outputs: bool = False
 
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))
@@ -183,6 +246,9 @@ class TestQNN(unittest.TestCase):
         expected_profile_events: int = -1,
         expected_intermediate_events: int = -1,
         method_index: int = 0,
+        input_encodings: Tuple = (),
+        output_encodings: Tuple = (),
+        check_io_shape: bool = False,
     ):
         with tempfile.TemporaryDirectory() as tmp_dir:
             (
@@ -202,14 +268,35 @@ class TestQNN(unittest.TestCase):
             debug_output_path = f"{tmp_dir}/debug_output.bin"
 
             def post_process():
+                from torch.testing._internal.common_utils import (
+                    torch_to_numpy_dtype_dict,
+                )
+
                 for i, f in enumerate(sorted(os.listdir(output_dir))):
+                    enc = output_encodings[i] if len(output_encodings) != 0 else None
+                    dtype = (
+                        ref_outputs[i].numpy().dtype
+                        if enc is None
+                        else torch_to_numpy_dtype_dict[enc[QCOM_DTYPE]]
+                    )
                     filename = os.path.join(output_dir, f)
-                    output = np.fromfile(filename, dtype=ref_outputs[i].numpy().dtype)
+                    output = np.fromfile(filename, dtype=dtype)
                     output = torch.from_numpy(output).reshape(ref_outputs[i].shape)
+                    if enc is not None:
+                        output = (
+                            output.to(torch.float)
+                            .sub(enc[QCOM_ZERO_POINT])
+                            .mul(enc[QCOM_SCALE])
+                        )
                     outputs.append(output)
 
             def validate_profile():
-                inspector = Inspector(etdump_path=etdump_path, etrecord=etrecord_path)
+                inspector = Inspector(
+                    etdump_path=etdump_path,
+                    etrecord=etrecord_path,
+                    source_time_scale=TimeScale.CYCLES,
+                    target_time_scale=TimeScale.CYCLES,
+                )
                 self.assertTrue(
                     len(inspector.to_dataframe().index) == expected_profile_events
                 )
@@ -224,8 +311,20 @@ class TestQNN(unittest.TestCase):
                             len(event_block.events) == expected_intermediate_events
                         )
 
+            processed_inputs = list(sample_inputs)
+            for i, enc in enumerate(input_encodings):
+                processed_inputs[i] = (
+                    processed_inputs[i]
+                    .div(enc[QCOM_SCALE])
+                    .add(enc[QCOM_ZERO_POINT])
+                    .round()
+                    .to(enc[QCOM_DTYPE])
+                )
+
             if self.enable_x86_64:
-                generate_inputs(tmp_dir, "input_list.txt", [sample_inputs], input_list)
+                generate_inputs(
+                    tmp_dir, "input_list.txt", [processed_inputs], input_list
+                )
                 make_output_dir(output_dir)
 
                 target = "x86_64-linux-clang"
@@ -254,6 +353,18 @@ class TestQNN(unittest.TestCase):
                 ]
                 if expected_intermediate_events != -1:
                     cmd.append("--dump_intermediate_outputs")
+
+                if check_io_shape:
+                    shape_info = {
+                        "input_shape": processed_inputs,
+                        "output_shape": ref_outputs,
+                    }
+                    for name, tensors in shape_info.items():
+                        with open(f"{tmp_dir}/{name}.txt", "w") as f:
+                            for t in tensors:
+                                f.write(str(tuple(t.shape)).strip("()") + "\n")
+                        cmd.append(f"--{name}_path")
+                        cmd.append(f"{tmp_dir}/{name}.txt")
 
                 env = dict(os.environ)
                 env["LD_LIBRARY_PATH"] = f"{qnn_sdk}/lib/{target}/:{build_folder}/lib"
@@ -296,8 +407,18 @@ class TestQNN(unittest.TestCase):
                     dump_intermediate_outputs=(
                         True if expected_intermediate_events != -1 else False
                     ),
+                    expected_input_shape=(
+                        (tensor.shape for tensor in processed_inputs)
+                        if check_io_shape
+                        else None
+                    ),
+                    expected_output_shape=(
+                        (tensor.shape for tensor in ref_outputs)
+                        if check_io_shape
+                        else None
+                    ),
                 )
-                adb.push(inputs=[sample_inputs], input_list=input_list)
+                adb.push(inputs=[processed_inputs], input_list=input_list)
                 adb.execute(method_index=method_index)
                 adb.pull(output_path=tmp_dir, callback=post_process)
                 self._assert_outputs_equal(outputs, ref_outputs)
@@ -320,20 +441,24 @@ class TestQNN(unittest.TestCase):
         expected_profile_events: int = -1,
         expected_intermediate_events: int = -1,
         assert_output_equal: bool = True,
+        passes_job: Optional[OrderedDict] = None,
         skip_node_id_set: set = None,
         skip_node_op_set: set = None,
+        dynamic_shapes: Dict = None,
     ):
-        qnn_partitioner = QnnPartitioner(
-            self.compiler_specs, skip_node_id_set, skip_node_op_set
+        delegated_program = to_edge_transform_and_lower_to_qnn(
+            module,
+            sample_inputs,
+            self.compiler_specs,
+            dynamic_shapes=dynamic_shapes,
+            passes_job=passes_job,
+            skip_node_id_set=skip_node_id_set,
+            skip_node_op_set=skip_node_op_set,
         )
-        delegated_program = capture_program(module, sample_inputs)
 
         # this is needed for the ETRecord as lowering modifies the graph in-place
         edge_copy = copy.deepcopy(delegated_program)
 
-        delegated_program.exported_program = to_backend(
-            delegated_program.exported_program, qnn_partitioner
-        )
         exec_prog = delegated_program.to_executorch(
             exir.ExecutorchBackendConfig(
                 # For shared buffer, user must pass the memory address
@@ -349,12 +474,12 @@ class TestQNN(unittest.TestCase):
 
         # Assert the backend name is qnn
         self.assertEqual(
-            len(exec_prog.program.execution_plan[0].delegates),
+            len(exec_prog.executorch_program.execution_plan[0].delegates),
             expected_partitions,
         )
         for i in range(expected_partitions):
             self.assertEqual(
-                exec_prog.program.execution_plan[0].delegates[i].id,
+                exec_prog.executorch_program.execution_plan[0].delegates[i].id,
                 QnnBackend.__name__,
             )
 
@@ -384,15 +509,24 @@ class TestQNN(unittest.TestCase):
         is_linear_per_channel: Optional[bool] = False,
         custom_quant_annotations: Tuple[Callable] = (),
         quant_dtype: QuantDtype = QuantDtype.use_8a8w,
+        dynamic_shapes: Dict = None,
+        bypass_check: bool = False,
+        block_size_map: Dict[str, Tuple] = None,
+        submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
     ) -> torch.fx.GraphModule:
-        m = torch.export.export(module, inputs, strict=True).module()
+        m = torch.export.export(
+            module, inputs, dynamic_shapes=dynamic_shapes, strict=True
+        ).module()
 
-        quantizer = QnnQuantizer()
-        quantizer.add_custom_quant_annotations(custom_quant_annotations)
-        quantizer.set_per_channel_conv_quant(is_conv_per_channel)
-        quantizer.set_per_channel_linear_quant(is_linear_per_channel)
-        quantizer.set_quant_config(quant_dtype)
-
+        quantizer = make_quantizer(
+            quant_dtype=quant_dtype,
+            custom_annotations=custom_quant_annotations,
+            per_channel_conv=is_conv_per_channel,
+            per_channel_linear=is_linear_per_channel,
+            submodule_qconfig_list=submodule_qconfig_list,
+        )
+        if block_size_map is not None:
+            quantizer.set_block_size_map(block_size_map)
         prepared = prepare_pt2e(m, quantizer)
         prepared(*inputs)
         quantized_module = convert_pt2e(prepared)
@@ -402,8 +536,11 @@ class TestQNN(unittest.TestCase):
             torch.ops.quantized_decomposed.dequantize_per_tensor.default,
             torch.ops.quantized_decomposed.quantize_per_channel.default,
             torch.ops.quantized_decomposed.dequantize_per_channel.default,
+            torch.ops.pt2e_quant.quantize_affine.default,
+            torch.ops.pt2e_quant.dequantize_affine.default,
         }
-        self.assertTrue(nodes.intersection(q_and_dq))
+        if not bypass_check:
+            self.assertTrue(nodes.intersection(q_and_dq))
         return quantized_module
 
     def get_prepared_qat_module(
@@ -414,18 +551,21 @@ class TestQNN(unittest.TestCase):
         is_linear_per_channel: Optional[bool] = False,
         custom_quant_annotations: Tuple[Callable] = (),
         quant_dtype: QuantDtype = QuantDtype.use_8a8w,
+        submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
     ) -> torch.fx.GraphModule:
-        m = torch.export.export_for_training(module, inputs).module()
+        m = torch.export.export_for_training(module, inputs, strict=True).module()
 
-        quantizer = QnnQuantizer()
-        quantizer.add_custom_quant_annotations(custom_quant_annotations)
-        quantizer.set_per_channel_conv_quant(is_conv_per_channel)
-        quantizer.set_per_channel_linear_quant(is_linear_per_channel)
+        quantizer = make_quantizer(
+            quant_dtype=quant_dtype,
+            custom_annotations=custom_quant_annotations,
+            per_channel_conv=is_conv_per_channel,
+            per_channel_linear=is_linear_per_channel,
+            is_qat=True,
+            submodule_qconfig_list=submodule_qconfig_list,
+        )
 
-        if quant_dtype == QuantDtype.use_8a8w:
-            quantizer.set_quant_config(quant_dtype, is_qat=True)
-        else:
-            raise RuntimeError("Shuld not be here")
+        submodule_qconfig_list = submodule_qconfig_list or []
+        quantizer.set_submodule_qconfig_list(submodule_qconfig_list)
 
         prepared = prepare_qat_pt2e(m, quantizer)
         return torch.ao.quantization.move_exported_model_to_train(prepared)
@@ -445,24 +585,33 @@ class TestQNN(unittest.TestCase):
         optimizer.step()
         return torch.ao.quantization.quantize_pt2e.convert_pt2e(prepared)
 
-    def split_graph(self, graph_module: torch.fx.GraphModule, division: int):
+    def split_graph(self, division: int):
         class SplitGraph(ExportPass):
             """
             Split graph based on number of nodes.
             """
 
-            def __init__(self, shares):
+            def __init__(self, division):
                 super().__init__()
-                self.shares = shares
+                self.division = division
 
             def _insert_clone(
                 self, graph_module: torch.fx.GraphModule
             ) -> torch.fx.GraphModule:
+                # Count the total of nodes in the graph
                 num_graph_nodes = 0
                 for node in graph_module.graph.nodes:
                     num_graph_nodes += 1 if node.op == "call_function" else 0
 
-                    if num_graph_nodes % self.shares != 0 or node.op != "call_function":
+                # Compute how many nodes in one share
+                shares = num_graph_nodes // self.division
+
+                # Insert clone op to split model based on the shares
+                num_graph_nodes = 0
+                for node in graph_module.graph.nodes:
+                    num_graph_nodes += 1 if node.op == "call_function" else 0
+
+                    if num_graph_nodes % shares != 0 or node.op != "call_function":
                         continue
 
                     with graph_module.graph.inserting_after(node):
@@ -481,9 +630,9 @@ class TestQNN(unittest.TestCase):
             def call(self, graph_module: torch.fx.GraphModule):
                 self._insert_clone(graph_module)
                 graph_module.recompile()
+                return PassResult(graph_module, True)
 
-        num_graph_nodes = 0
-        for node in graph_module.graph.nodes:
-            num_graph_nodes += 1 if node.op == "call_function" else 0
-
-        SplitGraph(-(num_graph_nodes // -division))(graph_module)
+        return SplitGraph, {
+            QCOM_PASS_ACTIVATE_KEY: True,
+            QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY: {"division": division},
+        }

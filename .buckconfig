@@ -8,15 +8,18 @@
   root = .
   prelude = third-party/prelude
   shim = shim
+  shim_et = shim_et
 
 [repository_aliases]
+  bazel_skylib = shim
   config = prelude
   ovr_config = prelude
-  toolchains = shim
-  fbcode = shim
+  toolchains = shim_et
+  fbcode = shim_et
   fbcode_macros = shim
-  fbsource = shim
+  fbsource = shim_et
   buck = shim
+  gh_facebook_buck2_shims_meta = shim
 
 [cxx]
   cxxflags = -g -std=c++17
@@ -36,3 +39,6 @@
 
 [buck2]
 restarter=true
+
+[oss]
+folly_cxx_tests = False

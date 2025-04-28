@@ -37,12 +37,13 @@ Download [NeuroPilot Express SDK](https://neuropilot.mediatek.com/resources/publ
 - `libneuron_buffer_allocator.so`: This utility library is designed for allocating DMA buffers necessary for model inference.
 - `mtk_converter-8.8.0.dev20240723+public.d1467db9-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl`: This library preprocess the model into a MediaTek representation.
 - `mtk_neuron-8.2.2-py3-none-linux_x86_64.whl`: This library converts the model to binaries.
+- Copy `NeuronAdapter.h` under `backends/mediatek/runtime/include/api/`.
 
 ### Setup
 
 Follow the steps below to setup your build environment:
 
-1. **Setup ExecuTorch Environment**: Refer to the [Setting up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup) guide for detailed instructions on setting up the ExecuTorch environment.
+1. **Setup ExecuTorch Environment**: Refer to the [Setting up ExecuTorch](https://pytorch.org/executorch/main/getting-started-setup) guide for detailed instructions on setting up the ExecuTorch environment.
 
 2. **Setup MediaTek Backend Environment**
 - Install the dependent libs. Ensure that you are inside backends/mediatek/ directory

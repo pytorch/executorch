@@ -262,11 +262,6 @@ void check_conv2d_params(const Kernel2dParams& p, const bool transposed) {
           "aten.convolution.default: transposed = true, dilation > 1 is not supported yet!");
     }
   }
-  if ((p.padding[0] > 0 && p.kernel_size[0] > 1 && p.dilation[0] > 1) ||
-      (p.padding[1] > 0 && p.kernel_size[1] > 1 && p.dilation[1] > 1)) {
-    VK_THROW(
-        "aten.convolution.default: padding > 0 while dilation, kernel_size > 1 is not supported yet!");
-  }
 }
 
 Conv2dMethod get_conv2d_method(
@@ -475,7 +470,12 @@ void add_conv1d_node(
     const ValueRef out,
     const bool clamp_out) {
   ValueRef arg_weight = prepack_standard(
-      graph, weight, graph.storage_type_of(out), utils::kChannelsPacked);
+      graph,
+      weight,
+      graph.storage_type_of(out),
+      utils::kChannelsPacked,
+      /* passthrough = */ false,
+      utils::kOptimizedAxisMap);
   ValueRef arg_bias = prepack_biases(
       graph,
       bias,

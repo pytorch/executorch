@@ -1,4 +1,8 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 # pyre-strict
 
@@ -31,8 +35,8 @@ class CadencePassAttribute:
 ALL_CADENCE_PASSES: dict[ExportPass, CadencePassAttribute] = {}
 
 
-def get_cadence_pass_attribute(p: ExportPass) -> CadencePassAttribute:
-    return ALL_CADENCE_PASSES[p]
+def get_cadence_pass_attribute(p: ExportPass) -> Optional[CadencePassAttribute]:
+    return ALL_CADENCE_PASSES.get(p, None)
 
 
 # A decorator that registers a pass.
@@ -57,7 +61,8 @@ def create_cadence_pass_filter(
     def _filter(p: ExportPass) -> bool:
         pass_attribute = get_cadence_pass_attribute(p)
         return (
-            pass_attribute.opt_level is not None
+            pass_attribute is not None
+            and pass_attribute.opt_level is not None
             and pass_attribute.opt_level <= opt_level
             and (not pass_attribute.debug_pass or debug)
         )
@@ -98,6 +103,16 @@ def count_node(graph_module: torch.fx.GraphModule, target: torch.fx.node.Target)
         if node.op == "call_function" and node.target == target:
             total += 1
     return total
+
+
+def op_counts_match(
+    graph_module: torch.fx.GraphModule,
+    expected_op_counts: dict[EdgeOpOverload, int],
+) -> bool:
+    for op, count in expected_op_counts.items():
+        if count_node(graph_module, op) != count:
+            return False
+    return True
 
 
 # Testing utils

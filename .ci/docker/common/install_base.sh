@@ -26,6 +26,11 @@ install_ubuntu() {
     libssl-dev \
     zip
 
+  # These libraries are needed by TorchVision
+  apt-get install -y --no-install-recommends \
+    libjpeg-dev \
+    libpng-dev
+
   # Cleanup package manager
   apt-get autoclean && apt-get clean
   rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*

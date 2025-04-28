@@ -15,7 +15,7 @@ from .qnn_constants import OpMatMul, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Matmul(NodeVisitor):
-    target = ["aten.matmul.default"]
+    target = ["aten.matmul.default", "aten.mm.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

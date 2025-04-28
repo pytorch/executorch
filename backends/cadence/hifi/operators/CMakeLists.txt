@@ -11,8 +11,8 @@ if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -22,6 +22,7 @@ endif()
 set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_add.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_atan2.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_bmm.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_cat.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_clamp.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_div.cpp"
@@ -29,27 +30,27 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_maximum.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_mean.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_minimum.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_mm.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_mul.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_permute_copy.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_pow.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_remainder.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_rsqrt.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_slice_copy.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_softmax.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_split_with_sizes_copy.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_sigmoid.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_sub.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_tanh.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_view_copy.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_where.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_bmm.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_clone.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_embedding.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_gt.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_gelu.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_hardtanh.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_max_pool2d_with_indices.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_slice_copy.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_split_with_sizes_copy.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_to_copy.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_view_copy.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/pattern/unary_ufunc_realhbbf16_to_floathbf16.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/activation_ops_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/broadcast_util.cpp"
@@ -67,7 +68,8 @@ target_link_libraries(aten_ops_cadence PUBLIC executorch)
 target_link_libraries(aten_ops_cadence PRIVATE cadence_kernels)
 
 # Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+set(_common_include_directories ${EXECUTORCH_ROOT}/..
+${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)
 
 target_include_directories(
   aten_ops_cadence PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}
@@ -76,8 +78,9 @@ target_include_directories(
 
 # Custom ops that are needed to run the test model.
 add_library(
-  custom_ops "quantized_linear_out.cpp" "quantized_layer_norm.cpp"
-             "quantize_per_tensor.cpp" "quantized_relu_out.cpp" "dequantize_per_tensor.cpp"
+  custom_ops "op_quantized_linear_out.cpp" "op_quantized_layer_norm.cpp"
+             "op_quantize_per_tensor.cpp" "op_quantized_relu_out.cpp" "op_dequantize_per_tensor.cpp"
+             "op_quantized_conv_out.cpp" "op_quantized_fully_connected_out"
 )
 target_include_directories(
   custom_ops PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}

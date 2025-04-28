@@ -6,9 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/runtime/kernel/kernel_includes.h>
-
 #include <executorch/kernels/optimized/blas/CPUBlas.h>
+#include <executorch/kernels/portable/cpu/util/matmul_ops_util.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
 
 // Performs a batch matrix-matrix product of matrices stored in input and mat2.
 
@@ -31,39 +31,38 @@ namespace {
 // Verifies that the parameters are valid.
 bool check_bmm_out_args(const Tensor& self, const Tensor& mat2, Tensor& out) {
   // Ensure dimensions is 3 for all input and out
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       self.dim() == mat2.dim(),
       "self.dim() %zd != mat2.dim() %zd",
       self.dim(),
       mat2.dim());
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       self.dim() == out.dim(),
       "self.dim() %zd != out.dim() %zd",
       self.dim(),
       out.dim());
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      self.dim() == 3, "self.dim() %zd != 3", self.dim());
+  ET_CHECK_OR_RETURN_FALSE(self.dim() == 3, "self.dim() %zd != 3", self.dim());
   // Ensure batch larger than or equals to 0
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       self.size(0) >= 0, "self.size(0) %zd < 0", self.size(0));
   // Ensure batches are the same
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       self.size(0) == mat2.size(0),
       "self.size(0) %zd != mat2.size(0) %zd",
       self.size(0),
       mat2.size(0));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       self.size(0) == out.size(0),
       "self.size(0) %zd != out.size(0) %zd",
       self.size(0),
       out.size(0));
   // Ensure the out size is compatible with input tensors
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       mat2.size(2) == out.size(2),
       "mat2.size(2) %zd != out.size(2) %zd",
       mat2.size(2),
       out.size(2));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       self.size(1) == out.size(1),
       "self.size(1) %zd != out.size(1) %zd",
       self.size(1),
@@ -137,33 +136,32 @@ Error resize_out_tensor(const Tensor& self, const Tensor& mat2, Tensor& out) {
 
 // bmm.out(Tensor self, Tensor mat2, *, Tensor(a!) out) -> Tensor(a!)
 Tensor& opt_bmm_out(
-    KernelRuntimeContext& context,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     const Tensor& mat2,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
 
   ET_KERNEL_CHECK(
-      context,
+      ctx,
       resize_out_tensor(self, mat2, out) == Error::Ok,
       InvalidArgument,
       out);
   ET_KERNEL_CHECK(
-      context, check_bmm_out_args(self, mat2, out), InvalidArgument, out);
+      ctx, check_bmm_out_args(self, mat2, out), InvalidArgument, out);
 
-#define BMM_TENSOR(ctype, dtype)        \
-  case ScalarType::dtype:               \
-    bmm_kernel<ctype>(self, mat2, out); \
-    break;
+  constexpr auto name = "bmm.out";
+  auto self_type = self.scalar_type();
 
-  auto scalar_type = self.scalar_type();
-  switch (scalar_type) {
-    ET_FORALL_REAL_TYPES_AND(Half, BMM_TENSOR)
-    default:
-      ET_CHECK_MSG(
-          false, "Unhandled dtype %" PRId8, static_cast<int8_t>(scalar_type));
+  if (executorch::runtime::isComplexType(self_type)) {
+    ET_SWITCH_COMPLEXH_TYPES(self_type, ctx, name, CTYPE, [&]() {
+      internal::bmm_out_impl<CTYPE>(self, mat2, out);
+    });
+  } else {
+    ET_SWITCH_REALH_TYPES(self_type, ctx, name, CTYPE, [&]() {
+      bmm_kernel<CTYPE>(self, mat2, out);
+    });
   }
-#undef BMM_TENSOR
 
   return out;
 }

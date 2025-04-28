@@ -1,11 +1,10 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
 import unittest
 
 from typing import Tuple
@@ -13,9 +12,10 @@ from typing import Tuple
 import pytest
 
 import torch
-from executorch.backends.arm.quantizer.arm_quantizer import (
-    ArmQuantizer,
+from executorch.backends.arm.quantizer import (
+    EthosUQuantizer,
     get_symmetric_quantization_config,
+    TOSAQuantizer,
 )
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
@@ -25,8 +25,6 @@ from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.backend.backend_details import CompileSpec
 from parameterized import parameterized
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 test_data_suite = [
     # (test_name, test_data, [kernel_size, stride, padding])
@@ -89,7 +87,7 @@ class TestMaxPool2d(unittest.TestCase):
     ):
         tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
         compile_spec = common.get_tosa_compile_spec(tosa_spec)
-        quantizer = ArmQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
+        quantizer = TOSAQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
         (
             ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
@@ -115,8 +113,9 @@ class TestMaxPool2d(unittest.TestCase):
         compile_spec: CompileSpec,
         test_data: Tuple[torch.tensor],
     ):
-        tosa_spec = TosaSpecification.create_from_compilespecs(compile_spec)
-        quantizer = ArmQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
+        quantizer = EthosUQuantizer(compile_spec).set_io(
+            get_symmetric_quantization_config()
+        )
         tester = (
             ArmTester(
                 module,
@@ -230,8 +229,24 @@ class TestMaxPool2d(unittest.TestCase):
         if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(qtol=1, inputs=(test_data,))
 
+    @parameterized.expand(test_data_suite_mult_batches)
+    @pytest.mark.corstone_fvp
+    @conftest.expectedFailureOnFVP  # TODO: MLETORCH-433
+    def test_maxpool2d_tosa_u55_BI_mult_batches(
+        self,
+        test_name: str,
+        test_data: torch.Tensor,
+        model_params: int | Tuple[int, int],
+    ):
+        tester = self._test_maxpool2d_tosa_ethos_BI_pipeline(
+            self.MaxPool2d(*model_params),
+            common.get_u55_compile_spec(),
+            (test_data,),
+        )
+        if conftest.is_option_enabled("corstone_fvp"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=(test_data,))
+
     reject_data_suite = [
-        (MaxPool2d(1, 1, 0), torch.rand(2, 5, 5, 5)),
         (MaxPool2d(1, 4, 0), torch.rand(1, 10, 10, 10)),
         (MaxPool2d((1, 257), 1, 0), torch.rand(1, 16, 5, 300)),
         (MaxPool2d((800, 90), 1, 0), torch.rand(1, 16, 850, 100)),
@@ -244,8 +259,9 @@ class TestMaxPool2d(unittest.TestCase):
         test_data: torch.tensor,
     ):
         compile_spec = common.get_u55_compile_spec()
-        tosa_spec = TosaSpecification.create_from_compilespecs(compile_spec)
-        quantizer = ArmQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
+        quantizer = EthosUQuantizer(compile_spec).set_io(
+            get_symmetric_quantization_config()
+        )
 
         (
             ArmTester(

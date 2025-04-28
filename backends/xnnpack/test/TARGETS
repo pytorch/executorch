@@ -53,7 +53,7 @@ runtime.python_test(
     srcs = glob([
         "models/*.py",
     ]),
-    tags = ["long_running"],
+    labels = ["long_running"],
     deps = [
         "fbsource//third-party/pypi/timm:timm",
         "fbsource//third-party/pypi/torchsr:torchsr",  # @manual

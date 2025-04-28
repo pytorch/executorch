@@ -25,15 +25,20 @@ def define_common_targets():
         # mean I cant just expose visibility to a single rule.
         visibility = [
             "//executorch/backends/...",
+            "//executorch/extension/fb/dynamic_shim/...",
             "//executorch/runtime/core/exec_aten/...",
             "//executorch/runtime/core/portable_type/test/...",
+        ],
+        deps = [
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
         ],
         exported_deps = [
             ":scalar_type",
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:tensor_shape_dynamism",
-            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:dim_order_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
             "//executorch/runtime/core:tag",
         ],
     )
@@ -51,7 +56,7 @@ def define_common_targets():
             "bits_types.h",
         ],
         exported_deps = [
-            "//executorch/runtime/core/portable_type/c10:c10",
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
         ],
         visibility = [
             "//executorch/extension/...",

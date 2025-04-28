@@ -15,8 +15,8 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -63,7 +63,10 @@ target_compile_options(
   full_portable_ops_lib INTERFACE -DET_EVENT_TRACER_ENABLED
 )
 target_include_directories(
-  full_portable_ops_lib PUBLIC ${_common_include_directories}
+  full_portable_ops_lib
+  PUBLIC
+    ${_common_include_directories}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/include
 )
 
 # find RE2 for tokenizer
@@ -72,11 +75,11 @@ set(ABSL_PROPAGATE_CXX_STD ON)
 set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/third-party/abseil-cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/abseil-cpp
   ${CMAKE_CURRENT_BINARY_DIR}/abseil-cpp
 )
 add_subdirectory(
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/third-party/re2
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/re2
   ${CMAKE_CURRENT_BINARY_DIR}/re2
 )
 set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})

@@ -76,18 +76,6 @@ class TestMultipleOutputs(unittest.TestCase):
             tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @pytest.mark.corstone_fvp
-    def test_u85_BI(self):
-        module = self.MultipleOutputsModule()
-        test_data = module.get_inputs()
-        self._test_ethosu_BI_pipeline(
-            module,
-            test_data,
-            common.get_u85_compile_spec(),
-        )
-
-    @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP
-    # TODO MLETORCH-598
     def test_u55_BI(self):
         module = self.MultipleOutputsModule()
         test_data = module.get_inputs()
@@ -95,4 +83,14 @@ class TestMultipleOutputs(unittest.TestCase):
             module,
             test_data,
             common.get_u55_compile_spec(),
+        )
+
+    @pytest.mark.corstone_fvp
+    def test_u85_BI(self):
+        module = self.MultipleOutputsModule()
+        test_data = module.get_inputs()
+        self._test_ethosu_BI_pipeline(
+            module,
+            test_data,
+            common.get_u85_compile_spec(),
         )

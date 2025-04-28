@@ -189,6 +189,23 @@ def _dump_yaml(
         )
 
 
+def create_kernel_key(maybe_kernel_key: str) -> str:
+    # It is a kernel key.
+    if maybe_kernel_key.lstrip().startswith("v1"):
+        return maybe_kernel_key
+    # It is a dtype.
+    else:
+        # Generate a kernel key based on the dtype provided.
+        # Note: no dim order is included in this kernel key.
+        # For a description of the kernel key format, see
+        # executorch/blob/main/runtime/kernel/operator_registry.h#L97-L123
+        try:
+            dtype = ScalarType[maybe_kernel_key]
+            return "v1/" + str(dtype.value) + ";"
+        except KeyError:
+            raise Exception(f"Unknown dtype: {maybe_kernel_key}")
+
+
 def gen_oplist(
     output_path: str,
     model_file_path: Optional[str] = None,
@@ -223,7 +240,11 @@ def gen_oplist(
         ops_and_metadata = json.loads(ops_dict)
         for op, metadata in ops_and_metadata.items():
             op_set.update({op})
-            op_metadata = metadata if len(metadata) > 0 else ["default"]
+            op_metadata = (
+                [create_kernel_key(x) for x in metadata]
+                if len(metadata) > 0
+                else ["default"]
+            )
             et_kernel_metadata = merge_et_kernel_metadata(
                 et_kernel_metadata, {op: op_metadata}
             )
