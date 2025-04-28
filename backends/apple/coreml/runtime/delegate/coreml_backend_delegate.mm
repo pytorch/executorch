@@ -88,9 +88,17 @@ std::optional<MultiArray> get_multi_array(EValue *eValue, ArgType argType) {
         ET_LOG(Error, "%s: DataType=%d is not supported", ETCoreMLStrings.delegateIdentifier.UTF8String, (int)tensor.scalar_type());
         return std::nullopt;
     }
-
+    
     std::vector<ssize_t> strides(tensor.strides().begin(), tensor.strides().end());
     std::vector<size_t> shape(tensor.sizes().begin(), tensor.sizes().end());
+    
+    // If tensor is rank 0, wrap in rank 1
+    // See https://github.com/apple/coremltools/blob/8.2/coremltools/converters/mil/frontend/torch/exir_utils.py#L73
+    if (strides.size() == 0) {
+        shape.push_back(1);
+        strides.push_back(1);
+    }
+    
     MultiArray::MemoryLayout layout(dataType.value(), std::move(shape), std::move(strides));
     switch (argType) {
         case ArgType::Input: {
@@ -195,7 +203,10 @@ Error CoreMLBackendDelegate::execute(BackendExecutionContext& context,
     size_t nInputs = nArgs.first;
     size_t nOutputs = nArgs.second;
     delegate_args.reserve(nInputs + nOutputs);
-
+    
+    // Container to hold wrapped scalar input args
+    std::vector<executorch::extension::TensorPtr> wrapped_scalars;
+    
     // inputs
     for (size_t i = 0; i < nInputs; i++) {
         auto multi_array = get_multi_array(args[i], ArgType::Input);
