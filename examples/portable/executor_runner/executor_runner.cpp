@@ -295,9 +295,9 @@ int main(int argc, char** argv) {
   ET_CHECK(status == Error::Ok);
   // Print the first and last 100 elements of long lists of scalars.
   std::cout << executorch::extension::evalue_edge_items(100);
-  for (int i = 0; i < outputs.size(); ++i) {
-    std::cout << "Output " << i << ": " << outputs[i] << std::endl;
-  }
+  // for (int i = 0; i < outputs.size(); ++i) {
+  //   std::cout << "Output " << i << ": " << outputs[i] << std::endl;
+  // }
 
   if (tracer.get_event_tracer()) {
     // Dump ETDump data containing profiling/debugging data to file specified in

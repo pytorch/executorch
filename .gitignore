@@ -40,3 +40,5 @@ xcuserdata/
 .swiftpm/
 *.xcworkspace/
 *.xcframework/
+
+playground/
