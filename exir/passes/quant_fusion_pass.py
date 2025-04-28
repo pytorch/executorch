@@ -7,11 +7,11 @@
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
+from executorch.exir.passes.constant_prop_pass import constant_prop_pass
+from torch.export import ExportedProgram
 from torch.fx import GraphModule, subgraph_rewriter
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.utils import _pytree as pytree
-from executorch.exir.passes.constant_prop_pass import constant_prop_pass
-from torch.export import ExportedProgram
 
 from ._quant_patterns_and_replacements import get_quant_patterns_and_replacements
 
@@ -147,7 +147,7 @@ def quant_fusion_and_const_prop_pass(program: ExportedProgram) -> ExportedProgra
     gm = program.graph_module
     gm_res = QuantFusionPass(_fix_node_meta_val=True)(gm)
     gm = gm_res.graph_module
-    
+
     # Do const prop pass to remove packing/dtype conversion ops
     program = constant_prop_pass(program)
     return program

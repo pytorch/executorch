@@ -1532,7 +1532,7 @@ class EdgeProgramManager:
                     raise Exception(
                         "Cannot run do_quant_fusion_and_const_prop on a graph with a backward signature intended for on-device training."
                         " Please set do_quant_fusion_and_const_prop to False in the ExecutorchBackendConfig."
-                     )
+                    )
                 program = quant_fusion_and_const_prop_pass(program)
             program = weights_to_outputs_pass(program)
             program = unsafe_remove_auto_functionalized_pass(program)

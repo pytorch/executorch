@@ -6,9 +6,9 @@
 
 # pyre-unsafe
 
+import logging
 from collections import OrderedDict
 from typing import cast, Mapping, Optional
-import logging
 
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -30,6 +30,10 @@ from torch.utils import _pytree as pytree
 # Propagating aten.full can significantly increase compiled model size.
 _DEFAULT_SKIP_TARGETS = {exir_ops.edge.aten.full.default}
 
+# Skipping transpose/permute for now because https://github.com/pytorch/executorch/issues/10499
+_DEFAULT_SKIP_TARGETS.add(exir_ops.edge.transpose.int)
+_DEFAULT_SKIP_TARGETS.add(exir_ops.edge.permute.default)
+
 # Do not const prop quantization primitives
 _QDQ_OPS = [
     exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
@@ -42,7 +46,8 @@ _QDQ_OPS = [
     exir_ops.edge.quantized_decomposed.choose_qparams.tensor,
 ]
 try:
-    import torchao # noqa: F401
+    import torchao  # noqa: F401
+
     _QDQ_OPS.extend(
         [
             exir_ops.edge.torchao.dequantize_affine.default,
@@ -65,6 +70,7 @@ _PRIMITIVE_TYPES = (
     torch.dtype,
     torch.layout,
 )
+
 
 def is_const(
     arg,
@@ -333,7 +339,9 @@ def constant_prop_pass(
         if node.target == torch.ops.higher_order.cond
     ]
     if len(has_control_flow) > 0:
-        logging.warning("constant_prop_pass does not constant propagate in control flow modules")
+        logging.warning(
+            "constant_prop_pass does not constant propagate in control flow modules"
+        )
 
     const_node_to_tensor = get_propagated_const_tensor_dict(
         exported_program, custom_skip_targets

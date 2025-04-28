@@ -20,6 +20,7 @@ import torch
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
+from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
 from executorch.exir import EdgeProgramManager, to_edge_transform_and_lower
 from executorch.exir.backend.partitioner import Partitioner
 
@@ -508,9 +509,9 @@ class LLMEdgeManager:
             # If there are Linear operations left in the graph, let's execute
             # them with the optimized op_linear rather than materializing a
             # transpose followed by a regular op_mm.
-            # Disabling because ConvertToLinearPass is not a sound pass: 
+            # TODO: ConvertToLinearPass is not a sound pass and we should fix it
             # https://github.com/pytorch/executorch/issues/10499
-            # ConvertToLinearPass(),
+            ConvertToLinearPass(),
         ]
         if passes:
             # pyre-fixme[6]: In call `list.extend`, for 1st positional argument,
