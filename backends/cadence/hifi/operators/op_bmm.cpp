@@ -86,8 +86,8 @@ Tensor& bmm_out(
     tmp[batch_size * m * p] = {0};
 
     WORD32* __restrict__ p_o =
-          (WORD32* __restrict__)kernels::allocate_temp_memory(
-              ctx, (batch_size * m * p) * sizeof(WORD32));
+        (WORD32* __restrict__)kernels::allocate_temp_memory(
+            ctx, (batch_size * m * p) * sizeof(WORD32));
 
     ET_KERNEL_CHECK(ctx, p_o != nullptr, MemoryAllocationFailed, out);
 
