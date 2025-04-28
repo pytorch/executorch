@@ -15,6 +15,7 @@ from executorch.backends.vulkan.test.op_tests.utils.aten_types import (
     BOOL,
     DOUBLE,
     INT,
+    OLD_STRING,
     OPT_AT_DOUBLE_ARRAY_REF,
     OPT_AT_INT_ARRAY_REF,
     OPT_AT_TENSOR,
@@ -44,7 +45,12 @@ class GeneratedOpsTest_{op_name} : public ::testing::Test {{
 test_suite_template = """
 TEST_P(GeneratedOpsTest_{op_name}, {case_name}) {{
 {create_ref_data}
+try {{
 {create_and_check_out}
+}}
+catch (const vkcompute::vkapi::ShaderNotSupportedError& e) {{
+    GTEST_SKIP() << e.what();
+}}
 }}
 """
 
@@ -164,7 +170,13 @@ class CorrectnessTestGen:
 
         if cpp_type == AT_TENSOR:
             if arg.name == "index" or arg.name == "indices":
-                ret_str += f"make_index_tensor({init_list_str(data)});"
+                args_str = init_list_str(data)
+                if args_str[:3] == "{{{":
+                    ret_str += f"make_index_tensor_3d({init_list_str(data)});"
+                elif args_str[:2] == "{{":
+                    ret_str += f"make_index_tensor_2d({init_list_str(data)});"
+                else:
+                    ret_str += f"make_index_tensor_1d({init_list_str(data)});"
             else:
                 ret_str += self.call_data_gen_fn(arg, data)
         elif cpp_type == OPT_AT_TENSOR:
@@ -192,8 +204,8 @@ class CorrectnessTestGen:
                 ret_str += "std::nullopt;"
             else:
                 ret_str += f"{str(data)};"
-        elif cpp_type == STRING:
-            ret_str += f'c10::string_view("{data}");'
+        elif cpp_type == STRING or cpp_type == OLD_STRING:
+            ret_str += f'std::string_view("{data}");'
         elif (
             cpp_type == OPT_SCALAR_TYPE
             or cpp_type == OPT_LAYOUT
@@ -272,7 +284,7 @@ at::Tensor make_rand_tensor(
     float high = 1.0) {{
   if (high == 1.0 && low == 0.0)
     return at::rand(sizes, at::device(at::kCPU).dtype(dtype));
-    
+
   if (dtype == at::kChar)
     return at::randint(high, sizes, at::device(at::kCPU).dtype(dtype));
 
@@ -301,7 +313,7 @@ at::Tensor make_seq_tensor(
   return at::from_blob(values.data(), sizes, at::kFloat).toType(dtype).detach().clone();
 }}
 
-at::Tensor make_index_tensor(std::vector<int64_t> indices) {{
+at::Tensor make_index_tensor_1d(std::vector<int64_t> indices) {{
   at::ScalarType dtype = at::kInt;
   std::vector<int64_t> sizes = {{static_cast<int64_t>(indices.size())}};
 
@@ -309,7 +321,7 @@ at::Tensor make_index_tensor(std::vector<int64_t> indices) {{
   return at::from_blob(indices.data(), sizes, dtype).detach().clone();
 }}
 
-at::Tensor make_index_tensor(std::vector<std::vector<int64_t>> indices) {{
+at::Tensor make_index_tensor_2d(std::vector<std::vector<int64_t>> indices) {{
   at::ScalarType dtype = at::kInt;
   std::vector<int64_t> sizes = {{
     static_cast<int64_t>(indices.size()),
@@ -325,7 +337,7 @@ at::Tensor make_index_tensor(std::vector<std::vector<int64_t>> indices) {{
   return at::from_blob(acc.data(), sizes, dtype).detach().clone();
 }}
 
-at::Tensor make_index_tensor(std::vector<std::vector<std::vector<int64_t>>> indices) {{
+at::Tensor make_index_tensor_3d(std::vector<std::vector<std::vector<int64_t>>> indices) {{
   at::ScalarType dtype = at::kInt;
   std::vector<int64_t> sizes = {{
     static_cast<int64_t>(indices.size()),

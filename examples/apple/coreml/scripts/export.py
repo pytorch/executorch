@@ -76,6 +76,12 @@ def parse_args() -> argparse.ArgumentParser:
     parser.add_argument("--use_partitioner", action=argparse.BooleanOptionalAction)
     parser.add_argument("--generate_etrecord", action=argparse.BooleanOptionalAction)
     parser.add_argument("--save_processed_bytes", action=argparse.BooleanOptionalAction)
+    parser.add_argument(
+        "--dynamic_shapes",
+        action=argparse.BooleanOptionalAction,
+        required=False,
+        default=False,
+    )
 
     args = parser.parse_args()
     # pyre-fixme[7]: Expected `ArgumentParser` but got `Namespace`.
@@ -88,7 +94,9 @@ def partition_module_to_coreml(module):
 
 def lower_module_to_coreml(module, compile_specs, example_inputs):
     module = module.eval()
-    edge = to_edge(export(module, example_inputs), compile_config=_EDGE_COMPILE_CONFIG)
+    edge = to_edge(
+        export(module, example_inputs, strict=True), compile_config=_EDGE_COMPILE_CONFIG
+    )
     # All of the subsequent calls on the edge_dialect_graph generated above (such as delegation or
     # to_executorch()) are done in place and the graph is also modified in place. For debugging purposes
     # we would like to keep a copy of the original edge dialect graph and hence we create a deepcopy of
@@ -107,7 +115,8 @@ def lower_module_to_coreml(module, compile_specs, example_inputs):
 def export_lowered_module_to_executorch_program(lowered_module, example_inputs):
     lowered_module(*example_inputs)
     exec_prog = to_edge(
-        export(lowered_module, example_inputs), compile_config=_EDGE_COMPILE_CONFIG
+        export(lowered_module, example_inputs, strict=True),
+        compile_config=_EDGE_COMPILE_CONFIG,
     ).to_executorch(config=exir.ExecutorchBackendConfig(extract_delegate_segments=True))
 
     return exec_prog
@@ -161,16 +170,20 @@ def main():
             f"Valid compute units are {valid_compute_units}."
         )
 
-    model, example_inputs, _, _ = EagerModelFactory.create_model(
+    model, example_inputs, _, dynamic_shapes = EagerModelFactory.create_model(
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
+    if not args.dynamic_shapes:
+        dynamic_shapes = None
 
     compile_specs = generate_compile_specs_from_args(args)
     lowered_module = None
 
     if args.use_partitioner:
         model.eval()
-        exir_program_aten = torch.export.export(model, example_inputs)
+        exir_program_aten = torch.export.export(
+            model, example_inputs, dynamic_shapes=dynamic_shapes, strict=True
+        )
 
         edge_program_manager = exir.to_edge(exir_program_aten)
         edge_copy = copy.deepcopy(edge_program_manager)

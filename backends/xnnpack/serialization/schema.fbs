@@ -132,6 +132,9 @@ union XNodeUnion {
   XNNStaticSlice,
   XNNScaledDotProductAttention,
   XNNBatchMatrixMultiply: _XNNNode2x1,
+  XNNConcatenate5: _XNNCat,
+  XNNConvTranspose2d: _XNNNodeConv,
+  XNNReciprocalSquareRoot: _XNNNode1x1,
 }
 
 union XValueUnion {
@@ -205,6 +208,7 @@ table _XNNCat {
   input4_id: uint;
   output_id: uint;
   flags: uint;
+  input5_id: uint;
 }
 
 table XNNELU {
@@ -312,11 +316,20 @@ table XNNLeakyReLU {
 table ConstantDataOffset {
   // Constant data offsets are relative to the constant data base offset provided
   // in the XNNPACKHeader.
+  // named_key and offset are mutually exclusive, meaning only one of these values
+  // are valid. If the named key is a non-empty string, then the offset must be UINT64_MAX.
+  // If the offset is not UINT64_MAX, then the named key must be an empty string
   offset: uint64;
 
   // The size in bytes of valid data starting at the offset. The constant data
   // may be followed by padding before the next piece of constant data
   size: uint64;
+
+  // unique string id used to query the offset from the named data store.
+  // named_key and offset are mutually exclusive, meaning only one of these values
+  // are valid. If the named key is a non-empty string, then the offset must be UINT64_MAX.
+  // If the offset is not UINT64_MAX, then the named key must be an empty string
+  named_key: string;
 }
 
 table XNNGraph {

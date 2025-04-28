@@ -106,7 +106,7 @@ struct type_convert<
             torch::executor::Tensor>>>
     final {
   explicit type_convert(ATensor value)
-      : value_(value),
+      : value_(value.contiguous()),
         converted_(from_blob(
             value_.mutable_data_ptr(),
             {value_.sizes().begin(), value_.sizes().end()},
@@ -117,7 +117,7 @@ struct type_convert<
   }
 
  private:
-  ATensor value_;
+  typename remove_const_ref<ATensor>::type value_;
   TensorPtr converted_;
 };
 
@@ -162,24 +162,6 @@ struct type_convert<std::optional<F>, torch::executor::optional<T>> final {
       return torch::executor::optional<T>(convert_struct->call());
     } else {
       return torch::executor::optional<T>();
-    }
-  }
-};
-
-// Optionals: ETen to ATen.
-template <class F, class T>
-struct type_convert<torch::executor::optional<F>, std::optional<T>> final {
- public:
-  torch::executor::optional<F> val;
-  std::unique_ptr<struct type_convert<F, T>> convert_struct;
-  explicit type_convert(torch::executor::optional<F> value) : val(value) {}
-  std::optional<T> call() {
-    if (val.has_value()) {
-      convert_struct = std::make_unique<struct type_convert<F, T>>(
-          type_convert<F, T>(val.value()));
-      return std::optional<T>(convert_struct->call());
-    } else {
-      return std::optional<T>();
     }
   }
 };

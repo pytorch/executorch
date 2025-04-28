@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <cstring>
@@ -14,8 +15,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using exec_aten::Scalar;
-using ScalarType = exec_aten::ScalarType;
+using executorch::aten::Scalar;
+using ScalarType = executorch::aten::ScalarType;
 
 namespace {
 
@@ -44,8 +45,8 @@ void apply_tril(
     int64_t num_cols,
     int64_t row_stride,
     int64_t col_stride) {
-  for (int64_t i = 0; i < num_rows; i++) {
-    for (int64_t j = 0; j < std::min(num_cols, i + diagonal + 1); j++) {
+  for (const auto i : c10::irange(num_rows)) {
+    for (const auto j : c10::irange(std::min(num_cols, i + diagonal + 1))) {
       out[i * row_stride + j * col_stride] =
           self[i * row_stride + j * col_stride];
     }
@@ -63,21 +64,21 @@ void tril_kernel(
     const Tensor& out) {
   // Dynamically compute `self` sizes and strides.
 
-  int64_t ndim = self.dim();
+  size_t ndim = static_cast<size_t>(self.dim());
 
   ET_KERNEL_CHECK_MSG(
       ctx,
       ndim < kTensorDimensionLimit,
       InvalidArgument,
       ,
-      "ndim %" PRId64 " >= %zu",
+      "ndim %zu >= %zu",
       ndim,
       kTensorDimensionLimit);
 
   int64_t sizes[kTensorDimensionLimit];
   int64_t strides[kTensorDimensionLimit];
 
-  for (size_t i = 0; i < ndim; ++i) {
+  for (const auto i : c10::irange(ndim)) {
     sizes[i] = self.size(i);
     strides[i] = getTrailingDims(self, static_cast<int64_t>(i));
   }
@@ -102,7 +103,7 @@ void tril_kernel(
   int64_t row_stride = strides_ref[ndim - 2];
   int64_t col_stride = strides_ref[ndim - 1];
 
-  for (int64_t i = 0; i < batch_size; i++) {
+  for (const auto i : c10::irange(batch_size)) {
     CTYPE* __restrict__ data_self_ptr = &data_self[i * self_stride];
     CTYPE* __restrict__ data_out_ptr = &data_out[i * self_stride];
 
@@ -158,7 +159,7 @@ Tensor& tril_out(
   clear_out(out);
 
   ScalarType out_type = out.scalar_type();
-  ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, __func__, CTYPE, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, __func__, CTYPE, [&]() {
     tril_kernel<CTYPE>(ctx, self, diagonal, out);
   });
 

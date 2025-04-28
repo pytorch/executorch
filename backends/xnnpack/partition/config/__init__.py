@@ -39,6 +39,7 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     PermuteConfig,
     PowConfig,
     QuantizedPerTensorConfig,
+    ReciprocalSquareRootConfig,
     ReLUConfig,
     # SDPAConfig, TODO: D60553559: preserving SDPA for fairseq fails
     SigmoidConfig,
@@ -92,6 +93,7 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     PermuteConfig,
     PowConfig,
     PreluConfig,
+    ReciprocalSquareRootConfig,
     ReLUConfig,
     # SDPAConfig, TODO: D60553559: preserving SDPA for fairseq fails
     SigmoidConfig,

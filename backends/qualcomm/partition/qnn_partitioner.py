@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 import copy
 from collections import defaultdict
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import torch
@@ -24,15 +24,17 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.utils import tag_constant_data
+from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
 
 from .common_defs import (
     allow_list_operator,
+    constant_operator,
     not_supported_operator,
     to_be_implemented_operator,
 )
-from .utils import generate_qnn_executorch_option
+from .utils import filter_fn, generate_qnn_executorch_option, get_skip_decomp_table
 
 
 class QnnOperatorSupport(OperatorSupportBase):
@@ -82,6 +84,8 @@ class QnnOperatorSupport(OperatorSupportBase):
         op_wrapper = self.node_visitors[node.target.__name__].define_node(
             node, self.nodes_to_wrappers
         )
+        if node.target in constant_operator:
+            return True
 
         op_wrapper_list = []
         if isinstance(op_wrapper, List):
@@ -171,3 +175,10 @@ class QnnPartitioner(Partitioner):
         return PartitionResult(
             tagged_exported_program=edge_program, partition_tags=self.partition_tags
         )
+
+    # override
+    def ops_to_not_decompose(
+        self, ep: ExportedProgram
+    ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
+        do_not_decompose = get_skip_decomp_table()
+        return (do_not_decompose, filter_fn)

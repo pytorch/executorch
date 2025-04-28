@@ -174,6 +174,14 @@ void SpecVarList::append(const SpecVarList& other) {
   vars.insert(vars.end(), other.vars.begin(), other.vars.end());
 }
 
+void SpecVarList::reserve(const size_t size) {
+  vars.reserve(size);
+}
+
+void SpecVarList::append(const SpecVar& other) {
+  vars.push_back(other);
+}
+
 std::vector<VkSpecializationMapEntry> SpecVarList::generate_map_entries()
     const {
   std::vector<VkSpecializationMapEntry> map_entries;
@@ -205,17 +213,29 @@ bool operator==(const SpecVarList& lhs, const SpecVarList& rhs) {
 
 PipelineLayout::PipelineLayout(
     VkDevice device,
-    VkDescriptorSetLayout descriptor_layout)
+    VkDescriptorSetLayout descriptor_layout,
+    const uint32_t push_constants_size)
     : device_(device), handle_{VK_NULL_HANDLE} {
-  // TODO: Enable push constants
+  VkPushConstantRange pc_range{
+      VK_SHADER_STAGE_COMPUTE_BIT, // stageFlags
+      0u, // offset
+      push_constants_size, // size
+  };
+  uint32_t num_push_constants = 0u;
+  VkPushConstantRange* pc_ranges_ptr = nullptr;
+  if (push_constants_size > 0u) {
+    num_push_constants = 1u;
+    pc_ranges_ptr = &pc_range;
+  }
+
   const VkPipelineLayoutCreateInfo pipeline_layout_create_info{
       VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, // sType
       nullptr, // pNext
       0u, // flags
       1u, // setLayoutCount
       &descriptor_layout, // pSetLayouts
-      0u, // pushConstantRangeCount
-      nullptr, // pPushConstantRanges
+      num_push_constants, // pushConstantRangeCount
+      pc_ranges_ptr, // pPushConstantRanges
   };
 
   VK_CHECK(vkCreatePipelineLayout(
@@ -255,12 +275,11 @@ ComputePipeline::ComputePipeline(
     const ComputePipeline::Descriptor& descriptor,
     VkPipelineCache pipeline_cache)
     : device_(device), handle_{VK_NULL_HANDLE} {
-  std::vector<VkSpecializationMapEntry> map_entries =
-      descriptor.specialization_constants.generate_map_entries();
+  map_entries_ = descriptor.specialization_constants.generate_map_entries();
 
   const VkSpecializationInfo specialization_info{
       descriptor.specialization_constants.size(), // mapEntryCount
-      map_entries.data(), // pMapEntries
+      map_entries_.data(), // pMapEntries
       descriptor.specialization_constants.data_nbytes(), // dataSize
       descriptor.specialization_constants.data(), // pData
   };
@@ -275,10 +294,16 @@ ComputePipeline::ComputePipeline(
       &specialization_info, // pSpecializationInfo
   };
 
+  VkPipelineCreateFlags flags = 0u;
+#if defined(VULKAN_DEBUG) && defined(VK_KHR_pipeline_executable_properties)
+  flags = VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR |
+      VK_PIPELINE_CREATE_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_KHR | flags;
+#endif /* VULKAN_DEBUG && VK_KHR_pipeline_executable_properties */
+
   const VkComputePipelineCreateInfo compute_pipeline_create_info{
       VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, // sType
       nullptr, // pNext
-      0u, // flags
+      flags, // flags
       shader_stage_create_info, // stage
       descriptor.pipeline_layout, // layout
       VK_NULL_HANDLE, // basePipelineHandle
@@ -295,7 +320,9 @@ ComputePipeline::ComputePipeline(
 }
 
 ComputePipeline::ComputePipeline(ComputePipeline&& other) noexcept
-    : device_(other.device_), handle_(other.handle_) {
+    : device_(other.device_),
+      handle_(other.handle_),
+      map_entries_(std::move(other.map_entries_)) {
   other.handle_ = VK_NULL_HANDLE;
 }
 
@@ -344,12 +371,19 @@ PipelineLayoutCache::~PipelineLayoutCache() {
 }
 
 VkPipelineLayout PipelineLayoutCache::retrieve(
-    const PipelineLayoutCache::Key& key) {
+    const VkDescriptorSetLayout layout,
+    const uint32_t push_constants_size) {
+  PipelineLayoutCache::Key key{layout, push_constants_size};
   std::lock_guard<std::mutex> lock(cache_mutex_);
 
   auto it = cache_.find(key);
   if (cache_.cend() == it) {
-    it = cache_.insert({key, PipelineLayoutCache::Value(device_, key)}).first;
+    it = cache_
+             .insert(
+                 {key,
+                  PipelineLayoutCache::Value(
+                      device_, layout, push_constants_size)})
+             .first;
   }
 
   return it->second.handle();

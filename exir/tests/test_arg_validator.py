@@ -31,7 +31,7 @@ class TestArgValidator(unittest.TestCase):
 
         m = TestModel()
         inputs = (torch.randn(1, 3, 100, 100).to(dtype=torch.int),)
-        egm = to_edge(export(m, inputs)).exported_program().graph_module
+        egm = to_edge(export(m, inputs, strict=True)).exported_program().graph_module
         validator = EdgeOpArgValidator(egm)
         validator.run(*inputs)
         self.assertEqual(len(validator.violating_ops), 0)
@@ -49,7 +49,7 @@ class TestArgValidator(unittest.TestCase):
         inputs = (torch.randn(1, 3, 100, 100).to(dtype=torch.bfloat16),)
         egm = (
             to_edge(
-                export(M(), inputs),
+                export(M(), inputs, strict=True),
                 compile_config=EdgeCompileConfig(_check_ir_validity=False),
             )
             .exported_program()
@@ -64,7 +64,7 @@ class TestArgValidator(unittest.TestCase):
             ops.edge.aten._log_softmax.default.name(),
         )
         self.assertDictEqual(
-            validator.violating_ops[key],
+            validator.violating_ops[key][0],
             {
                 "self": torch.bfloat16,
                 "__ret_0": torch.bfloat16,

@@ -1,22 +1,27 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import unittest
+
 from typing import Tuple
+
+import pytest
 
 import torch
 
-from executorch.backends.arm.quantizer.arm_quantizer import (
-    ArmQuantizer,
+from executorch.backends.arm.quantizer import (
+    EthosUQuantizer,
     get_symmetric_quantization_config,
+    TOSAQuantizer,
 )
-
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+
+from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.xnnpack.test.tester.tester import Quantize
 from parameterized import parameterized
 
@@ -52,7 +57,7 @@ class TestHardTanh(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .check(["torch.ops.aten.hardtanh.default"])
@@ -68,13 +73,11 @@ class TestHardTanh(unittest.TestCase):
     def _test_hardtanh_tosa_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
     ):
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
+        tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
+        compile_spec = common.get_tosa_compile_spec(tosa_spec)
+        quantizer = TOSAQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
         (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
-            )
+            ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
             .check_count({"torch.ops.aten.hardtanh.default": 1})
@@ -87,15 +90,17 @@ class TestHardTanh(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data)
         )
 
-    def _test_hardtanh_tosa_u55_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
+    def _test_hardtanh_tosa_ethosu_BI_pipeline(
+        self, compile_spec, module: torch.nn.Module, test_data: Tuple[torch.tensor]
     ):
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
-        (
+        quantizer = EthosUQuantizer(compile_spec).set_io(
+            get_symmetric_quantization_config()
+        )
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(),
+                compile_spec=compile_spec,
             )
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
@@ -106,7 +111,10 @@ class TestHardTanh(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_hardtanh_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .serialize()
         )
+        if conftest.is_option_enabled("corstone_fvp"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(test_data_suite)
     def test_hardtanh_tosa_MI(
@@ -121,5 +129,15 @@ class TestHardTanh(unittest.TestCase):
         self._test_hardtanh_tosa_BI_pipeline(self.HardTanh(), (test_data,))
 
     @parameterized.expand(test_data_suite)
+    @pytest.mark.corstone_fvp
     def test_hardtanh_tosa_u55_BI(self, test_name: str, test_data: torch.Tensor):
-        self._test_hardtanh_tosa_u55_BI_pipeline(self.HardTanh(), (test_data,))
+        self._test_hardtanh_tosa_ethosu_BI_pipeline(
+            common.get_u55_compile_spec(), self.HardTanh(), (test_data,)
+        )
+
+    @parameterized.expand(test_data_suite)
+    @pytest.mark.corstone_fvp
+    def test_hardtanh_tosa_u85_BI(self, test_name: str, test_data: torch.Tensor):
+        self._test_hardtanh_tosa_ethosu_BI_pipeline(
+            common.get_u85_compile_spec(), self.HardTanh(), (test_data,)
+        )

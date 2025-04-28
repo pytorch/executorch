@@ -10,6 +10,13 @@ from multiprocessing.connection import Client
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm._passes.expand_broadcast_tensor_shape import (
+    ExpandBroadcastTensorShape,
+)
+
+from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+    get_capture_program_passes,
+)
 from executorch.backends.qualcomm.quantizer.annotators import (
     QuantizationConfig,
     QuantizationSpec,
@@ -23,9 +30,7 @@ from executorch.backends.qualcomm.quantizer.qconfig import (
 )
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.backends.qualcomm.utils.constants import (
-    QCOM_PASS_EXPAND_BROADCAST_SHAPE,
-)
+from executorch.backends.qualcomm.utils.constants import QCOM_PASS_ACTIVATE_KEY
 from executorch.backends.qualcomm.utils.utils import convert_linear_to_conv2d
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
@@ -96,21 +101,25 @@ def main(args):
         ),
     )
     # rewrite default per-channel ptq config
-    quantizer.per_channel_quant_config = QuantizationConfig(
+    quantizer.default_quant_config.per_channel_quant_config = QuantizationConfig(
         input_activation=act_qspec,
         output_activation=act_qspec,
         weight=weight_qspec,
         bias=_derived_bias_quant_spec,
     )
+
     # rewrite default ptq config
-    q_config = quantizer.bit8_quant_config
-    quantizer.bit8_quant_config = QuantizationConfig(
+    q_config = quantizer.default_quant_config.quant_config
+    quantizer.default_quant_config.quant_config = QuantizationConfig(
         input_activation=act_qspec,
         output_activation=act_qspec,
         weight=q_config.weight,
         bias=q_config.bias,
     )
+
     # lower to QNN
+    passes_job = get_capture_program_passes()
+    passes_job[ExpandBroadcastTensorShape][QCOM_PASS_ACTIVATE_KEY] = True
     build_executorch_binary(
         convert_linear_to_conv2d(get_instance(args.oss_repo, args.pretrained_weight)),
         inputs[0],
@@ -121,7 +130,7 @@ def main(args):
         skip_node_op_set=skip_node_op_set,
         quant_dtype=QuantDtype.use_8a8w,
         custom_quantizer=quantizer,
-        custom_pass_config={QCOM_PASS_EXPAND_BROADCAST_SHAPE},
+        passes_job=passes_job,
         shared_buffer=args.shared_buffer,
     )
 

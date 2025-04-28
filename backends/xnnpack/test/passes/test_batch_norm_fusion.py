@@ -18,13 +18,22 @@ class TestBatchNormFusion(unittest.TestCase):
     PassStage = RunPasses([FuseBatchNormWithConvPass])
     bn_name = "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default"
 
+    def setUp(self):
+        torch._dynamo.reset()
+
     class ModelConvBN(torch.nn.Module):
         def __init__(
-            self, in_features: int, out_features: int, kernel_size: Tuple[int, int]
+            self,
+            in_features: int,
+            out_features: int,
+            kernel_size: Tuple[int, int],
+            transpose: bool,
         ):
             super().__init__()
-            self.conv2d = torch.nn.Conv2d(in_features, out_features, kernel_size)
+            op = torch.nn.ConvTranspose2d if transpose else torch.nn.Conv2d
+            self.conv2d = op(in_features, out_features, kernel_size)
             self.bn = torch.nn.BatchNorm2d(out_features)
+            self.forward(torch.randn(2, 2, 4, 4) * 2 + 2)  # update the BN stats
 
         def forward(self, x):
             y = self.conv2d(x)
@@ -34,25 +43,33 @@ class TestBatchNormFusion(unittest.TestCase):
             return self.bn(y)
 
     def test_fp32_batch_norm_fusion(self):
-        (
-            Tester(self.ModelConvBN(2, 2, (2, 2)).eval(), (torch.randn(2, 2, 4, 4),))
-            .export()
-            .to_edge()
-            .run_passes(self.PassStage)
-            .check_count({self.bn_name: 1})
-            .run_method_and_compare_outputs()
-        )
+        for transpose in [False, True]:
+            (
+                Tester(
+                    self.ModelConvBN(2, 2, (2, 2), transpose).eval(),
+                    (torch.randn(2, 2, 4, 4),),
+                )
+                .export()
+                .to_edge()
+                .run_passes(self.PassStage)
+                .check_count({self.bn_name: 1})
+                .run_method_and_compare_outputs()
+            )
 
     def test_q8_batch_norm_fusion(self):
-        (
-            Tester(self.ModelConvBN(2, 2, (2, 2)).eval(), (torch.randn(2, 2, 4, 4),))
-            .quantize()
-            .export()
-            .to_edge()
-            .run_passes(self.PassStage)
-            .check_count({self.bn_name: 1})
-            .run_method_and_compare_outputs()
-        )
+        for transpose in [False, True]:
+            (
+                Tester(
+                    self.ModelConvBN(2, 2, (2, 2), transpose).eval(),
+                    (torch.randn(2, 2, 4, 4),),
+                )
+                .quantize()
+                .export()
+                .to_edge()
+                .run_passes(self.PassStage)
+                .check_count({self.bn_name: 1})
+                .run_method_and_compare_outputs()
+            )
 
     def test_fp32_batch_norm_no_fusion_doesnt_partition(self):
         """

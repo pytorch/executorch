@@ -1,4 +1,8 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
 
@@ -114,6 +118,8 @@ class AdvanceQuantizeOpAboveDefInBranchPass(ExportPass):
             if user_target in {
                 torch.ops.quantized_decomposed.quantize_per_tensor,
                 exir_ops.edge.quantized_decomposed.quantize_per_tensor,
+                torch.ops.cadence.quantize_per_tensor,
+                exir_ops.edge.cadence.quantize_per_tensor,
             }:
                 descendent_quant_ops.append(user)
             # If the successor is a trivially quantizable op, consider its users
@@ -296,6 +302,8 @@ class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
             if get_overload_packet(node.target) not in (
                 exir_ops.edge.quantized_decomposed.quantize_per_tensor,
                 torch.ops.quantized_decomposed.quantize_per_tensor,
+                exir_ops.edge.cadence.quantize_per_tensor,
+                torch.ops.cadence.quantize_per_tensor,
             ):
                 continue
 
@@ -409,6 +417,7 @@ class PostponeDequantizeOpBelowUseChainPass(ExportPass):
             in {
                 exir_ops.edge.quantized_decomposed.quantize_per_tensor,
                 exir_ops.edge.quantized_decomposed.quantize_per_channel,
+                exir_ops.edge.cadence.quantize_per_tensor,
             }
             for x in users
         )
@@ -418,6 +427,7 @@ class PostponeDequantizeOpBelowUseChainPass(ExportPass):
         packet_to_overload_map = {
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor: "default",
             exir_ops.edge.quantized_decomposed.dequantize_per_channel: "default",
+            exir_ops.edge.cadence.dequantize_per_tensor: "default",
         }
         graph = graph_module.graph
         modified = False
@@ -438,9 +448,9 @@ class PostponeDequantizeOpBelowUseChainPass(ExportPass):
                         args=(user, *node.args[1:]),
                     )
                     dequant_node.meta = user.meta.copy()
-                    # Remove meta["debug_handle"] on new node. Reassign it at the
-                    # caller level by calling generate_missing_debug_handles
-                    dequant_node.meta.pop("debug_handle")
+                    # Remove meta["debug_handle"] on new node if it exists.
+                    # Reassign it at the caller level by calling generate_missing_debug_handles
+                    dequant_node.meta.pop("debug_handle", None)
                     user.replace_all_uses_with(dequant_node)
                     dequant_node.args = (user, *node.args[1:])
 
@@ -496,6 +506,7 @@ class SinkOpsCloserToUsePass(ExportPass):
         exir_ops.edge.aten.dequantize,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor,
         exir_ops.edge.quantized_decomposed.dequantize_per_channel,
+        exir_ops.edge.cadence.dequantize_per_tensor,
     }
 
     def sink_ops_closer_to_use(self, graph_module: torch.fx.GraphModule):
@@ -554,6 +565,7 @@ class HoistOpsCloserToDefPass(ExportPass):
 
     hoistable_ops: Set[EdgeOpOverload] = {
         exir_ops.edge.quantized_decomposed.quantize_per_tensor,
+        exir_ops.edge.cadence.quantize_per_tensor,
         exir_ops.edge.aten.slice_copy,
         exir_ops.edge.aten.select_copy,
     }

@@ -145,7 +145,10 @@ class PyTree {
           } else if (py::isinstance<py::int_>(key)) {
             s.key(i) = py::cast<int32_t>(key);
           } else {
-            pytree_assert(false);
+            throw std::runtime_error(
+                std::string(
+                    "invalid key in pytree dict; must be int or string but got ") +
+                std::string(py::str(key.get_type())));
           }
 
           flatten_internal(dict[key], leaves, s[i]);
@@ -175,7 +178,11 @@ class PyTree {
         break;
       }
       case Kind::None:
-        pytree_assert(false);
+        [[fallthrough]];
+      default:
+        throw std::runtime_error(
+            std::string("invalid pytree kind  ") + std::to_string(int(kind)) +
+            " in flatten_internal");
     }
   }
 
@@ -221,11 +228,12 @@ class PyTree {
                 return py::cast(key.as_int()).release();
               case Key::Kind::Str:
                 return py::cast(key.as_str()).release();
-              case Key::Kind::None:
-                pytree_assert(false);
+              default:
+                throw std::runtime_error(
+                    std::string("invalid key kind ") +
+                    std::to_string(int(key.kind())) +
+                    " in pytree dict; must be int or string");
             }
-            pytree_assert(false);
-            return py::none();
           }();
           dict[py_key] = unflatten_internal(spec[i], leaves_it);
         }
@@ -241,7 +249,9 @@ class PyTree {
         return py::none();
       }
     }
-    pytree_assert(false);
+    throw std::runtime_error(
+        std::string("invalid spec kind ") + std::to_string(int(spec.kind())) +
+        " in unflatten_internal");
   }
 
  public:
@@ -339,12 +349,10 @@ static py::object broadcast_to_and_flatten(
       if (kind != top.x_spec_node->kind()) {
         return py::none();
       }
-      pytree_assert(top.tree_spec_node->kind() == top.x_spec_node->kind());
       const size_t child_num = top.tree_spec_node->size();
       if (child_num != top.x_spec_node->size()) {
         return py::none();
       }
-      pytree_assert(child_num == top.x_spec_node->size());
 
       size_t x_leaves_offset =
           top.x_leaves_offset + top.x_spec_node->leaves_num();

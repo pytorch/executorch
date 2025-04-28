@@ -8,9 +8,16 @@
 
 #pragma once
 
+#ifdef __GNUC__
+// Disable -Wdeprecated-declarations, as some builds use 'Werror'.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/method_meta.h>
@@ -25,7 +32,13 @@ struct EValue;
 } // namespace executorch_flatbuffer
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
+
+// Forward declare NamedData. This is a public header and must not include
+// internal data types.
+namespace deserialization {
+struct NamedData;
+} // namespace deserialization
 
 // Forward declare Program to avoid a circular reference.
 class Program;
@@ -38,6 +51,7 @@ using OpFunction = void (*)(KernelRuntimeContext&, EValue**);
 /// A list of pointers into the master values table that together compose the
 /// argument list for a single instruction
 using InstructionArgs = Span<EValue*>;
+using deserialization::NamedData;
 
 /**
  * An executable method of an executorch program. Maps to a python method like
@@ -62,6 +76,8 @@ class Method final {
         delegates_(rhs.delegates_),
         n_chains_(rhs.n_chains_),
         chains_(rhs.chains_),
+        external_constants_(rhs.external_constants_),
+        n_external_constants_(rhs.n_external_constants_),
         init_state_(rhs.init_state_) {
     // Required: clear out fields that the dtor looks at, so that we don't free
     // anything twice.
@@ -69,6 +85,8 @@ class Method final {
     rhs.values_ = nullptr;
     rhs.n_delegate_ = 0;
     rhs.delegates_ = nullptr;
+    rhs.n_external_constants_ = 0;
+    rhs.external_constants_ = nullptr;
 
     // Helpful: Try to ensure that any other interactions with the old object
     // result in failures.
@@ -173,6 +191,18 @@ class Method final {
    * @returns Error::Ok on success, non-Ok on failure.
    */
   ET_NODISCARD Error get_inputs(EValue* input_evalues, size_t length);
+
+  /**
+   *
+   * Retrieves the attribute tensor associated with the given name.
+   *
+   * @param[in] name The name of the attribute tensor to retrieve.
+   *
+   * @returns Result containing the attribute tensor on success, non-Ok on
+   * failure.
+   */
+  ET_NODISCARD Result<executorch::aten::Tensor> get_attribute(
+      executorch::aten::string_view name);
 
   /**
    * Execute the method.
@@ -284,6 +314,8 @@ class Method final {
         delegates_(nullptr),
         n_chains_(0),
         chains_(nullptr),
+        external_constants_(nullptr),
+        n_external_constants_(0),
         init_state_(InitializationState::Uninitialized) {}
 
   /// Static factory used by Program.
@@ -291,14 +323,17 @@ class Method final {
       executorch_flatbuffer::ExecutionPlan* s_plan,
       const Program* program,
       MemoryManager* memory_manager,
-      EventTracer* event_tracer);
+      EventTracer* event_tracer,
+      const NamedDataMap* named_data_map);
 
   /**
    * Initialize the method from its serialized representation.
    *
    * @returns Error::Ok on success, non-Ok on failure.
    */
-  ET_NODISCARD Error init(executorch_flatbuffer::ExecutionPlan* s_plan);
+  ET_NODISCARD Error init(
+      executorch_flatbuffer::ExecutionPlan* s_plan,
+      const NamedDataMap* named_data_map);
 
   /// Returns true if the Method was successfully initialized.
   inline bool initialized() const {
@@ -329,14 +364,37 @@ class Method final {
   size_t n_chains_;
   Chain* chains_;
 
+  NamedData* external_constants_;
+  size_t n_external_constants_ = 0;
+
   InitializationState init_state_;
+
+  /**
+   * Counts the number of tensors marked as EXTERNAL in the flatbuffer
+   * for this method.
+   */
+  ET_NODISCARD Result<size_t> get_num_external_constants();
+
+  /**
+   * Parses the flatbuffer for constant tensors tagged as EXTERNAL.
+   * Retrieves the external constants using the named_data_map and places them
+   * into `external_constants_`. Updates `n_external_constants_` to count the
+   * number of successfully-initialized external constants.
+   * FreeableBuffers returned by the named_data_map are owned by the
+   * method and are freed on method destruction.
+   *
+   * @param[in] named_data_map, to retrieve external constants from.
+   * @returns Error::Ok on success, non-Ok on failure.
+   */
+  ET_NODISCARD Error
+  parse_external_constants(const NamedDataMap* named_data_map);
 
   /**
    * Parses the elements of the values_ array. On error, n_value_ will be set to
    * the number of successfully-initialized entries so that ~Method doesn't try
    * to clean up uninitialized entries.
    */
-  ET_NODISCARD Error parse_values();
+  ET_NODISCARD Error parse_values(const NamedDataMap* named_data_map);
 
   ET_NODISCARD Error resolve_operator(
       int32_t op_index,
@@ -348,13 +406,17 @@ class Method final {
   void log_outputs();
 };
 
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
 
 namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::Method;
+using ::executorch::ET_RUNTIME_NAMESPACE::Method;
 } // namespace executor
 } // namespace torch
+
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif

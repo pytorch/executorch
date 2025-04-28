@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cstring>
 
 #include <executorch/kernels/portable/cpu/util/advanced_index_util.h>
@@ -16,12 +17,12 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 Tensor& index_put_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
+    executorch::aten::ArrayRef<executorch::aten::optional<Tensor>> indices,
     const Tensor& values,
     const bool accumulate,
     Tensor& out) {
@@ -116,7 +117,7 @@ Tensor& index_put_out(
 
   // Compute the number of elements in the indexed space
   size_t x_numel = 1;
-  for (size_t i = 0; i < x_dim; i++) {
+  for (const auto i : c10::irange(x_dim)) {
     x_numel *= x_sizes[i];
   }
 
@@ -124,7 +125,7 @@ Tensor& index_put_out(
     const CTYPE* const values_data = values.const_data_ptr<CTYPE>();
     CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
-    for (auto x_ix = 0; x_ix < x_numel; x_ix++) {
+    for (const auto x_ix : c10::irange(x_numel)) {
       size_t in_ix = 0;
 
       size_t x_coord[kTensorDimensionLimit];

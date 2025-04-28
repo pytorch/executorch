@@ -80,20 +80,6 @@ class SizeAnalysisToolTest(unittest.TestCase):
                 "shape": [2, 4, 3, 3, 3],
                 "num_bytes": 864,
             },
-            # ConvTranspose2d Weight
-            32: {
-                "dtype": "float32",
-                "element_size": 4,
-                "shape": [2, 4, 2, 2],
-                "num_bytes": 128,
-            },
-            # ConvTranspose2d Bias
-            4: {
-                "dtype": "float32",
-                "element_size": 4,
-                "shape": [4],
-                "num_bytes": 16,
-            },
             # Conv3d Bias
             2: {
                 "dtype": "float32",
@@ -111,5 +97,5 @@ class SizeAnalysisToolTest(unittest.TestCase):
             for k, v in exepected_tensor_data[tensor["numel"]].items():
                 self.assertEqual(tensor[k], v)
 
-        # Two delegate blobs: sigmoid and conv2d
+        # Two delegate blobs: sigmoid and conv2d/conv_transpose2d
         self.assertEqual(len(size_information["delegate_blob_data"]), 2)

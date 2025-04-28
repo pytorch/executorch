@@ -39,7 +39,7 @@ Tensor& arange_out(KernelRuntimeContext& ctx, const Scalar& end, Tensor& out) {
       InvalidArgument,
       out);
 
-  ET_SWITCH_REAL_TYPES(out.scalar_type(), ctx, "arange.out", CTYPE, [&]() {
+  ET_SWITCH_REALHBF16_TYPES(out.scalar_type(), ctx, "arange.out", CTYPE, [&]() {
     auto out_data = out.mutable_data_ptr<CTYPE>();
     for (size_t i = 0; i < size; i++) {
       out_data[i] = static_cast<CTYPE>(i);
@@ -88,7 +88,7 @@ Tensor& arange_start_out(
       InvalidArgument,
       out);
 
-  ET_SWITCH_REAL_TYPES(
+  ET_SWITCH_REALHBF16_TYPES(
       out.scalar_type(), ctx, "arange.start_out", CTYPE, [&]() {
         auto out_data = out.mutable_data_ptr<CTYPE>();
         for (size_t i = 0; i < size; i++) {

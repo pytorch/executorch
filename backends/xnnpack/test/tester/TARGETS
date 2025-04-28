@@ -16,12 +16,16 @@ runtime.python_library(
     deps = [
         "//caffe2:torch",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer_utils",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
+        "//executorch/devtools/visualization:visualization",
         "//executorch/exir:lib",
         "//executorch/exir/_serialize:lib",
         "//executorch/exir/backend:backend_api",
         "//executorch/exir/backend:partitioner",
         "//executorch/exir/passes:spec_prop_pass",
         "//executorch/extension/pybindings:portable_lib",  # @manual
+        "//executorch/backends/transforms:duplicate_dynamic_quant_chain"
     ],
 )

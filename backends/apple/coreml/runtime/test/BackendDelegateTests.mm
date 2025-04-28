@@ -162,8 +162,9 @@ std::vector<MultiArray> to_multiarrays(NSArray<MLMultiArray *> *ml_multiarrays) 
     MLMultiArray *output = [ETCoreMLTestUtils filledMultiArrayWithShape:inputs[0].shape dataType:inputs[0].dataType repeatedValue:@(0) error:&localError];
     NSArray<MLMultiArray *> *args = [inputs arrayByAddingObject:output];
     std::error_code errorCode;
+    auto argsVec = to_multiarrays(args);
     XCTAssertTrue(_delegate->execute(handle,
-                                     to_multiarrays(args),
+                                     argsVec,
                                      ModelLoggingOptions(),
                                      nullptr,
                                      errorCode));
@@ -187,8 +188,9 @@ std::vector<MultiArray> to_multiarrays(NSArray<MLMultiArray *> *ml_multiarrays) 
     MLMultiArray *output = [ETCoreMLTestUtils filledMultiArrayWithShape:inputs[0].shape dataType:inputs[0].dataType repeatedValue:@(0) error:&localError];
     NSArray<MLMultiArray *> *args = [inputs arrayByAddingObject:output];
     std::error_code errorCode;
-    XCTAssertTrue(_delegate->execute(handle, 
-                                     to_multiarrays(args),
+    auto argsVec = to_multiarrays(args);
+    XCTAssertTrue(_delegate->execute(handle,
+                                     argsVec,
                                      ModelLoggingOptions(),
                                      nullptr,
                                      errorCode));

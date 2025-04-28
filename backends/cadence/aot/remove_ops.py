@@ -1,4 +1,8 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 # pyre-strict
 
@@ -16,7 +20,7 @@
 import itertools
 import logging
 from dataclasses import dataclass, field
-from typing import Callable, cast, Dict, List, Optional, Sequence
+from typing import Callable, cast, Dict, Iterable, List, Optional, Sequence, Union
 
 import torch
 import torch.fx
@@ -29,7 +33,7 @@ from executorch.backends.cadence.aot.simplify_ops import SimplifySliceOpPass
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
 from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.dialects.edge._ops import EdgeOpOverload
+from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from executorch.exir.pass_base import ExportPass, NodeMetadata, PassResult, ProxyValue
 from executorch.exir.pass_manager import PassManager, PassType
 from executorch.exir.passes import dead_code_elimination_pass
@@ -110,7 +114,8 @@ class RemoveZeroSizedCatArgsPass(ExportPass):
 
         # Otherwise, we replace args[0] with cat_inputs.
         new_args = list(args)
-        new_args[0] = cat_inputs
+        # pyre error introduced after D66937105
+        new_args[0] = cat_inputs  # pyre-ignore[6]
         return super().call_operator(op, tuple(new_args), kwargs, meta)
 
 
@@ -564,6 +569,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         exir_ops.edge.aten.hardtanh.default,
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.cadence.quantize_per_tensor.default,
+        exir_ops.edge.cadence.dequantize_per_tensor.default,
     }
 
     # must be initialized in the constructor
@@ -697,16 +704,175 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             sg.is_valid = False
 
     def is_starting_permute(self, node: torch.fx.Node) -> bool:
-        return (
-            node.target == exir_ops.edge.aten.permute_copy.default
-            and cast(list[int], node.args[1]) == self.to_NCHW
-        )
+        return self.is_boundary_permute(node, self.to_NCHW)
 
     def is_ending_permute(self, node: torch.fx.Node) -> bool:
-        return (
-            node.target == exir_ops.edge.aten.permute_copy.default
-            and cast(list[int], node.args[1]) == self.to_NHWC
+        return self.is_boundary_permute(node, self.to_NHWC)
+
+    @staticmethod
+    def is_boundary_permute(node: torch.fx.Node, permute_dims: Iterable[int]) -> bool:
+        permute_dims = list(permute_dims)
+        if node.target == exir_ops.edge.aten.permute_copy.default:
+            return cast(list[int], node.args[1]) == permute_dims
+        elif node.target == exir_ops.edge.aten.view_copy.default:
+            # If there's a view node, check if it's swapping two dimensions and
+            # not splitting any others from the input shape.
+            inp = node.args[0]
+            if not isinstance(inp, torch.fx.Node):
+                return False
+            input_shape = inp.meta["val"].shape
+            output_shape = node.args[1]
+            assert isinstance(output_shape, (tuple, list))
+            # If the shapes are equal in length, no dimension is being split or
+            # grouped. Then check if a permute of the input shape results in the output shape.
+            return (
+                len(input_shape) == len(output_shape)
+                and len(input_shape) == len(permute_dims)
+                and RemovePermutesAroundElementwiseOps.permute_shape(
+                    input_shape, permute_dims
+                )
+                == output_shape
+            )
+        else:
+            return False
+
+    @staticmethod
+    def permute_shape(
+        shape: Union[List[int], torch.Size], permute_dims: Iterable[int]
+    ) -> List[int]:
+        permute_dims = list(permute_dims)
+        assert len(shape) == len(permute_dims)
+        return [shape[p] for p in permute_dims]
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class RemoveBranchedQuantDequant(ExportPass):
+    """
+    This pass looks for adjacent quant and dequant nodes with identical
+    parameters, where the quant node has other users in addition to the
+    dequant. The quant and dequant pair would be removed by the
+    FuseQuantDequantToRequantizePass if not for the multiple users. This pass
+    removes just the dequant node by connecting it to the quant's parent node
+    """
+
+    quantize_op_packets: set[EdgeOpOverloadPacket] = {
+        exir_ops.edge.cadence.quantize_per_tensor,
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor,
+    }
+    dequantize_op_packets: set[EdgeOpOverloadPacket] = {
+        exir_ops.edge.cadence.dequantize_per_tensor,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor,
+    }
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self.remove_branched(
+            graph_module, self.quantize_op_packets, self.dequantize_op_packets
         )
+        self.remove_branched(
+            graph_module, self.dequantize_op_packets, self.quantize_op_packets
+        )
+
+        graph_module.graph.eliminate_dead_code()
+        result = super().call(graph_module)
+        return result
+
+    def remove_branched(
+        self,
+        graph_module: torch.fx.GraphModule,
+        producer_pkts: set[EdgeOpOverloadPacket],
+        consumer_pkts: set[EdgeOpOverloadPacket],
+    ) -> None:
+        for node in graph_module.graph.nodes:
+            if (
+                node.op != "call_function"
+                or not isinstance(node.target, EdgeOpOverload)
+                or get_edge_overload_packet(node.target) not in producer_pkts
+            ):
+                continue
+
+            if len(node.users) < 2:
+                continue
+
+            for user in node.users:
+                if (
+                    not isinstance(user.target, EdgeOpOverload)
+                    or get_edge_overload_packet(user.target) not in consumer_pkts
+                ):
+                    continue
+
+                # check qparams match
+                if node.args[1:] != user.args[1:]:
+                    continue
+
+                user.replace_all_uses_with(node.args[0])
+
+
+class RemoveCatFromSliceCopyPass(ExportPass):
+    def _remove_unused_cat(  # noqa: C901
+        self, graph_module: torch.fx.GraphModule
+    ) -> None:
+        slice_copy_nodes = [
+            node
+            for node in graph_module.graph.nodes
+            if node.target == exir_ops.edge.aten.slice_copy.Tensor
+        ]
+        for slice_copy_node in slice_copy_nodes:
+            slice_dim, start_idx, end_idx, step = 0, 0, float("inf"), 1
+            input_node, *other_args = slice_copy_node.args
+            if len(other_args) >= 1:
+                slice_dim = other_args[0]
+            if len(other_args) >= 2:
+                start_idx = other_args[1]
+            if len(other_args) >= 3:
+                end_idx = other_args[2]
+            if len(other_args) >= 4:
+                step = other_args[3]
+            if step != 1:
+                continue
+            slice_copy_dtype = slice_copy_node.meta["val"].dtype
+            if input_node.target != exir_ops.edge.aten.cat.default:
+                continue
+            cat_dtype = input_node.meta["val"].dtype
+            if slice_copy_dtype != cat_dtype:
+                continue
+            cat_dim = input_node.args[1:]
+            if len(cat_dim) == 0:
+                cat_dim = 0
+            if cat_dim != slice_dim:
+                continue
+            cat_output_shape = input_node.meta["val"].shape
+            start_idx = (
+                cat_output_shape[cat_dim] + start_idx if start_idx < 0 else start_idx
+            )
+            end_idx = (
+                cat_output_shape[cat_dim]
+                if end_idx > cat_output_shape[cat_dim]
+                else end_idx
+            )
+            base_idx = 0
+            cat_input_to_keep = None
+            for cat_input_node in input_node.args[0]:
+                cat_input_dtype = cat_input_node.meta["val"].dtype
+                if slice_copy_dtype != cat_input_dtype:
+                    continue
+                cat_input_shape = cat_input_node.meta["val"].shape
+
+                # check if the slice range overlaps with the cat range
+                if (
+                    base_idx <= start_idx
+                    and end_idx <= list(cat_input_shape)[cat_dim] + base_idx
+                ):
+                    cat_input_to_keep = cat_input_node
+                    break
+                base_idx += list(cat_input_shape)[cat_dim]
+            if cat_input_to_keep is not None:
+                slice_copy_node.replace_input_with(input_node, cat_input_to_keep)
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self._remove_unused_cat(graph_module)
+        graph_module.recompile()
+        graph_module.graph.eliminate_dead_code()
+        return super().call(graph_module)
 
 
 # The following class consolidates functions to remove ops that are redundant
@@ -729,4 +895,5 @@ class CadenceRemoveNops:
         RemoveNopMulOpPass,
         RemoveNopAddOpPass,
         RemoveNopLinalgVectorNormOpPass,
+        RemoveBranchedQuantDequant,
     ]

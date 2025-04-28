@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Type
 import torch
 from executorch.exir import CaptureConfig
 from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.program._program import ExecutorchProgramManager
 from torch import nn
 from torch.export import Dim
 
@@ -182,6 +183,23 @@ class ModuleSimpleTrain(torch.nn.Module):
         return True
 
 
+class ModuleStateful(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("state", torch.zeros(1, dtype=torch.int32))
+
+    def forward(self, x):
+        self.state.add_(1)
+        return x + self.state
+
+    def get_random_inputs(self):
+        return (torch.ones(1),)
+
+    @staticmethod
+    def export_state_names():
+        return True
+
+
 #
 # Main logic.
 #
@@ -190,7 +208,8 @@ class ModuleSimpleTrain(torch.nn.Module):
 def export_module_to_program(
     module_class: Type[nn.Module],
     skip_type_promotion: bool,
-):
+    external_constants: bool = False,
+) -> ExecutorchProgramManager:
     """Exports the module and returns the serialized program data."""
     torch.manual_seed(0)
     # Look for an optional @staticmethod that defines custom trace params.
@@ -199,8 +218,11 @@ def export_module_to_program(
         # pyre-ignore[16]: pyre doesn't know about get_export_kwargs.
         export_kwargs = module_class.get_export_kwargs()
     export_joint = False
+    export_state_names = False
     if hasattr(module_class, "export_joint"):
         export_joint = module_class.export_joint()  # pyre-ignore
+    if hasattr(module_class, "export_state_names"):
+        export_state_names = module_class.export_state_names()
     if hasattr(module_class, "get_method_names_to_export"):
         # pyre-ignore[16]: pyre doesn't know about get_export_kwargs.
         methods = module_class.get_method_names_to_export()
@@ -211,9 +233,11 @@ def export_module_to_program(
         methods,
         skip_type_promotion=skip_type_promotion,
         export_joint_graph=export_joint,
+        external_constants=external_constants,
+        export_state_names=export_state_names,
         **export_kwargs,
     )
-    return module.executorch_program.buffer
+    return module.executorch_program
 
 
 def main() -> None:
@@ -235,7 +259,12 @@ def main() -> None:
         "--outdir",
         type=str,
         required=True,
-        help="Path to the directory to write <classname>.pte files to",
+        help="Path to the directory to write <classname>.pte files and .ptd files to",
+    )
+    parser.add_argument(
+        "--external-constants",
+        action="store_true",
+        help="Export the model with external constants",
     )
     args = parser.parse_args()
 
@@ -256,15 +285,24 @@ def main() -> None:
             # Skip type promotion to keep the model in fp16.
             # Type promotion will convert to fp32.
             skip_type_promotion = True
+        if args.external_constants:
+            module_name = f"{module_name}Program"
         outfile = os.path.join(args.outdir, f"{module_name}.pte")
+        prog = export_module_to_program(
+            module_class,
+            skip_type_promotion=skip_type_promotion,
+            external_constants=args.external_constants,
+        )
         with open(outfile, "wb") as fp:
-            fp.write(
-                export_module_to_program(
-                    module_class,
-                    skip_type_promotion=skip_type_promotion,
-                )
+            prog.write_to_file(fp)
+            print(f"Exported {module_name} and wrote program data to {outfile}")
+
+        if args.external_constants:
+            # current infra doesnt easily allow renaming this file, so just hackily do it here.
+            prog._tensor_data[f"{module_name}"] = prog._tensor_data.pop(
+                "_default_external_constant"
             )
-        print(f"Exported {module_name} and wrote program data to {outfile}")
+        prog.write_tensor_data_to_file(args.outdir)
 
 
 if __name__ == "__main__":

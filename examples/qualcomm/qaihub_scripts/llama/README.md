@@ -12,19 +12,22 @@ Note that the pre-compiled context binaries could not be futher fine-tuned for o
 ### Instructions
 #### Step 1: Setup
 1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch.
-2. Follow the [tutorial](https://pytorch.org/executorch/stable/build-run-qualcomm-ai-engine-direct-backend.html) to build Qualcomm AI Engine Direct Backend.
+2. Follow the [tutorial](https://pytorch.org/executorch/main/backends-qualcomm) to build Qualcomm AI Engine Direct Backend.
 
 #### Step2: Prepare Model
 1. Create account for https://aihub.qualcomm.com/
 2. Follow instructions in https://huggingface.co/qualcomm/Llama-v2-7B-Chat to export context binaries (will take some time to finish)
 
 ```bash
-# tokenizer.model: https://huggingface.co/meta-llama/Llama-2-7b-chat-hf/blob/main/tokenizer.model
+# tokenizer.model: https://huggingface.co/meta-llama/Llama-2-7b-chat-hf/tree/main
 # tokenizer.bin:
 python -m examples.models.llama.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
 ```
 
-#### Step3: Run default examples
+#### Step3: Verify context binary's version
+Please refer to [Check context binary version](../../README.md#check-context-binary-version) for more info on why and how to verify the context binary's version
+
+#### Step4: Run default examples
 ```bash
 # AIHUB_CONTEXT_BINARIES: ${PATH_TO_AIHUB_WORKSPACE}/build/llama_v2_7b_chat_quantized
 python examples/qualcomm/qaihub_scripts/llama/llama2/qaihub_llama2_7b.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --context_binaries ${AIHUB_CONTEXT_BINARIES} --tokenizer_bin tokenizer.bin --prompt "What is Python?"
@@ -37,15 +40,17 @@ Note that the pre-compiled context binaries could not be futher fine-tuned for o
 ### Instructions
 #### Step 1: Setup
 1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch.
-2. Follow the [tutorial](https://pytorch.org/executorch/stable/build-run-qualcomm-ai-engine-direct-backend.html) to build Qualcomm AI Engine Direct Backend.
+2. Follow the [tutorial](https://pytorch.org/executorch/main/backends-qualcomm) to build Qualcomm AI Engine Direct Backend.
 
 #### Step2: Prepare Model
 1. Create account for https://aihub.qualcomm.com/
 2. Follow instructions in https://huggingface.co/qualcomm/Llama-v3-8B-Chat to export context binaries (will take some time to finish)
 3. For Llama 3 tokenizer, please refer to https://github.com/meta-llama/llama-models/blob/main/README.md for further instructions on how to download tokenizer.model.
 
+#### Step3: Verify context binary's version
+Please refer to [Check context binary version](../../README.md#check-context-binary-version) for more info on why and how to verify the context binary's version
 
-#### Step3: Run default examples
+#### Step4: Run default examples
 ```bash
 # AIHUB_CONTEXT_BINARIES: ${PATH_TO_AIHUB_WORKSPACE}/build/llama_v3_8b_chat_quantized
 python examples/qualcomm/qaihub_scripts/llama/llama3/qaihub_llama3_8b.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --context_binaries ${AIHUB_CONTEXT_BINARIES} --tokenizer_model tokenizer.model --prompt "What is baseball?"

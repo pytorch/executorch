@@ -10,9 +10,15 @@ set -exu
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
+if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
+  PYTHON_EXECUTABLE=python3
+fi
+which "${PYTHON_EXECUTABLE}"
+
 install_executorch_and_backend_lib() {
   echo "Installing executorch and xnnpack backend"
-  rm -rf cmake-android-out && mkdir cmake-android-out
+  clean_executorch_install_folders
+  mkdir cmake-android-out
   ANDROID_NDK=/opt/ndk
   BUCK2=buck2
   ANDROID_ABI=arm64-v8a
@@ -36,6 +42,10 @@ install_executorch_and_backend_lib() {
 
 build_llama_runner() {
     echo "Building llama runner for Android..."
+    pushd extension/llm/tokenizers
+    echo "Updating tokenizers submodule"
+    git submodule update --init
+    popd
     ANDROID_ABI=arm64-v8a
     cmake -DBUCK2="${BUCK2}" \
     -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK"/build/cmake/android.toolchain.cmake  \
@@ -50,6 +60,5 @@ build_llama_runner() {
 
     cmake --build cmake-android-out/examples/models/llama -j4 --config Release
 }
-install_flatc_from_source
 install_executorch_and_backend_lib
 build_llama_runner

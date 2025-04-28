@@ -1,9 +1,9 @@
 [submodule "backends/arm/third-party/ethos-u-core-driver"]
 	path = backends/arm/third-party/ethos-u-core-driver
-	url = https://github.com/pytorch-labs/ethos-u-core-driver-mirror
+	url = https://git.gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-core-driver.git
 [submodule "backends/arm/third-party/serialization_lib"]
 	path = backends/arm/third-party/serialization_lib
-	url = https://github.com/pytorch-labs/tosa_serialization_lib-mirror
+	url = https://git.gitlab.arm.com/tosa/tosa-serialization.git
 [submodule "backends/vulkan/third-party/Vulkan-Headers"]
 	path = backends/vulkan/third-party/Vulkan-Headers
 	url = https://github.com/KhronosGroup/Vulkan-Headers
@@ -28,15 +28,9 @@
 [submodule "backends/xnnpack/third-party/pthreadpool"]
 	path = backends/xnnpack/third-party/pthreadpool
 	url = https://github.com/Maratyszcza/pthreadpool.git
-[submodule "extension/llm/third-party/abseil-cpp"]
-	path = extension/llm/third-party/abseil-cpp
-	url = https://github.com/abseil/abseil-cpp.git
-[submodule "extension/llm/third-party/re2"]
-	path = extension/llm/third-party/re2
-	url = https://github.com/google/re2.git
-[submodule "extension/llm/third-party/sentencepiece"]
-	path = extension/llm/third-party/sentencepiece
-	url = https://github.com/google/sentencepiece.git
+[submodule "extension/llm/tokenizers"]
+	path = extension/llm/tokenizers
+	url = https://github.com/pytorch-labs/tokenizers.git
 [submodule "kernels/optimized/third-party/eigen"]
 	path = kernels/optimized/third-party/eigen
 	url = https://gitlab.com/libeigen/eigen.git
@@ -55,18 +49,21 @@
 [submodule "third-party/ios-cmake"]
 	path = third-party/ios-cmake
 	url = https://github.com/leetal/ios-cmake
-[submodule "backends/cadence/hifi/third-party/nnlib/nnlib-hifi4"]
-	path = backends/cadence/hifi/third-party/nnlib/nnlib-hifi4
-	url = https://github.com/foss-xtensa/nnlib-hifi4.git
 [submodule "third-party/prelude"]
 	path = third-party/prelude
 	url = https://github.com/facebook/buck2-prelude.git
 [submodule "third-party/pybind11"]
 	path = third-party/pybind11
 	url = https://github.com/pybind/pybind11.git
-[submodule "backends/cadence/fusion_g3/third-party/nnlib/nnlib-FusionG3"]
-	path = backends/cadence/fusion_g3/third-party/nnlib/nnlib-FusionG3
-	url = https://github.com/foss-xtensa/nnlib-FusionG3/
 [submodule "third-party/ao"]
 	path = third-party/ao
 	url = https://github.com/pytorch/ao.git
+[submodule "backends/cadence/utils/FACTO"]
+	path = backends/cadence/utils/FACTO
+	url = https://github.com/pytorch-labs/FACTO.git
+[submodule "third-party/pocketfft"]
+	path = third-party/pocketfft
+	url = https://github.com/mreineck/pocketfft
+[submodule "shim"]
+	path = shim
+	url = https://github.com/facebook/buck2-shims-meta

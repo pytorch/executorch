@@ -9,6 +9,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpGather, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -31,26 +32,26 @@ class Index(NodeVisitor):
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
 
-        if len(node.args[1]) > 1:
-            # TODO consider to implement it in a recursive way.
-            raise NotImplementedError("Not support tuple of tensor.")
-
-        indices_node = node.args[1][0]
+        # e.g. x[:, index]:
+        # > node.args[1] = [None, indices]
+        # > axis = 1
+        axis = len(node.args[1]) - 1
+        indices_node = node.args[1][axis]
         indices_tensor = self.get_tensor(indices_node, node).to(torch.int32)
         assert indices_tensor.size(0) != 0, "Not support empty indices list"
 
         indices_tensor_wrapper = self.define_tensor(
             indices_node,
+            node,
             indices_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
 
         gather_input_tensors = [input_tensor_wrapper, indices_tensor_wrapper]
@@ -58,10 +59,10 @@ class Index(NodeVisitor):
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
         gather_output_tensors = [output_tensor_wrapper]
 
@@ -77,7 +78,7 @@ class Index(NodeVisitor):
         gather_op.AddScalarParam(
             OpGather.param_axis,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_32,
-            {"data": np.int32(0)},
+            {QCOM_DATA: np.int32(axis)},
         )
 
         return gather_op

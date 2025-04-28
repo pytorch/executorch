@@ -8,6 +8,8 @@
 # Added torch._check() to make sure guards on symints are enforced.
 # See https://github.com/pytorch/torchtune/blob/main/torchtune/models/clip/_position_embeddings.py
 
+# pyre-ignore-all-errors
+
 import logging
 import math
 from typing import Any, Dict, Tuple

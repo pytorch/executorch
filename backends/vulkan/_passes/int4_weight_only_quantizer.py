@@ -39,11 +39,12 @@ class VkWeightOnlyInt4Linear(torch.nn.Module):
             from torchao.utils import find_multiple
 
             self.origin_in_features = in_features
-            in_features = find_multiple(in_features, (1024,))
+            # pyre-ignore[6]: Incompatible parameter type
+            in_features = find_multiple(in_features, 1024)
 
+        self.use_bias = bias
         self.in_features = in_features
         self.out_features = out_features
-        assert not bias, "require bias=False"
         self.device = device
         self.groupsize = groupsize
         self.inner_k_tiles = inner_k_tiles
@@ -80,6 +81,11 @@ class VkWeightOnlyInt4Linear(torch.nn.Module):
                 device=device,
             ),
         )
+        if bias:
+            self.register_buffer(
+                "bias",
+                torch.empty((out_features,), dtype=torch.float32, device=device),
+            )
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         if self.padding:
@@ -87,13 +93,16 @@ class VkWeightOnlyInt4Linear(torch.nn.Module):
         # The forward method is replaced. In the original implementation, the forward
         # method is torchao.quantization.GPTQ.linear_forward_int4; here a Vulkan custom
         # operator is called instead.
-        return torch.ops.et_vk.linear_weight_int4(
+        r = torch.ops.et_vk.linear_weight_int4(
             input,
             self.weight,
             self.groupsize,
             self.scales_and_zeros,
             self.inner_k_tiles,
         )
+        if self.use_bias:
+            return r + self.bias
+        return r
 
 
 # This function is coped from torchao.quantization.GPTQ._replace_linear_int4
@@ -109,9 +118,6 @@ def _vk_replace_linear_int4(
     # Use custom vulkan linear layer as default
     linear_class: Type[torch.nn.Module] = VkWeightOnlyInt4Linear,
     copy_weights: bool = False,
-    # Serves the same purpose as `tensor_dim_limit` in
-    # executorch.backends.vulkan.partitioner.VulkanSupportedOperators
-    feature_limit: int = 16384,
 ):
     for name, child in module.named_children():
         if isinstance(child, torch.nn.Linear) and (
@@ -122,13 +128,11 @@ def _vk_replace_linear_int4(
             if (
                 _check_linear_int4_k(child.in_features, groupsize, inner_k_tiles)
                 or padding_allowed
-            ) and (
-                child.out_features < feature_limit and child.in_features < feature_limit
             ):
                 new_linear = linear_class(
                     child.in_features,
                     child.out_features,
-                    bias=False,
+                    bias=child.bias is not None,
                     device=child.weight.device,
                     groupsize=groupsize,
                     inner_k_tiles=inner_k_tiles,
@@ -138,6 +142,9 @@ def _vk_replace_linear_int4(
                 if copy_weights and child.weight.device != torch.device("meta"):
                     # pyre-fixme[16]: `Module` has no attribute `weight`.
                     new_linear.weight = child.weight
+                    if child.bias is not None:
+                        # pyre-fixme[16]: `Module` has no attribute `bias`.
+                        new_linear.bias = child.bias
                 setattr(module, name, new_linear)
         else:
             _vk_replace_linear_int4(
@@ -163,7 +170,6 @@ class VkInt4WeightOnlyQuantizer(Quantizer):
         inner_k_tiles: Optional[int] = 8,
         device: torch.device = torch.device("cpu"),  # noqa
         precision: torch.dtype = torch.float32,
-        feature_limit: int = 16384,
     ) -> None:
         super().__init__()
         assert inner_k_tiles in [2, 4, 8]
@@ -174,9 +180,6 @@ class VkInt4WeightOnlyQuantizer(Quantizer):
         self.padding_allowed: bool = padding_allowed
         self.device: torch.device = device
         self.precision: torch.dtype = precision
-        # Serves the same purpose as `tensor_dim_limit` in
-        # executorch.backends.vulkan.partitioner.VulkanSupportedOperators
-        self.feature_limit = feature_limit
 
     @torch.no_grad()
     def _create_quantized_state_dict(
@@ -185,11 +188,7 @@ class VkInt4WeightOnlyQuantizer(Quantizer):
         cur_state_dict = model.state_dict()
         for fqn, mod in model.named_modules():
             # Add additional check to make sure features do not exceed feature limit
-            if isinstance(mod, torch.nn.Linear) and (
-                mod.out_features < self.feature_limit
-                and mod.in_features < self.feature_limit
-            ):
-                assert not mod.bias
+            if isinstance(mod, torch.nn.Linear):
                 out_features = mod.out_features
                 in_features = mod.in_features
                 logging.info(f"linear: {fqn}, in={in_features}, out={out_features}")
@@ -210,7 +209,8 @@ class VkInt4WeightOnlyQuantizer(Quantizer):
                         logging.warn(
                             f"warning: {fqn} is padded to satisfy in_features % 1024 == 0"
                         )
-                        padded_in_features = find_multiple(in_features, (1024,))
+                        # pyre-ignore[6]: Incompatible parameter type
+                        padded_in_features = find_multiple(in_features, 1024)
                         weight = F.pad(
                             weight, pad=(0, padded_in_features - in_features)
                         )
@@ -226,6 +226,12 @@ class VkInt4WeightOnlyQuantizer(Quantizer):
                     self.groupsize,
                     self.precision,  # dtype for scales_and_zeros
                 )
+                # If the packing of 2 4-bit values into a single 8-bit value was not
+                # performed in the previous function call, then do it manually now.
+                if w_int4x8.shape == weight.shape:
+                    w_int4x8 = (w_int4x8[::, ::2] << 4 | w_int4x8[::, 1::2]).to(
+                        torch.uint8
+                    )
                 # In the original implementation, w_int4x8 is packed via calling the
                 # _convert_weight_to_int4pack operator before storing the weight. However
                 # the Vulkan implementation does not expect the weights to be packed, so

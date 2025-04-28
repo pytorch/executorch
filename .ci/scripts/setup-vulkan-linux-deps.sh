@@ -27,7 +27,7 @@ install_swiftshader() {
 
 install_vulkan_sdk() {
   VULKAN_SDK_VERSION=$1
-  _vulkan_sdk_url="https://sdk.lunarg.com/sdk/download/${VULKAN_SDK_VERSION}/linux/vulkansdk-linux-x86_64-${VULKAN_SDK_VERSION}.tar.gz"
+  _vulkan_sdk_url="https://sdk.lunarg.com/sdk/download/${VULKAN_SDK_VERSION}/linux/vulkansdk-linux-x86_64-${VULKAN_SDK_VERSION}.tar.xz"
 
   _vulkan_sdk_dir=/tmp/vulkansdk
   mkdir -p $_vulkan_sdk_dir
@@ -37,12 +37,12 @@ install_vulkan_sdk() {
   curl --silent --show-error --location --fail --retry 3 \
     --output "${_tmp_archive}" "${_vulkan_sdk_url}"
 
-  tar -C "${_vulkan_sdk_dir}" -xzf "${_tmp_archive}"
+  tar -C "${_vulkan_sdk_dir}" -xJf "${_tmp_archive}"
 
   export PATH="${PATH}:${_vulkan_sdk_dir}/${VULKAN_SDK_VERSION}/x86_64/bin/"
 }
 
-VULKAN_SDK_VERSION="1.2.198.1"
+VULKAN_SDK_VERSION="1.3.296.0"
 
 install_swiftshader
 install_vulkan_sdk "${VULKAN_SDK_VERSION}"

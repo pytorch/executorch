@@ -3,8 +3,17 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+import logging
+from typing import FrozenSet
+
 import torch
-from executorch.backends.qualcomm.builders.utils import get_parameter, is_constant
+from executorch.backends.qualcomm.builders.utils import (
+    get_parameter,
+    is_constant,
+    is_graph_output,
+)
+from executorch.backends.qualcomm.utils.constants import QCOM_ORIG_DTYPE
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._subclasses.fake_tensor import FakeTensor
@@ -12,14 +21,82 @@ from torch._subclasses.fake_tensor import FakeTensor
 
 class I64toI32(ExportPass):
     """
-    Cast unsupported int64 datatype into int32.
+    Insert a cast node to cast dtype from int64 to int32.
+    This will be applied on operator and constant nodes such as weights.
     """
 
-    def __init__(self, edge_program: torch.export.ExportedProgram):
+    I64_OPS = {
+        exir_ops.edge.aten.argmin.default,
+        exir_ops.edge.aten.arange.start_step,
+        exir_ops.edge.aten.full.default,
+        exir_ops.edge.aten.scalar_tensor.default,
+    }
+    copy_op = exir_ops.edge.aten._to_copy.default
+
+    def __init__(
+        self,
+        edge_program,
+        skip_node: FrozenSet[str] = frozenset(),
+    ):
         super(I64toI32, self).__init__()
         self.edge_program = edge_program
-        # pyre-ignore[4]
-        self.copy_op = exir_ops.edge.aten._to_copy.default
+        self.skip_node = skip_node
+
+    # pyre-ignore[2]
+    def _is_tensor_of_dtype(self, node_val, dtype: torch.dtype) -> bool:
+        return isinstance(node_val, FakeTensor) and node_val.dtype == dtype
+
+    def call_operator(self, op, args, kwargs, meta):
+        if op in self.I64_OPS and self._is_tensor_of_dtype(meta["val"], torch.int64):
+            res = super().call_operator(op, args, kwargs, meta)
+            return super().call_operator(
+                self.copy_op, (res,), {"dtype": torch.int32}, meta
+            )
+        return super().call_operator(op, args, kwargs, meta)
+
+    def _record_original_output_dtype(self, graph_module: torch.fx.GraphModule):
+        for n in graph_module.graph.nodes:
+            # Keep track of original output dtype so we ensure the dtype of the graph is consistent with nn.Module
+            if is_graph_output(n):
+                if isinstance(n.meta["val"], (tuple, list)):
+                    dtype_list = [tensor.dtype for tensor in n.meta["val"]]
+                    n.meta[QCOM_ORIG_DTYPE] = dtype_list
+                else:
+                    n.meta[QCOM_ORIG_DTYPE] = n.meta["val"].dtype
+
+    def _preserve_output_dtype(self, graph_module: torch.fx.GraphModule):
+        for n in graph_module.graph.nodes:
+            if is_graph_output(n) and QCOM_ORIG_DTYPE in n.meta:
+                if isinstance(n.meta["val"], (tuple, list)):
+                    for i, dtype in enumerate(n.meta[QCOM_ORIG_DTYPE]):
+                        # TODO: Enable this in future to support OP such as topK
+                        if n.meta["val"][i].dtype != dtype:
+                            raise AssertionError(
+                                "Multi output nodes currently don't support casting dtype back."
+                            )
+                elif n.meta["val"].dtype != n.meta[QCOM_ORIG_DTYPE]:
+                    if n.meta[QCOM_ORIG_DTYPE] != torch.int64:
+                        logging.warning(
+                            "This pass is intended to maintain output as int64 when nn.Module outputs int64. Other dtype modification is detected. Please ensure this is desired."
+                        )
+                    with graph_module.graph.inserting_after(n):
+                        orig_dtype = n.meta[QCOM_ORIG_DTYPE]
+                        node_val = n.meta["val"]
+                        args = (n,)
+                        users = list(n.users.keys())
+                        output_users = [
+                            user for user in users if user.target == "output"
+                        ]
+                        cast_node = graph_module.graph.create_node(
+                            "call_function",
+                            self.copy_op,
+                            args,
+                            {"dtype": orig_dtype},
+                        )
+                        cast_node.meta["val"] = node_val.to(orig_dtype)
+                        cast_node.args = args
+                        for user in output_users:
+                            user.replace_input_with(n, cast_node)
 
     def _update_meta(self, node: torch.fx.node) -> None:
         meta_val = node.meta["val"]
@@ -34,14 +111,14 @@ class I64toI32(ExportPass):
             )
         else:
             if meta_val.dtype == torch.int64:
+                # TODO This trick seems to use in mobilebert.
+                # It would be better to convert to torch.int32
                 node.meta["val"] = meta_val.to(torch.float)
 
-    # pyre-ignore[2]
-    def _is_tensor_of_dtype(self, node_val, dtype: torch.dtype) -> bool:
-        return isinstance(node_val, FakeTensor) and node_val.dtype == dtype
-
-    def _cast_to_int32(self, graph_module: torch.fx.GraphModule):
+    def _cast_constant_to_int32(self, graph_module: torch.fx.GraphModule):
         for n in graph_module.graph.nodes:
+            if n.target in self.skip_node:
+                continue
             if is_constant(n, self.edge_program):
                 param = get_parameter(n, self.edge_program)
                 if param.dtype == torch.int64:
@@ -64,8 +141,12 @@ class I64toI32(ExportPass):
                         n.replace_all_uses_with(to_dst_node)
                         to_dst_node.args = (n,)
 
-    def call(self, graph_module: torch.fx.GraphModule):
-        self._cast_to_int32(graph_module)
-        graph_module.recompile()
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        # Record original output dtype to ensure that if user expects int64 as output,
+        # convert the output back to int64 if it is casted from int64->int32.
+        self._record_original_output_dtype(graph_module)
+        self._cast_constant_to_int32(graph_module)
         graph_module = super().call(graph_module).graph_module
+        self._preserve_output_dtype(graph_module)
+        graph_module.recompile()
         return PassResult(graph_module, True)

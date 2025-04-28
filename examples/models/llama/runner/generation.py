@@ -4,12 +4,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import time
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
 import torch
 
-from executorch.extension.llm.tokenizer.utils import get_tokenizer
+from pytorch_tokenizers import get_tokenizer
 
 
 def sample_top_p(probs, p):
@@ -48,7 +49,9 @@ def next_token(logits: torch.Tensor, temperature: float, top_p: float) -> int:
 class LlamaRunner(ABC):
     def __init__(
         self,
+        *,
         tokenizer_path: str,
+        tokenizer_config_path: Optional[str] = None,
         max_seq_len: int,
         max_batch_size: int,
         use_kv_cache: bool,
@@ -59,19 +62,23 @@ class LlamaRunner(ABC):
         Constructor.
 
         Args:
-        tokenizer_path: path to tokenizer.model file.
-        max_seq_len: max length of the output sequence, after which the output will be clipped.
-        max_batch_size: max batch size.
-        use_kv_cache: whether to use a KV cache.
-        vocab_size: number of items in the vocab.
-        device: device to run the runner on.
+            tokenizer_path: path to tokenizer.model file.
+            max_seq_len: max length of the output sequence, after which the output will be clipped.
+            max_batch_size: max batch size.
+            use_kv_cache: whether to use a KV cache.
+            vocab_size: number of items in the vocab.
+            device: device to run the runner on.
         """
         self.max_seq_len = max_seq_len
         self.max_batch_size = max_batch_size
         self.use_kv_cache = use_kv_cache
-        self.tokenizer = get_tokenizer(tokenizer_path)
+        self.tokenizer = get_tokenizer(tokenizer_path, tokenizer_config_path)
         self.device = device
-        assert vocab_size == self.tokenizer.n_words
+        # For some models like qwen, mismatch is acceptable: https://github.com/QwenLM/Qwen2.5/issues/466#issuecomment-2146759706
+        if vocab_size != self.tokenizer.n_words:
+            print(
+                "Warning - given vocab_size in params is unequal to tokenizer vocab size."
+            )
 
     @abstractmethod
     def forward(
@@ -91,6 +98,7 @@ class LlamaRunner(ABC):
         pos_base: int = 0,
     ) -> List[int]:
         # Prefill
+        prefill_start = time.time()
         logits = self.forward(
             tokens=torch.tensor([prompt_tokens], dtype=torch.long, device=self.device),
             input_pos=(
@@ -99,11 +107,13 @@ class LlamaRunner(ABC):
                 else None
             ),
         )
+        prefill_time = time.time() - prefill_start
 
         current_token = next_token(logits, temperature, top_p)
         print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
         tokens = prompt_tokens + [current_token]
 
+        generate_start = time.time()
         while len(tokens) < max_seq_len:
             if self.use_kv_cache:
                 logits = self.forward(
@@ -133,6 +143,10 @@ class LlamaRunner(ABC):
 
             print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
         print("\n")
+
+        generate_time = time.time() - generate_start
+        print(f"Prefill time: {prefill_time}")
+        print(f"Generation tok/s: {len(tokens) / generate_time}")
 
         return tokens if echo else tokens[len(prompt_tokens) :]
 
@@ -168,18 +182,19 @@ class LlamaRunner(ABC):
 
     def chat_completion(
         self,
+        max_seq_len: int,
         temperature: float = 0.6,
         top_p: float = 0.9,
+        show_progress: bool = False,
     ) -> List[int]:
         """
         Perform multi-turn chat with the language model.
 
             Args:
-                prompt (str): Text prompt for completion.
+                max_seq_len (int): Maximum number of tokens to generate for each prompt.
                 temperature (float, optional): Temperature value for controlling randomness in sampling. Defaults to 0.6.
                 top_p (float, optional): Top-p probability threshold for nucleus sampling. Defaults to 0.9.
-                echo (bool, optional): Flag indicating whether to include prompt tokens in the generated output. Defaults to False.
-
+                show_progress (bool, optional): Flag indicating whether to show number of tokens generated.
             Returns:
                 Generated list of tokens.
 
@@ -188,20 +203,26 @@ class LlamaRunner(ABC):
         """
         exit_prompt = "exit"
         tokens = []
+        pre_stop_token = []
         prompt = input("Me: ")
         while prompt and prompt != exit_prompt:
             print("LLM: ", end="", flush=True)
-            new_tokens = self.generate(
-                prompt_tokens=self.tokenizer.encode(
-                    self._format_prompt(prompt), bos=True, eos=False
-                ),
-                max_seq_len=self.max_seq_len,
+            prompt_tokens = self.tokenizer.encode(
+                self._format_prompt(prompt), bos=True, eos=False
+            )
+            generated_tokens = self.generate(
+                prompt_tokens=pre_stop_token + prompt_tokens,
+                max_seq_len=max_seq_len,
                 temperature=temperature,
                 top_p=top_p,
-                echo=True,
+                echo=False,
                 pos_base=len(tokens) - 1 if len(tokens) > 0 else 0,
             )
-            tokens.extend(new_tokens)
+            pre_stop_token = generated_tokens[-1:]
+            tokens.extend(prompt_tokens)
+            tokens.extend(generated_tokens)
+            if show_progress:
+                print(f"[Generated {len(tokens)} tokens]")
             prompt = input("Me: ")
         return tokens
 

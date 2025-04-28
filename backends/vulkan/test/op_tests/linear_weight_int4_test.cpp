@@ -30,14 +30,36 @@ at::Tensor linear_weight_int4_reference_impl(
   const size_t ndim = original_x_size.size();
   const int64_t out_features = weights_4x2.size(0);
   const at::Tensor x_flattened = x.reshape({-1, original_x_size[ndim - 1]});
-  const at::Tensor packed_weights =
-      at::_convert_weight_to_int4pack(weights_4x2, inner_k_tiles);
-  at::Tensor out = at::_weight_int4pack_mm(
-      x_flattened, packed_weights, groupsize, scales_and_zeros);
+  at::Tensor out = at::_weight_int4pack_mm_for_cpu(
+      x_flattened, weights_4x2, groupsize, scales_and_zeros);
   std::vector<int64_t> out_shape(
       original_x_size.begin(), original_x_size.end());
   out_shape.at(ndim - 1) = out_features;
   return out.reshape(out_shape);
+}
+
+at::Tensor unpack_weights_4x2(const at::Tensor& weights_4x2) {
+  std::vector<int64_t> weights_shape(weights_4x2.sizes().vec());
+  weights_shape[1] *= 2;
+
+  at::Tensor weights_unpacked =
+      at::empty(weights_shape, at::device(at::kCPU).dtype(at::kInt));
+
+  const int64_t N = weights_unpacked.size(0);
+  const int64_t K = weights_unpacked.size(1);
+
+  for (int n = 0; n < N; n++) {
+    for (int k = 0; k < K; k += 2) {
+      const uint8_t packed_val = weights_4x2[n][k / 2].item().to<uint8_t>();
+      const uint8_t second_val = packed_val & 0x0F;
+      const uint8_t first_val = (packed_val & 0xF0) >> 4;
+
+      weights_unpacked[n][k] = int(first_val);
+      weights_unpacked[n][k + 1] = int(second_val);
+    }
+  }
+
+  return weights_unpacked;
 }
 
 at::Tensor dequantize_and_linear(
@@ -91,13 +113,18 @@ void test_reference_linear_int4(
   at::Tensor x = at::rand({B, M, K}, at::device(at::kCPU).dtype(at::kFloat));
   at::Tensor weights_4x2 =
       at::randint(0, 256, {N, K / 2}, at::device(at::kCPU).dtype(at::kByte));
+  at::Tensor weights_int = unpack_weights_4x2(weights_4x2);
 
   const int k_groups = K / group_size;
   at::Tensor scales_and_zeros =
       at::rand({k_groups, N, 2}, at::device(at::kCPU).dtype(at::kFloat));
 
   at::Tensor out = linear_weight_int4_reference_impl(
-      x, weights_4x2, group_size, scales_and_zeros, inner_k_tiles);
+      x,
+      at::_convert_weight_to_int4pack_for_cpu(weights_int, group_size),
+      group_size,
+      scales_and_zeros,
+      inner_k_tiles);
 
   at::Tensor out_ref = dequantize_and_linear(
       x, weights_4x2, group_size, scales_and_zeros, inner_k_tiles);
@@ -125,13 +152,17 @@ vkcompute::vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
   }
 }
 
-void test_vulkan_linear_int4(
+void test_vulkan_linear_int4_impl(
     const int B,
     const int M,
     const int K,
     const int N,
     const int group_size = 32,
-    const int inner_k_tiles = 8) {
+    const int inner_k_tiles = 8,
+    const vkcompute::utils::StorageType in_storage =
+        vkcompute::utils::kTexture3D,
+    const vkcompute::utils::StorageType out_storage =
+        vkcompute::utils::kTexture3D) {
   assert(K % group_size == 0);
 
   at::Tensor x = at::rand({B, M, K}, at::device(at::kCPU).dtype(at::kFloat));
@@ -142,8 +173,13 @@ void test_vulkan_linear_int4(
   at::Tensor scales_and_zeros =
       at::rand({k_groups, N, 2}, at::device(at::kCPU).dtype(at::kFloat));
 
-  at::Tensor out_ref = dequantize_and_linear(
-      x, weights_4x2, group_size, scales_and_zeros, inner_k_tiles);
+  at::Tensor weights_int = unpack_weights_4x2(weights_4x2);
+  at::Tensor out_ref = linear_weight_int4_reference_impl(
+      x,
+      at::_convert_weight_to_int4pack_for_cpu(weights_int, group_size),
+      group_size,
+      scales_and_zeros,
+      inner_k_tiles);
 
   // Build Vulkan graph
   using namespace vkcompute;
@@ -161,14 +197,13 @@ void test_vulkan_linear_int4(
   MAKE_TENSORREF_FOR(weights_4x2);
   MAKE_TENSORREF_FOR(scales_and_zeros);
 
-#define MAKE_INPUT_FOR(x)                    \
-  IOValueRef r_##x = graph.add_input_tensor( \
-      x.sizes().vec(), from_at_scalartype(x.scalar_type()));
-
-  MAKE_INPUT_FOR(x);
+  IOValueRef r_x = graph.add_input_tensor(
+      x.sizes().vec(), from_at_scalartype(x.scalar_type()), in_storage);
 
   const ValueRef r_out = graph.add_tensor(
-      out_ref.sizes().vec(), from_at_scalartype(out_ref.scalar_type()));
+      out_ref.sizes().vec(),
+      from_at_scalartype(out_ref.scalar_type()),
+      out_storage);
 
   VK_GET_OP_FN("et_vk.linear_weight_int4.default")
   (graph,
@@ -202,6 +237,34 @@ void test_vulkan_linear_int4(
   ASSERT_TRUE(at::allclose(vk_out, out_ref, 1e-4, 1e-4));
 }
 
+void test_vulkan_linear_int4(
+    const int B,
+    const int M,
+    const int K,
+    const int N,
+    const int group_size = 32,
+    const int inner_k_tiles = 8) {
+  test_vulkan_linear_int4_impl(
+      B,
+      M,
+      K,
+      N,
+      group_size,
+      inner_k_tiles,
+      vkcompute::utils::kBuffer,
+      vkcompute::utils::kBuffer);
+
+  test_vulkan_linear_int4_impl(
+      B,
+      M,
+      K,
+      N,
+      group_size,
+      inner_k_tiles,
+      vkcompute::utils::kTexture3D,
+      vkcompute::utils::kTexture3D);
+}
+
 TEST(VulkanInt4LinearTest, test_reference_impl) {
   test_reference_linear_int4(
       /*B = */ 1,
@@ -210,15 +273,24 @@ TEST(VulkanInt4LinearTest, test_reference_impl) {
       /*N = */ 32);
 }
 
-TEST(VulkanInt4LinearTest, test_vulkan_impl) {
-  if (!vkcompute::api::context()
-           ->adapter_ptr()
-           ->has_full_int8_buffers_support()) {
-    GTEST_SKIP();
-  }
+TEST(VulkanInt4LinearTest, test_vulkan_impl_small_m) {
   test_vulkan_linear_int4(
       /*B = */ 1,
       /*M = */ 4,
       /*K = */ 128,
       /*N = */ 32);
+
+  test_vulkan_linear_int4(
+      /*B = */ 1,
+      /*M = */ 1,
+      /*K = */ 256,
+      /*N = */ 256);
+}
+
+TEST(VulkanInt4LinearTest, test_vulkan_impl_gemm) {
+  test_vulkan_linear_int4(
+      /*B = */ 1,
+      /*M = */ 256,
+      /*K = */ 256,
+      /*N = */ 256);
 }

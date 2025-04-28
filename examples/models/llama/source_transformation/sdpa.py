@@ -9,33 +9,28 @@
 # Example script for exporting Llama2 to flatbuffer
 
 import math
-from typing import Tuple, Union
+from typing import Tuple
 
 import torch
 
-from executorch.examples.models.llama.llama_transformer import KVCache, SDPA
-from executorch.examples.models.llama.source_transformation.quantized_kv_cache import (
-    QuantizedKVCache,
-)
+from executorch.examples.models.llama.attention import Attention, KVCache, SDPA
+
+from .custom_kv_cache import QuantizedKVCache
 
 
 class SDPACustom(torch.nn.Module):
     def __init__(
         self,
-        kv_cache: Union[KVCache, QuantizedKVCache],
         dim: int,
+        max_context_len,
+        enable_dynamic_shape,
+        use_attention_mask: bool = False,
     ):
         super().__init__()
-        # Custom op only supports float32 currently. Converting to/from float32 is
-        # faster than not having the op.
-        self.kv_cache = kv_cache
-        if not isinstance(kv_cache, QuantizedKVCache):
-            self.kv_cache = kv_cache.to(torch.float)
-        else:
-            assert (
-                kv_cache.cache_fp_type == torch.float32
-            ), "Only float32 is supported for custom SDPA"
         self.dim = dim
+        self.max_context_len = max_context_len
+        self.use_attention_mask = use_attention_mask
+        self.enable_dynamic_shape = enable_dynamic_shape
 
     def forward(
         self,
@@ -47,6 +42,20 @@ class SDPACustom(torch.nn.Module):
         seqlen,
         mask,
     ):
+        if self.use_attention_mask:
+            if self.enable_dynamic_shape:
+                start_pos = input_pos[-1].item()
+                torch._check_is_size(start_pos)
+                torch._check(start_pos < self.max_context_len)
+                seq_length = q.size(2)
+                mask = mask.narrow(0, start_pos, seq_length)
+            else:
+                mask = mask[input_pos]
+
+        q = q.transpose(1, 2)  # (bs, seqlen, n_local_heads, head_dim)
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
+
         # Custom op only supports float32 currently. Converting to/from float32 is
         # faster than not having the op.
         input_dtype = q.dtype
@@ -54,31 +63,22 @@ class SDPACustom(torch.nn.Module):
         k = k.to(dtype=torch.float)
         v = v.to(dtype=torch.float)
 
-        k_cache = self.kv_cache.k_cache
-        v_cache = self.kv_cache.v_cache
-        if isinstance(self.kv_cache, QuantizedKVCache):
-            # updated quantize cache, scale and zero points
-            # returns dequantized kv cache
-            # Not most optimal. Optimizations to follow next
-            k_cache, v_cache = self.kv_cache.update(input_pos, k, v)
+        if self.use_attention_mask:
             output = torch.ops.llama.custom_sdpa(
-                q,
-                k_cache,
-                v_cache,
-                input_pos[0].item(),
-                None,  # Attention mask
-                0,  # dropout probability. Ignored by the code
-                True,  # is_causal
-            )
-        else:
-            output = torch.ops.llama.sdpa_with_kv_cache(
                 q,
                 k,
                 v,
-                k_cache,
-                v_cache,
                 input_pos[0].item(),
-                seqlen,
+                mask,  # Attention mask
+                0,  # dropout probability. Ignored by the code
+                False,  # is_causal
+            )
+        else:
+            output = torch.ops.llama.custom_sdpa(
+                q,
+                k,
+                v,
+                input_pos[0].item(),
                 None,  # Attention mask
                 0,  # dropout probability. Ignored by the code
                 True,  # is_causal
@@ -86,36 +86,160 @@ class SDPACustom(torch.nn.Module):
         return output.view(bsz, seqlen, self.dim).to(dtype=input_dtype)
 
 
-def _replace_sdpa_with_custom_op(module: torch.nn.Module):
+def _replace_sdpa_with_custom_op(
+    module: torch.nn.Module, use_attention_mask: bool = False
+):
     for name, child in module.named_children():
         if isinstance(child, SDPA):
             setattr(
                 module,
                 name,
-                SDPACustom(child.kv_cache, child.dim),
+                SDPACustom(
+                    child.dim,
+                    child.max_context_len,
+                    child.enable_dynamic_shape,
+                    use_attention_mask=use_attention_mask,
+                ),
             )
         else:
-            _replace_sdpa_with_custom_op(child)
+            _replace_sdpa_with_custom_op(child, use_attention_mask=use_attention_mask)
 
 
-def replace_sdpa_with_custom_op(module: torch.nn.Module) -> torch.nn.Module:
-    from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa
+def replace_sdpa_with_custom_op(
+    module: torch.nn.Module, use_attention_mask: bool = False
+) -> torch.nn.Module:
+    from executorch.extension.llm.custom_ops import custom_ops  # noqa
 
-    _replace_sdpa_with_custom_op(module)
+    _replace_sdpa_with_custom_op(module, use_attention_mask=use_attention_mask)
+    return module
+
+
+class QuantizedSDPA(torch.nn.Module):
+    """
+    A quantized version of the SDPA (Scaled Dot Product Attention) module.
+
+    This module implements attention computation using quantized key-value pairs
+    to reduce memory footprint and potentially improve performance. It works with
+    a QuantizedKVCache to store and retrieve quantized key-value tensors.
+
+    The quantization process converts floating point tensors to int8, which requires
+    maintaining scale and zero point values for proper dequantization during computation.
+
+    Args:
+        dim (int): The dimension of the model
+        kv_cache (QuantizedKVCache): The cache for storing quantized key-value pairs
+    Note that it needs to own kv_cache to access scales and zero points, and since
+    SDPA forward signature only accepts q, k and v, to allow accessing scales and
+    zero points, we need to pass kv_cache to SDPA.
+    """
+
+    def __init__(self, dim: int, kv_cache: QuantizedKVCache):
+        super().__init__()
+        self.dim = dim
+        self.quantized_dtype = torch.int8
+        self.float_dtype = torch.float32
+        self.kv_cache = kv_cache
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k_quantized: torch.Tensor,
+        v_quantized: torch.Tensor,
+        bsz,
+        seqlen,
+        mask,
+    ):
+        q = q.transpose(1, 2)  # (bs, seqlen, n_local_heads, head_dim)
+        k_quantized = k_quantized.transpose(1, 2)
+        v_quantized = v_quantized.transpose(1, 2)
+
+        q_scale, q_zero_point = (
+            torch.ops.quantized_decomposed.choose_qparams_per_token_asymmetric.default(
+                q, self.quantized_dtype
+            )
+        )
+        q_quantized = torch.ops.quantized_decomposed.quantize_per_token(
+            q,
+            q_scale,
+            q_zero_point,
+            torch.iinfo(self.quantized_dtype).min,
+            torch.iinfo(self.quantized_dtype).max,
+            self.quantized_dtype,
+        )
+        q_zero_point_int8 = q_zero_point.to(dtype=torch.int8)
+        q_scale_fp32 = q_scale.to(dtype=torch.float32)
+
+        k_zero_point_int8 = self.kv_cache.k_cache_zero_points
+        k_scale_fp32 = self.kv_cache.k_cache_scales
+        v_zero_point_int8 = self.kv_cache.v_cache_zero_points
+        v_scale_fp32 = self.kv_cache.v_cache_scales
+
+        start_pos = input_pos[0].item()
+        output = torch.ops.llama.custom_quantized_sdpa(
+            q_quantized,
+            k_quantized,
+            v_quantized,
+            start_pos,
+            None,
+            0,
+            True,
+            None,
+            q_zero_point_int8,
+            q_scale_fp32,
+            k_zero_point_int8,
+            k_scale_fp32,
+            v_zero_point_int8,
+            v_scale_fp32,
+        )
+
+        return output.view(bsz, seqlen, self.dim)
+
+
+def _update_attention_module_with_quantized_sdpa(
+    module: torch.nn.Module, kv_cache: QuantizedKVCache
+):
+    sdpa = getattr(module, "SDPA", None)
+    assert sdpa is not None
+    # pyre-ignore
+    setattr(module, "SDPA", QuantizedSDPA(sdpa.dim, kv_cache))  # noqa: B010
+
+
+def _replace_sdpa_with_quantized_sdpa(module: torch.nn.Module):
+    for _, child in module.named_children():
+        if isinstance(child, Attention):
+            kv_cache = getattr(child, "kv_cache", None)
+            if kv_cache is None:
+                continue
+            if not isinstance(kv_cache, QuantizedKVCache):
+                continue
+            # Only when kv_cache is QuantizedKVCache, we replace SDPA with QuantizedSDPA
+            sdpa = getattr(child, "SDPA", None)
+            if sdpa is None:
+                continue
+            if not isinstance(sdpa, SDPACustom):
+                continue
+            kv_cache.return_float_values = False
+            _update_attention_module_with_quantized_sdpa(child, kv_cache)
+        else:
+            _replace_sdpa_with_quantized_sdpa(child)
+
+
+def replace_sdpa_with_quantized_sdpa(module: torch.nn.Module) -> torch.nn.Module:
+    from executorch.extension.llm.custom_ops import custom_ops  # noqa
+
+    _replace_sdpa_with_quantized_sdpa(module)
     return module
 
 
 class SDPASimple(torch.nn.Module):
-
     def __init__(
         self,
-        kv_cache: KVCache,
         dim: int,
         head_dim: int,
         n_rep: int,
     ):
         super().__init__()
-        self.kv_cache = kv_cache
         self.dim = dim
         self.head_dim = head_dim
         self.n_rep = n_rep
@@ -130,11 +254,6 @@ class SDPASimple(torch.nn.Module):
         seqlen,
         mask,
     ):
-        q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
-        k = k.transpose(1, 2)
-        v = v.transpose(1, 2)
-
-        k, v = self.kv_cache.update(input_pos, k, v)
         attn_mask = mask[None, None, input_pos]
 
         k = k.repeat_interleave(self.n_rep, dim=1)
@@ -166,15 +285,12 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
 
 
 class SDPAFlex(torch.nn.Module):
-
     def __init__(
         self,
-        kv_cache: KVCache,
         dim: int,
         n_rep: int,
     ):
         super().__init__()
-        self.kv_cache = kv_cache
         self.dim = dim
         self.n_rep = n_rep
 
@@ -188,9 +304,10 @@ class SDPAFlex(torch.nn.Module):
         seqlen,
         mask,
     ):
-        q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
-
-        k, v = self.kv_cache.update(input_pos, k, v)
+        """
+        q: (bs, n_heads, seqlen, head_dim)
+        k, v: (bs, n_local_heads, seqlen, head_dim)
+        """
         k = repeat_kv(k, self.n_rep)
         v = repeat_kv(v, self.n_rep)
         attn_mask = mask[input_pos]
@@ -210,7 +327,7 @@ def replace_sdpa_with_simple_sdpa(module: torch.nn.Module):
             setattr(
                 module,
                 name,
-                SDPASimple(child.kv_cache, child.dim, child.head_dim, child.n_rep),
+                SDPASimple(child.dim, child.head_dim, child.n_rep),
             )
         else:
             replace_sdpa_with_simple_sdpa(child)
@@ -223,7 +340,7 @@ def replace_sdpa_with_flex_sdpa(module: torch.nn.Module):
             setattr(
                 module,
                 name,
-                SDPAFlex(child.kv_cache, child.dim, child.n_rep),
+                SDPAFlex(child.dim, child.n_rep),
             )
         else:
             replace_sdpa_with_flex_sdpa(child)
@@ -255,13 +372,11 @@ class SDPACoreML(torch.nn.Module):
 
     def __init__(
         self,
-        kv_cache: KVCache,
         dim: int,
         head_dim: int,
         n_rep: int,
     ):
         super().__init__()
-        self.kv_cache = kv_cache
         self.dim = dim
         self.head_dim = head_dim
         self.n_rep = n_rep
@@ -276,11 +391,6 @@ class SDPACoreML(torch.nn.Module):
         seqlen,
         mask,
     ):
-        q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
-        k = k.transpose(1, 2)
-        v = v.transpose(1, 2)
-
-        k, v = self.kv_cache.update(input_pos, k, v)
         attn_mask = mask[None, None, input_pos]
 
         if self.n_rep > 1:
@@ -298,7 +408,7 @@ def replace_sdpa_with_coreml_sdpa(module: torch.nn.Module):
             setattr(
                 module,
                 name,
-                SDPACoreML(child.kv_cache, child.dim, child.head_dim, child.n_rep),
+                SDPACoreML(child.dim, child.head_dim, child.n_rep),
             )
         else:
             replace_sdpa_with_coreml_sdpa(child)
@@ -314,14 +424,14 @@ class KVCacheCoreML(torch.nn.Module):
     def __init__(
         self,
         max_batch_size: int,
-        max_seq_length: int,
+        max_context_length: int,
         n_heads: int,
         head_dim: int,
         dtype=torch.float32,
     ):
         super().__init__()
-        self.max_seq_length = max_seq_length
-        cache_shape = (max_batch_size, n_heads, max_seq_length, head_dim)
+        self.max_context_length = max_context_length
+        cache_shape = (max_batch_size, n_heads, max_context_length, head_dim)
 
         self.max_batch_size = max_batch_size
         self.n_heads = n_heads
@@ -349,7 +459,7 @@ def replace_kv_cache_with_coreml_kv_cache(module: torch.nn.Module):
                 name,
                 KVCacheCoreML(
                     child.max_batch_size,
-                    child.max_seq_length,
+                    child.max_context_length,
                     child.n_heads,
                     child.head_dim,
                     child.k_cache.dtype,
@@ -364,13 +474,13 @@ class KVCacheSimple(torch.nn.Module):
     def __init__(
         self,
         max_batch_size: int,
-        max_seq_length: int,
+        max_context_length: int,
         n_heads: int,
         head_dim: int,
         dtype=torch.float32,
     ):
         super().__init__()
-        cache_shape = (max_batch_size, max_seq_length, n_heads, head_dim)
+        cache_shape = (max_batch_size, max_context_length, n_heads, head_dim)
         self.register_buffer(
             "past_k_caches",
             torch.zeros(cache_shape, dtype=dtype, device="cpu"),
@@ -385,6 +495,9 @@ class KVCacheSimple(torch.nn.Module):
     def update(
         self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        # can we combine this with KVCacheCoreML?
+        k_val = k_val.transpose(1, 2)
+        v_val = v_val.transpose(1, 2)
         k_out = torch.ops.aten.index_put_(self.past_k_caches, [None, input_pos], k_val)
         v_out = torch.ops.aten.index_put_(self.past_v_caches, [None, input_pos], v_val)
 
@@ -401,7 +514,7 @@ def replace_kv_cache_with_simple_kv_cache(module: torch.nn.Module):
                 name,
                 KVCacheSimple(
                     child.max_batch_size,
-                    child.max_seq_length,
+                    child.max_context_length,
                     child.n_heads,
                     child.head_dim,
                     child.k_cache.dtype,
@@ -416,9 +529,9 @@ def replace_causal_mask(module: torch.nn.Module):
     for buffer_fqn_name, buffer in module.named_buffers():
         buffer_name = buffer_fqn_name.split(".")[-1]
         if buffer_name == "mask":
-            max_seq_len = buffer.shape[-1]
+            max_context_len = buffer.shape[-1]
             mask = torch.full(
-                (max_seq_len, max_seq_len),
+                (max_context_len, max_context_len),
                 float("-inf"),
                 device="cpu",
             )

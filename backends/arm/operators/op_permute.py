@@ -1,20 +1,19 @@
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
 
-from typing import List
+from typing import Any, List
 
-import serializer.tosa_serializer as ts
 import torch
+
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from serializer.tosa_serializer import TosaOp
 
 
 def permutation_vector_to_matrix(permutation_vector: list[int]) -> torch.Tensor:
@@ -65,9 +64,34 @@ def permutation_matrix_to_vector(permutation_matrix: torch.Tensor) -> list[int]:
     return p
 
 
+def transform_permutation_vector(permutation_vector: list[int], dim_order: list[int]):
+    """Transforms a permutation to dim_order."""
+
+    # We need to first transform to dim_order, apply the permutation P,
+    # and then transform back to the original dim_order.
+    # This transformation, S, is also a permutation, with the dim_order as permutation vector.
+
+    # To do this, represent P and S with permutation matrices.
+    # Matrices can handle chained transformations and inversion easily.
+    S = permutation_vector_to_matrix(dim_order)
+    # The inverse of a permutation matrix is its transpose.
+    S_inverse = S.t()
+    P = permutation_vector_to_matrix(permutation_vector)
+
+    # The complete transformation is S * P * S_inverse.
+    transformation_matrix = S.matmul(P.matmul(S_inverse))
+
+    # Luckily, since it is just a combination of permutations, the result is also a permutation
+    # that can again be described by a new permutation vector.
+    permutation_vector = permutation_matrix_to_vector(transformation_matrix)
+    return permutation_vector
+
+
 @register_node_visitor
-class PermuteVisitor(NodeVisitor):
+class PermuteVisitor_0_80(NodeVisitor):
     target = "aten.permute_copy.default"
+
+    tosa_specs = NodeVisitor.tosa_specs_0_80
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -75,11 +99,12 @@ class PermuteVisitor(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        tosa_graph: ts.TosaSerializer,
+        tosa_graph: Any,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
+        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
+
         # The permutation vector describes a permutation P in default Pytorch dim_order.
         # For rank 4, the default dim_order NCHW.
         # E.g. (2,3,0,1) -> permute (n,c,h,w) to (w,c,n,h)
@@ -87,26 +112,50 @@ class PermuteVisitor(NodeVisitor):
 
         if output.dim_order != tuple(range(len(output.dim_order))):
             # the permutation vector can't be used directly if we are not in NCHW dim_order.
-            # We need to first transform to NCHW, apply P,
-            # and then transform back to the original dim_order.
-            # This transformation, S, is also a permutation, with the dim_order as permutation vector.
-
-            # To do this, represent P and S with permutation matrices.
-            # Matrices can handle chained transformations and inversion easily.
-            S = permutation_vector_to_matrix(output.dim_order)
-            # The inverse of a permutation matrix is its transpose.
-            S_inverse = S.transpose(1, 0)
-            P = permutation_vector_to_matrix(permutation_vector)
-
-            # The complete transformation is S * P * S_inverse.
-            transformation_matrix = S.matmul(P.matmul(S_inverse))
-
-            # Luckily, since it is just a combination of permutations, the result is also a permutation
-            # that can again be described by a new permutation vector.
-            permutation_vector = permutation_matrix_to_vector(transformation_matrix)
+            # Transform to dim_order.
+            permutation_vector = transform_permutation_vector(
+                permutation_vector, output.dim_order
+            )
 
         attr = ts.TosaSerializerAttribute()
         attr.TransposeAttribute(permutation_vector)
         tosa_graph.addOperator(
-            TosaOp.Op().TRANSPOSE, [inputs[0].name], [output.name], attr
+            ts.TosaOp.Op().TRANSPOSE, [inputs[0].name], [output.name], attr
+        )
+
+
+@register_node_visitor
+class PermuteVisitor(NodeVisitor):
+    target = "aten.permute_copy.default"
+
+    tosa_specs = NodeVisitor.tosa_specs_1_00
+
+    def __init__(self, *args):
+        super().__init__(*args)
+
+    def define_node(
+        self,
+        node: torch.fx.Node,
+        tosa_graph: Any,
+        inputs: List[TosaArg],
+        output: TosaArg,
+    ) -> None:
+        import serializer.tosa_serializer as ts
+
+        # The permutation vector describes a permutation P in default Pytorch dim_order.
+        # For rank 4, the default dim_order NCHW.
+        # E.g. (2,3,0,1) -> permute (n,c,h,w) to (w,c,n,h)
+        permutation_vector = inputs[1].special
+
+        if output.dim_order != tuple(range(len(output.dim_order))):
+            # the permutation vector can't be used directly if we are not in NCHW dim_order.
+            # Transform to dim_order.
+            permutation_vector = transform_permutation_vector(
+                permutation_vector, output.dim_order
+            )
+
+        attr = ts.TosaSerializerAttribute()
+        attr.TransposeAttribute(permutation_vector)
+        tosa_graph.addOperator(
+            ts.TosaOp.Op().TRANSPOSE, [inputs[0].name], [output.name], attr
         )

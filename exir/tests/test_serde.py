@@ -7,12 +7,16 @@
 # pyre-strict
 
 import io
+import tempfile
 import unittest
 from typing import Tuple
 
 import executorch.exir as exir
 
 import torch
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+    XnnpackFloatingPointPartitioner,
+)
 from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import CompileSpec, to_backend
 from executorch.exir.backend.test.backend_with_compiler_demo import (
@@ -20,6 +24,10 @@ from executorch.exir.backend.test.backend_with_compiler_demo import (
 )
 
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
+from executorch.exir.program._program import (
+    EdgeProgramManager,
+    to_edge_transform_and_lower,
+)
 from executorch.exir.serde.serialize import deserialize, serialize
 from torch import nn
 from torch.export import export
@@ -49,7 +57,7 @@ class TestSerde(unittest.TestCase):
 
     # pyre-ignore
     def check_serde(self, m, inputs, check_executorch=True) -> None:
-        aten = export(m, inputs)
+        aten = export(m, inputs, strict=True)
         aten_new = deserialize(serialize(aten))
         self.check_ep(aten, aten_new, inputs)
 
@@ -135,7 +143,7 @@ class TestSerde(unittest.TestCase):
 
         sin_module = SinModule()
         model_inputs = (torch.ones(1),)
-        edgeir_m = to_edge(export(sin_module, model_inputs))
+        edgeir_m = to_edge(export(sin_module, model_inputs, strict=True))
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_sin_module = to_backend(
@@ -155,7 +163,7 @@ class TestSerde(unittest.TestCase):
 
         composite_model(*model_inputs)
 
-        edge = to_edge(export(composite_model, model_inputs))
+        edge = to_edge(export(composite_model, model_inputs, strict=True))
         edge_new = deserialize(serialize(edge.exported_program()))
         self.check_ep(edge.exported_program(), edge_new, model_inputs)
 
@@ -197,10 +205,37 @@ class TestSerde(unittest.TestCase):
         m = Model()
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
 
-        ep = to_edge(export(m, inputs))
+        ep = to_edge(export(m, inputs, strict=True))
         edge = ep.to_backend(AddMulPartitionerDemo())
         edge_new = deserialize(serialize(edge.exported_program()))
         self.check_ep(edge.exported_program(), edge_new, inputs)
+
+    def test_delegate_xnnpack(self) -> None:
+        class SimpleConv1DModel(nn.Module):
+            def __init__(self):
+                super(SimpleConv1DModel, self).__init__()
+                self.conv1 = nn.Conv1d(
+                    in_channels=1, out_channels=16, kernel_size=3, stride=1, padding=1
+                )
+
+            def forward(self, x):
+                x = self.conv1(x)
+                return x
+
+        x = torch.randn(64, 1, 100)
+        model = SimpleConv1DModel()
+        ep = torch.export.export(model, (x,))
+        edge_orig = to_edge_transform_and_lower(
+            ep, partitioner=[XnnpackFloatingPointPartitioner()]
+        )
+
+        with tempfile.NamedTemporaryFile() as f:
+            exir.save(edge_orig.exported_program(), f)
+            edge_deserialized = EdgeProgramManager(exir.load(f))
+            self.assertTrue(
+                edge_orig.to_executorch().buffer
+                == edge_deserialized.to_executorch().buffer
+            )
 
     def test_meta_stack_trace_module_hierarchy(self) -> None:
         class Model(nn.Module):
@@ -217,7 +252,7 @@ class TestSerde(unittest.TestCase):
         inputs = (torch.randn(1, 1, 32, 32),)
 
         metadata = ()
-        edge = to_edge(export(m, inputs))
+        edge = to_edge(export(m, inputs, strict=True))
         for node in edge.exported_program().graph_module.graph.nodes:
             if "convolution" in str(node.target):
                 metadata = (

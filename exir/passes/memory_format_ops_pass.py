@@ -32,13 +32,14 @@ class MemoryFormatOpsPass(ExportPass):
     """
 
     def call_operator(self, op, args, kwargs, meta):
-        if not (isinstance(op, EdgeOpOverload) and op.__name__ in DimOrderOpsMap):
+        if not (isinstance(op, EdgeOpOverload) and op in DimOrderOpsMap):
             return super().call_operator(
                 op,
                 args,
                 kwargs,
                 meta,
             )
+
         # new kwargs with dim_order, and no memory_format for the new op
         nkwargs = dict(copy.deepcopy(kwargs))  # orig kwargs are immutable
 
@@ -50,17 +51,20 @@ class MemoryFormatOpsPass(ExportPass):
             ndim = args[0].to_tensor().dim()
         elif isinstance(args[0], torch.Tensor):
             ndim = args[0].dim()
+        elif isinstance(args[0], torch.fx.immutable_collections.immutable_list):
+            ndim = len(args[0])
         else:
-            assert 0, f"Expecting a Tensor or a ProxyValue buy got {type(args[0])}"
+            assert (
+                0
+            ), f"Expecting a Tensor, a ProxyValue, or a Sequence, but got {type(args[0])}"
 
         nkwargs["dim_order"] = get_dim_order(mem_format, ndim)
         logger.debug(
-            f"_to_copy = rank: {ndim}, memory_format: {mem_format}."
-            f" _to_dim_order_copy = dim_order: {nkwargs['dim_order']}"
+            f"{op.__name__} = rank: {ndim}, memory_format: {mem_format}."
+            f" {DimOrderOpsMap[op].__name__} = dim_order: {nkwargs['dim_order']}"
         )
 
-        t = DimOrderOpsMap.get(op.__name__, None)
-        assert t is not None, f"{op.__name__} not found in DimOrderOpsMap"
+        t = DimOrderOpsMap[op]
 
         return super().call_operator(
             t,
@@ -76,7 +80,7 @@ class DimOrderOpsRevertPass(ExportPass):
     """
 
     def call_operator(self, op, args, kwargs, meta):
-        if not (isinstance(op, EdgeOpOverload) and op.__name__ in MemoryFormatOpsMap):
+        if not (isinstance(op, EdgeOpOverload) and op in MemoryFormatOpsMap):
             return super().call_operator(
                 op,
                 args,
@@ -92,8 +96,10 @@ class DimOrderOpsRevertPass(ExportPass):
             ndim = args[0].to_tensor().dim()
         elif isinstance(args[0], torch.Tensor):
             ndim = args[0].dim()
+        elif isinstance(args[0], torch.fx.immutable_collections.immutable_list):
+            ndim = len(args[0])
         else:
-            assert 0, f"Expecting a Tensor or a ProxyValue buy got {type(args[0])}"
+            assert 0, f"Expecting a Tensor or a ProxyValue but got {type(args[0])}"
 
         # get the "to" memory format for the EdgeOp
         default_dim_order = list(range(ndim))
@@ -102,12 +108,11 @@ class DimOrderOpsRevertPass(ExportPass):
         nkwargs["memory_format"] = get_memory_format(dim_order)
 
         logger.debug(
-            f" _to_dim_order_copy = dim_order: {dim_order}."
-            f"_to_copy = rank: {ndim}, memory_format: {nkwargs['memory_format']}."
+            f" {op.__name__} = dim_order: {dim_order}."
+            f" {MemoryFormatOpsMap[op].__name__} = rank: {ndim}, memory_format: {nkwargs['memory_format']}."
         )
 
-        t = MemoryFormatOpsMap.get(op.__name__, None)
-        assert t is not None, f"{op.__name__} not found in MemoryFormatOpsMap"
+        t = MemoryFormatOpsMap[op]
 
         return super().call_operator(
             t,

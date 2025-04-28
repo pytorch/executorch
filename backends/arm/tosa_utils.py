@@ -1,4 +1,4 @@
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,44 +7,55 @@
 
 import logging
 import os
-from typing import Any, cast
+from typing import Any, Optional, Tuple
 
-import numpy as np
-import serializer.tosa_serializer as ts
 import torch
+
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.tosa_mapping import TosaArg
 
-from executorch.backends.arm.tosa_quant_utils import (
-    get_quant_arg_downstream,
-    get_quant_arg_upstream,
-    q_op,
-)
 from executorch.exir.dialects._ops import ops as exir_ops
-from serializer.tosa_serializer import TosaOp
+from executorch.exir.print_program import inspect_node
 from torch.fx import Node
+from tosa_tools.v0_80.serializer.tosa_serializer import TosaOp
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
-TOSA_DBG_VERBOSE = os.environ.get("TOSA_DBG_VERBOSE") == "1"
-if TOSA_DBG_VERBOSE:
-    logging.basicConfig(level=logging.INFO)
-    logger.setLevel(logging.INFO)
 
 
-def dbg_node(node):
+def dbg_node(node: torch.fx.Node, graph_module: torch.fx.GraphModule):
     # Debug output of node information
-    logger.info("OP")
-    logger.info(f"  op is {node.op}")
-    logger.info(f"  name is {node.name}")
-    logger.info(f"  node target is {node.target}")
-    logger.info(f"  node args is {node.args}")
-    logger.info(f"  node kwargs is {node.kwargs}")
-    logger.info("  node.meta = ")
+    logger.info(get_node_debug_info(node, graph_module))
+
+
+def get_node_debug_info(
+    node: torch.fx.Node, graph_module: torch.fx.GraphModule | None = None
+) -> str:
+    output = (
+        f"  {inspect_node(graph=graph_module.graph, node=node)}\n"
+        if graph_module
+        else ""
+        "-- NODE DEBUG INFO --\n"
+        f"  Op is {node.op}\n"
+        f"  Name is {node.name}\n"
+        f"  Node target is {node.target}\n"
+        f"  Node args is {node.args}\n"
+        f"  Node kwargs is {node.kwargs}\n"
+        f"  Node users is {node.users}\n"
+        "  Node.meta = \n"
+    )
     for k, v in node.meta.items():
-        logger.info(f"    '{k}' = {v}")
-        if isinstance(v, list):
-            for i in v:
-                logger.info(f"      {i} ")
+        if k == "stack_trace":
+            matches = v.split("\n")
+            output += "      'stack_trace =\n"
+            for m in matches:
+                output += f"      {m}\n"
+        else:
+            output += f"    '{k}' = {v}\n"
+
+            if isinstance(v, list):
+                for i in v:
+                    output += f"      {i}\n"
+    return output
 
 
 # Output TOSA flatbuffer and test harness file
@@ -69,59 +80,24 @@ def dbg_tosa_dump(tosa_graph: ts.TosaSerializer, path: str, suffix: str = ""):
     assert os.path.exists(filepath_desc_json), "Failed to write TOSA JSON"
 
 
-def dbg_fail(node, tosa_graph, path):
-    dbg_tosa_dump(tosa_graph, path)
-    logger.warn("Internal error due to poorly handled node:")
-    dbg_node(node)
-    logger.warn(f"Debug output captured in '{path}'.")
-    raise RuntimeError("TOSA Internal Error on node, enable logging for further info.")
-
-
-# Helper function to match TOSA's broadcasting rank requirement
-# Ref: TOSA 0.80.0 specification - 1.9.3. Data Layouts from
-# https://www.mlplatform.org/tosa/tosa_spec.html
-def promote_shape(tosa_fb, arg, promoted_shape, out_dtype):
-    assert np.prod(arg.shape) == np.prod(promoted_shape), "Incompatible promoted shape"
-    reshape_res = tosa_fb.addIntermediate(promoted_shape, out_dtype)
-    attr = ts.TosaSerializerAttribute()
-    attr.ReshapeAttribute(promoted_shape)
-    tosa_fb.addOperator(TosaOp.Op().RESHAPE, [arg.name], [reshape_res.name], attr)
-    return reshape_res
-
-
-# Helper transpose function to match TOSA's shape requirements
-# E.g., TOSA 0.80.0 specification - 2.3.3 CONV2D shapes:
-# https://www.mlplatform.org/tosa/tosa_spec.html#_conv2d
-def transpose_helper(tosa_fb, input, new_order, out_dtype):
-    # Check new_order's length is equal to input rank
-    assert len(input.shape) == len(new_order), "Wrong shape order length"
-
-    # Check no duplications
-    assert len(set(new_order)) == len(new_order), "Contain duplicated dim numbers"
-
-    # Check all dims are valid
-    for idx in new_order:
-        if idx < 0:
-            assert True, "Negative dim number"
-        elif idx >= len(input.shape):
-            assert True, "Dim is greater than input rank"
-
-    input_shape_transpoed = [input.shape[i] for i in new_order]
-    attr = ts.TosaSerializerAttribute()
-    attr.TransposeAttribute(new_order)
-    input_transposed = tosa_fb.addIntermediate(input_shape_transpoed, out_dtype)
-    tosa_fb.addOperator(
-        TosaOp.Op().TRANSPOSE, [input.name], [input_transposed.name], attr
-    )
-    return input_transposed
+def dbg_fail(
+    node,
+    graph_module,
+    tosa_graph: Optional[ts.TosaSerializer] = None,
+    path: Optional[str] = None,
+):
+    logger.warning("Internal error due to poorly handled node:")
+    if tosa_graph is not None and path is not None:
+        dbg_tosa_dump(tosa_graph, path)
+        logger.warning(f"Debug output captured in '{path}'.")
+    dbg_node(node, graph_module)
 
 
 def getNodeArgs(node: Node) -> list[TosaArg]:
-    return [TosaArg(arg) for arg in node.args]
-
-
-def get_input_tensor(node: Node) -> TosaArg:
-    return TosaArg(node.args[0])
+    try:
+        return [TosaArg(arg) for arg in node.args]
+    except ValueError as e:
+        raise ValueError(f"Failed processing args to op:\n{node}") from e
 
 
 def get_output_node(node: Node) -> Node:
@@ -138,12 +114,43 @@ def build_reshape(tosa_fb, input_name, new_shape, output_name):
     tosa_fb.addOperator(TosaOp.Op().RESHAPE, [input_name], [output_name], attr)
 
 
-def is_bias_node_for_quantized_conv(node):
-    consumer_node = list(node.users)[0]
-    return (
-        consumer_node.target == exir_ops.edge.aten.convolution.default
-        and list(consumer_node.users)[0].target == q_op
+def reshape_for_broadcast(tosa_fb, inputs, dim_order=None):
+    assert len(inputs) == 2
+    input1 = inputs[0]
+    input2 = inputs[1]
+
+    def get_new_shape(l_rank_in, h_rank_in):
+        rank_diff = len(h_rank_in.shape) - len(l_rank_in.shape)
+        new_shape = list(l_rank_in.shape)
+
+        for _ in range(rank_diff):
+            new_shape.insert(0, 1)
+        return tuple(new_shape)
+
+    if len(input1.shape) == len(input2.shape):
+        return input1, input2
+    elif len(input1.shape) > len(input2.shape):
+        l_rank_in = input2
+        h_rank_in = input1
+    elif len(input1.shape) < len(input2.shape):
+        l_rank_in = input1
+        h_rank_in = input2
+
+    new_shape = get_new_shape(l_rank_in, h_rank_in)
+    dim_order = h_rank_in.dim_order if dim_order is None else dim_order
+    new_shape = tosa_shape(new_shape, dim_order)
+
+    reshaped = tosa_fb.addIntermediate(
+        new_shape,
+        inputs[0].dtype,
     )
+
+    build_reshape(tosa_fb, l_rank_in.name, new_shape, reshaped.name)
+
+    if len(input1.shape) > len(input2.shape):
+        return input1, reshaped
+    else:
+        return reshaped, input2
 
 
 def is_consumer_node_depthwise_conv2d(node):
@@ -157,72 +164,6 @@ def is_consumer_node_depthwise_conv2d(node):
             return True
 
     return False
-
-
-def build_avg_pool_2d_common(
-    node: torch.fx.Node,
-    tosa_graph: ts.TosaSerializer,
-    input_tensor: TosaArg,
-    kernel_size: list,
-    stride: list,
-    padding: list,
-    is_quant_node: bool,
-    output: TosaArg,
-):
-    accumulator_type = input_tensor.dtype
-
-    if is_quant_node:
-        # Accumulator type always is int32 when input tensor is an integer type.
-        accumulator_type = ts.DType.INT32
-
-    # Initilize zero point to zero.
-    input_zp = 0
-    output_zp = 0
-
-    if is_quant_node:
-        input_zp = get_quant_arg_upstream(cast(torch.fx.Node, node.args[0])).zp
-        output_zp = get_quant_arg_downstream(list(node.users)[0]).zp
-
-    attr = ts.TosaSerializerAttribute()
-    attr.PoolAttribute(
-        kernel=kernel_size,
-        stride=stride,
-        pad=padding,
-        input_zp=input_zp,
-        output_zp=output_zp,
-        accum_dtype=accumulator_type,
-    )
-
-    tosa_graph.addOperator(
-        TosaOp.Op().AVG_POOL2D,
-        [input_tensor.name],
-        [output.name],
-        attr,
-    )
-
-
-def get_two_inputs(node: Node, check: bool = False) -> tuple[Node, Node]:
-    """Returns two input nodes to 'node' in order. If 'node' only has one input,
-    it is returned twice.
-
-    Fails if there are no input nodes.
-    Fails if there are >2 input nodes and 'check' is True,
-    """
-
-    num_inputs = len(node.all_input_nodes)
-    assert num_inputs > 0, f"Node '{node.name}' requires >0 input, got {num_inputs}."
-
-    input1 = node.all_input_nodes[0]
-    if num_inputs == 1:
-        input2 = node.all_input_nodes[0]
-    else:
-        input2 = node.all_input_nodes[1]
-    if check:
-        assert (
-            num_inputs <= 2
-        ), f"Node '{node.name}' requires <=2 inputs, got {num_inputs}."
-
-    return input1, input2
 
 
 def tosa_shape(shape, dim_order):
@@ -263,7 +204,7 @@ def get_resize_parameters(
     output_size: torch.Tensor,
     resize_mode: int,
     align_corners: bool,
-):
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Get the tosa.resize parameters based on the input and output size.
 
     Args:

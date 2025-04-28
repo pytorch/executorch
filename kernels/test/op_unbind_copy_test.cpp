@@ -17,10 +17,10 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
-using exec_aten::TensorList;
+using executorch::aten::ArrayRef;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::aten::TensorList;
 using torch::executor::testing::TensorFactory;
 using torch::executor::testing::TensorListFactory;
 
@@ -208,19 +208,19 @@ class OpUnbindCopyIntOutTest : public OperatorTest {
  */
 TEST_F(OpUnbindCopyIntOutTest, Unbind1x2x3OnDim0AllRealDtypes) {
 #define TEST_ENTRY(ctype, dtype) test_unbind_dim0<ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
 TEST_F(OpUnbindCopyIntOutTest, Unbind1x2x3OnDim1AllRealDTypes) {
 #define TEST_ENTRY(ctype, dtype) test_unbind_dim1<ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
 TEST_F(OpUnbindCopyIntOutTest, Unbind1x2x3OnDim2AllRealDTypes) {
 #define TEST_ENTRY(ctype, dtype) test_unbind_dim2<ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
@@ -269,6 +269,9 @@ TEST_F(OpUnbindCopyIntOutTest, UnbindWorksWithZeroSizedTensors) {
 }
 
 TEST_F(OpUnbindCopyIntOutTest, UnbindFailsWithWronglyAllocatedOutput) {
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "ATen kernel can handle mismatched output shape";
+  }
   TensorFactory<ScalarType::Int> tf;
   TensorListFactory<ScalarType::Int> tlf;
 

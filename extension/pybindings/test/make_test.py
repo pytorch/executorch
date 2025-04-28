@@ -32,6 +32,40 @@ class ModuleAdd(torch.nn.Module):
         return (torch.ones(2, 2), torch.ones(2, 2))
 
 
+class ModuleChannelsLast(torch.nn.Module):
+    """The module to serialize and execute."""
+
+    def forward(self, x):
+        return torch.nn.functional.interpolate(
+            x,
+            scale_factor=2,
+            mode="nearest",
+        )
+
+    def get_methods_to_export(self):
+        return ("forward",)
+
+    def get_inputs(self):
+        return (torch.ones(1, 2, 3, 4).to(memory_format=torch.channels_last),)
+
+
+class ModuleChannelsLastInDefaultOut(torch.nn.Module):
+    """The module to serialize and execute."""
+
+    def forward(self, x):
+        return torch.nn.functional.interpolate(
+            x,
+            scale_factor=2,
+            mode="nearest",
+        ).to(memory_format=torch.contiguous_format)
+
+    def get_methods_to_export(self):
+        return ("forward",)
+
+    def get_inputs(self):
+        return (torch.ones(1, 2, 3, 4).to(memory_format=torch.channels_last),)
+
+
 class ModuleMulti(torch.nn.Module):
     """The module to serialize and execute."""
 
@@ -113,7 +147,7 @@ def create_program(
     # variant, along with some other transformations.
     for method_name, method_input in input_map.items():
         wrapped_mod = WrapperModule(getattr(eager_module, method_name))
-        exported_methods[method_name] = export(wrapped_mod, method_input)
+        exported_methods[method_name] = export(wrapped_mod, method_input, strict=True)
 
     exec_prog = to_edge(exported_methods).to_executorch(config=et_config)
 
@@ -136,7 +170,6 @@ def make_test(  # noqa: C901
     load_fn: Callable = runtime._load_for_executorch_from_buffer
 
     def wrapper(tester: unittest.TestCase) -> None:
-
         ######### TEST CASES #########
 
         def test_e2e(tester):
@@ -154,7 +187,6 @@ def make_test(  # noqa: C901
             tester.assertEqual(str(expected), str(executorch_output))
 
         def test_multiple_entry(tester):
-
             program, inputs = create_program(ModuleMulti())
             executorch_module = load_fn(program.buffer)
 
@@ -268,7 +300,7 @@ def make_test(  # noqa: C901
             )
             m = _convert_to_reference_decomposed_fx(m)
             config = EdgeCompileConfig(_check_ir_validity=False)
-            m = to_edge(export(m, example_inputs), compile_config=config)
+            m = to_edge(export(m, example_inputs, strict=True), compile_config=config)
             m = m.transform([QuantFusionPass(_fix_node_meta_val=True)])
 
             exec_prog = m.to_executorch()
@@ -300,10 +332,60 @@ def make_test(  # noqa: C901
             # The test module adds the input to torch.ones(2,2), so its output should be the same
             # as adding them directly.
             expected = torch.ones(2, 2) + torch.ones(2, 2)
-            tester.assertEqual(str(expected), str(executorch_output[0]))
+            tester.assertTrue(torch.allclose(expected, executorch_output[0]))
 
             # The test module returns the state. Check that its value is correct.
             tester.assertEqual(str(torch.ones(2, 2)), str(executorch_output[1]))
+
+        def test_channels_last(tester) -> None:
+            # Create an ExecuTorch program from ModuleChannelsLast.
+            model = ModuleChannelsLast()
+            exported_program, inputs = create_program(model)
+
+            # Use pybindings to load and execute the program.
+            executorch_module = load_fn(exported_program.buffer)
+            # Inovke the callable on executorch_module instead of calling module.forward.
+            # Use only one input to test this case.
+            executorch_output = executorch_module(inputs[0])[0]
+
+            # The test module adds the two inputs, so its output should be the same
+            # as adding them directly.
+            expected = model(inputs[0])
+            tester.assertTrue(torch.allclose(expected, executorch_output))
+
+        def test_unsupported_dim_order(tester) -> None:
+            """
+            Verify that the pybind layer rejects unsupported dim orders.
+            """
+
+            # Create an ExecuTorch program from ModuleChannelsLast.
+            model = ModuleChannelsLast()
+            exported_program, inputs = create_program(model)
+            inputs = (
+                torch.randn(1, 2, 3, 4, 5).to(memory_format=torch.channels_last_3d),
+            )
+
+            # Use pybindings to load and execute the program.
+            executorch_module = load_fn(exported_program.buffer)
+
+            # We expect execution to error because of the invalid input dim order.
+            tester.assertRaises(RuntimeError, executorch_module, inputs[0])
+
+        def test_channels_last_in_default_out(tester) -> None:
+            # Create an ExecuTorch program from ModuleChannelsLastInDefaultOut.
+            model = ModuleChannelsLastInDefaultOut()
+            exported_program, inputs = create_program(model)
+
+            # Use pybindings to load and execute the program.
+            executorch_module = load_fn(exported_program.buffer)
+            # Inovke the callable on executorch_module instead of calling module.forward.
+            # Use only one input to test this case.
+            executorch_output = executorch_module(inputs[0])[0]
+
+            # The test module adds the two inputs, so its output should be the same
+            # as adding them directly.
+            expected = model(inputs[0])
+            tester.assertTrue(torch.allclose(expected, executorch_output))
 
         def test_method_meta(tester) -> None:
             exported_program, inputs = create_program(ModuleAdd())
@@ -390,6 +472,9 @@ def make_test(  # noqa: C901
         test_module_single_input(tester)
         test_stderr_redirect(tester)
         test_quantized_ops(tester)
+        test_channels_last(tester)
+        test_channels_last_in_default_out(tester)
+        test_unsupported_dim_order(tester)
         test_constant_output_not_memory_planned(tester)
         test_method_meta(tester)
         test_bad_name(tester)

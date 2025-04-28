@@ -249,8 +249,8 @@ Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
         }
         Buffer buffer(tensor_meta->nbytes(), 0);
         auto sizes = tensor_meta->sizes();
-        exec_aten::TensorImpl tensor_impl(tensor_meta->scalar_type(), std::size(sizes), const_cast<int *>(sizes.data()), buffer.data());
-        exec_aten::Tensor tensor(&tensor_impl);
+        executorch::aten::TensorImpl tensor_impl(tensor_meta->scalar_type(), std::size(sizes), const_cast<int *>(sizes.data()), buffer.data());
+        executorch::aten::Tensor tensor(&tensor_impl);
         EValue input_value(std::move(tensor));
         Error err = method.set_input(input_value, i);
         if (err != Error::Ok) {

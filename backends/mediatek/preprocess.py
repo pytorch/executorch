@@ -24,6 +24,23 @@ REQUIRED_COMPILE_SPEC_KEYS = {"platform-config"}
 SUPPORTED_PLATFORM_CONFIGS = {"mt6989", "mt6991"}
 
 
+def assert_default_dim_order(edge_graph_module: torch.fx.GraphModule) -> None:
+    for node in edge_graph_module.graph.nodes:
+        if node.op != "placeholder":
+            continue
+
+        # We expect the default dim order for all tensor-like inputs i.e. inputs, buffers, and params
+        t = node.meta.get("val", None)
+        if t is not None and getattr(t, "dim_order", None) is not None:
+            default_dim_order = tuple(range(t.dim()))
+            if t.dim_order() != default_dim_order:
+                raise RuntimeError(
+                    f"Neuropilot backend only supports contiguous memory format for inputs."
+                    f"Expecting dim_order: {default_dim_order}, but got "
+                    f"{node.meta['val'].dim_order()} for a placeholder node {node}."
+                )
+
+
 @final
 class NeuropilotBackend(BackendDetails):
 
@@ -53,6 +70,9 @@ class NeuropilotBackend(BackendDetails):
                 "Unsupported value of platform-config CompileSpec. Given {} but expected to be one "
                 "of {}.".format(platform, SUPPORTED_PLATFORM_CONFIGS)
             )
+
+        # Make sure all inputs are contiguous_format or NCHW or default dim order
+        assert_default_dim_order(edge_program.graph_module)
 
         name_to_node_mappings = {node.name: node for node in edge_program.graph.nodes}
         input_names = edge_program.graph_signature.user_inputs

@@ -51,6 +51,9 @@ UPLOAD_DIR="${UPLOAD_DIR:-}"
 # Default PT2E_QUANTIZE to empty string if not set
 PT2E_QUANTIZE="${PT2E_QUANTIZE:-}"
 
+# Default CMake Build Type to release mode
+CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-Release}
+
 if [[ $# -lt 4 ]]; then # Assuming 4 mandatory args
     echo "Expecting atleast 4 positional arguments"
     echo "Usage: [...]"
@@ -107,12 +110,20 @@ else
   COREML=OFF
 fi
 
+if [[ "${MODE}" =~ .*quantize_kv.* ]]; then
+  QUANTIZE_KV_CACHE=ON
+  # quantize_kv cache transform uses custom kv cache update op
+  CUSTOM=ON
+else
+  QUANTIZE_KV_CACHE=OFF
+fi
+
 echo "COREML option ${COREML}"
 
 if [[ "${MODE}" =~ .*qnn.* ]]; then
   QNN=ON
   export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-  export QNN_SDK_ROOT=/tmp/qnn/2.25.0.240728
+  export QNN_SDK_ROOT=/tmp/qnn/2.28.0.241029
   export LD_LIBRARY_PATH="${QNN_SDK_ROOT}/lib/x86_64-linux-clang"
   export PYTHONPATH=".."
   cp schema/program.fbs exir/_serialize/program.fbs
@@ -143,7 +154,7 @@ cmake_install_executorch_libraries() {
     rm -rf cmake-out
     retry cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DCMAKE_BUILD_TYPE=Debug \
+        -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
@@ -157,22 +168,26 @@ cmake_install_executorch_libraries() {
         -DQNN_SDK_ROOT="$QNN_SDK_ROOT" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out .
-    cmake --build cmake-out -j9 --target install --config Debug
+    cmake --build cmake-out -j9 --target install --config "$CMAKE_BUILD_TYPE"
 }
 
 cmake_build_llama_runner() {
     echo "Building llama runner"
+    pushd extension/llm/tokenizers
+    echo "Updating tokenizers submodule"
+    git submodule update --init
+    popd
     dir="examples/models/llama"
     retry cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DCMAKE_BUILD_TYPE=Debug \
+        -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM="$CUSTOM" \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out/${dir} \
         ${dir}
-    cmake --build cmake-out/${dir} -j9 --config Debug
+    cmake --build cmake-out/${dir} -j9 --config "$CMAKE_BUILD_TYPE"
 
 }
 
@@ -199,7 +214,7 @@ prepare_artifacts_upload() {
 PARAMS="params.json"
 CHECKPOINT_FILE_NAME=""
 touch "${PARAMS}"
-if [[ "${MODEL_NAME}" == "stories110M" ]]; then
+if [[ "${MODEL_NAME}" == "llama" ]] || [[ "${MODEL_NAME}" == "stories"* ]] || [[ "${MODEL_NAME}" == "tinyllama" ]]; then
   CHECKPOINT_FILE_NAME="stories110M.pt"
   download_stories_model_artifacts
 else
@@ -246,12 +261,15 @@ if [[ "${QNN}" == "ON" ]]; then
     EXPORT_ARGS+=" --tokenizer_path tokenizer.model --pt2e_quantize qnn_16a16w --calibration_tasks wikitext --calibration_limit 1 --calibration_seq_length 128 --calibration_data Once "
   fi
 fi
+if [[ "${QUANTIZE_KV_CACHE}" == "ON" ]]; then
+  EXPORT_ARGS="${EXPORT_ARGS} --quantize_kv_cache"
+fi
 # Add dynamically linked library location
 $PYTHON_EXECUTABLE -m examples.models.llama.export_llama ${EXPORT_ARGS}
 
 # Create tokenizer.bin.
 echo "Creating tokenizer.bin"
-$PYTHON_EXECUTABLE -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+$PYTHON_EXECUTABLE -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokenizer.bin
 
 
 RUNTIME_ARGS="--model_path=${EXPORTED_MODEL_NAME} --tokenizer_path=tokenizer.bin --prompt=Once --temperature=0 --seq_len=10 --warmup=1"

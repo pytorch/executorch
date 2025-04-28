@@ -6,12 +6,12 @@
 
 load("@fbcode_macros//build_defs:export_files.bzl", "export_file")
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 load(
     "@fbsource//tools/build_defs:default_platform_defs.bzl",
     "CXX",
 )
 load("@fbsource//xplat/executorch/codegen:codegen.bzl", "executorch_generated_lib")
-load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
 oncall("odai_jarvis")
 
@@ -36,17 +36,18 @@ python_library(
         "compiler.py",
     ],
     deps = [
-        ":passes",
-        ":utils",
+        ":memory_planning",
         ":ops_registrations",
+        ":passes",
         ":replace_ops",
+        ":utils",
         "//caffe2:torch",
         "//executorch/backends/cadence/aot/quantizer:fusion_pass",
         "//executorch/backends/cadence/aot/quantizer:quantizer",
         "//executorch/backends/transforms:decompose_sdpa",
         "//executorch/backends/transforms:remove_clone_ops",
-        "//executorch/exir:lib",
         "//executorch/devtools:lib",
+        "//executorch/exir:lib",
     ],
 )
 
@@ -56,18 +57,19 @@ python_library(
         "export_example.py",
     ],
     deps = [
-        ":passes",
-        ":utils",
         ":ops_registrations",
+        ":passes",
         ":replace_ops",
+        ":utils",
         "//caffe2:torch",
         "//executorch/backends/cadence/aot/quantizer:fusion_pass",
-        "//executorch/backends/cadence/runtime:runtime",
         "//executorch/backends/cadence/aot/quantizer:quantizer",
+        "//executorch/backends/cadence/runtime:runtime",
         "//executorch/backends/transforms:decompose_sdpa",
         "//executorch/backends/transforms:remove_clone_ops",
-        "//executorch/exir:lib",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
         "//executorch/devtools:lib",
+        "//executorch/exir:lib",
     ],
 )
 
@@ -92,12 +94,12 @@ python_library(
         "passes.py",
     ],
     deps = [
-        ":utils",
         ":fuse_ops",
-        ":simplify_ops",
-        ":replace_ops",
-        ":reorder_ops",
         ":remove_ops",
+        ":reorder_ops",
+        ":replace_ops",
+        ":simplify_ops",
+        ":utils",
         "//caffe2:torch",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
@@ -113,8 +115,19 @@ python_library(
     ],
     deps = [
         "fbcode//caffe2:torch",
-        "fbcode//executorch/exir:scalar_type",
         "fbcode//executorch/backends/cadence/aot:utils",
+    ],
+)
+
+python_library(
+    name = "ref_implementations",
+    srcs = [
+        "ref_implementations.py",
+    ],
+    typing = True,
+    deps = [
+        "fbcode//caffe2:torch",
+        "fbcode//executorch/exir:scalar_type",
     ],
 )
 
@@ -177,8 +190,9 @@ python_library(
     ],
     typing = True,
     deps = [
-        "//caffe2:torch",
         ":compiler_utils",
+        ":ops_registrations",
+        "//caffe2:torch",
         "//executorch/backends/cadence/aot:pass_utils",
         "//executorch/backends/cadence/aot:utils",
         "//executorch/exir:pass_base",
@@ -213,11 +227,11 @@ python_library(
         "//caffe2:torch",
         "//executorch/backends/cadence/aot:pass_utils",
         "//executorch/backends/cadence/aot:simplify_ops",
+        "//executorch/backends/transforms:remove_clone_ops",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
         "//executorch/exir/dialects/edge:lib",
         "//executorch/exir/passes:spec_prop_pass",
-        "//executorch/backends/transforms:remove_clone_ops"
     ],
 )
 
@@ -253,6 +267,7 @@ python_library(
         "//executorch/backends/cadence/aot:pass_utils",
         "//executorch/backends/cadence/aot:remove_ops",
         "//executorch/backends/cadence/aot:utils",
+        "//executorch/backends/transforms:replace_scalar_with_tensor",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
         "//executorch/exir/dialects/edge:lib",
@@ -267,13 +282,13 @@ python_unittest(
     ],
     typing = True,
     deps = [
+        ":ops_registrations",
         "//caffe2:torch",
         "//executorch/backends/cadence/aot:graph_builder",
         "//executorch/backends/cadence/aot:pass_utils",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
         "//later:lib",
-        ":ops_registrations"
     ],
 )
 
@@ -303,8 +318,10 @@ python_unittest(
     srcs = [
         "tests/test_fusion_ops_passes.py",
     ],
+    supports_static_listing = False,
     typing = True,
     deps = [
+        "fbsource//third-party/pypi/parameterized:parameterized",
         ":compiler",
         "//caffe2:torch",
         "//executorch/backends/cadence/aot:compiler",
@@ -372,5 +389,55 @@ python_unittest(
         "//executorch/backends/cadence/aot:pass_utils",
         "//executorch/backends/cadence/aot:reorder_ops",
         "//executorch/exir/dialects:lib",
+    ],
+)
+
+python_library(
+    name = "memory_planning",
+    srcs = [
+        "memory_planning.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/tabulate:tabulate",
+        ":memory_constraints",
+        ":pass_utils",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:memory_planning",
+        "//executorch/exir:tensor",
+        "//executorch/exir/passes:lib",
+    ],
+)
+
+python_library(
+    name = "memory_constraints",
+    srcs = [
+        "memory_constraints.py",
+    ],
+    deps = [
+        ":pass_utils",
+        ":utils",
+        "//caffe2:torch",
+        "//executorch/exir:memory",
+        "//executorch/exir:pass_manager",
+        "//executorch/exir:tensor",
+    ],
+)
+
+python_unittest(
+    name = "test_memory_passes",
+    srcs = [
+        "tests/test_memory_passes.py",
+    ],
+    typing = True,
+    deps = [
+        ":compiler",
+        ":memory_planning",
+        ":ops_registrations",
+        ":pass_utils",
+        "//caffe2:torch",
+        "//executorch/exir:memory",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/tests:models",
     ],
 )

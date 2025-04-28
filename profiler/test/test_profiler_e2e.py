@@ -52,7 +52,9 @@ class TestCustomOps(unittest.TestCase):
         # The serialized program file. This must live longer than cls.module,
         # because the C++ pybindings will have a pointer to it. But none of the
         # tests should need to touch it.
-        cls.__buffer: bytes = to_edge(export(model, inputs)).to_executorch().buffer
+        cls.__buffer: bytes = (
+            to_edge(export(model, inputs, strict=True)).to_executorch().buffer
+        )
 
         cls.module = _load_for_executorch_from_buffer(cls.__buffer)
 

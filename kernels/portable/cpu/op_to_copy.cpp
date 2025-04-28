@@ -14,7 +14,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 template <typename SELF_CTYPE, typename OUT_CTYPE>
 void _to_impl(const Tensor& self, Tensor& out) {
@@ -32,7 +32,7 @@ Tensor& to_copy_out(
     KernelRuntimeContext& ctx,
     const Tensor& self,
     bool non_blocking,
-    exec_aten::optional<exec_aten::MemoryFormat> memory_format,
+    executorch::aten::optional<executorch::aten::MemoryFormat> memory_format,
     Tensor& out) {
   ET_KERNEL_CHECK(
       ctx,

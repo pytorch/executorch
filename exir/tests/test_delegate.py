@@ -45,7 +45,7 @@ class TestDelegate(unittest.TestCase):
             return x + y
 
         inputs = (torch.ones(1, 3), torch.ones(1, 3))
-        edge_ir_m = to_edge(export(WrapperModule(g), inputs))
+        edge_ir_m = to_edge(export(WrapperModule(g), inputs, strict=True))
         lowered_module: LoweredBackendModule = LoweredBackendModule(
             edge_ir_m.exported_program(), "BackendWithCompilerDemo", b"moo", []
         )
@@ -54,10 +54,7 @@ class TestDelegate(unittest.TestCase):
             return torch.ops.higher_order.executorch_call_delegate(lowered_module, x, y)
 
         orig_res = f(*inputs)
-        gm = export(
-            WrapperModule(f),
-            inputs,
-        )
+        gm = export(WrapperModule(f), inputs, strict=True)
         FileCheck().check("lowered_module_0").check(
             "torch.ops.higher_order.executorch_call_delegate"
         ).run(gm.graph_module.code)
@@ -69,7 +66,7 @@ class TestDelegate(unittest.TestCase):
         m = models.CompositeDelegateModule()
 
         exec_prog = to_edge(
-            export(m, m.get_random_inputs()),
+            export(m, m.get_random_inputs(), strict=True),
             compile_config=EdgeCompileConfig(_check_ir_validity=False),
         ).to_executorch()  # TODO(larryliu): fix split_copy.Tensor
         graph_module = exec_prog.exported_program().graph_module
@@ -165,7 +162,7 @@ class TestDelegate(unittest.TestCase):
                 return x
 
         orig_res = Model()(*inputs)
-        prog = to_edge(export(Model(), inputs))
+        prog = to_edge(export(Model(), inputs, strict=True))
         gm = prog.exported_program().graph_module
 
         node_list = []
@@ -225,7 +222,7 @@ class TestDelegate(unittest.TestCase):
                 return x
 
         orig_res = Model()(*inputs)
-        prog = to_edge(export(Model(), inputs))
+        prog = to_edge(export(Model(), inputs, strict=True))
         gm = prog.exported_program().graph_module
 
         node_list = []
@@ -284,7 +281,7 @@ class TestDelegate(unittest.TestCase):
                 return x
 
         orig_res = Model()(*inputs)
-        prog = to_edge(export(Model(), inputs))
+        prog = to_edge(export(Model(), inputs, strict=True))
         gm = prog.exported_program().graph_module
 
         node_list = []

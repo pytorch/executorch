@@ -7,6 +7,12 @@
 # Example script for exporting Llama2 to flatbuffer
 
 import logging
+
+# force=True to ensure logging while in debugger. Set up logger before any
+# other imports.
+FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
+logging.basicConfig(level=logging.INFO, format=FORMAT, force=True)
+
 import sys
 
 import torch
@@ -14,10 +20,6 @@ import torch
 from .export_llama_lib import build_args_parser, export_llama
 
 sys.setrecursionlimit(4096)
-
-
-FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
-logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
 def main() -> None:

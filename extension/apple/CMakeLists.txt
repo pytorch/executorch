@@ -18,18 +18,34 @@ endif()
 
 add_library(extension_apple)
 
-set(EXPORTED_SOURCES ExecuTorch/Exported/ExecuTorchLog.mm)
+file(GLOB EXPORTED_SOURCES
+  ExecuTorch/Exported/*.m
+  ExecuTorch/Exported/*.mm
+)
 
-target_sources(extension_apple PRIVATE ${EXPORTED_SOURCES})
+file(GLOB INTERNAL_SOURCES
+  ExecuTorch/Internal/*.m
+  ExecuTorch/Internal/*.mm
+)
 
-target_include_directories(extension_apple PUBLIC ExecuTorch/Exported)
+target_sources(extension_apple PRIVATE
+  ${EXPORTED_SOURCES}
+  ${INTERNAL_SOURCES}
+)
+
+target_include_directories(extension_apple
+  PUBLIC ExecuTorch/Exported
+  PRIVATE ExecuTorch/Internal
+)
 
 find_library(FOUNDATION_FRAMEWORK Foundation)
-target_link_libraries(
-  extension_apple PRIVATE executorch ${FOUNDATION_FRAMEWORK}
+target_link_libraries(extension_apple
+  PRIVATE executorch ${FOUNDATION_FRAMEWORK}
 )
 
 target_compile_options(extension_apple PUBLIC ${_common_compile_options})
-target_compile_options(extension_apple PRIVATE "-fobjc-arc")
-target_compile_options(extension_apple PRIVATE "-fno-exceptions")
-target_compile_options(extension_apple PRIVATE "-fno-rtti")
+target_compile_options(extension_apple PRIVATE
+  "-fobjc-arc"
+  "-fno-exceptions"
+  "-fno-rtti"
+)

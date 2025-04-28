@@ -21,7 +21,7 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -35,8 +35,8 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 find_package(executorch CONFIG REQUIRED HINTS ${CMAKE_INSTALL_PREFIX})
 target_include_directories(executorch INTERFACE ${_common_include_directories})
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime). Here select all ops in functions.yaml
@@ -57,3 +57,8 @@ generate_bindings_for_kernels(
 gen_operators_lib(
   LIB_NAME "arm_portable_ops_lib" KERNEL_LIBS portable_kernels DEPS executorch
 )
+
+if(EXECUTORCH_ENABLE_EVENT_TRACER)
+  target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
+  target_compile_options(portable_ops_lib INTERFACE -DET_EVENT_TRACER_ENABLED)
+endif()

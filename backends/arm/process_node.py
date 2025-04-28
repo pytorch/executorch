@@ -1,35 +1,37 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 #
 
 # pyre-unsafe
-from typing import cast, Dict
+from typing import Any, cast, Dict
 
 import numpy as np
-import serializer.tosa_serializer as ts
 import torch
 import torch.fx
 from executorch.backends.arm.operators.node_visitor import NodeVisitor
-from executorch.backends.arm.tosa_mapping import map_dtype, TosaArg
-from executorch.backends.arm.tosa_quant_utils import (
-    get_quant_arg_upstream,
-    get_quantized_node_output_dtype,
-    is_node_quantized,
+from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.backends.arm.tosa_specification import (
+    Tosa_0_80,
+    Tosa_1_00,
+    TosaSpecification,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
-from executorch.backends.arm.tosa_utils import (
-    getNodeArgs,
-    is_bias_node_for_quantized_conv,
-    tosa_shape,
+from executorch.backends.arm.tosa_utils import getNodeArgs, tosa_shape
+from torch._export.utils import (
+    get_buffer,
+    get_lifted_tensor_constant,
+    get_param,
+    is_buffer,
+    is_lifted_tensor_constant,
+    is_param,
 )
 from torch.export.exported_program import ExportedProgram
 
 
 def process_call_function(
     node: torch.fx.Node,
-    tosa_graph: ts.TosaSerializer,
+    tosa_graph: Any,
     node_visitors: Dict[str, NodeVisitor],
     tosa_spec: TosaSpecification,
 ):
@@ -37,29 +39,26 @@ def process_call_function(
     inputs = getNodeArgs(node)
 
     # Convert output (this node itself)
-    output = TosaArg(node)
-
-    is_quant_node = is_node_quantized(node)
-    if is_quant_node:
-        output_dtype = map_dtype(get_quantized_node_output_dtype(node))
-    else:
-        output_dtype = output.dtype
+    try:
+        output = TosaArg(node)
+    except ValueError as e:
+        raise ValueError(
+            f"Failed processing call_function: {node.name}. "
+            "Is the original torch function supported?"
+        ) from e
     tosa_graph.currRegion.currBasicBlock.addTensor(
-        output.name,
-        tosa_shape(output.shape, output.dim_order),
-        output_dtype,
+        output.name, tosa_shape(output.shape, output.dim_order), output.dtype
     )
 
     # Visiting each Node
     # pyre-ignore[16]: Undefined attribute.
-    if node.target.__name__ in node_visitors:
+    if node.target.__name__ in node_visitors:  # type: ignore[union-attr]
         # pyre-ignore[16]: Undefined attribute.
-        node_visitors[node.target.__name__].define_node(
+        node_visitors[node.target.__name__].define_node(  # type: ignore[union-attr]
             node,
             tosa_graph,
             inputs,
             output,
-            is_quant_node,
         )
     else:
         raise RuntimeError(f"Unknown operator {node.target} for TOSA : {tosa_spec}")
@@ -67,7 +66,7 @@ def process_call_function(
 
 def process_inputs(
     node: torch.fx.Node,
-    tosa_graph: ts.TosaSerializer,
+    tosa_graph: Any,
     tosa_spec: TosaSpecification,
 ):
     """Serialize an input node"""
@@ -78,93 +77,76 @@ def process_inputs(
             f"Arm backend only supports contiguous memory format for inputs. "
             f"Expected dim_order: {tuple(range(meta.dim()))}, but got: {meta.dim_order()} for node {node.name}"
         )
-    inputs = [TosaArg(node)]
-    input_shape = inputs[0].shape
-    input_dim_order = inputs[0].dim_order
+    try:
+        tosa_arg = TosaArg(node)
+    except ValueError as e:
+        raise ValueError(
+            f"Failed processing input placeholder: {node.name}. "
+            "Is the original torch function supported?"
+        ) from e
+
+    if isinstance(tosa_spec, Tosa_0_80):
+        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
+    elif isinstance(tosa_spec, Tosa_1_00):
+        import serializer.tosa_serializer as ts
+    else:
+        raise ValueError(f"Unsupported TOSA spec: {tosa_spec}")
+
+    input_shape = tosa_arg.shape
+    input_dim_order = tosa_arg.dim_order
     tensor = ts.TosaSerializerTensor(
-        inputs[0].name,
+        tosa_arg.name,
         tosa_shape(input_shape, input_dim_order),
-        (
-            map_dtype(get_quantized_node_output_dtype(node))
-            if is_node_quantized(node)
-            else inputs[0].dtype
-        ),
+        tosa_arg.dtype,
         data=None,
-        placeholderFilename=inputs[0].name + ".npy",
+        placeholderFilename=tosa_arg.name + ".npy",
     )
     tosa_graph.addInputTensor(tensor)
 
 
-def process_quantized_bias(
-    node: torch.fx.Node,
-    tosa_graph: ts.TosaSerializer,
-    parameter_values,
-):
-    """
-    Serialize bias node that needs to be quantized.
-    """
-    consumer_node = list(node.users)[0]
-    (
-        input_node,
-        weight_node,
-        _,
-    ) = consumer_node.all_input_nodes
-
-    input_node_scale = get_quant_arg_upstream(input_node).scale
-    weight_node_scale = get_quant_arg_upstream(weight_node).scale
-    bias_values_quantized = (
-        (parameter_values / (input_node_scale * weight_node_scale))
-        .round()
-        .astype(np.int32)
-    )
-
-    tosa_graph.addConst(
-        bias_values_quantized.shape,
-        ts.DType.INT32,
-        bias_values_quantized,
-        name=node.name,
-    )
-
-
 def process_inputs_to_parameters(
     node: torch.fx.Node,
-    tosa_graph: ts.TosaSerializer,
+    tosa_graph: Any,
     edge_program: ExportedProgram,
     tosa_spec: TosaSpecification,
 ):
     """Serialize bias and non-quantized weights"""
-    inputs = [TosaArg(node)]
-    parameter_name = edge_program.graph_signature.inputs_to_parameters[node.name]
-    parameter_data = edge_program.state_dict[parameter_name]
+    try:
+        tosa_arg = TosaArg(node)
+    except ValueError as e:
+        raise ValueError(
+            f"Failed processing parameter placeholder: {node.name}. "
+            "Is the original torch function supported?"
+        ) from e
+    parameter_data = get_param(edge_program, node)
 
     assert isinstance(parameter_data, torch.Tensor), "Expect Attr to be tensor"
     parameter_values = parameter_data.detach().numpy()
 
-    if is_bias_node_for_quantized_conv(node):
-        # BI bias
-        assert tosa_spec.support_integer(), f"{tosa_spec} doesnt't support integer"
-        process_quantized_bias(node, tosa_graph, parameter_values)
-    else:
-        # MI weights or bias
-        if inputs[0].dtype == torch.float32:
-            assert tosa_spec.support_float(), f"{tosa_spec} doesn't support float"
+    if tosa_arg.dtype == torch.float32:
+        assert tosa_spec.support_float(), f"{tosa_spec} doesn't support float"
 
-        parameter_values = np.transpose(parameter_values, inputs[0].dim_order)
+    parameter_values = np.transpose(parameter_values, tosa_arg.dim_order)
 
-        tosa_graph.addConst(
-            parameter_values.shape, inputs[0].dtype, parameter_values, name=node.name
-        )
+    tosa_graph.addConst(
+        parameter_values.shape, tosa_arg.dtype, parameter_values, name=tosa_arg.name
+    )
 
 
 def process_inputs_to_buffers(
     node: torch.fx.Node,
-    tosa_graph: ts.TosaSerializer,
+    tosa_graph: Any,
     edge_program: ExportedProgram,
 ):
     """Serialize quantized weights"""
-    inputs = [TosaArg(node)]
-    buffer_name = edge_program.graph_signature.inputs_to_buffers[node.name]
-    buffer_data = edge_program.state_dict[buffer_name]
+    try:
+        tosa_arg = TosaArg(node)
+    except ValueError as e:
+        raise ValueError(
+            f"Failed processing buffer placeholder: {node.name}. "
+            "Is the original torch function supported?"
+        ) from e
+    buffer_data = get_buffer(edge_program, node)
 
     assert isinstance(buffer_data, torch.Tensor), "Expect Attr to be tensor"
     buffer_values = buffer_data.detach().numpy()
@@ -172,31 +154,36 @@ def process_inputs_to_buffers(
     # TODO: fragile code for temporary fix
     # the mean and var tensors are also stored here but they have shape (1, )
     # we only transpose weights here
-    buffer_values = np.transpose(buffer_values, inputs[0].dim_order)
+    buffer_values = np.transpose(buffer_values, tosa_arg.dim_order)
 
     tosa_graph.addConst(
-        buffer_values.shape, inputs[0].dtype, buffer_values, name=node.name
+        buffer_values.shape, tosa_arg.dtype, buffer_values, name=node.name
     )
 
 
 def process_inputs_to_lifted_tensor_constants(
     node: torch.fx.Node,
-    tosa_graph: ts.TosaSerializer,
+    tosa_graph: Any,
     edge_program: ExportedProgram,
 ):
-    arg = TosaArg(node)
-    tensor_name = edge_program.graph_signature.inputs_to_lifted_tensor_constants[
-        arg.name
-    ]
-    tensor = edge_program.tensor_constants[tensor_name]
-    tensor_data = tensor.detach().numpy()
+    try:
+        tosa_arg = TosaArg(node)
+    except ValueError as e:
+        raise ValueError(
+            f"Failed processing lifted tensor constant placeholder: {node.name}. "
+            "Is the original torch function supported?"
+        ) from e
+    tensor = get_lifted_tensor_constant(edge_program, node)
+    tensor_data = tensor.detach().numpy()  # type: ignore[union-attr]
 
-    tosa_graph.addConst(tensor_data.shape, arg.dtype, tensor_data, name=arg.name)
+    tosa_graph.addConst(
+        tensor_data.shape, tosa_arg.dtype, tensor_data, name=tosa_arg.name
+    )
 
 
 def process_placeholder(
     node: torch.fx.Node,
-    tosa_graph: ts.TosaSerializer,
+    tosa_graph: Any,
     edge_program: ExportedProgram,
     tosa_spec: TosaSpecification,
 ):
@@ -206,11 +193,11 @@ def process_placeholder(
 
     if node.name in edge_program.graph_signature.user_inputs:
         process_inputs(node, tosa_graph, tosa_spec)
-    elif node.name in edge_program.graph_signature.inputs_to_parameters:
+    elif is_param(edge_program, node):
         process_inputs_to_parameters(node, tosa_graph, edge_program, tosa_spec)
-    elif node.name in edge_program.graph_signature.inputs_to_buffers:
+    elif is_buffer(edge_program, node):
         process_inputs_to_buffers(node, tosa_graph, edge_program)
-    elif node.name in edge_program.graph_signature.inputs_to_lifted_tensor_constants:
+    elif is_lifted_tensor_constant(edge_program, node):
         process_inputs_to_lifted_tensor_constants(node, tosa_graph, edge_program)
     elif node.name in edge_program.graph_signature.inputs_to_lifted_custom_objs:
         raise NotImplementedError(
@@ -222,7 +209,7 @@ def process_placeholder(
 
 def process_output(
     node: torch.fx.Node,
-    tosa_graph: ts.TosaSerializer,
+    tosa_graph: Any,
 ):
     for output in cast(tuple[torch.fx.Node, ...], node.args[0]):
         tosa_graph.addOutputTensor(

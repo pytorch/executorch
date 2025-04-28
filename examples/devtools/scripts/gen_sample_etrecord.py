@@ -31,10 +31,7 @@ DEFAULT_OUTPUT_PATH = "/tmp/etrecord.bin"
 
 def gen_etrecord(model: torch.nn.Module, inputs: Any, output_path=None):
     f = model
-    aten_dialect: ExportedProgram = export(
-        f,
-        inputs,
-    )
+    aten_dialect: ExportedProgram = export(f, inputs, strict=True)
     edge_program: EdgeProgramManager = to_edge(
         aten_dialect, compile_config=EdgeCompileConfig(_check_ir_validity=True)
     )

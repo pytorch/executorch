@@ -60,7 +60,6 @@ def _core_aten_to_edge(
     if not edge_compile_config:
         edge_compile_config = exir.EdgeCompileConfig(
             _check_ir_validity=False,  # quant ops currently break ir verification
-            _skip_dim_order=True,  # TODO(T182928844): dim order ops can not delegate to backend
         )
     edge_manager: EdgeProgramManager = to_edge(
         core_aten_exir_ep,
@@ -109,7 +108,7 @@ def export_to_exec_prog(
 ) -> ExecutorchProgramManager:
     m = model.eval()
     # pre-autograd export. eventually this will become torch.export
-    m = export_for_training(m, example_inputs).module()
+    m = export_for_training(m, example_inputs, strict=True).module()
 
     core_aten_ep = _to_core_aten(
         m,
@@ -136,9 +135,12 @@ def save_pte_program(
         filename = os.path.join(output_dir, f"{model_name}.pte")
 
     try:
+        # Write program to file.
         with open(filename, "wb") as file:
             prog.write_to_file(file)
             logging.info(f"Saved exported program to {filename}")
+        # Write data to file/s.
+        prog.write_tensor_data_to_file(outdir=output_dir)
     except Exception as e:
         logging.error(f"Error while saving to {filename}: {e}")
 

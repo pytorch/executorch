@@ -7,11 +7,12 @@
  */
 
 #pragma once
+#include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/core/memory_allocator.h>
+#include <executorch/runtime/core/named_data_map.h>
 
 namespace executorch {
-namespace runtime {
-
+namespace ET_RUNTIME_NAMESPACE {
 /**
  * BackendInitContext will be used to inject runtime info for to initialize
  * delegate.
@@ -20,8 +21,12 @@ class BackendInitContext final {
  public:
   explicit BackendInitContext(
       MemoryAllocator* runtime_allocator,
-      const char* method_name = nullptr)
-      : runtime_allocator_(runtime_allocator), method_name_(method_name) {}
+      EventTracer* event_tracer = nullptr,
+      const char* method_name = nullptr,
+      const NamedDataMap* named_data_map = nullptr)
+      : runtime_allocator_(runtime_allocator),
+        method_name_(method_name),
+        named_data_map_(named_data_map) {}
 
   /** Get the runtime allocator passed from Method. It's the same runtime
    * executor used by the standard executor runtime and the life span is the
@@ -29,6 +34,15 @@ class BackendInitContext final {
    */
   MemoryAllocator* get_runtime_allocator() {
     return runtime_allocator_;
+  }
+
+  /**
+   * Returns a pointer (null if not installed) to an instance of EventTracer to
+   * do profiling/debugging logging inside the delegate backend. Users will need
+   * access to this pointer to use any of the event tracer APIs.
+   */
+  EventTracer* event_tracer() {
+    return event_tracer_;
   }
 
   /** Get the loaded method name from ExecuTorch runtime. Usually it's
@@ -42,18 +56,27 @@ class BackendInitContext final {
     return method_name_;
   }
 
+  /** Get the named data map from ExecuTorch runtime.
+   * This provides a way for backends to retrieve data blobs by key.
+   */
+  const NamedDataMap* get_named_data_map() const {
+    return named_data_map_;
+  }
+
  private:
   MemoryAllocator* runtime_allocator_ = nullptr;
+  EventTracer* event_tracer_ = nullptr;
   const char* method_name_ = nullptr;
+  const NamedDataMap* named_data_map_ = nullptr;
 };
 
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
 
 namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::BackendInitContext;
+using ::executorch::ET_RUNTIME_NAMESPACE::BackendInitContext;
 } // namespace executor
 } // namespace torch

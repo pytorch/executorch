@@ -69,7 +69,7 @@ class TestETRecord(unittest.TestCase):
 
     def get_test_model_with_manager(self):
         f = models.BasicSinMax()
-        aten_dialect = export(f, f.get_random_inputs())
+        aten_dialect = export(f, f.get_random_inputs(), strict=True)
         edge_program: EdgeProgramManager = to_edge(
             aten_dialect, compile_config=EdgeCompileConfig(_check_ir_validity=False)
         )

@@ -15,7 +15,7 @@ namespace executor {
 namespace native {
 
 Tensor& trunc_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
-  return internal::unary_ufunc_realh(std::trunc, ctx, in, out);
+  return internal::unary_ufunc_realhbf16(std::trunc, ctx, in, out);
 }
 
 } // namespace native

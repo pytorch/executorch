@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,7 +14,6 @@
 import re
 from typing import List
 
-from executorch.exir.backend.compile_spec_schema import CompileSpec
 from packaging.version import Version
 
 
@@ -54,27 +53,12 @@ class TosaSpecification:
         self.version = version
 
     @staticmethod
-    def create_from_compilespecs(
-        compile_specs: List[CompileSpec],
-    ) -> "TosaSpecification":
-        """
-        Search the CompileSpec list for 'tosa_version' and instantiate a
-        class from the found value or return None on failure.
-        """
-        for spec in compile_specs:
-            if spec.key == "tosa_version":
-                return TosaSpecification.create_from_string(spec.value.decode())
-        raise ValueError(
-            "No TOSA version key found in any of the supplied CompileSpecs"
-        )
-
-    @staticmethod
     def create_from_string(repr: str) -> "TosaSpecification":
         """
         Creates a TOSA specification class from a string representation:
-        TOSA-0.80.0+MI
-        TOSA-0.80.0+BI+8k
-        TOSA-0.80.0+BI+u55   # Ethos-U55 extension to handle TOSA subset
+        TOSA-0.80+MI
+        TOSA-0.80+BI+8k
+        TOSA-0.80+BI+u55   # Ethos-U55 extension to handle TOSA subset
         TOSA-0.90.0+MI
         TOSA-1.00.0+INT+FP+int4+cf
         """
@@ -128,10 +112,10 @@ class Tosa_0_80(TosaSpecification):
         if len(extras) > 0:
             raise ValueError(f"Unhandled extras found: {extras}")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         extensions = ""
         if self.level_8k:
-            extensions += "+8K"
+            extensions += "+8k"
         if self.is_U55_subset:
             extensions += "+u55"
         return f"TOSA-{str(self.version)}+{self.profile}{extensions}"
@@ -158,7 +142,7 @@ class Tosa_1_00(TosaSpecification):
 
     available_profiles = ["INT", "FP"]
     valid_extensions = {
-        "INT": ["int16", "int4", "var", "cf"],
+        "INT": ["int16", "int4", "var", "cf", "u55"],
         "FP": ["bf16", "fp8e4m3", "fp8e5m2", "fft", "var", "cf"],
     }
 
@@ -207,7 +191,10 @@ class Tosa_1_00(TosaSpecification):
         return "".join(["+" + e for e in self.extensions])
 
     def __repr__(self):
-        return f"TOSA-{self.version}{self._get_profiles_string()}{self._get_profiles_string()}"
+        extensions = self._get_extensions_string()
+        if self.level_8k:
+            extensions += "+8k"
+        return f"TOSA-{self.version}{self._get_profiles_string()}{extensions}"
 
     def __hash__(self) -> int:
         return hash(str(self.version) + self._get_profiles_string())

@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <executorch/kernels/portable/cpu/util/activation_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
@@ -17,8 +18,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
 
 namespace {
 
@@ -37,7 +38,7 @@ float exp_overload(float f) {
 template <typename CTYPE_OUT>
 void sigmoid_tensor(Tensor& out) {
   CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
-  for (size_t i = 0; i < out.numel(); i++) {
+  for (const auto i : c10::irange(out.numel())) {
     out_data[i] = 1.0 / (1.0 + exp_overload(-out_data[i]));
   }
 }
@@ -57,13 +58,13 @@ void mul_tensors(const Tensor& in, int64_t dim, Tensor& out) {
   const CTYPE_IN* input_data_base = in.const_data_ptr<CTYPE_IN>();
   CTYPE_OUT* output_data_base = out.mutable_data_ptr<CTYPE_OUT>();
 
-  for (size_t i = 0; i < leading_dims; i++) {
+  for (const auto i : c10::irange(leading_dims)) {
     const CTYPE_IN* input_data =
         input_data_base + i * dim_length_in * trailing_dims;
     CTYPE_OUT* output_data =
         output_data_base + i * dim_length_out * trailing_dims;
-    for (size_t j = 0; j < num_values; j++) {
-      for (size_t k = 0; k < trailing_dims; ++k) {
+    for ([[maybe_unused]] const auto j : c10::irange(num_values)) {
+      for (const auto k : c10::irange(trailing_dims)) {
         output_data[k] = static_cast<CTYPE_OUT>(input_data[k]) * output_data[k];
       }
       input_data += trailing_dims;
@@ -94,13 +95,13 @@ void slice_tensor(
   const CTYPE_IN* input_data_base = in.const_data_ptr<CTYPE_IN>();
   CTYPE_OUT* output_data_base = out.mutable_data_ptr<CTYPE_OUT>();
 
-  for (size_t i = 0; i < leading_dims; i++) {
+  for (const auto i : c10::irange(leading_dims)) {
     const CTYPE_IN* input_data = input_data_base +
         (i * dim_length_in + non_negative_start) * trailing_dims;
     CTYPE_OUT* output_data =
         output_data_base + i * dim_length_out * trailing_dims;
-    for (size_t j = 0; j < num_values; j++) {
-      for (size_t k = 0; k < trailing_dims; ++k) {
+    for ([[maybe_unused]] const auto j : c10::irange(num_values)) {
+      for (const auto k : c10::irange(trailing_dims)) {
         output_data[k] = static_cast<CTYPE_OUT>(input_data[k]);
       }
       input_data += trailing_dims;
@@ -155,12 +156,10 @@ Tensor& glu_out(
   const size_t non_negative_dim = dim < 0 ? dim + self.dim() : dim;
   const auto in_dtype = self.scalar_type();
 
-  ET_SWITCH_FLOAT_TYPES(in_dtype, ctx, "glu", CTYPE_IN, [&]() {
-    if (out.scalar_type() == ScalarType::Float) {
-      glu_out_tensor<CTYPE_IN, float>(self, non_negative_dim, out);
-    } else {
-      glu_out_tensor<CTYPE_IN, double>(self, non_negative_dim, out);
-    }
+  ET_SWITCH_FLOATHBF16_TYPES(in_dtype, ctx, "glu", CTYPE_IN, [&]() {
+    ET_SWITCH_FLOATHBF16_TYPES(out.scalar_type(), ctx, "glu", CTYPE_OUT, [&]() {
+      glu_out_tensor<CTYPE_IN, CTYPE_OUT>(self, non_negative_dim, out);
+    });
   });
 
   return out;

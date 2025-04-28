@@ -9,13 +9,9 @@
 # cmake-format -i CMakeLists.txt
 # ~~~
 
-if(NOT FLATC_EXECUTABLE)
-  set(FLATC_EXECUTABLE flatc)
-endif()
-
 # The include directory that will contain the generated schema headers.
 set(_program_schema__include_dir "${CMAKE_BINARY_DIR}/schema/include")
-
+set(_program_schema__output_dir "${_program_schema__include_dir}/executorch/schema")
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
@@ -26,7 +22,7 @@ function(generate_program_schema _schema_srcs _schema_name)
   foreach(fbs_file ${_schema_srcs})
     string(REGEX REPLACE "[.]fbs$" "_generated.h" generated "${fbs_file}")
     list(APPEND _schema_outputs
-         "${_program_schema__include_dir}/executorch/${generated}"
+         "${_program_schema__output_dir}/${generated}"
     )
   endforeach()
 
@@ -35,9 +31,9 @@ function(generate_program_schema _schema_srcs _schema_name)
     OUTPUT ${_schema_outputs}
     COMMAND
       ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --gen-mutable --scoped-enums -o
-      "${_program_schema__include_dir}/executorch/schema" ${_schema_srcs}
+      "${_program_schema__output_dir}" ${_schema_srcs}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    DEPENDS ${FLATC_EXECUTABLE} ${_schema_srcs}
+    DEPENDS flatc ${_schema_srcs}
     COMMENT "Generating ${_schema_name} headers"
     VERBATIM
   )
@@ -49,7 +45,7 @@ function(generate_program_schema _schema_srcs _schema_name)
   # and some users need an alignment larger than the default, which is typically
   # 32.
   target_compile_definitions(
-    ${_schema_name} INTERFACE FLATBUFFERS_MAX_ALIGNMENT=1024
+    ${_schema_name} INTERFACE FLATBUFFERS_MAX_ALIGNMENT=${FLATBUFFERS_MAX_ALIGNMENT}
   )
 
   target_include_directories(

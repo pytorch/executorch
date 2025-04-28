@@ -8,6 +8,8 @@ import torch
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx.experimental.proxy_tensor import make_fx
 
+from .utils import copy_nn_module_stack
+
 
 class DecomposeEinsum(ExportPass):
     """
@@ -28,7 +30,7 @@ class DecomposeEinsum(ExportPass):
 
                 with graph.inserting_before(node):
                     # remap is used to map original node values to new node values,
-                    # which ensures that reference to nodes are correclty updated in the new graph
+                    # which ensures that reference to nodes are correctly updated in the new graph
                     remap = {}
                     # Different from other nodes, einsum args[0] is the einsum equation,
                     # while input nodes are stored in args[1]
@@ -36,6 +38,7 @@ class DecomposeEinsum(ExportPass):
                         remap[f"arg1_{i+1}"] = arg
 
                     for decomposed_node in decomposed_module.graph.nodes:
+                        copy_nn_module_stack(node, decomposed_node)
                         # This is the arg[0] equation string, which is not required anymore after decomposition
                         if "arg0" in decomposed_node.name:
                             continue

@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <c10/util/irange.h>
 
 #include <executorch/kernels/portable/cpu/util/normalization_ops_util.h>
 #include <executorch/kernels/portable/cpu/vec_ops.h>
@@ -16,7 +17,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 namespace {
 
@@ -51,7 +52,7 @@ void group_norm(
   CTYPE* rstd_data = rstd.mutable_data_ptr<CTYPE>();
 
   if (inner_size == 0) {
-    for (int i = 0; i < leading; ++i) {
+    for (const auto i : c10::irange(leading)) {
       mean_data[i] = static_cast<CTYPE>(0);
       rstd_data[i] = static_cast<CTYPE>(NAN);
     }
@@ -72,7 +73,7 @@ void group_norm(
     bias_data = nullptr;
   }
 
-  for (int i = 0; i < leading; ++i) {
+  for (const auto i : c10::irange(leading)) {
     const CTYPE* x = input_data + i * inner_size;
 
     // compute E[X] and Var[x] = E[x^2] - E[x]^2
@@ -86,12 +87,12 @@ void group_norm(
     // Calculate the elements of output
     if (weight_data == nullptr && bias_data == nullptr) {
       CTYPE* y = out_data + i * inner_size;
-      for (size_t j = 0; j < inner_size; j++) {
+      for (const auto j : c10::irange(inner_size)) {
         y[j] = (x[j] - mean_value) * rstd_value;
       }
     } else {
       const size_t g = i % G;
-      for (size_t j = 0; j < D; j++) {
+      for (const auto j : c10::irange(D)) {
         const size_t ch = g * D + j;
         const CTYPE scale =
             rstd_value * (weight_data == nullptr ? 1.0 : weight_data[ch]);
@@ -99,7 +100,7 @@ void group_norm(
             -scale * mean_value + (bias_data == nullptr ? 0.0 : bias_data[ch]);
         x = input_data + (i * D + j) * HxW;
         CTYPE* y = out_data + (i * D + j) * HxW;
-        for (size_t k = 0; k < HxW; k++) {
+        for (const auto k : c10::irange(HxW)) {
           y[k] = scale * x[k] + beta;
         }
       }
@@ -115,8 +116,8 @@ void group_norm(
 std::tuple<Tensor&, Tensor&, Tensor&> native_group_norm_out(
     KernelRuntimeContext& ctx,
     const Tensor& input,
-    const exec_aten::optional<Tensor>& weight,
-    const exec_aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& weight,
+    const executorch::aten::optional<Tensor>& bias,
     int64_t N,
     int64_t C,
     int64_t HxW,

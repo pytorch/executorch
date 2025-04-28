@@ -7,7 +7,7 @@ import itertools
 import unittest
 
 import torch
-from executorch.backends.arm.quantizer.arm_quantizer_utils import is_annotated
+from executorch.backends.arm.quantizer import is_annotated
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
@@ -32,7 +32,7 @@ class TestGenericAnnotator(unittest.TestCase):
         tester = ArmTester(
             model,
             model.example_inputs(),
-            common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+            common.get_tosa_compile_spec("TOSA-0.80+BI"),
         )
         quant_model = tester.quantize().get_artifact()
         partitions = get_source_partitions(quant_model.graph, [model.op])
@@ -85,4 +85,11 @@ class TestGenericAnnotator(unittest.TestCase):
     def test_flip(self):
         self.check_annotation(
             SingleOpModel(torch.flip, (torch.randn(2, 4),), dims=(0, 1)),
+        )
+
+    def test_concat(self):
+        self.check_annotation(
+            SingleOpModel(
+                torch.concatenate, ((torch.randn(2, 3), torch.randn(2, 3)),), dim=0
+            ),
         )

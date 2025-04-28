@@ -11,8 +11,8 @@ if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -36,6 +36,21 @@ set(_aten_ops__srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/op_native_layer_norm.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/op_quantize.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/op_dequantize.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_sub.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_div.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_mean.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_slice_copy.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_permute_copy.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_transpose_copy.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_exp.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_sigmoid.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_sqrt.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_rsqrt.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_tanh.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_lt.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_where.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_clamp.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_hardtanh.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_bmm.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_clone.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_div.cpp"
@@ -51,13 +66,15 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_where.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/dtype_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/normalization_ops_util.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/pattern/unary_ufunc_realhbbf16_to_floathbf16.cpp"
 )
 add_library(aten_ops_cadence ${_aten_ops__srcs})
 target_link_libraries(aten_ops_cadence PUBLIC executorch)
 target_link_libraries(aten_ops_cadence PRIVATE xa_nnlib)
 
 # Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+set(_common_include_directories ${EXECUTORCH_ROOT}/..
+${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)
 
 target_include_directories(
   aten_ops_cadence PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}

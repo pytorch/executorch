@@ -10,6 +10,7 @@
 
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/profiler.h>
@@ -18,7 +19,9 @@
 #include <ATen/ATen.h> // @donotremove @manual=//caffe2/aten:ATen-core
 
 namespace executorch {
+// This file is only used in ATen mode, so we use the runtime_aten namespace.
 namespace runtime {
+namespace aten {
 namespace deserialization {
 
 namespace {
@@ -31,7 +34,9 @@ void deleteNothing(void*) {}
 Result<at::Tensor> parseTensor(
     const Program* program,
     MemoryManager* memory_manager,
-    const executorch_flatbuffer::Tensor* s_tensor) {
+    const executorch_flatbuffer::Tensor* s_tensor,
+    const NamedDataMap* named_data_map,
+    Span<NamedData> external_constants) {
   EXECUTORCH_SCOPE_PROF("TensorParser::parseTensor");
 
   ET_CHECK_OR_RETURN_ERROR(
@@ -102,7 +107,12 @@ Result<at::Tensor> parseTensor(
   } else {
     // Now that we know how big the tensor is, find and assign its memory.
     Result<void*> data_ptr = getTensorDataPtr(
-        s_tensor, program, tensor.nbytes(), memory_manager->planned_memory());
+        s_tensor,
+        program,
+        tensor.nbytes(),
+        memory_manager->planned_memory(),
+        named_data_map,
+        external_constants);
     if (!data_ptr.ok()) {
       ET_LOG(
           Error,
@@ -118,5 +128,6 @@ Result<at::Tensor> parseTensor(
 }
 
 } // namespace deserialization
+} // namespace aten
 } // namespace runtime
 } // namespace executorch

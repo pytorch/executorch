@@ -8,6 +8,11 @@ import copy
 import unittest
 
 import torch
+
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+    XNNPACKQuantizer,
+)
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 from executorch.exir.passes.quantize_io_pass import (
     get_config_method_name,
@@ -16,11 +21,6 @@ from executorch.exir.passes.quantize_io_pass import (
 )
 from executorch.exir.tensor import get_scalar_type
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-    XNNPACKQuantizer,
-)
 from torch.testing import FileCheck
 
 op_str = {
@@ -39,12 +39,14 @@ class TestQuantIOPass(unittest.TestCase):
         operator_config = get_symmetric_quantization_config()
         quantizer.set_global(operator_config)
         m = torch.export.export_for_training(
-            mod, copy.deepcopy(example_inputs)
+            mod, copy.deepcopy(example_inputs), strict=True
         ).module()
         m = prepare_pt2e(m, quantizer)
         _ = m(*example_inputs)
         m = convert_pt2e(m)
-        exported_program = torch.export.export_for_training(m, example_inputs)
+        exported_program = torch.export.export_for_training(
+            m, example_inputs, strict=True
+        )
         return exported_program
 
     def _check_count(self, op, count, epm):

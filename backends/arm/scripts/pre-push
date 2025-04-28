@@ -1,0 +1,219 @@
+#!/bin/bash
+# Copyright 2025 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+RESET='\e[0m'
+RED='\e[31m'
+GREEN='\e[32m'
+YELLOW='\e[33m'
+BLUE='\e[34m'
+
+INFO="${BLUE}[INFO]${RESET}"
+WARNING="${YELLOW}[WARNING]${RESET}"
+ERROR="${RED}[ERROR]${RESET}"
+SUCCESS="${GREEN}[SUCCESS]${RESET}"
+
+# This list of imperative verbs was compiled from the entire list of Executorch
+# commits. It should be fairly exhaustive, but add more verbs if you find one
+# that's missing.
+VERBS="Add|Fix|Update|Refactor|Improve|Remove|Change|Implement|Create|Modify|"\
+"Enable|Integrate|Make|Support|Deprecate|Extend|Enhance|Convert|Rewrite|Unify|"\
+"Optimize|Expand|Reorganize|Adjust|Streamline|Clarify|Introduce|Document|"\
+"Polish|Standardize|Revise|Simplify|Restore|Resolve|Replace|Suppress|Migrate|"\
+"Generate|Delete|Exclude|Register|Include|Upgrade|Validate|Verify|Refine|"\
+"Reimplement|Patch|Sync|Revert|Fixup|Enhance|Append|Annotate|Disable|Emit|"\
+"Handle|Ignore|Interpret|Instantiate|Invoke|Limit|Load|Modify|Permit|Print|"\
+"Profile|Recalculate|Reconstruct|Redefine|Redesign|Reevaluate|Relocate|Remap|"\
+"Render|Reposition|Request|Revert|Sanitize|Specify|Strengthen|Stub|Substitute|"\
+"Tag|Tweak|Unify|Unlock|Unset|Use|Validate|Verify"
+
+# Remote branch
+REMOTE=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null)
+
+if [ -z "$REMOTE" ]; then
+    echo -e "${WARNING} Could not find upstream branch to compare to."
+    echo "Please specify the number of commits you are pushing."
+    echo -n "Enter number of commits to check (default 1): " > /dev/tty
+    read NUM_COMMITS < /dev/tty
+    NUM_COMMITS=${NUM_COMMITS:-1} # Default to 1 if empty
+    RANGE=$(git rev-list HEAD -n "$NUM_COMMITS")
+    COMMITS=${RANGE}
+elif [ "$(git rev-parse --abbrev-ref HEAD)" == "HEAD" ]; then
+    echo -e "${WARNING} You're in a detached HEAD state."
+    echo "Please specify the number of commits you are pushing."
+    echo -n "Enter number of commits to check (default 1): " > /dev/tty
+    read NUM_COMMITS < /dev/tty
+    NUM_COMMITS=${NUM_COMMITS:-1} # Default to 1 if empty
+    RANGE=$(git rev-list HEAD -n "$NUM_COMMITS")
+    COMMITS=${RANGE}
+else
+    # Determine commits to check
+    RANGE="$REMOTE..HEAD"
+    COMMITS=$(git rev-list "$RANGE")
+fi
+
+if [ -z "$COMMITS" ]; then
+    echo -e "${INFO} No new commits to check."
+    exit 0
+fi
+
+for COMMIT in ${COMMITS}; do
+    # If commit header contains WIP, everything is ok
+    git rev-list --format=%s --max-count=1 ${COMMIT} | grep -q WIP && \
+         continue
+
+    echo -e "${INFO} Checking commit ${COMMIT}"
+
+    # lintrunner on latest patches.
+    echo -e "${INFO} Lintrunner"
+    lintrunner --revision ${COMMIT}
+    if [[ $? != 0 ]]; then
+        echo -e "${ERROR} Failed linting"
+        FAILED=1
+    else
+        echo -e "${SUCCESS} Lintrunner OK"
+    fi
+
+    # Check license headers
+    # We do a simple check of if all committed headers contain
+    # "$current_year Arm". This does not guarantee OK in ci but should be ok
+    # most of the time.
+    echo -e "${INFO} License check"
+
+    current_year=$(date +%Y)
+    failed_license_check=false
+    commit_files=$(git diff-tree --no-commit-id --name-only \
+        --diff-filter=ACMR ${COMMIT} -r)
+    for commited_file in $commit_files; do
+        head $commited_file | grep -q "$current_year Arm"
+        if [[ $? != 0 ]]; then
+            echo -e "${ERROR} Header in $commited_file did not contain"\
+            "'$current_year Arm'"
+            failed_license_check=true
+        else
+            echo -e "${SUCCESS} $commited_file passed license check"
+        fi
+    done
+
+    if [[ $failed_license_check == true ]]; then
+        FAILED=1
+    else
+        echo -e "${SUCCESS} All files passed license check"
+    fi
+
+    # Check commit message
+    echo -e "${INFO} Checking commit message"
+    COMMIT_MSG=$(git log -1 --format=%B "$COMMIT")
+
+    SUBJECT=$(echo "$COMMIT_MSG" | head -n1)
+    BODY=$(echo "$COMMIT_MSG" | tail -n +2)
+
+    # Check subject length (72 chars)
+    SUBJECT_MAX_LEN=72
+    if [ ${#SUBJECT} -gt ${SUBJECT_MAX_LEN} ]; then
+        echo -e "${ERROR} Subject exceeds ${SUBJECT_MAX_LEN} characters:"\
+            "'${SUBJECT}'" >&2
+
+        FAILED=1
+    else
+        echo -e "${SUCCESS} Commit message subject OK"
+    fi
+
+    # Check body line length (72 chars)
+    BODY_MAX_LEN=72
+    line_number=2 # Subject + 1 empty line
+    failed_body_check=false
+    while IFS= read -r line; do
+        if [ ${#line} -gt ${BODY_MAX_LEN} ]; then
+            echo -e "${ERROR} Line ${line_number} in body exceeds"\
+                "${BODY_MAX_LEN} characters: '$line'" >&2
+
+            failed_body_check=true
+        fi
+
+        ((line_number++))
+    done <<< "$BODY"
+
+    if [[ $failed_body_check == true ]]; then
+        FAILED=1
+    else
+        echo -e "${SUCCESS} Commit message body OK"
+    fi
+
+    # Check for Signed-off-by
+    if ! echo "$COMMIT_MSG" | grep -qE "^Signed-off-by: "; then
+        echo -e "${ERROR} Commit message must contain a 'Signed-off-by'"\
+            "footer." >&2
+
+        FAILED=1
+    fi
+
+    # Check subject format, should start with 'Arm backend: ' and be
+    # imperative mood.
+    if [[ ! "$SUBJECT" =~ ^"Arm backend":\ (${VERBS}) ]]; then
+        echo -e "${WARNING} Subject should start with 'Arm backend: '"\
+            "followed by an imperative verb." >&2
+        echo -n "There are warnings in your commit message. Do you want to"\
+            "ignore the warning (y/N): " > /dev/tty
+
+        read USER_INPUT < /dev/tty
+
+        # Check user input for warnings
+        if [[ ! "$USER_INPUT" =~ ^[Yy]$ ]]; then
+            FAILED=1
+        fi
+    fi
+
+    # Op test checks
+    op_test_files=$(echo $commit_files | grep -oE 'backends/arm/test/ops/\S+')
+    if [ "$op_test_files" ]; then
+
+        # TODO: These checks can be removed when all unittests are refactored.
+        if grep -icq "SkipIfNoCorstone" $op_test_files; then
+            echo -e "${ERROR} @SkipIfNoCorstone300/320 is deprecated;"\
+                "please use XfailIfNoCorstone300/320 instead." >&2
+            FAILED=1
+        fi
+
+        if grep -icq "conftest.expectedFailureOnFVP" $op_test_files; then
+            echo -e "${ERROR} @conftest.expectedFailureOnFVP is deprecated;"\
+                "please use XfailIfCorstone300/320 instead." >&2
+            FAILED=1
+        fi
+
+        if grep -icq "unittest.TestCase" $op_test_files; then
+            echo -e "${ERROR} Use of the Unittest test framework is deprecated;"\
+            "please use Pytest instead." >&2
+            FAILED=1
+        fi
+
+        if grep -icq "on_fvp(" $op_test_files; then
+            echo -e "${ERROR} All unittests should run on FVP if relevant,"\
+            "on_fvp suffix can be excluded." >&2
+            FAILED=1
+        fi
+
+        # Check that the tested op and target is parsed correctly from the test name
+        test_names=$(grep -h "def test_" $op_test_files | cut -d"(" -f1 | cut -d" " -f2)
+        python ./backends/arm/scripts/parse_test_names.py $test_names
+        if [ $? -ne 0 ]; then
+            echo -e "${ERROR} Failed op test name check." >&2
+            FAILED=1
+        fi
+    fi
+
+    echo "" # Newline to visually separate commit processing
+done
+
+if [[ $FAILED ]]; then
+    echo -e "${INFO} Fix your commit message errors with"\
+        "'git commit --amend' or 'git commit --fixup=<SHA>'"
+
+    exit 1
+else
+    echo -e "${SUCCESS} All checks passed"
+fi
+
+exit 0

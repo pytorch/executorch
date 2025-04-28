@@ -17,13 +17,10 @@ namespace example {
 class ET_EXPERIMENTAL LlavaTextDecoderRunner
     : public executorch::extension::llm::TextDecoderRunner {
  public:
-  LlavaTextDecoderRunner(
-      executorch::extension::Module* module,
-      int32_t vocab_size,
-      float temperature)
-      : TextDecoderRunner(module, true, vocab_size, temperature){};
+  explicit LlavaTextDecoderRunner(executorch::extension::Module* module)
+      : TextDecoderRunner(module, true) {}
 
-  inline executorch::runtime::Result<exec_aten::Tensor> step(
+  inline executorch::runtime::Result<executorch::aten::Tensor> step(
       executorch::extension::TensorPtr& tokens,
       executorch::extension::TensorPtr& start_pos) override {
     // run token embedding

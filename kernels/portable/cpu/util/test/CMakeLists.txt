@@ -14,16 +14,14 @@
 #
 
 cmake_minimum_required(VERSION 3.19)
-project(kernels_portable_cpu_util_test)
-
-# Use C++17 for test.
-set(CMAKE_CXX_STANDARD 17)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../../..)
 
-include(${EXECUTORCH_ROOT}/build/Test.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
-set(_test_srcs broadcast_test.cpp reduce_test.cpp)
+set(_test_srcs broadcast_indexes_range_test.cpp broadcast_test.cpp
+               reduce_test.cpp
+)
 
 et_cxx_test(
   kernels_portable_cpu_util_test SOURCES ${_test_srcs} EXTRA_LIBS

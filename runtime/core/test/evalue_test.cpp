@@ -16,7 +16,7 @@
 
 using namespace ::testing;
 
-using exec_aten::ScalarType;
+using executorch::aten::ScalarType;
 using executorch::runtime::BoxedEvalueList;
 using executorch::runtime::EValue;
 using executorch::runtime::Tag;
@@ -36,14 +36,15 @@ class EValueTest : public ::testing::Test {
 // behavior of smart pointers.
 class TensorWrapper {
  public:
-  explicit TensorWrapper(exec_aten::Tensor tensor)
-      : tensor_(std::make_unique<exec_aten::Tensor>(std::move(tensor))) {}
+  explicit TensorWrapper(executorch::aten::Tensor tensor)
+      : tensor_(std::make_unique<executorch::aten::Tensor>(std::move(tensor))) {
+  }
 
-  exec_aten::Tensor& operator*() {
+  executorch::aten::Tensor& operator*() {
     return *tensor_;
   }
 
-  const exec_aten::Tensor& operator*() const {
+  const executorch::aten::Tensor& operator*() const {
     return *tensor_;
   }
 
@@ -60,7 +61,7 @@ class TensorWrapper {
   }
 
  private:
-  std::unique_ptr<exec_aten::Tensor> tensor_;
+  std::unique_ptr<executorch::aten::Tensor> tensor_;
 };
 
 TEST_F(EValueTest, CopyTrivialType) {
@@ -101,7 +102,7 @@ TEST_F(EValueTest, ToOptionalInt) {
   EXPECT_TRUE(e.isInt());
   EXPECT_FALSE(e.isNone());
 
-  exec_aten::optional<int64_t> o = e.toOptional<int64_t>();
+  executorch::aten::optional<int64_t> o = e.toOptional<int64_t>();
   EXPECT_TRUE(o.has_value());
   EXPECT_EQ(o.value(), 5);
 }
@@ -110,28 +111,29 @@ TEST_F(EValueTest, NoneToOptionalInt) {
   EValue e;
   EXPECT_TRUE(e.isNone());
 
-  exec_aten::optional<int64_t> o = e.toOptional<int64_t>();
+  executorch::aten::optional<int64_t> o = e.toOptional<int64_t>();
   EXPECT_FALSE(o.has_value());
 }
 
 TEST_F(EValueTest, ToOptionalScalar) {
-  exec_aten::Scalar s((double)3.141);
+  executorch::aten::Scalar s((double)3.141);
   EValue e(s);
   EXPECT_TRUE(e.isScalar());
   EXPECT_FALSE(e.isNone());
 
-  exec_aten::optional<exec_aten::Scalar> o = e.toOptional<exec_aten::Scalar>();
+  executorch::aten::optional<executorch::aten::Scalar> o =
+      e.toOptional<executorch::aten::Scalar>();
   EXPECT_TRUE(o.has_value());
   EXPECT_TRUE(o.value().isFloatingPoint());
   EXPECT_EQ(o.value().to<double>(), 3.141);
 }
 
 TEST_F(EValueTest, ScalarToType) {
-  exec_aten::Scalar s_d((double)3.141);
+  executorch::aten::Scalar s_d((double)3.141);
   EXPECT_EQ(s_d.to<double>(), 3.141);
-  exec_aten::Scalar s_i((int64_t)3);
+  executorch::aten::Scalar s_i((int64_t)3);
   EXPECT_EQ(s_i.to<int64_t>(), 3);
-  exec_aten::Scalar s_b(true);
+  executorch::aten::Scalar s_b(true);
   EXPECT_EQ(s_b.to<bool>(), true);
 }
 
@@ -139,7 +141,8 @@ TEST_F(EValueTest, NoneToOptionalScalar) {
   EValue e;
   EXPECT_TRUE(e.isNone());
 
-  exec_aten::optional<exec_aten::Scalar> o = e.toOptional<exec_aten::Scalar>();
+  executorch::aten::optional<executorch::aten::Scalar> o =
+      e.toOptional<executorch::aten::Scalar>();
   EXPECT_FALSE(o.has_value());
 }
 
@@ -147,18 +150,19 @@ TEST_F(EValueTest, NoneToOptionalTensor) {
   EValue e;
   EXPECT_TRUE(e.isNone());
 
-  exec_aten::optional<exec_aten::Tensor> o = e.toOptional<exec_aten::Tensor>();
+  executorch::aten::optional<executorch::aten::Tensor> o =
+      e.toOptional<executorch::aten::Tensor>();
   EXPECT_FALSE(o.has_value());
 }
 
 TEST_F(EValueTest, ToScalarType) {
   EValue e((int64_t)4);
   auto o = e.toScalarType();
-  EXPECT_EQ(o, exec_aten::ScalarType::Long);
+  EXPECT_EQ(o, executorch::aten::ScalarType::Long);
   EValue f((int64_t)4);
-  auto o2 = e.toOptional<exec_aten::ScalarType>();
+  auto o2 = e.toOptional<executorch::aten::ScalarType>();
   EXPECT_TRUE(o2.has_value());
-  EXPECT_EQ(o2.value(), exec_aten::ScalarType::Long);
+  EXPECT_EQ(o2.value(), executorch::aten::ScalarType::Long);
 }
 
 TEST_F(EValueTest, toString) {
@@ -166,28 +170,29 @@ TEST_F(EValueTest, toString) {
   EXPECT_TRUE(e.isString());
   EXPECT_FALSE(e.isNone());
 
-  exec_aten::string_view x = e.toString();
+  executorch::aten::string_view x = e.toString();
   EXPECT_EQ(x, "foo");
 }
 
 TEST_F(EValueTest, MemoryFormat) {
   const EValue e((int64_t)0);
   EXPECT_TRUE(e.isInt());
-  const exec_aten::MemoryFormat m = e.to<exec_aten::MemoryFormat>();
-  EXPECT_EQ(m, exec_aten::MemoryFormat::Contiguous);
+  const executorch::aten::MemoryFormat m =
+      e.to<executorch::aten::MemoryFormat>();
+  EXPECT_EQ(m, executorch::aten::MemoryFormat::Contiguous);
 }
 
 TEST_F(EValueTest, Layout) {
   const EValue e((int64_t)0);
   EXPECT_TRUE(e.isInt());
-  const exec_aten::Layout l = e.to<exec_aten::Layout>();
-  EXPECT_EQ(l, exec_aten::Layout::Strided);
+  const executorch::aten::Layout l = e.to<executorch::aten::Layout>();
+  EXPECT_EQ(l, executorch::aten::Layout::Strided);
 }
 
 TEST_F(EValueTest, Device) {
   const EValue e((int64_t)0);
   EXPECT_TRUE(e.isInt());
-  const exec_aten::Device d = e.to<exec_aten::Device>();
+  const executorch::aten::Device d = e.to<executorch::aten::Device>();
   EXPECT_TRUE(d.is_cpu());
 }
 
@@ -211,9 +216,9 @@ TEST_F(EValueTest, toOptionalTensorList) {
   // create list, empty evalue ctor gets tag::None
   EValue values[2] = {EValue(), EValue()};
   EValue* values_p[2] = {&values[0], &values[1]};
-  exec_aten::optional<exec_aten::Tensor> storage[2];
+  executorch::aten::optional<executorch::aten::Tensor> storage[2];
   // wrap in array ref
-  BoxedEvalueList<exec_aten::optional<exec_aten::Tensor>> a(
+  BoxedEvalueList<executorch::aten::optional<executorch::aten::Tensor>> a(
       values_p, storage, 2);
 
   // create Evalue
@@ -222,8 +227,9 @@ TEST_F(EValueTest, toOptionalTensorList) {
   EXPECT_TRUE(e.isListOptionalTensor());
 
   // Convert back to list
-  exec_aten::ArrayRef<exec_aten::optional<exec_aten::Tensor>> x =
-      e.toListOptionalTensor();
+  executorch::aten::ArrayRef<
+      executorch::aten::optional<executorch::aten::Tensor>>
+      x = e.toListOptionalTensor();
   EXPECT_EQ(x.size(), 2);
   EXPECT_FALSE(x[0].has_value());
   EXPECT_FALSE(x[1].has_value());
@@ -231,7 +237,7 @@ TEST_F(EValueTest, toOptionalTensorList) {
 
 TEST_F(EValueTest, ConstructFromUniquePtr) {
   TensorFactory<ScalarType::Float> tf;
-  auto tensor_ptr = std::make_unique<exec_aten::Tensor>(tf.ones({2, 3}));
+  auto tensor_ptr = std::make_unique<executorch::aten::Tensor>(tf.ones({2, 3}));
 
   EValue evalue(std::move(tensor_ptr));
 
@@ -239,7 +245,7 @@ TEST_F(EValueTest, ConstructFromUniquePtr) {
   EXPECT_EQ(evalue.toTensor().dim(), 2);
   EXPECT_EQ(evalue.toTensor().numel(), 6);
 
-  EValue evalue2(std::make_unique<exec_aten::Tensor>(tf.ones({4, 5})));
+  EValue evalue2(std::make_unique<executorch::aten::Tensor>(tf.ones({4, 5})));
 
   EXPECT_TRUE(evalue2.isTensor());
   EXPECT_EQ(evalue2.toTensor().dim(), 2);
@@ -248,7 +254,7 @@ TEST_F(EValueTest, ConstructFromUniquePtr) {
 
 TEST_F(EValueTest, ConstructFromSharedPtr) {
   TensorFactory<ScalarType::Float> tf;
-  auto tensor_ptr = std::make_shared<exec_aten::Tensor>(tf.ones({4, 5}));
+  auto tensor_ptr = std::make_shared<executorch::aten::Tensor>(tf.ones({4, 5}));
 
   EValue evalue(tensor_ptr);
 
@@ -269,7 +275,7 @@ TEST_F(EValueTest, ConstructFromTensorWrapper) {
 }
 
 TEST_F(EValueTest, ConstructFromNullPtrAborts) {
-  std::unique_ptr<exec_aten::Tensor> null_ptr;
+  std::unique_ptr<executorch::aten::Tensor> null_ptr;
 
   ET_EXPECT_DEATH({ EValue evalue(null_ptr); }, "");
 }

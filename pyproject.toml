@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-  "cmake",  # For building binary targets in the wheel.
+  "cmake<4.0.0",  # For building binary targets in the wheel. 4.0.0 breaks third-party CMake build so temporarily pin the version.
   "pip>=23",  # For building the pip package.
   "pyyaml",  # Imported by the kernel codegen tools.
   "setuptools>=63",  # For building the pip package contents.
@@ -29,7 +29,7 @@ classifiers = [
     #   3 - Alpha
     #   4 - Beta
     #   5 - Production/Stable
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Education",
     "Intended Audience :: Science/Research",
@@ -55,20 +55,20 @@ dependencies=[
   "flatbuffers",
   "hypothesis",
   "mpmath==1.3.0",
-  "numpy==1.21.3; python_version == '3.10'",
-  "numpy==1.23.2; python_version == '3.11'",
-  "numpy; python_version >= '3.12'",
+  "numpy>=2.0.0; python_version >= '3.10'",
   "packaging",
-  "pandas==2.0.3; python_version == '3.10'",
-  "pandas; python_version >= '3.11'",
+  "pandas>=2.2.2; python_version >= '3.10'",
   "parameterized",
   "pytest",
   "pytest-xdist",
+  "pytest-rerunfailures",
   "pyyaml",
   "ruamel.yaml",
   "sympy",
   "tabulate",
   "typing-extensions",
+  # Keep this version in sync with: ./backends/apple/coreml/scripts/install_requirements.sh
+  "coremltools==8.2; platform_system == 'Darwin'",
 ]
 
 [project.urls]
@@ -83,6 +83,20 @@ Changelog = "https://github.com/pytorch/executorch/releases"
 # path.
 [project.scripts]
 flatc = "executorch.data.bin:flatc"
+
+# TODO(dbort): Could use py_modules to restrict the set of modules we
+# package, and package_data to restrict the set up non-python files we
+# include. See also setuptools/discovery.py for custom finders.
+[tool.setuptools.package-dir]
+# Tell setuptools to follow the symlink: src/executorch/* -> * for all first level
+# modules such as src/executorch/exir -> exir. This helps us to semi-compliant with
+# the "src layout" convention for python packages, which is also discussed in
+# https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/.
+# In the long term we should move all the modules under the src/executorch/ folder.
+#
+# Doing this also allows us to import from executorch.exir directly in
+# editable mode.
+"executorch" = "src/executorch"
 
 [tool.setuptools.package-data]
 # TODO(dbort): Prune /test[s]/ dirs, /third-party/ dirs, yaml files that we

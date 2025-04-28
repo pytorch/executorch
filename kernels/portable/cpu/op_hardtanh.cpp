@@ -17,8 +17,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
 
 Tensor& hardtanh_out(
     KernelRuntimeContext& ctx,
@@ -46,17 +46,17 @@ Tensor& hardtanh_out(
 
   ET_KERNEL_CHECK(ctx, in_type == out_type, InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES(in_type, ctx, "hardtanh.out", CTYPE, [&]() {
+  ET_SWITCH_REALHBF16_TYPES(in_type, ctx, "hardtanh.out", CTYPE, [&]() {
     CTYPE min_casted;
     ET_SWITCH_SCALAR_OBJ_TYPES(min_type, ctx, "hardtanh.out", CTYPE_MIN, [&]() {
-      CTYPE_MIN min_val;
+      CTYPE_MIN min_val = 0;
       utils::extract_scalar(min, &min_val);
       min_casted = static_cast<CTYPE>(min_val);
     });
 
     CTYPE max_casted;
     ET_SWITCH_SCALAR_OBJ_TYPES(max_type, ctx, "hardtanh.out", CTYPE_MAX, [&]() {
-      CTYPE_MAX max_val;
+      CTYPE_MAX max_val = 0;
       utils::extract_scalar(max, &max_val);
       max_casted = static_cast<CTYPE>(max_val);
     });

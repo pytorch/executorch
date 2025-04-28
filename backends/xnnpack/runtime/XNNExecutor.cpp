@@ -30,7 +30,8 @@ using executorch::runtime::kTensorDimensionLimit;
 ET_NODISCARD Error XNNExecutor::initialize(
     xnn_runtime_t runtime,
     std::vector<uint32_t>&& input_ids,
-    std::vector<uint32_t>&& output_ids) {
+    std::vector<uint32_t>&& output_ids,
+    std::vector<std::string>&& packed_data_names) {
   runtime_ = std::unique_ptr<xnn_runtime, decltype(&xnn_delete_runtime)>(
       runtime, xnn_delete_runtime);
 
@@ -51,6 +52,7 @@ ET_NODISCARD Error XNNExecutor::initialize(
   std::sort(output_ids_.begin(), output_ids_.end());
 
   externals_.resize(input_ids_.size() + output_ids_.size());
+  packed_data_names_ = std::move(packed_data_names);
 
   return Error::Ok;
 }
@@ -68,6 +70,11 @@ ET_NODISCARD Error XNNExecutor::initialize(
  * delegate->execute()
  */
 ET_NODISCARD Error XNNExecutor::prepare_args(EValue** args) {
+  ET_CHECK_OR_RETURN_ERROR(
+      runtime_ != nullptr,
+      Internal,
+      "XNNPACK Delegate did not compile correctly");
+
   // Create xnn_externals_value from evalue args
   xnn_status status;
   for (uint32_t i = 0; i < externals_.size(); ++i) {

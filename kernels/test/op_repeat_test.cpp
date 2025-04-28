@@ -15,10 +15,10 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::IntArrayRef;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::IntArrayRef;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpRepeatOutTest : public OperatorTest {
@@ -38,7 +38,7 @@ class OpRepeatOutTest : public OperatorTest {
                     2, 3,
                   });
     std::vector<int64_t> repeats_vec = {3, 3, 3};
-    exec_aten::ArrayRef<int64_t> repeats = {repeats_vec.data(), repeats_vec.size()};
+    executorch::aten::ArrayRef<int64_t> repeats = {repeats_vec.data(), repeats_vec.size()};
     // clang-format on
 
     // Output tensor with the shape of the input tensor x repeated
@@ -102,7 +102,7 @@ TEST_F(OpRepeatOutTest, EmptyInputSupported) {
       /*sizes=*/{3, 0, 2}, /*data=*/{});
 
   std::vector<int64_t> repeats_vec = {3, 4, 5, 6};
-  exec_aten::ArrayRef<int64_t> repeats = {
+  executorch::aten::ArrayRef<int64_t> repeats = {
       repeats_vec.data(), repeats_vec.size()};
 
   Tensor out = tf.ones(/*sizes=*/{3, 12, 0, 12});
@@ -120,7 +120,7 @@ TEST_F(OpRepeatOutTest, ZeroDimInputSupported) {
       /*sizes=*/{}, /*data=*/{5});
 
   std::vector<int64_t> repeats_vec = {3, 4};
-  exec_aten::ArrayRef<int64_t> repeats = {
+  executorch::aten::ArrayRef<int64_t> repeats = {
       repeats_vec.data(), repeats_vec.size()};
 
   Tensor out = tf.ones(/*sizes=*/{3, 4});
@@ -147,7 +147,7 @@ TEST_F(OpRepeatOutTest, ZeroRepeatRegularInputSupported) {
       /*sizes=*/{3, 2}, /*data=*/{0, 1, 2, 3, 4, 5});
 
   std::vector<int64_t> repeats_vec = {3, 0, 6};
-  exec_aten::ArrayRef<int64_t> repeats = {
+  executorch::aten::ArrayRef<int64_t> repeats = {
       repeats_vec.data(), repeats_vec.size()};
 
   Tensor out = tf.ones(/*sizes=*/{3, 0, 12});
@@ -165,7 +165,7 @@ TEST_F(OpRepeatOutTest, ZeroRepeatZeroDimInputSupported) {
       /*sizes=*/{}, /*data=*/{5});
 
   std::vector<int64_t> repeats_vec = {3, 0, 6};
-  exec_aten::ArrayRef<int64_t> repeats = {
+  executorch::aten::ArrayRef<int64_t> repeats = {
       repeats_vec.data(), repeats_vec.size()};
 
   Tensor out = tf.ones(/*sizes=*/{3, 0, 6});
@@ -184,7 +184,7 @@ TEST_F(OpRepeatOutTest, RepeatTooShortDie) {
 
   // The length of repeat vector shall not be shorter than x.dim().
   std::vector<int64_t> repeats_vec = {3};
-  exec_aten::ArrayRef<int64_t> repeats = {
+  executorch::aten::ArrayRef<int64_t> repeats = {
       repeats_vec.data(), repeats_vec.size()};
 
   Tensor out = tf.ones(/*sizes=*/{3, 0, 12});
@@ -200,7 +200,7 @@ TEST_F(OpRepeatOutTest, NegativeRepeatDie) {
 
   // Try to create tensor with negative shape, die.
   std::vector<int64_t> repeats_vec = {3, -1};
-  exec_aten::ArrayRef<int64_t> repeats = {
+  executorch::aten::ArrayRef<int64_t> repeats = {
       repeats_vec.data(), repeats_vec.size()};
 
   Tensor out = tf.ones(/*sizes=*/{3, 1});
@@ -218,7 +218,7 @@ TEST_F(OpRepeatOutTest, WrongOutputShapeDie) {
       /*sizes=*/{3, 2});
 
   std::vector<int64_t> repeats_vec = {3, 5, 6};
-  exec_aten::ArrayRef<int64_t> repeats = {
+  executorch::aten::ArrayRef<int64_t> repeats = {
       repeats_vec.data(), repeats_vec.size()};
 
   // The size of output shall be [3, 15, 12].
@@ -235,7 +235,7 @@ TEST_F(OpRepeatOutTest, OutputDtypeMismatchedDie) {
       /*sizes=*/{3, 3});
 
   std::vector<int64_t> repeats_vec = {7, 5, 6};
-  exec_aten::ArrayRef<int64_t> repeats = {
+  executorch::aten::ArrayRef<int64_t> repeats = {
       repeats_vec.data(), repeats_vec.size()};
 
   Tensor out = tf_out.ones(/*sizes=*/{7, 15, 18});
@@ -255,7 +255,7 @@ TEST_F(OpRepeatOutTest, TooManyDimensionsDies) {
       /*sizes=*/{3, 2});
 
   auto repeats_vec = std::vector<int64_t>(17, 1);
-  exec_aten::ArrayRef<int64_t> repeats = {
+  executorch::aten::ArrayRef<int64_t> repeats = {
       repeats_vec.data(), repeats_vec.size()};
 
   // The size of output shall be [1, 1, .. total 15 * 1 .. , 1, 3, 2].
@@ -278,7 +278,7 @@ TEST_F(OpRepeatOutTest, UpperBoundOutTensor) {
                   2, 3,
                 });
   std::vector<int64_t> repeats_vec = {3, 3, 3};
-  exec_aten::ArrayRef<int64_t> repeats = {repeats_vec.data(), repeats_vec.size()};
+  executorch::aten::ArrayRef<int64_t> repeats = {repeats_vec.data(), repeats_vec.size()};
   // clang-format on
 
   // Output tensor with the shape of the input tensor x repeated

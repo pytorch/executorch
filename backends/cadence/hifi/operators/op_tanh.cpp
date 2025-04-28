@@ -11,9 +11,9 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <cmath>
 
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
 using executorch::aten::RuntimeContext;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::Error;
 
 namespace cadence {

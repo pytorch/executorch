@@ -2,6 +2,11 @@
 #
 # This yaml file contains operators that are defined by ExecuTorch and used in ATen mode.
 
+- func: dim_order_ops::_empty_dim_order.out(int[] size, *, int[]? dim_order=None, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_empty_dim_order_out
+
 - func: dim_order_ops::_to_dim_order_copy.out(Tensor self, *, bool non_blocking=False, int[]? dim_order=None, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null

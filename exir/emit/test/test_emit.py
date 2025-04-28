@@ -9,6 +9,7 @@
 import typing
 import unittest
 from contextlib import contextmanager
+from copy import deepcopy
 from typing import List, Optional, Tuple
 
 import executorch.exir as exir
@@ -26,11 +27,15 @@ from executorch.exir import (
 from executorch.exir._serialize._program import deserialize_pte_binary
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
+from executorch.exir.backend.test.demos.rpc.executor_backend_partitioner import (
+    ExecutorBackendPartitioner,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.emit import emit_program  # noqa
 from executorch.exir.error import InternalError
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
+from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.print_program import pretty_print, print_program  # noqa
 from executorch.exir.schema import (
@@ -56,11 +61,13 @@ from executorch.exir.tests.models import Mul
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
+from executorch.runtime import Runtime
 
 from functorch.experimental import control_flow
 from torch import nn
 
-from torch.export import Dim, export
+from torch.export import Dim, export, export_for_training
+from torch.export.experimental import _export_forward_backward
 
 
 class WrapperModule(torch.nn.Module):
@@ -154,12 +161,7 @@ class TestEmit(unittest.TestCase):
         f = Foo()
 
         program = (
-            to_edge(
-                export(
-                    f,
-                    (torch.ones(3, 2), torch.zeros(3, 2)),
-                )
-            )
+            to_edge(export(f, (torch.ones(3, 2), torch.zeros(3, 2)), strict=True))
             .to_executorch()
             .executorch_program
         )
@@ -180,7 +182,9 @@ class TestEmit(unittest.TestCase):
     def test_basic_end_to_end(self) -> None:
         f = models.BasicSinMax()
         program = (
-            to_edge(export(f, f.get_random_inputs())).to_executorch().executorch_program
+            to_edge(export(f, f.get_random_inputs(), strict=True))
+            .to_executorch()
+            .executorch_program
         )
         exec_plan = program.execution_plan[0]
         ops = exec_plan.operators
@@ -210,7 +214,7 @@ class TestEmit(unittest.TestCase):
         f = Foo()
 
         x = (torch.randn(100),)
-        program = to_edge(export(f, x)).to_executorch().executorch_program
+        program = to_edge(export(f, x, strict=True)).to_executorch().executorch_program
         exec_plan = program.execution_plan[0]
         self.assertEqual(len(exec_plan.outputs), 4)
         self.assertEqual(len(exec_plan.inputs), 1)
@@ -230,7 +234,7 @@ class TestEmit(unittest.TestCase):
             def forward(self, x):
                 return [((1, 3, 1.2), True, [x + x, x * x], None)]
 
-        ep = torch.export.export(M(), (torch.ones(2, 3),))
+        ep = torch.export.export(M(), (torch.ones(2, 3),), strict=True)
         res = ep.module()(torch.ones(2, 3))
         self.assertEqual(res[0][0], (1, 3, 1.2))
         program = to_edge(ep).to_executorch().executorch_program
@@ -246,12 +250,62 @@ class TestEmit(unittest.TestCase):
         )
         self.assertIsInstance(program.execution_plan[0].values[outputs[6]].val, Null)
 
+    def test_initialized_mutable_buffer(self):
+        """Test that mutable buffers can hold meaningful initialized state."""
+
+        class TestModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                # Mutable buffer with non-empty initial state.
+                self.register_buffer("cache_pos", torch.arange(0, 10))
+
+            def forward(self, x):
+                self.cache_pos.add_(1)
+                return self.cache_pos
+
+        m = TestModule()
+        example_inputs = (torch.ones(10),)
+        ep = torch.export.export(m, example_inputs, strict=True)
+        edge = to_edge(
+            ep,
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False,
+            ),
+        )
+
+        # Save a copy of the edge program since to_executorch is
+        # stateful to some degree.
+        edge_copy = deepcopy(edge)
+        et_config = ExecutorchBackendConfig(
+            passes=[InitializedMutableBufferPass(["cache_pos"])],
+        )
+        et_program_init_pass = edge.to_executorch(config=et_config)
+        et_program_regular = edge_copy.to_executorch()
+
+        runtime = Runtime.get()
+        program_init_pass = runtime.load_program(et_program_init_pass.buffer)
+        method_init_pass = program_init_pass.load_method("forward")
+
+        program_regular = runtime.load_program(et_program_regular.buffer)
+        method_regular = program_regular.load_method("forward")
+
+        # Test that the mutable buffer is initialized.
+        torch.allclose(
+            method_init_pass.execute((example_inputs))[0], torch.arange(1, 11)
+        )
+        # Test that the mutable buffer is uninitialized and starts with default zeros,
+        # we test equality with torch.ones because of the mutation += 1 in the model forward.
+        torch.allclose(
+            method_regular.execute((example_inputs))[0],
+            torch.ones(10, dtype=torch.int64),
+        )
+
     def test_int_list_input(self):
         class M(torch.nn.Module):
             def forward(self, x, y, z):
                 return x + y, x + x, x + y + z
 
-        ep = torch.export.export(M(), (torch.ones(2, 3), 2, True))
+        ep = torch.export.export(M(), (torch.ones(2, 3), 2, True), strict=True)
         ep.module()(torch.ones(2, 3), 2, True)
         program = to_edge(ep).to_executorch().executorch_program
         inputs = program.execution_plan[0].inputs
@@ -270,36 +324,45 @@ class TestEmit(unittest.TestCase):
         f = Foo()
 
         inputs = (torch.ones((10, 10)),)
-        edge = to_edge(export(f, inputs))
+        edge = to_edge(export(f, inputs, strict=True))
 
         removed_ops = ["aten::relu_", "aten::view"]
         expected_ops = [
             "aten::sin",
             "aten::relu",
             "aten::max",
-            "executorch_prim::et_view",  # aten::view_copy if ExecutorchBackendConfig.remove_view_copy = False
         ]
+
+        def expected_view_ops(config):
+            if config.remove_view_copy:
+                return []
+            else:
+                return ["aten::view_copy"]
 
         for opname in removed_ops:
             self.assertEqual(
                 self.count_node(edge.exported_program().graph_module, opname), 0
             )
         for opname in expected_ops:
-            if (
-                opname != "executorch_prim::et_view"
-            ):  # et_view appears as call_function with target = memory.view in graph
-                self.assertTrue(
-                    self.count_node(edge.exported_program().graph_module, opname) >= 1
-                )
-
-        program = edge.to_executorch().executorch_program
-        for opname in removed_ops:
             self.assertTrue(
-                all(op.name != opname for op in program.execution_plan[0].operators)
+                self.count_node(edge.exported_program().graph_module, opname) >= 1
             )
-        for opname in expected_ops:
+
+        for remove_view_copy in [True, False]:
+            config = exir.ExecutorchBackendConfig(remove_view_copy=remove_view_copy)
+            edge_copy = deepcopy(edge)
+            program = edge_copy.to_executorch(config=config).executorch_program
+            for opname in removed_ops:
+                self.assertTrue(
+                    all(op.name != opname for op in program.execution_plan[0].operators)
+                )
+            for opname in expected_ops + expected_view_ops(config):
+                self.assertTrue(
+                    any(op.name == opname for op in program.execution_plan[0].operators)
+                )
             self.assertTrue(
-                any(op.name == opname for op in program.execution_plan[0].operators)
+                len(program.execution_plan[0].operators)
+                == len(expected_ops + expected_view_ops(config))
             )
 
     def test_operators_unique(self) -> None:
@@ -319,7 +382,11 @@ class TestEmit(unittest.TestCase):
 
         inputs = (torch.ones(2, 2),)
 
-        program = to_edge(export(model, inputs)).to_executorch().executorch_program
+        program = (
+            to_edge(export(model, inputs, strict=True))
+            .to_executorch()
+            .executorch_program
+        )
 
         self.assertEqual(len(program.execution_plan[0].operators), 2)
 
@@ -333,17 +400,15 @@ class TestEmit(unittest.TestCase):
         f = Foo()
 
         program = (
-            to_edge(export(f, (torch.randn(2, 3, 5),)))
+            to_edge(export(f, (torch.randn(2, 3, 5),), strict=True))
             .to_executorch()
             .executorch_program
         )
         exir.print_program.pretty_print(program)
 
         deboxed_int_list = []
-        for item in program.execution_plan[0].values[5].val.items:  # pyre-ignore[16]
-            deboxed_int_list.append(
-                program.execution_plan[0].values[item].val.int_val  # pyre-ignore[16]
-            )
+        for item in program.execution_plan[0].values[5].val.items:
+            deboxed_int_list.append(program.execution_plan[0].values[item].val.int_val)
 
         self.assertEqual(IntList(deboxed_int_list), IntList([2, 0, 1]))
 
@@ -361,7 +426,9 @@ class TestEmit(unittest.TestCase):
         f = Foo()
 
         program = (
-            to_edge(export(f, (torch.randn(3, 5),))).to_executorch().executorch_program
+            to_edge(export(f, (torch.randn(3, 5),), strict=True))
+            .to_executorch()
+            .executorch_program
         )
         # The value for beta should appear before alpha
         self.assertEqual(program.execution_plan[0].values[12].val, Int(3))
@@ -380,7 +447,9 @@ class TestEmit(unittest.TestCase):
         f = Foo()
 
         x, _ = torch.sort(torch.randn(3, 4))
-        program = to_edge(export(f, (x,))).to_executorch().executorch_program
+        program = (
+            to_edge(export(f, (x,), strict=True)).to_executorch().executorch_program
+        )
         # The value for right should appear before side
         self.assertEqual(program.execution_plan[0].values[6].val, Bool(False))
         self.assertEqual(program.execution_plan[0].values[7].val, Bool(True))
@@ -404,7 +473,7 @@ class TestEmit(unittest.TestCase):
         f = Foo()
 
         program = (
-            to_edge(export(f, (torch.ones(3), torch.ones(3))))
+            to_edge(export(f, (torch.ones(3), torch.ones(3)), strict=True))
             .to_executorch()
             .executorch_program
         )
@@ -431,7 +500,11 @@ class TestEmit(unittest.TestCase):
         inputs = (torch.ones(2, 2, dtype=torch.int32),)
 
         # Trace to FX Graph.
-        program = to_edge(export(model_out, inputs)).to_executorch().executorch_program
+        program = (
+            to_edge(export(model_out, inputs, strict=True))
+            .to_executorch()
+            .executorch_program
+        )
 
         self.assertEqual(len(program.execution_plan[0].chains[0].instructions), 2)
         self._assertCallLength(program, 0, 4)
@@ -451,7 +524,7 @@ class TestEmit(unittest.TestCase):
         h = Foo()
 
         x = (torch.randn(3, 2),)
-        exec_prog = to_edge(export(h, x)).to_executorch(
+        exec_prog = to_edge(export(h, x, strict=True)).to_executorch(
             exir.ExecutorchBackendConfig(emit_stacktrace=True)
         )
         program = exec_prog.executorch_program
@@ -459,11 +532,7 @@ class TestEmit(unittest.TestCase):
         # Check the mul operator's stack trace contains f -> g -> h
         self.assertTrue(
             "return torch.mul(x, torch.randn(3, 2))"
-            in program.execution_plan[0]  # pyre-ignore[16]
-            .chains[0]
-            .stacktrace[1]
-            .items[-1]
-            .context
+            in program.execution_plan[0].chains[0].stacktrace[1].items[-1].context
         )
         self.assertEqual(
             program.execution_plan[0].chains[0].stacktrace[1].items[-1].name, "f"
@@ -503,7 +572,7 @@ class TestEmit(unittest.TestCase):
         h = Hoo()
 
         x = (torch.randn(3, 2),)
-        program = to_edge(export(h, x)).to_executorch().executorch_program
+        program = to_edge(export(h, x, strict=True)).to_executorch().executorch_program
 
         # Check the stacktrace is None since we did not specify to get the stacktrace
         self.assertTrue(program.execution_plan[0].chains[0].stacktrace is None)
@@ -518,7 +587,7 @@ class TestEmit(unittest.TestCase):
 
         x = torch.randn(3, 2)
         program = (
-            to_edge(export(f, (x, x)))
+            to_edge(export(f, (x, x), strict=True))
             # .to_edge(self.compile_config)  # TODO(larryliu): fix cat
             .to_executorch().executorch_program
         )
@@ -535,7 +604,7 @@ class TestEmit(unittest.TestCase):
         f = Foo()
 
         x = (torch.randn(10),)
-        program = to_edge(export(f, x)).to_executorch().executorch_program
+        program = to_edge(export(f, x, strict=True)).to_executorch().executorch_program
         self._assertCallLength(program, 0, 8)
 
     def test_emit_layout(self) -> None:
@@ -546,7 +615,7 @@ class TestEmit(unittest.TestCase):
         f = Foo()
 
         x = (torch.randn(3, 2),)
-        program = to_edge(export(f, x)).to_executorch().executorch_program
+        program = to_edge(export(f, x, strict=True)).to_executorch().executorch_program
 
         vals = program.execution_plan[0].values
         for val in vals:
@@ -566,7 +635,7 @@ class TestEmit(unittest.TestCase):
         x = (torch.triu(torch.ones(2, 2)),)
         program = (
             to_edge(
-                export(f, x),
+                export(f, x, strict=True),
                 compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
             )
             .to_executorch()
@@ -583,8 +652,10 @@ class TestEmit(unittest.TestCase):
             def forward(self, x):
                 return torch.nn.functional.interpolate(x, scale_factor=2)
 
-        x = (torch.randn(1, 1, 2, 2),)
-        program = to_edge(export(M(), x)).to_executorch().executorch_program
+        x = (torch.randn(1, 1, 2, 2, 2),)
+        program = (
+            to_edge(export(M(), x, strict=True)).to_executorch().executorch_program
+        )
         self.assertIsInstance(
             program.execution_plan[0].values[-1].val, schema.OptionalTensorList
         )
@@ -606,7 +677,9 @@ class TestEmit(unittest.TestCase):
                 ret = control_flow.cond(pred, true_fn, false_fn, [x])
                 return ret
 
-        module = to_edge(export(M(), (torch.tensor(True), torch.ones(2, 2))))
+        module = to_edge(
+            export(M(), (torch.tensor(True), torch.ones(2, 2)), strict=True)
+        )
         program = module.to_executorch().executorch_program
 
         num_mm = 0
@@ -616,11 +689,7 @@ class TestEmit(unittest.TestCase):
             if not isinstance(inst.instr_args, KernelCall):
                 continue
 
-            op = (
-                program.execution_plan[0]
-                .operators[inst.instr_args.op_index]  # pyre-ignore[16]
-                .name
-            )
+            op = program.execution_plan[0].operators[inst.instr_args.op_index].name
 
             if "mm" in op:
                 num_mm += 1
@@ -645,7 +714,7 @@ class TestEmit(unittest.TestCase):
 
         inputs = (torch.ones(4, 4), torch.ones(4))
         module = to_edge(
-            export(f, inputs),
+            export(f, inputs, strict=True),
             compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
         program = module.to_executorch().executorch_program
@@ -657,19 +726,13 @@ class TestEmit(unittest.TestCase):
         # generate the tensor on which this iteration will operate on.
         self.assertEqual(
             op_table[
-                program.execution_plan[0]  # pyre-ignore[16]
-                .chains[0]
-                .instructions[0]
-                .instr_args.op_index
+                program.execution_plan[0].chains[0].instructions[0].instr_args.op_index
             ].name,
             "aten::sym_size",
         )
         self.assertEqual(
             op_table[
-                program.execution_plan[0]  # pyre-ignore[16]
-                .chains[0]
-                .instructions[1]
-                .instr_args.op_index
+                program.execution_plan[0].chains[0].instructions[1].instr_args.op_index
             ].name,
             "aten::select_copy",
         )
@@ -681,28 +744,19 @@ class TestEmit(unittest.TestCase):
         # We check here that both of these have been generated.
         self.assertEqual(
             op_table[
-                program.execution_plan[0]  # pyre-ignore[16]
-                .chains[0]
-                .instructions[-5]
-                .instr_args.op_index
+                program.execution_plan[0].chains[0].instructions[-5].instr_args.op_index
             ].name,
             "executorch_prim::et_copy_index",
         )
         self.assertEqual(
             op_table[
-                program.execution_plan[0]  # pyre-ignore[16]
-                .chains[0]
-                .instructions[-4]
-                .instr_args.op_index
+                program.execution_plan[0].chains[0].instructions[-4].instr_args.op_index
             ].name,
             "executorch_prim::add",
         )
         self.assertEqual(
             op_table[
-                program.execution_plan[0]  # pyre-ignore[16]
-                .chains[0]
-                .instructions[-3]
-                .instr_args.op_index
+                program.execution_plan[0].chains[0].instructions[-3].instr_args.op_index
             ].name,
             "executorch_prim::eq",
         )
@@ -716,10 +770,7 @@ class TestEmit(unittest.TestCase):
         )
         self.assertEqual(
             op_table[
-                program.execution_plan[0]  # pyre-ignore[16]
-                .chains[0]
-                .instructions[-1]
-                .instr_args.op_index
+                program.execution_plan[0].chains[0].instructions[-1].instr_args.op_index
             ].name,
             "executorch_prim::sub",
         )
@@ -736,7 +787,7 @@ class TestEmit(unittest.TestCase):
 
         inputs = (torch.ones(4, 4), torch.ones(4))
         module = to_edge(
-            export(f, inputs),
+            export(f, inputs, strict=True),
             compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
         _load_for_executorch_from_buffer(module.to_executorch().buffer)
@@ -753,7 +804,7 @@ class TestEmit(unittest.TestCase):
 
         inputs = (torch.ones(4, 4), torch.ones(4))
         module = to_edge(
-            export(f, inputs),
+            export(f, inputs, strict=True),
             compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
         buffer = module.to_executorch().buffer
@@ -774,7 +825,7 @@ class TestEmit(unittest.TestCase):
         inputs = (torch.ones(10, 5),)
         program = (
             to_edge(
-                export(model, inputs),
+                export(model, inputs, strict=True),
                 compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
             )
             .to_executorch()
@@ -814,16 +865,11 @@ class TestEmit(unittest.TestCase):
         class Add(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 b = 3 + 1
-                return x + b
+                return x + torch.tensor(b)
 
         f = Add()
 
-        edge_program_manager = to_edge(
-            export(
-                f,
-                (torch.ones(3, 2),),
-            )
-        )
+        edge_program_manager = to_edge(export(f, (torch.ones(3, 2),), strict=True))
         edge_program_manager._edge_programs["forward"] = constant_prop_pass(
             edge_program_manager.exported_program()
         )
@@ -833,12 +879,7 @@ class TestEmit(unittest.TestCase):
             .non_const_buffer_sizes
         )
 
-        edge_program_manager = to_edge(
-            export(
-                f,
-                (torch.ones(3, 2),),
-            )
-        )
+        edge_program_manager = to_edge(export(f, (torch.ones(3, 2),), strict=True))
         non_const_buffer_size_without_const_prop_pass = (
             edge_program_manager.to_executorch()
             .executorch_program.execution_plan[0]
@@ -917,7 +958,7 @@ class TestEmit(unittest.TestCase):
         inputs = (torch.ones(10, 5),)
         try:
             to_edge(
-                export(model, inputs),
+                export(model, inputs, strict=True),
                 compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
             ).to_executorch()
         except:
@@ -936,7 +977,7 @@ class TestEmit(unittest.TestCase):
         inputs = (torch.ones(10, 5, 2, 1),)
         with self.assertRaises(InternalError):
             to_edge(
-                export(model, inputs),
+                export(model, inputs, strict=True),
                 compile_config=exir.EdgeCompileConfig(
                     _check_ir_validity=False, _skip_dim_order=True
                 ),
@@ -944,7 +985,7 @@ class TestEmit(unittest.TestCase):
 
         # Success if you use dim_order
         to_edge(
-            export(model, inputs),
+            export(model, inputs, strict=True),
             compile_config=exir.EdgeCompileConfig(
                 _check_ir_validity=False, _skip_dim_order=False
             ),
@@ -967,12 +1008,12 @@ class TestEmit(unittest.TestCase):
         inputs = (torch.ones(10, 5),)
         with patch_forward(model, model.forward_relu):
             program_relu = to_edge(
-                export(model, inputs),
+                export(model, inputs, strict=True),
                 compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
             ).to_executorch()
         with patch_forward(model, model.forward_sigmoid):
             program_sigmoid = to_edge(
-                export(model, inputs),
+                export(model, inputs, strict=True),
                 compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
             ).to_executorch()
         exir_input = {
@@ -1031,9 +1072,11 @@ class TestEmit(unittest.TestCase):
         model = SimpleLinear()
         inputs = (torch.ones(10, 5),)
         with patch_forward(model, model.forward_relu):
-            program_relu = to_edge(export(model, inputs)).to_executorch()
+            program_relu = to_edge(export(model, inputs, strict=True)).to_executorch()
         with patch_forward(model, model.forward_sigmoid):
-            program_sigmoid = to_edge(export(model, inputs)).to_executorch()
+            program_sigmoid = to_edge(
+                export(model, inputs, strict=True)
+            ).to_executorch()
         exir_input = {
             "forward_relu": program_relu.exported_program(),
             "forward_sigmoid": program_sigmoid.exported_program(),
@@ -1084,10 +1127,7 @@ class TestEmit(unittest.TestCase):
             inputs,
         ) -> "ExecutorchProgramManager":
             return to_edge(
-                export(
-                    WrapperModule(fn),
-                    inputs,
-                )
+                export(WrapperModule(fn), inputs, strict=True)
             ).to_executorch()
 
         program_a = make_program(model.a, inputs)
@@ -1134,11 +1174,7 @@ class TestEmit(unittest.TestCase):
         k = torch.rand(2, 4)
         dim0_k = Dim("dim0_k", max=3)
         dynamic_shapes = {"k": {0: dim0_k}}
-        captured = export(
-            func,
-            (k,),
-            dynamic_shapes=dynamic_shapes,
-        )
+        captured = export(func, (k,), dynamic_shapes=dynamic_shapes, strict=True)
         edge = to_edge(captured)
         from executorch.exir.passes import MemoryPlanningPass
 
@@ -1186,7 +1222,7 @@ class TestEmit(unittest.TestCase):
 
         model = Simple()
         inputs = (torch.ones(10, 5),)
-        program = to_edge(export(model, inputs)).to_executorch()
+        program = to_edge(export(model, inputs, strict=True)).to_executorch()
         exir_input = {
             "forward": program.exported_program(),
         }
@@ -1260,7 +1296,7 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(len(merged_program.execution_plan[4].outputs), 2)
 
         merged_program = to_edge(
-            export(model, inputs), constant_methods=getters
+            export(model, inputs, strict=True), constant_methods=getters
         ).to_executorch()
         executorch_module = _load_for_executorch_from_buffer(merged_program.buffer)
         torch.allclose(executorch_module.run_method("get_tensor", [])[0], tensor_output)
@@ -1271,10 +1307,7 @@ class TestEmit(unittest.TestCase):
     def test_emit_debug_handle_map(self) -> None:
         mul_model = Mul()
         program_mul = to_edge(
-            export(
-                mul_model,
-                mul_model.get_random_inputs(),
-            )
+            export(mul_model, mul_model.get_random_inputs(), strict=True)
         ).to_executorch()
         # this triggers the actual emission of the graph
         program_mul._emitter_output.program
@@ -1291,22 +1324,20 @@ class TestEmit(unittest.TestCase):
 
         mul_model = SimpleAddMul()
         program_mul = to_edge(
-            export(
-                mul_model,
-                (torch.ones(2, 2),),
-            )
+            export(mul_model, (torch.ones(2, 2),), strict=True)
         ).to_executorch()
 
         # this triggers the actual emission of the graph
         program = program_mul._emitter_output.program
         node = None
-        program.execution_plan[0].chains[0].instructions[  # pyre-ignore[16]
-            0
-        ].instr_args.op_index
+        program.execution_plan[0].chains[0].instructions[0].instr_args.op_index
 
         # Find the multiplication node in the graph that was emitted.
         for node in program_mul.exported_program().graph.nodes:
-            if node.target == torch.ops.aten.mul.out:
+            if (
+                node.target == torch.ops.aten.mul.out
+                or node.target == torch.ops.aten.mul.Scalar_out
+            ):
                 break
         self.assertIsNotNone(node)
 
@@ -1314,7 +1345,7 @@ class TestEmit(unittest.TestCase):
         # Find the multiplication instruction in the program that was emitted.
         for idx in range(len(program.execution_plan[0].chains[0].instructions)):
             instruction = program.execution_plan[0].chains[0].instructions[idx]
-            op_index = instruction.instr_args.op_index  # pyre-ignore[16]
+            op_index = instruction.instr_args.op_index
             if "mul" in program.execution_plan[0].operators[op_index].name:
                 break
 
@@ -1347,7 +1378,7 @@ class TestEmit(unittest.TestCase):
 
         inputs = ([torch.ones(2, 2), torch.ones(2, 2)],)
         model = TestModel()
-        edgeir_m = to_edge(export(model, inputs))
+        edgeir_m = to_edge(export(model, inputs, strict=True))
         lowered_module = to_backend(
             "BackendWithCompilerExample", edgeir_m.exported_program(), []
         )
@@ -1362,7 +1393,7 @@ class TestEmit(unittest.TestCase):
 
         composite_model = CompositeModule()
         exec_prog = to_edge(
-            export(composite_model, inputs),
+            export(composite_model, inputs, strict=True),
         ).to_executorch()
         exec_prog.buffer
 
@@ -1389,7 +1420,7 @@ class TestEmit(unittest.TestCase):
 
         model_inputs = ((torch.ones(2, 2), 2 * torch.ones(2, 2), 3 * torch.ones(2, 2)),)
         model = AddMulModule()
-        edgeir_m = to_edge(export(model, model_inputs))
+        edgeir_m = to_edge(export(model, model_inputs, strict=True))
         lowered_module = to_backend(
             "BackendWithCompilerExample", edgeir_m.exported_program(), []
         )
@@ -1404,7 +1435,7 @@ class TestEmit(unittest.TestCase):
 
         composite_model = CompositeModule()
         exec_prog = to_edge(
-            export(composite_model, model_inputs),
+            export(composite_model, model_inputs, strict=True),
         ).to_executorch()
         exec_prog.buffer
 
@@ -1431,7 +1462,7 @@ class TestEmit(unittest.TestCase):
 
         inputs = (torch.ones(2, 2), torch.ones(2, 2))
         model = TestModel()
-        edgeir_m = to_edge(export(model, inputs))
+        edgeir_m = to_edge(export(model, inputs, strict=True))
         lowered_module = to_backend(
             "BackendWithCompilerExample", edgeir_m.exported_program(), []
         )
@@ -1446,16 +1477,14 @@ class TestEmit(unittest.TestCase):
 
         composite_model = CompositeModule()
         exec_prog = to_edge(
-            export(composite_model, inputs),
+            export(composite_model, inputs, strict=True),
         ).to_executorch()
         # Reading the program triggers the call to emit_program underneath which
         # we need to be done for our test to succeed.
         exec_prog._emitter_output.program
         self.assertIsNotNone(exec_prog.delegate_map)
         self.assertIsNotNone(exec_prog.delegate_map.get("forward"))
-        self.assertIsNotNone(
-            exec_prog.delegate_map.get("forward").get(0)  # pyre-ignore[16]
-        )
+        self.assertIsNotNone(exec_prog.delegate_map.get("forward").get(0))
         self.assertEqual(
             exec_prog.delegate_map.get("forward").get(0).get("name"),
             "BackendWithCompilerExample",
@@ -1481,12 +1510,7 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(model.W1.untyped_storage().nbytes(), 8)
         self.assertEqual(model.W2.nbytes, 4)
         self.assertEqual(model.W2.untyped_storage().nbytes(), 8)
-        program = to_edge(
-            export(
-                model,
-                (torch.ones(1),),
-            )
-        ).to_executorch()
+        program = to_edge(export(model, (torch.ones(1),), strict=True)).to_executorch()
 
         program = program._emitter_output.program
         # each emitted weight is not a view
@@ -1503,19 +1527,14 @@ class TestEmit(unittest.TestCase):
                 return x + self.buf
 
         model = NonPersistentBuffer()
-        program = to_edge(
-            export(
-                model,
-                (torch.ones(1),),
-            )
-        ).to_executorch()
+        program = to_edge(export(model, (torch.ones(1),), strict=True)).to_executorch()
         program = program._emitter_output.program
         # confirm that the buffer was emitted
         self.assertEqual(len(program.constant_buffer), 2)
         self.assertEqual(len(program.constant_buffer[1].storage), 8)
 
     def test_emit_lifted_tensor_constant(self) -> None:
-        class LiftedConstants(nn.Module):
+        class LiftedTensorConstants(nn.Module):
             def __init__(self):
                 super().__init__()
 
@@ -1523,21 +1542,41 @@ class TestEmit(unittest.TestCase):
                 x = x * torch.tensor([[4, 3], [1, 2], [5, 6]], dtype=torch.float)
                 return x
 
-        model = LiftedConstants()
-
+        model = LiftedTensorConstants()
+        # Specify that we want to move non-lifted constants to external file
+        et_cfg = ExecutorchBackendConfig(external_constants=True)
         program = to_edge(
-            export(
-                model,
-                (torch.ones(3, 2),),
-            )
-        ).to_executorch()
-
+            export(model, (torch.ones(3, 2),), strict=True)
+        ).to_executorch(et_cfg)
         program = program._emitter_output.program
         exec_plan = program.execution_plan[0]
         # There should only be 1 input to this model.
         self.assertEqual(len(exec_plan.inputs), 1)
         self.assertEqual(len(program.constant_buffer), 2)
         self.assertEqual(len(program.constant_buffer[1].storage), 24)
+
+    def test_emit_lifted_constant(self) -> None:
+        class LiftedConstants(nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                x = x + 1
+                return x
+
+        model = LiftedConstants()
+        # Specify that we want to move non-lifted constants to external file
+        et_cfg = ExecutorchBackendConfig(external_constants=True)
+        program = to_edge(
+            export(model, (torch.ones(3, 2),), strict=True)
+        ).to_executorch(et_cfg)
+
+        program = program._emitter_output.program
+        exec_plan = program.execution_plan[0]
+        # There should only be 1 input to this model.
+        self.assertEqual(len(exec_plan.inputs), 1)
+        self.assertEqual(len(program.constant_buffer), 2)
+        self.assertEqual(len(program.constant_buffer[1].storage), 8)
 
     def test_mutable_buffers(self) -> None:
         def count_copies(gm: torch.fx.GraphModule) -> int:
@@ -1559,18 +1598,11 @@ class TestEmit(unittest.TestCase):
                 self.state.add_(1)
                 return y
 
-        model = to_edge(
-            export(
-                MutableStateModule(),
-                (torch.zeros(1),),
-            )
-        )
+        model = to_edge(export(MutableStateModule(), (torch.zeros(1),), strict=True))
         model = model.to_executorch()
         model.dump_executorch_program(True)
         self.assertTrue(
-            model.executorch_program.execution_plan[0]  # pyre-ignore[16]
-            .values[0]
-            .val.allocation_info
+            model.executorch_program.execution_plan[0].values[0].val.allocation_info
             is not None
         )
         executorch_module = _load_for_executorch_from_buffer(model.buffer)
@@ -1597,12 +1629,7 @@ class TestEmit(unittest.TestCase):
                 self.state.add_(1)
                 return y
 
-        model = to_edge(
-            export(
-                MutableStateModule(),
-                (torch.zeros(1),),
-            )
-        )
+        model = to_edge(export(MutableStateModule(), (torch.zeros(1),), strict=True))
         model = model.to_executorch(
             config=ExecutorchBackendConfig(
                 memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
@@ -1611,9 +1638,7 @@ class TestEmit(unittest.TestCase):
         )
         model.dump_executorch_program(True)
         self.assertTrue(
-            model.executorch_program.execution_plan[0]  # pyre-ignore[16]
-            .values[0]
-            .val.allocation_info
+            model.executorch_program.execution_plan[0].values[0].val.allocation_info
             is not None
         )
         executorch_module = _load_for_executorch_from_buffer(model.buffer)
@@ -1630,12 +1655,7 @@ class TestEmit(unittest.TestCase):
                 masked_weights = x.masked_fill(self.mask == 0, float("-inf"))
                 return masked_weights
 
-        model = to_edge(
-            export(
-                InfinityMaskModel(),
-                (torch.randn(2, 2),),
-            )
-        )
+        model = to_edge(export(InfinityMaskModel(), (torch.randn(2, 2),), strict=True))
 
         # Confirm that we can serialize the model with infinity in it.
         model = model.to_executorch()
@@ -1659,7 +1679,7 @@ class TestEmit(unittest.TestCase):
                 x.add_(1)
 
         model = to_edge(
-            export(MutateInputTensorModule(), (torch.zeros(1),))
+            export(MutateInputTensorModule(), (torch.zeros(1),), strict=True)
         ).to_executorch(
             config=ExecutorchBackendConfig(
                 memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False)
@@ -1669,3 +1689,189 @@ class TestEmit(unittest.TestCase):
         input = torch.zeros(1)
         executorch_model(input)
         self.assertEqual(input, torch.ones(1))
+
+    def test_constant_tagged_tensors(self) -> None:
+        class LinearModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(5, 5)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        model = to_edge(
+            export(LinearModule(), (torch.ones(5, 5),), strict=True)
+        ).to_executorch(
+            config=ExecutorchBackendConfig(
+                external_constants=True,
+            )
+        )
+        emitter_output = model._emitter_output
+        # Check that constant_buffer is empty besides the non-constant placeholder 0.
+        self.assertEqual(len(emitter_output.program.constant_buffer), 1)
+        # Check that constant weights are in the external constant buffer.
+        self.assertEqual(len(emitter_output.external_constant_buffer), 2)
+        # Setting external_constants=True, saves all constants to the key
+        # '_default_external_constant'.
+        external_map = emitter_output.external_constant_map[
+            "_default_external_constant"
+        ]
+        self.assertEqual(external_map["linear.weight"], 0)
+        self.assertEqual(external_map["linear.bias"], 1)
+
+    def test_delegate_deduplicate(self) -> None:
+        class SharedModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(2, 2)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        class Module1(torch.nn.Module):
+            def __init__(self, shared_module):
+                super().__init__()
+                self.shared_module = shared_module
+
+            def forward(self, x):
+                return self.shared_module(x)
+
+        class Module2(torch.nn.Module):
+            def __init__(self, shared_module):
+                super().__init__()
+                self.shared_module = shared_module
+
+            def forward(self, x):
+                return self.shared_module(x)
+
+        shared_module = SharedModule()
+        module_1 = Module1(shared_module)
+        module_2 = Module2(shared_module)
+        example_inputs = (torch.randn(2, 2),)
+        module_1(*example_inputs)
+        module_2(*example_inputs)
+
+        ep1 = export_for_training(module_1, example_inputs, strict=True)
+        ep2 = export_for_training(module_2, example_inputs, strict=True)
+
+        edge_program_manager = exir.to_edge(
+            {"forward1": ep1, "forward2": ep2},
+            compile_config=exir.EdgeCompileConfig(
+                _check_ir_validity=False, _use_edge_ops=True
+            ),
+        )
+
+        edge_program_manager = edge_program_manager.to_backend(
+            ExecutorBackendPartitioner()
+        ).to_executorch()
+
+        # Check that there is only one delegate because two methods are exactly the same
+        self.assertEqual(
+            len(edge_program_manager.executorch_program.backend_delegate_data), 1
+        )
+
+    def test_constant_tagged_mutable_tensors(self) -> None:
+        class Net(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(2, 2)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        # On device training requires the loss to be embedded in the model (and be the first output).
+        # We wrap the original model here and add the loss calculation. This will be the model we export.
+        class TrainingNet(nn.Module):
+            def __init__(self, net):
+                super().__init__()
+                self.net = net
+                self.loss = nn.CrossEntropyLoss()
+
+            def forward(self, input, label):
+                pred = self.net(input)
+                return self.loss(pred, label), pred.detach().argmax(dim=1)
+
+        net = TrainingNet(Net())
+
+        # Captures the forward graph. The graph will look similar to the model definition now.
+        # Will move to export_for_training soon which is the api planned to be supported in the long term.
+        ep = export(
+            net, (torch.randn(1, 2), torch.ones(1, dtype=torch.int64)), strict=True
+        )
+        # Captures the backward graph. The exported_program now contains the joint forward and backward graph.
+        ep = _export_forward_backward(ep)
+        # Lower the graph to edge dialect.
+        ep = to_edge(ep)
+        # Lower the graph to executorch.
+        ep = ep.to_executorch(
+            config=ExecutorchBackendConfig(external_mutable_weights=True)
+        )
+
+        emitter_output = ep._emitter_output
+        # Check that constant_buffer is empty besides the non-constant placeholder 0.
+        self.assertEqual(len(emitter_output.program.constant_buffer), 1)
+        # Check that constant weights are in the external constant buffer.
+        self.assertEqual(len(emitter_output.external_constant_buffer), 2)
+        # Setting external_mutable_weights=True, saves all constants with an associated gradient to the key
+        # '_default_external_constant'.
+        external_map = emitter_output.external_constant_map[
+            "_default_external_constant"
+        ]
+        self.assertEqual(external_map["net.linear.weight"], 0)
+        self.assertEqual(external_map["net.linear.bias"], 1)
+
+    def test_emit_mutable_buffer_names(self) -> None:
+        class Net(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(2, 2)
+                self.register_buffer("buffer", torch.zeros(1, 2))
+
+            def forward(self, x):
+                self.buffer.add_(1)
+                return self.linear(x) + self.buffer
+
+        net = Net()
+
+        ep = export(net, (torch.randn(1, 2),), strict=True)
+        # Lower the graph to edge dialect.
+        ep = to_edge(ep)
+        # Lower the graph to executorch.
+        ep = ep.to_executorch(
+            config=ExecutorchBackendConfig(
+                emit_mutable_buffer_names=True,
+                memory_planning_pass=MemoryPlanningPass(alloc_mutable_buffers=False),
+            )
+        )
+        for val in ep.executorch_program.execution_plan[0].values:
+            if isinstance(val, Tensor) and val.extra_tensor_info:
+                self.assertEqual(val.extra_tensor_info.fully_qualified_name, "buffer")
+                self.assertEqual(val.allocation_info, None)
+
+    def test_emit_mutable_buffer_names_fails(self) -> None:
+        class Net(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(2, 2)
+                self.register_buffer("buffer", torch.zeros(1, 2))
+
+            def forward(self, x):
+                self.buffer.add_(1)
+                return self.linear(x) + self.buffer
+
+        net = Net()
+
+        ep = export(net, (torch.randn(1, 2),), strict=True)
+        # Lower the graph to edge dialect.
+        ep = to_edge(ep)
+        # Lower the graph to executorch.
+        # Must emit mutable buffer names if we don't allocate mutable buffers
+        with self.assertRaises(InternalError):
+            ep.to_executorch(
+                config=ExecutorchBackendConfig(
+                    emit_mutable_buffer_names=False,
+                    memory_planning_pass=MemoryPlanningPass(
+                        alloc_mutable_buffers=False
+                    ),
+                )
+            )

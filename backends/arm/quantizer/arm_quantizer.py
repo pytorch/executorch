@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -13,25 +13,22 @@
 
 from __future__ import annotations
 
-import copy
 import functools
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional
 
 import torch
-import torch.nn.functional as F
-from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
+from executorch.backends.arm._passes import ArmPassManager
 
-from executorch.backends.arm.quantizer import arm_quantizer_utils
-from executorch.backends.arm.quantizer.arm_quantizer_utils import (
-    mark_nodes_as_annotated,
-    propagate_annotation,
-)
-from executorch.backends.arm.quantizer.quantization_annotation import (
-    OP_TO_ANNOTATOR,
-    OperatorConfig,
-    OperatorPatternType,
-)
-from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
+from executorch.backends.arm.quantizer import QuantizationConfig
+from executorch.backends.arm.tosa_specification import TosaSpecification
+
+from .arm_quantizer_utils import is_annotated, mark_node_as_annotated
+from .quantization_annotator import annotate_graph
+from executorch.backends.arm.arm_backend import (
+    get_tosa_spec,
+    is_ethosu,
+)  # usort: skip
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.ao.quantization.fake_quantize import (
     FakeQuantize,
     FusedMovingAvgObsFakeQuantize,
@@ -53,46 +50,10 @@ from torch.ao.quantization.quantizer.utils import (
 from torch.fx import GraphModule, Node
 
 __all__ = [
-    "ArmQuantizer",
+    "TOSAQuantizer",
+    "EthosUQuantizer",
     "get_symmetric_quantization_config",
 ]
-
-
-def _supported_symmetric_quantized_operators() -> Dict[str, List[OperatorPatternType]]:
-    supported_operators: Dict[str, List[OperatorPatternType]] = {
-        # Both conv and linear should be able to handle relu + hardtanh fusion since
-        # those are clamp ops
-        "conv2d": [
-            [torch.nn.Conv2d, torch.nn.ReLU],
-            [torch.nn.Conv2d, F.relu],
-            [F.conv2d, torch.nn.ReLU],
-            [F.conv2d, F.relu],
-        ],
-        "linear": [[torch.nn.Linear], [F.linear]],
-        "add": [[torch.add]],
-        "max_pool2d": [[torch.nn.MaxPool2d], [F.max_pool2d]],
-        "adaptive_avg_pool2d": [
-            [torch.nn.AdaptiveAvgPool2d],
-            [F.adaptive_avg_pool2d],
-        ],
-        "mul": [[torch.mul]],
-        "sub": [[torch.sub]],
-    }
-    return copy.deepcopy(supported_operators)
-
-
-def _get_supported_symmetric_config_and_operators() -> List[OperatorConfig]:
-    supported_config_and_operators: List[OperatorConfig] = []
-    for quantization_config in [
-        get_symmetric_quantization_config(),
-        get_symmetric_quantization_config(is_per_channel=True),
-    ]:
-        ops = _supported_symmetric_quantized_operators()
-        for pattern_list in ops.values():
-            supported_config_and_operators.append(
-                OperatorConfig(quantization_config, pattern_list)
-            )
-    return copy.deepcopy(supported_config_and_operators)
 
 
 @functools.lru_cache
@@ -179,10 +140,6 @@ def get_symmetric_quantization_config(
     return quantization_config
 
 
-def _get_supported_config_and_operators() -> List[OperatorConfig]:
-    return _get_supported_symmetric_config_and_operators()
-
-
 NodeFilterType = Callable[[Node], bool]
 """Type for a Node Filter used by annotators. A Node filter is a function that takes
     a Node and returns whether the node should be annotated or not.
@@ -229,6 +186,8 @@ def _get_module_type_filter(tp: Callable) -> NodeFilterType:
     True  # the node is from the submodule `Sub` (same for `Block` and `Linear` as well)
     """
 
+    tp_str = tp.__module__ + "." + tp.__qualname__
+
     def module_type_filter(n: Node) -> bool:
         # node_stack example: {
         #     'L__self___sub': ("L['self'].sub", <class '....Sub'>),
@@ -236,7 +195,7 @@ def _get_module_type_filter(tp: Callable) -> NodeFilterType:
         # }
         nn_module_stack = n.meta.get("nn_module_stack", {})
         types = [t for _, t in nn_module_stack.values()]
-        return tp in types
+        return tp_str in types
 
     return module_type_filter
 
@@ -253,41 +212,24 @@ def _get_not_module_type_or_name_filter(
     return not_module_type_or_name_filter
 
 
-class ArmQuantizer(Quantizer):
-    supported_config_and_operators = _get_supported_config_and_operators()
+class TOSAQuantizer(Quantizer):
 
-    # A list of supported static quantization annotators, in order of application.
-    # For example, fusions come before singular ops.
-    # The name must match the name used when registering the annotator.
-    STATIC_ANNOTATION_ORDER = [
-        "linear",
-        "conv",
-        "adaptive_avg_pool2d",
-        "max_pool2d",
-        "add",
-        "sub",
-        "mul",
-        "mm",
-        "one_to_one",
-        "generic",
-        "upsample_nearest2d",
-    ]
-
-    def __init__(self) -> None:
+    def __init__(self, tosa_spec: TosaSpecification) -> None:
         super().__init__()
+        self.tosa_spec = tosa_spec
         self.global_config: Optional[QuantizationConfig] = None
         self.io_config: Optional[QuantizationConfig] = None
         self.module_type_config: Dict[Callable, Optional[QuantizationConfig]] = {}
         self.module_name_config: Dict[str, Optional[QuantizationConfig]] = {}
 
-    def set_global(self, quantization_config: QuantizationConfig) -> ArmQuantizer:
+    def set_global(self, quantization_config: QuantizationConfig) -> TOSAQuantizer:
         """Set quantization_config for submodules that are not already annotated by name or type filters."""
         self.global_config = quantization_config
         return self
 
     def set_module_type(
         self, module_type: Callable, quantization_config: QuantizationConfig
-    ) -> ArmQuantizer:
+    ) -> TOSAQuantizer:
         """Set quantization_config for a submodule with type: `module_type`, for example:
         quantizer.set_module_name(Sub) or quantizer.set_module_name(nn.Linear), it will quantize all supported operator/operator
         patterns in the submodule with this module type with the given `quantization_config`
@@ -297,7 +239,7 @@ class ArmQuantizer(Quantizer):
 
     def set_module_name(
         self, module_name: str, quantization_config: Optional[QuantizationConfig]
-    ) -> ArmQuantizer:
+    ) -> TOSAQuantizer:
         """Set quantization_config for a submodule with name: `module_name`, for example:
         quantizer.set_module_name("blocks.sub"), it will quantize all supported operator/operator
         patterns in the submodule with this module name with the given `quantization_config`
@@ -318,7 +260,9 @@ class ArmQuantizer(Quantizer):
         Currently transforms scalar values to tensor attributes.
         """
 
-        return ArmPassManager().transform_for_annotation_pipeline(graph_module=model)
+        return ArmPassManager(self.tosa_spec).transform_for_annotation_pipeline(  # type: ignore[arg-type]
+            graph_module=model
+        )
 
     def annotate(self, model: GraphModule) -> GraphModule:
         """Performs the quantization annotation on the graph.
@@ -329,7 +273,6 @@ class ArmQuantizer(Quantizer):
             The annotated model.
         """
         model = self._annotate_for_static_quantization_config(model)
-        propagate_annotation(model)
         return model
 
     def _annotate_all_static_patterns(
@@ -338,10 +281,10 @@ class ArmQuantizer(Quantizer):
         quantization_config: Optional[QuantizationConfig],
         filter_fn: Optional[Callable[[Node], bool]] = None,
     ) -> GraphModule:
-        """Loops over all STATIC_OPS and runs the corresponding registred annotator.
+        """Loops over all STATIC_OPS and runs the corresponding registered annotator.
         Args:
             model: The model to annotate statically.
-            quantization_config: Specifices the QuantizationSpecs for the model's
+            quantization_config: Specifies the QuantizationSpecs for the model's
                 input activations, output activations, weights and biases.
             filter_fn: An optional filter function that takes a node and returns whether the node should be annotated.
         Returns:
@@ -351,8 +294,7 @@ class ArmQuantizer(Quantizer):
         if quantization_config is None:
             return model
 
-        for op in self.STATIC_ANNOTATION_ORDER:
-            OP_TO_ANNOTATOR[op](model, quantization_config, filter_fn)
+        annotate_graph(model, quantization_config, filter_fn)
         return model
 
     def _annotate_for_static_quantization_config(
@@ -361,6 +303,9 @@ class ArmQuantizer(Quantizer):
         """Matches the correct QuantizationConfig with the correct module using a filter
         when running _annotate_all_static_patterns.
         """
+        if self.io_config:
+            self._annotate_io(model, self.io_config)
+
         module_name_list = list(self.module_name_config.keys())
         for module_name, config in self.module_name_config.items():
             self._annotate_all_static_patterns(
@@ -379,9 +324,6 @@ class ArmQuantizer(Quantizer):
             _get_not_module_type_or_name_filter(tp_list, module_name_list),
         )
 
-        if self.io_config:
-            self._annotate_io(model, self.io_config)
-
         return model
 
     def _annotate_io(
@@ -390,51 +332,29 @@ class ArmQuantizer(Quantizer):
         quantization_config: QuantizationConfig,
     ):
         for node in model.graph.nodes:
-            if arm_quantizer_utils.is_annotated(node):
+            if is_annotated(node):
                 continue
             if node.op == "placeholder" and len(node.users) > 0:
                 _annotate_output_qspec(
                     node,
                     quantization_config.get_output_act_qspec(),
                 )
-                mark_nodes_as_annotated([node])
+                mark_node_as_annotated(node)
             if node.op == "output":
                 parent = node.all_input_nodes[0]
                 _annotate_input_qspec_map(
                     node, parent, quantization_config.get_input_act_qspec()
                 )
-                mark_nodes_as_annotated([node])
+                mark_node_as_annotated(node)
 
     def validate(self, model: GraphModule) -> None:
         pass
 
-    @classmethod
-    def get_supported_operators(cls) -> List[OperatorConfig]:
-        return cls.supported_config_and_operators
 
-    @classmethod
-    def get_supported_quantization_configs(cls) -> List[QuantizationConfig]:
-        op_configs: Set[QuantizationConfig] = set({})
-        for spec, _ in cls.supported_config_and_operators:
-            op_configs.add(spec)
-        return list(op_configs)
+class EthosUQuantizer(TOSAQuantizer):
+    def __init__(self, compile_spec: list[CompileSpec]) -> None:
+        if not is_ethosu(compile_spec):
+            raise RuntimeError("compile spec is not targeting Ethos-U")
 
-    @classmethod
-    def get_supported_operator_for_quantization_config(
-        cls, quantization_config: Optional[QuantizationConfig]
-    ) -> List[OperatorPatternType]:
-        if quantization_config is None:
-            all_ops = []
-            for _, ops in cls.supported_config_and_operators:
-                all_ops.extend(ops)
-            return all_ops
-
-        for config, ops in cls.supported_config_and_operators:
-            # note: this assumes each entry in cls.supported_spec_and_operators
-            # corresponds to one spec, e.g. we don't have
-            # [(spec1, op_list1), (spec1, op_list2), (spec2, op_list3)]
-            # where the first and second entry have the same spec but did not
-            # merge the op list
-            if config == quantization_config:
-                return ops
-        return []
+        tosa_spec = get_tosa_spec(compile_spec)
+        super().__init__(tosa_spec)

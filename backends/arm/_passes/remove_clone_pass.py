@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -11,6 +11,7 @@ from executorch.exir.pass_base import ExportPass
 
 
 class RemoveClonePass(ExportPass):
+    """Remove all clones from graph_module"""
 
     def call_operator(self, op, args, kwargs, meta):
         if op != exir_ops.edge.aten.clone.default:

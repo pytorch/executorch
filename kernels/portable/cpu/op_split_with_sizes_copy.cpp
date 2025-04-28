@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cstdint>
 #include <cstring>
 
@@ -17,13 +18,13 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using TensorList = exec_aten::TensorList;
+using Tensor = executorch::aten::Tensor;
+using TensorList = executorch::aten::TensorList;
 
 void split_with_sizes_copy_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    exec_aten::ArrayRef<int64_t> split_sizes,
+    executorch::aten::ArrayRef<int64_t> split_sizes,
     int64_t dim,
     TensorList out) {
   (void)ctx;
@@ -38,7 +39,8 @@ void split_with_sizes_copy_out(
       check_split_with_sizes_copy_args(in, split_sizes, dim, out),
       InvalidArgument, );
 
-  for (size_t i = 0; i < out.size(); ++i) {
+  // All output tensors must have the same dim order as the input
+  for (const auto i : c10::irange(out.size())) {
     ET_KERNEL_CHECK(
         ctx, tensors_have_same_dim_order(in, out[i]), InvalidArgument, );
   }
@@ -52,11 +54,12 @@ void split_with_sizes_copy_out(
   // Check that all chunks broadcast to their respective out tensor
   Tensor::SizesType target_out_sizes[kTensorDimensionLimit];
   size_t target_out_ndim = in.dim();
-  for (size_t d = 0; d < in.dim(); ++d) {
+
+  for (const auto d : c10::irange(in.dim())) {
     target_out_sizes[d] = static_cast<Tensor::SizesType>(in.size(d));
   }
 
-  for (size_t i = 0; i < split_sizes.size(); i++) {
+  for (const auto i : c10::irange(split_sizes.size())) {
     target_out_sizes[dim] = static_cast<Tensor::SizesType>(split_sizes[i]);
     ET_KERNEL_CHECK(
         ctx,
@@ -71,12 +74,12 @@ void split_with_sizes_copy_out(
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out[0].scalar_type();
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, __func__, CTYPE_IN, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, __func__, CTYPE_OUT, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, __func__, CTYPE_IN, [&]() {
+    ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, __func__, CTYPE_OUT, [&]() {
       const CTYPE_IN* in_data = in.const_data_ptr<CTYPE_IN>();
 
       // Iterate through list of out tensors
-      for (size_t i = 0; i < out.size(); ++i) {
+      for (const auto i : c10::irange(out.size())) {
         const Tensor& out_tensor = out[i];
 
         // If out tensor is empty, no action is required
@@ -99,8 +102,8 @@ void split_with_sizes_copy_out(
         // Simpler logic if there's no broadcasting
         if (!is_broadcasted) {
           const CTYPE_IN* src = in_data;
-          for (size_t j = 0; j < leading_dims; ++j) {
-            for (size_t k = 0; k < chunk_step; ++k) {
+          for ([[maybe_unused]] const auto j : c10::irange(leading_dims)) {
+            for (const auto k : c10::irange(chunk_step)) {
               out_data[k] = convert<CTYPE_OUT, CTYPE_IN>(src[k]);
             }
             src += step;
@@ -119,7 +122,7 @@ void split_with_sizes_copy_out(
 
           // For each element in the out tensor, find its corresponding index
           // in the input tensor and copy it over
-          for (size_t ix = 0; ix < out_tensor.numel(); ++ix) {
+          for (const auto ix : c10::irange(out_tensor.numel())) {
             size_t out_coord[kTensorDimensionLimit];
             delinearize_index(ix, out_tensor, out_coord, kTensorDimensionLimit);
 

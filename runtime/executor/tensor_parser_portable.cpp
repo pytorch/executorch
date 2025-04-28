@@ -11,23 +11,27 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/program_generated.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 namespace deserialization {
 
-using torch::executor::ScalarType;
-using torch::executor::Tensor;
-using torch::executor::TensorImpl;
+using executorch::runtime::Span;
+using ::torch::executor::ScalarType;
+using ::torch::executor::Tensor;
+using ::torch::executor::TensorImpl;
 
 Result<Tensor> parseTensor(
     const Program* program,
     MemoryManager* memory_manager,
-    const executorch_flatbuffer::Tensor* s_tensor) {
+    const executorch_flatbuffer::Tensor* s_tensor,
+    const NamedDataMap* named_data_map,
+    Span<NamedData> external_constants) {
   EXECUTORCH_SCOPE_PROF("TensorParser::parseTensor");
   auto method_allocator = memory_manager->method_allocator();
 
@@ -39,11 +43,7 @@ Result<Tensor> parseTensor(
 
   ScalarType scalar_type = static_cast<ScalarType>(s_tensor->scalar_type());
   ET_CHECK_OR_RETURN_ERROR(
-      isValid(scalar_type) &&
-          // Types that do not yet have deserialization support.
-          scalar_type != exec_aten::ScalarType::ComplexHalf &&
-          scalar_type != exec_aten::ScalarType::ComplexFloat &&
-          scalar_type != exec_aten::ScalarType::ComplexDouble,
+      isValid(scalar_type),
       InvalidProgram,
       "Invalid or unsupported ScalarType %" PRId8,
       static_cast<int8_t>(scalar_type));
@@ -74,47 +74,76 @@ Result<Tensor> parseTensor(
       dim);
   const auto serialized_dim_order = s_tensor->dim_order()->data();
 
-  exec_aten::SizesType* sizes = nullptr;
-  exec_aten::DimOrderType* dim_order = nullptr;
+  executorch::aten::SizesType* sizes = nullptr;
+  executorch::aten::DimOrderType* dim_order = nullptr;
   // For dynamic shape tensors, allocate local buffers to allow mutable sizes
   // and strides
   if (dynamism != TensorShapeDynamism::STATIC) {
     // copy sizes and dim order out of flatbuffer
     // kimishpate: I think dim order can remain immutable and point to fb
     // memory, unless we plan to implement in-place permute
-    exec_aten::SizesType* sizes_buf = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-        method_allocator, exec_aten::SizesType, dim);
-    exec_aten::DimOrderType* dim_order_buf = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-        method_allocator, exec_aten::DimOrderType, dim);
+    executorch::aten::SizesType* sizes_buf =
+        method_allocator->allocateList<executorch::aten::SizesType>(dim);
+    if (sizes_buf == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+
+    executorch::aten::DimOrderType* dim_order_buf =
+        method_allocator->allocateList<executorch::aten::DimOrderType>(dim);
+    if (dim_order_buf == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+
     std::memcpy(
-        sizes_buf, serialized_sizes, sizeof(exec_aten::SizesType) * dim);
+        sizes_buf, serialized_sizes, sizeof(executorch::aten::SizesType) * dim);
     std::memcpy(
         dim_order_buf,
         serialized_dim_order,
-        sizeof(exec_aten::DimOrderType) * dim);
+        sizeof(executorch::aten::DimOrderType) * dim);
 
     sizes = sizes_buf;
     dim_order = dim_order_buf;
   } else {
     // Const cast safe here as these tensors can't be resized, so these fields
     // will not be modified.
-    sizes = const_cast<exec_aten::SizesType*>(serialized_sizes);
-    dim_order = const_cast<exec_aten::DimOrderType*>(serialized_dim_order);
+    sizes = const_cast<executorch::aten::SizesType*>(serialized_sizes);
+    dim_order =
+        const_cast<executorch::aten::DimOrderType*>(serialized_dim_order);
   }
+  // Validate sizes before using them in case the PTE data is bad. We can't
+  // detect bad positive values, but we can reject negative values, which would
+  // otherwise panic in the TensorImpl ctor. dim_order_to_stride() will validate
+  // dim_order.
+  for (flatbuffers::uoffset_t i = 0; i < dim; i++) {
+    ET_CHECK_OR_RETURN_ERROR(
+        sizes[i] >= 0,
+        InvalidProgram,
+        "Negative size[%zu] %" PRId32,
+        static_cast<size_t>(i),
+        sizes[i]);
+  }
+
   // We will remove strides from schema.
   // Allocating strides buffer here and populating it.
   // In subsequent diffs we can remove strides accessor, however this
   // will introduce incompatible APIs between ATen Tensor and ETensor.
-  exec_aten::StridesType* strides = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-      method_allocator, exec_aten::StridesType, dim);
+  executorch::aten::StridesType* strides =
+      method_allocator->allocateList<executorch::aten::StridesType>(dim);
+  if (strides == nullptr) {
+    return Error::MemoryAllocationFailed;
+  }
+
   auto status = dim_order_to_stride(sizes, dim_order, dim, strides);
   ET_CHECK_OR_RETURN_ERROR(
       status == Error::Ok,
       Internal,
       "dim_order_to_stride returned invalid status");
 
-  auto* tensor_impl =
-      ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(method_allocator, TensorImpl);
+  auto* tensor_impl = method_allocator->allocateInstance<TensorImpl>();
+  if (tensor_impl == nullptr) {
+    return Error::MemoryAllocationFailed;
+  }
+
   // Placement new on the allocated memory space. Note that we create this first
   // with null data so we can find its expected size before getting its memory.
   new (tensor_impl) TensorImpl(
@@ -131,7 +160,9 @@ Result<Tensor> parseTensor(
       s_tensor,
       program,
       tensor_impl->nbytes(),
-      memory_manager->planned_memory());
+      memory_manager->planned_memory(),
+      named_data_map,
+      external_constants);
   if (!data_ptr.ok()) {
     ET_LOG(
         Error,
@@ -145,5 +176,5 @@ Result<Tensor> parseTensor(
 }
 
 } // namespace deserialization
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch

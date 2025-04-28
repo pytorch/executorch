@@ -48,6 +48,10 @@ class DataLoader {
        * Data used for initializing mutable tensors.
        */
       Mutable,
+      /**
+       * Data used for initializing external tensors.
+       */
+      External,
     };
 
     /// Type of the segment.
@@ -65,12 +69,12 @@ class DataLoader {
     SegmentInfo() = default;
 
     explicit SegmentInfo(
-        Type segment_type,
-        size_t segment_index = 0,
-        const char* descriptor = nullptr)
-        : segment_type(segment_type),
-          segment_index(segment_index),
-          descriptor(descriptor) {}
+        Type segment_type_,
+        size_t segment_index_ = 0,
+        const char* descriptor_ = nullptr)
+        : segment_type(segment_type_),
+          segment_index(segment_index_),
+          descriptor(descriptor_) {}
   };
 
   virtual ~DataLoader() = default;

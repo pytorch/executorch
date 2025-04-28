@@ -1,0 +1,17 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+python_library(
+    name = "model",
+    srcs = [
+        "__init__.py",
+        "model.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/extension/llm/modules:module_lib",
+        "//pytorch/torchtune:lib",
+        "//executorch/examples/models:model_base",
+    ],
+)

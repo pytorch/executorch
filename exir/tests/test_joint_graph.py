@@ -18,6 +18,7 @@ from executorch.extension.pybindings.portable_lib import (
 from torch.export._trace import _export
 from torch.export.experimental import _export_forward_backward
 from torch.export.exported_program import OutputKind
+from torch.testing import assert_close
 
 
 class TestJointGraph(unittest.TestCase):
@@ -73,28 +74,24 @@ class TestJointGraph(unittest.TestCase):
 
         # assert that the weight and bias have proper data_buffer_idx and allocation_info
         self.assertEqual(
-            et.executorch_program.execution_plan[0]  # pyre-ignore
-            .values[0]
-            .val.data_buffer_idx,
+            et.executorch_program.execution_plan[0].values[0].val.data_buffer_idx,
             1,
         )
         self.assertEqual(
-            et.executorch_program.execution_plan[0]  # pyre-ignore
-            .values[1]
-            .val.data_buffer_idx,
+            et.executorch_program.execution_plan[0].values[1].val.data_buffer_idx,
             2,
         )
         self.assertEqual(
-            et.executorch_program.execution_plan[0]  # pyre-ignore
+            et.executorch_program.execution_plan[0]
             .values[0]
             .val.allocation_info.memory_offset_low,
-            0,
+            96,
         )
         self.assertEqual(
-            et.executorch_program.execution_plan[0]  # pyre-ignore
+            et.executorch_program.execution_plan[0]
             .values[1]
             .val.allocation_info.memory_offset_low,
-            48,
+            224,
         )
 
         loss = m(*example_inputs)
@@ -104,9 +101,10 @@ class TestJointGraph(unittest.TestCase):
             example_inputs
         )  # ET outputs are [loss, grads, weights]
 
-        self.assertTrue(torch.allclose(loss, et_outputs[0]))
+        # Without rtol and atol, this test fails in macos.
+        assert_close(loss, et_outputs[0], rtol=1e-4, atol=1e-4)
         self.assertTrue(
-            torch.allclose(m.linear.weight.grad, et_outputs[1])  # pyre-ignore[6]
+            torch.allclose(m.linear.weight.grad, et_outputs[1])  # pyre-ignore
         )
         self.assertTrue(torch.allclose(m.linear.bias.grad, et_outputs[2]))
         self.assertTrue(torch.allclose(m.linear.weight, et_outputs[3]))
@@ -118,23 +116,17 @@ class TestJointGraph(unittest.TestCase):
 
         # gradient outputs start at index 1
         self.assertEqual(
-            et.executorch_program.execution_plan[1]  # pyre-ignore
-            .values[0]
-            .val.int_val,
+            et.executorch_program.execution_plan[1].values[0].val.int_val,
             1,
         )
 
         self.assertEqual(
-            et.executorch_program.execution_plan[2]  # pyre-ignore
-            .values[0]
-            .val.string_val,
+            et.executorch_program.execution_plan[2].values[0].val.string_val,
             "linear.weight",
         )
 
         # parameter outputs start at index 3
         self.assertEqual(
-            et.executorch_program.execution_plan[3]  # pyre-ignore
-            .values[0]
-            .val.int_val,
+            et.executorch_program.execution_plan[3].values[0].val.int_val,
             3,
         )

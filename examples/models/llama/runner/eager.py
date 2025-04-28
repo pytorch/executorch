@@ -28,6 +28,7 @@ class EagerLlamaRunner(LlamaRunner):
             params = json.loads(f.read())
         super().__init__(
             tokenizer_path=args.tokenizer_path,
+            tokenizer_config_path=args.tokenizer_config_path,
             max_seq_len=args.max_seq_length,
             max_batch_size=1,
             use_kv_cache=args.use_kv_cache,
@@ -42,7 +43,7 @@ class EagerLlamaRunner(LlamaRunner):
         tokens: torch.Tensor,
         input_pos: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        return self.model.forward(tokens=tokens, input_pos=input_pos)
+        return self.model.forward(tokens, {"input_pos": input_pos})
 
 
 def build_args_parser() -> argparse.ArgumentParser:
@@ -74,6 +75,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Have multi-turn chat with the model",
     )
 
+    parser.add_argument(
+        "--tokenizer_config_path",
+        type=str,
+        default=None,
+        help="Path to an accompanying tokenizer_config.json, which provides metadata for the main tokenizer.json",
+    )
+
     return parser
 
 
@@ -84,7 +92,11 @@ def execute_runner(runner_class: Type[LlamaRunner]) -> None:
     with torch.no_grad():
         runner = runner_class(args)  # pyre-ignore: Missing argument [20]
         generated_tokens = (
-            runner.chat_completion(temperature=args.temperature)
+            runner.chat_completion(
+                max_seq_len=1000000 if args.use_attention_sink else args.max_seq_length,
+                temperature=args.temperature,
+                show_progress=args.show_tokens,
+            )
             if args.chat
             else runner.text_completion(
                 prompt=args.prompt,
