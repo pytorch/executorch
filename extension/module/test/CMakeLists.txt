@@ -56,7 +56,7 @@ et_cxx_test(
   portable_ops_lib
 )
 
-add_dependencies(extension_module_test generated_pte_files)
+add_dependencies(extension_module_test generated_module_test_files)
 set_property(TEST extension_module_test PROPERTY ENVIRONMENT ${test_env})
 
 set_property(
