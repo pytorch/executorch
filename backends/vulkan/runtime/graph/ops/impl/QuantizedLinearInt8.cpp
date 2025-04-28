@@ -195,12 +195,11 @@ void add_q_8w_linear_tiled_node(
     out_tile_nrows = 4;
   }
 
-  utils::uvec3 global_wg_size = graph.logical_limits_of(out);
-  global_wg_size[1] = global_wg_size[1] / out_tile_nrows;
-  if (!use_coop_algorithm) {
-    global_wg_size[0] *= global_wg_size[1];
-    global_wg_size[1] = 1;
-  }
+  utils::uvec3 out_limits = graph.logical_limits_of(out);
+  utils::uvec3 global_wg_size = {
+      out_limits[0] * (utils::div_up(out_limits, out_tile_nrows)),
+      1,
+      out_limit[2]};
 
   utils::uvec3 local_wg_size{64, 1, 1};
   if (use_coop_algorithm) {

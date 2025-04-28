@@ -43,9 +43,9 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 #extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
 
 void main() {
-  const uint16_t out_size_x_div_4 = uint16_t(divup4(out_sizes.x));
-  const uint16_t out_col = uint16_t((gl_GlobalInvocationID.x % out_size_x_div_4) << 2);
-  const uint16_t out_row = uint16_t((gl_GlobalInvocationID.x / out_size_x_div_4) * TILE_ROWS);
+  const uint16_t out_width_ntexels = uint16_t(divup4(out_sizes.x));
+  const uint16_t out_col = uint16_t((gl_GlobalInvocationID.x % out_width_ntexels) << 2);
+  const uint16_t out_row = uint16_t((gl_GlobalInvocationID.x / out_width_ntexels) * TILE_ROWS);
 
   if (out_row >= uint16_t(out_sizes.y)) {
     return;
