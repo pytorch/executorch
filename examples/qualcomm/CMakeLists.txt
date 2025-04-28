@@ -68,6 +68,8 @@ target_include_directories(
     ${_common_include_directories}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/json/single_include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/llama.cpp-unicode/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/llama.cpp-unicode/src
 )
 
 # find RE2 for tokenizer
