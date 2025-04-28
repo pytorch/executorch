@@ -31,8 +31,8 @@ from torch.utils import _pytree as pytree
 _DEFAULT_SKIP_TARGETS = {exir_ops.edge.aten.full.default}
 
 # Skipping transpose/permute for now because https://github.com/pytorch/executorch/issues/10499
-_DEFAULT_SKIP_TARGETS.add(exir_ops.edge.transpose.int)
-_DEFAULT_SKIP_TARGETS.add(exir_ops.edge.permute.default)
+_DEFAULT_SKIP_TARGETS.add(exir_ops.edge.aten.transpose.int)
+_DEFAULT_SKIP_TARGETS.add(exir_ops.edge.aten.permute.default)
 
 # Do not const prop quantization primitives
 _QDQ_OPS = [
