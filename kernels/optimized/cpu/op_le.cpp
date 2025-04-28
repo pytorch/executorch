@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/optimized/vec/functional.h>
-#include <executorch/kernels/optimized/vec/vec.h>
+#include <ATen/cpu/vec/functional.h>
+#include <ATen/cpu/vec/vec.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -60,15 +60,15 @@ Tensor& opt_le_tensor_out(
         CTYPE_SCALAR scalar_val = *scalar->const_data_ptr<CTYPE_SCALAR>();
         CTYPE scalar_casted = static_cast<CTYPE>(scalar_val);
 
-        using Vec = executorch::vec::Vectorized<CTYPE>;
+        using Vec = at::vec::Vectorized<CTYPE>;
         if (a.numel() == 1) {
-          executorch::vec::map<CTYPE>(
+          at::vec::map<CTYPE>(
               [scalar_casted](Vec x) { return Vec(scalar_casted).le(x); },
               out.mutable_data_ptr<CTYPE>(),
               tensor->const_data_ptr<CTYPE>(),
               out.numel());
         } else {
-          executorch::vec::map<CTYPE>(
+          at::vec::map<CTYPE>(
               [scalar_casted](Vec x) { return x.le(Vec(scalar_casted)); },
               out.mutable_data_ptr<CTYPE>(),
               tensor->const_data_ptr<CTYPE>(),
@@ -93,8 +93,8 @@ Tensor& opt_le_tensor_out(
   if (a_type == b_type && a_type == out_type) {
     ET_SWITCH_REAL_TYPES_AND(
         Bool, out_type, ctx, "le.Tensor_out", CTYPE, [&]() {
-          using Vec = executorch::vec::Vectorized<CTYPE>;
-          executorch::vec::map2<CTYPE>(
+          using Vec = at::vec::Vectorized<CTYPE>;
+          at::vec::map2<CTYPE>(
               [](Vec x, Vec y) { return x.le(y); },
               out.mutable_data_ptr<CTYPE>(),
               a.const_data_ptr<CTYPE>(),
@@ -158,8 +158,8 @@ Tensor& opt_le_scalar_out(
             CTYPE_B b_val = 0;
             ET_EXTRACT_SCALAR(b, b_val);
             CTYPE b_casted = static_cast<CTYPE>(b_val);
-            using Vec = executorch::vec::Vectorized<CTYPE>;
-            executorch::vec::map<CTYPE>(
+            using Vec = at::vec::Vectorized<CTYPE>;
+            at::vec::map<CTYPE>(
                 [b_casted](Vec x) { return x.le(Vec(b_casted)); },
                 out.mutable_data_ptr<CTYPE>(),
                 a.const_data_ptr<CTYPE>(),
