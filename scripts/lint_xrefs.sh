@@ -31,7 +31,9 @@ done < <(
     ':(exclude)**/*.lock' \
     ':(exclude)**/*.svg' \
     ':(exclude)**/*.xml' \
-    ':(exclude)**/third-party/**' \
+    ':(exclude,glob)**/third-party/**' \
+    ':(exclude,glob)**/third_party/**' \
+  | grep -v '@lint-ignore' \
   | grep -Ev 'https?://' \
   | sed -E \
       -e 's#([^:]+):\[[^]]+\]\(([^)]+)\)#\1:\2#' \
