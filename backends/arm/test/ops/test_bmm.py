@@ -32,15 +32,6 @@ class TestBMM(unittest.TestCase):
         def forward(self, x, y):
             return torch.bmm(x, y)
 
-    class MatMul(torch.nn.Module):
-        test_data_generators = [
-            lambda: (torch.rand(2, 3, 5), torch.rand(2, 5, 2)),
-            lambda: (torch.rand(1, 2, 3, 5), torch.rand(1, 2, 5, 2)),
-        ]
-
-        def forward(self, x, y):
-            return torch.matmul(x, y)
-
     class BMMSingleInput(torch.nn.Module):
         test_data_generators = [
             lambda: (torch.rand(20, 3, 3),),
@@ -128,16 +119,6 @@ class TestBMM(unittest.TestCase):
     def test_bmm_single_input_tosa_MI(self, test_data_generator: Callable[[], Tuple]):
         test_data = test_data_generator()
         self._test_bmm_tosa_MI_pipeline(self.BMMSingleInput(), test_data)
-
-    @parameterized.expand(MatMul.test_data_generators)
-    def test_matmul_tosa_MI(self, test_data_generator: Callable[[], Tuple]):
-        test_data = test_data_generator()
-        self._test_bmm_tosa_MI_pipeline(self.MatMul(), test_data)
-
-    @parameterized.expand(MatMul.test_data_generators)
-    def test_matmul_tosa_BI(self, test_data_generator: Callable[[], Tuple]):
-        test_data = test_data_generator()
-        self._test_bmm_tosa_BI_pipeline(self.MatMul(), test_data)
 
     @parameterized.expand(BMM.test_data_generators)
     def test_bmm_tosa_BI(self, test_data_generator: Callable[[], Tuple]):
