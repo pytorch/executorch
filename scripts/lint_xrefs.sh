@@ -23,15 +23,16 @@ while IFS=: read -r filepath link; do
     status=1
   fi
 done < <(
-  git --no-pager grep --no-color -I -o -E \
-    '\[[^]]+\]\([^[:space:])]*/[^[:space:])]*\)|href="[^"]*/[^"]*"|src="[^"]*/[^"]*"' \
+  git --no-pager grep --no-color -I -P -o \
+    '(?!.*@lint-ignore)(?:\[[^]]+\]\([^[:space:])]*/[^[:space:])]*\)|href="[^"]*/[^"]*"|src="[^"]*/[^"]*")' \
     -- '*' \
     ':(exclude).*' \
     ':(exclude)**/.*' \
     ':(exclude)**/*.lock' \
     ':(exclude)**/*.svg' \
     ':(exclude)**/*.xml' \
-    ':(exclude)**/third-party/**' \
+    ':(exclude,glob)**/third-party/**' \
+    ':(exclude,glob)**/third_party/**' \
   | grep -Ev 'https?://' \
   | sed -E \
       -e 's#([^:]+):\[[^]]+\]\(([^)]+)\)#\1:\2#' \
