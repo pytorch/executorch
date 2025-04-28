@@ -602,7 +602,7 @@
 <p>To run the model on-device, build the executorch library and EthosUDelegate using the script
 <code class="docutils literal notranslate"><span class="pre">executorch/backends/arm/scripts/build_executorch.sh</span></code>.
 Then build the arm executorch runtime using the script
-<code class="docutils literal notranslate"><span class="pre">executorch/backends/arm/scripts/build_executorch_runner.sh</span> <span class="pre">--pte=mv2_arm_ethos_u55.pte</span> <span class="pre">--target=ethos-u55-128</span></code>.</p>
+<code class="docutils literal notranslate"><span class="pre">executorch/backends/arm/scripts/build_executor_runner.sh</span> <span class="pre">--pte=mv2_arm_ethos_u55.pte</span> <span class="pre">--target=ethos-u55-128</span></code>.</p>
 <p>Finally, run the elf file on FVP using the script
 <code class="docutils literal notranslate"><span class="pre">executorch/backends/arm/scripts/run_fvp.sh</span> <span class="pre">--elf=executorch/mv2_arm_ethos_u55/cmake-out/arm_executor_runner</span> <span class="pre">--target=ethos-u55-128</span></code>.</p>
 </div>
