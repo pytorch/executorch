@@ -5,7 +5,6 @@
 
 import argparse
 import os
-import platform
 import subprocess
 import sys
 
@@ -113,14 +112,6 @@ def build_libs(et_build_root: str, script_path: str):
             "--portable_kernels=aten::_softmax.out",
         ]
     )
-    run_external_cmd(
-        [
-            "bash",
-            os.path.join(script_path, "build_quantized_ops_aot_lib.sh"),
-            f"--et_build_root={et_build_root}",
-            "--build_type=Release",
-        ]
-    )
 
 
 def build_pte(
@@ -132,17 +123,6 @@ def build_pte(
     build_output: str,
     no_intermediate: bool,
 ):
-    soext = {"Darwin": "dylib", "Linux": "so", "Windows": "dll"}.get(
-        platform.system(), None
-    )
-    solibs_path = os.path.join(
-        et_build_root,
-        "cmake-out-aot-lib",
-        "kernels",
-        "quantized",
-        f"libquantized_ops_aot_lib.{soext}",
-    )
-    solibs = f"--so_library={solibs_path}"
 
     intermediate = ""
     if not no_intermediate:
@@ -162,7 +142,6 @@ def build_pte(
             f"--output={build_output}",
             f"--system_config={system_config}",
             f"--memory_mode={memory_mode}",
-            solibs,
         ]
     )
 

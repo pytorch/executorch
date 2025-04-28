@@ -74,9 +74,6 @@ test_pytest() { # Test ops and other things
 
     ./examples/models/llama3_2_vision/install_requirements.sh
 
-    cd "${et_root_dir}"
-    backends/arm/scripts/build_quantized_ops_aot_lib.sh
-
     # Run arm baremetal pytest tests without FVP
     pytest  --verbose --color=yes --numprocesses=auto backends/arm/test/
     echo "${TEST_SUITE_NAME}: PASS"
