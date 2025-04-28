@@ -88,13 +88,12 @@ std::optional<MultiArray> get_multi_array(EValue *eValue, ArgType argType) {
         ET_LOG(Error, "%s: DataType=%d is not supported", ETCoreMLStrings.delegateIdentifier.UTF8String, (int)tensor.scalar_type());
         return std::nullopt;
     }
-    
     std::vector<ssize_t> strides(tensor.strides().begin(), tensor.strides().end());
     std::vector<size_t> shape(tensor.sizes().begin(), tensor.sizes().end());
     
     // If tensor is rank 0, wrap in rank 1
     // See https://github.com/apple/coremltools/blob/8.2/coremltools/converters/mil/frontend/torch/exir_utils.py#L73
-    if (strides.size() == 0) {
+    if (shape.size() == 0) {
         shape.push_back(1);
         strides.push_back(1);
     }
