@@ -327,7 +327,7 @@ The SDK dir is the same one prepared [earlier](#setup-the-arm-ethos-u-software-d
 
 Note, you have to generate a new `executor-runner` binary if you want to change the model or the `.pte` file. This constraint is from the constrained bare-metal runtime environment you have for Corstone-300/Corstone-320 platforms.
 
-This is performed by the `backends/arm/scripts/build_executorch_runner.sh` script runned from `run.sh`.
+This is performed by the `backends/arm/scripts/build_executor_runner.sh` script runned from `run.sh`.
 
 ```{tip}
 The `run.sh` script takes in `--target` option, which provides a way to provide a specific target, Corstone-300(ethos-u55-128) or Corstone-320(ethos-u85-128)
