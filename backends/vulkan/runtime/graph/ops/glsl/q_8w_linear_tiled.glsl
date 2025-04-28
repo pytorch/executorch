@@ -40,12 +40,14 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-void main() {
-  const uint out_size_x_div_4 = divup4(out_sizes.x);
-  const uint out_col = (gl_GlobalInvocationID.x % out_size_x_div_4) << 2;
-  const uint out_row = (gl_GlobalInvocationID.x / out_size_x_div_4) * TILE_ROWS;
+#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
 
-  if (out_row >= out_sizes.y) {
+void main() {
+  const uint16_t out_size_x_div_4 = uint16_t(divup4(out_sizes.x));
+  const uint16_t out_col = uint16_t((gl_GlobalInvocationID.x % out_size_x_div_4) << 2);
+  const uint16_t out_row = uint16_t((gl_GlobalInvocationID.x / out_size_x_div_4) * TILE_ROWS);
+
+  if (out_row >= uint16_t(out_sizes.y)) {
     return;
   }
 
@@ -54,21 +56,21 @@ void main() {
   VEC4_T c[TILE_ROWS];
 
   $if SCALES_STORAGE == "buffer":
-    const VEC4_T scales = VEC4_T(t_scales[out_col >> 2]);
+    const VEC4_T scales = VEC4_T(t_scales[int(out_col >> 2)]);
   $else:
-    const VEC4_T scales = VEC4_T(texelFetch(t_scales, ivec2(out_col >> 2, 0), 0));
+    const VEC4_T scales = VEC4_T(texelFetch(t_scales, u16vec2(out_col >> 2, 0), 0));
 
   [[unroll]] for (int i = 0; i < TILE_ROWS; ++i) {
     c[i] = VEC4_T(0.0);
   }
 
-  for (int pos = 0; pos < in_sizes.x; pos += 4) {
+  for (uint16_t pos = uint16_t(0); pos < uint16_t(in_sizes.x); pos += uint16_t(4)) {
     // Preload weight tensor
     [[unroll]] for (int i = 0; i < 4; i++) {
       $if WEIGHT_STORAGE == "buffer":
         b[i] = t_weight[((pos + i) * out_sizes.x + out_col) >> 2];
       $else:
-        b[i] = VEC4_T(texelFetch(t_weight, ivec2(out_col >> 2, pos + i), 0));
+        b[i] = VEC4_T(texelFetch(t_weight, u16vec2(out_col >> 2, pos + i), 0));
     }
 
     // Preload input tensor
@@ -76,7 +78,7 @@ void main() {
       $if IN_STORAGE == "buffer":
         a[i] = t_in[((out_row + i) * in_sizes.x + pos) >> 2];
       $else:
-        a[i] = VEC4_T(texelFetch(t_in, ivec3(pos >> 2, out_row + i, 0), 0));
+        a[i] = VEC4_T(texelFetch(t_in, u16vec3(pos >> 2, out_row + i, 0), 0));
     }
 
     // Accumulate output
