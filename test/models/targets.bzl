@@ -61,8 +61,8 @@ def define_common_targets():
     MODULES_TO_EXPORT = [
         "ModuleAdd",
         "ModuleAddHalf",
+        "ModuleAddMul",
         "ModuleBasic",
-        "ModuleLinear",
         "ModuleMultipleEntry",
         "ModuleIndex",
         "ModuleDynamicCatUnallocatedIO",
@@ -94,7 +94,7 @@ def define_common_targets():
 
     # Class names of nn.Modules for :exported_programs to export.
     MODULES_AND_DATA_TO_EXPORT = [
-        "ModuleLinear",
+        "ModuleAddMul",
         "ModuleSimpleTrain",
     ]
     
@@ -102,8 +102,8 @@ def define_common_targets():
         name = "exported_program_and_data",
         cmd = "$(exe :export_program) --modules " + ",".join(MODULES_AND_DATA_TO_EXPORT) + " --external-constants --outdir $OUT",
         outs = {
-            "ModuleLinear.pte": ["ModuleLinearProgram.pte"],
-            "ModuleLinear.ptd": ["ModuleLinearProgram.ptd"],
+            "ModuleAddMul.pte": ["ModuleAddMulProgram.pte"],
+            "ModuleAddMul.ptd": ["ModuleAddMulProgram.ptd"],
             "ModuleSimpleTrainProgram.pte": ["ModuleSimpleTrainProgram.pte"],
             "ModuleSimpleTrain.ptd": ["ModuleSimpleTrainProgram.ptd"],
         },

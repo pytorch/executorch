@@ -131,7 +131,7 @@ class ModuleDynamicCatUnallocatedIO(nn.Module):
         return {"capture_config": CaptureConfig(pt2_mode=True, enable_aot=True)}
 
 
-class ModuleLinear(torch.nn.Module):
+class ModuleAddMul(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.a = 3 * torch.ones(2, 2, dtype=torch.float)
