@@ -95,6 +95,7 @@ def define_common_targets():
     # Class names of nn.Modules for :exported_programs to export.
     MODULES_AND_DATA_TO_EXPORT = [
         "ModuleAddMul",
+        "ModuleLinear",
         "ModuleSimpleTrain",
     ]
     
@@ -104,6 +105,8 @@ def define_common_targets():
         outs = {
             "ModuleAddMul.pte": ["ModuleAddMulProgram.pte"],
             "ModuleAddMul.ptd": ["ModuleAddMulProgram.ptd"],
+            "ModuleLinear.pte": ["ModuleLinearProgram.pte"],
+            "ModuleLinear.ptd": ["ModuleLinearProgram.ptd"],
             "ModuleSimpleTrainProgram.pte": ["ModuleSimpleTrainProgram.pte"],
             "ModuleSimpleTrain.ptd": ["ModuleSimpleTrainProgram.ptd"],
         },
@@ -146,7 +149,7 @@ def define_common_targets():
         deps = [
             ":export_delegated_program_lib",
             "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
-
+            "//executorch/exir/backend/test/demos/rpc:executor_backend_preprocess",
         ],
         visibility = [],  # Private
     )
@@ -222,6 +225,26 @@ def define_common_targets():
         default_outs = ["."],
         visibility = [
             "//executorch/runtime/executor/test/...",
+            "//executorch/test/...",
+        ],
+    )
+
+    # Export with demo ExecutorBackend for program-data separation test.
+    runtime.genrule(
+        name = "exported_executor_backend_program_and_data",
+        cmd = "$(exe :export_delegated_program)" +
+            " --modules ModuleLinear" + 
+            " --backend_id ExecutorBackend" +
+            " --external_constants" +
+            " --outdir $OUT",
+        
+        outs = {
+            "ModuleLinear-e.pte": ["ModuleLinear-e.pte"],
+        },
+        default_outs = ["."],
+        visibility = [
+            "//executorch/runtime/executor/test/...",
+            "//executorch/extension/flat_tensor/test/...",
             "//executorch/test/...",
         ],
     )
