@@ -203,10 +203,7 @@ Error CoreMLBackendDelegate::execute(BackendExecutionContext& context,
     size_t nInputs = nArgs.first;
     size_t nOutputs = nArgs.second;
     delegate_args.reserve(nInputs + nOutputs);
-    
-    // Container to hold wrapped scalar input args
-    std::vector<executorch::extension::TensorPtr> wrapped_scalars;
-    
+
     // inputs
     for (size_t i = 0; i < nInputs; i++) {
         auto multi_array = get_multi_array(args[i], ArgType::Input);
