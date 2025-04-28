@@ -23,10 +23,6 @@ using namespace ::executorch::runtime;
 class ModuleTest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
-    std::string resources_path;
-    if (const char* env = std::getenv("RESOURCES_PATH")) {
-      resources_path = env;
-    }
     model_path_ = std::getenv("ET_MODULE_ADD_PATH");
     linear_path_ = std::getenv("ET_MODULE_LINEAR_PROGRAM_PATH");
     linear_data_path_ = std::getenv("ET_MODULE_LINEAR_DATA_PATH");
