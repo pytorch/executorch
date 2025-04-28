@@ -12,7 +12,7 @@ import torch
 from executorch import exir
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
-from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
+from executorch.exir.passes.quant_fusion_pass import QuantFusionPass, quant_fusion_and_const_prop_pass
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from torch.ao.quantization import (  # @manual
     float_qparams_weight_only_qconfig,
@@ -33,7 +33,7 @@ from torch.nn import functional as F
 from torch.testing import FileCheck
 from torchao.quantization.granularity import PerAxis, PerGroup
 from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
-
+import copy
 
 class TestQuantFusionPass(unittest.TestCase):
     @classmethod
@@ -419,6 +419,7 @@ class TestQuantFusionPass(unittest.TestCase):
         m = to_edge(
             export(model, example_inputs, strict=True), compile_config=compile_config
         )
+        m_copy = copy.deepcopy(m)
 
         # Before pass, we see torchao dequantize and embedding ops
         FileCheck().check_count(
@@ -437,13 +438,9 @@ class TestQuantFusionPass(unittest.TestCase):
 
         # After pass, we see packing op and quantized embedding op, but no torchao dequantize op
         FileCheck().check_count(
-            "executorch_exir_dialects_edge__ops_quant_fusion__pack_embedding_weight_default",
-            1 if bit_width < 8 else 0,
-            exactly=True,
+            "executorch_exir_dialects_edge__ops_quant_fusion__pack_embedding_weight_default", 1 if bit_width < 8 else 0, exactly=True
         ).check_count(
-            f"executorch_exir_dialects_edge__ops_quantized_decomposed_embedding_{embedding_suffix}",
-            1,
-            exactly=True,
+            f"executorch_exir_dialects_edge__ops_quantized_decomposed_embedding_{embedding_suffix}", 1, exactly=True,
         ).check_not(
             "executorch_exir_dialects_edge__ops_torchao_dequantize_affine_default"
         ).run(
@@ -454,9 +451,7 @@ class TestQuantFusionPass(unittest.TestCase):
 
         # After constant prop, we see quantized embedding op, but no packing op
         FileCheck().check_count(
-            f"executorch_exir_dialects_edge__ops_quantized_decomposed_embedding_{embedding_suffix}",
-            1,
-            exactly=True,
+             f"executorch_exir_dialects_edge__ops_quantized_decomposed_embedding_{embedding_suffix}", 1, exactly=True,
         ).check_not(
             "executorch_exir_dialects_edge__ops_quant_fusion__pack_embedding_weight_default",
         ).run(
@@ -468,4 +463,21 @@ class TestQuantFusionPass(unittest.TestCase):
         self.assertTrue(torch.allclose(expected_outputs, actual_outputs))
 
         # Can lower to executorch
-        exec_prog = m.to_executorch()  # noqa: F841
+        exec_prog = m.to_executorch() # noqa
+
+
+        # Alternative flow 2 using quant_fusion_pass on exported program
+        quant_fusion_and_const_prop_pass(m_copy.exported_program())
+        FileCheck().check_count(
+             f"executorch_exir_dialects_edge__ops_quantized_decomposed_embedding_{embedding_suffix}", 1, exactly=True,
+        ).check_not(
+            "executorch_exir_dialects_edge__ops_quant_fusion__pack_embedding_weight_default",
+        ).run(
+            m_copy.exported_program().graph_module.code
+        )
+
+        actual_outputs2 = m_copy.exported_program().module()(*example_inputs)
+        self.assertTrue(torch.allclose(expected_outputs, actual_outputs2))
+
+        # Can lower to executorch
+        exec_prog2 = m_copy.to_executorch() # noqa

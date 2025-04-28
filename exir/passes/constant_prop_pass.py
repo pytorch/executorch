@@ -8,6 +8,7 @@
 
 from collections import OrderedDict
 from typing import cast, Mapping, Optional
+import logging
 
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -29,6 +30,31 @@ from torch.utils import _pytree as pytree
 # Propagating aten.full can significantly increase compiled model size.
 _DEFAULT_SKIP_TARGETS = {exir_ops.edge.aten.full.default}
 
+# Do not const prop quantization primitives
+_QDQ_OPS = [
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+    exir_ops.edge.quantized_decomposed.convert_element_type.no_fuse,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.choose_qparams.tensor,
+]
+try:
+    import torchao # noqa: F401
+    _QDQ_OPS.extend(
+        [
+            exir_ops.edge.torchao.dequantize_affine.default,
+            exir_ops.edge.torchao.quantize_affine.default,
+            exir_ops.edge.torchao.choose_qparams_affine.default,
+        ]
+    )
+except ImportError:
+    pass
+_DEFAULT_SKIP_TARGETS.update(set(_QDQ_OPS))
+
+
 _PRIMITIVE_TYPES = (
     float,
     int,
@@ -39,7 +65,6 @@ _PRIMITIVE_TYPES = (
     torch.dtype,
     torch.layout,
 )
-
 
 def is_const(
     arg,
@@ -308,7 +333,7 @@ def constant_prop_pass(
         if node.target == torch.ops.higher_order.cond
     ]
     if len(has_control_flow) > 0:
-        raise RuntimeError("constant_prop_pass for control flow is not supported yet.")
+        logging.warning("constant_prop_pass does not constant propagate in control flow modules")
 
     const_node_to_tensor = get_propagated_const_tensor_dict(
         exported_program, custom_skip_targets

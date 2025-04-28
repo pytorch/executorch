@@ -20,7 +20,6 @@ import torch
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
-from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
 from executorch.exir import EdgeProgramManager, to_edge_transform_and_lower
 from executorch.exir.backend.partitioner import Partitioner
 
@@ -29,7 +28,6 @@ from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackend
 
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes import MemoryPlanningPass
-from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
@@ -504,12 +502,15 @@ class LLMEdgeManager:
         """
         Lower the model to executorch and get an ExecutorchProgram.
         """
+        # QuantFusionPass is not necessary because we set do_quant_fusion_and_const_prop=True
+        # in ExecutorchBackendConfig
         to_executorch_passes = [
             # If there are Linear operations left in the graph, let's execute
             # them with the optimized op_linear rather than materializing a
             # transpose followed by a regular op_mm.
-            ConvertToLinearPass(),
-            QuantFusionPass(),
+            # Disabling because ConvertToLinearPass is not a sound pass: 
+            # https://github.com/pytorch/executorch/issues/10499
+            # ConvertToLinearPass(),
         ]
         if passes:
             # pyre-fixme[6]: In call `list.extend`, for 1st positional argument,
@@ -526,6 +527,7 @@ class LLMEdgeManager:
                 # Optional[PassResult]]]` but got `List[Union[ConvertToLinearPass,
                 # QuantFusionPass]]`.
                 passes=to_executorch_passes,
+                do_quant_fusion_and_const_prop=True,
                 memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
             )
