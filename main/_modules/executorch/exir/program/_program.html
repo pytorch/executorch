@@ -556,6 +556,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.normalize_view_copy_base_pass</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">NormalizeViewCopyBasePass</span><span class="p">,</span>
 <span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.quant_fusion_pass</span><span class="w"> </span><span class="kn">import</span> <span class="n">quant_fusion_and_const_prop_pass</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.remove_graph_asserts_pass</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">RemoveGraphAssertsPass</span><span class="p">,</span>
     <span class="n">RemoveNonCoreAtenOpGraphAssertsPass</span><span class="p">,</span>
@@ -2028,9 +2029,15 @@
 <span class="sd">            after it has been transformed to the ExecuTorch backend.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="k">if</span> <span class="n">config</span> <span class="k">else</span> <span class="n">ExecutorchBackendConfig</span><span class="p">()</span>
-
         <span class="n">execution_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">do_quant_fusion_and_const_prop</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">backward_signature</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span>
+                        <span class="s2">&quot;Cannot run do_quant_fusion_and_const_prop on a graph with a backward signature intended for on-device training.&quot;</span>
+                        <span class="s2">&quot; Please set do_quant_fusion_and_const_prop to False in the ExecutorchBackendConfig.&quot;</span>
+                    <span class="p">)</span>
+                <span class="n">program</span> <span class="o">=</span> <span class="n">quant_fusion_and_const_prop_pass</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
             <span class="n">program</span> <span class="o">=</span> <span class="n">weights_to_outputs_pass</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
             <span class="n">program</span> <span class="o">=</span> <span class="n">unsafe_remove_auto_functionalized_pass</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
             <span class="n">gm</span><span class="p">,</span> <span class="n">new_signature</span> <span class="o">=</span> <span class="n">insert_write_back_for_buffers_pass</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
