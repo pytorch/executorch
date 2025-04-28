@@ -443,6 +443,15 @@ class ComputeGraph final {
   utils::GPUMemoryLayout suggested_memory_layout(
       const std::vector<int64_t>& sizes);
 
+  inline bool device_is_adreno() {
+    return context_->adapter_ptr()->device_type() == vkapi::DeviceType::ADRENO;
+  }
+  const std::string& device_name() {
+    return context()->adapter_ptr()->device_name();
+  }
+
+  bool device_name_contains(const char* substr);
+
   //
   // Graph Building
   //

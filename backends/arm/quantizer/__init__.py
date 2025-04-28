@@ -10,3 +10,6 @@ from .arm_quantizer import (  # noqa
     get_symmetric_quantization_config,
     TOSAQuantizer,
 )
+
+# Used in tests
+from .arm_quantizer_utils import is_annotated  # noqa

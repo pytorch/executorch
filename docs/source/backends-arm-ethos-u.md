@@ -96,3 +96,6 @@ Then build the arm executorch runtime using the script
 
 Finally, run the elf file on FVP using the script
 `executorch/backends/arm/scripts/run_fvp.sh --elf=executorch/mv2_arm_ethos_u55/cmake-out/arm_executor_runner --target=ethos-u55-128`.
+
+## See Also
+- [Arm Ethos-U Backend Tutorial](tutorial-arm-ethos-u.md)

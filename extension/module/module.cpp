@@ -302,5 +302,15 @@ runtime::Error Module::set_output(
       output_tensor.mutable_data_ptr(), output_tensor.nbytes(), output_index);
 }
 
+ET_NODISCARD inline runtime::Result<Method*> Module::get_method(
+    const std::string& method_name) {
+  ET_CHECK_OR_RETURN_ERROR(
+      methods_.count(method_name) > 0,
+      InvalidArgument,
+      "no such method in program: %s",
+      method_name.c_str());
+  return methods_[method_name].method.get();
+}
+
 } // namespace extension
 } // namespace executorch

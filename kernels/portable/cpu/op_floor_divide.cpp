@@ -53,13 +53,9 @@ Tensor& floor_divide_out(
   bool div_by_zero_error = false;
 
   ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_bitensor_elementwise_fn<
-        CTYPE_COMPUTE,
-        op_name,
-        utils::SupportedTensorDtypes::REALHBF16>(
+    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
         [&div_by_zero_error](
             const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
-          // TODO: rewrite this to be vectorization-capable.
           if (is_integral_type<CTYPE_COMPUTE, /*includeBool=*/true>::value) {
             if (val_b == 0) {
               div_by_zero_error = true;
@@ -73,7 +69,8 @@ Tensor& floor_divide_out(
         utils::SupportedTensorDtypes::REALHBBF16,
         b,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out);
+        out,
+        utils::SupportedTensorDtypes::REALHBF16);
   });
 
   ET_KERNEL_CHECK_MSG(

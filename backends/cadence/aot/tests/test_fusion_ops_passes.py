@@ -12,7 +12,10 @@ import unittest
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
 from executorch.backends.cadence.aot import compiler
-from executorch.backends.cadence.aot.compiler import export_to_edge, quantize_pt2
+from executorch.backends.cadence.aot.compiler import (
+    export_to_edge,
+    quantize_and_export_to_edge,
+)
 from executorch.backends.cadence.aot.fuse_ops import (
     FuseFullThenReshapePass,
     FuseMulIntoDequantPass,
@@ -222,6 +225,26 @@ class TestFusionPasses(TestFusionPassesBase):
             count_node(graph_module, exir_ops.edge.aten.view_copy.default), 1
         )
 
+    def test_view_fusion_branched(self):
+        class ViewFusion(torch.nn.Module):
+            def forward(self, x):
+                y = x.view([1, 8, 15])
+                z = y.view([1, 1, 120])
+                t = y.view([120, 1, 1])
+                return z, t
+
+        x = torch.randn(8, 5, 3)
+        graph_module = (
+            compiler.export_to_cadence(ViewFusion(), (x,))
+            .exported_program()
+            .graph_module
+        )
+        graph_module.graph.eliminate_dead_code()
+        # z and t should be fused and y should be eliminated.
+        self.assertEqual(
+            count_node(graph_module, exir_ops.edge.aten.view_copy.default), 2
+        )
+
     def test_force_quant_dequant_fusion(self):
         class M(torch.nn.Module):
             def __init__(self):
@@ -394,9 +417,10 @@ class TestFusionPasses(TestFusionPassesBase):
 
         inputs = torch.randn(2, 12, 1, 6)
         model = M()
-        quantized_model = quantize_pt2(model, (inputs,))
         graph_module = (
-            export_to_edge(quantized_model, (inputs,)).exported_program().graph_module
+            quantize_and_export_to_edge(model, (inputs,))
+            .exported_program()
+            .graph_module
         )
         graph_module = FuseQuantDequantToRequantizePass()(graph_module).graph_module
         self.check_op_counts(
