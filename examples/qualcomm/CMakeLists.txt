@@ -82,6 +82,14 @@ add_subdirectory(
   ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/re2
   ${CMAKE_CURRENT_BINARY_DIR}/re2
 )
+add_subdirectory(
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/pcre2
+  ${CMAKE_CURRENT_BINARY_DIR}/pcre2
+)
+add_subdirectory(
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/json/single_include
+  ${CMAKE_CURRENT_BINARY_DIR}/json
+)
 set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 
 # build qnn_executor_runner
