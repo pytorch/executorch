@@ -29,6 +29,7 @@ add_custom_command(
   COMMAND
     python3 -m test.models.export_program --modules "ModuleLinear"
     --external-constants --outdir "${CMAKE_CURRENT_BINARY_DIR}" 2> /dev/null
+  WORKING_DIRECTORY ${EXECUTORCH_ROOT}
 )
 
 add_custom_target(
