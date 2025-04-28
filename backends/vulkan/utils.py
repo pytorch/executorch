@@ -14,6 +14,10 @@ from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkStorageType,
 )
 
+from executorch.exir.backend.canonical_partitioners.config_partitioner import (
+    format_target_name,
+)
+
 from executorch.exir.tensor import TensorSpec
 
 from torch._export.utils import is_buffer, is_param
@@ -22,9 +26,39 @@ from torch._subclasses.fake_tensor import FakeTensor
 
 from torch.export import ExportedProgram
 
+_DQ_OPS = {
+    "dequantize_per_tensor.tensor",
+    "dequantize_per_tensor.default",
+    "dequantize_per_channel.default",
+    "dequantize_per_channel_group.default",
+    "dequantize_per_token.default",
+    "dequantize_affine.default",
+}
+
 ##
 ## Node type determination
 ##
+
+
+def is_dequant_node(node: torch.fx.Node) -> bool:
+    if node.op != "call_function":
+        return False
+    node_name = format_target_name(node.target.__name__)  # pyre-ignore
+    return node_name in _DQ_OPS
+
+
+def is_dequant_per_channel_node(node: torch.fx.Node) -> bool:
+    if node.op != "call_function":
+        return False
+    node_name = format_target_name(node.target.__name__)  # pyre-ignore
+    return node_name == "dequantize_per_channel.default"
+
+
+def is_linear_node(node: torch.fx.Node) -> bool:
+    if node.op != "call_function":
+        return False
+    node_name = format_target_name(node.target.__name__)  # pyre-ignore
+    return node_name == "linear.default"
 
 
 def is_get_attr_node(node: torch.fx.Node) -> bool:

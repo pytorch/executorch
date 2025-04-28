@@ -78,21 +78,6 @@ def define_common_targets():
     )
 
     runtime.python_library(
-        name = "fuse_dequant_linear",
-        srcs = ["fuse_dequant_linear.py"],
-        visibility = [
-            "//executorch/backends/...",
-        ],
-        deps = [
-            ":utils",
-            "//caffe2:torch",
-            "//executorch/exir:pass_base",
-            "//executorch/exir:sym_util",
-            "//executorch/exir/dialects:lib",
-        ],
-    )
-
-    runtime.python_library(
         name = "view_copy_to_squeeze_unsqueeze",
         srcs = ["view_copy_to_squeeze_unsqueeze.py"],
         visibility = [
