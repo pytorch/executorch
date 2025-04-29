@@ -12,5 +12,6 @@
   "vocab_size": 151936,
   "use_hf_rope": true,
   "attention_qkv_bias": false,
-  "use_qk_norm": true
+  "use_qk_norm": true,
+  "qk_norm_before_rope": true
 }
