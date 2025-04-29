@@ -4,7 +4,7 @@ ExecuTorch supports both iOS and macOS via Objective-C, Swift, and C++. ExecuTor
 
 ## Integration
 
-The ExecuTorch Runtime for iOS and macOS is distributed as a collection of prebuilt [.xcframework](https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle) binary targets. These targets are compatible with both iOS and macOS devices and simulators and are available in both release and debug modes:
+The ExecuTorch Runtime for iOS and macOS (ARM64) is distributed as a collection of prebuilt [.xcframework](https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle) binary targets. These targets are compatible with both iOS and macOS devices and simulators and are available in both release and debug modes:
 
 * `executorch` - Main Runtime components
 * `backend_coreml` - Core ML backend
@@ -113,6 +113,13 @@ python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 # CoreML-only requirements:
 ./backends/apple/coreml/scripts/install_requirements.sh
 ```
+
+- **Intel-based macOS** systems require building PyTorch from source:  
+  - Use the [`--use-pt-pinned-commit` flag](https://github.com/pytorch/executorch/blob/main/install_requirements.sh) to install Executorch with an existing PyTorch build.  
+    See the [PyTorch instructions](https://github.com/pytorch/pytorch#installation) on how to build PyTorch from source.
+    ```bash
+    ./install_requirements.sh --use-pt-pinned-commit
+    ```
 
 5. Install [CMake](https://cmake.org):
 

@@ -10,8 +10,9 @@ The following are required to install the ExecuTorch host libraries, needed to e
 
 - Python 3.10 - 3.12
 - g++ version 7 or higher, clang++ version 5 or higher, or another C++17-compatible toolchain.
-- Linux or MacOS operating system (Arm or x86).
-  - Windows is supported via WSL.
+- Linux (x86_64 or ARM64) or macOS (ARM64).
+    - Intel-based macOS systems require building PyTorch from source (see [Building From Source](using-executorch-building-from-source.md) for instructions).
+    - Windows is supported via WSL.
 
 ## Installation
 To use ExecuTorch, you will need to install both the Python package and the appropriate platform-specific runtime libraries. Pip is the recommended way to install the ExecuTorch python package.

@@ -16,7 +16,7 @@ Linux (x86_64)
 - Ubuntu 20.04.6 LTS+
 - RHEL 8+
 
-macOS (x86_64/M1/M2)
+macOS (x86_64/ARM64)
 - Big Sur (11.0)+
 
 Windows (x86_64)
@@ -56,12 +56,20 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
    conda create -yn executorch python=3.10.0 && conda activate executorch
    ```
 
-## Install ExecuTorch pip package from Source
+## Install ExecuTorch pip package from source
    ```bash
    # Install ExecuTorch pip package and its dependencies, as well as
    # development tools like CMake.
    # If developing on a Mac, make sure to install the Xcode Command Line Tools first.
+   # Intel-based macOS systems require building PyTorch from source (see below)
    ./install_executorch.sh
+   ```
+  
+  Use the [`--use-pt-pinned-commit` flag](https://github.com/pytorch/executorch/blob/main/install_executorch.sh) to install Executorch with an existing PyTorch build.  
+  See the [PyTorch instructions](https://github.com/pytorch/pytorch#installation) on how to build PyTorch from source.
+
+   ```bash
+   ./install_executorch.sh --use-pt-pinned-commit
    ```
 
    Not all backends are built into the pip wheel by default. You can link these missing/experimental backends by turning on the corresponding cmake flag. For example, to include the MPS backend:

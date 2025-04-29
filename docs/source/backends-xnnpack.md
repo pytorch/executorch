@@ -14,7 +14,7 @@ The XNNPACK delegate is the ExecuTorch solution for CPU execution on mobile CPUs
 - ARM64 on Android, iOS, macOS, Linux, and Windows.
 - ARMv7 (with NEON) on Android.
 - ARMv6 (with VFPv2) on Linux.
-- x86 and x86-64 (up to AVX512) on Windows, Linux, macOS, Android, and iOS simulator.
+- x86 and x86-64 (up to AVX512) on Windows, Linux, Android.
 
 ## Development Requirements
 
