@@ -47,6 +47,14 @@ from .passes import get_cadence_passes
 from .utils import print_ops_info
 
 
+default_quantizer = CadenceDefaultQuantizer()
+
+
+# Note: this is not meant as a primary API since it can create inconsistencies
+# if the quantizer here is different from the quantizer used to convert. It is
+# however useful for unit tests to separate the converted model from the fused
+# model, to be able to get reference numerics.
+# If this does not apply, please use quantize_and_fuse_pt2 instead.
 def prepare_and_convert_pt2(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
@@ -243,6 +251,28 @@ def export_to_edge(
     edge_prog_manager = lower_ep_to_edge(expo_program, dump_graphs, constant_methods)
 
     return edge_prog_manager
+
+
+def quantize_and_export_to_edge(
+    model: torch.nn.Module,
+    inputs: tuple[object, ...],
+    quantizer: Optional[CadenceQuantizer] = None,
+    dump_graphs: bool = False,
+    constant_methods: Optional[dict[str, object]] = None,
+) -> EdgeProgramManager:
+    quantized_model = quantize_pt2(
+        model,
+        inputs,
+        quantizer=quantizer,
+        dump_graphs=dump_graphs,
+    )
+
+    return export_to_edge(
+        quantized_model,
+        inputs,
+        dump_graphs=dump_graphs,
+        constant_methods=constant_methods,
+    )
 
 
 def export_to_cadence(
