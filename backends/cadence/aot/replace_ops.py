@@ -675,8 +675,8 @@ class ReplaceConstantPadNdWithSlicePass(ExportPass):
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceAtenConvolutionWithJarvisConvolutionPass(ExportPass):
     """
-    Replace aten convolution op with jarvis-specific convolution op, since the
-    aten version is not supported by jarvis.
+    Replace aten convolution op with cadence-specific convolution op, since the
+    aten version is not supported by cadence.
     Also remove convolution stride if the output size along the strided dimension
     is 1. We can enable more transformations (e.g., conv -> linear replacement)
     for unit-stride convolutions.
@@ -1896,7 +1896,7 @@ class ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass(ExportPass):
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceAtenAvgPoolWithJarvisAvgPoolPass(ExportPass):
     """
-    Replace the aten avg_pool op with the jarvis custom avg_pool2d op.
+    Replace the aten avg_pool op with the cadence custom avg_pool2d op.
     """
 
     def call_operator(self, op, args, kwargs, meta):
