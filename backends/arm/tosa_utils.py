@@ -153,14 +153,14 @@ def reshape_for_broadcast(tosa_fb, inputs, dim_order=None):
         return reshaped, input2
 
 
-def is_consumer_node_depthwise_conv2d(node):
+def is_consumer_node_depthwise_conv2d(node: Node):
     consumer_node = list(node.users)[0]
     if consumer_node.target == exir_ops.edge.aten.convolution.default:
-        inputs = getNodeArgs(consumer_node)
-        group = inputs[-1]
-        in_channels = inputs[0].shape[1]
-        out_channels = inputs[1].shape[0]
-        if (in_channels == group.number) and (out_channels % in_channels) == 0:
+        consumer_node_inputs = consumer_node.all_input_nodes
+        groups = consumer_node.args[-1]
+        in_channels = consumer_node_inputs[0].meta["val"].shape[1]
+        out_channels = consumer_node_inputs[1].meta["val"].shape[0]
+        if (in_channels == groups) and (out_channels % in_channels) == 0:
             return True
 
     return False
