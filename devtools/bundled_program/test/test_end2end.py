@@ -5,21 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # flake8: noqa: F401
-import functools
-import inspect
-import os
-import random
 import unittest
-from typing import Callable, Dict, Optional, Tuple, Type
-
-import executorch.exir as exir
-
-import executorch.exir.control_flow as control_flow
-
-# @manual=//executorch/extension/pytree:pybindings
-import executorch.extension.pytree as pytree
-
-import torch
 
 from executorch.devtools.bundled_program.core import BundledProgram
 from executorch.devtools.bundled_program.serialize import (
@@ -35,7 +21,6 @@ kernel_mode = None  # either aten mode or lean mode
 try:
     from executorch.extension.pybindings.portable_lib import (
         _load_bundled_program_from_buffer,
-        _load_for_executorch_from_buffer,
         _load_for_executorch_from_bundled_program,
     )
 
@@ -47,7 +32,6 @@ except ImportError as e:
 try:
     from executorch.extension.pybindings.aten_lib import (  # @manual=//executorch/extension/pybindings:aten_lib
         _load_bundled_program_from_buffer,
-        _load_for_executorch_from_buffer,
         _load_for_executorch_from_bundled_program,
     )
 

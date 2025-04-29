@@ -23,7 +23,7 @@
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
-#include <executorch/extension/module/module.h>
+#include <executorch/extension/module/bundled_module.h>
 #include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/data_loader.h>
@@ -97,6 +97,7 @@ using ::executorch::ET_RUNTIME_NAMESPACE::Program;
 using ::executorch::extension::BufferDataLoader;
 using ::executorch::extension::MallocMemoryAllocator;
 using ::executorch::extension::MmapDataLoader;
+using ::executorch::extension::BundledModule;
 using ::executorch::runtime::ArrayRef;
 using ::executorch::runtime::DataLoader;
 using ::executorch::runtime::Error;
@@ -842,20 +843,14 @@ struct PyModule final {
       size_t testset_idx,
       double rtol = 1e-5,
       double atol = 1e-8) {
-    auto status = m.load_bundled_input(method_name, testset_idx);
-    THROW_IF_ERROR(
-        status,
-        "Load input from bundled to method failed with status %" PRIu32,
-        static_cast<uint32_t>(status));
-
-    auto outputs = m.Module::execute(method_name);
+    auto outputs = m.execute(method_name, testset_idx);
 
     THROW_IF_ERROR(
         outputs.error(),
         "Execution failed with status 0x%" PRIx32,
         static_cast<uint32_t>(outputs.error()));
 
-    status = m.verify_method_outputs(method_name, testset_idx, rtol, atol);
+    auto status = m.verify_method_outputs(method_name, testset_idx, rtol, atol);
     THROW_IF_ERROR(
         status,
         "Result verification failed with status %" PRIu32,

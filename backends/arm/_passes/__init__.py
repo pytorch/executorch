@@ -25,6 +25,7 @@ from .decompose_layernorm_pass import DecomposeLayerNormPass  # noqa
 from .decompose_leaky_relu_pass import DecomposeLeakyReLUPass  # noqa
 from .decompose_linear_pass import DecomposeLinearPass  # noqa
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
+from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
 from .decompose_select import DecomposeSelectPass  # noqa
 from .decompose_silu_pass import DecomposeSiluPass  # noqa
 from .decompose_softmax_pass import DecomposeSoftmaxPass  # noqa
