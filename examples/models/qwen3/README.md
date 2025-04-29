@@ -24,6 +24,7 @@ python -m examples.models.llama.export_llama \
   -d fp32 \
   -X \
   --xnnpack-extended-ops \
+  -qmode 8da4w
   --output_name="qwen3-0_6b.pte" \
   --verbose
 ```
@@ -38,6 +39,7 @@ python -m examples.models.llama.export_llama \
   -d fp32 \
   -X \
   --xnnpack-extended-ops \
+  -qmode 8da4w
   --output_name="qwen3-1_7b.pte" \
   --verbose
 ```
@@ -52,6 +54,7 @@ python -m examples.models.llama.export_llama \
   -d fp32 \
   -X \
   --xnnpack-extended-ops \
+  -qmode 8da4w
   --output_name="qwen3-4b.pte" \
   --verbose
 ```
