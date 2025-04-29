@@ -44,6 +44,20 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "bpe_tokenizer_base",
+        srcs = [
+            "src/bpe_tokenizer_base.cpp",
+        ],
+        exported_deps = [
+            ":headers",
+        ],
+        visibility = [
+            "//pytorch/tokenizers/...",
+        ],
+        platforms = PLATFORMS,
+    )
+
+    runtime.cxx_library(
         name = "sentencepiece",
         srcs = [
             "src/sentencepiece.cpp",
@@ -69,9 +83,9 @@ def define_common_targets():
         name = "tiktoken",
         srcs = [
             "src/tiktoken.cpp",
-            "src/bpe_tokenizer_base.cpp",
         ],
         deps = [
+            ":bpe_tokenizer_base",
             ":regex",
         ],
         exported_deps = [
@@ -91,11 +105,11 @@ def define_common_targets():
         name = "hf_tokenizer",
         srcs = [
             "src/hf_tokenizer.cpp",
-            "src/bpe_tokenizer_base.cpp",
             "src/pre_tokenizer.cpp",
             "src/token_decoder.cpp",
         ],
         deps = [
+            ":bpe_tokenizer_base",
             ":regex",
         ],
         exported_deps = [
