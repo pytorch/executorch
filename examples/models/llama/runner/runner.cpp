@@ -40,7 +40,6 @@ static constexpr auto kUseSDPAWithKVCache = "use_sdpa_with_kv_cache";
 
 std::unique_ptr<::tokenizers::Tokenizer> load_tokenizer(
     const std::string& tokenizer_path) {
-
   auto json_tokenizer = std::make_unique<tokenizers::HFTokenizer>();
   if (json_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
     ET_LOG(Info, "Loaded json tokenizer");
