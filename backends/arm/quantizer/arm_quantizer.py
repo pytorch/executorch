@@ -27,6 +27,7 @@ from .quantization_annotator import annotate_graph
 from executorch.backends.arm.arm_backend import (
     get_tosa_spec,
     is_ethosu,
+    is_vgf,
 )  # usort: skip
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.ao.quantization.fake_quantize import (
@@ -52,6 +53,7 @@ from torch.fx import GraphModule, Node
 __all__ = [
     "TOSAQuantizer",
     "EthosUQuantizer",
+    "VgfQuantizer",
     "get_symmetric_quantization_config",
 ]
 
@@ -355,6 +357,15 @@ class EthosUQuantizer(TOSAQuantizer):
     def __init__(self, compile_spec: list[CompileSpec]) -> None:
         if not is_ethosu(compile_spec):
             raise RuntimeError("compile spec is not targeting Ethos-U")
+
+        tosa_spec = get_tosa_spec(compile_spec)
+        super().__init__(tosa_spec)
+
+
+class VgfQuantizer(TOSAQuantizer):
+    def __init__(self, compile_spec: list[CompileSpec]) -> None:
+        if not is_vgf(compile_spec):
+            raise RuntimeError("compile spec is not targeting VGF")
 
         tosa_spec = get_tosa_spec(compile_spec)
         super().__init__(tosa_spec)

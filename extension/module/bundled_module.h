@@ -47,7 +47,34 @@ class BundledModule : public Module {
   BundledModule(BundledModule&&) = delete;
   BundledModule& operator=(BundledModule&&) = delete;
   // Default destructor
-  ~BundledModule() = default;
+  ~BundledModule() {
+    if (is_loaded_from_file_) {
+      delete[] static_cast<const uint8_t*>(bundled_program_ptr_);
+    }
+  }
+
+  /**
+   * Constructs an instance with the bundled program buffer pointer.
+   *
+   * This constructor reads the program from bundled program buffer to load the
+   * module with data loader. The bundled program pointer is preserved so that
+   * the portion outside of program is accessible.
+   *
+   * @param[in] file_path The path to the ExecuTorch program file to load.
+   * @param[in] memory_allocator A MemoryAllocator used for memory management.
+   * @param[in] temp_allocator A MemoryAllocator to use when allocating
+   * temporary data during kernel or delegate execution.
+   * @param[in] event_tracer A EventTracer used for tracking and logging events.
+   * @param[in] data_map_loader A DataLoader used for loading external weights.
+   */
+  ET_NODISCARD static runtime::Result<std::unique_ptr<BundledModule>> from_file(
+      const std::string& file_path,
+      std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
+      std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr,
+      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr,
+      std::unique_ptr<runtime::DataLoader> data_map_loader = nullptr);
+
+  using Module::execute;
 
   /**
    * Execute a specific method with the input value at the given `testset_idx`
@@ -91,6 +118,7 @@ class BundledModule : public Module {
 
  private:
   const void* bundled_program_ptr_;
+  bool is_loaded_from_file_ = false;
 };
 
 } // namespace extension

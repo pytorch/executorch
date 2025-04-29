@@ -42,7 +42,6 @@ def define_common_targets():
             ],
             deps = [
                 "//executorch/kernels/portable:generated_lib" + aten_suffix,
-                "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/extension/module:bundled_module" + aten_suffix,
                 "//executorch/extension/tensor:tensor" + aten_suffix,
             ],
