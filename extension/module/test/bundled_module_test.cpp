@@ -7,10 +7,7 @@
  */
 
 #include <executorch/extension/module/bundled_module.h>
-
 #include <gtest/gtest.h>
-
-#include <executorch/extension/data_loader/file_data_loader.h>
 
 using namespace ::executorch::extension;
 using namespace ::executorch::runtime;
@@ -23,32 +20,91 @@ class BundledModuleTest : public ::testing::Test {
       resources_path = env;
     }
     bpte_path_ = resources_path + "/bundled_program.bpte";
+    pte_path_ = resources_path + "/add.pte";
   }
 
   static inline std::string bpte_path_;
+  static inline std::string pte_path_;
 };
 
-#include <fstream>
+TEST_F(BundledModuleTest, TestExecute) {
+  auto bundled_module_output = BundledModule::from_file(bpte_path_.c_str());
+  EXPECT_EQ(bundled_module_output.error(), Error::Ok);
+  auto& bundled_module = bundled_module_output.get();
 
-std::vector<uint8_t> load_file_or_die(const char* path) {
-  std::ifstream file(path, std::ios::binary | std::ios::ate);
-  const size_t nbytes = file.tellg();
-  file.seekg(0, std::ios::beg);
-  auto file_data = std::vector<uint8_t>(nbytes);
-  ET_CHECK_MSG(
-      file.read(reinterpret_cast<char*>(file_data.data()), nbytes),
-      "Could not load contents of file '%s'",
-      path);
-  return file_data;
+  auto outputs = bundled_module->execute("forward", /*testset_idx=*/0);
+  EXPECT_EQ(bundled_module->Module::is_loaded(), true);
+  EXPECT_EQ(outputs.error(), Error::Ok);
+
+  auto status =
+      bundled_module->verify_method_outputs("forward", /*testset_idx=*/0);
+  EXPECT_EQ(status, Error::Ok);
 }
 
-TEST_F(BundledModuleTest, TestExecute) {
-  std::vector<uint8_t> file_data = load_file_or_die(bpte_path_.c_str());
-  BundledModule bundled_module(reinterpret_cast<void*>(file_data.data()));
+TEST_F(BundledModuleTest, TestNonExistBPFile) {
+  auto bundled_module_output =
+      BundledModule::from_file("/path/to/nonexistent/file.bpte");
+  EXPECT_EQ(bundled_module_output.error(), Error::AccessFailed);
+}
 
-  auto outputs = bundled_module.execute("forward", 0);
+TEST_F(BundledModuleTest, TestNonBPFile) {
+  auto bundled_module_output = BundledModule::from_file(pte_path_.c_str());
+  EXPECT_EQ(bundled_module_output.error(), Error::Ok);
+
+  auto& bundled_module = bundled_module_output.get();
+
+  auto outputs = bundled_module->execute("forward", /*testset_idx=*/0);
+  EXPECT_EQ(bundled_module->Module::is_loaded(), false);
+  EXPECT_EQ(outputs.error(), Error::InvalidArgument);
+
+  auto status =
+      bundled_module->verify_method_outputs("forward", /*testset_idx=*/0);
+  EXPECT_EQ(status, Error::InvalidArgument);
+}
+
+TEST_F(BundledModuleTest, TestExecuteInvalidMethod) {
+  auto bundled_module_output = BundledModule::from_file(bpte_path_.c_str());
+  EXPECT_EQ(bundled_module_output.error(), Error::Ok);
+  auto& bundled_module = bundled_module_output.get();
+
+  auto outputs =
+      bundled_module->execute("non_existent_method", /*testset_idx=*/0);
+  EXPECT_EQ(outputs.error(), Error::InvalidArgument);
+}
+
+TEST_F(BundledModuleTest, TestExecuteInvalidIdx) {
+  auto bundled_module_output = BundledModule::from_file(bpte_path_.c_str());
+  EXPECT_EQ(bundled_module_output.error(), Error::Ok);
+  auto& bundled_module = bundled_module_output.get();
+
+  auto outputs = bundled_module->execute("forward", /*testset_idx=*/10000);
+  EXPECT_EQ(outputs.error(), Error::InvalidArgument);
+}
+
+TEST_F(BundledModuleTest, TestVerifyInvalidMethod) {
+  auto bundled_module_output = BundledModule::from_file(bpte_path_.c_str());
+  EXPECT_EQ(bundled_module_output.error(), Error::Ok);
+  auto& bundled_module = bundled_module_output.get();
+
+  auto outputs = bundled_module->execute("forward", /*testset_idx=*/0);
+  EXPECT_EQ(bundled_module->Module::is_loaded(), true);
   EXPECT_EQ(outputs.error(), Error::Ok);
-  auto status = bundled_module.verify_method_outputs(
-      "forward", 0, 1e-3, 1e-5);
-  EXPECT_EQ(status, Error::Ok);
+
+  auto status = bundled_module->verify_method_outputs(
+      "non_existent_method", /*testset_idx=*/0);
+  EXPECT_EQ(status, Error::InvalidArgument);
+}
+
+TEST_F(BundledModuleTest, TestVerifyInvalidIdx) {
+  auto bundled_module_output = BundledModule::from_file(bpte_path_.c_str());
+  EXPECT_EQ(bundled_module_output.error(), Error::Ok);
+  auto& bundled_module = bundled_module_output.get();
+
+  auto outputs = bundled_module->execute("forward", /*testset_idx=*/0);
+  EXPECT_EQ(bundled_module->Module::is_loaded(), true);
+  EXPECT_EQ(outputs.error(), Error::Ok);
+
+  auto status =
+      bundled_module->verify_method_outputs("forward", /*testset_idx=*/10000);
+  EXPECT_EQ(status, Error::InvalidArgument);
 }
