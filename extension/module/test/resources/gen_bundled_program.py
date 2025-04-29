@@ -1,7 +1,5 @@
 # (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
-# pyre-strict
-
 import torch
 
 from executorch.exir import to_edge_transform_and_lower
