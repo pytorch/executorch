@@ -13,7 +13,7 @@ Backend developers will need to implement their own ``Quantizer`` to express how
 
 Modeling users will use the ``Quantizer`` specific to their target backend to quantize their model, e.g. ``XNNPACKQuantizer``.
 
-For an example quantization flow with ``XNPACKQuantizer``, more documentation and tutorials, please see ``Performing Quantization`` section in [ExecuTorch tutorial](https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial).
+For an example quantization flow with ``XNNPACKQuantizer``, more documentation and tutorials, please see ``Performing Quantization`` section in [ExecuTorch tutorial](https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial).
 
 ## Source Quantization: Int8DynActInt4WeightQuantizer
 
