@@ -1,0 +1,36 @@
+name: Link checks
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: true
+
+jobs:
+  lint-urls:
+    name: Lint URLs
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-linter
+      submodules: 'none'
+      fetch-depth: 0
+      ref: ${{ inputs.ref }}
+      timeout: 90
+      script: |
+        ./scripts/lint_urls.sh
+
+  lint-xrefs:
+    name: Lint Xrefs
+    needs: lint-urls
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-linter
+      submodules: 'none'
+      fetch-depth: 0
+      ref: ${{ inputs.ref }}
+      timeout: 90
+      script: |
+        ./scripts/lint_xrefs.sh
