@@ -9,6 +9,7 @@ from .arm_quantizer import (  # noqa
     EthosUQuantizer,
     get_symmetric_quantization_config,
     TOSAQuantizer,
+    VgfQuantizer,
 )
 
 # Used in tests
