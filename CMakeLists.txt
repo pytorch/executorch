@@ -665,7 +665,10 @@ install(FILES tools/cmake/executorch-config.cmake DESTINATION lib/cmake/ExecuTor
 #
 # executor_runner: Host tool that demonstrates program execution.
 #
-option(EXECUTORCH_BUILD_EXECUTOR_RUNNER "Build the executor_runner executable" ON)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_EXECUTOR_RUNNER "Build the executor_runner executable" ON
+  "NOT CMAKE_TOOLCHAIN_IOS" OFF
+)
 
 # Add googletest if any test targets should be built
 if(BUILD_TESTING)

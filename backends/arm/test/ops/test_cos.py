@@ -6,8 +6,9 @@
 
 from typing import Tuple
 
-import torch
+import pytest
 
+import torch
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineBI,
@@ -37,24 +38,28 @@ class Cos(torch.nn.Module):
 
 
 @common.parametrize("test_data", test_data_suite)
+@pytest.mark.tosa_ref_model
 def test_cos_tosa_MI(test_data: Tuple):
     pipeline = TosaPipelineMI[input_t1](
         Cos(),
         (test_data,),
         aten_op,
         exir_op=[],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     if conftest.get_option("tosa_version") == "1.0":
         pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
+@pytest.mark.tosa_ref_model
 def test_cos_tosa_BI(test_data: Tuple):
     pipeline = TosaPipelineBI[input_t1](
         Cos(),
         (test_data,),
         aten_op,
         exir_op=[],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 

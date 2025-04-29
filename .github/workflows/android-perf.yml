@@ -167,7 +167,7 @@ jobs:
     with:
       runner: linux.2xlarge.memory
       docker-image: executorch-ubuntu-22.04-qnn-sdk
-      submodules: 'true'
+      submodules: 'recursive'
       timeout: 60
       upload-artifact: android-models
       upload-artifact-to-s3: true

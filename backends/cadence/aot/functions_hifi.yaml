@@ -35,7 +35,7 @@
 - op: bmm.out
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::bmm_out
+      kernel_name: cadence::impl::HiFi::bmm_out
 
 - op: cat.out
   kernels:
@@ -107,6 +107,11 @@
     - arg_meta: null
       kernel_name: cadence::impl::HiFi::minimum_out
 
+- op: mm.out
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::HiFi::mm_out
+
 - op: mul.out
   kernels:
     - arg_meta: null
@@ -150,12 +155,12 @@
 - op: slice_copy.Tensor_out
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::slice_copy_Tensor_out
+      kernel_name: cadence::impl::HiFi::slice_copy_Tensor_out
 
 - op: split_with_sizes_copy.out
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::split_with_sizes_copy_out
+      kernel_name: cadence::impl::HiFi::split_with_sizes_copy_out
 
 - op: sub.out
   kernels:
@@ -170,7 +175,7 @@
 - op: view_copy.out
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::view_copy_out
+      kernel_name: cadence::impl::HiFi::view_copy_out
 
 - op: where.self_out
   kernels:
