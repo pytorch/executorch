@@ -191,6 +191,8 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.lt.Tensor,
             exir_ops.edge.aten.lt.Scalar,
             exir_ops.edge.aten.mul.Tensor,
+            exir_ops.edge.aten.ne.Tensor,
+            exir_ops.edge.aten.ne.Scalar,
             exir_ops.edge.aten.add.Scalar,
             exir_ops.edge.aten.sub.Scalar,
             exir_ops.edge.aten.mul.Scalar,
@@ -275,6 +277,8 @@ class NeedsDecompositionCheck(OperatorSupportBase):
                 exir_ops.edge.aten.sqrt.default,
                 exir_ops.edge.aten.sub.Scalar,
                 exir_ops.edge.aten.mul.Scalar,
+                exir_ops.edge.aten.ne.Tensor,
+                exir_ops.edge.aten.ne.Scalar,
                 exir_ops.edge.aten.div.Scalar,
                 exir_ops.edge.aten.leaky_relu.default,
             ]
