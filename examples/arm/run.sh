@@ -36,6 +36,7 @@ system_config=""
 memory_mode=""
 et_build_root="${et_root_dir}/arm_test"
 ethos_u_scratch_dir=${script_dir}/ethos-u-scratch
+scratch_dir_set=false
 
 function help() {
     echo "Usage: $(basename $0) [options]"
@@ -81,7 +82,7 @@ for arg in "$@"; do
       --system_config=*) system_config="${arg#*=}";;
       --memory_mode=*) memory_mode="${arg#*=}";;
       --et_build_root=*) et_build_root="${arg#*=}";;
-      --scratch-dir=*) ethos_u_scratch_dir="${arg#*=}";;
+      --scratch-dir=*) ethos_u_scratch_dir="${arg#*=}" ; scratch_dir_set=true ;;
       *)
       ;;
     esac
@@ -113,25 +114,47 @@ then
     fi
 fi
 
+function check_setup () {
+    # basic checks that setup.sh did everything needed before we get started
+
+    # check if setup_path_script was created, if so source it
+    if [[ -f ${setup_path_script} ]]; then
+        source $setup_path_script
+    else
+        echo "Could not find ${setup_path_script} file, ${_setup_msg}"
+        return 1
+    fi
+
+    # If setup_path_script was correct all these checks should now pass
+    hash arm-none-eabi-gcc \
+        || { echo "Could not find arm baremetal toolchain on PATH, ${_setup_msg}"; return 1; }
+
+    [[ -f ${toolchain_cmake} ]] \
+        || { echo "Could not find ${toolchain_cmake} file, ${_setup_msg}"; return 1; }
+
+    [[ -f ${et_root_dir}/CMakeLists.txt ]] \
+        || { echo "Executorch repo doesn't contain CMakeLists.txt file at root level"; return 1; }
+
+    return 0
+}
+
 #######
 ### Main
 #######
-# Source the tools
-# This should be prepared by the setup.sh
-[[ -f ${setup_path_script} ]] \
-    || { echo "Missing ${setup_path_script}. ${_setup_msg}"; exit 1; }
-
-source ${setup_path_script}
-
-# basic checks before we get started
-hash arm-none-eabi-gcc \
-    || { echo "Could not find arm baremetal toolchain on PATH, ${_setup_msg}"; exit 1; }
-
-[[ -f ${toolchain_cmake} ]] \
-    || { echo "Could not find ${toolchain_cmake} file, ${_setup_msg}"; exit 1; }
-
-[[ -f ${et_root_dir}/CMakeLists.txt ]] \
-    || { echo "Executorch repo doesn't contain CMakeLists.txt file at root level"; exit 1; }
+if ! check_setup; then
+    if [ "$scratch_dir_set" = false ] ; then
+	# check setup failed, no scratchdir given as parameter. trying to run setup.sh
+	if ${script_dir}/setup.sh; then
+	    # and recheck setup. If this fails exit.
+	    if ! check_setup; then
+		exit 1
+	    fi
+	else
+	    # setup.sh failed, it should print why
+	    exit 1
+	fi
+    fi
+fi
 
 # Build executorch libraries
 cd $et_root_dir
