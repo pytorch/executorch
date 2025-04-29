@@ -16,7 +16,10 @@ jobs:
       ref: ${{ inputs.ref }}
       timeout: 90
       script: |
-        ./scripts/lint_urls.sh
+        ./scripts/lint_urls.sh $(
+          [ "${{ github.event_name }}" = "pull_request" ] \
+            && git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }}
+        )
 
   lint-xrefs:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -28,4 +31,7 @@ jobs:
       ref: ${{ inputs.ref }}
       timeout: 90
       script: |
-        ./scripts/lint_xrefs.sh
+        ./scripts/lint_xrefs.sh $(
+          [ "${{ github.event_name }}" = "pull_request" ] \
+            && git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }}
+        )
