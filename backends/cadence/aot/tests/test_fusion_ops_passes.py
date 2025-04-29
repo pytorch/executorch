@@ -12,7 +12,10 @@ import unittest
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
 from executorch.backends.cadence.aot import compiler
-from executorch.backends.cadence.aot.compiler import export_to_edge, quantize_pt2
+from executorch.backends.cadence.aot.compiler import (
+    export_to_edge,
+    quantize_and_export_to_edge,
+)
 from executorch.backends.cadence.aot.fuse_ops import (
     FuseFullThenReshapePass,
     FuseMulIntoDequantPass,
@@ -325,7 +328,6 @@ class TestFusionPasses(TestFusionPassesBase):
         model = M()
         graph_module = export_to_edge(model, (inputs,)).exported_program().graph_module
         graph_module = FuseQuantDequantToRequantizePass()(graph_module).graph_module
-        graph_module.print_readable()
 
         self.check_op_counts(
             graph_module,
@@ -414,9 +416,10 @@ class TestFusionPasses(TestFusionPassesBase):
 
         inputs = torch.randn(2, 12, 1, 6)
         model = M()
-        quantized_model = quantize_pt2(model, (inputs,))
         graph_module = (
-            export_to_edge(quantized_model, (inputs,)).exported_program().graph_module
+            quantize_and_export_to_edge(model, (inputs,))
+            .exported_program()
+            .graph_module
         )
         graph_module = FuseQuantDequantToRequantizePass()(graph_module).graph_module
         self.check_op_counts(

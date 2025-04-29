@@ -177,6 +177,8 @@ _one_to_one = [
     torch.ops.aten.reciprocal.default,
     torch.ops.aten.rsqrt.default,
     torch.ops.aten.sigmoid.default,
+    torch.ops.aten.cos.default,
+    torch.ops.aten.sin.default,
     torch.ops.aten.tanh.default,
     torch.ops.aten.sum.dim_IntList,
     torch.ops.aten.hardsigmoid.default,

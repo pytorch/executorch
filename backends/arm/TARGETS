@@ -7,6 +7,8 @@ python_library(
         "ethosu_partitioner.py",
         "tosa_backend.py",
         "tosa_partitioner.py",
+        "vgf_backend.py",
+        "vgf_partitioner.py",
     ],
     deps = [
         ":arm_backend",
@@ -23,8 +25,10 @@ python_library(
     deps = [
         "fbsource//third-party/pypi/flatbuffers:flatbuffers",
         "fbsource//third-party/pypi/ml-dtypes:ml-dtypes",
-        "fbsource//third-party/serialization_lib/python/serializer:serializer",
-        "fbsource//third-party/serialization_lib/python/tosa:tosa",
+        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
+        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
+        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/tosa:tosa",
+        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/tosa:tosa",
         ":arm_vela",
         ":process_node",
         "//executorch/backends/arm/operators:lib",
@@ -36,7 +40,8 @@ python_library(
     name = "process_node",
     srcs = ["process_node.py"],
     deps = [
-        "fbsource//third-party/serialization_lib/python/tosa:tosa",
+        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/tosa:tosa",
+        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/tosa:tosa",
         "//executorch/backends/arm/operators:node_visitor",
         "//executorch/backends/arm:tosa_mapping",
         "//executorch/backends/arm:tosa_quant_utils",
@@ -59,7 +64,8 @@ python_library(
         "tosa_mapping.py",
     ],
     deps = [
-        "fbsource//third-party/serialization_lib/python/serializer:serializer",
+        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
+        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
         "//caffe2:torch",
     ],
 )
@@ -70,8 +76,10 @@ python_library(
     ],
     deps = [
         "fbsource//third-party/pypi/numpy:numpy",
-        "fbsource//third-party/serialization_lib/python/serializer:serializer",
-        "fbsource//third-party/serialization_lib/python/tosa:tosa",
+        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
+        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
+        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/tosa:tosa",
+        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/tosa:tosa",
         ":tosa_mapping",
         "//executorch/exir/dialects:lib",
     ],
@@ -92,7 +100,7 @@ python_library(
         "tosa_utils.py",
     ],
     deps = [
-        "fbsource//third-party/serialization_lib/python/serializer:serializer",
+        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
         ":tosa_quant_utils",
         "//executorch/backends/arm/operators:node_visitor",
     ],
