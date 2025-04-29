@@ -96,16 +96,15 @@ struct evalue_to_arg<const executorch::aten::Tensor&> final {
 };
 
 template <class T>
-struct evalue_to_arg<executorch::aten::optional<T>> final {
-  static executorch::aten::optional<T> call(executorch::runtime::EValue& v) {
+struct evalue_to_arg<std::optional<T>> final {
+  static std::optional<T> call(executorch::runtime::EValue& v) {
     return v.toOptional<T>();
   }
 };
 
 template <class T>
-struct evalue_to_arg<executorch::aten::ArrayRef<executorch::aten::optional<T>>>
-    final {
-  static executorch::aten::ArrayRef<executorch::aten::optional<T>> call(
+struct evalue_to_arg<executorch::aten::ArrayRef<std::optional<T>>> final {
+  static executorch::aten::ArrayRef<std::optional<T>> call(
       executorch::runtime::EValue& v) {
     return v.toListOptionalTensor();
   }

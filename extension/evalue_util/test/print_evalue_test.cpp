@@ -566,20 +566,18 @@ void expect_list_optional_tensor_output(
   // optional<Tensor> entries. It's important not to destroy these entries,
   // because the values list will own the underlying Tensors.
   auto unwrapped_values_memory = std::make_unique<uint8_t[]>(
-      sizeof(executorch::aten::optional<executorch::aten::Tensor>) *
-      wrapped_values.size());
-  executorch::aten::optional<executorch::aten::Tensor>* unwrapped_values =
-      reinterpret_cast<executorch::aten::optional<executorch::aten::Tensor>*>(
+      sizeof(std::optional<executorch::aten::Tensor>) * wrapped_values.size());
+  std::optional<executorch::aten::Tensor>* unwrapped_values =
+      reinterpret_cast<std::optional<executorch::aten::Tensor>*>(
           unwrapped_values_memory.get());
   // Must be initialized because BoxedEvalueList will use operator=() on each
   // entry.
   for (int i = 0; i < wrapped_values.size(); ++i) {
-    new (&unwrapped_values[i])
-        executorch::aten::optional<executorch::aten::Tensor>();
+    new (&unwrapped_values[i]) std::optional<executorch::aten::Tensor>();
   }
 
   ASSERT_LE(num_tensors, wrapped_values.size());
-  BoxedEvalueList<executorch::aten::optional<executorch::aten::Tensor>> list(
+  BoxedEvalueList<std::optional<executorch::aten::Tensor>> list(
       wrapped_values.data(), unwrapped_values, num_tensors);
   EValue value(list);
   expect_output(value, expected);

@@ -20,7 +20,7 @@ using executorch::aten::Tensor;
 Tensor& logit_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    executorch::aten::optional<double> eps,
+    std::optional<double> eps,
     Tensor& out) {
   (void)ctx;
 

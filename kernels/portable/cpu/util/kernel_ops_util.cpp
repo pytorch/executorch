@@ -269,7 +269,7 @@ bool check_avg_pool2d_args(
     const IntArrayRef padding,
     const bool ceil_mode,
     const bool count_include_pad,
-    const executorch::aten::optional<int64_t>& divisor_override,
+    const std::optional<int64_t>& divisor_override,
     const Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
 
@@ -324,7 +324,7 @@ void get_avg_pool2d_out_target_size(
 bool check_convolution_args(
     const Tensor& in,
     const Tensor& weight,
-    const executorch::aten::optional<Tensor>& bias,
+    const std::optional<Tensor>& bias,
     IntArrayRef stride,
     IntArrayRef padding,
     IntArrayRef dilation,

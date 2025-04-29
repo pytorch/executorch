@@ -37,7 +37,7 @@ Tensor& quantized_embedding_2bit_out(
     // non quant input and returns fp output
     const Tensor& weight,
     const Tensor& weight_scales,
-    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
+    const std::optional<Tensor>& opt_weight_zero_points,
     const int64_t weight_quant_min,
     const int64_t weight_quant_max,
     const Tensor& indices,
@@ -57,7 +57,7 @@ Tensor& quantized_embedding_2bit_out(
     KernelRuntimeContext& context,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
+    const std::optional<Tensor>& opt_weight_zero_points,
     int64_t weight_quant_min,
     int64_t weight_quant_max,
     const Tensor& indices,
@@ -77,11 +77,11 @@ Tensor& quantized_embedding_2bit_out(
 Tensor& quantized_embedding_2bit_dtype_out(
     const Tensor& weight,
     const Tensor& weight_scales,
-    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
+    const std::optional<Tensor>& opt_weight_zero_points,
     int64_t weight_quant_min,
     int64_t weight_quant_max,
     const Tensor& indices,
-    executorch::aten::optional<ScalarType> out_dtype,
+    std::optional<ScalarType> out_dtype,
     Tensor& out) {
   return quantized_embedding_xbit_dtype_out(
       weight,
@@ -99,11 +99,11 @@ Tensor& quantized_embedding_2bit_dtype_out(
     KernelRuntimeContext& context,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
+    const std::optional<Tensor>& opt_weight_zero_points,
     int64_t weight_quant_min,
     int64_t weight_quant_max,
     const Tensor& indices,
-    executorch::aten::optional<ScalarType> out_dtype,
+    std::optional<ScalarType> out_dtype,
     Tensor& out) {
   return quantized_embedding_xbit_dtype_out(
       context,

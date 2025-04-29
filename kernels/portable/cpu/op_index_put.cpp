@@ -22,7 +22,7 @@ using Tensor = executorch::aten::Tensor;
 Tensor& index_put_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    executorch::aten::ArrayRef<executorch::aten::optional<Tensor>> indices,
+    executorch::aten::ArrayRef<std::optional<Tensor>> indices,
     const Tensor& values,
     const bool accumulate,
     Tensor& out) {

@@ -27,7 +27,7 @@ using ::executorch::runtime::getLeadingDims;
 inline __attribute__((always_inline)) void linear_(
     const ::executorch::aten::Tensor& input,
     const ::executorch::aten::Tensor& weight,
-    const ::executorch::aten::optional<::executorch::aten::Tensor>& bias,
+    const std::optional<::executorch::aten::Tensor>& bias,
     ::executorch::aten::Tensor& output) {
   const float* __restrict__ input_data = input.const_data_ptr<float>();
   const float* __restrict__ weight_data = weight.const_data_ptr<float>();

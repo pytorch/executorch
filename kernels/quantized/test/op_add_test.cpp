@@ -20,11 +20,11 @@
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;
-using executorch::aten::optional;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext;
+using std::optional;
 using torch::executor::native::add_out;
 using torch::executor::native::dequantize_per_tensor_out;
 using torch::executor::native::quantize_per_tensor_out;

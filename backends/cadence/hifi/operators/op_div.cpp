@@ -178,7 +178,7 @@ Tensor& div_out_mode(
     RuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
-    executorch::aten::optional<executorch::aten::string_view> mode,
+    std::optional<std::string_view> mode,
     Tensor& out) {
   ET_KERNEL_CHECK(
       ctx,

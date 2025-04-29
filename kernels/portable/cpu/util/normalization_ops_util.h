@@ -15,10 +15,10 @@ namespace executor {
 
 bool check_batch_norm_args(
     const Tensor& in,
-    const executorch::aten::optional<Tensor>& weight,
-    const executorch::aten::optional<Tensor>& bias,
-    const executorch::aten::optional<Tensor>& running_mean,
-    const executorch::aten::optional<Tensor>& running_var,
+    const std::optional<Tensor>& weight,
+    const std::optional<Tensor>& bias,
+    const std::optional<Tensor>& running_mean,
+    const std::optional<Tensor>& running_var,
     double momentum,
     double eps,
     Tensor& out,
@@ -28,8 +28,8 @@ bool check_batch_norm_args(
 bool check_layer_norm_args(
     const Tensor& input,
     IntArrayRef normalized_shape,
-    const executorch::aten::optional<Tensor>& weight,
-    const executorch::aten::optional<Tensor>& bias,
+    const std::optional<Tensor>& weight,
+    const std::optional<Tensor>& bias,
     Tensor& out,
     Tensor& mean_out,
     Tensor& rstd_out);
@@ -42,8 +42,8 @@ void get_layer_norm_out_target_size(
 
 bool check_group_norm_args(
     const Tensor& input,
-    const executorch::aten::optional<Tensor>& weight,
-    const executorch::aten::optional<Tensor>& bias,
+    const std::optional<Tensor>& weight,
+    const std::optional<Tensor>& bias,
     int64_t N,
     int64_t C,
     int64_t HxW,

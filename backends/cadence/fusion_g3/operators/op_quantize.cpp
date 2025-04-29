@@ -329,8 +329,8 @@ Tensor& quantize_impl(
           }
         }
 
-        ::executorch::aten::optional<::executorch::aten::ArrayRef<int64_t>>
-            optional_dim_list{::executorch::aten::ArrayRef<int64_t>{
+        std::optional<::executorch::aten::ArrayRef<int64_t>> optional_dim_list{
+            ::executorch::aten::ArrayRef<int64_t>{
                 dims, size_t(input.dim() - 1)}};
 
 // Actual quantization logic
@@ -534,8 +534,8 @@ Tensor& quantize_impl(
           }
         }
 
-        ::executorch::aten::optional<::executorch::aten::ArrayRef<int64_t>>
-            optional_dim_list{::executorch::aten::ArrayRef<int64_t>{
+        std::optional<::executorch::aten::ArrayRef<int64_t>> optional_dim_list{
+            ::executorch::aten::ArrayRef<int64_t>{
                 dims, size_t(input.dim() - 1)}};
 
 // Actual quantization logic

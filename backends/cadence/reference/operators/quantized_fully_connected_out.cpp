@@ -13,10 +13,10 @@ namespace impl {
 namespace reference {
 namespace native {
 
-using ::executorch::aten::optional;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
+using std::optional;
 
 void quantized_fully_connected_out(
     __ET_UNUSED KernelRuntimeContext& ctx,

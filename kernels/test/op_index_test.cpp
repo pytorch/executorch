@@ -19,9 +19,9 @@
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;
-using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using std::optional;
 using torch::executor::testing::TensorFactory;
 
 using OptTensorArrayRef = ArrayRef<optional<Tensor>>;
@@ -411,11 +411,11 @@ TEST_F(OpIndexTensorOutTest, IndicesWithOnlyNullTensorsSupported) {
   optional<Tensor> indices0[] = {optional<Tensor>()};
   run_test_cases(x, indices0, x);
 
-  optional<Tensor> indices1[] = {optional<Tensor>(), optional<Tensor>()};
+  optional<Tensor> indices1[] = {optional<Tensor>(), std::optional<Tensor>()};
   run_test_cases(x, indices1, x);
 
   optional<Tensor> indices2[] = {
-      optional<Tensor>(), optional<Tensor>(), optional<Tensor>()};
+      optional<Tensor>(), std::optional<Tensor>(), std::optional<Tensor>()};
   Tensor out = tf.ones({2, 3});
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
       context_, op_index_tensor_out(x, indices2, out), "");

@@ -64,7 +64,7 @@ bool check_convolution_backward_args(
       check_convolution_args(
           input,
           weight,
-          executorch::aten::optional<Tensor>(),
+          std::optional<Tensor>(),
           stride,
           padding,
           dilation,

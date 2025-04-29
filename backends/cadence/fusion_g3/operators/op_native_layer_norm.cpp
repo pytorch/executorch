@@ -19,11 +19,11 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 using ::executorch::aten::IntArrayRef;
-using ::executorch::aten::optional;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;
+using std::optional;
 
 namespace cadence {
 namespace impl {
