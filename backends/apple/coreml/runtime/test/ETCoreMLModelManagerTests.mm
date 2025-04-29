@@ -15,6 +15,9 @@
 #import <XCTest/XCTest.h>
 #import <executorch/runtime/platform/runtime.h>
 #import <model_logging_options.h>
+#import <multiarray.h>
+
+using namespace executorchcoreml;
 
 @interface ETCoreMLModelManagerTests : XCTestCase
 
