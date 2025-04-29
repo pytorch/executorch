@@ -1,0 +1,73 @@
+{
+  "version": 10,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 31,
+    "patch": 0
+  },
+  "$comment": "On-device AI across mobile, embedded and edge for PyTorch.",
+  "configurePresets": [
+    {
+      "name": "common",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/cmake-out",
+      "generator": "Unix Makefiles"
+    },
+    {
+      "name": "macos-arm64",
+      "inherits": ["common"],
+      "generator": "Xcode",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third-party/ios-cmake/ios.toolchain.cmake",
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/macos-arm64.cmake",
+        "PLATFORM": "MAC_ARM64",
+        "DEPLOYMENT_TARGET": "10.15"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "ios-arm64",
+      "inherits": ["common"],
+      "generator": "Xcode",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third-party/ios-cmake/ios.toolchain.cmake",
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/ios-arm64.cmake",
+        "PLATFORM": "OS64",
+        "DEPLOYMENT_TARGET": "17.0"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "linux-x86_64",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "CMAKE_SYSTEM_NAME": "Linux",
+        "CMAKE_SYSTEM_PROCESSOR": "x86_64",
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/linux-x86_64.cmake"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "android-arm64-v8a",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{ANDROID_NDK}/build/cmake/android.toolchain.cmake",
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/android-arm64-v8a.cmake",
+        "ANDROID_ABI": "arm64-v8a",
+        "ANDROID_PLATFORM": "android-26"
+      }
+    }
+  ]
+}

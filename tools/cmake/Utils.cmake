@@ -51,10 +51,6 @@ function(executorch_print_configuration_summary)
   )
   message(
     STATUS
-      "  EXECUTORCH_BUILD_COREML                : ${EXECUTORCH_BUILD_COREML}"
-  )
-  message(
-    STATUS
       "  EXECUTORCH_BUILD_CPUINFO               : ${EXECUTORCH_BUILD_CPUINFO}"
   )
   message(
@@ -320,6 +316,11 @@ function(resolve_python_executable)
     set(PYTHON_EXECUTABLE
         python
         PARENT_SCOPE
+    )
+  elseif(DEFINED ENV{VIRTUAL_ENV})
+    set(PYTHON_EXECUTABLE
+      $ENV{VIRTUAL_ENV}/bin/python3
+      PARENT_SCOPE
     )
   else()
     set(PYTHON_EXECUTABLE

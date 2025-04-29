@@ -44,6 +44,20 @@
 
 cmake_minimum_required(VERSION 3.24)
 project(executorch)
+
+# MARK: - Start EXECUTORCH_H12025_BUILD_MIGRATION --------------------------------------------------
+
+include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
+
+# Determine the build preset and load it.
+determine_and_load_build_preset()
+include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
+
+# Print all the configs that were called with announce_configured_options.
+print_configured_options()
+
+# MARK: - End EXECUTORCH_H12025_BUILD_MIGRATION ----------------------------------------------------
+
 include(tools/cmake/Utils.cmake)
 include(CMakeDependentOption)
 
@@ -170,8 +184,6 @@ option(EXECUTORCH_BUILD_ARM_BAREMETAL
        "Build the Arm Baremetal flow for Cortex-M and Ethos-U" OFF
 )
 
-option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
-
 option(EXECUTORCH_BUILD_KERNELS_CUSTOM "Build the custom kernels" OFF)
 
 option(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT "Build the custom ops lib for AOT"
@@ -196,17 +208,11 @@ option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension"
        OFF
 )
 
-option(EXECUTORCH_BUILD_EXTENSION_TENSOR "Build the Tensor extension" OFF)
-
 option(EXECUTORCH_BUILD_EXTENSION_TRAINING "Build the training extension" OFF)
-
-option(EXECUTORCH_BUILD_MPS "Build the MPS backend" OFF)
 
 option(EXECUTORCH_BUILD_NEURON "Build the backends/mediatek directory" OFF)
 
 option(EXECUTORCH_BUILD_OPENVINO "Build the Openvino backend" OFF)
-
-option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
 
 option(EXECUTORCH_BUILD_QNN "Build the Qualcomm backend" OFF)
 
@@ -223,8 +229,6 @@ option(EXECUTORCH_NNLIB_OPT "Build Cadence backend Hifi nnlib kernel" OFF)
 option(EXECUTORCH_CADENCE_CPU_RUNNER "Build Cadence backend CPU runner" OFF)
 
 option(EXECUTORCH_BUILD_SIZE_TEST "Build the size test" OFF)
-
-option(EXECUTORCH_BUILD_XNNPACK "Build the XNNPACK backend" OFF)
 
 option(EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" OFF)
 
@@ -665,11 +669,6 @@ install(FILES tools/cmake/executorch-config.cmake DESTINATION lib/cmake/ExecuTor
 #
 # executor_runner: Host tool that demonstrates program execution.
 #
-cmake_dependent_option(
-  EXECUTORCH_BUILD_EXECUTOR_RUNNER "Build the executor_runner executable" ON
-  "NOT CMAKE_TOOLCHAIN_IOS" OFF
-)
-
 # Add googletest if any test targets should be built
 if(BUILD_TESTING)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/googletest)
@@ -754,9 +753,7 @@ if(EXECUTORCH_BUILD_EXTENSION_TENSOR)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/tensor)
 endif()
 
-if(EXECUTORCH_BUILD_PTHREADPOOL
-   AND EXECUTORCH_BUILD_CPUINFO
-)
+if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_CPUINFO)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/threadpool)
 endif()
 
