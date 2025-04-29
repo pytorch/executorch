@@ -63,11 +63,12 @@ class ViewVisitor(NodeVisitor):
 
         tosa_graph = cast(ts.TosaSerializer, tosa_graph)
 
-        if len(output.shape) == 0:
-            raise ValueError(f"No output shape for {output}")
-
-        shape_len = len(output.shape)
-        shape_data = list(tosa_shape(output.shape, output.dim_order))
+        if len(output.shape) != 0:
+            shape_len = len(output.shape)
+            shape_data = list(tosa_shape(output.shape, output.dim_order))
+        else:
+            shape_len = 1
+            shape_data = [0]
 
         shape = tosa_graph.addConst(
             [shape_len],

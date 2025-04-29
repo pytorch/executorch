@@ -20,14 +20,15 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
 set(_test_srcs
-    span_test.cpp
+    array_ref_test.cpp
     error_handling_test.cpp
+    evalue_test.cpp
     event_tracer_test.cpp
     freeable_buffer_test.cpp
-    array_ref_test.cpp
-    memory_allocator_test.cpp
+    function_ref_test.cpp
     hierarchical_allocator_test.cpp
-    evalue_test.cpp
+    memory_allocator_test.cpp
+    span_test.cpp
 )
 
 et_cxx_test(runtime_core_test SOURCES ${_test_srcs} EXTRA_LIBS)
