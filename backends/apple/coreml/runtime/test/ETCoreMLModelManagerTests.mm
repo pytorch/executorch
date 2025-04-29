@@ -15,6 +15,9 @@
 #import <XCTest/XCTest.h>
 #import <executorch/runtime/platform/runtime.h>
 #import <model_logging_options.h>
+#import <multiarray.h>
+
+using namespace executorchcoreml;
 
 @interface ETCoreMLModelManagerTests : XCTestCase
 
@@ -94,7 +97,7 @@
 - (void)testAddModelExecution {
     NSURL *modelURL = [[self class] bundledResourceWithName:@"add_coreml_all" extension:@"bin"];
     XCTAssertNotNil(modelURL);
-    
+
     NSError *localError = nil;
     NSData *data = [NSData dataWithContentsOfURL:modelURL];
     MLModelConfiguration *configuration = [[MLModelConfiguration alloc] init];
@@ -105,12 +108,12 @@
     int y = 50;
     // add_coreml_all does the following operation.
     int z = x + y;
-    
+
     NSArray<MLMultiArray *> *inputs = [ETCoreMLTestUtils inputsForModel:model repeatedValues:@[@(x), @(y)] error:&localError];
     XCTAssertNotNil(inputs);
     MLMultiArray *output = [ETCoreMLTestUtils filledMultiArrayWithShape:inputs[0].shape dataType:inputs[0].dataType repeatedValue:@(0) error:&localError];
     NSArray<MLMultiArray *> *args = [inputs arrayByAddingObject:output];
-    XCTAssertTrue([self.modelManager executeModelWithHandle:handle 
+    XCTAssertTrue([self.modelManager executeModelWithHandle:handle
                                                        args:args
                                              loggingOptions:executorchcoreml::ModelLoggingOptions()
                                                 eventLogger:nullptr
@@ -124,7 +127,7 @@
 - (void)testMulModelExecution {
     NSURL *modelURL = [[self class] bundledResourceWithName:@"mul_coreml_all" extension:@"bin"];
     XCTAssertNotNil(modelURL);
-    
+
     NSError *localError = nil;
     NSData *data = [NSData dataWithContentsOfURL:modelURL];
     MLModelConfiguration *configuration = [[MLModelConfiguration alloc] init];
@@ -148,7 +151,6 @@
     }
 }
 
-// See https://github.com/pytorch/executorch/pull/10465
 - (void)testAutoreleasepoolError {
     NSURL *modelURL = [self.class bundledResourceWithName:@"add_coreml_all" extension:@"bin"];
     NSError *localError = nil;
