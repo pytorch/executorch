@@ -10,9 +10,10 @@ import os
 from typing import Any, Optional, Tuple
 
 import torch
-
 import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.tosa_mapping import TosaArg
+
+from executorch.backends.arm.tosa_specification import TosaSpecification
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.print_program import inspect_node
@@ -93,9 +94,9 @@ def dbg_fail(
     dbg_node(node, graph_module)
 
 
-def getNodeArgs(node: Node) -> list[TosaArg]:
+def getNodeArgs(node: Node, tosa_spec: TosaSpecification) -> list[TosaArg]:
     try:
-        return [TosaArg(arg) for arg in node.args]
+        return [TosaArg(arg, tosa_spec) for arg in node.args]
     except ValueError as e:
         raise ValueError(f"Failed processing args to op:\n{node}") from e
 
