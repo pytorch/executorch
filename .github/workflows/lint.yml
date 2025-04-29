@@ -65,7 +65,6 @@ jobs:
         exit $RC
 
   link-check:
-    name: Link checks
     uses: ./.github/workflows/_link_check.yml
     with:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
