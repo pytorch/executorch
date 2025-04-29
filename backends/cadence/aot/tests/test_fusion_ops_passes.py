@@ -328,7 +328,6 @@ class TestFusionPasses(TestFusionPassesBase):
         model = M()
         graph_module = export_to_edge(model, (inputs,)).exported_program().graph_module
         graph_module = FuseQuantDequantToRequantizePass()(graph_module).graph_module
-        graph_module.print_readable()
 
         self.check_op_counts(
             graph_module,
