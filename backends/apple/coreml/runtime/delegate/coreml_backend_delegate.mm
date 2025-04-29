@@ -241,6 +241,12 @@ Error CoreMLBackendDelegate::execute(BackendExecutionContext& context,
     std::array<SizesType, kTensorDimensionLimit> new_shape;
     for (size_t i = nInputs; i < nInputs + nOutputs; i++) {
         Tensor& t = args[i]->toTensor();
+        // If t has rank 0, do not resize.  delegate_args[i] will have rank 1
+        // because we resized it in get_multi_array
+        if (t.dim() == 0) {
+            continue;
+        }
+
         int rank = delegate_args[i].layout().rank();
         assert (rank <= new_shape.size());
         for (int d = 0; d < rank; d++) {
