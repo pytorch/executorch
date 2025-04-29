@@ -52,6 +52,7 @@ from executorch.exir.passes.insert_write_back_for_buffers_pass import (
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
+from executorch.exir.passes.quant_fusion_pass import quant_fusion_and_const_prop_pass
 from executorch.exir.passes.remove_graph_asserts_pass import (
     RemoveGraphAssertsPass,
     RemoveNonCoreAtenOpGraphAssertsPass,
@@ -1524,9 +1525,15 @@ class EdgeProgramManager:
             after it has been transformed to the ExecuTorch backend.
         """
         config = config if config else ExecutorchBackendConfig()
-
         execution_programs: Dict[str, ExportedProgram] = {}
         for name, program in self._edge_programs.items():
+            if config.do_quant_fusion_and_const_prop:
+                if program.graph_signature.backward_signature is not None:
+                    raise Exception(
+                        "Cannot run do_quant_fusion_and_const_prop on a graph with a backward signature intended for on-device training."
+                        " Please set do_quant_fusion_and_const_prop to False in the ExecutorchBackendConfig."
+                    )
+                program = quant_fusion_and_const_prop_pass(program)
             program = weights_to_outputs_pass(program)
             program = unsafe_remove_auto_functionalized_pass(program)
             gm, new_signature = insert_write_back_for_buffers_pass(program)
