@@ -243,16 +243,16 @@ class AttentionMHA(Attention):
         k = k.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
         v = v.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
 
+        if self.use_qk_norm:
+            q = self.q_norm_fn(q)
+            k = self.k_norm_fn(k)
+
         # RoPE relative positional embeddings
         q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
 
         q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
-
-        if self.use_qk_norm:
-            q = self.q_norm_fn(q)
-            k = self.k_norm_fn(k)
 
         if self.use_kv_cache:
             assert input_pos is not None
