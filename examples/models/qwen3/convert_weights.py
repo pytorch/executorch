@@ -1,9 +1,11 @@
 import argparse
+
+import json
+import os
 from typing import Dict
 
-import os
-from safetensors import safe_open
 import torch
+from safetensors.torch import load_file
 
 from torchtune.models.convert_weights import get_mapped_key
 
@@ -58,13 +60,35 @@ def qwen_3_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.
     return converted_state_dict
 
 
+def load_checkpoint(input_dir: str) -> Dict:
+    index_path = os.path.join(input_dir, "model.safetensors.index.json")
+    if os.path.exists(index_path):
+        # Sharded checkpoint.
+        with open(index_path, "r") as f:
+            index = json.load(f)
+        weight_map = index["weight_map"]
+        checkpoint_shards = sorted(set(weight_map.values()))
+
+        # Load all the shards into memory
+        shard_to_weights = {}
+        for shard in checkpoint_shards:
+            shard_to_weights[shard] = load_file(os.path.join(input_dir, shard))
+
+        # Merge tensors into consolidated state dict.
+        merged_state_dict = {}
+        for weight_name, shard in weight_map.items():
+            tensor = shard_to_weights[shard][weight_name]
+            merged_state_dict[weight_name] = tensor
+        return merged_state_dict
+    else:
+        # Single checkpoint.
+        state_dict = load_file(os.path.join(input_dir, "model.safetensors"))
+        return state_dict
+
+
 def convert_weights(input_dir: str, output_file: str) -> None:
     print("Loading checkpoint...")
-    sd = {}
-    with safe_open(os.path.join(input_dir, "model.safetensors"), framework="pt", device="cpu") as f:
-        for key in f.keys():
-            sd[key] = f.get_tensor(key)
-
+    sd = load_checkpoint(input_dir)
     print("Converting checkpoint...")
     sd = qwen_3_tune_to_meta(sd)
     print("Saving checkpoint...")
