@@ -32,7 +32,6 @@ jobs:
           pytorchbot-token: ${{ secrets.GH_PYTORCHBOT_TOKEN }}
 
   link-check:
-    name: Link checks
     needs: update-pytorch-commit-hash
     uses: ./.github/workflows/_link_check.yml
     with:
