@@ -1,14 +1,13 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
-
 import torch
 
-from executorch.exir import to_edge_transform_and_lower
 from executorch.devtools import BundledProgram
 
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.devtools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
+
+from executorch.exir import to_edge_transform_and_lower
 from torch.export import export, export_for_training
 
 # Step 1: ExecuTorch Program Export
@@ -17,8 +16,8 @@ class SampleModel(torch.nn.Module):
 
     def __init__(self) -> None:
         super().__init__()
-        self.register_buffer('a', 3 * torch.ones(2, 2, dtype=torch.int32))
-        self.register_buffer('b', 2 * torch.ones(2, 2, dtype=torch.int32))
+        self.register_buffer("a", 3 * torch.ones(2, 2, dtype=torch.int32))
+        self.register_buffer("b", 2 * torch.ones(2, 2, dtype=torch.int32))
 
     def forward(self, x: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
         z = x.clone()
@@ -76,7 +75,7 @@ def main() -> None:
             test_cases=[
                 MethodTestCase(
                     inputs=input,
-                    expected_outputs=(getattr(model, method_name)(*input), ),
+                    expected_outputs=(getattr(model, method_name)(*input),),
                 )
                 for input in inputs
             ],
