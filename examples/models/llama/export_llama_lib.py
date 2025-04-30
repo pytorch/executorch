@@ -100,6 +100,9 @@ EXECUTORCH_DEFINED_MODELS = [
     "llama3_2",
     "static_llama",
     "qwen2_5",
+    "qwen3-0_6b",
+    "qwen3-1_7b",
+    "qwen3-4b",
     "phi_4_mini",
     "smollm2",
 ]
@@ -108,6 +111,9 @@ HUGGING_FACE_REPO_IDS = {
     "qwen2_5": "Qwen/Qwen2.5-1.5B",
     "phi_4_mini": "microsoft/Phi-4-mini-instruct",
     "smollm2": "HuggingFaceTB/SmolLM-135M",
+    "qwen3-0_6b": "Qwen/Qwen3-0.6B",
+    "qwen3-1_7b": "Qwen/Qwen3-1.7B",
+    "qwen3-4b": "Qwen/Qwen3-4B",
 }
 
 
@@ -542,6 +548,10 @@ def export_llama(args) -> str:
         repo_id = HUGGING_FACE_REPO_IDS[args.model]
         if args.model == "qwen2_5":
             from executorch.examples.models.qwen2_5 import (  # pyre-ignore[21]
+                convert_weights,
+            )
+        elif args.model.startswith("qwen3"):
+            from executorch.examples.models.qwen3 import (  # pyre-ignore[21]
                 convert_weights,
             )
         elif args.model == "phi_4_mini":

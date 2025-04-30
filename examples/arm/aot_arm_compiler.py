@@ -22,12 +22,14 @@ from executorch.backends.arm.arm_backend import (
     get_tosa_spec,
     is_ethosu,
     is_tosa,
+    is_vgf,
 )
 from executorch.backends.arm.ethosu_partitioner import EthosUPartitioner
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
     TOSAQuantizer,
+    VgfQuantizer,
 )
 from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -36,6 +38,8 @@ from executorch.backends.arm.util.arm_model_evaluator import (
     GenericModelEvaluator,
     MobileNetV2Evaluator,
 )
+
+from executorch.backends.arm.vgf_partitioner import VgfPartitioner
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
 
@@ -145,6 +149,8 @@ def quantize(
         quantizer = EthosUQuantizer(compile_specs)
     elif is_tosa(compile_specs):
         quantizer = TOSAQuantizer(get_tosa_spec(compile_specs))
+    elif is_vgf(compile_specs):
+        quantizer = VgfQuantizer(compile_specs)
     else:
         raise RuntimeError("Unsupported compilespecs for quantization!")
 
@@ -267,6 +273,7 @@ targets = [
     "ethos-u85-512",
     "ethos-u85-1024",
     "ethos-u85-2048",
+    "vgf",
     "TOSA",
 ]
 
@@ -317,20 +324,15 @@ def get_compile_spec(
         except:
             tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
         spec_builder = ArmCompileSpecBuilder().tosa_compile_spec(tosa_spec)
-    elif "ethos-u55" in target:
+    elif "ethos-u" in target:
         spec_builder = ArmCompileSpecBuilder().ethosu_compile_spec(
             target,
             system_config=system_config,
             memory_mode=memory_mode,
-            extra_flags="--debug-force-regor --output-format=raw --verbose-operators --verbose-cycle-estimate",
+            extra_flags="--verbose-operators --verbose-cycle-estimate",
         )
-    elif "ethos-u85" in target:
-        spec_builder = ArmCompileSpecBuilder().ethosu_compile_spec(
-            target,
-            system_config=system_config,
-            memory_mode=memory_mode,
-            extra_flags="--output-format=raw --verbose-operators --verbose-cycle-estimate",
-        )
+    elif "vgf" in target:
+        spec_builder = ArmCompileSpecBuilder().vgf_compile_spec()
 
     if intermediates is not None:
         spec_builder.dump_intermediate_artifacts_to(intermediates)
@@ -466,7 +468,7 @@ def get_args():
         "--so_library",
         required=False,
         default=None,
-        help="Provide path to so library. E.g., cmake-out/examples/portable/custom_ops/libcustom_ops_aot_lib.so",
+        help="Provide path to custom .so library.",
     )
     parser.add_argument(
         "--debug", action="store_true", help="Set the logging level to debug."
@@ -509,12 +511,6 @@ def get_args():
     if args.debug:
         logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
 
-    if args.quantize and not args.so_library:
-        logging.warning(
-            "Quantization enabled without supplying path to libcustom_ops_aot_lib using -s flag."
-            + "This is required for running quantized models with unquantized input."
-        )
-
     # if we have custom ops, register them before processing the model
     if args.so_library is not None:
         logging.info(f"Loading custom ops from {args.so_library}")
@@ -526,22 +522,6 @@ def get_args():
         and models[args.model_name].can_delegate is False
     ):
         raise RuntimeError(f"Model {args.model_name} cannot be delegated.")
-
-    if "ethos-u" in args.target and args.system_config is None:
-        if "u55" in args.target:
-            args.system_config = "Ethos_U55_High_End_Embedded"
-        elif "u85" in args.target:
-            args.system_config = "Ethos_U85_SYS_DRAM_Mid"
-        else:
-            raise RuntimeError(f"Invalid target name {args.target}")
-
-    if "ethos-u" in args.target and args.memory_mode is None:
-        if "u55" in args.target:
-            args.memory_mode = "Shared_Sram"
-        elif "u85" in args.target:
-            args.memory_mode = "Sram_Only"
-        else:
-            raise RuntimeError(f"Invalid target name {args.target}")
 
     return args
 
@@ -664,6 +644,8 @@ def to_edge_TOSA_delegate(
         partitioner = EthosUPartitioner(compile_spec)
     elif is_tosa(compile_spec):
         partitioner = TOSAPartitioner(compile_spec)
+    elif is_vgf(compile_spec):
+        partitioner = VgfPartitioner(compile_spec)
     else:
         raise RuntimeError(f"Unhandled compile spec: {compile_spec}")
 
