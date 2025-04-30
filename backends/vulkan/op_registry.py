@@ -377,7 +377,12 @@ def register_mm_op(features: OpFeatures):
     return features
 
 
-@update_features(exir_ops.edge.aten._weight_int8pack_mm.default)
+@update_features(
+    [
+        exir_ops.edge.aten._weight_int8pack_mm.default,
+        exir_ops.edge.et_vk.linear_qcs4w.default,
+    ]
+)
 def register_int8_mm_op(features: OpFeatures):
     features.texture_impl = TextureImplFeatures(
         uses_axis_map=False,

@@ -44,9 +44,19 @@
 #define div4(x) (x >> 2)
 
 /*
+ * Fast multiplication by 4 using bit shifting
+ */
+#define mul4(x) (x << 2)
+
+/*
  * Divides input and rounds up to 4
  */
 #define divup4(x) ((x + 3) >> 2)
+
+/*
+ * Divides input by denominator and rounds up
+ */
+#define divup(x, d) (((x) + (d) - 1) / (d))
 
 /*
  * Aligns input to the next multiple of 4
