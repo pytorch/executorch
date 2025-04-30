@@ -15,7 +15,6 @@
 
 using namespace executorch::extension;
 using namespace executorch::runtime;
-using namespace executorch::extension::ET_MODULE_NAMESPACE::Module;
 
 static inline EValue toEValue(ExecuTorchValue *value) {
   if (value.isTensor) {

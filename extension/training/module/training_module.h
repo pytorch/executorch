@@ -27,7 +27,7 @@ namespace training {
  * methods within them.
  */
 class ET_EXPERIMENTAL TrainingModule final
-    : public executorch::extension::ET_MODULE_NAMESPACE::Module {
+    : public executorch::extension::Module {
  public:
   explicit TrainingModule(
       std::unique_ptr<runtime::DataLoader> data_loader,
@@ -35,7 +35,7 @@ class ET_EXPERIMENTAL TrainingModule final
       std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr,
       std::unique_ptr<runtime::EventTracer> event_tracer = nullptr,
       std::unique_ptr<runtime::DataLoader> data_map_data_loader = nullptr)
-      : executorch::extension::ET_MODULE_NAMESPACE::Module(
+      : executorch::extension::Module(
             std::move(data_loader),
             std::move(memory_allocator),
             std::move(temp_allocator),
