@@ -267,7 +267,9 @@ ET_NODISCARD Error load_bundled_input(
       "testset_idx %zu is out of range [0, %u]",
       testset_idx,
       test_cases->size());
-  auto bundled_inputs = test_cases->Get(static_cast<flatbuffers::uoffset_t>(testset_idx))->inputs();
+  auto bundled_inputs =
+      test_cases->Get(static_cast<flatbuffers::uoffset_t>(testset_idx))
+          ->inputs();
 
   for (size_t input_idx = 0; input_idx < method.inputs_size(); input_idx++) {
     auto bundled_input = bundled_inputs->GetMutableObject(input_idx);
@@ -372,7 +374,8 @@ ET_NODISCARD Error verify_method_outputs(
       testset_idx,
       test_cases->size());
   auto bundled_expected_outputs =
-      test_cases->Get(static_cast<flatbuffers::uoffset_t>(testset_idx))->expected_outputs();
+      test_cases->Get(static_cast<flatbuffers::uoffset_t>(testset_idx))
+          ->expected_outputs();
 
   if (bundled_expected_outputs->size() == 0) {
     // No bundled expected outputs, so we can't verify the method outputs.
