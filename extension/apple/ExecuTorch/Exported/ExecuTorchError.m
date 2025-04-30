@@ -49,18 +49,14 @@ NSString *ExecuTorchErrorDescription(ExecuTorchErrorCode code) {
     case ExecuTorchErrorCodeDelegateInvalidHandle:
       return @"Delegate handle invalid";
     default:
-      return [NSString stringWithFormat:@"Unknown error %zd", code];
+      return @"Unknown error";
   }
 }
 
-@implementation NSError (ExecuTorch)
-
-+ (instancetype)errorWithExecuTorchCode:(ExecuTorchErrorCode)code {
+NSError *ExecuTorchErrorWithCode(ExecuTorchErrorCode code) {
   return [NSError errorWithDomain:ExecuTorchErrorDomain
                              code:code
                          userInfo:@{
                            NSLocalizedDescriptionKey : ExecuTorchErrorDescription(code)
                          }];
 }
-
-@end
