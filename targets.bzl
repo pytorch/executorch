@@ -85,10 +85,10 @@ def define_common_targets():
             "src/tiktoken.cpp",
         ],
         deps = [
-            ":bpe_tokenizer_base",
             ":regex",
         ],
         exported_deps = [
+            ":bpe_tokenizer_base",
             ":headers",
         ],
         exported_external_deps = [
@@ -109,10 +109,10 @@ def define_common_targets():
             "src/token_decoder.cpp",
         ],
         deps = [
-            ":bpe_tokenizer_base",
             ":regex",
         ],
         exported_deps = [
+            ":bpe_tokenizer_base",
             ":headers",
             "//pytorch/tokenizers/third-party:unicode",
         ],
