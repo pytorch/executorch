@@ -11,6 +11,7 @@
 
 using namespace ::executorch::extension;
 using namespace ::executorch::runtime;
+using ::executorch::extension::ET_BUNDLED_MODULE_NAMESPACE::BundledModule;
 
 class BundledModuleTest : public ::testing::Test {
  protected:
