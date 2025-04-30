@@ -5,7 +5,6 @@
 
 import argparse
 import os
-import platform
 import subprocess
 import sys
 
@@ -62,6 +61,12 @@ def get_args():
         default=None,
         help="Extra cmake flags to pass the when building the executor_runner",
     )
+    parser.add_argument(
+        "--timeout",
+        required=False,
+        default=60 * 10,
+        help="Timeout in seconds used when running the model",
+    )
     args = parser.parse_args()
 
     if args.model and "ethos-u" in args.target and args.system_config is None:
@@ -113,14 +118,6 @@ def build_libs(et_build_root: str, script_path: str):
             "--portable_kernels=aten::_softmax.out",
         ]
     )
-    run_external_cmd(
-        [
-            "bash",
-            os.path.join(script_path, "build_quantized_ops_aot_lib.sh"),
-            f"--et_build_root={et_build_root}",
-            "--build_type=Release",
-        ]
-    )
 
 
 def build_pte(
@@ -132,17 +129,6 @@ def build_pte(
     build_output: str,
     no_intermediate: bool,
 ):
-    soext = {"Darwin": "dylib", "Linux": "so", "Windows": "dll"}.get(
-        platform.system(), None
-    )
-    solibs_path = os.path.join(
-        et_build_root,
-        "cmake-out-aot-lib",
-        "kernels",
-        "quantized",
-        f"libquantized_ops_aot_lib.{soext}",
-    )
-    solibs = f"--so_library={solibs_path}"
 
     intermediate = ""
     if not no_intermediate:
@@ -162,7 +148,6 @@ def build_pte(
             f"--output={build_output}",
             f"--system_config={system_config}",
             f"--memory_mode={memory_mode}",
-            solibs,
         ]
     )
 
@@ -188,7 +173,7 @@ def build_ethosu_runtime(
     run_external_cmd(
         [
             "bash",
-            os.path.join(script_path, "build_executorch_runner.sh"),
+            os.path.join(script_path, "build_executor_runner.sh"),
             f"--et_build_root={et_build_root}",
             f"--pte={pte_file}",
             "--bundleio",
@@ -206,13 +191,14 @@ def build_ethosu_runtime(
     return elf_file
 
 
-def run_elf_with_fvp(script_path: str, elf_file: str, target: str):
+def run_elf_with_fvp(script_path: str, elf_file: str, target: str, timeout: int):
     run_external_cmd(
         [
             "bash",
             os.path.join(script_path, "run_fvp.sh"),
             f"--elf={elf_file}",
             f"--target={target}",
+            f"--timeout={timeout}",
         ]
     )
 
@@ -264,5 +250,5 @@ if __name__ == "__main__":
             )
             print(f"ELF file created: {elf_file} ")
 
-            run_elf_with_fvp(script_path, elf_file, args.target)
+            run_elf_with_fvp(script_path, elf_file, args.target, args.timeout)
         print(f"Model: {model_name} on {args.target} -> PASS")
