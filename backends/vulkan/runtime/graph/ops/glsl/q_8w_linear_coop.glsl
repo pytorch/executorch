@@ -38,18 +38,21 @@ layout(push_constant) uniform restrict Block {
   ivec4 weight_sizes;
 };
 
+#include "indexing_utils.h"
+
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 shared VEC4_T partial_c[NGROUPS][NWORKERS][TILE_ROWS];
 
 void main() {
-  const uint out_row = gl_GlobalInvocationID.y * TILE_ROWS;
-  const uint out_col = gl_GlobalInvocationID.x << 2;
+  const uint out_width_ntexels = divup4(out_sizes.x);
+  const uint out_col = (gl_GlobalInvocationID.x % out_width_ntexels) << 2;
+  const uint out_row = (gl_GlobalInvocationID.x / out_width_ntexels) * TILE_ROWS;
 
   const int gid = int(gl_LocalInvocationID.x); // group id
   const int wid = int(gl_LocalInvocationID.z); // worker id
 
-  if (out_col >= out_sizes.x || out_row >= out_sizes.y) {
+  if (out_row >= out_sizes.y) {
     return;
   }
 
