@@ -54,13 +54,11 @@ class BundledModule : public Module {
   }
 
   /**
-   * Constructs an instance with the bundled program buffer pointer.
+   * Constructs an instance by loading a bundled program from a file with
+   * specified memory locking behavior.
    *
-   * This constructor reads the program from bundled program buffer to load the
-   * module with data loader. The bundled program pointer is preserved so that
-   * the portion outside of program is accessible.
-   *
-   * @param[in] file_path The path to the ExecuTorch program file to load.
+   * @param[in] file_path The path to the ExecuTorch bundled program file to
+   * load.
    * @param[in] memory_allocator A MemoryAllocator used for memory management.
    * @param[in] temp_allocator A MemoryAllocator to use when allocating
    * temporary data during kernel or delegate execution.
