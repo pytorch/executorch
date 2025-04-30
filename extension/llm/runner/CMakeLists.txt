@@ -53,3 +53,7 @@ target_include_directories(
   extension_llm_runner INTERFACE ${_common_include_directories}
                                  ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
 )
+
+if(BUILD_TESTING)
+  add_subdirectory(test)
+endif()

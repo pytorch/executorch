@@ -21,9 +21,7 @@ from . import (  # noqa
     op_eq,
     op_erf,
     op_exp,
-    op_full,
     op_ge,
-    op_get_item,
     op_gt,
     op_le,
     op_log,
@@ -52,5 +50,6 @@ from . import (  # noqa
     op_view,
     op_where,
     ops_binary,
+    ops_identity,
     ops_unary,
 )

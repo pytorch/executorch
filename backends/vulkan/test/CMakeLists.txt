@@ -46,8 +46,7 @@ if(LIB_VULKAN_BACKEND)
   set(VULKAN_THIRD_PARTY_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../third-party)
 
   set(GTEST_INCLUDE_PATH
-      ${EXECUTORCH_ROOT}/third-party/googletest/googletest/include set
-      (PYTORCH_PATH ${EXECUTORCH_ROOT}/third-party/pytorch)
+      ${EXECUTORCH_ROOT}/third-party/googletest/googletest/include
   )
   set(VULKAN_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/Vulkan-Headers/include)
   set(VOLK_PATH ${VULKAN_THIRD_PARTY_PATH}/volk)
