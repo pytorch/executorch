@@ -194,6 +194,7 @@ Loading and running a model using the high-level API can be done as follows:
 #include <executorch/extension/tensor/tensor.h>
 
 using namespace ::executorch::extension;
+using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
 
 // Load the model.
 Module module("/path/to/model.pte");

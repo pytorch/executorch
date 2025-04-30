@@ -29,6 +29,8 @@
 #include <executorch/extension/module/module.h>
 #include <pytorch/tokenizers/tokenizer.h>
 
+using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
+
 namespace executorch {
 namespace extension {
 namespace llm {
