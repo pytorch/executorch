@@ -810,7 +810,7 @@ Error Method::init(
         NotSupported,
         "NamedDataMap merge not supported; both pte_data_map and named_data_map are non-empty. If you see this error please file an issue at https://github.com/pytorch/executorch/issues");
 
-    if (named_data_map && named_data_map->get_num_keys().get() > 0) {
+    if (!named_data_map || named_data_map->get_num_keys().get() == 0) {
       named_data_map = pte_data_map;
     }
 
