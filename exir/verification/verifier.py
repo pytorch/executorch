@@ -38,6 +38,10 @@ from torch.fx import GraphModule
 ALLOWED_META_KEYS = {"spec", "stack_trace"}
 
 class AmbiguousDimOrderError(RuntimeError):
+    '''
+    Returns an Ambiguous Dimension Order Error when any node's output tensor dim_order
+    is ambiguous for a list of formats.
+    '''
     def __init__(self, message: str) -> None:
         super().__init__(message)
 
@@ -84,7 +88,7 @@ def assert_unambiguous_dim_order(gm):
                             ]
                         )
                     except Exception:
-                        raise AmbiguousDimOrderError
+                        raise AmbiguousDimOrderError("Tensors should not have ambigous dim order, try with a different example input")
 
     # any pass or passes, just using MemoryFormatOpsPass as an example
     dim_order_pass_manager = PassManager(passes=[ExampleNOPPass()])
