@@ -18,7 +18,6 @@
 
 using namespace ::executorch::extension;
 using namespace ::executorch::runtime;
-using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
 
 class ModuleTest : public ::testing::Test {
  protected:
