@@ -38,6 +38,7 @@ class ModelArgs:
     apply_embedding: bool = True  # Use embedding inside the transformer
     apply_output: bool = True  # Use output layer (unembedding) inside the transformer
     use_qk_norm: bool = False  # apply normalization to q and k in the attention
+    qk_norm_before_rope: bool = False  # when to apply qk norm
     use_hf_rope: bool = False  # Use HuggingFace's RoPE implementation
     partial_rotary_factor: float = 1.0
     rope_theta: Optional[float] = (
