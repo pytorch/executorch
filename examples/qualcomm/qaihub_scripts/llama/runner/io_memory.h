@@ -32,7 +32,9 @@ class Memory {
  public:
   Memory(
       const std::vector<std::string>& pos_embs_path,
-      std::vector<std::shared_ptr<executorch::extension::Module>>& modules);
+      std::vector<
+          std::shared_ptr<executorch::extension::ET_MODULE_NAMESPACE::Module>>&
+          modules);
   virtual ~Memory();
   virtual void prepare_io(
       const std::vector<
@@ -51,7 +53,9 @@ class Memory {
   std::vector<std::vector<executorch::aten::TensorImpl*>> input_tensors_;
   std::vector<std::vector<executorch::aten::TensorImpl*>> output_tensors_;
   std::vector<std::string> pos_embs_path_;
-  std::vector<std::shared_ptr<executorch::extension::Module>> modules_;
+  std::vector<
+      std::shared_ptr<executorch::extension::ET_MODULE_NAMESPACE::Module>>
+      modules_;
   std::vector<std::string> method_names_;
 };
 
@@ -59,7 +63,9 @@ class BertMemory : public Memory {
  public:
   BertMemory(
       const std::vector<std::string>& pos_embs_path,
-      std::vector<std::shared_ptr<executorch::extension::Module>>& modules,
+      std::vector<
+          std::shared_ptr<executorch::extension::ET_MODULE_NAMESPACE::Module>>&
+          modules,
       std::vector<int> shard_layers);
   void prepare_io(const std::vector<executorch::runtime::Result<
                       executorch::runtime::MethodMeta>>& methods_meta) override;
@@ -121,7 +127,9 @@ class KVCachedMemory : public Memory {
  public:
   KVCachedMemory(
       const std::vector<std::string>& pos_embs_path,
-      std::vector<std::shared_ptr<executorch::extension::Module>>& modules,
+      std::vector<
+          std::shared_ptr<executorch::extension::ET_MODULE_NAMESPACE::Module>>&
+          modules,
       std::vector<int> shard_layers);
   void prepare_io(const std::vector<executorch::runtime::Result<
                       executorch::runtime::MethodMeta>>& methods_meta) override;

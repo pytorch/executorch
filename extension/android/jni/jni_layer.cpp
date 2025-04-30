@@ -36,6 +36,7 @@
 
 using namespace executorch::extension;
 using namespace torch::executor;
+using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
 
 namespace executorch::extension {
 class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {

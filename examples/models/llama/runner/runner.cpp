@@ -21,7 +21,7 @@
 
 namespace example {
 
-using ::executorch::extension::Module;
+using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
 

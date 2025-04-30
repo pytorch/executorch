@@ -137,7 +137,7 @@ cmake                                                 \
 
 echo "[$(basename $0)] Configured CMAKE"
 
-cmake --build ${et_build_dir} --parallel --target install --config ${build_type} --
+cmake --build ${et_build_dir} -j$(nproc) --target install --config ${build_type} --
 
 set +x
 

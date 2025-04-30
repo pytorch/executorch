@@ -18,7 +18,8 @@ namespace example {
 class ET_EXPERIMENTAL LlavaImagePrefiller
     : public ::executorch::extension::llm::ImagePrefiller {
  public:
-  explicit LlavaImagePrefiller(::executorch::extension::Module* module)
+  explicit LlavaImagePrefiller(
+      ::executorch::extension::ET_MODULE_NAMESPACE::Module* module)
       : ImagePrefiller(module){};
   /**
    * Prefill an LLM Module with the given image input.
