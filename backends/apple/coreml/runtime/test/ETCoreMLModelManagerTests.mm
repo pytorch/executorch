@@ -113,7 +113,7 @@ using namespace executorchcoreml;
     XCTAssertNotNil(inputs);
     MLMultiArray *output = [ETCoreMLTestUtils filledMultiArrayWithShape:inputs[0].shape dataType:inputs[0].dataType repeatedValue:@(0) error:&localError];
     NSArray<MLMultiArray *> *args = [inputs arrayByAddingObject:output];
-    XCTAssertTrue([self.modelManager executeModelWithHandle:handle 
+    XCTAssertTrue([self.modelManager executeModelWithHandle:handle
                                                        args:args
                                              loggingOptions:executorchcoreml::ModelLoggingOptions()
                                                 eventLogger:nullptr
@@ -172,10 +172,10 @@ using namespace executorchcoreml;
         [ETCoreMLTestUtils inputsForModel:model repeatedValues:@[@(2), @(3)] error:&localError];
     XCTAssert(inputArrays);
 
-    std::vector<executorchcoreml::MultiArray> multiArrays;
+    std::vector<MultiArray> multiArrays;
     multiArrays.reserve(inputArrays.count + model.orderedOutputNames.count);
     for (MLMultiArray *array in inputArrays) {
-        auto dataTypeOpt = executorchcoreml::to_multiarray_data_type(array.dataType);
+        auto dataTypeOpt = to_multiarray_data_type(array.dataType);
         XCTAssert(dataTypeOpt.has_value());
         auto dataType = dataTypeOpt.value();
 
@@ -192,7 +192,7 @@ using namespace executorchcoreml;
         }
 
         multiArrays.emplace_back(array.dataPointer,
-                                 executorchcoreml::MultiArray::MemoryLayout(dataType, dims, strides));
+                                 MultiArray::MemoryLayout(dataType, dims, strides));
     }
 
     auto inputLayout = multiArrays[0].layout();
@@ -205,15 +205,15 @@ using namespace executorchcoreml;
         auto originalLayout = multiArrays[0].layout();
         auto corruptedDims = originalLayout.shape();
         corruptedDims[0] += 1;
-        multiArrays[0] = executorchcoreml::MultiArray(multiArrays[0].data(),
-                                                      executorchcoreml::MultiArray::MemoryLayout(originalLayout.dataType(),
+        multiArrays[0] = MultiArray(multiArrays[0].data(),
+                                    MultiArray::MemoryLayout(originalLayout.dataType(),
                                                              corruptedDims,
                                                              originalLayout.strides()));
     }
 
     BOOL success = [self.modelManager executeModelWithHandle:modelHandle
                                                     argsVec:multiArrays
-                                             loggingOptions:executorchcoreml::ModelLoggingOptions()
+                                             loggingOptions:ModelLoggingOptions()
                                                 eventLogger:nullptr
                                                       error:&localError];
     XCTAssertFalse(success);
