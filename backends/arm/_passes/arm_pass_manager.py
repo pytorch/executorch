@@ -37,6 +37,7 @@ from executorch.backends.arm._passes import (
     DecomposeSoftmaxPass,
     DecomposeSoftmaxUnstablePass,
     DecomposeSqrtPass,
+    DecomposeSumPass,
     DecomposeVarPass,
     FoldAndAnnotateQParamsPass,
     FuseBatchnorm2DPass,
@@ -45,7 +46,6 @@ from executorch.backends.arm._passes import (
     FuseQuantizedActivationPass,
     InsertRescalePass,
     InsertTableOpsPass,
-    KeepDimsFalseToSqueezePass,
     MatchArgRanksPass,
     MatchWhereSelfDtypePass,
     QuantizeOperatorArguments,
@@ -110,7 +110,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
-        self.add_pass(KeepDimsFalseToSqueezePass())
+        self.add_pass(DecomposeSumPass())
         self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSelectPass())
         self.add_pass(ConvertSqueezesToViewPass())
@@ -163,7 +163,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
-        self.add_pass(KeepDimsFalseToSqueezePass())
+        self.add_pass(DecomposeSumPass())
         self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSelectPass())
         self.add_pass(ConvertSqueezesToViewPass())
@@ -220,4 +220,6 @@ class ArmPassManager(PassManager):
 
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ReplaceInfValues())
+        self.add_pass(DecomposeSumPass())
+
         return self._transform(graph_module)

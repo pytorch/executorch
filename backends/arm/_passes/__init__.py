@@ -32,6 +32,7 @@ from .decompose_silu_pass import DecomposeSiluPass  # noqa
 from .decompose_softmax_pass import DecomposeSoftmaxPass  # noqa
 from .decompose_softmax_unstable_pass import DecomposeSoftmaxUnstablePass  # noqa
 from .decompose_sqrt_pass import DecomposeSqrtPass  # noqa
+from .decompose_sum_pass import DecomposeSumPass  # noqa
 from .decompose_var_pass import DecomposeVarPass  # noqa
 from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     FoldAndAnnotateQParamsPass,
@@ -44,7 +45,6 @@ from .fuse_equal_placeholders_pass import FuseEqualPlaceholdersPass  # noqa
 from .fuse_quantized_activation_pass import FuseQuantizedActivationPass  # noqa
 from .insert_rescales_pass import InsertRescalePass  # noqa
 from .insert_table_ops import InsertTableOpsPass  # noqa
-from .keep_dims_false_to_squeeze_pass import KeepDimsFalseToSqueezePass  # noqa
 from .match_arg_ranks_pass import MatchArgRanksPass  # noqa
 from .match_where_self_arg_dtype_pass import MatchWhereSelfDtypePass  # noqa
 from .meandim_to_averagepool_pass import ConvertMeanDimToAveragePoolPass  # noqa
