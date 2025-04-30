@@ -15,8 +15,6 @@
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/platform/compiler.h>
 
-using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
-
 namespace executorch {
 namespace extension {
 namespace llm {

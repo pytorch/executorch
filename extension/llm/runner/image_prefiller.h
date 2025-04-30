@@ -14,8 +14,6 @@
 #include <executorch/extension/module/module.h>
 #include <executorch/runtime/platform/compiler.h>
 
-using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
-
 namespace executorch {
 namespace extension {
 namespace llm {
@@ -23,8 +21,7 @@ namespace llm {
 // Assuming kv cache and parallel prefill are enabled.
 class ET_EXPERIMENTAL ImagePrefiller {
  public:
-  explicit ImagePrefiller(
-      ::executorch::extension::ET_MODULE_NAMESPACE::Module* module)
+  explicit ImagePrefiller(::executorch::extension::Module* module)
       : module_(module) {}
 
   /**

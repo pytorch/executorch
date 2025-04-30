@@ -13,7 +13,6 @@ In addition the Module class, the tensor extension provides an encapsulated inte
 #include <executorch/extension/tensor/tensor.h>
 
 using namespace ::executorch::extension;
-using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
 
 // Load the model.
 Module module("/path/to/model.pte");

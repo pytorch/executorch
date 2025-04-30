@@ -12,7 +12,7 @@
 
 using executorch::aten::Tensor;
 using executorch::aten::TensorImpl;
-using executorch::extension::ET_MODULE_NAMESPACE::Module;
+using executorch::extension::Module;
 using executorch::runtime::Error;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::MethodMeta;

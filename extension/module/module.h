@@ -524,3 +524,10 @@ namespace executor {
 using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
 } // namespace executor
 } // namespace torch
+
+namespace executorch {
+namespace extension {
+// backward compatible namespace alias
+using namespace ::executorch::extension::ET_MODULE_NAMESPACE;
+} // namespace extension
+} // namespace executorch
