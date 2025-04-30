@@ -41,6 +41,7 @@ from executorch.exir.common import (
 from executorch.exir.error import ExportError, ExportErrorType, InternalError
 from executorch.exir.graph_module import LeafValue
 from executorch.exir.operator.convert import is_out_variant
+from executorch.exir.operator.util import _QUANT_PRIMITIVES
 from executorch.exir.types import ValueSpec
 
 from torch._C import _EnableTorchFunction, DisableTorchFunctionSubclass  # @manual
@@ -53,7 +54,6 @@ from torch.fx.operator_schemas import normalize_function
 from torch.utils._pytree import TreeSpec
 
 from typing_extensions import TypeAlias
-
 
 Value: TypeAlias = Union[
     LeafValue,
@@ -643,22 +643,7 @@ def _default_decomposition_table(
     # pyre-fixme[7]: Expected `Dict[OpOverload, typing.Callable[..., executorch.exir....
 
     never_decompose = []
-    try:
-        # Do not decompose torchao quant primitives
-        # They have decompositions registered for inductor/CUDA, but in ExecuTorch we
-        # just pattern match them and lower to delegates
-        import torchao  # noqa: F401
-
-        never_decompose.extend(
-            [
-                torch.ops.torchao.quantize_affine.default,
-                torch.ops.torchao.dequantize_affine.default,
-                torch.ops.torchao.choose_qparams_affine.default,
-            ]
-        )
-    except:
-        pass
-
+    never_decompose.extend(_QUANT_PRIMITIVES)
     for op in never_decompose:
         decomps.pop(op, None)
     return decomps  # pyre-fixme[7]
