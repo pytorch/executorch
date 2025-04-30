@@ -75,7 +75,7 @@ if(FETCH_ETHOS_U_CONTENT)
   endif()
 
   # Always patch the core_platform repo since this is fast enough.
-  set(core_platform_base_rev "b728c774158248ba2cad8e78a515809e1eb9b77f")
+  set(core_platform_base_rev "1916a9c984819c35b19c9e5c4c80d47e4e866420")
   set(patch_dir "${ET_DIR_PATH}/examples/arm/ethos-u-setup")
   execute_process(COMMAND bash -c "pwd && source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_platform ${core_platform_base_rev} ${patch_dir}"
     WORKING_DIRECTORY ${ET_DIR_PATH}
@@ -221,6 +221,7 @@ elseif(SYSTEM_CONFIG STREQUAL "Ethos_U55_Deep_Embedded")
         )
     elseif(MEMORY_MODE STREQUAL "Sram_Only")
       target_compile_definitions(ethosu_target_common INTERFACE
+      ETHOSU_MODEL=1
       # Configure NPU architecture timing adapters
       # This is just example numbers and you should make this match your hardware
       # SRAM
@@ -410,6 +411,53 @@ elseif(SYSTEM_CONFIG STREQUAL "Ethos_U85_SYS_DRAM_Mid" OR SYSTEM_CONFIG STREQUAL
 else()
   message(FATAL_ERROR "Unsupported SYSTEM_CONFIG: ${SYSTEM_CONFIG}")
 endif()
+
+# The REGIONCFG registers of the Ethos-U control whether the NPU
+# reads/writes data through the SRAM or the external memory.
+# By default, the Ethos-U driver provides REGIONCFG configuration for Shared Sram memory mode.
+# For Sram_Only and Dedicated_Sram memory modes, we need to change the settings for optimal performance.
+#
+# Currently, the convention used by Vela and the Ethos-U driver is that the NPU uses:
+# Region 0 for traffic of the Read-Only data(weights & biases)
+# Region 1 for traffic of of the intermediate Read/Write buffers required for the computation
+# Region 2 for traffic of of the cache in Dedicated_Sram memory mode(not applicable in Sram_Only or Shared_Sram)
+#
+# NOTE: The above convention is determined by the Vela compiler and the Ethos-U driver and can change in the future.
+#
+# Common definitions:
+# For Ethos-U55/U65/U85, region configs are set as:
+#   0 or 1 = AXI0 (Ethos-U55 or Ethos-U65) or AXI_SRAM(Ethos-U85)
+#   2 or 3 = AXI1 (Ethos-U55 or Ethos-U65) or AXI_EXT(Ethos-U85)
+#
+# When we compile a model for Sram_Only, the memory traffic for Region 0 and Region 1 should pass via the SRAM(hence regioncfg = 1)
+# When we compile a model for Dedicated_Sram, the memory traffic for Region 0 should pass via the external memory(3),
+# the memory traffic of Region 1 should pass via the external memory(3) and the traffic for Region 2 should pass via the SRAM(0)
+#
+
+if(MEMORY_MODE STREQUAL "Sram_Only")
+  target_compile_definitions(ethosu_core_driver PRIVATE
+      NPU_QCONFIG=1
+      NPU_REGIONCFG_0=1
+      NPU_REGIONCFG_1=0
+      NPU_REGIONCFG_2=0
+      NPU_REGIONCFG_3=0
+      NPU_REGIONCFG_4=0
+      NPU_REGIONCFG_5=0
+      NPU_REGIONCFG_6=0
+      NPU_REGIONCFG_7=0)
+  elseif(MEMORY_MODE STREQUAL "Dedicated_Sram")
+    target_compile_definitions(ethosu_core_driver PRIVATE
+      NPU_QCONFIG=3
+      NPU_REGIONCFG_0=3
+      NPU_REGIONCFG_1=3
+      NPU_REGIONCFG_2=0
+      NPU_REGIONCFG_3=0
+      NPU_REGIONCFG_4=0
+      NPU_REGIONCFG_5=0
+      NPU_REGIONCFG_6=0
+      NPU_REGIONCFG_7=0)
+endif()
+
 
 # Dependencies from the ExecuTorch build
 add_library(executorch STATIC IMPORTED)

@@ -79,6 +79,7 @@ class MethodTest : public ::testing::Test {
     load_program(
         std::getenv("ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH"), "cat");
     load_program(std::getenv("ET_MODULE_LINEAR_PATH"), "linear");
+    load_program(std::getenv("ET_MODULE_STATEFUL_PATH"), "stateful");
     load_program(
         std::getenv("DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH"),
         "linear_constant_buffer");
@@ -337,6 +338,31 @@ TEST_F(MethodTest, ProgramDataSeparationTest) {
   // Can execute the method.
   Error err = method->execute();
   ASSERT_EQ(err, Error::Ok);
+}
+
+TEST_F(MethodTest, MethodGetAttributeTest) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method =
+      programs_["stateful"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  auto res = method->get_attribute("state");
+  ASSERT_TRUE(res.ok());
+  // expect data to be empty
+  EXPECT_EQ(res->const_data_ptr(), nullptr);
+
+  int32_t data = 0;
+  res->set_data(&data);
+
+  // expect data to be set
+  EXPECT_EQ(res->const_data_ptr(), &data);
+
+  // Can execute the method.
+  Error err = method->execute();
+  ASSERT_EQ(err, Error::Ok);
+
+  // Expect the state to be incremented
+  EXPECT_EQ(res->const_data_ptr<int32_t>()[0], 1);
 }
 
 /*

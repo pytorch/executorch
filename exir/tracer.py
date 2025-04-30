@@ -629,8 +629,7 @@ def _default_decomposition_table(
             torch.ops.aten.arange.start,
             torch.ops.aten.transpose,
         ]
-        # pyre-fixme[7]: Expected `Dict[OpOverload, typing.Callable[..., executorch.e...
-        return get_decompositions(decomp_opset)
+        return get_decompositions(decomp_opset)  # pyre-fixme[7]
 
     decomps = default_decompositions()
     # Add edge specific decompositions
@@ -642,7 +641,27 @@ def _default_decomposition_table(
     additional_decomps = get_decompositions(additional_decomp_ops)
     decomps.update(additional_decomps)
     # pyre-fixme[7]: Expected `Dict[OpOverload, typing.Callable[..., executorch.exir....
-    return decomps
+
+    never_decompose = []
+    try:
+        # Do not decompose torchao quant primitives
+        # They have decompositions registered for inductor/CUDA, but in ExecuTorch we
+        # just pattern match them and lower to delegates
+        import torchao  # noqa: F401
+
+        never_decompose.extend(
+            [
+                torch.ops.torchao.quantize_affine.default,
+                torch.ops.torchao.dequantize_affine.default,
+                torch.ops.torchao.choose_qparams_affine.default,
+            ]
+        )
+    except:
+        pass
+
+    for op in never_decompose:
+        decomps.pop(op, None)
+    return decomps  # pyre-fixme[7]
 
 
 def dynamo_trace(

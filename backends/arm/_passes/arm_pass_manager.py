@@ -30,6 +30,7 @@ from executorch.backends.arm._passes import (
     DecomposeLeakyReLUPass,
     DecomposeLinearPass,
     DecomposeMeanDimPass,
+    DecomposeNotEqualPass,
     DecomposeSelectPass,
     DecomposeSiluPass,
     DecomposeSoftmaxPass,
@@ -39,6 +40,7 @@ from executorch.backends.arm._passes import (
     FoldAndAnnotateQParamsPass,
     FuseBatchnorm2DPass,
     FuseConstantArgsPass,
+    FuseEqualPlaceholdersPass,
     FuseQuantizedActivationPass,
     InsertRescalePass,
     InsertTableOpsPass,
@@ -112,6 +114,7 @@ class ArmPassManager(PassManager):
         self.add_pass(FuseConstantArgsPass(exported_program))
 
         self.add_pass(InsertTableOpsPass(exported_program))
+        self.add_pass(FuseEqualPlaceholdersPass(exported_program))
         self.add_pass(AnnotateChannelsLastDimOrder())
         self.add_pass(InsertRescalePass())
 
@@ -131,6 +134,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass())
+        self.add_pass(DecomposeNotEqualPass())
         self.add_pass(ConvertMeanDimToAveragePoolPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeSoftmaxPass())
@@ -162,6 +166,7 @@ class ArmPassManager(PassManager):
         self.add_pass(FuseViewCopyTransform())
         self.add_pass(FuseConstantArgsPass(exported_program))
         self.add_pass(InsertTableOpsPass(exported_program))
+        self.add_pass(FuseEqualPlaceholdersPass(exported_program))
         self.add_pass(AnnotateChannelsLastDimOrder())
         self.add_pass(InsertRescalePass())
 
@@ -194,6 +199,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass())
+        self.add_pass(DecomposeNotEqualPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeLeakyReLUPass())
         self.add_pass(DecomposeSqrtPass())
