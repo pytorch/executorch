@@ -109,7 +109,7 @@ file(GLOB vulkan_backend_cpp ${RUNTIME_PATH}/*.cpp)
 list(APPEND vulkan_backend_cpp ${vulkan_graph_cpp})
 list(APPEND vulkan_backend_cpp ${vulkan_standard_shaders_cpp})
 
-add_library(vulkan_backend STATIC ${vulkan_backend_cpp})
+add_library(vulkan_backend SHARED ${vulkan_backend_cpp})
 target_include_directories(
   vulkan_backend PRIVATE ${SCHEMA_INCLUDE_DIR} ${COMMON_INCLUDES}
 )
@@ -119,7 +119,6 @@ target_compile_options(vulkan_backend PRIVATE ${VULKAN_CXX_FLAGS})
 target_link_options_shared_lib(vulkan_backend)
 
 set_property(TARGET vulkan_backend PROPERTY CXX_STANDARD 17)
-
 # Executor Runner
 
 if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")

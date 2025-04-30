@@ -105,11 +105,6 @@ if(TARGET xnnpack_backend)
   list(APPEND link_libraries xnnpack_backend XNNPACK pthreadpool cpuinfo microkernels-prod)
 endif()
 
-if(TARGET vulkan_backend)
-  target_link_options_shared_lib(vulkan_backend)
-  list(APPEND link_libraries vulkan_backend)
-endif()
-
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
   list(APPEND link_libraries $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
 endif()
