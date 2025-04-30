@@ -57,17 +57,12 @@ NSString *ExecuTorchErrorDescription(ExecuTorchErrorCode code)
     NS_SWIFT_NAME(ErrorDescription(_:));
 
 /**
- * NSError convenience initializer for ExecuTorch errors.
+ * Create an NSError in the ExecuTorch domain for the given code.
  *
- * @param code The ExecuTorchErrorCode to wrap into an NSError.
+ * @param code The ExecuTorchErrorCode to wrap.
  * @return An NSError with ExecuTorchErrorDomain, the specified code, and a localized description.
  */
- @interface NSError (ExecuTorch)
-
- + (instancetype)errorWithExecuTorchCode:(ExecuTorchErrorCode)code
-     __attribute__((deprecated("This API is experimental.")))
-     NS_SWIFT_NAME(init(code:));
-
-@end
+FOUNDATION_EXPORT NSError *ExecuTorchErrorWithCode(ExecuTorchErrorCode code)
+    NS_SWIFT_NAME(Error(code:));
 
 NS_ASSUME_NONNULL_END
