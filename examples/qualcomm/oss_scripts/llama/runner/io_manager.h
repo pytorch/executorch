@@ -20,8 +20,6 @@
 #include <executorch/extension/module/module.h>
 #include <executorch/runtime/executor/method_meta.h>
 
-using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
-
 namespace example {
 
 enum EvalMode {
@@ -31,8 +29,8 @@ enum EvalMode {
 };
 class IoMgrBase {
  public:
-  IoMgrBase(std::vector<std::shared_ptr<
-                executorch::extension::ET_MODULE_NAMESPACE::Module>>& modules);
+  IoMgrBase(
+      std::vector<std::shared_ptr<executorch::extension::Module>>& modules);
   virtual ~IoMgrBase();
   virtual void init_io() = 0;
   virtual void reset_io(
@@ -83,16 +81,13 @@ class IoMgrBase {
       std::string,
       std::vector<std::vector<executorch::aten::TensorImpl*>>>
       output_tensors_;
-  std::vector<
-      std::shared_ptr<executorch::extension::ET_MODULE_NAMESPACE::Module>>
-      modules_;
+  std::vector<std::shared_ptr<executorch::extension::Module>> modules_;
 };
 
 class ShiftPointerIoMgr : public IoMgrBase {
  public:
   ShiftPointerIoMgr(
-      std::vector<std::shared_ptr<
-          executorch::extension::ET_MODULE_NAMESPACE::Module>>& modules,
+      std::vector<std::shared_ptr<executorch::extension::Module>>& modules,
       int32_t context_len,
       int32_t prefill_ar_len,
       int32_t prefill_cache_len,
@@ -204,8 +199,7 @@ class ShiftPointerIoMgr : public IoMgrBase {
 class SmartMaskIoMgr : public IoMgrBase {
  public:
   SmartMaskIoMgr(
-      std::vector<std::shared_ptr<
-          executorch::extension::ET_MODULE_NAMESPACE::Module>>& modules,
+      std::vector<std::shared_ptr<executorch::extension::Module>>& modules,
       int32_t context_len,
       int32_t prefill_ar_len,
       int32_t prefill_cache_len,

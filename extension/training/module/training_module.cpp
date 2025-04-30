@@ -25,8 +25,7 @@ TrainingModule::execute_forward_backward(
   // Find where the user outputs end.
   const std::string gradients_method_name =
       gradients_method_prefix + method_name;
-  auto res = executorch::extension::ET_MODULE_NAMESPACE::Module::execute(
-      gradients_method_name);
+  auto res = executorch::extension::Module::execute(gradients_method_name);
   if (!res.ok()) {
     return res.error();
   }
@@ -35,8 +34,8 @@ TrainingModule::execute_forward_backward(
   const std::string parameters_method_name =
       parameters_method_prefix + method_name;
   // get params start.
-  auto param_res = executorch::extension::ET_MODULE_NAMESPACE::Module::execute(
-      parameters_method_name);
+  auto param_res =
+      executorch::extension::Module::execute(parameters_method_name);
   if (!param_res.ok()) {
     return param_res.error();
   }
@@ -68,8 +67,7 @@ TrainingModule::execute_forward_backward(
 
     // Get names if we havent seen this method before.
     const std::string fqn_method_name = fqn_method_prefix + method_name;
-    auto fqn_res = executorch::extension::ET_MODULE_NAMESPACE::Module::execute(
-        fqn_method_name);
+    auto fqn_res = executorch::extension::Module::execute(fqn_method_name);
     if (!fqn_res.ok()) {
       return fqn_res.error();
     }
@@ -102,8 +100,7 @@ TrainingModule::named_parameters(const std::string& method_name) {
     method_named_parameters_.insert({method_name, {}});
 
     // get names.
-    auto fqn_res = executorch::extension::ET_MODULE_NAMESPACE::Module::execute(
-        fqn_method_name);
+    auto fqn_res = executorch::extension::Module::execute(fqn_method_name);
     if (!fqn_res.ok()) {
       return fqn_res.error();
     }
@@ -111,8 +108,7 @@ TrainingModule::named_parameters(const std::string& method_name) {
 
     // get params start.
     auto param_res =
-        executorch::extension::ET_MODULE_NAMESPACE::Module::execute(
-            parameters_method_name);
+        executorch::extension::Module::execute(parameters_method_name);
     if (!param_res.ok()) {
       return param_res.error();
     }
@@ -120,8 +116,7 @@ TrainingModule::named_parameters(const std::string& method_name) {
     uint64_t param_start = param_res.get()[0].toInt();
 
     // Load the method if it is not already loaded.
-    auto e = executorch::extension::ET_MODULE_NAMESPACE::Module::load_method(
-        method_name);
+    auto e = executorch::extension::Module::load_method(method_name);
     if (e != runtime::Error::Ok) {
       return e;
     }

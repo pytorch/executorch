@@ -30,7 +30,7 @@
 #endif
 
 using executorch::aten::Tensor;
-using executorch::extension::ET_MODULE_NAMESPACE::Module;
+using executorch::extension::Module;
 using executorch::extension::llm::Sampler;
 using executorch::extension::llm::time_in_ms;
 using executorch::runtime::Error;

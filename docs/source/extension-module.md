@@ -13,7 +13,6 @@ Let's see how we can run the `SimpleConv` model generated from the [Exporting to
 #include <executorch/extension/tensor/tensor.h>
 
 using namespace ::executorch::extension;
-using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
 
 // Create a Module.
 Module module("/path/to/model.pte");
@@ -222,7 +221,6 @@ Use [ExecuTorch Dump](etdump.md) to trace model execution. Create an `ETDumpGen`
 #include <executorch/devtools/etdump/etdump_flatcc.h>
 
 using namespace ::executorch::extension;
-using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
 
 Module module("/path/to/model.pte", Module::LoadMode::MmapUseMlock, std::make_unique<ETDumpGen>());
 

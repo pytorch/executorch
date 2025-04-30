@@ -11,7 +11,6 @@ Imagine you’re working with a [`Module`](extension-module.md) interface, and y
 
 using namespace executorch::aten;
 using namespace executorch::extension;
-using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
 
 SizesType sizes[] = {2, 3};
 DimOrderType dim_order[] = {0, 1};
@@ -43,7 +42,6 @@ Here’s how you can use it:
 #include <executorch/extension/tensor/tensor.h>
 
 using namespace executorch::extension;
-using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
 
 auto tensor = make_tensor_ptr(
     {2, 3},                                // sizes
