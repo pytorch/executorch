@@ -26,6 +26,9 @@ from torch._subclasses.fake_tensor import FakeTensor
 
 from torch.export import ExportedProgram
 
+from torch.export.exported_program import InputKind
+from torch.export.graph_signature import TensorArgument
+
 _DQ_OPS = {
     "dequantize_per_tensor.tensor",
     "dequantize_per_tensor.default",
@@ -292,3 +295,35 @@ def get_node_storage_type(node: torch.fx.Node) -> Optional[VkStorageType]:
 
 def get_node_memory_layout(node: torch.fx.Node) -> Optional[VkMemoryLayout]:
     return get_node_spec_attr(node, "vk_memory_layout")
+
+
+##
+## Misc
+##
+
+
+def update_program_state_dict(
+    program: ExportedProgram,
+    buffer_name: str,
+    updated_tensor: torch.Tensor,
+) -> None:
+    target_name = None
+    # Iterate over all the tensors in the graph signature, and find
+    # the one corresponding to the parameter/buffer name
+    for input_ in program.graph_signature.input_specs:
+        if (
+            input_.kind in (InputKind.BUFFER, InputKind.PARAMETER)
+            and isinstance(input_.arg, TensorArgument)
+            and input_.arg.name == buffer_name
+        ):
+            target_name = input_.target
+            break
+
+    # Assert that we found the parameter/buffer
+    assert (
+        target_name is not None
+    ), f"could not find {buffer_name} in source program signature"
+    assert target_name in program.state_dict, f"could not find {target_name}"
+
+    # Finally, overwrite the current tensor with updated tensor
+    program.state_dict[target_name] = updated_tensor

@@ -7,7 +7,7 @@ from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTrans
 from executorch.backends.vulkan._passes import FuseQuantizedOpsTransform
 
 from executorch.backends.vulkan.quantizer.vulkan_quantizer import (
-    get_weight_quantization_config,
+    get_linear_weight_only_qcs_xnn_qconfig,
     VulkanQuantizer,
 )
 
@@ -76,15 +76,6 @@ def quantize_and_lower_module(
     return edge_program
 
 
-def get_weight_int8_symmetric_vk_qconfig():
-    qconfig = get_weight_quantization_config(
-        is_per_channel=True,
-        weight_qmin=-128,
-        weight_qmax=127,
-    )
-    return qconfig
-
-
 def get_target_canonical_name(node: torch.fx.Node) -> Optional[str]:
     if node.op != "call_function":
         return None
@@ -110,22 +101,51 @@ class TestVulkanPasses(unittest.TestCase):
         sample_inputs = model.get_sample_inputs()
 
         quantizer = VulkanQuantizer()
-        quantizer.set_global(get_weight_int8_symmetric_vk_qconfig())
+        quantizer.set_global(get_linear_weight_only_qcs_xnn_qconfig(8))
 
-        edge_program = quantize_and_lower_module(
+        edge_manager = quantize_and_lower_module(
             model,
             sample_inputs,
             quantizer,
         )
 
-        edge_program.transform(
+        ep = edge_manager._edge_programs["forward"]
+        edge_manager.transform(
             [
                 AddmmToLinearTransform(),
-                FuseQuantizedOpsTransform(),
+                FuseQuantizedOpsTransform(ep),
             ]
         )
 
-        gm = edge_program._edge_programs["forward"].graph_module
+        gm = ep.graph_module
 
         self.assertEqual(op_node_count(gm, "_weight_int8pack_mm.default"), 1)
+        self.assertEqual(op_node_count(gm, "dequantize_per_channel.default"), 0)
+
+    def test_fuse_linear_qcs4w(self):
+        K = 256
+        N = 256
+        model = SingleLinearModule(K, N)
+        sample_inputs = model.get_sample_inputs()
+
+        quantizer = VulkanQuantizer()
+        quantizer.set_global(get_linear_weight_only_qcs_xnn_qconfig(4))
+
+        edge_manager = quantize_and_lower_module(
+            model,
+            sample_inputs,
+            quantizer,
+        )
+
+        ep = edge_manager._edge_programs["forward"]
+        edge_manager.transform(
+            [
+                AddmmToLinearTransform(),
+                FuseQuantizedOpsTransform(ep),
+            ]
+        )
+
+        gm = ep.graph_module
+
+        self.assertEqual(op_node_count(gm, "linear_qcs4w.default"), 1)
         self.assertEqual(op_node_count(gm, "dequantize_per_channel.default"), 0)

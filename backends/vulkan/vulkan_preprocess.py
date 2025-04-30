@@ -152,7 +152,7 @@ class VulkanBackend(BackendDetails):
             [
                 RemoveRedundantOpsTransform(),
                 AddmmToLinearTransform(),
-                FuseQuantizedOpsTransform(),
+                FuseQuantizedOpsTransform(program),
                 SqueezeUnsqueezeInputs(),
                 FuseViewCopyTransform(),
                 ViewCopyToSqueezeUnsqueezePass(),
