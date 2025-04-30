@@ -97,7 +97,9 @@ class Runner {
   const int32_t vocab_size_;
   const int32_t max_seq_len_;
   int32_t eval_mode_;
-  std::vector<std::shared_ptr<executorch::extension::Module>> modules_;
+  std::vector<
+      std::shared_ptr<executorch::extension::ET_MODULE_NAMESPACE::Module>>
+      modules_;
   std::vector<std::string> method_names_;
   std::string tokenizer_path_;
   float temperature_;

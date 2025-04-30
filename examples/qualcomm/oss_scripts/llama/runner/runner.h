@@ -101,7 +101,9 @@ class Runner {
   std::unordered_set<uint64_t> eos_id_;
   const int32_t n_bos_;
   const int32_t n_eos_;
-  std::vector<std::shared_ptr<executorch::extension::Module>> modules_;
+  std::vector<
+      std::shared_ptr<executorch::extension::ET_MODULE_NAMESPACE::Module>>
+      modules_;
   std::string tokenizer_path_;
   std::string performance_output_path_;
   float logits_scale_;

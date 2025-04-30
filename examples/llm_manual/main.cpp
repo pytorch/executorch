@@ -20,7 +20,7 @@
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::extension::from_blob;
-using executorch::extension::Module;
+using executorch::extension::ET_MODULE_NAMESPACE::Module;
 using executorch::runtime::EValue;
 using executorch::runtime::Result;
 

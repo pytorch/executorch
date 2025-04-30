@@ -36,6 +36,7 @@
 
 namespace executorch {
 namespace extension {
+namespace ET_MODULE_NAMESPACE {
 
 using ET_RUNTIME_NAMESPACE::MethodMeta;
 using ET_RUNTIME_NAMESPACE::Program;
@@ -312,5 +313,6 @@ ET_NODISCARD inline runtime::Result<Method*> Module::get_method(
   return methods_[method_name].method.get();
 }
 
+} // namespace ET_MODULE_NAMESPACE
 } // namespace extension
 } // namespace executorch

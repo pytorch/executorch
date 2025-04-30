@@ -16,8 +16,15 @@
 
 #include <executorch/runtime/executor/program.h>
 
+#ifdef USE_ATEN_LIB
+#define ET_MODULE_NAMESPACE module::aten
+#else // !USE_ATEN_LIB
+#define ET_MODULE_NAMESPACE module
+#endif // USE_ATEN_LIB
+
 namespace executorch {
 namespace extension {
+namespace ET_MODULE_NAMESPACE {
 
 using ET_RUNTIME_NAMESPACE::Method;
 using ET_RUNTIME_NAMESPACE::MethodMeta;
@@ -506,6 +513,7 @@ class Module {
   friend class ExecuTorchJni;
 };
 
+} // namespace ET_MODULE_NAMESPACE
 } // namespace extension
 } // namespace executorch
 
@@ -513,6 +521,6 @@ namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::extension::Module;
+using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
 } // namespace executor
 } // namespace torch
