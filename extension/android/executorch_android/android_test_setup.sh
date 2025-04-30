@@ -15,7 +15,8 @@ which "${PYTHON_EXECUTABLE}"
 BASEDIR=$(dirname "$(realpath $0)")
 
 prepare_add() {
-  cp "${BASEDIR}/../../../extension/module/test/resources/add.pte" "${BASEDIR}/src/androidTest/resources"
+  python3 -m test.models.export_program --modules "ModuleAdd"
+  cp add.pte "${BASEDIR}/src/androidTest/resources/"
 }
 
 prepare_tinyllama() {
