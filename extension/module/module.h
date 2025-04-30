@@ -24,12 +24,15 @@
 
 namespace executorch {
 namespace extension {
-namespace ET_MODULE_NAMESPACE {
 
 using ET_RUNTIME_NAMESPACE::Method;
 using ET_RUNTIME_NAMESPACE::MethodMeta;
 using ET_RUNTIME_NAMESPACE::NamedDataMap;
 using ET_RUNTIME_NAMESPACE::Program;
+
+class ExecuTorchJni;
+
+namespace ET_MODULE_NAMESPACE {
 
 /**
  * A facade class for loading programs and executing methods within them.
@@ -500,7 +503,7 @@ class Module {
  protected:
   std::unordered_map<std::string, MethodHolder> methods_;
 
-  friend class ExecuTorchJni;
+  friend class executorch::extension::ExecuTorchJni;
 };
 
 } // namespace ET_MODULE_NAMESPACE
@@ -518,6 +521,6 @@ using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
 namespace executorch {
 namespace extension {
 // backward compatible namespace alias
-using namespace ::executorch::extension::ET_MODULE_NAMESPACE;
+using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
 } // namespace extension
 } // namespace executorch
