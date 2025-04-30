@@ -49,7 +49,7 @@ NSString *ExecuTorchErrorDescription(ExecuTorchErrorCode code) {
     case ExecuTorchErrorCodeDelegateInvalidHandle:
       return @"Delegate handle invalid";
     default:
-      return [NSString stringWithFormat:@"Unknown error (%ld)", (long)code];
+      return [NSString stringWithFormat:@"Unknown error %zd", code];
   }
 }
 
