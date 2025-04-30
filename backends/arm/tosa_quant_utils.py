@@ -273,12 +273,9 @@ def build_rescale(
     import serializer.tosa_serializer as ts  # type: ignore
     import tosa.Op as TosaOp  # type: ignore
 
-    # Check if scale32 mode is used for given output element type
-    is_scale32 = output_type == ts.DType.INT8
-    scale_width = 32 if is_scale32 else 16
     input_name = input_node.name
 
-    multipliers, shifts = compute_multiplier_and_shift(scale, scale_width)
+    multipliers, shifts = compute_multiplier_and_shift(scale, 32)
     rescale_inputs = create_const_ops_for_rescale(
         tosa_fb,
         input_node.dtype,
@@ -291,7 +288,7 @@ def build_rescale(
     )
     attr_rescale = ts.TosaSerializerAttribute()
     attr_rescale.RescaleAttribute(
-        scale32=is_scale32,
+        scale32=True,
         rounding_mode=rounding_mode,
         per_channel=per_channel,
         input_unsigned=False,
