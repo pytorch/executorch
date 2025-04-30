@@ -16,11 +16,11 @@
 #define ET_BUNDLED_MODULE_NAMESPACE bundled_module
 #endif // USE_ATEN_LIB
 
-using executorch::extension::ET_MODULE_NAMESPACE::Module;
-
 namespace executorch {
 namespace extension {
 namespace ET_BUNDLED_MODULE_NAMESPACE {
+
+using executorch::extension::ET_MODULE_NAMESPACE::Module;
 
 /**
  * A facade class for loading bundled programs and executing methods within
