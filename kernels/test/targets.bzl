@@ -272,6 +272,7 @@ def define_common_targets():
     _common_op_test("op_mul_test", ["aten", "portable", "optimized"])
     _common_op_test("op_narrow_copy_test", ["aten", "portable"])
     _common_op_test("op_native_batch_norm_test", ["aten", "portable"])
+    _common_op_test("op_native_dropout_test", ["aten", "portable"])
     _common_op_test("op_native_group_norm_test", ["aten", "portable"])
     _common_op_test("op_native_layer_norm_test", ["aten", "portable", "optimized"])
     _common_op_test("op_ne_test", ["aten", "portable"])
