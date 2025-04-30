@@ -60,7 +60,7 @@ class ET_EXPERIMENTAL Runner : public executorch::extension::llm::IRunner {
   bool shouldStop_{false};
 
   // model
-  std::unique_ptr<::executorch::extension::ET_MODULE_NAMESPACE::Module> module_;
+  std::unique_ptr<::executorch::extension::Module> module_;
   std::string tokenizer_path_;
   std::unique_ptr<::tokenizers::Tokenizer> tokenizer_;
   std::unordered_map<std::string, int64_t> metadata_;

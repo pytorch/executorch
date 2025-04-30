@@ -23,8 +23,8 @@
 #include <executorch/runtime/platform/log.h>
 
 using executorch::extension::from_blob;
+using executorch::extension::Module;
 using executorch::extension::TensorPtr;
-using executorch::extension::ET_MODULE_NAMESPACE::Module;
 using executorch::extension::llm::time_in_ms;
 using executorch::runtime::Error;
 using executorch::runtime::MethodMeta;

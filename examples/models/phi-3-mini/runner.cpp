@@ -16,7 +16,7 @@
 #include <pytorch/tokenizers/llama2c_tokenizer.h>
 
 using executorch::aten::ScalarType;
-using executorch::extension::ET_MODULE_NAMESPACE::Module;
+using executorch::extension::Module;
 using executorch::extension::llm::Sampler;
 using executorch::runtime::Error;
 using tokenizers::Llama2cTokenizer;
