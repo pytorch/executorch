@@ -10,6 +10,7 @@ from executorch.devtools.bundled_program.serialize import (
 from executorch.exir import to_edge_transform_and_lower
 from torch.export import export, export_for_training
 
+
 # Step 1: ExecuTorch Program Export
 class SampleModel(torch.nn.Module):
     """An example model with multi-methods. Each method has multiple input and single output"""
@@ -26,6 +27,7 @@ class SampleModel(torch.nn.Module):
         torch.add(z, self.b, out=y)
         torch.add(y, q, out=y)
         return y
+
 
 def main() -> None:
     """Sample code to generate bundled program and save it to file. It is the same as in https://pytorch.org/executorch/0.6/bundled-io.html#emit-example"""
@@ -45,7 +47,6 @@ def main() -> None:
         export_for_training(model, capture_input).module(),
         capture_input,
     )
-
 
     # Emit the traced method into ET Program.
     et_program = to_edge_transform_and_lower(method_graph).to_executorch()
