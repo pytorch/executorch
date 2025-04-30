@@ -208,7 +208,10 @@ def _insert_lowered_submodule(
     # handle getitem node in multi-method scenario
     call_submodule_inputs = []
     for inp_node in call_submodule_node.all_input_nodes:
-        if inp_node.target == operator.getitem:
+        if inp_node.target == operator.getitem and (
+            inp_node.args[0].target == torch._higher_order_ops.executorch_call_delegate
+            or inp_node.args[0].op == "call_module"
+        ):
             # it could be an executorch_call_delegate node or a submodule to be replaced
             subgraph = (
                 # get owning_module of lowered_module node
