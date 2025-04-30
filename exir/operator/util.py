@@ -7,6 +7,7 @@
 # pyre-strict
 
 import torch
+from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib  # noqa: F401
 from torchgen.model import FunctionSchema, SchemaKind
 from torchgen.native_function_generation import (
     functional_to_out_signature,
