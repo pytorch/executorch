@@ -18,9 +18,9 @@ from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
-#############################
-## aten.weight_int8pack_mm ##
-#############################
+#################
+## linear_qcnw ##
+#################
 
 
 def matches_linear_qcnw_pattern(  # noqa: C901
