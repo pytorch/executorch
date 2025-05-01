@@ -25,10 +25,10 @@ from executorch.backends.qualcomm._passes.utils import (
 from executorch.backends.qualcomm.tests.utils import (
     generate_context_binary,
     ModuleQConfig,
+    QnnTool,
     QuantDtype,
     TestQNN,
     validate_context_binary,
-    validate_qcir,
 )
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_ANNOTATION,
@@ -2563,15 +2563,30 @@ class TestQNNFloatingPointUtils(TestQNN):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         backend_options = generate_htp_compiler_spec(use_fp16=True)
+
+        # Validate dlc
+        compiler_spec = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+            online_prepare=True,
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+                module, sample_input, compiler_spec
+            ).to_executorch()
+            pte_path = f"{tmp_dir}/model.pte"
+            with open(pte_path, "wb") as f:
+                edge_prog_mgr.write_to_file(f)
+            dump_context_from_pte(pte_path)
+
+            qnn_tool = QnnTool(tmp_dir, pte_path, sample_input)
+            qnn_tool.qnn_context_binary_generator()
+            qnn_tool.qnn_net_run()
+
         compiler_specs = [
             self.compiler_specs,
-            generate_qnn_executorch_compiler_spec(
-                soc_model=self.chipset_table[TestQNN.model],
-                backend_options=backend_options,
-                online_prepare=True,
-            ),
         ]
-        validators = [validate_context_binary, validate_qcir]
+        validators = [validate_context_binary]
 
         for compiler_spec, validate in zip(compiler_specs, validators):
             edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
@@ -2591,15 +2606,30 @@ class TestQNNFloatingPointUtils(TestQNN):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         backend_options = generate_htp_compiler_spec(use_fp16=True)
+
+        # Validate dlc
+        compiler_spec = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+            online_prepare=True,
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+                module, sample_input, compiler_spec
+            ).to_executorch()
+            pte_path = f"{tmp_dir}/model.pte"
+            with open(pte_path, "wb") as f:
+                edge_prog_mgr.write_to_file(f)
+            dump_context_from_pte(pte_path)
+
+            qnn_tool = QnnTool(tmp_dir, pte_path, sample_input)
+            qnn_tool.qnn_context_binary_generator()
+            qnn_tool.qnn_net_run()
+
         compiler_specs = [
             self.compiler_specs,
-            generate_qnn_executorch_compiler_spec(
-                soc_model=self.chipset_table[TestQNN.model],
-                backend_options=backend_options,
-                online_prepare=True,
-            ),
         ]
-        validators = [validate_context_binary, validate_qcir]
+        validators = [validate_context_binary]
 
         for compiler_spec, validate in zip(compiler_specs, validators):
             edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
@@ -3181,15 +3211,30 @@ class TestQNNQuantizedUtils(TestQNN):
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         module = self.get_qdq_module(module, sample_input)
         backend_options = generate_htp_compiler_spec(use_fp16=False)
+
+        # Validate dlc
+        compiler_spec = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+            online_prepare=True,
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+                module, sample_input, compiler_spec
+            ).to_executorch()
+            pte_path = f"{tmp_dir}/model.pte"
+            with open(pte_path, "wb") as f:
+                edge_prog_mgr.write_to_file(f)
+            dump_context_from_pte(pte_path)
+
+            qnn_tool = QnnTool(tmp_dir, pte_path, sample_input)
+            qnn_tool.qnn_context_binary_generator()
+            qnn_tool.qnn_net_run()
+
         compiler_specs = [
             self.compiler_specs,
-            generate_qnn_executorch_compiler_spec(
-                soc_model=self.chipset_table[TestQNN.model],
-                backend_options=backend_options,
-                online_prepare=True,
-            ),
         ]
-        validators = [validate_context_binary, validate_qcir]
+        validators = [validate_context_binary]
 
         for compiler_spec, validate in zip(compiler_specs, validators):
             edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
@@ -3210,15 +3255,30 @@ class TestQNNQuantizedUtils(TestQNN):
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         module = self.get_qdq_module(module, sample_input)
         backend_options = generate_htp_compiler_spec(use_fp16=True)
+
+        # Validate dlc
+        compiler_spec = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+            online_prepare=True,
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+                module, sample_input, compiler_spec
+            ).to_executorch()
+            pte_path = f"{tmp_dir}/model.pte"
+            with open(pte_path, "wb") as f:
+                edge_prog_mgr.write_to_file(f)
+            dump_context_from_pte(pte_path)
+
+            qnn_tool = QnnTool(tmp_dir, pte_path, sample_input)
+            qnn_tool.qnn_context_binary_generator()
+            qnn_tool.qnn_net_run()
+
         compiler_specs = [
             self.compiler_specs,
-            generate_qnn_executorch_compiler_spec(
-                soc_model=self.chipset_table[TestQNN.model],
-                backend_options=backend_options,
-                online_prepare=True,
-            ),
         ]
-        validators = [validate_context_binary, validate_qcir]
+        validators = [validate_context_binary]
 
         for compiler_spec, validate in zip(compiler_specs, validators):
             edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
@@ -4678,12 +4738,6 @@ def setup_environment():
         "--model_name",
         help="Input the model to export",
         type=str,
-    )
-    parser.add_argument(
-        "-o",
-        "--online_prepare",
-        help="Conduct on-device graph compilation",
-        action="store_true",
     )
     parser.add_argument(
         "-P",

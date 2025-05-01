@@ -16,7 +16,6 @@ Error QnnGraph::Configure(const std::string& graph_name) {
   // create qnn backend
   const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
-
   std::vector<const QnnGraph_Config_t*> temp_graph_config;
   ET_CHECK_OR_RETURN_ERROR(
       MakeConfig(temp_graph_config) == Error::Ok,
@@ -44,8 +43,8 @@ Error QnnGraph::Configure(const std::string& graph_name) {
     }
   } else if (
       context_->GetCacheState() == QnnBackendCache::SERIALIZE ||
-      context_->GetCacheState() == QnnBackendCache::ONLINE_PREPARE) {
-    Qnn_ErrorHandle_t error = qnn_interface.qnn_graph_create(
+      context_->GetCacheState() == QnnBackendCache::MULTI_GRAPH) {
+    error = qnn_interface.qnn_graph_create(
         context_->GetHandle(),
         graph_name.c_str(),
         temp_graph_config.empty() ? nullptr : temp_graph_config.data(),
@@ -56,6 +55,9 @@ Error QnnGraph::Configure(const std::string& graph_name) {
           "qnn_graph_create failed. Error  %d", QNN_GET_ERROR_CODE(error));
       return Error::Internal;
     }
+  } else if (context_->GetCacheState() == QnnBackendCache::ONLINE_PREPARE) {
+    QNN_EXECUTORCH_LOG_INFO(
+        "Skip qnn_graph_create, graph has already been composed from Dlc.");
   } else {
     QNN_EXECUTORCH_LOG_ERROR("QNN context cache is invalid.");
     return Error::Internal;
