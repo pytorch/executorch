@@ -194,21 +194,23 @@ struct ContentView: View {
             .background(Color.clear)
             .cornerRadius(8)
 
-            Button(action: {
-              thinkingMode.toggle()
-              showThinkingModeNotification = true
-              DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                showThinkingModeNotification = false
+            if resourceManager.isModelValid && ModelType.fromPath(resourceManager.modelPath) == .qwen3 {
+              Button(action: {
+                thinkingMode.toggle()
+                showThinkingModeNotification = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                  showThinkingModeNotification = false
+                }
+              }) {
+                Image(systemName: "brain")
+                  .resizable()
+                  .scaledToFit()
+                  .frame(width: 24, height: 24)
+                  .foregroundColor(thinkingMode ? .blue : .gray)
               }
-            }) {
-              Image(systemName: "brain")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 24, height: 24)
-                .foregroundColor(thinkingMode ? .blue : .gray)
+              .background(Color.clear)
+              .cornerRadius(8)
             }
-            .background(Color.clear)
-            .cornerRadius(8)
 
             TextField(placeholder, text: $prompt, axis: .vertical)
               .padding(8)
@@ -464,7 +466,10 @@ struct ContentView: View {
           let prompt: String
           switch modelType {
           case .qwen3:
-            prompt = String(format: Constants.qwen3PromptTemplate, text)
+            let basePrompt = String(format: Constants.qwen3PromptTemplate, text)
+            // If thinking mode is enabled for Qwen, don't skip the <think></think> special tokens
+            // and have them be generated.
+            prompt = thinkingMode ? basePrompt.replacingOccurrences(of: "<think>\n\n</think>\n\n\n", with: "") : basePrompt
           case .llama:
             prompt = String(format: Constants.llama3PromptTemplate, text)
           case .llava:
@@ -474,12 +479,45 @@ struct ContentView: View {
           try runnerHolder.runner?.generate(prompt, sequenceLength: seq_len) { token in
 
             if token != prompt {
-              // hack to fix the issue that extension/llm/runner/text_token_generator.h
-              // keeps generating after <|eot_id|>
               if token == "<|eot_id|>" {
+                // hack to fix the issue that extension/llm/runner/text_token_generator.h
+                // keeps generating after <|eot_id|>
                 shouldStopShowingToken = true
+              } else if token == "<|im_end|>" {
+                // Qwen3 specific token.
+                // Skip.
+              } else if token == "<think>" {
+                // Qwen3 specific token.
+                let textToFlush = tokens.joined()
+                let flushedTokenCount = tokens.count
+                tokens = []
+                DispatchQueue.main.async {
+                  var message = messages.removeLast()
+                  message.text += textToFlush
+                  message.text += message.text.isEmpty ? "Thinking...\n\n" : "\n\nThinking...\n\n"
+                  message.format = .italic
+                  message.tokenCount += flushedTokenCount + 1  // + 1 for the start thinking token.
+                  message.dateUpdated = Date()
+                  messages.append(message)
+                }
+              } else if token == "</think>" {
+                // Qwen3 specific token.
+                let textToFlush = tokens.joined()
+                let flushedTokenCount = tokens.count
+                tokens = []
+                DispatchQueue.main.async {
+                  var message = messages.removeLast()
+                  message.text += textToFlush
+                  message.text += "\n\nFinished thinking.\n\n"
+                  message.format = .italic
+                  message.tokenCount += flushedTokenCount + 1  // + 1 for the end thinking token.
+                  message.dateUpdated = Date()
+                  messages.append(message)
+                }
               } else {
                 tokens.append(token.trimmingCharacters(in: .newlines))
+                // Flush tokens in groups of 3 so that it's closer to whole words being generated
+                // rather than parts of words (tokens).
                 if tokens.count > 2 {
                   let text = tokens.joined()
                   let count = tokens.count
