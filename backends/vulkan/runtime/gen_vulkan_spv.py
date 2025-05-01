@@ -1140,8 +1140,6 @@ def genCppFiles(
         if spvPath is None:
             continue
 
-        print(spvPath)
-        print(srcPath)
         name = getName(spvPath).replace("_spv", "")
 
         sizeBytes, spv_bin_str = generateSpvBinStr(spvPath, name)
