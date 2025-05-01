@@ -22,15 +22,11 @@ class SDPACustom(torch.nn.Module):
     def __init__(
         self,
         dim: int,
-        max_context_len,
-        enable_dynamic_shape,
         use_attention_mask: bool = False,
     ):
         super().__init__()
         self.dim = dim
-        self.max_context_len = max_context_len
         self.use_attention_mask = use_attention_mask
-        self.enable_dynamic_shape = enable_dynamic_shape
 
     def forward(
         self,
@@ -42,16 +38,6 @@ class SDPACustom(torch.nn.Module):
         seqlen,
         mask,
     ):
-        if self.use_attention_mask:
-            if self.enable_dynamic_shape:
-                start_pos = input_pos[-1].item()
-                torch._check_is_size(start_pos)
-                torch._check(start_pos < self.max_context_len)
-                seq_length = q.size(2)
-                mask = mask.narrow(0, start_pos, seq_length)
-            else:
-                mask = mask[input_pos]
-
         q = q.transpose(1, 2)  # (bs, seqlen, n_local_heads, head_dim)
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
@@ -96,8 +82,6 @@ def _replace_sdpa_with_custom_op(
                 name,
                 SDPACustom(
                     child.dim,
-                    child.max_context_len,
-                    child.enable_dynamic_shape,
                     use_attention_mask=use_attention_mask,
                 ),
             )
@@ -133,12 +117,15 @@ class QuantizedSDPA(torch.nn.Module):
     zero points, we need to pass kv_cache to SDPA.
     """
 
-    def __init__(self, dim: int, kv_cache: QuantizedKVCache):
+    def __init__(
+        self, dim: int, kv_cache: QuantizedKVCache, use_attention_mask: bool = False
+    ):
         super().__init__()
         self.dim = dim
         self.quantized_dtype = torch.int8
         self.float_dtype = torch.float32
         self.kv_cache = kv_cache
+        self.use_attention_mask = use_attention_mask
 
     def forward(
         self,
@@ -176,22 +163,40 @@ class QuantizedSDPA(torch.nn.Module):
         v_scale_fp32 = self.kv_cache.v_cache_scales
 
         start_pos = input_pos[0].item()
-        output = torch.ops.llama.custom_quantized_sdpa(
-            q_quantized,
-            k_quantized,
-            v_quantized,
-            start_pos,
-            None,
-            0,
-            True,
-            None,
-            q_zero_point_int8,
-            q_scale_fp32,
-            k_zero_point_int8,
-            k_scale_fp32,
-            v_zero_point_int8,
-            v_scale_fp32,
-        )
+        if self.use_attention_mask:
+            output = torch.ops.llama.custom_quantized_sdpa(
+                q_quantized,
+                k_quantized,
+                v_quantized,
+                start_pos,
+                mask,
+                0,
+                False,
+                None,
+                q_zero_point_int8,
+                q_scale_fp32,
+                k_zero_point_int8,
+                k_scale_fp32,
+                v_zero_point_int8,
+                v_scale_fp32,
+            )
+        else:
+            output = torch.ops.llama.custom_quantized_sdpa(
+                q_quantized,
+                k_quantized,
+                v_quantized,
+                start_pos,
+                None,
+                0,
+                True,
+                None,
+                q_zero_point_int8,
+                q_scale_fp32,
+                k_zero_point_int8,
+                k_scale_fp32,
+                v_zero_point_int8,
+                v_scale_fp32,
+            )
 
         return output.view(bsz, seqlen, self.dim)
 
@@ -201,6 +206,7 @@ def _update_attention_module_with_quantized_sdpa(
 ):
     sdpa = getattr(module, "SDPA", None)
     assert sdpa is not None
+    # TODO: add support for SDPA with attention mask
     # pyre-ignore
     setattr(module, "SDPA", QuantizedSDPA(sdpa.dim, kv_cache))  # noqa: B010
 
