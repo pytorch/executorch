@@ -10,7 +10,7 @@ import unittest
 import torch
 import torch._dynamo
 
-from executorch.exir import to_edge
+from executorch.exir import to_edge, ExecutorchBackendConfig
 
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
@@ -49,8 +49,11 @@ class TestJointGraph(unittest.TestCase):
                 break
 
         orig_outputs = len(output_node.args[0])
-
-        et = edge.to_executorch()
+     
+        config = ExecutorchBackendConfig(
+            do_quant_fusion_and_const_prop=False,
+        )
+        et = edge.to_executorch(config)
 
         weight_output_specs = [
             spec

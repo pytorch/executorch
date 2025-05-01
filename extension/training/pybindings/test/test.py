@@ -9,7 +9,7 @@
 import unittest
 
 import torch
-from executorch.exir import to_edge
+from executorch.exir import to_edge, ExecutorchBackendConfig
 
 from executorch.extension.training import (
     _load_for_executorch_for_training_from_buffer,
@@ -36,7 +36,8 @@ class TestTraining(unittest.TestCase):
         ep = torch.export.export(m, m.get_inputs(), strict=True)
         ep = _export_forward_backward(ep)
         ep = to_edge(ep)
-        ep = ep.to_executorch()
+        config = ExecutorchBackendConfig(do_quant_fusion_and_const_prop=False)
+        ep = ep.to_executorch(config)
         buffer = ep.buffer
         tm = _load_for_executorch_for_training_from_buffer(buffer)
 

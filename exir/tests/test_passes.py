@@ -1085,7 +1085,16 @@ class TestPasses(unittest.TestCase):
         self.assertEqual(ep.graph_signature.input_specs[1].arg.name, "b_a")
 
         # Validate that the program successfully passes validation to executorch:
-        edge.to_executorch()
+
+        # The test fails when do_quant_fusion_and_const_prop=True, but it is not related to
+        # the pass, but rather that memory planning fails (AssertionError: graph_output_allocated not set)
+        # when a graph has no user inputs and no operations.  We can construct a failure case
+        # even with do_quant_fusion_and_const_prop = False by changing the forward method in NoUserInputs
+        # to just return self.a
+        config = exir.ExecutorchBackendConfig(
+            do_quant_fusion_and_const_prop=False,
+        )
+        edge.to_executorch(config)
 
     def test_constant_prop_pass_for_parameter(self) -> None:
         def count_additions(gm: torch.fx.GraphModule) -> int:

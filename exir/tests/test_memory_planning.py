@@ -769,7 +769,8 @@ class TestMisc(unittest.TestCase):
         ep = export(net, inputs, strict=True)
         ep = _export_forward_backward(ep)
         ep = to_edge(ep)
-        ep = ep.to_executorch()
+        config = ExecutorchBackendConfig(do_quant_fusion_and_const_prop=False)
+        ep = ep.to_executorch(config)
 
         ep.dump_executorch_program(True)
 
