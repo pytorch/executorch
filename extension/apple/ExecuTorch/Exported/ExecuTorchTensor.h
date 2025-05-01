@@ -670,4 +670,82 @@ __attribute__((deprecated("This API is experimental.")))
 
 @end
 
+#pragma mark - Empty Category
+
+@interface ExecuTorchTensor (Empty)
+
+/**
+ * Creates an empty tensor with the specified shape, strides, data type, and shape dynamism.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param strides An NSArray of NSNumber objects representing the desired strides.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new, empty ExecuTorchTensor instance.
+ */
++ (instancetype)emptyTensorWithShape:(NSArray<NSNumber *> *)shape
+                             strides:(NSArray<NSNumber *> *)strides
+                            dataType:(ExecuTorchDataType)dataType
+                       shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(empty(shape:strides:dataType:shapeDynamism:));
+
+/**
+ * Creates an empty tensor with the specified shape, data type, and shape dynamism.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new, empty ExecuTorchTensor instance.
+ */
++ (instancetype)emptyTensorWithShape:(NSArray<NSNumber *> *)shape
+                            dataType:(ExecuTorchDataType)dataType
+                       shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(empty(shape:dataType:shapeDynamism:));
+
+/**
+ * Creates an empty tensor with the specified shape and data type, using dynamic bound shape.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @return A new, empty ExecuTorchTensor instance.
+ */
++ (instancetype)emptyTensorWithShape:(NSArray<NSNumber *> *)shape
+                            dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(empty(shape:dataType:));
+
+/**
+ * Creates an empty tensor similar to the given tensor, with the specified data type and shape dynamism.
+ *
+ * @param tensor An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param dataType An ExecuTorchDataType value specifying the desired element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new, empty ExecuTorchTensor instance with the same shape as the provided tensor.
+ */
++ (instancetype)emptyTensorLikeTensor:(ExecuTorchTensor *)tensor
+                             dataType:(ExecuTorchDataType)dataType
+                        shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(empty(like:dataType:shapeDynamism:));
+
+/**
+ * Creates an empty tensor similar to the given tensor, with the specified data type.
+ *
+ * @param tensor An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param dataType An ExecuTorchDataType value specifying the desired element type.
+ * @return A new, empty ExecuTorchTensor instance with the same shape as the provided tensor.
+ */
++ (instancetype)emptyTensorLikeTensor:(ExecuTorchTensor *)tensor
+                             dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(empty(like:dataType:));
+
+/**
+ * Creates an empty tensor similar to the given tensor.
+ *
+ * @param tensor An existing ExecuTorchTensor instance.
+ * @return A new, empty ExecuTorchTensor instance with the same properties as the provided tensor.
+ */
++ (instancetype)emptyTensorLikeTensor:(ExecuTorchTensor *)tensor
+    NS_SWIFT_NAME(empty(like:));
+
+@end
+
 NS_ASSUME_NONNULL_END
