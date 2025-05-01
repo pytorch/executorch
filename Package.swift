@@ -96,6 +96,7 @@ let package = Package(
         .copy("resources/add.pte")
       ],
       linkerSettings: [
+        .linkedLibrary("c++"),
         .unsafeFlags([
           "-Xlinker", "-all_load",
         ])
