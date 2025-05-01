@@ -82,6 +82,25 @@ struct ContentView: View {
     case tokenizer
   }
 
+  enum ModelType {
+    case llama
+    case llava
+    case qwen3
+    
+    static func fromPath(_ path: String) -> ModelType {
+      let filename = (path as NSString).lastPathComponent.lowercased()
+      if filename.hasPrefix("llama") {
+        return .llama
+      } else if filename.hasPrefix("llava") {
+        return .llava
+      } else if filename.hasPrefix("qwen3") {
+        return .qwen3
+      }
+      print("Unknown model type in path: \(path). Model filename should start with one of: llama, llava, or qwen3")
+      exit(1)
+    }
+  }
+
   private var placeholder: String {
     resourceManager.isModelValid ? resourceManager.isTokenizerValid ? "Prompt..." : "Select Tokenizer..." : "Select Model..."
   }
@@ -304,14 +323,14 @@ struct ContentView: View {
     let seq_len = 768 // text: 256, vision: 768
     let modelPath = resourceManager.modelPath
     let tokenizerPath = resourceManager.tokenizerPath
-    let useLlama = modelPath.lowercased().contains("llama")
+    let modelType = ModelType.fromPath(modelPath)
 
     prompt = ""
     hideKeyboard()
     showingSettings = false
 
     messages.append(Message(text: text))
-    messages.append(Message(type: useLlama ? .llamagenerated : .llavagenerated))
+    messages.append(Message(type: modelType == .llama ? .llamagenerated : .llavagenerated))
 
     runnerQueue.async {
       defer {
@@ -321,14 +340,16 @@ struct ContentView: View {
         }
       }
 
-      if useLlama {
+      switch modelType {
+      case .llama, .qwen3:
         runnerHolder.runner = runnerHolder.runner ?? Runner(modelPath: modelPath, tokenizerPath: tokenizerPath)
-      } else {
+      case .llava:
         runnerHolder.llavaRunner = runnerHolder.llavaRunner ?? LLaVARunner(modelPath: modelPath, tokenizerPath: tokenizerPath)
       }
 
       guard !shouldStopGenerating else { return }
-      if useLlama {
+      switch modelType {
+      case .llama, .qwen3:
         if let runner = runnerHolder.runner, !runner.isLoaded() {
           var error: Error?
           let startLoadTime = Date()
@@ -358,7 +379,7 @@ struct ContentView: View {
             return
           }
         }
-      } else {
+      case .llava:
         if let runner = runnerHolder.llavaRunner, !runner.isLoaded() {
           var error: Error?
           let startLoadTime = Date()
@@ -440,12 +461,19 @@ struct ContentView: View {
             }
           }
         } else {
-          let llama3_prompt = "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\(text)<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+          let prompt: String
+          switch modelType {
+          case .qwen3:
+            prompt = String(format: Constants.qwen3PromptTemplate, text)
+          case .llama:
+            prompt = String(format: Constants.llama3PromptTemplate, text)
+          case .llava:
+            prompt = String(format: Constants.llama3PromptTemplate, text)
+          }
 
-          try runnerHolder.runner?.generate(llama3_prompt, sequenceLength: seq_len) { token in
+          try runnerHolder.runner?.generate(prompt, sequenceLength: seq_len) { token in
 
-            NSLog(">>> token={\(token)}")
-            if token != llama3_prompt {
+            if token != prompt {
               // hack to fix the issue that extension/llm/runner/text_token_generator.h
               // keeps generating after <|eot_id|>
               if token == "<|eot_id|>" {
