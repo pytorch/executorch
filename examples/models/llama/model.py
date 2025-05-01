@@ -15,9 +15,10 @@ from executorch.examples.models.checkpoint import (
     get_checkpoint_dtype,
     get_default_model_resource_dir,
 )
-from executorch.examples.models.llama.llama_transformer import Transformer
 
+from executorch.examples.models.llama.llama_transformer import construct_transformer
 from executorch.examples.models.llama.model_args import ModelArgs
+from executorch.examples.models.llama.rope import Rope
 from torchao.utils import TorchAOBaseTensor
 
 try:
@@ -174,7 +175,7 @@ the checkpoint format to avoid generating faulty models.
         # They possess all other metadata a tensor carries such as size, stride, requires_grad.
         with torch.device("meta"):
             # Model itself is loaded in default dtype, fp32.
-            self.model_ = Transformer(model_args)
+            self.model_ = construct_transformer(model_args)
             # Get checkpoint dtype.
             if checkpoint:
                 self.model_.checkpoint_dtype = get_checkpoint_dtype(checkpoint)
