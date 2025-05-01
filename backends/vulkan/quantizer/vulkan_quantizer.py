@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import functools
-from typing import Callable, Optional
+from typing import Any, Callable, Dict, Optional
 
 import torch
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
@@ -18,60 +18,53 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
     propagate_annotation,
     QuantizationConfig,
 )
-from torch.ao.quantization.observer import PerChannelMinMaxObserver
+from torch.ao.quantization.observer import MinMaxObserver, PerChannelMinMaxObserver
+from torch.ao.quantization.qconfig import _ObserverOrFakeQuantizeConstructor
 from torch.ao.quantization.quantizer import QuantizationSpec, Quantizer
 from torch.fx import Node
 
 
 __all__ = [
     "VulkanQuantizer",
-    "get_linear_weight_qcs_qspec",
-    "get_linear_weight_only_qcs_xnn_qconfig",
+    "get_weight_quantization_config",
 ]
 
 
-def get_linear_weight_qcs_qspec(quant_bits: int) -> QuantizationSpec:
-    """
-    Return a QuantizationSpec to perform per-channel symmetric (i.e. "qcs") quantization
-    of weight tensors of linear layers to the number of bits specified by quant_bits.
-    """
-    weight_observer = PerChannelMinMaxObserver
-    assert quant_bits in {
-        8,
-        4,
-    }, f"Unsupported weight quantization bits: {quant_bits}"
+@functools.lru_cache
+def get_weight_quantization_config(
+    is_per_channel: bool = True,
+    weight_qmin: int = -128,
+    weight_qmax: int = 127,
+) -> QuantizationConfig:
 
-    quant_min = -(2 ** (quant_bits - 1))
-    quant_max = 2 ** (quant_bits - 1) - 1
-    qscheme = torch.per_channel_symmetric
+    weight_qscheme = (
+        torch.per_channel_symmetric if is_per_channel else torch.per_tensor_symmetric
+    )
+    weight_observer_or_fake_quant_ctr: _ObserverOrFakeQuantizeConstructor = (
+        PerChannelMinMaxObserver if is_per_channel else MinMaxObserver
+    )
+    extra_args: Dict[str, Any] = {"eps": 2**-12}
 
-    return QuantizationSpec(
+    weight_quantization_spec = QuantizationSpec(
         dtype=torch.int8,
-        quant_min=quant_min,
-        quant_max=quant_max,
-        qscheme=qscheme,
+        quant_min=weight_qmin,
+        quant_max=weight_qmax,
+        qscheme=weight_qscheme,
         ch_axis=0,
         is_dynamic=False,
-        observer_or_fake_quant_ctr=weight_observer,
+        observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr.with_args(
+            **extra_args
+        ),
     )
 
-
-@functools.lru_cache
-def get_linear_weight_only_qcs_xnn_qconfig(quant_bits: int) -> QuantizationConfig:
-    """
-    Return a XNNPACKQuantizer QuantizationConfig class instance that specifies
-    quantizing the weight tensors of linear layers using per-channel symmetric (qcs)
-    quantization to the number of bits specified by quant_bits.
-    """
-    weight_qspec = get_linear_weight_qcs_qspec(quant_bits)
-
-    return QuantizationConfig(
+    quantization_config = QuantizationConfig(
         input_activation=None,
         output_activation=None,
-        weight=weight_qspec,
+        weight=weight_quantization_spec,
         bias=None,
         is_qat=False,
     )
+    return quantization_config
 
 
 _SUPPORTED_OPS = [

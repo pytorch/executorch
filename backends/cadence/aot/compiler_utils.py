@@ -109,12 +109,12 @@ def get_cascaded_ops(
     return nodes
 
 
-# Capture the effect of transpose op on incoming dimension order
-def get_transposed_dims(node: torch.fx.Node, dims: List[int]) -> List[int]:
+def get_transposed_dims(
+    node: torch.fx.Node, dims: Optional[List[int]] = None
+) -> List[int]:
     """
-    Given a transpose node, and the incoming dimension ordering of the input
-    tensor to the transpose node, return the net effect of transpose op on the
-    dimension order.
+    Applies the transposition as given by node onto the dimensions given in input
+    e.g (1, 2) on [a, b, c, d] would return [a, c, b, d]
     """
     assert node.target == exir_ops.edge.aten.transpose_copy.int
     # Assert that the dims is not empty
@@ -127,28 +127,22 @@ def get_transposed_dims(node: torch.fx.Node, dims: List[int]) -> List[int]:
     assert isinstance(transpose_dims1, int)
     dim0 = transpose_dims0 if transpose_dims0 >= 0 else transpose_dims0 + dim_len
     dim1 = transpose_dims1 if transpose_dims1 >= 0 else transpose_dims1 + dim_len
-    # Perform transpose on dimmension ordering (dims)
-    dims[dim0], dims[dim1] = dims[dim1], dims[dim0]
-    return dims
+    new_dims = list(dims)
+    new_dims[dim0], new_dims[dim1] = dims[dim1], dims[dim0]
+    return new_dims
 
 
-# Capture the effect of permute op on incoming dimension order
-def get_permuted_dims(node: torch.fx.Node, dims: Optional[Sequence[int]]) -> List[int]:
+def get_permuted_dims(node: torch.fx.Node, dims: List[int]) -> List[int]:
     """
-    Given a permute node, and the incoming dimension ordering of the input
-    tensor to the permute node, return the net effect of permute op on the
-    dimension order.
+    Applies the permutation as given by node onto the dimensions given in input
+    e.g (1, 2, 0)  on [a, b, c] would return [b, c, a]
     """
     assert node.target == exir_ops.edge.aten.permute_copy.default
     # Permute each index of the dimension ordering (dims)
     # pyre-fixme[6]: This combined typecheck isn't supported yet.
     permute_dims: List[int] = list(node.args[1])
     assert all(isinstance(x, int) for x in permute_dims)
-    # If the dims is empty, we can simply return the permute order
-    if not dims:
-        return permute_dims
-    dims = [dims[x] for x in permute_dims]
-    return dims
+    return [dims[x] for x in permute_dims]
 
 
 # Return the tensor of buffer/parameter op
