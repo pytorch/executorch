@@ -495,7 +495,6 @@ struct ContentView: View {
                   var message = messages.removeLast()
                   message.text += textToFlush
                   message.text += message.text.isEmpty ? "Thinking...\n\n" : "\n\nThinking...\n\n"
-                  message.format = .italic
                   message.tokenCount += flushedTokenCount + 1  // + 1 for the start thinking token.
                   message.dateUpdated = Date()
                   messages.append(message)
@@ -509,7 +508,6 @@ struct ContentView: View {
                   var message = messages.removeLast()
                   message.text += textToFlush
                   message.text += "\n\nFinished thinking.\n\n"
-                  message.format = .italic
                   message.tokenCount += flushedTokenCount + 1  // + 1 for the end thinking token.
                   message.dateUpdated = Date()
                   messages.append(message)
