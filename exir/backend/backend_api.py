@@ -227,9 +227,8 @@ def _insert_lowered_submodule(
                     inp_node.args[0].all_input_nodes[0].name,
                 )
             )
-            output_node = [
-                node for node in subgraph.graph.nodes if node.name == "output"
-            ][0]
+            output_node = list(subgraph.graph.nodes)[-1]
+            assert output_node.op == "output"
             call_submodule_inputs.append(output_node.all_input_nodes[inp_node.args[1]])
         else:
             call_submodule_inputs.append(inp_node)
@@ -356,7 +355,8 @@ def _partition_and_lower_one_graph_module(
 
     # perform validation here to make sure all the delegated submodules are gone
     # validate inside _insert_lowered_submodule will break multi-method scenario
-    owning_program._validate()
+    if not is_submodule:
+        owning_program._validate()
     return tagged_graph_module
 
 
@@ -665,7 +665,8 @@ def lower_all_submodules_to_backend(
 
         # perform validation here to make sure all the delegated submodules are gone
         # validate inside _insert_lowered_submodule will break multi-method scenario
-        owning_program._validate()
+        if not is_submodule:
+            owning_program._validate()
 
 
 @dataclass
