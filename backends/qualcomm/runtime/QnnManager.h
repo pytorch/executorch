@@ -67,7 +67,6 @@ class QnnManager {
   executorch::runtime::Error GetContextBinary(
       QnnExecuTorchContextBinary& qnn_executorch_context_binary);
 
-  executorch::runtime::Error CompileQcir();
   executorch::runtime::Error CompileDlc();
   executorch::runtime::Error Compile(
       const std::string& graph_name,

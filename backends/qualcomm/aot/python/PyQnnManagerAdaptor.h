@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 #pragma once
-#include <executorch/backends/qualcomm/aot/ir/qcir_utils.h>
 #include <executorch/backends/qualcomm/aot/python/PyQnnWrapperAdaptor.h>
 #include <executorch/backends/qualcomm/qc_compiler_spec_generated.h>
 #include <executorch/backends/qualcomm/runtime/Logging.h>

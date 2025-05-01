@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/qualcomm/aot/ir/qcir_utils.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCache.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
 namespace executorch {
@@ -129,18 +128,6 @@ Error QnnBackendCache::Configure(const std::vector<std::string>& graph_names) {
       qnn_context_blob_.nbytes);
 
   if (status == Error::Internal) {
-    auto [status, qcir_fbs_size, _, qcir_fbs_ptr, __] =
-        QnnQcirCustomProtocol().DeserializeQcirCustomBuffer(
-            qnn_context_blob_.buffer);
-    if (status == Error::Ok) {
-      // first stage of multi graph
-      state_ = MULTI_GRAPH;
-      auto context = qcir::GetContext(qcir_fbs_ptr);
-      for (const auto& graph : *context->graphs()) {
-        graph_names_.emplace_back(graph->name()->str());
-      }
-      return Error::Ok;
-    }
     // online prepare
     state_ = ONLINE_PREPARE;
   }

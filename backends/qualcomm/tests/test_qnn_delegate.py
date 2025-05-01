@@ -2535,6 +2535,9 @@ class TestQNNFloatingPointUtils(TestQNN):
         )
 
     def test_qnn_backend_online_prepare(self):
+        if self.enable_x86_64:
+            self.skipTest("TODO: add online_prepare support on host platform")
+
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.model],
@@ -3187,6 +3190,9 @@ class TestQNNQuantizedUtils(TestQNN):
         )
 
     def test_qnn_backend_online_prepare(self):
+        if self.enable_x86_64:
+            self.skipTest("TODO: add online_prepare support on host platform")
+
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.model],
