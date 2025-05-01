@@ -182,7 +182,7 @@ cmake .. \
     -DPYTHON_EXECUTABLE=python3 \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI='arm64-v8a' \
-    -DANDROID_NATIVE_API_LEVEL=23
+    -DANDROID_PLATFORM=android-30
 
 # nproc is used to detect the number of available CPU.
 # If it is not applicable, please feel free to use the number you want.
@@ -191,7 +191,7 @@ cmake --build $PWD --target install -j$(nproc)
 cmake ../examples/qualcomm \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI='arm64-v8a' \
-    -DANDROID_NATIVE_API_LEVEL=23 \
+    -DANDROID_PLATFORM=android-30 \
     -DCMAKE_PREFIX_PATH="$PWD/lib/cmake/ExecuTorch;$PWD/third-party/gflags;" \
     -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
     -DPYTHON_EXECUTABLE=python3 \
