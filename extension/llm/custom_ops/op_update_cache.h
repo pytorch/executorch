@@ -20,6 +20,7 @@ Tensor& update_cache_out(
     const Tensor& value,
     Tensor& cache,
     const int64_t start_pos,
+    const optional<Tensor>& indices,
     Tensor& output);
 } // namespace native
 } // namespace executor

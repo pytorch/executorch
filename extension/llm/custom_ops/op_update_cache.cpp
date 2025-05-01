@@ -24,7 +24,8 @@ bool validate_cache_params(
     const Tensor& quantized_value,
     const Tensor& quantized_cache,
     int64_t start_pos,
-    int64_t seq_length) {
+    int64_t seq_length,
+    const optional<Tensor>& indices = nullopt) {
   ET_CHECK_OR_RETURN_FALSE(
       quantized_cache.dim() == 4, "quantized cache must be a 4D tensor");
 
@@ -32,11 +33,14 @@ bool validate_cache_params(
       quantized_value.dim() == 4, "quantized_value must be a 4D tensor");
 
   ET_CHECK_OR_RETURN_FALSE(
-      start_pos < quantized_cache.size(1),
-      "start_pos must be less than cache size at dim 1");
+      indices.has_value() || start_pos < quantized_cache.size(1),
+      "start_pos: %" PRId64 " must be less than cache size at dim 1: %zd",
+      start_pos,
+      quantized_cache.size(1));
 
   ET_CHECK_OR_RETURN_FALSE(
-      (start_pos + seq_length) <= quantized_cache.size(1),
+      indices.has_value() ||
+          (start_pos + seq_length) <= quantized_cache.size(1),
       "start_post + seq_length must be less than max seq length supported by cache."
       "start pos: %" PRId64 ", seq_length: %" PRId64
       "."
@@ -44,6 +48,31 @@ bool validate_cache_params(
       start_pos,
       seq_length,
       quantized_cache.size(1));
+
+  // Validate indices tensor if provided
+  if (indices.has_value()) {
+    const Tensor& indices_tensor = indices.value();
+    ET_CHECK_OR_RETURN_FALSE(
+        indices_tensor.dim() == 2,
+        "indices must be a 2D tensor [batch_size, seq_len]");
+
+    ET_CHECK_OR_RETURN_FALSE(
+        indices_tensor.size(0) == quantized_value.size(0),
+        "indices batch dimension must match value batch dimension");
+
+    ET_CHECK_OR_RETURN_FALSE(
+        indices_tensor.size(1) == quantized_value.size(1),
+        "indices sequence length dimension must match value sequence length dimension");
+
+    ET_CHECK_OR_RETURN_FALSE(
+        indices_tensor.scalar_type() == ScalarType::Long,
+        "indices must be of Long (int64_t) type");
+
+    ET_CHECK_OR_RETURN_FALSE(
+        is_contiguous_dim_order(
+            indices_tensor.dim_order().data(), indices_tensor.dim()),
+        "indices must be in contiguous dim order");
+  }
 
   // Make sure they are in contiguous dim order
   ET_CHECK_OR_RETURN_FALSE(
@@ -65,27 +94,36 @@ Tensor& update_cache_out(
     const Tensor& value,
     Tensor& cache,
     const int64_t start_pos,
+    const optional<Tensor>& indices,
     Tensor& output) {
   (void)ctx;
   int64_t seq_len = value.size(1);
   ET_KERNEL_CHECK(
       ctx,
-      validate_cache_params(value, cache, start_pos, seq_len),
+      validate_cache_params(value, cache, start_pos, seq_len, indices),
       InvalidArgument,
       output);
 
   ET_CHECK_MSG(
       value.size(0) == cache.size(0),
-      "projected_value batch size should be equal to the cache batch size.");
+      "projected_value batch size (%zd) should be equal to the cache batch size (%zd).",
+      value.size(0),
+      cache.size(0));
   ET_CHECK_MSG(
       value.size(2) == cache.size(2),
-      "projected_value number of heads should be equal to the cache number of heads.");
+      "projected_value number of heads (%zd) should be equal to the cache number of heads (%zd).",
+      value.size(2),
+      cache.size(2));
   ET_CHECK_MSG(
       value.size(3) == cache.size(3),
-      "projected_value embedding dimension should be equal to the cache embedding dimension.");
+      "projected_value embedding dimension (%zd) should be equal to the cache embedding dimension (%zd).",
+      value.size(3),
+      cache.size(3));
   ET_CHECK_MSG(
       value.element_size() == cache.element_size(),
-      "projected_value data type size should be equal to the cache data type size.");
+      "projected_value data type size (%zd) should be equal to the cache data type size (%zd).",
+      value.element_size(),
+      cache.element_size());
 
   ET_CHECK_MSG(
       is_contiguous_dim_order(value.dim_order().data(), value.dim()),
@@ -110,18 +148,64 @@ Tensor& update_cache_out(
   executorch::aten::SizesType num_bytes_to_copy =
       (value.numel() / value.size(0)) * value.element_size();
 
-  for (int64_t batch_line = 0; batch_line < value.size(0); ++batch_line) {
-    executorch::aten::SizesType cache_pos_offset =
-        (batch_line * cache_batch_dim_stride +
-         start_pos * cache_seq_dim_stride) *
-        cache.element_size();
-    executorch::aten::SizesType value_pos_offset =
-        (batch_line * value_batch_dim_stride) * cache.element_size();
+  if (indices.has_value()) {
+    // Use the provided indices tensor for each batch and sequence position
+    const Tensor& indices_tensor = indices.value();
+    const int64_t* indices_data = indices_tensor.const_data_ptr<int64_t>();
+    auto indices_strides = indices_tensor.strides();
+    executorch::aten::StridesType indices_batch_stride = indices_strides[0];
+    executorch::aten::StridesType indices_seq_stride = indices_strides[1];
 
-    std::memcpy(
-        (uint8_t*)cache_data + cache_pos_offset,
-        (uint8_t*)value_data + value_pos_offset,
-        num_bytes_to_copy);
+    // Calculate bytes to copy for a single token
+    executorch::aten::SizesType bytes_per_token =
+        (value.numel() / (value.size(0) * value.size(1))) *
+        value.element_size();
+
+    for (int64_t batch_line = 0; batch_line < value.size(0); ++batch_line) {
+      for (int64_t seq_idx = 0; seq_idx < value.size(1); ++seq_idx) {
+        // Get the target position from the indices tensor
+        int64_t target_pos = indices_data
+            [batch_line * indices_batch_stride + seq_idx * indices_seq_stride];
+
+        // Ensure the target position is valid
+        ET_CHECK_MSG(
+            target_pos >= 0 && target_pos < cache.size(1),
+            "Index out of bounds: %" PRId64 " not in [0, %zd)",
+            target_pos,
+            cache.size(1));
+
+        // Calculate offsets for cache and value
+        executorch::aten::SizesType cache_pos_offset =
+            (batch_line * cache_batch_dim_stride +
+             target_pos * cache_seq_dim_stride) *
+            cache.element_size();
+
+        executorch::aten::SizesType value_pos_offset =
+            (batch_line * value_batch_dim_stride + seq_idx * value_strides[1]) *
+            value.element_size();
+
+        // Copy a single token
+        std::memcpy(
+            (uint8_t*)cache_data + cache_pos_offset,
+            (uint8_t*)value_data + value_pos_offset,
+            bytes_per_token);
+      }
+    }
+  } else {
+    // Use the original implementation with start_pos
+    for (int64_t batch_line = 0; batch_line < value.size(0); ++batch_line) {
+      executorch::aten::SizesType cache_pos_offset =
+          (batch_line * cache_batch_dim_stride +
+           start_pos * cache_seq_dim_stride) *
+          cache.element_size();
+      executorch::aten::SizesType value_pos_offset =
+          (batch_line * value_batch_dim_stride) * cache.element_size();
+
+      std::memcpy(
+          (uint8_t*)cache_data + cache_pos_offset,
+          (uint8_t*)value_data + value_pos_offset,
+          num_bytes_to_copy);
+    }
   }
 
   // Noone uses output. Just a placeholder.
