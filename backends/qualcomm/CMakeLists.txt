@@ -70,6 +70,7 @@ endif()
 
 include_directories(
   BEFORE ${_common_include_directories} ${QNN_SDK_ROOT}/include/QNN
+  ${QNN_SDK_ROOT}/share/QNN/converter/jni
   ${EXECUTORCH_SOURCE_DIR}/third-party/flatbuffers/include
   ${EXECUTORCH_SOURCE_DIR}/runtime/core/portable_type/c10
 )
@@ -117,6 +118,7 @@ add_library(qnn_backend STATIC)
 add_library(qnn_backend_cache STATIC)
 add_library(qnn_context STATIC)
 add_library(qnn_custom_protocol STATIC)
+add_library(qnn_dlc_manager STATIC)
 add_library(qnn_device STATIC)
 add_library(qnn_executorch_backend SHARED)
 add_library(qnn_executorch_header INTERFACE)
@@ -174,8 +176,11 @@ target_link_libraries(
   qnn_factory PRIVATE qnn_schema qnn_backend qnn_device qnn_context qnn_graph
           qnn_mem_manager qnn_custom_protocol
 )
+
+target_link_libraries(qnn_dlc_manager PRIVATE qnn_factory qnn_backend qnn_device qnn_context qnn_graph qnn_mem_manager)
+
 target_link_libraries(
-  qnn_manager PRIVATE qnn_factory wrappers qnn_schema utils shared_buffer
+  qnn_manager PRIVATE qnn_factory wrappers qnn_schema utils shared_buffer qnn_dlc_manager
 )
 target_link_libraries(
   qnn_executorch_backend PRIVATE qnn_executorch_header qnn_schema qnn_manager
