@@ -143,7 +143,7 @@ Copy them to your project and link them against your targets.
 
 ## Linkage
 
-ExecuTorch initializes its backends and kernels (operators) during app startup by registering them in a static dictionary. If you encounter errors like "unregistered kernel" or "unregistered backend" at runtime, you may need to explicitly force-load certain components. Use the `-all_load` or `-force_load` linker flags in your Xcode build configuration to ensure components are registered early.
+ExecuTorch initializes its backends and kernels (operators) during app startup by registering them in a static dictionary. If you encounter errors like "unregistered kernel" or "unregistered backend" at runtime, you may need to explicitly force-load certain components. Use the `-all_load` or `-force_load` linker flags in your Xcode build configuration to ensure components are registered early. Also, you may need to link against the C++ standard library, if not already, e.g. by adding the `-lc++` linker flag.
 
 Here's an example of a Xcode configuration file (`.xcconfig`):
 
