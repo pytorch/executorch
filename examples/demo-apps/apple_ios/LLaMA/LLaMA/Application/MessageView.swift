@@ -19,15 +19,15 @@ struct MessageView: View {
           .foregroundColor(.secondary)
           .padding([.leading, .trailing], 10)
       } else {
-        VStack(alignment: message.type == .llamagenerated || message.type == .llavagenerated ? .leading : .trailing) {
-          if message.type == .llamagenerated || message.type == .llavagenerated || message.type == .prompted {
-            Text(message.type == .llamagenerated ? "Llama" : (message.type == .llavagenerated ? "Llava" : "Prompt"))
+        VStack(alignment: message.type == .llamagenerated || message.type == .llavagenerated || message.type == .qwengenerated ? .leading : .trailing) {
+          if message.type == .llamagenerated || message.type == .llavagenerated || message.type == .qwengenerated || message.type == .prompted {
+            Text(message.type == .llamagenerated ? "Llama" : message.type == .llavagenerated ? "Llava" : message.type == .qwengenerated ? "Qwen" : "Prompt")
               .font(.caption)
               .foregroundColor(.secondary)
-              .padding(message.type == .llamagenerated || message.type == .llavagenerated ? .trailing : .leading, 20)
+              .padding(message.type == .llamagenerated || message.type == .llavagenerated || message.type == .qwengenerated ? .trailing : .leading, 20)
           }
           HStack {
-            if message.type != .llamagenerated && message.type != .llavagenerated { Spacer() }
+            if message.type != .llamagenerated && message.type != .llavagenerated && message.type != .qwengenerated { Spacer() }
             if message.text.isEmpty {
               if let img = message.image {
                 Image(uiImage: img)
@@ -45,8 +45,8 @@ struct MessageView: View {
             } else {
               Text(message.text)
                 .padding(10)
-                .foregroundColor(message.type == .llamagenerated || message.type == .llavagenerated ? .primary : .white)
-                .background(message.type == .llamagenerated || message.type == .llavagenerated ? Color(UIColor.secondarySystemBackground) : Color.blue)
+                .foregroundColor(message.type == .llamagenerated || message.type == .llavagenerated || message.type == .qwengenerated ? .primary : .white)
+                .background(message.type == .llamagenerated || message.type == .llavagenerated || message.type == .qwengenerated ? Color(UIColor.secondarySystemBackground) : Color.blue)
                 .cornerRadius(20)
                 .contextMenu {
                   Button(action: {
@@ -57,14 +57,14 @@ struct MessageView: View {
                   }
                 }
             }
-            if message.type == .llamagenerated || message.type == .llavagenerated { Spacer() }
+            if message.type == .llamagenerated || message.type == .llavagenerated || message.type == .qwengenerated { Spacer() }
           }
           let elapsedTime = message.dateUpdated.timeIntervalSince(message.dateCreated)
           if elapsedTime > 0 && message.type != .info {
             Text(String(format: "%.1f t/s", Double(message.tokenCount) / elapsedTime))
               .font(.caption)
               .foregroundColor(.secondary)
-              .padding(message.type == .llamagenerated || message.type == .llavagenerated ? .trailing : .leading, 20)
+              .padding(message.type == .llamagenerated || message.type == .llavagenerated || message.type == .qwengenerated ? .trailing : .leading, 20)
           }
         }.padding([.leading, .trailing], message.type == .info ? 0 : 10)
       }
