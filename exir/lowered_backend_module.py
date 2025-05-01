@@ -862,6 +862,7 @@ def _unsafe_adjust_original_program(  # noqa: C901
     call_delegate_node: torch.fx.Node,
     input_specs_to_delete: Dict[str, InputSpec],
     output_specs_to_delete: Dict[str, OutputSpec],
+    validate_program: bool,
 ) -> None:
     """
     Directly modify the original exported program's signature and state dict
@@ -958,3 +959,6 @@ def _unsafe_adjust_original_program(  # noqa: C901
             if user_idx > idx:
                 user.args = (user.args[0], user_idx - (len(getitem_idxs) - i))
                 break
+
+    if validate_program:
+        original_program._validate()

@@ -201,6 +201,7 @@ def _insert_lowered_submodule(
     is_submodule: bool,
     toplevel_input_specs_to_delete: Dict[str, InputSpec],
     toplevel_output_specs_to_delete: Dict[str, OutputSpec],
+    validate_program: bool = True,
 ):
     owning_graph_module = call_submodule_node.graph.owning_module
     # call delegate args should only use user_inputs
@@ -275,6 +276,7 @@ def _insert_lowered_submodule(
             call_delegate_node,
             toplevel_input_specs_to_delete,
             toplevel_output_specs_to_delete,
+            validate_program,
         )
 
 
@@ -353,10 +355,6 @@ def _partition_and_lower_one_graph_module(
             toplevel_output_specs_to_delete,
         )
 
-    # perform validation here to make sure all the delegated submodules are gone
-    # validate inside _insert_lowered_submodule will break multi-method scenario
-    if not is_submodule:
-        owning_program._validate()
     return tagged_graph_module
 
 
@@ -661,12 +659,10 @@ def lower_all_submodules_to_backend(
                 is_submodule,
                 toplevel_input_specs_to_delete,
                 toplevel_output_specs_to_delete,
+                # validate only when all submodules are processed
+                validate_program=call_submodule_node
+                == list_of_call_submodule_nodes[-1],
             )
-
-        # perform validation here to make sure all the delegated submodules are gone
-        # validate inside _insert_lowered_submodule will break multi-method scenario
-        if not is_submodule:
-            owning_program._validate()
 
 
 @dataclass
