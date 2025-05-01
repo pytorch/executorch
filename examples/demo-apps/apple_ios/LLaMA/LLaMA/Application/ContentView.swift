@@ -332,7 +332,7 @@ struct ContentView: View {
     showingSettings = false
 
     messages.append(Message(text: text))
-    messages.append(Message(type: modelType == .llama ? .llamagenerated : .llavagenerated))
+    messages.append(Message(type: modelType == .llama ? .llamagenerated : modelType == .llava ? .llavagenerated : .qwengenerated))
 
     runnerQueue.async {
       defer {
