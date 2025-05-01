@@ -665,7 +665,7 @@ class TestXNNPACKQuantizer(PT2EQuantizationTestCase):
         quantization_config = get_symmetric_quantization_config(
             is_per_channel=False, is_dynamic=True
         )
-        quantizer.set_global(quantization_config)
+        quantizer.set_operator_type(torch.ops.aten.linear.default, quantization_config)
         m_eager = TestHelperModules.ConvLinearWPermute().eval()
 
         node_occurrence = {
