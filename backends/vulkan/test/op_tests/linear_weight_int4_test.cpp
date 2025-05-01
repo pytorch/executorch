@@ -313,15 +313,15 @@ void test_vulkan_linear_qga4w(
     const int N,
     const int group_size = 32,
     const int inner_k_tiles = 8) {
-  // test_vulkan_linear_qga4w_impl(
-  //     B,
-  //     M,
-  //     K,
-  //     N,
-  //     group_size,
-  //     inner_k_tiles,
-  //     vkcompute::utils::kBuffer,
-  //     vkcompute::utils::kBuffer);
+  test_vulkan_linear_qga4w_impl(
+      B,
+      M,
+      K,
+      N,
+      group_size,
+      inner_k_tiles,
+      vkcompute::utils::kBuffer,
+      vkcompute::utils::kBuffer);
 
   test_vulkan_linear_qga4w_impl(
       B,

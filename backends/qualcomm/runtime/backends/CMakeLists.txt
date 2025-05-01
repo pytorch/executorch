@@ -67,10 +67,12 @@ target_sources(
   qnn_context
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnContextCommon.h
          ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpContext.h
+         ${CMAKE_CURRENT_LIST_DIR}/irbackend/IrContext.h
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnContextCommon.cpp
           ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpContext.cpp
           ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpContextCustomConfig.h
           ${HOST_ARCHITECTURE}/HtpContextCustomConfig.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/irbackend/${CMAKE_SYSTEM_PROCESSOR}/IrContext.cpp
 )
 
 # qnn_backend_cache
@@ -99,6 +101,7 @@ target_sources(
   qnn_backend
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnBackendCommon.h
          ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpBackend.h
+         ${CMAKE_CURRENT_LIST_DIR}/irbackend/IrBackend.h
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnBackendCommon.cpp
 )
 
@@ -121,4 +124,11 @@ target_sources(
   qnn_custom_protocol
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnCustomProtocol.h
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnCustomProtocol.cpp
+)
+
+# qnn_dlc_manager
+target_sources(
+  qnn_dlc_manager
+  PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnDlcManager.h
+  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/irbackend/${CMAKE_SYSTEM_PROCESSOR}/QnnDlcManager.cpp
 )
