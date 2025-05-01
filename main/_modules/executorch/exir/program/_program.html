@@ -536,6 +536,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.error</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExportError</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.graph_module</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_control_flow_submodules</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.operator.convert</span><span class="w"> </span><span class="kn">import</span> <span class="n">_pybind_schema_to_native_schema</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.operator.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">_QUANT_PRIMITIVES</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.pass_base</span><span class="w"> </span><span class="kn">import</span> <span class="n">PassBase</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.pass_manager</span><span class="w"> </span><span class="kn">import</span> <span class="n">PassType</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
@@ -1475,10 +1476,14 @@
     <span class="n">ops_set_to_not_decompose</span> <span class="o">=</span> <span class="p">{</span>
         <span class="n">aten_to_edge</span><span class="p">(</span><span class="n">op</span><span class="p">)</span> <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span>
     <span class="p">}</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="n">ops_set_to_not_decompose</span><span class="p">)</span>
+
+    <span class="n">quant_primitives</span> <span class="o">=</span> <span class="p">{</span><span class="n">aten_to_edge</span><span class="p">(</span><span class="n">op</span><span class="p">)</span> <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">_QUANT_PRIMITIVES</span><span class="p">}</span>
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
         <span class="n">is_op_supported</span> <span class="o">=</span> <span class="n">check_op_support</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="k">if</span> <span class="n">check_op_support</span> <span class="k">else</span> <span class="kc">True</span>
         <span class="k">if</span> <span class="p">(</span>
-            <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span>
+            <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span>
+            <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span>
+            <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">quant_primitives</span>
         <span class="p">)</span> <span class="ow">and</span> <span class="n">is_op_supported</span><span class="p">:</span>
             <span class="n">warning_str</span> <span class="o">=</span> <span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;Node </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> with op </span><span class="si">{</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="si">}</span><span class="s2"> was not decomposed or delegated.</span><span class="se">\n</span><span class="s2">&quot;</span>
@@ -1492,7 +1497,9 @@
         <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">submod</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
             <span class="n">is_op_supported</span> <span class="o">=</span> <span class="n">check_op_support</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="k">if</span> <span class="n">check_op_support</span> <span class="k">else</span> <span class="kc">True</span>
             <span class="k">if</span> <span class="p">(</span>
-                <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span>
+                <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span>
+                <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span>
+                <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">quant_primitives</span>
             <span class="p">)</span> <span class="ow">and</span> <span class="n">is_op_supported</span><span class="p">:</span>
                 <span class="n">warning_str</span> <span class="o">=</span> <span class="p">(</span>
                     <span class="sa">f</span><span class="s2">&quot;Node </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> with op </span><span class="si">{</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="si">}</span><span class="s2"> was not decomposed or delegated.</span><span class="se">\n</span><span class="s2">&quot;</span>
