@@ -137,7 +137,7 @@ are meant to be lowered. It will return a `partition_tags` dictionary mapping ta
 backend names and module compile specs. The tagged nodes will then be
 partitioned and lowered to their mapped backends using Flow 1's process.
 Available helper partitioners are documented
-[here](compiler-custom-compiler-passes.md). These lowered modules
+[here](./compiler-custom-compiler-passes.md). These lowered modules
 will be inserted into the top-level module and serialized.
 
 The following is an example of the flow:

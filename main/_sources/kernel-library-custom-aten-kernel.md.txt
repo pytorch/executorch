@@ -1,7 +1,7 @@
 # Kernel Registration
 ## Overview
 
-At the last stage of [ExecuTorch model exporting](export-overview.md), we lower the operators in the dialect to the _out variants_ of the [core ATen operators](ir-ops-set-definition.md). Then we serialize these operator names into the model artifact. During runtime execution, for each operator name we will need to find the actual _kernels_, i.e., the C++ functions that do the heavy-lifting calculations and return results.
+At the last stage of [ExecuTorch model exporting](./export-overview.md), we lower the operators in the dialect to the _out variants_ of the [core ATen operators](./ir-ops-set-definition.md). Then we serialize these operator names into the model artifact. During runtime execution, for each operator name we will need to find the actual _kernels_, i.e., the C++ functions that do the heavy-lifting calculations and return results.
 
 ## Kernel Libraries
 ### First-party kernel libraries:
@@ -47,7 +47,7 @@ If it's not clear which API to use, please see [Best Practices](#custom-ops-api-
 
 ### YAML Entry API High Level Architecture
 
-![](_static/img/kernel-library-custom-aten-kernel.png)
+![](./_static/img/kernel-library-custom-aten-kernel.png)
 
 ExecuTorch users are asked to provide:
 

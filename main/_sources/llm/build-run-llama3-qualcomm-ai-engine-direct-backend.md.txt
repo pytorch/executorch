@@ -4,7 +4,7 @@ This tutorial demonstrates how to export Llama 3 8B Instruct for Qualcomm AI Eng
 
 ## Prerequisites
 
-- Set up your ExecuTorch repo and environment if you haven’t done so by following [the Setting up ExecuTorch](../getting-started-setup.rst) to set up the repo and dev environment.
+- Set up your ExecuTorch repo and environment if you haven’t done so by following [the Setting up ExecuTorch](../getting-started-setup.md) to set up the repo and dev environment.
 - Read [the Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend page](../backends-qualcomm.md) to understand how to export and run a model with Qualcomm AI Engine Direct Backend on Qualcomm device.
 - Follow [the README for executorch llama](https://github.com/pytorch/executorch/tree/main/examples/models/llama) to know how to run a llama model on mobile via ExecuTorch.
 - A Qualcomm device with 16GB RAM

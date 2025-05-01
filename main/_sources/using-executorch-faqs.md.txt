@@ -26,7 +26,7 @@ The model likely contains an operator that is not yet supported on ExecuTorch. I
 
 ## Runtime
 
-ExecuTorch error codes are defined in [executorch/core/runtime/error.h](https://github.com/pytorch/executorch/blob/main/runtime/core/error.h).
+ExecuTorch error codes are defined in [executorch/core/runtime/error.h](https://github.com/pytorch/executorch/blob/release/0.6/runtime/core/error.h).
 
 ### Inference is Slow / Performance Troubleshooting
 

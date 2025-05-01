@@ -32,7 +32,7 @@ To help you out with this, we've gathered together some beginner-friendly sugges
 
 Here's what the list looks like at the time of writing — you can see that they all have a purple `good first issue` label in the right-hand column:
 
-![](_static/img/new-contributor-guide/good_first_issues.png)
+![](./_static/img/new-contributor-guide/good_first_issues.png)
 
 Please check it out and see if anything interests you! New issues are added to this list all the time.
 
@@ -54,17 +54,17 @@ Before you can start writing any code, you need to get a copy of ExecuTorch code
 
 1. Fork the main ExecuTorch repository into your GitHub account. This creates a clone of the repository in your own space, so you can modify it freely. To do this, visit the [main repository page](https://github.com/pytorch/executorch) and click `Fork`:
 
-    ![](_static/img/new-contributor-guide/how_to_fork1.png)
+    ![](./_static/img/new-contributor-guide/how_to_fork1.png)
 
     This will take you to another page. Click `Create fork`:
 
-    ![](_static/img/new-contributor-guide/how_to_fork2.png)
+    ![](./_static/img/new-contributor-guide/how_to_fork2.png)
 
 2. Clone your fork locally. This downloads a copy of your fork onto your dev machine, ready for you to make your changes.
 
     In the example below, we clone using HTTP, but any of the provided methods on the `Local` tab are fine. For HTTP, copy the URL given here:
 
-    ![](_static/img/new-contributor-guide/how_to_clone.png)
+    ![](./_static/img/new-contributor-guide/how_to_clone.png)
 
     Then go to your terminal, enter the directory you want to clone the fork to, and run:
 
@@ -92,8 +92,8 @@ Before you can start writing any code, you need to get a copy of ExecuTorch code
     Depending on how you cloned your repo (HTTP, SSH, etc.), this should print something like:
 
     ```bash
-    origin  https://github.com/{YOUR_GITHUB_USERNAME}/executorch.git (fetch)
-    origin  https://github.com/{YOUR_GITHUB_USERNAME}/executorch.git (push)
+    origin  https://github.com/YOUR_GITHUB_USERNAME/executorch.git (fetch)
+    origin  https://github.com/YOUR_GITHUB_USERNAME/executorch.git (push)
     upstream        https://github.com/pytorch/executorch.git (fetch)
     upstream        https://github.com/pytorch/executorch.git (push)
     ```
@@ -112,13 +112,13 @@ Before you can start writing any code, you need to get a copy of ExecuTorch code
 
 4. If you just cloned your fork, your GitHub repository will tell you your branch is up-to-date:
 
-    ![](_static/img/new-contributor-guide/synced_fork.png)
+    ![](./_static/img/new-contributor-guide/synced_fork.png)
 
     However, ExecuTorch updates frequently — if it's been a while you visited your fork, you might not have the latest version anymore. It's important to keep your fork as up-to-date as possible. Otherwise, the code changes you're making might fix your issue for an old version of the codebase, but _not_ fix it for the current version.
 
     GitHub will tell you if your fork is out-of-date. To synchronise the necessary changes, click `Sync fork`, then `Update branch` as shown:
 
-    ![](_static/img/new-contributor-guide/unsynced_fork.png)
+    ![](./_static/img/new-contributor-guide/unsynced_fork.png)
 
 5. Now you have the latest fork on your GitHub account, it's time to download it onto your dev machine. For this, you can run the following commands in your terminal:
 
@@ -129,7 +129,7 @@ Before you can start writing any code, you need to get a copy of ExecuTorch code
     git push                  # push updated local main to your GitHub fork
     ```
 
-6. [Build the project](using-executorch-building-from-source.md) and [run the tests](https://github.com/pytorch/executorch/blob/main/CONTRIBUTING.md#testing).
+6. [Build the project](https://pytorch.org/executorch/0.6/using-executorch-building-from-source.html) and [run the tests](https://github.com/pytorch/executorch/blob/main/CONTRIBUTING.md#testing).
 
     Unfortunately, this step is too long to detail here. If you get stuck at any point, please feel free to ask for help on our [Discord server](https://discord.com/invite/Dh43CKSAdc) — we're always eager to help newcomers get onboarded.
 
@@ -199,17 +199,17 @@ Once you've successfully finished local development, it's time to send out your 
 
 1. After pushing your last edit to remote, your GitHub fork will show your new changed branch — click `Compare & pull request`:
 
-    ![](_static/img/new-contributor-guide/how_to_pr1.png)
+    ![](./_static/img/new-contributor-guide/how_to_pr1.png)
 
     Alternatively, you can click the same `Compare & pull request` button on the main ExecuTorch repo:
 
-    ![](_static/img/new-contributor-guide/how_to_pr2.png)
+    ![](./_static/img/new-contributor-guide/how_to_pr2.png)
 
     Another way still is via the `Pull request` tab on the main repo — we won't go into that here though, as it takes a few more steps.
 
 2. This will take you to a page where you can format your PR and explain your changes. You'll see all the required details in our PR template. You should choose a title describing the proposed fix and fill in all the required details.
 
-    ![](_static/img/new-contributor-guide/how_to_pr3.png)
+    ![](./_static/img/new-contributor-guide/how_to_pr3.png)
 
     In the description, you’ll describe all the changes you’ve made.
 
@@ -223,55 +223,47 @@ Once you've successfully finished local development, it's time to send out your 
 
     To do submit a draft, click the arrow next to the `Create Pull Request` button, then click `Create draft pull request` in the dropdown menu:
 
-    ![](_static/img/new-contributor-guide/how_to_draft_pr1.png)
+    ![](./_static/img/new-contributor-guide/how_to_draft_pr1.png)
 
     This will change the green button's text to `Draft pull request`:
 
-    ![](_static/img/new-contributor-guide/how_to_draft_pr2.png)
+    ![](./_static/img/new-contributor-guide/how_to_draft_pr2.png)
 
     Click it to create your draft PR.
 
 4. This will take you to your Draft PR page. It might look something like this:
 
-    ![](_static/img/new-contributor-guide/how_to_draft_pr3.png)
+    ![](./_static/img/new-contributor-guide/how_to_draft_pr3.png)
 
     As you scroll down, you might see a number of comments and automated checks, some of which may come with alarming red warning signs and the word "Failure"! There's no need to panic, though — they are here to help. Let's go through some common checks one-by-one.
 
     * The `pytorch-bot` will probably be the first comment. It runs regular CI checks. When your PR is passing, this comment will automatically update to let you know.
 
-      ![](_static/img/new-contributor-guide/ci1.png)
+      ![](./_static/img/new-contributor-guide/ci1.png)
 
     * If this is your very first contribution to a Meta Open Source project, and you've not signed Meta's contributor license agreement (CLA), you may have a comment like this from `facebook-github-bot`:
 
-        ![](_static/img/new-contributor-guide/cla1.png)
+        ![](./_static/img/new-contributor-guide/cla1.png)
 
         You will need to sign the linked CLA to contribute your code. Once your signature has been processed, the bot will let you know in another comment:
 
-        ![](_static/img/new-contributor-guide/cla2.png)
+        ![](./_static/img/new-contributor-guide/cla2.png)
 
     * You may see a comment from `github-actions` requesting a "release notes" label:
 
-        ![](_static/img/new-contributor-guide/release_notes.png)
+        ![](./_static/img/new-contributor-guide/release_notes.png)
 
-        As the comment says, you can add a label by commenting on the PR with an instruction to pytorchbot. You can see a list of all our labels [here](https://github.com/pytorch/executorch/labels/). Pick the one which fits your PR best, then add it as a comment using the syntax `@pytorchbot label "YOUR LABEL HERE"`. For example:
-
-        ![](./_static/img/new-contributor-guide/how_to_label1.png)
-
-        After you've submitted your comment, `pytorchbot` will add your chosen label to the PR:
-
-        ![](./_static/img/new-contributor-guide/how_to_label2.png)
-
-        and the `github-actions` comment requesting a label will disappear.
+        Please ignore this message. It's directed at the ExecuTorch maintainers — they'll label your PR for you.
 
     * At the end of your Draft PR, you'll see something like this:
 
-        ![](_static/img/new-contributor-guide/end_of_draft_pr1.png)
+        ![](./_static/img/new-contributor-guide/end_of_draft_pr1.png)
 
         This is a summary of all the CI checks and requirements which need to be satisfied before your PR can be merged. Ensure that all tests are passing. If not, click on a failing test to see what went wrong and make the required changes.
 
         Once you're happy with your draft, you can click the `Ready for review` button to create your PR:
 
-        ![](_static/img/new-contributor-guide/end_of_draft_pr2.png)
+        ![](./_static/img/new-contributor-guide/end_of_draft_pr2.png)
 
 5. Now you've created your PR, it's time for your changes to be reviewed by the ExecuTorch community and maintainers.
 
@@ -281,24 +273,12 @@ Once you've successfully finished local development, it's time to send out your 
 
     Once the reviewers are happy, they'll approve your PR, indicating that they're happy for it to be merged. This will send you a notification and display as follows on your PR page:
 
-    ![](_static/img/new-contributor-guide/pr_approval1.png)
+    ![](./_static/img/new-contributor-guide/pr_approval1.png)
 
     And in the PR comments:
 
-    ![](_static/img/new-contributor-guide/pr_approval2.png)
+    ![](./_static/img/new-contributor-guide/pr_approval2.png)
 
-6. Once you've received the required approval from a core contributor, you're very nearly done. We just need to make sure all the CI checks have passed, some of which need approval from a maintainer to start:
+    Once you've received the required approval from a core contributor, you can go ahead and merge your PR. Congratulations — you're now an official ExecuTorch contributor!
 
-    ![](_static/img/new-contributor-guide/how_to_merge1.png)
-
-    Once all checks these have all been approved, ran, and passed, you can go ahead and merge your PR. If there's a grey `Update branch` button instead of a green `Merge pull request` button, click that first:
-
-    ![](_static/img/new-contributor-guide/how_to_merge2.png)
-
-    After a moment, the branch should update with the latest changes, and you'll see the final green `Merge pull request` button:
-
-    ![](_static/img/new-contributor-guide/how_to_merge3.png)
-
-    Click it to merge your changes into the main codebase. Congratulations — you're now an official ExecuTorch contributor!
-
-Great job making it to the end of our guide — we hope you enjoy contributing. Once again, please check out our **[Discord Server](https://discord.com/invite/Dh43CKSAdc)** if you want to say hello, ask any questions, or talk about any and all things ExecuTorch. We look forward to receiving your contributions!
+Great job making it to the end of our guide — we hope you enjoy contributing. Once again, please check out **[Discord Server](https://discord.com/invite/Dh43CKSAdc)** if you want to say hello, ask any questions, or talk about any and all things ExecuTorch. We look forward to receiving your contributions!

@@ -5,12 +5,11 @@
 <!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
-  <meta name="robots" content="noindex">
   <meta charset="utf-8">
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Quantization Overview &mdash; ExecuTorch main documentation</title>
+  <title>Quantization Overview &mdash; ExecuTorch 0.6 documentation</title>
   
 
   
@@ -295,7 +294,7 @@
           <div class="pytorch-left-menu-search">
             
     <div class="version">
-      <a href='https://pytorch.org/executorch/versions.html'>main &#x25BC</a>
+      <a href='https://pytorch.org/executorch/versions.html'>0.6 &#x25BC</a>
     </div>
     
 
@@ -341,7 +340,6 @@
 <ul>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">Building an ExecuTorch iOS Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorial-arm-ethos-u.html">Arm Ethos-U Backend Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
 <ul>
@@ -350,7 +348,7 @@
 <li class="toctree-l1"><a class="reference internal" href="backends-coreml.html">Core ML Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-mps.html">MPS Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-vulkan.html">Vulkan Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">Arm(R) Ethos(TM)-U NPU Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">ARM Ethos-U Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
@@ -385,7 +383,7 @@
 <li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">Runtime Python API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">API Life Cycle and Deprecation Policy</a></li>
-<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/main/javadoc/">Javadoc</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/0.6/javadoc/">Javadoc</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
 <ul class="current">
@@ -510,11 +508,11 @@
 <p>Quantization is a process that reduces the precision of computations and lowers memory footprint in the model. To learn more, please visit the <a class="reference internal" href="concepts.html#quantization"><span class="std std-doc">ExecuTorch concepts page</span></a>. This is particularly useful for edge devices including wearables, embedded devices and microcontrollers, which typically have limited resources such as processing power, memory, and battery life. By using quantization, we can make our models more efficient and enable them to run effectively on these devices.</p>
 <p>In terms of flow, quantization happens early in the ExecuTorch stack:</p>
 <p><img alt="ExecuTorch Entry Points" src="_images/executorch-entry-points.png" /></p>
-<p>A more detailed workflow can be found in the <a class="reference external" href="https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial">ExecuTorch tutorial</a>.</p>
+<p>A more detailed workflow can be found in the <a class="reference internal" href="tutorials/export-to-executorch-tutorial.html"><span class="doc std std-doc">ExecuTorch tutorial</span></a>.</p>
 <p>Quantization is usually tied to execution backends that have quantized operators implemented. Thus each backend is opinionated about how the model should be quantized, expressed in a backend specific <code class="docutils literal notranslate"><span class="pre">Quantizer</span></code> class. <code class="docutils literal notranslate"><span class="pre">Quantizer</span></code> provides API for modeling users in terms of how they want their model to be quantized and also passes on the user intention to quantization workflow.</p>
 <p>Backend developers will need to implement their own <code class="docutils literal notranslate"><span class="pre">Quantizer</span></code> to express how different operators or operator patterns are quantized in their backend. This is accomplished via <a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quantizer.html">Annotation API</a> provided by quantization workflow. Since <code class="docutils literal notranslate"><span class="pre">Quantizer</span></code> is also user facing, it will expose specific APIs for modeling users to configure how they want the model to be quantized. Each backend should provide their own API documentation for their <code class="docutils literal notranslate"><span class="pre">Quantizer</span></code>.</p>
 <p>Modeling users will use the <code class="docutils literal notranslate"><span class="pre">Quantizer</span></code> specific to their target backend to quantize their model, e.g. <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code>.</p>
-<p>For an example quantization flow with <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code>, more documentation and tutorials, please see <code class="docutils literal notranslate"><span class="pre">Performing</span> <span class="pre">Quantization</span></code> section in <a class="reference external" href="https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial">ExecuTorch tutorial</a>.</p>
+<p>For an example quantization flow with <code class="docutils literal notranslate"><span class="pre">XNPACKQuantizer</span></code>, more documentation and tutorials, please see <code class="docutils literal notranslate"><span class="pre">Performing</span> <span class="pre">Quantization</span></code> section in <a class="reference internal" href="tutorials/export-to-executorch-tutorial.html"><span class="doc std std-doc">ExecuTorch tutorial</span></a>.</p>
 <div class="section" id="source-quantization-int8dynactint4weightquantizer">
 <h2>Source Quantization: Int8DynActInt4WeightQuantizer<a class="headerlink" href="#source-quantization-int8dynactint4weightquantizer" title="Permalink to this heading">¶</a></h2>
 <p>In addition to export based quantization (described above), ExecuTorch wants to highlight source based quantizations, accomplished via <a class="reference external" href="https://github.com/pytorch/ao">torchao</a>. Unlike export based quantization, source based quantization directly modifies the model prior to export. One specific example is <code class="docutils literal notranslate"><span class="pre">Int8DynActInt4WeightQuantizer</span></code>.</p>
@@ -678,14 +676,14 @@ for (var i = 0; i < menuItems.length; i++) {
     $(".main-menu a:contains('GitHub')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
-    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
+    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
     // Mobile
     $(".mobile-menu a:contains('Github')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
-    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
+    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
 
   });
 </script>

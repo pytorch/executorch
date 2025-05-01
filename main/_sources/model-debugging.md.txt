@@ -13,8 +13,8 @@ Currently, ExecuTorch supports the following debugging flows:
 ### Runtime
 For a real example reflecting the steps below, please refer to [example_runner.cpp](https://github.com/pytorch/executorch/blob/main/examples/devtools/example_runner/example_runner.cpp).
 
-1. [Optional] Generate an [ETRecord](etrecord.rst) while exporting your model. When provided, this enables users to link profiling information back to the eager model source code (with stack traces and module hierarchy).
-2. Integrate [ETDump generation](etdump.md) into the runtime and set the debugging level by configuring the `ETDumpGen` object. Then, provide an additional buffer to which intermediate outputs and program outputs will be written. Currently we support two levels of debugging:
+1. [Optional] Generate an [ETRecord](./etrecord.rst) while exporting your model. When provided, this enables users to link profiling information back to the eager model source code (with stack traces and module hierarchy).
+2. Integrate [ETDump generation](./etdump.md) into the runtime and set the debugging level by configuring the `ETDumpGen` object. Then, provide an additional buffer to which intermediate outputs and program outputs will be written. Currently we support two levels of debugging:
     - Program level outputs
     ```C++
     Span<uint8_t> buffer((uint8_t*)debug_buffer, debug_buffer_size);
@@ -30,12 +30,12 @@ For a real example reflecting the steps below, please refer to [example_runner.c
     etdump_gen.set_event_tracer_debug_level(
         EventTracerDebugLogLevel::kIntermediateOutputs);
     ```
-3. Build the runtime with the pre-processor flag that enables tracking of debug events. Instructions are in the [ETDump documentation](etdump.md).
-4. Run your model and dump out the ETDump buffer as described [here](etdump.md). (Do so similarly for the debug buffer if configured above)
+3. Build the runtime with the pre-processor flag that enables tracking of debug events. Instructions are in the [ETDump documentation](./etdump.md).
+4. Run your model and dump out the ETDump buffer as described [here](./etdump.md). (Do so similarly for the debug buffer if configured above)
 
 
 ### Accessing the debug outputs post run using the Inspector API's
-Once a model has been run, using the generated ETDump and debug buffers, users can leverage the [Inspector API's](model-inspector.rst) to inspect these debug outputs.
+Once a model has been run, using the generated ETDump and debug buffers, users can leverage the [Inspector API's](./model-inspector.rst) to inspect these debug outputs.
 
 ```python
 from executorch.devtools import Inspector

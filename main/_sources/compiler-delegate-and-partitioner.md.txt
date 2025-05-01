@@ -28,7 +28,7 @@ A delegate backend implementation is composed of:
 
 The diagram looks like following
 
-<img src="_static/img/backend_interface.png" alt="drawing" style="width:600px;"/>
+<img src="./_static/img/backend_interface.png" alt="drawing" style="width:600px;"/>
 
 **Figure 1.** A high level of entry points for backend interfaces, including both ahead-of-time and runtime.
 
@@ -71,7 +71,7 @@ parsed and executed at runtime.
 
 The diagram looks like following
 
-<img src="_static/img/backend_interface_aot.png" alt="drawing" style="width:800px;"/>
+<img src="./_static/img/backend_interface_aot.png" alt="drawing" style="width:800px;"/>
 
 **Figure 2.** The graph goes through partition and each subgraph will be sent to the preprocess part.
 
@@ -107,7 +107,7 @@ virtual void destroy(ET_UNUSED DelegateHandle* handle);
 
 The diagram looks like following
 
-<img src="_static/img/backend_interface_runtime.png" alt="drawing" style="width:600px;"/>
+<img src="./_static/img/backend_interface_runtime.png" alt="drawing" style="width:600px;"/>
 
 **Figure 3.** The relationship between standard ExecuTorch Runtime and backend entry point.
 
@@ -129,20 +129,20 @@ static auto success_with_compiler = register_backend(backend);
 
 ## Developer Tools Integration: Debuggability
 
-Providing consistent debugging experience, be it for runtime failures or performance profiling, is important. ExecuTorch employs native Developer Tools for this purpose, which enables correlating program instructions to original PyTorch code, via debug handles. You can read more about it [here](etrecord.rst).
+Providing consistent debugging experience, be it for runtime failures or performance profiling, is important. ExecuTorch employs native Developer Tools for this purpose, which enables correlating program instructions to original PyTorch code, via debug handles. You can read more about it [here](./etrecord).
 
 Delegated program or subgraphs are opaque to ExecuTorch runtime and appear as a special `call_delegate` instruction, which asks corresponding backend to handle the execution of the subgraph or program. Due to the opaque nature of backend delgates, native Developer Tools does not have visibility into delegated program. Thus the debugging, functional or performance, experiences of delegated execution suffers significantly as compared to it's non-delegated counterpart.
 
-In order to provide consistent debugging experience to users, regardless of the use of delegation for a model, Developer Tools provide an interface to correlate delegated (sub)graph to original (sub)graph. The Developer Tools do so via debug handles map which allows delegates to generate internal handles that can be associated with the original (sub)graph consumed by the delegate. Then at runtime, backend developer can report error or profiling information using the internal handle, which will be mapped to original (sub)graph using the debug handle map. For more information, please refer to [Delegate Debugging](delegate-debugging.md).
+In order to provide consistent debugging experience to users, regardless of the use of delegation for a model, Developer Tools provide an interface to correlate delegated (sub)graph to original (sub)graph. The Developer Tools do so via debug handles map which allows delegates to generate internal handles that can be associated with the original (sub)graph consumed by the delegate. Then at runtime, backend developer can report error or profiling information using the internal handle, which will be mapped to original (sub)graph using the debug handle map. For more information, please refer to [Delegate Debugging](./delegate-debugging).
 
 By leveraging the debug identifier, backend developer can embed the debug as part of the delegated blob
 
-<img src="_static/img/backend_debug_handle.png" alt="drawing" style="width:600px;"/>
+<img src="./_static/img/backend_debug_handle.png" alt="drawing" style="width:600px;"/>
 
 In this way, during execute stage, with the debug identifier, backend developer can associate the failed instruction inside the delegate
 back to the exact line of PyThon code.
 
-<img src="_static/img/backend_debug_handle_example.png" alt="drawing" style="width:700px;"/>
+<img src="./_static/img/backend_debug_handle_example.png" alt="drawing" style="width:700px;"/>
 
 ## Common Questions
 
@@ -236,7 +236,7 @@ class Backend_1_2_Partitioner(Partitioner):
 **6. Is there an easy way to write a partitioner?**
 
 We provide some helper partitioners
-[here](compiler-custom-compiler-passes.md) to make it easy to find
+[here](./compiler-custom-compiler-passes.md) to make it easy to find
 nodes from decomposed operators.
 
 **7. How do we link the node back to the source code?**

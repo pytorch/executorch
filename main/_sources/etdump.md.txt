@@ -41,4 +41,4 @@ target_compile_options(portable_ops_lib INTERFACE -DET_EVENT_TRACER_ENABLED)
 ```
 ## Using an ETDump
 
-Pass this ETDump into the [Inspector API](model-inspector.rst) to access this data and do post-run analysis.
+Pass this ETDump into the [Inspector API](./model-inspector.rst) to access this data and do post-run analysis.

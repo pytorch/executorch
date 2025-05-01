@@ -5,12 +5,11 @@
 <!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
-  <meta name="robots" content="noindex">
   <meta charset="utf-8">
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Using ExecuTorch on iOS &mdash; ExecuTorch main documentation</title>
+  <title>Using ExecuTorch on iOS &mdash; ExecuTorch 0.6 documentation</title>
   
 
   
@@ -295,7 +294,7 @@
           <div class="pytorch-left-menu-search">
             
     <div class="version">
-      <a href='https://pytorch.org/executorch/versions.html'>main &#x25BC</a>
+      <a href='https://pytorch.org/executorch/versions.html'>0.6 &#x25BC</a>
     </div>
     
 
@@ -341,7 +340,6 @@
 <ul>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">Building an ExecuTorch iOS Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorial-arm-ethos-u.html">Arm Ethos-U Backend Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
 <ul>
@@ -350,7 +348,7 @@
 <li class="toctree-l1"><a class="reference internal" href="backends-coreml.html">Core ML Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-mps.html">MPS Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-vulkan.html">Vulkan Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">Arm(R) Ethos(TM)-U NPU Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">ARM Ethos-U Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
@@ -385,7 +383,7 @@
 <li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">Runtime Python API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">API Life Cycle and Deprecation Policy</a></li>
-<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/main/javadoc/">Javadoc</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/0.6/javadoc/">Javadoc</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
 <ul>
@@ -528,13 +526,13 @@
 <p>The prebuilt ExecuTorch runtime, backend, and kernels are available as a <a class="reference external" href="https://www.swift.org/documentation/package-manager/">Swift PM</a> package.</p>
 <div class="section" id="xcode">
 <h4>Xcode<a class="headerlink" href="#xcode" title="Permalink to this heading">¶</a></h4>
-<p>In Xcode, go to <code class="docutils literal notranslate"><span class="pre">File</span> <span class="pre">&gt;</span> <span class="pre">Add</span> <span class="pre">Package</span> <span class="pre">Dependencies</span></code>. Paste the URL of the <a class="reference external" href="https://github.com/pytorch/executorch">ExecuTorch repo</a> into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format “swiftpm-<version>”, (e.g. “swiftpm-0.6.0”), or a branch name in format “swiftpm-<version>.&lt;year_month_date&gt;” (e.g. “swiftpm-0.7.0-20250401”) for a <a class="reference external" href="https://ossci-ios.s3.amazonaws.com/list.html">nightly build</a> on a specific date.</p>
+<p>In Xcode, go to <code class="docutils literal notranslate"><span class="pre">File</span> <span class="pre">&gt;</span> <span class="pre">Add</span> <span class="pre">Package</span> <span class="pre">Dependencies</span></code>. Paste the URL of the <a class="reference external" href="https://github.com/pytorch/executorch">ExecuTorch repo</a> into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format “swiftpm-<version>”, (e.g. “swiftpm-0.6.0”), or a branch name in format “swiftpm-<version>.&lt;year_month_date&gt;” (e.g. “swiftpm-0.6.0-20250501”) for a nightly build on a specific date.</p>
 <p><img alt="" src="_images/swiftpm_xcode1.png" /></p>
 <p>Then select which ExecuTorch framework should link against which target.</p>
 <p><img alt="" src="_images/swiftpm_xcode2.png" /></p>
 <p>Click the screenshot below to watch the <em>demo video</em> on how to add the package and run a simple ExecuTorch model on iOS.</p>
-<a href="_static/img/swiftpm_xcode.mp4">
-  <img src="_static/img/swiftpm_xcode.png" width="800" alt="Integrating and Running ExecuTorch on Apple Platforms">
+<a href="https://pytorch.org/executorch/0.6/_static/img/swiftpm_xcode.mp4">
+  <img src="https://pytorch.org/executorch/0.6/_static/img/swiftpm_xcode.png" width="800" alt="Integrating and Running ExecuTorch on Apple Platforms">
 </a>
 </div>
 <div class="section" id="cli">
@@ -592,7 +590,7 @@ swift<span class="w"> </span>build
 <ol class="arabic simple" start="2">
 <li><p>Clone ExecuTorch:</p></li>
 </ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>-b<span class="w"> </span>viable/strict<span class="w"> </span>https://github.com/pytorch/executorch.git<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>--recurse-submodules<span class="w"> </span>--shallow-submodules<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>executorch
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>-b<span class="w"> </span>release/0.6<span class="w"> </span>https://github.com/pytorch/executorch.git<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>--recurse-submodules<span class="w"> </span>--shallow-submodules<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>executorch
 </pre></div>
 </div>
 <ol class="arabic simple" start="3">
@@ -636,7 +634,7 @@ Copy them to your project and link them against your targets.</p>
 </div>
 <div class="section" id="linkage">
 <h2>Linkage<a class="headerlink" href="#linkage" title="Permalink to this heading">¶</a></h2>
-<p>ExecuTorch initializes its backends and kernels (operators) during app startup by registering them in a static dictionary. If you encounter errors like “unregistered kernel” or “unregistered backend” at runtime, you may need to explicitly force-load certain components. Use the <code class="docutils literal notranslate"><span class="pre">-all_load</span></code> or <code class="docutils literal notranslate"><span class="pre">-force_load</span></code> linker flags in your Xcode build configuration to ensure components are registered early.</p>
+<p>ExecuTorch initializes its backends and kernels (operators) during app startup by registering them in a static dictionary. If you encounter errors like “unregistered kernel” or “unregistered backend” at runtime, you may need to explicitly force-load certain components. Use the <code class="docutils literal notranslate"><span class="pre">-all_load</span></code> or <code class="docutils literal notranslate"><span class="pre">-force_load</span></code> linker flags in your Xcode build configuration to ensure components are registered early. Also, you may need to link against the C++ standard library, if not already, e.g. by adding the <code class="docutils literal notranslate"><span class="pre">-lc++</span></code> linker flag.</p>
 <p>Here’s an example of a Xcode configuration file (<code class="docutils literal notranslate"><span class="pre">.xcconfig</span></code>):</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>ET_PLATFORM[sdk=iphonesimulator*] = simulator
 ET_PLATFORM[sdk=iphoneos*] = ios
@@ -1406,14 +1404,14 @@ for (var i = 0; i < menuItems.length; i++) {
     $(".main-menu a:contains('GitHub')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
-    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
+    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
     // Mobile
     $(".mobile-menu a:contains('Github')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
-    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
+    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
 
   });
 </script>

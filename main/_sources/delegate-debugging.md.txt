@@ -127,7 +127,7 @@ A demo of the runtime code can be found [here](https://github.com/pytorch/execut
 
 ## Surfacing custom metadata from delegate events
 
-As seen in the runtime logging API's above, users can log an array of bytes along with their delegate profiling event. We make this data available for users in post processing via the [Inspector API](model-inspector.rst).
+As seen in the runtime logging API's above, users can log an array of bytes along with their delegate profiling event. We make this data available for users in post processing via the [Inspector API](./model-inspector.rst).
 
 Users can pass a metadata parser when creating an instance of the Inspector. The parser is a callable that deserializes the data and returns a list of strings or a dictionary containing key-value pairs. The deserialized data is then added back to the corresponding event in the event block for user consumption. Here's an example of how to write this parser:
 

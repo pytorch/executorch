@@ -5,12 +5,11 @@
 <!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
-  <meta name="robots" content="noindex">
   <meta charset="utf-8">
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Memory Planning Inspection in ExecuTorch &mdash; ExecuTorch main documentation</title>
+  <title>Memory Planning Inspection in ExecuTorch &mdash; ExecuTorch 0.6 documentation</title>
   
 
   
@@ -295,7 +294,7 @@
           <div class="pytorch-left-menu-search">
             
     <div class="version">
-      <a href='https://pytorch.org/executorch/versions.html'>main &#x25BC</a>
+      <a href='https://pytorch.org/executorch/versions.html'>0.6 &#x25BC</a>
     </div>
     
 
@@ -341,7 +340,6 @@
 <ul>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">Building an ExecuTorch iOS Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorial-arm-ethos-u.html">Arm Ethos-U Backend Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
 <ul>
@@ -350,7 +348,7 @@
 <li class="toctree-l1"><a class="reference internal" href="backends-coreml.html">Core ML Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-mps.html">MPS Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-vulkan.html">Vulkan Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">Arm(R) Ethos(TM)-U NPU Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">ARM Ethos-U Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
@@ -385,7 +383,7 @@
 <li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">Runtime Python API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">API Life Cycle and Deprecation Policy</a></li>
-<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/main/javadoc/">Javadoc</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/0.6/javadoc/">Javadoc</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
 <ul>
@@ -507,10 +505,10 @@
               
   <div class="section" id="memory-planning-inspection-in-executorch">
 <h1>Memory Planning Inspection in ExecuTorch<a class="headerlink" href="#memory-planning-inspection-in-executorch" title="Permalink to this heading">¶</a></h1>
-<p>After the <a class="reference internal" href="concepts.html#memory-planning"><span class="std std-doc">Memory Planning</span></a> pass of ExecuTorch, memory allocation information is stored on the nodes of the <a class="reference internal" href="concepts.html#exportedprogram"><span class="std std-doc"><code class="docutils literal notranslate"><span class="pre">ExportedProgram</span></code></span></a>. Here, we present a tool designed to inspect memory allocation and visualize all active tensor objects.</p>
+<p>After the <a class="reference external" href="https://pytorch.org/executorch/0.6/concepts.html#memory-planning">Memory Planning</a> pass of ExecuTorch, memory allocation information is stored on the nodes of the <a class="reference external" href="https://pytorch.org/executorch/0.6/concepts.html#exportedprogram"><code class="docutils literal notranslate"><span class="pre">ExportedProgram</span></code></a>. Here, we present a tool designed to inspect memory allocation and visualize all active tensor objects.</p>
 <div class="section" id="usage">
 <h2>Usage<a class="headerlink" href="#usage" title="Permalink to this heading">¶</a></h2>
-<p>User should add this code after they call <span class="xref myst">to_executorch()</span>, and it will write memory allocation information stored on the nodes to the file path “memory_profile.json”. The file is compatible with the Chrome trace viewer; see below for more information about interpreting the results.</p>
+<p>User should add this code after they call <a class="reference external" href="https://pytorch.org/executorch/0.6/export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager.to_executorch">to_executorch()</a>, and it will write memory allocation information stored on the nodes to the file path “memory_profile.json”. The file is compatible with the Chrome trace viewer; see below for more information about interpreting the results.</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.util.activation_memory_profiler</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_memory_trace</span>
 <span class="n">generate_memory_trace</span><span class="p">(</span>
     <span class="n">executorch_program_manager</span><span class="o">=</span><span class="n">prog</span><span class="p">,</span>
@@ -520,7 +518,7 @@
 </pre></div>
 </div>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">prog</span></code> is an instance of <span class="xref myst"><code class="docutils literal notranslate"><span class="pre">ExecuTorchProgramManager</span></code></span>, returned by <span class="xref myst">to_executorch()</span>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">prog</span></code> is an instance of <a class="reference external" href="https://pytorch.org/executorch/0.6/export-to-executorch-api-reference.html#executorch.exir.ExecutorchProgramManager"><code class="docutils literal notranslate"><span class="pre">ExecuTorchProgramManager</span></code></a>, returned by <a class="reference external" href="https://pytorch.org/executorch/0.6/export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager.to_executorch">to_executorch()</a>.</p></li>
 <li><p>Set <code class="docutils literal notranslate"><span class="pre">enable_memory_offsets</span></code> to <code class="docutils literal notranslate"><span class="pre">True</span></code> to show the location of each tensor on the memory space.</p></li>
 </ul>
 </div>
@@ -538,7 +536,7 @@ Example of a <a class="reference external" href="https://pytorch.org/vision/main
 <div class="section" id="further-reading">
 <h2>Further Reading<a class="headerlink" href="#further-reading" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="compiler-memory-planning.html"><span class="doc std std-doc">Memory Planning</span></a></p></li>
+<li><p><a class="reference external" href="https://pytorch.org/executorch/0.6/compiler-memory-planning.html">Memory Planning</a></p></li>
 </ul>
 </div>
 </div>
@@ -687,14 +685,14 @@ for (var i = 0; i < menuItems.length; i++) {
     $(".main-menu a:contains('GitHub')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
-    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
+    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
     // Mobile
     $(".mobile-menu a:contains('Github')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
-    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
+    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
 
   });
 </script>

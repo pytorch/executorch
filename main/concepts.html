@@ -5,12 +5,11 @@
 <!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
-  <meta name="robots" content="noindex">
   <meta charset="utf-8">
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Concepts &mdash; ExecuTorch main documentation</title>
+  <title>Concepts &mdash; ExecuTorch 0.6 documentation</title>
   
 
   
@@ -295,7 +294,7 @@
           <div class="pytorch-left-menu-search">
             
     <div class="version">
-      <a href='https://pytorch.org/executorch/versions.html'>main &#x25BC</a>
+      <a href='https://pytorch.org/executorch/versions.html'>0.6 &#x25BC</a>
     </div>
     
 
@@ -341,7 +340,6 @@
 <ul>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">Building an ExecuTorch iOS Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorial-arm-ethos-u.html">Arm Ethos-U Backend Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
 <ul>
@@ -350,7 +348,7 @@
 <li class="toctree-l1"><a class="reference internal" href="backends-coreml.html">Core ML Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-mps.html">MPS Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-vulkan.html">Vulkan Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">Arm(R) Ethos(TM)-U NPU Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">ARM Ethos-U Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
@@ -385,7 +383,7 @@
 <li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">Runtime Python API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">API Life Cycle and Deprecation Policy</a></li>
-<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/main/javadoc/">Javadoc</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/0.6/javadoc/">Javadoc</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
 <ul>
@@ -511,8 +509,8 @@
 <div class="section" id="concepts-map">
 <h2>Concepts Map<a class="headerlink" href="#concepts-map" title="Permalink to this heading">¶</a></h2>
 <p><img alt="" src="_images/concepts-map-overview.png" /></p>
-<p><a href="_static/img/concepts-map-overview.png" target="_blank">View in full size</a></p>
-<p><a href="_static/img/concepts-map-detailed.png" target="_blank">View detailed concept map</a></p>
+<p><a href="./_static/img/concepts-map-overview.png" target="_blank">View in full size</a></p>
+<p><a href="./_static/img/concepts-map-detailed.png" target="_blank">View detailed concept map</a></p>
 </div>
 <div class="section" id="aot-ahead-of-time">
 <h2><a class="reference internal" href="getting-started-architecture.html#program-preparation"><span class="std std-doc">AOT (Ahead of Time)</span></a><a class="headerlink" href="#aot-ahead-of-time" title="Permalink to this heading">¶</a></h2>
@@ -744,7 +742,7 @@ The default PAL implementation can be overridden if it doesn’t work for a part
 <p>Kernels that support a subset of tensor dtypes and/or dim orders.</p>
 </div>
 <div class="section" id="partitioner">
-<h2><a class="reference internal" href="compiler-custom-compiler-passes.html#partitioner"><span class="std std-ref">Partitioner</span></a><a class="headerlink" href="#partitioner" title="Permalink to this heading">¶</a></h2>
+<h2><span class="xref myst">Partitioner</span><a class="headerlink" href="#partitioner" title="Permalink to this heading">¶</a></h2>
 <p>Parts of a model may be delegated to run on an optimized backend. The partitioner splits the graph into the appropriate sub-networks and tags them for delegation.</p>
 </div>
 <div class="section" id="etensor-mode">
@@ -1013,14 +1011,14 @@ for (var i = 0; i < menuItems.length; i++) {
     $(".main-menu a:contains('GitHub')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
-    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
+    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
     // Mobile
     $(".mobile-menu a:contains('Github')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
-    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
+    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
 
   });
 </script>

@@ -79,7 +79,7 @@ ExecuTorch provides support for:
 - [Executorch Runtime API Reference](executorch-runtime-api-reference)
 - [Runtime Python API Reference](runtime-python-api-reference)
 - [API Life Cycle](api-life-cycle)
-- [Javadoc](https://pytorch.org/executorch/main/javadoc/)
+- [Javadoc](https://pytorch.org/executorch/0.6/javadoc/)
 #### Quantization
 - [Overview](quantization-overview)
 #### Kernel Library
@@ -87,11 +87,11 @@ ExecuTorch provides support for:
 - [Custom ATen Kernel](kernel-library-custom-aten-kernel)
 - [Selective Build](kernel-library-selective-build)
 #### Working with LLMs
-- [Llama](llm/llama.md)
-- [Llama on Android](llm/llama-demo-android.md)
-- [Llama on iOS](llm/llama-demo-ios.md)
-- [Llama on Android via Qualcomm backend](llm/build-run-llama3-qualcomm-ai-engine-direct-backend.md)
-- [Intro to LLMs in Executorch](llm/getting-started.md)
+- [Llama](llm/llama)
+- [Llama on Android](llm/llama-demo-android)
+- [Llama on iOS](llm/llama-demo-ios)
+- [Llama on Android via Qualcomm backend](llm/build-run-llama3-qualcomm-ai-engine-direct-backend)
+- [Intro to LLMs in Executorch](llm/getting-started)
 #### Backend Development
 - [Delegates Integration](backend-delegates-integration)
 - [XNNPACK Reference](backend-delegates-xnnpack-reference)
@@ -145,7 +145,6 @@ using-executorch-faqs
 
 Building an ExecuTorch Android Demo App <https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app>
 Building an ExecuTorch iOS Demo App <https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo>
-tutorial-arm-ethos-u.md
 ```
 
 ```{toctree}
@@ -209,7 +208,7 @@ export-to-executorch-api-reference
 executorch-runtime-api-reference
 runtime-python-api-reference
 api-life-cycle
-Javadoc <https://pytorch.org/executorch/main/javadoc/>
+Javadoc <https://pytorch.org/executorch/0.6/javadoc/>
 ```
 
 ```{toctree}

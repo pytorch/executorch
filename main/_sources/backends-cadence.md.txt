@@ -17,9 +17,9 @@ On top of being able to run on the Xtensa HiFi4 DSP, another goal of this tutori
 :::
 :::{grid-item-card}  Tutorials we recommend you complete before this:
 :class-card: card-prerequisites
-* [Introduction to ExecuTorch](intro-how-it-works.md)
-* [Getting Started](getting-started.md)
-* [Building ExecuTorch with CMake](using-executorch-building-from-source.md)
+* [Introduction to ExecuTorch](./intro-how-it-works.md)
+* [Getting Started](./getting-started.md)
+* [Building ExecuTorch with CMake](./using-executorch-building-from-source.md)
 :::
 ::::
 
@@ -89,7 +89,7 @@ executorch
 
 ***AoT (Ahead-of-Time) Components***:
 
-The AoT folder contains all of the python scripts and functions needed to export the model to an ExecuTorch `.pte` file. In our case, [export_example.py](https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/export_example.py) is an API that takes a model (nn.Module) and representative inputs and runs it through the quantizer (from [quantizer.py](https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/quantizer/quantizer.py)). Then a few compiler passes, also defined in [quantizer.py](https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/quantizer/quantizer.py), will replace operators with custom ones that are supported and optimized on the chip. Any operator needed to compute things should be defined in [ops_registrations.py](https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/ops_registrations.py) and have corresponding implemetations in the other folders.
+The AoT folder contains all of the python scripts and functions needed to export the model to an ExecuTorch `.pte` file. In our case, [export_example.py](https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/export_example.py) is an API that takes a model (nn.Module) and representative inputs and runs it through the quantizer (from [quantizer.py](https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/quantizer.py)). Then a few compiler passes, also defined in [quantizer.py](https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/quantizer.py), will replace operators with custom ones that are supported and optimized on the chip. Any operator needed to compute things should be defined in [ops_registrations.py](https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/ops_registrations.py) and have corresponding implemetations in the other folders.
 
 ***Operators***:
 
@@ -115,8 +115,8 @@ python3 -m examples.portable.scripts.export --model_name="add"
 ***Quantized Operators***:
 
 The other, more complex model are custom operators, including:
-  - a quantized [linear](https://pytorch.org/docs/stable/generated/torch.nn.Linear.html) operation. The model is defined [here](https://github.com/pytorch/executorch/blob/main/examples/cadence/operators/test_quantized_linear_op.py#L30). Linear is the backbone of most Automatic Speech Recognition (ASR) models.
-  - a quantized [conv1d](https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html) operation. The model is defined [here](https://github.com/pytorch/executorch/blob/main/examples/cadence/operators/test_quantized_conv1d_op.py#L40). Convolutions are important in wake word and many denoising models.
+  - a quantized [linear](https://pytorch.org/docs/stable/generated/torch.nn.Linear.html) operation. The model is defined [here](https://github.com/pytorch/executorch/blob/main/examples/cadence/operators/quantized_linear_op.py#L28). Linear is the backbone of most Automatic Speech Recognition (ASR) models.
+  - a quantized [conv1d](https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html) operation. The model is defined [here](https://github.com/pytorch/executorch/blob/main/examples/cadence/operators/quantized_conv1d_op.py#L36). Convolutions are important in wake word and many denoising models.
 
 In both cases the generated file is called `CadenceDemoModel.pte`.
 
@@ -170,6 +170,7 @@ cmake -DCMAKE_TOOLCHAIN_FILE=<path_to_executorch>/backends/cadence/cadence.cmake
     -DCMAKE_BUILD_TYPE=Debug \
     -DPYTHON_EXECUTABLE=python3 \
     -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
+    -DEXECUTORCH_BUILD_HOST_TARGETS=ON \
     -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
     -DEXECUTORCH_BUILD_PTHREADPOOL=OFF \
     -DEXECUTORCH_BUILD_CPUINFO=OFF \

@@ -27,7 +27,7 @@ For non-POSIX-compliant systems, a minimal no-op PAL implementation is provided.
 Overriding the default PAL implementation is commonly done to route logs to a user-specified destination or to provide PAL functionality on embedded systems. To override one or more PAL methods, take the following steps:
 
 - Include
-  [`executorch/runtime/platform/platform.h`](https://github.com/pytorch/executorch/blob/main/runtime/platform/platform.h)
+  [`executorch/runtime/platform/platform.h`](https://github.com/pytorch/executorch/blob/release/0.6/runtime/platform/platform.h)
   in one of your application's `.c` or `.cpp` files.
 - Define an implementation of one or more of the `et_pal_*()` functions.
 
@@ -36,7 +36,7 @@ definition can override them at link time. To ensure that your definitions take
 precedence, you may need to ensure that the strong definitions precede the weak
 definitions in the link order.
 
-See [runtime/platform/platform.h](https://github.com/pytorch/executorch/blob/main/runtime/platform/platform.h) for the PAL function signatures and [runtime/platform/default/posix.cpp](https://github.com/pytorch/executorch/blob/main/runtime/platform/default/posix.cpp) for the reference POSIX implementation.
+See [runtime/platform/platform.h](https://github.com/pytorch/executorch/blob/release/0.6/runtime/platform/platform.h) for the PAL function signatures and [runtime/platform/default/posix.cpp](https://github.com/pytorch/executorch/blob/release/0.6/runtime/platform/default/posix.cpp) for the reference POSIX implementation.
 
 ## Kernel Libraries
 

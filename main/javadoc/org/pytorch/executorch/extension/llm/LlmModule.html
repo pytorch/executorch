@@ -190,12 +190,6 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                                 <td class="colLast">Constructs a LLM Module for a model with given path, tokenizer, and temperature.</td>
                                             </tr>
                                         
-                                            <tr class="rowColor">
-                                                <th class="colConstructorName" scope="row"><code><span class="memberNameLink"><a
-                                                        href="#LlmModule(LlmModuleConfig)">LlmModule</a></span>(<a href=LlmModuleConfig.html>LlmModuleConfig</a> config)</code></th>
-                                                <td class="colLast">Constructs a LLM Module for a model with the given LlmModuleConfig</td>
-                                            </tr>
-                                        
 
                                         </tbody>
                                     </table>
@@ -268,14 +262,6 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                         </tr>
                                         
                                         <tr id="i5" class="rowColor">
-                                            <td class="colFirst"><code>int</code>
-                                            </td>
-                                            <th class="colSecond" scope="row"><code><a href=LlmModule.html#generate(String,LlmGenerationConfig,LlmCallback)>generate</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> prompt, <a href=LlmGenerationConfig.html>LlmGenerationConfig</a> config, <a href=LlmCallback.html>LlmCallback</a> llmCallback) </code>
-                                            </th>
-                                            <td class="colLast">Start generating tokens from the module.</td>
-                                        </tr>
-                                        
-                                        <tr id="i6" class="altColor">
                                             <td class="colFirst"><code>native int</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#generate(Array,int,int,int,String,int,LlmCallback,boolean)>generate</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;int&gt; image, int width, int height, int channels, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> prompt, int seqLen, <a href=LlmCallback.html>LlmCallback</a> llmCallback, boolean echo) </code>
@@ -283,7 +269,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                             <td class="colLast">Start generating tokens from the module.</td>
                                         </tr>
                                         
-                                        <tr id="i7" class="rowColor">
+                                        <tr id="i6" class="altColor">
                                             <td class="colFirst"><code>long</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#prefillImages(Array,int,int,int,long)>prefillImages</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;int&gt; image, int width, int height, int channels, long startPos) </code>
@@ -291,7 +277,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                             <td class="colLast">Prefill an LLaVA Module with the given images input.</td>
                                         </tr>
                                         
-                                        <tr id="i8" class="altColor">
+                                        <tr id="i7" class="rowColor">
                                             <td class="colFirst"><code>long</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#prefillPrompt(String,long,int,int)>prefillPrompt</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> prompt, long startPos, int bos, int eos) </code>
@@ -299,7 +285,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                             <td class="colLast">Prefill an LLaVA Module with the given text input.</td>
                                         </tr>
                                         
-                                        <tr id="i9" class="rowColor">
+                                        <tr id="i8" class="altColor">
                                             <td class="colFirst"><code>native int</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#generateFromPos(String,int,long,LlmCallback,boolean)>generateFromPos</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> prompt, int seqLen, long startPos, <a href=LlmCallback.html>LlmCallback</a> callback, boolean echo) </code>
@@ -307,7 +293,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                             <td class="colLast">Generate tokens from the given prompt, starting from the given position.</td>
                                         </tr>
                                         
-                                        <tr id="i10" class="altColor">
+                                        <tr id="i9" class="rowColor">
                                             <td class="colFirst"><code>native void</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#stop()>stop</a>() </code>
@@ -315,7 +301,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                             <td class="colLast">Stop current generate() before it finishes.</td>
                                         </tr>
                                         
-                                        <tr id="i11" class="rowColor">
+                                        <tr id="i10" class="altColor">
                                             <td class="colFirst"><code>native int</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#load()>load</a>() </code>
@@ -380,16 +366,6 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                         <h4>LlmModule</h4>
                                         <pre>LlmModule(int modelType, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> modulePath, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> tokenizerPath, float temperature)</pre>
                                         <div class="block">Constructs a LLM Module for a model with given path, tokenizer, and temperature.</div>
-                                        
-                                    </li>
-                                </ul>
-                                
-                                <a name="LlmModule(LlmModuleConfig)"></a>
-                                <ul class="blockList">
-                                    <li class="blockList">
-                                        <h4>LlmModule</h4>
-                                        <pre>LlmModule(<a href=LlmModuleConfig.html>LlmModuleConfig</a> config)</pre>
-                                        <div class="block">Constructs a LLM Module for a model with the given LlmModuleConfig</div>
                                         
                                     </li>
                                 </ul>
@@ -542,38 +518,6 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                             
                                             
                                             <dd><code>echo</code> - indicate whether to echo the input prompt or not (text completion vs chat)</dd>
-                                            
-                                            
-                                        </dl>
-                                        
-                                        <!-- TODO missing return annotation -->
-                                    </li>
-                                </ul>
-                                
-                                <a id="generate(String,LlmGenerationConfig,LlmCallback)">
-                                    <!--   -->
-                                </a>
-                                <ul class=
-                                              "blockList"
-                                          >
-                                    <li class="blockList">
-                                        <h4>generate</h4>
-                                        <pre class="methodSignature"> int <a href=LlmModule.html#generate(String,LlmGenerationConfig,LlmCallback)>generate</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> prompt, <a href=LlmGenerationConfig.html>LlmGenerationConfig</a> config, <a href=LlmCallback.html>LlmCallback</a> llmCallback)</pre>
-                                        <div class="block"><p>Start generating tokens from the module.</p></div>
-                                        
-                                        <dl>
-                                            <dt><span class="paramLabel">Parameters:</span></dt>
-                                            
-                                            
-                                            <dd><code>prompt</code> - Input prompt</dd>
-                                            
-                                            
-                                            
-                                            <dd><code>config</code> - the config for generation</dd>
-                                            
-                                            
-                                            
-                                            <dd><code>llmCallback</code> - callback object to receive results</dd>
                                             
                                             
                                         </dl>

@@ -133,7 +133,7 @@ will be executed on the GPU.
 
 
 ::::{note}
-The [supported ops list](https://github.com/pytorch/executorch/blob/main/backends/vulkan/op_registry.py#L194)
+The [supported ops list](https://github.com/pytorch/executorch/blob/main/backends/vulkan/partitioner/supported_ops.py)
 Vulkan partitioner code can be inspected to examine which ops are currently
 implemented in the Vulkan delegate.
 ::::

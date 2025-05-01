@@ -86,4 +86,4 @@ Users attempting to write a custom memory planning algorithm should start by loo
 
 ## Debugging Tool
 
-Please refer to [Memory Planning Inspection](memory-planning-inspection.md) for a tool to inspect the result of memory planning.
+Please refer to [Memory Planning Inspection](./memory-planning-inspection.md) for a tool to inspect the result of memory planning.

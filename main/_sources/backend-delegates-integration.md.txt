@@ -16,7 +16,7 @@ Delegate Python files such as those implementing `preprocess()` or `partition()`
 functions for ExecuTorch AOT flow, excluding any external third-party
 dependencies and their files, should be installed and available with
 the top level ExecuTorch package. For third-party dependencies, please refer to
-[this](backend-delegates-dependencies.md).
+[this](./backend-delegates-dependencies.md).
 
 ## C++ Source Files
 
@@ -28,7 +28,7 @@ top level `CMakeLists.txt` file using `add_subdirectory` CMake command, and
 should be built conditionally with an ExecuTorch build flag like
 `EXECUTORCH_BUILD_<DELEGATE_NAME>`, see `EXECUTORCH_BUILD_XNNPACK` for example.
 For third-party dependencies, please refer to
-[this](backend-delegates-dependencies.md).
+[this](./backend-delegates-dependencies.md).
 
 <!---
 TODO: Add more details. Need to insert a CMake layer in `executorch/backends` to

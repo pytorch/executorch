@@ -66,7 +66,7 @@ The `executor_runner` target is built by default when building with CMake. It ca
 ./cmake-out/executor_runner --model_path path/to/model.pte
 ```
 
-The runner source code can be found in the ExecuTorch repo under [examples/portable/executor_runner.cpp](https://github.com/pytorch/executorch/blob/main/examples/portable/executor_runner/executor_runner.cpp). Some backends, such as CoreML, have dedicated runners to showcase backend and platform-specific functionality. See [examples/apple/coreml](https://github.com/pytorch/executorch/tree/main/examples/apple/coreml) and the [examples](https://github.com/pytorch/executorch/tree/main/examples) directory for more information.
+The runner source code can be found in the ExecuTorch repo under [examples/portable/executor_runner.cpp](https://github.com/pytorch/executorch/blob/release/0.6/examples/portable/executor_runner/executor_runner.cpp). Some backends, such as CoreML, have dedicated runners to showcase backend and platform-specific functionality. See [examples/apple/coreml](https://github.com/pytorch/executorch/tree/release/0.6/examples/apple/coreml) and the [examples](https://github.com/pytorch/executorch/tree/release/0.6/examples) directory for more information.
 
 ## Next Steps
 

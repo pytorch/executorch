@@ -10,7 +10,7 @@ In order to target on-device AI with diverse hardware, critical power requiremen
 
 There are three phases to deploy a PyTorch model to on-device: program preparation, runtime preparation, and program execution, as shown in the diagram below, with a number of user entry points. We’ll discuss each step separately in this documentation.
 
-![](executorch_stack.png)
+![](./executorch_stack.png)
 
 **Figure 1.** The figure illustrates the three phases - program preparation, runtime preparation and program execution.
 
@@ -40,21 +40,21 @@ Starting from the program source code, below are the steps you would go through 
 
 ### Export
 
-To deploy the program to the device, engineers need to have a graph representation for compiling a model to run on various backends. With [`torch.export()`](https://pytorch.org/docs/main/export.html), an [EXIR](ir-exir.md) (export intermediate representation) is generated with ATen dialect. All AOT compilations are based on this EXIR, but can have multiple dialects along the lowering path as detailed below.
+To deploy the program to the device, engineers need to have a graph representation for compiling a model to run on various backends. With [`torch.export()`](https://pytorch.org/docs/main/export.html), an [EXIR](./ir-exir.md) (export intermediate representation) is generated with ATen dialect. All AOT compilations are based on this EXIR, but can have multiple dialects along the lowering path as detailed below.
 
-* _[ATen Dialect](ir-exir.md#aten-dialect)_. PyTorch Edge is based on PyTorch’s Tensor library ATen, which has clear contracts for efficient execution. ATen Dialect is a graph represented by ATen nodes which are fully ATen compliant. Custom operators are allowed, but must be registered with the dispatcher. It’s flatten with no module hierarchy (submodules in a bigger module), but the source code and module hierarchy are preserved in the metadata. This representation is also autograd safe.
+* _[ATen Dialect](./ir-exir.md#aten-dialect)_. PyTorch Edge is based on PyTorch’s Tensor library ATen, which has clear contracts for efficient execution. ATen Dialect is a graph represented by ATen nodes which are fully ATen compliant. Custom operators are allowed, but must be registered with the dispatcher. It’s flatten with no module hierarchy (submodules in a bigger module), but the source code and module hierarchy are preserved in the metadata. This representation is also autograd safe.
 * Optionally, _quantization_, either QAT (quantization-aware training) or PTQ (post training quantization) can be applied to the whole ATen graph before converting to Core ATen. Quantization helps with reducing the model size, which is important for edge devices.
-* _[Core ATen Dialect](ir-ops-set-definition.md)_. ATen has thousands of operators. It’s not ideal for some fundamental transforms and kernel library implementation. The operators from the ATen Dialect graph are decomposed into fundamental operators so that the operator set (op set) is smaller and more fundamental transforms can be applied. The Core ATen dialect is also serializable and convertible to Edge Dialect as detailed below.
+* _[Core ATen Dialect](./ir-ops-set-definition.md)_. ATen has thousands of operators. It’s not ideal for some fundamental transforms and kernel library implementation. The operators from the ATen Dialect graph are decomposed into fundamental operators so that the operator set (op set) is smaller and more fundamental transforms can be applied. The Core ATen dialect is also serializable and convertible to Edge Dialect as detailed below.
 
 ### Edge Compilation
 
 The Export process discussed above operates on a graph that is agnostic to the edge device where the code is ultimately executed. During the edge compilation step, we work on representations that are Edge specific.
 
-* _[Edge Dialect](ir-exir.md#edge-dialect)_. All operators are either compliant with ATen operators with dtype plus memory layout information (represented as `dim_order`) or registered custom operators. Scalars are converted to Tensors. Those specifications allow following steps focusing on a smaller Edge domain. In addition, it enables the selective build which is based on specific dtypes and memory layouts.
+* _[Edge Dialect](./ir-exir.md#edge-dialect)_. All operators are either compliant with ATen operators with dtype plus memory layout information (represented as `dim_order`) or registered custom operators. Scalars are converted to Tensors. Those specifications allow following steps focusing on a smaller Edge domain. In addition, it enables the selective build which is based on specific dtypes and memory layouts.
 
-With the Edge dialect, there are two target-aware ways to further lower the graph to the _[Backend Dialect](compiler-backend-dialect.md)_. At this point, delegates for specific hardware can perform many operations. For example, Core ML on iOS, QNN on Qualcomm, or TOSA on Arm can rewrite the graph. The options at this level are:
+With the Edge dialect, there are two target-aware ways to further lower the graph to the _[Backend Dialect](./compiler-backend-dialect.md)_. At this point, delegates for specific hardware can perform many operations. For example, Core ML on iOS, QNN on Qualcomm, or TOSA on Arm can rewrite the graph. The options at this level are:
 
-* _[Backend Delegate](compiler-delegate-and-partitioner.md)_. The entry point to compile the graph (either full or partial) to a specific backend. The compiled graph is swapped with the semantically equivalent graph during this transformation. The compiled graph will be offloaded to the backend (aka `delegated`) later during the runtime for improved performance.
+* _[Backend Delegate](./compiler-delegate-and-partitioner.md)_. The entry point to compile the graph (either full or partial) to a specific backend. The compiled graph is swapped with the semantically equivalent graph during this transformation. The compiled graph will be offloaded to the backend (aka `delegated`) later during the runtime for improved performance.
 * _User-defined passes_. Target-specific transforms can also be performed by the user. Good examples of this are kernel fusion, async behavior, memory layout conversion, and others.
 
 ### Compile to ExecuTorch Program
@@ -73,7 +73,7 @@ Finally, the emitted program can be serialized to [flatbuffer](https://github.co
 
 With the serialized program, and provided kernel libraries (for operator calls) or backend libraries (for delegate calls), model deployment engineers can now prepare the program for the runtime.
 
-ExecuTorch has the _[selective build](kernel-library-selective-build.md)_ APIs, to build the runtime that links to only kernels used by the program, which can provide significant binary size savings in the resulting application.
+ExecuTorch has the _[selective build](./kernel-library-selective-build.md)_ APIs, to build the runtime that links to only kernels used by the program, which can provide significant binary size savings in the resulting application.
 
 ## Program Execution
 
@@ -89,6 +89,6 @@ _Executor_ is the entry point to load the program and execute it. The execution 
 
 ## Developer Tools
 
-It should be efficient for users to go from research to production using the flow above. Productivity is essentially important, for users to author, optimize and deploy their models. We provide [ExecuTorch Developer Tools](devtools-overview.md) to improve productivity. The Developer Tools are not in the diagram. Instead it's a tool set that covers the developer workflow in all three phases.
+It should be efficient for users to go from research to production using the flow above. Productivity is essentially important, for users to author, optimize and deploy their models. We provide [ExecuTorch Developer Tools](./devtools-overview.md) to improve productivity. The Developer Tools are not in the diagram. Instead it's a tool set that covers the developer workflow in all three phases.
 
 During the program preparation and execution, users can use the ExecuTorch Developer Tools to profile, debug, or visualize the program. Since the end-to-end flow is within the PyTorch ecosystem, users can correlate and display performance data along with graph visualization as well as direct references to the program source code and model hierarchy. We consider this to be a critical component for quickly iterating and lowering PyTorch programs to edge devices and environments.

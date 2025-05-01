@@ -5,12 +5,11 @@
 <!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
-  <meta name="robots" content="noindex">
   <meta charset="utf-8">
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>executorch.devtools.inspector._inspector &mdash; ExecuTorch main documentation</title>
+  <title>executorch.devtools.inspector._inspector &mdash; ExecuTorch 0.6 documentation</title>
   
 
   
@@ -293,7 +292,7 @@
           <div class="pytorch-left-menu-search">
             
     <div class="version">
-      <a href='https://pytorch.org/executorch/versions.html'>main &#x25BC</a>
+      <a href='https://pytorch.org/executorch/versions.html'>0.6 &#x25BC</a>
     </div>
     
 
@@ -339,7 +338,6 @@
 <ul>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">Building an ExecuTorch iOS Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../../tutorial-arm-ethos-u.html">Arm Ethos-U Backend Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
 <ul>
@@ -348,7 +346,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../../backends-coreml.html">Core ML Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../backends-mps.html">MPS Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../backends-vulkan.html">Vulkan Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../../backends-arm-ethos-u.html">Arm(R) Ethos(TM)-U NPU Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../backends-arm-ethos-u.html">ARM Ethos-U Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../backends-mediatek.html">MediaTek Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../backends-cadence.html">Cadence Xtensa Backend</a></li>
@@ -383,7 +381,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../../executorch-runtime-api-reference.html">Runtime API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../runtime-python-api-reference.html">Runtime Python API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../api-life-cycle.html">API Life Cycle and Deprecation Policy</a></li>
-<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/main/javadoc/">Javadoc</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/0.6/javadoc/">Javadoc</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
 <ul>
@@ -838,7 +836,6 @@
     <span class="n">_delegate_time_scale_converter</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
         <span class="n">Callable</span><span class="p">[[</span><span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]],</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]</span>
     <span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="n">_start_time</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="nd">@cached_property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">delegate_debug_metadatas</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
@@ -856,13 +853,6 @@
 <span class="sd">        Return the raw unparsed _delegate_debug_metadatas</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_delegate_debug_metadatas</span>
-
-    <span class="nd">@property</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">start_time</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Returns the start time of the event.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_start_time</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">to_dataframe</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">_units</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -914,7 +904,6 @@
             <span class="s2">&quot;is_delegated_op&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_delegated_op</span><span class="p">,</span>
             <span class="s2">&quot;delegate_backend_name&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">delegate_backend_name</span><span class="p">,</span>
             <span class="s2">&quot;debug_data&quot;</span><span class="p">:</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">debug_data</span><span class="p">],</span>
-            <span class="s2">&quot;start_time&quot;</span><span class="p">:</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_start_time</span><span class="p">],</span>
         <span class="p">}</span>
 
     <span class="nd">@staticmethod</span>
@@ -1043,7 +1032,6 @@
 
         <span class="c1"># Fill out fields from profile event</span>
         <span class="n">data</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="n">stime</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="n">delegate_debug_metadatas</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">events</span><span class="p">:</span>
             <span class="k">if</span> <span class="p">(</span><span class="n">profile_events</span> <span class="o">:=</span> <span class="n">event</span><span class="o">.</span><span class="n">profile_events</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -1085,7 +1073,6 @@
                     <span class="p">)</span>
 
                 <span class="n">data</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">scaled_time</span><span class="p">)</span>
-                <span class="n">stime</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">profile_event</span><span class="o">.</span><span class="n">start_time</span><span class="p">)</span>
                 <span class="n">delegate_debug_metadatas</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                     <span class="n">profile_event</span><span class="o">.</span><span class="n">delegate_debug_metadata</span>
                     <span class="k">if</span> <span class="n">profile_event</span><span class="o">.</span><span class="n">delegate_debug_metadata</span>
@@ -1097,10 +1084,6 @@
             <span class="n">ret_event</span><span class="o">.</span><span class="n">perf_data</span> <span class="o">=</span> <span class="n">PerfData</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
         <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">delegate_debug_metadatas</span><span class="p">):</span>
             <span class="n">ret_event</span><span class="o">.</span><span class="n">_delegate_debug_metadatas</span> <span class="o">=</span> <span class="n">delegate_debug_metadatas</span>
-
-        <span class="c1"># add _start_time to the event</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">stime</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="n">ret_event</span><span class="o">.</span><span class="n">_start_time</span> <span class="o">=</span> <span class="n">stime</span>
 
     <span class="nd">@staticmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_populate_debugging_related_fields</span><span class="p">(</span>
@@ -1924,14 +1907,14 @@ for (var i = 0; i < menuItems.length; i++) {
     $(".main-menu a:contains('GitHub')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
-    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
+    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
     // Mobile
     $(".mobile-menu a:contains('Github')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
-    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
+    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
 
   });
 </script>

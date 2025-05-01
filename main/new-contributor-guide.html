@@ -5,12 +5,11 @@
 <!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
-  <meta name="robots" content="noindex">
   <meta charset="utf-8">
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>New Contributor Guide &mdash; ExecuTorch main documentation</title>
+  <title>New Contributor Guide &mdash; ExecuTorch 0.6 documentation</title>
   
 
   
@@ -293,7 +292,7 @@
           <div class="pytorch-left-menu-search">
             
     <div class="version">
-      <a href='https://pytorch.org/executorch/versions.html'>main &#x25BC</a>
+      <a href='https://pytorch.org/executorch/versions.html'>0.6 &#x25BC</a>
     </div>
     
 
@@ -339,7 +338,6 @@
 <ul>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">Building an ExecuTorch iOS Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorial-arm-ethos-u.html">Arm Ethos-U Backend Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
 <ul>
@@ -348,7 +346,7 @@
 <li class="toctree-l1"><a class="reference internal" href="backends-coreml.html">Core ML Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-mps.html">MPS Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-vulkan.html">Vulkan Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">Arm(R) Ethos(TM)-U NPU Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">ARM Ethos-U Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
@@ -383,7 +381,7 @@
 <li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">Runtime Python API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">API Life Cycle and Deprecation Policy</a></li>
-<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/main/javadoc/">Javadoc</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/0.6/javadoc/">Javadoc</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
 <ul>
@@ -571,8 +569,8 @@ git<span class="w"> </span>remote<span class="w"> </span>add<span class="w"> </s
 </pre></div>
 </div>
 <p>Depending on how you cloned your repo (HTTP, SSH, etc.), this should print something like:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>origin<span class="w">  </span>https://github.com/<span class="o">{</span>YOUR_GITHUB_USERNAME<span class="o">}</span>/executorch.git<span class="w"> </span><span class="o">(</span>fetch<span class="o">)</span>
-origin<span class="w">  </span>https://github.com/<span class="o">{</span>YOUR_GITHUB_USERNAME<span class="o">}</span>/executorch.git<span class="w"> </span><span class="o">(</span>push<span class="o">)</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>origin<span class="w">  </span>https://github.com/YOUR_GITHUB_USERNAME/executorch.git<span class="w"> </span><span class="o">(</span>fetch<span class="o">)</span>
+origin<span class="w">  </span>https://github.com/YOUR_GITHUB_USERNAME/executorch.git<span class="w"> </span><span class="o">(</span>push<span class="o">)</span>
 upstream<span class="w">        </span>https://github.com/pytorch/executorch.git<span class="w"> </span><span class="o">(</span>fetch<span class="o">)</span>
 upstream<span class="w">        </span>https://github.com/pytorch/executorch.git<span class="w"> </span><span class="o">(</span>push<span class="o">)</span>
 </pre></div>
@@ -601,7 +599,7 @@ git<span class="w"> </span>push<span class="w">                  </span><span cl
 </pre></div>
 </div>
 </li>
-<li><p><a class="reference internal" href="using-executorch-building-from-source.html"><span class="doc std std-doc">Build the project</span></a> and <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/CONTRIBUTING.md#testing">run the tests</a>.</p>
+<li><p><a class="reference external" href="https://pytorch.org/executorch/0.6/using-executorch-building-from-source.html">Build the project</a> and <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/CONTRIBUTING.md#testing">run the tests</a>.</p>
 <p>Unfortunately, this step is too long to detail here. If you get stuck at any point, please feel free to ask for help on our <a class="reference external" href="https://discord.com/invite/Dh43CKSAdc">Discord server</a> — we’re always eager to help newcomers get onboarded.</p>
 </li>
 </ol>
@@ -700,11 +698,7 @@ git<span class="w"> </span>push
 </li>
 <li><p>You may see a comment from <code class="docutils literal notranslate"><span class="pre">github-actions</span></code> requesting a “release notes” label:</p>
 <p><img alt="" src="_images/release_notes.png" /></p>
-<p>As the comment says, you can add a label by commenting on the PR with an instruction to pytorchbot. You can see a list of all our labels <a class="reference external" href="https://github.com/pytorch/executorch/labels/">here</a>. Pick the one which fits your PR best, then add it as a comment using the syntax <code class="docutils literal notranslate"><span class="pre">&#64;pytorchbot</span> <span class="pre">label</span> <span class="pre">&quot;YOUR</span> <span class="pre">LABEL</span> <span class="pre">HERE&quot;</span></code>. For example:</p>
-<p><img alt="" src="_images/how_to_label1.png" /></p>
-<p>After you’ve submitted your comment, <code class="docutils literal notranslate"><span class="pre">pytorchbot</span></code> will add your chosen label to the PR:</p>
-<p><img alt="" src="_images/how_to_label2.png" /></p>
-<p>and the <code class="docutils literal notranslate"><span class="pre">github-actions</span></code> comment requesting a label will disappear.</p>
+<p>Please ignore this message. It’s directed at the ExecuTorch maintainers — they’ll label your PR for you.</p>
 </li>
 <li><p>At the end of your Draft PR, you’ll see something like this:</p>
 <p><img alt="" src="_images/end_of_draft_pr1.png" /></p>
@@ -721,17 +715,10 @@ git<span class="w"> </span>push
 <p><img alt="" src="_images/pr_approval1.png" /></p>
 <p>And in the PR comments:</p>
 <p><img alt="" src="_images/pr_approval2.png" /></p>
-</li>
-<li><p>Once you’ve received the required approval from a core contributor, you’re very nearly done. We just need to make sure all the CI checks have passed, some of which need approval from a maintainer to start:</p>
-<p><img alt="" src="_images/how_to_merge1.png" /></p>
-<p>Once all checks these have all been approved, ran, and passed, you can go ahead and merge your PR. If there’s a grey <code class="docutils literal notranslate"><span class="pre">Update</span> <span class="pre">branch</span></code> button instead of a green <code class="docutils literal notranslate"><span class="pre">Merge</span> <span class="pre">pull</span> <span class="pre">request</span></code> button, click that first:</p>
-<p><img alt="" src="_images/how_to_merge2.png" /></p>
-<p>After a moment, the branch should update with the latest changes, and you’ll see the final green <code class="docutils literal notranslate"><span class="pre">Merge</span> <span class="pre">pull</span> <span class="pre">request</span></code> button:</p>
-<p><img alt="" src="_images/how_to_merge3.png" /></p>
-<p>Click it to merge your changes into the main codebase. Congratulations — you’re now an official ExecuTorch contributor!</p>
+<p>Once you’ve received the required approval from a core contributor, you can go ahead and merge your PR. Congratulations — you’re now an official ExecuTorch contributor!</p>
 </li>
 </ol>
-<p>Great job making it to the end of our guide — we hope you enjoy contributing. Once again, please check out our <strong><a class="reference external" href="https://discord.com/invite/Dh43CKSAdc">Discord Server</a></strong> if you want to say hello, ask any questions, or talk about any and all things ExecuTorch. We look forward to receiving your contributions!</p>
+<p>Great job making it to the end of our guide — we hope you enjoy contributing. Once again, please check out <strong><a class="reference external" href="https://discord.com/invite/Dh43CKSAdc">Discord Server</a></strong> if you want to say hello, ask any questions, or talk about any and all things ExecuTorch. We look forward to receiving your contributions!</p>
 </div>
 </div>
 </div>
@@ -880,14 +867,14 @@ for (var i = 0; i < menuItems.length; i++) {
     $(".main-menu a:contains('GitHub')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
-    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
+    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
     // Mobile
     $(".mobile-menu a:contains('Github')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
-    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
+    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
 
   });
 </script>
