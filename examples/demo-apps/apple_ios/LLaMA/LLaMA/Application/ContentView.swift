@@ -89,14 +89,14 @@ struct ContentView: View {
     
     static func fromPath(_ path: String) -> ModelType {
       let filename = (path as NSString).lastPathComponent.lowercased()
-      if filename.hasPrefix("llama") {
+      if filename.contains("llama") {
         return .llama
-      } else if filename.hasPrefix("llava") {
+      } else if filename.contains("llava") {
         return .llava
-      } else if filename.hasPrefix("qwen3") {
+      } else if filename.contains("qwen3") {
         return .qwen3
       }
-      print("Unknown model type in path: \(path). Model filename should start with one of: llama, llava, or qwen3")
+      print("Unknown model type in path: \(path). Model filename should contain one of following words: llama, llava, or qwen3")
       exit(1)
     }
   }
