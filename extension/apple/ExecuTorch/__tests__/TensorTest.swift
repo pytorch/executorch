@@ -548,4 +548,24 @@ class TensorTest: XCTestCase {
       XCTAssertEqual(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: UInt.self), count: count).first, 42)
     }
   }
+
+  func testEmpty() {
+    let tensor = Tensor.empty(shape: [3, 4], dataType: .float)
+    XCTAssertEqual(tensor.shape, [3, 4])
+    XCTAssertEqual(tensor.count, 12)
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertNotNil(pointer)
+      XCTAssertEqual(count, 12)
+      XCTAssertEqual(dataType, .float)
+    }
+  }
+
+  func testEmptyLike() {
+    let other = Tensor.empty(shape: [2, 2], dataType: .int)
+    let tensor = Tensor.empty(like: other)
+    XCTAssertEqual(tensor.shape, other.shape)
+    XCTAssertEqual(tensor.strides, other.strides)
+    XCTAssertEqual(tensor.dimensionOrder, other.dimensionOrder)
+    XCTAssertEqual(tensor.dataType, other.dataType)
+  }
 }
