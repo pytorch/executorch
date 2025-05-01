@@ -5,11 +5,12 @@
 <!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
+  <meta name="robots" content="noindex">
   <meta charset="utf-8">
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>executorch.exir.program._program &mdash; ExecuTorch 0.6 documentation</title>
+  <title>executorch.exir.program._program &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -292,7 +293,7 @@
           <div class="pytorch-left-menu-search">
             
     <div class="version">
-      <a href='https://pytorch.org/executorch/versions.html'>0.6 &#x25BC</a>
+      <a href='https://pytorch.org/executorch/versions.html'>main &#x25BC</a>
     </div>
     
 
@@ -338,6 +339,7 @@
 <ul>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">Building an ExecuTorch iOS Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../tutorial-arm-ethos-u.html">Arm Ethos-U Backend Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
 <ul>
@@ -346,7 +348,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../../backends-coreml.html">Core ML Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../backends-mps.html">MPS Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../backends-vulkan.html">Vulkan Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../../backends-arm-ethos-u.html">ARM Ethos-U Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../backends-arm-ethos-u.html">Arm(R) Ethos(TM)-U NPU Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../backends-mediatek.html">MediaTek Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../backends-cadence.html">Cadence Xtensa Backend</a></li>
@@ -381,7 +383,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../../executorch-runtime-api-reference.html">Runtime API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../runtime-python-api-reference.html">Runtime Python API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../api-life-cycle.html">API Life Cycle and Deprecation Policy</a></li>
-<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/0.6/javadoc/">Javadoc</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/main/javadoc/">Javadoc</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
 <ul>
@@ -534,6 +536,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.error</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExportError</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.graph_module</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_control_flow_submodules</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.operator.convert</span><span class="w"> </span><span class="kn">import</span> <span class="n">_pybind_schema_to_native_schema</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.operator.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">_QUANT_PRIMITIVES</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.pass_base</span><span class="w"> </span><span class="kn">import</span> <span class="n">PassBase</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.pass_manager</span><span class="w"> </span><span class="kn">import</span> <span class="n">PassType</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
@@ -554,6 +557,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.normalize_view_copy_base_pass</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">NormalizeViewCopyBasePass</span><span class="p">,</span>
 <span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.quant_fusion_pass</span><span class="w"> </span><span class="kn">import</span> <span class="n">quant_fusion_and_const_prop_pass</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.remove_graph_asserts_pass</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">RemoveGraphAssertsPass</span><span class="p">,</span>
     <span class="n">RemoveNonCoreAtenOpGraphAssertsPass</span><span class="p">,</span>
@@ -714,7 +718,28 @@
     <span class="k">return</span> <span class="n">new_signature</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_transform</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">passes</span><span class="p">:</span> <span class="n">PassType</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExportedProgram&quot;</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_transform</span><span class="p">(</span>
+    <span class="bp">self</span><span class="p">,</span>
+    <span class="o">*</span><span class="n">passes</span><span class="p">:</span> <span class="n">PassType</span><span class="p">,</span>
+    <span class="n">override_verifiers</span><span class="p">:</span> <span class="kc">None</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">Verifier</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExportedProgram&quot;</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Transforms the program according to the provided passes.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        self: The ExportedProgram instance to transform</span>
+<span class="sd">        *passes: A sequence of passes to apply to the program</span>
+<span class="sd">        override_verifiers: Optional list of verifier classes to use instead of the default verifiers.</span>
+<span class="sd">            This is needed if the transforms yields illegal graph that the default verifier cannot handle.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        ExportedProgram: A new ExportedProgram with the transformations applied, or self if no changes were made</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># A user friendly check to avoid vararg surprises, PEP 3102</span>
+    <span class="k">assert</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span>
+        <span class="nb">isinstance</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="n">Verifier</span><span class="p">))</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">passes</span>
+    <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Expected all passes to be of PassType, not list or Verifier. Use override_verifiers kwarg instead. Got: </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">passes</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+
     <span class="n">pm</span> <span class="o">=</span> <span class="n">PassManager</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">passes</span><span class="p">))</span>
     <span class="n">res</span> <span class="o">=</span> <span class="n">pm</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
     <span class="n">transformed_gm</span> <span class="o">=</span> <span class="n">res</span><span class="o">.</span><span class="n">graph_module</span> <span class="k">if</span> <span class="n">res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph_module</span>
@@ -723,7 +748,9 @@
     <span class="k">if</span> <span class="n">transformed_gm</span> <span class="ow">is</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph_module</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">res</span><span class="o">.</span><span class="n">modified</span><span class="p">:</span>
         <span class="k">return</span> <span class="bp">self</span>
 
-    <span class="k">return</span> <span class="n">_update_exported_program_graph_module</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">transformed_gm</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_update_exported_program_graph_module</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">transformed_gm</span><span class="p">,</span> <span class="n">override_verifiers</span>
+    <span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_update_exported_program_graph_module</span><span class="p">(</span>
@@ -1449,10 +1476,14 @@
     <span class="n">ops_set_to_not_decompose</span> <span class="o">=</span> <span class="p">{</span>
         <span class="n">aten_to_edge</span><span class="p">(</span><span class="n">op</span><span class="p">)</span> <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span>
     <span class="p">}</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="n">ops_set_to_not_decompose</span><span class="p">)</span>
+
+    <span class="n">quant_primitives</span> <span class="o">=</span> <span class="p">{</span><span class="n">aten_to_edge</span><span class="p">(</span><span class="n">op</span><span class="p">)</span> <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">_QUANT_PRIMITIVES</span><span class="p">}</span>
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
         <span class="n">is_op_supported</span> <span class="o">=</span> <span class="n">check_op_support</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="k">if</span> <span class="n">check_op_support</span> <span class="k">else</span> <span class="kc">True</span>
         <span class="k">if</span> <span class="p">(</span>
-            <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span>
+            <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span>
+            <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span>
+            <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">quant_primitives</span>
         <span class="p">)</span> <span class="ow">and</span> <span class="n">is_op_supported</span><span class="p">:</span>
             <span class="n">warning_str</span> <span class="o">=</span> <span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;Node </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> with op </span><span class="si">{</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="si">}</span><span class="s2"> was not decomposed or delegated.</span><span class="se">\n</span><span class="s2">&quot;</span>
@@ -1466,7 +1497,9 @@
         <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">submod</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
             <span class="n">is_op_supported</span> <span class="o">=</span> <span class="n">check_op_support</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="k">if</span> <span class="n">check_op_support</span> <span class="k">else</span> <span class="kc">True</span>
             <span class="k">if</span> <span class="p">(</span>
-                <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span>
+                <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span>
+                <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span>
+                <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">quant_primitives</span>
             <span class="p">)</span> <span class="ow">and</span> <span class="n">is_op_supported</span><span class="p">:</span>
                 <span class="n">warning_str</span> <span class="o">=</span> <span class="p">(</span>
                     <span class="sa">f</span><span class="s2">&quot;Node </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> with op </span><span class="si">{</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="si">}</span><span class="s2"> was not decomposed or delegated.</span><span class="se">\n</span><span class="s2">&quot;</span>
@@ -1488,7 +1521,7 @@
         <span class="k">try</span><span class="p">:</span>
             <span class="c1"># Ops in torch.ops.quant are not always loaded, so we use try/except</span>
             <span class="c1"># Aliases output, but we need to allow it for XNNPACK</span>
-            <span class="n">allow_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">quant</span><span class="o">.</span><span class="n">choose_qparams_affine</span><span class="o">.</span><span class="n">default</span><span class="p">)</span>
+            <span class="n">allow_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">torchao</span><span class="o">.</span><span class="n">choose_qparams_affine</span><span class="o">.</span><span class="n">default</span><span class="p">)</span>
         <span class="k">except</span><span class="p">:</span>
             <span class="k">pass</span>
 
@@ -1529,6 +1562,7 @@
             <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">item</span><span class="o">.</span><span class="n">default</span><span class="p">,</span>
             <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">_local_scalar_dense</span><span class="o">.</span><span class="n">default</span><span class="p">,</span>
             <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">unbind</span><span class="o">.</span><span class="n">int</span><span class="p">,</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">split_with_sizes</span><span class="o">.</span><span class="n">default</span><span class="p">,</span>
         <span class="p">]:</span>
             <span class="n">logging</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;Op </span><span class="si">{</span><span class="n">op</span><span class="si">}</span><span class="s2"> was requested for preservation by partitioner.  This request is ignored because it is in a blocklist.&quot;</span>
@@ -1827,7 +1861,7 @@
 <div class="viewcode-block" id="EdgeProgramManager"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager">[docs]</a><span class="k">class</span><span class="w"> </span><span class="nc">EdgeProgramManager</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Package of one or more `ExportedPrograms` in Edge dialect. Designed to simplify</span>
-<span class="sd">    lowering to ExecuTorch. See: https://pytorch.org/executorch/stable/ir-exir.html</span>
+<span class="sd">    lowering to ExecuTorch. See: https://pytorch.org/executorch/main/ir-exir</span>
 
 <span class="sd">    Allows easy applications of transforms across a collection of exported programs</span>
 <span class="sd">    including the delegation of subgraphs.</span>
@@ -2002,9 +2036,15 @@
 <span class="sd">            after it has been transformed to the ExecuTorch backend.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="k">if</span> <span class="n">config</span> <span class="k">else</span> <span class="n">ExecutorchBackendConfig</span><span class="p">()</span>
-
         <span class="n">execution_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">do_quant_fusion_and_const_prop</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">backward_signature</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span>
+                        <span class="s2">&quot;Cannot run do_quant_fusion_and_const_prop on a graph with a backward signature intended for on-device training.&quot;</span>
+                        <span class="s2">&quot; Please set do_quant_fusion_and_const_prop to False in the ExecutorchBackendConfig.&quot;</span>
+                    <span class="p">)</span>
+                <span class="n">program</span> <span class="o">=</span> <span class="n">quant_fusion_and_const_prop_pass</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
             <span class="n">program</span> <span class="o">=</span> <span class="n">weights_to_outputs_pass</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
             <span class="n">program</span> <span class="o">=</span> <span class="n">unsafe_remove_auto_functionalized_pass</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
             <span class="n">gm</span><span class="p">,</span> <span class="n">new_signature</span> <span class="o">=</span> <span class="n">insert_write_back_for_buffers_pass</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
@@ -2067,7 +2107,7 @@
 <div class="viewcode-block" id="ExecutorchProgramManager"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.ExecutorchProgramManager">[docs]</a><span class="k">class</span><span class="w"> </span><span class="nc">ExecutorchProgramManager</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Package of one or more `ExportedPrograms` in Execution dialect. Designed to simplify</span>
-<span class="sd">    lowering to ExecuTorch. See: https://pytorch.org/executorch/stable/ir-exir.html</span>
+<span class="sd">    lowering to ExecuTorch. See: https://pytorch.org/executorch/main/ir-exir</span>
 
 <span class="sd">    When the ExecutorchProgramManager is constructed the ExportedPrograms in execution dialect</span>
 <span class="sd">    are used to form the executorch binary (in a process called emission) and then serialized</span>
@@ -2114,6 +2154,7 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_execution_programs</span><span class="p">,</span>
             <span class="n">backend_config</span><span class="o">.</span><span class="n">emit_stacktrace</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span><span class="p">,</span>
+            <span class="n">backend_config</span><span class="o">.</span><span class="n">emit_mutable_buffer_names</span><span class="p">,</span>
         <span class="p">)</span>
 
         <span class="c1"># Serialize emitter output, ready to be written to a file.</span>
@@ -2356,14 +2397,14 @@ for (var i = 0; i < menuItems.length; i++) {
     $(".main-menu a:contains('GitHub')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
-    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
+    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
+    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
     // Mobile
     $(".mobile-menu a:contains('Github')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
-    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
+    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
+    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
 
   });
 </script>

@@ -5,11 +5,12 @@
 <!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
+  <meta name="robots" content="noindex">
   <meta charset="utf-8">
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Backends and Delegates &mdash; ExecuTorch 0.6 documentation</title>
+  <title>Backends and Delegates &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -297,7 +298,7 @@
           <div class="pytorch-left-menu-search">
             
     <div class="version">
-      <a href='https://pytorch.org/executorch/versions.html'>0.6 &#x25BC</a>
+      <a href='https://pytorch.org/executorch/versions.html'>main &#x25BC</a>
     </div>
     
 
@@ -343,6 +344,7 @@
 <ul>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">Building an ExecuTorch iOS Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial-arm-ethos-u.html">Arm Ethos-U Backend Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
 <ul>
@@ -351,7 +353,7 @@
 <li class="toctree-l1"><a class="reference internal" href="backends-coreml.html">Core ML Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-mps.html">MPS Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-vulkan.html">Vulkan Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">ARM Ethos-U Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">Arm(R) Ethos(TM)-U NPU Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
@@ -386,7 +388,7 @@
 <li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">Runtime Python API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">API Life Cycle and Deprecation Policy</a></li>
-<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/0.6/javadoc/">Javadoc</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/main/javadoc/">Javadoc</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
 <ul>
@@ -542,7 +544,7 @@ the <code class="docutils literal notranslate"><span class="pre">to_edge</span><
 <li><p>A runtime initialization and execution interface</p></li>
 </ol>
 <p>The diagram looks like following</p>
-<img src="./_static/img/backend_interface.png" alt="drawing" style="width:600px;"/>
+<img src="_static/img/backend_interface.png" alt="drawing" style="width:600px;"/>
 <p><strong>Figure 1.</strong> A high level of entry points for backend interfaces, including both ahead-of-time and runtime.</p>
 </div>
 <div class="section" id="backend-interfaces-ahead-of-time-preprocessing">
@@ -576,7 +578,7 @@ The demo loops through the nodes in the graph module of the <code class="docutil
 serializes the <code class="docutils literal notranslate"><span class="pre">add</span></code>, <code class="docutils literal notranslate"><span class="pre">mul</span></code>, and <code class="docutils literal notranslate"><span class="pre">sin</span></code> instructions into a string, which is later
 parsed and executed at runtime.</p>
 <p>The diagram looks like following</p>
-<img src="./_static/img/backend_interface_aot.png" alt="drawing" style="width:800px;"/>
+<img src="_static/img/backend_interface_aot.png" alt="drawing" style="width:800px;"/>
 <p><strong>Figure 2.</strong> The graph goes through partition and each subgraph will be sent to the preprocess part.</p>
 </div>
 <div class="section" id="backend-interfaces-runtime-initialization-and-execution">
@@ -608,7 +610,7 @@ function which will be called when the program is out of its lifespan.</p>
 </pre></div>
 </div>
 <p>The diagram looks like following</p>
-<img src="./_static/img/backend_interface_runtime.png" alt="drawing" style="width:600px;"/>
+<img src="_static/img/backend_interface_runtime.png" alt="drawing" style="width:600px;"/>
 <p><strong>Figure 3.</strong> The relationship between standard ExecuTorch Runtime and backend entry point.</p>
 <p>In order to make backend available to ExecuTorch runtime, it must be registered via the <code class="docutils literal notranslate"><span class="pre">register_backend</span></code> API:</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">ET_NODISCARD</span><span class="w"> </span><span class="n">Error</span><span class="w"> </span><span class="n">register_backend</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">Backend</span><span class="o">&amp;</span><span class="w"> </span><span class="n">backend</span><span class="p">);</span>
@@ -629,10 +631,10 @@ function which will be called when the program is out of its lifespan.</p>
 <p>Delegated program or subgraphs are opaque to ExecuTorch runtime and appear as a special <code class="docutils literal notranslate"><span class="pre">call_delegate</span></code> instruction, which asks corresponding backend to handle the execution of the subgraph or program. Due to the opaque nature of backend delgates, native Developer Tools does not have visibility into delegated program. Thus the debugging, functional or performance, experiences of delegated execution suffers significantly as compared to it’s non-delegated counterpart.</p>
 <p>In order to provide consistent debugging experience to users, regardless of the use of delegation for a model, Developer Tools provide an interface to correlate delegated (sub)graph to original (sub)graph. The Developer Tools do so via debug handles map which allows delegates to generate internal handles that can be associated with the original (sub)graph consumed by the delegate. Then at runtime, backend developer can report error or profiling information using the internal handle, which will be mapped to original (sub)graph using the debug handle map. For more information, please refer to <a class="reference internal" href="delegate-debugging.html"><span class="doc std std-doc">Delegate Debugging</span></a>.</p>
 <p>By leveraging the debug identifier, backend developer can embed the debug as part of the delegated blob</p>
-<img src="./_static/img/backend_debug_handle.png" alt="drawing" style="width:600px;"/>
+<img src="_static/img/backend_debug_handle.png" alt="drawing" style="width:600px;"/>
 <p>In this way, during execute stage, with the debug identifier, backend developer can associate the failed instruction inside the delegate
 back to the exact line of PyThon code.</p>
-<img src="./_static/img/backend_debug_handle_example.png" alt="drawing" style="width:700px;"/>
+<img src="_static/img/backend_debug_handle_example.png" alt="drawing" style="width:700px;"/>
 </div>
 <div class="section" id="common-questions">
 <h2>Common Questions<a class="headerlink" href="#common-questions" title="Permalink to this heading">¶</a></h2>
@@ -892,14 +894,14 @@ for (var i = 0; i < menuItems.length; i++) {
     $(".main-menu a:contains('GitHub')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
-    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
+    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
+    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
     // Mobile
     $(".mobile-menu a:contains('Github')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
-    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
+    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
+    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
 
   });
 </script>

@@ -155,9 +155,9 @@ public interface <span class="typeNameLabel"><a href=LlmCallback.html>LlmCallbac
                                         </tr>
                                         
                                         <tr id="i1" class="rowColor">
-                                            <td class="colFirst"><code>abstract void</code>
+                                            <td class="colFirst"><code>void</code>
                                             </td>
-                                            <th class="colSecond" scope="row"><code><a href=LlmCallback.html#onStats(float)>onStats</a>(float tps) </code>
+                                            <th class="colSecond" scope="row"><code><a href=LlmCallback.html#onStats(String)>onStats</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> stats) </code>
                                             </th>
                                             <td class="colLast">Called when the statistics for the generate() is available.</td>
                                         </tr>
@@ -219,7 +219,7 @@ public interface <span class="typeNameLabel"><a href=LlmCallback.html>LlmCallbac
                                     </li>
                                 </ul>
                                 
-                                <a id="onStats(float)">
+                                <a id="onStats(String)">
                                     <!--   -->
                                 </a>
                                 <ul class=
@@ -227,14 +227,14 @@ public interface <span class="typeNameLabel"><a href=LlmCallback.html>LlmCallbac
                                           >
                                     <li class="blockList">
                                         <h4>onStats</h4>
-                                        <pre class="methodSignature"> abstract void <a href=LlmCallback.html#onStats(float)>onStats</a>(float tps)</pre>
-                                        <div class="block"><p>Called when the statistics for the generate() is available.</p></div>
+                                        <pre class="methodSignature"> void <a href=LlmCallback.html#onStats(String)>onStats</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> stats)</pre>
+                                        <div class="block"><p>Called when the statistics for the generate() is available.</p><p>The result will be a JSON string. See extension/llm/stats.h for the field definitions.</p></div>
                                         
                                         <dl>
                                             <dt><span class="paramLabel">Parameters:</span></dt>
                                             
                                             
-                                            <dd><code>tps</code> - Tokens/second for generated tokens.</dd>
+                                            <dd><code>stats</code> - JSON string containing the statistics for the generate()</dd>
                                             
                                             
                                         </dl>
