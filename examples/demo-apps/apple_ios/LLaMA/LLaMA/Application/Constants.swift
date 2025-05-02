@@ -28,4 +28,3 @@ You are a helpful assistant.
     
 public static let phi4PromptTemplate = "<|user|>%@<|end|><|assistant|>"
 }
-
