@@ -42,6 +42,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.content.res.ResourcesCompat;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import java.lang.reflect.Type;
@@ -56,6 +57,7 @@ import org.pytorch.executorch.extension.llm.LlmModule;
 
 public class MainActivity extends AppCompatActivity implements Runnable, LlmCallback {
   private EditText mEditTextMessage;
+  private ImageButton mThinkModeButton;
   private ImageButton mSendButton;
   private ImageButton mGalleryButton;
   private ImageButton mCameraButton;
@@ -77,6 +79,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
   private SettingsFields mCurrentSettingsFields;
   private Handler mMemoryUpdateHandler;
   private Runnable memoryUpdater;
+  private boolean mThinkMode = false;
   private int promptID = 0;
   private long startPos = 0;
   private static final int CONVERSATION_HISTORY_MESSAGE_LOOKBACK = 2;
@@ -252,6 +255,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
       finish();
     }
 
+    mThinkModeButton = requireViewById(R.id.thinkModeButton);
     mEditTextMessage = requireViewById(R.id.editTextMessage);
     mSendButton = requireViewById(R.id.sendButton);
     mSendButton.setEnabled(false);
@@ -269,6 +273,20 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
         view -> {
           Intent myIntent = new Intent(MainActivity.this, SettingsActivity.class);
           MainActivity.this.startActivity(myIntent);
+        });
+
+    mThinkModeButton.setOnClickListener(
+        view -> {
+          if (mThinkMode) {
+            mThinkMode = false;
+            mThinkModeButton.setImageDrawable(
+                ResourcesCompat.getDrawable(
+                    getResources(), R.drawable.baseline_lightbulb_24, null));
+          } else {
+            mThinkMode = true;
+            mThinkModeButton.setImageDrawable(
+                ResourcesCompat.getDrawable(getResources(), R.drawable.blue_lightbulb_24, null));
+          }
         });
 
     mCurrentSettingsFields = new SettingsFields();
