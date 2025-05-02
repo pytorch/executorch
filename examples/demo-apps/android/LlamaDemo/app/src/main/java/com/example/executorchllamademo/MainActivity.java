@@ -287,6 +287,14 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
             mThinkModeButton.setImageDrawable(
                 ResourcesCompat.getDrawable(getResources(), R.drawable.blue_lightbulb_24, null));
           }
+          runOnUiThread(
+              () -> {
+                String thinkingModeText = mThinkMode ? "on" : "off";
+                mMessageAdapter.add(
+                    new Message(
+                        "Thinking mode is " + thinkingModeText, false, MessageType.SYSTEM, 0));
+                mMessageAdapter.notifyDataSetChanged();
+              });
         });
 
     mCurrentSettingsFields = new SettingsFields();
