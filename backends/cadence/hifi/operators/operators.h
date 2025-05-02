@@ -12,6 +12,11 @@
   _(uint8_t, Byte)                           \
   _(int8_t, Char)
 
+using ::executorch::aten::optional;
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::runtime::KernelRuntimeContext;
+
 namespace cadence {
 namespace impl {
 namespace HiFi {
@@ -35,6 +40,32 @@ void quantize_per_tensor_out(
     const ::executorch::aten::Tensor& b,
     ::executorch::aten::optional<::executorch::aten::string_view> mode,
     ::executorch::aten::Tensor& out);
+
+void quantized_linear_out(
+    __ET_UNUSED KernelRuntimeContext& ctx,
+    const Tensor& in,
+    const Tensor& weight,
+    const Tensor& bias,
+    int64_t in_zero_point,
+    const Tensor& weight_zero_point,
+    const Tensor& out_multiplier,
+    const Tensor& out_shift,
+    int64_t out_zero_point,
+    __ET_UNUSED const optional<Tensor>& offset,
+    Tensor& out);
+
+void quantized_linear_per_tensor_out(
+    __ET_UNUSED KernelRuntimeContext& ctx,
+    const Tensor& in,
+    const Tensor& weight,
+    const Tensor& bias,
+    int64_t in_zero_point,
+    int64_t weight_zero_point,
+    int64_t out_multiplier,
+    int64_t out_shift,
+    int64_t out_zero_point,
+    __ET_UNUSED const optional<Tensor>& offset,
+    Tensor& out);
 
 } // namespace native
 } // namespace HiFi
