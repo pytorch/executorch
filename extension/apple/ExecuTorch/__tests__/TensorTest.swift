@@ -593,4 +593,29 @@ class TensorTest: XCTestCase {
       }
     }
   }
+
+  func testOnes() {
+    let tensor = Tensor.ones(shape: [2, 3], dataType: .float)
+    XCTAssertEqual(tensor.shape, [2, 3])
+    XCTAssertEqual(tensor.count, 6)
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(dataType, .float)
+      let buffer = UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Float.self), count: count)
+      for value in buffer {
+        XCTAssertEqual(value, 1.0)
+      }
+    }
+  }
+
+  func testOnesLike() {
+    let other = Tensor.empty(shape: [2, 4], dataType: .double)
+    let tensor = Tensor.ones(like: other)
+    XCTAssertEqual(tensor.shape, other.shape)
+    tensor.bytes { pointer, count, dataType in
+      let buffer = UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Double.self), count: count)
+      for value in buffer {
+        XCTAssertEqual(value, 1.0)
+      }
+    }
+  }
 }

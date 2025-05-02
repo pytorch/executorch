@@ -839,4 +839,67 @@ __attribute__((deprecated("This API is experimental.")))
 
 @end
 
+#pragma mark - Ones Category
+
+@interface ExecuTorchTensor (Ones)
+
+/**
+ * Creates a tensor filled with ones, with the specified shape, data type, and shape dynamism.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with ones.
+ */
++ (instancetype)onesTensorWithShape:(NSArray<NSNumber *> *)shape
+                           dataType:(ExecuTorchDataType)dataType
+                      shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(ones(shape:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor filled with ones, with the specified shape and data type.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @return A new ExecuTorchTensor instance filled with ones.
+ */
++ (instancetype)onesTensorWithShape:(NSArray<NSNumber *> *)shape
+                           dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(ones(shape:dataType:));
+
+/**
+ * Creates a tensor filled with ones similar to an existing tensor, with the specified data type and shape dynamism.
+ *
+ * @param tensor An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param dataType An ExecuTorchDataType value specifying the desired element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with ones.
+ */
++ (instancetype)onesTensorLikeTensor:(ExecuTorchTensor *)tensor
+                            dataType:(ExecuTorchDataType)dataType
+                       shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(ones(like:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor filled with ones similar to an existing tensor, with the specified data type.
+ *
+ * @param tensor An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param dataType An ExecuTorchDataType value specifying the desired element type.
+ * @return A new ExecuTorchTensor instance filled with ones.
+ */
++ (instancetype)onesTensorLikeTensor:(ExecuTorchTensor *)tensor
+                            dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(ones(like:dataType:));
+
+/**
+ * Creates a tensor filled with ones similar to an existing tensor.
+ *
+ * @param tensor An existing ExecuTorchTensor instance.
+ * @return A new ExecuTorchTensor instance filled with ones.
+ */
++ (instancetype)onesTensorLikeTensor:(ExecuTorchTensor *)tensor
+    NS_SWIFT_NAME(ones(like:));
+
+@end
+
 NS_ASSUME_NONNULL_END
