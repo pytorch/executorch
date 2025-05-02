@@ -37,7 +37,7 @@ Download already exported LLaMA/LLaVA models along with tokenizers from [Hugging
 
 4. To run on a device, ensure you have it set up for development and a provisioning profile with the `increased-memory-limit` entitlement. Update the app's bundle identifier to match your provisioning profile with the required capability.
 
-5. After successfully launching the app, copy the exported ExecuTorch model (`.pte`) and tokenizer (`.model`) files to the iLLaMA folder. Three models are currently supported at the moment - Llama, Qwen3, Phi4-mini, and Llava multimodal. Please ensure that your model `.pte` file starts with `llama`, `qwen3`, `phi4` or `llava` so that the app selects the correct model type.
+5. After successfully launching the app, copy the exported ExecuTorch model (`.pte`) and tokenizer (`.model`) files to the iLLaMA folder. Four models are currently supported at the moment - Llama, Qwen3, Phi4-mini, and Llava multimodal. Please ensure that your model `.pte` file starts with `llama`, `qwen3`, `phi4` or `llava` so that the app selects the correct model type.
 
     - **For the Simulator:** Drag and drop both files onto the Simulator window and save them in the `On My iPhone > iLLaMA` folder.
     - **For a Device:** Open a separate Finder window, navigate to the Files tab, drag and drop both files into the iLLaMA folder, and wait for the copying to finish.
