@@ -980,4 +980,87 @@ __attribute__((deprecated("This API is experimental.")))
 
 @end
 
+#pragma mark - RandomNormal Category
+
+@interface ExecuTorchTensor (RandomNormal)
+
+/**
+ * Creates a tensor with random values drawn from a normal distribution,
+ * with full specification of shape, strides, data type, and shape dynamism.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param strides An NSArray of NSNumber objects representing the desired strides.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with values from a normal distribution.
+ */
++ (instancetype)randomNormalTensorWithShape:(NSArray<NSNumber *> *)shape
+                                    strides:(NSArray<NSNumber *> *)strides
+                                   dataType:(ExecuTorchDataType)dataType
+                              shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(randn(shape:strides:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor with random values drawn from a normal distribution,
+ * with the specified shape and data type.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with values from a normal distribution.
+ */
++ (instancetype)randomNormalTensorWithShape:(NSArray<NSNumber *> *)shape
+                                   dataType:(ExecuTorchDataType)dataType
+                              shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(randn(shape:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor with random values drawn from a normal distribution,
+ * with the specified shape (using dynamic bound shape) and data type.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @return A new ExecuTorchTensor instance filled with values from a normal distribution.
+ */
++ (instancetype)randomNormalTensorWithShape:(NSArray<NSNumber *> *)shape
+                                   dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(randn(shape:dataType:));
+
+/**
+ * Creates a tensor with random normal values similar to an existing tensor,
+ * with the specified data type and shape dynamism.
+ *
+ * @param tensor An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param dataType An ExecuTorchDataType value specifying the desired element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with values from a normal distribution.
+ */
++ (instancetype)randomNormalTensorLikeTensor:(ExecuTorchTensor *)tensor
+                                    dataType:(ExecuTorchDataType)dataType
+                               shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(randn(like:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor with random normal values similar to an existing tensor,
+ * with the specified data type.
+ *
+ * @param tensor An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param dataType An ExecuTorchDataType value specifying the desired element type.
+ * @return A new ExecuTorchTensor instance filled with values from a normal distribution.
+ */
++ (instancetype)randomNormalTensorLikeTensor:(ExecuTorchTensor *)tensor
+                                    dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(randn(like:dataType:));
+
+/**
+ * Creates a tensor with random normal values similar to an existing tensor.
+ *
+ * @param tensor An existing ExecuTorchTensor instance.
+ * @return A new ExecuTorchTensor instance filled with values from a normal distribution.
+ */
++ (instancetype)randomNormalTensorLikeTensor:(ExecuTorchTensor *)tensor
+    NS_SWIFT_NAME(randn(like:));
+
+@end
+
 NS_ASSUME_NONNULL_END
