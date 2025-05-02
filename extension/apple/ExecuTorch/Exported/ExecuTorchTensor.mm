@@ -775,3 +775,61 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
 }
 
 @end
+
+@implementation ExecuTorchTensor (Random)
+
++ (instancetype)randomTensorWithShape:(NSArray<NSNumber *> *)shape
+                              strides:(NSArray<NSNumber *> *)strides
+                             dataType:(ExecuTorchDataType)dataType
+                        shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  auto tensor = rand_strided(
+    utils::toVector<SizesType>(shape),
+    utils::toVector<StridesType>(strides),
+    static_cast<ScalarType>(dataType),
+    static_cast<TensorShapeDynamism>(shapeDynamism)
+  );
+  return [[self alloc] initWithNativeInstance:&tensor];
+}
+
++ (instancetype)randomTensorWithShape:(NSArray<NSNumber *> *)shape
+                             dataType:(ExecuTorchDataType)dataType
+                        shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self randomTensorWithShape:shape
+                             strides:@[]
+                            dataType:dataType
+                       shapeDynamism:shapeDynamism];
+}
+
++ (instancetype)randomTensorWithShape:(NSArray<NSNumber *> *)shape
+                             dataType:(ExecuTorchDataType)dataType {
+  return [self randomTensorWithShape:shape
+                             strides:@[]
+                            dataType:dataType
+                       shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
++ (instancetype)randomTensorLikeTensor:(ExecuTorchTensor *)tensor
+                              dataType:(ExecuTorchDataType)dataType
+                         shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self randomTensorWithShape:tensor.shape
+                             strides:tensor.strides
+                            dataType:dataType
+                       shapeDynamism:shapeDynamism];
+}
+
++ (instancetype)randomTensorLikeTensor:(ExecuTorchTensor *)tensor
+                              dataType:(ExecuTorchDataType)dataType {
+  return [self randomTensorWithShape:tensor.shape
+                             strides:tensor.strides
+                            dataType:dataType
+                       shapeDynamism:tensor.shapeDynamism];
+}
+
++ (instancetype)randomTensorLikeTensor:(ExecuTorchTensor *)tensor {
+  return [self randomTensorWithShape:tensor.shape
+                             strides:tensor.strides
+                            dataType:tensor.dataType
+                       shapeDynamism:tensor.shapeDynamism];
+}
+
+@end
