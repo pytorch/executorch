@@ -1063,4 +1063,111 @@ __attribute__((deprecated("This API is experimental.")))
 
 @end
 
+#pragma mark - RandomInteger Category
+
+@interface ExecuTorchTensor (RandomInteger)
+
+/**
+ * Creates a tensor with random integer values in the specified range,
+ * with full specification of shape, strides, data type, and shape dynamism.
+ *
+ * @param low An NSInteger specifying the inclusive lower bound of random values.
+ * @param high An NSInteger specifying the exclusive upper bound of random values.
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param strides An NSArray of NSNumber objects representing the desired strides.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with random integer values.
+ */
++ (instancetype)randomIntegerTensorWithLow:(NSInteger)low
+                                      high:(NSInteger)high
+                                     shape:(NSArray<NSNumber *> *)shape
+                                   strides:(NSArray<NSNumber *> *)strides
+                                  dataType:(ExecuTorchDataType)dataType
+                             shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(randint(low:high:shape:strides:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor with random integer values in the specified range,
+ * with the given shape and data type.
+ *
+ * @param low An NSInteger specifying the inclusive lower bound of random values.
+ * @param high An NSInteger specifying the exclusive upper bound of random values.
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with random integer values.
+ */
++ (instancetype)randomIntegerTensorWithLow:(NSInteger)low
+                                      high:(NSInteger)high
+                                     shape:(NSArray<NSNumber *> *)shape
+                                  dataType:(ExecuTorchDataType)dataType
+                             shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(randint(low:high:shape:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor with random integer values in the specified range,
+ * with the given shape (using dynamic bound shape) and data type.
+ *
+ * @param low An NSInteger specifying the inclusive lower bound of random values.
+ * @param high An NSInteger specifying the exclusive upper bound of random values.
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @return A new ExecuTorchTensor instance filled with random integer values.
+ */
++ (instancetype)randomIntegerTensorWithLow:(NSInteger)low
+                                      high:(NSInteger)high
+                                     shape:(NSArray<NSNumber *> *)shape
+                                  dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(randint(low:high:shape:dataType:));
+
+/**
+ * Creates a tensor with random integer values in the specified range, similar to an existing tensor,
+ * with the given data type and shape dynamism.
+ *
+ * @param tensor An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param low An NSInteger specifying the inclusive lower bound of random values.
+ * @param high An NSInteger specifying the exclusive upper bound of random values.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with random integer values.
+ */
++ (instancetype)randomIntegerTensorLikeTensor:(ExecuTorchTensor *)tensor
+                                          low:(NSInteger)low
+                                         high:(NSInteger)high
+                                     dataType:(ExecuTorchDataType)dataType
+                                shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(randint(like:low:high:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor with random integer values in the specified range, similar to an existing tensor,
+ * with the given data type.
+ *
+ * @param tensor An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param low An NSInteger specifying the inclusive lower bound of random values.
+ * @param high An NSInteger specifying the exclusive upper bound of random values.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @return A new ExecuTorchTensor instance filled with random integer values.
+ */
++ (instancetype)randomIntegerTensorLikeTensor:(ExecuTorchTensor *)tensor
+                                          low:(NSInteger)low
+                                         high:(NSInteger)high
+                                     dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(randint(like:low:high:dataType:));
+
+/**
+ * Creates a tensor with random integer values in the specified range, similar to an existing tensor.
+ *
+ * @param tensor An existing ExecuTorchTensor instance.
+ * @param low An NSInteger specifying the inclusive lower bound of random values.
+ * @param high An NSInteger specifying the exclusive upper bound of random values.
+ * @return A new ExecuTorchTensor instance filled with random integer values.
+ */
++ (instancetype)randomIntegerTensorLikeTensor:(ExecuTorchTensor *)tensor
+                                          low:(NSInteger)low
+                                         high:(NSInteger)high
+    NS_SWIFT_NAME(randint(like:low:high:));
+
+@end
+
 NS_ASSUME_NONNULL_END
