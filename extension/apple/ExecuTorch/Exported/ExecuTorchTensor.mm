@@ -649,3 +649,79 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
 }
 
 @end
+
+@implementation ExecuTorchTensor (Full)
+
++ (instancetype)fullTensorWithShape:(NSArray<NSNumber *> *)shape
+                             scalar:(NSNumber *)scalar
+                            strides:(NSArray<NSNumber *> *)strides
+                           dataType:(ExecuTorchDataType)dataType
+                      shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  Scalar fillValue;
+  ET_SWITCH_REALHBBF16_AND_UINT_TYPES(
+    static_cast<ScalarType>(dataType), nil, "fullTensor", CTYPE, [&] {
+      fillValue = utils::extractValue<CTYPE>(scalar);
+    }
+  );
+  auto tensor = full_strided(
+    utils::toVector<SizesType>(shape),
+    utils::toVector<StridesType>(strides),
+    fillValue,
+    static_cast<ScalarType>(dataType),
+    static_cast<TensorShapeDynamism>(shapeDynamism)
+  );
+  return [[self alloc] initWithNativeInstance:&tensor];
+}
+
++ (instancetype)fullTensorWithShape:(NSArray<NSNumber *> *)shape
+                             scalar:(NSNumber *)scalar
+                           dataType:(ExecuTorchDataType)dataType
+                      shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self fullTensorWithShape:shape
+                            scalar:scalar
+                           strides:@[]
+                          dataType:dataType
+                     shapeDynamism:shapeDynamism];
+}
+
++ (instancetype)fullTensorWithShape:(NSArray<NSNumber *> *)shape
+                             scalar:(NSNumber *)scalar
+                           dataType:(ExecuTorchDataType)dataType {
+  return [self fullTensorWithShape:shape
+                            scalar:scalar
+                           strides:@[]
+                          dataType:dataType
+                     shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
++ (instancetype)fullTensorLikeTensor:(ExecuTorchTensor *)tensor
+                              scalar:(NSNumber *)scalar
+                            dataType:(ExecuTorchDataType)dataType
+                       shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self fullTensorWithShape:tensor.shape
+                            scalar:scalar
+                           strides:tensor.strides
+                          dataType:dataType
+                     shapeDynamism:shapeDynamism];
+}
+
++ (instancetype)fullTensorLikeTensor:(ExecuTorchTensor *)tensor
+                              scalar:(NSNumber *)scalar
+                            dataType:(ExecuTorchDataType)dataType {
+  return [self fullTensorWithShape:tensor.shape
+                            scalar:scalar
+                           strides:tensor.strides
+                          dataType:dataType
+                     shapeDynamism:tensor.shapeDynamism];
+}
+
++ (instancetype)fullTensorLikeTensor:(ExecuTorchTensor *)tensor
+                              scalar:(NSNumber *)scalar {
+  return [self fullTensorWithShape:tensor.shape
+                            scalar:scalar
+                           strides:tensor.strides
+                          dataType:tensor.dataType
+                     shapeDynamism:tensor.shapeDynamism];
+}
+
+@end
