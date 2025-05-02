@@ -86,6 +86,7 @@ struct ContentView: View {
     case llama
     case llava
     case qwen3
+    case phi4
     
     static func fromPath(_ path: String) -> ModelType {
       let filename = (path as NSString).lastPathComponent.lowercased()
@@ -95,8 +96,10 @@ struct ContentView: View {
         return .llava
       } else if filename.hasPrefix("qwen3") {
         return .qwen3
+      } else if filename.hasPrefix("phi4") {
+        return .phi4
       }
-      print("Unknown model type in path: \(path). Model filename should start with one of: llama, llava, or qwen3")
+      print("Unknown model type in path: \(path). Model filename should start with one of: llama, llava, qwen3, or phi4")
       exit(1)
     }
   }
@@ -343,7 +346,7 @@ struct ContentView: View {
       }
 
       switch modelType {
-      case .llama, .qwen3:
+      case .llama, .qwen3, .phi4:
         runnerHolder.runner = runnerHolder.runner ?? Runner(modelPath: modelPath, tokenizerPath: tokenizerPath)
       case .llava:
         runnerHolder.llavaRunner = runnerHolder.llavaRunner ?? LLaVARunner(modelPath: modelPath, tokenizerPath: tokenizerPath)
@@ -351,7 +354,7 @@ struct ContentView: View {
 
       guard !shouldStopGenerating else { return }
       switch modelType {
-      case .llama, .qwen3:
+      case .llama, .qwen3, .phi4:
         if let runner = runnerHolder.runner, !runner.isLoaded() {
           var error: Error?
           let startLoadTime = Date()
@@ -474,12 +477,14 @@ struct ContentView: View {
             prompt = String(format: Constants.llama3PromptTemplate, text)
           case .llava:
             prompt = String(format: Constants.llama3PromptTemplate, text)
+          case .phi4:
+              prompt = String(format: Constants.phi4PromptTemplate, text)
           }
 
           try runnerHolder.runner?.generate(prompt, sequenceLength: seq_len) { token in
 
             if token != prompt {
-              if token == "<|eot_id|>" {
+                if token == "<|eot_id|>" {
                 // hack to fix the issue that extension/llm/runner/text_token_generator.h
                 // keeps generating after <|eot_id|>
                 shouldStopShowingToken = true
