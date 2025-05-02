@@ -236,13 +236,21 @@ def build_rescale_v0_80(
 # For TOSA spec v1.0 RESCALE operator requires multipler, shifts, input_zp and output_zp to be
 # const inputs. Create constant operators from the data already initialized.
 def create_const_ops_for_rescale(
-    tosa_fb, input_dtype, input_name, multipliers, shifts, input_zp, output_zp, ts
+    tosa_fb,
+    scale_32,
+    input_dtype,
+    input_name,
+    multipliers,
+    shifts,
+    input_zp,
+    output_zp,
+    output_dtype,
+    ts,
 ):
-    output_dtype = ts.DType.INT32 if input_dtype == ts.DType.INT8 else ts.DType.INT8
 
     multipliers = tosa_fb.addConst(
         (len(multipliers),),
-        ts.DType.INT32,
+        ts.DType.INT32 if scale_32 else ts.DType.INT16,
         multipliers,
         name=input_name + "_multipliers",
     )
@@ -275,20 +283,24 @@ def build_rescale(
 
     input_name = input_node.name
 
-    multipliers, shifts = compute_multiplier_and_shift(scale, 32)
+    scaleWidth = 32
+    is_scale32 = True
+    multipliers, shifts = compute_multiplier_and_shift(scale, scaleWidth)
     rescale_inputs = create_const_ops_for_rescale(
         tosa_fb,
+        is_scale32,
         input_node.dtype,
         input_name,
         multipliers,
         shifts,
         input_zp,
         output_zp,
+        output_type,
         ts,
     )
     attr_rescale = ts.TosaSerializerAttribute()
     attr_rescale.RescaleAttribute(
-        scale32=True,
+        scale32=is_scale32,
         rounding_mode=rounding_mode,
         per_channel=per_channel,
         input_unsigned=False,
