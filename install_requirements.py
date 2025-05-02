@@ -170,15 +170,15 @@ def install_optional_example_requirements(use_pytorch_nightly):
 # Prebuilt binaries for Intel-based macOS are no longer available on PyPI; users must compile from source.
 # PyTorch stopped building macOS x86_64 binaries since version 2.3.0 (January 2024).
 def is_intel_mac_os():
-    # Returns True if running on Intel-based macOS
+    # Returns True if running on Intel macOS
     if platform.system().lower() == "darwin" and platform.machine().lower() in (
         "x86",
         "x86_64",
         "i386",
     ):
         print(
-            "ERROR: Prebuilt PyTorch binaries are no longer available for Intel-based macOS.\n"
-            "Please compile from source by following https://pytorch.org/executorch/0.6/using-executorch-building-from-source.html",
+            "ERROR: Prebuilt PyTorch wheels are no longer available for Intel-based macOS.\n"
+            "Please build from source by following https://docs.pytorch.org/executorch/main/using-executorch-building-from-source.html",
             file=sys.stderr,
         )
         return True
