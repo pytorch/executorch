@@ -748,4 +748,95 @@ __attribute__((deprecated("This API is experimental.")))
 
 @end
 
+#pragma mark - Full Category
+
+@interface ExecuTorchTensor (Full)
+
+/**
+ * Creates a tensor filled with the specified scalar value, with full specification of shape, strides, data type, and shape dynamism.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param scalar An NSNumber representing the value to fill the tensor.
+ * @param strides An NSArray of NSNumber objects representing the desired strides.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with the scalar value.
+ */
++ (instancetype)fullTensorWithShape:(NSArray<NSNumber *> *)shape
+                             scalar:(NSNumber *)scalar
+                            strides:(NSArray<NSNumber *> *)strides
+                           dataType:(ExecuTorchDataType)dataType
+                      shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(full(shape:scalar:strides:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor filled with the specified scalar value, with the given shape, data type, and shape dynamism.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param scalar An NSNumber representing the value to fill the tensor.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with the scalar value.
+ */
++ (instancetype)fullTensorWithShape:(NSArray<NSNumber *> *)shape
+                             scalar:(NSNumber *)scalar
+                           dataType:(ExecuTorchDataType)dataType
+                      shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(full(shape:scalar:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor filled with the specified scalar value, with the given shape and data type,
+ * using dynamic bound shape for strides and dimension order.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param scalar An NSNumber representing the value to fill the tensor.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @return A new ExecuTorchTensor instance filled with the scalar value.
+ */
++ (instancetype)fullTensorWithShape:(NSArray<NSNumber *> *)shape
+                             scalar:(NSNumber *)scalar
+                           dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(full(shape:scalar:dataType:));
+
+/**
+ * Creates a tensor filled with the specified scalar value, similar to an existing tensor, with the given data type and shape dynamism.
+ *
+ * @param tensr An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param scalar An NSNumber representing the value to fill the tensor.
+ * @param dataType An ExecuTorchDataType value specifying the desired element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with the scalar value.
+ */
++ (instancetype)fullTensorLikeTensor:(ExecuTorchTensor *)tensr
+                              scalar:(NSNumber *)scalar
+                            dataType:(ExecuTorchDataType)dataType
+                       shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(full(like:scalar:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor filled with the specified scalar value, similar to an existing tensor, with the given data type.
+ *
+ * @param tensr An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param scalar An NSNumber representing the value to fill the tensor.
+ * @param dataType An ExecuTorchDataType value specifying the desired element type.
+ * @return A new ExecuTorchTensor instance filled with the scalar value.
+ */
++ (instancetype)fullTensorLikeTensor:(ExecuTorchTensor *)tensr
+                              scalar:(NSNumber *)scalar
+                            dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(full(like:scalar:dataType:));
+
+/**
+ * Creates a tensor filled with the specified scalar value, similar to an existing tensor.
+ *
+ * @param tensr An existing ExecuTorchTensor instance.
+ * @param scalar An NSNumber representing the value to fill the tensor.
+ * @return A new ExecuTorchTensor instance filled with the scalar value.
+ */
++ (instancetype)fullTensorLikeTensor:(ExecuTorchTensor *)tensr
+                              scalar:(NSNumber *)scalar
+    NS_SWIFT_NAME(full(like:scalar:));
+
+@end
+
 NS_ASSUME_NONNULL_END
