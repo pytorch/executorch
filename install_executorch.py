@@ -196,9 +196,6 @@ def _list_pybind_defines(args) -> Tuple[bool, List[str]]:
 
 
 def main(args):
-    if not python_is_compatible():
-        sys.exit(1)
-
     parser = build_args_parser()
     args = parser.parse_args()
 
