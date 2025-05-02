@@ -725,3 +725,53 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
 }
 
 @end
+
+@implementation ExecuTorchTensor (Ones)
+
++ (instancetype)onesTensorWithShape:(NSArray<NSNumber *> *)shape
+                           dataType:(ExecuTorchDataType)dataType
+                      shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self fullTensorWithShape:shape
+                            scalar:@(1)
+                           strides:@[]
+                          dataType:dataType
+                     shapeDynamism:shapeDynamism];
+}
+
++ (instancetype)onesTensorWithShape:(NSArray<NSNumber *> *)shape
+                           dataType:(ExecuTorchDataType)dataType {
+  return [self fullTensorWithShape:shape
+                            scalar:@(1)
+                           strides:@[]
+                          dataType:dataType
+                     shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
++ (instancetype)onesTensorLikeTensor:(ExecuTorchTensor *)tensor
+                            dataType:(ExecuTorchDataType)dataType
+                       shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self fullTensorWithShape:tensor.shape
+                            scalar:@(1)
+                           strides:tensor.strides
+                          dataType:dataType
+                     shapeDynamism:shapeDynamism];
+}
+
++ (instancetype)onesTensorLikeTensor:(ExecuTorchTensor *)tensor
+                            dataType:(ExecuTorchDataType)dataType {
+  return [self fullTensorWithShape:tensor.shape
+                            scalar:@(1)
+                           strides:tensor.strides
+                          dataType:dataType
+                     shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
++ (instancetype)onesTensorLikeTensor:(ExecuTorchTensor *)tensor {
+  return [self fullTensorWithShape:tensor.shape
+                            scalar:@(1)
+                           strides:tensor.strides
+                          dataType:tensor.dataType
+                     shapeDynamism:tensor.shapeDynamism];
+}
+
+@end
