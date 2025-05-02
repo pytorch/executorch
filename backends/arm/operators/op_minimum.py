@@ -109,7 +109,7 @@ class MinVisitor(NodeVisitor):
     ) -> None:
 
         import serializer.tosa_serializer as ts  # type: ignore
-        from tosa import NanPropagationMode  # type: ignore[import-untyped]
+        from tosa.NanPropagationMode import NanPropagationMode  # type: ignore
 
         if inputs[0].dtype != inputs[1].dtype and inputs[0].dtype != output.dtype:
             raise TypeError(
