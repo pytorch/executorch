@@ -593,4 +593,29 @@ class TensorTest: XCTestCase {
       }
     }
   }
+
+  func testZeros() {
+    let tensor = Tensor.zeros(shape: [2, 3], dataType: .double)
+    XCTAssertEqual(tensor.shape, [2, 3])
+    XCTAssertEqual(tensor.count, 6)
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(dataType, .double)
+      let buffer = UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Double.self), count: count)
+      for value in buffer {
+        XCTAssertEqual(value, 0)
+      }
+    }
+  }
+
+  func testZerosLike() {
+    let other = Tensor.full(shape: [3, 2], scalar: 9, dataType: .int)
+    let tensor = Tensor.zeros(like: other)
+    XCTAssertEqual(tensor.shape, other.shape)
+    tensor.bytes { pointer, count, dataType in
+      let buffer = UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Int32.self), count: count)
+      for value in buffer {
+        XCTAssertEqual(value, 0)
+      }
+    }
+  }
 }
