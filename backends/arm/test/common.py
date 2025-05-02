@@ -93,7 +93,7 @@ def get_tosa_compile_spec_unbuilt(
 def get_u55_compile_spec(
     macs: int = 128,
     system_config: str = "Ethos_U55_High_End_Embedded",
-    memory_mode: str = "Shared_Sram",
+    memory_mode: str = "Sram_Only",
     extra_flags: str = "--debug-force-regor --output-format=raw",
     custom_path: Optional[str] = None,
 ) -> list[CompileSpec]:
@@ -112,7 +112,7 @@ def get_u55_compile_spec(
 def get_u85_compile_spec(
     macs: int = 128,
     system_config="Ethos_U85_SYS_DRAM_Mid",
-    memory_mode="Shared_Sram",
+    memory_mode="Sram_Only",
     extra_flags="--output-format=raw",
     custom_path=None,
 ) -> list[CompileSpec]:
