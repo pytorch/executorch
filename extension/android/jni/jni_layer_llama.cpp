@@ -112,7 +112,7 @@ class ExecuTorchLlmCallbackJni
 class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
  private:
   friend HybridBase;
-  float temperature_;
+  float temperature_ = 0.0f;
   int model_type_category_;
   std::unique_ptr<llm::IRunner> runner_;
   std::unique_ptr<llm::MultimodalRunner> multi_modal_runner_;
@@ -146,6 +146,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       facebook::jni::alias_ref<jstring> tokenizer_path,
       jfloat temperature,
       facebook::jni::alias_ref<jstring> data_path = nullptr) {
+    temperature_ = temperature;
 #if defined(ET_USE_THREADPOOL)
     // Reserve 1 thread for the main thread.
     int32_t num_performant_cores =

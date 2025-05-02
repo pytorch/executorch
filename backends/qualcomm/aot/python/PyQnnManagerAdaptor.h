@@ -195,7 +195,7 @@ class PyQnnManager {
       std::vector<std::shared_ptr<OpWrapper>>& op_wrappers) {
     QnnExecuTorchContextBinary binary_info;
 
-    if (qnn_manager_->IsOnlinePrepare() || qnn_manager_->IsMultipleGraphs()) {
+    if (qnn_manager_->IsMultipleGraphs()) {
       builder_.Reset();
       std::vector<uint8_t> tensor_data;
       std::vector<uint64_t> offsets;
@@ -305,8 +305,11 @@ class PyQnnManager {
         QNN_EXECUTORCH_LOG_ERROR("Fail to compile QNN graph");
         return py::array_t<char>(0);
       }
-      if (qnn_manager_->GetContextBinary(binary_info) !=
-          executorch::runtime::Error::Ok) {
+      auto qnn_executorch_options = GetQnnExecuTorchOptions(
+          qnn_executorch_option_ptr_.cast<std::string_view>().data());
+      if (qnn_executorch_options->saver() ||
+          qnn_manager_->GetContextBinary(binary_info) !=
+              executorch::runtime::Error::Ok) {
         return py::array_t<char>(0);
       }
     }

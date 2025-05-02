@@ -112,14 +112,10 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
 
 - (BOOL)resizeToShape:(NSArray<NSNumber *> *)shape
                 error:(NSError **)error {
-  const auto resizeError = resize_tensor_ptr(
-    _tensor, utils::toVector<SizesType>(shape)
-  );
-  if (resizeError != Error::Ok) {
+  const auto errorCode = resize_tensor_ptr(_tensor, utils::toVector<SizesType>(shape));
+  if (errorCode != Error::Ok) {
     if (error) {
-      *error = [NSError errorWithDomain:ExecuTorchErrorDomain
-                                   code:(NSInteger)resizeError
-                               userInfo:nil];
+      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
     }
     return NO;
   }
@@ -592,6 +588,438 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
               dimensionOrder:@[]
                     dataType:(sizeof(scalar) == 8 ? ExecuTorchDataTypeUInt64 : ExecuTorchDataTypeUInt32)
                shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
+@end
+
+@implementation ExecuTorchTensor (Empty)
+
++ (instancetype)emptyTensorWithShape:(NSArray<NSNumber *> *)shape
+                             strides:(NSArray<NSNumber *> *)strides
+                            dataType:(ExecuTorchDataType)dataType
+                       shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  auto tensor = empty_strided(
+    utils::toVector<SizesType>(shape),
+    utils::toVector<StridesType>(strides),
+    static_cast<ScalarType>(dataType),
+    static_cast<TensorShapeDynamism>(shapeDynamism)
+  );
+  return [[self alloc] initWithNativeInstance:&tensor];
+}
+
++ (instancetype)emptyTensorWithShape:(NSArray<NSNumber *> *)shape
+                            dataType:(ExecuTorchDataType)dataType
+                       shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self emptyTensorWithShape:shape
+                            strides:@[]
+                           dataType:dataType
+                      shapeDynamism:shapeDynamism];
+}
+
++ (instancetype)emptyTensorWithShape:(NSArray<NSNumber *> *)shape
+                            dataType:(ExecuTorchDataType)dataType {
+  return [self emptyTensorWithShape:shape
+                            strides:@[]
+                           dataType:dataType
+                      shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
++ (instancetype)emptyTensorLikeTensor:(ExecuTorchTensor *)tensor
+                             dataType:(ExecuTorchDataType)dataType
+                        shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self emptyTensorWithShape:tensor.shape
+                            strides:tensor.strides
+                           dataType:dataType
+                      shapeDynamism:shapeDynamism];
+}
+
++ (instancetype)emptyTensorLikeTensor:(ExecuTorchTensor *)tensor
+                             dataType:(ExecuTorchDataType)dataType {
+  return [self emptyTensorWithShape:tensor.shape
+                            strides:tensor.strides
+                           dataType:dataType
+                      shapeDynamism:tensor.shapeDynamism];
+}
+
++ (instancetype)emptyTensorLikeTensor:(ExecuTorchTensor *)tensor {
+  return [self emptyTensorWithShape:tensor.shape
+                            strides:tensor.strides
+                           dataType:tensor.dataType
+                      shapeDynamism:tensor.shapeDynamism];
+}
+
+@end
+
+@implementation ExecuTorchTensor (Full)
+
++ (instancetype)fullTensorWithShape:(NSArray<NSNumber *> *)shape
+                             scalar:(NSNumber *)scalar
+                            strides:(NSArray<NSNumber *> *)strides
+                           dataType:(ExecuTorchDataType)dataType
+                      shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  Scalar fillValue;
+  ET_SWITCH_REALHBBF16_AND_UINT_TYPES(
+    static_cast<ScalarType>(dataType), nil, "fullTensor", CTYPE, [&] {
+      fillValue = utils::extractValue<CTYPE>(scalar);
+    }
+  );
+  auto tensor = full_strided(
+    utils::toVector<SizesType>(shape),
+    utils::toVector<StridesType>(strides),
+    fillValue,
+    static_cast<ScalarType>(dataType),
+    static_cast<TensorShapeDynamism>(shapeDynamism)
+  );
+  return [[self alloc] initWithNativeInstance:&tensor];
+}
+
++ (instancetype)fullTensorWithShape:(NSArray<NSNumber *> *)shape
+                             scalar:(NSNumber *)scalar
+                           dataType:(ExecuTorchDataType)dataType
+                      shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self fullTensorWithShape:shape
+                            scalar:scalar
+                           strides:@[]
+                          dataType:dataType
+                     shapeDynamism:shapeDynamism];
+}
+
++ (instancetype)fullTensorWithShape:(NSArray<NSNumber *> *)shape
+                             scalar:(NSNumber *)scalar
+                           dataType:(ExecuTorchDataType)dataType {
+  return [self fullTensorWithShape:shape
+                            scalar:scalar
+                           strides:@[]
+                          dataType:dataType
+                     shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
++ (instancetype)fullTensorLikeTensor:(ExecuTorchTensor *)tensor
+                              scalar:(NSNumber *)scalar
+                            dataType:(ExecuTorchDataType)dataType
+                       shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self fullTensorWithShape:tensor.shape
+                            scalar:scalar
+                           strides:tensor.strides
+                          dataType:dataType
+                     shapeDynamism:shapeDynamism];
+}
+
++ (instancetype)fullTensorLikeTensor:(ExecuTorchTensor *)tensor
+                              scalar:(NSNumber *)scalar
+                            dataType:(ExecuTorchDataType)dataType {
+  return [self fullTensorWithShape:tensor.shape
+                            scalar:scalar
+                           strides:tensor.strides
+                          dataType:dataType
+                     shapeDynamism:tensor.shapeDynamism];
+}
+
++ (instancetype)fullTensorLikeTensor:(ExecuTorchTensor *)tensor
+                              scalar:(NSNumber *)scalar {
+  return [self fullTensorWithShape:tensor.shape
+                            scalar:scalar
+                           strides:tensor.strides
+                          dataType:tensor.dataType
+                     shapeDynamism:tensor.shapeDynamism];
+}
+
+@end
+
+@implementation ExecuTorchTensor (Ones)
+
++ (instancetype)onesTensorWithShape:(NSArray<NSNumber *> *)shape
+                           dataType:(ExecuTorchDataType)dataType
+                      shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self fullTensorWithShape:shape
+                            scalar:@(1)
+                           strides:@[]
+                          dataType:dataType
+                     shapeDynamism:shapeDynamism];
+}
+
++ (instancetype)onesTensorWithShape:(NSArray<NSNumber *> *)shape
+                           dataType:(ExecuTorchDataType)dataType {
+  return [self fullTensorWithShape:shape
+                            scalar:@(1)
+                           strides:@[]
+                          dataType:dataType
+                     shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
++ (instancetype)onesTensorLikeTensor:(ExecuTorchTensor *)tensor
+                            dataType:(ExecuTorchDataType)dataType
+                       shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self fullTensorWithShape:tensor.shape
+                            scalar:@(1)
+                           strides:tensor.strides
+                          dataType:dataType
+                     shapeDynamism:shapeDynamism];
+}
+
++ (instancetype)onesTensorLikeTensor:(ExecuTorchTensor *)tensor
+                            dataType:(ExecuTorchDataType)dataType {
+  return [self fullTensorWithShape:tensor.shape
+                            scalar:@(1)
+                           strides:tensor.strides
+                          dataType:dataType
+                     shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
++ (instancetype)onesTensorLikeTensor:(ExecuTorchTensor *)tensor {
+  return [self fullTensorWithShape:tensor.shape
+                            scalar:@(1)
+                           strides:tensor.strides
+                          dataType:tensor.dataType
+                     shapeDynamism:tensor.shapeDynamism];
+}
+
+@end
+
+@implementation ExecuTorchTensor (Zeros)
+
++ (instancetype)zerosTensorWithShape:(NSArray<NSNumber *> *)shape
+                            dataType:(ExecuTorchDataType)dataType
+                       shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self fullTensorWithShape:shape
+                            scalar:@(0)
+                           strides:@[]
+                          dataType:dataType
+                     shapeDynamism:shapeDynamism];
+}
+
++ (instancetype)zerosTensorWithShape:(NSArray<NSNumber *> *)shape
+                            dataType:(ExecuTorchDataType)dataType {
+  return [self fullTensorWithShape:shape
+                            scalar:@(0)
+                           strides:@[]
+                          dataType:dataType
+                     shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
++ (instancetype)zerosTensorLikeTensor:(ExecuTorchTensor *)tensor
+                             dataType:(ExecuTorchDataType)dataType
+                        shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self fullTensorWithShape:tensor.shape
+                            scalar:@(0)
+                           strides:tensor.strides
+                          dataType:dataType
+                     shapeDynamism:shapeDynamism];
+}
+
++ (instancetype)zerosTensorLikeTensor:(ExecuTorchTensor *)tensor
+                             dataType:(ExecuTorchDataType)dataType {
+  return [self fullTensorWithShape:tensor.shape
+                            scalar:@(0)
+                           strides:tensor.strides
+                          dataType:dataType
+                     shapeDynamism:tensor.shapeDynamism];
+}
+
++ (instancetype)zerosTensorLikeTensor:(ExecuTorchTensor *)tensor {
+  return [self fullTensorWithShape:tensor.shape
+                            scalar:@(0)
+                           strides:tensor.strides
+                          dataType:tensor.dataType
+                     shapeDynamism:tensor.shapeDynamism];
+}
+
+@end
+
+@implementation ExecuTorchTensor (Random)
+
++ (instancetype)randomTensorWithShape:(NSArray<NSNumber *> *)shape
+                              strides:(NSArray<NSNumber *> *)strides
+                             dataType:(ExecuTorchDataType)dataType
+                        shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  auto tensor = rand_strided(
+    utils::toVector<SizesType>(shape),
+    utils::toVector<StridesType>(strides),
+    static_cast<ScalarType>(dataType),
+    static_cast<TensorShapeDynamism>(shapeDynamism)
+  );
+  return [[self alloc] initWithNativeInstance:&tensor];
+}
+
++ (instancetype)randomTensorWithShape:(NSArray<NSNumber *> *)shape
+                             dataType:(ExecuTorchDataType)dataType
+                        shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self randomTensorWithShape:shape
+                             strides:@[]
+                            dataType:dataType
+                       shapeDynamism:shapeDynamism];
+}
+
++ (instancetype)randomTensorWithShape:(NSArray<NSNumber *> *)shape
+                             dataType:(ExecuTorchDataType)dataType {
+  return [self randomTensorWithShape:shape
+                             strides:@[]
+                            dataType:dataType
+                       shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
++ (instancetype)randomTensorLikeTensor:(ExecuTorchTensor *)tensor
+                              dataType:(ExecuTorchDataType)dataType
+                         shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self randomTensorWithShape:tensor.shape
+                             strides:tensor.strides
+                            dataType:dataType
+                       shapeDynamism:shapeDynamism];
+}
+
++ (instancetype)randomTensorLikeTensor:(ExecuTorchTensor *)tensor
+                              dataType:(ExecuTorchDataType)dataType {
+  return [self randomTensorWithShape:tensor.shape
+                             strides:tensor.strides
+                            dataType:dataType
+                       shapeDynamism:tensor.shapeDynamism];
+}
+
++ (instancetype)randomTensorLikeTensor:(ExecuTorchTensor *)tensor {
+  return [self randomTensorWithShape:tensor.shape
+                             strides:tensor.strides
+                            dataType:tensor.dataType
+                       shapeDynamism:tensor.shapeDynamism];
+}
+
+@end
+
+@implementation ExecuTorchTensor (RandomNormal)
+
++ (instancetype)randomNormalTensorWithShape:(NSArray<NSNumber *> *)shape
+                                    strides:(NSArray<NSNumber *> *)strides
+                                   dataType:(ExecuTorchDataType)dataType
+                              shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  auto tensor = randn_strided(
+    utils::toVector<SizesType>(shape),
+    utils::toVector<StridesType>(strides),
+    static_cast<ScalarType>(dataType),
+    static_cast<TensorShapeDynamism>(shapeDynamism)
+  );
+  return [[self alloc] initWithNativeInstance:&tensor];
+}
+
++ (instancetype)randomNormalTensorWithShape:(NSArray<NSNumber *> *)shape
+                                   dataType:(ExecuTorchDataType)dataType
+                              shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self randomNormalTensorWithShape:shape
+                                   strides:@[]
+                                  dataType:dataType
+                             shapeDynamism:shapeDynamism];
+}
+
++ (instancetype)randomNormalTensorWithShape:(NSArray<NSNumber *> *)shape
+                                   dataType:(ExecuTorchDataType)dataType {
+  return [self randomNormalTensorWithShape:shape
+                                   strides:@[]
+                                  dataType:dataType
+                             shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
++ (instancetype)randomNormalTensorLikeTensor:(ExecuTorchTensor *)tensor
+                                    dataType:(ExecuTorchDataType)dataType
+                               shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self randomNormalTensorWithShape:tensor.shape
+                                   strides:tensor.strides
+                                  dataType:dataType
+                             shapeDynamism:shapeDynamism];
+}
+
++ (instancetype)randomNormalTensorLikeTensor:(ExecuTorchTensor *)tensor
+                                    dataType:(ExecuTorchDataType)dataType {
+  return [self randomNormalTensorWithShape:tensor.shape
+                                   strides:tensor.strides
+                                  dataType:dataType
+                             shapeDynamism:tensor.shapeDynamism];
+}
+
++ (instancetype)randomNormalTensorLikeTensor:(ExecuTorchTensor *)tensor {
+  return [self randomNormalTensorWithShape:tensor.shape
+                                   strides:tensor.strides
+                                  dataType:tensor.dataType
+                             shapeDynamism:tensor.shapeDynamism];
+}
+
+@end
+
+@implementation ExecuTorchTensor (RandomInteger)
+
++ (instancetype)randomIntegerTensorWithLow:(NSInteger)low
+                                      high:(NSInteger)high
+                                     shape:(NSArray<NSNumber *> *)shape
+                                   strides:(NSArray<NSNumber *> *)strides
+                                  dataType:(ExecuTorchDataType)dataType
+                             shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  auto tensor = randint_strided(
+    low,
+    high,
+    utils::toVector<SizesType>(shape),
+    utils::toVector<StridesType>(strides),
+    static_cast<ScalarType>(dataType),
+    static_cast<TensorShapeDynamism>(shapeDynamism)
+  );
+  return [[self alloc] initWithNativeInstance:&tensor];
+}
+
++ (instancetype)randomIntegerTensorWithLow:(NSInteger)low
+                                      high:(NSInteger)high
+                                     shape:(NSArray<NSNumber *> *)shape
+                                  dataType:(ExecuTorchDataType)dataType
+                             shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self randomIntegerTensorWithLow:low
+                                     high:high
+                                    shape:shape
+                                  strides:@[]
+                                 dataType:dataType
+                            shapeDynamism:shapeDynamism];
+}
+
++ (instancetype)randomIntegerTensorWithLow:(NSInteger)low
+                                      high:(NSInteger)high
+                                     shape:(NSArray<NSNumber *> *)shape
+                                  dataType:(ExecuTorchDataType)dataType {
+  return [self randomIntegerTensorWithLow:low
+                                     high:high
+                                    shape:shape
+                                  strides:@[]
+                                 dataType:dataType
+                            shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
++ (instancetype)randomIntegerTensorLikeTensor:(ExecuTorchTensor *)tensor
+                                          low:(NSInteger)low
+                                         high:(NSInteger)high
+                                     dataType:(ExecuTorchDataType)dataType
+                                shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self randomIntegerTensorWithLow:low
+                                     high:high
+                                    shape:tensor.shape
+                                  strides:tensor.strides
+                                 dataType:dataType
+                            shapeDynamism:shapeDynamism];
+}
+
++ (instancetype)randomIntegerTensorLikeTensor:(ExecuTorchTensor *)tensor
+                                          low:(NSInteger)low
+                                         high:(NSInteger)high
+                                     dataType:(ExecuTorchDataType)dataType {
+  return [self randomIntegerTensorWithLow:low
+                                     high:high
+                                    shape:tensor.shape
+                                  strides:tensor.strides
+                                 dataType:dataType
+                            shapeDynamism:tensor.shapeDynamism];
+}
+
++ (instancetype)randomIntegerTensorLikeTensor:(ExecuTorchTensor *)tensor
+                                          low:(NSInteger)low
+                                         high:(NSInteger)high {
+  return [self randomIntegerTensorWithLow:low
+                                     high:high
+                                    shape:tensor.shape
+                                  strides:tensor.strides
+                                 dataType:tensor.dataType
+                            shapeDynamism:tensor.shapeDynamism];
 }
 
 @end
