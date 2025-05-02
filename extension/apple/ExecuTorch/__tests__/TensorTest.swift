@@ -568,4 +568,29 @@ class TensorTest: XCTestCase {
     XCTAssertEqual(tensor.dimensionOrder, other.dimensionOrder)
     XCTAssertEqual(tensor.dataType, other.dataType)
   }
+
+  func testFull() {
+    let tensor = Tensor.full(shape: [2, 2], scalar: 7, dataType: .int)
+    XCTAssertEqual(tensor.shape, [2, 2])
+    XCTAssertEqual(tensor.count, 4)
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(dataType, .int)
+      let buffer = UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Int32.self), count: count)
+      for value in buffer {
+        XCTAssertEqual(value, 7)
+      }
+    }
+  }
+
+  func testFullLike() {
+    let other = Tensor.empty(shape: [2, 2], dataType: .int)
+    let tensor = Tensor.full(like: other, scalar: 42, dataType: .float)
+    XCTAssertEqual(tensor.shape, other.shape)
+    tensor.bytes { pointer, count, dataType in
+      let buffer = UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Float.self), count: count)
+      for value in buffer {
+        XCTAssertEqual(value, 42.0)
+      }
+    }
+  }
 }
