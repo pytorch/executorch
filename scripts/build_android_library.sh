@@ -32,7 +32,7 @@ build_android_native_library() {
     EXECUTORCH_BUILD_NEURON=OFF
   fi
 
-  EXECUTORCH_BUILD_VULKAN="${EXECUTORCH_BUILD_VULKAN:-OFF}"
+  EXECUTORCH_BUILD_VULKAN="${EXECUTORCH_BUILD_VULKAN:-ON}"
 
   cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
@@ -47,7 +47,7 @@ build_android_native_library() {
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
     -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=OFF \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM="${EXECUTORCH_BUILD_EXTENSION_LLM:-ON}" \
     -DEXECUTORCH_BUILD_NEURON="${EXECUTORCH_BUILD_NEURON}" \
@@ -88,6 +88,8 @@ build_android_native_library() {
   local SO_STAGE_DIR="cmake-out-android-so/${ANDROID_ABI}"
   mkdir -p ${SO_STAGE_DIR}
   cp "${CMAKE_OUT}"/extension/android/*.so "${SO_STAGE_DIR}/libexecutorch.so"
+  cp "${CMAKE_OUT}"/backends/vulkan/libvulkan_backend.so "${SO_STAGE_DIR}/libvulkan_backend.so"
+  cp "${CMAKE_OUT}"/*.so "${SO_STAGE_DIR}/"
 
   # Copy QNN related so library
   if [ -n "$QNN_SDK_ROOT" ] && [ "$ANDROID_ABI" == "arm64-v8a" ]; then

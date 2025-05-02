@@ -551,7 +551,7 @@ else()
   )
 endif()
 
-add_library(executorch_core ${_executorch_core__srcs})
+add_library(executorch_core SHARED ${_executorch_core__srcs})
 
 # Legacy name alias.
 add_library(executorch_no_prim_ops ALIAS executorch_core)
@@ -607,7 +607,7 @@ endif()
 # Does not contain portable kernels or other full operators. Does not contain
 # any backends.
 #
-add_library(executorch ${_executorch__srcs})
+add_library(executorch SHARED ${_executorch__srcs})
 target_link_libraries(executorch PUBLIC executorch_core)
 target_include_directories(executorch PUBLIC ${_common_include_directories})
 target_compile_definitions(executorch PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
