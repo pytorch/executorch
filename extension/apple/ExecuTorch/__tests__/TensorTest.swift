@@ -655,4 +655,28 @@ class TensorTest: XCTestCase {
     XCTAssertEqual(tensor.shape, other.shape)
     XCTAssertEqual(tensor.count, other.count)
   }
+
+  func testRandomInteger() {
+    let tensor = Tensor.randint(low: 10, high: 20, shape: [5], dataType: .int)
+    XCTAssertEqual(tensor.shape, [5])
+    XCTAssertEqual(tensor.count, 5)
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(dataType, .int)
+      let buffer = UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Int32.self), count: count)
+      for value in buffer {
+        XCTAssertTrue(value >= 10 && value < 20)
+      }
+    }
+  }
+
+  func testRandomIntegerLike() {
+    let other = Tensor.ones(shape: [5], dataType: .int)
+    let tensor = Tensor.randint(like: other, low: 100, high: 200)
+    tensor.bytes { pointer, count, dataType in
+      let buffer = UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Int32.self), count: count)
+      for value in buffer {
+        XCTAssertTrue(value >= 100 && value < 200)
+      }
+    }
+  }
 }
