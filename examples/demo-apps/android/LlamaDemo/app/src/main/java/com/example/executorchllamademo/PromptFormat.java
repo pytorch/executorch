@@ -80,7 +80,7 @@ public class PromptFormat {
       case LLAVA_1_5:
         return "</s>";
       case QWEN_3:
-        return "<|im_end|>";
+        return "<|endoftext|>";
       default:
         return "";
     }
