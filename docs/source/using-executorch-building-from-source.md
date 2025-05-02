@@ -61,7 +61,7 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
    # Install ExecuTorch pip package and its dependencies, as well as
    # development tools like CMake.
    # If developing on a Mac, make sure to install the Xcode Command Line Tools first.
-   # Intel-based macOS systems require building PyTorch from source (see below)
+   # Intel-based macOS systems require building PyTorch, Torchvision, and Torchaudio from source (see below)
    ./install_executorch.sh
    ```
   

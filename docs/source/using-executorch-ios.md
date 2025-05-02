@@ -114,7 +114,7 @@ python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 ./backends/apple/coreml/scripts/install_requirements.sh
 ```
 
-- **Intel-based macOS** systems require building PyTorch from source:  
+- **Intel-based macOS** systems require building PyTorch, Torchvision, and Torchaudio from source:  
   - Use the [`--use-pt-pinned-commit` flag](https://github.com/pytorch/executorch/blob/main/install_requirements.sh) to install Executorch with an existing PyTorch build.  
     See the [PyTorch instructions](https://github.com/pytorch/pytorch#installation) on how to build PyTorch from source.
     ```bash
