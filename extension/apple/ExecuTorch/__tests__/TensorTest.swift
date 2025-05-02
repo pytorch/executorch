@@ -618,4 +618,23 @@ class TensorTest: XCTestCase {
       }
     }
   }
+
+  func testRandom() {
+    let tensor = Tensor.rand(shape: [3, 3], dataType: .float)
+    XCTAssertEqual(tensor.shape, [3, 3])
+    XCTAssertEqual(tensor.count, 9)
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(dataType, .float)
+      let buffer = UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Float.self), count: count)
+      let uniqueValues = Set(buffer.map { $0 })
+      XCTAssertTrue(uniqueValues.count > 1)
+    }
+  }
+
+  func testRandomLike() {
+    let other = Tensor.full(shape: [3, 3], scalar: 9, dataType: .int)
+    let tensor = Tensor.rand(like: other)
+    XCTAssertEqual(tensor.shape, other.shape)
+    XCTAssertEqual(tensor.count, other.count)
+  }
 }
