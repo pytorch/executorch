@@ -22,7 +22,6 @@ from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.arm.tosa_utils import tosa_shape
 from torch.fx import Node
-from tosa.NanPropagationMode import NanPropagationMode  # type: ignore[import-untyped]
 
 
 @register_node_visitor
@@ -112,6 +111,7 @@ class MaxVisitor(NodeVisitor):
     ) -> None:
 
         import serializer.tosa_serializer as ts  # type: ignore
+        from tosa import NanPropagationMode  # type: ignore[import-untyped]
 
         if inputs[0].dtype != inputs[1].dtype and inputs[0].dtype != output.dtype:
             raise TypeError(
