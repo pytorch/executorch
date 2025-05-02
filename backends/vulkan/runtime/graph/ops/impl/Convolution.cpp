@@ -520,7 +520,7 @@ void add_conv1d_node(
       // out channels
       static_cast<uint32_t>(out_channels),
       // out batches
-      graph.size_at<uint32_t>(-3, out)};
+      utils::div_up_4(graph.size_at<uint32_t>(-3, out))};
   const utils::uvec3 local_size = graph.create_local_wg_size(global_size);
 
   Kernel1dParams kernel_params = {

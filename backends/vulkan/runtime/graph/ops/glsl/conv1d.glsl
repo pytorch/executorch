@@ -59,10 +59,6 @@ const lowp ivec4 bias_axis_map = unhash_axis_map(bias_layout);
 // This implementation performs N x out_C x out_L shader invocations, where each invocation
 // calculates the rolling kernel of the length dimension for each batch, i.e.,
 // computes out_L results.
-//
-// Note that we can rewrite this implementation as out_L * out_C * ceil(N / 4)
-// shader invocations, where each invocation computes 1 result. But that
-// performs worse.
 void main() {
   const ivec3 lpos = ivec3(gl_GlobalInvocationID);
 
