@@ -138,7 +138,8 @@ static constexpr NSInteger MAX_MODEL_OUTPUTS_COUNT = 50;
     if (!self.debugger) {
         return nil;
     }
-    
+
+    NSError *localError = nil;
     NSArray<MLMultiArray *> *modelOutputs = nil;
     NSArray<ETCoreMLModelStructurePath *> *operationPaths = self.debugger.operationPaths;
     NSDictionary<ETCoreMLModelStructurePath *, NSString *> *operationPathToDebugSymbolMap = self.debugger.operationPathToDebugSymbolMap;
@@ -150,8 +151,11 @@ static constexpr NSInteger MAX_MODEL_OUTPUTS_COUNT = 50;
                                                                               options:predictionOptions
                                                                                inputs:inputs
                                                                          modelOutputs:&modelOutputs
-                                                                                error:error];
+                                                                                error:&localError];
             if (!outputs) {
+                if (error) {
+                    *error = localError;
+                }
                 return nil;
             }
             

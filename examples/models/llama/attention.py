@@ -178,6 +178,7 @@ class AttentionMHA(Attention):
         self.dim = args.dim
         self.attention_qkv_bias = args.attention_qkv_bias
         self.use_qk_norm = args.use_qk_norm
+        self.qk_norm_before_rope = args.qk_norm_before_rope
 
         if self.use_qk_norm:
             q_norm_dim = self.head_dim
@@ -243,6 +244,10 @@ class AttentionMHA(Attention):
         k = k.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
         v = v.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
 
+        if self.use_qk_norm and self.qk_norm_before_rope:
+            q = self.q_norm_fn(q)
+            k = self.k_norm_fn(k)
+
         # RoPE relative positional embeddings
         q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
 
@@ -250,7 +255,7 @@ class AttentionMHA(Attention):
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
 
-        if self.use_qk_norm:
+        if self.use_qk_norm and not self.qk_norm_before_rope:
             q = self.q_norm_fn(q)
             k = self.k_norm_fn(k)
 

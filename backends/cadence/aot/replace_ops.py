@@ -32,7 +32,10 @@ from executorch.backends.cadence.aot.compiler_utils import (
     is_quantized_tensor,
     quantize_tensor_multiplier,
 )
-from executorch.backends.cadence.aot.fuse_ops import FuseCascadedViewOps
+from executorch.backends.cadence.aot.fuse_ops import (
+    FuseCascadedTransposeOrPermuteOps,
+    FuseCascadedViewOps,
+)
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
     register_cadence_pass,
@@ -2260,9 +2263,9 @@ class ReplaceSplitWithSlicePass(ExportPass):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class ReplacePowWithMullPass(ExportPass):
+class ReplacePowWithMulPass(ExportPass):
     """
-    Replace the pow op with degree 2 for a mul op.
+    Replace the pow op for a mul op.
     """
 
     def call_operator(
@@ -2272,22 +2275,130 @@ class ReplacePowWithMullPass(ExportPass):
         kwargs: Dict[str, Argument],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        # TODO(eigen): Add support for other degrees.
-        if (
-            op
-            not in {
-                exir_ops.edge.aten.pow.Scalar,
+        if not (
+            len(args) > 1
+            and isinstance(args[1], int)
+            and cast(int, args[1]) > 1
+            and cast(int, args[1]) < 5
+            and op
+            in {
+                exir_ops.edge.aten.pow.Tensor_Scalar,
             }
-            or args[0] != 2
         ):
             return super().call_operator(op, args, kwargs, meta)
 
+        x = args[0]
+        exponent = cast(int, args[1])
+
+        if exponent > 2:
+            for _ in range(exponent, 2, -1):
+                x = super().call_operator(
+                    exir_ops.edge.aten.mul.Tensor,
+                    (x, args[0]),
+                    {},
+                    meta,
+                )
         return super().call_operator(
             exir_ops.edge.aten.mul.Tensor,
-            (args[1], args[1]),
+            (x, args[0]),
             {},
             meta,
         )
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class ReplaceMatmulWithTransposedMatmulPass(ExportPass):
+    """
+    For certain backends, we have efficient kernels for transposed matmul. We
+    replace AxB with AxB' for such backends.
+    """
+
+    def call_operator(self, op, args, kwargs, meta):
+        if op != exir_ops.edge.cadence.quantized_matmul.default or args[-1] is True:
+            return super().call_operator(op, args, kwargs, meta)
+
+        # Get the args
+        if len(args) == 9:
+            (
+                X_arg,
+                X_zero_point,
+                Y_arg,
+                Y_zero_point,
+                bias,
+                out_multiplier,
+                out_shift,
+                out_zero_point,
+                transposed,
+            ) = args
+        elif len(args) == 8:
+            (
+                X_arg,
+                X_zero_point,
+                Y_arg,
+                Y_zero_point,
+                bias,
+                out_multiplier,
+                out_shift,
+                out_zero_point,
+            ) = args
+            transposed = False
+        else:
+            raise AssertionError(
+                f"Unexpected number of args for quantized_matmul: {len(args)}"
+            )
+
+        # If the matmul is already transposed, bail
+        if transposed:
+            return super().call_operator(op, args, kwargs, meta)
+
+        # Get the second tensor
+        Y_tensor = Y_arg.to_tensor() if isinstance(Y_arg, ProxyValue) else Y_arg
+        # Concretize the bias
+        zero_bias = super().call_operator(
+            exir_ops.edge.aten.full.default,
+            ([Y_tensor.size(-1)], 0),
+            {"dtype": torch.int32},
+            meta,
+        )
+
+        # If the arg was a ProxyValue, insert a transpose node. Otherwise we
+        # can simply transpose the tensor inplace.
+        if isinstance(Y_arg, ProxyValue):
+            transpose_args = (Y_arg, -1, -2)
+            transpose_node = super().call_operator(
+                exir_ops.edge.aten.transpose_copy.int,
+                transpose_args,
+                {},
+                meta,
+            )
+            Y_arg_t = transpose_node
+        else:
+            Y_arg_t = Y_tensor.transpose(-1, -2)
+
+        # Construct the new args, and return the transposed matmult op
+        new_args = (
+            X_arg,
+            X_zero_point,
+            Y_arg_t,
+            Y_zero_point,
+            zero_bias,
+            out_multiplier,
+            out_shift,
+            out_zero_point,
+            True,
+        )
+        return super().call_operator(op, new_args, kwargs, meta)
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        result = super().call(graph_module)
+        # Fuse any inserted transpose node with transpose/permute nodes
+        # surrounding it.
+        result = FuseCascadedTransposeOrPermuteOps()(result.graph_module)
+        assert result is not None
+        # Replace permute with transpose.
+        result = ReplacePermuteWithTransposePass()(result.graph_module)
+        assert result is not None
+        return result
 
 
 # This class encapsulates all the functions that replace/switch one op in the
@@ -2317,6 +2428,7 @@ class CadenceReplaceOpsInGraph:
         # This pass should be after passes that replace conv -> im2row + linear.
         ReplaceIm2RowWithViewPass,
         MakeSliceAndCatDimOutermostPass,
+        ReplaceMatmulWithTransposedMatmulPass,
         ReplaceNopTransposeOrPermuteWithViewPass,
         ReplaceLinearWithFullyConnectedOpPass,
         ReplaceScalarTensorWithFullPass,
@@ -2330,5 +2442,5 @@ class CadenceReplaceOpsInGraph:
         ReplaceWhereWithFullArgsWithWhereScalar,
         ReplaceGeluWithApproximateGeluPass,
         ReplaceSplitWithSlicePass,
-        ReplacePowWithMullPass,
+        ReplacePowWithMulPass,
     ]
