@@ -97,7 +97,7 @@ class TransformerBlock(nn.Module):
             self.feed_forward = FeedForward(args)
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
-    
+
     @classmethod
     def from_type(cls, layer_id, args, rope) -> "TransformerBlock":
         if args.attention_type not in ATTENTION_REGISTRY:
