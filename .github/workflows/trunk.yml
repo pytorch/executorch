@@ -176,12 +176,22 @@ jobs:
         # Test selective build
         PYTHON_EXECUTABLE=python bash examples/portable/scripts/test_demo_backend_delegation.sh "${BUILD_TOOL}"
 
-  test-arm-backend-delegation:
-    name: test-arm-backend-delegation
+  test-arm-backend:
+    name: test-arm-backend
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
+    strategy:
+      matrix:
+        include:
+          - test_arm_baremetal: test_pytest_ops_ethosu_fvp
+          - test_arm_baremetal: test_pytest_models_ethosu_fvp
+          - test_arm_baremetal: test_run_ethosu_fvp
+          - test_arm_baremetal: test_models_tosa
+          - test_arm_baremetal: test_models_ethos-u55
+          - test_arm_baremetal: test_models_ethos-u85
+      fail-fast: false
     with:
       runner: linux.2xlarge.memory
       docker-image: executorch-ubuntu-22.04-arm-sdk
@@ -202,34 +212,10 @@ jobs:
         # Hopefully this is high enough for this setup.
         sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
 
-        # Test ethos-u delegate examples with run.sh
-        backends/arm/test/test_arm_baremetal.sh test_full_ethosu_fvp
+        ARM_TEST=${{ matrix.test_arm_baremetal }}
 
-
-  test-arm-reference-delegation:
-    name: test-arm-reference-delegation
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    with:
-      runner: linux.2xlarge.memory
-      docker-image: executorch-ubuntu-22.04-arm-sdk
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        source .ci/scripts/utils.sh
-        install_executorch "--use-pt-pinned-commit"
-
-        .ci/scripts/setup-arm-baremetal-tools.sh
-
-        # Run arm unit tests using the simulator
-        backends/arm/test/test_arm_baremetal.sh test_pytest_ethosu_fvp
+        # Test test_arm_baremetal.sh with test
+        backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
 
   test-arm-cortex-m-size-test:
     name: test-arm-cortex-m-size-test

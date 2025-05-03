@@ -100,7 +100,6 @@ class TestRemoveOpsPasses(unittest.TestCase):
         p = RemoveNopAddOpPass()
 
         graph_after_passes = cast(PassResult, p(graph_module)).graph_module
-        graph_module.print_readable()
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.add.Tensor),
             0,
@@ -140,7 +139,6 @@ class TestRemoveOpsPasses(unittest.TestCase):
         p = RemoveNopMulOpPass()
 
         graph_after_passes = cast(PassResult, p(graph_module)).graph_module
-        graph_module.print_readable()
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.mul.Tensor),
             0,

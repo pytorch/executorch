@@ -41,6 +41,21 @@ runtime.python_library(
         "//executorch/exir:lib",
         "//executorch/exir/backend:backend_details",
         "//executorch/extension/export_util:export_util",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
         "//pytorch/tokenizers/pytorch_tokenizers:tokenizers",
+    ],
+)
+
+runtime.python_test(
+    name = "export_passes_test",
+    srcs = [
+        "test_export_passes.py",
+    ],
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+    ],
+    deps = [
+        ":export_lib",
     ],
 )

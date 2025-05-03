@@ -253,7 +253,8 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
       index,
       num_keys);
 
-  if (flat_tensor_->named_data() != nullptr && index < flat_tensor_->named_data()->size()) {
+  if (flat_tensor_->named_data() != nullptr &&
+      index < flat_tensor_->named_data()->size()) {
     return flat_tensor_->named_data()->Get(index)->key()->c_str();
   } else {
     if (flat_tensor_->named_data() != nullptr) {
