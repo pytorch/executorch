@@ -1279,6 +1279,7 @@ class TestPasses(unittest.TestCase):
             def __init__(self):
                 super().__init__()
                 self.linear = torch.nn.Linear(3, 3)
+                self.w = torch.randn(3, 3)
 
             def t(self, val):
                 return val + 1
@@ -1293,8 +1294,11 @@ class TestPasses(unittest.TestCase):
                 return self.linear(val) - self.f(val)
 
             def forward(self, pred, x):
+                out = torch.nn.functional.linear(
+                    x, self.w.to(torch.float16).to(torch.float32)
+                )
                 return torch.ops.higher_order.cond(
-                    pred, self.true_fn, self.false_fn, [x]
+                    pred, self.true_fn, self.false_fn, [out]
                 )
 
         mod = Module()
@@ -1304,14 +1308,48 @@ class TestPasses(unittest.TestCase):
             export(mod, (pred, x), strict=True),
             compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
-        error_msg = r"constant_prop_pass for control flow is not supported yet."
+        expected_out = edge.exported_program().module()(pred, x)
 
-        # TODO(chenlai): enable constant prop pass for control flow
-        with self.assertRaisesRegex(
-            RuntimeError,
-            error_msg,
-        ):
-            _ = constant_prop_pass(edge.exported_program())
+        warn_log = (
+            "constant_prop_pass does not constant propagate in control flow modules"
+        )
+        with self.assertLogs(level="WARNING") as log:
+            program = constant_prop_pass(edge.exported_program())
+            self.assertIn(warn_log, log.output[0])
+
+        out = program.module()(pred, x)
+        self.assertTrue(torch.allclose(expected_out, out))
+
+        # dtype casts in parent module are const propagated
+        FileCheck().check(
+            "executorch_exir_dialects_edge__ops_aten_mm_default(x, _prop_tensor_constant"
+        ).run(program.graph_module.code)
+
+    def test_constant_prop_pass_quant_primitives(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w_int = torch.ones(3, 3, dtype=torch.int8)
+                self.w_scale = 3.0
+                self.w_zero_point = 3
+
+            def forward(self, x):
+                w_dq = torch.ops.quantized_decomposed.dequantize_per_tensor.default(
+                    self.w_int, self.w_scale, self.w_zero_point, -127, 128, torch.int8
+                )
+                return torch.nn.functional.linear(x, w_dq)
+
+        mod = M()
+        x = torch.randn([3])
+        mod(x)
+        edge = to_edge(
+            export(mod, (x,), strict=True),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        constant_prop_pass(edge.exported_program())
+        FileCheck().check(
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default"
+        ).run(edge.exported_program().graph_module.code)
 
     def test_mutable_buffers(self) -> None:
         def count_copies(gm: torch.fx.GraphModule) -> int:

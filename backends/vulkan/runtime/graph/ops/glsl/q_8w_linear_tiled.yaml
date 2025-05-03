@@ -16,10 +16,10 @@ q_8w_linear_tiled:
     TILE_ROWS:
       - VALUE: 1
         SUFFIX: o4x1
+      - VALUE: 2
+        SUFFIX: o4x2
       - VALUE: 4
         SUFFIX: o4x4
-      - VALUE: 6
-        SUFFIX: o4x6
   shader_variants:
     - NAME: q_8w_linear_tiled_texture3d_texture3d_texture2d_texture2d_float
     - NAME: q_8w_linear_tiled_buffer_buffer_texture2d_texture2d_float
