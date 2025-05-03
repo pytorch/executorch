@@ -292,6 +292,9 @@ class XNNPACKQuantizer(Quantizer):
         ] = {}
         self.module_type_config: dict[Callable, Optional[QuantizationConfig]] = {}
         self.module_name_config: dict[str, Optional[QuantizationConfig]] = {}
+        # If specified, only quantize nodes that return true for the filter
+        # function.
+        self.filter_fn: Optional[Callable[[Node], bool]] = None
 
     @classmethod
     def get_supported_quantization_configs(cls) -> list[QuantizationConfig]:
@@ -355,6 +358,14 @@ class XNNPACKQuantizer(Quantizer):
         self.module_name_config[module_name] = quantization_config
         return self
 
+    def set_filter_function(self, filter_fn: Callable[[Node], bool]):
+        """
+        Set the filter function. We only quantize nodes that return True for
+        the filter function.
+        """
+        self.filter_fn = filter_fn
+        return self
+
     def transform_for_annotation(
         self, model: torch.fx.GraphModule
     ) -> torch.fx.GraphModule:
@@ -378,17 +389,29 @@ class XNNPACKQuantizer(Quantizer):
         if quantization_config is None:
             return model
 
+        # Create a combined filter function, which returns True only when
+        # both filter_fn and self.filter_fn return True.
+        def combined_filter_fn(n: Node) -> bool:
+            combined_filter = [self.filter_fn, filter_fn]
+            return all(f(n) for f in combined_filter if f is not None)
+
         for pattern in self.SUPPORTED_PATTERNS:
             if operator_target and operator_target not in pattern.op_overloads:
                 # if operator_target is specified, skip patterns that aren't
                 # associated with that target
                 continue
             if quantization_config.input_activation.is_dynamic and pattern.is_dynamic:
-                OP_TO_ANNOTATOR[pattern.name](model, quantization_config, filter_fn)
+                OP_TO_ANNOTATOR[pattern.name](
+                    model, quantization_config, combined_filter_fn
+                )
             elif quantization_config.is_qat and pattern.is_qat:
-                OP_TO_ANNOTATOR[pattern.name](model, quantization_config, filter_fn)
+                OP_TO_ANNOTATOR[pattern.name](
+                    model, quantization_config, combined_filter_fn
+                )
             elif not quantization_config.input_activation.is_dynamic:
-                OP_TO_ANNOTATOR[pattern.name](model, quantization_config, filter_fn)
+                OP_TO_ANNOTATOR[pattern.name](
+                    model, quantization_config, combined_filter_fn
+                )
 
         return model
 
