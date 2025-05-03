@@ -16,7 +16,6 @@ from executorch.backends.cadence.aot import compiler
 from executorch.backends.cadence.aot.compiler import (
     export_to_edge,
     quantize_and_export_to_edge,
-    quantize_pt2,
 )
 from executorch.backends.cadence.aot.graph_builder import (
     GraphBuilder,
@@ -113,9 +112,8 @@ class TestReplaceOpsPasses(unittest.TestCase):
         Y = torch.randn(y_shape)
         p = ReplaceMatmulWithTransposedMatmulPass()
         inputs = (X, Y)
-        quantized_model = quantize_pt2(model, inputs)
         graph_module = (
-            export_to_edge(quantized_model, inputs).exported_program().graph_module
+            quantize_and_export_to_edge(model, inputs).exported_program().graph_module
         )
         # pyre-fixme[16]: Optional type has no attribute `graph_module`
         graph_after_passes = p(graph_module).graph_module
