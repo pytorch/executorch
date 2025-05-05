@@ -15,7 +15,7 @@
 
 namespace vkcompute {
 
-void check_q_4w_linear_args(
+void check_linear_qga4w_args(
     ComputeGraph& graph,
     const ValueRef mat1,
     const ValueRef mat2_data,
@@ -43,7 +43,7 @@ void check_q_4w_linear_args(
   VK_CHECK_COND(graph.has_standard_axis_map(out));
 }
 
-void resize_q_4w_linear_node(
+void resize_linear_qga4w_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
@@ -118,14 +118,14 @@ ValueRef prepack_int4_linear_weight_transposed_interleaved(
   return qmat2;
 }
 
-void add_q_4w_linear_node(
+void add_linear_qga4w_node(
     ComputeGraph& graph,
     const ValueRef mat1,
     const ValueRef mat2_data,
     const ValueRef group_size,
     const ValueRef scales_and_zeros_data,
     const ValueRef out) {
-  check_q_4w_linear_args(
+  check_linear_qga4w_args(
       graph, mat1, mat2_data, group_size, scales_and_zeros_data, out);
 
   const uint32_t group_size_val = graph.extract_scalar<uint32_t>(group_size);
@@ -143,7 +143,7 @@ void add_q_4w_linear_node(
   ValueRef scales_and_zeros = prepack_standard_hw_transposed(
       graph, scales_and_zeros_data, utils::kBuffer, utils::kWidthPacked);
 
-  std::string kernel_name = "q_4w_linear";
+  std::string kernel_name = "linear_qga4w";
   if (use_coop_algorithm) {
     kernel_name += "_coop";
   } else {
@@ -176,7 +176,7 @@ void add_q_4w_linear_node(
       // Specialization Constants
       {SV(group_size_val)},
       // Resizing Logic
-      resize_q_4w_linear_node,
+      resize_linear_qga4w_node,
       {},
       // Push Constants
       {graph.sizes_pc_of(out),
@@ -187,7 +187,7 @@ void add_q_4w_linear_node(
 void linear_weight_int4(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
-  return add_q_4w_linear_node(
+  return add_linear_qga4w_node(
       graph,
       args[0], // mat1
       args[1], // mat2

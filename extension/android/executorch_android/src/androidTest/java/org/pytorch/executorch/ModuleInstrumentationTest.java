@@ -38,7 +38,7 @@ import androidx.test.InstrumentationRegistry;
 /** Unit tests for {@link Module}. */
 @RunWith(AndroidJUnit4.class)
 public class ModuleInstrumentationTest {
-    private static String TEST_FILE_NAME = "/add.pte";
+    private static String TEST_FILE_NAME = "/ModuleAdd.pte";
     private static String MISSING_FILE_NAME = "/missing.pte";
     private static String NON_PTE_FILE_NAME = "/test.txt";
     private static String FORWARD_METHOD = "forward";
