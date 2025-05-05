@@ -7,11 +7,11 @@
  */
 
 #include <executorch/backends/qualcomm/runtime/backends/QnnContextCommon.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnDlcManager.h>
+
 namespace executorch {
 namespace backends {
 namespace qnn {
-
-using executorch::runtime::Error;
 
 QnnContext::~QnnContext() {
   const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
@@ -63,13 +63,13 @@ Error QnnContext::Configure() {
     }
   } else if (
       cache_->GetCacheState() == QnnBackendCache::SERIALIZE ||
-      cache_->GetCacheState() == QnnBackendCache::ONLINE_PREPARE) {
+      cache_->GetCacheState() == QnnBackendCache::ONLINE_PREPARE ||
+      cache_->GetCacheState() == QnnBackendCache::MULTI_GRAPH) {
     error = qnn_interface.qnn_context_create(
         backend_->GetHandle(),
         device_->GetHandle(),
         temp_context_config.empty() ? nullptr : temp_context_config.data(),
         &handle_);
-
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG_ERROR(
           "Failed to create QNN context for Backend "
@@ -82,7 +82,15 @@ Error QnnContext::Configure() {
     QNN_EXECUTORCH_LOG_ERROR("QNN context cache is invalid.");
     return Error::Internal;
   }
-  return AfterConfigure();
+  if (AfterConfigure() != Error::Ok) {
+    return Error::Internal;
+  }
+  if (cache_->GetCacheState() == QnnBackendCache::ONLINE_PREPARE) {
+    // Register graphs from DLC during online prepare for HTP/GPU/DSP backends
+    return qnn_dlc_manager_->RegisterGraphsFromDLC(
+        implementation_, backend_, this, cache_);
+  }
+  return Error::Ok;
 }
 
 Error QnnContext::GetContextBinary(

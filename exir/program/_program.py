@@ -32,6 +32,7 @@ from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
 from executorch.exir.error import ExportError
 from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.operator.convert import _pybind_schema_to_native_schema
+from executorch.exir.operator.util import _QUANT_PRIMITIVES
 from executorch.exir.pass_base import PassBase
 from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import (
@@ -971,10 +972,14 @@ def _sanity_check_graph_for_non_decomp_ops(
     ops_set_to_not_decompose = {
         aten_to_edge(op) for op in ops_set_to_not_decompose
     }.union(ops_set_to_not_decompose)
+
+    quant_primitives = {aten_to_edge(op) for op in _QUANT_PRIMITIVES}
     for node in program.graph_module.graph.nodes:
         is_op_supported = check_op_support(node) if check_op_support else True
         if (
-            node.op == "call_function" and node.target in ops_set_to_not_decompose
+            node.op == "call_function"
+            and node.target in ops_set_to_not_decompose
+            and node.target not in quant_primitives
         ) and is_op_supported:
             warning_str = (
                 f"Node {node} with op {node.target} was not decomposed or delegated.\n"
@@ -988,7 +993,9 @@ def _sanity_check_graph_for_non_decomp_ops(
         for node in submod.graph.nodes:
             is_op_supported = check_op_support(node) if check_op_support else True
             if (
-                node.op == "call_function" and node.target in ops_set_to_not_decompose
+                node.op == "call_function"
+                and node.target in ops_set_to_not_decompose
+                and node.target not in quant_primitives
             ) and is_op_supported:
                 warning_str = (
                     f"Node {node} with op {node.target} was not decomposed or delegated.\n"
