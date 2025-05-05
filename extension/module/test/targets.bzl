@@ -44,24 +44,25 @@ def define_common_targets(is_fbcode=False):
             )
 
 
-        runtime.cxx_test(
-            name = "bundled_test" + aten_suffix,
-            srcs = [
-                "bundled_module_test.cpp",
-            ],
-            deps = [
-                "//executorch/kernels/portable:generated_lib" + aten_suffix,
-                "//executorch/extension/module:bundled_module" + aten_suffix,
-                "//executorch/extension/tensor:tensor" + aten_suffix,
-            ],
-            env = {
-                "RESOURCES_PATH": "$(location :resources)/resources",
-            },
-            platforms = [CXX, ANDROID],  # Cannot bundle resources on Apple platform.
-            compiler_flags = [
-                "-Wno-error=deprecated-declarations",
-            ],
-        )
+            runtime.cxx_test(
+                name = "bundled_test" + aten_suffix,
+                srcs = [
+                    "bundled_module_test.cpp",
+                ],
+                deps = [
+                    "//executorch/kernels/portable:generated_lib" + aten_suffix,
+                    "//executorch/extension/module:bundled_module" + aten_suffix,
+                    "//executorch/extension/tensor:tensor" + aten_suffix,
+                ],
+                env = {
+                    "RESOURCES_PATH": "$(location :resources)/resources",
+                    "ET_MODULE_PTE_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.pte])",
+                },
+                platforms = [CXX, ANDROID],  # Cannot bundle resources on Apple platform.
+                compiler_flags = [
+                    "-Wno-error=deprecated-declarations",
+                ],
+            )
 
     runtime.filegroup(
         name = "resources",

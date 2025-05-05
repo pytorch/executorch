@@ -13,8 +13,6 @@
 namespace executorch {
 namespace extension {
 
-using executorch::extension::ET_MODULE_NAMESPACE::Module;
-
 /**
  * A facade class for loading bundled programs and executing methods within
  * them.
