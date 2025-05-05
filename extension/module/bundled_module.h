@@ -10,8 +10,15 @@
 
 #include <executorch/extension/module/module.h>
 
+#ifdef USE_ATEN_LIB
+#define ET_BUNDLED_MODULE_NAMESPACE bundled_module::aten
+#else // !USE_ATEN_LIB
+#define ET_BUNDLED_MODULE_NAMESPACE bundled_module
+#endif // USE_ATEN_LIB
+
 namespace executorch {
 namespace extension {
+namespace ET_BUNDLED_MODULE_NAMESPACE {
 
 using executorch::extension::ET_MODULE_NAMESPACE::Module;
 
@@ -121,5 +128,6 @@ class BundledModule : public Module {
   bool is_loaded_from_file_ = false;
 };
 
+} // namespace ET_BUNDLED_MODULE_NAMESPACE
 } // namespace extension
 } // namespace executorch

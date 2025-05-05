@@ -15,6 +15,7 @@
 
 namespace executorch {
 namespace extension {
+namespace ET_BUNDLED_MODULE_NAMESPACE {
 
 namespace {
 std::unique_ptr<BufferDataLoader> program_data_loader(
@@ -108,5 +109,6 @@ runtime::Error BundledModule::verify_method_outputs(
       *method, bundled_program_ptr_, testset_idx, rtol, atol);
 }
 
+} // namespace ET_BUNDLED_MODULE_NAMESPACE
 } // namespace extension
 } // namespace executorch
