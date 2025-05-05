@@ -501,16 +501,6 @@ class Module {
   std::unique_ptr<NamedDataMap> data_map_;
 
  protected:
-  /**
-   * Get a method by method name.
-   *
-   * @param[in] method_name The name of the method to get.
-   *
-   * @returns A Result object containing either a pointer to the requested
-   *          method or an error to indicate failure.
-   */
-  ET_NODISCARD inline runtime::Result<Method*> get_method(
-      const std::string& method_name);
   std::unordered_map<std::string, MethodHolder> methods_;
 
   friend class executorch::extension::ExecuTorchJni;
