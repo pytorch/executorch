@@ -49,6 +49,7 @@ from executorch.backends.arm._passes import (
     MatchWhereSelfDtypePass,
     QuantizeOperatorArguments,
     RemoveClonePass,
+    ReplaceInfValues,
     ReplaceScalarWithTensorArgPassTOSABI,
     ReplaceScalarWithTensorArgPassTOSAMI,
     RetraceFoldedDtypesPass,
@@ -216,4 +217,5 @@ class ArmPassManager(PassManager):
             self.add_pass(DecomposeSoftmaxPass())
 
         self.add_pass(ConvertMinMaxPass())
+        self.add_pass(ReplaceInfValues())
         return self._transform(graph_module)
