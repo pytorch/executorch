@@ -444,16 +444,17 @@ void add_conv2d_node(
       wg_size,
       graph.create_local_wg_size(wg_size),
       // Inputs and Outputs
-      {{out, vkapi::MemoryAccessType::WRITE},
-       {{in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
+      {{out, vkapi::kWrite}, {{in, arg_weight, arg_bias}, vkapi::kRead}},
       // Shader params buffers
       param_buffers,
+      // Push Constants
+      push_constants,
       // Specialization Constants
       {},
-      // Resizing Logic
-      resize_conv2d_node,
+      // Resize Args
       {weight_data, stride, padding, dilation, transposed, output_padding},
-      push_constants));
+      // Resizing Logic
+      resize_conv2d_node));
 }
 
 void add_conv1d_node(
@@ -541,8 +542,7 @@ void add_conv1d_node(
       global_size,
       local_size,
       // Inputs and Outputs
-      {{out, vkapi::MemoryAccessType::WRITE},
-       {{in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
+      {{out, vkapi::kWrite}, {{in, arg_weight, arg_bias}, vkapi::kRead}},
       // Shader params buffers
       {
           t_out->logical_limits_ubo(),
@@ -550,14 +550,17 @@ void add_conv1d_node(
           graph.create_params_buffer(kernel_params),
           graph.create_params_buffer(out_params),
       },
+      // Push Constants
+      {},
       // Specialization Constants
       {t_out->hashed_layout(),
        t_in->hashed_layout(),
        t_weight->hashed_layout(),
        t_bias->hashed_layout()},
+      // Resize Args
+      {weight, stride, padding, dilation},
       // Resizing Logic
-      resize_conv1d_node,
-      {weight, stride, padding, dilation}));
+      resize_conv1d_node));
 }
 
 void conv(ComputeGraph& graph, const std::vector<ValueRef>& args) {
