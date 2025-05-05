@@ -196,9 +196,9 @@ filters = [
   ".cpp$",
 ]
 deps = [
+  "extension_data_loader",
   "extension_flat_tensor_schema",
   "executorch_core",
-  "executorch",
 ]
 
 [targets.extension_module]
@@ -209,9 +209,9 @@ filters = [
   ".cpp$",
 ]
 deps = [
-  "executorch",
   "executorch_core",
   "extension_data_loader",
+  "extension_flat_tensor",
 ]
 
 [targets.extension_runner_util]
@@ -222,7 +222,6 @@ filters = [
   ".cpp$",
 ]
 deps = [
-  "executorch",
   "executorch_core",
 ]
 
@@ -234,7 +233,6 @@ filters = [
   ".cpp$",
 ]
 deps = [
-  "executorch",
   "executorch_core",
   "extension_module",
   "extension_runner_util",
@@ -248,7 +246,6 @@ filters = [
   ".cpp$",
 ]
 deps = [
-  "executorch",
   "executorch_core",
 ]
 
@@ -260,7 +257,6 @@ filters = [
   ".cpp$",
 ]
 deps = [
-  "executorch",
   "executorch_core",
 ]
 

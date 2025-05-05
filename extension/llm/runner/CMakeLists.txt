@@ -43,7 +43,7 @@ target_include_directories(
 
 add_library(extension_llm_runner STATIC ${_extension_llm_runner__srcs})
 
-set(runner_deps executorch extension_data_loader extension_module
+set(runner_deps executorch_core extension_data_loader extension_module
                 extension_tensor
 )
 
