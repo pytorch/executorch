@@ -338,12 +338,10 @@ class GraphBuilder {
       std::string op_name = op_call->name()->str();
       ET_CHECK_MSG(VK_HAS_OP(op_name), "Missing operator: %s", op_name.c_str());
 
-      const std::vector<int> arg_fb_ids(
-          op_call->args()->cbegin(), op_call->args()->cend());
-
       std::vector<ValueRef> args;
-      for (const int arg_fb_id : arg_fb_ids) {
-        args.push_back(get_fb_id_valueref(arg_fb_id));
+      args.reserve(op_call->args()->size());
+      for (const auto arg_fb_id : *op_call->args()) {
+        args.push_back(get_fb_id_valueref(static_cast<int>(arg_fb_id)));
       }
 
       auto vkFn = VK_GET_OP_FN(op_name);
