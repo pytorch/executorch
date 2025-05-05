@@ -90,7 +90,7 @@ def prepare_and_convert_pt2(
     remove_decompositions(decomp_table, ops_to_keep)
     # Export with dynamo
     model_gm = (
-        torch.export.export_for_training(model, inputs, strict=True)
+        torch.export.export_for_training(model, inputs)
         .run_decompositions(decomp_table)
         .module()
     )
@@ -194,7 +194,7 @@ def export_program(
     torch._C._set_mkldnn_enabled(False)
 
     # Export the model and return it.
-    expo_program = export(model, inputs, strict=True)
+    expo_program = export(model, inputs)
 
     return expo_program
 
