@@ -2263,9 +2263,9 @@ class ReplaceSplitWithSlicePass(ExportPass):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class ReplacePowWithMullPass(ExportPass):
+class ReplacePowWithMulPass(ExportPass):
     """
-    Replace the pow op with degree 2 for a mul op.
+    Replace the pow op for a mul op.
     """
 
     def call_operator(
@@ -2275,19 +2275,32 @@ class ReplacePowWithMullPass(ExportPass):
         kwargs: Dict[str, Argument],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        # TODO(eigen): Add support for other degrees.
-        if (
-            op
-            not in {
-                exir_ops.edge.aten.pow.Scalar,
+        if not (
+            len(args) > 1
+            and isinstance(args[1], int)
+            and cast(int, args[1]) > 1
+            and cast(int, args[1]) < 5
+            and op
+            in {
+                exir_ops.edge.aten.pow.Tensor_Scalar,
             }
-            or args[0] != 2
         ):
             return super().call_operator(op, args, kwargs, meta)
 
+        x = args[0]
+        exponent = cast(int, args[1])
+
+        if exponent > 2:
+            for _ in range(exponent, 2, -1):
+                x = super().call_operator(
+                    exir_ops.edge.aten.mul.Tensor,
+                    (x, args[0]),
+                    {},
+                    meta,
+                )
         return super().call_operator(
             exir_ops.edge.aten.mul.Tensor,
-            (args[1], args[1]),
+            (x, args[0]),
             {},
             meta,
         )
@@ -2429,5 +2442,5 @@ class CadenceReplaceOpsInGraph:
         ReplaceWhereWithFullArgsWithWhereScalar,
         ReplaceGeluWithApproximateGeluPass,
         ReplaceSplitWithSlicePass,
-        ReplacePowWithMullPass,
+        ReplacePowWithMulPass,
     ]

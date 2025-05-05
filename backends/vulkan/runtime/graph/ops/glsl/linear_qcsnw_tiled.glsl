@@ -15,9 +15,6 @@
 
 #define TILE_ROWS ${TILE_ROWS}
 
-#define NGROUPS 8
-#define NWORKERS 8
-
 ${define_required_extensions(DTYPE)}
 
 $if WEIGHT_STORAGE == "buffer":
@@ -32,85 +29,65 @@ ${layout_declare_tensor(B, "r", "t_in", DTYPE, IN_STORAGE, is_scalar_array=False
 ${layout_declare_tensor(B, "r", "t_weight", "int8", WEIGHT_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_scales", DTYPE, SCALES_STORAGE, is_scalar_array=False)}
 
+
 layout(push_constant) uniform restrict Block {
   ivec4 out_sizes;
   ivec4 in_sizes;
   ivec4 weight_sizes;
 };
 
+#include "indexing_utils.h"
+
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-shared VEC4_T partial_c[NGROUPS][NWORKERS][TILE_ROWS];
+#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
 
 void main() {
-  const uint out_row = gl_GlobalInvocationID.y * TILE_ROWS;
-  const uint out_col = gl_GlobalInvocationID.x << 2;
+  const uint16_t out_width_ntexels = uint16_t(divup4(out_sizes.x));
+  const uint16_t out_col = uint16_t((gl_GlobalInvocationID.x % out_width_ntexels) << 2);
+  const uint16_t out_row = uint16_t((gl_GlobalInvocationID.x / out_width_ntexels) * TILE_ROWS);
 
-  const int gid = int(gl_LocalInvocationID.x); // group id
-  const int wid = int(gl_LocalInvocationID.z); // worker id
-
-  if (out_col >= out_sizes.x || out_row >= out_sizes.y) {
+  if (out_row >= uint16_t(out_sizes.y)) {
     return;
   }
 
   VEC4_T a[TILE_ROWS];
   VEC4_T b[4];
-  VEC4_T local_c[TILE_ROWS];
-
-  [[unroll]] for (int i = 0; i < TILE_ROWS; ++i) {
-    local_c[i] = VEC4_T(0.0);
-  }
+  VEC4_T c[TILE_ROWS];
 
   $if SCALES_STORAGE == "buffer":
-    const VEC4_T scales = VEC4_T(t_scales[out_col >> 2]);
+    const VEC4_T scales = VEC4_T(t_scales[int(out_col >> 2)]);
   $else:
-    const VEC4_T scales = VEC4_T(texelFetch(t_scales, ivec2(out_col >> 2, 0), 0));
+    const VEC4_T scales = VEC4_T(texelFetch(t_scales, u16vec2(out_col >> 2, 0), 0));
 
-  for (int pos = 4 * wid; pos < in_sizes.x; pos += (4 * NWORKERS)) {
-    // Preload t_weight
+  [[unroll]] for (int i = 0; i < TILE_ROWS; ++i) {
+    c[i] = VEC4_T(0.0);
+  }
+
+  for (uint16_t pos = uint16_t(0); pos < uint16_t(in_sizes.x); pos += uint16_t(4)) {
+    // Preload weight tensor
     [[unroll]] for (int i = 0; i < 4; i++) {
       $if WEIGHT_STORAGE == "buffer":
-        b[i] = t_weight[((pos + i) * weight_sizes.x + out_col) >> 2];
+        b[i] = t_weight[((pos + i) * out_sizes.x + out_col) >> 2];
       $else:
-        b[i] = VEC4_T(texelFetch(t_weight, ivec2(out_col >> 2, pos + i), 0));
+        b[i] = VEC4_T(texelFetch(t_weight, u16vec2(out_col >> 2, pos + i), 0));
     }
-    // Preload t_in
-    for (int i = 0; i < TILE_ROWS; i++) {
+
+    // Preload input tensor
+    [[unroll]] for (int i = 0; i < TILE_ROWS; i++) {
       $if IN_STORAGE == "buffer":
         a[i] = t_in[((out_row + i) * in_sizes.x + pos) >> 2];
       $else:
-        a[i] = VEC4_T(texelFetch(t_in, ivec3(pos >> 2, out_row + i, 0), 0));
+        a[i] = VEC4_T(texelFetch(t_in, u16vec3(pos >> 2, out_row + i, 0), 0));
     }
 
-    // Accumulate partial output
+    // Accumulate output
     [[unroll]] for (int i = 0; i < TILE_ROWS; ++i) {
-        local_c[i] += a[i].x * b[0] +
-                      a[i].y * b[1] +
-                      a[i].z * b[2] +
-                      a[i].w * b[3];
+        c[i] += a[i].x * b[0] + a[i].y * b[1] + a[i].z * b[2] + a[i].w * b[3];
     }
   }
 
-  [[unroll]] for (int i = 0; i < TILE_ROWS; ++i) {
-    partial_c[gid][wid][i] = local_c[i];
-  }
-
-  memoryBarrierShared();
-  barrier();
-
-  if (wid != 0) {
-    return;
-  }
-
-  VEC4_T c[TILE_ROWS];
-
-  for (int row = 0; row < TILE_ROWS; ++row) {
-    c[row] = VEC4_T(0.0);
-    [[unroll]] for (int worker = 0; worker < NWORKERS; ++worker) {
-      c[row] += partial_c[gid][worker][row];
-    }
-  }
-
+  // Store to output tensor
   [[unroll]] for (int i = 0; i < TILE_ROWS; ++i) {
     $if OUT_STORAGE == "buffer":
       if (out_row + i < out_sizes.y) {
