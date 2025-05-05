@@ -113,7 +113,7 @@ using namespace executorchcoreml;
     XCTAssertNotNil(inputs);
     MLMultiArray *output = [ETCoreMLTestUtils filledMultiArrayWithShape:inputs[0].shape dataType:inputs[0].dataType repeatedValue:@(0) error:&localError];
     NSArray<MLMultiArray *> *args = [inputs arrayByAddingObject:output];
-    XCTAssertTrue([self.modelManager executeModelWithHandle:handle 
+    XCTAssertTrue([self.modelManager executeModelWithHandle:handle
                                                        args:args
                                              loggingOptions:executorchcoreml::ModelLoggingOptions()
                                                 eventLogger:nullptr
