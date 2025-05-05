@@ -505,17 +505,24 @@ void add_conv1d_node(
 
   check_conv_args(*t_in, *t_out);
 
-  int32_t in_channels = in_sizes.at(1);
-  int32_t out_channels = weight_sizes.at(0);
-  int32_t kernel_size = weight_sizes.at(2);
-  int32_t stride_size = graph.get_int_list(stride)->at(0);
-  int32_t padding_size = graph.get_int_list(padding)->at(0);
-  int32_t dilation_size = graph.get_int_list(dilation)->at(0);
-  int32_t in_group_size = static_cast<int64_t>(in_channels / groups_val);
-  int32_t out_group_size = static_cast<int64_t>(out_channels / groups_val);
+  const int32_t in_channels = in_sizes.at(1);
+  const int32_t out_channels = weight_sizes.at(0);
+  const int32_t kernel_size = weight_sizes.at(2);
+  const int32_t stride_size = graph.get_int_list(stride)->at(0);
+  const int32_t padding_size = graph.get_int_list(padding)->at(0);
+  const int32_t dilation_size = graph.get_int_list(dilation)->at(0);
+  const int32_t in_group_size = static_cast<int64_t>(in_channels / groups_val);
+  const int32_t out_group_size =
+      static_cast<int64_t>(out_channels / groups_val);
 
-  utils::uvec3 global_size = {1, static_cast<uint32_t>(out_channels), 1};
-  utils::uvec3 local_size = {1, 64, 1};
+  const utils::uvec3 global_size = {
+      // out length
+      graph.size_at<uint32_t>(-1, out),
+      // out channels
+      static_cast<uint32_t>(out_channels),
+      // out batches
+      utils::div_up_4(graph.size_at<uint32_t>(-3, out))};
+  const utils::uvec3 local_size = graph.create_local_wg_size(global_size);
 
   Kernel1dParams kernel_params = {
       kernel_size,
@@ -525,7 +532,7 @@ void add_conv1d_node(
       in_group_size,
       out_group_size};
 
-  OutputParams out_params = {out_min_val, out_max_val};
+  const OutputParams out_params = {out_min_val, out_max_val};
 
   std::string kernel_name("conv1d");
   if (clamp_out) {
