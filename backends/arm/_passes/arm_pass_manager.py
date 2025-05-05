@@ -40,6 +40,7 @@ from executorch.backends.arm._passes import (
     FoldAndAnnotateQParamsPass,
     FuseBatchnorm2DPass,
     FuseConstantArgsPass,
+    FuseEqualPlaceholdersPass,
     FuseQuantizedActivationPass,
     InsertRescalePass,
     InsertTableOpsPass,
@@ -58,6 +59,9 @@ from executorch.backends.arm._passes import (
 )
 
 from executorch.backends.arm.tosa_specification import Tosa_0_80, TosaSpecification
+from executorch.backends.transforms.decompose_sdpa import (
+    DecomposeScaledDotProductAttention,
+)
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
 from executorch.backends.xnnpack._passes.remove_getitem_op import RemoveGetItemPass
 from executorch.exir import ExportedProgram
@@ -113,6 +117,7 @@ class ArmPassManager(PassManager):
         self.add_pass(FuseConstantArgsPass(exported_program))
 
         self.add_pass(InsertTableOpsPass(exported_program))
+        self.add_pass(FuseEqualPlaceholdersPass(exported_program))
         self.add_pass(AnnotateChannelsLastDimOrder())
         self.add_pass(InsertRescalePass())
 
@@ -164,6 +169,7 @@ class ArmPassManager(PassManager):
         self.add_pass(FuseViewCopyTransform())
         self.add_pass(FuseConstantArgsPass(exported_program))
         self.add_pass(InsertTableOpsPass(exported_program))
+        self.add_pass(FuseEqualPlaceholdersPass(exported_program))
         self.add_pass(AnnotateChannelsLastDimOrder())
         self.add_pass(InsertRescalePass())
 
@@ -191,6 +197,7 @@ class ArmPassManager(PassManager):
             )
 
     def transform_for_annotation_pipeline(self, graph_module: GraphModule):
+        self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(ScalarsToAttributePass())
         self.add_pass(DecomposeLayerNormPass())
