@@ -237,8 +237,10 @@ filters = [
 deps = [
   "executorch",
   "executorch_core",
+  "extension_data_loader",
   "extension_module",
   "extension_runner_util",
+  "extension_tensor",
 ]
 
 [targets.extension_tensor]
