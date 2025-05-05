@@ -26,9 +26,6 @@ from executorch.exir.backend.test.backend_with_compiler_demo import (
 )
 from executorch.exir.passes.external_constants_pass import (
     delegate_external_constants_pass,
-)	
-from executorch.exir.backend.test.demos.rpc.executor_backend_preprocess import (
-    ExecutorBackend,
 )
 from executorch.exir.program import ExecutorchProgramManager
 from torch import nn
