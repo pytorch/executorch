@@ -196,6 +196,10 @@ test_model_with_qnn() {
     EXPORT_SCRIPT=edsr
     # Additional deps for edsr
     pip install piq
+  elif [[ "${MODEL_NAME}" == "fastvit" ]]; then
+    EXPORT_SCRIPT=fastvit
+  elif [[ "${MODEL_NAME}" == "conv_former" ]]; then
+    EXPORT_SCRIPT=conv_former
   else
     echo "Unsupported model $MODEL_NAME"
     exit 1
