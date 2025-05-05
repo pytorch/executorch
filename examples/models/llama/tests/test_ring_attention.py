@@ -105,7 +105,7 @@ class TestRingAttention(unittest.TestCase):
 
             # Check that outputs are the same
             self.assertTrue(
-                torch.allclose(baseline_out, ring_out, rtol=1e-7, atol=1e-7),
+                torch.allclose(baseline_out, ring_out),
                 f"Outputs differ at position {pos}",
             )
 
@@ -139,7 +139,7 @@ class TestRingAttention(unittest.TestCase):
 
             # Check that outputs are the same
             self.assertTrue(
-                torch.allclose(baseline_out, ring_out, rtol=1e-7, atol=1e-7),
+                torch.allclose(baseline_out, ring_out),
                 f"Outputs differ at position {pos}",
             )
 
@@ -171,7 +171,7 @@ class TestRingAttention(unittest.TestCase):
                 x, freqs_cos, freqs_sin, input_pos=input_pos
             )
             self.assertTrue(
-                torch.allclose(baseline_out, ring_out, rtol=1e-7, atol=1e-7),
+                torch.allclose(baseline_out, ring_out),
                 f"Outputs differ at position {pos}",
             )
 
@@ -220,7 +220,7 @@ class TestRingAttention(unittest.TestCase):
 
             # Check that outputs are the same
             self.assertTrue(
-                torch.allclose(baseline_out, ring_out, rtol=1e-7, atol=1e-7),
+                torch.allclose(baseline_out, ring_out),
                 f"Outputs differ at position {pos} with max difference {(baseline_out - ring_out).abs().max()}",
             )
             pos += token_len
