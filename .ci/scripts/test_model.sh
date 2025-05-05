@@ -250,6 +250,11 @@ test_model_with_coreml() {
 test_model_with_mps() {
   "${PYTHON_EXECUTABLE}" -m examples.apple.mps.scripts.mps_example --model_name="${MODEL_NAME}" --use_fp16
   EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
+
+  if [ -n "$EXPORTED_MODEL" ]; then
+    bash ./examples/apple/mps/scripts/build_mps_executor_runner.sh
+    ./${CMAKE_OUTPUT_DIR}/examples/apple/mps/mps_executor_runner --model_path "${EXPORTED_MODEL}" --bundled_program
+  fi
 }
 
 if [[ "${BACKEND}" == "portable" ]]; then
