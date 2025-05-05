@@ -670,4 +670,567 @@ __attribute__((deprecated("This API is experimental.")))
 
 @end
 
+#pragma mark - Empty Category
+
+@interface ExecuTorchTensor (Empty)
+
+/**
+ * Creates an empty tensor with the specified shape, strides, data type, and shape dynamism.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param strides An NSArray of NSNumber objects representing the desired strides.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new, empty ExecuTorchTensor instance.
+ */
++ (instancetype)emptyTensorWithShape:(NSArray<NSNumber *> *)shape
+                             strides:(NSArray<NSNumber *> *)strides
+                            dataType:(ExecuTorchDataType)dataType
+                       shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(empty(shape:strides:dataType:shapeDynamism:));
+
+/**
+ * Creates an empty tensor with the specified shape, data type, and shape dynamism.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new, empty ExecuTorchTensor instance.
+ */
++ (instancetype)emptyTensorWithShape:(NSArray<NSNumber *> *)shape
+                            dataType:(ExecuTorchDataType)dataType
+                       shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(empty(shape:dataType:shapeDynamism:));
+
+/**
+ * Creates an empty tensor with the specified shape and data type, using dynamic bound shape.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @return A new, empty ExecuTorchTensor instance.
+ */
++ (instancetype)emptyTensorWithShape:(NSArray<NSNumber *> *)shape
+                            dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(empty(shape:dataType:));
+
+/**
+ * Creates an empty tensor similar to the given tensor, with the specified data type and shape dynamism.
+ *
+ * @param tensor An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param dataType An ExecuTorchDataType value specifying the desired element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new, empty ExecuTorchTensor instance with the same shape as the provided tensor.
+ */
++ (instancetype)emptyTensorLikeTensor:(ExecuTorchTensor *)tensor
+                             dataType:(ExecuTorchDataType)dataType
+                        shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(empty(like:dataType:shapeDynamism:));
+
+/**
+ * Creates an empty tensor similar to the given tensor, with the specified data type.
+ *
+ * @param tensor An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param dataType An ExecuTorchDataType value specifying the desired element type.
+ * @return A new, empty ExecuTorchTensor instance with the same shape as the provided tensor.
+ */
++ (instancetype)emptyTensorLikeTensor:(ExecuTorchTensor *)tensor
+                             dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(empty(like:dataType:));
+
+/**
+ * Creates an empty tensor similar to the given tensor.
+ *
+ * @param tensor An existing ExecuTorchTensor instance.
+ * @return A new, empty ExecuTorchTensor instance with the same properties as the provided tensor.
+ */
++ (instancetype)emptyTensorLikeTensor:(ExecuTorchTensor *)tensor
+    NS_SWIFT_NAME(empty(like:));
+
+@end
+
+#pragma mark - Full Category
+
+@interface ExecuTorchTensor (Full)
+
+/**
+ * Creates a tensor filled with the specified scalar value, with full specification of shape, strides, data type, and shape dynamism.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param scalar An NSNumber representing the value to fill the tensor.
+ * @param strides An NSArray of NSNumber objects representing the desired strides.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with the scalar value.
+ */
++ (instancetype)fullTensorWithShape:(NSArray<NSNumber *> *)shape
+                             scalar:(NSNumber *)scalar
+                            strides:(NSArray<NSNumber *> *)strides
+                           dataType:(ExecuTorchDataType)dataType
+                      shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(full(shape:scalar:strides:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor filled with the specified scalar value, with the given shape, data type, and shape dynamism.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param scalar An NSNumber representing the value to fill the tensor.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with the scalar value.
+ */
++ (instancetype)fullTensorWithShape:(NSArray<NSNumber *> *)shape
+                             scalar:(NSNumber *)scalar
+                           dataType:(ExecuTorchDataType)dataType
+                      shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(full(shape:scalar:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor filled with the specified scalar value, with the given shape and data type,
+ * using dynamic bound shape for strides and dimension order.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param scalar An NSNumber representing the value to fill the tensor.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @return A new ExecuTorchTensor instance filled with the scalar value.
+ */
++ (instancetype)fullTensorWithShape:(NSArray<NSNumber *> *)shape
+                             scalar:(NSNumber *)scalar
+                           dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(full(shape:scalar:dataType:));
+
+/**
+ * Creates a tensor filled with the specified scalar value, similar to an existing tensor, with the given data type and shape dynamism.
+ *
+ * @param tensr An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param scalar An NSNumber representing the value to fill the tensor.
+ * @param dataType An ExecuTorchDataType value specifying the desired element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with the scalar value.
+ */
++ (instancetype)fullTensorLikeTensor:(ExecuTorchTensor *)tensr
+                              scalar:(NSNumber *)scalar
+                            dataType:(ExecuTorchDataType)dataType
+                       shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(full(like:scalar:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor filled with the specified scalar value, similar to an existing tensor, with the given data type.
+ *
+ * @param tensr An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param scalar An NSNumber representing the value to fill the tensor.
+ * @param dataType An ExecuTorchDataType value specifying the desired element type.
+ * @return A new ExecuTorchTensor instance filled with the scalar value.
+ */
++ (instancetype)fullTensorLikeTensor:(ExecuTorchTensor *)tensr
+                              scalar:(NSNumber *)scalar
+                            dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(full(like:scalar:dataType:));
+
+/**
+ * Creates a tensor filled with the specified scalar value, similar to an existing tensor.
+ *
+ * @param tensr An existing ExecuTorchTensor instance.
+ * @param scalar An NSNumber representing the value to fill the tensor.
+ * @return A new ExecuTorchTensor instance filled with the scalar value.
+ */
++ (instancetype)fullTensorLikeTensor:(ExecuTorchTensor *)tensr
+                              scalar:(NSNumber *)scalar
+    NS_SWIFT_NAME(full(like:scalar:));
+
+@end
+
+#pragma mark - Ones Category
+
+@interface ExecuTorchTensor (Ones)
+
+/**
+ * Creates a tensor filled with ones, with the specified shape, data type, and shape dynamism.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with ones.
+ */
++ (instancetype)onesTensorWithShape:(NSArray<NSNumber *> *)shape
+                           dataType:(ExecuTorchDataType)dataType
+                      shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(ones(shape:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor filled with ones, with the specified shape and data type.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @return A new ExecuTorchTensor instance filled with ones.
+ */
++ (instancetype)onesTensorWithShape:(NSArray<NSNumber *> *)shape
+                           dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(ones(shape:dataType:));
+
+/**
+ * Creates a tensor filled with ones similar to an existing tensor, with the specified data type and shape dynamism.
+ *
+ * @param tensor An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param dataType An ExecuTorchDataType value specifying the desired element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with ones.
+ */
++ (instancetype)onesTensorLikeTensor:(ExecuTorchTensor *)tensor
+                            dataType:(ExecuTorchDataType)dataType
+                       shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(ones(like:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor filled with ones similar to an existing tensor, with the specified data type.
+ *
+ * @param tensor An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param dataType An ExecuTorchDataType value specifying the desired element type.
+ * @return A new ExecuTorchTensor instance filled with ones.
+ */
++ (instancetype)onesTensorLikeTensor:(ExecuTorchTensor *)tensor
+                            dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(ones(like:dataType:));
+
+/**
+ * Creates a tensor filled with ones similar to an existing tensor.
+ *
+ * @param tensor An existing ExecuTorchTensor instance.
+ * @return A new ExecuTorchTensor instance filled with ones.
+ */
++ (instancetype)onesTensorLikeTensor:(ExecuTorchTensor *)tensor
+    NS_SWIFT_NAME(ones(like:));
+
+@end
+
+#pragma mark - Zeros Category
+
+@interface ExecuTorchTensor (Zeros)
+
+/**
+ * Creates a tensor filled with zeros, with the specified shape, data type, and shape dynamism.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with zeros.
+ */
++ (instancetype)zerosTensorWithShape:(NSArray<NSNumber *> *)shape
+                            dataType:(ExecuTorchDataType)dataType
+                       shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(zeros(shape:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor filled with zeros, with the specified shape and data type.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @return A new ExecuTorchTensor instance filled with zeros.
+ */
++ (instancetype)zerosTensorWithShape:(NSArray<NSNumber *> *)shape
+                            dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(zeros(shape:dataType:));
+
+/**
+ * Creates a tensor filled with zeros similar to an existing tensor, with the specified data type and shape dynamism.
+ *
+ * @param tensor An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param dataType An ExecuTorchDataType value specifying the desired element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with zeros.
+ */
++ (instancetype)zerosTensorLikeTensor:(ExecuTorchTensor *)tensor
+                             dataType:(ExecuTorchDataType)dataType
+                        shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(zeros(like:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor filled with zeros similar to an existing tensor, with the specified data type.
+ *
+ * @param tensor An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param dataType An ExecuTorchDataType value specifying the desired element type.
+ * @return A new ExecuTorchTensor instance filled with zeros.
+ */
++ (instancetype)zerosTensorLikeTensor:(ExecuTorchTensor *)tensor
+                             dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(zeros(like:dataType:));
+
+/**
+ * Creates a tensor filled with zeros similar to an existing tensor.
+ *
+ * @param tensor An existing ExecuTorchTensor instance.
+ * @return A new ExecuTorchTensor instance filled with zeros.
+ */
++ (instancetype)zerosTensorLikeTensor:(ExecuTorchTensor *)tensor
+    NS_SWIFT_NAME(zeros(like:));
+
+@end
+
+#pragma mark - Random Category
+
+@interface ExecuTorchTensor (Random)
+
+/**
+ * Creates a tensor with random values, with full specification of shape, strides, data type, and shape dynamism.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param strides An NSArray of NSNumber objects representing the desired strides.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with random values.
+ */
++ (instancetype)randomTensorWithShape:(NSArray<NSNumber *> *)shape
+                              strides:(NSArray<NSNumber *> *)strides
+                             dataType:(ExecuTorchDataType)dataType
+                        shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(rand(shape:strides:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor with random values, with the specified shape and data type.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with random values.
+ */
++ (instancetype)randomTensorWithShape:(NSArray<NSNumber *> *)shape
+                             dataType:(ExecuTorchDataType)dataType
+                        shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(rand(shape:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor with random values, with the specified shape (using dynamic bound shape) and data type.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @return A new ExecuTorchTensor instance filled with random values.
+ */
++ (instancetype)randomTensorWithShape:(NSArray<NSNumber *> *)shape
+                             dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(rand(shape:dataType:));
+
+/**
+ * Creates a tensor with random values similar to an existing tensor, with the specified data type and shape dynamism.
+ *
+ * @param tensor An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param dataType An ExecuTorchDataType value specifying the desired element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with random values.
+ */
++ (instancetype)randomTensorLikeTensor:(ExecuTorchTensor *)tensor
+                              dataType:(ExecuTorchDataType)dataType
+                         shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(rand(like:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor with random values similar to an existing tensor, with the specified data type.
+ *
+ * @param tensor An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param dataType An ExecuTorchDataType value specifying the desired element type.
+ * @return A new ExecuTorchTensor instance filled with random values.
+ */
++ (instancetype)randomTensorLikeTensor:(ExecuTorchTensor *)tensor
+                              dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(rand(like:dataType:));
+
+/**
+ * Creates a tensor with random values similar to an existing tensor.
+ *
+ * @param tensor An existing ExecuTorchTensor instance.
+ * @return A new ExecuTorchTensor instance filled with random values.
+ */
++ (instancetype)randomTensorLikeTensor:(ExecuTorchTensor *)tensor
+    NS_SWIFT_NAME(rand(like:));
+
+@end
+
+#pragma mark - RandomNormal Category
+
+@interface ExecuTorchTensor (RandomNormal)
+
+/**
+ * Creates a tensor with random values drawn from a normal distribution,
+ * with full specification of shape, strides, data type, and shape dynamism.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param strides An NSArray of NSNumber objects representing the desired strides.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with values from a normal distribution.
+ */
++ (instancetype)randomNormalTensorWithShape:(NSArray<NSNumber *> *)shape
+                                    strides:(NSArray<NSNumber *> *)strides
+                                   dataType:(ExecuTorchDataType)dataType
+                              shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(randn(shape:strides:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor with random values drawn from a normal distribution,
+ * with the specified shape and data type.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with values from a normal distribution.
+ */
++ (instancetype)randomNormalTensorWithShape:(NSArray<NSNumber *> *)shape
+                                   dataType:(ExecuTorchDataType)dataType
+                              shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(randn(shape:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor with random values drawn from a normal distribution,
+ * with the specified shape (using dynamic bound shape) and data type.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @return A new ExecuTorchTensor instance filled with values from a normal distribution.
+ */
++ (instancetype)randomNormalTensorWithShape:(NSArray<NSNumber *> *)shape
+                                   dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(randn(shape:dataType:));
+
+/**
+ * Creates a tensor with random normal values similar to an existing tensor,
+ * with the specified data type and shape dynamism.
+ *
+ * @param tensor An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param dataType An ExecuTorchDataType value specifying the desired element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with values from a normal distribution.
+ */
++ (instancetype)randomNormalTensorLikeTensor:(ExecuTorchTensor *)tensor
+                                    dataType:(ExecuTorchDataType)dataType
+                               shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(randn(like:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor with random normal values similar to an existing tensor,
+ * with the specified data type.
+ *
+ * @param tensor An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param dataType An ExecuTorchDataType value specifying the desired element type.
+ * @return A new ExecuTorchTensor instance filled with values from a normal distribution.
+ */
++ (instancetype)randomNormalTensorLikeTensor:(ExecuTorchTensor *)tensor
+                                    dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(randn(like:dataType:));
+
+/**
+ * Creates a tensor with random normal values similar to an existing tensor.
+ *
+ * @param tensor An existing ExecuTorchTensor instance.
+ * @return A new ExecuTorchTensor instance filled with values from a normal distribution.
+ */
++ (instancetype)randomNormalTensorLikeTensor:(ExecuTorchTensor *)tensor
+    NS_SWIFT_NAME(randn(like:));
+
+@end
+
+#pragma mark - RandomInteger Category
+
+@interface ExecuTorchTensor (RandomInteger)
+
+/**
+ * Creates a tensor with random integer values in the specified range,
+ * with full specification of shape, strides, data type, and shape dynamism.
+ *
+ * @param low An NSInteger specifying the inclusive lower bound of random values.
+ * @param high An NSInteger specifying the exclusive upper bound of random values.
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param strides An NSArray of NSNumber objects representing the desired strides.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with random integer values.
+ */
++ (instancetype)randomIntegerTensorWithLow:(NSInteger)low
+                                      high:(NSInteger)high
+                                     shape:(NSArray<NSNumber *> *)shape
+                                   strides:(NSArray<NSNumber *> *)strides
+                                  dataType:(ExecuTorchDataType)dataType
+                             shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(randint(low:high:shape:strides:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor with random integer values in the specified range,
+ * with the given shape and data type.
+ *
+ * @param low An NSInteger specifying the inclusive lower bound of random values.
+ * @param high An NSInteger specifying the exclusive upper bound of random values.
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with random integer values.
+ */
++ (instancetype)randomIntegerTensorWithLow:(NSInteger)low
+                                      high:(NSInteger)high
+                                     shape:(NSArray<NSNumber *> *)shape
+                                  dataType:(ExecuTorchDataType)dataType
+                             shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(randint(low:high:shape:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor with random integer values in the specified range,
+ * with the given shape (using dynamic bound shape) and data type.
+ *
+ * @param low An NSInteger specifying the inclusive lower bound of random values.
+ * @param high An NSInteger specifying the exclusive upper bound of random values.
+ * @param shape An NSArray of NSNumber objects representing the desired shape.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @return A new ExecuTorchTensor instance filled with random integer values.
+ */
++ (instancetype)randomIntegerTensorWithLow:(NSInteger)low
+                                      high:(NSInteger)high
+                                     shape:(NSArray<NSNumber *> *)shape
+                                  dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(randint(low:high:shape:dataType:));
+
+/**
+ * Creates a tensor with random integer values in the specified range, similar to an existing tensor,
+ * with the given data type and shape dynamism.
+ *
+ * @param tensor An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param low An NSInteger specifying the inclusive lower bound of random values.
+ * @param high An NSInteger specifying the exclusive upper bound of random values.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value specifying whether the shape is static or dynamic.
+ * @return A new ExecuTorchTensor instance filled with random integer values.
+ */
++ (instancetype)randomIntegerTensorLikeTensor:(ExecuTorchTensor *)tensor
+                                          low:(NSInteger)low
+                                         high:(NSInteger)high
+                                     dataType:(ExecuTorchDataType)dataType
+                                shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(randint(like:low:high:dataType:shapeDynamism:));
+
+/**
+ * Creates a tensor with random integer values in the specified range, similar to an existing tensor,
+ * with the given data type.
+ *
+ * @param tensor An existing ExecuTorchTensor instance whose shape and strides are used.
+ * @param low An NSInteger specifying the inclusive lower bound of random values.
+ * @param high An NSInteger specifying the exclusive upper bound of random values.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @return A new ExecuTorchTensor instance filled with random integer values.
+ */
++ (instancetype)randomIntegerTensorLikeTensor:(ExecuTorchTensor *)tensor
+                                          low:(NSInteger)low
+                                         high:(NSInteger)high
+                                     dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(randint(like:low:high:dataType:));
+
+/**
+ * Creates a tensor with random integer values in the specified range, similar to an existing tensor.
+ *
+ * @param tensor An existing ExecuTorchTensor instance.
+ * @param low An NSInteger specifying the inclusive lower bound of random values.
+ * @param high An NSInteger specifying the exclusive upper bound of random values.
+ * @return A new ExecuTorchTensor instance filled with random integer values.
+ */
++ (instancetype)randomIntegerTensorLikeTensor:(ExecuTorchTensor *)tensor
+                                          low:(NSInteger)low
+                                         high:(NSInteger)high
+    NS_SWIFT_NAME(randint(like:low:high:));
+
+@end
+
 NS_ASSUME_NONNULL_END
