@@ -296,7 +296,7 @@ public:
                                      loggingOptions:logging_options
                                         eventLogger:event_logger
                                               error:&error]) {
-            ec = static_cast<ErrorCode>(error.code);
+            ec = error ? static_cast<ErrorCode>(error.code) : ErrorCode::BrokenModel;
             return false;
         }
         
