@@ -87,9 +87,7 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) {
   const auto errorCode = _module->load(static_cast<Program::Verification>(verification));
   if (errorCode != Error::Ok) {
     if (error) {
-      *error = [NSError errorWithDomain:ExecuTorchErrorDomain
-                                   code:(NSInteger)errorCode
-                               userInfo:nil];
+      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
     }
     return NO;
   }
@@ -110,9 +108,7 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) {
   const auto errorCode = _module->load_method(methodName.UTF8String);
   if (errorCode != Error::Ok) {
     if (error) {
-      *error = [NSError errorWithDomain:ExecuTorchErrorDomain
-                                   code:(NSInteger)errorCode
-                               userInfo:nil];
+      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
     }
     return NO;
   }
@@ -127,9 +123,7 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) {
   const auto result = _module->method_names();
   if (!result.ok()) {
     if (error) {
-      *error = [NSError errorWithDomain:ExecuTorchErrorDomain
-                                   code:(NSInteger)result.error()
-                               userInfo:nil];
+      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)result.error());
     }
     return nil;
   }
@@ -151,9 +145,7 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) {
   const auto result = _module->execute(methodName.UTF8String, inputs);
   if (!result.ok()) {
     if (error) {
-      *error = [NSError errorWithDomain:ExecuTorchErrorDomain
-                                   code:(NSInteger)result.error()
-                               userInfo:nil];
+      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)result.error());
     }
     return nil;
   }
