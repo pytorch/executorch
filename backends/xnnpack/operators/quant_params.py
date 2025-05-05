@@ -149,6 +149,8 @@ class QuantParams:
 
         while users_list:
             current_user = users_list.pop()
+            if "linear" in str(current_user.target):
+                return False
             if "convolution" in str(current_user.target):
                 return True
             users_list.extend(current_user.users)
