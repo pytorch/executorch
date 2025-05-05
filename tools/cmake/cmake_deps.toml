@@ -239,6 +239,7 @@ deps = [
   "executorch_core",
   "extension_module",
   "extension_runner_util",
+  "extension_tensor",
 ]
 
 [targets.extension_tensor]
