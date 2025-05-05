@@ -85,6 +85,14 @@ class MOEFeedForward(nn.Module):
 
 class TransformerBlock(nn.Module):
     def __init__(self, args: ModelArgs, attention: Attention):
+        """
+        Transformer block with support for pre-norm and post-norm.
+        Args:
+            args (ModelArgs): model configuration parameters.
+            attention (Attention): attention object to use in the transformer
+                block. See `attention.py` for types of attention. Make sure
+                the attention type is registered in the ATTENTION_REGISTRY.
+        """
         super().__init__()
         self.use_kv_cache = args.use_kv_cache
         self.n_heads = args.n_heads
@@ -100,6 +108,13 @@ class TransformerBlock(nn.Module):
 
     @classmethod
     def from_type(cls, layer_id, args, rope) -> "TransformerBlock":
+        """
+        Create a TransformerBlock with the legacy constructor.
+        Args:
+            layer_id (int): the index of the layer.
+            args (ModelArgs): model configuration parameters.
+            rope (Rope): the rope object to use for rotary embeddings.
+        """
         if args.attention_type not in ATTENTION_REGISTRY:
             raise ValueError(
                 f"Unknown attention type: {args.attention_type}. "
@@ -124,6 +139,14 @@ class TransformerBlock(nn.Module):
 
 class Transformer(nn.Module):
     def __init__(self, params: ModelArgs, layers: nn.ModuleList, rope: Rope):
+        """
+        Transformer model.
+        Args:
+            params (ModelArgs): model configuration parameters.
+            layers (nn.ModuleList): list of transformer blocks - see the
+                `TransformerBlock` type above.
+            rope (Rope): the rope object to use for rotary embeddings.
+        """
         super().__init__()
         self.params = params
         self.vocab_size = params.vocab_size
