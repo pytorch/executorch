@@ -14,7 +14,7 @@ import torch.utils._pytree as pytree
 from executorch.backends.cadence.aot.fuse_ops import (
     CadenceFuseOpsInGraph,
     FuseFullThenReshapePass,
-    FuseTransposeOpPairsPass,
+    FuseTransposeOrPermuteOpPairsPass,
 )
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
@@ -83,7 +83,7 @@ def get_passes_in_default_order() -> List[ExportPass]:
         CadenceSimplifyOpsInGraph.passes,
         FinalizePipeline,
         FuseFullThenReshapePass,
-        FuseTransposeOpPairsPass,
+        FuseTransposeOrPermuteOpPairsPass,
         RemoveNopSliceOrViewOpPass,
     ]
     return pytree.tree_flatten(passes)[0]
