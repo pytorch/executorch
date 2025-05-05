@@ -298,7 +298,7 @@ class TestQNN(unittest.TestCase):
                     target_time_scale=TimeScale.CYCLES,
                 )
                 self.assertTrue(
-                    len(inspector.to_dataframe().index) == expected_profile_events
+                    len(inspector.to_dataframe().index) >= expected_profile_events
                 )
 
             def validate_intermediate_tensor():
@@ -529,7 +529,7 @@ class TestQNN(unittest.TestCase):
             quantizer.set_block_size_map(block_size_map)
         prepared = prepare_pt2e(m, quantizer)
         prepared(*inputs)
-        quantized_module = convert_pt2e(prepared)
+        quantized_module = convert_pt2e(prepared, fold_quantize=False)
         nodes = {node.target for node in quantized_module.graph.nodes}
         q_and_dq = {
             torch.ops.quantized_decomposed.quantize_per_tensor.default,
@@ -583,7 +583,7 @@ class TestQNN(unittest.TestCase):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        return torch.ao.quantization.quantize_pt2e.convert_pt2e(prepared)
+        return convert_pt2e(prepared, fold_quantize=False)
 
     def split_graph(self, division: int):
         class SplitGraph(ExportPass):

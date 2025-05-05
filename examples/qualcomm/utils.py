@@ -251,8 +251,9 @@ def qat_train(ori_model, captured_model, quantizer, dataset):
         loss.backward()
         optimizer.step()
 
-    return torch.ao.quantization.quantize_pt2e.convert_pt2e(
-        torch.ao.quantization.move_exported_model_to_eval(annotated_model)
+    return convert_pt2e(
+        torch.ao.quantization.move_exported_model_to_eval(annotated_model),
+        fold_quantize=False,
     )
 
 
@@ -345,7 +346,7 @@ def build_executorch_binary(
             # ptq calibration
             annotated_model = ptq_calibrate(captured_model, quantizer, dataset)
 
-        quantized_model = convert_pt2e(annotated_model)
+        quantized_model = convert_pt2e(annotated_model, fold_quantize=False)
         edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
             quantized_model,
             inputs,

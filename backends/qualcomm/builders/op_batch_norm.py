@@ -40,7 +40,7 @@ class BatchNorm(NodeVisitor):
         if quant_attrs := node.meta.get(QCOM_QUANT_ATTRS):
             # scale value equals to zero will cause failure in HTP
             diff = max(abs(tensor.max()), abs(tensor.min())) + eps
-            quant_attrs[QCOM_SCALE] = diff / quant_attrs[QCOM_QUANT_MAX]
+            quant_attrs[QCOM_SCALE] = (diff / quant_attrs[QCOM_QUANT_MAX]).item()
 
     def define_node(
         self,

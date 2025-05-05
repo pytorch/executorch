@@ -64,7 +64,7 @@ def main() -> None:
     # Calibration
     m(*example_inputs)
     # Get the quantized model
-    m = convert_pt2e(m)
+    m = convert_pt2e(m, fold_quantize=False)
 
     # Capture program for edge IR and delegate to QNN backend
     backend_options = generate_htp_compiler_spec(

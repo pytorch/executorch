@@ -412,7 +412,7 @@ class SingleLlama:
             use_i64_token=args.embedding_quantize is not None,
         )
 
-        self.llama_graph_module = convert_pt2e(fx_graph_module)
+        self.llama_graph_module = convert_pt2e(fx_graph_module, fold_quantize=False)
 
     def lowering_modules(
         self,
