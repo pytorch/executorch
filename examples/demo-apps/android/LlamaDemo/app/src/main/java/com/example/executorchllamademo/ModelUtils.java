@@ -29,6 +29,7 @@ public class ModelUtils {
         case LLAMA_3:
         case LLAMA_3_1:
         case LLAMA_3_2:
+        case QWEN_3:
         default:
           return TEXT_MODEL;
       }
