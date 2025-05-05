@@ -27,6 +27,7 @@ import androidx.core.view.WindowInsetsCompat;
 import com.google.gson.Gson;
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class SettingsActivity extends AppCompatActivity {
@@ -324,7 +325,7 @@ public class SettingsActivity extends AppCompatActivity {
   }
 
   private void setupModelSelectorDialog() {
-    String[] pteFiles = listLocalFile("/data/local/tmp/llama/", ".pte");
+    String[] pteFiles = listLocalFile("/data/local/tmp/llama/", new String[] {".pte"});
     AlertDialog.Builder modelPathBuilder = new AlertDialog.Builder(this);
     modelPathBuilder.setTitle("Select model path");
 
@@ -341,13 +342,17 @@ public class SettingsActivity extends AppCompatActivity {
     modelPathBuilder.create().show();
   }
 
-  private static String[] listLocalFile(String path, String suffix) {
+  private static boolean fileHasExtension(String file, String[] suffix) {
+    return Arrays.stream(suffix).anyMatch(entry -> file.endsWith(entry));
+  }
+
+  private static String[] listLocalFile(String path, String[] suffix) {
     File directory = new File(path);
     if (directory.exists() && directory.isDirectory()) {
-      File[] files = directory.listFiles((dir, name) -> name.toLowerCase().endsWith(suffix));
+      File[] files = directory.listFiles((dir, name) -> (fileHasExtension(name, suffix)));
       String[] result = new String[files.length];
       for (int i = 0; i < files.length; i++) {
-        if (files[i].isFile() && files[i].getName().endsWith(suffix)) {
+        if (files[i].isFile() && fileHasExtension(files[i].getName(), suffix)) {
           result[i] = files[i].getAbsolutePath();
         }
       }
@@ -380,11 +385,8 @@ public class SettingsActivity extends AppCompatActivity {
   }
 
   private void setupTokenizerSelectorDialog() {
-    String[] binFiles = listLocalFile("/data/local/tmp/llama/", ".bin");
-    String[] modelFiles = listLocalFile("/data/local/tmp/llama/", ".model");
-    String[] tokenizerFiles = new String[binFiles.length + modelFiles.length];
-    System.arraycopy(binFiles, 0, tokenizerFiles, 0, binFiles.length);
-    System.arraycopy(modelFiles, 0, tokenizerFiles, binFiles.length, modelFiles.length);
+    String[] tokenizerFiles =
+        listLocalFile("/data/local/tmp/llama/", new String[] {".bin", ".json", ".model"});
     AlertDialog.Builder tokenizerPathBuilder = new AlertDialog.Builder(this);
     tokenizerPathBuilder.setTitle("Select tokenizer path");
     tokenizerPathBuilder.setSingleChoiceItems(
