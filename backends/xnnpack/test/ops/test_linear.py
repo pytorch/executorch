@@ -33,16 +33,11 @@ from executorch.backends.xnnpack.test.tester.tester import (
 
 from torch.export.graph_signature import ExportGraphSignature, InputKind
 
-try:
-    from torchao.quantization.quant_api import (
-        int8_dynamic_activation_int4_weight,
-        quantize_,
-    )
-    from torchao.utils import unwrap_tensor_subclass
-
-    torchao_installed = True
-except:
-    torchao_installed = False
+from torchao.quantization.quant_api import (
+    int8_dynamic_activation_int4_weight,
+    quantize_,
+)
+from torchao.utils import unwrap_tensor_subclass
 
 
 # Pytorch Modules Used for Testing
@@ -818,22 +813,13 @@ class TestLinear(unittest.TestCase):
         self._test_qd8_per_channel_4w_linear(dtype=torch.float)
 
     # Tests for q[dp]8-f16-qb4w
-    @unittest.skipIf(
-        not torchao_installed, "Per Channel Group Quantization Required TorchAO"
-    )
     def test_linear_qd8_f16_per_token_weight_per_channel_group_int4(self):
         self._test_qd8_per_token_weight_per_channel_group_int4(dtype=torch.half)
 
     # Tests for q[dp]8-f32-qb4w
-    @unittest.skipIf(
-        not torchao_installed, "Per Channel Group Quantization Required TorchAO"
-    )
     def test_linear_qd8_f32_per_token_weight_per_channel_group_int4(self):
         self._test_qd8_per_token_weight_per_channel_group_int4(dtype=torch.float)
 
-    @unittest.skipIf(
-        not torchao_installed, "Per Channel Group Quantization Required TorchAO"
-    )
     def test_linear_qd8_per_token_groupwise_unsupported_groupsize(self):
         # groupsize must be multiple of 32
         for dtype in [torch.float, torch.half]:

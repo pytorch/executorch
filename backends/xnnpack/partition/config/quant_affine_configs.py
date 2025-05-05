@@ -7,6 +7,7 @@
 from typing import List, Optional
 
 import torch
+import torchao.quantization.quant_primitives  # noqa
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
     XNNPartitionerConfig,
@@ -33,33 +34,18 @@ class QuantizeAffineConfig(QDQAffineConfigs):
     target_name = "quantize_affine.default"
 
     def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
-        try:
-            import torchao.quantization.quant_primitives  # noqa
-
-            return torch.ops.torchao.quantize_affine.default
-        except:
-            return None
+        return torch.ops.torchao.quantize_affine.default
 
 
 class DeQuantizeAffineConfig(QDQAffineConfigs):
     target_name = "dequantize_affine.default"
 
     def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
-        try:
-            import torchao.quantization.quant_primitives  # noqa
-
-            return torch.ops.torchao.dequantize_affine.default
-        except:
-            return None
+        return torch.ops.torchao.dequantize_affine.default
 
 
 class ChooseQParamsAffineConfig(QDQAffineConfigs):
     target_name = "choose_qparams_affine.default"
 
     def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
-        try:
-            import torchao.quantization.quant_primitives  # noqa
-
-            return torch.ops.torchao.choose_qparams_affine.default
-        except:
-            return None
+        return torch.ops.torchao.choose_qparams_affine.default
