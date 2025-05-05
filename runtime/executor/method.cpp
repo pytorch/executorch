@@ -805,18 +805,12 @@ Error Method::init(
       pte_data_map = pte_data_map_res.get();
     }
 
-    int named_data_map_items =
-        (named_data_map != nullptr) ? named_data_map->get_num_keys().get() : 0;
-    int pte_map_items =
-        (pte_data_map != nullptr) ? pte_data_map->get_num_keys().get() : 0;
-
-    // TODO: implement ndm merge.
     ET_CHECK_OR_RETURN_ERROR(
-        (pte_map_items == 0 || named_data_map_items == 0),
-        NotImplemented,
-        "NamedDataMap merge not supported. Both pte_data_map and named_data_map are non-empty, don't know what to do.");
+        !(pte_data_map && named_data_map),
+        NotSupported,
+        "NamedDataMap merge not supported; both pte_data_map and named_data_map are non-empty. If you see this error please file an issue at https://github.com/pytorch/executorch/issues");
 
-    if (named_data_map_items == 0) {
+    if (!named_data_map || named_data_map->get_num_keys().get() == 0) {
       named_data_map = pte_data_map;
     }
 
