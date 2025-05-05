@@ -512,7 +512,8 @@ void add_conv1d_node(
   const int32_t padding_size = graph.get_int_list(padding)->at(0);
   const int32_t dilation_size = graph.get_int_list(dilation)->at(0);
   const int32_t in_group_size = static_cast<int64_t>(in_channels / groups_val);
-  const int32_t out_group_size = static_cast<int64_t>(out_channels / groups_val);
+  const int32_t out_group_size =
+      static_cast<int64_t>(out_channels / groups_val);
 
   const utils::uvec3 global_size = {
       // out length
