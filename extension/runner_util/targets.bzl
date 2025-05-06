@@ -23,6 +23,6 @@ def define_common_targets():
             ],
             exported_deps = [
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
-                "//executorch/runtime/executor:program" + aten_suffix,
+                "//executorch/runtime/executor:program_no_prim_ops" + aten_suffix,
             ],
         )
