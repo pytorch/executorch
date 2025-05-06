@@ -239,7 +239,7 @@ def create_const_ops_for_rescale(
     tosa_fb,
     scale_32,
     input_dtype,
-    input_name,
+    node_name,
     multipliers,
     shifts,
     input_zp,
@@ -252,16 +252,16 @@ def create_const_ops_for_rescale(
         (len(multipliers),),
         ts.DType.INT32 if scale_32 else ts.DType.INT16,
         multipliers,
-        name=input_name + "_multipliers",
+        name=node_name + "_multipliers",
     )
     shifts = tosa_fb.addConst(
-        (len(shifts),), ts.DType.INT8, shifts, name=input_name + "_shifts"
+        (len(shifts),), ts.DType.INT8, shifts, name=node_name + "_shifts"
     )
     input_zp = tosa_fb.addConst(
-        [1], input_dtype, [input_zp], name=input_name + "_input_zp"
+        [1], input_dtype, [input_zp], name=node_name + "_input_zp"
     )
     output_zp = tosa_fb.addConst(
-        [1], output_dtype, [output_zp], name=input_name + "_output_zp"
+        [1], output_dtype, [output_zp], name=node_name + "_output_zp"
     )
 
     return [multipliers.name, shifts.name, input_zp.name, output_zp.name]
@@ -281,8 +281,6 @@ def build_rescale(
     import serializer.tosa_serializer as ts  # type: ignore
     import tosa.Op as TosaOp  # type: ignore
 
-    input_name = input_node.name
-
     scaleWidth = 32
     is_scale32 = True
     multipliers, shifts = compute_multiplier_and_shift(scale, scaleWidth)
@@ -290,7 +288,7 @@ def build_rescale(
         tosa_fb,
         is_scale32,
         input_node.dtype,
-        input_name,
+        output_name,
         multipliers,
         shifts,
         input_zp,
