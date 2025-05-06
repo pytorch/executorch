@@ -511,7 +511,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
         inputs = (x,)
 
         graph_module = (
-            compiler.export_to_edge(
+            export_to_edge(
                 model,
                 inputs,
             )
