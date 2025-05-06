@@ -1640,13 +1640,26 @@ class _TopLevelEmitter(_Emitter):
                 else:
                     spec.extra_tensor_info.fully_qualified_name = fqn
                     spec.extra_tensor_info.location = TensorDataLocation.EXTERNAL
-            if self.emitter_state.emit_mutable_buffer_names and is_mutable_buffer:
-                if spec.extra_tensor_info is None:
-                    spec.extra_tensor_info = ExtraTensorInfo(
-                        fully_qualified_name=fqn, location=TensorDataLocation.SEGMENT
+
+            if is_mutable_buffer:
+                # Emit names if we are supposed to.
+                if self.emitter_state.emit_mutable_buffer_names:
+                    if spec.extra_tensor_info is None:
+                        spec.extra_tensor_info = ExtraTensorInfo(
+                            fully_qualified_name=fqn,
+                            location=TensorDataLocation.SEGMENT,
+                        )
+                    else:
+                        spec.extra_tensor_info.fully_qualified_name = fqn
+                # if We aren't emitting the name then it needs to be memory planned.
+                elif spec.mem_id is None or spec.mem_offset is None:
+                    raise InternalError(
+                        self._emit_node_specific_error(
+                            self.node,
+                            # [2:] to remove the b_ prefix buffers get
+                            f'Mutable buffer "{target[2:]}" must have a memory id and offset if we are emitting it without a name. Please either memory plan your mutable buffers or call to_executorch with config=ExecutorchBackendConfig(emit_mutable_buffer_names=True)',
+                        )
                     )
-                else:
-                    spec.extra_tensor_info.fully_qualified_name = fqn
 
             # From the fqn find the corresponding tensor
             real_tensor = None

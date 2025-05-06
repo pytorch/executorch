@@ -84,27 +84,27 @@ void et_pal_emit_log_message(
 }
 
 namespace py = pybind11;
-using executorch::bundled_program::verify_method_outputs;
+using executorch::BUNDLED_PROGRAM_NAMESPACE::verify_method_outputs;
+using ::executorch::ET_RUNTIME_NAMESPACE::BackendInterface;
+using ::executorch::ET_RUNTIME_NAMESPACE::get_backend_class;
+using ::executorch::ET_RUNTIME_NAMESPACE::get_backend_name;
+using ::executorch::ET_RUNTIME_NAMESPACE::get_num_registered_backends;
+using ::executorch::ET_RUNTIME_NAMESPACE::get_registered_kernels;
+using ::executorch::ET_RUNTIME_NAMESPACE::Kernel;
+using ::executorch::ET_RUNTIME_NAMESPACE::Method;
+using ::executorch::ET_RUNTIME_NAMESPACE::Program;
 using ::executorch::extension::BufferDataLoader;
 using ::executorch::extension::MallocMemoryAllocator;
 using ::executorch::extension::MmapDataLoader;
 using ::executorch::runtime::ArrayRef;
-using ::executorch::runtime::BackendInterface;
 using ::executorch::runtime::DataLoader;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::EventTracerDebugLogLevel;
-using ::executorch::runtime::get_backend_class;
-using ::executorch::runtime::get_backend_name;
-using ::executorch::runtime::get_num_registered_backends;
-using ::executorch::runtime::get_registered_kernels;
 using ::executorch::runtime::HierarchicalAllocator;
-using ::executorch::runtime::Kernel;
 using ::executorch::runtime::MemoryAllocator;
 using ::executorch::runtime::MemoryManager;
-using ::executorch::runtime::Method;
 using ::executorch::runtime::prof_result_t;
-using ::executorch::runtime::Program;
 using ::executorch::runtime::Result;
 using ::executorch::runtime::Span;
 using ::executorch::runtime::Tag;
@@ -757,7 +757,9 @@ struct PyModule final {
       } else if (py::isinstance<py::int_>(python_input)) {
         cpp_inputs.push_back(EValue(py::cast<int64_t>(python_input)));
       } else {
-        ET_ASSERT_UNREACHABLE_MSG("Unsupported pytype: %s", type_str.c_str());
+        throw std::runtime_error(
+            "Unsupported python type " + type_str +
+            ". Ensure that inputs are passed as a flat list of tensors.");
       }
     }
 
@@ -826,7 +828,7 @@ struct PyModule final {
       const std::string method_name,
       size_t testset_idx) {
     const void* bundled_program_ptr = m.get_bundled_program_ptr();
-    Error status = executorch::bundled_program::load_bundled_input(
+    Error status = executorch::BUNDLED_PROGRAM_NAMESPACE::load_bundled_input(
         module_->get_method(method_name), bundled_program_ptr, testset_idx);
     THROW_IF_ERROR(
         status,
@@ -842,14 +844,14 @@ struct PyModule final {
       double atol = 1e-8) {
     const void* bundled_program_ptr = m.get_bundled_program_ptr();
     auto& method = module_->get_method(method_name);
-    Error status = executorch::bundled_program::load_bundled_input(
+    Error status = executorch::BUNDLED_PROGRAM_NAMESPACE::load_bundled_input(
         method, bundled_program_ptr, testset_idx);
     THROW_IF_ERROR(
         status,
         "load_bundled_input failed with status 0x%" PRIx32,
         static_cast<uint32_t>(status));
     py::list outputs = plan_execute(method_name);
-    status = executorch::bundled_program::verify_method_outputs(
+    status = executorch::BUNDLED_PROGRAM_NAMESPACE::verify_method_outputs(
         method, bundled_program_ptr, testset_idx, rtol, atol);
     THROW_IF_ERROR(
         status,

@@ -4,21 +4,19 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
-from typing import List
+from typing import Any, List
 
-import serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
-from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
 
 
 @register_node_visitor
-class TanhVisitor_080_MI(NodeVisitor):
+class TanhVisitor_0_80_MI(NodeVisitor):
     target = "aten.tanh.default"
 
     # BI case should be handled by op_table
@@ -30,10 +28,12 @@ class TanhVisitor_080_MI(NodeVisitor):
     def define_node(
         self,
         node: Node,
-        tosa_graph: ts.TosaSerializer,
+        tosa_graph: Any,
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
+        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
+
         if len(node.all_input_nodes) != 1:
             raise ValueError(
                 f"Expected 1 input for {self.target}, got {len(node.all_input_nodes)}"
@@ -44,4 +44,36 @@ class TanhVisitor_080_MI(NodeVisitor):
                 f"{inputs[0].dtype} and output_dtype: {output.dtype}"
             )
 
-        tosa_graph.addOperator(TosaOp.Op().TANH, [inputs[0].name], [output.name])
+        tosa_graph.addOperator(ts.TosaOp.Op().TANH, [inputs[0].name], [output.name])
+
+
+@register_node_visitor
+class TanhVisitor(NodeVisitor):
+    target = "aten.tanh.default"
+
+    # INT case should be handled by op_table
+    tosa_specs = [TosaSpecification.create_from_string("TOSA-1.0+FP")]
+
+    def __init__(self, *args):
+        super().__init__(*args)
+
+    def define_node(
+        self,
+        node: Node,
+        tosa_graph: Any,
+        inputs: List[TosaArg],
+        output: TosaArg,
+    ) -> None:
+        import serializer.tosa_serializer as ts
+
+        if len(node.all_input_nodes) != 1:
+            raise ValueError(
+                f"Expected 1 input for {self.target}, got {len(node.all_input_nodes)}"
+            )
+        if inputs[0].dtype != ts.DType.FP32 or output.dtype != ts.DType.FP32:
+            raise ValueError(
+                f"Input and output for {self.target} need to be FP32, got input_dtype: "
+                f"{inputs[0].dtype} and output_dtype: {output.dtype}"
+            )
+
+        tosa_graph.addOperator(ts.TosaOp.Op().TANH, [inputs[0].name], [output.name])

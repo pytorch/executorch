@@ -101,17 +101,20 @@ void add_repeat_node(
       },
       // Parameter buffers
       {},
-      // Specialization Constants
-      {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
-      nullptr,
-      {},
+      // Push Constants
       {
           PushConstantDataInfo(&wg_size, sizeof(wg_size), sizeof(utils::ivec4)),
           PushConstantDataInfo(
               &src_dims, sizeof(src_dims), sizeof(utils::ivec4)),
           PushConstantDataInfo(
               &dst_repeats, sizeof(dst_repeats), sizeof(utils::ivec4)),
-      }));
+      },
+      // Specialization Constants
+      {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
+      // Resize Args
+      {},
+      // Resizing Logic
+      nullptr));
 }
 
 void repeat(ComputeGraph& graph, const std::vector<ValueRef>& args) {

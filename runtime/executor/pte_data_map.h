@@ -46,7 +46,7 @@ using FlatbufferDataSegment = flatbuffers::
 #endif
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 namespace internal {
 
 /**
@@ -147,5 +147,5 @@ class PteDataMap final : public NamedDataMap {
 };
 
 } // namespace internal
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch

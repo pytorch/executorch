@@ -12,11 +12,11 @@ The MPS backend device maps machine learning computational graphs and primitives
 :::
 :::{grid-item-card}  Tutorials we recommend you complete before this:
 :class-card: card-prerequisites
-* [Introduction to ExecuTorch](intro-how-it-works.md)
-* [Setting up ExecuTorch](getting-started-setup.md)
-* [Building ExecuTorch with CMake](runtime-build-and-cross-compilation.md)
-* [ExecuTorch iOS Demo App](demo-apps-ios.md)
-* [ExecuTorch iOS LLaMA Demo App](llm/llama-demo-ios.md)
+* [Introduction to ExecuTorch](../../../docs/source/intro-how-it-works.md)
+* [Setting up ExecuTorch](../../../docs/source/getting-started-setup.rst)
+* [Building ExecuTorch with CMake](../../../docs/source/using-executorch-cpp.md#building-with-cmake)
+* [ExecuTorch iOS Demo App](https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo)
+* [ExecuTorch iOS LLaMA Demo App](../../../docs/source/llm/llama-demo-ios.md)
 :::
 ::::
 
@@ -40,7 +40,7 @@ In order to be able to successfully build and run a model using the MPS backend 
 
 ## Setting up Developer Environment
 
-***Step 1.*** Please finish tutorial [Setting up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup).
+***Step 1.*** Please finish tutorial [Setting up ExecuTorch](https://pytorch.org/executorch/main/getting-started-setup).
 
 ***Step 2.*** Install dependencies needed to lower MPS delegate:
 
@@ -76,12 +76,12 @@ cd executorch
 ## Run the mv3 generated model using the mps_executor_runner
 
 ```bash
-./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3_mps_bundled_fp16.pte --bundled_program
+./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3_mps_float16_bundled.pte --bundled_program
 ```
 
 - You should see the following results. Note that no output file will be generated in this example:
 ```
-I 00:00:00.003290 executorch:mps_executor_runner.mm:286] Model file mv3_mps_bundled_fp16.pte is loaded.
+I 00:00:00.003290 executorch:mps_executor_runner.mm:286] Model file mv3_mps_float16_bundled.pte is loaded.
 I 00:00:00.003306 executorch:mps_executor_runner.mm:292] Program methods: 1
 I 00:00:00.003308 executorch:mps_executor_runner.mm:294] Running method forward
 I 00:00:00.003311 executorch:mps_executor_runner.mm:349] Setting up non-const buffer 1, size 606112.
@@ -111,14 +111,14 @@ python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3" --no-use_fp
 ```
 
 ### Profiling:
-1. [Optional] Generate an [ETRecord](./etrecord.rst) while you're exporting your model.
+1. [Optional] Generate an [ETRecord](../../../docs/source/etrecord.rst) while you're exporting your model.
 ```bash
 cd executorch
 python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3" --generate_etrecord -b
 ```
-2. Run your Program on the ExecuTorch runtime and generate an [ETDump](./etdump.md).
+2. Run your Program on the ExecuTorch runtime and generate an [ETDump](../../../docs/source/etdump.md).
 ```
-./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3_mps_bundled_fp16.pte --bundled_program --dump-outputs
+./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3_mps_float16_bundled.pte --bundled_program --dump-outputs
 ```
 3. Create an instance of the Inspector API by passing in the ETDump you have sourced from the runtime along with the optionally generated ETRecord from step 1.
 ```bash

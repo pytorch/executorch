@@ -24,7 +24,7 @@ from executorch.examples.qualcomm.utils import (
 
 from PIL import Image
 from torch.utils.data import Dataset
-from torchsr.datasets import B100
+from torchsr.datasets import B100, Div2K
 from torchvision.transforms.functional import to_pil_image, to_tensor
 
 
@@ -75,6 +75,16 @@ def get_b100(
     return SrDataset(hr_dir, lr_dir)
 
 
+def get_Div2K(
+    dataset_dir: str,
+):
+    hr_dir = f"{dataset_dir}/sr_bm_dataset/DIV2K/DIV2K_valid_HR"
+    lr_dir = f"{dataset_dir}/sr_bm_dataset/DIV2K/DIV2K_valid_LR_bicubic/X2"
+    if not os.path.exists(hr_dir) or not os.path.exists(lr_dir):
+        Div2K(root=f"{dataset_dir}/sr_bm_dataset", scale=2, download=True)
+    return SrDataset(hr_dir, lr_dir)
+
+
 def get_dataset(hr_dir: str, lr_dir: str, default_dataset: str, dataset_dir: str):
     if not (lr_dir and hr_dir) and not default_dataset:
         raise RuntimeError(
@@ -85,7 +95,7 @@ def get_dataset(hr_dir: str, lr_dir: str, default_dataset: str, dataset_dir: str
         raise RuntimeError("Either use custom dataset, or use default dataset.")
 
     if default_dataset:
-        return get_b100(dataset_dir)
+        return get_Div2K(dataset_dir)
 
     return SrDataset(hr_dir, lr_dir)
 

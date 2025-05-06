@@ -5,7 +5,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
 import unittest
 from typing import Tuple
 
@@ -17,10 +16,6 @@ from executorch.backends.arm.test.tester.arm_tester import ArmTester
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torchaudio import models
-
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def get_test_inputs(batch_size, num_features, input_frames):

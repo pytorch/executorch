@@ -334,6 +334,7 @@ class Event:
     _delegate_time_scale_converter: Optional[
         Callable[[Union[int, str], Union[int, float]], Union[int, float]]
     ] = None
+    _start_time: Optional[List[Union[int, float]]] = None
 
     @cached_property
     def delegate_debug_metadatas(self) -> Union[List[str], Dict[str, Any]]:
@@ -351,6 +352,13 @@ class Event:
         Return the raw unparsed _delegate_debug_metadatas
         """
         return self._delegate_debug_metadatas
+
+    @property
+    def start_time(self) -> Optional[List[Union[int, float]]]:
+        """
+        Returns the start time of the event.
+        """
+        return self._start_time
 
     def to_dataframe(self, _units="") -> pd.DataFrame:
         """
@@ -402,6 +410,7 @@ class Event:
             "is_delegated_op": self.is_delegated_op,
             "delegate_backend_name": self.delegate_backend_name,
             "debug_data": [self.debug_data],
+            "start_time": [self._start_time],
         }
 
     @staticmethod
@@ -530,6 +539,7 @@ class Event:
 
         # Fill out fields from profile event
         data = []
+        stime = []
         delegate_debug_metadatas = []
         for event in events:
             if (profile_events := event.profile_events) is not None:
@@ -571,6 +581,7 @@ class Event:
                     )
 
                 data.append(scaled_time)
+                stime.append(profile_event.start_time)
                 delegate_debug_metadatas.append(
                     profile_event.delegate_debug_metadata
                     if profile_event.delegate_debug_metadata
@@ -582,6 +593,10 @@ class Event:
             ret_event.perf_data = PerfData(data)
         if any(delegate_debug_metadatas):
             ret_event._delegate_debug_metadatas = delegate_debug_metadatas
+
+        # add _start_time to the event
+        if len(stime) > 0:
+            ret_event._start_time = stime
 
     @staticmethod
     def _populate_debugging_related_fields(

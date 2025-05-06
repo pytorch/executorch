@@ -22,6 +22,7 @@ from executorch.exir.lowered_backend_module import get_lowered_submodules
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.program._program import (
+    _transform,
     EdgeProgramManager,
     ExecutorchProgramManager,
     to_edge,
@@ -34,6 +35,7 @@ from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
+from torch._export.verifier import Verifier
 from torch.export import Dim, export, ExportedProgram
 from torch.export._trace import _export
 
@@ -273,7 +275,6 @@ class TestProgramManagers(unittest.TestCase):
             for output_val in method.outputs:
                 evalue = method.values[output_val]
                 self.assertNotEqual(evalue.val.allocation_info, None)
-        else:
             for input_val in method.inputs:
                 evalue = method.values[input_val]
                 self.assertEqual(evalue.val.allocation_info, None)
@@ -725,17 +726,17 @@ class TestProgramManagers(unittest.TestCase):
         )
 
     def test_edge_dialect_non_core_aten_ops(self):
-        class LinalgNorm(torch.nn.Module):
+        class LinalgRank(torch.nn.Module):
             def __init__(self):
                 super().__init__()
 
             def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return torch.linalg.norm(x)
+                return torch.linalg.matrix_rank(x)
 
         from torch._export.verifier import SpecViolationError
 
-        input = torch.arange(9, dtype=torch.float) - 4
-        ep = torch.export.export(LinalgNorm(), (input,), strict=True)
+        input = torch.ones((9, 9, 9), dtype=torch.float)
+        ep = torch.export.export(LinalgRank(), (input,), strict=True)
 
         # aten::linalg_norm is not a core op, so it should error out
         with self.assertRaises(SpecViolationError):
@@ -748,9 +749,7 @@ class TestProgramManagers(unittest.TestCase):
                 ep,
                 compile_config=EdgeCompileConfig(
                     _check_ir_validity=True,
-                    _core_aten_ops_exception_list=[
-                        torch.ops.aten.linalg_vector_norm.default
-                    ],
+                    _core_aten_ops_exception_list=[torch.ops.aten._linalg_svd.default],
                 ),
             )
         except SpecViolationError:
@@ -849,3 +848,23 @@ class TestProgramManagers(unittest.TestCase):
         et = edge.to_executorch()
         with self.assertRaises(ValueError):
             _ = et.save("/tmp/test_save.pt")
+
+    def test__transform_override_verifiers(self):
+        """Test that _transform can override verifiers in the exported program."""
+
+        class MyVerifier(Verifier):
+            dialect: str = "MY_DIALECT"
+
+            def __init__(self):
+                super().__init__()
+
+        model = TestLinear()
+        program = torch.export.export(model, model._get_random_inputs(), strict=True)
+        self.assertFalse(issubclass(program.verifiers[0], MyVerifier))
+
+        # Apply transformation with custom verifier
+        transformed = _transform(
+            program, AddToMulPassEdge(), override_verifiers=[MyVerifier]
+        )
+        self.assertTrue(issubclass(transformed.verifiers[0], MyVerifier))
+        self.assertFalse(issubclass(program.verifiers[0], MyVerifier))

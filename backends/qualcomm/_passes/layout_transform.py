@@ -47,6 +47,7 @@ class LayoutTransform(ExportPass):
     layout_agnostic_ops = {
         exir_ops.edge.aten.abs.default,
         exir_ops.edge.aten.add.Tensor,
+        exir_ops.edge.aten.amax.default,
         exir_ops.edge.aten.bitwise_or.Tensor,
         exir_ops.edge.aten.bmm.default,
         exir_ops.edge.aten.bitwise_and.Tensor,
@@ -54,6 +55,7 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.ceil.default,
         exir_ops.edge.aten.clamp.default,
         exir_ops.edge.aten.constant_pad_nd.default,
+        exir_ops.edge.aten.cumsum.default,
         exir_ops.edge.aten.div.Tensor,
         exir_ops.edge.aten.elu.default,
         exir_ops.edge.aten.eq.Tensor,

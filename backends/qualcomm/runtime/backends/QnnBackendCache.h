@@ -24,6 +24,7 @@ class QnnBackendCache {
     SERIALIZE = 1,
     DESERIALIZE = 2,
     ONLINE_PREPARE = 3,
+    MULTI_GRAPH = 4,
   };
   explicit QnnBackendCache(
       const QnnExecuTorchContextBinary& qnn_context_blob,
@@ -53,6 +54,10 @@ class QnnBackendCache {
 
   std::vector<std::string> GetGraphNames() {
     return graph_names_;
+  }
+
+  void SetGraphNames(const std::string& graph_name) {
+    graph_names_.emplace_back(graph_name);
   }
 
   executorch::runtime::Error Configure();

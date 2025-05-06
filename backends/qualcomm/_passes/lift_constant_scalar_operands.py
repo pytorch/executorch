@@ -53,7 +53,13 @@ SCALAR_OPS = {
 }
 
 
-SKIP_LIFT_OPS = {aten.full_like.default, aten.arange.start_step}
+SKIP_LIFT_OPS = {
+    aten.full_like.default,
+    aten.arange.start_step,
+    aten.arange.default,
+    aten.scalar_tensor.default,
+    aten.elu.default,
+}
 
 
 class LiftConstantScalarOperands(ExportPass):

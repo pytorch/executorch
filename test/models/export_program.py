@@ -131,7 +131,7 @@ class ModuleDynamicCatUnallocatedIO(nn.Module):
         return {"capture_config": CaptureConfig(pt2_mode=True, enable_aot=True)}
 
 
-class ModuleLinear(torch.nn.Module):
+class ModuleAddMul(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.a = 3 * torch.ones(2, 2, dtype=torch.float)
@@ -183,6 +183,23 @@ class ModuleSimpleTrain(torch.nn.Module):
         return True
 
 
+class ModuleStateful(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("state", torch.zeros(1, dtype=torch.int32))
+
+    def forward(self, x):
+        self.state.add_(1)
+        return x + self.state
+
+    def get_random_inputs(self):
+        return (torch.ones(1),)
+
+    @staticmethod
+    def export_state_names():
+        return True
+
+
 #
 # Main logic.
 #
@@ -201,8 +218,11 @@ def export_module_to_program(
         # pyre-ignore[16]: pyre doesn't know about get_export_kwargs.
         export_kwargs = module_class.get_export_kwargs()
     export_joint = False
+    export_state_names = False
     if hasattr(module_class, "export_joint"):
         export_joint = module_class.export_joint()  # pyre-ignore
+    if hasattr(module_class, "export_state_names"):
+        export_state_names = module_class.export_state_names()
     if hasattr(module_class, "get_method_names_to_export"):
         # pyre-ignore[16]: pyre doesn't know about get_export_kwargs.
         methods = module_class.get_method_names_to_export()
@@ -214,6 +234,7 @@ def export_module_to_program(
         skip_type_promotion=skip_type_promotion,
         export_joint_graph=export_joint,
         external_constants=external_constants,
+        export_state_names=export_state_names,
         **export_kwargs,
     )
     return module.executorch_program
