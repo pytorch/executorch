@@ -198,7 +198,6 @@ filters = [
 deps = [
   "executorch_core",
   "extension_flat_tensor_schema",
-  "extension_data_loader",
 ]
 
 [targets.extension_module]

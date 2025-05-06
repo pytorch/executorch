@@ -19,8 +19,7 @@ endif()
 list(TRANSFORM _extension_flat_tensor__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(extension_flat_tensor ${_extension_flat_tensor__srcs})
 target_link_libraries(
-  extension_flat_tensor executorch_core extension_data_loader
-  flat_tensor_schema
+  extension_flat_tensor executorch_core
 )
 target_include_directories(
   extension_flat_tensor
