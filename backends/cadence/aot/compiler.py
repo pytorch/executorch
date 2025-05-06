@@ -144,7 +144,6 @@ def fuse_pt2(
     return converted_graph_module
 
 
-# Note: this is the one-liner API to quantize and fuse a model.
 def quantize_pt2(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
@@ -158,6 +157,8 @@ def quantize_pt2(
     not, the inputs will be used for calibration instead, which is useful for
     unit tests but should not be used for end-to-end use cases.
     Returns a GraphModule with the quantized model.
+    Note: this function should not be called directly in general. Please use
+    quantize_and_export_to_executorch for most needs.
     """
     # Make the model inference mode by calling model.eval()
     model.eval()
