@@ -27,9 +27,10 @@ if(CMAKE_TOOLCHAIN_IOS
 else()
   add_library(extension_module SHARED ${_extension_module__srcs})
 endif()
-target_link_libraries(extension_module PRIVATE executorch_core extension_data_loader)
-# Expose the header include path
-target_link_libraries(extension_module PUBLIC extension_flat_tensor)
+target_link_libraries(
+  extension_module PRIVATE executorch_core extension_data_loader
+                           extension_flat_tensor
+)
 target_include_directories(extension_module PUBLIC ${EXECUTORCH_ROOT}/..)
 target_compile_options(
   extension_module PUBLIC -Wno-deprecated-declarations -fPIC
@@ -40,9 +41,8 @@ target_compile_options(
 add_library(extension_module_static STATIC ${_extension_module__srcs})
 target_link_libraries(
   extension_module_static PRIVATE executorch_core extension_data_loader
+                                  extension_flat_tensor
 )
-# Expose the header include path
-target_link_libraries(extension_module_static PUBLIC extension_flat_tensor)
 target_include_directories(extension_module_static PUBLIC ${EXECUTORCH_ROOT}/..)
 target_compile_options(
   extension_module_static PUBLIC -Wno-deprecated-declarations -fPIC
