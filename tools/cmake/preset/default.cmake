@@ -14,4 +14,4 @@ endif()
 
 # MARK: - Definitions
 
-define_overridable_config(EXECUTORCH_ENABLE_LOGGING "Build with ET_LOG_ENABLED" ${_is_build_type_debug})
+define_overridable_config(EXECUTORCH_ENABLE_LOGGING "Build with ET_LOG_ENABLED" BOOL ${_is_build_type_debug})

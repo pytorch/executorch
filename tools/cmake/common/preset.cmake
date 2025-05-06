@@ -14,12 +14,16 @@ endfunction()
 # Define an overridable config.
 #   1) If the config is already defined in the process, then store that in cache
 #   2) If the config is NOT set, then store the default value in cache
-macro(define_overridable_config NAME DESCRIPTION DEFAULT_VALUE)
+macro(define_overridable_config NAME DESCRIPTION VALUE_TYPE DEFAULT_VALUE)
   enforce_executorch_config_name(${NAME})
 
+  if(NOT "${VALUE_TYPE}" STREQUAL "STRING" AND NOT "${VALUE_TYPE}" STREQUAL "BOOL")
+    message(FATAL_ERROR "Invalid config (${NAME}) value type '${VALUE_TYPE}', must be either STRING or BOOL")
+  endif()
+
   if(DEFINED ${NAME})
-    set(${NAME} ${${NAME}} CACHE STRING ${DESCRIPTION} FORCE)
+    set(${NAME} ${${NAME}} CACHE ${VALUE_TYPE} ${DESCRIPTION} FORCE)
   else()
-    set(${NAME} ${DEFAULT_VALUE} CACHE STRING ${DESCRIPTION})
+    set(${NAME} ${DEFAULT_VALUE} CACHE ${VALUE_TYPE} ${DESCRIPTION})
   endif()
 endmacro()
