@@ -113,6 +113,8 @@ jobs:
         working-directory: extension/benchmark/android/benchmark
         run: |
           set -eux
+          
+          echo "hello"
 
           # The model will be exported in the next step to this S3 path
           MODEL_PATH="https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.config }}/model.zip"
