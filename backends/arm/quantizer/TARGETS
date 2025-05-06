@@ -11,6 +11,7 @@ python_library(
 
 # Exposed through __init__.py
 python_library(
+    # @autodeps-skip
     name = "arm_quantizer",
     srcs = ["arm_quantizer.py"],
     deps = [
@@ -32,6 +33,7 @@ python_library(
 )
 
 python_library(
+    # @autodeps-skip
     name = "arm_quantizer_utils",
     srcs = ["arm_quantizer_utils.py"],
     deps = [
