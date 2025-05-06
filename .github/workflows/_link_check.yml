@@ -18,10 +18,11 @@ jobs:
       timeout: 90
       script: |
         ./scripts/lint_urls.sh $(
-          [ "${{ github.event_name }}" = "pull_request" ] \
-            && git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
-          || [ "${{ github.event_name }}" = "push" ] \
-            && git diff --name-only ${{ github.event.before }}...${{ github.sha }}
+          { [ "${{ github.event_name }}" = "pull_request" ] \
+              && git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}"; } \
+          || \
+          { [ "${{ github.event_name }}" = "push" ] \
+              && git diff --name-only "${{ github.event.before }}...${{ github.sha }}"; }
         )
 
   lint-xrefs:
@@ -36,8 +37,9 @@ jobs:
       timeout: 90
       script: |
         ./scripts/lint_xrefs.sh $(
-          [ "${{ github.event_name }}" = "pull_request" ] \
-            && git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
-          || [ "${{ github.event_name }}" = "push" ] \
-            && git diff --name-only ${{ github.event.before }}...${{ github.sha }}
+          { [ "${{ github.event_name }}" = "pull_request" ] \
+              && git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}"; } \
+          || \
+          { [ "${{ github.event_name }}" = "push" ] \
+              && git diff --name-only "${{ github.event.before }}...${{ github.sha }}"; }
         )
