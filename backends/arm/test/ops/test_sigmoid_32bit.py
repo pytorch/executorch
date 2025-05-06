@@ -5,7 +5,7 @@
 
 import pytest
 import torch
-from executorch.backends.arm.quantizer.arm_quantizer import TOSAQuantizer
+from executorch.backends.arm.quantizer import TOSAQuantizer
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (

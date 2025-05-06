@@ -6,6 +6,7 @@ from typing import Callable, NamedTuple, Optional
 
 import torch
 import torch.nn.functional as F
+from executorch.backends.xnnpack.utils.utils import is_depthwise_conv
 from torch._subclasses import FakeTensor
 from torch.ao.quantization.fx.utils import get_new_attr_name_with_prefix
 from torch.fx import Node
@@ -28,7 +29,6 @@ from torchao.quantization.pt2e.quantizer.utils import (
     _annotate_input_qspec_map,
     _annotate_output_qspec,
 )
-
 
 __all__ = [
     "OperatorConfig",
@@ -322,6 +322,23 @@ def _do_annotate_conv(
         weight = conv_node.args[1]
         assert isinstance(weight, Node)
         input_qspec_map[weight] = get_weight_qspec(quantization_config)
+
+        # Only annotate dynamically quantized conv if it's 2D and not depthwise
+        if (
+            quantization_config
+            and quantization_config.input_activation
+            and quantization_config.input_activation.is_dynamic
+        ):
+            weight_val = weight.meta.get("val", None)
+            weight_shape = getattr(weight_val, "shape", None)
+
+            # Skip if not a 4D weight tensor (i.e. not conv2d)
+            if weight_shape is not None and len(weight_shape) != 4:
+                continue
+
+            # Skip if depthwise (default to groups=1 since it's not an arg)
+            if is_depthwise_conv(weight_shape, 1, is_conv_transpose):
+                continue
 
         # adding weight node to the partition as well
         partition = [conv_node, conv_node.args[1]]

@@ -17,9 +17,6 @@ To compile for the NPUs, the Ethos-U Vela compiler is needed. A target-specific 
 
 These dependencies can easily be downloaded using the script `examples/arm/setup.sh`.
 
-To work with with quantized models, build the quantize_ops_aot library that contains kernels for quantization and dequantization. This can be done with the script
-`backends/arm/scripts/build_quantized_ops_aot_lib.sh`.
-
 ## Using the Arm Ethos-U backend
 The example below demonstrates the lowering processs of a MobileNet V2 model from torchvision for a Ethos-U55 target. Since the model is a floating point model, first quantize it using the `EthosUQuantizer`. Then, pass an instance of the `EthosUPartitioner` to `to_edge_transform_and_lower`. Both the quantizer and the partitioner need a compilation specification created using `ArmCompileSpecBuilder`.
 
@@ -95,7 +92,10 @@ A fully integer model is required for using the Arm Ethos-U backend. As discusse
 To run the model on-device, build the executorch library and EthosUDelegate using the script
 `executorch/backends/arm/scripts/build_executorch.sh`.
 Then build the arm executorch runtime using the script
-`executorch/backends/arm/scripts/build_executorch_runner.sh --pte=mv2_arm_ethos_u55.pte --target=ethos-u55-128`.
+`executorch/backends/arm/scripts/build_executor_runner.sh --pte=mv2_arm_ethos_u55.pte --target=ethos-u55-128`.
 
 Finally, run the elf file on FVP using the script
 `executorch/backends/arm/scripts/run_fvp.sh --elf=executorch/mv2_arm_ethos_u55/cmake-out/arm_executor_runner --target=ethos-u55-128`.
+
+## See Also
+- [Arm Ethos-U Backend Tutorial](tutorial-arm-ethos-u.md)

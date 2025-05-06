@@ -11,7 +11,7 @@ huggingface page [llava-hf/llava-1.5-7b-hf](https://huggingface.co/llava-hf/llav
 
 
 <p align="center">
-      <img src="./llava_via_xnnpack.gif" width=300>
+      <img src="llava_via_xnnpack.gif" width=300>
       <br>
       <em>
       Running Llava1.5 7B on Android phone

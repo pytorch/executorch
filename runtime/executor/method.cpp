@@ -805,6 +805,15 @@ Error Method::init(
       pte_data_map = pte_data_map_res.get();
     }
 
+    ET_CHECK_OR_RETURN_ERROR(
+        !(pte_data_map && named_data_map),
+        NotSupported,
+        "NamedDataMap merge not supported; both pte_data_map and named_data_map are non-empty. If you see this error please file an issue at https://github.com/pytorch/executorch/issues");
+
+    if (!named_data_map || named_data_map->get_num_keys().get() == 0) {
+      named_data_map = pte_data_map;
+    }
+
     // n_delegate_ counts the number of successfully-initialized delegates for
     // ~Method() to clean up, and is incremented at the bottom of the loop. This
     // makes it safe for errors to return without updating any state.
@@ -816,7 +825,7 @@ Error Method::init(
           method_allocator,
           /*event_tracer=*/event_tracer_,
           /*method_name=*/serialization_plan_->name()->c_str(),
-          /*named_data_map=*/pte_data_map);
+          /*named_data_map=*/named_data_map);
       Error err = BackendDelegate::Init(
           delegate, program_, backend_init_context, &delegates_[i]);
       if (err != Error::Ok) {
@@ -1591,6 +1600,37 @@ const EValue& Method::get_input(size_t i) const {
 
 EValue& Method::mutable_input(size_t i) {
   return mutable_value(get_input_index(i));
+}
+
+Result<executorch::aten::Tensor> Method::get_attribute(
+    executorch::aten::string_view name) {
+  auto flatbuffer_values = serialization_plan_->values();
+  size_t counter = 0;
+
+  for (size_t i = 0; i < flatbuffer_values->size(); ++i) {
+    auto serialization_value = flatbuffer_values->Get(i);
+    if (serialization_value->val_type() ==
+        executorch_flatbuffer::KernelTypes::Tensor) {
+      const auto s_tensor = static_cast<const executorch_flatbuffer::Tensor*>(
+          serialization_value->val());
+      if (s_tensor->extra_tensor_info() != nullptr &&
+          s_tensor->extra_tensor_info()->fully_qualified_name() != nullptr &&
+          strcmp(
+              s_tensor->extra_tensor_info()->fully_qualified_name()->c_str(),
+              name.data()) == 0) {
+        if (!this->values_[counter].isTensor()) {
+          ET_LOG(
+              Error,
+              "Attribute tensor not at the expected location. The .pte is likely malformed. Please file a bug report on https://github.com/pytorch/executorch/issues");
+          return Error::Internal;
+        }
+        return this->values_[counter].toTensor();
+      }
+    }
+    ++counter;
+  }
+
+  return Error::NotFound;
 }
 
 size_t Method::outputs_size() const {

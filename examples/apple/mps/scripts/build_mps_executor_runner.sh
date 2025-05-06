@@ -60,5 +60,3 @@ cmake \
 cmake --build cmake-out/examples/apple/mps -j9 --config "$MODE"
 
 echo "Build succeeded!"
-
-./cmake-out/examples/apple/mps/mps_executor_runner --model_path mps_logical_not.pte --bundled_program

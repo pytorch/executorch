@@ -46,4 +46,4 @@ All models were tested with `float32` precision.
 
 # Licensing
 
-The code in the `efficient_sam_core` directory is licensed under the [Apache License 2.0](./efficient_sam_core/LICENSE.txt).
+The code in the `efficient_sam_core` directory is licensed under the [Apache License 2.0](efficient_sam_core/LICENSE.txt).

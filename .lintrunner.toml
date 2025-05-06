@@ -10,7 +10,7 @@ exclude_patterns = [
     'exir/serde/**',
 ]
 command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -19,7 +19,7 @@ command = [
     '@{{PATHSFILE}}'
 ]
 init_command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -41,7 +41,7 @@ exclude_patterns = [
     'exir/serde/**',
 ]
 command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -50,7 +50,7 @@ command = [
     '@{{PATHSFILE}}'
 ]
 init_command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -83,7 +83,7 @@ exclude_patterns = [
     'runtime/core/portable_type/c10/**',
 ]
 command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -94,7 +94,7 @@ command = [
     '@{{PATHSFILE}}'
 ]
 init_command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -116,7 +116,7 @@ exclude_patterns = [
     '**/third-party/**',
 ]
 command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -126,7 +126,7 @@ command = [
     '@{{PATHSFILE}}',
 ]
 init_command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -150,7 +150,7 @@ exclude_patterns = [
     '**/third-party/**',
 ]
 command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -191,7 +191,7 @@ exclude_patterns = [
     'extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_special_unstrided_cpu.h',
 ]
 command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -226,7 +226,7 @@ exclude_patterns = [
     'util/**',
 ]
 command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -275,7 +275,7 @@ exclude_patterns = [
     'util/**',
 ]
 command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -325,7 +325,7 @@ exclude_patterns = [
     'backends/arm/test/**',
 ]
 command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -337,7 +337,7 @@ command = [
     '@{{PATHSFILE}}'
 ]
 init_command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -356,7 +356,7 @@ exclude_patterns = [
     '.lintrunner.toml',
 ]
 command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',

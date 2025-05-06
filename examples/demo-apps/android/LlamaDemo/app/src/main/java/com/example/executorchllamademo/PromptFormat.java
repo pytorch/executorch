@@ -25,6 +25,8 @@ public class PromptFormat {
             + "<|eot_id|>";
       case LLAVA_1_5:
         return "USER: ";
+      case QWEN_3:
+        return "<|im_start|>system\n" + "You are a helpful assistant.\n" + "<|im_end|>\n";
       default:
         return SYSTEM_PLACEHOLDER;
     }
@@ -42,6 +44,14 @@ public class PromptFormat {
             + "<|start_header_id|>assistant<|end_header_id|>";
 
       case LLAVA_1_5:
+      case QWEN_3:
+        return "<|im_start|>user\n"
+            + USER_PLACEHOLDER
+            + "<|im_end|>\n"
+            + "<|im_start|>assistant\n"
+            + "<think>\n"
+            + "\n"
+            + "</think>\n\n\n";
       default:
         return USER_PLACEHOLDER;
     }
@@ -69,6 +79,8 @@ public class PromptFormat {
         return "<|eot_id|>";
       case LLAVA_1_5:
         return "</s>";
+      case QWEN_3:
+        return "<|endoftext|>";
       default:
         return "";
     }

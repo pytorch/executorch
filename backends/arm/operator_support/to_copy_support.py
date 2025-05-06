@@ -77,7 +77,6 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
     ) -> bool:
         assert node.target in self.targets
 
-        assert tosa_spec.support_integer()
         supported_dtypes = (
             self.ALL_SUPPORTED_TYPES
             if tosa_spec.support_float()

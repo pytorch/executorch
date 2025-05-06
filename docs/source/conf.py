@@ -18,9 +18,9 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
-import distutils.file_util
 import glob
 import os
+import shutil
 import sys
 from typing import Any
 
@@ -135,7 +135,7 @@ for i in range(len(sphinx_gallery_conf["examples_dirs"])):
     # Copy .md files from source dir to gallery dir
     for f in glob.glob(os.path.join(source_dir, "*.md")):
 
-        distutils.file_util.copy_file(f, gallery_dir, update=True)
+        shutil.copyfile(f, gallery_dir)
 
 source_suffix = [".rst", ".md"]
 
@@ -192,7 +192,7 @@ html_js_files = ["js/progress-bar.js"]
 # Example configuration for intersphinx: refer to the Python standard library.
 intersphinx_mapping = {
     "python": ("https://docs.python.org/", None),
-    "numpy": ("https://docs.scipy.org/doc/numpy/", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
     "torch": ("https://pytorch.org/docs/stable/", None),
 }
 

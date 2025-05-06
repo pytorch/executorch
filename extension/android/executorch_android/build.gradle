@@ -47,6 +47,7 @@ dependencies {
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test:rules:1.2.0'
     androidTestImplementation 'commons-io:commons-io:2.4'
+    androidTestImplementation 'org.json:json:20250107'
 }
 
 import com.vanniktech.maven.publish.SonatypeHost

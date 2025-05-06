@@ -69,30 +69,71 @@ all() { # Run all tests
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
-test_pytest() { # Test ops and other things
+test_pytest_ops() { # Test ops and other things
     echo "${TEST_SUITE_NAME}: Run pytest"
 
-    ./examples/models/llama3_2_vision/install_requirements.sh
-
-    cd "${et_root_dir}"
-    backends/arm/scripts/build_quantized_ops_aot_lib.sh
+    # Prepare for pytest
+    backends/arm/scripts/build_executorch.sh
 
     # Run arm baremetal pytest tests without FVP
-    pytest  --verbose --color=yes --numprocesses=auto backends/arm/test/
+    pytest  --verbose --color=yes --numprocesses=auto backends/arm/test/ --ignore=backends/arm/test/models
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_pytest_models() { # Test ops and other things
+    echo "${TEST_SUITE_NAME}: Run pytest"
+
+    examples/models/llama3_2_vision/install_requirements.sh
+
+    # Prepare for pytest
+    backends/arm/scripts/build_executorch.sh
+
+    # Run arm baremetal pytest tests without FVP
+    pytest  --verbose --color=yes --numprocesses=auto backends/arm/test/models
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_pytest() { # Test ops and other things
+    echo "${TEST_SUITE_NAME}: Run pytest"
+    test_pytest_ops
+    test_pytest_models
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_pytest_ops_ethosu_fvp() { # Same as test_pytest but also sometime verify using Corstone FVP
+    echo "${TEST_SUITE_NAME}: Run pytest with fvp"
+
+    # Prepare Corstone-3x0 FVP for pytest
+    backends/arm/scripts/build_executorch.sh
+    backends/arm/scripts/build_portable_kernels.sh
+    # Build semihosting version of the runner used by pytest testing when using --arm_run_corstoneFVP
+    backends/arm/test/setup_testing.sh
+
+    # Run arm baremetal pytest tests with FVP
+    pytest  --verbose --color=yes --numprocesses=auto backends/arm/test/ --ignore=backends/arm/test/models --arm_run_corstoneFVP
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_pytest_models_ethosu_fvp() { # Same as test_pytest but also sometime verify using Corstone FVP
+    echo "${TEST_SUITE_NAME}: Run pytest with fvp"
+
+    examples/models/llama3_2_vision/install_requirements.sh
+
+    # Prepare Corstone-3x0 FVP for pytest
+    backends/arm/scripts/build_executorch.sh
+    backends/arm/scripts/build_portable_kernels.sh
+    # Build semihosting version of the runner used by pytest testing when using --arm_run_corstoneFVP
+    backends/arm/test/setup_testing.sh
+
+    # Run arm baremetal pytest tests with FVP
+    pytest  --verbose --color=yes --numprocesses=auto backends/arm/test/models --arm_run_corstoneFVP
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
 test_pytest_ethosu_fvp() { # Same as test_pytest but also sometime verify using Corstone FVP
     echo "${TEST_SUITE_NAME}: Run pytest with fvp"
-
-    ./examples/models/llama3_2_vision/install_requirements.sh
-
-    # Prepare Corstone-3x0 FVP for pytest
-    examples/arm/run.sh --model_name=add --build_only
-    backends/arm/test/setup_testing.sh
-
-    # Run arm baremetal pytest tests with FVP
-    pytest  --verbose --color=yes --numprocesses=auto backends/arm/test/ --arm_run_corstoneFVP
+    test_pytest_ops_ethosu_fvp
+    test_pytest_models_ethosu_fvp
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -116,8 +157,8 @@ test_run_ethosu_fvp() { # End to End model tests using run.sh
     echo "${TEST_SUITE_NAME}: PASS"
     }
 
-test_models_ethosu_fvp() { # End to End model tests using model_test.py
-    echo "${TEST_SUITE_NAME}: Test ethos-u delegate models with test_model.py"
+test_models_tosa() { # End to End model tests using model_test.py
+    echo "${TEST_SUITE_NAME}: Test TOSA delegated models with test_model.py"
 
     # Build common libs once
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --build_libs
@@ -128,6 +169,22 @@ test_models_ethosu_fvp() { # End to End model tests using model_test.py
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA --model=mv3
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA --model=lstm
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA --model=edsr
+    # python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA --model=emformer_transcribe # Takes long time to run
+    # python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA --model=emformer_join       # Takes long time to run
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA --model=w2l
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA --model=ic3
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA --model=ic4
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA --model=resnet18
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA --model=resnet50
+
+    echo "${TEST_SUITE_NAME}: PASS"
+    }
+
+test_models_ethos-u55() { # End to End model tests using model_test.py
+    echo "${TEST_SUITE_NAME}: Test Ethos-U55 delegated models with test_model.py"
+
+    # Build common libs once
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --build_libs
 
     # Ethos-U55
     echo "${TEST_SUITE_NAME}: Test ethos-u target Ethos-U55"
@@ -135,19 +192,34 @@ test_models_ethosu_fvp() { # End to End model tests using model_test.py
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u55-64  --model=mv3  --extra_flags="-DET_ATOL=5.00 -DET_RTOL=5.00"
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u55-256 --model=lstm --extra_flags="-DET_ATOL=0.03 -DET_RTOL=0.03"
 
-    # Ethos-U85
-    echo "${TEST_SUITE_NAME}: Test ethos-u target Ethos-U85"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-256  --model=mv2  --extra_flags="-DET_ATOL=2.00 -DET_RTOL=2.00"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-1024 --model=mv3  --extra_flags="-DET_ATOL=5.00 -DET_RTOL=5.00"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128  --model=lstm --extra_flags="-DET_ATOL=0.03 -DET_RTOL=0.03"
     echo "${TEST_SUITE_NAME}: PASS"
     }
+
+test_models_ethos-u85() { # End to End model tests using model_test.py
+    echo "${TEST_SUITE_NAME}: Test Ethos-U85 delegated models with test_model.py"
+
+    # Build common libs once
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --build_libs
+
+    # Ethos-U85
+    echo "${TEST_SUITE_NAME}: Test ethos-u target Ethos-U85"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-256 --model=mv2  --extra_flags="-DET_ATOL=2.00 -DET_RTOL=2.00"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-512 --model=mv3  --extra_flags="-DET_ATOL=5.00 -DET_RTOL=5.00"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=lstm --extra_flags="-DET_ATOL=0.03 -DET_RTOL=0.03"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=w2l  --extra_flags="-DET_ATOL=0.01 -DET_RTOL=0.01"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-256 --model=ic4  --extra_flags="-DET_ATOL=0.8 -DET_RTOL=0.8" --timeout=2400
+
+    echo "${TEST_SUITE_NAME}: PASS"
+    }
+
 
 test_full_ethosu_fvp() { # All End to End model tests
     echo "${TEST_SUITE_NAME}: Test ethos-u delegate models and examples on fvp"
 
-    test_models_ethosu_fvp
     test_run_ethosu_fvp
+    test_models_tosa
+    test_models_ethos-u55
+    test_models_ethos-u85
     echo "${TEST_SUITE_NAME}: PASS"
     }
 

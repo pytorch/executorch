@@ -8,21 +8,27 @@
 
 
 import unittest
+from typing import Tuple
 
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
 from executorch.backends.cadence.aot import compiler
-from executorch.backends.cadence.aot.compiler import export_to_edge, quantize_pt2
+from executorch.backends.cadence.aot.compiler import (
+    export_to_edge,
+    quantize_and_export_to_edge,
+)
 from executorch.backends.cadence.aot.fuse_ops import (
     FuseFullThenReshapePass,
     FuseMulIntoDequantPass,
     FuseQuantDequantToRequantizePass,
-    FuseTransposeOpPairsPass,
+    FuseTransposeOrPermuteOpPairsPass,
 )
 from executorch.backends.cadence.aot.graph_builder import GraphBuilder
 from executorch.backends.cadence.aot.pass_utils import count_node, op_counts_match
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
+from executorch.exir.pass_base import ProxyValue
+from parameterized import parameterized
 from torch import nn
 
 
@@ -220,6 +226,26 @@ class TestFusionPasses(TestFusionPassesBase):
             count_node(graph_module, exir_ops.edge.aten.view_copy.default), 1
         )
 
+    def test_view_fusion_branched(self):
+        class ViewFusion(torch.nn.Module):
+            def forward(self, x):
+                y = x.view([1, 8, 15])
+                z = y.view([1, 1, 120])
+                t = y.view([120, 1, 1])
+                return z, t
+
+        x = torch.randn(8, 5, 3)
+        graph_module = (
+            compiler.export_to_cadence(ViewFusion(), (x,))
+            .exported_program()
+            .graph_module
+        )
+        graph_module.graph.eliminate_dead_code()
+        # z and t should be fused and y should be eliminated.
+        self.assertEqual(
+            count_node(graph_module, exir_ops.edge.aten.view_copy.default), 2
+        )
+
     def test_force_quant_dequant_fusion(self):
         class M(torch.nn.Module):
             def __init__(self):
@@ -303,7 +329,6 @@ class TestFusionPasses(TestFusionPassesBase):
         model = M()
         graph_module = export_to_edge(model, (inputs,)).exported_program().graph_module
         graph_module = FuseQuantDequantToRequantizePass()(graph_module).graph_module
-        graph_module.print_readable()
 
         self.check_op_counts(
             graph_module,
@@ -392,9 +417,10 @@ class TestFusionPasses(TestFusionPassesBase):
 
         inputs = torch.randn(2, 12, 1, 6)
         model = M()
-        quantized_model = quantize_pt2(model, (inputs,))
         graph_module = (
-            export_to_edge(quantized_model, (inputs,)).exported_program().graph_module
+            quantize_and_export_to_edge(model, (inputs,))
+            .exported_program()
+            .graph_module
         )
         graph_module = FuseQuantDequantToRequantizePass()(graph_module).graph_module
         self.check_op_counts(
@@ -484,81 +510,205 @@ class TestFusionPasses(TestFusionPassesBase):
         )
 
 
+class TestFuseTransposeOrPermuteOpPairsPass(TestFusionPassesBase):
+    def _create_operator(
+        self, builder: GraphBuilder, op: torch._ops.OpOverload, x: ProxyValue
+    ) -> ProxyValue:
+        if op == exir_ops.edge.quantized_decomposed.quantize_per_tensor.default:
+            return builder.call_operator(
+                op=op,
+                args=(x, 1.2, 3, 0, 127, torch.int8),
+            )
+        elif op == exir_ops.edge.cadence.quantized_relu.per_tensor:
+            return builder.call_operator(
+                op=op,
+                args=(x, 0, 0, 0, 0),
+            )
+        else:
+            raise ValueError(f"Unsupported op: {op}")
+
+
 class TestFuseTransposeOpPairsPass(TestFusionPassesBase):
-    def test_fuse_transpose_pairs(self):
-        # Create a graph with transpose -> quant -> transpose.
+    def _create_operator(
+        self, builder: GraphBuilder, op: torch._ops.OpOverload, x: ProxyValue
+    ) -> ProxyValue:
+        if op == exir_ops.edge.quantized_decomposed.quantize_per_tensor.default:
+            return builder.call_operator(
+                op=op,
+                args=(x, 1.2, 3, 0, 127, torch.int8),
+            )
+        elif op == exir_ops.edge.cadence.quantized_relu.per_tensor:
+            return builder.call_operator(
+                op=op,
+                args=(x, 0, 0, 0, 0),
+            )
+        else:
+            raise ValueError(f"Unsupported op: {op}")
+
+    @parameterized.expand(
+        [
+            # transpose -> quant -> same transpose => fuse
+            (
+                True,
+                [0, 1],
+                True,
+                [0, 1],
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                True,
+            ),
+            # same with different input size
+            (
+                True,
+                [0, 1],
+                True,
+                [0, 1],
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                True,
+                [4, 4, 4],
+            ),
+            # transpose -> quant -> same transpose => fuse (same with transpose dimensions in different order, and with different skip quant op)
+            (
+                True,
+                [0, 1],
+                True,
+                [1, 0],
+                exir_ops.edge.cadence.quantized_relu.per_tensor,
+                True,
+            ),
+            # transpose -> quant -> different transpose => don't fuse
+            (
+                True,
+                [0, 1],
+                True,
+                [0, 2],
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                False,
+            ),
+            # permutation -> quant -> opposite permutation => fuse
+            (
+                False,
+                [1, 2, 0],
+                False,
+                [2, 0, 1],
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                True,
+            ),
+            # same with different input size
+            (
+                False,
+                [1, 2, 0],
+                False,
+                [2, 0, 1],
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                True,
+                [4, 4, 4],
+            ),
+            # permutation -> quant -> not the opposite permutation => don't fuse
+            (
+                False,
+                [1, 2, 0],
+                False,
+                [1, 2, 0],
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                False,
+            ),
+            # same with different input size
+            (
+                False,
+                [1, 2, 0],
+                False,
+                [1, 2, 0],
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                False,
+                [4, 4, 4],
+            ),
+            # transpose -> quant -> transpose as a permutation => fuse
+            (
+                True,
+                [0, 1],
+                False,
+                [1, 0, 2],
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                True,
+            ),
+            # transpose -> quant -> not opposite permutation => fuse
+            (
+                True,
+                [0, 1],
+                False,
+                [0, 2, 1],
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                False,
+            ),
+        ],
+    )
+    def test_fuse_transpose_permute_pairs(
+        self,
+        is_op1_transpose: bool,
+        perm1: list[int],
+        is_op2_transpose: bool,
+        perm2: list[int],
+        quant_op: torch._ops.OpOverload,
+        expected_is_fused: bool,
+        dims: Tuple[int, int, int] = (2, 3, 4),
+    ):
+        # Create a graph with transpose/permute -> quant -> transpose/permute.
         builder = GraphBuilder()
-        x = builder.placeholder("x", torch.randn(2, 3))
-        transpose_node = builder.call_operator(
-            op=exir_ops.edge.aten.transpose_copy.int,
-            args=(x, 0, 1),
+        x = builder.placeholder("x", torch.randn(dims))
+        op1 = (
+            exir_ops.edge.aten.transpose_copy.int
+            if is_op1_transpose
+            else exir_ops.edge.aten.permute_copy.default
         )
-        quant_node = builder.call_operator(
-            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-            args=(transpose_node, 1.2, 3, 0, 127, torch.int8),
+        node1 = builder.call_operator(
+            op=op1,
+            args=(x, perm1[0], perm1[1]) if is_op1_transpose else (x, list(perm1)),
         )
-        transpose_node = builder.call_operator(
-            op=exir_ops.edge.aten.transpose_copy.int,
-            args=(quant_node, 0, 1),
+        quant_node = self._create_operator(builder, quant_op, node1)
+        op2 = (
+            exir_ops.edge.aten.transpose_copy.int
+            if is_op2_transpose
+            else exir_ops.edge.aten.permute_copy.default
         )
-        builder.output(transpose_node)
+        node2 = builder.call_operator(
+            op=op2,
+            args=(
+                (quant_node, perm2[0], perm2[1])
+                if is_op2_transpose
+                else (quant_node, list(perm2))
+            ),
+        )
+        builder.output([node2])
         gm = builder.get_graph_module()
+        expected_op_counts = {
+            quant_op: 1,
+        }
+        expected_op_counts[op1] = 1
+        expected_op_counts[op2] = expected_op_counts.get(op2, 0) + 1
         self.check_op_counts(
             gm,
-            expected_op_counts={
-                exir_ops.edge.aten.transpose_copy.int: 2,
-                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: 1,
-            },
+            # pyre-fixme[6]: Incompatible parameter type
+            expected_op_counts=expected_op_counts,
         )
 
-        # Check that the pass fuses the two transpose ops.
-        gm_after_pass = FuseTransposeOpPairsPass()(gm).graph_module
+        # Check that the pass fuses the two transpose/permute ops.
+        fusion_pass_result = FuseTransposeOrPermuteOpPairsPass()(gm)
+        self.assertIsNotNone(fusion_pass_result)
+        gm_after_pass = fusion_pass_result.graph_module
+        if expected_is_fused:
+            expected_op_counts[op1] = 0
+            expected_op_counts[op2] = 0
         self.check_op_counts(
             gm_after_pass,
-            expected_op_counts={
-                exir_ops.edge.aten.transpose_copy.int: 0,
-                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: 1,
-            },
-        )
-
-    def test_no_fusion_for_transpose_pairs(self):
-        # Create a graph with transpose -> quant -> transpose.
-        builder = GraphBuilder()
-        x = builder.placeholder("x", torch.randn(2, 3, 4))
-        transpose_node = builder.call_operator(
-            op=exir_ops.edge.aten.transpose_copy.int,
-            args=(x, 0, 1),
-        )
-        quant_node = builder.call_operator(
-            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-            args=(transpose_node, 1.2, 3, 0, 127, torch.int8),
-        )
-        transpose_node = builder.call_operator(
-            op=exir_ops.edge.aten.transpose_copy.int,
-            args=(quant_node, 1, 2),
-        )
-        builder.output(transpose_node)
-        gm = builder.get_graph_module()
-        self.check_op_counts(
-            gm,
-            expected_op_counts={
-                exir_ops.edge.aten.transpose_copy.int: 2,
-                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: 1,
-            },
-        )
-
-        # No fusion.
-        gm_after_pass = FuseTransposeOpPairsPass()(gm).graph_module
-        self.check_op_counts(
-            gm_after_pass,
-            expected_op_counts={
-                exir_ops.edge.aten.transpose_copy.int: 2,
-                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: 1,
-            },
+            # pyre-fixme[6]: Incompatible parameter type
+            expected_op_counts=expected_op_counts,
         )
 
     def test_fusion_for_forked_transposes(self):
-        # Create a graph with transpose -> quant -> transpose.
+        # Create a graph with
+        # transpose -> quant -> transpose.
+        #           -> quant -> transpose.
+        #           -> quant -> transpose.
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(2, 3, 4, dtype=torch.float32))
         transpose_node = builder.call_operator(
@@ -588,8 +738,8 @@ class TestFuseTransposeOpPairsPass(TestFusionPassesBase):
             },
         )
 
-        # Fuse the all the transpose ops.
-        gm_after_pass = FuseTransposeOpPairsPass()(gm).graph_module
+        # Fuse all the transpose ops.
+        gm_after_pass = FuseTransposeOrPermuteOpPairsPass()(gm).graph_module
         self.check_op_counts(
             gm_after_pass,
             expected_op_counts={

@@ -47,12 +47,15 @@ from .passes import get_cadence_passes
 from .utils import print_ops_info
 
 
+default_quantizer = CadenceDefaultQuantizer()
+
+
 # Note: this is not meant as a primary API since it can create inconsistencies
 # if the quantizer here is different from the quantizer used to convert. It is
 # however useful for unit tests to separate the converted model from the fused
 # model, to be able to get reference numerics.
 # If this does not apply, please use quantize_and_fuse_pt2 instead.
-def convert_pt2(
+def prepare_and_convert_pt2(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
     quantizer: CadenceQuantizer,
@@ -148,9 +151,9 @@ def quantize_pt2(
     quantizer: Optional[CadenceQuantizer] = None,
     calibration_data: Optional[list[tuple[object, ...]]] = None,
     dump_graphs: bool = False,
-) -> torch.fx.GraphModule:
+) -> ExportedProgram:
     """
-    Prepare, convert and fuse the model using the given quantizer.
+    Trace, prepare, convert and fuse the model using the given quantizer.
     If calibration data is provided, it will be used to calibrate the model. If
     not, the inputs will be used for calibration instead, which is useful for
     unit tests but should not be used for end-to-end use cases.
@@ -164,7 +167,7 @@ def quantize_pt2(
         quantizer = CadenceDefaultQuantizer()
 
     # Get converted graph module
-    converted_gm = convert_pt2(
+    converted_gm = prepare_and_convert_pt2(
         model, inputs, quantizer, calibration_data, dump_graphs=dump_graphs
     )
 
@@ -175,7 +178,9 @@ def quantize_pt2(
         logging.info("Graph after quantization and fusion:")
         logging.info(fused_gm.graph.print_tabular())
 
-    return fused_gm
+    program = torch.export.export(fused_gm, inputs, strict=True)
+
+    return program
 
 
 # Export the model and lower it to an ExportedProgram (in aten IR)
@@ -250,6 +255,50 @@ def export_to_edge(
     return edge_prog_manager
 
 
+def quantize_and_export_to_edge(
+    model: torch.nn.Module,
+    inputs: tuple[object, ...],
+    quantizer: Optional[CadenceQuantizer] = None,
+    dump_graphs: bool = False,
+    constant_methods: Optional[dict[str, object]] = None,
+) -> EdgeProgramManager:
+    """
+    Trace, quantize and lower a model/inputs pair to edge IR.
+    """
+    quantized_model = quantize_pt2(
+        model,
+        inputs,
+        quantizer=quantizer,
+        dump_graphs=dump_graphs,
+    )
+
+    return lower_ep_to_edge(
+        quantized_model,
+        dump_graphs=dump_graphs,
+        constant_methods=constant_methods,
+    )
+
+
+def lower_ep_to_cadence(
+    program: ExportedProgram,
+    dump_graphs: bool = False,
+    opt_level: int = 1,
+) -> EdgeProgramManager:
+    """
+    Lower an existing ExportedProgram to edge IR and apply frontend optimization passes.
+    """
+    edge_prog_manager = lower_ep_to_edge(program, dump_graphs=dump_graphs)
+    cadence_passes = get_cadence_passes(opt_level)
+
+    # Run a couple required passes for quant/dequant ops
+    cadence_prog_manager = edge_prog_manager.transform(
+        cast(
+            list[Callable[[torch.fx.GraphModule], Optional[PassResult]]], cadence_passes
+        )
+    )
+    return cadence_prog_manager
+
+
 def export_to_cadence(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
@@ -274,11 +323,14 @@ def quantize_and_export_to_cadence(
     dump_graphs: bool = False,
     opt_level: int = 1,
 ) -> EdgeProgramManager:
+    """
+    Trace, quantize, lower a model/inputs pair to edge IR and apply frontend
+    optimization passes.
+    """
     quantized_model = quantize_pt2(model, inputs)
 
-    return export_to_cadence(
+    return lower_ep_to_cadence(
         quantized_model,
-        inputs,
         opt_level=opt_level,
         dump_graphs=dump_graphs,
     )

@@ -400,7 +400,8 @@ Tensor& custom_sdpa_out_impl(
 
   ET_CHECK_MSG(q.dim() == 4, "query must be a 4D tensor");
 
-  const int64_t num_keys_for_causal_attention = start_pos + seq_len;
+  const int64_t num_keys_for_causal_attention =
+      attn_mask.has_value() ? -1 : start_pos + seq_len;
 
   ET_KERNEL_CHECK(
       ctx,

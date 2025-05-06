@@ -5,10 +5,8 @@
 
 import logging
 import os
-import platform
 import random
 import shutil
-import subprocess
 import sys
 from typing import Any
 
@@ -81,8 +79,7 @@ def pytest_addoption(parser):
 
 
 def pytest_sessionstart(session):
-    if not session.config.option.collectonly:
-        _load_libquantized_ops_aot_lib()
+    pass
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -172,32 +169,3 @@ def get_option(option: str) -> Any | None:
     if option in pytest._test_options:  # type: ignore[attr-defined]
         return pytest._test_options[option]  # type: ignore[attr-defined]
     return None
-
-
-def _load_libquantized_ops_aot_lib():
-    """
-    Find and load the libquantized_ops_aot_lib shared library.
-    """
-    so_ext = {
-        "Darwin": "dylib",
-        "Linux": "so",
-        "Windows": "dll",
-    }.get(platform.system(), None)
-
-    find_lib_cmd = [
-        "find",
-        "cmake-out-aot-lib",
-        "-name",
-        f"libquantized_ops_aot_lib.{so_ext}",
-    ]
-
-    res = subprocess.run(find_lib_cmd, capture_output=True)
-    if res.returncode == 0:
-        library_path = res.stdout.decode().strip()
-        import torch
-
-        torch.ops.load_library(library_path)
-    else:
-        raise RuntimeError(
-            f"Did not find libquantized_ops_aot_lib.{so_ext} in cmake-out-aot-lib. Did you build it?"
-        )

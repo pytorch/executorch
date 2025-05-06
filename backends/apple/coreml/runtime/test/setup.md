@@ -4,18 +4,18 @@ This is a tutorial for setting up tests for the **Core ML** backend.
 
 ## Running tests
 
-1. Follow the instructions described in [Setting Up ExecuTorch](/docs/source/getting-started-setup.md) to set up ExecuTorch environment.
+1. Follow the instructions described in [Setting Up ExecuTorch](../../../../../docs/source/getting-started-setup.rst) to set up ExecuTorch environment.
 
 2. Run `install_requirements.sh` to install dependencies required by the **Core ML** backend.
 
 ```bash
 cd executorch
 
-sh backends/apple/coreml/scripts/install_requirements.sh   
+sh backends/apple/coreml/scripts/install_requirements.sh
 
-``` 
+```
 
-3. Follow the instructions described in [Building with CMake](/docs/source/runtime-build-and-cross-compilation.md#building-with-cmake) to set up CMake build system.
+3. Follow the instructions described in [Building with CMake](../../../../../docs/source/using-executorch-cpp.md#building-with-cmake) to set up CMake build system.
 
 4. Install [Xcode](https://developer.apple.com/xcode/).
 
@@ -26,7 +26,7 @@ sh backends/apple/coreml/scripts/install_requirements.sh
 ```bash
 cd executorch
 
-# Builds macOS universal test bundle. 
+# Builds macOS universal test bundle.
 
 sh backends/apple/coreml/srcipts/build_tests.sh
 
@@ -40,7 +40,7 @@ cd executorch
 sh backends/apple/coreml/srcipts/run_tests.sh
 
 ```
- 
+
 ## Updating tests
 
 1. Open the Xcode workspace.
@@ -48,7 +48,7 @@ sh backends/apple/coreml/srcipts/run_tests.sh
 ```bash
 cd executorch
 
-# Builds macOS universal test bundle. 
+# Builds macOS universal test bundle.
 
 open backends/apple/coreml/runtime/workspace/executorchcoreml.xcworkspace
 

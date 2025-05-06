@@ -1,0 +1,41 @@
+on:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: true
+
+jobs:
+  lint-urls:
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-linter
+      submodules: 'none'
+      fetch-depth: 0
+      ref: ${{ inputs.ref }}
+      timeout: 90
+      script: |
+        ./scripts/lint_urls.sh $(
+          [ "${{ github.event_name }}" = "pull_request" ] \
+            && git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} \
+          || [ "${{ github.event_name }}" = "push" ] \
+            && git diff --name-only ${{ github.event.before }} ${{ github.sha }}
+        )
+
+  lint-xrefs:
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-linter
+      submodules: 'none'
+      fetch-depth: 0
+      ref: ${{ inputs.ref }}
+      timeout: 90
+      script: |
+        ./scripts/lint_xrefs.sh $(
+          [ "${{ github.event_name }}" = "pull_request" ] \
+            && git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} \
+          || [ "${{ github.event_name }}" = "push" ] \
+            && git diff --name-only ${{ github.event.before }} ${{ github.sha }}
+        )
