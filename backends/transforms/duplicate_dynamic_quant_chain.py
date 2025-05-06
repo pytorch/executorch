@@ -8,6 +8,7 @@ import logging
 import operator
 
 import torch
+from executorch.exir.program._program import _update_exported_program_graph_module
 
 from torch.ao.quantization.pt2e.utils import (
     _filter_sym_size_users,
@@ -194,3 +195,11 @@ class DuplicateDynamicQuantChainPass(PassBase):
         graph_module.graph.eliminate_dead_code()
         graph_module.recompile()
         return PassResult(graph_module, True)
+
+
+def duplicate_dynamic_quant_chain_pass(
+    ep: torch.export.ExportedProgram,
+) -> torch.export.ExportedProgram:
+    res = DuplicateDynamicQuantChainPass()(ep.graph_module)
+    assert res is not None
+    return _update_exported_program_graph_module(ep, res.graph_module)

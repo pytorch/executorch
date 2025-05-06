@@ -1,0 +1,19 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+
+oncall("executorch")
+
+python_library(
+    name = "xnnpack_recipes",
+    srcs = [
+        "recipes.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/export:recipe",
+        "//executorch/backends/transforms:duplicate_dynamic_quant_chain",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+    ],
+)
