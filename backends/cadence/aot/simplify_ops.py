@@ -16,6 +16,7 @@ from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
     register_cadence_pass,
 )
+from executorch.exir import ExportedProgram
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, ProxyValue
@@ -107,6 +108,53 @@ class SimplifySliceOpPass(ExportPass):
             + (dim, start_val, end_val, step)
         )
         return super().call_operator(op, new_args, kwargs, meta)
+
+
+def FuseMulToQuantPass(
+    exported_program: ExportedProgram,
+) -> ExportedProgram:
+    """
+    If a mul op using a scalar constant input is followed by a quantize op, we can fuse the mul
+    into the quantize op by updating its scale. Unfortunately, lifted constants are not stored in
+    the nodes, so we need to find the constant value in the constants dict.
+    """
+    graph = exported_program.graph_module.graph
+    for node in graph.nodes:
+        # We are only interested in mul ops
+        if node.target != exir_ops.edge.aten.mul.Tensor:
+            continue
+
+        # Only applies if the following op is a quantize op
+        user = list(node.users.keys())[0]
+        if user.target not in (
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+        ):
+            continue
+
+        # Check that the second arg of the mul is a constant
+        # Get the constant value
+        if node.args[1].name not in exported_program.state_dict:
+            continue
+
+        tensor = exported_program.state_dict[node.args[1].name]
+
+        args = list(user.args)
+
+        # Update the scale of the quantize op
+        args[0] = node.args[0]
+        args[1] = user.args[1] / tensor.item()
+
+        # Return the op with the updated args
+        with graph.inserting_before(user):
+            op_node = graph.call_function(user.target, args=tuple(args))
+            op_node.meta = node.meta
+        user.replace_all_uses_with(op_node)
+
+    exported_program.graph_module.recompile()
+    exported_program.graph_module.graph.eliminate_dead_code()
+
+    return exported_program
 
 
 # This class encapsulates all the functions that simplify the op's args

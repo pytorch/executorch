@@ -14,7 +14,10 @@ import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
 from executorch.backends.cadence.aot.compiler import export_to_edge
 from executorch.backends.cadence.aot.pass_utils import count_node
-from executorch.backends.cadence.aot.simplify_ops import SimplifySliceOpPass
+from executorch.backends.cadence.aot.simplify_ops import (
+    FuseMulToQuantPass,
+    SimplifySliceOpPass,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from parameterized.parameterized import parameterized
 from torch.fx.passes.infra.pass_base import PassResult
@@ -111,4 +114,26 @@ class TestSimplifyOpsPasses(unittest.TestCase):
         )
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.full.default), 1
+        )
+
+
+    def test_fuse_mul_in_quant(self) -> None:
+        class FuseMulInQuant(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                y = x * 0.6
+                z = torch.ops.cadence.quantize_per_tensor(
+                    y, 0.1, 0, -32768, 32767, torch.int16
+                )
+                return z
+
+        model = FuseMulInQuant()
+        inputs = (torch.randn(1, 4, 16),)
+
+        exported_program = export_to_edge(model, inputs).exported_program()
+        exported_program = FuseMulToQuantPass(exported_program)
+
+        # Assert that the mul op was removed
+        self.assertEqual(
+            count_node(exported_program.graph_module, exir_ops.edge.aten.mul.Tensor),
+            0,
         )
