@@ -16,7 +16,7 @@ import executorch.exir as exir
 
 import torch
 
-from executorch.backends.qualcomm._passes import AnnotateStack
+from executorch.backends.qualcomm._passes import AnnotateStack, AnnotateUnbind
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 
 from executorch.backends.qualcomm.builders.node_visitor import (
@@ -221,7 +221,13 @@ def dump_context_from_pte(pte_path):
                     delegate.processed.index
                 ].data
                 binary = qnn_mgr.StripProtocol(processed_bytes)
-                with open(f"{ctx_path}/{execution_plan.name}_{i}.bin", "wb") as f:
+                file_extension = ".bin"
+                if len(binary) == 0:
+                    binary = processed_bytes
+                    file_extension = ".dlc"
+                with open(
+                    f"{ctx_path}/{execution_plan.name}_{i}{file_extension}", "wb"
+                ) as f:
                     f.write(binary)
 
 
@@ -304,11 +310,12 @@ def get_decomp_table(passes_job) -> Dict[torch._ops.OperatorBase, Callable]:
     skip_decompositions = get_skip_decomp_table()
 
     # If we want to annotate the decomposed ops, then we should decompose the operation.
-    if passes_job and passes_job.get(AnnotateStack, False):
+    if passes_job:
         skip_decompositions = [
             skip_decomp_op
             for skip_decomp_op in skip_decompositions
-            if skip_decomp_op not in AnnotateStack.decomp_ops
+            if skip_decomp_op
+            not in AnnotateStack.decomp_ops + AnnotateUnbind.decomp_ops
         ]
     remove_decompositions(source_decompositions, skip_decompositions)
 
@@ -1180,6 +1187,8 @@ def generate_qnn_executorch_compiler_spec(
 
     if saver:
         qnn_executorch_options.library_path = "libQnnSaver.so"
+        qnn_executorch_options.saver = True
+        qnn_executorch_options.saver_output_dir = "saver_output"
 
     if optrace:
         qnn_executorch_options.profile_level = QnnExecuTorchProfileLevel.kProfileOptrace

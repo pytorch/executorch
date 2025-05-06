@@ -47,6 +47,22 @@
 		03D03DAB2C7823830088D6A7 /* text_decoder_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03D03DA92C7823830088D6A7 /* text_decoder_runner.cpp */; };
 		03D03DAC2C7823830088D6A7 /* text_decoder_runner.h in Headers */ = {isa = PBXBuildFile; fileRef = 03D03DAA2C7823830088D6A7 /* text_decoder_runner.h */; };
 		26A6A4282C8A3769005A761E /* ImagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26A6A4272C8A3769005A761E /* ImagePicker.swift */; };
+		306A713D2DC1DC0F00936B1F /* token_decoder.h in Headers */ = {isa = PBXBuildFile; fileRef = 306A713C2DC1DC0F00936B1F /* token_decoder.h */; };
+		306A713E2DC1DC0F00936B1F /* regex.h in Headers */ = {isa = PBXBuildFile; fileRef = 306A71392DC1DC0F00936B1F /* regex.h */; };
+		306A713F2DC1DC0F00936B1F /* string_integer_map.h in Headers */ = {isa = PBXBuildFile; fileRef = 306A713B2DC1DC0F00936B1F /* string_integer_map.h */; };
+		306A71402DC1DC0F00936B1F /* re2_regex.h in Headers */ = {isa = PBXBuildFile; fileRef = 306A71382DC1DC0F00936B1F /* re2_regex.h */; };
+		306A71412DC1DC0F00936B1F /* hf_tokenizer.h in Headers */ = {isa = PBXBuildFile; fileRef = 306A71352DC1DC0F00936B1F /* hf_tokenizer.h */; };
+		306A71422DC1DC0F00936B1F /* pre_tokenizer.h in Headers */ = {isa = PBXBuildFile; fileRef = 306A71372DC1DC0F00936B1F /* pre_tokenizer.h */; };
+		306A71432DC1DC0F00936B1F /* pcre2_regex.h in Headers */ = {isa = PBXBuildFile; fileRef = 306A71362DC1DC0F00936B1F /* pcre2_regex.h */; };
+		306A71442DC1DC0F00936B1F /* std_regex.h in Headers */ = {isa = PBXBuildFile; fileRef = 306A713A2DC1DC0F00936B1F /* std_regex.h */; };
+		306A714C2DC1DC3D00936B1F /* std_regex.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 306A714A2DC1DC3D00936B1F /* std_regex.cpp */; };
+		306A714D2DC1DC3D00936B1F /* re2_regex.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 306A71482DC1DC3D00936B1F /* re2_regex.cpp */; };
+		306A714E2DC1DC3D00936B1F /* pcre2_regex.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 306A71462DC1DC3D00936B1F /* pcre2_regex.cpp */; };
+		306A714F2DC1DC3D00936B1F /* hf_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 306A71452DC1DC3D00936B1F /* hf_tokenizer.cpp */; };
+		306A71502DC1DC3D00936B1F /* regex.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 306A71492DC1DC3D00936B1F /* regex.cpp */; };
+		306A71512DC1DC3D00936B1F /* pre_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 306A71472DC1DC3D00936B1F /* pre_tokenizer.cpp */; };
+		306A71522DC1DC3D00936B1F /* token_decoder.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 306A714B2DC1DC3D00936B1F /* token_decoder.cpp */; };
+		3072D5232DC3EA280083FC83 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3072D5222DC3EA280083FC83 /* Constants.swift */; };
 		F292B0752D88B0C200BE6839 /* tiktoken.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F292B06F2D88B0C200BE6839 /* tiktoken.cpp */; };
 		F292B0762D88B0C200BE6839 /* llama2c_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F292B06C2D88B0C200BE6839 /* llama2c_tokenizer.cpp */; };
 		F292B0772D88B0C200BE6839 /* bpe_tokenizer_base.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F292B06A2D88B0C200BE6839 /* bpe_tokenizer_base.cpp */; };
@@ -117,6 +133,22 @@
 		03D03DA92C7823830088D6A7 /* text_decoder_runner.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = text_decoder_runner.cpp; sourceTree = "<group>"; };
 		03D03DAA2C7823830088D6A7 /* text_decoder_runner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = text_decoder_runner.h; sourceTree = "<group>"; };
 		26A6A4272C8A3769005A761E /* ImagePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePicker.swift; sourceTree = "<group>"; };
+		306A71352DC1DC0F00936B1F /* hf_tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = hf_tokenizer.h; sourceTree = "<group>"; };
+		306A71362DC1DC0F00936B1F /* pcre2_regex.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = pcre2_regex.h; sourceTree = "<group>"; };
+		306A71372DC1DC0F00936B1F /* pre_tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = pre_tokenizer.h; sourceTree = "<group>"; };
+		306A71382DC1DC0F00936B1F /* re2_regex.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = re2_regex.h; sourceTree = "<group>"; };
+		306A71392DC1DC0F00936B1F /* regex.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = regex.h; sourceTree = "<group>"; };
+		306A713A2DC1DC0F00936B1F /* std_regex.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = std_regex.h; sourceTree = "<group>"; };
+		306A713B2DC1DC0F00936B1F /* string_integer_map.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = string_integer_map.h; sourceTree = "<group>"; };
+		306A713C2DC1DC0F00936B1F /* token_decoder.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = token_decoder.h; sourceTree = "<group>"; };
+		306A71452DC1DC3D00936B1F /* hf_tokenizer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = hf_tokenizer.cpp; path = src/hf_tokenizer.cpp; sourceTree = "<group>"; };
+		306A71462DC1DC3D00936B1F /* pcre2_regex.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = pcre2_regex.cpp; path = src/pcre2_regex.cpp; sourceTree = "<group>"; };
+		306A71472DC1DC3D00936B1F /* pre_tokenizer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = pre_tokenizer.cpp; path = src/pre_tokenizer.cpp; sourceTree = "<group>"; };
+		306A71482DC1DC3D00936B1F /* re2_regex.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = re2_regex.cpp; path = src/re2_regex.cpp; sourceTree = "<group>"; };
+		306A71492DC1DC3D00936B1F /* regex.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = regex.cpp; path = src/regex.cpp; sourceTree = "<group>"; };
+		306A714A2DC1DC3D00936B1F /* std_regex.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = std_regex.cpp; path = src/std_regex.cpp; sourceTree = "<group>"; };
+		306A714B2DC1DC3D00936B1F /* token_decoder.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = token_decoder.cpp; path = src/token_decoder.cpp; sourceTree = "<group>"; };
+		3072D5222DC3EA280083FC83 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		F292B06A2D88B0C200BE6839 /* bpe_tokenizer_base.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = bpe_tokenizer_base.cpp; path = src/bpe_tokenizer_base.cpp; sourceTree = "<group>"; };
 		F292B06C2D88B0C200BE6839 /* llama2c_tokenizer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = llama2c_tokenizer.cpp; path = src/llama2c_tokenizer.cpp; sourceTree = "<group>"; };
 		F292B06F2D88B0C200BE6839 /* tiktoken.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = tiktoken.cpp; path = src/tiktoken.cpp; sourceTree = "<group>"; };
@@ -128,8 +160,8 @@
 		F292B07F2D88B0D200BE6839 /* result.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = result.h; sourceTree = "<group>"; };
 		F292B0812D88B0D200BE6839 /* tiktoken.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = tiktoken.h; sourceTree = "<group>"; };
 		F292B0832D88B0D200BE6839 /* tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = tokenizer.h; sourceTree = "<group>"; };
-		F292B0FF2D88B20C00BE6839 /* llama_tiktoken.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = llama_tiktoken.h; path = /Users/larryliu/CLionProjects/executorch/examples/models/llama/tokenizer/llama_tiktoken.h; sourceTree = "<absolute>"; };
-		F292B1002D88B20C00BE6839 /* llama_tiktoken.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = llama_tiktoken.cpp; path = /Users/larryliu/CLionProjects/executorch/examples/models/llama/tokenizer/llama_tiktoken.cpp; sourceTree = "<absolute>"; };
+		F292B0FF2D88B20C00BE6839 /* llama_tiktoken.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = llama_tiktoken.h; path = ../../../examples/models/llama/tokenizer/llama_tiktoken.h; sourceTree = "<group>"; };
+		F292B1002D88B20C00BE6839 /* llama_tiktoken.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; name = llama_tiktoken.cpp; path = ../../../examples/models/llama/tokenizer/llama_tiktoken.cpp; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -178,6 +210,7 @@
 		0324D6892BAACB6900DEF36F /* Application */ = {
 			isa = PBXGroup;
 			children = (
+				3072D5222DC3EA280083FC83 /* Constants.swift */,
 				0324D6802BAACB6900DEF36F /* App.swift */,
 				0324D6812BAACB6900DEF36F /* ContentView.swift */,
 				0324D6822BAACB6900DEF36F /* LogManager.swift */,
@@ -277,6 +310,13 @@
 		03729F0E2BB203D700152F2E /* tokenizers */ = {
 			isa = PBXGroup;
 			children = (
+				306A71452DC1DC3D00936B1F /* hf_tokenizer.cpp */,
+				306A71462DC1DC3D00936B1F /* pcre2_regex.cpp */,
+				306A71472DC1DC3D00936B1F /* pre_tokenizer.cpp */,
+				306A71482DC1DC3D00936B1F /* re2_regex.cpp */,
+				306A71492DC1DC3D00936B1F /* regex.cpp */,
+				306A714A2DC1DC3D00936B1F /* std_regex.cpp */,
+				306A714B2DC1DC3D00936B1F /* token_decoder.cpp */,
 				F292B0FF2D88B20C00BE6839 /* llama_tiktoken.h */,
 				F292B1002D88B20C00BE6839 /* llama_tiktoken.cpp */,
 				F292B0862D88B0D200BE6839 /* include */,
@@ -301,6 +341,14 @@
 		F292B0842D88B0D200BE6839 /* tokenizers */ = {
 			isa = PBXGroup;
 			children = (
+				306A71352DC1DC0F00936B1F /* hf_tokenizer.h */,
+				306A71362DC1DC0F00936B1F /* pcre2_regex.h */,
+				306A71372DC1DC0F00936B1F /* pre_tokenizer.h */,
+				306A71382DC1DC0F00936B1F /* re2_regex.h */,
+				306A71392DC1DC0F00936B1F /* regex.h */,
+				306A713A2DC1DC0F00936B1F /* std_regex.h */,
+				306A713B2DC1DC0F00936B1F /* string_integer_map.h */,
+				306A713C2DC1DC0F00936B1F /* token_decoder.h */,
 				F292B0782D88B0D200BE6839 /* base64.h */,
 				F292B0792D88B0D200BE6839 /* bpe_tokenizer_base.h */,
 				F292B07A2D88B0D200BE6839 /* error.h */,
@@ -347,6 +395,14 @@
 				F292B0912D88B0D200BE6839 /* tiktoken.h in Headers */,
 				F292B0922D88B0D200BE6839 /* base64.h in Headers */,
 				03D03DAC2C7823830088D6A7 /* text_decoder_runner.h in Headers */,
+				306A713D2DC1DC0F00936B1F /* token_decoder.h in Headers */,
+				306A713E2DC1DC0F00936B1F /* regex.h in Headers */,
+				306A713F2DC1DC0F00936B1F /* string_integer_map.h in Headers */,
+				306A71402DC1DC0F00936B1F /* re2_regex.h in Headers */,
+				306A71412DC1DC0F00936B1F /* hf_tokenizer.h in Headers */,
+				306A71422DC1DC0F00936B1F /* pre_tokenizer.h in Headers */,
+				306A71432DC1DC0F00936B1F /* pcre2_regex.h in Headers */,
+				306A71442DC1DC0F00936B1F /* std_regex.h in Headers */,
 				03729F122BB2042B00152F2E /* sampler.h in Headers */,
 				03729F0C2BB203B300152F2E /* util.h in Headers */,
 				F292B1012D88B20C00BE6839 /* llama_tiktoken.h in Headers */,
@@ -491,7 +547,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n\nif ! command -v cmake &> /dev/null\nthen\n    echo \"Cmake not found, please install Cmake. \\n1. Download Cmake.app from https://cmake.org/download with version > 3.19. \\n2. Install it to Applications/ folder and run `sudo /Applications/CMake.app/Contents/bin/cmake-gui --install` to install CMake commandline tools.\"\n    exit 1\nfi\n\nCMAKE_DIR=\"$TEMP_DIR/cmake\"\nrm -rf \"$CMAKE_DIR\"\n\nPLATFORM=\"SIMULATORARM64\"\nDEPLOYMENT_TARGET=\"17.0\"\n\nif [[ \"$PLATFORM_NAME\" == *\"iphoneos\"* ]]; then\n  PLATFORM=\"OS64\"\nelif [[ \"$PLATFORM_NAME\" == *\"macos\"* ]]; then\n  PLATFORM=\"MAC_ARM64\"\n  DEPLOYMENT_TARGET=\"10.15\"\nfi\n\ncmake_build() {\n    local src_dir=$1\n    local target=$2\n    shift 2\n    local extra_args=(\"$@\")\n    local build_dir=\"$CMAKE_DIR/build/$(basename \"$src_dir\")\"\n\n    mkdir -p \"$build_dir\" && cd \"$build_dir\"\n\n    if [[ \"$PLATFORM\" == \"MAC_ARM64\" ]]; then\n        extra_args+=(-DCMAKE_INSTALL_BUNDLEDIR=\"${CMAKE_DIR}/bin\")\n        extra_args+=(-DCMAKE_MACOSX_BUNDLE=OFF)\n    fi\n    cmake -G Xcode \\\n          -DCMAKE_BUILD_TYPE=\"Release\" \\\n          -DCMAKE_CXX_STANDARD=17 \\\n          -DCMAKE_TOOLCHAIN_FILE=\"$SRCROOT/../../../../third-party/ios-cmake/ios.toolchain.cmake\" \\\n          -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD=\"c++17\" \\\n          -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY=\"libc++\" \\\n          -DPLATFORM=\"$PLATFORM\" \\\n          -DDEPLOYMENT_TARGET=\"$DEPLOYMENT_TARGET\" \\\n          -DCMAKE_INSTALL_PREFIX=\"$CMAKE_DIR\" \\\n          \"${extra_args[@]}\" \\\n          \"$src_dir\"\n    cmake --build . --config \"Release\" --target \"$target\"\n    if [[ \"$target\" == \"install\" ]]; then\n        cmake --install . --prefix \"$CMAKE_DIR\"\n    fi\n}\n\ncmake_build \"$SRCROOT/../../../../extension/llm/tokenizers/third-party/abseil-cpp\" \"install\" \\\n    -DABSL_PROPAGATE_CXX_STD=ON\n\ncmake_build \"$SRCROOT/../../../../extension/llm/tokenizers/third-party/re2\" \"install\"\n\ncmake_build \"$SRCROOT/../../../../extension/llm/tokenizers/third-party/sentencepiece\" \"sentencepiece-static\" \\\n    -DSPM_ENABLE_SHARED=OFF\n\necho \"$(find $CMAKE_DIR/lib -name \"*.a\" | sed -E 's|^.*/lib([^/]+)\\.a|-l\\1|g' | tr '\\n' ' ')\" > \"$CMAKE_DIR/linker_flags\"\n";
+			shellScript = "set -e\n\nif ! command -v cmake &> /dev/null\nthen\n    echo \"Cmake not found, please install Cmake. \\n1. Download Cmake.app from https://cmake.org/download with version > 3.19. \\n2. Install it to Applications/ folder and run `sudo /Applications/CMake.app/Contents/bin/cmake-gui --install` to install CMake commandline tools.\"\n    exit 1\nfi\n\nCMAKE_DIR=\"$TEMP_DIR/cmake\"\nrm -rf \"$CMAKE_DIR\"\n\nPLATFORM=\"SIMULATORARM64\"\nDEPLOYMENT_TARGET=\"17.0\"\n\nif [[ \"$PLATFORM_NAME\" == *\"iphoneos\"* ]]; then\n  PLATFORM=\"OS64\"\nelif [[ \"$PLATFORM_NAME\" == *\"macos\"* ]]; then\n  PLATFORM=\"MAC_ARM64\"\n  DEPLOYMENT_TARGET=\"10.15\"\nfi\n\ncmake_build() {\n    local src_dir=$1\n    local target=$2\n    shift 2\n    local extra_args=(\"$@\")\n    local build_dir=\"$CMAKE_DIR/build/$(basename \"$src_dir\")\"\n\n    mkdir -p \"$build_dir\" && cd \"$build_dir\"\n\n    if [[ \"$PLATFORM\" == \"MAC_ARM64\" ]]; then\n        extra_args+=(-DCMAKE_INSTALL_BUNDLEDIR=\"${CMAKE_DIR}/bin\")\n        extra_args+=(-DCMAKE_MACOSX_BUNDLE=OFF)\n    fi\n    cmake -G Xcode \\\n          -DCMAKE_BUILD_TYPE=\"Release\" \\\n          -DCMAKE_CXX_STANDARD=17 \\\n          -DCMAKE_TOOLCHAIN_FILE=\"$SRCROOT/../../../../third-party/ios-cmake/ios.toolchain.cmake\" \\\n          -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD=\"c++17\" \\\n          -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY=\"libc++\" \\\n          -DPLATFORM=\"$PLATFORM\" \\\n          -DDEPLOYMENT_TARGET=\"$DEPLOYMENT_TARGET\" \\\n          -DCMAKE_INSTALL_PREFIX=\"$CMAKE_DIR\" \\\n          \"${extra_args[@]}\" \\\n          \"$src_dir\"\n    cmake --build . --config \"Release\" --target \"$target\"\n    if [[ \"$target\" == \"install\" ]]; then\n        cmake --install . --prefix \"$CMAKE_DIR\"\n    fi\n}\n\ncmake_build \"$SRCROOT/../../../../extension/llm/tokenizers/third-party/abseil-cpp\" \"install\" \\\n    -DABSL_PROPAGATE_CXX_STD=ON\n\ncmake_build \"$SRCROOT/../../../../extension/llm/tokenizers/third-party/re2\" \"install\"\n\ncmake_build \"$SRCROOT/../../../../extension/llm/tokenizers/third-party/pcre2\" \"install\" \\\n    -DPCRE2_BUILD_PCRE2_8=ON \\\n    -DPCRE2_BUILD_PCRE2_16=OFF \\\n    -DPCRE2_BUILD_PCRE2_32=OFF \\\n    -DPCRE2_BUILD_TESTS=OFF \\\n    -DPCRE2_BUILD_PCRE2GREP=OFF \\\n    -DPCRE2_BUILD_PCRE2TEST=OFF \\\n    -DPCRE2_BUILD_PCRE2GPERF=OFF \\\n    -DPCRE2_BUILD_DOCS=OFF \\\n    -DPCRE2_BUILD_LIBPCRE2_PDB=OFF\n\ncmake_build \"$SRCROOT/../../../../extension/llm/tokenizers/third-party/sentencepiece\" \"sentencepiece-static\" \\\n    -DSPM_ENABLE_SHARED=OFF\n    \ncmake_build \"$SRCROOT/../../../../extension/llm/tokenizers/third-party/llama.cpp-unicode\" \"install\"\n    \n# Include the single header for json.\nmkdir -p \"$CMAKE_DIR/include/nlohmann\"\ncp \"$SRCROOT/../../../../extension/llm/tokenizers/third-party/json/single_include/nlohmann/json.hpp\" \"$CMAKE_DIR/include/nlohmann/json.hpp\"\n\necho \"$(find $CMAKE_DIR/lib -name \"*.a\" | sed -E 's|^.*/lib([^/]+)\\.a|-l\\1|g' | tr '\\n' ' ')\" > \"$CMAKE_DIR/linker_flags\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -501,6 +557,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0324D6932BAACB6900DEF36F /* ResourceMonitor.swift in Sources */,
+				3072D5232DC3EA280083FC83 /* Constants.swift in Sources */,
 				0324D68D2BAACB6900DEF36F /* LogManager.swift in Sources */,
 				0324D68E2BAACB6900DEF36F /* LogView.swift in Sources */,
 				0324D68F2BAACB6900DEF36F /* Message.swift in Sources */,
@@ -526,6 +583,13 @@
 				F292B0772D88B0C200BE6839 /* bpe_tokenizer_base.cpp in Sources */,
 				03729F0A2BB203B300152F2E /* runner.cpp in Sources */,
 				03729F132BB2042B00152F2E /* sampler.cpp in Sources */,
+				306A714C2DC1DC3D00936B1F /* std_regex.cpp in Sources */,
+				306A714D2DC1DC3D00936B1F /* re2_regex.cpp in Sources */,
+				306A714E2DC1DC3D00936B1F /* pcre2_regex.cpp in Sources */,
+				306A714F2DC1DC3D00936B1F /* hf_tokenizer.cpp in Sources */,
+				306A71502DC1DC3D00936B1F /* regex.cpp in Sources */,
+				306A71512DC1DC3D00936B1F /* pre_tokenizer.cpp in Sources */,
+				306A71522DC1DC3D00936B1F /* token_decoder.cpp in Sources */,
 				03D03DA72C7823620088D6A7 /* text_prefiller.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -757,6 +821,7 @@
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"DEBUG=1",
 					"ET_USE_TIKTOKEN=1",
+					"SUPPORT_REGEX_LOOKAHEAD=ON",
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -793,7 +858,11 @@
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
 				ENABLE_MODULE_VERIFIER = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
-				GCC_PREPROCESSOR_DEFINITIONS = "ET_USE_TIKTOKEN=1";
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"ET_USE_TIKTOKEN=1",
+					"SUPPORT_REGEX_LOOKAHEAD=ON",
+				);
+				GCC_PREPROCESSOR_DEFINITIONS = "SUPPORT_REGEX_LOOKAHEAD=ON";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
@@ -852,7 +921,7 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pytorch/executorch";
 			requirement = {
-				branch = "swiftpm-0.7.0.20250401";
+				branch = "swiftpm-0.6.0";
 				kind = branch;
 			};
 		};

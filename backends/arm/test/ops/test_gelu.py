@@ -1,0 +1,125 @@
+# Copyright 2025 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+from typing import Tuple
+
+import torch
+from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineBI,
+    EthosU85PipelineBI,
+    TosaPipelineBI,
+    TosaPipelineMI,
+)
+
+input_t1 = Tuple[torch.Tensor]
+
+
+class Gelu(torch.nn.Module):
+    aten_op = "torch.ops.aten.gelu.default"
+    exir_op = "executorch_exir_dialects_edge__ops_aten_gelu_default"
+
+    test_data: dict[str, Tuple[str, input_t1]] = {
+        "zeros_none": (
+            "none",
+            torch.zeros(1, 10, 10, 10),
+        ),
+        "ones_none": (
+            "none",
+            torch.ones(10, 10, 10),
+        ),
+        "rand_none": (
+            "none",
+            (torch.rand(10, 10) - 0.5),
+        ),
+        "randn_pos_none": (
+            "none",
+            (torch.randn(1, 4, 4, 4) + 10),
+        ),
+        "randn_neg_none": (
+            "none",
+            (torch.randn(1, 4, 4, 4) - 10),
+        ),
+        "ramp_none": (
+            "none",
+            torch.arange(-16, 16, 0.2),
+        ),
+        "zeros_tanh": (
+            "tanh",
+            torch.zeros(1, 10, 10, 10),
+        ),
+        "ones_tanh": (
+            "tanh",
+            torch.ones(10, 10, 10),
+        ),
+        "rand_tanh": (
+            "tanh",
+            (torch.rand(10, 10) - 0.5),
+        ),
+        "randn_pos_tanh": (
+            "tanh",
+            (torch.randn(1, 4, 4, 4) + 10),
+        ),
+        "randn_neg_tanh": (
+            "tanh",
+            (torch.randn(1, 4, 4, 4) - 10),
+        ),
+        "ramp_tanh": (
+            "tanh",
+            torch.arange(-16, 16, 0.2),
+        ),
+    }
+
+    def __init__(self, approximate: str = "none"):
+        super().__init__()
+        self.gelu = torch.nn.GELU(approximate)
+
+    def forward(self, x: torch.Tensor):
+        return self.gelu(x)
+
+
+@common.parametrize("test_data", Gelu.test_data)
+def test_gelu_tosa_MI(test_data: input_t1):
+    approximate = test_data[0]
+    TosaPipelineMI[input_t1](
+        Gelu(approximate),
+        (test_data[1],),
+        Gelu.aten_op,
+        Gelu.exir_op,
+        use_to_edge_transform_and_lower=False,
+    ).run()
+
+
+@common.parametrize("test_data", Gelu.test_data)
+def test_gelu_tosa_BI(test_data: input_t1):
+    approximate = test_data[0]
+    TosaPipelineBI[input_t1](
+        Gelu(approximate),
+        (test_data[1],),
+        Gelu.aten_op,
+        Gelu.exir_op,
+    ).run()
+
+
+@common.parametrize("test_data", Gelu.test_data)
+def test_gelu_u55_BI(test_data: input_t1):
+    approximate = test_data[0]
+    EthosU55PipelineBI[input_t1](
+        Gelu(approximate),
+        (test_data[1],),
+        Gelu.aten_op,
+        Gelu.exir_op,
+    ).run()
+
+
+@common.parametrize("test_data", Gelu.test_data)
+def test_gelu_u85_BI(test_data: input_t1):
+    approximate = test_data[0]
+    EthosU85PipelineBI[input_t1](
+        Gelu(approximate),
+        (test_data[1],),
+        Gelu.aten_op,
+        Gelu.exir_op,
+    ).run()

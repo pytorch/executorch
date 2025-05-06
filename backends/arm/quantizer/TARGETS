@@ -1,5 +1,15 @@
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
+# Exposed through __init__.py
+python_library(
+    name = "quantization_config",
+    srcs = ["quantization_config.py"],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+# Exposed through __init__.py
 python_library(
     name = "arm_quantizer",
     srcs = ["arm_quantizer.py"],
@@ -22,17 +32,19 @@ python_library(
 )
 
 python_library(
-    name = "quantization_config",
-    srcs = ["quantization_config.py"],
-    deps = [
-        "//caffe2:torch",
-    ],
-)
-
-python_library(
     name = "arm_quantizer_utils",
     srcs = ["arm_quantizer_utils.py"],
     deps = [
         ":quantization_config",
     ],
+)
+
+python_library(
+    name = "lib",
+    srcs = ["__init__.py"],
+    deps = [
+        ":arm_quantizer",
+        ":quantization_config",
+        ":arm_quantizer_utils",
+    ]
 )

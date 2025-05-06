@@ -372,7 +372,6 @@ ATEN_OPS = (
         name = "op_bmm",
         deps = [
             "//executorch/kernels/portable/cpu/util:matmul_ops_util",
-            ":vec_ops",
         ],
     ),
     op_target(
@@ -1267,6 +1266,12 @@ ATEN_OPS = (
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
+        ],
+    ),
+    op_target(
+        name = "op_view_as_real_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],
     ),
     op_target(

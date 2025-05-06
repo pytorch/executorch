@@ -73,4 +73,13 @@ public enum DType {
   DType(int jniCode) {
     this.jniCode = jniCode;
   }
+
+  public static DType fromJniCode(int jniCode) {
+    for (DType dtype : values()) {
+      if (dtype.jniCode == jniCode) {
+        return dtype;
+      }
+    }
+    throw new IllegalArgumentException("No DType found for jniCode " + jniCode);
+  }
 }

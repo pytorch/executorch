@@ -22,12 +22,16 @@ class ExpandBroadcastTensorShape(ExportPass):
             exir_ops.edge.aten.sub.Tensor,
             exir_ops.edge.aten.mul.Tensor,
             exir_ops.edge.aten.div.Tensor,
+            # Support if the rank of input tensor: {input_dims} is less than the rank of output tensor: {output_dims}.
+            exir_ops.edge.aten.expand_copy.default,
         ]
 
     def traverse_broadcast_node(self, graph_module: torch.fx.GraphModule):
         for node in graph_module.graph.nodes:
             if node.target in self.broadcast_op_targets:
                 for arg in node.args:
+                    if not isinstance(arg, torch.fx.Node):
+                        continue
                     input_rank = len(arg.meta["val"].shape)
                     output_rank = len(node.meta["val"].shape)
                     if input_rank != output_rank:

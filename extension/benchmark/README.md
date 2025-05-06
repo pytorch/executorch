@@ -61,7 +61,7 @@ Users can schedule a benchmarking workflow on a pull request through GitHub Acti
 
 ## Retrieving Benchmark Results
 
-The easiest way to view benchmark results is on the [dashboard](./README.md#dashboard), while raw results for individual configurations can be manually accessed by downloading the `Customer_Artifacts.zip` from the CI.
+The easiest way to view benchmark results is on the [dashboard](README.md#dashboard), while raw results for individual configurations can be manually accessed by downloading the `Customer_Artifacts.zip` from the CI.
 
 
 ## Feedback and Issue Reporting

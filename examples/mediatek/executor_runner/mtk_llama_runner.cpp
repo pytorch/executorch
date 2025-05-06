@@ -80,11 +80,9 @@ bool MTKLlamaRunner::is_loaded() const {
 
 Error MTKLlamaRunner::generate(
     const std::string& prompt,
-    int32_t seq_len,
+    executorch::extension::llm::GenerationConfig config,
     std::function<void(const std::string&)> token_callback,
-    std::function<void(const Stats&)> stats_callback,
-    bool echo,
-    bool warming) {
+    std::function<void(const Stats&)> stats_callback) {
   if (!is_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
   }

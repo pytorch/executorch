@@ -100,20 +100,19 @@ class ExecuTorchLlmCallbackJni
 
   void onStats(const llm::Stats& result) const {
     static auto cls = ExecuTorchLlmCallbackJni::javaClassStatic();
-    static const auto method = cls->getMethod<void(jfloat)>("onStats");
-    double eval_time =
-        (double)(result.inference_end_ms - result.prompt_eval_end_ms);
-
-    float tps = result.num_generated_tokens / eval_time *
-        result.SCALING_FACTOR_UNITS_PER_SECOND;
-
-    method(self(), tps);
+    static const auto on_stats_method =
+        cls->getMethod<void(facebook::jni::local_ref<jstring>)>("onStats");
+    on_stats_method(
+        self(),
+        facebook::jni::make_jstring(
+            executorch::extension::llm::stats_to_json_string(result)));
   }
 };
 
 class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
  private:
   friend HybridBase;
+  float temperature_ = 0.0f;
   int model_type_category_;
   std::unique_ptr<llm::IRunner> runner_;
   std::unique_ptr<llm::MultimodalRunner> multi_modal_runner_;
@@ -147,9 +146,10 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       facebook::jni::alias_ref<jstring> tokenizer_path,
       jfloat temperature,
       facebook::jni::alias_ref<jstring> data_path = nullptr) {
+    temperature_ = temperature;
 #if defined(ET_USE_THREADPOOL)
     // Reserve 1 thread for the main thread.
-    uint32_t num_performant_cores =
+    int32_t num_performant_cores =
         ::executorch::extension::cpuinfo::get_num_performant_cores() - 1;
     if (num_performant_cores > 0) {
       ET_LOG(Info, "Resetting threadpool to %d threads", num_performant_cores);
@@ -169,20 +169,17 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         runner_ = std::make_unique<example::Runner>(
             model_path->toStdString().c_str(),
             tokenizer_path->toStdString().c_str(),
-            temperature,
             data_path->toStdString().c_str());
       } else {
         runner_ = std::make_unique<example::Runner>(
             model_path->toStdString().c_str(),
-            tokenizer_path->toStdString().c_str(),
-            temperature);
+            tokenizer_path->toStdString().c_str());
       }
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
     } else if (model_type_category == MODEL_TYPE_MEDIATEK_LLAMA) {
       runner_ = std::make_unique<MTKLlamaRunner>(
           model_path->toStdString().c_str(),
-          tokenizer_path->toStdString().c_str(),
-          temperature);
+          tokenizer_path->toStdString().c_str());
       // Interpret the model type as LLM
       model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
 #endif
@@ -219,12 +216,16 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           [callback](const llm::Stats& result) { callback->onStats(result); },
           echo);
     } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
+      executorch::extension::llm::GenerationConfig config{
+          .echo = static_cast<bool>(echo),
+          .seq_len = seq_len,
+          .temperature = temperature_,
+      };
       runner_->generate(
           prompt->toStdString(),
-          seq_len,
+          config,
           [callback](std::string result) { callback->onResult(result); },
-          [callback](const llm::Stats& result) { callback->onStats(result); },
-          echo);
+          [callback](const llm::Stats& result) { callback->onStats(result); });
     }
     return 0;
   }

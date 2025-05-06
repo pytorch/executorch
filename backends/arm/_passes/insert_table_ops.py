@@ -48,6 +48,8 @@ class TableOps:
         exir_ops.edge.aten.reciprocal.default: torch.reciprocal,
         exir_ops.edge.aten.rsqrt.default: torch.rsqrt,
         exir_ops.edge.aten.sigmoid.default: torch.sigmoid,
+        exir_ops.edge.aten.cos.default: torch.cos,
+        exir_ops.edge.aten.sin.default: torch.sin,
         exir_ops.edge.aten.tanh.default: torch.tanh,
         exir_ops.edge.aten.hardsigmoid.default: torch.nn.functional.hardsigmoid,
         exir_ops.edge.aten.hardswish.default: torch.nn.functional.hardswish,
@@ -56,6 +58,7 @@ class TableOps:
     # Targets that must be treated explicitly
     special_table_ops: Set[EdgeOpOverload] = {
         exir_ops.edge.aten.pow.Tensor_Scalar,
+        exir_ops.edge.aten.gelu.default,
     }
 
     def __init__(self, exported_program: ExportedProgram):
@@ -76,6 +79,19 @@ class TableOps:
                     # Exponent is a constant. Embed it into a lambda.
                     exp = cast(int, node.args[1])
                     return lambda x: torch.pow(x, exp).flatten()
+                case exir_ops.edge.aten.gelu.default:
+                    # If kwargs not present it is default "none"
+                    approximate = cast(
+                        str,
+                        (
+                            node.kwargs["approximate"]
+                            if "approximate" in node.kwargs
+                            else "none"
+                        ),
+                    )
+                    return lambda x: torch.nn.functional.gelu(
+                        x, approximate=approximate
+                    ).flatten()
                 case _:
                     # Op must be handled if it's inside self.special_ops
                     raise AssertionError("Unhandled table operation")

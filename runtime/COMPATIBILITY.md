@@ -1,7 +1,7 @@
 # Runtime Compatibility Policy
 
 This document describes the compatibility guarantees between the [PTE file
-format](https://pytorch.org/executorch/stable/pte-file-format.html) and the
+format](https://pytorch.org/executorch/main/pte-file-format) and the
 ExecuTorch runtime.
 
 > [!IMPORTANT]

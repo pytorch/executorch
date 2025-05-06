@@ -47,7 +47,7 @@ from executorch.exir.backend.backend_details import (
 )
 from executorch.exir.backend.utils import DelegateMappingBuilder
 
-from executorch.exir.memory_planning import greedy, memory_planning_algorithm_suite
+from executorch.exir.memory_planning import greedy, MemoryPlanningAlgorithmSuite
 from executorch.exir.pass_base import ExportPass, PassBase
 
 from executorch.exir.passes import MemoryPlanningPass, SpecPropPass
@@ -199,8 +199,8 @@ class VulkanBackend(BackendDetails):
         # Finally, apply dynamic shape passes and memory planning pass. These passes
         # must be applied only when the graph structure is finalized.
         greedy_memory_planning = partial(greedy, allow_overlapping_allocations=False)
-        mem_planning_suite = partial(
-            memory_planning_algorithm_suite, algo_list=[greedy_memory_planning]
+        mem_planning_suite = MemoryPlanningAlgorithmSuite(
+            algo_list=[greedy_memory_planning]
         )
         program = apply_passes(
             program,

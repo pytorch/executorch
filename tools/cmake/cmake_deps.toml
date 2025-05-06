@@ -150,6 +150,20 @@ deps = [
   "optimized_cpublas",
   "portable_kernels",
 ]
+
+[targets.test_backend_compiler_lib]
+buck_targets = [
+  "//runtime/executor/test:test_backend_compiler_lib",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+]
+deps = [
+  "executorch",
+  "executorch_core",
+]
 # ---------------------------------- core end ----------------------------------
 # ---------------------------------- extension start ----------------------------------
 [targets.extension_data_loader]
@@ -225,6 +239,7 @@ deps = [
   "executorch_core",
   "extension_module",
   "extension_runner_util",
+  "extension_tensor",
 ]
 
 [targets.extension_tensor]

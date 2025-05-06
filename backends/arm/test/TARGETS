@@ -42,7 +42,7 @@ python_library(
         ":common",
         "//executorch/backends/xnnpack/test/tester:tester",
         "//executorch/backends/arm:arm_partitioner",
-        "//executorch/backends/arm/quantizer:arm_quantizer",
+        "//executorch/backends/arm/quantizer:lib",
         "//executorch/backends/arm:tosa_mapping",
         "//executorch/devtools/backend_debug:delegation_info",
         "fbsource//third-party/pypi/tabulate:tabulate",

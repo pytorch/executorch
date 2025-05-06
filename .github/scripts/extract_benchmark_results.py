@@ -341,6 +341,7 @@ def transform(
     benchmark_results: List,
     benchmark_config: Dict[str, str],
     job_name: str,
+    job_report: Any = {},
 ) -> List:
     """
     Transform the benchmark results into the format writable into the benchmark database
@@ -348,7 +349,10 @@ def transform(
     # Overwrite the device name here with the job name as it has more information about
     # the device, i.e. Samsung Galaxy S22 5G instead of just Samsung
     for r in benchmark_results:
-        r["deviceInfo"]["device"] = job_name
+        is_private_device = job_report.get("is_private_instance", False)
+        r["deviceInfo"]["device"] = (
+            f"{job_name} (private)" if is_private_device else job_name
+        )
 
     # From https://github.com/pytorch/pytorch/wiki/How-to-integrate-with-PyTorch-OSS-benchmark-database
     return [
@@ -361,6 +365,8 @@ def transform(
                     # Just keep a copy of the benchmark config here
                     "benchmark_config": json.dumps(benchmark_config),
                     "job_conclusion": "SUCCESS",
+                    "job_arn": job_report.get("arn", ""),
+                    "instance_arn": job_report.get("instance_arn", ""),
                 },
             },
             "model": {
@@ -446,6 +452,7 @@ def transform_failure_record(
                 "app_type": app_type,
                 "job_conclusion": result,
                 "failure_type": level,
+                "job_arn": report.get("arn", ""),
                 "job_report": json.dumps(report),
             },
         },
@@ -512,6 +519,7 @@ def get_benchmark_config(
 def extract_benchmark_result_from_artifact(
     artifact: Dict[str, Any],
     benchmark_config: Dict[str, str],
+    job_report: Any,
 ) -> List[Any]:
     job_name = artifact.get("job_name", "")
     artifact_type = artifact.get("type", "")
@@ -532,7 +540,9 @@ def extract_benchmark_result_from_artifact(
         )
     if not benchmark_results:
         return []
-    return transform(app_type, benchmark_results, benchmark_config, job_name)
+    return transform(
+        app_type, benchmark_results, benchmark_config, job_name, job_report
+    )
 
 
 def get_app_type(type: str):
@@ -674,7 +684,7 @@ def process_benchmark_results(content: Any, app: str, benchmark_configs: str):
             for job_artifact in job_artifacts:
                 # generate result for each schema
                 results = extract_benchmark_result_from_artifact(
-                    job_artifact, benchmark_config
+                    job_artifact, benchmark_config, job_report
                 )
                 all_benchmark_results.extend(results)
     return all_benchmark_results
