@@ -146,6 +146,19 @@ class ModuleAddMul(torch.nn.Module):
         return (torch.ones(2, 2, dtype=torch.float),)
 
 
+# Used for program-data-separation.
+class ModuleLinear(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(3, 3)
+
+    def forward(self, x: torch.Tensor):
+        return self.linear(x)
+
+    def get_random_inputs(self):
+        return (torch.randn(3),)
+
+
 class ModuleMultipleEntry(torch.nn.Module):
     def __init__(self):
         super().__init__()
