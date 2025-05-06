@@ -241,6 +241,28 @@ def define_common_targets(is_fbcode = False):
         )
 
         runtime.cxx_test(
+            name = "backend_data_separation_test",
+            srcs = [
+                "backend_data_separation_test.cpp",
+            ],
+            deps = [
+                ":managed_memory_manager",
+                "//executorch/runtime/executor:program",
+                "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/exir/backend/test/demos/rpc:executor_backend",
+                "//executorch/exir/backend/test/demos/rpc:executor_backend_register",
+                "//executorch/extension/flat_tensor:flat_tensor_data_map",
+            ],
+            env = {
+                # The tests use these vars to find the program files to load.
+                # Uses an fbcode target path because the authoring/export tools
+                # intentionally don't work in xplat (since they're host-only
+                # tools).
+                "ET_MODULE_LINEAR_DELEGATE_PROGRAM_PATH": "$(location fbcode//executorch/test/models:exported_executor_backend_program_and_data[ModuleLinear-e.pte])",
+                "ET_MODULE_LINEAR_DATA_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleLinear.ptd])",
+            },
+        )
+        runtime.cxx_test(
             name = "memory_manager_test",
             srcs = [
                 "memory_manager_test.cpp",
