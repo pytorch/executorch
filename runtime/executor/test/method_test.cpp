@@ -78,15 +78,15 @@ class MethodTest : public ::testing::Test {
     load_program(std::getenv("ET_MODULE_INDEX_PATH"), "index");
     load_program(
         std::getenv("ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH"), "cat");
-    load_program(std::getenv("ET_MODULE_LINEAR_PATH"), "linear");
+    load_program(std::getenv("ET_MODULE_ADD_MUL_PATH"), "add_mul");
     load_program(std::getenv("ET_MODULE_STATEFUL_PATH"), "stateful");
     load_program(
         std::getenv("DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH"),
         "linear_constant_buffer");
 
     load_program(
-        std::getenv("ET_MODULE_LINEAR_PROGRAM_PATH"), "linear_program");
-    load_data_map(std::getenv("ET_MODULE_LINEAR_DATA_PATH"), "linear_data");
+        std::getenv("ET_MODULE_ADD_MUL_PROGRAM_PATH"), "add_mul_program");
+    load_data_map(std::getenv("ET_MODULE_ADD_MUL_DATA_PATH"), "add_mul_data");
   }
 
  private:
@@ -309,7 +309,7 @@ TEST_F(MethodTest, ConstantSegmentTest) {
   // Execute model with constants stored in segment.
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
   Result<Method> method =
-      programs_["linear"]->load_method("forward", &mmm.get());
+      programs_["add_mul"]->load_method("forward", &mmm.get());
   ASSERT_EQ(method.error(), Error::Ok);
 
   // Can execute the method.
@@ -331,8 +331,8 @@ TEST_F(MethodTest, ConstantBufferTest) {
 
 TEST_F(MethodTest, ProgramDataSeparationTest) {
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
-  Result<Method> method = programs_["linear_program"]->load_method(
-      "forward", &mmm.get(), nullptr, data_maps_["linear_data"].get());
+  Result<Method> method = programs_["add_mul_program"]->load_method(
+      "forward", &mmm.get(), nullptr, data_maps_["add_mul_data"].get());
   ASSERT_EQ(method.error(), Error::Ok);
 
   // Can execute the method.

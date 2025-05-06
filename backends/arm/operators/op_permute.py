@@ -13,6 +13,9 @@ from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+)
 from executorch.backends.arm.tosa_mapping import TosaArg
 
 
@@ -105,6 +108,8 @@ class PermuteVisitor_0_80(NodeVisitor):
     ) -> None:
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
+        validate_num_inputs(self.target, inputs, 2)
+
         # The permutation vector describes a permutation P in default Pytorch dim_order.
         # For rank 4, the default dim_order NCHW.
         # E.g. (2,3,0,1) -> permute (n,c,h,w) to (w,c,n,h)
@@ -141,6 +146,8 @@ class PermuteVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         import serializer.tosa_serializer as ts
+
+        validate_num_inputs(self.target, inputs, 2)
 
         # The permutation vector describes a permutation P in default Pytorch dim_order.
         # For rank 4, the default dim_order NCHW.
