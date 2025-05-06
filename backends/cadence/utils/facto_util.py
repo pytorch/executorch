@@ -99,6 +99,7 @@ def apply_scalar_contraints(op_name: str) -> list[ScalarDtype]:
     match op_name:
         case "add.Scalar" | "sub.Scalar" | "mul.Scalar" | "div.Scalar":
             return [ScalarDtype.int]
+
         case _:
             return [ScalarDtype.float, ScalarDtype.int]
 
@@ -121,6 +122,11 @@ def facto_testcase_gen(op_name: str) -> List[Tuple[List[str], OrderedDict[str, s
                         cp.Size.Ge(lambda deps, r, d: 1),
                         cp.Size.Le(lambda deps, r, d: 2**2),
                     ]
+                )
+            if in_spec.name == "max_val":  # hardtanh
+                spec.inspec[index].deps = [0, 1]
+                spec.inspec[index].constraints.extend(
+                    [cp.Value.Ge(lambda deps, _: deps[1])]
                 )
             else:
                 spec.inspec[index].constraints.extend(

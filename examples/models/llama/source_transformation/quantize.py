@@ -107,14 +107,24 @@ def quantize(  # noqa C901
             print("quantized model:", model)
         return model
     elif qmode.startswith("torchao:8da"):
+        # Check for required args
+        if group_size is None:
+            raise Exception(
+                "For torchao:8daxw quantization, group size must be specified."
+            )
+
         pattern = r"torchao:8da(\d+)w"
         matches = re.findall(pattern, qmode)
         assert len(matches) == 1, f"Expected 1 match for pattern but got {len(matches)}"
         bitwidth = int(matches[0][0])
 
-        from torchao.experimental.quant_api import Int8DynamicActivationIntxWeightConfig
-        from torchao.quantization.granularity import PerGroup, PerRow
-        from torchao.quantization.quant_api import quantize_
+        from torchao.dtypes import PackedLinearInt8DynamicActivationIntxWeightLayout
+        from torchao.quantization.granularity import PerAxis, PerGroup
+        from torchao.quantization.quant_api import (
+            Int8DynamicActivationIntxWeightConfig,
+            MappingType,
+            quantize_,
+        )
         from torchao.utils import unwrap_tensor_subclass
 
         with torch.no_grad():
@@ -124,8 +134,11 @@ def quantize(  # noqa C901
                 model,
                 Int8DynamicActivationIntxWeightConfig(
                     weight_dtype=getattr(torch, f"int{bitwidth}"),
-                    granularity=(PerRow() if group_size == 0 else PerGroup(group_size)),
-                    has_weight_zeros=False,
+                    weight_granularity=(
+                        PerAxis(0) if group_size == 0 else PerGroup(group_size)
+                    ),
+                    weight_mapping_type=MappingType.SYMMETRIC,
+                    layout=PackedLinearInt8DynamicActivationIntxWeightLayout(),
                 ),
             )
             model = unwrap_tensor_subclass(model)
@@ -164,7 +177,7 @@ def quantize(  # noqa C901
 
         try:
             # torchao 0.3+
-            from torchao._eval import InputRecorder  # pyre-fixme[21]
+            from torchao._models._eval import InputRecorder
         except ImportError:
             from torchao.quantization.GPTQ import InputRecorder  # pyre-ignore
 
@@ -777,23 +790,27 @@ def get_quant_embedding_transform(args, dtype_override: Optional[DType] = None):
             EmbeddingQuantizer,
             SharedEmbeddingQuantizer,
         )
-        from torchao.quantization.granularity import PerGroup, PerRow
+        from torchao.quantization.granularity import PerAxis, PerGroup
+        from torchao.quantization.quant_api import MappingType
 
         quant_args = args.embedding_quantize.split(":")[1].split(",")
         if len(quant_args) == 2:
             bitwidth, group_size = quant_args
-            has_weight_zeros = True
+            is_asymmetric = True
         else:
-            bitwidth, group_size, has_weight_zeros = quant_args
+            bitwidth, group_size, is_asymmetric = quant_args
 
         if group_size in ["none", "None", "0"]:
             group_size = 0
 
         group_size = int(group_size)
         bitwidth = int(bitwidth)
-        has_weight_zeros = bool(has_weight_zeros)
+        is_asymmetric = bool(is_asymmetric)
         weight_dtype = getattr(torch, f"int{bitwidth}")
-        granularity = PerRow() if group_size == 0 else PerGroup(group_size)
+        granularity = PerAxis(0) if group_size == 0 else PerGroup(group_size)
+        mapping_type = (
+            MappingType.ASYMMETRIC if is_asymmetric else MappingType.SYMMETRIC
+        )
 
         def _torchao_embedding_quantizer(model):
             with torch.no_grad():
@@ -801,14 +818,14 @@ def get_quant_embedding_transform(args, dtype_override: Optional[DType] = None):
                     EmbeddingQuantizer(
                         weight_dtype=weight_dtype,
                         granularity=granularity,
-                        has_weight_zeros=has_weight_zeros,
+                        mapping_type=mapping_type,
                         use_fallback=False,
                     ).quantize(model)
                 else:
                     SharedEmbeddingQuantizer(
                         weight_dtype=weight_dtype,
                         granularity=granularity,
-                        has_weight_zeros=has_weight_zeros,
+                        mapping_type=mapping_type,
                     ).quantize(model)
             return model
 

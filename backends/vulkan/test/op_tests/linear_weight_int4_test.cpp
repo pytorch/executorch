@@ -20,7 +20,7 @@
 // Reference Implementations
 //
 
-at::Tensor linear_weight_int4_reference_impl(
+at::Tensor linear_qga4w_reference_impl(
     const at::Tensor& x,
     const at::Tensor& weights_4x2,
     const int64_t groupsize,
@@ -101,7 +101,7 @@ at::Tensor dequantize_and_linear(
 // Test functions
 //
 
-void test_reference_linear_int4(
+void test_reference_linear_qga4w(
     const int B,
     const int M,
     const int K,
@@ -119,7 +119,7 @@ void test_reference_linear_int4(
   at::Tensor scales_and_zeros =
       at::rand({k_groups, N, 2}, at::device(at::kCPU).dtype(at::kFloat));
 
-  at::Tensor out = linear_weight_int4_reference_impl(
+  at::Tensor out = linear_qga4w_reference_impl(
       x,
       at::_convert_weight_to_int4pack_for_cpu(weights_int, group_size),
       group_size,
@@ -152,7 +152,7 @@ vkcompute::vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
   }
 }
 
-void test_vulkan_linear_int4_impl(
+void test_vulkan_linear_qga4w_impl(
     const int B,
     const int M,
     const int K,
@@ -174,7 +174,7 @@ void test_vulkan_linear_int4_impl(
       at::rand({k_groups, N, 2}, at::device(at::kCPU).dtype(at::kFloat));
 
   at::Tensor weights_int = unpack_weights_4x2(weights_4x2);
-  at::Tensor out_ref = linear_weight_int4_reference_impl(
+  at::Tensor out_ref = linear_qga4w_reference_impl(
       x,
       at::_convert_weight_to_int4pack_for_cpu(weights_int, group_size),
       group_size,
@@ -237,14 +237,14 @@ void test_vulkan_linear_int4_impl(
   ASSERT_TRUE(at::allclose(vk_out, out_ref, 1e-4, 1e-4));
 }
 
-void test_vulkan_linear_int4(
+void test_vulkan_linear_qga4w(
     const int B,
     const int M,
     const int K,
     const int N,
     const int group_size = 32,
     const int inner_k_tiles = 8) {
-  test_vulkan_linear_int4_impl(
+  test_vulkan_linear_qga4w_impl(
       B,
       M,
       K,
@@ -254,7 +254,7 @@ void test_vulkan_linear_int4(
       vkcompute::utils::kBuffer,
       vkcompute::utils::kBuffer);
 
-  test_vulkan_linear_int4_impl(
+  test_vulkan_linear_qga4w_impl(
       B,
       M,
       K,
@@ -265,23 +265,32 @@ void test_vulkan_linear_int4(
       vkcompute::utils::kTexture3D);
 }
 
-TEST(VulkanInt4LinearTest, test_reference_impl) {
-  test_reference_linear_int4(
+TEST(VulkanLinearQGA4WTest, test_reference_impl) {
+  test_reference_linear_qga4w(
       /*B = */ 1,
       /*M = */ 4,
       /*K = */ 128,
       /*N = */ 32);
 }
 
-TEST(VulkanInt4LinearTest, test_vulkan_impl) {
-  if (!vkcompute::api::context()
-           ->adapter_ptr()
-           ->has_full_int8_buffers_support()) {
-    GTEST_SKIP();
-  }
-  test_vulkan_linear_int4(
+TEST(VulkanLinearQGA4WTest, test_vulkan_impl_small_m) {
+  test_vulkan_linear_qga4w(
       /*B = */ 1,
       /*M = */ 4,
       /*K = */ 128,
       /*N = */ 32);
+
+  test_vulkan_linear_qga4w(
+      /*B = */ 1,
+      /*M = */ 1,
+      /*K = */ 256,
+      /*N = */ 256);
+}
+
+TEST(VulkanLinearQGA4WTest, test_vulkan_impl_gemm) {
+  test_vulkan_linear_qga4w(
+      /*B = */ 1,
+      /*M = */ 256,
+      /*K = */ 256,
+      /*N = */ 256);
 }

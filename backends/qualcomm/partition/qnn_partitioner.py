@@ -34,7 +34,7 @@ from .common_defs import (
     not_supported_operator,
     to_be_implemented_operator,
 )
-from .utils import generate_qnn_executorch_option, get_skip_decomp_table
+from .utils import filter_fn, generate_qnn_executorch_option, get_skip_decomp_table
 
 
 class QnnOperatorSupport(OperatorSupportBase):
@@ -181,5 +181,4 @@ class QnnPartitioner(Partitioner):
         self, ep: ExportedProgram
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
         do_not_decompose = get_skip_decomp_table()
-
-        return do_not_decompose, None
+        return (do_not_decompose, filter_fn)

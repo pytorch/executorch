@@ -14,8 +14,8 @@ export management.
 
 # pyre-strict
 
-from ._export import ExportSession, export
-from ._recipe import ExportRecipe
+from .export import export, ExportSession
+from .recipe import ExportRecipe
 
 __all__ = [
     "ExportRecipe",

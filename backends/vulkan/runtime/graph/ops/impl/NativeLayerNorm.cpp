@@ -83,8 +83,19 @@ void add_native_layer_norm_node(
 
   std::vector<int64_t> in_sizes = t_input->sizes();
 
-  utils::uvec3 global_size = t_mean->logical_limits();
-  utils::uvec3 local_size = adaptive_work_group_size(global_size);
+  utils::uvec3 global_size = t_out->logical_limits();
+  utils::uvec3 local_size;
+
+  // Since the shader sets shared memory scale factor > 1, if dispatch is
+  // greater than maximum WG size. Setting WG size in X axis to max WG size,
+  // would allow best thread utilization.
+  if (global_size[0] > 64) {
+    local_size = {64, 1, 1};
+  } else {
+    // If thread size in X axis is smaller or equal to maximum WG size, we can
+    // let the function decide the best WG size.
+    local_size = graph.create_local_wg_size(global_size);
+  }
 
   std::string kernel_name("native_layer_norm");
   kernel_name.reserve(kShaderNameReserve);
@@ -97,24 +108,25 @@ void add_native_layer_norm_node(
       global_size,
       local_size,
       // Inputs and Outputs
-      {{{out_val->at(0), out_val->at(1), out_val->at(2)},
-        vkapi::MemoryAccessType::WRITE},
-       {{in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
+      {{{out_val->at(0), out_val->at(1), out_val->at(2)}, vkapi::kWrite},
+       {{in, arg_weight, arg_bias}, vkapi::kRead}},
       // Shader params buffers
       {},
+      // Push Constants
+      {
+          graph.logical_limits_pc_of(out_val->at(0)),
+          graph.sizes_pc_of(out_val->at(0)),
+          PushConstantDataInfo(&epsilon, sizeof(epsilon)),
+      },
       // Specialization Constants
       {
           t_input->hashed_layout(),
           t_out->hashed_layout(),
       },
-      // Resizing Logic
-      resize_native_layer_norm_node,
+      // Resize Args
       {normalized_shape},
-      {
-          graph.logical_limits_pc_of(out_val->at(0)),
-          graph.sizes_pc_of(out_val->at(0)),
-          PushConstantDataInfo(&epsilon, sizeof(epsilon)),
-      }));
+      // Resizing Logic
+      resize_native_layer_norm_node));
 }
 
 void native_layer_norm(ComputeGraph& graph, const std::vector<ValueRef>& args) {

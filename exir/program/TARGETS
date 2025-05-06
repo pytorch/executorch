@@ -35,6 +35,7 @@ python_library(
         "//executorch/exir/capture:config",
         "//executorch/exir/emit:emit",
         "//executorch/exir/emit:lib",
+        "//executorch/exir/operator:util",
         "//executorch/exir/passes:insert_write_back_for_buffers_pass",
         "//executorch/exir/passes:lib",
         "//executorch/exir/passes:normalize_view_copy_base_pass",

@@ -14,12 +14,16 @@ import sys
 import tempfile
 from pathlib import Path
 
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
 import numpy as np
 
 import torch
-from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
+from executorch.backends.qualcomm.quantizer.quantizer import (
+    ModuleQConfig,
+    QnnQuantizer,
+    QuantDtype,
+)
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
@@ -125,6 +129,7 @@ class SimpleADB:
             f"{self.qnn_sdk}/lib/aarch64-android/libQnnSystem.so",
             f"{self.build_path}/{self.runner}",
             f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
+            f"{self.qnn_sdk}/lib/aarch64-android/libQnnModelDlc.so",
         ]
         input_list_file, input_files = generate_inputs(
             self.working_dir, self.input_list_filename, inputs, input_list
@@ -254,18 +259,23 @@ def qat_train(ori_model, captured_model, quantizer, dataset):
 def make_quantizer(
     quant_dtype: Optional[QuantDtype] = QuantDtype.use_8a8w,
     custom_annotations=(),
-    per_block_conv=False,
     per_channel_conv=True,
     per_channel_linear=False,
     act_observer=MovingAverageMinMaxObserver,
     is_qat=False,
+    submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
 ):
     quantizer = QnnQuantizer()
     quantizer.add_custom_quant_annotations(custom_annotations)
-    quantizer.set_per_block_conv_quant(per_block_conv)
-    quantizer.set_per_channel_conv_quant(per_channel_conv)
-    quantizer.set_per_channel_linear_quant(per_channel_linear)
-    quantizer.set_quant_config(quant_dtype, is_qat, act_observer)
+    quantizer.set_default_quant_config(
+        quant_dtype,
+        is_qat=is_qat,
+        is_conv_per_channel=per_channel_conv,
+        is_linear_per_channel=per_channel_linear,
+        act_observer=act_observer,
+    )
+    submodule_qconfig_list = submodule_qconfig_list or []
+    quantizer.set_submodule_qconfig_list(submodule_qconfig_list)
     return quantizer
 
 
@@ -279,12 +289,13 @@ def build_executorch_binary(
     skip_node_id_set=None,
     skip_node_op_set=None,
     quant_dtype: Optional[QuantDtype] = None,
-    custom_quantizer=None,
+    custom_quantizer: Optional[QnnQuantizer] = None,
     shared_buffer=False,
     metadata=None,
     dump_intermediate_outputs=False,
     passes_job=None,
     qat_training_data=None,
+    online_prepare=False,
 ):
     """
     A function to generate an ExecuTorch binary for Qualcomm platforms.
@@ -302,7 +313,9 @@ def build_executorch_binary(
         shared_buffer (bool, optional): Applies zero-copy mechanism to optimize runtime memory allocation.
         metadata (dict, optional): An optional dictionary that maps each method name to a constant value in eager mode.
         dump_intermediate_outputs (bool, optional): Enables dumping model intermediate outputs.
-        custom_pass_config (frozenset, optional): Set of custom passes for model processing.
+        passes_job (OrderedDict, optional): Custom passes job in capture_program, users can enable/disable specific passes or modify their attributes.
+        qat_training_data (List[torch.Tensor], optional): A dataset for quantization aware training(QAT). Typically is a pair of tensors, such as [features, ground truth].
+        online_prepare (bool, optional): Compose QNN graph on device if set to True.
 
     Returns:
         None: The function writes the output to a specified .pte file.
@@ -313,11 +326,12 @@ def build_executorch_binary(
     compile_spec = generate_qnn_executorch_compiler_spec(
         soc_model=getattr(QcomChipset, soc_model),
         backend_options=backend_options,
+        online_prepare=online_prepare,
         shared_buffer=shared_buffer,
         dump_intermediate_outputs=dump_intermediate_outputs,
     )
-    if quant_dtype is not None:
-        captured_model = torch.export.export(model, inputs, strict=True).module()
+    if quant_dtype is not None or custom_quantizer is not None:
+        captured_model = torch.export.export(model, inputs, strict=False).module()
         if qat_training_data:
             quantizer = custom_quantizer or make_quantizer(
                 quant_dtype=quant_dtype, is_qat=True
@@ -419,6 +433,15 @@ def segmentation_metrics(predictions, targets, classes):
     return (pa, mpa, miou, cls_iou)
 
 
+def class_agnostic_mIoU(predictions, targets):
+    total_iou = 0
+    for pred, tar in zip(predictions, targets):
+        inter = np.count_nonzero(pred & tar)
+        union = np.count_nonzero(pred | tar)
+        total_iou += inter / (union + 1e-10)
+    return total_iou / len(predictions)
+
+
 def get_imagenet_dataset(
     dataset_path, data_size, image_shape, crop_size=None, shuffle=True
 ):
@@ -480,6 +503,13 @@ def setup_common_args_and_variables():
         help="hostname where android device is connected.",
         default=None,
         type=str,
+    )
+
+    parser.add_argument(
+        "--online_prepare",
+        help="If specified, compose QNN graph on device.",
+        action="store_true",
+        default=False,
     )
 
     parser.add_argument(

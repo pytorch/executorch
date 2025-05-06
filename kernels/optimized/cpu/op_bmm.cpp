@@ -6,9 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/runtime/kernel/kernel_includes.h>
-
 #include <executorch/kernels/optimized/blas/CPUBlas.h>
+#include <executorch/kernels/portable/cpu/util/matmul_ops_util.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
 
 // Performs a batch matrix-matrix product of matrices stored in input and mat2.
 
@@ -136,33 +136,32 @@ Error resize_out_tensor(const Tensor& self, const Tensor& mat2, Tensor& out) {
 
 // bmm.out(Tensor self, Tensor mat2, *, Tensor(a!) out) -> Tensor(a!)
 Tensor& opt_bmm_out(
-    KernelRuntimeContext& context,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     const Tensor& mat2,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
 
   ET_KERNEL_CHECK(
-      context,
+      ctx,
       resize_out_tensor(self, mat2, out) == Error::Ok,
       InvalidArgument,
       out);
   ET_KERNEL_CHECK(
-      context, check_bmm_out_args(self, mat2, out), InvalidArgument, out);
+      ctx, check_bmm_out_args(self, mat2, out), InvalidArgument, out);
 
-#define BMM_TENSOR(ctype, dtype)        \
-  case ScalarType::dtype:               \
-    bmm_kernel<ctype>(self, mat2, out); \
-    break;
+  constexpr auto name = "bmm.out";
+  auto self_type = self.scalar_type();
 
-  auto scalar_type = self.scalar_type();
-  switch (scalar_type) {
-    ET_FORALL_REAL_TYPES_AND(Half, BMM_TENSOR)
-    default:
-      ET_CHECK_MSG(
-          false, "Unhandled dtype %" PRId8, static_cast<int8_t>(scalar_type));
+  if (executorch::runtime::isComplexType(self_type)) {
+    ET_SWITCH_COMPLEXH_TYPES(self_type, ctx, name, CTYPE, [&]() {
+      internal::bmm_out_impl<CTYPE>(self, mat2, out);
+    });
+  } else {
+    ET_SWITCH_REALH_TYPES(self_type, ctx, name, CTYPE, [&]() {
+      bmm_kernel<CTYPE>(self, mat2, out);
+    });
   }
-#undef BMM_TENSOR
 
   return out;
 }

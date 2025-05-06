@@ -11,7 +11,7 @@ huggingface page [llava-hf/llava-1.5-7b-hf](https://huggingface.co/llava-hf/llav
 
 
 <p align="center">
-      <img src="./llava_via_xnnpack.gif" width=300>
+      <img src="llava_via_xnnpack.gif" width=300>
       <br>
       <em>
       Running Llava1.5 7B on Android phone
@@ -26,16 +26,25 @@ model) for general-purpose visual and language understanding, achieving
 impressive chat capabilities mimicking spirits of the cutting edge multimodal
 models and setting a high bar for accuracy on Science QA.
 
-## Instructions
+## Instructions to run Llava on Android/iOS
 
 First you need to generate a .PTE file for the model, along with input image,
 and other artifacts. Then you need either a C++ runner, or Android or iOS
 application to test things out on device.
 
+### Host machine requirements
+
+The biggest requirement is to have a host machine with at least 32GiB memory, preferably 64GiB.
+
+The model weights is 15GiB, and the other memory usage at export stage (`export_llava`) is around 10GiB. So you need at least 25GiB memory to run the export script.
+
+
 ### Generate ExecuTorch .PTE and other artifacts
 
 Run the following command to generate `llava.pte`, `tokenizer.bin` and an image
 tensor (serialized in TorchScript) `image.pt`.
+
+> **Warning**: The C++ runner `llava_main` binary cannot process raw image inputs such as JPEG, PNG, or BMP files directly. You must convert these images to a `.pt` file format using the `examples/models/llava/image_util.py` script before using them with `llava_main`.
 
 Prerequisite: run `install_executorch.sh` to install ExecuTorch and run
 `examples/models/llava/install_requirements.sh` to install dependencies.
@@ -68,6 +77,13 @@ cmake-out/examples/models/llava/llava_main
 ```
 
 ### Build Mobile Apps
+
+#### Device Requirements
+
+To run the Android/iOS apps, you need a device with at least 12GiB memory.
+
+- iPhone 13 Pro or above
+- Samsung Galaxy S23 or above
 
 #### Android
 

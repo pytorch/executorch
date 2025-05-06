@@ -11,8 +11,8 @@ In this tutorial we will walk you through the process of setting up the prerequi
 :::{grid-item-card}  Tutorials we recommend you complete before this:
 :class-card: card-prerequisites
 * [Introduction to ExecuTorch](intro-how-it-works.md)
-* [Setting up ExecuTorch](getting-started-setup.md)
-* [Building ExecuTorch with CMake](runtime-build-and-cross-compilation.md)
+* [Setting up ExecuTorch](getting-started.md)
+* [Building ExecuTorch with CMake](using-executorch-building-from-source.md)
 :::
 ::::
 
@@ -61,7 +61,7 @@ For more information about OpenVINO build, refer to the [OpenVINO Build Instruct
 
 Follow the steps below to setup your build environment:
 
-1. **Setup ExecuTorch Environment**: Refer to the [Environment Setup](https://pytorch.org/executorch/stable/getting-started-setup#environment-setup) guide for detailed instructions on setting up the ExecuTorch environment.
+1. **Setup ExecuTorch Environment**: Refer to the [Environment Setup](getting-started-setup.md#environment-setup) guide for detailed instructions on setting up the ExecuTorch environment.
 
 2. **Setup OpenVINO Backend Environment**
 - Install the dependent libs. Ensure that you are inside `executorch/backends/openvino/` directory

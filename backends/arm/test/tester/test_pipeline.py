@@ -8,7 +8,7 @@ from typing import Callable, Dict, Generic, List, Optional, Type, TypeVar
 
 import torch
 
-from executorch.backends.arm.quantizer.arm_quantizer import (
+from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
     TOSAQuantizer,
@@ -258,6 +258,8 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
        exir_ops: Exir dialect ops expected to be found in the graph after to_edge.
        if not using use_edge_to_transform_and_lower.
 
+       run_on_tosa_ref_model: Set to true to test the tosa file on the TOSA reference model.
+
        tosa_version: A string for identifying the TOSA version, see common.get_tosa_compile_spec for
                      options.
        use_edge_to_transform_and_lower: Selects betweeen two possible ways of lowering the module.
@@ -270,6 +272,7 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
         test_data: T,
         aten_op: str | List[str],
         exir_op: Optional[str | List[str]] = None,
+        run_on_tosa_ref_model: bool = True,
         tosa_version: str = "TOSA-0.80+BI",
         symmetric_io_quantization: bool = False,
         use_to_edge_transform_and_lower: bool = True,
@@ -324,13 +327,14 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
             suffix="quant_nodes",
         )
 
-        self.add_stage(
-            self.tester.run_method_and_compare_outputs,
-            atol=atol,
-            rtol=rtol,
-            qtol=qtol,
-            inputs=self.test_data,
-        )
+        if run_on_tosa_ref_model:
+            self.add_stage(
+                self.tester.run_method_and_compare_outputs,
+                atol=atol,
+                rtol=rtol,
+                qtol=qtol,
+                inputs=self.test_data,
+            )
 
 
 class TosaPipelineMI(BasePipelineMaker, Generic[T]):
@@ -345,6 +349,8 @@ class TosaPipelineMI(BasePipelineMaker, Generic[T]):
        exir_ops: Exir dialect ops expected to be found in the graph after to_edge.
        if not using use_edge_to_transform_and_lower.
 
+       run_on_tosa_ref_model: Set to true to test the tosa file on the TOSA reference model.
+
        tosa_version: A string for identifying the TOSA version, see common.get_tosa_compile_spec for
                      options.
        use_edge_to_transform_and_lower: Selects betweeen two possible ways of lowering the module.
@@ -357,6 +363,7 @@ class TosaPipelineMI(BasePipelineMaker, Generic[T]):
         test_data: T,
         aten_op: str | List[str],
         exir_op: Optional[str | List[str]] = None,
+        run_on_tosa_ref_model: bool = True,
         tosa_version: str = "TOSA-0.80+MI",
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
@@ -385,13 +392,14 @@ class TosaPipelineMI(BasePipelineMaker, Generic[T]):
             suffix="quant_nodes",
         )
 
-        self.add_stage(
-            self.tester.run_method_and_compare_outputs,
-            atol=atol,
-            rtol=rtol,
-            qtol=qtol,
-            inputs=self.test_data,
-        )
+        if run_on_tosa_ref_model:
+            self.add_stage(
+                self.tester.run_method_and_compare_outputs,
+                atol=atol,
+                rtol=rtol,
+                qtol=qtol,
+                inputs=self.test_data,
+            )
 
 
 class EthosU55PipelineBI(BasePipelineMaker, Generic[T]):

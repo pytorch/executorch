@@ -152,6 +152,10 @@ def get_linear_inputs():
 @register_test_suite("aten._weight_int8pack_mm.default")
 def get_weight_int8pack_mm_inputs():
     MKN_list = [
+        [1, 480, 256],
+        [1, 1024, 1024],
+        [1, 1024, 256],
+        [3, 480, 256],
         [6, 480, 256],
         [6, 256, 1024],
         [6, 1024, 256],
@@ -226,153 +230,190 @@ def get_max_pool2d_inputs():
 
 @register_test_suite("aten.convolution.default")
 def get_conv_inputs():
-    test_suite = VkTestSuite(
+    Test = namedtuple(
+        "ConvTest",
         [
-            (
-                (1, 6, 40, 50),
-                (8, 6, 3, 3),
-                (8,),
-                [1, 2],
-                [2, 3],
-                [1, 1],
-                False,
-                [0, 0],
-                1,
-            ),
-            (
-                (1, 6, 40, 50),
-                (6, 8, 3, 3),
-                (8,),
-                [1, 2],
-                [2, 3],
-                [1, 1],
-                True,
-                [0, 1],
-                1,
-            ),
-            (
-                (1, 8, 72, 96),
-                (8, 1, 3, 3),
-                (8,),
-                [1, 1],
-                [1, 1],
-                [1, 1],
-                False,
-                [0, 0],
-                8,
-            ),
-            (
-                (1, 8, 72, 96),
-                (8, 8, 1, 1),
-                (8,),
-                [1, 1],
-                [1, 1],
-                [1, 1],
-                False,
-                [0, 0],
-                1,
-            ),
-            (
-                (1, 6, 40, 50),
-                (8, 6, 3, 3),
-                None,
-                [1, 2],
-                [2, 3],
-                [1, 1],
-                False,
-                [0, 0],
-                1,
-            ),
-            (
-                (1, 6, 7),
-                (6, 1, 3),
-                (6,),
-                [1],
-                [0],
-                [1],
-                False,
-                [0],
-                6,
-            ),
-            (
-                (2, 20, 30),
-                (10, 4, 6),
-                (10,),
-                [5],
-                [5],
-                [3],
-                False,
-                [0],
-                5,
-            ),
-            (
-                (1, 9, 11),
-                (9, 1, 3),
-                None,
-                [1],
-                [0],
-                [1],
-                False,
-                [0],
-                9,
-            ),
-            (
-                (5, 15, 30),
-                (20, 3, 3),
-                None,
-                [3],
-                [5],
-                [7],
-                False,
-                [0],
-                5,
-            ),
-            (
-                (1, 16, 672, 512),
-                (64, 16, 1, 1),
-                (64,),
-                [1, 1],
-                [0, 0],
-                [1, 1],
-                False,
-                [0, 0],
-                1,
-            ),
-            (
-                (1, 4, 234, 234),
-                (4, 1, 3, 3),
-                (4,),
-                [2, 1],
-                [1, 1],
-                [1, 1],
-                False,
-                [0, 0],
-                4,
-            ),
-            (
-                (1, 4, 234, 234),
-                (4, 1, 3, 3),
-                (4,),
-                [1, 2],
-                [1, 1],
-                [1, 1],
-                False,
-                [0, 0],
-                4,
-            ),
-            (
-                (1, 4, 234, 234),
-                (4, 1, 3, 3),
-                (4,),
-                [2, 2],
-                [1, 1],
-                [1, 1],
-                False,
-                [0, 0],
-                4,
-            ),
-        ]
+            "self",
+            "weight",
+            "bias",
+            "stride",
+            "padding",
+            "dilation",
+            "transposed",
+            "output_padding",
+            "groups",
+        ],
     )
+    Test.__new__.__defaults__ = (
+        None,
+        None,
+        None,
+        [1, 1],
+        [0, 0],
+        [1, 1],
+        False,
+        [9, 0],
+        1,
+    )
+    test_cases = []
+    test_cases = [
+        Test(
+            self=(1, 6, 40, 50),
+            weight=(8, 6, 3, 3),
+            bias=(8,),
+            stride=[1, 2],
+            padding=[2, 3],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 6, 40, 50),
+            weight=(6, 8, 3, 3),
+            bias=(8,),
+            stride=[1, 2],
+            padding=[2, 3],
+            dilation=[1, 1],
+            transposed=True,
+            output_padding=[0, 1],
+            groups=1,
+        ),
+        Test(
+            self=(1, 8, 72, 96),
+            weight=(8, 1, 3, 3),
+            bias=(8,),
+            stride=[1, 1],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=8,
+        ),
+        Test(
+            self=(1, 8, 72, 96),
+            weight=(8, 8, 1, 1),
+            bias=(8,),
+            stride=[1, 1],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 6, 40, 50),
+            weight=(8, 6, 3, 3),
+            bias=None,
+            stride=[1, 2],
+            padding=[2, 3],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 6, 7),
+            weight=(6, 1, 3),
+            bias=(6,),
+            stride=[1],
+            padding=[0],
+            dilation=[1],
+            transposed=False,
+            output_padding=[0],
+            groups=6,
+        ),
+        Test(
+            self=(2, 20, 30),
+            weight=(10, 4, 6),
+            bias=(10,),
+            stride=[5],
+            padding=[5],
+            dilation=[3],
+            transposed=False,
+            output_padding=[0],
+            groups=5,
+        ),
+        Test(
+            self=(1, 9, 11),
+            weight=(9, 1, 3),
+            bias=None,
+            stride=[1],
+            padding=[0],
+            dilation=[1],
+            transposed=False,
+            output_padding=[0],
+            groups=9,
+        ),
+        Test(
+            self=(5, 15, 30),
+            weight=(20, 3, 3),
+            bias=None,
+            stride=[3],
+            padding=[5],
+            dilation=[7],
+            transposed=False,
+            output_padding=[0],
+            groups=5,
+        ),
+        Test(
+            self=(1, 16, 672, 512),
+            weight=(64, 16, 1, 1),
+            bias=(64,),
+            stride=[1, 1],
+            padding=[0, 0],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 4, 234, 234),
+            weight=(4, 1, 3, 3),
+            bias=(4,),
+            stride=[2, 1],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=4,
+        ),
+        Test(
+            self=(1, 4, 234, 234),
+            weight=(4, 1, 3, 3),
+            bias=(4,),
+            stride=[1, 2],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=4,
+        ),
+        Test(
+            self=(1, 4, 234, 234),
+            weight=(4, 1, 3, 3),
+            bias=(4,),
+            stride=[2, 2],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=4,
+        ),
+        Test(
+            self=(1, 8, 90, 77),
+            weight=(1, 8, 3, 3),
+            bias=(1,),
+            stride=[1, 1],
+            padding=[2, 2],
+            dilation=[2, 2],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+    ]
+
+    test_suite = VkTestSuite(test_cases)
     return test_suite
 
 
@@ -393,21 +434,34 @@ def get_native_layer_norm_inputs():
     return test_suite
 
 
-@register_test_suite("aten.upsample_nearest2d.vec")
 def get_upsample_inputs():
-    test_suite = VkTestSuite(
-        [
-            # (input tensor shape, output 2D image size (H, W), output scaling factors)
-            ((2, 2, 2, 2), None, [1, 1]),
-            ((1, 1, 2, 2), None, [2, 2]),
-            ((1, 1, 2, 2), None, [2, 4]),
-            ((1, 1, 2, 2), None, [4, 2]),
-            ((1, 1, 2, 2), [2, 2], None),
-            ((1, 1, 2, 2), [2, 4], None),
-            ((1, 1, 2, 2), [3, 2], None),
-        ]
-    )
-    return test_suite
+    inputs_list = [
+        # (input tensor shape, output 2D image size (H, W), output scaling factors)
+        ((2, 2, 2, 2), None, [1, 1]),
+        ((1, 1, 2, 2), None, [2, 2]),
+        ((1, 1, 2, 2), None, [2, 4]),
+        ((1, 1, 2, 2), None, [4, 2]),
+        ((1, 1, 2, 2), [2, 2], None),
+        ((1, 1, 2, 2), [2, 4], None),
+        ((1, 1, 2, 2), [3, 2], None),
+    ]
+    return inputs_list
+
+
+@register_test_suite("aten.upsample_nearest2d.vec")
+def get_upsample_nearest2d_inputs():
+    inputs_list = get_upsample_inputs()
+    return VkTestSuite(inputs_list)
+
+
+@register_test_suite("aten.upsample_bilinear2d.vec")
+def get_upsample_bilinear2d_inputs():
+    base_inputs_list = get_upsample_inputs()
+    inputs_list = []
+    for input_case in base_inputs_list:
+        inputs_list.append((input_case[0], input_case[1], False, input_case[2]))
+        inputs_list.append((input_case[0], input_case[1], True, input_case[2]))
+    return VkTestSuite(inputs_list)
 
 
 @register_test_suite(["aten.full.default", "aten.full_like.default"])

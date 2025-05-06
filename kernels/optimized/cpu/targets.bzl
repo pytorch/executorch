@@ -15,6 +15,7 @@ _OPTIMIZED_ATEN_OPS = (
         name = "op_bmm",
         deps = [
             "//executorch/kernels/optimized:libblas",
+            "//executorch/kernels/portable/cpu/util:matmul_ops_util",
         ],
     ),
     op_target(
@@ -35,12 +36,20 @@ _OPTIMIZED_ATEN_OPS = (
     ),
     op_target(name = "op_exp"),
     op_target(
+        name = "op_fft_c2r",
+        compiler_flags = [] if runtime.is_oss else [
+            "-Wno-global-constructors",
+            "-Wno-shadow",
+        ],
+        deps = [":fft_utils"],
+    ),
+    op_target(
         name = "op_fft_r2c",
         compiler_flags = [] if runtime.is_oss else [
             "-Wno-global-constructors",
             "-Wno-shadow",
         ],
-        deps = [] if runtime.is_oss else ["fbsource//third-party/pocket_fft:pocketfft"],
+        deps = [":fft_utils"],
     ),
     op_target(name = "op_sigmoid"),
     op_target(
@@ -139,7 +148,18 @@ def define_common_targets():
         srcs = [],
         exported_headers = ["op_add_sub_impl.h"],
         visibility = ["//executorch/kernels/optimized/cpu/..."],
-        exported_deps = ["//executorch/runtime/core:core"],
+        exported_deps = [
+            "//executorch/runtime/core:core",
+            "//executorch/kernels/portable/cpu/util:broadcast_indexes_range",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "fft_utils",
+        srcs = [],
+        exported_headers = ["fft_utils.h"],
+        visibility = ["//executorch/kernels/optimized/cpu/..."],
+        exported_deps = [] if runtime.is_oss else ["fbsource//third-party/pocket_fft:pocketfft"],
     )
 
     runtime.cxx_library(

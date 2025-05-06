@@ -9,7 +9,7 @@ import pytest
 
 import torch
 
-from executorch.backends.arm.quantizer.arm_quantizer import (
+from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
     TOSAQuantizer,
@@ -173,14 +173,9 @@ def test_where_u55_BI(test_module):
         get_symmetric_quantization_config()
     )
 
-    # If condition is tensor_condition then there will be one full_like op which will be
-    # delegated.
-    if test_module.condition == tensor_condition:
-        num_delegates = 1
-        num_exir = 0
-    else:
-        num_delegates = 0
-        num_exir = 0
+    # There will be one full_like op which will be delegated.
+    num_delegates = 1
+    num_exir = 0
 
     pipeline = OpNotSupportedPipeline[input_t](
         test_module,
@@ -223,14 +218,9 @@ def test_where_u55_BI_on_fvp(test_module):
         get_symmetric_quantization_config()
     )
 
-    # If condition is tensor_condition then there will be one full_like op which will be
-    # delegated.
-    if test_module.condition == tensor_condition:
-        num_delegates = 1
-        num_exir = 0
-    else:
-        num_delegates = 0
-        num_exir = 0
+    # There will be one full_like op which will be delegated.
+    num_delegates = 1
+    num_exir = 0
 
     pipeline = OpNotSupportedPipeline[input_t](
         test_module,
@@ -249,18 +239,7 @@ def test_where_u55_BI_on_fvp(test_module):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_module",
-    test_modules_BI,
-    xfails={
-        "two_dim_scalar_cond": "E [executorch:method.cpp:601] Missing operator: "
-        "[2] aten::gt.Scalar_out",
-        "three_dim_scalar_cond": "E [executorch:method.cpp:601] Missing operator: "
-        "[2] aten::gt.Scalar_out",
-        "float32_scalar_cond": "E [executorch:method.cpp:601] Missing operator: "
-        "[2] aten::gt.Scalar_out",
-    },
-)
+@common.parametrize("test_module", test_modules_BI)
 @common.XfailIfNoCorstone320
 def test_where_u85_BI_on_fvp(test_module):
     compile_spec = common.get_u85_compile_spec()

@@ -56,7 +56,6 @@ Tensor& flash_attention_kernel_out(
     const optional<double> scale,
     Tensor& output);
 
-#ifdef ENABLE_CUSTOM_QUANTIZED_SDPA
 Tensor& custom_quantized_sdpa_out(
     RuntimeContext& ctx,
     const Tensor& q,
@@ -74,8 +73,8 @@ Tensor& custom_quantized_sdpa_out(
     const optional<Tensor>& k_scales,
     const optional<Tensor>& v_zero_points,
     const optional<Tensor>& v_scales,
+    const bool is_seq_at_dim_1,
     Tensor& output);
-#endif // ENABLE_CUSTOM_QUANTIZED_SDPA
 } // namespace native
 } // namespace executor
 } // namespace torch
