@@ -23,14 +23,14 @@
 #endif
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
 
-#if defined(ENABLE_CUSTOM_QUANTIZED_SDPA)
 #include <torchao/experimental/kernels/cpu/interface/quantized_matmul.h>
-#endif
 
 namespace torch {
 namespace executor {
 
 namespace native {
+
+enum class SeqDim { ONE = 1, TWO };
 
 namespace sdpa::impl {
 
@@ -39,6 +39,8 @@ struct MaybeQuantizedMatrixData {
   const int8_t* zero_points{nullptr};
   const float* scales{nullptr};
   int64_t m = 0, n = 0;
+  const int64_t zero_points_stride{1};
+  const int64_t scales_stride{1};
   ScalarType dtype{ScalarType::Float};
   MaybeQuantizedMatrixData() = default;
   MaybeQuantizedMatrixData(
@@ -47,12 +49,15 @@ struct MaybeQuantizedMatrixData {
       const float* scales_,
       int64_t m_,
       int64_t n_,
+      int64_t qparams_stride,
       ScalarType dtype_)
       : data(data_),
         zero_points(zero_points_),
         scales(scales_),
         m(m_),
         n(n_),
+        zero_points_stride(qparams_stride),
+        scales_stride(qparams_stride),
         dtype(dtype_) {}
 };
 
@@ -71,7 +76,6 @@ void _q_at_k_gemm(
       q_data.dtype == ScalarType::Char || q_data.dtype == ScalarType::Float,
       "q and k must be either int8 or float");
   if (q_data.dtype == ScalarType::Char) {
-#if defined(ENABLE_CUSTOM_QUANTIZED_SDPA)
     if constexpr (std::is_same<accum_t, float>::value) {
       int a_stride_m_tmp, b_stride_n_tmp;
       auto kernel = torchao::kernels::cpu::quantized_matmul::
@@ -91,17 +95,13 @@ void _q_at_k_gemm(
           static_cast<const int8_t*>(k_data.zero_points),
           static_cast<const float*>(q_data.scales),
           static_cast<const float*>(k_data.scales),
-          1,
-          1);
+          // LHS and RHS are assumed to have same stride for qparams
+          q_data.zero_points_stride,
+          k_data.zero_points_stride);
     } else {
       ET_CHECK_MSG(
           false, "Accumulation in dtype other than float not supported yet");
     }
-#else
-    ET_CHECK_MSG(
-        false,
-        "Quantized SDPA is not enabled. Check ENABLE_CUSTOM_QUANTIZED_SDPA compile flag");
-#endif
   } else {
     ::executorch::cpublas::gemm(
         ::executorch::cpublas::TransposeType::Transpose,
@@ -120,6 +120,131 @@ void _q_at_k_gemm(
   }
 }
 
+// Refactor op_dequantize.cpp to avoid code duplication
+void dequantize_optimized(
+    const int8_t* in,
+    const float scale,
+    const int8_t zero_point,
+    float* out,
+    int64_t quant_min,
+    int64_t quant_max,
+    size_t numel) {
+  size_t i = 0;
+#if defined(__aarch64__) || defined(__ARM_NEON)
+  int8x8_t zero_point_vec = vdup_n_s8(zero_point);
+  float32x4_t scales = vdupq_n_f32(static_cast<float>(scale));
+  constexpr int32_t kVecSize = 16;
+  const size_t num_vecs = numel / kVecSize;
+  const int8_t* in_copy = in;
+  float* out_copy = out;
+  for (; i < num_vecs; i++) {
+    int8x16_t in_vec = vld1q_s8(in_copy);
+    int16x8_t sub_vec_0_7 = vsubl_s8(vget_low_s8(in_vec), zero_point_vec);
+    int32x4_t sub_vec_0_3 = vmovl_s16(vget_low_s16(sub_vec_0_7));
+    int32x4_t sub_vec_4_7 = vmovl_s16(vget_high_s16(sub_vec_0_7));
+    float32x4_t out_vec_0_3 = vmulq_f32(vcvtq_f32_s32(sub_vec_0_3), scales);
+    float32x4_t out_vec_4_7 = vmulq_f32(vcvtq_f32_s32(sub_vec_4_7), scales);
+
+    int16x8_t sub_vec_8_15 = vsubl_s8(vget_high_s8(in_vec), zero_point_vec);
+    int32x4_t sub_vec_8_11 = vmovl_s16(vget_low_s16(sub_vec_8_15));
+    int32x4_t sub_vec_12_15 = vmovl_s16(vget_high_s16(sub_vec_8_15));
+    float32x4_t out_vec_8_11 = vmulq_f32(vcvtq_f32_s32(sub_vec_8_11), scales);
+    float32x4_t out_vec_12_15 = vmulq_f32(vcvtq_f32_s32(sub_vec_12_15), scales);
+    vst1q_f32(out_copy + 0, out_vec_0_3);
+    vst1q_f32(out_copy + 4, out_vec_4_7);
+    vst1q_f32(out_copy + 8, out_vec_8_11);
+    vst1q_f32(out_copy + 12, out_vec_12_15);
+    in_copy += kVecSize;
+    out_copy += kVecSize;
+  }
+  i = i * kVecSize;
+#endif
+  for (; i < numel; i++) {
+    out[i] = (static_cast<int16_t>(in[i]) - static_cast<int16_t>(zero_point)) *
+        scale;
+  }
+}
+
+void dequantize_per_channel_optimized(
+    const int8_t* in_data,
+    const float* scales_data,
+    const int8_t* zero_points_data,
+    float* out_data,
+    int64_t quant_min,
+    int64_t quant_max,
+    size_t outer_size,
+    size_t in_outer_stride,
+    size_t out_outer_stride,
+    size_t num_channels,
+    size_t in_channel_stride,
+    size_t out_channel_stride,
+    size_t channel_size,
+    size_t qparams_stride) {
+  for (size_t outer_idx = 0; outer_idx < outer_size; ++outer_idx) {
+    // Loop through dim
+    for (size_t channel_idx = 0; channel_idx < num_channels; ++channel_idx) {
+      const int8_t* in_data_local = in_data + outer_idx * in_outer_stride +
+          channel_idx * in_channel_stride;
+      const float scale = *(scales_data + channel_idx * qparams_stride);
+      const int8_t zero_point =
+          *(zero_points_data + channel_idx * qparams_stride);
+      float* out_data_local = out_data + outer_idx * out_outer_stride +
+          channel_idx * out_channel_stride;
+      dequantize_optimized(
+          in_data_local,
+          scale,
+          zero_point,
+          out_data_local,
+          quant_min,
+          quant_max,
+          channel_size);
+    }
+  }
+}
+
+void dequant_and_gemm(
+    const int64_t m,
+    const int64_t n,
+    const int64_t k,
+    float* qk_data,
+    const int64_t qk_stride_m,
+    const MaybeQuantizedMatrixData& v_data,
+    const int64_t v_stride_n,
+    float* o_data,
+    const int64_t o_stride_m,
+    const float beta) {
+  std::vector<float> dequantized_v_data(v_data.m * v_data.n);
+  dequantize_per_channel_optimized(
+      static_cast<const int8_t*>(v_data.data),
+      static_cast<const float*>(v_data.scales),
+      static_cast<const int8_t*>(v_data.zero_points),
+      dequantized_v_data.data(),
+      -128,
+      127,
+      1,
+      0,
+      0,
+      v_data.m,
+      v_stride_n,
+      v_data.n,
+      v_data.n,
+      v_data.zero_points_stride);
+  ::executorch::cpublas::gemm(
+      ::executorch::cpublas::TransposeType::NoTranspose,
+      ::executorch::cpublas::TransposeType::NoTranspose,
+      n,
+      m,
+      k,
+      static_cast<float>(1),
+      dequantized_v_data.data(),
+      v_data.n,
+      qk_data,
+      qk_stride_m,
+      beta,
+      o_data,
+      o_stride_m);
+}
+
 template <typename accum_t>
 void _qk_at_v_gemm(
     const int64_t m,
@@ -133,35 +258,46 @@ void _qk_at_v_gemm(
     const int64_t o_stride_m,
     const accum_t beta) {
   if (v_data.dtype == ScalarType::Char) {
-#if defined(ENABLE_CUSTOM_QUANTIZED_SDPA)
     if constexpr (std::is_same<accum_t, float>::value) {
-      int a_stride_m_tmp, b_stride_n_tmp;
-      auto kernel = torchao::kernels::cpu::quantized_matmul::
-          get_fp32_a_input_channelwise_8bit_b_f32_c_matmul(
-              m, n, k, false, false, a_stride_m_tmp, b_stride_n_tmp);
-      kernel(
-          m,
-          n,
-          k,
-          qk_data,
-          qk_stride_m /*lhs_stride_m*/,
-          static_cast<const int8_t*>(v_data.data),
-          v_stride_n /*rhs_stride_n*/,
-          o_data,
-          o_stride_m /*out_stride_n*/,
-          static_cast<const int8_t*>(v_data.zero_points),
-          static_cast<const float*>(v_data.scales),
-          beta,
-          1);
+      if (m > 4) {
+        // For larger batch sizes, dequantize and use BLAS for better
+        // performance
+        dequant_and_gemm(
+            m,
+            n,
+            k,
+            const_cast<float*>(qk_data),
+            qk_stride_m,
+            v_data,
+            v_stride_n,
+            o_data,
+            o_stride_m,
+            beta);
+      } else {
+        // For smaller batch sizes, use quantized gemm
+        int a_stride_m_tmp, b_stride_n_tmp;
+        auto kernel = torchao::kernels::cpu::quantized_matmul::
+            get_fp32_a_input_channelwise_8bit_b_f32_c_matmul(
+                m, n, k, false, false, a_stride_m_tmp, b_stride_n_tmp);
+        kernel(
+            m,
+            n,
+            k,
+            qk_data,
+            qk_stride_m /*lhs_stride_m*/,
+            static_cast<const int8_t*>(v_data.data),
+            v_stride_n /*rhs_stride_n*/,
+            o_data,
+            o_stride_m /*out_stride_n*/,
+            static_cast<const int8_t*>(v_data.zero_points),
+            static_cast<const float*>(v_data.scales),
+            beta,
+            v_data.zero_points_stride);
+      }
     } else {
       ET_CHECK_MSG(
           false, "Accumulation in dtype other than float not supported yet");
     }
-#else
-    ET_CHECK_MSG(
-        false,
-        "Quantized SDPA is not enabled. Check ENABLE_CUSTOM_QUANTIZED_SDPA compile flag");
-#endif
   } else {
     ::executorch::cpublas::gemm(
         ::executorch::cpublas::TransposeType::NoTranspose,
@@ -351,6 +487,40 @@ sdpa_with_kv_cache does not use attn_mask.
 
 TODO: Just handle conversion of bool mask to float
 */
+/**
+ * @brief Implements Flash Attention algorithm on CPU
+ *
+ * This function computes scaled dot-product attention with optimizations for
+ CPU.
+ * It supports both regular and quantized attention computation.
+ *
+ * @tparam scalar_t The data type for computation (e.g., float)
+ * @tparam q_split_size Block size for query matrix in tiling algorithm
+ * @tparam kv_split_size Block size for key/value matrices in tiling algorithm
+ *
+ * @param output Output tensor to store attention results
+ * @param query Query tensor [Batch x Num_heads x Q_seq_len x Dim_per_head]
+ * @param key Key tensor [Batch x Num_heads_kv x KV_seq_len x Dim_per_head]
+ * @param value Value tensor [Batch x Num_heads_kv x KV_seq_len x Dim_per_head]
+ * @param dropout_p Dropout probability (not used in current implementation)
+ * @param is_causal Whether to apply causal mask (lower triangular)
+ * @param attn_mask Optional explicit attention mask
+ * @param scale Optional custom scaling factor (default: 1/sqrt(head_dim))
+ * @param q_zero_points Optional zero points for quantized query
+ * @param q_scales Optional scales for quantized query
+ * @param k_zero_points Optional zero points for quantized key
+ * @param k_scales Optional scales for quantized key
+ * @param v_zero_points Optional zero points for quantized value
+ * @param v_scales Optional scales for quantized value
+ * @param seq_dim Which dimension is sequence dimension.
+ If SeqDim::One, then query, key, value are
+ expected to be in shape [Batch x Q_seq_len x Dim_per_head x Num_heads] and
+ output is expected to be in shape [Batch x Q_seq_len x Dim_per_head x
+ Num_heads]
+ * @param start_pos Starting position for causal masking in generation
+ * @param num_keys_for_causal_attention Number of keys to consider for causal
+ attention (-1 for all)
+ */
 template <typename scalar_t, int64_t q_split_size, int64_t kv_split_size>
 void cpu_flash_attention(
     Tensor& output,
@@ -367,22 +537,10 @@ void cpu_flash_attention(
     const optional<Tensor>& k_scales,
     const optional<Tensor>& v_zero_points,
     const optional<Tensor>& v_scales,
-    bool is_seq_at_dim_1 = false,
+    const SeqDim seq_dim = SeqDim::TWO,
     const int64_t start_pos = 0,
     const int64_t num_keys_for_causal_attention = -1) {
   (void)dropout_p;
-  // Query (Batch x Num_heads  x Q_seq_len  x Dim_per_head)
-  // Key   (Batch x Num_heads  x KV_seq_len x Dim_per_head)
-  // Value (Batch x Num_heads  x KV_seq_len x Dim_per_head)
-
-  /*
-  //    -> (Batch x Q_seq_len  x Num_heads  x Dim_per_head)
-  at::Tensor query = q.transpose(1, 2);
-  //    -> (Batch x KV_seq_len x Num_heads  x Dim_per_head)
-  at::Tensor key = k.transpose(1, 2);
-  //    -> (Batch x KV_seq_len x Num_heads  x Dim_per_head)
-  at::Tensor value = v.transpose(1, 2);
-  */
 
   // Without this we have out-of-bounds writes for
   // causal masking
@@ -408,7 +566,7 @@ void cpu_flash_attention(
   int64_t kvSize = value.size(2);
   int64_t num_heads_kv = key.size(1);
 
-  if (is_seq_at_dim_1) {
+  if (seq_dim == SeqDim::ONE) {
     num_head = query.size(2);
     num_heads_kv = key.size(2);
     qSize = query.size(1);
@@ -447,7 +605,11 @@ void cpu_flash_attention(
     */
     ET_CHECK_MSG(attn_mask.value().dim() == 2, "attn_mask must be 2D");
     ET_CHECK_MSG(
-        attn_mask.value().size(0) == qSize, "attn_mask shape mismatch");
+        attn_mask.value().size(0) == qSize,
+        "attn_mask shape mismatch"
+        "attn_mask.size(0)=%zd qSize=%" PRId64,
+        attn_mask.value().size(0),
+        qSize);
     ET_CHECK_MSG(
         attn_mask.value().size(1) == kvSize,
         "attn_mask shape mismatch"
@@ -457,16 +619,14 @@ void cpu_flash_attention(
   }
 
   bool is_quantized_sdpa = false;
-#if defined(ENABLE_CUSTOM_QUANTIZED_SDPA)
   is_quantized_sdpa = query.scalar_type() == ScalarType::Char;
-#endif
 
   auto strides = query.strides();
   int64_t qStrideB = strides[0];
   int64_t qStrideH = strides[1];
   int64_t qStrideM = strides[2];
 
-  if (is_seq_at_dim_1) {
+  if (seq_dim == SeqDim::ONE) {
     qStrideH = strides[2];
     qStrideM = strides[1];
   }
@@ -476,7 +636,7 @@ void cpu_flash_attention(
   int64_t kStrideH = strides[1];
   int64_t kStrideN = strides[2];
 
-  if (is_seq_at_dim_1) {
+  if (seq_dim == SeqDim::ONE) {
     kStrideH = strides[2];
     kStrideN = strides[1];
   }
@@ -486,7 +646,7 @@ void cpu_flash_attention(
   int64_t vStrideH = strides[1];
   int64_t vStrideN = strides[2];
 
-  if (is_seq_at_dim_1) {
+  if (seq_dim == SeqDim::ONE) {
     vStrideH = strides[2];
     vStrideN = strides[1];
   }
@@ -502,20 +662,36 @@ void cpu_flash_attention(
   int64_t v_quant_params_StrideN = 0;
 
   if (is_quantized_sdpa) {
-    strides = q_zero_points.value().strides();
-    q_quant_params_StrideB = strides[0];
-    q_quant_params_StrideH = strides[1];
-    q_quant_params_StrideM = strides[2];
+    auto q_strides = q_zero_points.value().strides();
+    q_quant_params_StrideB = q_strides[0];
+    q_quant_params_StrideH = q_strides[1];
+    q_quant_params_StrideM = q_strides[2];
 
-    strides = k_zero_points.value().strides();
-    k_quant_params_StrideB = strides[0];
-    k_quant_params_StrideH = strides[1];
-    k_quant_params_StrideN = strides[2];
+    auto k_strides = k_zero_points.value().strides();
+    k_quant_params_StrideB = k_strides[0];
+    k_quant_params_StrideH = k_strides[1];
+    k_quant_params_StrideN = k_strides[2];
 
-    strides = v_zero_points.value().strides();
-    v_quant_params_StrideB = strides[0];
-    v_quant_params_StrideH = strides[1];
-    v_quant_params_StrideN = strides[2];
+    auto v_strides = v_zero_points.value().strides();
+    v_quant_params_StrideB = v_strides[0];
+    v_quant_params_StrideH = v_strides[1];
+    v_quant_params_StrideN = v_strides[2];
+
+    ET_CHECK_MSG(
+        (v_quant_params_StrideN == k_quant_params_StrideN) &&
+            (v_quant_params_StrideN == q_quant_params_StrideM),
+        "Quant params strides must be same for seq dim");
+
+    if (seq_dim == SeqDim::ONE) {
+      q_quant_params_StrideH = q_strides[2];
+      q_quant_params_StrideM = q_strides[1];
+
+      k_quant_params_StrideH = k_strides[2];
+      k_quant_params_StrideN = k_strides[1];
+
+      v_quant_params_StrideH = v_strides[2];
+      v_quant_params_StrideN = v_strides[1];
+    }
   }
 
   strides = output.strides();
@@ -523,7 +699,7 @@ void cpu_flash_attention(
   int64_t oStrideH = strides[1];
   int64_t oStrideM = strides[2];
 
-  if (is_seq_at_dim_1) {
+  if (seq_dim == SeqDim::ONE) {
     oStrideH = strides[2];
     oStrideM = strides[1];
   }
@@ -679,6 +855,7 @@ void cpu_flash_attention(
             q_scales_ptr,
             qBlockSize,
             headSize,
+            q_quant_params_StrideM,
             query.scalar_type());
         MaybeQuantizedMatrixData k_sub_matrix_data = MaybeQuantizedMatrixData(
             static_cast<const void*>(k_sub_matrix_data_ptr),
@@ -686,6 +863,7 @@ void cpu_flash_attention(
             k_scales_ptr,
             kvBlockSize,
             headSize,
+            k_quant_params_StrideN,
             key.scalar_type());
         _q_at_k_gemm<accum_t>(
             qBlockSize,
@@ -790,27 +968,36 @@ void cpu_flash_attention(
                 tmp_max);
           }
           tmp_max = qk_max_data[row] > tmp_max ? qk_max_data[row] : tmp_max;
-          // qk <- exp(qk - max) and sum per row
-          tmp_sum = tmp_max;
-          _exp_reduce_sum_fusion_kernel(
-              qk_data + row * kvBlockSize,
-              kvBlockSize,
-              conditional_data_ptr(qk_data, qk_reduced_data) +
-                  row * kvBlockSize,
-              tmp_sum);
-          // exp_tmp <- exp(max[row] - max)
-          exp_tmp = std::exp(qk_max_data[row] - tmp_max);
-          // sum[row] <- sum + exp_tmp * sum[row]
-          qk_sum_data[row] = tmp_sum + exp_tmp * qk_sum_data[row];
-          // max[row] <- max
-          qk_max_data[row] = tmp_max;
-          // dst <- dst * exp_tmp
-          if (n > 0) {
-            vec::map<accum_t>(
-                [exp_tmp](Vec x) { return x * Vec(exp_tmp); },
-                dst_data + row * headSize,
-                dst_data + row * headSize,
-                headSize);
+          if (tmp_max == -std::numeric_limits<accum_t>::infinity()) {
+            // to avoid `nan = exp2f(-inf - (-inf))`
+            fill_stub(
+                conditional_data_ptr(qk_data, qk_reduced_data) +
+                    row * kvBlockSize,
+                static_cast<scalar_t>(0),
+                kvBlockSize);
+          } else {
+            // qk <- exp(qk - max) and sum per row
+            tmp_sum = tmp_max;
+            _exp_reduce_sum_fusion_kernel(
+                qk_data + row * kvBlockSize,
+                kvBlockSize,
+                conditional_data_ptr(qk_data, qk_reduced_data) +
+                    row * kvBlockSize,
+                tmp_sum);
+            // exp_tmp <- exp(max[row] - max)
+            exp_tmp = std::exp(qk_max_data[row] - tmp_max);
+            // sum[row] <- sum + exp_tmp * sum[row]
+            qk_sum_data[row] = tmp_sum + exp_tmp * qk_sum_data[row];
+            // max[row] <- max
+            qk_max_data[row] = tmp_max;
+            // dst <- dst * exp_tmp
+            if (n > 0) {
+              vec::map<accum_t>(
+                  [exp_tmp](Vec x) { return x * Vec(exp_tmp); },
+                  dst_data + row * headSize,
+                  dst_data + row * headSize,
+                  headSize);
+            }
           }
         }
 
@@ -835,6 +1022,7 @@ void cpu_flash_attention(
             v_scales_ptr,
             kvBlockSize,
             headSize,
+            v_quant_params_StrideN,
             value.scalar_type());
         // Calculate Softmax(q @ k.T) @ v
         _qk_at_v_gemm<accum_t>(

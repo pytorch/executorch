@@ -11,6 +11,7 @@ python_library(
     deps = [
         "//caffe2:torch",
         "//executorch/exir:lib",
+        "//executorch/export:recipe",
         "//executorch/backends/transforms:duplicate_dynamic_quant_chain",
         "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",

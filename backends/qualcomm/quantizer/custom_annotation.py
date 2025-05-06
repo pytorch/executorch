@@ -6,7 +6,10 @@
 from typing import Sequence
 
 import torch
-from executorch.backends.qualcomm.quantizer.annotators import QUANT_ANNOTATION_KEY
+from executorch.backends.qualcomm.quantizer.annotators import (
+    _is_float_tensor,
+    QUANT_ANNOTATION_KEY,
+)
 from executorch.backends.qualcomm.quantizer.quantizer import (
     get_16a8w_qnn_ptq_config,
     get_8a8w_qnn_ptq_config,
@@ -21,6 +24,38 @@ from torch.ao.quantization.quantizer import (
     SharedQuantizationSpec,
 )
 from torch.fx import Node
+
+
+def annotate_mimi_decoder(gm: torch.fx.GraphModule):
+    """
+    The 1st transpose conv in mimi decoder is really sensitive to scale/offset in 16a8w, which causes execution failure.
+    Annotate 1st transpose conv as 8a8w to prevent execution failure.
+    """
+    quantization_config_8a8w = get_8a8w_qnn_ptq_config()
+    for node in gm.graph.nodes:
+        if not _is_float_tensor(node):
+            continue
+        elif node.target == torch.ops.aten.conv_transpose1d.default:
+            input_qspec_map = {}
+            input_act = node.args[0]
+            assert isinstance(input_act, Node)
+            input_spec = quantization_config_8a8w.input_activation
+            input_qspec_map[input_act] = input_spec
+
+            weight = node.args[1]
+            assert isinstance(weight, Node)
+            input_qspec_map[weight] = quantization_config_8a8w.weight
+
+            if len(node.args) > 2 and isinstance(node.args[2], Node):
+                bias = node.args[2]
+                input_qspec_map[bias] = quantization_config_8a8w.bias
+
+            node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=quantization_config_8a8w.output_activation,
+                _annotated=True,
+            )
+            break
 
 
 def annotate_linear_16a8w_in_affine_layer(gm: torch.fx.GraphModule) -> None:

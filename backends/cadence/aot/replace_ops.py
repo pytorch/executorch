@@ -17,8 +17,9 @@
 # pyre-unsafe
 
 import math
+import operator
 from operator import neg
-from typing import cast, Dict, Iterable, Sequence, Set, Tuple
+from typing import cast, Dict, Iterable, Optional, Sequence, Set, Tuple
 
 import torch
 import torch.fx
@@ -31,7 +32,10 @@ from executorch.backends.cadence.aot.compiler_utils import (
     is_quantized_tensor,
     quantize_tensor_multiplier,
 )
-from executorch.backends.cadence.aot.fuse_ops import FuseCascadedViewOps
+from executorch.backends.cadence.aot.fuse_ops import (
+    FuseCascadedTransposeOrPermuteOps,
+    FuseCascadedViewOps,
+)
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
     register_cadence_pass,
@@ -1806,30 +1810,6 @@ class ReplaceInfArgInFullWithValuePass(ExportPass):
         return super().call_operator(op, tuple(new_args), kwargs, meta)
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
-class ReplaceAtenLinalgVectorNormWithCadenceLinalgVectorNormPass(ExportPass):
-    """
-    Replace the aten.linalg_vector_norm op with a custom op.
-    aten.linalg_vector_norm is not supported by Jarvis, so we
-    need to replace it with native_batch_norm at all optimization levels.
-    """
-
-    def call_operator(self, op, args, kwargs, meta):
-        if op != exir_ops.edge.aten.linalg_vector_norm.default:
-            return super().call_operator(op, args, kwargs, meta)
-
-        assert (
-            len(args) == 1
-        ), "aten.linalg_vector_norm should have 1 argument (a tensor), we do not support any custom variants"
-
-        return super().call_operator(
-            exir_ops.edge.cadence.linalg_vector_norm.default,
-            args,
-            kwargs,
-            meta,
-        )
-
-
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass(ExportPass):
     """
@@ -2110,6 +2090,317 @@ class ReplaceWhereWithFullArgsWithWhereScalar(ExportPass):
         return super().call_operator(op, args, kwargs, meta)
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=2))
+class ReplaceGeluWithApproximateGeluPass(ExportPass):
+    """
+    Replace the gelu op with an approximate gelu op. The approximate gelu op
+    is more efficient on DSP backends.
+    """
+
+    def call_operator(
+        self,
+        op,
+        args: Tuple[Argument, ...],
+        kwargs: Dict[str, Argument],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
+        if op not in {
+            exir_ops.edge.aten.gelu.default,
+        }:
+            return super().call_operator(op, args, kwargs, meta)
+
+        # compute the approximate gelu (0.7978845608028654 is sqrt(2 / pi))
+        # as 0.5 * x * (1 + torch.tanh(0.7978845608028654 * ( x + 0.044715 * x^3)))
+
+        # Get 0.5 * x
+        half = super().call_operator(
+            exir_ops.edge.aten.mul.Tensor,
+            (args[0], 0.5),
+            {},
+            meta,
+        )
+
+        scaled = super().call_operator(
+            exir_ops.edge.aten.mul.Tensor,
+            (args[0], 0.044715),
+            {},
+            meta,
+        )
+
+        # Get x^2 (note that we use mul.Tensor twice instead of pow.Tensor because
+        # it is much more efficient on DSP backends)
+        scaled_square = super().call_operator(
+            exir_ops.edge.aten.mul.Tensor,
+            (scaled, args[0]),
+            {},
+            meta,
+        )
+
+        # Get x^3
+        scaled_cubed = super().call_operator(
+            exir_ops.edge.aten.mul.Tensor,
+            (scaled_square, args[0]),
+            {},
+            meta,
+        )
+
+        # Get x + 0.044715 * x^3
+        inner_sum = super().call_operator(
+            exir_ops.edge.aten.add.Tensor,
+            (scaled_cubed, args[0]),
+            {},
+            meta,
+        )
+
+        # Get 0.7978845608028654 * ( x + 0.044715 * x^3)
+        scaled_sum = super().call_operator(
+            exir_ops.edge.aten.mul.Tensor,
+            (inner_sum, 0.7978845608028654),
+            {},
+            meta,
+        )
+
+        # Get torch.tanh(0.7978845608028654 * ( x + 0.044715 * x^3))
+        tanh = super().call_operator(
+            exir_ops.edge.aten.tanh.default,
+            (scaled_sum,),
+            {},
+            meta,
+        )
+
+        # Get 1 + torch.tanh(0.79788456 * ( x + 0.044715 * x^3))
+        # TODO(): Check why this is not working properly with integer values (e.g. 1 instead of 1.)
+        outer_sum = super().call_operator(
+            exir_ops.edge.aten.add.Tensor,
+            (tanh, 1.0),
+            {},
+            meta,
+        )
+
+        # Retunr the final result
+        return super().call_operator(
+            exir_ops.edge.aten.mul.Tensor,
+            (half, outer_sum),
+            {},
+            meta,
+        )
+
+
+# Adapted from fbcode/pyspeech/opt_passes/replace_ops.py
+@register_cadence_pass(CadencePassAttribute(opt_level=2))
+class ReplaceSplitWithSlicePass(ExportPass):
+    """
+    split_with_sizes() delegates to slice() op, so perform this replacement here.
+    This avoids the expense of delegation from ATen.
+    """
+
+    # For split_with_sizes, return the slice dim and extent for each split.
+    def get_split_sizes(
+        self, graph_module: torch.fx.GraphModule, node: torch.fx.Node
+    ) -> Optional[list[tuple[int, ...]]]:
+        # Parse the args of the split_with_sizes op
+        tensor_arg, split_sizes = node.args[0:2]
+        assert isinstance(tensor_arg, torch.fx.Node)
+        in_shape = get_shape(graph_module, tensor_arg)
+        split_dim = 0 if len(node.args) < 3 else node.args[2]
+        if in_shape is None:
+            return None
+
+        # Canonicalize the split dimension
+        assert isinstance(split_dim, int)
+        split_dim = split_dim if split_dim >= 0 else len(in_shape) + split_dim
+
+        # Create the slice op args corresponding to each split
+        slice_ops = []
+        split_start = 0
+        assert isinstance(split_sizes, list)
+        for split_size in split_sizes:
+            split_end = split_start + split_size
+            slice_args = (split_dim, split_start, split_end)
+            slice_ops.append(slice_args)
+            split_start = split_end
+
+        return slice_ops
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        graph = graph_module.graph
+        for node in graph.nodes:
+            if not isinstance(node.target, EdgeOpOverload):
+                continue
+            if (
+                get_edge_overload_packet(node.target)
+                != exir_ops.edge.aten.split_with_sizes_copy
+            ):
+                continue
+            # All the users of this split_with_sizes op must be getitem ops
+            if any(user.target != operator.getitem for user in node.users):
+                continue
+
+            # Get the slice dim and extent for each split
+            slice_ops = self.get_split_sizes(graph_module, node)
+            if slice_ops is None:
+                continue
+
+            # Go over each getitem user, and replace it with slice op
+            for user in list(node.users.keys()):
+                assert user.target == operator.getitem
+                item_idx = user.args[1]
+                assert item_idx < len(slice_ops)
+                cur_slice = slice_ops[item_idx]
+                with graph.inserting_before(user):
+                    cur_slice_node = graph.call_function(
+                        exir_ops.edge.aten.slice_copy.Tensor,
+                        (node.args[0], cur_slice[0], cur_slice[1], cur_slice[2], 1),
+                    )
+                user.replace_all_uses_with(cur_slice_node)
+                graph.erase_node(user)
+
+            graph.erase_node(node)
+
+        graph_module.recompile()
+        result = super().call(graph_module)
+        return result
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class ReplacePowWithMulPass(ExportPass):
+    """
+    Replace the pow op for a mul op.
+    """
+
+    def call_operator(
+        self,
+        op,
+        args: Tuple[Argument, ...],
+        kwargs: Dict[str, Argument],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
+        if not (
+            len(args) > 1
+            and isinstance(args[1], int)
+            and cast(int, args[1]) > 1
+            and cast(int, args[1]) < 5
+            and op
+            in {
+                exir_ops.edge.aten.pow.Tensor_Scalar,
+            }
+        ):
+            return super().call_operator(op, args, kwargs, meta)
+
+        x = args[0]
+        exponent = cast(int, args[1])
+
+        if exponent > 2:
+            for _ in range(exponent, 2, -1):
+                x = super().call_operator(
+                    exir_ops.edge.aten.mul.Tensor,
+                    (x, args[0]),
+                    {},
+                    meta,
+                )
+        return super().call_operator(
+            exir_ops.edge.aten.mul.Tensor,
+            (x, args[0]),
+            {},
+            meta,
+        )
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class ReplaceMatmulWithTransposedMatmulPass(ExportPass):
+    """
+    For certain backends, we have efficient kernels for transposed matmul. We
+    replace AxB with AxB' for such backends.
+    """
+
+    def call_operator(self, op, args, kwargs, meta):
+        if op != exir_ops.edge.cadence.quantized_matmul.default or args[-1] is True:
+            return super().call_operator(op, args, kwargs, meta)
+
+        # Get the args
+        if len(args) == 9:
+            (
+                X_arg,
+                X_zero_point,
+                Y_arg,
+                Y_zero_point,
+                bias,
+                out_multiplier,
+                out_shift,
+                out_zero_point,
+                transposed,
+            ) = args
+        elif len(args) == 8:
+            (
+                X_arg,
+                X_zero_point,
+                Y_arg,
+                Y_zero_point,
+                bias,
+                out_multiplier,
+                out_shift,
+                out_zero_point,
+            ) = args
+            transposed = False
+        else:
+            raise AssertionError(
+                f"Unexpected number of args for quantized_matmul: {len(args)}"
+            )
+
+        # If the matmul is already transposed, bail
+        if transposed:
+            return super().call_operator(op, args, kwargs, meta)
+
+        # Get the second tensor
+        Y_tensor = Y_arg.to_tensor() if isinstance(Y_arg, ProxyValue) else Y_arg
+        # Concretize the bias
+        zero_bias = super().call_operator(
+            exir_ops.edge.aten.full.default,
+            ([Y_tensor.size(-1)], 0),
+            {"dtype": torch.int32},
+            meta,
+        )
+
+        # If the arg was a ProxyValue, insert a transpose node. Otherwise we
+        # can simply transpose the tensor inplace.
+        if isinstance(Y_arg, ProxyValue):
+            transpose_args = (Y_arg, -1, -2)
+            transpose_node = super().call_operator(
+                exir_ops.edge.aten.transpose_copy.int,
+                transpose_args,
+                {},
+                meta,
+            )
+            Y_arg_t = transpose_node
+        else:
+            Y_arg_t = Y_tensor.transpose(-1, -2)
+
+        # Construct the new args, and return the transposed matmult op
+        new_args = (
+            X_arg,
+            X_zero_point,
+            Y_arg_t,
+            Y_zero_point,
+            zero_bias,
+            out_multiplier,
+            out_shift,
+            out_zero_point,
+            True,
+        )
+        return super().call_operator(op, new_args, kwargs, meta)
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        result = super().call(graph_module)
+        # Fuse any inserted transpose node with transpose/permute nodes
+        # surrounding it.
+        result = FuseCascadedTransposeOrPermuteOps()(result.graph_module)
+        assert result is not None
+        # Replace permute with transpose.
+        result = ReplacePermuteWithTransposePass()(result.graph_module)
+        assert result is not None
+        return result
+
+
 # This class encapsulates all the functions that replace/switch one op in the
 # graph with another.
 class CadenceReplaceOpsInGraph:
@@ -2137,6 +2428,7 @@ class CadenceReplaceOpsInGraph:
         # This pass should be after passes that replace conv -> im2row + linear.
         ReplaceIm2RowWithViewPass,
         MakeSliceAndCatDimOutermostPass,
+        ReplaceMatmulWithTransposedMatmulPass,
         ReplaceNopTransposeOrPermuteWithViewPass,
         ReplaceLinearWithFullyConnectedOpPass,
         ReplaceScalarTensorWithFullPass,
@@ -2147,6 +2439,8 @@ class CadenceReplaceOpsInGraph:
         ReplacePT2DequantWithCadenceDequantPass,
         ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass,
         ReplaceAtenAvgPoolWithJarvisAvgPoolPass,
-        ReplaceAtenLinalgVectorNormWithCadenceLinalgVectorNormPass,
         ReplaceWhereWithFullArgsWithWhereScalar,
+        ReplaceGeluWithApproximateGeluPass,
+        ReplaceSplitWithSlicePass,
+        ReplacePowWithMulPass,
     ]

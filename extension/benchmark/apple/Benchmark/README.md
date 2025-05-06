@@ -24,7 +24,7 @@ It provides a flexible framework for dynamically generating and running performa
 To get started, clone the ExecuTorch repository and cd into the source code directory:
 
 ```bash
-git clone -b viable/strict https://github.com/pytorch/executorch.git && cd executorch
+git clone -b viable/strict https://github.com/pytorch/executorch.git --depth 1 --recurse-submodules --shallow-submodules && cd executorch
 ```
 
 This command performs a shallow clone to speed up the process.
@@ -33,7 +33,7 @@ This command performs a shallow clone to speed up the process.
 
 The Benchmark App is configured to use a Swift PM package that provides the prebuilt ExecuTorch frameworks.
 
-By default, the app relies on the package referencing locally built binaries. To ensure it functions correctly, you must first build the frameworks by following the [guide](https://pytorch.org/executorch/main/using-executorch-ios.html#building-from-source).
+By default, the app relies on the package referencing locally built binaries. To ensure it functions correctly, you must first build the frameworks by following the [guide](https://pytorch.org/executorch/main/using-executorch-ios#building-from-source), starting from the steps after the code cloning (that you've just done already).
 
 ## Adding Models and Resources
 

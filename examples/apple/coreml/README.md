@@ -15,7 +15,7 @@ coreml
 
 We will walk through an example model to generate a Core ML delegated binary file from a python `torch.nn.module` then we will use the `coreml_executor_runner` to run the exported binary file.
 
-1. Following the setup guide in [Setting Up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup)
+1. Following the setup guide in [Setting Up ExecuTorch](https://pytorch.org/executorch/main/getting-started-setup)
 you should be able to get the basic development environment for ExecuTorch working.
 
 

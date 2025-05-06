@@ -101,5 +101,6 @@ runtime.python_test(
     ]),
     deps = [
         "//executorch/backends/xnnpack:xnnpack_delegate",
+        "//executorch/export:lib",
     ],
 )

@@ -14,7 +14,7 @@ import math
 import operator
 from collections import deque
 from numbers import Number
-from typing import cast, Sequence
+from typing import Any, Callable, cast
 
 # Import these for the cadence function signatures.
 import executorch.backends.cadence.aot.ops_registrations  # noqa: F401
@@ -526,34 +526,16 @@ class FuseCascadedViewOps(ExportPass):
     Fuse a cascaded chain of view ops
     """
 
-    # Find a chain of view ops, and fuse them into a single permute op.
-
     def fuse_cascaded_view_ops(self, graph_module: torch.fx.GraphModule):
-        graph = graph_module.graph
-        for node in graph.nodes:
-            # We are only interested in view ops
-            if node.target != exir_ops.edge.aten.view_copy.default:
+        view_target = exir_ops.edge.aten.view_copy.default
+        for view_node in graph_module.graph.find_nodes(
+            op="call_function", target=view_target, sort=True
+        ):
+            input_view = view_node.args[0]
+            if input_view.op != "call_function" or input_view.target != view_target:
                 continue
 
-            # Get the cascaded chain of view ops starting at node
-            cascaded_view_ops = get_cascaded_ops(
-                [node], [exir_ops.edge.aten.view_copy.default]
-            )
-            # The chain must have more than 1 node
-            if len(cascaded_view_ops) == 1:
-                continue
-
-            last_view_node = cascaded_view_ops[-1]
-            with graph.inserting_before(last_view_node):
-                new_view = graph.call_function(
-                    exir_ops.edge.aten.view_copy.default,
-                    args=(node.args[0], last_view_node.args[1]),
-                )
-                last_view_node.replace_all_uses_with(new_view)
-
-            # Now erase the chain
-            for v in reversed(cascaded_view_ops):
-                graph.erase_node(v)
+            view_node.replace_input_with(input_view, input_view.args[0])
 
         graph_module.recompile()
 
@@ -899,11 +881,10 @@ class FuseMulIntoDequantPass(ExportPass):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class FuseTransposeOpPairsPass(FuseOpPairsAcrossBranchesPass):
+class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
     """
-    Fuse dequantize-quantize op pairs to a single requantize op.
-    For the special case where quant params match, this will remove
-    both dequant and quant ops.
+    Fuse transpose or permute op pairs to a single view op.
+    (transpose or permutation) -> (quant or dequant) -> (transpose or permutation)
     """
 
     # A list of ops that can be bypassed when looking for a
@@ -915,6 +896,7 @@ class FuseTransposeOpPairsPass(FuseOpPairsAcrossBranchesPass):
         exir_ops.edge.cadence.dequantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        exir_ops.edge.cadence.quantized_relu.per_tensor,
     }
 
     def can_fuse_for_chain(
@@ -926,42 +908,17 @@ class FuseTransposeOpPairsPass(FuseOpPairsAcrossBranchesPass):
         if not super().can_fuse_for_chain(producer, consumer, consumer_op_packets):
             return False
 
-        def get_dims(node: torch.fx.Node) -> tuple[int, int]:
-            def canonicalize(dim: int) -> int:
-                if dim < 0:
-                    dim += len(node.meta["val"].shape)
-                return dim
-
-            return tuple(canonicalize(cast(int, d)) for d in node.args[1:3])
-
-        def is_equivalent(
-            shape: Sequence[int],
-            transpose0: tuple[int, int],
-            transpose1: tuple[int, int],
-        ) -> bool:
-            def permute_order(
-                order: Sequence[int], dims: tuple[int, int]
-            ) -> Sequence[int]:
-                new_order = list(order)
-                new_order[dims[0]], new_order[dims[1]] = (
-                    new_order[dims[1]],
-                    new_order[dims[0]],
-                )
-                return new_order
-
-            order = permute_order(range(len(shape)), transpose0)
-            order = permute_order(order, transpose1)
-
-            non_unit_dims = [dim for dim in range(len(shape)) if shape[dim] != 1]
-            non_unit_dims_permuted = [dim for dim in order if shape[dim] != 1]
-
-            return non_unit_dims == non_unit_dims_permuted
-
-        return is_equivalent(
-            cast(torch.fx.Node, producer.args[0]).meta["val"].shape,
-            get_dims(producer),
-            get_dims(consumer),
-        )
+        # checking that permut2(permut1(identify)) == identity
+        input_shape = cast(torch.fx.Node, producer.args[0]).meta["val"].shape
+        ident_dims = list(range(len(input_shape)))
+        # this mapping helps to handle both transpose and permutations
+        f: dict[Any, Callable] = {
+            exir_ops.edge.aten.transpose_copy.int: get_transposed_dims,
+            exir_ops.edge.aten.permute_copy.default: get_permuted_dims,
+        }
+        in_dims = f[producer.target](producer, ident_dims)
+        out_dims = f[consumer.target](consumer, in_dims)
+        return out_dims == ident_dims
 
     def get_fused_node(
         self,
@@ -979,11 +936,17 @@ class FuseTransposeOpPairsPass(FuseOpPairsAcrossBranchesPass):
         return view
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        # Remove any dequantize op that has only quantize ops as its users.
+        # Remove any transpose/permutation op pair that cancel each other.
         self.find_and_fuse(
             graph_module,
-            producer_op_packets={exir_ops.edge.aten.transpose_copy},
-            consumer_op_packets={exir_ops.edge.aten.transpose_copy},
+            producer_op_packets={
+                exir_ops.edge.aten.transpose_copy,
+                exir_ops.edge.aten.permute_copy,
+            },
+            consumer_op_packets={
+                exir_ops.edge.aten.transpose_copy,
+                exir_ops.edge.aten.permute_copy,
+            },
             bypass_ops=self.bypass_ops,
         )
         result = super().call(graph_module)
@@ -1047,5 +1010,5 @@ class CadenceFuseOpsInGraph:
         FuseQuantDequantToRequantizePass,
         FuseMulIntoDequantPass,
         FuseFullThenReshapePass,
-        FuseTransposeOpPairsPass,
+        FuseTransposeOrPermuteOpPairsPass,
     ]

@@ -31,11 +31,11 @@ from executorch.exir import (
     EdgeProgramManager,
     ExecutorchBackendConfig,
     ExecutorchProgramManager,
-    to_edge,
 )
 from executorch.exir.pass_base import PassResult
 from executorch.exir.passes import ToOutVarPass
 from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
+from executorch.exir.program._program import to_edge_with_preserved_ops
 from torch._inductor.decomposition import remove_decompositions
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
@@ -47,12 +47,15 @@ from .passes import get_cadence_passes
 from .utils import print_ops_info
 
 
+default_quantizer = CadenceDefaultQuantizer()
+
+
 # Note: this is not meant as a primary API since it can create inconsistencies
 # if the quantizer here is different from the quantizer used to convert. It is
 # however useful for unit tests to separate the converted model from the fused
 # model, to be able to get reference numerics.
 # If this does not apply, please use quantize_and_fuse_pt2 instead.
-def convert_pt2(
+def prepare_and_convert_pt2(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
     quantizer: CadenceQuantizer,
@@ -80,6 +83,7 @@ def convert_pt2(
         torch.ops.aten.layer_norm.default,
         torch.ops.aten.linear.default,
         torch.ops.aten.matmul.default,
+        torch.ops.aten.rms_norm.default,
     ]
     # Remove decompositions for the ops we want to keep
     # pyre-fixme[6]: For 1st argument expected `Dict[typing.Callable[..., typing.Any
@@ -147,9 +151,9 @@ def quantize_pt2(
     quantizer: Optional[CadenceQuantizer] = None,
     calibration_data: Optional[list[tuple[object, ...]]] = None,
     dump_graphs: bool = False,
-) -> torch.fx.GraphModule:
+) -> ExportedProgram:
     """
-    Prepare, convert and fuse the model using the given quantizer.
+    Trace, prepare, convert and fuse the model using the given quantizer.
     If calibration data is provided, it will be used to calibrate the model. If
     not, the inputs will be used for calibration instead, which is useful for
     unit tests but should not be used for end-to-end use cases.
@@ -163,7 +167,7 @@ def quantize_pt2(
         quantizer = CadenceDefaultQuantizer()
 
     # Get converted graph module
-    converted_gm = convert_pt2(
+    converted_gm = prepare_and_convert_pt2(
         model, inputs, quantizer, calibration_data, dump_graphs=dump_graphs
     )
 
@@ -174,7 +178,9 @@ def quantize_pt2(
         logging.info("Graph after quantization and fusion:")
         logging.info(fused_gm.graph.print_tabular())
 
-    return fused_gm
+    program = torch.export.export(fused_gm, inputs, strict=True)
+
+    return program
 
 
 # Export the model and lower it to an ExportedProgram (in aten IR)
@@ -193,7 +199,7 @@ def export_program(
     return expo_program
 
 
-def lower_ep_to_edge(
+def _lower_ep_to_edge(
     expo_program: ExportedProgram,
     dump_graphs: bool = False,
     constant_methods: Optional[dict[str, object]] = None,
@@ -201,9 +207,9 @@ def lower_ep_to_edge(
     """
     Lower an ExportedProgram to an EdgeProgramManager (in edge IR).
     """
-    # Call to_edge to convert the graph to edge IR.
+    # Call to_edge_with_preserved_ops to convert the graph to edge IR.
     # Note: dim_order is skipped (https://github.com/pytorch/executorch/issues/3704)
-    edge_prog_manager = to_edge(
+    edge_prog_manager = to_edge_with_preserved_ops(
         expo_program,
         compile_config=EdgeCompileConfig(
             _skip_dim_order=True,
@@ -216,9 +222,11 @@ def lower_ep_to_edge(
                 torch.ops.aten.linalg_vector_norm.default,
                 torch.ops.aten.unfold.default,
                 torch.ops.aten.angle.default,
+                torch.ops.aten.rms_norm.default,
             ],
         ),
         constant_methods=constant_methods,
+        preserve_ops=(torch.ops.aten.rms_norm.default,),
     )
 
     if dump_graphs:
@@ -242,9 +250,53 @@ def export_to_edge(
     expo_program = export_program(model, inputs)
 
     # Lower the model to edge IR.
-    edge_prog_manager = lower_ep_to_edge(expo_program, dump_graphs, constant_methods)
+    edge_prog_manager = _lower_ep_to_edge(expo_program, dump_graphs, constant_methods)
 
     return edge_prog_manager
+
+
+def quantize_and_export_to_edge(
+    model: torch.nn.Module,
+    inputs: tuple[object, ...],
+    quantizer: Optional[CadenceQuantizer] = None,
+    dump_graphs: bool = False,
+    constant_methods: Optional[dict[str, object]] = None,
+) -> EdgeProgramManager:
+    """
+    Trace, quantize and lower a model/inputs pair to edge IR.
+    """
+    quantized_model = quantize_pt2(
+        model,
+        inputs,
+        quantizer=quantizer,
+        dump_graphs=dump_graphs,
+    )
+
+    return _lower_ep_to_edge(
+        quantized_model,
+        dump_graphs=dump_graphs,
+        constant_methods=constant_methods,
+    )
+
+
+def _lower_ep_to_cadence(
+    program: ExportedProgram,
+    dump_graphs: bool = False,
+    opt_level: int = 1,
+) -> EdgeProgramManager:
+    """
+    Lower an existing ExportedProgram to edge IR and apply frontend optimization passes.
+    """
+    edge_prog_manager = _lower_ep_to_edge(program, dump_graphs=dump_graphs)
+    cadence_passes = get_cadence_passes(opt_level)
+
+    # Run a couple required passes for quant/dequant ops
+    cadence_prog_manager = edge_prog_manager.transform(
+        cast(
+            list[Callable[[torch.fx.GraphModule], Optional[PassResult]]], cadence_passes
+        )
+    )
+    return cadence_prog_manager
 
 
 def export_to_cadence(
@@ -271,11 +323,14 @@ def quantize_and_export_to_cadence(
     dump_graphs: bool = False,
     opt_level: int = 1,
 ) -> EdgeProgramManager:
+    """
+    Trace, quantize, lower a model/inputs pair to edge IR and apply frontend
+    optimization passes.
+    """
     quantized_model = quantize_pt2(model, inputs)
 
-    return export_to_cadence(
+    return _lower_ep_to_cadence(
         quantized_model,
-        inputs,
         opt_level=opt_level,
         dump_graphs=dump_graphs,
     )

@@ -1,11 +1,16 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 # pyre-strict
 
 import unittest
 
 import torch
-from executorch.export import ExportRecipe, export
+from executorch.export import export, ExportRecipe
+
 
 class TestExecutorchExport(unittest.TestCase):
     def test_basic_recipe(self) -> None:
@@ -20,14 +25,10 @@ class TestExecutorchExport(unittest.TestCase):
         model = SimpleModel()
         example_inputs = [(torch.rand(1, 10),)]
         export_recipe = ExportRecipe()
-        
+
         # Use the export API instead of creating ExportSession directly
         export_session = export(
-            model=model, 
-            example_inputs=example_inputs, 
-            export_recipe=export_recipe
+            model=model, example_inputs=example_inputs, export_recipe=export_recipe
         )
-        
-        # The export function doesn't automatically call export() on the session
-        export_session.export()
-        self.assertTrue(len(export_session.get_pte_buffer())!= 0)
+
+        self.assertTrue(len(export_session.get_pte_buffer()) != 0)

@@ -47,23 +47,42 @@ Tensor& mul_out(
   ET_KERNEL_CHECK(
       ctx,
       (executorch::runtime::isRealType(compute_type) ||
+       executorch::runtime::isComplexType(compute_type) ||
        compute_type == ScalarType::Bool),
       InvalidArgument,
       out);
 
-  ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
-          return val_a * val_b;
-        },
+  if (executorch::runtime::isComplexType(compute_type)) {
+    ET_KERNEL_CHECK(
         ctx,
-        a,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        b,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::REALHBBF16);
-  });
+        a.scalar_type() == b.scalar_type() &&
+            a.scalar_type() == out.scalar_type(),
+        InvalidArgument,
+        out);
+    ET_SWITCH_COMPLEXH_TYPES(out.scalar_type(), ctx, "mul.out", CTYPE, [&]() {
+      apply_binary_elementwise_fn<CTYPE, CTYPE, CTYPE>(
+          [](const CTYPE val_a, const CTYPE val_b) { return val_a * val_b; },
+          a,
+          b,
+          out);
+    });
+  } else {
+    ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+      utils::apply_bitensor_elementwise_fn<
+          CTYPE_COMPUTE,
+          op_name,
+          utils::SupportedTensorDtypes::REALHBBF16>(
+          [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+            return val_a * val_b;
+          },
+          ctx,
+          a,
+          utils::SupportedTensorDtypes::REALHBBF16,
+          b,
+          utils::SupportedTensorDtypes::REALHBBF16,
+          out);
+    });
+  }
 
   return out;
 }

@@ -10,7 +10,12 @@ from multiprocessing.connection import Client
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm._passes import ConvertUpsampleBicubicWithBilinear
+from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+    get_capture_program_passes,
+)
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.utils.constants import QCOM_PASS_ACTIVATE_KEY
 
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
@@ -56,6 +61,8 @@ def main(args):
 
     pte_filename = "dino_v2"
     instance = get_instance()
+    passes_job = get_capture_program_passes()
+    passes_job[ConvertUpsampleBicubicWithBilinear][QCOM_PASS_ACTIVATE_KEY] = True
     build_executorch_binary(
         instance,
         sample_input,
@@ -65,6 +72,7 @@ def main(args):
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
         quant_dtype=QuantDtype.use_8a8w,
+        passes_job=passes_job,
         shared_buffer=args.shared_buffer,
     )
 

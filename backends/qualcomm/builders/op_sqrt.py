@@ -10,7 +10,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 import torch
 
 from .node_visitor import NodeVisitor, register_node_visitor
-from .qnn_constants import OpElementWiseSqrt, QNN_OP_PACKAGE_NAME_QTI_AISW
+from .qnn_constants import OpElementWiseSquareRoot, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
@@ -51,7 +51,7 @@ class SQRT(NodeVisitor):
         sqrt_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
-            OpElementWiseSqrt.op_name,
+            OpElementWiseSquareRoot.op_name,
         )
         sqrt_op.AddInputTensors(sqrt_input_tensors)
         sqrt_op.AddOutputTensors(sqrt_output_tensors)

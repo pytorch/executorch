@@ -17,16 +17,16 @@ In the following diagram, we show how to quantize a mobile net v2 model and lowe
 
 We can define patterns based on the operators supported by the backend, which will be used by the quantizer and delegate.
 
-![](./diagrams/quantize_delegate.png)
+![](diagrams/quantize_delegate.png)
 
 ### Partitioner and Backend
 
 The way partitioner and backend is, partitioner will tag the nodes to lower to the backend and backend will will receive all tagged nodes and preprocess them as a delegate.
 
-![](./diagrams/delegate.png)
+![](diagrams/delegate.png)
 
 ### Memory format permute
 
 Some operators may have better performance in the memory format other than contiguous. One way to do that is to insert `to_dim_op` to describe memory format permutation and merge if there two opposite one next to each other.
 
-![](./diagrams/memory_permute.png)
+![](diagrams/memory_permute.png)

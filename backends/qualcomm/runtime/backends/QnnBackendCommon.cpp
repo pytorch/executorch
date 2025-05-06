@@ -57,8 +57,7 @@ Error QnnBackend::Configure() {
   return Error::Ok;
 }
 
-Error QnnBackend::VerifyQNNSDKVersion(
-    const QnnExecuTorchBackendType backend_id) {
+Error QnnBackend::VerifyQNNSDKVersion() {
   const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
 
   Qnn_ApiVersion_t qnn_version = {QNN_VERSION_INIT};
@@ -73,8 +72,16 @@ Error QnnBackend::VerifyQNNSDKVersion(
   expected_version.coreApiVersion.major = QNN_API_VERSION_MAJOR;
   expected_version.coreApiVersion.minor = QNN_API_VERSION_MINOR;
   expected_version.coreApiVersion.patch = QNN_API_VERSION_PATCH;
-  expected_version.backendApiVersion = GetExpectedBackendVersion();
-  const char* backend_type = EnumNameQnnExecuTorchBackendType(backend_id);
+  expected_version.backendApiVersion = QNN_VERSION_INIT;
+  if (qnn_interface.GetBackendId() == QNN_BACKEND_ID_SAVER) {
+    expected_version.backendApiVersion.major = QNN_SAVER_API_VERSION_MAJOR;
+    expected_version.backendApiVersion.minor = QNN_SAVER_API_VERSION_MINOR;
+    expected_version.backendApiVersion.patch = QNN_SAVER_API_VERSION_PATCH;
+  } else {
+    expected_version.backendApiVersion = GetExpectedBackendVersion();
+  }
+  const char* backend_type = EnumNameQnnExecuTorchBackendType(
+      static_cast<QnnExecuTorchBackendType>(qnn_interface.GetBackendId()));
 
   Error status = VersionChecker(
       qnn_version.coreApiVersion, expected_version.coreApiVersion, "Qnn API");

@@ -766,15 +766,15 @@ def create_submodule_from_nodes(
     gm = insert_subgm(gm, sub_gm, orig_inputs, orig_outputs)
     submodule_node = None
     for node in gm.graph.nodes:
-        if node.op == "call_module":
-            if node.target == submodule_name:
-                submodule_node = node
-            else:
-                raise RuntimeError(
-                    f"The submodule created with nodes {node_list} did not form \
-                    one fully contained subgraph. Check that these nodes form a \
-                    fully contained graph. Partitioned graph: {gm.graph}."
-                )
+        if node.op == "call_module" and node.target == submodule_name:
+            submodule_node = node
+
+    if submodule_node is None:
+        raise RuntimeError(
+            f"The submodule created with nodes {node_list} did not form \
+            one fully contained subgraph. Check that these nodes form a \
+            fully contained graph. Partitioned graph: {gm.graph}."
+        )
 
     if len(orig_outputs) == 1 and isinstance(orig_outputs[0].meta["val"], FakeTensor):
         # If the original output is a single tensor, it has been
@@ -809,12 +809,13 @@ def create_submodule_from_nodes(
     for node in gm.graph.nodes:
         if node.op == "call_module" and node.target == submodule_name:
             submodule_node = node
-        elif node.op == "call_module":
-            raise RuntimeError(
-                f"The submodule created with nodes {node_list} did not form \
-                one fully contained subgraph. Check that these nodes form a \
-                fully contained graph. Partitioned graph: {gm.graph}."
-            )
+
+    if submodule_node is None:
+        raise RuntimeError(
+            f"The submodule created with nodes {node_list} did not form \
+            one fully contained subgraph. Check that these nodes form a \
+            fully contained graph. Partitioned graph: {gm.graph}."
+        )
 
     assert (
         submodule_node is not None

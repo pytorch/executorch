@@ -196,6 +196,7 @@ class DuplicateDynamicQuantChainPass(PassBase):
         graph_module.recompile()
         return PassResult(graph_module, True)
 
+
 def duplicate_dynamic_quant_chain_pass(
     ep: torch.export.ExportedProgram,
 ) -> torch.export.ExportedProgram:

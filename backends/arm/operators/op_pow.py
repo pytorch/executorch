@@ -5,16 +5,14 @@
 
 # pyre-unsafe
 
-from typing import List
+from typing import Any, List
 
-import serializer.tosa_serializer as ts
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
-from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
 
 
@@ -32,10 +30,12 @@ class PowVisitor_080_MI(NodeVisitor):
     def define_node(
         self,
         node: Node,
-        tosa_graph: ts.TosaSerializer,
+        tosa_graph: Any,
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
+        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
+
         if not (inputs[0].dtype == inputs[1].dtype == output.dtype):
             raise ValueError(
                 "All inputs and outputs need same dtype."
@@ -47,7 +47,48 @@ class PowVisitor_080_MI(NodeVisitor):
             )
 
         tosa_graph.addOperator(
-            TosaOp.Op().POW,
+            ts.TosaOp.Op().POW,
+            [
+                inputs[0].name,
+                inputs[1].name,
+            ],
+            [output.name],
+            None,
+        )
+
+
+@register_node_visitor
+class PowVisitor(NodeVisitor):
+    target = "aten.pow.Tensor_Tensor"
+
+    tosa_specs = [
+        TosaSpecification.create_from_string("TOSA-1.0+FP"),
+    ]
+
+    def __init__(self, *args):
+        super().__init__(*args)
+
+    def define_node(
+        self,
+        node: Node,
+        tosa_graph: Any,
+        inputs: List[TosaArg],
+        output: TosaArg,
+    ) -> None:
+        import serializer.tosa_serializer as ts
+
+        if not (inputs[0].dtype == inputs[1].dtype == output.dtype):
+            raise ValueError(
+                "All inputs and outputs need same dtype."
+                f"Got {inputs[0].dtype=}, {inputs[1].dtype=}, {output.dtype=}"
+            )
+        if inputs[0].dtype not in [ts.DType.FP32, ts.DType.FP16]:
+            raise ValueError(
+                f"All inputs need to be FP32 or FP16. Got {inputs[0].dtype}"
+            )
+
+        tosa_graph.addOperator(
+            ts.TosaOp.Op().POW,
             [
                 inputs[0].name,
                 inputs[1].name,

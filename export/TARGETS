@@ -5,22 +5,24 @@ oncall("executorch")
 python_library(
     name = "recipe",
     srcs = [
-        "_recipe.py",
+        "recipe.py",
     ],
     deps = [
         "//caffe2:torch",
         "//executorch/exir/backend:backend_api",
         "//executorch/exir:pass_manager",
+        "//executorch/devtools/backend_debug:delegation_info",
     ]
 )
 
 python_library(
     name = "export",
     srcs = [
-        "_export.py",
+        "export.py",
     ],
     deps = [
         ":recipe",
+        "//executorch/runtime:runtime",
     ]
 )
 
