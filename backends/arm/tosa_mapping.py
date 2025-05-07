@@ -11,12 +11,14 @@
 # the standardised TOSA representation.
 #
 
-from typing import Any, Sequence
+from typing import Any, Optional, Sequence
 
 import torch
-
-import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-
+from executorch.backends.arm.tosa_specification import (
+    Tosa_0_80,
+    Tosa_1_00,
+    TosaSpecification,
+)
 
 UNSUPPORTED_DTYPES = (
     torch.float64,
@@ -30,33 +32,39 @@ UNSUPPORTED_DTYPES = (
     torch.long,
 )
 
-DTYPE_MAP = {
-    torch.float32: ts.DType.FP32,
-    torch.float: ts.DType.FP32,
-    torch.float16: ts.DType.FP16,
-    torch.half: ts.DType.FP16,
-    torch.bfloat16: ts.DType.BF16,
-    torch.int8: ts.DType.INT8,
-    torch.int16: ts.DType.INT16,
-    torch.short: ts.DType.INT16,
-    torch.int32: ts.DType.INT32,
-    torch.int: ts.DType.INT32,
-    torch.bool: ts.DType.BOOL,
-}
 
-
-def map_dtype(data_type: torch.dtype) -> ts.DType:
+def map_dtype(data_type: torch.dtype, tosa_spec: TosaSpecification) -> Any:
     if data_type in UNSUPPORTED_DTYPES:
         raise ValueError(f"Unsupported type: {data_type}")
-    if data_type not in DTYPE_MAP:
+    if isinstance(tosa_spec, Tosa_0_80):
+        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
+    elif isinstance(tosa_spec, Tosa_1_00):
+        import serializer.tosa_serializer as ts  # type: ignore
+    else:
+        raise RuntimeError(f"Unsupported tosa_spec: {tosa_spec}")
+
+    dtype_map = {
+        torch.float32: ts.DType.FP32,
+        torch.float: ts.DType.FP32,
+        torch.float16: ts.DType.FP16,
+        torch.half: ts.DType.FP16,
+        torch.bfloat16: ts.DType.BF16,
+        torch.int8: ts.DType.INT8,
+        torch.int16: ts.DType.INT16,
+        torch.short: ts.DType.INT16,
+        torch.int32: ts.DType.INT32,
+        torch.int: ts.DType.INT32,
+        torch.bool: ts.DType.BOOL,
+    }
+    if data_type not in dtype_map:
         raise ValueError(f"Unknown type: {data_type}")
-    return DTYPE_MAP[data_type]
+    return dtype_map[data_type]
 
 
 # Returns the shape and type of a node
 # TODO: other types, can be
 # SymInt, FakeTensor, a List[Union[FakeTensor, SymInt]], or None
-def extract_tensor_meta(meta):
+def extract_tensor_meta(meta, tosa_spec: TosaSpecification):
     assert meta.get("val") is not None
     val = meta["val"]
     if type(val) is tuple:
@@ -67,7 +75,7 @@ def extract_tensor_meta(meta):
         raise ValueError(
             f"Expected first value in node.meta['val'] to be FakeTensor, got {val.__class__}"
         )
-    dtype = map_dtype(val.dtype)
+    dtype = map_dtype(val.dtype, tosa_spec)
     shape = tuple(val.size())
 
     if meta.get("tosa_dim_order") is not None:
@@ -81,7 +89,9 @@ def extract_tensor_meta(meta):
 class TosaArg:
     def __process_node(self, argument: torch.fx.Node):
         self.name: str = argument.name
-        self.dtype, self.shape, self.dim_order = extract_tensor_meta(argument.meta)
+        self.dtype, self.shape, self.dim_order = extract_tensor_meta(
+            argument.meta, self.tosa_spec
+        )
 
     def __process_list(self, argument):
         self.special: list = list(argument)
@@ -89,9 +99,18 @@ class TosaArg:
     def __process_number(self, argument: float | int):
         self.number: float | int = argument
 
-    def __init__(self, argument: Any) -> None:
+    def __init__(
+        self, argument: Any, tosa_spec: Optional[TosaSpecification] = None
+    ) -> None:
         if argument is None:
             return
+        if tosa_spec is None:
+            raise ValueError("tosa_spec is None")
+        elif not isinstance(tosa_spec, TosaSpecification):
+            raise ValueError(
+                f"Expected tosa_spec to be a TosaSpecification, but got {tosa_spec}"
+            )
+        self.tosa_spec = tosa_spec
 
         if isinstance(argument, torch.fx.Node):
             self.__process_node(argument)
@@ -116,6 +135,12 @@ class TosaArg:
             if self.name is not None:
                 attrs.append(f"name={self.name!r}")
             if self.dtype is not None:
+                if isinstance(self.tosa_spec, Tosa_0_80):
+                    import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
+                elif isinstance(self.tosa_spec, Tosa_1_00):
+                    import serializer.tosa_serializer as ts  # type: ignore
+                else:
+                    raise RuntimeError(f"Unsupported tosa_spec: {self.tosa_spec}")
                 attrs.append(f"dtype={ts.DTypeNames[self.dtype]}")
             if self.shape is not None:
                 attrs.append(f"shape={self.shape!r}")
@@ -125,4 +150,6 @@ class TosaArg:
             attrs.append(f"special={self.special!r}")
         if hasattr(self, "number") and self.number is not None:
             attrs.append(f"number={self.number!r}")
+        if hasattr(self, "tosa_spec") and self.tosa_spec is not None:
+            attrs.append(f"tosa_spec={self.tosa_spec!r}")
         return f"{self.__class__.__name__}({', '.join(attrs)})"
