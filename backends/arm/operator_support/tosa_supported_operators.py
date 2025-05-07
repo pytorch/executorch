@@ -226,6 +226,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.squeeze_copy.dims,
             exir_ops.edge.aten.pow.Tensor_Scalar,
             exir_ops.edge.aten.pow.Tensor_Tensor,
+            torch.ops.aten.pow.Tensor_Tensor,
             exir_ops.edge.aten.where.self,
             operator.getitem,
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
@@ -306,8 +307,6 @@ class CheckProperQuantization(OperatorSupportBase):
         exir_ops.edge.aten.avg_pool2d.default,
         exir_ops.edge.aten.bmm.default,
         exir_ops.edge.aten.convolution.default,
-        exir_ops.edge.aten.full.default,
-        exir_ops.edge.aten.full_like.default,
         exir_ops.edge.aten.hardtanh.default,
         exir_ops.edge.aten.linear.default,
         exir_ops.edge.aten.max_pool2d_with_indices.default,
@@ -410,6 +409,7 @@ class CheckProperQuantization(OperatorSupportBase):
 
         input_quantized = input_quantized or all(
             (input_node.target in dq_ops)
+            or (node.name == "aten_pow_tensor_tensor")
             or (not get_first_fake_tensor(input_node).dtype.is_floating_point)
             for input_node in node.all_input_nodes
         )

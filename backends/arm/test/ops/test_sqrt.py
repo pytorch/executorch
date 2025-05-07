@@ -21,8 +21,8 @@ class Sqrt(torch.nn.Module):
     aten_op_MI = "torch.ops.aten.sqrt.default"
     exir_op_MI = "executorch_exir_dialects_edge__ops_aten_pow_Tensor_Tensor"
 
-    aten_op_BI = "torch.ops.aten.pow.Tensor_Scalar"
-    exir_op_BI = "executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar"
+    aten_op_BI = "torch.ops.aten.pow.Tensor_Tensor"
+    exir_op_BI = "executorch_exir_dialects_edge__ops_aten_pow_Tensor_Tensor"
 
     def __init__(self):
         super().__init__()

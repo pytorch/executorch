@@ -4,36 +4,62 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
+
+from typing import Any, Dict, Tuple
+
 import torch
+
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
-edge_sqrt_ops = (exir_ops.edge.aten.sqrt.default,)
-aten_sqrt_ops = (
-    torch.ops.aten.sqrt.default,
-    torch.ops.aten.sqrt_.default,
-)
-
-
-def get_sqrt_decomposition(op) -> tuple:
-    # TODO : "MLETORCH-863 : Replace current sqrt -> pow.Tensor_Scalar workaround with pow.Tensor_Tensor"
-    if op in edge_sqrt_ops:
-        return exir_ops.edge.aten.pow.Tensor_Scalar
-    if op in aten_sqrt_ops:
-        return torch.ops.aten.pow.Tensor_Scalar
-    raise RuntimeError(f"Can't get sqrt decomposition for op {op}")
-
 
 class DecomposeSqrtPass(ExportPass):
+    def __init__(self) -> None:
+        super().__init__()
 
-    def call_operator(self, op, args, kwargs, meta):
-        """
-        Decomposes `sqrt(x)` into `pow(x, 0.5)` for backend support.
-        """
+        # We cache constant tensor for the exponent
+        self._half_cache: Dict[Tuple[Any, Any], Any] = {}
+        self.SQRT_TO_POW = {
+            exir_ops.edge.aten.sqrt.default: exir_ops.edge.aten.pow.Tensor_Tensor,
+            torch.ops.aten.sqrt.default: torch.ops.aten.pow.Tensor_Tensor,
+            torch.ops.aten.sqrt_.default: torch.ops.aten.pow.Tensor_Tensor,
+        }
 
-        if op not in (edge_sqrt_ops + aten_sqrt_ops):
+    def _get_half_tensor(
+        self,
+        dtype: Any,
+        device: Any,
+        meta: Any,
+    ) -> Any:
+        # Choose a floating dtype for 0.5
+        if dtype in (torch.float16, torch.float32, torch.float64):
+            half_dtype = dtype
+        else:
+            half_dtype = torch.float32
+
+        key = (half_dtype, device)
+        if key not in self._half_cache:
+            half = super().call_operator(
+                exir_ops.edge.aten.full.default,
+                ([], 0.5),
+                {"dtype": half_dtype, "device": device},
+                meta,
+            )
+            self._half_cache[key] = half
+
+        return self._half_cache[key]
+
+    def call_operator(self, op: Any, args: tuple, kwargs: dict, meta: Any) -> Any:
+
+        if op not in self.SQRT_TO_POW:
             return super().call_operator(op, args, kwargs, meta)
 
-        pow_op = get_sqrt_decomposition(op)
+        if len(args) != 1:
+            raise ValueError(f"Expected 1 arg to sqrt, got {len(args)}")
 
-        return super().call_operator(pow_op, (args[0], 0.5), {}, meta)
+        x = args[0]
+        pow_op = self.SQRT_TO_POW[op]
+
+        half = self._get_half_tensor(x.data.dtype, x.data.device, meta)
+
+        return super().call_operator(pow_op, (x, half), {}, meta)
