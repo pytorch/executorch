@@ -12,7 +12,7 @@ set -e
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/../../../.ci/scripts/utils.sh"
 cmake_install_executorch_qnn_lib() {
-  echo "Installing libexecutorch.a, libqnn_executorch_backend.a"
+  echo "Installing libprim_ops_lib.a, libqnn_executorch_backend.a"
   rm -rf cmake-out
 
   retry cmake -DBUCK2="$BUCK" \

@@ -26,12 +26,12 @@ PLATFORM_FLAGS=("OS64" "SIMULATORARM64" "MAC_ARM64")
 PLATFORM_TARGET=("17.0" "17.0" "10.15")
 
 FRAMEWORK_EXECUTORCH="executorch:\
-libexecutorch.a,\
 libexecutorch_core.a,\
 libextension_apple.a,\
 libextension_data_loader.a,\
 libextension_module.a,\
 libextension_tensor.a,\
+libprim_ops_lib.a,\
 :$HEADERS_PATH"
 
 FRAMEWORK_BACKEND_COREML="backend_coreml:\

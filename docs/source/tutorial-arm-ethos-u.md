@@ -288,7 +288,8 @@ ExecuTorch's CMake build system produces a set of build pieces which are critica
 
 [This](using-executorch-building-from-source.md) document provides a detailed overview of each individual build piece. For running either variant of the `.pte` file, you will need a core set of libraries. Here is a list,
 
-- `libexecutorch.a`
+- `libexecutorch_core.a`
+- `libprim_ops_lib.a`
 - `libportable_kernels.a`
 - `libportable_ops_lib.a`
 
