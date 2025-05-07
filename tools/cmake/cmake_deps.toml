@@ -178,7 +178,6 @@ filters = [
 ]
 deps = [
   "executorch_core",
-  "executorch",
 ]
 
 [targets.extension_flat_tensor_schema]
@@ -223,7 +222,6 @@ filters = [
   ".cpp$",
 ]
 deps = [
-  "executorch",
   "executorch_core",
 ]
 
@@ -239,6 +237,7 @@ deps = [
   "executorch_core",
   "extension_module",
   "extension_runner_util",
+  "extension_tensor",
 ]
 
 [targets.extension_tensor]

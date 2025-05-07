@@ -14,6 +14,9 @@ from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+)
 from executorch.backends.arm.tosa_mapping import TosaArg
 
 
@@ -36,6 +39,8 @@ def identity_operator_factory_v0_80(identity_target: str):
             output: TosaArg,
         ) -> None:
             import tosa_tools.v0_80.serializer.tosa_serializer as ts
+
+            validate_num_inputs(self.target, inputs, 1)
 
             # Simply add an identityOp
             tosa_graph.addOperator(
@@ -68,6 +73,8 @@ def identity_operator_factory(identity_target: str):
             output: TosaArg,
         ) -> None:
             import serializer.tosa_serializer as ts
+
+            validate_num_inputs(self.target, inputs, 1)
 
             # Simply add an identityOp
             tosa_graph.addOperator(

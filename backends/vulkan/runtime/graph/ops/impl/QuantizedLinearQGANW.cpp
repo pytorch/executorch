@@ -173,15 +173,16 @@ void add_linear_qga4w_node(
       {{out, vkapi::kWrite}, {{mat1, mat2, scales_and_zeros}, vkapi::kRead}},
       // Shader params buffers
       {},
-      // Specialization Constants
-      {SV(group_size_val)},
-      // Resizing Logic
-      resize_linear_qga4w_node,
-      {},
       // Push Constants
       {graph.sizes_pc_of(out),
        graph.sizes_pc_of(mat1),
-       graph.sizes_pc_of(mat2)}));
+       graph.sizes_pc_of(mat2)},
+      // Specialization Constants
+      {SV(group_size_val)},
+      // Resize Args
+      {},
+      // Resizing Logic
+      resize_linear_qga4w_node));
 }
 
 void linear_weight_int4(
