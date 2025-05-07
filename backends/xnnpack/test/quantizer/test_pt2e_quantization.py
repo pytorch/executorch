@@ -43,7 +43,7 @@ from torchao.quantization.pt2e import (
     observer,
     prepare_for_propagation_comparison,
 )
-from torchao.quantization.pt2e.pt2e.graph_utils import bfs_trace_with_node_process
+from torchao.quantization.pt2e.graph_utils import bfs_trace_with_node_process
 from torchao.quantization.pt2e.quantize_pt2e import (
     convert_pt2e,
     prepare_pt2e,

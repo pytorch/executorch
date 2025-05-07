@@ -7,12 +7,12 @@
 from typing import Tuple
 
 import torch
-from torchao.quantization.pt2e.observer import MappingType, PerBlock
-from torchao.quantization.pt2e.pt2e._affine_quantization import (
+from torchao.quantization.pt2e._affine_quantization import (
     _get_reduction_params,
     AffineQuantizedMinMaxObserver,
     choose_qparams_affine_with_min_max,
 )
+from torchao.quantization.pt2e.observer import MappingType, PerBlock
 
 
 class PerBlockParamObserver(AffineQuantizedMinMaxObserver):

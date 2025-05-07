@@ -14,12 +14,10 @@ from executorch.backends.arm.quantizer import QuantizationConfig
 from executorch.backends.arm.tosa_utils import get_node_debug_info
 from torch.fx import Node
 from torchao.quantization.pt2e.quantizer import (
+    annotate_input_qspec_map,
+    annotate_output_qspec,
     QuantizationSpecBase,
     SharedQuantizationSpec,
-)
-from torchao.quantization.pt2e.quantizer.utils import (
-    _annotate_input_qspec_map,
-    _annotate_output_qspec,
 )
 
 from .arm_quantizer_utils import (
@@ -121,7 +119,7 @@ def _annotate_input(node: Node, quant_property: _QuantProperty):
         strict=True,
     ):
         assert isinstance(n_arg, Node)
-        _annotate_input_qspec_map(node, n_arg, qspec)
+        annotate_input_qspec_map(node, n_arg, qspec)
         if quant_property.mark_annotated:
             mark_node_as_annotated(n_arg)  # type: ignore[attr-defined]
 
@@ -132,7 +130,7 @@ def _annotate_output(node: Node, quant_property: _QuantProperty):
     assert not quant_property.optional
     assert quant_property.index == 0, "Only one output annotation supported currently"
 
-    _annotate_output_qspec(node, quant_property.qspec)
+    annotate_output_qspec(node, quant_property.qspec)
 
 
 def _match_pattern(

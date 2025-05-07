@@ -19,7 +19,7 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
     QuantizationConfig,
 )
 from torch.fx import Node
-from torchao.quantization.pt2e import _ObserverOrFakeQuantizeConstructor
+from torchao.quantization.pt2e import ObserverOrFakeQuantizeConstructor
 from torchao.quantization.pt2e.observer import MinMaxObserver, PerChannelMinMaxObserver
 from torchao.quantization.pt2e.quantizer import QuantizationSpec, Quantizer
 
@@ -40,7 +40,7 @@ def get_weight_quantization_config(
     weight_qscheme = (
         torch.per_channel_symmetric if is_per_channel else torch.per_tensor_symmetric
     )
-    weight_observer_or_fake_quant_ctr: _ObserverOrFakeQuantizeConstructor = (
+    weight_observer_or_fake_quant_ctr: ObserverOrFakeQuantizeConstructor = (
         PerChannelMinMaxObserver if is_per_channel else MinMaxObserver
     )
     extra_args: Dict[str, Any] = {"eps": 2**-12}

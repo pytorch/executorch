@@ -11,8 +11,8 @@ import torch
 from executorch.backends.example.example_operators.ops import module_to_annotator
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import OperatorConfig
 from torch import fx
+from torchao.quantization.pt2e import find_sequential_partitions
 from torchao.quantization.pt2e.observer import HistogramObserver, MinMaxObserver
-from torchao.quantization.pt2e.pt2e.graph_utils import find_sequential_partitions
 from torchao.quantization.pt2e.quantizer import QuantizationSpec, Quantizer
 
 
