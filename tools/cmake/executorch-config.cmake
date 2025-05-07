@@ -54,7 +54,7 @@ endforeach()
 # If we reach here, ET required libraries are found.
 set(EXECUTORCH_FOUND ON)
 
-target_link_libraries(executorch INTERFACE executorch_core)
+target_link_libraries(prim_ops_lib INTERFACE executorch_core)
 
 if(CMAKE_BUILD_TYPE MATCHES "Debug")
   set(FLATCCRT_LIB flatccrt_d)

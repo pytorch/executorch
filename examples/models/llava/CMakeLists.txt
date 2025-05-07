@@ -89,7 +89,7 @@ endif()
 # find `executorch` libraries Same as for gflags
 set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../lib/cmake/ExecuTorch)
 find_package(executorch CONFIG REQUIRED)
-target_link_options_shared_lib(executorch)
+target_link_options_shared_lib(prim_ops_lib)
 
 # llava_runner library
 add_subdirectory(runner)
