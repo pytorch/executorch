@@ -62,7 +62,7 @@ set_target_properties(fbjni PROPERTIES
 
 set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../lib/cmake/ExecuTorch)
 find_package(executorch CONFIG REQUIRED)
-target_link_options_shared_lib(executorch)
+target_link_options_shared_lib(prim_ops_lib)
 
 add_library(executorch_jni SHARED jni/jni_layer.cpp jni/log.cpp)
 
@@ -70,7 +70,7 @@ set(link_libraries)
 list(
   APPEND
   link_libraries
-  executorch
+  executorch_core
   extension_data_loader
   extension_flat_tensor
   extension_module
@@ -78,6 +78,7 @@ list(
   extension_tensor
   extension_threadpool
   fbjni
+  prim_ops_lib
 )
 
 if(TARGET optimized_native_cpu_ops_lib)

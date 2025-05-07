@@ -94,7 +94,7 @@ target_link_options_shared_lib(prim_ops_lib)
 # llava_runner library
 add_subdirectory(runner)
 
-set(LINK_LIBS executorch gflags)
+set(LINK_LIBS executorch_core prim_ops_lib gflags)
 if(NOT LLAVA_RUNNER_NO_TORCH_DUMMY_IMAGE)
   list(APPEND LINK_LIBS torch)
 endif()

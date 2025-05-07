@@ -50,8 +50,8 @@ target_link_options_shared_lib(openvino_backend)
 
 if(EXECUTORCH_BUILD_OPENVINO_EXECUTOR_RUNNER)
     # Build executor runner binary for openvino backend
-    list(APPEND openvino_executor_runner_libs openvino_backend executorch)
-    
+    list(APPEND openvino_executor_runner_libs openvino_backend executorch_core prim_ops_lib)
+
     set(_openvino_executor_runner__srcs
         ${EXECUTORCH_ROOT}/examples/portable/executor_runner/executor_runner.cpp
         ${EXECUTORCH_ROOT}/extension/data_loader/file_data_loader.cpp
@@ -60,9 +60,9 @@ if(EXECUTORCH_BUILD_OPENVINO_EXECUTOR_RUNNER)
         ${EXECUTORCH_ROOT}/extension/runner_util/inputs_portable.cpp
         )
     add_executable(openvino_executor_runner ${_openvino_executor_runner__srcs})
-    
+
     list(APPEND openvino_executor_runner_libs)
-    
+
     target_link_libraries(
       openvino_executor_runner gflags portable_ops_lib ${openvino_executor_runner_libs}
     )

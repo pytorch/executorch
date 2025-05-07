@@ -24,5 +24,5 @@ et_cxx_test(
   SOURCES
   ${_test_srcs}
   EXTRA_LIBS
-  executorch
+  executorch_core
 )

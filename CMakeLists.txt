@@ -616,7 +616,6 @@ target_include_directories(prim_ops_lib PUBLIC ${_common_include_directories})
 target_compile_definitions(prim_ops_lib PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
 target_compile_options(prim_ops_lib PUBLIC ${_common_compile_options})
 target_link_options_shared_lib(prim_ops_lib)
-add_library(executorch ALIAS prim_ops_lib)
 
 #
 # portable_ops_lib: A library to register core ATen ops using portable kernels,
@@ -785,8 +784,9 @@ if(EXECUTORCH_BUILD_PYBIND)
       ${TORCH_PYTHON_LIBRARY}
       bundled_program
       etdump
-      executorch
+      executorch_core
       extension_data_loader
+      prim_ops_lib
       util
       torch
   )
@@ -838,7 +838,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_definitions(util PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
 
   target_compile_options(util PUBLIC ${_pybind_compile_options})
-  target_link_libraries(util PRIVATE torch c10 executorch extension_tensor)
+  target_link_libraries(util PRIVATE torch c10 executorch_core extension_tensor)
 
   # pybind portable_lib
   pybind11_add_module(portable_lib SHARED extension/pybindings/pybindings.cpp)

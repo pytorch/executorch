@@ -123,7 +123,7 @@ target_link_options(
 )
 target_link_libraries(
   cadence_executorch_example dsp_mu_polling_libs cadence_ops_lib
-  extension_runner_util executorch
+  extension_runner_util executorch_core prim_ops_lib
 )
 
 add_custom_command(

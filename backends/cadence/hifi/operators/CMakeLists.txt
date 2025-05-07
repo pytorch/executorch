@@ -65,7 +65,7 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/delinearize_index.cpp"
     )
 add_library(aten_ops_cadence ${_aten_ops__srcs})
-target_link_libraries(aten_ops_cadence PUBLIC executorch)
+target_link_libraries(aten_ops_cadence PUBLIC executorch_core)
 target_link_libraries(aten_ops_cadence PRIVATE cadence_kernels)
 
 # Let files say "include <executorch/path/to/header.h>".
@@ -88,7 +88,7 @@ target_include_directories(
                     ${_common_include_directories}
 )
 
-target_link_libraries(custom_ops PUBLIC executorch)
+target_link_libraries(custom_ops PUBLIC executorch_core)
 target_link_libraries(custom_ops PRIVATE cadence_kernels)
 
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and

@@ -30,7 +30,7 @@ find_package(executorch CONFIG REQUIRED HINTS ${CMAKE_INSTALL_PREFIX})
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
-target_include_directories(executorch INTERFACE ${_common_include_directories})
+target_include_directories(executorch_core INTERFACE ${_common_include_directories})
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
@@ -51,7 +51,7 @@ list(TRANSFORM _size_test__srcs PREPEND "${EXECUTORCH_ROOT}/")
 # TODO(larryliu0820): Add EXECUTORCH_BUILD_EXECUTABLES to not build executable
 # when we cross compile to ios
 add_executable(size_test ${_size_test__srcs})
-target_link_libraries(size_test executorch)
+target_link_libraries(size_test executorch_core)
 if(CMAKE_BUILD_TYPE EQUAL "Release")
   target_link_options(size_test PRIVATE "LINKER:--gc-sections")
 endif()
@@ -62,7 +62,7 @@ endif()
 add_executable(size_test_all_ops ${_size_test__srcs})
 target_link_options_shared_lib(portable_ops_lib)
 target_link_libraries(
-  size_test_all_ops executorch portable_ops_lib portable_kernels
+  size_test_all_ops prim_ops_lib portable_ops_lib portable_kernels
 )
 if(CMAKE_BUILD_TYPE EQUAL "Release")
   target_link_options(size_test_all_ops PRIVATE "LINKER:--gc-sections")
@@ -75,7 +75,7 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
 add_executable(size_test_all_optimized_ops ${_size_test__srcs})
 target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 target_link_libraries(
-  size_test_all_optimized_ops executorch optimized_native_cpu_ops_lib)
+  size_test_all_optimized_ops prim_ops_lib optimized_native_cpu_ops_lib)
 if(CMAKE_BUILD_TYPE EQUAL "Release")
   target_link_options(size_test_all_optimized_ops PRIVATE "LINKER:--gc-sections")
 endif()
