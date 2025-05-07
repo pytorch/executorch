@@ -11,12 +11,18 @@ python_library(
 )
 
 python_library(
+    name = "operator_validation_utils",
+    srcs = ["operator_validation_utils.py"],
+)
+
+python_library(
     name = "ops",
     srcs = glob(["op_*.py", "ops_*.py"]),
     deps = [
         "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/tosa:tosa",
         "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/tosa:tosa",
         ":node_visitor",
+        ":operator_validation_utils",
         "//executorch/backends/arm:tosa_mapping",
         "//executorch/backends/arm:tosa_quant_utils",
         "//executorch/backends/arm:tosa_utils",
