@@ -11,6 +11,9 @@ from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+)
 from executorch.backends.arm.tosa_mapping import TosaArg
 from torch.fx import Node
 
@@ -32,6 +35,8 @@ class CatVisitor_0_80(NodeVisitor):
         output: TosaArg,
     ) -> None:
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
+
+        validate_num_inputs(self.target, inputs, [1, 2])
 
         tensors = inputs[0].special
         dim = 0 if len(inputs) < 2 else inputs[1].number
@@ -67,6 +72,8 @@ class CatVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         import serializer.tosa_serializer as ts
+
+        validate_num_inputs(self.target, inputs, [1, 2])
 
         tensors = inputs[0].special
         dim = 0 if len(inputs) < 2 else inputs[1].number

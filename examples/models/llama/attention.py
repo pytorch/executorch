@@ -423,7 +423,8 @@ class AttentionMHA(Attention):
                 # pyre-ignore: Incompatible parameter type [6]
                 attn_mask = self.mask.narrow(0, start_pos, seq_length)
             else:
-                attn_mask = self.mask[None, None, input_pos]
+                # mask is always 2D
+                attn_mask = self.mask[input_pos]
             k, v = self.kv_cache.update(input_pos, k, v)
             if getattr(self.kv_cache, "is_ring_buffer", False):
                 attn_mask = self.kv_cache.create_causal_mask_for_ring_buffer(
