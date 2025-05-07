@@ -53,7 +53,7 @@ else()
 endif()
 
 set(llama_runner_deps executorch_core extension_data_loader extension_module
-                      extension_tensor
+                      extension_tensor extension_flat_tensor
 )
 
 target_link_libraries(llama_runner PUBLIC ${llama_runner_deps})
