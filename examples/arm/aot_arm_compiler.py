@@ -113,7 +113,7 @@ def get_model_and_inputs_from_name(
         spec = importlib.util.spec_from_file_location("tmp_model", model_name)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        model = module.ModelUnderTest
+        model = module.ModelUnderTest()
         if example_inputs is None:
             example_inputs = module.ModelInputs
     # Case 4: Model is in an saved model file torch.save(model)
