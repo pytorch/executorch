@@ -12,8 +12,13 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <cstdlib>
 
+#if defined(ET_USE_QNN_OSS_RUNNER)
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/runner.h>
+#else
 #include <executorch/examples/models/llama/runner/runner.h>
+#endif
 #include <executorch/examples/models/llava/runner/llava_runner.h>
 #include <executorch/extension/llm/runner/image.h>
 #include <executorch/extension/llm/runner/irunner.h>
@@ -165,6 +170,20 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           tokenizer_path->toStdString().c_str(),
           temperature);
     } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
+#if defined(ET_USE_QNN_OSS_RUNNER)
+      // TODO: Replace with a more robust way to set the environment variable
+      setenv("QNN_OP_PACKAGE_PATHS", "/data/local/tmp/llama/libQnnTMANOpPackage.so:TMANOpPackageInterfaceProvider:HTP", 1);
+      runner_ = std::make_unique<example::Runner>(
+          std::vector<std::string>{model_path->toStdString().c_str()},
+          tokenizer_path->toStdString().c_str(),
+          "",
+          0.0012801217380911112f,  // TODO: replace hardcoded values
+          34183,
+          temperature,
+          0,
+          "ShiftPointer",
+          2);
+#else
       if (data_path != nullptr) {
         runner_ = std::make_unique<example::Runner>(
             model_path->toStdString().c_str(),
@@ -175,6 +194,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
             model_path->toStdString().c_str(),
             tokenizer_path->toStdString().c_str());
       }
+#endif
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
     } else if (model_type_category == MODEL_TYPE_MEDIATEK_LLAMA) {
       runner_ = std::make_unique<MTKLlamaRunner>(

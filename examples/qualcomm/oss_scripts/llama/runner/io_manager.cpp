@@ -705,7 +705,8 @@ void ShiftPointerIoMgr::fill_kv_tok_mask(int64_t pos, int64_t cur_token) {
   ptr->kv_attention_mask[kv_cache_len_] = 65535;
 }
 
-SmartMaskIoMgr::SmartMaskIoMgr(
+template <typename KVType, typename IOType>
+SmartMaskIoMgr<KVType, IOType>::SmartMaskIoMgr(
     std::vector<std::shared_ptr<Module>>& modules,
     int32_t context_len,
     int32_t prefill_ar_len,
@@ -768,7 +769,8 @@ SmartMaskIoMgr::SmartMaskIoMgr(
       new IO, [](void* ptr) { delete static_cast<IO*>(ptr); });
 }
 
-std::unordered_map<std::string, size_t> SmartMaskIoMgr::get_io_elements() {
+template <typename KVType, typename IOType>
+std::unordered_map<std::string, size_t> SmartMaskIoMgr<KVType, IOType>::get_io_elements() {
   int32_t max_ar_len = std::max(kv_ar_len_, prefill_ar_len_);
   size_t cache_in_ele = num_layers_ * num_heads_ * head_dim_ * kv_cache_len_;
   size_t cache_out_ele = num_layers_ * num_heads_ * head_dim_ * max_ar_len;
@@ -785,7 +787,8 @@ std::unordered_map<std::string, size_t> SmartMaskIoMgr::get_io_elements() {
       {"prefill_logits_ele", prefill_ar_len_ * vocab_size_}};
 }
 
-std::unordered_map<std::string, size_t> SmartMaskIoMgr::get_io_bytes() {
+template <typename KVType, typename IOType>
+std::unordered_map<std::string, size_t> SmartMaskIoMgr<KVType, IOType>::get_io_bytes() {
   std::unordered_map<std::string, size_t> element_map = get_io_elements();
   auto align = [](size_t byte) {
     size_t alignment = MemoryAllocator::kDefaultAlignment;
@@ -799,24 +802,25 @@ std::unordered_map<std::string, size_t> SmartMaskIoMgr::get_io_bytes() {
        align(element_map["kv_input_toks_ele"] * sizeof(int32_t))},
       {"kv_input_pos_bytes",
        align(element_map["kv_input_pos_ele"] * sizeof(int32_t))},
-      {"cache_in_bytes", align(element_map["cache_in_ele"] * sizeof(uint8_t))},
+      {"cache_in_bytes", align(element_map["cache_in_ele"] * sizeof(KVType))},
       {"cache_out_bytes",
-       align(element_map["cache_out_ele"] * sizeof(uint8_t))},
+       align(element_map["cache_out_ele"] * sizeof(KVType))},
       {"kv_attention_mask_bytes",
-       align(element_map["kv_attention_mask_ele"] * sizeof(uint16_t))},
+       align(element_map["kv_attention_mask_ele"] * sizeof(IOType))},
       {"kv_logits_bytes",
-       align(element_map["kv_logits_ele"] * sizeof(uint16_t))},
+       align(element_map["kv_logits_ele"] * sizeof(IOType))},
       {"prefill_input_toks_bytes",
        align(element_map["prefill_input_toks_ele"] * sizeof(int32_t))},
       {"prefill_input_pos_bytes",
        align(element_map["prefill_input_pos_ele"] * sizeof(int32_t))},
       {"prefill_attention_mask_bytes",
-       align(element_map["prefill_attention_mask_ele"] * sizeof(uint16_t))},
+       align(element_map["prefill_attention_mask_ele"] * sizeof(IOType))},
       {"prefill_logits_bytes",
-       align(element_map["prefill_logits_ele"] * sizeof(uint16_t))}};
+       align(element_map["prefill_logits_ele"] * sizeof(IOType))}};
 }
 
-void SmartMaskIoMgr::IO::init_io_ptrs(
+template <typename KVType, typename IOType>
+void SmartMaskIoMgr<KVType, IOType>::IO::init_io_ptrs(
     void* shared_buffer_ptr,
     std::unordered_map<std::string, size_t>& io_bytes_map) {
   shared_buffer_base = shared_buffer_ptr;
@@ -842,11 +846,11 @@ void SmartMaskIoMgr::IO::init_io_ptrs(
         k_cache_ref[i].reserve(num_heads_);
         v_cache_ref[i].reserve(num_heads_);
         for (int j = 0; j < num_heads_; ++j) {
-          k_cache_ref[i][j] = reinterpret_cast<uint8_t*>(cur_ptr);
+          k_cache_ref[i][j] = reinterpret_cast<KVType*>(cur_ptr);
           io_pos_map[cur_ptr] = cur_pos;
           cur_ptr += single_head_size;
           cur_pos += single_head_size;
-          v_cache_ref[i][j] = reinterpret_cast<uint8_t*>(cur_ptr);
+          v_cache_ref[i][j] = reinterpret_cast<KVType*>(cur_ptr);
           io_pos_map[cur_ptr] = cur_pos;
           cur_ptr += single_head_size;
           cur_pos += single_head_size;
@@ -854,17 +858,17 @@ void SmartMaskIoMgr::IO::init_io_ptrs(
       }
       continue;
     } else if (key == "kv_attention_mask_bytes") {
-      kv_attention_mask = reinterpret_cast<uint16_t*>(cur_ptr);
+      kv_attention_mask = reinterpret_cast<IOType*>(cur_ptr);
     } else if (key == "kv_logits_bytes") {
-      kv_logits = reinterpret_cast<uint16_t*>(cur_ptr);
+      kv_logits = reinterpret_cast<IOType*>(cur_ptr);
     } else if (key == "prefill_input_toks_bytes") {
       prefill_input_toks = reinterpret_cast<int64_t*>(cur_ptr);
     } else if (key == "prefill_input_pos_bytes") {
       prefill_input_pos = reinterpret_cast<int32_t*>(cur_ptr);
     } else if (key == "prefill_attention_mask_bytes") {
-      prefill_attention_mask = reinterpret_cast<uint16_t*>(cur_ptr);
+      prefill_attention_mask = reinterpret_cast<IOType*>(cur_ptr);
     } else if (key == "prefill_logits_bytes") {
-      prefill_logits = reinterpret_cast<uint16_t*>(cur_ptr);
+      prefill_logits = reinterpret_cast<IOType*>(cur_ptr);
     } else {
       ET_LOG(Error, "Unknown pointer type: %s", key.c_str());
     }
@@ -875,7 +879,8 @@ void SmartMaskIoMgr::IO::init_io_ptrs(
   }
 }
 
-void SmartMaskIoMgr::IO::add_custom_mem_info(
+template <typename KVType, typename IOType>
+void SmartMaskIoMgr<KVType, IOType>::IO::add_custom_mem_info(
     void* ptr,
     size_t nbytes,
     executorch::aten::ScalarType scalar_type,
@@ -892,7 +897,8 @@ void SmartMaskIoMgr::IO::add_custom_mem_info(
   QnnExecuTorchAddCustomMemTensorInfo(info);
 }
 
-void SmartMaskIoMgr::init_io() {
+template <typename KVType, typename IOType>
+void SmartMaskIoMgr<KVType, IOType>::init_io() {
   std::unordered_map<std::string, size_t> io_bytes_map = get_io_bytes();
 
   switch (eval_mode_) {
@@ -931,7 +937,8 @@ void SmartMaskIoMgr::init_io() {
   ptr->init_io_ptrs(shared_ptr, io_bytes_map);
 }
 
-void SmartMaskIoMgr::reset_io(
+template <typename KVType, typename IOType>
+void SmartMaskIoMgr<KVType, IOType>::reset_io(
     const std::vector<executorch::runtime::Result<
         executorch::runtime::MethodMeta>>& prefill_methods_meta,
     const std::vector<
@@ -947,7 +954,8 @@ void SmartMaskIoMgr::reset_io(
   std::fill(ptr->kv_attention_mask, ptr->kv_attention_mask + kv_attn_size, 0);
 }
 
-void SmartMaskIoMgr::prepare_kv_io(
+template <typename KVType, typename IOType>
+void SmartMaskIoMgr<KVType, IOType>::prepare_kv_io(
     const std::vector<Result<MethodMeta>>& methods_meta) {
   for (int i = 0; i < modules_.size(); ++i) {
     ET_CHECK_MSG(
@@ -1020,7 +1028,7 @@ void SmartMaskIoMgr::prepare_kv_io(
           std::vector<std::unique_ptr<TensorImpl>>& cache =
               (cache_group == 0 ? k_cache_in_[kv_forward_name_]
                                 : v_cache_in_[kv_forward_name_]);
-          uint8_t* cache_ptr = (cache_group == 0)
+          KVType* cache_ptr = (cache_group == 0)
               ? ptr->k_cache[layer + offset][head]
               : ptr->v_cache[layer + offset][head];
 
@@ -1074,7 +1082,7 @@ void SmartMaskIoMgr::prepare_kv_io(
           std::vector<std::unique_ptr<TensorImpl>>& cache =
               (cache_group == 0 ? k_cache_out_[kv_forward_name_]
                                 : v_cache_out_[kv_forward_name_]);
-          uint8_t* cache_ptr = (cache_group == 0)
+          KVType* cache_ptr = (cache_group == 0)
               ? ptr->k_cache_out[layer + offset][head]
               : ptr->v_cache_out[layer + offset][head];
           cache.emplace_back(std::make_unique<TensorImpl>(
@@ -1097,7 +1105,8 @@ void SmartMaskIoMgr::prepare_kv_io(
   }
 }
 
-void SmartMaskIoMgr::update_kv_io(
+template <typename KVType, typename IOType>
+void SmartMaskIoMgr<KVType, IOType>::update_kv_io(
     int64_t cur_token,
     int64_t pos,
     std::vector<std::vector<Tensor>>& output_tensors) {
@@ -1115,16 +1124,16 @@ void SmartMaskIoMgr::update_kv_io(
   auto& v_cache_out = v_cache_out_[kv_forward_name_];
   // update v_cache by single thread, this part is cpu cache sensitive
   for (int i = 0; i < v_cache_in.size(); ++i) {
-    uint8_t* ptr_in = v_cache_in[i]->mutable_data<uint8_t>() + pos * head_dim_;
-    const uint8_t* ptr_out = v_cache_out[i]->data<uint8_t>();
-    memcpy(ptr_in, ptr_out, head_dim_ * sizeof(uint8_t));
+    KVType* ptr_in = v_cache_in[i]->mutable_data<KVType>() + pos * head_dim_;
+    const KVType* ptr_out = v_cache_out[i]->data<KVType>();
+    memcpy(ptr_in, ptr_out, head_dim_ * sizeof(KVType));
   }
 
   auto& k_cache_in = k_cache_in_[kv_forward_name_];
   auto& k_cache_out = k_cache_out_[kv_forward_name_];
   for (int i = 0; i < k_cache_in.size(); ++i) {
-    uint8_t* ptr_in = k_cache_in[i]->mutable_data<uint8_t>() + pos;
-    const uint8_t* ptr_out = k_cache_out[i]->data<uint8_t>();
+    KVType* ptr_in = k_cache_in[i]->mutable_data<KVType>() + pos;
+    const KVType* ptr_out = k_cache_out[i]->data<KVType>();
     for (size_t j = 0, offset = 0; j < head_dim_;
          ++j, offset += kv_cache_len_) {
       ptr_in[offset] = ptr_out[j];
@@ -1132,7 +1141,8 @@ void SmartMaskIoMgr::update_kv_io(
   }
 }
 
-void SmartMaskIoMgr::prepare_prefill_io(
+template <typename KVType, typename IOType>
+void SmartMaskIoMgr<KVType, IOType>::prepare_prefill_io(
     const std::vector<Result<MethodMeta>>& methods_meta) {
   for (int i = 0; i < modules_.size(); ++i) {
     ET_CHECK_MSG(
@@ -1226,7 +1236,7 @@ void SmartMaskIoMgr::prepare_prefill_io(
             std::vector<std::unique_ptr<TensorImpl>>& cache =
                 (cache_group == 0 ? k_cache_in_[prefill_forward_name_]
                                   : v_cache_in_[prefill_forward_name_]);
-            uint8_t* cache_ptr = (cache_group == 0)
+            KVType* cache_ptr = (cache_group == 0)
                 ? ptr->k_cache[layer + offset][head]
                 : ptr->v_cache[layer + offset][head];
 
@@ -1303,7 +1313,8 @@ void SmartMaskIoMgr::prepare_prefill_io(
   }
 }
 
-void SmartMaskIoMgr::update_prefill_to_kv_io(
+template <typename KVType, typename IOType>
+void SmartMaskIoMgr<KVType, IOType>::update_prefill_to_kv_io(
     int64_t cur_token,
     int64_t pos,
     std::vector<std::vector<Tensor>>& output_tensors) {
@@ -1322,18 +1333,18 @@ void SmartMaskIoMgr::update_prefill_to_kv_io(
     auto& v_cache_in = v_cache_in_[kv_forward_name_];
     auto& v_cache_out = v_cache_out_[prefill_forward_name_];
     // update v_cache by single thread, this part is cpu cache sensitive
-    size_t copied_size = kv_cache_len_ * head_dim_ * sizeof(uint8_t);
+    size_t copied_size = kv_cache_len_ * head_dim_ * sizeof(KVType);
     for (int i = 0; i < v_cache_in.size(); ++i) {
-      uint8_t* ptr_in = v_cache_in[i]->mutable_data<uint8_t>();
-      const uint8_t* ptr_out = v_cache_out[i]->data<uint8_t>();
+      KVType* ptr_in = v_cache_in[i]->mutable_data<KVType>();
+      const KVType* ptr_out = v_cache_out[i]->data<KVType>();
       memcpy(ptr_in, ptr_out, copied_size);
     }
 
     auto& k_cache_in = k_cache_in_[kv_forward_name_];
     auto& k_cache_out = k_cache_out_[prefill_forward_name_];
     for (int i = 0; i < k_cache_in.size(); ++i) {
-      uint8_t* ptr_in = k_cache_in[i]->mutable_data<uint8_t>();
-      const uint8_t* ptr_out = k_cache_out[i]->data<uint8_t>();
+      KVType* ptr_in = k_cache_in[i]->mutable_data<KVType>();
+      const KVType* ptr_out = k_cache_out[i]->data<KVType>();
       for (size_t j = 0, offset = 0; j < head_dim_;
            ++j, offset += kv_cache_len_) {
         for (size_t k = 0, k_stride = j * prefill_ar_len_; k < pos; k++) {
@@ -1343,10 +1354,10 @@ void SmartMaskIoMgr::update_prefill_to_kv_io(
     }
   } else {
     // Update K is enough, copy from last to prevent from overwriting values
-    size_t copied_size = pos * sizeof(uint8_t);
+    size_t copied_size = pos * sizeof(KVType);
     for (int l = 0; l < num_layers_; l++) {
       for (int h = 0; h < num_heads_; h++) {
-        uint8_t* k_cache = ptr->k_cache[l][h];
+        KVType* k_cache = ptr->k_cache[l][h];
         for (int hd = head_dim_ - 1; hd > -1; hd--) {
           memcpy(
               k_cache + (kv_cache_len_ * hd),
@@ -1358,7 +1369,8 @@ void SmartMaskIoMgr::update_prefill_to_kv_io(
   }
 }
 
-void SmartMaskIoMgr::update_prefill_io(
+template <typename KVType, typename IOType>
+void SmartMaskIoMgr<KVType, IOType>::update_prefill_io(
     int64_t cur_token,
     int64_t pos,
     std::vector<std::vector<Tensor>>& output_tensors) {
@@ -1369,19 +1381,19 @@ void SmartMaskIoMgr::update_prefill_io(
     auto& v_cache_in = v_cache_in_[prefill_forward_name_];
     auto& v_cache_out = v_cache_out_[prefill_forward_name_];
     // update v_cache by single thread, this part is cpu cache sensitive
-    size_t copied_size = prefill_ar_len_ * head_dim_ * sizeof(uint8_t);
+    size_t copied_size = prefill_ar_len_ * head_dim_ * sizeof(KVType);
     for (int i = 0; i < v_cache_in.size(); ++i) {
-      uint8_t* ptr_in =
-          v_cache_in[i]->mutable_data<uint8_t>() + pos * head_dim_;
-      const uint8_t* ptr_out = v_cache_out[i]->data<uint8_t>();
+      KVType* ptr_in =
+          v_cache_in[i]->mutable_data<KVType>() + pos * head_dim_;
+      const KVType* ptr_out = v_cache_out[i]->data<KVType>();
       memcpy(ptr_in, ptr_out, copied_size);
     }
 
     auto& k_cache_in = k_cache_in_[prefill_forward_name_];
     auto& k_cache_out = k_cache_out_[prefill_forward_name_];
     for (int i = 0; i < k_cache_in.size(); ++i) {
-      uint8_t* ptr_in = k_cache_in[i]->mutable_data<uint8_t>();
-      const uint8_t* ptr_out = k_cache_out[i]->data<uint8_t>();
+      KVType* ptr_in = k_cache_in[i]->mutable_data<KVType>();
+      const KVType* ptr_out = k_cache_out[i]->data<KVType>();
       for (size_t j = 0, offset = pos; j < head_dim_;
            ++j, offset += prefill_cache_len_) {
         for (size_t k = 0, k_stride = j * prefill_ar_len_; k < prefill_ar_len_;
@@ -1393,7 +1405,8 @@ void SmartMaskIoMgr::update_prefill_io(
   }
 }
 
-void SmartMaskIoMgr::fill_prefill_toks(
+template <typename KVType, typename IOType>
+void SmartMaskIoMgr<KVType, IOType>::fill_prefill_toks(
     int64_t start_pos,
     std::vector<uint64_t>& prompt_tokens) {
   IO* ptr = static_cast<IO*>(get_mutable_ptr());
@@ -1425,11 +1438,15 @@ void SmartMaskIoMgr::fill_prefill_toks(
   }
 }
 
-void SmartMaskIoMgr::fill_kv_tok_mask(int64_t pos, int64_t cur_token) {
+template <typename KVType, typename IOType>
+void SmartMaskIoMgr<KVType, IOType>::fill_kv_tok_mask(int64_t pos, int64_t cur_token) {
   IO* ptr = static_cast<IO*>(get_mutable_ptr());
   *ptr->kv_input_toks =
       use_int64_token_ ? cur_token : static_cast<int32_t>(cur_token);
   ptr->kv_attention_mask[kv_cache_len_] = 65535;
 }
+
+template class SmartMaskIoMgr<uint8_t, uint16_t>;
+template class SmartMaskIoMgr<float, float>;
 
 } // namespace example

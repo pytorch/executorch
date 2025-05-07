@@ -100,6 +100,8 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.where.self,
         _operator.getitem,
         torch.ops.aten.scalar_tensor.default,
+        exir_ops.edge.tman.linear.default,
+        exir_ops.edge.tman.bitnet_linear.default,
     }
 
     layout_type = {

@@ -50,7 +50,8 @@ Runner::Runner(
     const float temperature,
     const int eval_mode,
     const std::string& kv_updater,
-    const int num_iters)
+    const int num_iters,
+    const std::string& kv_type)
     : n_bos_(1),
       n_eos_(1),
       tokenizer_path_(tokenizer_path),
@@ -60,7 +61,8 @@ Runner::Runner(
       temperature_(temperature),
       eval_mode_(static_cast<EvalMode>(eval_mode)),
       kv_updater_(kv_updater),
-      num_iters_(num_iters) {
+      num_iters_(num_iters),
+      kv_type_(kv_type) {
   for (size_t i = 0; i < models_path.size(); ++i) {
     modules_.push_back(std::make_shared<Module>(
         models_path[i], Module::LoadMode::MmapUseMlockIgnoreErrors));
@@ -69,6 +71,28 @@ Runner::Runner(
   ET_LOG(Info, "creating runner: tokenizer_path=%s", tokenizer_path_.c_str());
   ET_LOG(Info, "eval mode=%d", eval_mode_);
 }
+
+Runner::Runner(
+    const std::vector<std::string>& models_path,
+    const std::string& tokenizer_path,
+    const std::string& performance_output_path_,
+    const float logits_scale,
+    const int32_t logits_offset,
+    const float temperature,
+    const int eval_mode,
+    const std::string& kv_updater,
+    const int num_iters)
+    : Runner(
+          models_path,
+          tokenizer_path,
+          performance_output_path_,
+          logits_scale,
+          logits_offset,
+          temperature,
+          eval_mode,
+          kv_updater,
+          num_iters,
+          "uint8") { }
 
 bool Runner::is_loaded() const {
   bool loaded = true;
@@ -139,21 +163,41 @@ Error Runner::load() {
   ET_CHECK_MSG(num_layers != -1, "Could not retrieve num layers");
 
   if (kv_updater_ == "SmartMask") {
-    io_mgr_ = std::make_unique<SmartMaskIoMgr>(
-        modules_,
-        context_len_,
-        prefill_ar_len_,
-        prefill_cache_len_,
-        kv_ar_len_,
-        kv_cache_len_,
-        vocab_size_,
-        num_layers,
-        head_dim,
-        num_heads,
-        eval_mode_,
-        prefill_forward_name_,
-        kv_forward_name_,
-        use_int64_token_);
+    if (kv_type_ == "uint8") {
+      io_mgr_ = std::make_unique<SmartMaskIoMgr<uint8_t, uint16_t>>(
+          modules_,
+          context_len_,
+          prefill_ar_len_,
+          prefill_cache_len_,
+          kv_ar_len_,
+          kv_cache_len_,
+          vocab_size_,
+          num_layers,
+          head_dim,
+          num_heads,
+          eval_mode_,
+          prefill_forward_name_,
+          kv_forward_name_,
+          use_int64_token_);
+    } else if (kv_type_ == "float32") {
+      io_mgr_ = std::make_unique<SmartMaskIoMgr<float, float>>(
+          modules_,
+          context_len_,
+          prefill_ar_len_,
+          prefill_cache_len_,
+          kv_ar_len_,
+          kv_cache_len_,
+          vocab_size_,
+          num_layers,
+          head_dim,
+          num_heads,
+          eval_mode_,
+          prefill_forward_name_,
+          kv_forward_name_,
+          use_int64_token_);
+    } else {
+      ET_LOG(Error, "Using an unknown kv type %s", kv_type_.c_str());
+    }
   } else if (kv_updater_ == "ShiftPointer") {
     io_mgr_ = std::make_unique<ShiftPointerIoMgr>(
         modules_,
@@ -246,21 +290,34 @@ T Runner::getMetadataHelper(std::string method_name, T default_val) {
 }
 
 int32_t Runner::logitsToToken(const Tensor& logits_tensor, int64_t pos) {
-  static std::vector<float> logits_f(vocab_size_);
-  const uint16_t* logits = logits_tensor.data_ptr<uint16_t>();
-  // Since the logits are for all tokens, get the last token probabilities
-  auto* logits_last = logits;
+  if (kv_type_ == "float32") {
+    // logits are float32
+    float* logits = logits_tensor.data_ptr<float>();
+    // Since the logits are for all tokens, get the last token probabilities
+    auto* logits_last = logits;
 
-  // offset to the meaningful logit we want.
-  if (logits_tensor.sizes().data()[1] > 1) {
-    logits_last += pos * vocab_size_;
-  }
+    // offset to the meaningful logit we want.
+    if (logits_tensor.sizes().data()[1] > 1) {
+      logits_last += pos * vocab_size_;
+    }
+    return sampler_->sample(logits_last);
+  } else {
+    static std::vector<float> logits_f(vocab_size_);
+    const uint16_t* logits = logits_tensor.data_ptr<uint16_t>();
+    // Since the logits are for all tokens, get the last token probabilities
+    auto* logits_last = logits;
 
-  // dequantize
-  for (int i = 0; i < vocab_size_; i++) {
-    logits_f[i] = (logits_last[i] - logits_offset_) * logits_scale_;
+    // offset to the meaningful logit we want.
+    if (logits_tensor.sizes().data()[1] > 1) {
+      logits_last += pos * vocab_size_;
+    }
+
+    // dequantize
+    for (int i = 0; i < vocab_size_; i++) {
+      logits_f[i] = (logits_last[i] - logits_offset_) * logits_scale_;
+    }
+    return sampler_->sample(logits_f.data());
   }
-  return sampler_->sample(logits_f.data());
 }
 
 void Runner::run_model_step(
@@ -528,7 +585,7 @@ void printReport(
     outfile << num_tok;
     outfile.close();
   } else {
-    ET_CHECK_MSG(false, "Error saving the inference speed file");
+    ET_LOG(Error, "Error saving the inference speed file");
   }
 }
 
@@ -542,6 +599,7 @@ std::string statsToJsonString(const Runner::Stats& stats) {
      << "\"inference_end_ms\":" << stats.inference_end_ms << ","
      << "\"prompt_eval_end_ms\":" << stats.prompt_eval_end_ms << ","
      << "\"first_token_ms\":" << stats.first_token_ms << ","
+     << "\"tokens_per_second\":" << (double)stats.num_generated_tokens * 1000 / (stats.inference_end_ms - stats.prompt_eval_end_ms) << ","
      << "\"aggregate_sampling_time_ms\":" << stats.aggregate_sampling_time_ms
      << "," << "\"SCALING_FACTOR_UNITS_PER_SECOND\":"
      << stats.SCALING_FACTOR_UNITS_PER_SECOND << "}";
@@ -557,5 +615,9 @@ std::vector<Result<MethodMeta>> Runner::get_methods_meta(
     methods_meta.emplace_back(module->method_meta(method_name));
   }
   return methods_meta;
+}
+
+void Runner::stop() {
+  ET_LOG(Error, "Not implemented yet");
 }
 } // namespace example

@@ -19,13 +19,26 @@
 
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/io_manager.h>
 #include <executorch/extension/llm/sampler/sampler.h>
+#include <executorch/extension/llm/runner/irunner.h>
 #include <executorch/extension/module/module.h>
 #include <pytorch/tokenizers/tokenizer.h>
 
 namespace example {
 
-class Runner {
+class Runner : public executorch::extension::llm::IRunner {
  public:
+  explicit Runner(
+      const std::vector<std::string>& models_path,
+      const std::string& tokenizer_path,
+      const std::string& performance_output_path_,
+      const float logits_scale,
+      const int32_t logits_offset,
+      const float temperature,
+      const int eval_mode,
+      const std::string& kv_updater,
+      const int num_iters,
+      const std::string& kv_type);
+
   explicit Runner(
       const std::vector<std::string>& models_path,
       const std::string& tokenizer_path,
@@ -63,15 +76,28 @@ class Runner {
     int64_t num_generated_tokens;
   };
 
-  bool is_loaded() const;
-  executorch::runtime::Error load();
+  bool is_loaded() const override;
+  executorch::runtime::Error load() override;
   executorch::runtime::Error generate(
       int32_t seq_len,
       const std::string& prompt,
       const std::string& system_prompt,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const Stats&)> stats_callback = {});
-  void stop();
+  executorch::runtime::Error generate(
+      const std::string& prompt,
+      const executorch::extension::llm::GenerationConfig& config,
+      std::function<void(const std::string&)> token_callback = {},
+      std::function<void(const executorch::extension::llm::Stats&)>
+          stats_callback = {}) override {
+    // TODO: convert stats_callback
+    return generate(
+        config.seq_len,
+        prompt,
+        "",
+        token_callback);
+  }
+  void stop() override;
   std::vector<executorch::runtime::Result<executorch::runtime::MethodMeta>>
   get_methods_meta(std::string& method_name);
 
@@ -119,6 +145,7 @@ class Runner {
   LlamaVersion llama_version_;
   std::string kv_updater_;
   int num_iters_;
+  std::string kv_type_;
 };
 
 } // namespace example

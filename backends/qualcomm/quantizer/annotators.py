@@ -1224,3 +1224,30 @@ def annotate_zeros(node: Node, quantization_config: QuantizationConfig) -> None:
         output_qspec=quantization_config.output_activation,
         _annotated=True,
     )
+
+
+@register_annotator([torch.ops.aten.split_with_sizes.default])
+def annotate_split_with_sizes(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_in_out_obs_sharing_op(node, quantization_config)
+    if not _is_annotated([node]):
+        annotate_single_in_single_out(node, quantization_config)
+
+
+try:
+    from executorch.backends.qualcomm.builders.custom_ops import tman_linear, tman_bitnet_linear
+    @register_annotator([torch.ops.tman.linear.default])
+    def annotate_tman_linear(node: Node, quantization_config: QuantizationConfig) -> None:
+        if _is_annotated([node]):
+            return
+        # We can use single_in_single_out since we don't want to quantize qweight and scales input
+        annotate_single_in_single_out(node, quantization_config)
+
+
+    @register_annotator([torch.ops.tman.bitnet_linear.default])
+    def annotate_tman_bitnet_linear(node: Node, quantization_config: QuantizationConfig) -> None:
+        if _is_annotated([node]):
+            return
+        # We can use single_in_single_out since we don't want to quantize qweight and scales input
+        annotate_single_in_single_out(node, quantization_config)
+except ImportError:
+    pass

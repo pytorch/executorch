@@ -135,19 +135,28 @@ if(EXECUTORCH_JNI_CUSTOM_LIBRARY)
   )
 endif()
 
+set(ET_USE_QNN_OSS_RUNNER 1)
+
 if(EXECUTORCH_BUILD_LLAMA_JNI)
   target_sources(executorch_jni PRIVATE jni/jni_layer_llama.cpp jni/log.cpp)
   list(APPEND link_libraries llama_runner llava_runner)
-  target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_LLAMA_JNI=1)
+  target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_LLAMA_JNI=1 ET_USE_QNN_OSS_RUNNER=${ET_USE_QNN_OSS_RUNNER})
   add_subdirectory(
     ${EXECUTORCH_ROOT}/examples/models/llava/runner
     ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llava/runner
   )
 
-  add_subdirectory(
-    ${EXECUTORCH_ROOT}/examples/models/llama/runner
-    ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llama/runner
-  )
+  if(ET_USE_QNN_OSS_RUNNER)
+    add_subdirectory(
+      ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/llama/runner
+      ${CMAKE_CURRENT_BINARY_DIR}/../../examples/qualcomm/oss_scripts/llama/runner
+    )
+  else()
+    add_subdirectory(
+      ${EXECUTORCH_ROOT}/examples/models/llama/runner
+      ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llama/runner
+    )
+  endif()
 
   if(NEURON_BUFFER_ALLOCATOR_LIB)
       target_sources(

@@ -24,6 +24,11 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     QNN_TENSOR_TYPE_MAP,
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
+from executorch.backends.qualcomm.builders.custom_ops import (
+    tman_linear,
+    tman_bitnet_linear,
+)
+from executorch.backends.qualcomm.builders.utils import unpack_weights
 from executorch.backends.qualcomm.partition.qnn_partitioner import (
     generate_qnn_executorch_option,
     get_skip_decomp_table,
@@ -143,6 +148,218 @@ def qnn_edge_config() -> exir.EdgeCompileConfig:
     return exir.EdgeCompileConfig(
         _check_ir_validity=False,
     )
+
+
+def convert_linear_to_qlinear(module: torch.nn.Module, qlinear_cls):
+    from gptqmodel.nn_modules.qlinear.torch import TorchQuantLinear
+    def replace_linear(module: torch.nn.Module):
+        attr_strs = dir(module)
+        if isinstance(module, torch.nn.ModuleList):
+            attr_strs += [str(i) for i in range(len(module))]
+
+        for attr_str in attr_strs:
+            target_attr = getattr(module, attr_str)
+            if isinstance(target_attr, torch.nn.Linear):
+                qlinear = qlinear_cls(
+                    in_features=target_attr.in_features,
+                    out_features=target_attr.out_features,
+                    bias=target_attr.bias is not None,
+                )
+                # The model should have been converted to gptq_v2 in convert_gptq_weights_to_llama.py
+                qlinear.qzero_format(2)
+                assert isinstance(qlinear, TorchQuantLinear)
+                setattr(module, attr_str, qlinear)
+
+        for _, sub_module in module.named_children():
+            sub_module = replace_linear(sub_module)
+        return module
+
+    return replace_linear(module)
+
+
+def convert_qlinear_to_linear(module: torch.nn.Module):
+    from gptqmodel.nn_modules.qlinear.torch import TorchQuantLinear, BaseQuantLinear
+
+    def replace_qlinear(module: torch.nn.Module):
+        attr_strs = dir(module)
+        if isinstance(module, torch.nn.ModuleList):
+            attr_strs += [str(i) for i in range(len(module))]
+
+        for attr_str in attr_strs:
+            target_attr = getattr(module, attr_str)
+            if isinstance(target_attr, BaseQuantLinear):
+                if not isinstance(target_attr, TorchQuantLinear):
+                    raise RuntimeError("Only GPTQ TorchQuantLinear backend is supported")
+                target_attr.post_init()
+                new_attr = torch.nn.Linear(target_attr.in_features, target_attr.out_features)
+                new_attr.weight = torch.nn.Parameter(target_attr.dequantize_weight().T.detach().to("cpu", torch.float16))
+                new_attr.bias = torch.nn.Parameter(target_attr.bias) if target_attr.bias is not None else None
+                setattr(module, attr_str, new_attr)
+
+        for _, sub_module in module.named_children():
+            sub_module = replace_qlinear(sub_module)
+        return module
+
+    return replace_qlinear(module)
+
+
+class TMANLinear(torch.nn.Module):
+    def __init__(self, qlinear: torch.nn.Module, n_splits: int = 1):
+        super().__init__()
+        # GPTQv1: AutoGPTQ
+        # GPTQv2: GPTQModel
+        self.gptq_v2 = qlinear.qzero_format() == 2
+        self.in_features = qlinear.in_features
+        self.out_features = qlinear.out_features // n_splits
+
+        _, _, _, bits, group_size, symmetric = unpack_gptqv2(
+            qlinear.qweight.detach().numpy(),
+            qlinear.scales.detach().numpy(),
+            qlinear.qzeros.detach().numpy(),
+            self.gptq_v2,
+        )
+
+        if n_splits == 1:
+            self.qweight = torch.nn.Parameter(qlinear.qweight, requires_grad=False)
+            self.scales = torch.nn.Parameter(qlinear.scales, requires_grad=False)
+            self.qzeros = torch.nn.Parameter(qlinear.qzeros, requires_grad=False)
+        else:
+            self.qweight = torch.nn.Parameter(qlinear.qweight.new_zeros((qlinear.qweight.shape[0], qlinear.qweight.shape[1] // n_splits)), requires_grad=False)
+            self.scales = torch.nn.Parameter(qlinear.scales.new_zeros((qlinear.scales.shape[0], qlinear.scales.shape[1] // n_splits)), requires_grad=False)
+            self.qzeros = torch.nn.Parameter(qlinear.qzeros.new_zeros((qlinear.qzeros.shape[0], qlinear.qzeros.shape[1] // n_splits)), requires_grad=False)
+
+        self.g_idx = torch.nn.Parameter(qlinear.g_idx, requires_grad=False)
+        self.wf_unsqueeze_zero = torch.nn.Parameter(qlinear.wf_unsqueeze_zero, requires_grad=False)
+        self.wf_unsqueeze_neg_one = torch.nn.Parameter(qlinear.wf_unsqueeze_neg_one, requires_grad=False)
+
+        self.group_size = group_size
+        self.bits = bits
+        self.symmetric = symmetric
+
+    def forward(self, x):
+        return tman_linear(
+            x,
+            self.qweight,
+            self.scales,
+            self.qzeros,
+            self.g_idx,
+            self.wf_unsqueeze_zero,
+            self.wf_unsqueeze_neg_one,
+            self.group_size,
+            self.bits,
+            self.symmetric,
+            self.gptq_v2,
+        )
+
+    def extra_repr(self):
+        s = (
+            "{in_features}, {out_features}, group_size={group_size}, bits={bits}"
+            ", symmetric={symmetric}"
+        )
+        return s.format(**self.__dict__)
+
+
+def convert_qlinear_to_tman_linear(module: torch.nn.Module):
+    from gptqmodel.nn_modules.qlinear import BaseQuantLinear
+    from gptqmodel.nn_modules.qlinear.torch import TorchQuantLinear
+
+    def replace_qlinear(module: torch.nn.Module):
+        attr_strs = dir(module)
+        if isinstance(module, torch.nn.ModuleList):
+            attr_strs += [str(i) for i in range(len(module))]
+
+        for attr_str in attr_strs:
+            target_attr = getattr(module, attr_str)
+            if isinstance(target_attr, BaseQuantLinear):
+                if not isinstance(target_attr, TorchQuantLinear):
+                    raise RuntimeError("Only GPTQ TorchQuantLinear backend is supported")
+                target_attr.post_init()
+                setattr(module, attr_str, TMANLinear(target_attr))
+
+        for _, sub_module in module.named_children():
+            sub_module = replace_qlinear(sub_module)
+        return module
+
+    return replace_qlinear(module)
+
+
+# https://github.com/huggingface/transformers/pull/37742
+class BitLinear(torch.nn.Module):
+    def __init__(self, in_features: int, out_features: int, bias: bool, device=None, dtype=None):
+        super().__init__()
+        self.dtype = dtype
+        self.in_features = in_features
+        self.out_features = out_features
+        VALUES_PER_ITEM = 4
+        self.register_buffer(
+            "weight",
+            torch.zeros(
+                (out_features // VALUES_PER_ITEM, in_features),
+                dtype=torch.uint8,
+                device=device,
+            ),
+        )
+        self.register_buffer(
+            "weight_scale",
+            torch.ones(
+                (1),
+                dtype=dtype,
+                device=device,
+            ),
+        )
+        if bias:
+            self.register_buffer("bias", torch.zeros((out_features), dtype=dtype, device=device))
+        else:
+            self.bias = None
+
+    def forward(self, input):
+        y = tman_bitnet_linear(input, self.weight, self.weight_scale)
+        if self.bias is not None:
+            y += self.bias.view(1, -1).expand_as(y)
+        return y
+
+
+def convert_linear_to_bitlinear(module: torch.nn.Module):
+    def replace_linear(module: torch.nn.Module):
+        attr_strs = dir(module)
+        if isinstance(module, torch.nn.ModuleList):
+            attr_strs += [str(i) for i in range(len(module))]
+
+        for attr_str in attr_strs:
+            target_attr = getattr(module, attr_str)
+            if isinstance(target_attr, torch.nn.Linear):
+                setattr(module, attr_str, BitLinear(
+                    target_attr.in_features,
+                    target_attr.out_features,
+                    target_attr.bias is not None,
+                ))
+
+        for _, sub_module in module.named_children():
+            sub_module = replace_linear(sub_module)
+        return module
+
+    return replace_linear(module)
+
+
+def convert_bitlinear_to_linear(module: torch.nn.Module):
+    def replace_bitlinear(module: torch.nn.Module):
+        attr_strs = dir(module)
+        if isinstance(module, torch.nn.ModuleList):
+            attr_strs += [str(i) for i in range(len(module))]
+
+        for attr_str in attr_strs:
+            target_attr = getattr(module, attr_str)
+            if isinstance(target_attr, BitLinear):
+                new_attr = torch.nn.Linear(target_attr.in_features, target_attr.out_features, bias=target_attr.bias is not None)
+                new_attr.weight = torch.nn.Parameter(unpack_weights(target_attr.weight, dtype=target_attr.weight_scale.dtype) * target_attr.weight_scale)
+                new_attr.bias = torch.nn.Parameter(target_attr.bias) if target_attr.bias is not None else None
+                setattr(module, attr_str, new_attr)
+
+        for _, sub_module in module.named_children():
+            sub_module = replace_bitlinear(sub_module)
+        return module
+
+    return replace_bitlinear(module)
 
 
 def convert_linear_to_conv2d(module: torch.nn.Module):

@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpDefCollection PackageName="TMANOpPackage" Domain="" Version="1.0">
+    <OpDefList>
+        <OpDef>
+            <Name>TMANLinear</Name>
+            <Description>
+                <Content>Matrix multiplication through T-MAC paradigm</Content>
+            </Description>
+
+            <Input>
+                <Name>in</Name>
+                <Description>
+                    <Content>Input tensor</Content>
+                </Description>
+                <Mandatory>true</Mandatory>
+                <Datatype>QNN_DATATYPE_UFIXED_POINT_16</Datatype>
+                <Shape>
+                    <Rank>4D</Rank>
+                    <Layout>NHWC</Layout>
+                </Shape>
+            </Input>
+
+            <Input>
+                <Name>qweight</Name>
+                <Description>
+                    <Content>qweight matrix</Content>
+                </Description>
+                <Mandatory>true</Mandatory>
+                <Datatype>QNN_DATATYPE_INT_32</Datatype>
+                <Shape>
+                    <Rank>4D</Rank>
+                    <Layout>NHWC</Layout>
+                </Shape>
+                <IsStaticTensor>true</IsStaticTensor>
+            </Input>
+
+            <Input>
+                <Name>scales</Name>
+                <Description>
+                    <Content>scale factor</Content>
+                </Description>
+                <Mandatory>true</Mandatory>
+                <Datatype>QNN_DATATYPE_INT_32</Datatype>
+                <Shape>
+                    <Rank>4D</Rank>
+                    <Layout>NHWC</Layout>
+                </Shape>
+                <IsStaticTensor>true</IsStaticTensor>
+            </Input>
+
+            <Output>
+                <Name>out</Name>
+                <Description>
+                    <Content>Output tensor</Content>
+                </Description>
+                <Mandatory>true</Mandatory>
+                <Datatype>QNN_DATATYPE_UFIXED_POINT_16</Datatype>
+                <Shape>
+                    <Rank>4D</Rank>
+                    <Layout>NHWC</Layout>
+                </Shape>
+            </Output>
+
+            <Output>
+                <Name>scratch_buffer</Name>
+                <Description>
+                    <Content>Output tensor</Content>
+                </Description>
+                <Mandatory>true</Mandatory>
+                <Datatype>QNN_DATATYPE_INT_32</Datatype>
+                <Shape>
+                    <Rank>4D</Rank>
+                    <Layout>NHWC</Layout>
+                </Shape>
+            </Output>
+
+            <Parameter>
+                <Name>group_size</Name>
+                <Mandatory>true</Mandatory>
+                <Datatype>QNN_DATATYPE_INT_32</Datatype>
+                <Shape>
+                    <Rank>SCALAR</Rank>
+                </Shape>
+                <Default>64</Default>
+                </Parameter>
+
+             <Parameter>
+                <Name>bits</Name>
+                <Mandatory>true</Mandatory>
+                <Datatype>QNN_DATATYPE_INT_32</Datatype>
+                <Shape>
+                    <Rank>SCALAR</Rank>
+                </Shape>
+                <Default>2</Default>
+            </Parameter>
+
+             <Parameter>
+                <Name>symmetric</Name>
+                <Mandatory>true</Mandatory>
+                <Datatype>QNN_DATATYPE_INT_32</Datatype>
+                <Shape>
+                    <Rank>SCALAR</Rank>
+                </Shape>
+                <Default>0</Default>
+            </Parameter>
+
+            <SupportedBackend>HTP</SupportedBackend>
+        </OpDef>
+    </OpDefList>
+</OpDefCollection>

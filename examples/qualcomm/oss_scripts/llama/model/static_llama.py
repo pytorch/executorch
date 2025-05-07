@@ -9,11 +9,14 @@
 
 from typing import List, Optional, Tuple
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.rope import precompute_freqs_cis
+
+from executorch.backends.qualcomm.utils.utils import TMANLinear
 
 
 def apply_rotary_emb_single(
@@ -32,6 +35,37 @@ def apply_rotary_emb_single(
 
     x_out = torch.cat([x_out_r, x_out_i], dim=-1)
     return x_out
+
+
+def permute(qlinear: nn.Module, n_head: int, n_head_kv: int | None):
+    if n_head_kv is not None and n_head != n_head_kv:
+        n_head = n_head_kv
+    # Unpack the qzeros first for permutations
+    zeros = torch.bitwise_right_shift(
+        torch.unsqueeze(qlinear.qzeros, 2).expand(-1, -1, qlinear.pack_factor),
+        qlinear.wf_unsqueeze_zero,
+    ).to(qlinear.dequant_dtype)
+    zeros = torch.bitwise_and(zeros, qlinear.maxq).reshape(qlinear.scales.shape)
+
+    def _permute(weights: torch.Tensor, n_head: int, n_head_kv: int | None):
+        if n_head_kv is not None and n_head != n_head_kv:
+            n_head = n_head_kv
+        return (weights.reshape(weights.shape[0], n_head, 2, weights.shape[1] // n_head // 2)
+                .swapaxes(-2, -1)
+                .reshape(weights.shape))
+
+    qweight = _permute(qlinear.qweight, n_head, n_head_kv)
+    scales = _permute(qlinear.scales, n_head, n_head_kv)
+    zeros = _permute(zeros, n_head, n_head_kv)
+
+    zeros = zeros.numpy().astype(qlinear.pack_np_math_dtype)
+    qzeros = np.zeros((zeros.shape[0], zeros.shape[1] // qlinear.pack_dtype_bits * qlinear.bits), dtype=qlinear.pack_np_math_dtype)
+    for col in range(qzeros.shape[1]):
+        for j in range(qlinear.pack_factor):
+            qzeros[:, col] |= zeros[:, col * qlinear.pack_factor + j] << (qlinear.bits * j)
+    qzeros = torch.from_numpy(qzeros.astype(qlinear.pack_np_dtype))
+
+    return qweight, scales, qzeros
 
 
 class LlamaAttention(nn.Module):
@@ -161,6 +195,155 @@ class LlamaAttention(nn.Module):
         y = self.wo_sha(y)
         y = y.transpose(1, 3)
         y = y.reshape(bsz, seq_len, -1)
+
+        if self.output_new_cache_only:
+            return y, k, v
+
+        return y, kh, vh
+
+    # TODO: can't find a better way to replace with tman_sha at this moment
+    #       place it here for now
+    def prepare_tman(self, do_permute=False, use_sha=False):
+        from gptqmodel.nn_modules.qlinear.torch import TorchQuantLinear
+        assert(isinstance(self.wq, TorchQuantLinear))
+        assert(isinstance(self.wk, TorchQuantLinear))
+        assert(isinstance(self.wv, TorchQuantLinear))
+        assert(isinstance(self.wo, TorchQuantLinear))
+        self.wq.post_init()
+        self.wk.post_init()
+        self.wv.post_init()
+        self.wo.post_init()
+
+        if use_sha:
+            self.wq_tman = nn.ModuleList(
+                [
+                    TMANLinear(self.wq, n_splits=self.n_heads)
+                    for _ in range(self.n_heads)
+                ]
+            )
+            self.wk_tman = nn.ModuleList(
+                [
+                    TMANLinear(self.wk, n_splits=self.n_kv_heads)
+                    for _ in range(self.n_kv_heads)
+                ]
+            )
+            self.wv_tman = nn.ModuleList(
+                [
+                    TMANLinear(self.wv, n_splits=self.n_kv_heads)
+                    for _ in range(self.n_kv_heads)
+                ]
+            )
+        else:
+            self.wq_tman = TMANLinear(self.wq)
+            self.wk_tman = TMANLinear(self.wk)
+            self.wv_tman = TMANLinear(self.wv)
+        self.wo_tman = TMANLinear(self.wo)
+
+        self.forward_mha = self.forward
+        self.forward = self.forward_tman
+
+        if do_permute:
+            wq_qweight, wq_scales, wq_qzeros = permute(self.wq, self.n_heads, self.n_heads)
+            wk_qweight, wk_scales, wk_qzeros = permute(self.wk, self.n_heads, self.n_kv_heads)
+        else:
+            wq_qweight, wq_scales, wq_qzeros = self.wq.qweight, self.wq.scales, self.wq.qzeros
+            wk_qweight, wk_scales, wk_qzeros = self.wk.qweight, self.wk.scales, self.wk.qzeros
+        wv_qweight, wv_scales, wv_qzeros = self.wv.qweight, self.wv.scales, self.wv.qzeros
+
+        def _copy(target: nn.ModuleList | TMANLinear, source: TorchQuantLinear, qweight: torch.Tensor, scales: torch.Tensor, qzeros: torch.Tensor, n_head: int, n_head_kv: int | None):
+            if use_sha:
+                if n_head_kv is not None and n_head != n_head_kv:
+                    n_head = n_head_kv
+                for i in range(n_head):
+                    target[i].qweight.copy_(
+                        qweight[
+                            :, i * self.head_dim : (i + 1) * self.head_dim
+                        ]
+                    )
+                    target[i].scales.copy_(
+                        scales[
+                            :, i * self.head_dim : (i + 1) * self.head_dim
+                        ]
+                    )
+                    target[i].qzeros.copy_(
+                        qzeros[
+                            :, i * self.head_dim // source.pack_factor : (i + 1) * self.head_dim // source.pack_factor
+                        ]
+                    )
+            else:
+                target.qweight.copy_(qweight)
+                target.scales.copy_(scales)
+                target.qzeros.copy_(qzeros)
+
+        _copy(self.wq_tman, self.wq, wq_qweight, wq_scales, wq_qzeros, self.n_heads, self.n_heads)
+        _copy(self.wk_tman, self.wk, wk_qweight, wk_scales, wk_qzeros, self.n_heads, self.n_kv_heads)
+        _copy(self.wv_tman, self.wv, wv_qweight, wv_scales, wv_qzeros, self.n_heads, self.n_kv_heads)
+
+    def forward_tman(
+        self,
+        hidden_states: torch.Tensor,
+        freqs_cos: torch.Tensor,
+        freqs_sin: torch.Tensor,
+        atten_mask: torch.Tensor,
+        k_caches: Optional[List[torch.Tensor]] = None,
+        v_caches: Optional[List[torch.Tensor]] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        bsz, seq_len, _ = hidden_states.shape
+
+        if isinstance(self.wq_tman, nn.ModuleList):
+            q = [
+                wq_tman(hidden_states)
+                for wq_tman in self.wq_tman
+            ]
+            k = [
+                wk_tman(hidden_states)
+                for wk_tman in self.wk_tman
+            ]
+            v = [
+                wv_tman(hidden_states)
+                for wv_tman in self.wv_tman
+            ]
+            for i in range(len(q)):
+                q[i] = apply_rotary_emb_single(q[i], freqs_cos, freqs_sin)
+            for i in range(len(k)):
+                k[i] = apply_rotary_emb_single(k[i], freqs_cos, freqs_sin).permute(0, 2, 1)
+        else:
+            q = self.wq_tman(hidden_states).reshape(bsz, seq_len, self.n_heads, self.head_dim)
+            k = self.wk_tman(hidden_states).reshape(bsz, seq_len, self.n_kv_heads, self.head_dim)
+            v = self.wv_tman(hidden_states).reshape(bsz, seq_len, self.n_kv_heads, self.head_dim)
+            q = apply_rotary_emb_single(q, freqs_cos, freqs_sin)
+            k = apply_rotary_emb_single(k, freqs_cos, freqs_sin).permute(0, 2, 3, 1)
+            # Use split_with_sizes as only split_with_sizes is supported
+            q = torch.split_with_sizes(q, [1 for _ in range(self.n_heads)], dim=2)
+            k = torch.split_with_sizes(k, [1 for _ in range(self.n_kv_heads)], dim=1)
+            v = torch.split_with_sizes(v, [1 for _ in range(self.n_kv_heads)], dim=2)
+            q = [t.squeeze(2) for t in q]
+            k = [t.squeeze(1) for t in k]
+            v = [t.squeeze(2) for t in v]
+
+        output_y = []
+        kh, vh = [], []
+        # kv cache mode
+        if k_caches and v_caches:
+            for i, _ in enumerate(k_caches):
+                kh.append(torch.cat([k_caches[i], k[i]], dim=-1))
+                vh.append(torch.cat([v_caches[i], v[i]], dim=1))
+        # batch_prefill mode
+        else:
+            kh = k
+            vh = v
+
+        for i, _ in enumerate(q):
+            cache_idx = i // self.num_key_value_groups
+            attn = q[i] @ kh[cache_idx]
+            attn = attn / self.scale + atten_mask
+            attn = self.attn_softmax(attn)
+            y = attn @ vh[cache_idx]
+
+            output_y.append(y)
+
+        y = torch.concat(output_y, dim=-1)
+        y = self.wo_tman(y)
 
         if self.output_new_cache_only:
             return y, k, v

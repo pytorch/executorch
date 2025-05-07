@@ -6,11 +6,29 @@
  * LICENSE file in the root directory of this source tree.
  */
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
+#include <sstream>
 namespace executorch {
 namespace backends {
 namespace qnn {
 
 using executorch::runtime::Error;
+
+namespace {
+void split(
+    std::vector<std::string>& splitString,
+    const std::string& tokenizedString,
+    const char separator) {
+  splitString.clear();
+  std::istringstream tokenizedStringStream(tokenizedString);
+  while (!tokenizedStringStream.eof()) {
+    std::string value;
+    getline(tokenizedStringStream, value, separator);
+    if (!value.empty()) {
+      splitString.push_back(value);
+    }
+  }
+}
+} // namespace
 
 QnnBackend::~QnnBackend() {
   const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
@@ -53,6 +71,47 @@ Error QnnBackend::Configure() {
         qnn_interface.GetBackendId(),
         QNN_GET_ERROR_CODE(error));
     return Error::Internal;
+  }
+
+  // TODO: Expose API to options in QnnManager later
+  std::string opPackagePaths = "/data/local/tmp/llama/libQnnTMANOpPackage.so:TMANOpPackageInterfaceProvider:HTP";
+  if (const char* env_p = std::getenv("QNN_OP_PACKAGE_PATHS")) {
+    opPackagePaths = env_p;
+  }
+  std::vector<std::string> m_opPackagePaths;
+  split(m_opPackagePaths, opPackagePaths, ',');
+
+  const size_t pathIdx = 0;
+  const size_t interfaceProviderIdx = 1;
+  for (auto const& opPackagePath : m_opPackagePaths) {
+    std::vector<std::string> opPackage;
+    split(opPackage, opPackagePath, ':');
+    const char* target = nullptr;
+    const size_t targetIdx = 2;
+    if (opPackage.size() != 2 && opPackage.size() != 3) {
+      QNN_EXECUTORCH_LOG_ERROR(
+          "Malformed opPackageString provided: %s", opPackagePath.c_str());
+      return Error::Internal;
+    }
+    if (opPackage.size() == 3) {
+      target = opPackage[targetIdx].c_str();
+    }
+    error = qnn_interface.qnn_backend_register_op_package(
+        handle_, opPackage[pathIdx].c_str(), opPackage[interfaceProviderIdx].c_str(), target);
+    if (error != QNN_SUCCESS) {
+      QNN_EXECUTORCH_LOG_ERROR(
+          "Failed to register "
+          "op package %s for Backend "
+          "ID %u, error=%d",
+          opPackage[pathIdx].c_str(),
+          qnn_interface.GetBackendId(),
+          QNN_GET_ERROR_CODE(error));
+      return Error::Internal;
+    }
+    QNN_EXECUTORCH_LOG_INFO(
+        "Registered Op Package: %s and interface provider: %s",
+        opPackage[pathIdx].c_str(),
+        opPackage[interfaceProviderIdx].c_str());
   }
   return Error::Ok;
 }

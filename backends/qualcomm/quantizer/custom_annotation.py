@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 from typing import Sequence
+import operator
 
 import torch
 from executorch.backends.qualcomm.quantizer.annotators import (
@@ -228,6 +229,14 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
                 annotate_conv2d(
                     node, quantization_config=quantization_config_8a4w_per_channel
                 )
+                break
+            elif node.target in [
+                torch.ops.tman.linear.default,
+                torch.ops.tman.bitnet_linear.default,
+                torch.ops.aten.split_with_sizes.default,
+                operator.getitem,
+            ]:
+                # TODO: tman::linear currently does not support 8a
                 break
             elif node.target in [torch.ops.aten.add.Tensor, torch.ops.aten.sub.Tensor]:
                 break

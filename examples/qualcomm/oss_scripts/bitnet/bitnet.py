@@ -15,20 +15,14 @@ import os
 import subprocess
 import sys
 import time
+from collections import OrderedDict
 from functools import partial
 from multiprocessing.connection import Client
 
 import torch
-from executorch.backends.qualcomm._passes import FoldQDQ, TagQuantIO
-from executorch.backends.qualcomm._passes.i64_to_i32 import I64toI32
-from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
-)
-from executorch.backends.qualcomm._passes.utils import (
-    get_passes_dependency_for_capture_program,
-)
+from executorch.backends.qualcomm._passes.constant_i64_to_i32 import ConstantI64toI32
 
-from executorch.backends.qualcomm.builders.utils import is_graph_output
+from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 
 from executorch.backends.qualcomm.quantizer.custom_annotation import (
     annotate_linear_16a8w_in_affine_layer,
@@ -44,21 +38,20 @@ from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     option_to_flatbuffer,
 )
 from executorch.backends.qualcomm.utils.constants import (
-    QCOM_PASS_ACTIVATE_KEY,
     QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
-    QCOM_QUANT_ATTRS_MAP,
+    QCOM_QUANTIZED_IO,
 )
 from executorch.backends.qualcomm.utils.utils import (
+    capture_program,
     convert_linear_to_conv2d,
-    convert_qlinear_to_tman_linear,
-    convert_qlinear_to_linear,
-    convert_linear_to_qlinear,
+    convert_linear_to_bitlinear,
+    convert_bitlinear_to_linear,
     generate_composite_llama_program,
     generate_htp_compiler_spec,
     generate_multi_graph_program,
     generate_qnn_executorch_compiler_spec,
+    get_capture_program_passes,
     get_soc_to_chipset_map,
-    to_edge_transform_and_lower_to_qnn,
     update_spill_fill_size,
 )
 
@@ -66,10 +59,11 @@ from executorch.devtools.backend_debug import print_delegation_info
 from executorch.examples.models.llama.source_transformation.quantize import (
     get_quant_embedding_transform,
 )
-from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
-    LlamaModel,
-    ModelArgs,
-    LlamaDecoderLayer,
+from executorch.examples.models.llama.tokenizer.tiktoken import Tokenizer as Tiktoken
+from executorch.examples.qualcomm.oss_scripts.bitnet.model.static_bitnet import (
+    BitNetForCausalLM,
+    BitNetConfig,
+    BitNetDecoderLayer,
 )
 from executorch.examples.qualcomm.utils import (
     make_output_dir,
@@ -77,16 +71,24 @@ from executorch.examples.qualcomm.utils import (
     setup_common_args_and_variables,
     SimpleADB,
 )
+from executorch.exir import EdgeCompileConfig, EdgeProgramManager
+from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.extension.llm.custom_ops import model_sharding
 from executorch.extension.llm.export.builder import DType
-from pytorch_tokenizers import get_tokenizer, TiktokenTokenizer
-from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
+from executorch.extension.llm.tokenizer.tokenizer import (
+    Tokenizer as SentencePieceTokenizer,
+)
+from executorch.extension.llm.tokenizer.hf_tokenizer import HuggingFaceTokenizer
+from executorch.extension.llm.tokenizer.utils import get_tokenizer
 
 from torch.ao.quantization.observer import MinMaxObserver
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+from safetensors.torch import load_file
+
 
 sys.setrecursionlimit(4096)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -148,10 +150,12 @@ def _kv_calibrate(
     # Llama2 tokenizer has no special tokens
     if isinstance(tokenizer, SentencePieceTokenizer):
         token_list = tokenizer.encode(user_prompts, bos=True, eos=False)
-    elif isinstance(tokenizer, TiktokenTokenizer):
+    elif isinstance(tokenizer, Tiktoken):
         token_list = tokenizer.encode(
             user_prompts, bos=True, eos=False, allowed_special="all"
         )
+    elif isinstance(tokenizer, HuggingFaceTokenizer):
+        token_list = tokenizer.encode(user_prompts, bos=True, eos=False)
     else:
         raise RuntimeError("Unkown tokenizer")
 
@@ -220,7 +224,7 @@ def _prefill_calibrate(
     # Llama2 tokenizer has no special tokens
     if isinstance(tokenizer, SentencePieceTokenizer):
         token_list = tokenizer.encode(user_prompts, bos=True, eos=False)
-    elif isinstance(tokenizer, TiktokenTokenizer):
+    elif isinstance(tokenizer, Tiktoken):
         token_list = tokenizer.encode(
             user_prompts, bos=True, eos=False, allowed_special="all"
         )
@@ -301,9 +305,6 @@ class SingleLlama:
     def __init__(self, llama_model, pte_filename) -> None:
         super().__init__()
         self.llama_model = llama_model
-        self.passes_job = get_capture_program_passes()
-        self.dep_table = get_passes_dependency_for_capture_program()
-        self.quant_attrs = None
         self.quant_dtype = None
         self.llama_meta = self.llama_model.get_metadata()
         self.has_quant_io = False
@@ -317,16 +318,8 @@ class SingleLlama:
             tokens, atten_mask = self.get_example_inputs(use_kv_cache=False)
             self.inputs = (tokens, atten_mask)
         self.llama_graph_module = llama_model
-        self.io_shape = {
-            # logit output
-            (
-                self.llama_meta["get_max_batch_size"],
-                self.llama_meta["get_ar_len"],
-                self.llama_meta["get_vocab_size"],
-            ),
-        }
 
-    def _tag_ios(self, node, fixed_point_type):
+    def _tag_ios(self, gm: torch.fx.GraphModule, fixed_point_type):
         if not self.has_quant_io:
             return
 
@@ -338,6 +331,14 @@ class SingleLlama:
             # single head, kv output
             (self.llama_meta["get_head_dim"], self.llama_meta["get_ar_len"]),
             (self.llama_meta["get_ar_len"], self.llama_meta["get_head_dim"]),
+        }
+        io_shape = {
+            # logit output
+            (
+                self.llama_meta["get_max_batch_size"],
+                self.llama_meta["get_ar_len"],
+                self.llama_meta["get_vocab_size"],
+            ),
         }
 
         atten_mask_shape = {
@@ -355,35 +356,37 @@ class SingleLlama:
         freq_op = {
             exir_ops.edge.aten.select.int,
         }
-        quant_io_type = None
 
-        if node.op == "placeholder":
-            if (
-                len(users := list(node.users)) == 1
-                and users[0].meta["val"].size()[-2:] in kv_cache_shape
-            ):
-                quant_io_type = fixed_point_type["kv_type"]
-            elif node.meta["val"].size() in self.io_shape:
-                quant_io_type = fixed_point_type["io_type"]
-            elif node.meta["val"].size() in atten_mask_shape:
-                quant_io_type = fixed_point_type["io_type"]
-        if is_graph_output(node):
-            if node.meta["val"].size()[-2:] in kv_cache_shape:
-                quant_io_type = fixed_point_type["kv_type"]
-            elif node.meta["val"].size() in self.io_shape:
-                quant_io_type = fixed_point_type["io_type"]
+        for n in gm.graph.nodes:
+            if n.op == "placeholder":
+                if (
+                    len(users := list(n.users)) == 1
+                    and users[0].meta["val"].size()[-2:] in kv_cache_shape
+                ):
+                    n.meta[QCOM_QUANTIZED_IO] = fixed_point_type["kv_type"]
+                elif n.meta["val"].size() in io_shape:
+                    n.meta[QCOM_QUANTIZED_IO] = fixed_point_type["io_type"]
+                elif n.meta["val"].size() in atten_mask_shape:
+                    n.meta[QCOM_QUANTIZED_IO] = fixed_point_type["io_type"]
+            elif n.op == "output":
+                for a in n.args[0]:
+                    if a.meta["val"].size()[-2:] in kv_cache_shape:
+                        a.meta[QCOM_QUANTIZED_IO] = fixed_point_type["kv_type"]
+                    elif a.meta["val"].size() in io_shape:
+                        a.meta[QCOM_QUANTIZED_IO] = fixed_point_type["io_type"]
+                        quant_attrs = a.meta["quant_attrs"]
 
-        # Tag sharding io
-        if exir_ops.edge.llama.fallback.default in [
-            u.target for u in list(node.users.keys())
-        ] + [node.target]:
-            quant_io_type = fixed_point_type["io_type"]
+            # Tag sharding io
+            if exir_ops.edge.llama.fallback.default in [
+                u.target for u in list(n.users.keys())
+            ] + [n.target]:
+                n.meta[QCOM_QUANTIZED_IO] = fixed_point_type["io_type"]
 
-        # Tag select op as quantized tensors for freq_sin and freq_cos. It is caused by sharding
-        if node.target in freq_op and node.meta["val"].size() in freq_shape:
-            quant_io_type = fixed_point_type["io_type"]
+            # Tag select op as quantized tensors for freq_sin and freq_cos. It is caused by sharding
+            if n.target in freq_op and n.meta["val"].size() in freq_shape:
+                n.meta[QCOM_QUANTIZED_IO] = fixed_point_type["io_type"]
 
-        return quant_io_type
+        return quant_attrs
 
     def quantize(self, quant_dtype, args, tokenizer, custom_annotations=()):
         self.quant_dtype = quant_dtype
@@ -402,14 +405,6 @@ class SingleLlama:
             fx_graph_module = torch.export.export(
                 self.llama_graph_module, self.inputs, strict=True
             ).module()
-
-            if QuantDtype == QuantDtype.use_16a4w_block:
-                conv_nodes = [
-                    n for n in fx_graph_module.graph.nodes if "conv" in n.name
-                ]
-                block_size_map = {n.name: (1, 64, 1, 1) for n in conv_nodes}
-                quantizer.set_block_size_map(block_size_map)
-
             fx_graph_module = prepare_pt2e(fx_graph_module, quantizer)
 
         logging.info("Quantizing the model...")
@@ -429,9 +424,11 @@ class SingleLlama:
     def lowering_modules(
         self,
         work_space,
+        fixed_point_type,
         use_fp16=False,
         soc_model=QcomChipset.SM8650,
         num_sharding=1,
+        passes_job=OrderedDict(),
         shared_buffer=False,
         verbose=False,
     ):
@@ -457,22 +454,32 @@ class SingleLlama:
                 shared_buffer=shared_buffer,
             )
             skip_node_op_set = {"llama.fallback.default"}
-            edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+            partitioner = QnnPartitioner(
+                compiler_specs, skip_node_op_set=skip_node_op_set
+            )
+            edge_prog = capture_program(
                 self.llama_graph_module,
                 self.inputs,
-                compiler_specs,
-                constant_methods=self.llama_meta,
-                dep_table=self.dep_table,
-                passes_job=self.passes_job,
-                skip_node_op_set=skip_node_op_set,
+                passes_job,
             )
 
-            for n in edge_prog_mgr.exported_program().graph.nodes:
-                if n.op == "output":
-                    for node, output_encoding in n.meta[QCOM_QUANT_ATTRS_MAP].items():
-                        if node.meta["val"].size() in self.io_shape:
-                            self.quant_attrs = output_encoding
+            if num_sharding > 1:
+                model_sharding.split_graph(
+                    edge_prog.exported_program,
+                    self.llama_meta["get_n_layers"],
+                    shares=num_sharding,
+                )
 
+            self.quant_attrs = self._tag_ios(
+                edge_prog.exported_program.graph_module,
+                fixed_point_type=fixed_point_type,
+            )
+            edge_prog_mgr = EdgeProgramManager(
+                edge_programs={"forward": edge_prog.exported_program},
+                constant_methods=self.llama_meta,
+                compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            )
+            edge_prog_mgr = edge_prog_mgr.to_backend(partitioner)
             if num_sharding > 1:
                 update_spill_fill_size(edge_prog_mgr.exported_program())
 
@@ -494,131 +501,68 @@ def compile(args, pte_filename, tokenizer):
     os.makedirs(args.artifact, exist_ok=True)
     start_ts = time.time()
 
-    with open(args.params) as f:
-        kv_config = ModelArgs(**json.load(f))
-        # TODO: support batch inputs if necessary
-        kv_config.max_batch_size = 1
-        kv_config.max_seq_len = args.max_seq_len
-        kv_config.use_kv_cache = True
+    config = BitNetConfig.from_pretrained(args.model_dir)
 
-        prefill_config = copy.copy(kv_config)
-        prefill_config.max_seq_len = args.max_seq_len
-        prefill_config.use_kv_cache = (
-            False if args.max_seq_len == args.prefill_ar_len else True
-        )
-
-    state_dict = torch.load(
-        args.checkpoint, weights_only=True, map_location="cpu", mmap=True
-    )
+    state_dict = load_file(os.path.join(args.model_dir, "model.safetensors"))
 
     llama_instance_list = []
     use_i64_token = args.embedding_quantize is not None
     with torch.device("meta"):
         if args.model_mode == "kv":
             llama_instance_list.append(
-                LlamaModel(
-                    kv_config,
+                BitNetForCausalLM(
+                    config,
                     ar_len=1,
-                    output_new_cache_only=True,
-                    output_cache=True,
+                    max_seq_len=args.max_seq_len,
                     use_i64_token=use_i64_token,
                 )
             )
         elif args.model_mode == "hybrid":
             llama_instance_list.append(
-                LlamaModel(
-                    kv_config,
+                BitNetForCausalLM(
+                    config,
                     ar_len=1,
-                    output_new_cache_only=True,
-                    output_cache=True,
+                    max_seq_len=args.max_seq_len,
                     use_i64_token=use_i64_token,
                 )
             )
             llama_instance_list.append(
-                LlamaModel(
-                    prefill_config,
+                BitNetForCausalLM(
+                    config,
                     ar_len=args.prefill_ar_len,
-                    output_new_cache_only=True,
-                    output_cache=True,
+                    max_seq_len=args.max_seq_len,
                     use_i64_token=use_i64_token,
                 )
             )
         else:
             raise RuntimeError(f"Unknown model_mode: {args.model_mode}.")
 
-    if args.gptq_dir:
-        from gptqmodel.quantization.config import QuantizeConfig
-        from gptqmodel.nn_modules.qlinear.torch import TorchQuantLinear
-        qcfg = QuantizeConfig.from_pretrained(args.gptq_dir)
-        if qcfg.desc_act:
-            raise RuntimeError(
-                "desc_act=True is unsupported right now."
-            )
-        qlinear_cls = partial(
-            TorchQuantLinear,
-            bits=qcfg.bits,
-            group_size=qcfg.group_size,
-            desc_act=qcfg.desc_act,
-            sym=qcfg.sym,
-            pack_dtype=qcfg.pack_dtype,
-            device=qcfg.device,
-            adapter=qcfg.adapter,
-        )
-        for llama_instance in llama_instance_list:
-            layer: LlamaDecoderLayer
-            for layer in llama_instance.layers:
-                convert_linear_to_qlinear(layer.attention, qlinear_cls)
-                convert_linear_to_qlinear(layer.feed_forward, qlinear_cls)
-
-    if "model" in state_dict:
-        state_dict = state_dict["model"]
-
-    # Change to HuggingFace weight to improve the performance of RoPE in HTP backend.
-    def permute(w, heads):
-        dim_0 = w.size(0)
-        dim_1 = w.size(1)
-        return (
-            w.view(heads, dim_0 // heads // 2, 2, dim_1)
-            .transpose(1, 2)
-            .reshape(dim_0, dim_1)
-        )
-
-    n_heads = llama_instance_list[0].n_heads
-    n_kv_heads = llama_instance_list[0].n_kv_heads
-    n_layers = llama_instance_list[0].n_layers
-
-    for layer_i in range(n_layers):
-        state_dict[f"layers.{layer_i}.attention.wq.weight"] = permute(
-            state_dict[f"layers.{layer_i}.attention.wq.weight"], n_heads
-        )
-        state_dict[f"layers.{layer_i}.attention.wk.weight"] = permute(
-            state_dict[f"layers.{layer_i}.attention.wk.weight"], n_kv_heads
-        )
+    for llama_instance in llama_instance_list:
+        for layer in llama_instance.model.layers:
+            layer: BitNetDecoderLayer
+            convert_linear_to_bitlinear(layer.self_attn)
+            convert_linear_to_bitlinear(layer.mlp)
 
     for llama_instance in llama_instance_list:
-        llama_instance.load_state_dict(
+        incompatible_keys = llama_instance.load_state_dict(
             state_dict,
-            strict=True,
+            strict=False,
             assign=True,
         )
+        assert len(incompatible_keys.missing_keys) <= 1 and len(incompatible_keys.unexpected_keys) == 0
+        llama_instance.tie_weights()
     end_load_ts = time.time()
     logging.info(f"Time for loading checkpoint: {end_load_ts - start_ts}")
 
     for llama_instance in llama_instance_list:
-        for layer in llama_instance.layers:
-            if args.gptq_dir:
-                # TODO: optimize the performance when needed
-                if args.use_tman:
-                    if getattr(layer.attention, "prepare_tman", None):
-                        layer.attention.prepare_tman(do_permute=False, use_sha=False)
-                    convert_qlinear_to_tman_linear(layer.feed_forward)
-                else:
-                    convert_qlinear_to_linear(layer.attention)
-                    if getattr(layer.attention, "prepare_sha", None):
-                        layer.attention.prepare_sha()
-                    convert_qlinear_to_linear(layer.feed_forward)
-                    if getattr(layer.feed_forward, "prepare_feedfoward_conv", None):
-                        layer.feed_forward.prepare_feedfoward_conv()
+        for layer in llama_instance.model.layers:
+            if args.use_tman:
+                # TODO
+                layer.self_attn.prepare_tman()
+            else:
+                convert_bitlinear_to_linear(layer.self_attn)
+                layer.self_attn.prepare_sha()
+                convert_bitlinear_to_linear(layer.mlp)
 
     use_fp16 = True
     fixed_point_type = {"kv_type": torch.float32, "io_type": torch.float32}
@@ -627,18 +571,18 @@ def compile(args, pte_filename, tokenizer):
         fixed_point_type["kv_type"] = torch.uint8
         if args.ptq == "8a8w":
             fixed_point_type["io_type"] = torch.uint8
-        elif args.ptq in ("16a4w", "16a4w_block"):
+        elif args.ptq == "16a4w":
             fixed_point_type["io_type"] = torch.uint16
         else:
             assert args.ptq in [
                 "8a8w",
                 "16a4w",
-                "16a4w_block",
-            ], f"No support for quant type {args.ptq}. Support 8a8w, 16a4w and 16a4w_block."
+            ], f"No support for quant type {args.ptq}. Support 8a8w and 16a4w."
         quant_dtype = getattr(QuantDtype, f"use_{args.ptq}")
 
     assert args.tokenizer_model is not None, "Need tokenizer model for calibration"
 
+    passes_job = get_capture_program_passes()
     if args.dtype_override is not None:
         dtype_override = DType[args.dtype_override]
         for i in range(len(llama_instance_list)):
@@ -651,16 +595,14 @@ def compile(args, pte_filename, tokenizer):
             llama_instance_list[i] = get_quant_embedding_transform(args)(
                 llama_instance_list[i]
             )
+            passes_job[ConstantI64toI32][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
+                "skip_node"
+            ] = {"tokens"}
         llama_instance_list[i] = convert_linear_to_conv2d(llama_instance_list[i])
-        # llama_instance_list[i] = convert_qlinear_to_tman_linear(llama_instance_list[i])
         print(llama_instance_list[i])
         llama_instance_list[i] = SingleLlama(
             llama_instance_list[i].eval(), pte_filename
         )
-        if args.embedding_quantize:
-            llama_instance_list[i].passes_job[I64toI32][
-                QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY
-            ]["skip_node"] = {"tokens"}
 
     if args.ptq:
         start_quantize_ts = time.time()
@@ -669,54 +611,44 @@ def compile(args, pte_filename, tokenizer):
             custom_annotations = custom_annotations + (
                 annotate_linear_16a8w_in_affine_layer,
             )
-        kv_quant_attrs = {}
-        for i, llama_instance in enumerate(llama_instance_list):
-            llama_instance.quantize(
-                quant_dtype=quant_dtype,
-                args=args,
-                tokenizer=tokenizer,
-                custom_annotations=custom_annotations,
-            )
-            # If hybrid mode, we store kv output quant_attrs and apply to prefill output quant_attrs later
-            if i == 0 and args.model_mode == "hybrid":
-                output_indices = 0
-                for node in llama_instance.llama_graph_module.graph.nodes:
-                    if node.op == "output":
-                        for output in node.args[0]:
-                            kv_quant_attrs[output_indices] = output.args[1:]
-                            output_indices += 1
-                        break
-                custom_annotations = custom_annotations + (
-                    partial(
-                        annotate_prefill_kv_output,
-                        kv_quant_attrs=kv_quant_attrs,
-                    ),
+        if args.ptq != None:
+            kv_quant_attrs = {}
+            for i, llama_instance in enumerate(llama_instance_list):
+                llama_instance.quantize(
+                    quant_dtype=quant_dtype,
+                    args=args,
+                    tokenizer=tokenizer,
+                    custom_annotations=custom_annotations,
                 )
-            llama_instance.passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
-            llama_instance.passes_job[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
-                "get_quant_io_dtype_fn"
-            ] = partial(llama_instance._tag_ios, fixed_point_type=fixed_point_type)
+                # If hybrid mode, we store kv output quant_attrs and apply to prefill output quant_attrs later
+                if i == 0 and args.model_mode == "hybrid":
+                    output_indices = 0
+                    for node in llama_instance.llama_graph_module.graph.nodes:
+                        if node.op == "output":
+                            for output in node.args[0]:
+                                kv_quant_attrs[output_indices] = output.args[1:]
+                                output_indices += 1
+                            break
+                    custom_annotations = custom_annotations + (
+                        partial(
+                            annotate_prefill_kv_output,
+                            kv_quant_attrs=kv_quant_attrs,
+                        ),
+                    )
         end_quantize_ts = time.time()
         logging.info(f"Time for quantizing: {end_quantize_ts - start_quantize_ts}")
 
     start_lowering_ts = time.time()
     quant_attrs = None
-    if args.num_sharding > 1:
-        for llama_instance in llama_instance_list:
-            SplitGraph, setting = model_sharding.get_split_graph_pass(
-                llama_instance.llama_meta["get_n_layers"],
-                shares=args.num_sharding,
-            )
-            llama_instance.passes_job[SplitGraph] = setting
-            llama_instance.dep_table[SplitGraph] = [FoldQDQ]
-            llama_instance.dep_table[TagQuantIO] = [SplitGraph]
 
     if args.model_mode in ["kv"]:
         llama_instance_list[0].lowering_modules(
             args.artifact,
+            fixed_point_type,
             use_fp16=use_fp16,
             soc_model=get_soc_to_chipset_map()[args.model],
             num_sharding=args.num_sharding,
+            passes_job=passes_job,
             shared_buffer=args.shared_buffer,
         )
         quant_attrs = llama_instance_list[0].get_quant_attrs()
@@ -724,6 +656,30 @@ def compile(args, pte_filename, tokenizer):
         sample_inputs_list = [
             llama_instace.inputs for llama_instace in llama_instance_list
         ]
+        edge_progs = [
+            capture_program(
+                llama_instance.llama_graph_module,
+                sample_input,
+                passes_job=passes_job,
+            )
+            for llama_instance, sample_input in zip(
+                llama_instance_list, sample_inputs_list
+            )
+        ]
+
+        if args.num_sharding > 1:
+            for i in range(len(llama_instance_list)):
+                model_sharding.split_graph(
+                    edge_progs[i].exported_program,
+                    llama_instance_list[i].llama_meta["get_n_layers"],
+                    shares=args.num_sharding,
+                )
+
+        for i in range(len(llama_instance_list)):
+            quant_attrs = llama_instance_list[i]._tag_ios(
+                edge_progs[i].exported_program.graph_module,
+                fixed_point_type,
+            )
         backend_options = generate_htp_compiler_spec(
             use_fp16=use_fp16, use_multi_contexts=args.num_sharding > 1
         )
@@ -740,29 +696,15 @@ def compile(args, pte_filename, tokenizer):
             for graph_name in graph_names
         ]
         skip_node_op_set = {"llama.fallback.default"}
-        edge_prog_mgrs = [
-            to_edge_transform_and_lower_to_qnn(
-                llama_instance.llama_graph_module,
-                sample_input,
-                compile_spec,
-                dep_table=llama_instance.dep_table,
-                passes_job=llama_instance.passes_job,
-                skip_node_op_set=skip_node_op_set,
+        exported_programs = [
+            to_backend(
+                edge_prog.exported_program,
+                QnnPartitioner(compiler_specs[i], skip_node_op_set=skip_node_op_set),
             )
-            for llama_instance, sample_input, compile_spec in zip(
-                llama_instance_list, sample_inputs_list, compiler_specs
-            )
+            for i, edge_prog in enumerate(edge_progs)
         ]
-        for n in edge_prog_mgrs[0].exported_program().graph.nodes:
-            if n.op == "output":
-                for node, output_encoding in n.meta[QCOM_QUANT_ATTRS_MAP].items():
-                    if node.meta["val"].size() in llama_instance_list[0].io_shape:
-                        quant_attrs = output_encoding
-
         if args.num_sharding > 1:
-            max_sf_size = update_spill_fill_size(
-                [edge_prog_mgr.exported_program() for edge_prog_mgr in edge_prog_mgrs]
-            )
+            max_sf_size = update_spill_fill_size(exported_programs)
             qnn_executorch_options = flatbuffer_to_option(compiler_specs[0][0].value)
             qnn_executorch_options.backend_options.htp_options.max_sf_buf_size = (
                 max_sf_size
@@ -770,8 +712,8 @@ def compile(args, pte_filename, tokenizer):
             compiler_specs[0][0].value = option_to_flatbuffer(qnn_executorch_options)
 
         if args.verbose:
-            for edge_prog_mgr in edge_prog_mgrs:
-                print_delegation_info(edge_prog_mgr.exported_program().graph_module)
+            for exported_program in exported_programs:
+                print_delegation_info(exported_program.graph_module)
 
         executorch_config = ExecutorchBackendConfig(
             # For shared buffer, user must pass the memory address
@@ -791,8 +733,8 @@ def compile(args, pte_filename, tokenizer):
         call_delegate_node_name_dict = {name: [] for name in graph_names}
         outputs_dict = {name: [] for name in graph_names}
         input_nodes_dict = {name: [] for name in graph_names}
-        for prog, graph_name in zip(edge_prog_mgrs, graph_names):
-            for node in prog.exported_program().graph_module.graph.nodes:
+        for prog, graph_name in zip(exported_programs, graph_names):
+            for node in prog.graph_module.graph.nodes:
                 if (
                     node.op == "call_function"
                     and "executorch_call_delegate" in node.name
@@ -823,15 +765,13 @@ def compile(args, pte_filename, tokenizer):
                         outputs_dict[graph_name].append((arg.args[0].name, arg.args[1]))
         for num in range(args.num_sharding - 1, -1, -1):
             processed_bytes = []
-            for prog, graph_name in zip(edge_prog_mgrs, graph_names):
+            for prog, graph_name in zip(exported_programs, graph_names):
                 processed_bytes.append(
-                    getattr(
-                        prog.exported_program().graph_module, f"lowered_module_{num}"
-                    ).processed_bytes
+                    getattr(prog.graph_module, f"lowered_module_{num}").processed_bytes
                 )
                 call_delegate_node = [
                     list(node.users.keys())[0]
-                    for node in prog.exported_program().graph_module.graph.nodes
+                    for node in prog.graph_module.graph.nodes
                     if node.op == "get_attr" and node.name == f"lowered_module_{num}"
                 ]
                 input_nodes_dict[graph_name] = [
@@ -913,7 +853,6 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
     )
 
     runner_cmd = ""
-    performance_output_path = "outputs/inference_speed.txt"
     if args.enable_x86_64:
         # x86 emulator is intended for CI and not performance. Check only the first few tokens.
         seq_len = min(seq_len, 16)
@@ -933,7 +872,6 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
                 f"--model_path {pte_path}",
                 f"--seq_len {seq_len}",
                 f"--output_path {args.artifact}/outputs/outputs.txt",
-                f"--performance_output_path {performance_output_path}",
                 f"--kv_updater ShiftPointer",
                 runner_args,
             ]
@@ -954,7 +892,6 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
                 f"--model_path {pte_filename}.pte",
                 f"--seq_len {seq_len}",
                 "--output_path outputs/outputs.txt",
-                f"--performance_output_path {performance_output_path}",
                 f"--kv_updater {'SmartMask' if args.kv_updater == smart_mask_updater else 'ShiftPointer'}",
                 runner_args,
             ]
@@ -978,7 +915,7 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
         adb.pull(output_path=args.artifact, callback=post_process)
     if args.ip and args.port != -1:
         inference_speed = 0
-        with open(f"{args.artifact}/{performance_output_path}", "r") as f:
+        with open(f"{args.artifact}/outputs/inference_speed.txt", "r") as f:
             inference_speed = float(f.read())
 
         pte_size = os.path.getsize(pte_path)
@@ -1010,27 +947,20 @@ def _build_parser():
     parser.add_argument(
         "-P",
         "--ptq",
-        help="If specified, will do PTQ quantization. default is 16bits activation and 4bits weight. Support 8a8w, 16a4w and 16a4w_block.",
+        help="If specified, will do PTQ quantization. default is 16bits activation and 4bits weight. Support 8a8w and 16a4w.",
         type=str,
     )
 
     parser.add_argument(
         "--llama_model",
-        choices=["stories110m", "llama3_2"],
+        choices=["stories110m", "llama3_2", "bitnet"],
         help="The Llama model to export. Current available options are: [stories110m, llama3_2]",
         required=True,
     )
 
     parser.add_argument(
-        "--checkpoint",
+        "--model_dir",
         help="Pass llama checkpoint.",
-        required=True,
-        type=str,
-    )
-
-    parser.add_argument(
-        "--params",
-        help="Pass llama params json file.",
         required=True,
         type=str,
     )
@@ -1131,13 +1061,6 @@ def _build_parser():
     )
 
     parser.add_argument(
-        "--gptq_dir",
-        default=None,
-        type=str,
-        help="Path to the GPTQ model dir, which should contain config.json or quantize_config.json.",
-    )
-
-    parser.add_argument(
         "--use_tman",
         action="store_true",
         help="Use TMANLinear instead of QNNConv2d.",
@@ -1174,8 +1097,13 @@ def export_llama(args) -> None:
         runtime_tokenizer_path = args.tokenizer_bin
     elif args.llama_model == "llama3_2":
         assert isinstance(
-            tokenizer, TiktokenTokenizer
+            tokenizer, Tiktoken
         ), f"Wrong tokenizer provided for llama3_2."
+        runtime_tokenizer_path = args.tokenizer_model
+    elif args.llama_model == "bitnet":
+        assert isinstance(
+            tokenizer, HuggingFaceTokenizer
+        ), f"Wrong tokenizer provided for bitnet."
         runtime_tokenizer_path = args.tokenizer_model
     else:
         raise RuntimeError(f"Unknown llama_model: {args.llama_model}.")
