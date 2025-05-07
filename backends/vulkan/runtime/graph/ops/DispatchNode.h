@@ -33,10 +33,10 @@ class DispatchNode final : public ExecuteNode {
       const utils::uvec3& local_workgroup_size,
       const std::vector<ArgGroup>& args,
       const vkapi::ParamsBindList& params,
+      const std::vector<PushConstantDataInfo>& push_constants = {},
       const vkapi::SpecVarList& spec_vars = {},
-      const ResizeFunction& resize_fn = nullptr,
       const std::vector<ValueRef>& resize_args = {},
-      const std::vector<PushConstantDataInfo>& push_constants = {});
+      const ResizeFunction& resize_fn = nullptr);
 
   ~DispatchNode() override = default;
 

@@ -11,5 +11,6 @@ python_library(
         "//executorch/backends/xnnpack/_passes:xnnpack_passes",
         "//executorch/exir:lib",
         "//executorch/backends/transforms:utils",
+        "//executorch/backends/transforms:decompose_sdpa",
     ],
 )
