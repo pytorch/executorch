@@ -8,7 +8,7 @@ This folder contains examples demonstrating how to register custom operators int
 
 - Please finish tutorial [Setting up executorch](https://pytorch.org/executorch/stable/getting-started-setup).
 
-- Please finish [setup QNN backend](../../docs/source/build-run-qualcomm-ai-engine-direct-backend.md).
+- Please finish [setup QNN backend](../../../docs/source/backends-qualcomm.md).
 
 - Please follow [the instructions to install proper version of Hexagon SDK and Hexagon Tools.](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/linux_setup.html#htp-and-dsp)
   - This example is verified with SM8650 (Snapdragon 8 Gen 3).

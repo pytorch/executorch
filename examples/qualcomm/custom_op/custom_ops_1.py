@@ -68,8 +68,6 @@ def annotate_custom(gm: torch.fx.GraphModule) -> None:
     This function is specific for custom op.
     The source_fn of the rewritten nn module turns out to be "my_ops.mul3.default"
     """
-    import itertools
-
     from executorch.backends.qualcomm.quantizer.annotators import (
         _is_annotated,
         QUANT_ANNOTATION_KEY,
@@ -80,31 +78,23 @@ def annotate_custom(gm: torch.fx.GraphModule) -> None:
     )
     from torch.ao.quantization.quantize_pt2e import QuantizationAnnotation
     from torch.fx import Node
-    from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
-    custom_partitions = get_source_partitions(gm.graph, [torch.ops.my_ops.mul3.default])
-    custom_partitions = list(itertools.chain(*custom_partitions.values()))
     quantization_config = get_ptq_per_channel_quant_config()
-    for custom_partition in custom_partitions:
-        if len(custom_partition.output_nodes) > 1:
-            raise ValueError("custom partition has more than one output node")
-        custom_node = custom_partition.output_nodes[0]
-        if (
-            custom_node.op != "call_function"
-            or custom_node.target != torch.ops.my_ops.mul3.default
-        ):
-            raise ValueError(f"{custom_node} is not a custom operator")
+    for node in gm.graph.nodes:
+        if node.target != torch.ops.my_ops.mul3.default:
+            continue
+
         # skip annotation if it is already annotated
-        if _is_annotated([custom_node]):
+        if _is_annotated([node]):
             continue
 
         input_qspec_map = {}
-        input_act = custom_node.args[0]
+        input_act = node.args[0]
         assert isinstance(input_act, Node)
         input_spec = quantization_config.input_activation
         input_qspec_map[input_act] = input_spec
 
-        custom_node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=quantization_config.output_activation,
             _annotated=True,
