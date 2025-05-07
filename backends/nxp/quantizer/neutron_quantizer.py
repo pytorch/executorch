@@ -35,9 +35,9 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
     QuantizationSpec,
 )
 from torch import fx
-from torch.ao.quantization.observer import HistogramObserver, MinMaxObserver
-from torch.ao.quantization.quantizer import DerivedQuantizationSpec, Quantizer
-from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
+from torchao.quantization.pt2e.observer import HistogramObserver, MinMaxObserver
+from torchao.quantization.pt2e.quantizer import DerivedQuantizationSpec, Quantizer
+from torchao.quantization.pt2e.quantizer.composable_quantizer import ComposableQuantizer
 
 
 class NeutronAtenQuantizer(Quantizer):

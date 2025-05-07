@@ -7,18 +7,21 @@ from executorch.backends.qualcomm.quantizer.observers.per_block_param_observer i
     PerBlockParamObserver,
 )
 from torch import Tensor
-from torch.ao.quantization.fake_quantize import (
+from torch.fx import Node
+from torchao.quantization.pt2e.fake_quantize import (
     FakeQuantize,
     FusedMovingAvgObsFakeQuantize,
 )
-from torch.ao.quantization.observer import (
+from torchao.quantization.pt2e.observer import (
     MinMaxObserver,
     MovingAverageMinMaxObserver,
     MovingAveragePerChannelMinMaxObserver,
     PerChannelMinMaxObserver,
 )
-from torch.ao.quantization.quantizer import DerivedQuantizationSpec, QuantizationSpec
-from torch.fx import Node
+from torchao.quantization.pt2e.quantizer import (
+    DerivedQuantizationSpec,
+    QuantizationSpec,
+)
 
 
 @dataclass(eq=True)

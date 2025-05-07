@@ -14,7 +14,7 @@ from executorch.backends.mediatek import (
     NeuropilotQuantizer,
     Precision,
 )
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 def build_executorch_binary(

@@ -31,14 +31,14 @@ from executorch.extension.pytree import tree_flatten
 from torch.ao.quantization.backend_config.executorch import (
     get_executorch_backend_config,
 )
-from torch.ao.quantization.observer import (
-    default_dynamic_quant_observer,
-    default_per_channel_weight_observer,
-)
 from torch.ao.quantization.qconfig_mapping import QConfig, QConfigMapping
 from torch.ao.quantization.quantize_fx import (
     _convert_to_reference_decomposed_fx,
     prepare_fx,
+)
+from torchao.quantization.pt2e.observer import (
+    default_dynamic_quant_observer,
+    default_per_channel_weight_observer,
 )
 
 

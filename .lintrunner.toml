@@ -371,3 +371,26 @@ command = [
     '--',
     '@{{PATHSFILE}}',
 ]
+
+[[linter]]
+code = 'TORCH_AO_IMPORT'
+include_patterns = ['**/*.py']
+exclude_patterns = [
+    'third-party/**',
+]
+command = [
+    'python3',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'grep_linter',
+    '--pattern=\\bfrom torch.ao.quantization(\\.[a-zA-Z0-9_]+)*\\b',
+    '--linter-name=TorchAOImport',
+    '--error-name=Prohibited torch.ao.quantization import',
+    """--error-description=\
+        Imports from torch.ao.quantization are not allowed. \
+        Please import from torchao.quantization.pt2e instead.\
+    """,
+    '--',
+    '@{{PATHSFILE}}',
+]

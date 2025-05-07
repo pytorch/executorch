@@ -9,26 +9,26 @@ import torch.nn.functional as F
 from executorch.backends.xnnpack.utils.utils import is_depthwise_conv
 from torch._subclasses import FakeTensor
 from torch.ao.quantization.fx.utils import get_new_attr_name_with_prefix
-from torch.ao.quantization.pt2e.export_utils import _WrapperModule
-from torch.ao.quantization.pt2e.utils import (
-    _get_aten_graph_module_for_pattern,
-    _is_conv_node,
-    _is_conv_transpose_node,
-)
-from torch.ao.quantization.quantizer import (
-    QuantizationAnnotation,
-    QuantizationSpec,
-    SharedQuantizationSpec,
-)
-from torch.ao.quantization.quantizer.utils import (
-    _annotate_input_qspec_map,
-    _annotate_output_qspec,
-)
 from torch.fx import Node
 from torch.fx.passes.utils.matcher_with_name_node_map_utils import (
     SubgraphMatcherWithNameNodeMap,
 )
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
+from torchao.quantization.pt2e.export_utils import WrapperModule
+from torchao.quantization.pt2e.quantizer import (
+    QuantizationAnnotation,
+    QuantizationSpec,
+    SharedQuantizationSpec,
+)
+from torchao.quantization.pt2e.quantizer.utils import (
+    annotate_input_qspec_map,
+    annotate_output_qspec,
+)
+from torchao.quantization.pt2e.utils import (
+    _get_aten_graph_module_for_pattern,
+    _is_conv_node,
+    _is_conv_transpose_node,
+)
 
 __all__ = [
     "OperatorConfig",
@@ -204,25 +204,25 @@ def _annotate_linear(
             bias_node = node.args[2]
 
         if _is_annotated([node]) is False:  # type: ignore[list-item]
-            _annotate_input_qspec_map(
+            annotate_input_qspec_map(
                 node,
                 act_node,
                 input_act_qspec,
             )
-            _annotate_input_qspec_map(
+            annotate_input_qspec_map(
                 node,
                 weight_node,
                 weight_qspec,
             )
             nodes_to_mark_annotated = [node, weight_node]
             if bias_node:
-                _annotate_input_qspec_map(
+                annotate_input_qspec_map(
                     node,
                     bias_node,
                     bias_qspec,
                 )
                 nodes_to_mark_annotated.append(bias_node)
-            _annotate_output_qspec(node, output_act_qspec)
+            annotate_output_qspec(node, output_act_qspec)
             _mark_nodes_as_annotated(nodes_to_mark_annotated)
             annotated_partitions.append(nodes_to_mark_annotated)
 
@@ -572,7 +572,7 @@ def _do_annotate_conv_bn(  # noqa: C901
                 "output": output,
             }
 
-        return _WrapperModule(_conv_bn)
+        return WrapperModule(_conv_bn)
 
     # Needed for matching, otherwise the matches gets filtered out due to unused
     # nodes returned by batch norm

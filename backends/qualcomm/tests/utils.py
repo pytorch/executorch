@@ -14,6 +14,8 @@ from typing import Callable, Dict, List, Optional, OrderedDict, Tuple
 
 import numpy as np
 import torch
+import torchao
+
 from executorch import exir
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import ModuleQConfig, QuantDtype
@@ -43,12 +45,12 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.program import ExecutorchProgram, ExecutorchProgramManager
-from torch.ao.quantization.quantize_pt2e import (
+from torch.fx.passes.infra.pass_base import PassResult
+from torchao.quantization.pt2e.quantize_pt2e import (
     convert_pt2e,
     prepare_pt2e,
     prepare_qat_pt2e,
 )
-from torch.fx.passes.infra.pass_base import PassResult
 
 
 def generate_context_binary(
@@ -536,8 +538,8 @@ class TestQNN(unittest.TestCase):
             torch.ops.quantized_decomposed.dequantize_per_tensor.default,
             torch.ops.quantized_decomposed.quantize_per_channel.default,
             torch.ops.quantized_decomposed.dequantize_per_channel.default,
-            torch.ops.pt2e_quant.quantize_affine.default,
-            torch.ops.pt2e_quant.dequantize_affine.default,
+            torch.ops.torchao.quantize_affine.default,
+            torch.ops.torchao.dequantize_affine.default,
         }
         if not bypass_check:
             self.assertTrue(nodes.intersection(q_and_dq))
@@ -568,7 +570,7 @@ class TestQNN(unittest.TestCase):
         quantizer.set_submodule_qconfig_list(submodule_qconfig_list)
 
         prepared = prepare_qat_pt2e(m, quantizer)
-        return torch.ao.quantization.move_exported_model_to_train(prepared)
+        return torchao.quantization.pt2e.move_exported_model_to_train(prepared)
 
     def get_converted_sgd_trained_module(
         self,
@@ -583,7 +585,7 @@ class TestQNN(unittest.TestCase):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        return torch.ao.quantization.quantize_pt2e.convert_pt2e(prepared)
+        return torchao.quantization.pt2e.quantize_pt2e.convert_pt2e(prepared)
 
     def split_graph(self, division: int):
         class SplitGraph(ExportPass):

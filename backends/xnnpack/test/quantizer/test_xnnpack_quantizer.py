@@ -9,13 +9,7 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 from torch.ao.ns.fx.utils import compute_sqnr
-from torch.ao.quantization import (
-    default_dynamic_fake_quant,
-    default_dynamic_qconfig,
-    observer,
-    QConfig,
-    QConfigMapping,
-)
+from torch.ao.quantization import default_dynamic_qconfig, QConfig, QConfigMapping
 from torch.ao.quantization.backend_config import get_qnnpack_backend_config
 from torch.ao.quantization.qconfig import (
     default_per_channel_symmetric_qnnpack_qconfig,
@@ -38,6 +32,8 @@ from torch.testing._internal.common_quantization import (
     TestHelperModules,
 )
 from torch.testing._internal.common_quantized import override_quantized_engine
+from torchao.quantization.pt2e import observer
+from torchao.quantization.pt2e.fake_quantize import default_dynamic_fake_quant
 
 
 @skipIfNoQNNPACK
