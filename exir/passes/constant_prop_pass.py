@@ -61,6 +61,8 @@ def is_const(
         )
     elif isinstance(arg, _PRIMITIVE_TYPES):
         return True
+    elif arg is None:
+        return True
     elif not isinstance(arg, torch.fx.Node):
         return False
     elif arg in const_node_to_tensor:
