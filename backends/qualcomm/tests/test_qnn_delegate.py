@@ -165,9 +165,14 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_cast(self):
-        module = Cast()  # noqa: F405
-        sample_input = (10 * torch.rand((9, 4, 5, 3)),)
-        self.lower_module_and_test_output(module, sample_input)
+        modules = [Cast(), CastMultiUsers()]  # noqa: F405
+        sample_inputs = [
+            (10 * torch.rand((9, 4, 5, 3)),),
+            (torch.randint(0, 3, size=(3, 3)), torch.randn(3, 3)),
+        ]
+        for i, (module, sample_input) in enumerate(zip(modules, sample_inputs)):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_cat(self):
         modules = [Cat2(), Cat3(), Cat4()]  # noqa: F405
@@ -1231,6 +1236,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = Bmm()  # noqa: F405
         torch.manual_seed(8)
         sample_input = (torch.randn([4, 8, 32]), torch.randn([4, 32, 8]))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_cast(self):
+        module = CastMultiUsers()  # noqa: F405
+        sample_input = (torch.randint(0, 3, size=(3, 3)), torch.randn(3, 3))
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 

@@ -74,7 +74,8 @@ class FuseConsecutiveCast(ExportPass):
                             clone_cast_node = graph.create_node(
                                 "call_function",
                                 exir_ops.edge.aten._to_copy.default,
-                                (n.args[0]),
+                                n.args,
+                                kwargs=n.kwargs,
                             )
                             clone_cast_node.meta = n.meta
                             users[i].replace_input_with(n, clone_cast_node)
@@ -98,6 +99,8 @@ class FuseConsecutiveCast(ExportPass):
     def _fuse(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         for n in graph_module.graph.nodes:
             self._traverse(n)
+            # TODO: how to handle following scenario (won't happen for quantized graph)
+            #       fp -> to(i32) -> to(fp)
             if len(self.nodes) > 1:
                 input_node, output_node = self.nodes[0], self.nodes[-1]
                 output_node.replace_input_with(output_node.args[0], input_node.args[0])

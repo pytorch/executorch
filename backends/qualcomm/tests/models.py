@@ -166,6 +166,16 @@ class Cast(torch.nn.Module):
         return x.type(torch.IntTensor)
 
 
+class CastMultiUsers(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        index = x.to(torch.long)
+        res = torch.gather(y, dim=1, index=index)
+        return res + index.to(torch.int32)
+
+
 class Cat2(torch.nn.Module):
     def __init__(self):
         super().__init__()
