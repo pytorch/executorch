@@ -197,7 +197,6 @@ filters = [
 ]
 deps = [
   "executorch_core",
-  "extension_flat_tensor_schema",
 ]
 
 [targets.extension_module]
@@ -236,6 +235,8 @@ deps = [
   "extension_data_loader",
   "extension_flat_tensor",
   "extension_module",
+  "extension_data_loader",
+  "extension_flat_tensor",
   "extension_runner_util",
   "extension_tensor",
 ]
