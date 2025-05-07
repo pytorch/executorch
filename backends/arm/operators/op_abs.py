@@ -13,6 +13,9 @@ from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+)
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from torch.fx import Node
@@ -39,6 +42,7 @@ class AbsVisitor_080_BI(NodeVisitor):
 
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
+        validate_num_inputs(self.target, inputs, 1)
         # Specification (0.80) states that input and output types
         # should all be the same
         if not (inputs[0].dtype == output.dtype):
@@ -105,6 +109,7 @@ class AbsVisitor_080_MI(AbsVisitor_080_BI):
 
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
+        validate_num_inputs(self.target, inputs, 1)
         # Specification (0.80) states that input and output types
         # should all be the same
         if not (inputs[0].dtype == output.dtype):
@@ -156,6 +161,8 @@ class AbsVisitor_INT(NodeVisitor):
     ) -> None:
 
         import serializer.tosa_serializer as ts  # type: ignore
+
+        validate_num_inputs(self.target, inputs, 1)
 
         # Specification (1.0) states that input and output types
         # should all be the same
@@ -223,6 +230,8 @@ class AbsVisitor_FP(AbsVisitor_INT):
     ) -> None:
 
         import serializer.tosa_serializer as ts  # type: ignore
+
+        validate_num_inputs(self.target, inputs, 1)
 
         # Specification (1.0) states that input and output types
         # should all be the same

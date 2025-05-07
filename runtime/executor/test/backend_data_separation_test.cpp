@@ -70,8 +70,11 @@ class BackendDataSeparationTest : public ::testing::Test {
     EXPECT_EQ(linear_data_map.error(), Error::Ok);
     linear_data_map_ =
         std::make_unique<FlatTensorDataMap>(std::move(linear_data_map.get()));
-    
-    ET_LOG(Info, "setup done, named_data_map_ = %lu", linear_data_map_->get_num_keys().get());
+
+    ET_LOG(
+        Info,
+        "setup done, named_data_map_ = %lu",
+        linear_data_map_->get_num_keys().get());
   }
 
  private:
@@ -86,7 +89,10 @@ class BackendDataSeparationTest : public ::testing::Test {
 TEST_F(BackendDataSeparationTest, TestSeparation) {
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
   Result<Method> method = linear_program_->load_method(
-      "forward", &mmm.get(), /*event_tracer=*/nullptr, /*named_data_map=*/linear_data_map_.get());
+      "forward",
+      &mmm.get(),
+      /*event_tracer=*/nullptr,
+      /*named_data_map=*/linear_data_map_.get());
   ASSERT_EQ(method.error(), Error::Ok);
 
   // Can execute the method.
