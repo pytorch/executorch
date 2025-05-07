@@ -47,11 +47,14 @@ void add_staging_to_tensor_node(
       {{out_tensor, vkapi::kWrite}, {in_staging, vkapi::kRead}},
       // Parameter Buffers
       ubos,
+      // Push Constants
+      {},
       // Specialization Constants
       {graph.hashed_layout_of(out_tensor)},
+      // Resize Args
+      {},
       // Resizing Logic
-      nullptr,
-      {}));
+      nullptr));
 }
 
 const std::string kBitw8PrefixStr = "bitw8_image_to_nchw_nobitw8buffer";
@@ -106,8 +109,14 @@ void add_tensor_to_staging_node(
       {{out_staging, vkapi::kWrite}, {in_tensor, vkapi::kRead}},
       // Parameter Buffers
       ubos,
+      // Push Constants
+      {},
       // Specialization Constants
-      {graph.hashed_layout_of(in_tensor)}));
+      {graph.hashed_layout_of(in_tensor)},
+      // Resize Args
+      {},
+      // Resizing Logic
+      nullptr));
 }
 
 void add_prepack_standard_node(

@@ -20,6 +20,7 @@ from executorch.examples.models.llama.source_transformation.custom_kv_cache impo
     replace_kv_cache_with_custom_kv_cache,
     replace_kv_cache_with_quantized_kv_cache,
 )
+from torch.nn.attention import SDPBackend
 
 
 class KVCacheType(Enum):
@@ -142,27 +143,30 @@ class TestRingAttention(unittest.TestCase):
         ring_attn = self._create_ring_attention(baseline_attn, kv_cache_type)
 
         # Process tokens one by one
-        for pos in range(seq_len):
-            # Create input tensor for a single token
-            x = torch.randn((self.batch_size, 1, self.dim), dtype=self.dtype)
-            input_pos = torch.tensor([pos], dtype=torch.long)
-            freqs_cos, freqs_sin = self.rope.get_freqs(input_pos, 1)
+        with torch.nn.attention.sdpa_kernel(
+            [SDPBackend.FLASH_ATTENTION]
+        ), torch.no_grad():
+            for pos in range(seq_len):
+                # Create input tensor for a single token
+                x = torch.randn((self.batch_size, 1, self.dim), dtype=self.dtype)
+                input_pos = torch.tensor([pos], dtype=torch.long)
+                freqs_cos, freqs_sin = self.rope.get_freqs(input_pos, 1)
 
-            # Process with baseline attention
-            baseline_out, _ = baseline_attn.forward(
-                x, freqs_cos, freqs_sin, input_pos=input_pos
-            )
+                # Process with baseline attention
+                baseline_out, _ = baseline_attn.forward(
+                    x, freqs_cos, freqs_sin, input_pos=input_pos
+                )
 
-            # Process with ring buffer attention
-            ring_out, _ = ring_attn.forward(
-                x, freqs_cos, freqs_sin, input_pos=input_pos
-            )
+                # Process with ring buffer attention
+                ring_out, _ = ring_attn.forward(
+                    x, freqs_cos, freqs_sin, input_pos=input_pos
+                )
 
-            # Check that outputs are the same
-            self.assertTrue(
-                torch.allclose(baseline_out, ring_out),
-                f"Outputs differ at position {pos}",
-            )
+                # Check that outputs are the same
+                self.assertTrue(
+                    torch.allclose(baseline_out, ring_out, rtol=1e-7, atol=1e-7),
+                    f"Outputs differ at position {pos}",
+                )
 
     def test_single_token_processing_quantized(self):
         """Test single token processing with QuantizedKVCache."""
@@ -191,26 +195,29 @@ class TestRingAttention(unittest.TestCase):
         ring_attn = self._create_ring_attention(baseline_attn, kv_cache_type)
 
         # Process tokens one by one
-        for pos in range(seq_len):
-            # Create input tensor for a single token
-            x = torch.randn((self.batch_size, 1, self.dim), dtype=self.dtype)
-            input_pos = torch.tensor([pos], dtype=torch.long)
-            freqs_cos, freqs_sin = self.rope.get_freqs(input_pos, 1)
+        with torch.nn.attention.sdpa_kernel(
+            [SDPBackend.FLASH_ATTENTION]
+        ), torch.no_grad():
+            for pos in range(seq_len):
+                # Create input tensor for a single token
+                x = torch.randn((self.batch_size, 1, self.dim), dtype=self.dtype)
+                input_pos = torch.tensor([pos], dtype=torch.long)
+                freqs_cos, freqs_sin = self.rope.get_freqs(input_pos, 1)
 
-            baseline_out, _ = baseline_attn.forward(
-                x, freqs_cos, freqs_sin, input_pos=input_pos
-            )
+                baseline_out, _ = baseline_attn.forward(
+                    x, freqs_cos, freqs_sin, input_pos=input_pos
+                )
 
-            # Process with ring buffer attention
-            ring_out, _ = ring_attn.forward(
-                x, freqs_cos, freqs_sin, input_pos=input_pos
-            )
+                # Process with ring buffer attention
+                ring_out, _ = ring_attn.forward(
+                    x, freqs_cos, freqs_sin, input_pos=input_pos
+                )
 
-            # Check that outputs are the same
-            self.assertTrue(
-                torch.allclose(baseline_out, ring_out),
-                f"Outputs differ at position {pos}",
-            )
+                # Check that outputs are the same
+                self.assertTrue(
+                    torch.allclose(baseline_out, ring_out, rtol=1e-7, atol=1e-7),
+                    f"Outputs differ at position {pos}",
+                )
 
     def test_sliding_window_attention_quantized(self):
         """Test sliding window attention with QuantizedKVCache."""
@@ -241,24 +248,27 @@ class TestRingAttention(unittest.TestCase):
 
         # Process enough tokens to cause wrapping
         seq_len = 1
-        for pos in range(8):
-            # Create input tensor for a single token
-            x = torch.randn((self.batch_size, seq_len, self.dim), dtype=self.dtype)
-            input_pos = torch.tensor([pos], dtype=torch.long)
-            freqs_cos, freqs_sin = self.rope.get_freqs(input_pos, seq_len)
+        with torch.nn.attention.sdpa_kernel(
+            [SDPBackend.FLASH_ATTENTION]
+        ), torch.no_grad():
+            for pos in range(8):
+                # Create input tensor for a single token
+                x = torch.randn((self.batch_size, seq_len, self.dim), dtype=self.dtype)
+                input_pos = torch.tensor([pos], dtype=torch.long)
+                freqs_cos, freqs_sin = self.rope.get_freqs(input_pos, seq_len)
 
-            baseline_out, _ = baseline_attn.forward(
-                x, freqs_cos, freqs_sin, input_pos=input_pos
-            )
+                baseline_out, _ = baseline_attn.forward(
+                    x, freqs_cos, freqs_sin, input_pos=input_pos
+                )
 
-            # Process with ring buffer attention
-            ring_out, _ = ring_attn.forward(
-                x, freqs_cos, freqs_sin, input_pos=input_pos
-            )
-            self.assertTrue(
-                torch.allclose(baseline_out, ring_out),
-                f"Outputs differ at position {pos}",
-            )
+                # Process with ring buffer attention
+                ring_out, _ = ring_attn.forward(
+                    x, freqs_cos, freqs_sin, input_pos=input_pos
+                )
+                self.assertTrue(
+                    torch.allclose(baseline_out, ring_out, rtol=1e-7, atol=1e-7),
+                    f"Outputs differ at position {pos}",
+                )
 
         # After processing 8 tokens with window size 4, the ring buffer should have wrapped around
         # Check the cache positions to verify wrapping
@@ -302,27 +312,32 @@ class TestRingAttention(unittest.TestCase):
         ring_attn = self._create_ring_attention(baseline_attn, kv_cache_type)
 
         pos = 0
-        for token_len in token_lens:
-            # Create input tensor for a single token
-            x = torch.randn((self.batch_size, token_len, self.dim), dtype=self.dtype)
-            input_pos = torch.tensor([pos], dtype=torch.long)
-            freqs_cos, freqs_sin = self.rope.get_freqs(input_pos, token_len)
+        with torch.nn.attention.sdpa_kernel(
+            [SDPBackend.FLASH_ATTENTION]
+        ), torch.no_grad():
+            for token_len in token_lens:
+                # Create input tensor for a single token
+                x = torch.randn(
+                    (self.batch_size, token_len, self.dim), dtype=self.dtype
+                )
+                input_pos = torch.tensor([pos], dtype=torch.long)
+                freqs_cos, freqs_sin = self.rope.get_freqs(input_pos, token_len)
 
-            baseline_out, _ = baseline_attn.forward(
-                x, freqs_cos, freqs_sin, input_pos=input_pos
-            )
+                baseline_out, _ = baseline_attn.forward(
+                    x, freqs_cos, freqs_sin, input_pos=input_pos
+                )
 
-            # Process with ring buffer attention
-            ring_out, _ = ring_attn.forward(
-                x, freqs_cos, freqs_sin, input_pos=input_pos
-            )
+                # Process with ring buffer attention
+                ring_out, _ = ring_attn.forward(
+                    x, freqs_cos, freqs_sin, input_pos=input_pos
+                )
 
-            # Check that outputs are the same
-            self.assertTrue(
-                torch.allclose(baseline_out, ring_out),
-                f"Outputs differ at position {pos} with max difference {(baseline_out - ring_out).abs().max()}",
-            )
-            pos += token_len
+                # Check that outputs are the same
+                self.assertTrue(
+                    torch.allclose(baseline_out, ring_out, rtol=1e-7, atol=1e-7),
+                    f"Outputs differ at position {pos} with max difference {(baseline_out - ring_out).abs().max()}",
+                )
+                pos += token_len
 
     def test_large_context_with_sliding_window_quantized(self):
         """Test large context with sliding window with QuantizedKVCache."""
