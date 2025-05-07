@@ -21,6 +21,7 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
+list(TRANSFORM _executorch__srcs PREPEND "${EXECUTORCH_ROOT}/")
 set(_common_compile_options -Wno-deprecated-declarations)
 
 add_library(prim_ops_lib ${_executorch__srcs})
