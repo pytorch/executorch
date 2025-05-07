@@ -38,8 +38,8 @@ public class SettingsFields {
     return userPrompt;
   }
 
-  public String getFormattedSystemAndUserPrompt(String prompt) {
-    return getFormattedSystemPrompt() + getFormattedUserPrompt(prompt);
+  public String getFormattedSystemAndUserPrompt(String prompt, boolean thinkingMode) {
+    return getFormattedSystemPrompt() + getFormattedUserPrompt(prompt, thinkingMode);
   }
 
   public String getFormattedSystemPrompt() {
@@ -47,8 +47,12 @@ public class SettingsFields {
         .replace(PromptFormat.SYSTEM_PLACEHOLDER, systemPrompt);
   }
 
-  public String getFormattedUserPrompt(String prompt) {
-    return userPrompt.replace(PromptFormat.USER_PLACEHOLDER, prompt);
+  public String getFormattedUserPrompt(String prompt, boolean thinkingMode) {
+    return userPrompt
+        .replace(PromptFormat.USER_PLACEHOLDER, prompt)
+        .replace(
+            PromptFormat.THINKING_MODE_PLACEHOLDER,
+            PromptFormat.getThinkingModeToken(modelType, thinkingMode));
   }
 
   public boolean getIsClearChatHistory() {
@@ -77,7 +81,7 @@ public class SettingsFields {
     tokenizerFilePath = "";
     temperature = SettingsActivity.TEMPERATURE_MIN_VALUE;
     systemPrompt = "";
-    userPrompt = PromptFormat.getUserPromptTemplate(DEFAULT_MODEL);
+    userPrompt = PromptFormat.getUserPromptTemplate(DEFAULT_MODEL, false);
     isClearChatHistory = false;
     isLoadModel = false;
     modelType = DEFAULT_MODEL;

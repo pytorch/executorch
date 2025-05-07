@@ -692,7 +692,10 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
         prevPromptID = currentPromptID;
       }
       if (conversation.getIsSent()) {
-        format = format.replace(PromptFormat.USER_PLACEHOLDER, conversation.getText());
+        format =
+            format
+                .replace(PromptFormat.USER_PLACEHOLDER, conversation.getText())
+                .replace(PromptFormat.THINKING_MODE_PLACEHOLDER, "");
       } else {
         format = format.replace(PromptFormat.ASSISTANT_PLACEHOLDER, conversation.getText());
       }
@@ -704,12 +707,12 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
 
   private String getTotalFormattedPrompt(String conversationHistory, String rawPrompt) {
     if (conversationHistory.isEmpty()) {
-      return mCurrentSettingsFields.getFormattedSystemAndUserPrompt(rawPrompt);
+      return mCurrentSettingsFields.getFormattedSystemAndUserPrompt(rawPrompt, mThinkMode);
     }
 
     return mCurrentSettingsFields.getFormattedSystemPrompt()
         + conversationHistory
-        + mCurrentSettingsFields.getFormattedUserPrompt(rawPrompt);
+        + mCurrentSettingsFields.getFormattedUserPrompt(rawPrompt, mThinkMode);
   }
 
   private void onModelRunStarted() {
@@ -738,7 +741,8 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
           if (ModelUtils.getModelCategory(
                   mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType())
               == ModelUtils.VISION_MODEL) {
-            finalPrompt = mCurrentSettingsFields.getFormattedSystemAndUserPrompt(rawPrompt);
+            finalPrompt =
+                mCurrentSettingsFields.getFormattedSystemAndUserPrompt(rawPrompt, mThinkMode);
           } else {
             finalPrompt = getTotalFormattedPrompt(getConversationHistory(), rawPrompt);
           }
