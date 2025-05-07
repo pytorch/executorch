@@ -65,19 +65,19 @@ class TestPreset(CMakeTestCase):
         self.assert_cmake_cache("SECRET_MESSAGE", "move fast", "STRING")
         self.assert_cmake_cache("PI", "3.14", "STRING")
 
-    def test_define_overridable_config_invalid_name(self):
+    def test_define_overridable_option_invalid_name(self):
         _cmake_lists_txt = """
             cmake_minimum_required(VERSION 3.24)
             project(test_preset)
             include(${PROJECT_SOURCE_DIR}/preset.cmake)
-            define_overridable_config(IAM_AN_INVALID_NAME "test example" STRING "default value")
+            define_overridable_option(IAM_AN_INVALID_NAME "test example" STRING "default value")
         """
         self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
         self.run_cmake(
-            error_contains="Config name 'IAM_AN_INVALID_NAME' must start with EXECUTORCH_"
+            error_contains="Option name 'IAM_AN_INVALID_NAME' must start with EXECUTORCH_"
         )
 
-    def test_define_overridable_config_default(self):
+    def test_define_overridable_option_default(self):
         _cmake_lists_txt = """
             cmake_minimum_required(VERSION 3.24)
             project(test_preset)
@@ -85,8 +85,8 @@ class TestPreset(CMakeTestCase):
             add_subdirectory(example)
         """
         _example_cmake_lists_txt = """
-            define_overridable_config(EXECUTORCH_TEST_MESSAGE "test message" STRING "default value")
-            define_overridable_config(EXECUTORCH_TEST_OPTION "test option" BOOL ON)
+            define_overridable_option(EXECUTORCH_TEST_MESSAGE "test message" STRING "default value")
+            define_overridable_option(EXECUTORCH_TEST_OPTION "test option" BOOL ON)
         """
         self.create_workspace(
             {
@@ -100,19 +100,19 @@ class TestPreset(CMakeTestCase):
         self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "default value", "STRING")
         self.assert_cmake_cache("EXECUTORCH_TEST_OPTION", "ON", "BOOL")
 
-    def test_define_overridable_config_invalid_type(self):
+    def test_define_overridable_option_invalid_type(self):
         _cmake_lists_txt = """
             cmake_minimum_required(VERSION 3.24)
             project(test_preset)
             include(${PROJECT_SOURCE_DIR}/preset.cmake)
-            define_overridable_config(EXECUTORCH_TEST_MESSAGE "test example" NUMBER "default value")
+            define_overridable_option(EXECUTORCH_TEST_MESSAGE "test example" NUMBER "default value")
         """
         self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
         self.run_cmake(
-            error_contains="Invalid config (EXECUTORCH_TEST_MESSAGE) value type 'NUMBER'"
+            error_contains="Invalid option (EXECUTORCH_TEST_MESSAGE) value type 'NUMBER'"
         )
 
-    def test_define_overridable_config_cli_override(self):
+    def test_define_overridable_option_cli_override(self):
         _cmake_lists_txt = """
             cmake_minimum_required(VERSION 3.24)
             project(test_preset)
@@ -120,7 +120,7 @@ class TestPreset(CMakeTestCase):
             add_subdirectory(example)
         """
         _example_cmake_lists_txt = """
-            define_overridable_config(EXECUTORCH_TEST_MESSAGE "test message" STRING "default value")
+            define_overridable_option(EXECUTORCH_TEST_MESSAGE "test message" STRING "default value")
         """
         self.create_workspace(
             {
@@ -133,7 +133,7 @@ class TestPreset(CMakeTestCase):
         self.run_cmake(cmake_args=["-DEXECUTORCH_TEST_MESSAGE='cli value'"])
         self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "cli value", "STRING")
 
-    def test_define_overridable_config_set_override_before(self):
+    def test_define_overridable_option_set_override_before(self):
         _cmake_lists_txt = """
             cmake_minimum_required(VERSION 3.24)
             project(test_preset)
@@ -142,7 +142,7 @@ class TestPreset(CMakeTestCase):
             add_subdirectory(example)
         """
         _example_cmake_lists_txt = """
-            define_overridable_config(EXECUTORCH_TEST_MESSAGE "test message" STRING "default value")
+            define_overridable_option(EXECUTORCH_TEST_MESSAGE "test message" STRING "default value")
         """
         self.create_workspace(
             {
@@ -155,7 +155,7 @@ class TestPreset(CMakeTestCase):
         self.run_cmake()
         self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "set value", "STRING")
 
-    def testdefine_overridable_config_set_override_after(self):
+    def test_define_overridable_option_set_override_after(self):
         _cmake_lists_txt = """
             cmake_minimum_required(VERSION 3.24)
             project(test_preset)
@@ -164,7 +164,7 @@ class TestPreset(CMakeTestCase):
             set(EXECUTORCH_TEST_MESSAGE "set value")
         """
         _example_cmake_lists_txt = """
-            define_overridable_config(EXECUTORCH_TEST_MESSAGE "test message" STRING "default value")
+            define_overridable_option(EXECUTORCH_TEST_MESSAGE "test message" STRING "default value")
         """
         self.create_workspace(
             {
@@ -178,7 +178,7 @@ class TestPreset(CMakeTestCase):
         # Setting the value after should not affect the cache.
         self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "default value", "STRING")
 
-    def test_define_overridable_config_set_override_after_with_cache(self):
+    def test_define_overridable_option_set_override_after_with_cache(self):
         _cmake_lists_txt = """
             cmake_minimum_required(VERSION 3.24)
             project(test_preset)
@@ -187,7 +187,7 @@ class TestPreset(CMakeTestCase):
             set(EXECUTORCH_TEST_MESSAGE "set value" CACHE STRING "")
         """
         _example_cmake_lists_txt = """
-            define_overridable_config(EXECUTORCH_TEST_MESSAGE "test message" STRING "default value")
+            define_overridable_option(EXECUTORCH_TEST_MESSAGE "test message" STRING "default value")
         """
         self.create_workspace(
             {
@@ -201,7 +201,7 @@ class TestPreset(CMakeTestCase):
         # Setting the value after should not affect the cache.
         self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "default value", "STRING")
 
-    def test_define_overridable_config_cli_override_with_set_override(self):
+    def test_define_overridable_option_cli_override_with_set_override(self):
         _cmake_lists_txt = """
             cmake_minimum_required(VERSION 3.24)
             project(test_preset)
@@ -210,7 +210,7 @@ class TestPreset(CMakeTestCase):
             add_subdirectory(example)
         """
         _example_cmake_lists_txt = """
-            define_overridable_config(EXECUTORCH_TEST_MESSAGE "test message" STRING "default value")
+            define_overridable_option(EXECUTORCH_TEST_MESSAGE "test message" STRING "default value")
         """
         self.create_workspace(
             {
