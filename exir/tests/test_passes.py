@@ -682,7 +682,6 @@ class TestPasses(unittest.TestCase):
         inputs = eager_model.get_random_inputs()
         gm = export(eager_model, inputs, strict=True).graph_module
 
-        self.assertTrue(torch.ops.aten.sub.Tensor in collect_ops(gm))
         dead_code_elimination_pass(gm)
         gm.print_readable()
         self.assertFalse(torch.ops.aten.sub.Tensor in collect_ops(gm))

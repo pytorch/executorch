@@ -144,7 +144,6 @@ def fuse_pt2(
     return converted_graph_module
 
 
-# Note: this is the one-liner API to quantize and fuse a model.
 def quantize_pt2(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
@@ -158,6 +157,8 @@ def quantize_pt2(
     not, the inputs will be used for calibration instead, which is useful for
     unit tests but should not be used for end-to-end use cases.
     Returns a GraphModule with the quantized model.
+    Note: this function should not be called directly in general. Please use
+    quantize_and_export_to_executorch for most needs.
     """
     # Make the model inference mode by calling model.eval()
     model.eval()
@@ -199,7 +200,7 @@ def export_program(
     return expo_program
 
 
-def lower_ep_to_edge(
+def _lower_ep_to_edge(
     expo_program: ExportedProgram,
     dump_graphs: bool = False,
     constant_methods: Optional[dict[str, object]] = None,
@@ -250,7 +251,7 @@ def export_to_edge(
     expo_program = export_program(model, inputs)
 
     # Lower the model to edge IR.
-    edge_prog_manager = lower_ep_to_edge(expo_program, dump_graphs, constant_methods)
+    edge_prog_manager = _lower_ep_to_edge(expo_program, dump_graphs, constant_methods)
 
     return edge_prog_manager
 
@@ -272,14 +273,14 @@ def quantize_and_export_to_edge(
         dump_graphs=dump_graphs,
     )
 
-    return lower_ep_to_edge(
+    return _lower_ep_to_edge(
         quantized_model,
         dump_graphs=dump_graphs,
         constant_methods=constant_methods,
     )
 
 
-def lower_ep_to_cadence(
+def _lower_ep_to_cadence(
     program: ExportedProgram,
     dump_graphs: bool = False,
     opt_level: int = 1,
@@ -287,7 +288,7 @@ def lower_ep_to_cadence(
     """
     Lower an existing ExportedProgram to edge IR and apply frontend optimization passes.
     """
-    edge_prog_manager = lower_ep_to_edge(program, dump_graphs=dump_graphs)
+    edge_prog_manager = _lower_ep_to_edge(program, dump_graphs=dump_graphs)
     cadence_passes = get_cadence_passes(opt_level)
 
     # Run a couple required passes for quant/dequant ops
@@ -329,7 +330,7 @@ def quantize_and_export_to_cadence(
     """
     quantized_model = quantize_pt2(model, inputs)
 
-    return lower_ep_to_cadence(
+    return _lower_ep_to_cadence(
         quantized_model,
         opt_level=opt_level,
         dump_graphs=dump_graphs,

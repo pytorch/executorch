@@ -21,6 +21,7 @@ python_library(
         ":quant_fusion_pass",
         ":quantize_io_pass",
         ":remove_noop_pass",
+        ":remove_unused_parameters_pass",
         ":replace_aten_with_edge_pass",
         ":replace_broken_ops_with_function_ops_pass",
         ":replace_edge_with_backend_pass",
@@ -387,6 +388,17 @@ python_library(
         "//caffe2:torch",
         "//executorch/exir:memory",
         "//executorch/exir:tensor",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+python_library(
+    name = "remove_unused_parameters_pass",
+    srcs = [
+        "remove_unused_parameters_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
         "//executorch/exir/dialects:lib",
     ],
 )
