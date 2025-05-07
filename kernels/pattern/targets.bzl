@@ -12,10 +12,10 @@ def define_common_targets():
     runtime.cxx_library(
         name = "all_deps",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
-            "//executorch/kernels/portable/cpu/pattern:bitwise_op",
-            "//executorch/kernels/portable/cpu/pattern:comparison_op",
-            "//executorch/kernels/portable/cpu/pattern:logical_op"
+            "//executorch/kernels/pattern:pattern",
+            "//executorch/kernels/pattern:bitwise_op",
+            "//executorch/kernels/pattern:comparison_op",
+            "//executorch/kernels/pattern:logical_op"
         ],
         visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     )

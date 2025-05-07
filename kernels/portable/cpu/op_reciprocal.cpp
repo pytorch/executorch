@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/portable/cpu/pattern/pattern.h>
+#include <executorch/kernels/pattern/pattern.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {

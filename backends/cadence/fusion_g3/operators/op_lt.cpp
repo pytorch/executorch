@@ -11,7 +11,7 @@
 #include <xa_nnlib_kernels_api.h>
 
 #include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
-#include <executorch/kernels/portable/cpu/pattern/comparison_op.h>
+#include <executorch/kernels/pattern/comparison_op.h>
 
 using ::executorch::aten::Scalar;
 using ::executorch::aten::ScalarType;

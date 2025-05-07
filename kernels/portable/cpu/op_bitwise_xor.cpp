@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/portable/cpu/pattern/bitwise_op.h>
+#include <executorch/kernels/pattern/bitwise_op.h>
 
 namespace torch {
 namespace executor {

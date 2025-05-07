@@ -208,13 +208,13 @@ ATEN_OPS = (
     op_target(
         name = "op_acos",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
         name = "op_acosh",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
@@ -295,19 +295,19 @@ ATEN_OPS = (
     op_target(
         name = "op_asin",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
         name = "op_asinh",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
         name = "op_atan",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
@@ -321,7 +321,7 @@ ATEN_OPS = (
     op_target(
         name = "op_atanh",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
@@ -334,7 +334,7 @@ ATEN_OPS = (
         name = "op_bitwise_and",
         deps = [
             ":scalar_utils",
-            "//executorch/kernels/portable/cpu/pattern:bitwise_op",
+            "//executorch/kernels/pattern:bitwise_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
@@ -352,7 +352,7 @@ ATEN_OPS = (
         name = "op_bitwise_or",
         deps = [
             ":scalar_utils",
-            "//executorch/kernels/portable/cpu/pattern:bitwise_op",
+            "//executorch/kernels/pattern:bitwise_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
@@ -362,7 +362,7 @@ ATEN_OPS = (
         name = "op_bitwise_xor",
         deps = [
             ":scalar_utils",
-            "//executorch/kernels/portable/cpu/pattern:bitwise_op",
+            "//executorch/kernels/pattern:bitwise_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
@@ -390,7 +390,7 @@ ATEN_OPS = (
     op_target(
         name = "op_ceil",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
@@ -441,13 +441,13 @@ ATEN_OPS = (
     op_target(
         name = "op_cos",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
         name = "op_cosh",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
@@ -498,7 +498,7 @@ ATEN_OPS = (
         name = "op_eq",
         deps = [
             ":scalar_utils",
-            "//executorch/kernels/portable/cpu/pattern:comparison_op",
+            "//executorch/kernels/pattern:comparison_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
@@ -510,13 +510,13 @@ ATEN_OPS = (
     op_target(
         name = "op_erf",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
         name = "op_exp",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
@@ -532,7 +532,7 @@ ATEN_OPS = (
     op_target(
         name = "op_expm1",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
@@ -553,7 +553,7 @@ ATEN_OPS = (
     op_target(
         name = "op_floor",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
@@ -600,7 +600,7 @@ ATEN_OPS = (
         name = "op_ge",
         deps = [
             ":scalar_utils",
-            "//executorch/kernels/portable/cpu/pattern:comparison_op",
+            "//executorch/kernels/pattern:comparison_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
@@ -626,7 +626,7 @@ ATEN_OPS = (
         name = "op_gt",
         deps = [
             ":scalar_utils",
-            "//executorch/kernels/portable/cpu/pattern:comparison_op",
+            "//executorch/kernels/pattern:comparison_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
@@ -663,20 +663,20 @@ ATEN_OPS = (
     op_target(
         name = "op_isinf",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
         name = "op_isnan",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
         name = "op_le",
         deps = [
             ":scalar_utils",
-            "//executorch/kernels/portable/cpu/pattern:comparison_op",
+            "//executorch/kernels/pattern:comparison_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
@@ -698,25 +698,25 @@ ATEN_OPS = (
     op_target(
         name = "op_log",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
         name = "op_log10",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
         name = "op_log1p",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
         name = "op_log2",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
@@ -732,7 +732,7 @@ ATEN_OPS = (
         name = "op_logical_and",
         deps = [
             ":scalar_utils",
-            "//executorch/kernels/portable/cpu/pattern:logical_op",
+            "//executorch/kernels/pattern:logical_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
@@ -749,7 +749,7 @@ ATEN_OPS = (
         name = "op_logical_or",
         deps = [
             ":scalar_utils",
-            "//executorch/kernels/portable/cpu/pattern:logical_op",
+            "//executorch/kernels/pattern:logical_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
@@ -759,7 +759,7 @@ ATEN_OPS = (
         name = "op_logical_xor",
         deps = [
             ":scalar_utils",
-            "//executorch/kernels/portable/cpu/pattern:logical_op",
+            "//executorch/kernels/pattern:logical_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
@@ -775,7 +775,7 @@ ATEN_OPS = (
         name = "op_lt",
         deps = [
             ":scalar_utils",
-            "//executorch/kernels/portable/cpu/pattern:comparison_op",
+            "//executorch/kernels/pattern:comparison_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
@@ -907,7 +907,7 @@ ATEN_OPS = (
         name = "op_ne",
         deps = [
             ":scalar_utils",
-            "//executorch/kernels/portable/cpu/pattern:comparison_op",
+            "//executorch/kernels/pattern:comparison_op",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
@@ -976,7 +976,7 @@ ATEN_OPS = (
     op_target(
         name = "op_reciprocal",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
@@ -1052,7 +1052,7 @@ ATEN_OPS = (
     op_target(
         name = "op_rsqrt",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
@@ -1116,13 +1116,13 @@ ATEN_OPS = (
     op_target(
         name = "op_sin",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
         name = "op_sinh",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
@@ -1162,7 +1162,7 @@ ATEN_OPS = (
     op_target(
         name = "op_sqrt",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
@@ -1201,13 +1201,13 @@ ATEN_OPS = (
     op_target(
         name = "op_tan",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
         name = "op_tanh",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
@@ -1232,7 +1232,7 @@ ATEN_OPS = (
     op_target(
         name = "op_trunc",
         deps = [
-            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/pattern:pattern",
         ],
     ),
     op_target(
