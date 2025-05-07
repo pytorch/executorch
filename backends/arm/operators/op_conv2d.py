@@ -17,6 +17,9 @@ from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+)
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import build_rescale, build_rescale_v0_80
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -67,6 +70,7 @@ class Conv2dVisitor_0_80(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         input, weight, bias, stride, pad, dilation, _, _, group = inputs
+        validate_num_inputs(self.target, inputs, 9)
 
         # Get the attributes of convolution.
         attr = ts.TosaSerializerAttribute()
@@ -242,6 +246,7 @@ class Conv2dVisitor(NodeVisitor):
         from tosa.RoundingMode import RoundingMode  # type: ignore
 
         input, weight, bias, stride, pad, dilation, _, _, group = inputs
+        validate_num_inputs(self.target, inputs, 9)
 
         # Get the attributes of convolution.
         attr = ts.TosaSerializerAttribute()

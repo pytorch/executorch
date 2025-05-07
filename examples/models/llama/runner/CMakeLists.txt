@@ -52,7 +52,7 @@ else()
   add_library(llama_runner SHARED ${_llama_runner__srcs})
 endif()
 
-set(llama_runner_deps executorch extension_data_loader extension_module
+set(llama_runner_deps executorch_core extension_data_loader extension_module
                       extension_tensor
 )
 
