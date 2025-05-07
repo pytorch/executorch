@@ -260,9 +260,16 @@ ET_NODISCARD Error load_bundled_input(
   if (!method_test.ok()) {
     return method_test.error();
   }
-
+  auto test_cases = method_test.get()->test_cases();
+  ET_CHECK_OR_RETURN_ERROR(
+      testset_idx < test_cases->size(),
+      InvalidArgument,
+      "testset_idx %zu is out of range [0, %u]",
+      testset_idx,
+      test_cases->size());
   auto bundled_inputs =
-      method_test.get()->test_cases()->Get(testset_idx)->inputs();
+      test_cases->Get(static_cast<flatbuffers::uoffset_t>(testset_idx))
+          ->inputs();
 
   for (size_t input_idx = 0; input_idx < method.inputs_size(); input_idx++) {
     auto bundled_input = bundled_inputs->GetMutableObject(input_idx);
@@ -359,8 +366,16 @@ ET_NODISCARD Error verify_method_outputs(
     return method_test.error();
   }
 
+  auto test_cases = method_test.get()->test_cases();
+  ET_CHECK_OR_RETURN_ERROR(
+      testset_idx < test_cases->size(),
+      InvalidArgument,
+      "testset_idx %zu is out of range [0, %u]",
+      testset_idx,
+      test_cases->size());
   auto bundled_expected_outputs =
-      method_test.get()->test_cases()->Get(testset_idx)->expected_outputs();
+      test_cases->Get(static_cast<flatbuffers::uoffset_t>(testset_idx))
+          ->expected_outputs();
 
   if (bundled_expected_outputs->size() == 0) {
     // No bundled expected outputs, so we can't verify the method outputs.

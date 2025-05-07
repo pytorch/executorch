@@ -52,8 +52,8 @@ else()
   add_library(llama_runner SHARED ${_llama_runner__srcs})
 endif()
 
-set(llama_runner_deps executorch_core extension_data_loader
-                      extension_flat_tensor extension_module extension_tensor
+set(llama_runner_deps executorch_core extension_data_loader extension_module
+                      extension_tensor
 )
 
 target_link_libraries(llama_runner PUBLIC ${llama_runner_deps})
