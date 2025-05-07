@@ -519,7 +519,7 @@ def replace_kv_cache_with_ring_kv_cache(module, layer_sizes):
     # This is needed to ensure that custom ops are registered
     from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
 
-    assert len(module.layers) > len(
+    assert len(module.layers) >= len(
         layer_sizes
     ), f"Length of layer sizes {len(layer_sizes)} must match the number of layers in the module {len(module.layers)}."
     multiplier = len(module.layers) // len(layer_sizes)

@@ -18,6 +18,7 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 
@@ -37,6 +38,7 @@ using ::executorch::runtime::MemoryAllocator;
 using ::executorch::runtime::MemoryManager;
 using ::executorch::runtime::Method;
 using ::executorch::runtime::MethodMeta;
+using ::executorch::runtime::NamedDataMap;
 using ::executorch::runtime::Program;
 using ::executorch::runtime::Result;
 using ::executorch::runtime::Span;
@@ -156,9 +158,13 @@ class ExecutorBackend final : public ::executorch::runtime::BackendInterface {
     new (client_memory_manager)
         MemoryManager(client_method_allocator, client_planned_memory);
 
+    const NamedDataMap* named_data_map = context.get_named_data_map();
     // Construct the client Method
-    Result<Method> method_res =
-        client_program->load_method("forward", client_memory_manager);
+    Result<Method> method_res = client_program->load_method(
+        "forward",
+        client_memory_manager,
+        /*event_tracer=*/nullptr,
+        named_data_map);
     if (!method_res.ok()) {
       ET_LOG(
           Error,
