@@ -31,15 +31,12 @@ from .utils import dq_ops, get_quant_attrs, q_ops
 class AnnotateQuantAttrs(ExportPass):
     """
     Add "quant_attrs" to graph nodes' meta from the QDQ information
-    generated after quatization process.
+    generated after quantization process.
     """
 
-    def __init__(
-        self, edge_program: torch.export.ExportedProgram, skip_advanced_requat: bool
-    ):
+    def __init__(self, edge_program: torch.export.ExportedProgram):
         super(AnnotateQuantAttrs, self).__init__()
         self.edge_program = edge_program
-        self.skip_advanced_requant = skip_advanced_requat
 
     def _annotate_source_nodes(
         self, quant_node: torch.fx.Node, quant_attrs: Dict[str, Any]
@@ -88,30 +85,21 @@ class AnnotateQuantAttrs(ExportPass):
                 dq_attrs = get_quant_attrs(self.edge_program, dq_node)
                 # TODO: Store multiple pairs of requantize attributes when we have an op builder
                 # that has multiple outputs that requires quant attributes.
-                if self.skip_advanced_requant:
-                    if q_attrs[QCOM_DTYPE] != dq_attrs[QCOM_DTYPE]:
-                        dq_attrs[QCOM_ENCODING] = q_attrs[QCOM_ENCODING]
-                        user_node = list(dq_node.users)[0]
-                        n.args[0].meta.setdefault(QCOM_REQUANTIZE, {})
-                        n.args[0].meta[QCOM_REQUANTIZE][user_node.name] = dq_attrs
-                else:
-                    # When dtype is the same but other specs such as scale and offset are different,
-                    # insert requant to improve accuracy.
-                    # Users can turn this feature off if any inference speed drop is observed.
-                    if any(
-                        q_attrs[attr] != dq_attrs[attr]
-                        for attr in [
-                            QCOM_SCALE,
-                            QCOM_ZERO_POINT,
-                            QCOM_QUANT_MIN,
-                            QCOM_QUANT_MAX,
-                            QCOM_DTYPE,
-                        ]
-                    ):
-                        dq_attrs[QCOM_ENCODING] = q_attrs[QCOM_ENCODING]
-                        user_node = list(dq_node.users)[0]
-                        n.args[0].meta.setdefault(QCOM_REQUANTIZE, {})
-                        n.args[0].meta[QCOM_REQUANTIZE][user_node.name] = dq_attrs
+
+                if any(
+                    q_attrs[attr] != dq_attrs[attr]
+                    for attr in [
+                        QCOM_SCALE,
+                        QCOM_ZERO_POINT,
+                        QCOM_QUANT_MIN,
+                        QCOM_QUANT_MAX,
+                        QCOM_DTYPE,
+                    ]
+                ):
+                    dq_attrs[QCOM_ENCODING] = q_attrs[QCOM_ENCODING]
+                    user_node = list(dq_node.users)[0]
+                    n.args[0].meta.setdefault(QCOM_REQUANTIZE, {})
+                    n.args[0].meta[QCOM_REQUANTIZE][user_node.name] = dq_attrs
 
     # Dequant all the fold_quant parameters back to fp32.
     # If an operation is not supported by QNN and got fallback, it will expect a fp32 param.
