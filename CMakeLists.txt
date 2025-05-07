@@ -610,13 +610,7 @@ endif()
 #
 # Provides primitive operators with registration.
 #
-add_library(prim_ops_lib ${_executorch__srcs})
-target_link_libraries(prim_ops_lib PRIVATE executorch_core)
-target_include_directories(prim_ops_lib PUBLIC ${_common_include_directories})
-target_compile_definitions(prim_ops_lib PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
-target_compile_options(prim_ops_lib PUBLIC ${_common_compile_options})
-target_link_options_shared_lib(prim_ops_lib)
-
+add_subdirectory(kernels/prim_ops)
 #
 # portable_ops_lib: A library to register core ATen ops using portable kernels,
 # see kernels/portable/CMakeLists.txt.
