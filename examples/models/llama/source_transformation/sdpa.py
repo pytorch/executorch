@@ -260,7 +260,8 @@ class SDPASimple(torch.nn.Module):
         seqlen,
         mask,
     ):
-        attn_mask = mask[None, None, input_pos]
+        # Input mask is slided however it is 2D
+        attn_mask = mask[None, None]
 
         k = k.repeat_interleave(self.n_rep, dim=1)
         v = v.repeat_interleave(self.n_rep, dim=1)
@@ -316,7 +317,8 @@ class SDPAFlex(torch.nn.Module):
         """
         k = repeat_kv(k, self.n_rep)
         v = repeat_kv(v, self.n_rep)
-        attn_mask = mask[input_pos]
+        # Mask is already sliced as needed
+        attn_mask = mask
 
         scale_factor = 1 / math.sqrt(q.size(-1))
         attn_weight = q @ k.transpose(-2, -1) * scale_factor
@@ -397,7 +399,8 @@ class SDPACoreML(torch.nn.Module):
         seqlen,
         mask,
     ):
-        attn_mask = mask[None, None, input_pos]
+        # Input mask is slided however it is 2D
+        attn_mask = mask[None, None]
 
         if self.n_rep > 1:
             k = k.repeat_interleave(self.n_rep, dim=1)
