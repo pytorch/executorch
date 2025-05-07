@@ -659,7 +659,7 @@ install(DIRECTORY extension/kernel_util/  DESTINATION include/executorch/extensi
 install(DIRECTORY extension/tensor/  DESTINATION include/executorch/extension/tensor FILES_MATCHING PATTERN "*.h")
 install(DIRECTORY extension/threadpool/  DESTINATION include/executorch/extension/threadpool FILES_MATCHING PATTERN "*.h")
 install(
-  TARGETS executorch_core prim_ops_lib executorch
+  TARGETS executorch_core prim_ops_lib
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}
