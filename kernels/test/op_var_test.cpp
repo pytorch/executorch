@@ -78,7 +78,7 @@ class OpVarOutTest : public OperatorTest {
         context_,
         op_var_out(
             self,
-            std::optional_dim_list,
+            optional_dim_list,
             /*unbiased=*/true,
             /*keepdim=*/true,
             out));
@@ -90,7 +90,7 @@ class OpVarOutTest : public OperatorTest {
         context_,
         op_var_out(
             self,
-            std::optional_dim_list,
+            optional_dim_list,
             /*unbiased=*/true,
             /*keepdim=*/true,
             out));
@@ -124,7 +124,7 @@ class OpVarOutTest : public OperatorTest {
         context_,
         op_var_out(
             self,
-            std::optional_dim_list,
+            optional_dim_list,
             /*unbiased=*/true,
             /*keepdim=*/true,
             out));
@@ -165,7 +165,7 @@ class OpVarOutTest : public OperatorTest {
     optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
     optional<ScalarType> dtype = OUT_DTYPE;
     op_var_out(
-        self, std::optional_dim_list, /*unbiased=*/true, /*keepdim=*/true, out);
+        self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/true, out);
     // clang-format off
     expect_tensor_close_with_increased_tol(out, tf_out.make(
       {2, 3, 1},
@@ -184,7 +184,7 @@ class OpVarOutTest : public OperatorTest {
     out = tf_out.zeros({2, 3});
     op_var_out(
         self,
-        std::optional_dim_list,
+        optional_dim_list,
         /*unbiased=*/true,
         /*keepdim=*/false,
         out);
@@ -202,14 +202,14 @@ class OpVarOutTest : public OperatorTest {
     int64_t dims_2[2] = {0, 1};
     optional_dim_list = ArrayRef<int64_t>{dims_2, 2};
     op_var_out(
-        self, std::optional_dim_list, /*unbiased=*/true, /*keepdim=*/true, out);
+        self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/true, out);
     expect_tensor_close_with_increased_tol(
         out, tf_out.make({1, 1, 4}, {56.0, 56.0, 56.0, 56.0}));
 
     out = tf_out.zeros({4});
     op_var_out(
         self,
-        std::optional_dim_list,
+        optional_dim_list,
         /*unbiased=*/true,
         /*keepdim=*/false,
         out);
@@ -222,7 +222,7 @@ class OpVarOutTest : public OperatorTest {
     optional_dim_list = ArrayRef<int64_t>{dims_3, 1};
     op_var_out(
         self,
-        std::optional_dim_list,
+        optional_dim_list,
         /*unbiased=*/false,
         /*keepdim=*/true,
         out);
@@ -349,7 +349,7 @@ TEST_F(OpVarOutTest, InvalidDTypeDies) {
       context_,
       op_var_out(
           self,
-          std::optional_dim_list,
+          optional_dim_list,
           /*unbiased=*/true,
           /*keepdim=*/true,
           out));
@@ -407,8 +407,7 @@ TEST_F(OpVarOutTest, InfinityAndNANTest) {
   int64_t dims[1] = {-1};
   optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims, 1}};
   optional<ScalarType> dtype;
-  op_var_out(
-      self, std::optional_dim_list, /*unbiased=*/true, /*keepdim=*/true, out);
+  op_var_out(self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/true, out);
   // clang-format off
   EXPECT_TENSOR_CLOSE(out, tf_float.make(
     {2, 3, 1},
