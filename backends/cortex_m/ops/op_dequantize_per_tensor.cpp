@@ -73,16 +73,23 @@ void check_dequantize_args(
 /**
  * Scalar implementation of quantization for a single value.
  */
-template <typename K, typename T>
-T dequantize_val(
+template <typename Q, typename F>
+F dequantize_val(
     float scale,
     int32_t zero_point,
-    K value,
+    Q qvalue,
     int64_t quant_min,
     int64_t quant_max) {
   (void)quant_min;
   (void)quant_max;
-  return static_cast<T>((static_cast<int32_t>(value) - zero_point) * scale);
+  F value = static_cast<F>((static_cast<int32_t>(qvalue) - zero_point) * scale);
+  printf(
+      "Scalar DQ: float value: %f, quantized value: %d, scale: %f, zp: %d\n",
+      value,
+      qvalue,
+      scale,
+      zero_point);
+  return value;
 }
 
 } // namespace
@@ -98,6 +105,13 @@ Tensor& dequantize_per_tensor_out(
     Tensor& out) {
   // Ignore context for now
   (void)context;
+
+  printf(
+      "DQ: scale: %f, zp: %d, qmin: %d, qmax: %d\n",
+      scale,
+      zero_point,
+      quant_min,
+      quant_max);
 
   // Resize output tensor to match input dimensions
   torch::executor::Error err = resize_tensor(out, input.sizes());
@@ -118,11 +132,11 @@ Tensor& dequantize_per_tensor_out(
   float* out_data = out.mutable_data_ptr<float>();
   const size_t numel = input.numel();
 
-#if defined(HAS_HELIUM_SIMD)
+#if defined(HAS_HELIUM_SIMD) && 0
 // Helium MVE implementation for float32 to int8 quantization
 #Error "Implement MVE version!"
 #else
-  // Scalar implementation for float32 to int8 quantization
+  // Scalar implementation for int8 to float32 quantization
   for (size_t i = 0; i < numel; i++) {
     out_data[i] =
         dequantize_val<int8_t, float>(scale, zp, input_data[i], qmin, qmax);
