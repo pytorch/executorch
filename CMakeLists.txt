@@ -44,6 +44,14 @@
 
 cmake_minimum_required(VERSION 3.24)
 project(executorch)
+
+# MARK: - Start EXECUTORCH_H12025_BUILD_MIGRATION --------------------------------------------------
+
+include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
+include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
+
+# MARK: - End EXECUTORCH_H12025_BUILD_MIGRATION ----------------------------------------------------
+
 include(tools/cmake/Utils.cmake)
 include(CMakeDependentOption)
 
@@ -96,9 +104,6 @@ set(EXECUTORCH_PAL_DEFAULT
           "Which PAL default implementation to use: one of {posix, minimal}"
 )
 
-option(EXECUTORCH_ENABLE_LOGGING "Build with ET_LOG_ENABLED"
-       ${_default_release_disabled_options}
-)
 if(NOT EXECUTORCH_ENABLE_LOGGING)
   # Avoid pulling in the logging strings, which can be large. Note that this
   # will set the compiler flag for all targets in this directory, and for all
