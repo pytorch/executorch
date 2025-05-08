@@ -5,14 +5,16 @@
 
 # pyre-unsafe
 
-from typing import List
+from typing import Any, List
 
 import torch
 
-import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
+)
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 
@@ -89,8 +91,10 @@ def transform_permutation_vector(permutation_vector: list[int], dim_order: list[
 
 
 @register_node_visitor
-class PermuteVisitor(NodeVisitor):
+class PermuteVisitor_0_80(NodeVisitor):
     target = "aten.permute_copy.default"
+
+    tosa_specs = NodeVisitor.tosa_specs_0_80
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -98,10 +102,53 @@ class PermuteVisitor(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        tosa_graph: ts.TosaSerializer,
+        tosa_graph: Any,
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
+        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
+
+        validate_num_inputs(self.target, inputs, 2)
+
+        # The permutation vector describes a permutation P in default Pytorch dim_order.
+        # For rank 4, the default dim_order NCHW.
+        # E.g. (2,3,0,1) -> permute (n,c,h,w) to (w,c,n,h)
+        permutation_vector = inputs[1].special
+
+        if output.dim_order != tuple(range(len(output.dim_order))):
+            # the permutation vector can't be used directly if we are not in NCHW dim_order.
+            # Transform to dim_order.
+            permutation_vector = transform_permutation_vector(
+                permutation_vector, output.dim_order
+            )
+
+        attr = ts.TosaSerializerAttribute()
+        attr.TransposeAttribute(permutation_vector)
+        tosa_graph.addOperator(
+            ts.TosaOp.Op().TRANSPOSE, [inputs[0].name], [output.name], attr
+        )
+
+
+@register_node_visitor
+class PermuteVisitor(NodeVisitor):
+    target = "aten.permute_copy.default"
+
+    tosa_specs = NodeVisitor.tosa_specs_1_00
+
+    def __init__(self, *args):
+        super().__init__(*args)
+
+    def define_node(
+        self,
+        node: torch.fx.Node,
+        tosa_graph: Any,
+        inputs: List[TosaArg],
+        output: TosaArg,
+    ) -> None:
+        import serializer.tosa_serializer as ts
+
+        validate_num_inputs(self.target, inputs, 2)
+
         # The permutation vector describes a permutation P in default Pytorch dim_order.
         # For rank 4, the default dim_order NCHW.
         # E.g. (2,3,0,1) -> permute (n,c,h,w) to (w,c,n,h)

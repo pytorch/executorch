@@ -48,6 +48,8 @@ class TableOps:
         exir_ops.edge.aten.reciprocal.default: torch.reciprocal,
         exir_ops.edge.aten.rsqrt.default: torch.rsqrt,
         exir_ops.edge.aten.sigmoid.default: torch.sigmoid,
+        exir_ops.edge.aten.cos.default: torch.cos,
+        exir_ops.edge.aten.sin.default: torch.sin,
         exir_ops.edge.aten.tanh.default: torch.tanh,
         exir_ops.edge.aten.hardsigmoid.default: torch.nn.functional.hardsigmoid,
         exir_ops.edge.aten.hardswish.default: torch.nn.functional.hardswish,

@@ -21,10 +21,10 @@ DispatchNode::DispatchNode(
     const utils::uvec3& local_workgroup_size,
     const std::vector<ArgGroup>& args,
     const vkapi::ParamsBindList& params,
+    const std::vector<PushConstantDataInfo>& push_constants,
     const vkapi::SpecVarList& spec_vars,
-    const ResizeFunction& resize_fn,
     const std::vector<ValueRef>& resize_args,
-    const std::vector<PushConstantDataInfo>& push_constants)
+    const ResizeFunction& resize_fn)
     : ExecuteNode(resize_fn, resize_args, args, shader.kernel_name),
       shader_(shader),
       global_workgroup_size_(global_workgroup_size),
