@@ -22,6 +22,7 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 set(_common_compile_options -Wno-deprecated-declarations)
+list(TRANSFORM _executorch__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
 add_library(prim_ops_lib ${_executorch__srcs})
 target_link_libraries(prim_ops_lib PRIVATE executorch_core)
