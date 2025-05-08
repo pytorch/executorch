@@ -280,6 +280,7 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 "//caffe2:torch",
                 "//executorch/exir:tensor",
+                "//executorch/exir/backend/canonical_partitioners:config_partitioner_lib",
                 "//executorch/backends/vulkan/serialization:lib",
             ]
         )
@@ -332,7 +333,6 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/backends/transforms:addmm_mm_to_linear",
                 "//executorch/backends/transforms:fuse_batch_norm_with_conv",
                 "//executorch/backends/transforms:fuse_conv_with_clamp",
-                "//executorch/backends/transforms:fuse_dequant_linear",
                 "//executorch/backends/transforms:fuse_view_copy",
                 "//executorch/backends/transforms:remove_clone_ops",
                 "//executorch/backends/transforms:view_copy_to_squeeze_unsqueeze",
