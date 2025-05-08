@@ -232,7 +232,25 @@ def update_cache_meta(
     value,
     cache,
     start_pos,
-    indices=None,
+):
+    _validate_update_cache_params(
+        value,
+        cache,
+        start_pos,
+    )
+
+    # Update cache doesnt really return anything but I dont know a better
+    # workaround. Should we just return cache instead? But I am afraid that
+    # will result in extra memory allocation
+    return torch.empty((1,), dtype=value.dtype, device="meta")
+
+
+@impl(custom_ops_lib, "update_cache_with_indices", "Meta")
+def update_cache_with_indices_meta(
+    value,
+    cache,
+    start_pos,
+    indices,
 ):
     _validate_update_cache_params(
         value,
