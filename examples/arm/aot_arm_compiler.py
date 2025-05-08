@@ -759,7 +759,9 @@ if __name__ == "__main__":  # noqa: C901
             output_name = os.path.join(args.output, output_name)
 
     if args.bundleio:
-        save_bpte_program(exec_prog, original_model, output_name)
+        # Realize the quantization impact on numerics when generating reference output
+        reference_model = original_model if not model_int8 else model_int8
+        save_bpte_program(exec_prog, reference_model, output_name)
         print(f"Bundle PTE file saved as {output_name}")
     else:
         save_pte_program(exec_prog, output_name)
