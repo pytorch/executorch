@@ -232,9 +232,10 @@ def generate_etrecord(
             edge_dialect_program.exported_program,
         )
     else:
-        raise RuntimeError(
-            f"Unsupported type of edge_dialect_program passed in {type(edge_dialect_program)}."
-        )
+        if export_modules is None:
+            raise RuntimeError(
+                f"Unsupported type of edge_dialect_program passed in {type(edge_dialect_program)}."
+            )
 
     # When a BundledProgram is passed in, extract the reference outputs and save in a file
     if isinstance(executorch_program, BundledProgram):
