@@ -24,6 +24,7 @@ from executorch.backends.arm._passes import (
     ConvertSqueezesToViewPass,
     ConvertToClampPass,
     DecomposeBatchNormPass,
+    DecomposeCosineSimilarityPass,
     DecomposeDivPass,
     DecomposeGeluPass,
     DecomposeLayerNormPass,
@@ -49,6 +50,7 @@ from executorch.backends.arm._passes import (
     MatchWhereSelfDtypePass,
     QuantizeOperatorArguments,
     RemoveClonePass,
+    ReplaceInfValues,
     ReplaceScalarWithTensorArgPassTOSABI,
     ReplaceScalarWithTensorArgPassTOSAMI,
     RetraceFoldedDtypesPass,
@@ -204,6 +206,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass())
         self.add_pass(DecomposeNotEqualPass())
+        self.add_pass(DecomposeCosineSimilarityPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeLeakyReLUPass())
         self.add_pass(DecomposeSqrtPass())
@@ -216,4 +219,5 @@ class ArmPassManager(PassManager):
             self.add_pass(DecomposeSoftmaxPass())
 
         self.add_pass(ConvertMinMaxPass())
+        self.add_pass(ReplaceInfValues())
         return self._transform(graph_module)

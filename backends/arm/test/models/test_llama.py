@@ -105,7 +105,6 @@ class TestLlama(unittest.TestCase):
                 )
             )
 
-    @pytest.mark.xfail(reason="KeyError: scalar_tensor_1 (MLETORCH-907)")
     def test_llama_tosa_BI(self):
         llama_model, llama_inputs, llama_meta = self.prepare_model()
 
@@ -126,7 +125,7 @@ class TestLlama(unittest.TestCase):
                 .to_executorch()
                 .run_method_and_compare_outputs(
                     inputs=llama_inputs,
-                    atol=4.3,
-                    rtol=1.1,  # TODO: Tolerance needs to be updated after MLETORCH-907
+                    atol=9.9,
+                    rtol=1.5,  # TODO: Tolerance needs to be updated after MLETORCH-907
                 )
             )

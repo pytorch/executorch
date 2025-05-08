@@ -14,6 +14,9 @@ from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+)
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from torch.fx import Node
@@ -39,6 +42,8 @@ class SumVisitor_080_BI(NodeVisitor):
     ) -> None:
 
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
+
+        validate_num_inputs(self.target, inputs, 3)
 
         input_shape = list(inputs[0].shape)
         dim_list = cast(list[int], inputs[1].special)
@@ -98,6 +103,8 @@ class SumVisitor_080_MI(SumVisitor_080_BI):
 
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
+        validate_num_inputs(self.target, inputs, 3)
+
         if inputs[0].dtype == ts.DType.INT8:
             return super().define_node(node, tosa_graph, inputs, output)
         input_name = inputs[0].name
@@ -150,6 +157,8 @@ class SumVisitor_INT(NodeVisitor):
     ) -> None:
 
         import serializer.tosa_serializer as ts  # type: ignore
+
+        validate_num_inputs(self.target, inputs, 3)
 
         input_shape = list(inputs[0].shape)
         dim_list = cast(list[int], inputs[1].special)
@@ -209,6 +218,8 @@ class SumVisitor_FP(SumVisitor_INT):
     ) -> None:
 
         import serializer.tosa_serializer as ts  # type: ignore
+
+        validate_num_inputs(self.target, inputs, 3)
 
         if inputs[0].dtype == ts.DType.INT8:
             return super().define_node(node, tosa_graph, inputs, output)
