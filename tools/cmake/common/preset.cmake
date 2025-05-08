@@ -26,6 +26,7 @@ function(announce_configured_options NAME)
   endif()
 endfunction()
 
+
 # Print the configured options.
 function(print_configured_options)
   get_property(_options GLOBAL PROPERTY _announce_configured_options)
@@ -52,12 +53,14 @@ function(print_configured_options)
   message(STATUS "---------------------------")
 endfunction()
 
+
 # Enforce option names to always start with EXECUTORCH.
 function(enforce_executorch_option_name NAME)
   if(NOT "${NAME}" MATCHES "^EXECUTORCH_")
     message(FATAL_ERROR "Option name '${NAME}' must start with EXECUTORCH_")
   endif()
 endfunction()
+
 
 # Define an overridable option.
 #   1) If the option is already defined in the process, then store that in cache
@@ -76,4 +79,15 @@ macro(define_overridable_option NAME DESCRIPTION VALUE_TYPE DEFAULT_VALUE)
   endif()
 
   announce_configured_options(${NAME})
+endmacro()
+
+
+# Set an overridable option.
+macro(set_overridable_option NAME VALUE)
+  # If the user has explitily set the option, do not override it.
+  if(DEFINED ${NAME})
+    return()
+  endif()
+
+  set(${NAME} ${VALUE} CACHE STRING "")
 endmacro()
