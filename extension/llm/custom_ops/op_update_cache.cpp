@@ -20,6 +20,7 @@ namespace executor {
 namespace native {
 
 namespace {
+// Helper function to validate cache parameters
 bool validate_cache_params(
     const Tensor& quantized_value,
     const Tensor& quantized_cache,
@@ -32,26 +33,8 @@ bool validate_cache_params(
   ET_CHECK_OR_RETURN_FALSE(
       quantized_value.dim() == 4, "quantized_value must be a 4D tensor");
 
-  ET_CHECK_OR_RETURN_FALSE(
-      indices.has_value() || start_pos < quantized_cache.size(1),
-      "start_pos: %" PRId64 " must be less than cache size at dim 1: %zd",
-      start_pos,
-      quantized_cache.size(1));
-
-  ET_CHECK_OR_RETURN_FALSE(
-      indices.has_value() ||
-          (start_pos + seq_length) <= quantized_cache.size(1),
-      "start_post + seq_length must be less than max seq length supported by cache."
-      "start pos: %" PRId64 ", seq_length: %" PRId64
-      "."
-      "cache size: %zd",
-      start_pos,
-      seq_length,
-      quantized_cache.size(1));
-
-  // Validate indices tensor if provided
   if (indices.has_value()) {
-    const Tensor& indices_tensor = indices.value();
+    const auto& indices_tensor = indices.value();
     ET_CHECK_OR_RETURN_FALSE(
         indices_tensor.dim() == 2,
         "indices must be a 2D tensor [batch_size, seq_len]");
@@ -72,6 +55,22 @@ bool validate_cache_params(
         is_contiguous_dim_order(
             indices_tensor.dim_order().data(), indices_tensor.dim()),
         "indices must be in contiguous dim order");
+  } else {
+    ET_CHECK_OR_RETURN_FALSE(
+        start_pos < quantized_cache.size(1),
+        "start_pos: %" PRId64 " must be less than cache size at dim 1: %zd",
+        start_pos,
+        quantized_cache.size(1));
+
+    ET_CHECK_OR_RETURN_FALSE(
+        (start_pos + seq_length) <= quantized_cache.size(1),
+        "start_post + seq_length must be less than max seq length supported by cache."
+        "start pos: %" PRId64 ", seq_length: %" PRId64
+        "."
+        "cache size: %zd",
+        start_pos,
+        seq_length,
+        quantized_cache.size(1));
   }
 
   // Make sure they are in contiguous dim order
@@ -87,22 +86,16 @@ bool validate_cache_params(
 
   return true;
 }
-} // anonymous namespace
 
-Tensor& update_cache_out(
+// Helper function for the actual update operation
+Tensor& update_cache_impl(
     RuntimeContext& ctx,
     const Tensor& value,
     Tensor& cache,
     const int64_t start_pos,
-    const optional<Tensor>& indices,
-    Tensor& output) {
+    Tensor& output,
+    const optional<Tensor>& indices = nullopt) {
   (void)ctx;
-  int64_t seq_len = value.size(1);
-  ET_KERNEL_CHECK(
-      ctx,
-      validate_cache_params(value, cache, start_pos, seq_len, indices),
-      InvalidArgument,
-      output);
 
   ET_CHECK_MSG(
       value.size(0) == cache.size(0),
@@ -151,7 +144,8 @@ Tensor& update_cache_out(
   if (indices.has_value()) {
     // Use the provided indices tensor for each batch and sequence position
     const Tensor& indices_tensor = indices.value();
-    const int64_t* indices_data = indices_tensor.const_data_ptr<int64_t>();
+    const int64_t* indices_data =
+        static_cast<const int64_t*>(indices_tensor.const_data_ptr());
     auto indices_strides = indices_tensor.strides();
     executorch::aten::StridesType indices_batch_stride = indices_strides[0];
     executorch::aten::StridesType indices_seq_stride = indices_strides[1];
@@ -211,6 +205,43 @@ Tensor& update_cache_out(
   // Noone uses output. Just a placeholder.
   return output;
 }
+} // anonymous namespace
+
+// Original update_cache_out function without indices parameter
+Tensor& update_cache_out(
+    RuntimeContext& ctx,
+    const Tensor& value,
+    Tensor& cache,
+    const int64_t start_pos,
+    Tensor& output) {
+  int64_t seq_len = value.size(1);
+  ET_KERNEL_CHECK(
+      ctx,
+      validate_cache_params(value, cache, start_pos, seq_len),
+      InvalidArgument,
+      output);
+
+  return update_cache_impl(ctx, value, cache, start_pos, output);
+}
+
+// New function that explicitly takes indices
+Tensor& update_cache_with_indices_out(
+    RuntimeContext& ctx,
+    const Tensor& value,
+    Tensor& cache,
+    const int64_t start_pos,
+    const Tensor& indices,
+    Tensor& output) {
+  int64_t seq_len = value.size(1);
+  ET_KERNEL_CHECK(
+      ctx,
+      validate_cache_params(value, cache, start_pos, seq_len, indices),
+      InvalidArgument,
+      output);
+
+  return update_cache_impl(ctx, value, cache, start_pos, output, indices);
+}
+
 } // namespace native
 } // namespace executor
 } // namespace torch
@@ -225,3 +256,9 @@ EXECUTORCH_LIBRARY(
     llama,
     "update_cache.out",
     torch::executor::native::update_cache_out);
+
+// Register the new update_cache_with_indices.out op
+EXECUTORCH_LIBRARY(
+    llama,
+    "update_cache_with_indices.out",
+    torch::executor::native::update_cache_with_indices_out);
