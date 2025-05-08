@@ -128,12 +128,14 @@ void add_linear_qcs8w_node(
        {{mat1_W_packed, q_mat2, scales}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {},
+      // Push Constants
+      pcs,
       // Specialization Constants
       {},
-      // Resizing Logic
-      resize_linear_qcs8w_node,
+      // Resize Args
       {},
-      pcs));
+      // Resizing Logic
+      resize_linear_qcs8w_node));
   if (!graph.is_buffer_storage(out) &&
       graph.packed_dim_of(out) != WHCN::kWidthDim) {
     viewFn(graph, {out_W_packed, graph.add_none(), out});
@@ -215,13 +217,14 @@ void add_linear_qcs8w_tiled_node(
       {{out, vkapi::kWrite}, {{mat1, q_mat2, scales}, vkapi::kRead}},
       // Shader params buffers
       {},
+      // Push Constants
+      {{graph.sizes_pc_of(out), graph.sizes_pc_of(mat1)}},
       // Specialization Constants
       {},
-      // Resizing Logic
-      resize_linear_qcs8w_node,
+      // Resize Args
       {},
-      // Push Constants
-      {{graph.sizes_pc_of(out), graph.sizes_pc_of(mat1)}}));
+      // Resizing Logic
+      resize_linear_qcs8w_node));
 }
 
 bool can_use_tiled_impl(

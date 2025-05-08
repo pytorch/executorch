@@ -18,7 +18,7 @@ endif()
 
 list(TRANSFORM _extension_runner_util__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(extension_runner_util ${_extension_runner_util__srcs})
-target_link_libraries(extension_runner_util executorch)
+target_link_libraries(extension_runner_util executorch_core)
 target_include_directories(extension_runner_util PUBLIC ${EXECUTORCH_ROOT}/..)
 target_compile_options(extension_runner_util PUBLIC ${_common_compile_options})
 

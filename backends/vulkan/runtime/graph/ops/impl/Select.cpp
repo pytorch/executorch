@@ -119,8 +119,14 @@ void add_select_int_node(
        // created.
        graph.create_params_buffer(
            utils::make_ivec4({index, num_batches, num_texel_per_batch, 0}))},
+      // Push Constants
+      {},
       // Specialization Constants
-      {}));
+      {},
+      // Resize Args
+      {},
+      // Resizing Logic
+      nullptr));
 }
 
 void select_int(ComputeGraph& graph, const std::vector<ValueRef>& args) {
