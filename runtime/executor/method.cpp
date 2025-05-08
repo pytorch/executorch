@@ -329,6 +329,8 @@ Result<size_t> Method::get_num_external_constants() {
 }
 
 Error Method::parse_external_constants(const NamedDataMap* named_data_map) {
+  ET_CHECK_OR_RETURN_ERROR(
+      named_data_map != nullptr, InvalidState, "named_data_map is null");
   auto flatbuffer_values = serialization_plan_->values();
   size_t n_value = flatbuffer_values->size();
 
@@ -372,6 +374,7 @@ Error Method::parse_external_constants(const NamedDataMap* named_data_map) {
     Result<const TensorLayout> tensor_layout =
         named_data_map->get_metadata(key);
     if (!tensor_layout.ok()) {
+      ET_LOG(Info, "Failed to get metadata for key %s", key);
       return tensor_layout.error();
     }
     // Check external tensor compatibility.
@@ -805,6 +808,15 @@ Error Method::init(
       pte_data_map = pte_data_map_res.get();
     }
 
+    ET_CHECK_OR_RETURN_ERROR(
+        !(pte_data_map && named_data_map),
+        NotSupported,
+        "NamedDataMap merge not supported; both pte_data_map and named_data_map are non-empty. If you see this error please file an issue at https://github.com/pytorch/executorch/issues");
+
+    if (!named_data_map || named_data_map->get_num_keys().get() == 0) {
+      named_data_map = pte_data_map;
+    }
+
     // n_delegate_ counts the number of successfully-initialized delegates for
     // ~Method() to clean up, and is incremented at the bottom of the loop. This
     // makes it safe for errors to return without updating any state.
@@ -816,7 +828,7 @@ Error Method::init(
           method_allocator,
           /*event_tracer=*/event_tracer_,
           /*method_name=*/serialization_plan_->name()->c_str(),
-          /*named_data_map=*/pte_data_map);
+          /*named_data_map=*/named_data_map);
       Error err = BackendDelegate::Init(
           delegate, program_, backend_init_context, &delegates_[i]);
       if (err != Error::Ok) {

@@ -24,6 +24,7 @@ from executorch.backends.arm._passes import (
     ConvertSqueezesToViewPass,
     ConvertToClampPass,
     DecomposeBatchNormPass,
+    DecomposeCosineSimilarityPass,
     DecomposeDivPass,
     DecomposeGeluPass,
     DecomposeLayerNormPass,
@@ -49,6 +50,7 @@ from executorch.backends.arm._passes import (
     MatchWhereSelfDtypePass,
     QuantizeOperatorArguments,
     RemoveClonePass,
+    ReplaceInfValues,
     ReplaceScalarWithTensorArgPassTOSABI,
     ReplaceScalarWithTensorArgPassTOSAMI,
     RetraceFoldedDtypesPass,
@@ -59,6 +61,9 @@ from executorch.backends.arm._passes import (
 )
 
 from executorch.backends.arm.tosa_specification import Tosa_0_80, TosaSpecification
+from executorch.backends.transforms.decompose_sdpa import (
+    DecomposeScaledDotProductAttention,
+)
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
 from executorch.backends.xnnpack._passes.remove_getitem_op import RemoveGetItemPass
 from executorch.exir import ExportedProgram
@@ -194,12 +199,14 @@ class ArmPassManager(PassManager):
             )
 
     def transform_for_annotation_pipeline(self, graph_module: GraphModule):
+        self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(ScalarsToAttributePass())
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass())
         self.add_pass(DecomposeNotEqualPass())
+        self.add_pass(DecomposeCosineSimilarityPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeLeakyReLUPass())
         self.add_pass(DecomposeSqrtPass())
@@ -212,4 +219,5 @@ class ArmPassManager(PassManager):
             self.add_pass(DecomposeSoftmaxPass())
 
         self.add_pass(ConvertMinMaxPass())
+        self.add_pass(ReplaceInfValues())
         return self._transform(graph_module)
