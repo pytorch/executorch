@@ -19,6 +19,9 @@ from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+)
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.arm.tosa_utils import reshape_for_broadcast
@@ -41,6 +44,8 @@ class MulVisitor_080_BI(NodeVisitor):
     ) -> None:
 
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
+
+        validate_num_inputs(self.target, inputs, 2)
 
         if (
             inputs[0].dtype != ts.DType.INT8
@@ -122,6 +127,8 @@ class MulVisitor_080_MI(MulVisitor_080_BI):
 
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
+        validate_num_inputs(self.target, inputs, 2)
+
         if inputs[0].dtype == ts.DType.INT8:
             return super().define_node(node, tosa_graph, inputs, output)
 
@@ -151,6 +158,8 @@ class MulVisitor_INT(NodeVisitor):
     ) -> None:
 
         import serializer.tosa_serializer as ts  # type: ignore
+
+        validate_num_inputs(self.target, inputs, 2)
 
         if (
             inputs[0].dtype != ts.DType.INT8
@@ -217,6 +226,8 @@ class MulVisitor_FP(MulVisitor_INT):
     ) -> None:
 
         import serializer.tosa_serializer as ts  # type: ignore
+
+        validate_num_inputs(self.target, inputs, 2)
 
         if inputs[0].dtype == ts.DType.INT8:
             return super().define_node(node, tosa_graph, inputs, output)

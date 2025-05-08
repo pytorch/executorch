@@ -31,6 +31,7 @@ test_data_suite = [
     ("zeros", torch.zeros(1, 1, 4, 8), [2, 2, 1]),
     ("ones", torch.ones(1, 16, 50, 32), [4, 2, 0]),
     ("rand", torch.rand(1, 16, 52, 16), [4, 3, 0]),
+    ("non_divisible", torch.rand(1, 16, 112, 112), [3, 2, 1]),
 ]
 
 test_data_suite_mult_batches = [

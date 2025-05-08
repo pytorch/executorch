@@ -71,7 +71,7 @@ target_compile_options(optimized_kernels PUBLIC ${_common_compile_options})
 #
 # optimized_ops_lib: Register optimized ops kernels into Executorch runtime
 gen_operators_lib(
-  LIB_NAME "optimized_ops_lib" KERNEL_LIBS optimized_kernels DEPS executorch
+  LIB_NAME "optimized_ops_lib" KERNEL_LIBS optimized_kernels DEPS executorch_core
 )
 
 install(

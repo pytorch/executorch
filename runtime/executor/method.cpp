@@ -329,6 +329,8 @@ Result<size_t> Method::get_num_external_constants() {
 }
 
 Error Method::parse_external_constants(const NamedDataMap* named_data_map) {
+  ET_CHECK_OR_RETURN_ERROR(
+      named_data_map != nullptr, InvalidState, "named_data_map is null");
   auto flatbuffer_values = serialization_plan_->values();
   size_t n_value = flatbuffer_values->size();
 
@@ -372,6 +374,7 @@ Error Method::parse_external_constants(const NamedDataMap* named_data_map) {
     Result<const TensorLayout> tensor_layout =
         named_data_map->get_metadata(key);
     if (!tensor_layout.ok()) {
+      ET_LOG(Info, "Failed to get metadata for key %s", key);
       return tensor_layout.error();
     }
     // Check external tensor compatibility.

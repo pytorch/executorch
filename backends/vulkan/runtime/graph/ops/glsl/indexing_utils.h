@@ -41,22 +41,32 @@
 /*
  * Fast division by 4 using bit shifting
  */
-#define div4(x) (x >> 2)
+#define div4(x) ((x) >> 2)
+
+/*
+ * Fast multiplication by 4 using bit shifting
+ */
+#define mul4(x) ((x) << 2)
 
 /*
  * Divides input and rounds up to 4
  */
-#define divup4(x) ((x + 3) >> 2)
+#define divup4(x) (((x) + 3) >> 2)
+
+/*
+ * Divides input by denominator and rounds up
+ */
+#define divup(x, d) (((x) + (d) - 1) / (d))
 
 /*
  * Aligns input to the next multiple of 4
  */
-#define alignup4(x) ((x + 3) & -4)
+#define alignup4(x) (((x) + 3) & -4)
 
 /*
  * Fast modulo by 4 using bit masking
  */
-#define mod4(x) (x & 3)
+#define mod4(x) ((x) & 3)
 
 /*
  * Find the packed dimension of a tensor given its strides. The packed dimension

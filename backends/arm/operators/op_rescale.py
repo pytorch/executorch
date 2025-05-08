@@ -13,6 +13,9 @@ from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+)
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import create_const_ops_for_rescale
 
@@ -34,6 +37,8 @@ class RescaleVisitor_0_80(NodeVisitor):
         output: TosaArg,
     ) -> None:
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
+
+        validate_num_inputs(self.target, inputs, 5)
 
         input_dtype = node.all_input_nodes[0].meta["val"].dtype
         output_dtype = cast(torch.dtype, node.args[1])
@@ -90,6 +95,8 @@ class RescaleVisitor_INT(NodeVisitor):
     ) -> None:
         import serializer.tosa_serializer as ts  # type: ignore
         from tosa.RoundingMode import RoundingMode  # type: ignore
+
+        validate_num_inputs(self.target, inputs, 5)
 
         input_dtype = node.all_input_nodes[0].meta["val"].dtype
         output_dtype = cast(torch.dtype, node.args[1])

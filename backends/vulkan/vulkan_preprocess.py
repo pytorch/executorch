@@ -17,12 +17,12 @@ from executorch.backends.transforms.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
 from executorch.backends.transforms.fuse_conv_with_clamp import FuseClampPass
-from executorch.backends.transforms.fuse_dequant_linear import FuseDequantLinearPass
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
 from executorch.backends.transforms.view_copy_to_squeeze_unsqueeze import (
     ViewCopyToSqueezeUnsqueezePass,
 )
 from executorch.backends.vulkan._passes import (
+    FuseQuantizedOpsTransform,
     insert_prepack_nodes,
     RemoveLocalScalarDenseOpsTransform,
     RemoveRedundantOpsTransform,
@@ -152,7 +152,7 @@ class VulkanBackend(BackendDetails):
             [
                 RemoveRedundantOpsTransform(),
                 AddmmToLinearTransform(),
-                FuseDequantLinearPass(),
+                FuseQuantizedOpsTransform(program),
                 SqueezeUnsqueezeInputs(),
                 FuseViewCopyTransform(),
                 ViewCopyToSqueezeUnsqueezePass(),

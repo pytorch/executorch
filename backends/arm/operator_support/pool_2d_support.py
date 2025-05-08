@@ -54,8 +54,11 @@ class AvgPool2dSupported(SupportedTOSAOperatorCheck):
         kernel = cast(tuple[int, int], node.args[1])
         stride = cast(tuple[int, int], node.args[2])
         if len(node.args) > 3:
+            padding = cast(tuple[int, int], node.args[3])
             # Padding case
-            if not all(1 <= k <= 8 for k in kernel):
+            if not all(1 <= k <= 8 for k in kernel) and not all(
+                v == 0 for v in padding
+            ):
                 self.reporter.report_reject(
                     node, f"Avgpool2d with padding needs kernel dims < 8, got {kernel}"
                 )

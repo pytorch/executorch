@@ -25,6 +25,7 @@ python -m examples.models.llama.export_llama \
   -X \
   --xnnpack-extended-ops \
   -qmode 8da4w \
+  --metadata '{"get_bos_id": 151644, "get_eos_ids":[151645]}' \
   --output_name="qwen3-0_6b.pte" \
   --verbose
 ```
@@ -40,6 +41,7 @@ python -m examples.models.llama.export_llama \
   -X \
   --xnnpack-extended-ops \
   -qmode 8da4w \
+  --metadata '{"get_bos_id": 151644, "get_eos_ids":[151645]}' \
   --output_name="qwen3-1_7b.pte" \
   --verbose
 ```
@@ -55,6 +57,7 @@ python -m examples.models.llama.export_llama \
   -X \
   --xnnpack-extended-ops \
   -qmode 8da4w \
+  --metadata '{"get_bos_id": 151644, "get_eos_ids":[151645]}' \
   --output_name="qwen3-4b.pte" \
   --verbose
 ```

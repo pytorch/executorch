@@ -19,8 +19,8 @@ namespace backends {
 namespace xnnpack {
 namespace delegate {
 
+using executorch::ET_RUNTIME_NAMESPACE::NamedDataMap;
 using executorch::runtime::MemoryAllocator;
-using executorch::runtime::NamedDataMap;
 
 XNNWeightsCache::XNNWeightsCache() {
   weights_cache_.context = this;
