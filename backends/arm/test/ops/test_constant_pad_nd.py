@@ -17,19 +17,20 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 
 aten_op = "torch.ops.aten.pad.default"
 exir_op = "executorch_exir_dialects_edge__ops_aten_pad_default"
+
 input_t1 = Tuple[torch.Tensor]  # Input x
+
 test_data_suite = {
-    "4dim_last1dim": (torch.rand(1, 1, 16, 16), (1, 1, 0, 0, 0, 0, 0, 0), 1),
-    "4dim_last2dim": (torch.rand(1, 1, 16, 16), (1, 0, 1, 0, 0, 0, 0, 0), 2),
-    "4dim_last3dim": (torch.rand(1, 1, 16, 16), (1, 1, 0, 2, 0, 2, 0, 0), 3),
-    "4dim_last4dim": (torch.rand(1, 1, 16, 16), (1, 0, 1, 1, 0, 2, 0, 2), 4),
-    "3dim_last1dim": (torch.rand(1, 1, 16), (1, 1, 0, 0, 0, 0), 1),
-    "3dim_last2dim": (torch.rand(1, 1, 16), (1, 0, 1, 1, 0, 0), 2),
-    "3dim_last3dim": (torch.rand(1, 1, 16), (1, 0, 1, 0, 1, 1), 3),
-    "2dim_last1dim": (torch.rand(1, 1, 16), (1, 1, 0, 0), 1),
-    "2dim_last2dim": (torch.rand(1, 1, 16), (1, 0, 1, 1), 2),
+    "4dim_last1dim": lambda: (torch.rand(1, 1, 16, 16), (1, 1, 0, 0, 0, 0, 0, 0), 1),
+    "4dim_last2dim": lambda: (torch.rand(1, 1, 16, 16), (1, 0, 1, 0, 0, 0, 0, 0), 2),
+    "4dim_last3dim": lambda: (torch.rand(1, 1, 16, 16), (1, 1, 0, 2, 0, 2, 0, 0), 3),
+    "4dim_last4dim": lambda: (torch.rand(1, 1, 16, 16), (1, 0, 1, 1, 0, 2, 0, 2), 4),
+    "3dim_last1dim": lambda: (torch.rand(1, 1, 16), (1, 1, 0, 0, 0, 0), 1),
+    "3dim_last2dim": lambda: (torch.rand(1, 1, 16), (1, 0, 1, 1, 0, 0), 2),
+    "3dim_last3dim": lambda: (torch.rand(1, 1, 16), (1, 0, 1, 0, 1, 1), 3),
+    "2dim_last1dim": lambda: (torch.rand(1, 1, 16), (1, 1, 0, 0), 1),
+    "2dim_last2dim": lambda: (torch.rand(1, 1, 16), (1, 0, 1, 1), 2),
 }
-"""Tests pad."""
 
 
 class ConstantPadND(torch.nn.Module):
@@ -53,7 +54,7 @@ class ConstantPadND(torch.nn.Module):
     test_data_suite,
 )
 def test_constant_pad_nd_tosa_MI(test_data: Tuple):
-    test_data, padding, value = test_data
+    test_data, padding, value = test_data()
     pipeline = TosaPipelineMI[input_t1](
         ConstantPadND(padding, value),
         (test_data,),
@@ -65,7 +66,7 @@ def test_constant_pad_nd_tosa_MI(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 def test_constant_pad_nd_tosa_BI(test_data: Tuple):
-    test_data, padding, value = test_data
+    test_data, padding, value = test_data()
     pipeline = TosaPipelineBI[input_t1](
         ConstantPadND(padding, value),
         (test_data,),
