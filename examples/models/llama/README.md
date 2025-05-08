@@ -308,6 +308,8 @@ Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the 
 
 To build for CoreML backend and validate on Mac, replace `-DEXECUTORCH_BUILD_XNNPACK=ON` with `-DEXECUTORCH_BUILD_COREML=ON`
 
+If you an error about "RE2 failed to compile pattern with lookahead:...SUPPORT_REGEX_LOOKAHEAD=ON", add "-DSUPPORT_REGEX_LOOKAHEAD=ON" when building the runner.
+
 ## Step 4: Run benchmark on Android phone
 
 **1. Build llama runner binary for Android**

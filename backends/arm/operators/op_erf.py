@@ -3,14 +3,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 # pyre-unsafe
-from typing import List
+from typing import Any, List
 
 import torch.fx
-import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-import tosa_tools.v0_80.tosa.Op as TosaOp  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
+)
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -29,10 +30,14 @@ class ERFVisitor_080_MI(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        tosa_graph: ts.TosaSerializer,
+        tosa_graph: Any,
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
+        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
+
+        validate_num_inputs(self.target, inputs, 1)
+
         if not (inputs[0].dtype == output.dtype):
             raise ValueError(
                 "All inputs and output need same dtype."
@@ -41,4 +46,37 @@ class ERFVisitor_080_MI(NodeVisitor):
         if not (inputs[0].dtype == ts.DType.FP32):
             raise ValueError("All inputs need to be FP32." f"Got {inputs[0].dtype=}")
         # MI lowering
-        tosa_graph.addOperator(TosaOp.Op().ERF, [inputs[0].name], [output.name])
+        tosa_graph.addOperator(ts.TosaOp.Op().ERF, [inputs[0].name], [output.name])
+
+
+@register_node_visitor
+class ERFVisitor(NodeVisitor):
+    target = "aten.erf.default"
+
+    # INT case handled by op_table
+    tosa_specs = [TosaSpecification.create_from_string("TOSA-1.0+FP")]
+
+    def __init__(self, *args):
+        super().__init__(*args)
+
+    def define_node(
+        self,
+        node: torch.fx.Node,
+        tosa_graph: Any,
+        inputs: List[TosaArg],
+        output: TosaArg,
+    ) -> None:
+        import serializer.tosa_serializer as ts
+
+        validate_num_inputs(self.target, inputs, 1)
+
+        if not (inputs[0].dtype == output.dtype):
+            raise ValueError(
+                "All inputs and output need same dtype."
+                f"Got {inputs[0].dtype=}, {output.dtype=}"
+            )
+        if not (inputs[0].dtype == ts.DType.FP32):
+            raise ValueError("All inputs need to be FP32." f"Got {inputs[0].dtype=}")
+
+        # MI lowering
+        tosa_graph.addOperator(ts.TosaOp.Op().ERF, [inputs[0].name], [output.name])

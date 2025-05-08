@@ -13,10 +13,12 @@ def define_arm_tests():
 
     # Operators
     test_files += [
+        "ops/test_avg_pool2d.py",
         "ops/test_linear.py", 
         "ops/test_slice.py",
         "ops/test_sigmoid.py",
         "ops/test_tanh.py",
+        "ops/test_cos.py",
     ]
 
     # Quantization
