@@ -12,7 +12,6 @@ from executorch.backends.arm.operator_support.tosa_supported_operators import (
     SupportedTOSAOperatorCheck,
 )
 from executorch.backends.arm.tosa_specification import TosaSpecification
-from executorch.backends.arm.tosa_utils import getNodeArgs
 from executorch.exir.dialects._ops import ops as exir_ops
 
 logger = logging.getLogger(__name__)
@@ -33,8 +32,8 @@ class SliceCopySupported(SupportedTOSAOperatorCheck):
         if tosa_spec not in self.tosa_specs:
             return False
 
-        inputs = getNodeArgs(node)
-        if len(inputs) == 5 and (step := inputs[4].number) != 1:
+        args = node.args
+        if len(args) == 5 and (step := args[4]) != 1:
             logging.warning(f"{node.target} with step size of {step} not supported.")
             return False
         return True

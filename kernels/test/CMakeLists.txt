@@ -186,6 +186,7 @@ set(all_test_sources
     "op_mul_test.cpp"
     "op_pow_test.cpp"
     "op_native_batch_norm_test.cpp"
+    "op_native_dropout_test.cpp"
     "op_native_group_norm_test.cpp"
     "op_native_layer_norm_test.cpp"
     "op_ne_test.cpp"

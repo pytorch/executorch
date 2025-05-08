@@ -24,13 +24,13 @@ class ModuleTest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
     model_path_ = std::getenv("ET_MODULE_ADD_PATH");
-    linear_path_ = std::getenv("ET_MODULE_LINEAR_PROGRAM_PATH");
-    linear_data_path_ = std::getenv("ET_MODULE_LINEAR_DATA_PATH");
+    add_mul_path_ = std::getenv("ET_MODULE_ADD_MUL_PROGRAM_PATH");
+    add_mul_data_path_ = std::getenv("ET_MODULE_ADD_MUL_DATA_PATH");
   }
 
   static inline std::string model_path_;
-  static inline std::string linear_path_;
-  static inline std::string linear_data_path_;
+  static inline std::string add_mul_path_;
+  static inline std::string add_mul_data_path_;
 };
 
 TEST_F(ModuleTest, TestLoad) {
@@ -449,7 +449,7 @@ TEST_F(ModuleTest, TestSetOutputInvalidType) {
 }
 
 TEST_F(ModuleTest, TestPTD) {
-  Module module(linear_path_, linear_data_path_);
+  Module module(add_mul_path_, add_mul_data_path_);
 
   ASSERT_EQ(module.load_method("forward"), Error::Ok);
 

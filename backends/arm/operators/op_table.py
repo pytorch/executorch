@@ -13,6 +13,9 @@ from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+)
 from executorch.backends.arm.tosa_mapping import TosaArg
 
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -32,6 +35,8 @@ class TableVisitor_0_80(NodeVisitor):
         output: TosaArg,
     ) -> None:
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
+
+        validate_num_inputs(self.target, inputs, 1)
 
         if node.name not in self._exported_program.state_dict.keys():  # type: ignore[union-attr]
             raise RuntimeError(
@@ -70,6 +75,8 @@ class TableVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         import serializer.tosa_serializer as ts  # type: ignore
+
+        validate_num_inputs(self.target, inputs, 1)
 
         if node.name not in self._exported_program.state_dict.keys():  # type: ignore[union-attr]
             raise RuntimeError(
