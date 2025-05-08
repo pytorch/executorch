@@ -313,6 +313,11 @@ function(resolve_python_executable)
         python
         PARENT_SCOPE
     )
+  elseif(DEFINED ENV{VIRTUAL_ENV})
+    set(PYTHON_EXECUTABLE
+      $ENV{VIRTUAL_ENV}/bin/python3
+      PARENT_SCOPE
+    )
   else()
     set(PYTHON_EXECUTABLE
         python3
