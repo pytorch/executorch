@@ -12,6 +12,9 @@ from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+)
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import build_rescale, build_rescale_v0_80
 from executorch.backends.arm.tosa_utils import get_resize_parameters, tosa_shape
@@ -35,6 +38,8 @@ class UpsampleBilinear2dVisitor_0_80(NodeVisitor):
 
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
         from tosa_tools.v0_80.tosa.ResizeMode import ResizeMode  # type: ignore
+
+        validate_num_inputs(self.target, inputs, 4)
 
         if inputs[0].shape is None or output.shape is None:
             raise ValueError("Only static shapes are supported")
@@ -122,6 +127,8 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
         import serializer.tosa_serializer as ts
         from tosa.ResizeMode import ResizeMode  # type: ignore
         from tosa.RoundingMode import RoundingMode  # type: ignore
+
+        validate_num_inputs(self.target, inputs, 4)
 
         if inputs[0].shape is None or output.shape is None:
             raise ValueError("Only static shapes are supported")

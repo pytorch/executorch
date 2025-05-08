@@ -89,14 +89,12 @@ endif()
 # find `executorch` libraries Same as for gflags
 set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../lib/cmake/ExecuTorch)
 find_package(executorch CONFIG REQUIRED)
-if(CMAKE_TOOLCHAIN_IOS OR ANDROID)
-  target_link_options_shared_lib(executorch)
-endif()
+target_link_options_shared_lib(executorch)
 
 # llava_runner library
 add_subdirectory(runner)
 
-set(LINK_LIBS gflags)
+set(LINK_LIBS executorch gflags)
 if(NOT LLAVA_RUNNER_NO_TORCH_DUMMY_IMAGE)
   list(APPEND LINK_LIBS torch)
 endif()
@@ -211,10 +209,6 @@ endif()
 target_include_directories(llava_main PUBLIC ${_common_include_directories})
 target_link_libraries(llava_main PUBLIC llava_runner ${link_libraries})
 target_compile_options(llava_main PUBLIC ${_common_compile_options})
-
-if(APPLE)
-  target_link_options_shared_lib(executorch)
-endif()
 
 # Print all summary
 executorch_print_configuration_summary()

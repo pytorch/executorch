@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import requests
 import torch
-from executorch.examples.models.llama.llama_transformer import Transformer
+from executorch.examples.models.llama.llama_transformer import construct_transformer
 from executorch.examples.models.llama.model_args import ModelArgs
 
 from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
@@ -66,7 +66,7 @@ class Llava(torch.nn.Module):
             use_hf_rope=True,
             max_seq_len=max_seq_len,
         )
-        self.text_model = Transformer(self.text_model_args)
+        self.text_model = construct_transformer(self.text_model_args)
         # use custom op for SDPA.
         if use_sdpa_with_kv_cache_op:
             self.text_model = replace_kv_cache_with_custom_kv_cache(self.text_model)
