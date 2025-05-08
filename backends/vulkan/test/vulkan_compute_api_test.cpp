@@ -87,6 +87,9 @@ class VulkanComputeAPITest : public ::testing::Test {
   void SetUp() override {
     // Make sure we are starting with a clean slate
     EXPECT_TRUE(get_vma_allocation_count() == 0);
+    if (!context()->descriptor_pool()) {
+      context()->descriptor_pool().init(default_descriptor_pool_config());
+    }
   }
 
   void TearDown() override {
