@@ -32,7 +32,8 @@ def _export_model(external_mutable_weights: bool = False):
     # Lower the graph to executorch.
     ep = ep.to_executorch(
         config=ExecutorchBackendConfig(
-            external_mutable_weights=external_mutable_weights
+            external_mutable_weights=external_mutable_weights,
+            do_quant_fusion_and_const_prop=False,
         )
     )
     return ep
