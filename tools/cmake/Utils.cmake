@@ -47,10 +47,6 @@ function(executorch_print_configuration_summary)
   )
   message(
     STATUS
-      "  EXECUTORCH_BUILD_COREML                : ${EXECUTORCH_BUILD_COREML}"
-  )
-  message(
-    STATUS
       "  EXECUTORCH_BUILD_CPUINFO               : ${EXECUTORCH_BUILD_CPUINFO}"
   )
   message(
