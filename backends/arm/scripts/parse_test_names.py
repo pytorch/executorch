@@ -5,7 +5,7 @@
 from executorch.exir.dialects.edge.spec.utils import SAMPLE_INPUT
 
 # Add edge ops which we lower but which are not included in exir/dialects/edge/edge.yaml here.
-CUSTOM_EDGE_OPS = ["linspace.default", "eye.default"]
+CUSTOM_EDGE_OPS = ["linspace.default", "eye.default", "native_group_norm.default"]
 ALL_EDGE_OPS = SAMPLE_INPUT.keys() | CUSTOM_EDGE_OPS
 
 # Add all targets and TOSA profiles we support here.
