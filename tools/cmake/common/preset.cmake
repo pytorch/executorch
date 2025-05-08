@@ -4,6 +4,54 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# Announce the name and value of a cmake variable in the summary of the build.
+function(announce_configured_options NAME)
+  get_property(_options GLOBAL PROPERTY _announce_configured_options)
+  if(NOT _options)
+    set_property(GLOBAL PROPERTY _announce_configured_options)
+    get_property(_options GLOBAL PROPERTY _announce_configured_options)
+  endif()
+
+  set(option_exists FALSE)
+  foreach(_option IN LISTS _options)
+    if(_option STREQUAL "${NAME}")
+      set(option_exists TRUE)
+      break()
+    endif()
+  endforeach()
+
+  if(NOT option_exists)
+    set(_options ${_options} "${NAME}")
+    set_property(GLOBAL PROPERTY _announce_configured_options "${_options}")
+  endif()
+endfunction()
+
+# Print the configured options.
+function(print_configured_options)
+  get_property(_options GLOBAL PROPERTY _announce_configured_options)
+
+  set(_longest_name_length 0)
+  foreach(_option IN LISTS _options)
+    string(LENGTH "${_option}" length)
+    if(length GREATER _longest_name_length)
+      set(_longest_name_length ${length})
+    endif()
+  endforeach()
+
+  message(STATUS "--- Configurated Options ---\n")
+  foreach(_option IN LISTS _options)
+    string(LENGTH "${_option}" _option_length)
+    math(EXPR num_spaces "${_longest_name_length} - ${_option_length}")
+    set(padding "")
+    while(num_spaces GREATER 0)
+      set(padding "${padding} ")
+      math(EXPR num_spaces "${num_spaces} - 1")
+    endwhile()
+    message(STATUS "${_option}${padding} : ${${_option}}")
+  endforeach()
+  message(STATUS "---------------------------")
+endfunction()
+
 # Enforce option names to always start with EXECUTORCH.
 function(enforce_executorch_option_name NAME)
   if(NOT "${NAME}" MATCHES "^EXECUTORCH_")
@@ -26,4 +74,6 @@ macro(define_overridable_option NAME DESCRIPTION VALUE_TYPE DEFAULT_VALUE)
   else()
     set(${NAME} ${DEFAULT_VALUE} CACHE ${VALUE_TYPE} ${DESCRIPTION})
   endif()
+
+  announce_configured_options(${NAME})
 endmacro()

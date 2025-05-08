@@ -50,6 +50,9 @@ project(executorch)
 include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
 include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
 
+# Print all the configs that were called with announce_configured_options.
+print_configured_options()
+
 # MARK: - End EXECUTORCH_H12025_BUILD_MIGRATION ----------------------------------------------------
 
 include(tools/cmake/Utils.cmake)

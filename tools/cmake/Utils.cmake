@@ -30,10 +30,6 @@ function(executorch_print_configuration_summary)
   message(STATUS "  BUCK2                         : ${BUCK2}")
   message(STATUS "  PYTHON_EXECUTABLE             : ${PYTHON_EXECUTABLE}")
   message(STATUS "  FLATC_EXECUTABLE              : ${FLATC_EXECUTABLE}")
-  message(
-    STATUS
-      "  EXECUTORCH_ENABLE_LOGGING              : ${EXECUTORCH_ENABLE_LOGGING}"
-  )
   message(STATUS "  EXECUTORCH_ENABLE_PROGRAM_VERIFICATION : "
                  "${EXECUTORCH_ENABLE_PROGRAM_VERIFICATION}"
   )
