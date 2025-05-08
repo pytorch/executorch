@@ -118,9 +118,11 @@ class UpdateQuantizedKVCacheTest(unittest.TestCase):
                     ]
 
         # Update using custom op
-        torch.ops.llama.update_cache(k, k_cache, start_pos, indices)
-        torch.ops.llama.update_cache(k_scales, k_scales_cache, start_pos, indices)
-        torch.ops.llama.update_cache(
+        torch.ops.llama.update_cache_with_indices(k, k_cache, start_pos, indices)
+        torch.ops.llama.update_cache_with_indices(
+            k_scales, k_scales_cache, start_pos, indices
+        )
+        torch.ops.llama.update_cache_with_indices(
             k_zero_points, k_zero_points_cache, start_pos, indices
         )
 
@@ -266,14 +268,18 @@ class UpdateQuantizedKVCacheTest(unittest.TestCase):
         v_zero_points_cache = self.v_zero_points_cache.clone()
 
         # Update using custom op
-        torch.ops.llama.update_cache(k, k_cache, start_pos, indices)
-        torch.ops.llama.update_cache(k_scales, k_scales_cache, start_pos, indices)
-        torch.ops.llama.update_cache(
+        torch.ops.llama.update_cache_with_indices(k, k_cache, start_pos, indices)
+        torch.ops.llama.update_cache_with_indices(
+            k_scales, k_scales_cache, start_pos, indices
+        )
+        torch.ops.llama.update_cache_with_indices(
             k_zero_points, k_zero_points_cache, start_pos, indices
         )
-        torch.ops.llama.update_cache(v, v_cache, start_pos, indices)
-        torch.ops.llama.update_cache(v_scales, v_scales_cache, start_pos, indices)
-        torch.ops.llama.update_cache(
+        torch.ops.llama.update_cache_with_indices(v, v_cache, start_pos, indices)
+        torch.ops.llama.update_cache_with_indices(
+            v_scales, v_scales_cache, start_pos, indices
+        )
+        torch.ops.llama.update_cache_with_indices(
             v_zero_points, v_zero_points_cache, start_pos, indices
         )
 

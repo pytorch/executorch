@@ -104,24 +104,44 @@ class QuantizedKVCache(nn.Module):
 
         if self.use_custom_update_cache_op:
             start_pos = input_pos[0].item()
-            _ = torch.ops.llama.update_cache(
-                quantized_k_val, self.k_cache, start_pos, indices
-            )
-            _ = torch.ops.llama.update_cache(
-                k_scales, self.k_cache_scales, start_pos, indices
-            )
-            _ = torch.ops.llama.update_cache(
-                k_zero_points, self.k_cache_zero_points, start_pos, indices
-            )
-            _ = torch.ops.llama.update_cache(
-                quantized_v_val, self.v_cache, start_pos, indices
-            )
-            _ = torch.ops.llama.update_cache(
-                v_scales, self.v_cache_scales, start_pos, indices
-            )
-            _ = torch.ops.llama.update_cache(
-                v_zero_points, self.v_cache_zero_points, start_pos, indices
-            )
+            if indices is not None:
+                _ = torch.ops.llama.update_cache_with_indices(
+                    quantized_k_val, self.k_cache, start_pos, indices
+                )
+                _ = torch.ops.llama.update_cache_with_indices(
+                    k_scales, self.k_cache_scales, start_pos, indices
+                )
+                _ = torch.ops.llama.update_cache_with_indices(
+                    k_zero_points, self.k_cache_zero_points, start_pos, indices
+                )
+                _ = torch.ops.llama.update_cache_with_indices(
+                    quantized_v_val, self.v_cache, start_pos, indices
+                )
+                _ = torch.ops.llama.update_cache_with_indices(
+                    v_scales, self.v_cache_scales, start_pos, indices
+                )
+                _ = torch.ops.llama.update_cache_with_indices(
+                    v_zero_points, self.v_cache_zero_points, start_pos, indices
+                )
+            else:
+                _ = torch.ops.llama.update_cache(
+                    quantized_k_val, self.k_cache, start_pos
+                )
+                _ = torch.ops.llama.update_cache(
+                    k_scales, self.k_cache_scales, start_pos
+                )
+                _ = torch.ops.llama.update_cache(
+                    k_zero_points, self.k_cache_zero_points, start_pos
+                )
+                _ = torch.ops.llama.update_cache(
+                    quantized_v_val, self.v_cache, start_pos
+                )
+                _ = torch.ops.llama.update_cache(
+                    v_scales, self.v_cache_scales, start_pos
+                )
+                _ = torch.ops.llama.update_cache(
+                    v_zero_points, self.v_cache_zero_points, start_pos
+                )
         else:
             assert indices is None, "Indices not supported for this path"
             # Following is also broken because in prefill input_pos = [0]
@@ -159,8 +179,16 @@ class QuantizedKVCache(nn.Module):
         # instead of dequantized value.
         start_pos = input_pos[0].item()
         if self.use_custom_update_cache_op:
-            _ = torch.ops.llama.update_cache(k_val, k_out, start_pos, indices)
-            _ = torch.ops.llama.update_cache(v_val, v_out, start_pos, indices)
+            if indices is not None:
+                _ = torch.ops.llama.update_cache_with_indices(
+                    k_val, k_out, start_pos, indices
+                )
+                _ = torch.ops.llama.update_cache_with_indices(
+                    v_val, v_out, start_pos, indices
+                )
+            else:
+                _ = torch.ops.llama.update_cache(k_val, k_out, start_pos)
+                _ = torch.ops.llama.update_cache(v_val, v_out, start_pos)
         else:
             k_out[:, input_pos] = k_val
             v_out[:, input_pos] = v_val
@@ -303,8 +331,16 @@ class CustomKVCache(nn.Module):
         v_val = v_val.transpose(1, 2)
         start_pos = input_pos[0].item()
 
-        _ = torch.ops.llama.update_cache(k_val, self.k_cache, start_pos, indices)
-        _ = torch.ops.llama.update_cache(v_val, self.v_cache, start_pos, indices)
+        if indices is not None:
+            _ = torch.ops.llama.update_cache_with_indices(
+                k_val, self.k_cache, start_pos, indices
+            )
+            _ = torch.ops.llama.update_cache_with_indices(
+                v_val, self.v_cache, start_pos, indices
+            )
+        else:
+            _ = torch.ops.llama.update_cache(k_val, self.k_cache, start_pos)
+            _ = torch.ops.llama.update_cache(v_val, self.v_cache, start_pos)
 
         return (
             self.k_cache.transpose(1, 2),
