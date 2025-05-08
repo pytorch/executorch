@@ -178,8 +178,6 @@ option(EXECUTORCH_BUILD_ARM_BAREMETAL
        "Build the Arm Baremetal flow for Cortex-M and Ethos-U" OFF
 )
 
-option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
-
 option(EXECUTORCH_BUILD_KERNELS_CUSTOM "Build the custom kernels" OFF)
 
 option(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT "Build the custom ops lib for AOT"
