@@ -9,9 +9,11 @@
 
 from typing import Tuple
 
+import pytest
+
 import torch
 
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineBI,
@@ -64,15 +66,24 @@ test_modules = {
 
 
 @common.parametrize("test_module", test_modules)
+@pytest.mark.tosa_ref_model
 def test_avgpool2d_tosa_MI(test_module):
     model, input_tensor = test_module
 
-    pipeline = TosaPipelineMI[input_t](model, input_tensor, aten_op, exir_op)
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1, atol=1, rtol=1)
-    pipeline.run()
+    pipeline = TosaPipelineMI[input_t](
+        model,
+        input_tensor,
+        aten_op,
+        exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    )
+    if conftest.is_option_enabled("tosa_ref_model"):
+        pipeline.change_args("run_method_and_compare_outputs", qtol=1, atol=1, rtol=1)
+        pipeline.run()
 
 
 @common.parametrize("test_module", test_modules)
+@pytest.mark.tosa_ref_model
 def test_avgpool2d_tosa_BI(test_module):
     model, input_tensor = test_module
 
@@ -82,9 +93,11 @@ def test_avgpool2d_tosa_BI(test_module):
         aten_op,
         exir_op,
         symmetric_io_quantization=True,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1, atol=1, rtol=1)
-    pipeline.run()
+    if conftest.is_option_enabled("tosa_ref_model"):
+        pipeline.change_args("run_method_and_compare_outputs", qtol=1, atol=1, rtol=1)
+        pipeline.run()
 
 
 @common.parametrize("test_module", test_modules)
