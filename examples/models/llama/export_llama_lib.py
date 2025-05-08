@@ -385,7 +385,9 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--local_global_attention",
         type=parse_list_of_ints,
         default=None,
-        help="List of integers specifying local and global attention pattern, e.g., [0, 16, 0, 16].",
+        help="List of integers specifying local and global attention pattern, e.g., [0, 16, 0, 16] to specify that every other layer is sliding window of 16."
+        " [0, 16, 32] pattern specifes 2nd and 3rd layer has sliding window of 16 and 32 respecitvely. "
+        " [16] pattern specifies all layers have sliding window of 16.",
     )
 
     parser.add_argument("-2", "--fairseq2", action="store_true")
@@ -1332,7 +1334,7 @@ def _get_source_transforms(  # noqa
     if args.vulkan:
         transforms.append(replace_with_vulkan_rotary_emb)
 
-    if args.local_global_attention:
+    if getattr(args, "local_global_attention", None) is not None:
         transforms.append(
             partial(
                 replace_kv_cache_with_ring_kv_cache,
