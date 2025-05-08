@@ -1,5 +1,4 @@
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,7 +6,7 @@
 # pyre-unsafe
 
 import itertools
-
+import operator
 from typing import List
 
 import torch
@@ -22,7 +21,7 @@ from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 class AnnotateDecomposedMatmulPass(ExportPass):
     """
-    torch.matmul can be decomposed in many ways, for instance:
+    torch.matmul and it's equivalent operator @ can be decomposed in many ways, for instance:
     dq -> matmul -> q can become
     dq -> repeat -> view -> bmm -> view -> dq which makes quantization folding
     difficult. This helper function find all matmul partitions and annotate its
@@ -50,6 +49,7 @@ class AnnotateDecomposedMatmulPass(ExportPass):
             graph_module.graph,
             [
                 torch.matmul,
+                operator.matmul,
             ],
             None,
         )

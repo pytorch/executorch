@@ -196,7 +196,6 @@ filters = [
   ".cpp$",
 ]
 deps = [
-  "extension_flat_tensor_schema",
   "executorch_core",
 ]
 
@@ -232,8 +231,9 @@ filters = [
   ".cpp$",
 ]
 deps = [
-  "executorch",
   "executorch_core",
+  "extension_data_loader",
+  "extension_flat_tensor",
   "extension_module",
   "extension_data_loader",
   "extension_flat_tensor",
@@ -249,7 +249,6 @@ filters = [
   ".cpp$",
 ]
 deps = [
-  "executorch",
   "executorch_core",
 ]
 
@@ -261,7 +260,6 @@ filters = [
   ".cpp$",
 ]
 deps = [
-  "executorch",
   "executorch_core",
 ]
 
@@ -455,6 +453,7 @@ deps = [
   "extension_data_loader",
   "extension_flat_tensor",
   "extension_module",
+  "extension_tensor",
   "extension_threadpool",
   "optimized_cpublas",
   "portable_kernels",
