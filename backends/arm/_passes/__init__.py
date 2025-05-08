@@ -19,6 +19,7 @@ from .convert_split_to_slice import ConvertSplitToSlicePass  # noqa
 from .convert_squeezes_to_view import ConvertSqueezesToViewPass  # noqa
 from .convert_to_clamp import ConvertToClampPass  # noqa
 from .decompose_batchnorm_pass import DecomposeBatchNormPass  # noqa
+from .decompose_cosine_similarity_pass import DecomposeCosineSimilarityPass  # noqa
 from .decompose_div_pass import DecomposeDivPass  # noqa
 from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_layernorm_pass import DecomposeLayerNormPass  # noqa
@@ -39,6 +40,7 @@ from .fold_qdq_with_annotated_qparams_pass import (  # noqa
 )
 from .fuse_batchnorm2d_pass import FuseBatchnorm2DPass  # noqa
 from .fuse_constant_ops_pass import ComputeConstantOpsAOT, FuseConstantArgsPass  # noqa
+from .fuse_equal_placeholders_pass import FuseEqualPlaceholdersPass  # noqa
 from .fuse_quantized_activation_pass import FuseQuantizedActivationPass  # noqa
 from .insert_rescales_pass import InsertRescalePass  # noqa
 from .insert_table_ops import InsertTableOpsPass  # noqa
@@ -56,4 +58,5 @@ from .scalars_to_attribute_pass import ScalarsToAttributePass  # noqa
 from .size_adjust_conv2d_pass import SizeAdjustConv2DPass  # noqa
 from .unsqueeze_before_repeat_pass import UnsqueezeBeforeRepeatPass  # noqa
 from .unsqueeze_scalar_placeholders_pass import UnsqueezeScalarPlaceholdersPass  # noqa
+from .replace_inf_values_pass import ReplaceInfValues  # noqa  # usort: skip
 from .arm_pass_manager import ArmPassManager  # noqa  # usort: skip

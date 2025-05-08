@@ -433,6 +433,22 @@ python_unittest(
 )
 
 python_unittest(
+    name = "test_remove_unused_parameters_pass",
+    srcs = [
+        "test_remove_unused_parameters_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/xnnpack:xnnpack_delegate",
+        "//executorch/exir:lib",
+        "//executorch/exir:memory",
+        "//executorch/exir/capture:config",
+        "//executorch/exir/passes:lib",
+        "//executorch/runtime:runtime",
+    ],
+)
+
+python_unittest(
     name = "test_remove_view_copy",
     srcs = [
         "test_remove_view_copy.py",

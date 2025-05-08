@@ -75,7 +75,7 @@ if(FETCH_ETHOS_U_CONTENT)
   endif()
 
   # Always patch the core_platform repo since this is fast enough.
-  set(core_platform_base_rev "b728c774158248ba2cad8e78a515809e1eb9b77f")
+  set(core_platform_base_rev "1916a9c984819c35b19c9e5c4c80d47e4e866420")
   set(patch_dir "${ET_DIR_PATH}/examples/arm/ethos-u-setup")
   execute_process(COMMAND bash -c "pwd && source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_platform ${core_platform_base_rev} ${patch_dir}"
     WORKING_DIRECTORY ${ET_DIR_PATH}

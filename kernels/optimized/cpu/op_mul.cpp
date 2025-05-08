@@ -120,21 +120,47 @@ Tensor& opt_mul_out(
         out,
         "Failed to resize output tensor.");
 
-    ET_SWITCH_REALB_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
-      using Vec = executorch::vec::Vectorized<CTYPE>;
-      executorch::vec::map2<CTYPE>(
-          [](Vec x, Vec y) { return x * y; },
-          out.mutable_data_ptr<CTYPE>(),
-          a.const_data_ptr<CTYPE>(),
-          b.const_data_ptr<CTYPE>(),
-          out.numel());
-    });
+    if (executorch::runtime::isComplexType(out_type)) {
+      ET_KERNEL_CHECK(
+          ctx, a_type == b_type && a_type == out_type, InvalidArgument, out);
+
+      ET_SWITCH_COMPLEXH_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
+        using Vec = executorch::vec::Vectorized<CTYPE>;
+        executorch::vec::map2<CTYPE>(
+            [](Vec x, Vec y) { return x * y; },
+            out.mutable_data_ptr<CTYPE>(),
+            a.const_data_ptr<CTYPE>(),
+            b.const_data_ptr<CTYPE>(),
+            out.numel());
+      });
+    } else {
+      ET_SWITCH_REALB_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
+        using Vec = executorch::vec::Vectorized<CTYPE>;
+        executorch::vec::map2<CTYPE>(
+            [](Vec x, Vec y) { return x * y; },
+            out.mutable_data_ptr<CTYPE>(),
+            a.const_data_ptr<CTYPE>(),
+            b.const_data_ptr<CTYPE>(),
+            out.numel());
+      });
+    }
   } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
-    ET_SWITCH_REALB_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
-      auto mul_lambda = [](auto x, auto y) { return x * y; };
-      return torch::executor::handle_broadcast_elementwise<CTYPE>(
-          ctx, mul_lambda, a, b, out, selected_optimized_path);
-    });
+    if (executorch::runtime::isComplexType(out_type)) {
+      ET_KERNEL_CHECK(
+          ctx, a_type == b_type && a_type == out_type, InvalidArgument, out);
+
+      ET_SWITCH_COMPLEXH_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
+        auto mul_lambda = [](auto x, auto y) { return x * y; };
+        return torch::executor::handle_broadcast_elementwise<CTYPE>(
+            ctx, mul_lambda, a, b, out, selected_optimized_path);
+      });
+    } else {
+      ET_SWITCH_REALB_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
+        auto mul_lambda = [](auto x, auto y) { return x * y; };
+        return torch::executor::handle_broadcast_elementwise<CTYPE>(
+            ctx, mul_lambda, a, b, out, selected_optimized_path);
+      });
+    }
   } else {
     ScalarType common_type =
         promoteTypes(a_type, b_type, /*half_to_float*/ true);
@@ -146,26 +172,42 @@ Tensor& opt_mul_out(
         InvalidArgument,
         out);
 
-    ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, "mul.out", CTYPE_A, [&]() {
-      ET_SWITCH_REALHBBF16_TYPES(b_type, ctx, "mul.out", CTYPE_B, [&]() {
-        using CTYPE_IN = typename torch::executor::
-            promote_types<CTYPE_A, CTYPE_B, /*half_to_float*/ true>::type;
-        ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
-        ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, "mul.out", CTYPE_OUT, [&]() {
-          apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
-              [](const CTYPE_A val_a, const CTYPE_B val_b) {
-                CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-                CTYPE_IN value = a_casted * b_casted;
+    if (executorch::runtime::isComplexType(a_type) ||
+        executorch::runtime::isComplexType(b_type) ||
+        executorch::runtime::isComplexType(out_type)) {
+      ET_KERNEL_CHECK(
+          ctx, a_type == b_type && a_type == out_type, InvalidArgument, out);
 
-                return static_cast<CTYPE_OUT>(value);
-              },
-              a,
-              b,
-              out);
+      ET_SWITCH_COMPLEXH_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
+        apply_binary_elementwise_fn<CTYPE, CTYPE, CTYPE>(
+            [](const CTYPE val_a, const CTYPE val_b) { return val_a * val_b; },
+            a,
+            b,
+            out);
+      });
+    } else {
+      ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, "mul.out", CTYPE_A, [&]() {
+        ET_SWITCH_REALHBBF16_TYPES(b_type, ctx, "mul.out", CTYPE_B, [&]() {
+          using CTYPE_IN = typename torch::executor::
+              promote_types<CTYPE_A, CTYPE_B, /*half_to_float*/ true>::type;
+          ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
+          ET_SWITCH_REALHBBF16_TYPES(
+              out_type, ctx, "mul.out", CTYPE_OUT, [&]() {
+                apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
+                    [](const CTYPE_A val_a, const CTYPE_B val_b) {
+                      CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+                      CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
+                      CTYPE_IN value = a_casted * b_casted;
+
+                      return static_cast<CTYPE_OUT>(value);
+                    },
+                    a,
+                    b,
+                    out);
+              });
         });
       });
-    });
+    }
   }
 
   return out;

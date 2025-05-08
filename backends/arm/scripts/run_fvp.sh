@@ -65,7 +65,7 @@ hash ${fvp_model} \
 num_macs=$(echo ${target} | cut -d - -f 3)
 
 echo "--------------------------------------------------------------------------------"
-echo "Running ${elf_file} for ${target} run with FVP:${fvp_model} num_macs:${num_macs}"
+echo "Running ${elf_file} for ${target} run with FVP:${fvp_model} num_macs:${num_macs} timeout:${timeout}"
 echo "WARNING: Corstone FVP is not cycle accurate and should NOT be used to determine valid runtime"
 echo "--------------------------------------------------------------------------------"
 

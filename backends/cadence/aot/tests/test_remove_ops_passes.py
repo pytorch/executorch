@@ -16,6 +16,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from executorch.backends.cadence.aot import compiler
 from executorch.backends.cadence.aot.compiler import export_to_edge
+from executorch.backends.cadence.aot.graph_builder import GraphBuilder
 
 from executorch.backends.cadence.aot.pass_utils import count_node, op_counts_match
 from executorch.backends.cadence.aot.quantizer.quantizer import CadenceDefaultQuantizer
@@ -100,7 +101,6 @@ class TestRemoveOpsPasses(unittest.TestCase):
         p = RemoveNopAddOpPass()
 
         graph_after_passes = cast(PassResult, p(graph_module)).graph_module
-        graph_module.print_readable()
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.add.Tensor),
             0,
@@ -140,7 +140,6 @@ class TestRemoveOpsPasses(unittest.TestCase):
         p = RemoveNopMulOpPass()
 
         graph_after_passes = cast(PassResult, p(graph_module)).graph_module
-        graph_module.print_readable()
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.mul.Tensor),
             0,
@@ -512,7 +511,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
         inputs = (x,)
 
         graph_module = (
-            compiler.export_to_edge(
+            export_to_edge(
                 model,
                 inputs,
             )
@@ -590,6 +589,39 @@ class TestRemoveOpsPasses(unittest.TestCase):
         ][0]
         self.assertEqual(mean.args[1], [2, 3])
 
+    def test_remove_permutes_around_elemwise_ops_slice(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 8, 4, 4))
+        permute_node = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(x, [0, 2, 3, 1]),
+        )
+        slice_copy = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(permute_node, 1, 2, 4, 1),
+        )
+        output = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(slice_copy, [0, 3, 1, 2]),
+        )
+        builder.output([output])
+        graph_module = builder.get_graph_module()
+
+        p = RemovePermutesAroundElementwiseOps()
+        graph_module = cast(PassResult, p(graph_module)).graph_module
+
+        # No permutes should remain.
+        self.assertEqual(
+            count_node(graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+
+        # Verify that slice dimension was updated correctly.
+        slices = graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slices), 1)
+        self.assertEqual(slices[0].args[1], 2)
+
     def test_remove_permutes_around_elemwise_ops_mul(self) -> None:
         class M(torch.nn.Module):
             def forward(self, x, y):
@@ -657,36 +689,69 @@ class TestRemoveOpsPasses(unittest.TestCase):
         ][0]
         self.assertEqual(cat.args[1], 3)
 
-    def test_remove_permutes_around_concat_with_views(self) -> None:
-        class M(torch.nn.Module):
-            def forward(self, x, y):
-                # Mix and match views that are permutes and actual permutes. Both
-                # should be removed.
-                x = x.view(1, 1, 4, 4)
-                y = torch.permute(y, [0, 3, 1, 2])
-                z = torch.cat((x, y), 1)
-                return z.view(1, 4, 4, 8)
+    def test_remove_permutes_around_elemwise_ops_complicated_case(self) -> None:
+        """
+        A complicated case touching many edge cases.
+        """
+        builder = GraphBuilder()
+        a = builder.placeholder("a", torch.randn(1, 4, 4, 8))
+        a = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(a, [0, 3, 1, 2]),
+        )
+        # Multiple inputs to same subgraph:
+        b = builder.placeholder("b", torch.randn(1, 4, 4, 8))
+        b = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(b, [0, 3, 1, 2]),
+        )
+        c = builder.call_operator(op=exir_ops.edge.aten.hardtanh.default, args=(b,))
+        # Traverse upstream:
+        d = builder.call_operator(op=exir_ops.edge.aten.add.Tensor, args=(a, c))
+        # Will see an already visited node:
+        e = builder.call_operator(op=exir_ops.edge.aten.add.Tensor, args=(d, c))
+        f = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(e, [0, 2, 3, 1]),
+        )
+        # Multiple outputs from the same subgraph:
+        g = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(c, [0, 2, 3, 1]),
+        )
+        # Different subgraphs from the same input permutation:
+        h = builder.call_operator(op=exir_ops.edge.aten.hardtanh.default, args=(b,))
+        h = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(h, [0, 2, 3, 1]),
+        )
+        # Bad output permutation:
+        i = builder.call_operator(op=exir_ops.edge.aten.hardtanh.default, args=(b,))
+        i = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(i, [0, 3, 1, 2]),
+        )
+        # Bad input permutation:
+        j = builder.placeholder("j", torch.randn(1, 4, 4, 8))
+        j = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(j, [0, 3, 2, 1]),
+        )
+        k = builder.call_operator(op=exir_ops.edge.aten.add.Tensor, args=(b, j))
+        k = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(k, [0, 3, 2, 1]),
+        )
+        builder.output([f, g, h, i, k])
+        graph_module = builder.get_graph_module()
 
-        inputs = (torch.randn(1, 4, 4, 1), torch.randn(1, 4, 4, 7))
-        graph_module = export_to_edge(M(), inputs).exported_program().graph_module
         p = RemovePermutesAroundElementwiseOps()
         graph_module = cast(PassResult, p(graph_module)).graph_module
 
-        # Expect 0 permutes and views to remain.
+        # Permutations (a, f, g, h) will be eliminated but (b, i, j, k) will remain.
         self.assertEqual(
-            count_node(graph_module, exir_ops.edge.aten.permute_copy.default), 0
+            count_node(graph_module, exir_ops.edge.aten.permute_copy.default), 4
         )
-        self.assertEqual(
-            count_node(graph_module, exir_ops.edge.aten.view_copy.default), 0
-        )
-
-        # verify that cat was updated correctly
-        cat = [
-            n
-            for n in graph_module.graph.nodes
-            if n.target == exir_ops.edge.aten.cat.default
-        ][0]
-        self.assertEqual(cat.args[1], 3)
 
     def test_remove_permutes_around_elemwise_ops_noop(self) -> None:
         class M(torch.nn.Module):
@@ -696,9 +761,9 @@ class TestRemoveOpsPasses(unittest.TestCase):
 
             def forward(self, x):
                 x = self.conv(x)
-                x = torch.permute(x, [0, 2, 3, 1])
+                x = torch.permute(x, [2, 1, 0, 3])
                 x = torch.add(x, x)
-                x = torch.permute(x, [0, 3, 1, 2])
+                x = torch.permute(x, [0, 1, 3, 2])
                 x = self.conv(x)
                 return x
 
