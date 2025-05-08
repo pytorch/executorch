@@ -10,6 +10,7 @@ def define_common_targets():
         name = "tokenizers",
         srcs = [
             "__init__.py",
+            "constants.py",
             "llama2c.py",
             "tiktoken.py",
             "hf_tokenizer.py",

@@ -16,6 +16,8 @@ namespace tokenizers {
 
 namespace {
 // Test case based on Llama 2
+const std::string kPattern =
+    R"((?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+)";
 static constexpr int32_t kSpecialTokensSize = 256;
 static inline std::unique_ptr<std::vector<std::string>> _get_special_tokens() {
   auto special_tokens =
@@ -50,7 +52,8 @@ static inline std::string _get_resource_path(const std::string& name) {
 class TiktokenTest : public Test {
  public:
   void SetUp() override {
-    tokenizer_ = std::make_unique<Tiktoken>(_get_special_tokens(), 0, 1);
+    tokenizer_ =
+        std::make_unique<Tiktoken>(kPattern, _get_special_tokens(), 0, 1);
     modelPath_ = _get_resource_path("test_tiktoken_tokenizer.model");
   }
 

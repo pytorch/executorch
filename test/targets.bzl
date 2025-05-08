@@ -108,3 +108,16 @@ def define_common_targets():
         src = "resources/test_tiktoken_tokenizer.model",
         visibility = ["@EXECUTORCH_CLIENTS", "//pytorch/tokenizers/..."],
     )
+
+    runtime.python_test(
+        name = "test_tiktoken_py",
+        srcs = [
+            "test_tiktoken.py",
+        ],
+        deps = [
+            "//pytorch/tokenizers/pytorch_tokenizers:tokenizers",
+        ],
+        resources = {
+            ":test_tiktoken_tokenizer_model": "test_tiktoken_tokenizer.model",
+        },
+    )

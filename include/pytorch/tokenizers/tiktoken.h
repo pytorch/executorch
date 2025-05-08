@@ -32,20 +32,33 @@ static constexpr size_t kEOSTokenIndex = 1;
 class Tiktoken : public detail::BPETokenizerBase {
  public:
   explicit Tiktoken(
+      std::string pattern,
       std::unique_ptr<std::vector<std::string>> special_tokens,
       size_t bos_token_index,
       size_t eos_token_index)
-      : _special_tokens(std::move(special_tokens)),
+      : _pattern(std::move(pattern)),
+        _special_tokens(std::move(special_tokens)),
         _bos_token_index(bos_token_index),
         _eos_token_index(eos_token_index) {
     if (_bos_token_index >= _special_tokens->size() ||
         _eos_token_index >= _special_tokens->size()) {
       abort();
     }
-  };
+  }
+
+  explicit Tiktoken(
+      std::unique_ptr<std::vector<std::string>> special_tokens,
+      size_t bos_token_index,
+      size_t eos_token_index)
+      : Tiktoken(
+            _get_default_patern(),
+            std::move(special_tokens),
+            bos_token_index,
+            eos_token_index) {}
 
   explicit Tiktoken()
-      : _special_tokens(_get_default_special_tokens()),
+      : _pattern(_get_default_patern()),
+        _special_tokens(_get_default_special_tokens()),
         _bos_token_index(kBOSTokenIndex),
         _eos_token_index(kEOSTokenIndex){};
 
@@ -77,6 +90,11 @@ class Tiktoken : public detail::BPETokenizerBase {
     return special_tokens;
   }
 
+  static inline std::string _get_default_patern() {
+    // Removed negative lookahead \s+(?!\S) since it's not supported by RE2.
+    return R"((?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+)";
+  }
+
   Error _encode(
       const std::string& input,
       std::vector<uint64_t>& ret,
@@ -86,13 +104,10 @@ class Tiktoken : public detail::BPETokenizerBase {
 
   detail::TokenMap _build_special_token_map(ssize_t num_base_tokens) const;
 
+  std::string _pattern;
   std::unique_ptr<std::vector<std::string>> _special_tokens;
   size_t _bos_token_index;
   size_t _eos_token_index;
-
-  // Removed negative lookahead \s+(?!\S) since it's not supported by RE2.
-  const std::string _pattern =
-      R"((?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+)";
 
   std::unique_ptr<IRegex> _regex;
 };

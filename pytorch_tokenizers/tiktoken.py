@@ -25,6 +25,8 @@ import tiktoken
 
 from tiktoken.load import load_tiktoken_bpe
 
+from .constants import CL100K_PAT_STR, LLAMA_SPECIAL_TOKENS
+
 logger = getLogger(__name__)
 
 
@@ -47,12 +49,6 @@ class TiktokenTokenizer:
     WARNING: The regex and special tokens are hardcoded from Llama 3+.
     """
 
-    special_tokens: Dict[str, int]
-
-    num_reserved_special_tokens = 256
-
-    pat_str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"  # noqa: E501
-
     @classmethod
     def get_instance(cls):
         global _INSTANCE
@@ -63,7 +59,12 @@ class TiktokenTokenizer:
             )
         return _INSTANCE
 
-    def __init__(self, model_path: str):
+    def __init__(
+        self,
+        model_path: str,
+        pat_str: str = CL100K_PAT_STR,
+        special_tokens: List[str] = LLAMA_SPECIAL_TOKENS,
+    ):
         """
         Initializes the Tokenizer with a Tiktoken model.
 
@@ -74,32 +75,13 @@ class TiktokenTokenizer:
 
         mergeable_ranks = load_tiktoken_bpe(model_path)
         num_base_tokens = len(mergeable_ranks)
-        special_tokens = [
-            "<|begin_of_text|>",
-            "<|end_of_text|>",
-            "<|reserved_special_token_0|>",
-            "<|reserved_special_token_1|>",
-            "<|finetune_right_pad_id|>",
-            "<|step_id|>",
-            "<|start_header_id|>",
-            "<|end_header_id|>",
-            "<|eom_id|>",  # end of message
-            "<|eot_id|>",  # end of turn
-            "<|python_tag|>",
-            "<|image|>",
-        ]
-        reserved_tokens = [
-            f"<|reserved_special_token_{2 + i}|>"
-            for i in range(self.num_reserved_special_tokens - len(special_tokens))
-        ]
-        special_tokens = special_tokens + reserved_tokens
 
         self.special_tokens = {
             token: num_base_tokens + i for i, token in enumerate(special_tokens)
         }
         self.model = tiktoken.Encoding(
             name=Path(model_path).name,
-            pat_str=self.pat_str,
+            pat_str=pat_str,
             mergeable_ranks=mergeable_ranks,
             special_tokens=self.special_tokens,
         )
@@ -108,15 +90,6 @@ class TiktokenTokenizer:
         # BOS / EOS token IDs
         self.bos_id: int = self.special_tokens["<|begin_of_text|>"]
         self.eos_id: int = self.special_tokens["<|end_of_text|>"]
-        self.eot_id: int = self.special_tokens["<|eot_id|>"]
-        self.eom_id: int = self.special_tokens["<|eom_id|>"]
-        self.python_tag_id = self.special_tokens["<|python_tag|>"]
-        self.pad_id: int = self.special_tokens["<|finetune_right_pad_id|>"]
-        self.stop_tokens = [
-            self.eos_id,
-            self.special_tokens["<|eom_id|>"],
-            self.special_tokens["<|eot_id|>"],
-        ]
 
     def encode(
         self,
