@@ -44,10 +44,11 @@ target_compile_options(train_xor PUBLIC ${_common_compile_options})
 set(_pybind_training_dep_libs
   ${TORCH_PYTHON_LIBRARY}
   etdump
-  executorch
+  executorch_core
   util
   torch
   extension_training
+  prim_ops_lib
 )
 
 if(EXECUTORCH_BUILD_XNNPACK)

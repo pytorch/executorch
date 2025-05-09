@@ -26,7 +26,8 @@ add_subdirectory(
 add_executable(nanogpt_runner main.cpp)
 target_link_libraries(
   nanogpt_runner
-  PRIVATE executorch
+  PRIVATE executorch_core
+          prim_ops_lib
           extension_module_static # Provides the Module class
           extension_tensor # Provides the TensorPtr class
           optimized_native_cpu_ops_lib # Provides baseline cross-platform

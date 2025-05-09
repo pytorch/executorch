@@ -121,8 +121,8 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
 ExecuTorch's CMake build system covers the pieces of the runtime that are
 likely to be useful to embedded systems users.
 
-- `libexecutorch.a`: The core of the ExecuTorch runtime. Does not contain any
-  operator/kernel definitions or backend definitions.
+- `libexecutorch_core.a`: The core of the ExecuTorch runtime. Does not contain any
+- `libprim_ops_lib.a`: The implementations and registration of prim ops.
 - `libportable_kernels.a`: The implementations of ATen-compatible operators,
   following the signatures in `//kernels/portable/functions.yaml`.
 - `libportable_kernels_bindings.a`: Generated code that registers the contents

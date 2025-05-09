@@ -242,7 +242,8 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
             qnn_schema
             qnn_manager
             qnn_executorch_header
-            executorch
+            executorch_core
+            prim_ops_lib
             qcir_utils
             extension_tensor
   )

@@ -534,7 +534,7 @@ endif()
 add_subdirectory(schema)
 
 #
-# executorch_core: Minimal runtime library
+# executorch_core: Primary runtime library
 #
 # The bare-minimum runtime library, supporting the Program and Method
 # interfaces. Does not contain any operators, including primitive ops. Does not
@@ -609,19 +609,11 @@ if(EXECUTORCH_BUILD_PYBIND AND APPLE)
 endif()
 
 #
-# executorch: Primary runtime library with primitive operators.
+# prim_ops_lib: primitive operators.
 #
-# Provides the Program and Method interfaces, along with primitive operators.
-# Does not contain portable kernels or other full operators. Does not contain
-# any backends.
+# Provides primitive operators with registration.
 #
-add_library(executorch ${_executorch__srcs})
-target_link_libraries(executorch PRIVATE executorch_core)
-target_include_directories(executorch PUBLIC ${_common_include_directories})
-target_compile_definitions(executorch PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
-target_compile_options(executorch PUBLIC ${_common_compile_options})
-target_link_options_shared_lib(executorch)
-
+add_subdirectory(kernels/prim_ops)
 #
 # portable_ops_lib: A library to register core ATen ops using portable kernels,
 # see kernels/portable/CMakeLists.txt.
@@ -663,7 +655,7 @@ install(DIRECTORY extension/kernel_util/  DESTINATION include/executorch/extensi
 install(DIRECTORY extension/tensor/  DESTINATION include/executorch/extension/tensor FILES_MATCHING PATTERN "*.h")
 install(DIRECTORY extension/threadpool/  DESTINATION include/executorch/extension/threadpool FILES_MATCHING PATTERN "*.h")
 install(
-  TARGETS executorch executorch_core
+  TARGETS executorch_core prim_ops_lib
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}
@@ -789,8 +781,9 @@ if(EXECUTORCH_BUILD_PYBIND)
       ${TORCH_PYTHON_LIBRARY}
       bundled_program
       etdump
-      executorch
+      executorch_core
       extension_data_loader
+      prim_ops_lib
       util
       torch
   )
@@ -842,7 +835,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_definitions(util PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
 
   target_compile_options(util PUBLIC ${_pybind_compile_options})
-  target_link_libraries(util PRIVATE torch c10 executorch extension_tensor)
+  target_link_libraries(util PRIVATE torch c10 executorch_core extension_tensor)
 
   # pybind portable_lib
   pybind11_add_module(portable_lib SHARED extension/pybindings/pybindings.cpp)
@@ -881,7 +874,7 @@ endif()
 
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
-  set(_executor_runner_libs executorch gflags)
+  set(_executor_runner_libs executorch_core prim_ops_lib gflags)
 
   if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     list(APPEND _executor_runner_libs optimized_native_cpu_ops_lib)
