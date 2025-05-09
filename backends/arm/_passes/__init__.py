@@ -19,6 +19,7 @@ from .convert_split_to_slice import ConvertSplitToSlicePass  # noqa
 from .convert_squeezes_to_view import ConvertSqueezesToViewPass  # noqa
 from .convert_to_clamp import ConvertToClampPass  # noqa
 from .decompose_batchnorm_pass import DecomposeBatchNormPass  # noqa
+from .decompose_cosine_similarity_pass import DecomposeCosineSimilarityPass  # noqa
 from .decompose_div_pass import DecomposeDivPass  # noqa
 from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_layernorm_pass import DecomposeLayerNormPass  # noqa
