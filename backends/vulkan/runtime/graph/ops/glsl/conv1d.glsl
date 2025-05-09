@@ -86,6 +86,9 @@ void main() {
   const int in_l = out_l * stride - padding;
   VEC4_T sum = VEC4_T(0);
 
+  const int out_c_packed_index = out_c >> 2;
+  const int out_c_packed_lane = out_c & 0x3;
+
   for (int in_c = c_start; in_c < c_end; ++in_c) {
     // "k" tracks the kernel's index for our input-kernel computation.
     // It reads out-of-bound zeros, but trying to avoid them complicates
@@ -103,16 +106,16 @@ void main() {
     // It is possible to further reduce the memory footprint by swapping the
     // dimensions, using x extent for out_channel, and y for kernel.
     for (int k = 0; k < kernel_size; k++) {
-      const ivec3 w_lpos = ivec3(k, in_c % in_group_size, out_c / 4);
+      const ivec3 w_lpos = ivec3(k, in_c % in_group_size, out_c_packed_index);
       const VEC4_T weight_texel = load_texel_lpos(kernel_in, w_lpos, kernel_axis_map);
-      VEC4_T weight = VEC4_T(weight_texel[out_c % 4]);
+      VEC4_T weight = VEC4_T(weight_texel[out_c_packed_lane]);
 
       const ivec3 in_pos = lpos_to_pos(ivec3(in_l + k * dilation, in_c, N), in_axis_map);
       sum = fma(weight, load_texel(t_in, in_pos), sum);
     }
   }
 
-  const VEC4_T bias = load_texel_lpos(bias_in, ivec3(out_c, 0, 0), bias_axis_map);
+  const VEC4_T bias = load_texel_lpos(bias_in, ivec3(out_c_packed_index, 0, 0), bias_axis_map);
   const ivec3 out_lpos = ivec3(out_l, out_c, N);
-  write_texel_lpos(t_out, out_lpos, op(sum + bias.x, out_min, out_max), out_axis_map);
+  write_texel_lpos(t_out, out_lpos, op(sum + bias[out_c_packed_lane], out_min, out_max), out_axis_map);
 }
