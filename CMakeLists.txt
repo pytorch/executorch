@@ -636,6 +636,8 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   find_package_torch_headers()
 endif()
 
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable/cpu/util)
+
 if(BUILD_EXECUTORCH_PORTABLE_OPS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
 endif()

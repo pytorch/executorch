@@ -84,7 +84,6 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
     # hack.
     set(_quantized_sources
         ${_quantized_kernels__srcs}
-        ${EXECUTORCH_ROOT}/kernels/portable/cpu/util/reduce_util.cpp
         ${EXECUTORCH_ROOT}/runtime/core/exec_aten/util/tensor_util_aten.cpp
     )
     gen_custom_ops_aot_lib(
@@ -142,7 +141,7 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
 endif()
 
 add_library(quantized_kernels ${_quantized_kernels__srcs})
-target_link_libraries(quantized_kernels PRIVATE executorch_core)
+target_link_libraries(quantized_kernels PRIVATE executorch_core kernels_util_all_deps)
 target_compile_options(quantized_kernels PUBLIC ${_common_compile_options})
 # Build a library for _quantized_kernels_srcs
 #
