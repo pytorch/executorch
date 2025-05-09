@@ -181,6 +181,14 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     }
     EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
 
+    MemoryAllocator* temp_allocator = context.get_temp_allocator();
+
+    // Use a temporary allocator for the intermediate tensors of the
+    // computation. The allocator is released in runtime/executor/method.cpp at
+    // the end of the execution of the Ethos-U custom delegate
+    char* ethosu_scratch =
+        static_cast<char*>(temp_allocator->allocate(handles.scratch_data_size));
+
     ET_LOG(
         Debug,
         "EthosUBackend::execute: Running program data:\n  cmd %p %zu\n  weight %p %zu\n  scratch %p %zu\n",
@@ -188,7 +196,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
         handles.cmd_data_size,
         handles.weight_data,
         handles.weight_data_size,
-        handles.scratch_data,
+        ethosu_scratch,
         handles.scratch_data_size);
 
     // Write argument values (from EValue tensor) into Ethos-U scratch
@@ -197,7 +205,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     for (int i = 0; i < handles.inputs->count; i++) {
       auto tensor_count = 1, io_count = 1;
       auto tensor_in = args[i]->toTensor();
-      char* scratch_addr = handles.scratch_data + handles.inputs->io[i].offset;
+      char* scratch_addr = ethosu_scratch + handles.inputs->io[i].offset;
 
       // We accept:
       bool supported = 0;
@@ -294,11 +302,11 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     // Ethos-U low level driver expected order for Ethos U-55, we have
     // constant weight data, then scratch (which contains input and output)
     // scratch is written above in this function.
+
     uint64_t bases[2] = {
         static_cast<uint64_t>(
             reinterpret_cast<uintptr_t>((handles.weight_data))),
-        static_cast<uint64_t>(
-            reinterpret_cast<uintptr_t>((handles.scratch_data)))};
+        static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ethosu_scratch))};
     size_t bases_size[2] = {
         handles.weight_data_size, handles.scratch_data_size};
     int result = 0;
@@ -325,8 +333,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     // Write outputs from scratch into EValue pointers
     for (int i = 0; i < handles.outputs->count; i++) {
       int tensor_count = 1, io_count = 1;
-      const char* output_addr =
-          handles.scratch_data + handles.outputs->io[i].offset;
+      const char* output_addr = ethosu_scratch + handles.outputs->io[i].offset;
       // Process input EValue into scratch
       // Outputs are in the index immediately after inputs
       auto tensor_out = args[handles.inputs->count + i]->toTensor();

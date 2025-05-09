@@ -128,15 +128,22 @@ const float et_rtol = 0.01;
  * The temp_allocation_pool is used for allocating temporary data during kernel
  * or delegate execution. This will be reset after each kernel or delegate call.
  * Currently a MemoryAllocator is used but a PlatformMemoryAllocator is probably
- * a better fit
+ * a better fit.
+ *
+ * The Corstone-300 and Corstone-320 platforms have 2MB of SRAM, we allocate
+ * temporary pool that can fully utilize the memory subsystem of the platform.
+ * If your NN requires more than 2MB of SRAM for the peak intermediate tensor
+ * (Total SRAM Used in the AoT Vela summary), consider compiling your model with
+ * the --optimise Size CLI option in the Vela compile spec to lower the SRAM
+ * consumption of the model.
  */
 #if !defined(ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE)
-#define ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE (1 * 1024 * 1024)
+#define ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE (2 * 1024 * 1024)
 #endif
 const size_t temp_allocation_pool_size =
     ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE;
 unsigned char __attribute__((
-    section("input_data_sec"),
+    section(".bss.ethosu_scratch"),
     aligned(16))) temp_allocation_pool[temp_allocation_pool_size];
 
 void et_pal_init(void) {
@@ -207,7 +214,7 @@ namespace {
 class ArmMemoryAllocator : public executorch::runtime::MemoryAllocator {
  public:
   ArmMemoryAllocator(uint32_t size, uint8_t* base_address)
-      : MemoryAllocator(size, base_address), used_(0) {}
+      : MemoryAllocator(size, base_address), used_(0), peak_used_(0) {}
 
   void* allocate(size_t size, size_t alignment = kDefaultAlignment) override {
     void* ret = executorch::runtime::MemoryAllocator::allocate(size, alignment);
@@ -222,6 +229,8 @@ class ArmMemoryAllocator : public executorch::runtime::MemoryAllocator {
       } else {
         used_ = (used_ | (alignment - 1)) + 1 + size;
       }
+      if (used_ > peak_used_)
+        peak_used_ = used_;
     }
     return ret;
   }
@@ -231,13 +240,25 @@ class ArmMemoryAllocator : public executorch::runtime::MemoryAllocator {
     return used_;
   }
 
+  // Returns the peak memory usage of the allocator's memory buffer
+  // Peak usage is useful when doing multiple allocations & resets
+  size_t peak_used() const {
+    return peak_used_;
+  }
+
   // Returns the free size of the allocator's memory buffer.
   size_t free_size() const {
     return executorch::runtime::MemoryAllocator::size() - used_;
   }
 
+  void reset() {
+    executorch::runtime::MemoryAllocator::reset();
+    used_ = 0;
+  }
+
  private:
   size_t used_;
+  size_t peak_used_;
 };
 
 Result<BufferCleanup> prepare_input_tensors(
@@ -682,11 +703,11 @@ int main(int argc, const char* argv[]) {
   if (temp_allocator.size() > 0) {
     ET_LOG(
         Info,
-        "temp_allocator_used:       %zu / %zu free: %zu ( used: %zu %% ) ",
-        temp_allocator.used_size(),
+        "peak_temp_allocator:       %zu / %zu free: %zu ( used: %zu %% ) ",
+        temp_allocator.peak_used(),
         temp_allocator.size(),
         temp_allocator.free_size(),
-        100 * temp_allocator.used_size() / temp_allocator.size());
+        100 * temp_allocator.peak_used() / temp_allocator.size());
   }
 
   if (status != Error::Ok) {
