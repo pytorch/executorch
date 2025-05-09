@@ -14,7 +14,6 @@ from argparse import ArgumentParser
 import torch
 import torchvision
 from PIL import Image
-from torch import nn
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
