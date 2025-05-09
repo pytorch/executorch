@@ -19,14 +19,14 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
-using ::executorch::aten::optional;
 using ::executorch::aten::Scalar;
 using ::executorch::aten::ScalarType;
-using ::executorch::aten::string_view;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::canCast;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;
+using std::optional;
+using std::string_view;
 
 namespace cadence {
 namespace impl {

@@ -27,7 +27,7 @@ template <typename T>
 using OptionalArrayRef = executorch::aten::OptionalArrayRef<T>;
 
 template <typename T>
-using Optional = executorch::aten::optional<T>;
+using Optional = std::optional<T>;
 
 namespace {
 

@@ -56,8 +56,7 @@ ET_NODISCARD Error validateTensorLayout(
 // list of optionals: list of optional Tensor, list of optional float etc, so we
 // just use a template to avoid boilerplate.
 template <typename T>
-ET_NODISCARD Result<BoxedEvalueList<executorch::aten::optional<T>>>
-parseListOptionalType(
+ET_NODISCARD Result<BoxedEvalueList<std::optional<T>>> parseListOptionalType(
     const flatbuffers::Vector<int32_t>* value_indices,
     EValue* values,
     size_t values_len,
@@ -69,8 +68,8 @@ parseListOptionalType(
   }
 
   auto* optional_tensor_list =
-      memory_manager->method_allocator()
-          ->allocateList<executorch::aten::optional<T>>(value_indices->size());
+      memory_manager->method_allocator()->allocateList<std::optional<T>>(
+          value_indices->size());
   if (optional_tensor_list == nullptr) {
     return Error::MemoryAllocationFailed;
   }
@@ -87,7 +86,7 @@ parseListOptionalType(
     // copy assignment is not defined if its non trivial.
     if (index == -1) {
       new (&optional_tensor_list[output_idx])
-          executorch::aten::optional<T>(executorch::aten::nullopt);
+          std::optional<T>(executorch::aten::nullopt);
       // no value to point to. BoxedEvalueList for optional tensor will convert
       // this to nullopt.
       // TODO(T161156879): do something less hacky here.
@@ -99,12 +98,12 @@ parseListOptionalType(
           "Invalid value index %" PRId32 " for ListOptional",
           index);
       new (&optional_tensor_list[output_idx])
-          executorch::aten::optional<T>(values[index].toOptional<T>());
+          std::optional<T>(values[index].toOptional<T>());
       evalp_list[output_idx] = &values[static_cast<size_t>(index)];
     }
     output_idx++;
   }
-  return BoxedEvalueList<executorch::aten::optional<T>>(
+  return BoxedEvalueList<std::optional<T>>(
       evalp_list, optional_tensor_list, value_indices->size());
 }
 

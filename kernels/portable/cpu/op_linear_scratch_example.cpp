@@ -23,7 +23,7 @@ namespace native {
 using Tensor = executorch::aten::Tensor;
 
 template <typename T>
-using optional = executorch::aten::optional<T>;
+using optional = std::optional<T>;
 
 // kernel for demonstration purpose only
 

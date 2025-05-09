@@ -51,8 +51,8 @@ namespace native {
 Tensor& clamp_Tensor_out(
     RuntimeContext& ctx,
     const Tensor& in,
-    const executorch::aten::optional<Tensor>& min_opt,
-    const executorch::aten::optional<Tensor>& max_opt,
+    const std::optional<Tensor>& min_opt,
+    const std::optional<Tensor>& max_opt,
     Tensor& out) {
   (void)ctx;
 
@@ -325,8 +325,8 @@ Tensor& clamp_Tensor_out(
 Tensor& clamp_tensor_out(
     RuntimeContext& ctx,
     const Tensor& in,
-    const executorch::aten::optional<Tensor>& min_opt,
-    const executorch::aten::optional<Tensor>& max_opt,
+    const std::optional<Tensor>& min_opt,
+    const std::optional<Tensor>& max_opt,
     Tensor& out) {
   return clamp_Tensor_out(ctx, in, min_opt, max_opt, out);
 }

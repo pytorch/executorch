@@ -745,7 +745,7 @@ bool check_split_copy_args(
 bool check_to_copy_args(
     const Tensor& input,
     bool non_blocking,
-    executorch::aten::optional<executorch::aten::MemoryFormat> memory_format,
+    std::optional<executorch::aten::MemoryFormat> memory_format,
     Tensor& out) {
   (void)input;
   (void)out;
