@@ -267,6 +267,8 @@ bool available();
 // a static local variable.
 Context* context();
 
+vkapi::DescriptorPoolConfig default_descriptor_pool_config();
+
 namespace detail {
 
 inline void arg_is_empty(
