@@ -200,6 +200,9 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(DecomposeExpM1())
+        # this pass will rewrite state_dict, it needs to be accomplished before
+        # to_edge_transform_and_lower
+        self.add_pass(ConvertConv1dToConv2d(exported_program))
         self.add_pass(ConvertSquareToPow())
         self.add_pass(LiftConstantScalarOperands())
         self._transform(exported_program.graph_module)

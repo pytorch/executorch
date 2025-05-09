@@ -170,10 +170,16 @@ def _get_updated_graph_signature(
         if node.op != "placeholder":
             continue
 
-        assert i < len(
-            old_signature.input_specs
-        ), "Number of inputs changed after transformation"
-        old_input_spec = old_signature.input_specs[i]
+        while True:
+            assert i < len(
+                old_signature.input_specs
+            ), "Number of inputs changed after transformation"
+            old_input_spec = old_signature.input_specs[i]
+            if old_input_spec.arg.name in (node.target, node.name):
+                break
+            else:
+                i += 1
+
         arg = (
             old_input_spec.arg
             if isinstance(old_input_spec.arg, ConstantArgument)
@@ -1274,7 +1280,7 @@ def to_edge_transform_and_lower(
 
 @experimental(
     """
-    This is an experimental API which overloads to_edge by preserving specified ops to not be decomposed. 
+    This is an experimental API which overloads to_edge by preserving specified ops to not be decomposed.
     This function will be combined with to_edge in the future.
     """
 )
