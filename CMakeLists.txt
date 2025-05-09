@@ -242,6 +242,8 @@ option(EXECUTORCH_USE_DL "Use libdl library" ON)
 
 option(EXECUTORCH_BUILD_CADENCE "Build the Cadence DSP backend" OFF)
 
+option(EXECUTORCH_BUILD_CORTEX_M "Build the Cortex-M backend" OFF)
+
 #
 # pthreadpool: build pthreadpool library. Disable on unsupported platforms
 #
@@ -713,6 +715,10 @@ endif()
 
 if(EXECUTORCH_BUILD_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
+endif()
+
+if(EXECUTORCH_BUILD_CORTEX_M)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
 endif()
 
 if(EXECUTORCH_BUILD_DEVTOOLS)
