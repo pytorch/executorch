@@ -48,12 +48,7 @@ def prepare_image(image: Image, target_h: int, target_w: int) -> torch.Tensor:
 
 def serialize_image(image: torch.Tensor, path: str) -> None:
     copy = torch.tensor(image)
-    m = nn.Module()
-    par = nn.Parameter(copy, requires_grad=False)
-    m.register_parameter("0", par)
-    tensors = torch.jit.script(m)
-    tensors.save(path)
-
+    torch.save(copy, path)
     logging.info(f"Saved image tensor to {path}")
 
 

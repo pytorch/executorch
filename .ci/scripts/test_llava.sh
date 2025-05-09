@@ -149,13 +149,8 @@ run_and_verify() {
 
     # verify result.txt
     RESULT=$(cat result.txt)
-    # set the expected prefix to be the same as prompt because there's a bug in sdpa_with_kv_cache that causes <unk> tokens.
-    if [[ "$(uname)" == "Darwin" ]]; then
-        EXPECTED_PREFIX="ASSISTANT: image captures a basketball game in progress, with several players on the court. One of the players is dribbling the ball, while the others are in various"
-    else
-        # set the expected prefix to be the same as prompt because there's a bug in sdpa_with_kv_cache that causes <unk> tokens.
-        EXPECTED_PREFIX="ASSISTANT: image"
-    fi
+    EXPECTED_PREFIX="ASSISTANT: image captures a basketball game in progress, with several players on the court. One of the players is dribbling the ball, while"
+
     if [[ "${RESULT}" == *"${EXPECTED_PREFIX}"* ]]; then
         echo "Expected result prefix: ${EXPECTED_PREFIX}"
         echo "Actual result: ${RESULT}"
