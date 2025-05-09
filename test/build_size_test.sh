@@ -11,13 +11,18 @@ set -e
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/../.ci/scripts/utils.sh"
 
+EXTRA_BUILD_ARGS="${@:-}"
 # TODO(#8357): Remove -Wno-int-in-bool-context
-COMMON_CXXFLAGS="-fno-exceptions -fno-rtti -Wall -Werror -Wno-int-in-bool-context"
+# TODO: Replace -ET_HAVE_PREAD=0 with a CMake option.
+#  FileDataLoader used in the size_test breaks baremetal builds with pread when missing.
+COMMON_CXXFLAGS="-fno-exceptions -fno-rtti -Wall -Werror -Wno-int-in-bool-context -DET_HAVE_PREAD=0"
 
 cmake_install_executorch_lib() {
   echo "Installing libexecutorch.a"
   clean_executorch_install_folders
   update_tokenizers_git_submodule
+  local EXTRA_BUILD_ARGS="${@}"
+
   CXXFLAGS="$COMMON_CXXFLAGS" retry cmake -DBUCK2="$BUCK2" \
           -DCMAKE_CXX_STANDARD_REQUIRED=ON \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
@@ -25,12 +30,16 @@ cmake_install_executorch_lib() {
           -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
           -DOPTIMIZE_SIZE=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+          ${EXTRA_BUILD_ARGS} \
           -Bcmake-out .
   cmake --build cmake-out -j9 --target install --config Release
 }
 
 test_cmake_size_test() {
-    CXXFLAGS="$COMMON_CXXFLAGS" retry cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out/test test
+    CXXFLAGS="$COMMON_CXXFLAGS" retry cmake -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=cmake-out \
+        ${EXTRA_BUILD_ARGS} \
+        -Bcmake-out/test test
 
     echo "Build size test"
     cmake --build cmake-out/test -j9 --config Release
@@ -46,5 +55,5 @@ if [[ -z $PYTHON_EXECUTABLE ]]; then
   PYTHON_EXECUTABLE=python3
 fi
 
-cmake_install_executorch_lib
-test_cmake_size_test
+cmake_install_executorch_lib ${EXTRA_BUILD_ARGS}
+test_cmake_size_test ${EXTRA_BUILD_ARGS}

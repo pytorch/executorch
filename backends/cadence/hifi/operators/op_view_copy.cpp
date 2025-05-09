@@ -13,8 +13,8 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 using executorch::runtime::resize_tensor;
-using executorch::runtime::tensors_have_same_dim_order;
 using executorch::runtime::tensor_is_default_dim_order;
+using executorch::runtime::tensors_have_same_dim_order;
 using torch::executor::check_view_copy_args;
 using torch::executor::Error;
 using torch::executor::get_view_copy_target_size;

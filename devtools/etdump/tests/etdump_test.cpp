@@ -12,6 +12,7 @@
 
 #include <executorch/devtools/etdump/data_sinks/buffer_data_sink.h>
 #include <executorch/devtools/etdump/data_sinks/file_data_sink.h>
+#include <executorch/devtools/etdump/etdump_filter.h>
 #include <executorch/devtools/etdump/etdump_flatcc.h>
 #include <executorch/devtools/etdump/etdump_schema_flatcc_builder.h>
 #include <executorch/devtools/etdump/etdump_schema_flatcc_reader.h>
@@ -33,9 +34,11 @@ using ::executorch::runtime::AllocatorID;
 using ::executorch::runtime::ArrayRef;
 using ::executorch::runtime::BoxedEvalueList;
 using ::executorch::runtime::DelegateDebugIdType;
+using ::executorch::runtime::DelegateDebugIntId;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::EventTracerEntry;
+using ::executorch::runtime::kUnsetDelegateDebugIntId;
 using ::executorch::runtime::LoggedEValueType;
 using ::executorch::runtime::Span;
 using ::executorch::runtime::Tag;
@@ -43,6 +46,8 @@ using ::executorch::runtime::testing::TensorFactory;
 
 using ::executorch::etdump::BufferDataSink;
 using ::executorch::etdump::FileDataSink;
+
+using ::executorch::etdump::ETDumpFilter;
 
 class ProfilerETDumpTest : public ::testing::Test {
  protected:
@@ -70,10 +75,72 @@ class ProfilerETDumpTest : public ::testing::Test {
       TensorFactory<ScalarType::Float>& tf) {
     ET_EXPECT_DEATH(
         gen->log_intermediate_output_delegate(
-            "test_event_tensor",
-            static_cast<torch::executor::DebugHandle>(-1),
-            tf.ones({3, 2})),
+            "test_event_tensor", kUnsetDelegateDebugIntId, tf.ones({3, 2})),
         "Must set data sink before writing tensor-like data");
+  }
+
+  void check_log_with_filter(
+      const char* name,
+      DelegateDebugIntId delegate_debug_index,
+      bool use_tensor_input,
+      bool expected_log,
+      bool expected_ok) {
+    TensorFactory<ScalarType::Float> tf;
+    for (size_t i = 0; i < 2; i++) {
+      const size_t buffer_size = 2048;
+
+      void* ptr = malloc(buffer_size);
+      auto buffer_data_sink = BufferDataSink::create(ptr, buffer_size);
+      auto filter = ETDumpFilter();
+      filter.add_regex("filtered.*");
+      filter.set_debug_handle_range(1, 10);
+      etdump_gen[i]->set_delegation_intermediate_output_filter(&filter);
+
+      etdump_gen[i]->create_event_block("test_block");
+      etdump_gen[i]->set_data_sink(&buffer_data_sink.get());
+
+      // size of empty etdump
+      size_t initial_size = 68;
+
+      // Perform logging
+
+      if (use_tensor_input) {
+        auto tensor = tf.ones({3, 2});
+        auto result = etdump_gen[i]->log_intermediate_output_delegate(
+            name, delegate_debug_index, tensor);
+        ASSERT_EQ(result.ok(), expected_ok);
+        if (expected_ok) {
+          ASSERT_EQ(result.get(), expected_log);
+        }
+      } else { // use tensor_list instead
+        std::vector<Tensor> tensors = {tf.ones({5, 4}), tf.ones({7, 6})};
+        Result<bool> result = etdump_gen[i]->log_intermediate_output_delegate(
+            name,
+            delegate_debug_index,
+            ArrayRef<Tensor>(tensors.data(), tensors.size()));
+        ASSERT_EQ(result.ok(), expected_ok);
+        if (expected_ok) {
+          ASSERT_EQ(result.get(), expected_log);
+        }
+      }
+
+      // Get final size of etdump
+      ETDumpResult final_result = etdump_gen[i]->get_etdump_data();
+      size_t final_size = final_result.size;
+      // Check if the size of etdump has changed based on logging success
+      if (expected_log) {
+        ASSERT_NE(initial_size, final_size); // Expect size change if logged
+      } else {
+        ASSERT_EQ(
+            initial_size, final_size); // Expect no size change if not logged
+      }
+
+      if (!etdump_gen[i]->is_static_etdump()) {
+        free(final_result.buf);
+      }
+
+      free(ptr);
+    }
   }
 
   ETDumpGen* etdump_gen[2];
@@ -582,7 +649,7 @@ TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
       Result<bool> log_tensor_list_result =
           etdump_gen[i]->log_intermediate_output_delegate(
               nullptr,
-              static_cast<torch::executor::DebugHandle>(-1),
+              kUnsetDelegateDebugIntId,
               ArrayRef<Tensor>(tensors.data(), tensors.size()));
 
       Result<bool> log_int_result =
@@ -599,7 +666,7 @@ TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
 
       Result<bool> log_bool_result =
           etdump_gen[i]->log_intermediate_output_delegate(
-              nullptr, static_cast<torch::executor::DebugHandle>(-1), 29.82);
+              nullptr, kUnsetDelegateDebugIntId, 29.82);
 
       ASSERT_EQ(log_tensor_result.error(), Error::InvalidArgument);
       ASSERT_EQ(log_tensor_list_result.error(), Error::InvalidArgument);
@@ -611,33 +678,25 @@ TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
 
       // Log a tensor
       etdump_gen[i]->log_intermediate_output_delegate(
-          "test_event_tensor",
-          static_cast<torch::executor::DebugHandle>(-1),
-          tf.ones({3, 2}));
+          "test_event_tensor", kUnsetDelegateDebugIntId, tf.ones({3, 2}));
 
       // Log a tensor list
       etdump_gen[i]->log_intermediate_output_delegate(
           "test_event_tensorlist",
-          static_cast<torch::executor::DebugHandle>(-1),
+          kUnsetDelegateDebugIntId,
           ArrayRef<Tensor>(tensors.data(), tensors.size()));
 
       // Log an int
       etdump_gen[i]->log_intermediate_output_delegate(
-          "test_event_tensorlist",
-          static_cast<torch::executor::DebugHandle>(-1),
-          10);
+          "test_event_tensorlist", kUnsetDelegateDebugIntId, 10);
 
       // Log a double
       etdump_gen[i]->log_intermediate_output_delegate(
-          "test_event_tensorlist",
-          static_cast<torch::executor::DebugHandle>(-1),
-          20.75);
+          "test_event_tensorlist", kUnsetDelegateDebugIntId, 20.75);
 
       // Log a bool
       etdump_gen[i]->log_intermediate_output_delegate(
-          "test_event_tensorlist",
-          static_cast<torch::executor::DebugHandle>(-1),
-          true);
+          "test_event_tensorlist", kUnsetDelegateDebugIntId, true);
 
       ETDumpResult result = etdump_gen[i]->get_etdump_data();
       ASSERT_TRUE(result.buf != nullptr);
@@ -661,7 +720,7 @@ TEST_F(ProfilerETDumpTest, VerifyDelegateIntermediateLogging) {
 
       void* ptr = malloc(2048);
       Span<uint8_t> buffer((uint8_t*)ptr, 2048);
-      ;
+
       auto buffer_data_sink = BufferDataSink::create(ptr, 2048);
       auto file_data_sink = FileDataSink::create(dump_file_path.c_str());
 
@@ -762,23 +821,18 @@ TEST_F(ProfilerETDumpTest, LogDelegateEvents) {
     etdump_gen[i]->log_profiling_delegate(
         nullptr, 278, 1, 2, metadata, strlen(metadata) + 1);
     EventTracerEntry entry = etdump_gen[i]->start_profiling_delegate(
-        "test_event", static_cast<torch::executor::DebugHandle>(-1));
+        "test_event", kUnsetDelegateDebugIntId);
     EXPECT_NE(entry.delegate_event_id_type, DelegateDebugIdType::kNone);
     // Event 2
     etdump_gen[i]->end_profiling_delegate(
         entry, metadata, strlen(metadata) + 1);
     // Event 3
     etdump_gen[i]->log_profiling_delegate(
-        "test_event",
-        static_cast<torch::executor::DebugHandle>(-1),
-        1,
-        2,
-        nullptr,
-        0);
+        "test_event", kUnsetDelegateDebugIntId, 1, 2, nullptr, 0);
     // Event 4
     etdump_gen[i]->log_profiling_delegate(
         "test_event",
-        static_cast<torch::executor::DebugHandle>(-1),
+        kUnsetDelegateDebugIntId,
         1,
         2,
         metadata,
@@ -856,11 +910,11 @@ TEST_F(ProfilerETDumpTest, LogDelegateEvents) {
         std::string(delegate_debug_id_name, strlen(delegate_debug_id_name)),
         "test_event");
     // Event 2 used a string delegate debug identifier, so delegate_debug_id_int
-    // should be -1.
+    // should be kUnsetDelegateDebugIntId.
     EXPECT_EQ(
         etdump_ProfileEvent_delegate_debug_id_int(
             etdump_Event_profile_event(event)),
-        -1);
+        kUnsetDelegateDebugIntId);
     if (!etdump_gen[i]->is_static_etdump()) {
       free(result.buf);
     }
@@ -905,4 +959,63 @@ TEST_F(ProfilerETDumpTest, WriteAfterGetETDumpData) {
       }
     }
   }
+}
+
+TEST_F(ProfilerETDumpTest, LogWithRegexAndUnsetDelegateDebugIdOnTensor) {
+  check_log_with_filter(
+      "filtered_event",
+      kUnsetDelegateDebugIntId,
+      /*use_tensor_input=*/true,
+      /*expected_log=*/false,
+      /*expected_ok=*/true);
+}
+
+TEST_F(ProfilerETDumpTest, LogWithRegexAndUnsetDelegateDebugIdOnTensorList) {
+  check_log_with_filter(
+      "filtered_event",
+      kUnsetDelegateDebugIntId,
+      /*use_tensor_input=*/true,
+      /*expected_log=*/false,
+      /*expected_ok=*/true);
+}
+
+TEST_F(ProfilerETDumpTest, LogWithNullptrAndInRange) {
+  check_log_with_filter(
+      nullptr,
+      5,
+      /*use_tensor_input=*/true,
+      /*expected_log=*/false,
+      /*expected_ok=*/true);
+}
+TEST_F(ProfilerETDumpTest, LogWithNonMatchingRegexAndOutOfRange) {
+  check_log_with_filter(
+      "unfiltered_event",
+      kUnsetDelegateDebugIntId,
+      /*use_tensor_input=*/true,
+      /*expected_log=*/true,
+      /*expected_ok=*/true);
+}
+TEST_F(ProfilerETDumpTest, LogWithNullptrAndOutOfRange) {
+  check_log_with_filter(
+      nullptr,
+      20,
+      /*use_tensor_input=*/true,
+      /*expected_log=*/true,
+      /*expected_ok=*/true);
+}
+TEST_F(ProfilerETDumpTest, LogWithRegexAndInRange) {
+  check_log_with_filter(
+      "filtered_event",
+      5,
+      /*use_tensor_input=*/true,
+      /*expected_log=*/false,
+      /*expected_ok=*/false);
+}
+TEST_F(ProfilerETDumpTest, LogWithNullptrAndUnsetDebugHandle) {
+  check_log_with_filter(
+      nullptr,
+      kUnsetDelegateDebugIntId,
+      /*use_tensor_input=*/true,
+      /*expected_log=*/false,
+      /*expected_ok=*/false);
 }

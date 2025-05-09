@@ -13,7 +13,7 @@ from typing import Sequence, Tuple
 
 import torch
 
-from executorch.backends.arm.quantizer.arm_quantizer import (
+from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
     TOSAQuantizer,

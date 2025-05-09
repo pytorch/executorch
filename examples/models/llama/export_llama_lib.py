@@ -59,13 +59,14 @@ from .source_transformation.apply_spin_quant_r1_r2 import (
 )
 
 from .source_transformation.attention import replace_attention_to_attention_sha
+from .source_transformation.custom_kv_cache import (
+    replace_kv_cache_with_custom_kv_cache,
+    replace_kv_cache_with_quantized_kv_cache,
+)
+
 from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
-)
-from .source_transformation.quantized_kv_cache import (
-    replace_kv_cache_with_custom_kv_cache,
-    replace_kv_cache_with_quantized_kv_cache,
 )
 from .source_transformation.rms_norm import replace_rms_norm_with_native_rms_norm
 
@@ -77,6 +78,7 @@ from .source_transformation.sdpa import (
     replace_sdpa_with_coreml_sdpa,
     replace_sdpa_with_custom_op,
     replace_sdpa_with_flex_sdpa,
+    replace_sdpa_with_quantized_sdpa,
     replace_sdpa_with_simple_sdpa,
 )
 from .source_transformation.vulkan_rope import replace_with_vulkan_rotary_emb
@@ -98,6 +100,9 @@ EXECUTORCH_DEFINED_MODELS = [
     "llama3_2",
     "static_llama",
     "qwen2_5",
+    "qwen3-0_6b",
+    "qwen3-1_7b",
+    "qwen3-4b",
     "phi_4_mini",
     "smollm2",
 ]
@@ -106,6 +111,9 @@ HUGGING_FACE_REPO_IDS = {
     "qwen2_5": "Qwen/Qwen2.5-1.5B",
     "phi_4_mini": "microsoft/Phi-4-mini-instruct",
     "smollm2": "HuggingFaceTB/SmolLM-135M",
+    "qwen3-0_6b": "Qwen/Qwen3-0.6B",
+    "qwen3-1_7b": "Qwen/Qwen3-1.7B",
+    "qwen3-4b": "Qwen/Qwen3-4B",
 }
 
 
@@ -542,6 +550,10 @@ def export_llama(args) -> str:
             from executorch.examples.models.qwen2_5 import (  # pyre-ignore[21]
                 convert_weights,
             )
+        elif args.model.startswith("qwen3"):
+            from executorch.examples.models.qwen3 import (  # pyre-ignore[21]
+                convert_weights,
+            )
         elif args.model == "phi_4_mini":
             from executorch.examples.models.phi_4_mini import (  # pyre-ignore[21]
                 convert_weights,
@@ -651,7 +663,7 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
         _get_source_transforms(
             modelname=args.model,
             dtype_override=dtype_override,
-            checkpoint_dtype=DType.from_torch_dtype(checkpoint_dtype),
+            checkpoint_dtype=DType.from_torch_dtype(checkpoint_dtype),  # type: ignore
             args=args,
         )
     )
@@ -793,10 +805,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
                 args.enable_dynamic_shape,
             )
         )
-        # Apply XNNPACK after Vulkan so that undelegated ops can be accelerated by XNNPACK
-        partitioners.append(
-            get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
-        )
         modelname = f"vulkan_{modelname}"
 
         # Need to remove asserts from the graph to prevent graph breaks
@@ -818,6 +826,10 @@ def _to_edge_and_lower_llama(  # noqa: C901
         modelname = f"coreml_{modelname}"
 
     if args.qnn:
+        logging.warning(
+            "The model definition in current repro is not performant, please refer to the instruction"
+            " in https://github.com/pytorch/executorch/tree/main/examples/qualcomm/oss_scripts/llama/README.md for better performance."
+        )
         from executorch.extension.llm.custom_ops import model_sharding
 
         partitioners.append(
@@ -825,31 +837,30 @@ def _to_edge_and_lower_llama(  # noqa: C901
                 args.use_kv_cache, args.pt2e_quantize, args.num_sharding, args.soc_model
             )
         )
-        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
-        from executorch.backends.qualcomm._passes.annotate_decomposed import (
-            AnnotateDecomposed,
+        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm._passes`
+        from executorch.backends.qualcomm._passes import (
+            AnnotateStack,
+            FoldQDQ,
+            RecomposeRmsNorm,
+            TagQuantIO,
         )
-        from executorch.backends.qualcomm.utils.constants import QCOM_PASS_ACTIVATE_KEY
-        from executorch.backends.qualcomm.utils.utils import (
-            _transform,
+
+        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm._passes.qnn_pass_manager`
+        from executorch.backends.qualcomm._passes.qnn_pass_manager import (
             get_capture_program_passes,
-            tag_quant_io,
+            get_passes_dependency_for_capture_program,
+            QnnPassManager,
         )
-
-        passes_job = get_capture_program_passes()
-        passes_job[AnnotateDecomposed][QCOM_PASS_ACTIVATE_KEY] = True
-        _transform(builder_exported_to_edge.edge_manager.exported_program(), passes_job)
-
-        if args.num_sharding > 0:
-            model_sharding.split_graph(
-                builder_exported_to_edge.edge_manager.exported_program(),
-                builder_exported_to_edge.metadata["get_n_layers"],
-                shares=args.num_sharding,
-            )
 
         # pyre-ignore
         from executorch.backends.qualcomm.quantizer.custom_annotation import (
             get_custom_quant_ios_dtype,
+        )
+
+        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.constants`
+        from executorch.backends.qualcomm.utils.constants import (
+            QCOM_PASS_ACTIVATE_KEY,
+            QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
         )
 
         atten = builder_exported_to_edge.model.layers[0].attention
@@ -866,9 +877,28 @@ def _to_edge_and_lower_llama(  # noqa: C901
                     atten.head_dim,
                 )
             )
-        tag_quant_io(
-            builder_exported_to_edge.edge_manager.exported_program().graph_module,
-            partial(get_custom_quant_ios_dtype, cache_shape),
+
+        # TODO: Use to_edge_lower_and_transform for QNN
+        passes_job = get_capture_program_passes()
+        dep_table = get_passes_dependency_for_capture_program()
+        passes_job[AnnotateStack][QCOM_PASS_ACTIVATE_KEY] = True
+        passes_job[RecomposeRmsNorm][QCOM_PASS_ACTIVATE_KEY] = True
+        passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
+        passes_job[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
+            "get_quant_io_dtype_fn"
+        ] = partial(get_custom_quant_ios_dtype, cache_shape)
+        if args.num_sharding > 0:
+            SplitGraph, setting = model_sharding.get_split_graph_pass(
+                builder_exported_to_edge.metadata["get_n_layers"],
+                shares=args.num_sharding,
+            )
+            passes_job[SplitGraph] = setting
+            dep_table[SplitGraph] = [FoldQDQ]
+            dep_table[TagQuantIO] = [SplitGraph]
+        QnnPassManager().transform_for_to_edge_pipeline(
+            builder_exported_to_edge.edge_manager.exported_program(),
+            dep_table=dep_table,
+            passes_job=passes_job,
         )
 
     logging.info("Lowering model using following partitioner(s): ")
@@ -886,6 +916,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
         if args.verbose:
             print_delegation_info(builder.edge_manager.exported_program().graph_module)
         if args.num_sharding > 0 and args.qnn:
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`.
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
             canonicalize_program(builder.edge_manager.exported_program())
@@ -1085,7 +1116,7 @@ def _load_llama_model(
     return LLMEdgeManager(
         model=model,
         modelname=modelname,
-        max_seq_len=model.max_seq_len,
+        max_seq_len=model.max_seq_len,  # type: ignore
         dtype=dtype_override,
         use_kv_cache=use_kv_cache,
         generate_full_logits=generate_full_logits,
@@ -1098,6 +1129,8 @@ def _load_llama_model(
         calibration_seq_length=calibration_seq_length,
         calibration_data=calibration_data,
         tokenizer_path=tokenizer_path,
+        use_legacy_export=args.qnn,
+        save_exported_program=args.export_only,
         verbose=verbose,
         metadata=_load_llama_model_metadata(
             weight_type,
@@ -1118,7 +1151,6 @@ def _load_llama_model(
             model.vocab_size,
             metadata_str,
         ),
-        args=args,
     )
 
 
@@ -1205,13 +1237,28 @@ def _get_source_transforms(  # noqa
     if args.expand_rope_table:
         transforms.append(materialze_broadcast_of_rope_freq_cis)
 
+    use_attention_mask_for_custom_sdpa = False
+    if isinstance(args, argparse.Namespace):
+        if getattr(args, "use_custom_sdpa_with_attention_mask", None):
+            use_attention_mask_for_custom_sdpa = True
+
     if args.use_sdpa_with_kv_cache:
         transforms.append(replace_kv_cache_with_custom_kv_cache)
-        transforms.append(replace_sdpa_with_custom_op)
+        # todo: do this optionally
+        # if use attention mask instead of causal attention
+        # then create partial function that sets use_attention_mask=True
+        if use_attention_mask_for_custom_sdpa:
+            transforms.append(
+                partial(replace_sdpa_with_custom_op, use_attention_mask=True)
+            )
+        else:
+            transforms.append(replace_sdpa_with_custom_op)
 
     if args.quantize_kv_cache:
         assert args.use_kv_cache, "quantize_kv_cache requires use_kv_cache=True"
         transforms.append(replace_kv_cache_with_quantized_kv_cache)
+        # Right now
+        transforms.append(replace_sdpa_with_quantized_sdpa)
 
     if args.use_kv_cache:
         if args.qnn:

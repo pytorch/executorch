@@ -77,6 +77,47 @@ at::Tensor custom_sdpa_aten(
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
     const std::optional<double> scale);
 
+Tensor& custom_quantized_sdpa_out_no_context(
+    const Tensor& q,
+    const Tensor& k,
+    const Tensor& v,
+    const int64_t start_pos,
+    // @lint-ignore CLANGTIDY facebook-hte-ConstantArgumentPassByValue
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const optional<Tensor> attn_mask,
+    const double dropout_p,
+    const bool is_causal,
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const optional<double> scale,
+    const optional<Tensor> q_zero_points,
+    const optional<Tensor> q_scales,
+    const optional<Tensor> k_zero_points,
+    const optional<Tensor> k_scales,
+    const optional<Tensor> v_zero_points,
+    const optional<Tensor> v_scales,
+    const bool is_seq_at_dim_2,
+    Tensor& output);
+
+at::Tensor custom_quantized_sdpa_aten(
+    const at::Tensor& q,
+    const at::Tensor& k,
+    const at::Tensor& v,
+    const int64_t start_pos,
+    // @lint-ignore CLANGTIDY facebook-hte-ConstantArgumentPassByValue
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const std::optional<at::Tensor> attn_mask,
+    const double dropout_p,
+    const bool is_causal,
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const std::optional<double> scale,
+    const std::optional<at::Tensor>& q_zero_points,
+    const std::optional<at::Tensor>& q_scales,
+    const std::optional<at::Tensor>& k_zero_points,
+    const std::optional<at::Tensor>& k_scales,
+    const std::optional<at::Tensor>& v_zero_points,
+    const std::optional<at::Tensor>& v_scales,
+    const bool is_seq_at_dim_2);
+
 Tensor& update_cache_out_no_context(
     const Tensor& value,
     Tensor& cache,
@@ -198,6 +239,87 @@ at::Tensor custom_sdpa_aten(
   return output;
 }
 
+Tensor& custom_quantized_sdpa_out_no_context(
+    const Tensor& q,
+    const Tensor& k,
+    const Tensor& v,
+    const int64_t start_pos,
+    // @lint-ignore CLANGTIDY facebook-hte-ConstantArgumentPassByValue
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const optional<Tensor> attn_mask,
+    const double dropout_p,
+    const bool is_causal,
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const optional<double> scale,
+    const optional<Tensor> q_zero_points,
+    const optional<Tensor> q_scales,
+    const optional<Tensor> k_zero_points,
+    const optional<Tensor> k_scales,
+    const optional<Tensor> v_zero_points,
+    const optional<Tensor> v_scales,
+    const bool is_seq_at_dim_2,
+    Tensor& output) {
+  executorch::aten::RuntimeContext context{};
+  return torch::executor::native::custom_quantized_sdpa_out(
+      context,
+      q,
+      k,
+      v,
+      start_pos,
+      attn_mask,
+      dropout_p,
+      is_causal,
+      scale,
+      q_zero_points,
+      q_scales,
+      k_zero_points,
+      k_scales,
+      v_zero_points,
+      v_scales,
+      is_seq_at_dim_2,
+      output);
+}
+
+at::Tensor custom_quantized_sdpa_aten(
+    const at::Tensor& q,
+    const at::Tensor& k,
+    const at::Tensor& v,
+    const int64_t start_pos,
+    // @lint-ignore CLANGTIDY facebook-hte-ConstantArgumentPassByValue
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const std::optional<at::Tensor> attn_mask,
+    const double dropout_p,
+    const bool is_causal,
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const std::optional<double> scale,
+    const std::optional<at::Tensor>& q_zero_points,
+    const std::optional<at::Tensor>& q_scales,
+    const std::optional<at::Tensor>& k_zero_points,
+    const std::optional<at::Tensor>& k_scales,
+    const std::optional<at::Tensor>& v_zero_points,
+    const std::optional<at::Tensor>& v_scales,
+    const bool is_seq_at_dim_2) {
+  auto output = at::empty(q.sizes());
+  WRAP_TO_ATEN(custom_quantized_sdpa_out_no_context, 15)
+  (q,
+   k,
+   v,
+   start_pos,
+   attn_mask,
+   dropout_p,
+   is_causal,
+   scale,
+   q_zero_points,
+   q_scales,
+   k_zero_points,
+   k_scales,
+   v_zero_points,
+   v_scales,
+   is_seq_at_dim_2,
+   output);
+  return output;
+}
+
 Tensor& update_cache_out_no_context(
     const Tensor& value,
     Tensor& cache,
@@ -245,6 +367,18 @@ TORCH_LIBRARY_FRAGMENT(llama, m) {
   m.def(
       "update_cache.out(Tensor value, Tensor(a!) cache, "
       "SymInt start_pos, *, Tensor(b!) out) -> Tensor(b!)");
+  m.def(
+      "custom_quantized_sdpa(Tensor query, Tensor key, Tensor value, SymInt start_pos, "
+      "Tensor? attn_mask=None, float drpout_p=0.0, bool is_causal=False, "
+      "float? scale=None, Tensor? q_zero_points=None, Tensor? q_scales=None, "
+      "Tensor? k_zero_points=None, Tensor? k_scales=None, Tensor? v_zero_points=None, "
+      "Tensor? v_scales=None, bool is_seq_at_dim_2=False) -> Tensor");
+  m.def(
+      "custom_quantized_sdpa.out(Tensor query, Tensor key, Tensor value, SymInt start_pos, "
+      "Tensor? attn_mask=None, float drpout_p=0.0, bool is_causal=False, "
+      "float? scale=None, Tensor? q_zero_points=None, Tensor? q_scales=None, "
+      "Tensor? k_zero_points=None, Tensor? k_scales=None, Tensor? v_zero_points=None, "
+      "Tensor? v_scales=None, bool is_seq_at_dim_2=False, *, Tensor(a!) out) -> Tensor(a!)");
 }
 
 // TODO: Rename this file to op_custom_ops_aot.cpp
@@ -263,4 +397,11 @@ TORCH_LIBRARY_IMPL(llama, CompositeExplicitAutograd, m) {
   m.impl(
       "update_cache.out",
       WRAP_TO_ATEN(torch::executor::native::update_cache_out_no_context, 3));
+  m.impl(
+      "custom_quantized_sdpa",
+      torch::executor::native::custom_quantized_sdpa_aten);
+  m.impl(
+      "custom_quantized_sdpa.out",
+      WRAP_TO_ATEN(
+          torch::executor::native::custom_quantized_sdpa_out_no_context, 15));
 }

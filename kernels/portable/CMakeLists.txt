@@ -66,13 +66,13 @@ gen_operators_lib(
 # Portable kernels support optional parallelization (and, in the
 # future, perhaps other performance features). If support is present,
 # produce an optimized version.
-set(BUILD_OPTIMIZED_PORTABLE_KERNELS EXECUTORCH_BUILD_PTHREADPOOL)
-
-if(BUILD_OPTIMIZED_PORTABLE_KERNELS)
+if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   add_library(optimized_portable_kernels ${_portable_kernels__srcs})
   target_link_libraries(optimized_portable_kernels PRIVATE executorch)
   target_link_libraries(optimized_portable_kernels PUBLIC extension_threadpool)
   target_compile_options(optimized_portable_kernels PUBLIC ${_common_compile_options})
+  target_include_directories(optimized_portable_kernels PRIVATE ${TORCH_INCLUDE_DIRS})
+  target_compile_definitions(optimized_portable_kernels PRIVATE ET_USE_PYTORCH_HEADERS)
   install(
     TARGETS optimized_portable_kernels
     DESTINATION lib

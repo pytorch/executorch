@@ -7,8 +7,9 @@
 # pyre-unsafe
 from typing import List
 
-import serializer.tosa_serializer as ts  # type: ignore
 import torch
+
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
@@ -20,7 +21,6 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import build_rescale
-from serializer.tosa_serializer import TosaOp
 
 
 @register_node_visitor
@@ -37,18 +37,24 @@ class BMMVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
+        if inputs[0].dtype != inputs[1].dtype or inputs[0].dtype != output.dtype:
+            raise TypeError(
+                f"All IO needs to have the same data type, got: "
+                f"{inputs[0].dtype=}, {inputs[1].dtype=} and {output.dtype=}"
+            )
 
-        assert inputs[0].dtype == inputs[1].dtype, "Both inputs must be of same type"
-        assert inputs[0].dtype in [
-            ts.DType.INT8,
-            ts.DType.FP32,
-        ], "Only int8 and float32 supported"
-        # aten.bmm maps directly to MATMUL
         # NOTE: For now, only INT8 & FP32 is supported
+        supported_dtypes = [ts.DType.INT8, ts.DType.FP32]
+        for input in inputs:
+            if input.dtype not in supported_dtypes:
+                raise TypeError(
+                    f'IO data type needs to be {supported_dtypes}, got "{input.dtype}"'
+                )
+
+        # aten.bmm maps directly to MATMUL
 
         # For INT8, we need to get the zero points and add an intermediate tensor
         # for a later rescale.
-
         if inputs[0].dtype == ts.DType.INT8:
             input_qparams = get_input_qparams(node)
             input0_zp = input_qparams[0].zp
@@ -64,7 +70,7 @@ class BMMVisitor(NodeVisitor):
         attr.MatMulAttribute(A_zp=input0_zp, B_zp=input1_zp)
 
         tosa_graph.addOperator(
-            TosaOp.Op().MATMUL,
+            ts.TosaOp.Op().MATMUL,
             [inputs[0].name, inputs[1].name],
             [bmm_output_name],
             attr,

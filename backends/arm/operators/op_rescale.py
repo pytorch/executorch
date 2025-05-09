@@ -8,10 +8,10 @@
 from typing import cast, List
 
 import executorch.backends.arm.tosa_quant_utils as tosa_quant_utils
-import serializer.tosa_serializer as ts  # type: ignore
 import torch
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
-import tosa.Op as TosaOp  # type: ignore
+import tosa_tools.v0_80.tosa.Op as TosaOp  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,

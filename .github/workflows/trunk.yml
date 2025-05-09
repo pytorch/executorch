@@ -41,7 +41,7 @@ jobs:
     with:
       runner: macos-m1-stable
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -89,7 +89,7 @@ jobs:
     with:
       runner: ${{ matrix.runner }}
       docker-image: executorch-ubuntu-22.04-gcc11-aarch64
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -116,7 +116,7 @@ jobs:
     with:
       runner: macos-m1-stable
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         BUILD_TOOL=${{ matrix.build-tool }}
@@ -138,7 +138,7 @@ jobs:
     with:
       runner: macos-m1-stable
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         BUILD_TOOL=${{ matrix.build-tool }}
@@ -164,7 +164,7 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
@@ -176,16 +176,26 @@ jobs:
         # Test selective build
         PYTHON_EXECUTABLE=python bash examples/portable/scripts/test_demo_backend_delegation.sh "${BUILD_TOOL}"
 
-  test-arm-backend-delegation:
-    name: test-arm-backend-delegation
+  test-arm-backend:
+    name: test-arm-backend
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
+    strategy:
+      matrix:
+        include:
+          - test_arm_baremetal: test_pytest_ops_ethosu_fvp
+          - test_arm_baremetal: test_pytest_models_ethosu_fvp
+          - test_arm_baremetal: test_run_ethosu_fvp
+          - test_arm_baremetal: test_models_tosa
+          - test_arm_baremetal: test_models_ethos-u55
+          - test_arm_baremetal: test_models_ethos-u85
+      fail-fast: false
     with:
       runner: linux.2xlarge.memory
       docker-image: executorch-ubuntu-22.04-arm-sdk
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -202,20 +212,21 @@ jobs:
         # Hopefully this is high enough for this setup.
         sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
 
-        # Test ethos-u delegate examples with run.sh
-        backends/arm/test/test_arm_baremetal.sh test_full_ethosu_fvp
+        ARM_TEST=${{ matrix.test_arm_baremetal }}
 
+        # Test test_arm_baremetal.sh with test
+        backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
 
-  test-arm-reference-delegation:
-    name: test-arm-reference-delegation
+  test-arm-cortex-m-size-test:
+    name: test-arm-cortex-m-size-test
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     with:
-      runner: linux.2xlarge.memory
+      runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-arm-sdk
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -225,11 +236,40 @@ jobs:
 
         source .ci/scripts/utils.sh
         install_executorch "--use-pt-pinned-commit"
-
         .ci/scripts/setup-arm-baremetal-tools.sh
+        source examples/arm/ethos-u-scratch/setup_path.sh
 
-        # Run arm unit tests using the simulator
-        backends/arm/test/test_arm_baremetal.sh test_pytest_ethosu_fvp
+        # User baremetal toolchain
+        arm-none-eabi-c++ --version
+        toolchain_cmake=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
+        toolchain_cmake=$(realpath ${toolchain_cmake})
+
+        # Build and test size test
+        bash test/build_size_test.sh "-DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON"
+        elf="cmake-out/test/size_test"
+
+        # Dump basic info
+        ls -al ${elf}
+        arm-none-eabi-size ${elf}
+
+        # Dump symbols
+        python .github/scripts/run_nm.py -e ${elf}
+        python .github/scripts/run_nm.py -e ${elf} -f "executorch" -p "arm-none-eabi-"
+        python .github/scripts/run_nm.py -e ${elf} -f "executorch_text" -p "arm-none-eabi-"
+
+        # Add basic guard - TODO: refine this!
+        arm-none-eabi-strip ${elf}
+        output=$(ls -la ${elf})
+        arr=($output)
+        size=${arr[4]}
+        threshold="102400" # 100KiB
+        echo "size: $size, threshold: $threshold"
+        if [[ "$size" -le "$threshold" ]]; then
+          echo "Success $size <= $threshold"
+        else
+          echo "Fail $size > $threshold"
+          exit 1
+        fi
 
   test-coreml-delegate:
     name: test-coreml-delegate
@@ -237,7 +277,7 @@ jobs:
     with:
       runner: macos-latest-xlarge
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -260,7 +300,7 @@ jobs:
     with:
       runner: macos-m1-stable
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 180
       script: |
@@ -279,7 +319,7 @@ jobs:
     with:
       runner: macos-m1-stable
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
@@ -301,7 +341,7 @@ jobs:
     with:
       runner: macos-m1-stable
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
@@ -353,7 +393,7 @@ jobs:
     with:
       runner: ${{ matrix.runner }}
       docker-image: ${{ matrix.docker-image }}
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
       script: |
@@ -385,7 +425,7 @@ jobs:
     with:
       runner: macos-m1-stable
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
       script: |
@@ -422,7 +462,7 @@ jobs:
   #   with:
   #     runner: macos-14-xlarge
   #     python-version: '3.11'
-  #     submodules: 'true'
+  #     submodules: 'recursive'
   #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
   #     timeout: 900
   #     script: |
@@ -456,7 +496,7 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-qnn-sdk
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
       script: |
@@ -476,7 +516,7 @@ jobs:
     with:
       runner: macos-m1-stable
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -526,7 +566,7 @@ jobs:
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: linux.2xlarge.memory
       docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -585,7 +625,7 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-qnn-sdk
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
       script: |

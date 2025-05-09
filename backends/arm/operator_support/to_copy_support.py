@@ -30,6 +30,8 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
     tosa_specs = [
         TosaSpecification.create_from_string("TOSA-0.80+BI"),
         TosaSpecification.create_from_string("TOSA-0.80+MI"),
+        TosaSpecification.create_from_string("TOSA-1.0+INT"),
+        TosaSpecification.create_from_string("TOSA-1.0+FP"),
     ]
 
     SupportedTypeDict = dict[torch.dtype, list[torch.dtype]]
@@ -75,7 +77,6 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
     ) -> bool:
         assert node.target in self.targets
 
-        assert tosa_spec.support_integer()
         supported_dtypes = (
             self.ALL_SUPPORTED_TYPES
             if tosa_spec.support_float()

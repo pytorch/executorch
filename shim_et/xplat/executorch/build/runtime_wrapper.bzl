@@ -112,6 +112,11 @@ def _patch_build_mode_flags(kwargs):
         # @oss-disable: "ovr_config//build_mode:code-coverage": ["-D__ET_BUILD_MODE_COV=1"],
     })
 
+    kwargs["compiler_flags"] = kwargs["compiler_flags"] + select({
+            "DEFAULT": [],
+            "ovr_config//os:macos": ["-fvisibility=default"],
+    })
+
     return kwargs
 
 def _patch_test_compiler_flags(kwargs):

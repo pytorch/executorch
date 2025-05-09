@@ -17,12 +17,13 @@ class StaticAttentionTest(unittest.TestCase):
         torch.manual_seed(42)
 
     def test_without_cache(self):
-        def test(use_conv2d):
+        def test(use_qk_norm, use_conv2d):
             config = ModelArgs(
                 dim=64,
                 n_heads=4,
                 n_kv_heads=2,
                 max_seq_len=8,
+                use_qk_norm=use_qk_norm,
             )
             layer_id = 0
             rope = Rope(config)
@@ -47,8 +48,10 @@ class StaticAttentionTest(unittest.TestCase):
             )
             self.assertTrue(torch.isclose(y, expected, rtol=1e-3).all())
 
-        test(True)
-        test(False)
+        test(True, True)
+        test(True, False)
+        test(False, True)
+        test(False, False)
 
     def test_hf_rope_without_cache(self):
         config = ModelArgs(

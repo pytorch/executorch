@@ -33,7 +33,7 @@ This command performs a shallow clone to speed up the process.
 
 The Benchmark App is configured to use a Swift PM package that provides the prebuilt ExecuTorch frameworks.
 
-By default, the app relies on the package referencing locally built binaries. To ensure it functions correctly, you must first build the frameworks by following the [guide](https://pytorch.org/executorch/main/using-executorch-ios.html#building-from-source).
+By default, the app relies on the package referencing locally built binaries. To ensure it functions correctly, you must first build the frameworks by following the [guide](https://pytorch.org/executorch/main/using-executorch-ios#building-from-source).
 
 ## Adding Models and Resources
 

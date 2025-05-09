@@ -93,9 +93,6 @@ function(executorch_print_configuration_summary)
     STATUS
       "  EXECUTORCH_BUILD_GFLAGS                : ${EXECUTORCH_BUILD_GFLAGS}"
   )
-  message(STATUS "  EXECUTORCH_BUILD_HOST_TARGETS          : "
-                 "${EXECUTORCH_BUILD_HOST_TARGETS}"
-  )
   message(STATUS "  EXECUTORCH_BUILD_KERNELS_CUSTOM        : "
                  "${EXECUTORCH_BUILD_KERNELS_CUSTOM}"
   )

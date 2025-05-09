@@ -10,34 +10,11 @@
 
 #include <executorch/kernels/optimized/vec/functional.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
+#include <executorch/kernels/portable/cpu/util/broadcast_indexes_range.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
 namespace executor {
-namespace internal {
-// NOTE: we bake ArrayRef iterators being pointers into the return
-// type here because we assume that iterators are portable across
-// ArrayRef copies.
-inline const Tensor::SizesType* arrayref_begin_ignoring_leading_1s(
-    ArrayRef<Tensor::SizesType> arr) {
-  return std::find_if(
-      arr.begin(), arr.end(), [](Tensor::SizesType x) { return x != 1; });
-}
-
-inline bool sizes_match_ignoring_leading_1s(
-    ArrayRef<Tensor::SizesType> lhs,
-    ArrayRef<Tensor::SizesType> rhs) {
-  auto lhs_begin = arrayref_begin_ignoring_leading_1s(lhs);
-  auto lhs_end = lhs.end();
-
-  auto rhs_begin = arrayref_begin_ignoring_leading_1s(rhs);
-  auto rhs_end = rhs.end();
-
-  return ((lhs_end - lhs_begin) == (rhs_end - rhs_begin)) &&
-      std::equal(lhs_begin, lhs_end, rhs_begin);
-}
-} // namespace internal
-
 enum class ElementwiseOptimizedPath {
   kNone,
   kTreatAs1d,

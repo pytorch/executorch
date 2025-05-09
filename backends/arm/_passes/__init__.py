@@ -20,12 +20,17 @@ from .convert_squeezes_to_view import ConvertSqueezesToViewPass  # noqa
 from .convert_to_clamp import ConvertToClampPass  # noqa
 from .decompose_batchnorm_pass import DecomposeBatchNormPass  # noqa
 from .decompose_div_pass import DecomposeDivPass  # noqa
+from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_layernorm_pass import DecomposeLayerNormPass  # noqa
+from .decompose_leaky_relu_pass import DecomposeLeakyReLUPass  # noqa
 from .decompose_linear_pass import DecomposeLinearPass  # noqa
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
+from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
 from .decompose_select import DecomposeSelectPass  # noqa
+from .decompose_silu_pass import DecomposeSiluPass  # noqa
 from .decompose_softmax_pass import DecomposeSoftmaxPass  # noqa
 from .decompose_softmax_unstable_pass import DecomposeSoftmaxUnstablePass  # noqa
+from .decompose_sqrt_pass import DecomposeSqrtPass  # noqa
 from .decompose_var_pass import DecomposeVarPass  # noqa
 from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     FoldAndAnnotateQParamsPass,
@@ -34,11 +39,13 @@ from .fold_qdq_with_annotated_qparams_pass import (  # noqa
 )
 from .fuse_batchnorm2d_pass import FuseBatchnorm2DPass  # noqa
 from .fuse_constant_ops_pass import ComputeConstantOpsAOT, FuseConstantArgsPass  # noqa
+from .fuse_equal_placeholders_pass import FuseEqualPlaceholdersPass  # noqa
 from .fuse_quantized_activation_pass import FuseQuantizedActivationPass  # noqa
 from .insert_rescales_pass import InsertRescalePass  # noqa
 from .insert_table_ops import InsertTableOpsPass  # noqa
 from .keep_dims_false_to_squeeze_pass import KeepDimsFalseToSqueezePass  # noqa
 from .match_arg_ranks_pass import MatchArgRanksPass  # noqa
+from .match_where_self_arg_dtype_pass import MatchWhereSelfDtypePass  # noqa
 from .meandim_to_averagepool_pass import ConvertMeanDimToAveragePoolPass  # noqa
 from .mm_to_bmm_pass import ConvertMmToBmmPass  # noqa
 from .remove_clone_pass import RemoveClonePass  # noqa

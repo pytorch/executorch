@@ -12,11 +12,6 @@ if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
 fi
 which "${PYTHON_EXECUTABLE}"
 
-copy_src() {
-  cp -r extension/android/build.gradle extension/android/settings.gradle extension/android/gradlew extension/android/gradle extension/android/gradlew.bat extension/android/gradle.properties "${BUILD_AAR_DIR}"
-  cp -r extension/android/executorch_android "${BUILD_AAR_DIR}/executorch_android"
-}
-
 build_android_native_library() {
   ANDROID_ABI="$1"
   ANDROID_NDK="${ANDROID_NDK:-/opt/ndk}"
@@ -70,11 +65,6 @@ build_android_native_library() {
   fi
   cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install --config "${EXECUTORCH_CMAKE_BUILD_TYPE}"
 
-  # Update tokenizers submodule
-  pushd extension/llm/tokenizers
-  echo "Update tokenizers submodule"
-  git submodule update --init
-  popd
   cmake extension/android \
     -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI="${ANDROID_ABI}" \
@@ -93,54 +83,52 @@ build_android_native_library() {
   cmake --build "${CMAKE_OUT}"/extension/android -j "${CMAKE_JOBS}" --config "${EXECUTORCH_CMAKE_BUILD_TYPE}"
 
   # Copy artifacts to ABI specific directory
-  mkdir -p "${BUILD_AAR_DIR}/executorch_android/src/main/jniLibs/${ANDROID_ABI}"
-  cp "${CMAKE_OUT}"/extension/android/*.so "${BUILD_AAR_DIR}/executorch_android/src/main/jniLibs/${ANDROID_ABI}/"
+  local SO_STAGE_DIR="cmake-out-android-so/${ANDROID_ABI}"
+  mkdir -p ${SO_STAGE_DIR}
+  cp "${CMAKE_OUT}"/extension/android/*.so "${SO_STAGE_DIR}/libexecutorch.so"
 
   # Copy QNN related so library
   if [ -n "$QNN_SDK_ROOT" ] && [ "$ANDROID_ABI" == "arm64-v8a" ]; then
-    cp "${CMAKE_OUT}"/lib/libqnn_executorch_backend.so "${BUILD_AAR_DIR}/executorch_android/src/main/jniLibs/${ANDROID_ABI}/"
-    cp "${QNN_SDK_ROOT}"/lib/aarch64-android/libQnnHtp.so "${BUILD_AAR_DIR}/executorch_android/src/main/jniLibs/${ANDROID_ABI}/"
-    cp "${QNN_SDK_ROOT}"/lib/aarch64-android/libQnnSystem.so "${BUILD_AAR_DIR}/executorch_android/src/main/jniLibs/${ANDROID_ABI}/"
-    cp "${QNN_SDK_ROOT}"/lib/aarch64-android/libQnnHtpV69Stub.so "${BUILD_AAR_DIR}/executorch_android/src/main/jniLibs/${ANDROID_ABI}/"
-    cp "${QNN_SDK_ROOT}"/lib/aarch64-android/libQnnHtpV73Stub.so "${BUILD_AAR_DIR}/executorch_android/src/main/jniLibs/${ANDROID_ABI}/"
-    cp "${QNN_SDK_ROOT}"/lib/aarch64-android/libQnnHtpV75Stub.so "${BUILD_AAR_DIR}/executorch_android/src/main/jniLibs/${ANDROID_ABI}/"
-    cp "${QNN_SDK_ROOT}"/lib/hexagon-v69/unsigned/libQnnHtpV69Skel.so "${BUILD_AAR_DIR}/executorch_android/src/main/jniLibs/${ANDROID_ABI}/"
-    cp "${QNN_SDK_ROOT}"/lib/hexagon-v73/unsigned/libQnnHtpV73Skel.so "${BUILD_AAR_DIR}/executorch_android/src/main/jniLibs/${ANDROID_ABI}/"
-    cp "${QNN_SDK_ROOT}"/lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so "${BUILD_AAR_DIR}/executorch_android/src/main/jniLibs/${ANDROID_ABI}/"
+    cp "${CMAKE_OUT}"/lib/libqnn_executorch_backend.so ${SO_STAGE_DIR}
+    cp "${QNN_SDK_ROOT}"/lib/aarch64-android/libQnnHtp.so ${SO_STAGE_DIR}
+    cp "${QNN_SDK_ROOT}"/lib/aarch64-android/libQnnSystem.so ${SO_STAGE_DIR}
+    cp "${QNN_SDK_ROOT}"/lib/aarch64-android/libQnnHtpV69Stub.so ${SO_STAGE_DIR}
+    cp "${QNN_SDK_ROOT}"/lib/aarch64-android/libQnnHtpV73Stub.so ${SO_STAGE_DIR}
+    cp "${QNN_SDK_ROOT}"/lib/aarch64-android/libQnnHtpV75Stub.so ${SO_STAGE_DIR}
+    cp "${QNN_SDK_ROOT}"/lib/hexagon-v69/unsigned/libQnnHtpV69Skel.so ${SO_STAGE_DIR}
+    cp "${QNN_SDK_ROOT}"/lib/hexagon-v73/unsigned/libQnnHtpV73Skel.so ${SO_STAGE_DIR}
+    cp "${QNN_SDK_ROOT}"/lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so ${SO_STAGE_DIR}
   fi
 
   # Copy MTK related so library
   if [ -n "$NEURON_BUFFER_ALLOCATOR_LIB" ] && [ -n "$NEURON_USDK_ADAPTER_LIB" ] && [ "$ANDROID_ABI" == "arm64-v8a" ]; then
-    cp "${CMAKE_OUT}"/backends/mediatek/libneuron_backend.so ${BUILD_AAR_DIR}/executorch_android/src/main/jniLibs/${ANDROID_ABI}/
-    cp "${NEURON_BUFFER_ALLOCATOR_LIB}" ${BUILD_AAR_DIR}/executorch_android/src/main/jniLibs/${ANDROID_ABI}/
-    cp "${NEURON_USDK_ADAPTER_LIB}" ${BUILD_AAR_DIR}/executorch_android/src/main/jniLibs/${ANDROID_ABI}/
+    cp "${CMAKE_OUT}"/backends/mediatek/libneuron_backend.so ${SO_STAGE_DIR}
+    cp "${NEURON_BUFFER_ALLOCATOR_LIB}" ${SO_STAGE_DIR}
+    cp "${NEURON_USDK_ADAPTER_LIB}" ${SO_STAGE_DIR}
   fi
 }
 
 build_aar() {
-  pushd "${BUILD_AAR_DIR}"
-  # Rename libexecutorch_jni.so to libexecutorch.so for soname consistency
-  # between Java and JNI
-  find . -type f -name "libexecutorch_jni.so" -exec bash -c 'mv "$1" "${1/_jni/}"' bash {} \;
   if [ "$EXECUTORCH_CMAKE_BUILD_TYPE" == "Release" ]; then
-    find . -type f -name "*.so" -exec "$ANDROID_NDK"/toolchains/llvm/prebuilt/*/bin/llvm-strip {} \;
+    find cmake-out-android-so -type f -name "*.so" -exec "$ANDROID_NDK"/toolchains/llvm/prebuilt/*/bin/llvm-strip {} \;
   fi
+  pushd extension/android/
   ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build
-  cp executorch_android/build/outputs/aar/executorch_android-debug.aar executorch.aar
+  # Use java unit test as sanity check
+  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:testDebugUnitTest
   popd
+  if [ ! -z $BUILD_AAR_DIR ]; then
+    cp extension/android/executorch_android/build/outputs/aar/executorch_android-debug.aar "${BUILD_AAR_DIR}/executorch.aar"
+  fi
 }
 
 main() {
-  if [[ -z "${BUILD_AAR_DIR:-}" ]]; then
-    BUILD_AAR_DIR="$(mktemp -d)"
-  fi
-  export BUILD_AAR_DIR
   if [ -z "$ANDROID_ABIS" ]; then
     ANDROID_ABIS=("arm64-v8a" "x86_64")
   fi
   export ANDROID_ABIS
 
-  copy_src
+  mkdir -p cmake-out-android-so/
   for ANDROID_ABI in "${ANDROID_ABIS[@]}"; do
     build_android_native_library ${ANDROID_ABI}
   done

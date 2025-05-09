@@ -16,7 +16,6 @@ from executorch.backends.arm.tosa_utils import getNodeArgs
 from executorch.exir.dialects._ops import ops as exir_ops
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
 
 
 @register_tosa_support_check
@@ -26,6 +25,8 @@ class SliceCopySupported(SupportedTOSAOperatorCheck):
     tosa_specs = [
         TosaSpecification.create_from_string("TOSA-0.80+BI"),
         TosaSpecification.create_from_string("TOSA-0.80+MI"),
+        TosaSpecification.create_from_string("TOSA-1.0+INT"),
+        TosaSpecification.create_from_string("TOSA-1.0+FP"),
     ]
 
     def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification) -> bool:  # type: ignore[override, misc]

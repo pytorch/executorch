@@ -136,8 +136,14 @@ class FoldAndAnnotateQParamsPass(ExportPass):
                 continue
 
             # Make sure we haven't already set qparams meta information on the node
-            assert "input_qparams" not in n.meta.keys()
-            assert "output_qparams" not in n.meta.keys()
+            assert "input_qparams" not in n.meta, (
+                f'Unexpected key "input_qparams" found in meta for node {n}. '
+                "input_qparams should not have been set at this point"
+            )
+            assert "output_qparams" not in n.meta, (
+                f'Unexpected key "output_qparams" found in meta for node {n}. '
+                "output_qparams should not have been set at this point"
+            )
 
             # for the inputs and outputs search the graph for quantization info and
             # store the information in a dict with order of the _tensor_ inputs as key,

@@ -112,14 +112,10 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
 
 - (BOOL)resizeToShape:(NSArray<NSNumber *> *)shape
                 error:(NSError **)error {
-  const auto resizeError = resize_tensor_ptr(
-    _tensor, utils::toVector<SizesType>(shape)
-  );
-  if (resizeError != Error::Ok) {
+  const auto errorCode = resize_tensor_ptr(_tensor, utils::toVector<SizesType>(shape));
+  if (errorCode != Error::Ok) {
     if (error) {
-      *error = [NSError errorWithDomain:ExecuTorchErrorDomain
-                                   code:(NSInteger)resizeError
-                               userInfo:nil];
+      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
     }
     return NO;
   }

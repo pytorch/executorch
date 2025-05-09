@@ -11,6 +11,7 @@ import os
 import sys
 import unittest
 
+import pytest
 import torch
 
 from executorch.backends.arm.test import common, conftest
@@ -27,7 +28,6 @@ project_dir = os.path.abspath(os.path.join(this_files_dir, "../../../.."))
 sys.path.append(project_dir)
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 class TestLlama(unittest.TestCase):
@@ -78,31 +78,13 @@ class TestLlama(unittest.TestCase):
 
         llama_model, llama_inputs, llama_meta = get_llama_model(args)
 
-        # TODO: Remove workaround since attention mask should not be persistent,
-        # it only works if input shape is always the same
-        freqs_c = "freqs_cos"
-        freqs_s = "freqs_sin"
-        for i in range(llama_model.n_layers):
-            val = llama_model.layers[i].attention.get_buffer("mask")
-            llama_model.layers[i].attention.register_buffer(
-                "mask", val, persistent=True
-            )
-            val = llama_model.layers[i].attention.rope.get_buffer(freqs_c)
-            llama_model.layers[i].attention.rope.register_buffer(
-                freqs_c, val, persistent=True
-            )
-            val = llama_model.layers[i].attention.rope.get_buffer(freqs_s)
-            llama_model.layers[i].attention.rope.register_buffer(
-                freqs_s, val, persistent=True
-            )
-
         return llama_model, llama_inputs, llama_meta
 
     def test_llama_tosa_MI(self):
         llama_model, llama_inputs, llama_meta = self.prepare_model()
 
-        if llama_model is None and llama_inputs is None and llama_meta is None:
-            return
+        if llama_model is None or llama_inputs is None:
+            pytest.skip("Missing model and/or input files")
 
         with torch.no_grad():
             (
@@ -114,11 +96,37 @@ class TestLlama(unittest.TestCase):
                 )
                 .export()
                 .to_edge_transform_and_lower()
-                .check_count({"torch.ops.higher_order.executorch_call_delegate": 14})
+                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
                 .to_executorch()
                 .run_method_and_compare_outputs(
                     inputs=llama_inputs,
                     atol=4.3,
                     rtol=1.1,  # TODO: MLETORCH-825 decrease tolerance
+                )
+            )
+
+    @pytest.mark.xfail(reason="KeyError: scalar_tensor_1 (MLETORCH-907)")
+    def test_llama_tosa_BI(self):
+        llama_model, llama_inputs, llama_meta = self.prepare_model()
+
+        if llama_model is None or llama_inputs is None:
+            pytest.skip("Missing model and/or input files")
+
+        with torch.no_grad():
+            (
+                ArmTester(
+                    llama_model,
+                    example_inputs=llama_inputs,
+                    compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
+                    constant_methods=llama_meta,
+                )
+                .quantize()
+                .export()
+                .to_edge_transform_and_lower()
+                .to_executorch()
+                .run_method_and_compare_outputs(
+                    inputs=llama_inputs,
+                    atol=4.3,
+                    rtol=1.1,  # TODO: Tolerance needs to be updated after MLETORCH-907
                 )
             )

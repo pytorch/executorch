@@ -12,7 +12,6 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from torch._export.utils import is_buffer
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
 
 
 class CastInt64BuffersToInt32Pass(ExportPass):

@@ -34,6 +34,11 @@ def define_operator(name: str, deps: list[str] | None = None) -> None:
 OPERATORS = [
     "add",
     "atan2",
+    "bmm",
+    "mm",
+    "slice_copy",
+    "split_with_sizes_copy",
+    "view_copy",
     "cat",
     "clamp",
     "dequantize_per_tensor",

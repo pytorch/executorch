@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
 import unittest
 
 import torch
@@ -12,10 +11,6 @@ from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 
 from torchaudio.models import Conformer
-
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def get_test_inputs(dim, lengths, num_examples):
@@ -31,10 +26,8 @@ class TestConformer(unittest.TestCase):
     # .to_executorch step, i.e. after Arm partitioner.
     ops_after_partitioner = {
         "executorch_exir_dialects_edge__ops_aten_max_default": 1,
-        "executorch_exir_dialects_edge__ops_aten_where_self": 4,
-        "torch.ops.aten._assert_scalar.default": 10,
+        "torch.ops.aten._assert_scalar.default": 7,
         "torch.ops.aten._local_scalar_dense.default": 1,
-        "torch.ops.higher_order.executorch_call_delegate": 4,
     }
 
     dim = 16

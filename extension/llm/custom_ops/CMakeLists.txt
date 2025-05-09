@@ -21,6 +21,9 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+  list(APPEND _common_compile_options "-march=armv8.2-a+dotprod")
+endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
@@ -38,6 +41,7 @@ include(${EXECUTORCH_SRCS_FILE})
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+list(APPEND _common_include_directories ${EXECUTORCH_ROOT}/third-party/ao)
 
 # Custom op libraries
 set(custom_ops_libs pthreadpool)

@@ -40,7 +40,9 @@ executorch
 
 ### Prerequisites
 
-Before you begin, ensure you have openvino installed and configured on your system:
+Before you begin, ensure you have openvino installed and configured on your system.
+
+### Build OpenVINO from Source
 
 ```bash
 git clone https://github.com/openvinotoolkit/openvino.git
@@ -56,14 +58,26 @@ cmake --install build --prefix <your_preferred_install_location>
 cd <your_preferred_install_location>
 source setupvars.sh
 ```
-Note: The OpenVINO backend is not yet supported with the current OpenVINO release packages. It is recommended to build from source. The instructions for using OpenVINO release packages will be added soon.
+
+### Use OpenVINO from Release Packages
+
+1. Download the OpenVINO release package from [here](https://docs.openvino.ai/2025/get-started/install-openvino.html). Make sure to select your configuration and click on **OpenVINO Archives** under the distribution section to download the appropriate archive for your platform.
+
+2. Extract the release package from the archive and set the environment variables.
+
+   ```bash
+   tar -zxf openvino_toolkit_<your_release_configuration>.tgz
+   cd openvino_toolkit_<your_release_configuration>
+   source setupvars.sh
+   ```
+
 For more information about OpenVINO build, refer to the [OpenVINO Build Instructions](https://github.com/openvinotoolkit/openvino/blob/master/docs/dev/build_linux.md).
 
 ### Setup
 
 Follow the steps below to setup your build environment:
 
-1. **Setup ExecuTorch Environment**: Refer to the [Environment Setup](https://pytorch.org/executorch/stable/getting-started-setup#environment-setup) guide for detailed instructions on setting up the ExecuTorch environment.
+1. **Setup ExecuTorch Environment**: Refer to the [Environment Setup](https://pytorch.org/executorch/main/getting-started-setup#environment-setup) guide for detailed instructions on setting up the ExecuTorch environment.
 
 2. **Setup OpenVINO Backend Environment**
 - Install the dependent libs. Ensure that you are inside `executorch/backends/openvino/` directory
@@ -78,7 +92,7 @@ Follow the steps below to setup your build environment:
    ```bash
    ./openvino_build.sh
    ```
-   **Build OpenVINO Backend Python Package with Pybindings**: To build and install the OpenVINO backend Python package with Python bindings, run the `openvino_build.sh` script with the `--enable_python` argument. This will compile and install the ExecuTorch Python package with the OpenVINO backend into your Python environment. This option will also enable python bindings required to execute OpenVINO backend tests and `export_and_infer_openvino.py` script inside `executorch/examples/openvino` folder.
+   **Build OpenVINO Backend Python Package with Pybindings**: To build and install the OpenVINO backend Python package with Python bindings, run the `openvino_build.sh` script with the `--enable_python` argument. This will compile and install the ExecuTorch Python package with the OpenVINO backend into your Python environment. This option will also enable python bindings required to execute OpenVINO backend tests and `aot_optimize_and_infer.py` script inside `executorch/examples/openvino` folder.
 
    ```bash
    ./openvino_build.sh --enable_python
