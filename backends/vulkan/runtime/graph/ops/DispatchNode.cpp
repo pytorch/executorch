@@ -33,7 +33,6 @@ DispatchNode::DispatchNode(
       spec_vars_(spec_vars),
       push_constants_(push_constants) {
   graph.update_descriptor_counts(shader, /*execute = */ true);
-  graph.context()->check_device_capabilities(shader_);
 }
 
 void DispatchNode::encode(ComputeGraph* graph) {
@@ -42,6 +41,8 @@ void DispatchNode::encode(ComputeGraph* graph) {
   }
   api::Context* const context = graph->context();
   vkapi::PipelineBarrier pipeline_barrier{};
+
+  context->check_device_capabilities(shader_);
 
   std::unique_lock<std::mutex> cmd_lock = context->dispatch_lock();
 
