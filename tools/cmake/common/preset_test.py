@@ -223,3 +223,70 @@ class TestPreset(CMakeTestCase):
         self.run_cmake(cmake_args=["-DEXECUTORCH_TEST_MESSAGE='cli value'"])
         # If an option is set through cmake, it should NOT be overridable from the CLI.
         self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "set value", "STRING")
+
+    def test_set_overridable_option_before(self):
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            set_overridable_option(EXECUTORCH_TEST_MESSAGE "from set_overridable_option")
+            add_subdirectory(build)
+        """
+        _build_cmake_lists_txt = """
+            define_overridable_option(EXECUTORCH_TEST_MESSAGE "test message" STRING "move fast")
+        """
+        self.create_workspace(
+            {
+                "CMakeLists.txt": _cmake_lists_txt,
+                "build": {
+                    "CMakeLists.txt": _build_cmake_lists_txt,
+                },
+            }
+        )
+        self.run_cmake()
+        self.assert_cmake_cache(
+            "EXECUTORCH_TEST_MESSAGE", "from set_overridable_option", "STRING"
+        )
+
+    def test_set_overridable_option_after(self):
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            add_subdirectory(build)
+            set_overridable_option(EXECUTORCH_TEST_MESSAGE "from set_overridable_option")
+        """
+        _build_cmake_lists_txt = """
+            define_overridable_option(EXECUTORCH_TEST_MESSAGE "test message" STRING "move fast")
+        """
+        self.create_workspace(
+            {
+                "CMakeLists.txt": _cmake_lists_txt,
+                "build": {
+                    "CMakeLists.txt": _build_cmake_lists_txt,
+                },
+            }
+        )
+        self.run_cmake()
+        self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "move fast", "STRING")
+
+    def test_set_overridable_option_with_cli_override(self):
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            add_subdirectory(build)
+        """
+        _build_cmake_lists_txt = """
+            define_overridable_option(EXECUTORCH_TEST_MESSAGE "test message" STRING "move fast")
+        """
+        self.create_workspace(
+            {
+                "CMakeLists.txt": _cmake_lists_txt,
+                "build": {
+                    "CMakeLists.txt": _build_cmake_lists_txt,
+                },
+            }
+        )
+        self.run_cmake(cmake_args=["-DEXECUTORCH_TEST_MESSAGE='from the cli'"])
+        self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "from the cli", "STRING")
