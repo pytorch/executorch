@@ -146,7 +146,7 @@ def _replace_embedding_with_quantized_group_embedding_for_pre_quantization(
         scales_key = f"{cur_fqn}.scales"
         if isinstance(child, nn.Embedding) and scales_key in checkpoint:
             assert checkpoint[f"{cur_fqn}.weight"].dtype == torch.int8
-            assert checkpoint[scales_key].dtype == torch.float32
+            assert checkpoint[scales_key].dtype == dtype
             return True
         return False
 
