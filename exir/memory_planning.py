@@ -25,7 +25,11 @@ from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
 
 from torch import fx
-from torch.export.exported_program import ExportGraphSignature, InputKind
+from torch.export.exported_program import (
+    ConstantArgument,
+    ExportGraphSignature,
+    InputKind,
+)
 from torch.fx import Node
 from torch.utils._pytree import tree_flatten
 
@@ -338,16 +342,23 @@ def _do_user_inputs_exist(graph_signature: Optional[ExportGraphSignature]) -> bo
     if graph_signature is None:
         return False
 
-    return (
-        len(
-            list(
-                filter(
-                    lambda input: input.kind == InputKind.USER_INPUT,
-                    graph_signature.input_specs,
-                )
-            )
+    user_inputs = list(
+        filter(
+            lambda input: input.kind == InputKind.USER_INPUT,
+            graph_signature.input_specs,
         )
-    ) > 0
+    )
+
+    # Return false if:
+    # - there are no inputs.
+    # - if user inputs are all prims (as this currently
+    #   causes the memory planning verifier to blow up).
+    # Otherwise, return true.
+    return any(
+        not isinstance(input.arg, ConstantArgument)
+        or not isinstance(input.arg.value, (int, float, bool, str))
+        for input in user_inputs
+    )
 
 
 def get_graph_input_tensors(

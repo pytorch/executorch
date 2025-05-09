@@ -16,6 +16,7 @@ import torch
 from executorch.exir import ExecutorchBackendConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.memory_planning import (
+    _do_user_inputs_exist,
     filter_nodes,
     get_node_tensor_specs,
     greedy,
@@ -305,6 +306,56 @@ def maketest(
                 extra_check(self, graph_module)
 
     return wrapper
+
+
+class TestMemoryPlanningUserInputs(unittest.TestCase):
+    """
+    Ensure that MemoryPlanning Verifer only assumes a model
+    has a user input if it has at least one tensor input.
+    """
+
+    def test_tensor_only_inputs(self):
+        class TensorModel(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                return x + y
+
+        model = TensorModel()
+        inputs = (torch.randn(2), torch.randn(2))
+        ep = export(model, inputs, strict=True)
+        result = _do_user_inputs_exist(graph_signature=ep.graph_signature)
+        self.assertTrue(result)
+
+    def test_mixed_inputs(self):
+        class MixedModel(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: int) -> torch.Tensor:
+                return x * y
+
+        model = MixedModel()
+        inputs = (torch.randn(2), 3)
+        ep = export(model, inputs, strict=True)
+        result = _do_user_inputs_exist(graph_signature=ep.graph_signature)
+        self.assertTrue(result)
+
+    def test_primitive_only_inputs(self):
+        class PrimModel(torch.nn.Module):
+            def forward(self, x: int, y: float) -> float:
+                return x * y
+
+        model = PrimModel()
+        inputs = (2, 3.0)
+        ep = export(model, inputs, strict=True)
+        result = _do_user_inputs_exist(graph_signature=ep.graph_signature)
+        self.assertFalse(result)
+
+    def test_no_inputs(self):
+        class NoInputModel(torch.nn.Module):
+            def forward(self) -> torch.Tensor:
+                return torch.tensor(1.0)
+
+        model = NoInputModel()
+        ep = export(model, (), strict=True)
+        result = _do_user_inputs_exist(graph_signature=ep.graph_signature)
+        self.assertFalse(result)
 
 
 class TestMemoryPlanning(unittest.TestCase):
