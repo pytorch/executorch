@@ -126,11 +126,12 @@ def test_ne_tensor_u55_BI(test_module):
     pipeline = OpNotSupportedPipeline[input_t](
         test_module,
         test_module.get_inputs(),
-        "TOSA-0.80+BI+u55",
         {
             NotEqual.decomposed_exir_ops[0]: 1,
             NotEqual.decomposed_exir_ops[1]: 1,
         },
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 
@@ -143,11 +144,12 @@ def test_ne_scalar_u55_BI(test_module):
     pipeline = OpNotSupportedPipeline[input_t](
         test_module,
         test_module.get_inputs(),
-        "TOSA-0.80+BI+u55",
         {
             NotEqual.decomposed_exir_ops[0]: 1,
             NotEqual.decomposed_exir_ops[1]: 1,
         },
+        quantize=True,
+        u55_subset=True,
         n_expected_delegates=1,
     )
     pipeline.run()
