@@ -63,24 +63,27 @@ op_gt_scalar_rank3_randn = Greater(torch.randn(10, 5, 2), -0.1)
 op_gt_scalar_rank4_randn = Greater(torch.randn(3, 2, 2, 2), 0.3)
 
 test_data_tensor = {
-    "gt_tensor_rank1_ones": op_gt_tensor_rank1_ones,
-    "gt_tensor_rank2_rand": op_gt_tensor_rank2_rand,
-    "gt_tensor_rank3_randn": op_gt_tensor_rank3_randn,
-    "gt_tensor_rank4_randn": op_gt_tensor_rank4_randn,
+    "gt_tensor_rank1_ones": lambda: op_gt_tensor_rank1_ones,
+    "gt_tensor_rank2_rand": lambda: op_gt_tensor_rank2_rand,
+    "gt_tensor_rank3_randn": lambda: op_gt_tensor_rank3_randn,
+    "gt_tensor_rank4_randn": lambda: op_gt_tensor_rank4_randn,
 }
 
 test_data_scalar = {
-    "gt_scalar_rank1_ones": op_gt_scalar_rank1_ones,
-    "gt_scalar_rank2_rand": op_gt_scalar_rank2_rand,
-    "gt_scalar_rank3_randn": op_gt_scalar_rank3_randn,
-    "gt_scalar_rank4_randn": op_gt_scalar_rank4_randn,
+    "gt_scalar_rank1_ones": lambda: op_gt_scalar_rank1_ones,
+    "gt_scalar_rank2_rand": lambda: op_gt_scalar_rank2_rand,
+    "gt_scalar_rank3_randn": lambda: op_gt_scalar_rank3_randn,
+    "gt_scalar_rank4_randn": lambda: op_gt_scalar_rank4_randn,
 }
 
 
 @common.parametrize("test_module", test_data_tensor)
 def test_gt_tensor_tosa_MI(test_module):
     pipeline = TosaPipelineMI[input_t](
-        test_module, test_module.get_inputs(), Greater.aten_op_tensor, Greater.exir_op
+        test_module(),
+        test_module().get_inputs(),
+        Greater.aten_op_tensor,
+        Greater.exir_op,
     )
     pipeline.run()
 
@@ -88,7 +91,10 @@ def test_gt_tensor_tosa_MI(test_module):
 @common.parametrize("test_module", test_data_scalar)
 def test_gt_scalar_tosa_MI(test_module):
     pipeline = TosaPipelineMI[input_t](
-        test_module, test_module.get_inputs(), Greater.aten_op_scalar, Greater.exir_op
+        test_module(),
+        test_module().get_inputs(),
+        Greater.aten_op_scalar,
+        Greater.exir_op,
     )
     pipeline.run()
 
@@ -96,7 +102,10 @@ def test_gt_scalar_tosa_MI(test_module):
 @common.parametrize("test_module", test_data_tensor)
 def test_gt_tensor_tosa_BI(test_module):
     pipeline = TosaPipelineBI[input_t](
-        test_module, test_module.get_inputs(), Greater.aten_op_tensor, Greater.exir_op
+        test_module(),
+        test_module().get_inputs(),
+        Greater.aten_op_tensor,
+        Greater.exir_op,
     )
     pipeline.run()
 
@@ -104,7 +113,10 @@ def test_gt_tensor_tosa_BI(test_module):
 @common.parametrize("test_module", test_data_scalar)
 def test_gt_scalar_tosa_BI(test_module):
     pipeline = TosaPipelineBI[input_t](
-        test_module, test_module.get_inputs(), Greater.aten_op_tensor, Greater.exir_op
+        test_module(),
+        test_module().get_inputs(),
+        Greater.aten_op_tensor,
+        Greater.exir_op,
     )
     pipeline.run()
 
@@ -114,10 +126,11 @@ def test_gt_scalar_tosa_BI(test_module):
 def test_gt_tensor_u55_BI(test_module):
     # Greater is not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t](
-        test_module,
-        test_module.get_inputs(),
-        "TOSA-0.80+BI+u55",
+        test_module(),
+        test_module().get_inputs(),
         {Greater.exir_op: 1},
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 
@@ -127,11 +140,12 @@ def test_gt_tensor_u55_BI(test_module):
 def test_gt_scalar_u55_BI(test_module):
     # Greater is not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t](
-        test_module,
-        test_module.get_inputs(),
-        "TOSA-0.80+BI+u55",
+        test_module(),
+        test_module().get_inputs(),
         {Greater.exir_op: 1},
         n_expected_delegates=1,
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 
@@ -146,8 +160,8 @@ def test_gt_scalar_u55_BI(test_module):
 @common.XfailIfNoCorstone320
 def test_gt_tensor_u85_BI(test_module):
     pipeline = EthosU85PipelineBI[input_t](
-        test_module,
-        test_module.get_inputs(),
+        test_module(),
+        test_module().get_inputs(),
         Greater.aten_op_tensor,
         Greater.exir_op,
         run_on_fvp=True,
@@ -165,8 +179,8 @@ def test_gt_tensor_u85_BI(test_module):
 @common.XfailIfNoCorstone320
 def test_gt_scalar_u85_BI(test_module):
     pipeline = EthosU85PipelineBI[input_t](
-        test_module,
-        test_module.get_inputs(),
+        test_module(),
+        test_module().get_inputs(),
         Greater.aten_op_tensor,
         Greater.exir_op,
         run_on_fvp=True,

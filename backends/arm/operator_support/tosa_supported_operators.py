@@ -335,6 +335,7 @@ class CheckProperQuantization(OperatorSupportBase):
                 graph_module.graph,
                 [
                     torch.matmul,
+                    operator.matmul,
                 ],
                 None,
             )
@@ -385,7 +386,7 @@ class CheckProperQuantization(OperatorSupportBase):
         ):
             source_fn_stack: tuple[typing.Any] = node.meta.get("source_fn_stack", [])
             if len(source_fn_stack) > 0:
-                if source_fn_stack[-1][1] in (torch.matmul,):
+                if source_fn_stack[-1][1] in (torch.matmul, operator.matmul):
                     return self._is_matmul_node_supported(submodules, node)
 
         elif node.target in (exir_ops.edge.aten.max_pool2d_with_indices.default,):
