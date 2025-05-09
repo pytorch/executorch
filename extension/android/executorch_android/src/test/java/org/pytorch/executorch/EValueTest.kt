@@ -70,27 +70,37 @@ class EValueTest {
         // try Tensor
         assertFalse(evalue.isTensor)
         assertThatThrownBy {
-            evalue.toTensor() }.isInstanceOf(IllegalStateException::class.java).hasMessage("Expected EValue type Tensor, actual type None")
+            evalue.toTensor()
+        }.isInstanceOf(IllegalStateException::class.java)
+            .hasMessage("Expected EValue type Tensor, actual type None")
 
         // try bool
         assertFalse(evalue.isBool)
         assertThatThrownBy {
-            evalue.toBool() }.isInstanceOf(IllegalStateException::class.java).hasMessage("Expected EValue type Bool, actual type None")
+            evalue.toBool()
+        }.isInstanceOf(IllegalStateException::class.java)
+            .hasMessage("Expected EValue type Bool, actual type None")
 
         // try int
         assertFalse(evalue.isInt)
         assertThatThrownBy {
-            evalue.toInt() }.isInstanceOf(IllegalStateException::class.java).hasMessage("Expected EValue type Int, actual type None")
+            evalue.toInt()
+        }.isInstanceOf(IllegalStateException::class.java)
+            .hasMessage("Expected EValue type Int, actual type None")
 
         // try double
         assertFalse(evalue.isDouble)
         assertThatThrownBy {
-            evalue.toDouble() }.isInstanceOf(IllegalStateException::class.java).hasMessage("Expected EValue type Double, actual type None")
+            evalue.toDouble()
+        }.isInstanceOf(IllegalStateException::class.java)
+            .hasMessage("Expected EValue type Double, actual type None")
 
         // try string
         assertFalse(evalue.isString)
         assertThatThrownBy {
-            evalue.toStr() }.isInstanceOf(IllegalStateException::class.java).hasMessage("Expected EValue type String, actual type None")
+            evalue.toStr()
+        }.isInstanceOf(IllegalStateException::class.java)
+            .hasMessage("Expected EValue type String, actual type None")
     }
 
     @Test

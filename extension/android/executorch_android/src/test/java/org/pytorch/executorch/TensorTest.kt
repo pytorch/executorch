@@ -192,19 +192,29 @@ class TensorTest {
         assertEquals(tensor.dtype(), DType.FLOAT)
 
         assertThatThrownBy {
-            tensor.dataAsByteArray }.isInstanceOf(IllegalStateException::class.java).hasMessage("Tensor of type Tensor_float32 cannot return data as byte array.")
+            tensor.dataAsByteArray
+        }.isInstanceOf(IllegalStateException::class.java)
+            .hasMessage("Tensor of type Tensor_float32 cannot return data as byte array.")
 
         assertThatThrownBy {
-            tensor.dataAsUnsignedByteArray }.isInstanceOf(IllegalStateException::class.java).hasMessage("Tensor of type Tensor_float32 cannot return data as unsigned byte array.")
+            tensor.dataAsUnsignedByteArray
+        }.isInstanceOf(IllegalStateException::class.java)
+            .hasMessage("Tensor of type Tensor_float32 cannot return data as unsigned byte array.")
 
         assertThatThrownBy {
-            tensor.dataAsIntArray }.isInstanceOf(IllegalStateException::class.java).hasMessage("Tensor of type Tensor_float32 cannot return data as int array.")
+            tensor.dataAsIntArray
+        }.isInstanceOf(IllegalStateException::class.java)
+            .hasMessage("Tensor of type Tensor_float32 cannot return data as int array.")
 
         assertThatThrownBy {
-            tensor.dataAsDoubleArray }.isInstanceOf(IllegalStateException::class.java).hasMessage("Tensor of type Tensor_float32 cannot return data as double array.")
+            tensor.dataAsDoubleArray
+        }.isInstanceOf(IllegalStateException::class.java)
+            .hasMessage("Tensor of type Tensor_float32 cannot return data as double array.")
 
         assertThatThrownBy {
-            tensor.dataAsLongArray }.isInstanceOf(IllegalStateException::class.java).hasMessage("Tensor of type Tensor_float32 cannot return data as long array.")
+            tensor.dataAsLongArray
+        }.isInstanceOf(IllegalStateException::class.java)
+            .hasMessage("Tensor of type Tensor_float32 cannot return data as long array.")
     }
 
     @Test
@@ -214,16 +224,23 @@ class TensorTest {
         val mismatchShape = longArrayOf(1, 2)
 
         assertThatThrownBy {
-            Tensor.fromBlob(null as FloatArray?, mismatchShape) }.isInstanceOf(IllegalArgumentException::class.java).hasMessage("Data array must be not null")
+            Tensor.fromBlob(null as FloatArray?, mismatchShape)
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessage("Data array must be not null")
 
         assertThatThrownBy {
-            Tensor.fromBlob(data, null) }.isInstanceOf(IllegalArgumentException::class.java).hasMessage("Shape must be not null")
+            Tensor.fromBlob(data, null)
+        }.isInstanceOf(IllegalArgumentException::class.java).hasMessage("Shape must be not null")
 
         assertThatThrownBy {
-            Tensor.fromBlob(data, shapeWithNegativeValues) }.isInstanceOf(IllegalArgumentException::class.java).hasMessage("Shape elements must be non negative")
+            Tensor.fromBlob(data, shapeWithNegativeValues)
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessage("Shape elements must be non negative")
 
         assertThatThrownBy {
-            Tensor.fromBlob(data, mismatchShape) }.isInstanceOf(IllegalArgumentException::class.java).hasMessage("Inconsistent data capacity:4 and shape number elements:2 shape:[1, 2]")
+            Tensor.fromBlob(data, mismatchShape)
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessage("Inconsistent data capacity:4 and shape number elements:2 shape:[1, 2]")
     }
 
     @Test
