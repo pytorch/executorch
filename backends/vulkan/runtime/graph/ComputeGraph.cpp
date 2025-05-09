@@ -594,13 +594,13 @@ void ComputeGraph::prepare() {
           prepack_descriptor_counts_.field) * \
       config_.descriptor_pool_safety_factor))
 
-  uint32_t max_sets = MERGE_FIELD(descriptor_pool_max_sets);
-  vkapi::DescriptorPoolConfig config{
+  const uint32_t max_sets = MERGE_FIELD(descriptor_pool_max_sets);
+  const vkapi::DescriptorPoolConfig config{
       max_sets,
-      std::max(MERGE_FIELD(descriptor_uniform_buffer_count), max_sets),
-      std::max(MERGE_FIELD(descriptor_storage_buffer_count), max_sets),
-      std::max(MERGE_FIELD(descriptor_combined_sampler_count), max_sets),
-      std::max(MERGE_FIELD(descriptor_storage_image_count), max_sets),
+      MERGE_FIELD(descriptor_uniform_buffer_count),
+      MERGE_FIELD(descriptor_storage_buffer_count),
+      MERGE_FIELD(descriptor_combined_sampler_count),
+      MERGE_FIELD(descriptor_storage_image_count),
       1u,
   };
 
