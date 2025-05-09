@@ -68,8 +68,16 @@ class SliceVisitor_080(NodeVisitor):
         end_index = _fixup_end(end, shape, dim)
         size = end_index - start_index
 
-        assert size > 0
-        assert size <= shape[dim]
+        if size <= 0:
+            raise ValueError(
+                f"The calculated slice size must be positive. Got {size=} "
+                f"with {start_index=} and {end_index=}."
+            )
+        if size > shape[dim]:
+            raise ValueError(
+                f"The calculated slice size cannot be greater than the dimension size"
+                f". Got {size=} and {shape[dim]=}."
+            )
 
         # Convert aten args to Tosa's start and size attributes and in TOSA dim order.
         attr = ts.TosaSerializerAttribute()
@@ -122,8 +130,16 @@ class SliceVisitor(NodeVisitor):
         end_index = _fixup_end(end, shape, dim)
         size = end_index - start_index
 
-        assert size > 0
-        assert size <= shape[dim]
+        if size <= 0:
+            raise ValueError(
+                f"The calculated slice size must be positive. Got {size=} "
+                f"with {start_index=} and {end_index=}."
+            )
+        if size > shape[dim]:
+            raise ValueError(
+                f"The calculated slice size cannot be greater than the dimension size"
+                f". Got {size=} and {shape[dim]=}."
+            )
 
         # Convert aten args to Tosa's start and size shape_t tensors and in TOSA dim order.
         starts = [

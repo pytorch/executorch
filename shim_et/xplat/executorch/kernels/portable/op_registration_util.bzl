@@ -884,6 +884,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_native_dropout",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+        ],
+    ),
+    op_target(
         name = "op_native_group_norm",
         deps = [
             ":vec_ops",

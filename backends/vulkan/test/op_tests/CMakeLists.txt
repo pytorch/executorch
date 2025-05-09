@@ -81,7 +81,7 @@ function(vulkan_op_test test_name test_src)
     ${test_name}
     PRIVATE GTest::gtest_main
             vulkan_backend
-            executorch
+            executorch_core
             ${LIB_TORCH}
             ${LIB_TORCH_CPU}
             ${LIB_C10}
