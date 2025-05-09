@@ -44,10 +44,20 @@ def pytest_configure(config):
     if getattr(config.option, "fast_fvp", False):
         pytest._test_options["fast_fvp"] = config.option.fast_fvp  # type: ignore[attr-defined]
 
+    pytest._test_options["tosa_version"] = "0.80"  # type: ignore[attr-defined]
     if config.option.arm_run_tosa_version:
         pytest._test_options["tosa_version"] = config.option.arm_run_tosa_version
 
-    pytest._test_options["tosa_ref_model"] = True  # type: ignore[attr-defined]
+    # Not all deployments of ET have the TOSA reference model available.
+    # Make sure we don't try to use it if it's not available.
+    try:
+        if pytest._test_options["tosa_version"] == "0.80":
+            import tosa_tools.v0_80.tosa_reference_model as tosa_reference_model
+        else:
+            import tosa_tools.tosa_ref_model as tosa_reference_model
+    except ImportError:
+        pytest._test_options["tosa_ref_model"] = False  # type: ignore[attr-defined]
+        tosa_reference_model = None  # noqa
 
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
