@@ -29,7 +29,8 @@ from torch.utils import _pytree as pytree
 
 # Avoid propagating constants for `exir.ops.edge.aten.full.default`.
 # Propagating aten.full can significantly increase compiled model size.
-_DEFAULT_SKIP_TARGETS = {exir_ops.edge.aten.full.default}
+_DEFAULT_SKIP_TARGETS_NO_QUANT = {exir_ops.edge.aten.full.default}
+_DEFAULT_SKIP_TARGETS = set(_DEFAULT_SKIP_TARGETS_NO_QUANT)
 
 # Do not const prop quantization primitives
 _QUANT_PRIMITIVES_EDGE = [aten_to_edge(op) for op in _QUANT_PRIMITIVES]
@@ -48,6 +49,10 @@ _PRIMITIVE_TYPES = (
 )
 
 
+def get_default_skip_targets_no_quant() -> set[EdgeOpOverload]:
+    return _DEFAULT_SKIP_TARGETS_NO_QUANT
+
+
 def is_const(
     arg,
     exported_program: ExportedProgram,
@@ -60,6 +65,8 @@ def is_const(
             is_const(x, exported_program, const_node_to_tensor) for x in arg.values()
         )
     elif isinstance(arg, _PRIMITIVE_TYPES):
+        return True
+    elif arg is None:
         return True
     elif not isinstance(arg, torch.fx.Node):
         return False
