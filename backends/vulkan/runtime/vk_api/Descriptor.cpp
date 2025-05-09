@@ -269,7 +269,11 @@ DescriptorPool::DescriptorPool(
       pool_(VK_NULL_HANDLE),
       config_(config),
       mutex_{},
-      piles_{} {}
+      piles_{} {
+  if (config.descriptor_pool_max_sets > 0) {
+    init(config);
+  }
+}
 
 DescriptorPool::~DescriptorPool() {
   if (pool_ == VK_NULL_HANDLE) {

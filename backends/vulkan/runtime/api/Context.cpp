@@ -235,6 +235,15 @@ Context* context() {
           8u, // cmdPoolBatchSize
       };
 
+      const vkapi::DescriptorPoolConfig descriptor_pool_config{
+          VULKAN_DESCRIPTOR_POOL_SIZE, // descriptorPoolMaxSets
+          VULKAN_DESCRIPTOR_POOL_SIZE, // descriptorUniformBufferCount
+          VULKAN_DESCRIPTOR_POOL_SIZE, // descriptorStorageBufferCount
+          VULKAN_DESCRIPTOR_POOL_SIZE, // descriptorCombinedSamplerCount
+          VULKAN_DESCRIPTOR_POOL_SIZE, // descriptorStorageImageCount
+          32u, // descriptorPileSizes
+      };
+
       const vkapi::QueryPoolConfig query_pool_config{
           VULKAN_QUERY_POOL_SIZE, // maxQueryCount
           256u, // initialReserveSize
@@ -243,7 +252,7 @@ Context* context() {
       const ContextConfig config{
           cmd_submit_frequency,
           cmd_config,
-          {},
+          descriptor_pool_config,
           query_pool_config,
       };
 
@@ -255,17 +264,6 @@ Context* context() {
   }());
 
   return context.get();
-}
-
-vkapi::DescriptorPoolConfig default_descriptor_pool_config() {
-  return {
-      VULKAN_DESCRIPTOR_POOL_SIZE, // descriptorPoolMaxSets
-      VULKAN_DESCRIPTOR_POOL_SIZE, // descriptorUniformBufferCount
-      VULKAN_DESCRIPTOR_POOL_SIZE, // descriptorStorageBufferCount
-      VULKAN_DESCRIPTOR_POOL_SIZE, // descriptorCombinedSamplerCount
-      VULKAN_DESCRIPTOR_POOL_SIZE, // descriptorStorageImageCount
-      32u, // descriptorPileSizes
-  };
 }
 
 #ifdef VULKAN_DEBUG
