@@ -45,6 +45,7 @@ PrepackNode::PrepackNode(
       push_constants_(push_constants) {
   graph.update_descriptor_counts(shader, /*execute = */ false);
   graph.update_descriptor_counts(noop_shader_, /*execute = */ false);
+  graph.context()->check_device_capabilities(shader_);
 }
 
 api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
@@ -69,8 +70,6 @@ api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
 
 void PrepackNode::encode(ComputeGraph* graph) {
   api::Context* const context = graph->context();
-
-  context->check_device_capabilities(shader_);
 
   vTensorPtr packed = graph->get_tensor(packed_);
   api::StagingBuffer staging = create_staging_buffer(graph);
