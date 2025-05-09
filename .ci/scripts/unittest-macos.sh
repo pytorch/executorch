@@ -29,7 +29,6 @@ if [[ "$BUILD_TOOL" == "cmake" ]]; then
     # Install llama3_2_vision dependencies.
     PYTHON_EXECUTABLE=python \
     ${CONDA_RUN} --no-capture-output \
-    ./examples/models/llama3_2_vision/install_requirements.sh
 
     .ci/scripts/unittest-macos-cmake.sh
 elif [[ "$BUILD_TOOL" == "buck2" ]]; then
