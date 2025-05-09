@@ -30,6 +30,7 @@ libexecutorch.a,\
 libexecutorch_core.a,\
 libextension_apple.a,\
 libextension_data_loader.a,\
+libextension_flat_tensor.a,\
 libextension_module.a,\
 libextension_tensor.a,\
 :$HEADERS_PATH"

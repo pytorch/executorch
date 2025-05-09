@@ -483,7 +483,7 @@ void add_conv1d_node(
       weight,
       /*transposed = */ false,
       /*storage_type = */ utils::kTexture3D,
-      /*memory_layout = */ utils::kChannelsPacked);
+      /*memory_layout = */ utils::kWidthPacked);
 
   float out_min_val = 0.0f;
   float out_max_val = 0.0f;
