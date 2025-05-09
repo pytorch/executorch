@@ -453,7 +453,7 @@ def build_portable_lib(name, oplist_header_name, feature = None, expose_operator
         srcs = portable_source_files,
         exported_headers = portable_header_files,
         exported_preprocessor_flags = ["-DEXECUTORCH_SELECTIVE_BUILD_DTYPE"],
-        deps = ["//executorch/kernels/portable/cpu/pattern:all_deps", "//executorch/kernels/portable/cpu/util:all_deps"],
+        deps = ["//executorch/kernels/pattern:all_deps", "//executorch/kernels/portable/cpu/util:all_deps"],
         # header_namespace is only available in xplat. See https://fburl.com/code/we2gvopk
         header_namespace = "executorch/kernels/portable/cpu",
         compiler_flags = compiler_flags,

@@ -7,7 +7,7 @@
  */
 
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
-#include <executorch/kernels/portable/cpu/pattern/pattern.h>
+#include <executorch/kernels/pattern/pattern.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <cmath>
 

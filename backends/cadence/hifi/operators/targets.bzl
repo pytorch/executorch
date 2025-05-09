@@ -8,7 +8,7 @@ def define_operator(name: str, deps: list[str] | None = None) -> None:
     # Deps used by all operators.
     common_deps = [
         "//executorch/kernels/portable/cpu/util:all_deps",
-        "//executorch/kernels/portable/cpu/pattern:all_deps",
+        "//executorch/kernels/pattern:all_deps",
         "//executorch/runtime/kernel:kernel_includes",
         "//executorch/kernels/portable/cpu:scalar_utils",
         "//executorch/backends/cadence/hifi/kernels:kernels",

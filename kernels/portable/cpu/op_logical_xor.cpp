@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/portable/cpu/pattern/logical_op.h>
+#include <executorch/kernels/pattern/logical_op.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <cmath>
 
