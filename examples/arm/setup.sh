@@ -60,7 +60,7 @@ fi
 
 # vela
 vela_repo_url="https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela"
-vela_rev="859cc066178a87ff28230c1ce9bd370f1e98aa5a"
+vela_rev="677651add50745478367da009936e4505d627399"
 
 ########
 ### Functions

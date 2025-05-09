@@ -202,8 +202,8 @@ def test_convolution_2d_tosa_BI_depth_wise(test_module: torch.nn.Module):
 
 
 x_fails = {
-    "3x3_2x8x198x198_gp8_st3": "MLETORCH-516: AssertionError: Output 0 does not match reference output.",
-    "two_dw_conv2d": "MLETORCH-516: AssertionError: Output 0 does not match reference output.",
+    "3x3_2x8x198x198_gp8_st3": "MLBEDSW-10752: Vela issues with batches > 1 for dw_conv",
+    "two_dw_conv2d": "MLBEDSW-10752: Vela issues with batches > 1 for dw_conv",
 }
 
 
