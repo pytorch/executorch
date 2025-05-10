@@ -394,7 +394,9 @@ public abstract class Tensor {
    */
   public byte[] getDataAsUnsignedByteArray() {
     throw new IllegalStateException(
-        "Tensor of type " + getClass().getSimpleName() + " cannot return data as byte array.");
+        "Tensor of type "
+            + getClass().getSimpleName()
+            + " cannot return data as unsigned byte array.");
   }
 
   /**
