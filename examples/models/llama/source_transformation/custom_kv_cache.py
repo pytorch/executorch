@@ -555,8 +555,17 @@ def replace_kv_cache_with_ring_kv_cache(module, layer_sizes):
     # This is needed to ensure that custom ops are registered
     from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
 
+    assert len(module.layers) >= len(
+        layer_sizes
+    ), f"Length of layer sizes {len(layer_sizes)} must match the number of layers in the module {len(module.layers)}."
+    multiplier = len(module.layers) // len(layer_sizes)
+    modulo = len(module.layers) % len(layer_sizes)
+    assert (
+        modulo == 0
+    ), f"num layers specified must be multiple of model layers in order to specify pattern. pattern: {layer_sizes} model's num layers {len(module.layers)}"
+    layer_sizes = layer_sizes * multiplier
     logging.info(
-        "Replacing kv cache with ring kv cache. This modifies the model in place."
+        f"Applying local sliding window attention with following pattern {layer_sizes}."
     )
     assert len(layer_sizes) == len(
         module.layers
@@ -570,4 +579,8 @@ def replace_kv_cache_with_ring_kv_cache(module, layer_sizes):
         ), f"Transfomer block must have attention module. Transformer block {transformer_block}"
         attention = transformer_block.attention
         _replace_kv_cache_with_ring_kv_cache(attention, sliding_window_size)
+        # if attention's sdpa is custom sdpa then we have to make sure
+        # it is not doing causal attention
+        if "SDPACustom" in attention.SDPA.__class__.__name__:
+            attention.SDPA.use_attention_mask = True
     return module
