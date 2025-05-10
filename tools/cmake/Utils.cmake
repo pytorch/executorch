@@ -29,9 +29,6 @@ function(executorch_print_configuration_summary)
   message(STATUS "  CMAKE_TOOLCHAIN_FILE          : ${CMAKE_TOOLCHAIN_FILE}")
   message(STATUS "  BUCK2                         : ${BUCK2}")
   message(STATUS "  PYTHON_EXECUTABLE             : ${PYTHON_EXECUTABLE}")
-  message(STATUS "  EXECUTORCH_ENABLE_PROGRAM_VERIFICATION : "
-                 "${EXECUTORCH_ENABLE_PROGRAM_VERIFICATION}"
-  )
   message(STATUS "  EXECUTORCH_BUILD_ANDROID_JNI           : "
                  "${EXECUTORCH_BUILD_ANDROID_JNI}"
   )
