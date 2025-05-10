@@ -150,7 +150,7 @@ if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
   list(APPEND xnn_executor_runner_libs quantized_ops_lib)
 endif()
 
-list(APPEND xnn_executor_runner_libs xnnpack_backend executorch)
+list(APPEND xnn_executor_runner_libs xnnpack_backend executorch_core prim_ops_lib)
 
 # ios can only build library but not binary
 if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")

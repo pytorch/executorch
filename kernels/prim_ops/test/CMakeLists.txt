@@ -20,4 +20,4 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
 set(_test_srcs prim_ops_test.cpp)
 
-et_cxx_test(kernels_prim_ops_test SOURCES ${_test_srcs} EXTRA_LIBS executorch)
+et_cxx_test(kernels_prim_ops_test SOURCES ${_test_srcs} EXTRA_LIBS prim_ops_lib)

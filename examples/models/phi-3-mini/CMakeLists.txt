@@ -49,6 +49,6 @@ target_include_directories(
          ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/tokenizers/include
 )
 target_link_libraries(
-  phi_3_mini_runner PRIVATE executorch extension_module_static extension_tensor
+  phi_3_mini_runner PRIVATE prim_ops_lib extension_module_static extension_tensor
                             optimized_native_cpu_ops_lib xnnpack_backend gflags
 )

@@ -52,12 +52,12 @@ cmake "$PROTOBUF_DIR_PATH/cmake" -B"$CMAKE_PROTOBUF_BUILD_DIR_PATH" \
 -DCMAKE_MACOSX_BUNDLE=OFF \
 -DCMAKE_CXX_STANDARD=17
 
-cmake --build "$CMAKE_PROTOBUF_BUILD_DIR_PATH"  -j9 -t libprotobuf-lite
+cmake --build "$CMAKE_PROTOBUF_BUILDb_DIR_PATH"  -j9 -t libprotobuf-lite
 
 # Copy required libraries
 echo "ExecuTorch: Copying libraries"
 mkdir "$LIBRARIES_DIR_PATH"
-cp -f "$CMAKE_EXECUTORCH_BUILD_DIR_PATH/libexecutorch.a" "$LIBRARIES_DIR_PATH"
+cp -f "$CMAKE_EXECUTORCH_BUILD_DIR_PATH/libprim_ops_lib.a" "$LIBRARIES_DIR_PATH"
 cp -f "$CMAKE_EXECUTORCH_BUILD_DIR_PATH/libexecutorch_core.a" "$LIBRARIES_DIR_PATH"
 cp -f "$CMAKE_PROTOBUF_BUILD_DIR_PATH/libprotobuf-lite.a" "$LIBRARIES_DIR_PATH"
 

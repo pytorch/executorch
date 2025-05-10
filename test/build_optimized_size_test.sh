@@ -18,7 +18,7 @@ set -e
 source "$(dirname "${BASH_SOURCE[0]}")/../.ci/scripts/utils.sh"
 
 cmake_install_executorch_lib() {
-  echo "Installing libexecutorch.a"
+  echo "Installing libprim_ops_lib.a"
   clean_executorch_install_folders
   update_tokenizers_git_submodule
   CXXFLAGS="-g" retry cmake -DBUCK2="$BUCK2" \

@@ -460,10 +460,10 @@ endif()
 
 
 # Dependencies from the ExecuTorch build
-add_library(executorch STATIC IMPORTED)
+add_library(prim_ops_lib STATIC IMPORTED)
 set_property(
-  TARGET executorch PROPERTY IMPORTED_LOCATION
-                             "${ET_BUILD_DIR_PATH}/libexecutorch.a"
+  TARGET prim_ops_lib PROPERTY IMPORTED_LOCATION
+                             "${ET_BUILD_DIR_PATH}/libprim_ops_lib.a"
 )
 
 add_library(executorch_core STATIC IMPORTED)
@@ -471,7 +471,7 @@ set_property(
   TARGET executorch_core
   PROPERTY IMPORTED_LOCATION "${ET_BUILD_DIR_PATH}/libexecutorch_core.a"
 )
-target_link_libraries(executorch INTERFACE executorch_core)
+target_link_libraries(prim_ops_lib INTERFACE executorch_core)
 
 add_library(executorch_delegate_ethos_u STATIC IMPORTED)
 set_property(
@@ -553,7 +553,7 @@ set(arm_executor_runner_link)
 list(APPEND arm_executor_runner_link
   extension_runner_util
   ethosu_target_init
-  executorch
+  executorch_core
   "-Wl,--whole-archive"
   executorch_delegate_ethos_u
   cortex_m_ops_lib
@@ -562,6 +562,7 @@ list(APPEND arm_executor_runner_link
   quantized_kernels
   cortex_m_kernels
   portable_kernels
+  prim_ops_lib
   "-Wl,--no-whole-archive"
   -Xlinker -Map=arm_executor_runner.map
 )

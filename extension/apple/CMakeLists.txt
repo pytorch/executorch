@@ -40,7 +40,7 @@ target_include_directories(extension_apple
 
 find_library(FOUNDATION_FRAMEWORK Foundation)
 target_link_libraries(extension_apple
-  PRIVATE executorch ${FOUNDATION_FRAMEWORK}
+  PRIVATE executorch_core prim_ops_lib ${FOUNDATION_FRAMEWORK}
 )
 
 target_compile_options(extension_apple PUBLIC ${_common_compile_options})

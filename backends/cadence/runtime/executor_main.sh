@@ -15,7 +15,7 @@ set -e
 source "$(dirname "${BASH_SOURCE[0]}")/../../.ci/scripts/utils.sh"
 
 cmake_install_executorch_devtools_lib() {
-  echo "Installing libexecutorch.a, libportable_kernels.a, libetdump.a, libbundled_program.a"
+  echo "Installing libprim_ops_lib.a, libportable_kernels.a, libetdump.a, libbundled_program.a"
   rm -rf cmake-out
 
   retry cmake -DCMAKE_INSTALL_PREFIX=cmake-out \

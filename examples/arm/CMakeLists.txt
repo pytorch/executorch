@@ -33,7 +33,7 @@ set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 find_package(executorch CONFIG REQUIRED HINTS ${CMAKE_INSTALL_PREFIX})
-target_include_directories(executorch INTERFACE ${_common_include_directories})
+target_include_directories(executorch_core INTERFACE ${_common_include_directories})
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
@@ -55,10 +55,10 @@ generate_bindings_for_kernels(
   ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
 )
 gen_operators_lib(
-  LIB_NAME "arm_portable_ops_lib" KERNEL_LIBS portable_kernels DEPS executorch
+  LIB_NAME "arm_portable_ops_lib" KERNEL_LIBS portable_kernels DEPS executorch_core
 )
 
 if(EXECUTORCH_ENABLE_EVENT_TRACER)
-  target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
+  target_compile_options(executorch_core INTERFACE -DET_EVENT_TRACER_ENABLED)
   target_compile_options(portable_ops_lib INTERFACE -DET_EVENT_TRACER_ENABLED)
 endif()

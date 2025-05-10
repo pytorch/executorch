@@ -43,7 +43,7 @@ include(${EXECUTORCH_SRCS_FILE})
 # Find prebuilt libraries. executorch package should contain portable_ops_lib,
 # etdump, bundled_program.
 find_package(executorch CONFIG REQUIRED)
-target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
+target_compile_options(executorch_core INTERFACE -DET_EVENT_TRACER_ENABLED)
 find_package(gflags REQUIRED)
 
 link_directories(${EXECUTORCH_ROOT}/cmake-android-out/lib)
@@ -70,7 +70,7 @@ if(${ANDROID})
   )
 
   target_link_libraries(
-    mtk_executor_runner ${_executor_runner_libs} executorch neuron_backend
+    mtk_executor_runner ${_executor_runner_libs} executorch_core prim_ops_lib neuron_backend
     gflags
   )
   target_compile_options(mtk_executor_runner PUBLIC ${_common_compile_options})
@@ -104,7 +104,8 @@ if(${ANDROID})
 
   target_link_libraries(mtk_oss_executor_runner
       ${_executor_runner_libs}
-      executorch
+      executorch_core
+      prim_ops_lib
       neuron_backend
       gflags
   )

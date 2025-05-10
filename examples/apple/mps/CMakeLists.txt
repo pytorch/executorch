@@ -43,8 +43,8 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 # Find prebuilt libraries. executorch package should contain portable_ops_lib,
 # etdump, bundled_program.
 find_package(executorch CONFIG REQUIRED)
-target_include_directories(executorch INTERFACE ${_common_include_directories})
-target_compile_options(executorch INTERFACE ${_common_compile_options})
+target_include_directories(executorch_core INTERFACE ${_common_include_directories})
+target_compile_options(executorch_core INTERFACE ${_common_compile_options})
 
 find_package(
   gflags REQUIRED PATHS ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party
@@ -67,7 +67,7 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   )
   gen_operators_lib(
     LIB_NAME "mps_portable_ops_lib" KERNEL_LIBS portable_kernels DEPS
-    executorch
+    executorch_core
   )
 
   set(mps_executor_runner_libs
@@ -110,7 +110,7 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   target_link_libraries(
     mps_executor_runner
     bundled_program
-    executorch
+    executorch_core
     gflags
     etdump
     ${FLATCC_LIB}

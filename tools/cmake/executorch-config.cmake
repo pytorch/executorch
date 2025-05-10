@@ -26,7 +26,7 @@
 cmake_minimum_required(VERSION 3.19)
 
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
-set(required_lib_list executorch executorch_core portable_kernels)
+set(required_lib_list executorch_core prim_ops_lib portable_kernels)
 set(EXECUTORCH_LIBRARIES)
 set(EXECUTORCH_INCLUDE_DIRS
     ${_root}/include ${_root}/include/executorch/runtime/core/portable_type/c10
@@ -54,7 +54,7 @@ endforeach()
 # If we reach here, ET required libraries are found.
 set(EXECUTORCH_FOUND ON)
 
-target_link_libraries(executorch INTERFACE executorch_core)
+target_link_libraries(prim_ops_lib INTERFACE executorch_core)
 
 if(CMAKE_BUILD_TYPE MATCHES "Debug")
   set(FLATCCRT_LIB flatccrt_d)

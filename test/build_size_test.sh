@@ -18,7 +18,7 @@ EXTRA_BUILD_ARGS="${@:-}"
 COMMON_CXXFLAGS="-fno-exceptions -fno-rtti -Wall -Werror -Wno-int-in-bool-context -DET_HAVE_PREAD=0"
 
 cmake_install_executorch_lib() {
-  echo "Installing libexecutorch.a"
+  echo "Installing libprim_ops_lib.a"
   clean_executorch_install_folders
   update_tokenizers_git_submodule
   local EXTRA_BUILD_ARGS="${@}"

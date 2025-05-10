@@ -156,7 +156,7 @@ build_executorch_runner() {
 }
 
 cmake_install_executorch_lib() {
-  echo "Installing libexecutorch.a and libportable_kernels.a"
+  echo "Installing libprim_ops_lib.a and libportable_kernels.a"
   clean_executorch_install_folders
   retry cmake -DBUCK2="$BUCK" \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
