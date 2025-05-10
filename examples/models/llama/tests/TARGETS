@@ -49,3 +49,14 @@ python_unittest(
         "//executorch/examples/models/llama:llama_transformer",
     ],
 )
+
+python_unittest(
+    name = "test_ring_attention",
+    srcs = [
+        "test_ring_attention.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:llama_transformer",
+    ],
+)
