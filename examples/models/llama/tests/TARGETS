@@ -38,3 +38,14 @@ python_unittest(
         "//executorch/examples/models/llama:static_attention",
     ],
 )
+
+python_unittest(
+    name = "test_ring_kv_cache",
+    srcs = [
+        "test_ring_kv_cache.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:llama_transformer",
+    ],
+)
