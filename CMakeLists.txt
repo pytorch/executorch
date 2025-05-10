@@ -128,8 +128,6 @@ else()
   set(CMAKE_CXX_FLAGS_RELEASE "-O2 ${CMAKE_CXX_FLAGS_RELEASE}")
 endif()
 
-option(EXECUTORCH_BUILD_ANDROID_JNI "Build Android JNI" OFF)
-
 option(EXECUTORCH_BUILD_ARM_BAREMETAL
        "Build the Arm Baremetal flow for Cortex-M and Ethos-U" OFF
 )
