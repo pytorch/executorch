@@ -49,6 +49,7 @@ dependencies {
     implementation 'com.facebook.soloader:nativeloader:0.10.5'
     implementation libs.core.ktx
     testImplementation 'junit:junit:4.12'
+    testImplementation 'org.assertj:assertj-core:3.27.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test:rules:1.2.0'
     androidTestImplementation 'commons-io:commons-io:2.4'
