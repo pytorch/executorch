@@ -150,6 +150,16 @@ class SDPA(nn.Module):
         return y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
 
 
+def _create_causal_mask_for_ring_buffer(
+    cache_positions, window_size, start_pos, seq_len
+):
+    pos_q = start_pos + torch.arange(seq_len, dtype=torch.long).view(-1, 1)
+    delta = pos_q - cache_positions
+    attn_mask = (cache_positions >= 0) & (delta >= 0) & (delta < window_size)
+    attn_mask = torch.where(attn_mask == True, 0, float("-inf"))  # noqa E712
+    return attn_mask
+
+
 class CacheUpdateStrategy(Enum):
     RING_BUFFER = "RingBuffer"
     INVALID = "Invalid"
@@ -283,12 +293,10 @@ class RingKVCache(KVCache):
         self.is_ring_buffer = True
 
     def create_causal_mask_for_ring_buffer(self, start_pos, seq_len):
-        pos_q = start_pos + torch.arange(seq_len, dtype=torch.long).view(-1, 1)
         cache_positions = self.cache_positions_manager.cache_positions
-        delta = pos_q - cache_positions
-        attn_mask = (cache_positions >= 0) & (delta >= 0) & (delta < self.window_size)
-        attn_mask = torch.where(attn_mask == True, 0, float("-inf"))  # noqa E712
-        return attn_mask
+        return _create_causal_mask_for_ring_buffer(
+            cache_positions, self.window_size, start_pos, seq_len
+        )
 
     def update(
         self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
