@@ -100,15 +100,6 @@ else()
   set(_default_release_disabled_options ON)
 endif()
 
-# Let users override which PAL defaults to use.
-#
-# TODO(dbort): Add another option that lets users point to a specific source
-# file; if set, would override the default option.
-set(EXECUTORCH_PAL_DEFAULT
-    "posix"
-    CACHE STRING
-          "Which PAL default implementation to use: one of {posix, minimal}"
-)
 
 if(NOT EXECUTORCH_ENABLE_LOGGING)
   # Avoid pulling in the logging strings, which can be large. Note that this
@@ -477,17 +468,7 @@ list(FILTER _executorch_core__srcs EXCLUDE REGEX
 )
 
 # Add the source file that maps to the requested default PAL implementation.
-if(EXECUTORCH_PAL_DEFAULT MATCHES "^(posix|minimal)$")
-  message(STATUS "executorch: Using PAL default '${EXECUTORCH_PAL_DEFAULT}'")
-  list(APPEND _executorch_core__srcs
-       "runtime/platform/default/${EXECUTORCH_PAL_DEFAULT}.cpp"
-  )
-else()
-  message(
-    FATAL_ERROR "Unknown EXECUTORCH_PAL_DEFAULT \"${EXECUTORCH_PAL_DEFAULT}\". "
-                "Expected one of {posix, minimal}."
-  )
-endif()
+list(APPEND _executorch_core__srcs ${EXECUTORCH_PAL_DEFAULT_FILE_PATH})
 
 add_library(executorch_core ${_executorch_core__srcs})
 
