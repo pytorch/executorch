@@ -91,16 +91,6 @@ set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
 # Instead please use `find_package(executorch REQUIRED)` in the example
 # directory and add a new executable in the example `CMakeLists.txt`.
 
-# _default_release_disabled_options: default value for options that should be
-# disabled in Release mode by default. Users can still manually enable them,
-# though.
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-  set(_default_release_disabled_options OFF)
-else()
-  set(_default_release_disabled_options ON)
-endif()
-
-
 if(NOT EXECUTORCH_ENABLE_LOGGING)
   # Avoid pulling in the logging strings, which can be large. Note that this
   # will set the compiler flag for all targets in this directory, and for all
@@ -110,10 +100,6 @@ endif()
 
 add_definitions(-DET_MIN_LOG_LEVEL=${ET_MIN_LOG_LEVEL})
 
-option(EXECUTORCH_ENABLE_PROGRAM_VERIFICATION
-       "Build with ET_ENABLE_PROGRAM_VERIFICATION"
-       ${_default_release_disabled_options}
-)
 if(NOT EXECUTORCH_ENABLE_PROGRAM_VERIFICATION)
   # Avoid pulling in the flatbuffer data verification logic, which can add about
   # 20kB. Note that this will set the compiler flag for all targets in this
