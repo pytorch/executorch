@@ -82,7 +82,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.extension.llm.custom_ops import model_sharding
 from executorch.extension.llm.export.builder import DType
-from pytorch_tokenizers import get_tokenizer, TiktokenTokenizer
+from pytorch_tokenizers import get_tokenizer, TiktokenTokenizer, HuggingFaceTokenizer
 from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
 
 from torch.ao.quantization.observer import MinMaxObserver
@@ -152,6 +152,8 @@ def _kv_calibrate(
         token_list = tokenizer.encode(
             user_prompts, bos=True, eos=False, allowed_special="all"
         )
+    elif isinstance(tokenizer, HuggingFaceTokenizer):
+        token_list = tokenizer.encode(user_prompts, bos=True, eos=False)
     else:
         raise RuntimeError("Unkown tokenizer")
 
@@ -587,13 +589,14 @@ def compile(args, pte_filename, tokenizer):
     n_kv_heads = llama_instance_list[0].n_kv_heads
     n_layers = llama_instance_list[0].n_layers
 
-    for layer_i in range(n_layers):
-        state_dict[f"layers.{layer_i}.attention.wq.weight"] = permute(
-            state_dict[f"layers.{layer_i}.attention.wq.weight"], n_heads
-        )
-        state_dict[f"layers.{layer_i}.attention.wk.weight"] = permute(
-            state_dict[f"layers.{layer_i}.attention.wk.weight"], n_kv_heads
-        )
+    if not args.gptq_dir:
+        for layer_i in range(n_layers):
+            state_dict[f"layers.{layer_i}.attention.wq.weight"] = permute(
+                state_dict[f"layers.{layer_i}.attention.wq.weight"], n_heads
+            )
+            state_dict[f"layers.{layer_i}.attention.wk.weight"] = permute(
+                state_dict[f"layers.{layer_i}.attention.wk.weight"], n_kv_heads
+            )
 
     for llama_instance in llama_instance_list:
         llama_instance.load_state_dict(
@@ -603,22 +606,6 @@ def compile(args, pte_filename, tokenizer):
         )
     end_load_ts = time.time()
     logging.info(f"Time for loading checkpoint: {end_load_ts - start_ts}")
-
-    for llama_instance in llama_instance_list:
-        for layer in llama_instance.layers:
-            if args.gptq_dir:
-                # TODO: optimize the performance when needed
-                if args.use_tman:
-                    if getattr(layer.attention, "prepare_tman", None):
-                        layer.attention.prepare_tman(do_permute=False, use_sha=False)
-                    convert_qlinear_to_tman_linear(layer.feed_forward)
-                else:
-                    convert_qlinear_to_linear(layer.attention)
-                    if getattr(layer.attention, "prepare_sha", None):
-                        layer.attention.prepare_sha()
-                    convert_qlinear_to_linear(layer.feed_forward)
-                    if getattr(layer.feed_forward, "prepare_feedfoward_conv", None):
-                        layer.feed_forward.prepare_feedfoward_conv()
 
     use_fp16 = True
     fixed_point_type = {"kv_type": torch.float32, "io_type": torch.float32}
@@ -645,6 +632,23 @@ def compile(args, pte_filename, tokenizer):
             llama_instance_list[i] = llama_instance_list[i].to(
                 dtype_override.to_torch_dtype()
             )
+
+    for llama_instance in llama_instance_list:
+        for layer in llama_instance.layers:
+            if args.gptq_dir:
+                # TODO: optimize the performance when needed
+                if args.use_tman:
+                    if getattr(layer.attention, "prepare_tman", None):
+                        layer.attention.prepare_tman(do_permute=False, use_sha=False)
+                    convert_qlinear_to_tman_linear(layer.feed_forward)
+                else:
+                    convert_qlinear_to_linear(layer.attention)
+                    if getattr(layer.attention, "prepare_sha", None):
+                        layer.attention.prepare_sha()
+                    convert_qlinear_to_linear(layer.feed_forward)
+                    if getattr(layer.feed_forward, "prepare_feedfoward_conv", None):
+                        layer.feed_forward.prepare_feedfoward_conv()
+
 
     for i in range(len(llama_instance_list)):
         if args.embedding_quantize:
@@ -1175,8 +1179,11 @@ def export_llama(args) -> None:
     elif args.llama_model == "llama3_2":
         assert isinstance(
             tokenizer, TiktokenTokenizer
+        ) or isinstance(
+            tokenizer, HuggingFaceTokenizer
         ), f"Wrong tokenizer provided for llama3_2."
         runtime_tokenizer_path = args.tokenizer_model
+        # args.prompt = "<|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n".format(args.prompt)
     else:
         raise RuntimeError(f"Unknown llama_model: {args.llama_model}.")
 

@@ -59,6 +59,7 @@ target_link_libraries(
   custom_ops
   quantized_ops_lib
   quantized_kernels
+  tokenizers
 )
 target_compile_options(
   qnn_llama_runner PUBLIC ${_common_compile_options}

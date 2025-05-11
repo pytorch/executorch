@@ -28,7 +28,7 @@ from executorch.backends.qualcomm.builders.custom_ops import (
     tman_linear,
     tman_bitnet_linear,
 )
-from executorch.backends.qualcomm.builders.utils import unpack_weights
+from executorch.backends.qualcomm.builders.utils import unpack_weights, unpack_gptqv2
 from executorch.backends.qualcomm.partition.qnn_partitioner import (
     generate_qnn_executorch_option,
     get_skip_decomp_table,

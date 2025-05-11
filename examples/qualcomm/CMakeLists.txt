@@ -78,12 +78,8 @@ set(ABSL_PROPAGATE_CXX_STD ON)
 set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/abseil-cpp
-  ${CMAKE_CURRENT_BINARY_DIR}/abseil-cpp
-)
-add_subdirectory(
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/re2
-  ${CMAKE_CURRENT_BINARY_DIR}/re2
+  ${EXECUTORCH_ROOT}/extension/llm/tokenizers
+  ${CMAKE_CURRENT_BINARY_DIR}/tokenizers
 )
 set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 

@@ -88,15 +88,7 @@ class Runner : public executorch::extension::llm::IRunner {
       const std::string& prompt,
       const executorch::extension::llm::GenerationConfig& config,
       std::function<void(const std::string&)> token_callback = {},
-      std::function<void(const executorch::extension::llm::Stats&)>
-          stats_callback = {}) override {
-    // TODO: convert stats_callback
-    return generate(
-        config.seq_len,
-        prompt,
-        "",
-        token_callback);
-  }
+      std::function<void(const executorch::extension::llm::Stats&)> stats_callback = {});
   void stop() override;
   std::vector<executorch::runtime::Result<executorch::runtime::MethodMeta>>
   get_methods_meta(std::string& method_name);

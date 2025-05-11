@@ -16,6 +16,7 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/log.h>
+#include <pytorch/tokenizers/hf_tokenizer.h>
 #include <pytorch/tokenizers/llama2c_tokenizer.h>
 
 #include <ctime>
@@ -247,10 +248,21 @@ Error Runner::load() {
     tokenizer_ = std::make_unique<tokenizers::Llama2cTokenizer>();
     err = tokenizer_->load(tokenizer_path_);
     llama_version_ = LlamaVersion::kLlama2;
-    ET_CHECK_MSG(
-        err == tokenizers::Error::Ok,
-        "failed to load tokenizer %s",
-        tokenizer_path_.c_str());
+    if (err != tokenizers::Error::Ok) {
+      ET_LOG(
+          Info,
+          "Failed to load %s as a llama2.c tokenizer artifact",
+          tokenizer_path_.c_str());
+      tokenizer_.reset();
+      tokenizer_ = std::make_unique<tokenizers::HFTokenizer>();
+      err = tokenizer_->load(tokenizer_path_);
+      ET_CHECK_MSG(
+          err == tokenizers::Error::Ok,
+          "failed to load tokenizer %s",
+          tokenizer_path_.c_str());
+      eos_id_.insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
+      llama_version_ = LlamaVersion::kLlama3;
+    }
   } else {
     eos_id_.insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
     llama_version_ = LlamaVersion::kLlama3;
@@ -509,6 +521,167 @@ Error Runner::generate(
       get_methods_meta(prefill_forward_name_),
       get_methods_meta(kv_forward_name_));
   prompt_.clear();
+  return Error::Ok;
+}
+
+Error Runner::generate(
+    const std::string& prompt,
+    const executorch::extension::llm::GenerationConfig& config,
+    std::function<void(const std::string&)> token_callback,
+    std::function<void(const executorch::extension::llm::Stats&)> stats_callback) {
+  std::unordered_map<std::string, std::vector<std::vector<Tensor>>>
+      input_tensors, output_tensors;
+  std::unordered_map<std::string, std::vector<std::vector<EValue>>> inputs;
+  executorch::extension::llm::Stats stats;
+  stats.model_load_start_ms = time_in_ms();
+  ET_CHECK_OK_OR_RETURN_ERROR(load());
+  for (auto method_name : method_names_) {
+    for (int i = 0; i < modules_.size(); ++i) {
+      input_tensors[method_name].emplace_back(
+          io_mgr_->get_input_tensors(i, method_name));
+      output_tensors[method_name].emplace_back(
+          io_mgr_->get_output_tensors(i, method_name));
+      for (size_t j = 0; j < output_tensors[method_name][i].size(); ++j) {
+        ET_CHECK_MSG(
+            modules_[i]->set_output(
+                method_name, output_tensors[method_name][i][j], j) ==
+                Error::Ok,
+            "failed to set output tensor for module %d's %zu'th output",
+            i,
+            j);
+      }
+      inputs[method_name].emplace_back(std::vector<EValue>(
+          begin(input_tensors[method_name][i]),
+          end(input_tensors[method_name][i])));
+    }
+  }
+  stats.model_load_end_ms = time_in_ms();
+  stats.inference_start_ms = time_in_ms();
+
+  ET_CHECK_MSG(!prompt.empty(), "prompt cannot be null");
+
+  int32_t seq_len = config.seq_len;
+  seq_len = (seq_len > 0 && seq_len <= context_len_) ? seq_len : context_len_;
+  tokenizers::Result<std::vector<uint64_t>> encode_res =
+      tokenizer_->encode(prompt, n_bos_, 0);
+  ET_CHECK_TK_OK_OR_RETURN_ERROR(
+      encode_res.error(), "failed to encode prompt %s", prompt.c_str());
+
+  std::vector<uint64_t> prompt_tokens = encode_res.get();
+  int num_prompt_tokens = prompt_tokens.size();
+  if (num_prompt_tokens >= seq_len) {
+    // Leave at least half of the context length for token generation
+    num_prompt_tokens = seq_len / 2;
+    prompt_tokens = std::vector<uint64_t>(
+        prompt_tokens.end() - num_prompt_tokens, prompt_tokens.end());
+  }
+  ET_CHECK_MSG(
+      num_prompt_tokens < seq_len,
+      "sequence length exceeded - please increase the seq_len value");
+
+  int64_t pos = 0, prev_token, cur_token = prompt_tokens[0];
+  if (config.echo && token_callback) {
+    token_callback(prompt);
+  }
+  auto prefill_execute = [&](const std::string& method_name) {
+    int num_iters = 1 + ((num_prompt_tokens - 1) / prefill_ar_len_);
+    ET_LOG(
+        Info,
+        "Prompt Processor: total %d tokens (AR-%d * %d iters)",
+        num_prompt_tokens,
+        prefill_ar_len_,
+        num_iters);
+
+    for (int i = 0; i < num_iters; i++) {
+      io_mgr_->fill_prefill_toks(pos, prompt_tokens);
+      run_model_step(method_name, inputs[method_name]);
+      io_mgr_->update_prefill_io(cur_token, pos, output_tensors[method_name]);
+      pos += prefill_ar_len_;
+    }
+    Tensor& logits_tensor = output_tensors[method_name].back()[0];
+    prev_token = prompt_tokens[num_prompt_tokens - 1];
+    long sample_start_time_ms = time_in_ms();
+    cur_token = logitsToToken(
+        logits_tensor,
+        (num_prompt_tokens + prefill_ar_len_ - 1) % prefill_ar_len_);
+    stats.aggregate_sampling_time_ms += time_in_ms() - sample_start_time_ms;
+
+    auto piece_res = tokenizer_->decode(prev_token, cur_token);
+    ET_CHECK(piece_res.ok());
+    if (token_callback) {
+      token_callback(piece_res.get().c_str());
+    }
+
+    pos = num_prompt_tokens;
+    stats.first_token_ms = time_in_ms();
+    stats.prompt_eval_end_ms = time_in_ms();
+  };
+
+  auto kv_execute = [&](const std::string& method_name) {
+    io_mgr_->fill_kv_tok_mask(pos, cur_token);
+    while (pos < seq_len - 1) {
+      // inference
+      run_model_step(method_name, inputs[method_name]);
+      Tensor& logits_tensor = output_tensors[method_name].back()[0];
+
+      // hybrid mode will check these stats_ at prefill(prefill)
+      if (eval_mode_ == EvalMode::kKVCached) {
+        if (pos == num_prompt_tokens) {
+          stats.first_token_ms = time_in_ms();
+        } else if (pos == num_prompt_tokens - 1) {
+          stats.prompt_eval_end_ms = time_in_ms();
+        }
+      }
+      prev_token = cur_token;
+      long sample_start_time_ms = time_in_ms();
+      cur_token = logitsToToken(logits_tensor, pos);
+      stats.aggregate_sampling_time_ms += time_in_ms() - sample_start_time_ms;
+
+      if (pos < num_prompt_tokens - 1) {
+        cur_token = prompt_tokens[pos + 1];
+      }
+      io_mgr_->update_kv_io(cur_token, ++pos, output_tensors[method_name]);
+      auto piece_res = tokenizer_->decode(prev_token, cur_token);
+      ET_CHECK(piece_res.ok());
+
+      if (token_callback && pos >= num_prompt_tokens) {
+        token_callback(piece_res.get().c_str());
+      }
+
+      if (pos >= num_prompt_tokens && eos_id_.count(cur_token) > 0) {
+        ET_LOG(Info, "\nReached to the end of generation");
+        break;
+      }
+    }
+  };
+
+  switch (eval_mode_) {
+    case EvalMode::kKVCached:
+      kv_execute(kv_forward_name_);
+      break;
+    case EvalMode::kHybrid:
+      prefill_execute(prefill_forward_name_);
+      io_mgr_->update_prefill_to_kv_io(
+          cur_token, pos, output_tensors[kv_forward_name_]);
+      kv_execute(kv_forward_name_);
+      break;
+    default:
+      ET_CHECK_MSG(false, "Unsupported eval mode");
+      break;
+  }
+  stats.inference_end_ms = time_in_ms();
+  if (pos == seq_len) {
+    ET_LOG(Info, "\nSequence length (%i tokens) reached!", seq_len);
+  }
+
+  stats.num_prompt_tokens = num_prompt_tokens;
+  stats.num_generated_tokens = pos - num_prompt_tokens;
+  if (stats_callback) {
+    stats_callback(stats);
+  }
+  io_mgr_->reset_io(
+      get_methods_meta(prefill_forward_name_),
+      get_methods_meta(kv_forward_name_));
   return Error::Ok;
 }
 
