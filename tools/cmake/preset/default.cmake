@@ -205,6 +205,24 @@ define_overridable_option(
   BOOL ON
 )
 
+if(EXECUTORCH_BUILD_ARM_BAREMETAL)
+  set(_default_executorch_build_pthreadpool OFF)
+  set(_default_executorch_build_cpuinfo OFF)
+else()
+  set(_default_executorch_build_pthreadpool ON)
+  set(_default_executorch_build_cpuinfo ON)
+endif()
+define_overridable_option(
+  EXECUTORCH_BUILD_PTHREADPOOL
+  "Build pthreadpool library."
+  BOOL ${_default_executorch_build_pthreadpool}
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_CPUINFO
+  "Build cpuinfo library."
+  BOOL ${_default_executorch_build_cpuinfo}
+)
+
 # MARK: - Validations
 # At this point all the options should be configured with their final value.
 
@@ -230,5 +248,14 @@ endif()
 if(EXECUTORCH_ENABLE_EVENT_TRACER)
   if(NOT EXECUTORCH_BUILD_DEVTOOLS)
     message(FATAL_ERROR "Use of 'EXECUTORCH_ENABLE_EVENT_TRACER' requires 'EXECUTORCH_BUILD_DEVTOOLS' to be enabled.")
+  endif()
+endif()
+
+
+if(EXECUTORCH_BUILD_ARM_BAREMETAL)
+  if(EXECUTORCH_BUILD_PTHREADPOOL)
+    message(FATAL_ERROR "Cannot enable both EXECUTORCH_BUILD_PTHREADPOOL and EXECUTORCH_BUILD_ARM_BAREMETAL")
+  elseif(EXECUTORCH_BUILD_CPUINFO)
+    message(FATAL_ERROR "Cannot enable both EXECUTORCH_BUILD_CPUINFO and EXECUTORCH_BUILD_ARM_BAREMETAL")
   endif()
 endif()
