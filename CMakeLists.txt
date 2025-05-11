@@ -128,22 +128,6 @@ else()
   set(CMAKE_CXX_FLAGS_RELEASE "-O2 ${CMAKE_CXX_FLAGS_RELEASE}")
 endif()
 
-#
-# pthreadpool: build pthreadpool library. Disable on unsupported platforms
-#
-cmake_dependent_option(
-  EXECUTORCH_BUILD_PTHREADPOOL "Build pthreadpool library." ON
-  "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
-)
-
-#
-# cpuinfo: build cpuinfo library. Disable on unsupported platforms
-#
-cmake_dependent_option(
-  EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." ON
-  "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
-)
-
 add_subdirectory(third-party)
 
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
@@ -569,9 +553,7 @@ if(EXECUTORCH_BUILD_EXTENSION_TENSOR)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/tensor)
 endif()
 
-if(EXECUTORCH_BUILD_PTHREADPOOL
-   AND EXECUTORCH_BUILD_CPUINFO
-)
+if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_CPUINFO)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/threadpool)
 endif()
 
