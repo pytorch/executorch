@@ -36,18 +36,6 @@ class Runner : public executorch::extension::llm::IRunner {
       const float temperature,
       const int eval_mode,
       const std::string& kv_updater,
-      const int num_iters,
-      const std::string& kv_type);
-
-  explicit Runner(
-      const std::vector<std::string>& models_path,
-      const std::string& tokenizer_path,
-      const std::string& performance_output_path_,
-      const float logits_scale,
-      const int32_t logits_offset,
-      const float temperature,
-      const int eval_mode,
-      const std::string& kv_updater,
       const int num_iters);
 
   struct Stats {

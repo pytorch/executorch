@@ -196,7 +196,6 @@ class ShiftPointerIoMgr : public IoMgrBase {
   const bool use_int64_token_{false};
 };
 
-template <typename KVType, typename IOType>
 class SmartMaskIoMgr : public IoMgrBase {
  public:
   SmartMaskIoMgr(
@@ -258,22 +257,22 @@ class SmartMaskIoMgr : public IoMgrBase {
     int64_t* kv_input_toks;
     int32_t* kv_input_pos;
     // layer -> head -> head_dim * seq_len
-    std::vector<std::vector<KVType*>> k_cache;
-    std::vector<std::vector<KVType*>> v_cache;
+    std::vector<std::vector<uint8_t*>> k_cache;
+    std::vector<std::vector<uint8_t*>> v_cache;
     // layer -> head -> head_dim
-    std::vector<std::vector<KVType*>> k_cache_out;
-    std::vector<std::vector<KVType*>> v_cache_out;
+    std::vector<std::vector<uint8_t*>> k_cache_out;
+    std::vector<std::vector<uint8_t*>> v_cache_out;
     // kv_ar_len_ * context_len_
-    IOType* kv_attention_mask;
+    uint16_t* kv_attention_mask;
     // kv_ar_len_ * vocab_size
-    IOType* kv_logits;
+    uint16_t* kv_logits;
     // prefill_ar_len_
     int64_t* prefill_input_toks;
     int32_t* prefill_input_pos;
     // prefill_ar_len_ * context_len_
-    IOType* prefill_attention_mask;
+    uint16_t* prefill_attention_mask;
     // vocab_size * prefill_ar_len_
-    IOType* prefill_logits;
+    uint16_t* prefill_logits;
 
     size_t num_layers_;
     size_t num_heads_;

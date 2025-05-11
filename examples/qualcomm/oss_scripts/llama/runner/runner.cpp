@@ -51,8 +51,7 @@ Runner::Runner(
     const float temperature,
     const int eval_mode,
     const std::string& kv_updater,
-    const int num_iters,
-    const std::string& kv_type)
+    const int num_iters)
     : n_bos_(1),
       n_eos_(1),
       tokenizer_path_(tokenizer_path),
@@ -62,8 +61,7 @@ Runner::Runner(
       temperature_(temperature),
       eval_mode_(static_cast<EvalMode>(eval_mode)),
       kv_updater_(kv_updater),
-      num_iters_(num_iters),
-      kv_type_(kv_type) {
+      num_iters_(num_iters) {
   for (size_t i = 0; i < models_path.size(); ++i) {
     modules_.push_back(std::make_shared<Module>(
         models_path[i], Module::LoadMode::MmapUseMlockIgnoreErrors));
@@ -72,28 +70,6 @@ Runner::Runner(
   ET_LOG(Info, "creating runner: tokenizer_path=%s", tokenizer_path_.c_str());
   ET_LOG(Info, "eval mode=%d", eval_mode_);
 }
-
-Runner::Runner(
-    const std::vector<std::string>& models_path,
-    const std::string& tokenizer_path,
-    const std::string& performance_output_path_,
-    const float logits_scale,
-    const int32_t logits_offset,
-    const float temperature,
-    const int eval_mode,
-    const std::string& kv_updater,
-    const int num_iters)
-    : Runner(
-          models_path,
-          tokenizer_path,
-          performance_output_path_,
-          logits_scale,
-          logits_offset,
-          temperature,
-          eval_mode,
-          kv_updater,
-          num_iters,
-          "uint8") { }
 
 bool Runner::is_loaded() const {
   bool loaded = true;
@@ -164,41 +140,21 @@ Error Runner::load() {
   ET_CHECK_MSG(num_layers != -1, "Could not retrieve num layers");
 
   if (kv_updater_ == "SmartMask") {
-    if (kv_type_ == "uint8") {
-      io_mgr_ = std::make_unique<SmartMaskIoMgr<uint8_t, uint16_t>>(
-          modules_,
-          context_len_,
-          prefill_ar_len_,
-          prefill_cache_len_,
-          kv_ar_len_,
-          kv_cache_len_,
-          vocab_size_,
-          num_layers,
-          head_dim,
-          num_heads,
-          eval_mode_,
-          prefill_forward_name_,
-          kv_forward_name_,
-          use_int64_token_);
-    } else if (kv_type_ == "float32") {
-      io_mgr_ = std::make_unique<SmartMaskIoMgr<float, float>>(
-          modules_,
-          context_len_,
-          prefill_ar_len_,
-          prefill_cache_len_,
-          kv_ar_len_,
-          kv_cache_len_,
-          vocab_size_,
-          num_layers,
-          head_dim,
-          num_heads,
-          eval_mode_,
-          prefill_forward_name_,
-          kv_forward_name_,
-          use_int64_token_);
-    } else {
-      ET_LOG(Error, "Using an unknown kv type %s", kv_type_.c_str());
-    }
+    io_mgr_ = std::make_unique<SmartMaskIoMgr>(
+        modules_,
+        context_len_,
+        prefill_ar_len_,
+        prefill_cache_len_,
+        kv_ar_len_,
+        kv_cache_len_,
+        vocab_size_,
+        num_layers,
+        head_dim,
+        num_heads,
+        eval_mode_,
+        prefill_forward_name_,
+        kv_forward_name_,
+        use_int64_token_);
   } else if (kv_updater_ == "ShiftPointer") {
     io_mgr_ = std::make_unique<ShiftPointerIoMgr>(
         modules_,

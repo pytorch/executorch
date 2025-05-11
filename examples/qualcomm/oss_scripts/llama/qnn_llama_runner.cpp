@@ -58,10 +58,6 @@ DEFINE_string(
     "How to update kv cache. Choose between SmartMask and ShiftPointer",
     "SmartMask");
 DEFINE_int32(num_iters, 1, "total num of iterations to run.");
-DEFINE_string(
-    kv_type,
-    "Type of kv cache. Choose between uint8 and float32",
-    "uint8");
 
 std::vector<std::string> CollectPrompts(int argc, char** argv) {
   // Collect all prompts from command line, example usage:
@@ -89,8 +85,7 @@ int main(int argc, char** argv) {
       FLAGS_temperature,
       FLAGS_eval_mode,
       FLAGS_kv_updater,
-      FLAGS_num_iters,
-      FLAGS_kv_type);
+      FLAGS_num_iters);
   std::vector<char> buf;
   buf.reserve(5 * FLAGS_seq_len); // assume each token is around 5 char
   std::ofstream fout(FLAGS_output_path.c_str());
