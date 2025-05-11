@@ -204,6 +204,11 @@ define_overridable_option(
   "Build the gflags library."
   BOOL ON
 )
+define_overridable_option(
+  EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT
+  "Build the optimized ops library for AOT export usage"
+  BOOL OFF
+)
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   set(_default_executorch_build_pthreadpool OFF)
@@ -256,11 +261,10 @@ else()
 endif()
 
 
-if(EXECUTORCH_ENABLE_EVENT_TRACER)
-  if(NOT EXECUTORCH_BUILD_DEVTOOLS)
-    message(FATAL_ERROR "Use of 'EXECUTORCH_ENABLE_EVENT_TRACER' requires 'EXECUTORCH_BUILD_DEVTOOLS' to be enabled.")
-  endif()
-endif()
+check_required_options_on(
+  IF_ON EXECUTORCH_ENABLE_EVENT_TRACER
+  REQUIRES EXECUTORCH_BUILD_DEVTOOLS
+)
 
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
@@ -270,3 +274,9 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL)
     message(FATAL_ERROR "Cannot enable both EXECUTORCH_BUILD_CPUINFO and EXECUTORCH_BUILD_ARM_BAREMETAL")
   endif()
 endif()
+
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_PYBIND
+  REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
+)

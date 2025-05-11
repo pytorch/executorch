@@ -106,3 +106,22 @@ macro(load_build_preset)
   # For now, just continue if the preset file is not set. In the future, we will
   # try to determine a preset file.
 endmacro()
+
+
+function(check_required_options_on)
+  cmake_parse_arguments(
+    ARG
+    ""
+    "IF_ON"
+    "REQUIRES"
+    ${ARGN}
+  )
+
+  if(${${ARG_IF_ON}})
+    foreach(required ${ARG_REQUIRES})
+      if(NOT ${${required}})
+        message(FATAL_ERROR "Use of '${ARG_IF_ON}' requires '${required}' to be ON")
+      endif()
+    endforeach()
+  endif()
+endfunction()

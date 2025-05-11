@@ -28,6 +28,34 @@
         "type": "equals",
         "rhs": "Darwin"
       }
+    },
+    {
+      "name": "pybind-macos",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third-party/ios-cmake/ios.toolchain.cmake",
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/pybind-macos.cmake",
+        "PLATFORM": "MAC_ARM64",
+        "DEPLOYMENT_TARGET": "10.15"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "pybind-linux",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "CMAKE_SYSTEM_NAME": "Linux",
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/pybind-linux.cmake"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Linux"
+      }
     }
   ]
 }
