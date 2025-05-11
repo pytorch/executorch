@@ -29,17 +29,6 @@ function(executorch_print_configuration_summary)
   message(STATUS "  CMAKE_TOOLCHAIN_FILE          : ${CMAKE_TOOLCHAIN_FILE}")
   message(STATUS "  BUCK2                         : ${BUCK2}")
   message(STATUS "  PYTHON_EXECUTABLE             : ${PYTHON_EXECUTABLE}")
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_CPUINFO               : ${EXECUTORCH_BUILD_CPUINFO}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_EXECUTOR_RUNNER       : "
-                 "${EXECUTORCH_BUILD_EXECUTOR_RUNNER}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_PTHREADPOOL           : ${EXECUTORCH_BUILD_PTHREADPOOL}"
-  )
 endfunction()
 
 # This is the funtion to use -Wl, --whole-archive to link static library NB:
