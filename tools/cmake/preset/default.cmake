@@ -59,6 +59,151 @@ define_overridable_option(
   "Build executorch runtime optimizing for binary size"
   BOOL OFF
 )
+define_overridable_option(
+  EXECUTORCH_BUILD_ARM_BAREMETAL
+  "Build the Arm Baremetal flow for Cortex-M and Ethos-U"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_KERNELS_CUSTOM
+  "Build the custom kernels"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT
+  "Build the custom ops lib for AOT"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
+  "Build the Data Loader extension"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR
+  "Build the Flat Tensor extension"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_LLM
+  "Build the LLM extension"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_MODULE
+  "Build the Module extension"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL
+  "Build the Runner Util extension"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_TENSOR
+  "Build the Tensor extension"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_TRAINING
+  "Build the training extension"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_MPS
+  "Build the MPS backend"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_NEURON
+  "Build the backends/mediatek directory"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_OPENVINO
+  "Build the Openvino backend"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_PYBIND
+  "Build the Python Bindings"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_QNN
+  "Build the Qualcomm backend"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_KERNELS_OPTIMIZED
+  "Build the optimized kernels"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_KERNELS_QUANTIZED
+  "Build the quantized kernels"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_DEVTOOLS
+  "Build the ExecuTorch Developer Tools"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_TESTS
+  "Build CMake-based unit tests"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_NNLIB_OPT
+  "Build Cadence backend Hifi nnlib kernel"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_CADENCE_CPU_RUNNER
+  "Build Cadence backend CPU runner"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_SIZE_TEST
+  "Build the size test"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_XNNPACK
+  "Build the XNNPACK backend"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_VULKAN
+  "Build the Vulkan backend"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_PORTABLE_OPS
+  "Build portable_ops library"
+  BOOL ON
+)
+define_overridable_option(
+  EXECUTORCH_USE_DL
+  "Use libdl library"
+  BOOL ON
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_CADENCE
+  "Build the Cadence DSP backend"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_CORTEX_M
+  "Build the Cortex-M backend"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_GFLAGS
+  "Build the gflags library."
+  BOOL ON
+)
 
 # MARK: - Validations
 # At this point all the options should be configured with their final value.
