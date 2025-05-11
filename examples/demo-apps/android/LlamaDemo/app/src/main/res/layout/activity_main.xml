@@ -22,7 +22,7 @@
             android:layout_height="wrap_content"
             android:paddingLeft="20dp"
             android:paddingTop="20dp"
-            android:text="Chat with BitNet"
+            android:text="Chat with Llama"
             android:textColor="@android:color/white"
             android:textSize="16sp"
             android:textStyle="bold" />

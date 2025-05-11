@@ -19,6 +19,8 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.TextView;
+import android.widget.Toast;
+import android.app.ProgressDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import androidx.core.graphics.Insets;
@@ -29,6 +31,11 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.net.HttpURLConnection;
+import java.io.FileOutputStream;
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.net.URL;
 
 public class SettingsActivity extends AppCompatActivity {
 
@@ -93,10 +100,7 @@ public class SettingsActivity extends AppCompatActivity {
         view -> {
           setupModelSelectorDialog();
         });
-    tokenizerImageButton.setOnClickListener(
-        view -> {
-          setupTokenizerSelectorDialog();
-        });
+    tokenizerImageButton.setEnabled(false);
     modelTypeImageButton.setOnClickListener(
         view -> {
           setupModelTypeSelectorDialog();
@@ -324,19 +328,153 @@ public class SettingsActivity extends AppCompatActivity {
     backendTypeBuilder.create().show();
   }
 
+  private static class ModelInfo {
+    String modelName;
+    String tokenizerUrl;
+    String modelUrl;
+    String quantAttrsUrl;
+
+    ModelInfo(String modelName, String tokenizerUrl, String modelUrl, String quantAttrsUrl) {
+      this.modelName = modelName;
+      this.tokenizerUrl = tokenizerUrl;
+      this.modelUrl = modelUrl;
+      this.quantAttrsUrl = quantAttrsUrl;
+    }
+  }
+
+  // Construct the model info array
+  private final ModelInfo[] modelInfoArray = new ModelInfo[] {
+    new ModelInfo(
+      "bitnet-b1.58-2B-4T",
+      "https://huggingface.co/JY-W/test_model/resolve/main/tokenizer.json?download=true",
+      "https://huggingface.co/JY-W/test_model/resolve/main/kv_llama_qnn.pte?download=true",
+      "https://huggingface.co/JY-W/test_model/resolve/main/kv_llama_qnn_quant_attrs.txt?download=true"
+    ),
+  };
+
+  private final String mOpPackageUrl = "https://huggingface.co/JY-W/test_model/resolve/main/libQnnTMANOpPackage.so?download=true";
+
+  private void downloadFileFromUrl(String fileUrl, String fileName, boolean overwrite) {
+    ProgressDialog progressDialog = new ProgressDialog(this);
+    progressDialog.setTitle("Downloading " + fileName + "...");
+    progressDialog.setMessage("Please wait...");
+    progressDialog.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
+    progressDialog.setIndeterminate(false);
+    progressDialog.setMax(100);
+    progressDialog.setProgress(0);
+    progressDialog.setCancelable(false);
+    progressDialog.show();
+
+    new Thread(() -> {
+        try {
+            File outputDir = getExternalFilesDir(null);
+            File outputFile = new File(outputDir, fileName);
+            if (!outputFile.exists() || overwrite) {
+                URL url = new URL(fileUrl);
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                connection.connect();
+
+                if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
+                    runOnUiThread(() -> {
+                        progressDialog.dismiss();
+                        Toast.makeText(this, "Failed to download file", Toast.LENGTH_SHORT).show();
+                    });
+                    return;
+                }
+
+                int fileLength = connection.getContentLength();
+                InputStream input = connection.getInputStream();
+
+                try (FileOutputStream output = new FileOutputStream(outputFile)) {
+                    byte[] buffer = new byte[4096];
+                    int bytesRead;
+                    long totalBytesRead = 0;
+
+                    while ((bytesRead = input.read(buffer)) != -1) {
+                        totalBytesRead += bytesRead;
+                        output.write(buffer, 0, bytesRead);
+
+                        // Update progress
+                        int progress = (int) (totalBytesRead * 100 / fileLength);
+                        runOnUiThread(() -> progressDialog.setProgress(progress));
+                    }
+                }
+
+                connection.disconnect();
+            }
+
+            runOnUiThread(() -> {
+                progressDialog.dismiss();
+                mLoadModelButton.setEnabled(true);
+                Toast.makeText(this, "File downloaded to " + outputFile.getAbsolutePath(), Toast.LENGTH_SHORT).show();
+            });
+        } catch (Exception e) {
+            runOnUiThread(() -> {
+                progressDialog.dismiss();
+                Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            });
+        }
+    }).start();
+  }
+
+  private void downloadModel(ModelInfo modelInfo) {
+    String modelFileName = modelInfo.modelName + ".pte";
+    String tokenizerFileName = modelInfo.modelName + "_tokenizer.json";
+    String quantAttrsFileName = modelInfo.modelName + "_quant_attrs.txt";
+    String opPackageFileName = "libQnnTMANOpPackage.so";
+
+    File modelFile = new File(getExternalFilesDir(null), modelFileName);
+    File tokenizerFile = new File(getExternalFilesDir(null), tokenizerFileName);
+    File quantAttrsFile = new File(getExternalFilesDir(null), quantAttrsFileName);
+    File opPackageFile = new File(getExternalFilesDir(null), opPackageFileName);
+
+    if (modelFile.exists() || tokenizerFile.exists() || quantAttrsFile.exists() || opPackageFile.exists()) {
+      runOnUiThread(() -> {
+          new AlertDialog.Builder(this)
+            .setTitle("Overwrite Existing Files")
+            .setMessage("Some files for this model already exist. Do you want to overwrite them?")
+            .setPositiveButton("Yes", (dialog, which) -> {
+              downloadFileFromUrl(modelInfo.modelUrl, modelFileName, true);
+              downloadFileFromUrl(modelInfo.tokenizerUrl, tokenizerFileName, true);
+              downloadFileFromUrl(modelInfo.quantAttrsUrl, quantAttrsFileName, true);
+              downloadFileFromUrl(mOpPackageUrl, opPackageFileName, true);
+            })
+            .setNegativeButton("No", (dialog, which) -> {
+              downloadFileFromUrl(modelInfo.modelUrl, modelFileName, false);
+              downloadFileFromUrl(modelInfo.tokenizerUrl, tokenizerFileName, false);
+              downloadFileFromUrl(modelInfo.quantAttrsUrl, quantAttrsFileName, false);
+              downloadFileFromUrl(mOpPackageUrl, opPackageFileName, false);
+            })
+            .show();
+      });
+    } else {
+      downloadFileFromUrl(modelInfo.modelUrl, modelFileName, true);
+      downloadFileFromUrl(modelInfo.tokenizerUrl, tokenizerFileName, true);
+      downloadFileFromUrl(modelInfo.quantAttrsUrl, quantAttrsFileName, true);
+      downloadFileFromUrl(mOpPackageUrl, opPackageFileName, true);
+    }
+    mModelFilePath = modelFile.getAbsolutePath();
+    mModelTextView.setText(getFilenameFromPath(mModelFilePath));
+    mTokenizerFilePath = tokenizerFile.getAbsolutePath();
+    mTokenizerTextView.setText(getFilenameFromPath(mTokenizerFilePath));
+  }
+
   private void setupModelSelectorDialog() {
-    String[] pteFiles = listLocalFile("/data/local/tmp/llama/", new String[] {".pte"});
+    // set a map from model name to url
     AlertDialog.Builder modelPathBuilder = new AlertDialog.Builder(this);
-    modelPathBuilder.setTitle("Select model path");
+    modelPathBuilder.setTitle("Select model");
+
+    String[] modelNames = Arrays.stream(modelInfoArray)
+                                .map(modelInfo -> modelInfo.modelName)
+                                .toArray(String[]::new);
 
     modelPathBuilder.setSingleChoiceItems(
-        pteFiles,
+        modelNames,
         -1,
         (dialog, item) -> {
-          mModelFilePath = pteFiles[item];
-          mModelTextView.setText(getFilenameFromPath(mModelFilePath));
-          mLoadModelButton.setEnabled(true);
-          dialog.dismiss();
+            ModelInfo selectedModel = modelInfoArray[item];
+            downloadModel(selectedModel);
+            dialog.dismiss();
         });
 
     modelPathBuilder.create().show();
@@ -382,24 +520,6 @@ public class SettingsActivity extends AppCompatActivity {
         });
 
     modelTypeBuilder.create().show();
-  }
-
-  private void setupTokenizerSelectorDialog() {
-    String[] tokenizerFiles =
-        listLocalFile("/data/local/tmp/llama/", new String[] {".bin", ".json", ".model"});
-    AlertDialog.Builder tokenizerPathBuilder = new AlertDialog.Builder(this);
-    tokenizerPathBuilder.setTitle("Select tokenizer path");
-    tokenizerPathBuilder.setSingleChoiceItems(
-        tokenizerFiles,
-        -1,
-        (dialog, item) -> {
-          mTokenizerFilePath = tokenizerFiles[item];
-          mTokenizerTextView.setText(getFilenameFromPath(mTokenizerFilePath));
-          mLoadModelButton.setEnabled(true);
-          dialog.dismiss();
-        });
-
-    tokenizerPathBuilder.create().show();
   }
 
   private String getFilenameFromPath(String uriFilePath) {

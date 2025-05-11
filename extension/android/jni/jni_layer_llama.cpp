@@ -13,6 +13,9 @@
 #include <unordered_map>
 #include <vector>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
 
 #if defined(ET_USE_QNN_OSS_RUNNER)
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/runner.h>
@@ -171,18 +174,35 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           temperature);
     } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
 #if defined(ET_USE_QNN_OSS_RUNNER)
+      // TODO: very ugly... Find better ways to set OpPackage and QuantAttrs
+      std::string model_path_str = model_path->toStdString();
+      std::filesystem::path model_path_fs(model_path->toStdString());
+      std::filesystem::path op_package_fs = model_path_fs.parent_path() / "libQnnTMANOpPackage.so";
+      std::string op_package_str = op_package_fs.string() + ":TMANOpPackageInterfaceProvider:HTP";
+
+      std::string quant_attrs_str = model_path_fs.stem().string() + "_quant_attrs.txt";
+      std::filesystem::path quant_attrs_fs = model_path_fs.parent_path() / quant_attrs_str;
+
+      std::ifstream quant_attrs_file(quant_attrs_fs.string());
+      if (!quant_attrs_file.is_open()) {
+          throw std::runtime_error("Failed to open quant_attrs file: " + quant_attrs_fs.string());
+      }
+      float scale;
+      int32_t zero_point;
+      quant_attrs_file >> scale >> zero_point;
+
       // TODO: Replace with a more robust way to set the environment variable
-      setenv("QNN_OP_PACKAGE_PATHS", "/data/local/tmp/llama/libQnnTMANOpPackage.so:TMANOpPackageInterfaceProvider:HTP", 1);
+      setenv("QNN_OP_PACKAGE_PATHS", op_package_str.c_str(), 1);
       runner_ = std::make_unique<example::Runner>(
           std::vector<std::string>{model_path->toStdString().c_str()},
           tokenizer_path->toStdString().c_str(),
           "",
-          0.0012801217380911112f,  // TODO: replace hardcoded values
-          34183,
+          scale,
+          zero_point,
           temperature,
           0,
           "ShiftPointer",
-          2);
+          1);
 #else
       if (data_path != nullptr) {
         runner_ = std::make_unique<example::Runner>(
