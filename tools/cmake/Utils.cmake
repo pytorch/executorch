@@ -32,9 +32,6 @@ function(executorch_print_configuration_summary)
   message(STATUS "  EXECUTORCH_ENABLE_PROGRAM_VERIFICATION : "
                  "${EXECUTORCH_ENABLE_PROGRAM_VERIFICATION}"
   )
-  message(
-    STATUS "  EXECUTORCH_LOG_LEVEL                   : ${EXECUTORCH_LOG_LEVEL}"
-  )
   message(STATUS "  EXECUTORCH_BUILD_ANDROID_JNI           : "
                  "${EXECUTORCH_BUILD_ANDROID_JNI}"
   )
