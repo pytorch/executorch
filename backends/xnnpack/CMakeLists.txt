@@ -162,14 +162,7 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   add_executable(xnn_executor_runner ${_xnn_executor_runner__srcs})
 
   if(EXECUTORCH_ENABLE_EVENT_TRACER)
-    if(EXECUTORCH_BUILD_DEVTOOLS)
-      list(APPEND xnn_executor_runner_libs etdump)
-    else()
-      message(
-        SEND_ERROR
-          "Use of 'EXECUTORCH_ENABLE_EVENT_TRACER' requires 'EXECUTORCH_BUILD_DEVTOOLS' to be enabled."
-      )
-    endif()
+    list(APPEND xnn_executor_runner_libs etdump)
   endif()
 
   target_link_libraries(xnn_executor_runner gflags ${xnn_executor_runner_libs})
