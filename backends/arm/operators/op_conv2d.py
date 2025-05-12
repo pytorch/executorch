@@ -277,17 +277,29 @@ class Conv2dVisitor(NodeVisitor):
             input_qparams = get_input_qparams(node)
             input_zp = input_qparams[0].zp
 
-        tosa_graph.addConst([1], output.dtype, [input_zp], name=f"{node.name}_input_zp")
-        tosa_graph.addConst([1], output.dtype, [0], name=f"{node.name}_weight_zp")
+        # The output type is int32 when input type is int8.
+        conv2d_output_name = output.name
+        if output.dtype == ts.DType.INT8:
+            conv2d_res = tosa_graph.addIntermediate(
+                tosa_shape(output.shape, output.dim_order), ts.DType.INT32
+            )
+            conv2d_output_name = conv2d_res.name
         acc_type = (
             inputs[0].dtype if inputs[0].dtype == ts.DType.FP32 else ts.DType.INT32
+        )
+
+        tosa_graph.addConst(
+            [1], output.dtype, [input_zp], name=f"{conv2d_output_name}_input_zp"
+        )
+        tosa_graph.addConst(
+            [1], output.dtype, [0], name=f"{conv2d_output_name}_weight_zp"
         )
 
         # Non-bias case.
         if len(node.all_input_nodes) == 2:
             # Create a zero bias tensor if not presented
             out_channels = weight.shape[0]
-            bias_name = "bias" + node.name.split("default", 1)[1]
+            bias_name = f"{conv2d_output_name}_bias"
             bias_type = output.dtype
             if output.dtype == ts.DType.INT8:
                 # Conv is quantized to int8, but the TOSA operator has
@@ -300,14 +312,6 @@ class Conv2dVisitor(NodeVisitor):
                 [0] * out_channels,
                 name=bias_name,
             )
-
-        # The output type is int32 when input type is int8.
-        conv2d_output_name = output.name
-        if output.dtype == ts.DType.INT8:
-            conv2d_res = tosa_graph.addIntermediate(
-                tosa_shape(output.shape, output.dim_order), ts.DType.INT32
-            )
-            conv2d_output_name = conv2d_res.name
 
         # Given input.shape is (N, Ci, H, W), and weight.shape is (Co, Ci/G, H, W)
         in_channels = input.shape[1]
@@ -373,8 +377,8 @@ class Conv2dVisitor(NodeVisitor):
                 input.name,
                 weight_name,
                 bias.name,
-                f"{node.name}_input_zp",
-                f"{node.name}_weight_zp",
+                f"{conv2d_output_name}_input_zp",
+                f"{conv2d_output_name}_weight_zp",
             ],
             [conv2d_output_name],
             attr,

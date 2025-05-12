@@ -83,8 +83,6 @@ test_pytest_ops() { # Test ops and other things
 test_pytest_models() { # Test ops and other things
     echo "${TEST_SUITE_NAME}: Run pytest"
 
-    examples/models/llama3_2_vision/install_requirements.sh
-
     # Prepare for pytest
     backends/arm/scripts/build_executorch.sh
 
@@ -116,8 +114,6 @@ test_pytest_ops_ethosu_fvp() { # Same as test_pytest but also sometime verify us
 
 test_pytest_models_ethosu_fvp() { # Same as test_pytest but also sometime verify using Corstone FVP
     echo "${TEST_SUITE_NAME}: Run pytest with fvp"
-
-    examples/models/llama3_2_vision/install_requirements.sh
 
     # Prepare Corstone-3x0 FVP for pytest
     backends/arm/scripts/build_executorch.sh

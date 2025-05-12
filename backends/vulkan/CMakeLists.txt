@@ -85,7 +85,7 @@ set(GENERATED_HEADER
 add_custom_command(
   OUTPUT ${GENERATED_HEADER}
   COMMAND
-    ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
+    flatc --cpp --cpp-std c++11 --scoped-enums -o
     "${SCHEMA_INCLUDE_DIR}/executorch/backends/vulkan/serialization/" ${_vulkan_schema__srcs}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   DEPENDS flatc
