@@ -129,6 +129,7 @@ cmake                                                 \
     -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON           \
     -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON       \
+    -DEXECUTORCH_BUILD_CORTEX_M=ON                    \
     -DEXECUTORCH_ENABLE_LOGGING=ON                    \
     ${build_devtools_flags}                           \
     ${build_with_etdump_flags}                        \
