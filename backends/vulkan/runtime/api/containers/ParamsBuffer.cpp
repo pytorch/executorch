@@ -36,7 +36,8 @@ ParamsBuffer::ParamsBuffer(const ParamsBuffer& other)
     : context_p_(other.context_p_), vulkan_buffer_{} {
   if (other.vulkan_buffer_) {
     vulkan_buffer_ = context_p_->adapter_ptr()->vma().create_uniform_buffer(
-        other.vulkan_buffer_.mem_size());
+        other.vulkan_buffer_.mem_size(),
+        context_p_->get_custom_memory_pool_ptr());
 
     memcpy_to_buffer(other.vulkan_buffer_, vulkan_buffer_);
   }
@@ -55,7 +56,8 @@ ParamsBuffer& ParamsBuffer::operator=(const ParamsBuffer& other) {
 
     if (other.vulkan_buffer_) {
       vulkan_buffer_ = context_p_->adapter_ptr()->vma().create_uniform_buffer(
-          other.vulkan_buffer_.mem_size());
+          other.vulkan_buffer_.mem_size(),
+          context_p_->get_custom_memory_pool_ptr());
 
       memcpy_to_buffer(other.vulkan_buffer_, vulkan_buffer_);
     }

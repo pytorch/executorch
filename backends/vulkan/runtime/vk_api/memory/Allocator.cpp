@@ -67,7 +67,8 @@ VmaAllocationCreateInfo Allocator::gpuonly_resource_create_info() {
 
 Allocation Allocator::create_allocation(
     const VkMemoryRequirements& memory_requirements,
-    const VmaAllocationCreateInfo& create_info) {
+    const VmaAllocationCreateInfo& create_info,
+    MemoryPoolManager* pool_manager) {
   VmaAllocationCreateInfo alloc_create_info = create_info;
   // Protect against using VMA_MEMORY_USAGE_AUTO_* flags when allocating memory
   // directly, since those usage flags require that VkBufferCreateInfo and/or
@@ -90,6 +91,11 @@ Allocation Allocator::create_allocation(
     default:
       break;
   }
+  if (pool_manager) {
+    uint32_t memory_type_idx =
+        pool_manager->get_memory_type_idx(alloc_create_info);
+    alloc_create_info.pool = pool_manager->get_memory_pool(memory_type_idx);
+  }
 
   return Allocation(allocator_, memory_requirements, alloc_create_info);
 }
@@ -104,7 +110,8 @@ VulkanImage Allocator::create_image(
     const VulkanImage::SamplerProperties& sampler_props,
     VkSampler sampler,
     const bool allow_transfer,
-    const bool allocate_memory) {
+    const bool allocate_memory,
+    MemoryPoolManager* pool_manager) {
   VkImageUsageFlags usage =
       VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
   if (allow_transfer) {
@@ -129,6 +136,15 @@ VulkanImage Allocator::create_image(
 
   const VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 
+  if (pool_manager) {
+    VkImageCreateInfo image_create_info = vkapi::generate_image_create_info(
+        image_type, image_format, extents, image_tiling, usage, initial_layout);
+
+    uint32_t memory_type_idx =
+        pool_manager->get_memory_type_idx(alloc_create_info, image_create_info);
+    alloc_create_info.pool = pool_manager->get_memory_pool(memory_type_idx);
+  }
+
   return VulkanImage(
       device,
       allocator_,
@@ -141,7 +157,26 @@ VulkanImage Allocator::create_image(
       allocate_memory);
 }
 
-VulkanBuffer Allocator::create_staging_buffer(const VkDeviceSize size) {
+VmaPool get_memory_pool_for_buffer(
+    MemoryPoolManager* pool_manager,
+    const VkDeviceSize size,
+    const VkBufferUsageFlags buffer_usage,
+    const VmaAllocationCreateInfo& alloc_create_info) {
+  if (pool_manager) {
+    VkBufferCreateInfo buffer_create_info =
+        vkapi::generate_buffer_create_info(size, buffer_usage);
+
+    uint32_t memory_type_idx = pool_manager->get_memory_type_idx(
+        alloc_create_info, buffer_create_info);
+
+    return pool_manager->get_memory_pool(memory_type_idx);
+  }
+  return VK_NULL_HANDLE; // Return a default value if pool_manager is null
+}
+
+VulkanBuffer Allocator::create_staging_buffer(
+    const VkDeviceSize size,
+    MemoryPoolManager* pool_manager) {
   const VkBufferUsageFlags buffer_usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 
   VmaAllocationCreateInfo alloc_create_info = {};
@@ -159,26 +194,37 @@ VulkanBuffer Allocator::create_staging_buffer(const VkDeviceSize size) {
   alloc_create_info.preferredFlags =
       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
 
+  alloc_create_info.pool = get_memory_pool_for_buffer(
+      pool_manager, size, buffer_usage, alloc_create_info);
+
   return VulkanBuffer(allocator_, size, alloc_create_info, buffer_usage);
 }
 
 VulkanBuffer Allocator::create_storage_buffer(
     const VkDeviceSize size,
-    const bool allocate_memory) {
+    const bool allocate_memory,
+    MemoryPoolManager* pool_manager) {
   const VkBufferUsageFlags buffer_usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 
   VmaAllocationCreateInfo alloc_create_info = gpuonly_resource_create_info();
+  alloc_create_info.pool = get_memory_pool_for_buffer(
+      pool_manager, size, buffer_usage, alloc_create_info);
+
   return VulkanBuffer(
       allocator_, size, alloc_create_info, buffer_usage, allocate_memory);
 }
 
-VulkanBuffer Allocator::create_uniform_buffer(const VkDeviceSize size) {
+VulkanBuffer Allocator::create_uniform_buffer(
+    const VkDeviceSize size,
+    MemoryPoolManager* pool_manager) {
   VmaAllocationCreateInfo alloc_create_info = {};
   alloc_create_info.flags = DEFAULT_ALLOCATION_STRATEGY |
       VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
   alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO;
 
   VkBufferUsageFlags buffer_usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+  alloc_create_info.pool = get_memory_pool_for_buffer(
+      pool_manager, size, buffer_usage, alloc_create_info);
 
   return VulkanBuffer(allocator_, size, alloc_create_info, buffer_usage);
 }

@@ -40,6 +40,10 @@ Context::Context(size_t adapter_i, const ContextConfig& config)
       cmd_mutex_{},
       cmd_(VK_NULL_HANDLE, 0u),
       submit_count_{0u},
+      // Custom memory pools
+      custom_vma_pool_(
+          adapter_p_->vma().handle(),
+          adapter_p_->num_memory_types()),
       // Memory Management
       buffer_clearlist_mutex_{},
       buffers_to_clear_{},
@@ -58,6 +62,13 @@ Context::~Context() {
     adapter_p_->return_queue(queue_);
   } catch (...) {
   }
+}
+
+vkapi::MemoryPoolManager* Context::get_custom_memory_pool_ptr() {
+  if (config_.use_custom_vma_pools) {
+    return &custom_vma_pool_;
+  }
+  return nullptr;
 }
 
 void Context::initialize_querypool() {

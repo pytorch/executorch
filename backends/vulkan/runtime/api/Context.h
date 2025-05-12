@@ -13,6 +13,8 @@
 #include <executorch/backends/vulkan/runtime/utils/MacroUtils.h>
 #include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
 
+#include <executorch/backends/vulkan/runtime/vk_api/memory/Pool.h>
+
 #include <executorch/backends/vulkan/runtime/vk_api/Adapter.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Command.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Descriptor.h>
@@ -29,6 +31,7 @@ struct ContextConfig final {
   vkapi::CommandPoolConfig cmd_pool_config;
   vkapi::DescriptorPoolConfig descriptor_pool_config;
   vkapi::QueryPoolConfig query_pool_config;
+  bool use_custom_vma_pools;
 };
 
 //
@@ -69,6 +72,9 @@ class Context final {
   std::mutex cmd_mutex_;
   vkapi::CommandBuffer cmd_;
   uint32_t submit_count_;
+  // Custom memory pool that can be used to allocate resources that are used in
+  // this command stream
+  vkapi::MemoryPoolManager custom_vma_pool_;
   // Memory Management
   std::mutex buffer_clearlist_mutex_;
   std::vector<vkapi::VulkanBuffer> buffers_to_clear_;
@@ -78,6 +84,10 @@ class Context final {
   VkImageTiling preferred_image_tiling_;
 
  public:
+  inline const ContextConfig& config() const {
+    return config_;
+  }
+
   // Adapter access
 
   inline vkapi::Adapter* adapter_ptr() {
@@ -129,6 +139,8 @@ class Context final {
   inline VkImageTiling preferred_image_tiling() {
     return preferred_image_tiling_;
   }
+
+  vkapi::MemoryPoolManager* get_custom_memory_pool_ptr();
 
   /*
    * By default, the querypool attached to a Context instance is uninitialized.

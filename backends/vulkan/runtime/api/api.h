@@ -30,3 +30,4 @@
 #include <executorch/backends/vulkan/runtime/vk_api/memory/Allocator.h>
 #include <executorch/backends/vulkan/runtime/vk_api/memory/Buffer.h>
 #include <executorch/backends/vulkan/runtime/vk_api/memory/Image.h>
+#include <executorch/backends/vulkan/runtime/vk_api/memory/Pool.h>

@@ -19,6 +19,7 @@
 #include <executorch/backends/vulkan/runtime/vk_api/memory/Allocation.h>
 #include <executorch/backends/vulkan/runtime/vk_api/memory/Buffer.h>
 #include <executorch/backends/vulkan/runtime/vk_api/memory/Image.h>
+#include <executorch/backends/vulkan/runtime/vk_api/memory/Pool.h>
 
 namespace vkcompute {
 namespace vkapi {
@@ -48,11 +49,16 @@ class Allocator final {
   VmaAllocator allocator_;
 
  public:
+  inline VmaAllocator handle() {
+    return allocator_;
+  }
+
   VmaAllocationCreateInfo gpuonly_resource_create_info();
 
   Allocation create_allocation(
       const VkMemoryRequirements& memory_requirements,
-      const VmaAllocationCreateInfo& create_info);
+      const VmaAllocationCreateInfo& create_info,
+      MemoryPoolManager* pool_manager = nullptr);
 
   VulkanImage create_image(
       const VkDevice,
@@ -64,18 +70,24 @@ class Allocator final {
       const VulkanImage::SamplerProperties&,
       VkSampler,
       const bool allow_transfer = false,
-      const bool allocate_memory = true);
+      const bool allocate_memory = true,
+      MemoryPoolManager* pool_manager = nullptr);
 
-  VulkanBuffer create_staging_buffer(const VkDeviceSize);
+  VulkanBuffer create_staging_buffer(
+      const VkDeviceSize,
+      MemoryPoolManager* pool_manager = nullptr);
 
   VulkanBuffer create_storage_buffer(
       const VkDeviceSize,
-      const bool allocate_memory = true);
+      const bool allocate_memory = true,
+      MemoryPoolManager* pool_manager = nullptr);
 
   /*
    * Create a uniform buffer with a specified size
    */
-  VulkanBuffer create_uniform_buffer(const VkDeviceSize);
+  VulkanBuffer create_uniform_buffer(
+      const VkDeviceSize,
+      MemoryPoolManager* pool_manager = nullptr);
 
   /*
    * Create a uniform buffer containing the data in an arbitrary struct

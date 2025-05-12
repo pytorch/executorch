@@ -30,6 +30,14 @@ class vTensorStorage;
 
 namespace vkapi {
 
+VkImageCreateInfo generate_image_create_info(
+    VkImageType image_type,
+    VkFormat image_format,
+    VkExtent3D image_extents,
+    VkImageTiling image_tiling,
+    VkImageUsageFlags image_usage,
+    VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED);
+
 class ImageSampler final {
  public:
   struct Properties final {
