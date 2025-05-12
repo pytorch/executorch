@@ -11,7 +11,6 @@
 
 using namespace ::executorch::extension;
 using namespace ::executorch::runtime;
-using namespace ::executorch::extension::ET_BUNDLED_MODULE_NAMESPACE;
 
 class BundledModuleTest : public ::testing::Test {
  protected:
@@ -20,8 +19,8 @@ class BundledModuleTest : public ::testing::Test {
     if (const char* env = std::getenv("RESOURCES_PATH")) {
       resources_path = env;
     }
+    pte_path_ = std::getenv("ET_MODULE_PTE_PATH");
     bpte_path_ = resources_path + "/bundled_program.bpte";
-    pte_path_ = resources_path + "/add.pte";
   }
 
   static inline std::string bpte_path_;

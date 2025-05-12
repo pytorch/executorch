@@ -12,7 +12,8 @@ from typing import Any, Dict, Optional, Tuple
 
 import requests
 import torch
-from executorch.examples.models.llama.llama_transformer import Transformer
+import torchvision
+from executorch.examples.models.llama.llama_transformer import construct_transformer
 from executorch.examples.models.llama.model_args import ModelArgs
 
 from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
@@ -21,8 +22,6 @@ from executorch.examples.models.llama.source_transformation.custom_kv_cache impo
 from executorch.examples.models.llama.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
-
-from executorch.examples.models.llava.image_util import prepare_image
 from executorch.examples.models.model_base import EagerModelBase
 from PIL import Image
 
@@ -35,6 +34,31 @@ from transformers import (
     LlamaForCausalLM,
     LlavaForConditionalGeneration,
 )
+
+
+# pyre-ignore: Undefined or invalid type [11]: Annotation `Image` is not defined as a type.
+def prepare_image(image: Image, target_h: int, target_w: int) -> torch.Tensor:
+    """Read image into a tensor and resize the image so that it fits in
+    a target_h x target_w canvas.
+
+    Args:
+        image (Image): An Image object.
+        target_h (int): Target height.
+        target_w (int): Target width.
+
+    Returns:
+        torch.Tensor: resized image tensor.
+    """
+    img = torchvision.transforms.functional.pil_to_tensor(image)
+    # height ratio
+    ratio_h = img.shape[1] / target_h
+    # width ratio
+    ratio_w = img.shape[2] / target_w
+    # resize the image so that it fits in a target_h x target_w canvas
+    ratio = max(ratio_h, ratio_w)
+    output_size = (int(img.shape[1] / ratio), int(img.shape[2] / ratio))
+    img = torchvision.transforms.Resize(size=output_size)(img)
+    return img
 
 
 class Llava(torch.nn.Module):
@@ -66,7 +90,7 @@ class Llava(torch.nn.Module):
             use_hf_rope=True,
             max_seq_len=max_seq_len,
         )
-        self.text_model = Transformer(self.text_model_args)
+        self.text_model = construct_transformer(self.text_model_args)
         # use custom op for SDPA.
         if use_sdpa_with_kv_cache_op:
             self.text_model = replace_kv_cache_with_custom_kv_cache(self.text_model)
