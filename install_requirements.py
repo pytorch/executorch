@@ -75,8 +75,13 @@ NIGHTLY_VERSION = "dev20250601"
 
 
 def install_requirements(use_pytorch_nightly):
-    # Prevent pip install on Intel-based macOS systems (no prebuilt PyTorch binaries available).
+    # Skip pip install on Intel macOS if using nightly.
     if use_pytorch_nightly and is_intel_mac_os():
+        print(
+            "ERROR: Prebuilt PyTorch wheels are no longer available for Intel-based macOS.\n"
+            "Please build from source by following https://docs.pytorch.org/executorch/main/using-executorch-building-from-source.html",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     # pip packages needed by exir.
@@ -171,18 +176,12 @@ def install_optional_example_requirements(use_pytorch_nightly):
 # PyTorch stopped building macOS x86_64 binaries since version 2.3.0 (January 2024).
 def is_intel_mac_os():
     # Returns True if running on Intel macOS
-    if platform.system().lower() == "darwin" and platform.machine().lower() in (
+    return platform.system().lower() == "darwin" and platform.machine().lower() in (
         "x86",
         "x86_64",
         "i386",
-    ):
-        print(
-            "ERROR: Prebuilt PyTorch wheels are no longer available for Intel-based macOS.\n"
-            "Please build from source by following https://docs.pytorch.org/executorch/main/using-executorch-building-from-source.html",
-            file=sys.stderr,
-        )
-        return True
-    return False
+    )
+
 
 
 def main(args):
