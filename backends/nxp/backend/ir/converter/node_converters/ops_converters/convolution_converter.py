@@ -17,6 +17,7 @@ from executorch.backends.nxp.backend.ir.converter.conversion import (
 )
 from executorch.backends.nxp.backend.ir.converter.conversion.common import try_get_input
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
     NodeConverter,
     Target,
 )
@@ -44,7 +45,10 @@ from torch.nn import Parameter
 class ConvolutionConverter(NodeConverter):
     @staticmethod
     def _is_supported_on_target(
-        node: Node, target: Target, parameters_mapping: dict[str, Parameter]
+        node: Node,
+        target: Target,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         match target:
             case Target.RT700:
@@ -83,7 +87,9 @@ class ConvolutionConverter(NodeConverter):
 
     @staticmethod
     def _is_supported_in_IR(
-        node: Node, parameters_mapping: dict[str, Parameter]
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         is_transposed = node.args[6]
         output_padding = node.args[7]

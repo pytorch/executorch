@@ -12,6 +12,9 @@ from typing import Dict, final, List, Mapping
 
 import torch
 
+from executorch.backends.nxp.backend.custom_delegation_options import (
+    CustomDelegationOptions,
+)
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
@@ -215,11 +218,13 @@ class NeutronSupportedOperators(OperatorSupportBase):
         target: Target,
         operators_not_to_delegate: List[str],
         parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ):
         self.qdq_clusters = qdq_clusters
         self.target = target
         self.operators_not_to_delegate = operators_not_to_delegate
         self.parameters_mapping = parameters_mapping
+        self.custom_delegation_options = custom_delegation_options
 
     def _is_node_quantized(self, node: torch.fx.node.Node):
         return "cluster" in node.meta
@@ -251,7 +256,12 @@ class NeutronSupportedOperators(OperatorSupportBase):
             and self._is_node_quantized(node)
             and
             # TODO: `view_copy` node should be delegated only if it's not the only operator in the cluster.
-            node_converter.is_supported(node, self.target, self.parameters_mapping)
+            node_converter.is_supported(
+                node,
+                self.target,
+                self.parameters_mapping,
+                self.custom_delegation_options,
+            )
         )
 
     def _is_node_supported_non_compute(self, node: torch.fx.node.Node) -> bool:
@@ -282,8 +292,15 @@ class NeutronSupportedOperators(OperatorSupportBase):
 
 @final
 class NeutronPartitioner(Partitioner):
-    def __init__(self, compile_spec: List[CompileSpec]) -> None:
+    def __init__(
+        self,
+        compile_spec: List[CompileSpec],
+        custom_delegation_options: CustomDelegationOptions | None = None,
+    ) -> None:
         self.delegation_spec = DelegationSpec(NeutronBackend.__name__, compile_spec)
+        self.custom_delegation_options = (
+            custom_delegation_options or CustomDelegationOptions()
+        )
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
@@ -318,6 +335,7 @@ class NeutronPartitioner(Partitioner):
                 target,
                 operators_not_to_delegate,
                 parameters_mapping,
+                self.custom_delegation_options,
             ),
             allows_single_node_partition=True,
         )
