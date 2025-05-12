@@ -44,6 +44,11 @@ define_overridable_option(
   "Build with the given ET_MIN_LOG_LEVEL value"
   STRING "Info"
 )
+define_overridable_option(
+  EXECUTORCH_ENABLE_PROGRAM_VERIFICATION
+  "Build with ET_ENABLE_PROGRAM_VERIFICATION"
+  BOOL ${_is_build_type_debug}
+)
 
 # MARK: - Validations
 # At this point all the options should be configured with their final value.
