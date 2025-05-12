@@ -12,6 +12,12 @@ else()
   set(_is_build_type_debug ON)
 endif()
 
-# MARK: - Definitions
+# MARK: - Overridable Options
 
 define_overridable_option(EXECUTORCH_ENABLE_LOGGING "Build with ET_LOG_ENABLED" BOOL ${_is_build_type_debug})
+define_overridable_option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" BOOL OFF)
+define_overridable_option(
+  EXECUTORCH_FLATBUFFERS_MAX_ALIGNMENT
+  "Exir lets users set the alignment of tensor data embedded in the flatbuffer, and some users need an alignment larger than the default, which is typically 32."
+  STRING 1024
+)

@@ -156,10 +156,6 @@ class ShouldBuild:
             "EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT", default=True
         )
 
-    @classmethod
-    def flatc(cls) -> bool:
-        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_FLATC", default=True)
-
 
 class Version:
     """Static strings that describe the version of the pip package."""
@@ -833,23 +829,20 @@ class CustomBuild(build):
 
 def get_ext_modules() -> List[Extension]:
     """Returns the set of extension modules to build."""
-    ext_modules = []
-    if ShouldBuild.flatc():
-        ext_modules.extend(
-            [
-                BuiltFile(
-                    src_dir="%CMAKE_CACHE_DIR%/third-party/flatbuffers/%BUILD_TYPE%/",
-                    src_name="flatc",
-                    dst="executorch/data/bin/",
-                    is_executable=True,
-                ),
-                BuiltFile(
-                    src_dir="tools/wheel",
-                    src_name="pip_data_bin_init.py.in",
-                    dst="executorch/data/bin/__init__.py",
-                ),
-            ]
-        )
+
+    ext_modules = [
+        BuiltFile(
+            src_dir="%CMAKE_CACHE_DIR%/third-party/flatbuffers_external_project",
+            src_name="flatc",
+            dst="executorch/data/bin/",
+            is_executable=True,
+        ),
+        BuiltFile(
+            src_dir="tools/wheel",
+            src_name="pip_data_bin_init.py.in",
+            dst="executorch/data/bin/__init__.py",
+        ),
+    ]
 
     if ShouldBuild.pybindings():
         ext_modules.append(
