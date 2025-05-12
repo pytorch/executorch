@@ -492,7 +492,6 @@ set_property(
   PROPERTY IMPORTED_LOCATION
            "${ET_BUILD_DIR_PATH}/kernels/portable/libportable_kernels.a"
 )
-
 add_library(quantized_ops_lib STATIC IMPORTED)
 set_property(
   TARGET quantized_ops_lib
@@ -505,7 +504,18 @@ set_property(
   PROPERTY IMPORTED_LOCATION
            "${ET_BUILD_DIR_PATH}/kernels/quantized/libquantized_kernels.a"
 )
-
+add_library(cortex_m_ops_lib STATIC IMPORTED)
+set_property(
+  TARGET cortex_m_ops_lib
+  PROPERTY IMPORTED_LOCATION
+           "${ET_BUILD_DIR_PATH}/backends/cortex_m/libcortex_m_ops_lib.a"
+)
+add_library(cortex_m_kernels STATIC IMPORTED)
+set_property(
+  TARGET cortex_m_kernels
+  PROPERTY IMPORTED_LOCATION
+           "${ET_BUILD_DIR_PATH}/backends/cortex_m/libcortex_m_kernels.a"
+)
 add_library(extension_runner_util STATIC IMPORTED)
 set_property(
   TARGET extension_runner_util
@@ -546,9 +556,11 @@ list(APPEND arm_executor_runner_link
   executorch
   "-Wl,--whole-archive"
   executorch_delegate_ethos_u
+  cortex_m_ops_lib
   quantized_ops_lib
   portable_ops_lib
   quantized_kernels
+  cortex_m_kernels
   portable_kernels
   "-Wl,--no-whole-archive"
   -Xlinker -Map=arm_executor_runner.map
@@ -561,7 +573,7 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
   set_property(
       TARGET etdump
       PROPERTY IMPORTED_LOCATION
-           "${ET_BUILD_DIR_PATH}/lib/libetdump.a"
+            "${ET_BUILD_DIR_PATH}/lib/libetdump.a"
   )
 
   if(CMAKE_BUILD_TYPE MATCHES "Debug")
@@ -574,7 +586,7 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
   set_property(
       TARGET ${FLATCCRT_LIB}
       PROPERTY IMPORTED_LOCATION
-           "${ET_BUILD_DIR_PATH}/lib/lib${FLATCCRT_LIB}.a"
+            "${ET_BUILD_DIR_PATH}/lib/lib${FLATCCRT_LIB}.a"
   )
 
   list(APPEND arm_executor_runner_link
