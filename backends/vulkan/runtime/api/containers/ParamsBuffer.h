@@ -35,8 +35,9 @@ class ParamsBuffer final {
   // constructor from the one above.
   ParamsBuffer(Context* context_p, const VkDeviceSize nbytes, const bool unused)
       : context_p_(context_p),
-        vulkan_buffer_(
-            context_p_->adapter_ptr()->vma().create_uniform_buffer(nbytes)) {}
+        vulkan_buffer_(context_p_->adapter_ptr()->vma().create_uniform_buffer(
+            nbytes,
+            context_p->get_custom_memory_pool_ptr())) {}
 
   ParamsBuffer(const ParamsBuffer&);
   ParamsBuffer& operator=(const ParamsBuffer&);

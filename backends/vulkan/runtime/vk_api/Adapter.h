@@ -110,6 +110,10 @@ class Adapter final {
     return physical_device_.has_unified_memory;
   }
 
+  inline uint32_t num_memory_types() const {
+    return physical_device_.memory_properties.memoryTypeCount;
+  }
+
   inline uint32_t num_compute_queues() const {
     return physical_device_.num_compute_queues;
   }

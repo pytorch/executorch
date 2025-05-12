@@ -39,7 +39,9 @@ void SharedObject::allocate(ComputeGraph* const graph) {
       graph->context()->adapter_ptr()->vma().gpuonly_resource_create_info();
 
   allocation = graph->context()->adapter_ptr()->vma().create_allocation(
-      aggregate_memory_requirements, alloc_create_info);
+      aggregate_memory_requirements,
+      alloc_create_info,
+      graph->context()->get_custom_memory_pool_ptr());
 }
 
 void SharedObject::bind_users(ComputeGraph* const graph) {

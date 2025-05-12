@@ -40,6 +40,7 @@ GraphConfig::GraphConfig() {
       cmd_config,
       descriptor_pool_config,
       query_pool_config,
+      false,
   };
 
   // Empirically selected safety factor. If descriptor pools start running out

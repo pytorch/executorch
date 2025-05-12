@@ -11,6 +11,21 @@
 namespace vkcompute {
 namespace vkapi {
 
+VkBufferCreateInfo generate_buffer_create_info(
+    VkDeviceSize size,
+    VkBufferUsageFlags usage) {
+  return VkBufferCreateInfo{
+      VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, // sType
+      nullptr, // pNext
+      0u, // flags
+      size, // size
+      usage, // usage
+      VK_SHARING_MODE_EXCLUSIVE, // sharingMode
+      0u, // queueFamilyIndexCount
+      nullptr, // pQueueFamilyIndices
+  };
+}
+
 //
 // VulkanBuffer
 //
@@ -42,16 +57,8 @@ VulkanBuffer::VulkanBuffer(
     buffer_properties_.mem_range = 1u;
   }
 
-  const VkBufferCreateInfo buffer_create_info{
-      VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, // sType
-      nullptr, // pNext
-      0u, // flags
-      buffer_properties_.size, // size
-      usage, // usage
-      VK_SHARING_MODE_EXCLUSIVE, // sharingMode
-      0u, // queueFamilyIndexCount
-      nullptr, // pQueueFamilyIndices
-  };
+  const VkBufferCreateInfo buffer_create_info =
+      generate_buffer_create_info(buffer_properties_.size, usage);
 
   if (allocate_memory) {
     VK_CHECK(vmaCreateBuffer(

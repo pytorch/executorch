@@ -27,6 +27,10 @@ class vTensorStorage;
 
 namespace vkapi {
 
+VkBufferCreateInfo generate_buffer_create_info(
+    VkDeviceSize size,
+    VkBufferUsageFlags usage);
+
 using MemoryAccessFlags = uint8_t;
 
 enum MemoryAccessType : MemoryAccessFlags {

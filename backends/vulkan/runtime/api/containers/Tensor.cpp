@@ -292,7 +292,8 @@ vkapi::VulkanImage allocate_image(
       sampler_props,
       sampler,
       /*allow_transfer = */ true,
-      /*allocate_memory = */ allocate_memory);
+      /*allocate_memory = */ allocate_memory,
+      /*pool_manager = */ context_ptr->get_custom_memory_pool_ptr());
 }
 
 vkapi::VulkanBuffer allocate_buffer(
@@ -301,8 +302,6 @@ vkapi::VulkanBuffer allocate_buffer(
     const utils::StorageType storage_type,
     const vkapi::ScalarType dtype,
     const bool allocate_memory) {
-  vkapi::Adapter* adapter_ptr = context_ptr->adapter_ptr();
-
   switch (storage_type) {
     case utils::kBuffer:
       break;
@@ -313,8 +312,10 @@ vkapi::VulkanBuffer allocate_buffer(
 
   VK_CHECK_COND(numel <= context_ptr->adapter_ptr()->max_buffer_numel());
 
-  return adapter_ptr->vma().create_storage_buffer(
-      element_size(dtype) * numel, allocate_memory);
+  return context_ptr->adapter_ptr()->vma().create_storage_buffer(
+      element_size(dtype) * numel,
+      allocate_memory,
+      context_ptr->get_custom_memory_pool_ptr());
 }
 
 vTensorStorage::vTensorStorage(

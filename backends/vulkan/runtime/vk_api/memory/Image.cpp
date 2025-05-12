@@ -11,6 +11,32 @@
 namespace vkcompute {
 namespace vkapi {
 
+VkImageCreateInfo generate_image_create_info(
+    VkImageType image_type,
+    VkFormat image_format,
+    VkExtent3D image_extents,
+    VkImageTiling image_tiling,
+    VkImageUsageFlags image_usage,
+    VkImageLayout initial_layout) {
+  return VkImageCreateInfo{
+      VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, // sType
+      nullptr, // pNext
+      0u, // flags
+      image_type, // imageType
+      image_format, // format
+      image_extents, // extents
+      1u, // mipLevels
+      1u, // arrayLayers
+      VK_SAMPLE_COUNT_1_BIT, // samples
+      image_tiling, // tiling
+      image_usage, // usage
+      VK_SHARING_MODE_EXCLUSIVE, // sharingMode
+      0u, // queueFamilyIndexCount
+      nullptr, // pQueueFamilyIndices
+      initial_layout, // initialLayout
+  };
+}
+
 //
 // ImageSampler
 //
@@ -146,23 +172,13 @@ VulkanImage::VulkanImage(
     image_properties_.image_extents.depth = 1u;
   }
 
-  const VkImageCreateInfo image_create_info{
-      VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, // sType
-      nullptr, // pNext
-      0u, // flags
-      image_properties_.image_type, // imageType
-      image_properties_.image_format, // format
-      image_properties_.image_extents, // extents
-      1u, // mipLevels
-      1u, // arrayLayers
-      VK_SAMPLE_COUNT_1_BIT, // samples
-      image_properties_.image_tiling, // tiling
-      image_properties_.image_usage, // usage
-      VK_SHARING_MODE_EXCLUSIVE, // sharingMode
-      0u, // queueFamilyIndexCount
-      nullptr, // pQueueFamilyIndices
-      layout_, // initialLayout
-  };
+  const VkImageCreateInfo image_create_info = generate_image_create_info(
+      image_properties_.image_type,
+      image_properties_.image_format,
+      image_properties_.image_extents,
+      image_properties_.image_tiling,
+      image_properties_.image_usage,
+      layout_);
 
   if (allocate_memory) {
     VK_CHECK(vmaCreateImage(
