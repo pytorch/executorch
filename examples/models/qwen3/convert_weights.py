@@ -61,6 +61,13 @@ def qwen_3_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.
 
 
 def load_checkpoint(input_dir: str) -> Dict:
+    # 1. Torchao-quantized checkpoint.
+    quantized_path = os.path.join(input_dir, "pytorch_model.bin")
+    if os.path.exists(quantized_path):
+        sd = torch.load(quantized_path, map_location="cpu", weights_only=True)
+        return sd
+
+    # 2. Official HuggingFace checkpoint.
     index_path = os.path.join(input_dir, "model.safetensors.index.json")
     if os.path.exists(index_path):
         # Sharded checkpoint.
