@@ -1,5 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
-# All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -20,17 +19,19 @@ class UnsqueezeScalarPlaceholdersPass(ExportPass):
         self.exported_program = exported_program
         super().__init__()
 
+    def _is_inputs_to_buffers_or_parameters(self, node):
+        return (
+            node.name in self.exported_program.graph_signature.inputs_to_buffers
+            or node.name in self.exported_program.graph_signature.inputs_to_parameters
+        )
+
     def call(self, graph_module: torch.fx.GraphModule):
         for node in graph_module.graph.nodes:
             if node.op != "placeholder":
                 continue
             rank = node.meta["val"].dim()
             if rank == 0:
-                if not (
-                    node.name in self.exported_program.graph_signature.inputs_to_buffers
-                    or node.name
-                    in self.exported_program.graph_signature.inputs_to_parameters
-                ):
+                if not self._is_inputs_to_buffers_or_parameters(node):
                     continue
                 tensor = self.exported_program.state_dict[node.name]
                 if tensor.dim() == 0:
@@ -52,4 +53,6 @@ class UnsqueezeScalarPlaceholdersPass(ExportPass):
             if node.op == "placeholder":
                 rank = node.meta["val"].dim()
                 if rank == 0:
+                    if not self._is_inputs_to_buffers_or_parameters(node):
+                        continue
                     raise ValueError("Placeholders of rank 0 are not supported!")

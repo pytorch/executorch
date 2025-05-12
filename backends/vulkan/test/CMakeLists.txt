@@ -82,7 +82,7 @@ if(TARGET vulkan_backend)
   )
   target_include_directories(vulkan_compute_api_test PRIVATE ${COMMON_INCLUDES})
   target_link_libraries(
-    vulkan_compute_api_test PRIVATE GTest::gtest_main vulkan_backend executorch
+    vulkan_compute_api_test PRIVATE GTest::gtest_main vulkan_backend executorch_core
                                     test_shaderlib
   )
   target_compile_options(vulkan_compute_api_test PRIVATE ${VULKAN_CXX_FLAGS})

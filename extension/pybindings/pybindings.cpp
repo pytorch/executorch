@@ -97,7 +97,6 @@ using ::executorch::ET_RUNTIME_NAMESPACE::Program;
 using ::executorch::extension::BufferDataLoader;
 using ::executorch::extension::MallocMemoryAllocator;
 using ::executorch::extension::MmapDataLoader;
-using ::executorch::extension::ET_BUNDLED_MODULE_NAMESPACE::BundledModule;
 using ::executorch::runtime::ArrayRef;
 using ::executorch::runtime::DataLoader;
 using ::executorch::runtime::Error;

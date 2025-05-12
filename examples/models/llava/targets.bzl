@@ -15,7 +15,7 @@ def define_common_targets():
         ],
         external_deps = [
             "gflags",
-            "torch-core-cpp",
+            "stb",
         ],
         **get_oss_build_kwargs()
     )

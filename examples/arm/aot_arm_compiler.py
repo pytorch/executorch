@@ -40,6 +40,11 @@ from executorch.backends.arm.util.arm_model_evaluator import (
 )
 
 from executorch.backends.arm.vgf_partitioner import VgfPartitioner
+
+# To use Cortex-M backend
+from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
+    ReplaceQuantNodesPass,
+)
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
 
@@ -58,6 +63,7 @@ from torch.utils.data import DataLoader
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
+
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.WARNING, format=FORMAT)
@@ -216,6 +222,54 @@ class AddModule3(torch.nn.Module):
     can_delegate = True
 
 
+class QuantAddTest(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, a):
+        return a + a
+
+    example_input = (torch.rand([13, 3], dtype=torch.float32),)  # a - normal values
+    can_delegate = True  # when quantized
+
+
+class QuantAddTest2(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, a, b):
+        p = a + a
+        q = b + b
+        r = p + q
+        return p, q, r
+
+    example_input = (
+        torch.randn([13, 7, 3], dtype=torch.float32),
+        torch.randn([13, 7, 3], dtype=torch.float32),
+    )
+    can_delegate = True  # when quantized
+
+
+class QuantOpTest(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, w, x, y, z):
+        o1 = w - x
+        o2 = o1 + y
+        o3 = o2 * z
+        return o1, o2, o3
+
+    example_input = (
+        torch.randn([3, 1, 2], dtype=torch.float32),  # w - normal values
+        torch.randn([3, 5, 2], dtype=torch.float32),  # x - normal values
+        torch.randn([3, 5, 1], dtype=torch.float32)
+        * -0.000001,  # y - small -ve values, needs to be calibration for tests
+        torch.randn([3, 5, 2], dtype=torch.float32) * 1000,  # z - large values
+    )
+    can_delegate = True  # when quantized
+
+
 class SoftmaxModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -241,6 +295,9 @@ models = {
     "add": AddModule,
     "add2": AddModule2,
     "add3": AddModule3,
+    "qadd": QuantAddTest,
+    "qadd2": QuantAddTest2,
+    "qops": QuantOpTest,
     "softmax": SoftmaxModule,
     "MultipleOutputsModule": MultipleOutputsModule,
 }
@@ -254,6 +311,17 @@ calibration_data = {
     "add3": (
         torch.randn(32, 5),
         torch.randn(32, 5),
+    ),
+    "qadd": (torch.randn(32, 2, 1),),
+    "qadd2": (
+        torch.randn(32, 2, 1),
+        torch.randn(32, 2, 1),
+    ),
+    "qops": (
+        torch.randn(32, 2, 1),
+        torch.randn(32, 2, 1),
+        torch.randn(32, 2, 1) * -0.000001,
+        torch.randn(32, 2, 1) * 1000,
     ),
     "softmax": (torch.randn(32, 2, 2),),
 }
@@ -656,6 +724,7 @@ def to_edge_TOSA_delegate(
             _check_ir_validity=False,
         ),
     )
+
     return model_int8, edge
 
 
@@ -681,7 +750,16 @@ def to_edge_no_delegate(exported_program, args, model: torch.nn.Module, example_
             _check_ir_validity=False,
         ),
     )
+
     return model_int8, edge
+
+
+def transform_for_cortex_m_backend(edge):
+    # Let's make sure we are using optimized Cortex M backend
+    # NB: If we can't find and replace ops those are expected to be replaced,
+    # bad things will happen at runtime, like "missing operator" errors!
+    edge = edge.transform([ReplaceQuantNodesPass()])
+    return edge
 
 
 if __name__ == "__main__":  # noqa: C901
@@ -714,6 +792,9 @@ if __name__ == "__main__":  # noqa: C901
         model_int8, edge = to_edge_no_delegate(
             exported_program, args, model, example_inputs
         )
+
+    # Transform so we can use ops from the Cortex M backend
+    edge = transform_for_cortex_m_backend(edge)
 
     dump_delegation_info(edge, args.intermediates)
 
@@ -759,7 +840,9 @@ if __name__ == "__main__":  # noqa: C901
             output_name = os.path.join(args.output, output_name)
 
     if args.bundleio:
-        save_bpte_program(exec_prog, original_model, output_name)
+        # Realize the quantization impact on numerics when generating reference output
+        reference_model = original_model if not model_int8 else model_int8
+        save_bpte_program(exec_prog, reference_model, output_name)
         print(f"Bundle PTE file saved as {output_name}")
     else:
         save_pte_program(exec_prog, output_name)

@@ -194,6 +194,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.mul.Tensor,
             exir_ops.edge.aten.ne.Tensor,
             exir_ops.edge.aten.ne.Scalar,
+            exir_ops.edge.aten.neg.default,
             exir_ops.edge.aten.add.Scalar,
             exir_ops.edge.aten.sub.Scalar,
             exir_ops.edge.aten.mul.Scalar,
@@ -311,6 +312,7 @@ class CheckProperQuantization(OperatorSupportBase):
         exir_ops.edge.aten.max_pool2d_with_indices.default,
         exir_ops.edge.aten.mm.default,
         exir_ops.edge.aten.mul.Tensor,
+        exir_ops.edge.aten.neg.default,
         exir_ops.edge.aten.relu.default,
         exir_ops.edge.aten.sub.Tensor,
         exir_ops.edge.aten.upsample_bilinear2d.vec,
@@ -333,6 +335,7 @@ class CheckProperQuantization(OperatorSupportBase):
                 graph_module.graph,
                 [
                     torch.matmul,
+                    operator.matmul,
                 ],
                 None,
             )
@@ -383,7 +386,7 @@ class CheckProperQuantization(OperatorSupportBase):
         ):
             source_fn_stack: tuple[typing.Any] = node.meta.get("source_fn_stack", [])
             if len(source_fn_stack) > 0:
-                if source_fn_stack[-1][1] in (torch.matmul,):
+                if source_fn_stack[-1][1] in (torch.matmul, operator.matmul):
                     return self._is_matmul_node_supported(submodules, node)
 
         elif node.target in (exir_ops.edge.aten.max_pool2d_with_indices.default,):

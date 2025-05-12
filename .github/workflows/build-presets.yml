@@ -1,0 +1,30 @@
+name: Build Presets
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - release/*
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  apple:
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    strategy:
+      matrix:
+        preset: [macos-arm64]
+    with:
+      job-name: build
+      runner: macos-latest-xlarge
+      python-version: 3.12
+      submodules: recursive
+      script: |
+        set -eux
+        ${CONDA_RUN} ./install_requirements.sh > /dev/null
+        ${CONDA_RUN} cmake --preset ${{ matrix.preset }}
+        ${CONDA_RUN} cmake --build cmake-out --parallel
