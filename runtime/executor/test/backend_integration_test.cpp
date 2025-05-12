@@ -656,8 +656,8 @@ class DelegateDataAlignmentTest : public ::testing::TestWithParam<bool> {
       // The delegate data inline alignment used by the -da1024 file.
       return 1024;
     } else {
-      // A small alignment that's compatible with any realistic alignment.
-      return 4;
+      // Minimum alignment expected by program.cpp.
+      return alignof(std::max_align_t);
     }
   }
 

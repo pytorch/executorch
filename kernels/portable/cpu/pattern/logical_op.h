@@ -34,15 +34,18 @@ Tensor& logical_tensor_out(
       InvalidArgument,
       out);
 
-  utils::apply_bitensor_elementwise_fn<bool, op_name>(
+  utils::apply_bitensor_elementwise_fn<
+      bool,
+      op_name,
+      utils::SupportedTensorDtypes::REALHBBF16>(
+      // TODO: rewrite this to be vectorization-capable.
       fn,
       ctx,
       a,
       utils::SupportedTensorDtypes::REALHBBF16,
       b,
       utils::SupportedTensorDtypes::REALHBBF16,
-      out,
-      utils::SupportedTensorDtypes::REALHBBF16);
+      out);
 
   return out;
 }

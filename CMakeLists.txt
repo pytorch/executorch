@@ -44,6 +44,19 @@
 
 cmake_minimum_required(VERSION 3.24)
 project(executorch)
+
+# MARK: - Start EXECUTORCH_H12025_BUILD_MIGRATION --------------------------------------------------
+
+include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
+
+load_build_preset()
+include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
+
+# Print all the configs that were called with announce_configured_options.
+print_configured_options()
+
+# MARK: - End EXECUTORCH_H12025_BUILD_MIGRATION ----------------------------------------------------
+
 include(tools/cmake/Utils.cmake)
 include(CMakeDependentOption)
 
@@ -96,9 +109,6 @@ set(EXECUTORCH_PAL_DEFAULT
           "Which PAL default implementation to use: one of {posix, minimal}"
 )
 
-option(EXECUTORCH_ENABLE_LOGGING "Build with ET_LOG_ENABLED"
-       ${_default_release_disabled_options}
-)
 if(NOT EXECUTORCH_ENABLE_LOGGING)
   # Avoid pulling in the logging strings, which can be large. Note that this
   # will set the compiler flag for all targets in this directory, and for all
@@ -170,8 +180,6 @@ option(EXECUTORCH_BUILD_ARM_BAREMETAL
        "Build the Arm Baremetal flow for Cortex-M and Ethos-U" OFF
 )
 
-option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
-
 option(EXECUTORCH_BUILD_KERNELS_CUSTOM "Build the custom kernels" OFF)
 
 option(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT "Build the custom ops lib for AOT"
@@ -233,6 +241,8 @@ option(BUILD_EXECUTORCH_PORTABLE_OPS "Build portable_ops library" ON)
 option(EXECUTORCH_USE_DL "Use libdl library" ON)
 
 option(EXECUTORCH_BUILD_CADENCE "Build the Cadence DSP backend" OFF)
+
+option(EXECUTORCH_BUILD_CORTEX_M "Build the Cortex-M backend" OFF)
 
 #
 # pthreadpool: build pthreadpool library. Disable on unsupported platforms
@@ -705,6 +715,10 @@ endif()
 
 if(EXECUTORCH_BUILD_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
+endif()
+
+if(EXECUTORCH_BUILD_CORTEX_M)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
 endif()
 
 if(EXECUTORCH_BUILD_DEVTOOLS)

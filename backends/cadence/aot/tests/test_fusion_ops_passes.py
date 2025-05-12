@@ -584,6 +584,28 @@ class TestFuseTransposeOpPairsPass(TestFusionPassesBase):
                 exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
                 False,
             ),
+            # transpose -> quant -> transpose is not the reverse BUT there is a UNITARY dimension
+            # so it ends up being the same on memory => fuse
+            (
+                True,
+                [0, 1],
+                True,
+                [0, 2],
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                True,
+                [5, 40, 1],
+            ),
+            # transpose -> quant -> transpose is not the reverse, and unitary dimensions
+            # don't help => don't fuse
+            (
+                True,
+                [0, 1],
+                True,
+                [1, 3],
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                False,
+                [5, 40, 1, 4],
+            ),
             # permutation -> quant -> opposite permutation => fuse
             (
                 False,
@@ -621,6 +643,28 @@ class TestFuseTransposeOpPairsPass(TestFusionPassesBase):
                 exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
                 False,
                 [4, 4, 4],
+            ),
+            # permutation -> quant -> a non reverse permutation BUT there is a UNITARY dimension
+            # so it ends up being the same on memory => fuse
+            (
+                False,
+                [1, 3, 2, 0],
+                False,
+                [3, 2, 1, 0],
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                True,
+                [3, 1, 8, 10],
+            ),
+            # permutation -> quant -> a non reverse permutation, and unitary dimensions
+            # don't help => don't fuse
+            (
+                False,
+                [1, 3, 2, 0],
+                False,
+                [3, 1, 2, 0],
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                False,
+                [3, 1, 8, 10],
             ),
             # transpose -> quant -> transpose as a permutation => fuse
             (
