@@ -23,6 +23,7 @@
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
+#include <executorch/extension/module/bundled_module.h>
 #include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/data_loader.h>
@@ -442,11 +443,12 @@ inline std::unique_ptr<Module> load_module_from_file(
 
 static constexpr size_t kDEFAULT_BUNDLED_INPUT_POOL_SIZE = 16 * 1024U;
 
-struct PyBundledModule final {
+struct PyBundledModule : public BundledModule {
   explicit PyBundledModule(
       const py::bytes& buffer,
       uint32_t bundled_input_pool_size)
-      : bundled_program_ptr_(buffer),
+      : BundledModule(buffer.cast<std::string_view>().data()),
+        bundled_program_ptr_(buffer),
         program_ptr_(static_cast<const void*>(
             bundled_program_flatbuffer::GetBundledProgram(
                 get_bundled_program_ptr())
@@ -842,22 +844,20 @@ struct PyModule final {
       size_t testset_idx,
       double rtol = 1e-5,
       double atol = 1e-8) {
-    const void* bundled_program_ptr = m.get_bundled_program_ptr();
-    auto& method = module_->get_method(method_name);
-    Error status = executorch::BUNDLED_PROGRAM_NAMESPACE::load_bundled_input(
-        method, bundled_program_ptr, testset_idx);
+    auto outputs = m.execute(method_name, testset_idx);
+
     THROW_IF_ERROR(
-        status,
-        "load_bundled_input failed with status 0x%" PRIx32,
-        static_cast<uint32_t>(status));
-    py::list outputs = plan_execute(method_name);
-    status = executorch::BUNDLED_PROGRAM_NAMESPACE::verify_method_outputs(
-        method, bundled_program_ptr, testset_idx, rtol, atol);
+        outputs.error(),
+        "Execution failed with status 0x%" PRIx32,
+        static_cast<uint32_t>(outputs.error()));
+
+    auto status = m.verify_method_outputs(method_name, testset_idx, rtol, atol);
     THROW_IF_ERROR(
         status,
         "Result verification failed with status %" PRIu32,
         static_cast<uint32_t>(status));
-    return outputs;
+
+    return get_outputs_as_py_list(outputs.get());
   }
 
   py::list plan_execute(
