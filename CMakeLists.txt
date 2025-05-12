@@ -107,9 +107,6 @@ if(NOT EXECUTORCH_ENABLE_PROGRAM_VERIFICATION)
   add_definitions(-DET_ENABLE_PROGRAM_VERIFICATION=0)
 endif()
 
-option(EXECUTORCH_ENABLE_EVENT_TRACER "Build with ET_EVENT_TRACER_ENABLED=ON"
-       OFF
-)
 if(EXECUTORCH_ENABLE_EVENT_TRACER)
   add_definitions(-DET_EVENT_TRACER_ENABLED)
 endif()
@@ -788,11 +785,7 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   endif()
 
   if(EXECUTORCH_ENABLE_EVENT_TRACER)
-    if(EXECUTORCH_BUILD_DEVTOOLS)
-      list(APPEND _executor_runner_libs etdump flatccrt)
-    else()
-      message(SEND_ERROR "Use of 'EXECUTORCH_ENABLE_EVENT_TRACER' requires 'EXECUTORCH_BUILD_DEVTOOLS' to be enabled.")
-    endif()
+    list(APPEND _executor_runner_libs etdump flatccrt)
   endif()
 
   if(EXECUTORCH_BUILD_COREML)

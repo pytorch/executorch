@@ -49,6 +49,11 @@ define_overridable_option(
   "Build with ET_ENABLE_PROGRAM_VERIFICATION"
   BOOL ${_is_build_type_debug}
 )
+define_overridable_option(
+  EXECUTORCH_ENABLE_EVENT_TRACER
+  "Build with ET_EVENT_TRACER_ENABLED"
+  BOOL OFF
+)
 
 # MARK: - Validations
 # At this point all the options should be configured with their final value.
@@ -56,6 +61,7 @@ define_overridable_option(
 if(NOT EXISTS ${EXECUTORCH_PAL_DEFAULT_FILE_PATH})
   message(FATAL_ERROR "PAL default implementation (EXECUTORCH_PAL_DEFAULT=${EXECUTORCH_PAL_DEFAULT}) file not found: ${EXECUTORCH_PAL_DEFAULT_FILE_PATH}. Choices: posix, minimal")
 endif()
+
 
 string(TOLOWER "${EXECUTORCH_LOG_LEVEL}" _executorch_log_level_lower)
 if(_executorch_log_level_lower STREQUAL "debug")
@@ -68,4 +74,11 @@ elseif(_executorch_log_level_lower STREQUAL "fatal")
   set(ET_MIN_LOG_LEVEL Fatal)
 else()
   message(FATAL_ERROR "Unknown EXECUTORCH_LOG_LEVEL '${EXECUTORCH_LOG_LEVEL}'. Choices: Debug, Info, Error, Fatal")
+endif()
+
+
+if(EXECUTORCH_ENABLE_EVENT_TRACER)
+  if(NOT EXECUTORCH_BUILD_DEVTOOLS)
+    message(FATAL_ERROR "Use of 'EXECUTORCH_ENABLE_EVENT_TRACER' requires 'EXECUTORCH_BUILD_DEVTOOLS' to be enabled.")
+  endif()
 endif()
