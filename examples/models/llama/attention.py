@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import Any, Dict, Optional, Tuple, Type, TypedDict
 
 import torch
@@ -158,6 +159,112 @@ class SDPA(nn.Module):
         y = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=0.0)
 
         return y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
+
+
+class CacheUpdateStrategy(Enum):
+    RING_BUFFER = "RingBuffer"
+    INVALID = "Invalid"
+
+
+class CachePositionsManager(nn.Module):
+    def __init__(
+        self,
+        max_context_length: int,
+        cache_update_strategy: CacheUpdateStrategy = CacheUpdateStrategy.RING_BUFFER,
+    ):
+        super().__init__()
+        assert (
+            cache_update_strategy == CacheUpdateStrategy.RING_BUFFER
+        ), "Only RingBuffer is supported"
+        self.max_context_length = max_context_length
+        self.register_buffer(
+            "cache_positions",
+            torch.zeros((self.max_context_length), dtype=torch.long, device="cpu"),
+        )
+
+    def calculate_positions_and_update_indices(self, input_pos: torch.Tensor, seq_len):
+        """
+        Calculate indices, into k_cache, v_cache, where to put k_val tensor.
+        Given the input_pos and length of k_val at sequence dim, the input pos may
+        have to wrap around if it is smaller than the cache capacity.
+        If it is larger than the cache capacity then just pick the last
+        self.max_context_length entries.
+
+        Additionally:
+        Update the cache positions buffer with the new indices.
+        Given the cache positions in sequence dim, indicated by indices,
+        we can just update cache_positions buffer using orig_indices.
+        For example
+        Given cache capacity of 4 and update of length 3 with start_pos = 2
+        will have following values
+        indices = [2, 3, 0]
+        orig_indices = [2, 3, 4]
+        So cache_positions after the update will be [4, 1, 2, 3]
+        Note cache_positions[1] = 1 that is from previous write to the cache.
+        The corner case here is cache positions before cache rolls over.
+        For example when start_pos = 0 and update is of length 2, then we have
+        filled positions 0 and 1 in the buffer, while the rest are invalid. In this case
+        we have
+        indices = [0, 1]
+        orig_indices = [0, 1]
+        But if we have cache_positins = [0, 1, 0, 0] that is not valid. Hence we have
+        to make sure that invalid positions have a sentinel value of - 1.
+        """
+        start_pos = input_pos[0].item()
+        torch._check_is_size(start_pos)
+        orig_indices = torch.arange(seq_len, dtype=torch.long) + start_pos
+        indices = orig_indices % self.max_context_length
+
+        full_t = torch.full((self.max_context_length,), -1, dtype=torch.long)
+        arange_tensor = torch.arange(self.max_context_length, dtype=torch.long)
+        cache_positions = torch.where(
+            arange_tensor < start_pos, self.cache_positions, full_t
+        )
+        self.cache_positions.copy_(cache_positions)
+        self.cache_positions.index_copy_(0, indices, orig_indices)
+
+        return indices
+
+
+class RingKVCache(KVCache):
+    def __init__(
+        self,
+        max_batch_size: int,
+        max_context_length: int,
+        n_heads: int,
+        head_dim: int,
+        enable_dynamic_shape: bool,
+        dtype=torch.float32,
+    ):
+        super().__init__(
+            max_batch_size,
+            max_context_length,
+            n_heads,
+            head_dim,
+            enable_dynamic_shape,
+            dtype,
+        )
+        self.cache_positions_manager = CachePositionsManager(max_context_length)
+
+    def update(
+        self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        # input_pos: [S], k_val: [B, H, S, D]
+        seq_len = k_val.size(2)
+        indices = self.cache_positions_manager.calculate_positions_and_update_indices(
+            input_pos, seq_len
+        )
+        if self.enable_dynamic_shape:
+            start_pos = input_pos[0].item()
+            torch._check_is_size(start_pos)
+
+            self.k_cache.index_copy_(2, indices, k_val)
+            self.v_cache.index_copy_(2, indices, v_val)
+        else:
+            self.k_cache[:, :, indices] = k_val
+            self.v_cache[:, :, indices] = v_val
+
+        return self.k_cache, self.v_cache
 
 
 @register_attention("mha")
