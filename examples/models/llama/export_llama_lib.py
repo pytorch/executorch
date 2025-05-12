@@ -62,6 +62,7 @@ from .source_transformation.attention import replace_attention_to_attention_sha
 from .source_transformation.custom_kv_cache import (
     replace_kv_cache_with_custom_kv_cache,
     replace_kv_cache_with_quantized_kv_cache,
+    replace_kv_cache_with_ring_kv_cache,
 )
 
 from .source_transformation.quantize import (
@@ -151,6 +152,23 @@ def build_model(
     parser = build_args_parser()
     args = parser.parse_args(shlex.split(argString))
     return export_llama(args)
+
+
+def parse_list_of_ints(s):
+    import ast
+
+    try:
+        parsed = ast.literal_eval(s)
+        if isinstance(parsed, list) and all(isinstance(i, int) for i in parsed):
+            print(parsed)
+            return parsed
+        raise argparse.ArgumentTypeError(
+            "Must be a list of integers, e.g., [0, 16, 0, 16]"
+        )
+    except Exception:
+        raise argparse.ArgumentTypeError(
+            "Must be a list of integers, e.g., [0, 16, 0, 16]"
+        )
 
 
 def build_args_parser() -> argparse.ArgumentParser:
@@ -361,6 +379,15 @@ def build_args_parser() -> argparse.ArgumentParser:
         type=int,
         default=128,
         help="maximum length of context for model to remember",
+    )
+
+    parser.add_argument(
+        "--local_global_attention",
+        type=parse_list_of_ints,
+        default=None,
+        help="List of integers specifying local and global attention pattern, e.g., [0, 16, 0, 16] to specify that every other layer is sliding window of 16."
+        " [0, 16, 32] pattern specifes 2nd and 3rd layer has sliding window of 16 and 32 respecitvely. "
+        " [16] pattern specifies all layers have sliding window of 16.",
     )
 
     parser.add_argument("-2", "--fairseq2", action="store_true")
@@ -1439,6 +1466,14 @@ def _get_source_transforms(  # noqa
 
     if vulkan:
         transforms.append(replace_with_vulkan_rotary_emb)
+
+    if getattr(args, "local_global_attention", None) is not None:
+        transforms.append(
+            partial(
+                replace_kv_cache_with_ring_kv_cache,
+                layer_sizes=args.local_global_attention,
+            )
+        )
 
     return transforms
 
