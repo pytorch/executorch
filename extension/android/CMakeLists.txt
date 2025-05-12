@@ -72,6 +72,7 @@ list(
   link_libraries
   executorch
   extension_data_loader
+  extension_flat_tensor
   extension_module
   extension_runner_util
   extension_tensor

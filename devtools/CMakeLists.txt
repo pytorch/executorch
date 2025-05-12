@@ -199,7 +199,7 @@ target_link_libraries(
 add_custom_command(
   OUTPUT ${_bundled_program_schema__outputs}
   COMMAND
-    ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --gen-mutable --scoped-enums -o
+    flatc --cpp --cpp-std c++11 --gen-mutable --scoped-enums -o
     "${_bundled_schema__include_dir}/executorch/devtools/bundled_program/schema"
     ${_bundled_program_schema__srcs}
   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/devtools

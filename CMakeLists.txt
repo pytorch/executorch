@@ -44,8 +44,22 @@
 
 cmake_minimum_required(VERSION 3.24)
 project(executorch)
+
+# MARK: - Start EXECUTORCH_H12025_BUILD_MIGRATION --------------------------------------------------
+
+include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
+
+load_build_preset()
+include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
+
+# Print all the configs that were called with announce_configured_options.
+print_configured_options()
+
+# MARK: - End EXECUTORCH_H12025_BUILD_MIGRATION ----------------------------------------------------
+
 include(tools/cmake/Utils.cmake)
 include(CMakeDependentOption)
+include(ExternalProject)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -96,9 +110,6 @@ set(EXECUTORCH_PAL_DEFAULT
           "Which PAL default implementation to use: one of {posix, minimal}"
 )
 
-option(EXECUTORCH_ENABLE_LOGGING "Build with ET_LOG_ENABLED"
-       ${_default_release_disabled_options}
-)
 if(NOT EXECUTORCH_ENABLE_LOGGING)
   # Avoid pulling in the logging strings, which can be large. Note that this
   # will set the compiler flag for all targets in this directory, and for all
@@ -170,8 +181,6 @@ option(EXECUTORCH_BUILD_ARM_BAREMETAL
        "Build the Arm Baremetal flow for Cortex-M and Ethos-U" OFF
 )
 
-option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
-
 option(EXECUTORCH_BUILD_KERNELS_CUSTOM "Build the custom kernels" OFF)
 
 option(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT "Build the custom ops lib for AOT"
@@ -234,6 +243,8 @@ option(EXECUTORCH_USE_DL "Use libdl library" ON)
 
 option(EXECUTORCH_BUILD_CADENCE "Build the Cadence DSP backend" OFF)
 
+option(EXECUTORCH_BUILD_CORTEX_M "Build the Cortex-M backend" OFF)
+
 #
 # pthreadpool: build pthreadpool library. Disable on unsupported platforms
 #
@@ -249,6 +260,8 @@ cmake_dependent_option(
   EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." ON
   "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
 )
+
+add_subdirectory(third-party)
 
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
   set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
@@ -444,81 +457,6 @@ if(EXECUTORCH_USE_CPP_CODE_COVERAGE)
   endif()
 endif()
 
-#
-# flatc: Flatbuffer commandline tool to generate .h files from .fbs files
-#
-cmake_dependent_option(
-  EXECUTORCH_BUILD_FLATC "Build the flatc executable." ON
-  "NOT FLATC_EXECUTABLE" OFF
-)
-
-set(FLATBUFFERS_BUILD_FLATC OFF CACHE BOOL "")
-set(FLATBUFFERS_BUILD_FLATHASH OFF CACHE BOOL "")
-set(FLATBUFFERS_BUILD_FLATLIB OFF CACHE BOOL "")
-set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "")
-set(FLATBUFFERS_INSTALL OFF CACHE BOOL "")
-# exir lets users set the alignment of tensor data embedded in the flatbuffer,
-# and some users need an alignment larger than the default, which is typically
-# 32.
-set(FLATBUFFERS_MAX_ALIGNMENT 1024)
-
-if(EXECUTORCH_BUILD_FLATC)
-  if(FLATC_EXECUTABLE)
-    # We could ignore this, but it could lead to confusion about which `flatc`
-    # is actually being used.
-    message(
-      FATAL_ERROR "May not set both EXECUTORCH_BUILD_FLATC and FLATC_EXECUTABLE"
-    )
-  endif()
-
-  # Build flatc for the *host* to generate files as part of the build step.
-  include(ExternalProject)
-  ExternalProject_Add(
-    flatbuffers
-    PREFIX ${CMAKE_CURRENT_BINARY_DIR}/third-party/flatbuffers
-    BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/third-party/flatbuffers
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third-party/flatbuffers
-    CMAKE_ARGS -DFLATBUFFERS_BUILD_FLATC=ON
-               -DFLATBUFFERS_BUILD_FLATHASH=${FLATBUFFERS_BUILD_FLATHASH}
-               -DFLATBUFFERS_BUILD_FLATLIB=${FLATBUFFERS_BUILD_FLATLIB}
-               -DFLATBUFFERS_BUILD_TESTS=${FLATBUFFERS_BUILD_TESTS}
-               -DFLATBUFFERS_INSTALL=${FLATBUFFERS_INSTALL}
-               -DCMAKE_CXX_FLAGS="-DFLATBUFFERS_MAX_ALIGNMENT=${FLATBUFFERS_MAX_ALIGNMENT}"
-               # If building for iOS, "unset" these variables to rely on the host (macOS) defaults.
-               $<$<AND:$<BOOL:${CMAKE_TOOLCHAIN_IOS}>,$<BOOL:$<FILTER:${PLATFORM},EXCLUDE,^MAC>>>:-DCMAKE_OSX_SYSROOT=>
-    INSTALL_COMMAND ""
-    BUILD_BYPRODUCTS <BINARY_DIR>/flatc
-  )
-  ExternalProject_Get_Property(flatbuffers BINARY_DIR)
-  if(WIN32)
-    # flatbuffers does not use CMAKE_BUILD_TYPE. Internally, the build forces Release
-    # config, but from CMake's perspective the build type is always Debug.
-    set(FLATC_EXECUTABLE ${BINARY_DIR}/$<CONFIG>/flatc.exe)
-  elseif(CMAKE_GENERATOR STREQUAL "Xcode")
-    set(FLATC_EXECUTABLE ${BINARY_DIR}/$<CONFIG>/flatc)
-  else()
-    set(FLATC_EXECUTABLE ${BINARY_DIR}/flatc)
-  endif()
-  set(FLATC_EXECUTABLE_BUILT_FROM_SOURCE YES)
-endif()
-
-if(NOT FLATC_EXECUTABLE)
-  message(
-    WARNING "FLATC_EXECUTABLE not specified, looking for flatc"
-  )
-  find_program(FLATC_EXECUTABLE flatc)
-
-  if(NOT FLATC_EXECUTABLE)
-    message(FATAL_ERROR "FLATC_EXECUTABLE must be set when EXECUTORCH_BUILD_FLATC is disabled.")
-  endif()
-endif()
-
-add_executable(flatc IMPORTED GLOBAL)
-set_target_properties(flatc PROPERTIES IMPORTED_LOCATION ${FLATC_EXECUTABLE})
-
-if(FLATC_EXECUTABLE_BUILT_FROM_SOURCE)
-  add_dependencies(flatc flatbuffers)
-endif()
 
 #
 # program_schema: Generated .h files from schema/*.fbs inputs
@@ -608,7 +546,7 @@ endif()
 # any backends.
 #
 add_library(executorch ${_executorch__srcs})
-target_link_libraries(executorch PUBLIC executorch_core)
+target_link_libraries(executorch PRIVATE executorch_core)
 target_include_directories(executorch PUBLIC ${_common_include_directories})
 target_compile_definitions(executorch PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
 target_compile_options(executorch PUBLIC ${_common_compile_options})
@@ -705,6 +643,10 @@ endif()
 
 if(EXECUTORCH_BUILD_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
+endif()
+
+if(EXECUTORCH_BUILD_CORTEX_M)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
 endif()
 
 if(EXECUTORCH_BUILD_DEVTOOLS)

@@ -52,7 +52,7 @@ message("Generated files ${gen_command_sources}")
 # Focused on portability and understandability rather than speed.
 #
 add_library(portable_kernels ${_portable_kernels__srcs})
-target_link_libraries(portable_kernels PRIVATE executorch)
+target_link_libraries(portable_kernels PRIVATE executorch_core)
 target_compile_options(portable_kernels PUBLIC ${_common_compile_options})
 
 # Build a library for _portable_kernels__srcs
@@ -60,7 +60,7 @@ target_compile_options(portable_kernels PUBLIC ${_common_compile_options})
 # portable_ops_lib: Register portable_ops_lib ops kernels into Executorch
 # runtime
 gen_operators_lib(
-  LIB_NAME "portable_ops_lib" KERNEL_LIBS portable_kernels DEPS executorch
+  LIB_NAME "portable_ops_lib" KERNEL_LIBS portable_kernels DEPS executorch_core
 )
 
 # Portable kernels support optional parallelization (and, in the
@@ -68,7 +68,7 @@ gen_operators_lib(
 # produce an optimized version.
 if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   add_library(optimized_portable_kernels ${_portable_kernels__srcs})
-  target_link_libraries(optimized_portable_kernels PRIVATE executorch)
+  target_link_libraries(optimized_portable_kernels PRIVATE executorch_core)
   target_link_libraries(optimized_portable_kernels PUBLIC extension_threadpool)
   target_compile_options(optimized_portable_kernels PUBLIC ${_common_compile_options})
   target_include_directories(optimized_portable_kernels PRIVATE ${TORCH_INCLUDE_DIRS})

@@ -54,16 +54,22 @@ class ArangeAdd(torch.nn.Module):
 def test_arange_start_step_tosa_MI(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = TosaPipelineMI[input_t](
-        ArangeAdd(*init_data), input_data(), ArangeAdd.aten_op, ArangeAdd.exir_op
+        ArangeAdd(*init_data),
+        input_data(),
+        ArangeAdd.aten_op,
+        ArangeAdd.exir_op,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", ArangeAdd.test_data_dtypes)
-def test_arange_start_step_dtypes_tosa_MI(test_data: test_data_t):
+def test_arange_start_step_tosa_MI_dtypes(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = TosaPipelineMI[input_t](
-        ArangeAdd(*init_data), input_data(), ArangeAdd.aten_op, ArangeAdd.exir_op
+        ArangeAdd(*init_data),
+        input_data(),
+        ArangeAdd.aten_op,
+        ArangeAdd.exir_op,
     )
     pipeline.run()
 
@@ -72,27 +78,34 @@ def test_arange_start_step_dtypes_tosa_MI(test_data: test_data_t):
 def test_arange_start_step_tosa_BI(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = TosaPipelineBI[input_t](
-        ArangeAdd(*init_data), input_data(), ArangeAdd.aten_op, ArangeAdd.exir_op
+        ArangeAdd(*init_data),
+        input_data(),
+        ArangeAdd.aten_op,
+        ArangeAdd.exir_op,
     )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
 @common.parametrize("test_data", ArangeAdd.test_data)
-def test_arange_start_step_tosa_u55(test_data: test_data_t):
+def test_arange_start_step_u55_BI(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = EthosU55PipelineBI[input_t](
-        ArangeAdd(*init_data), input_data(), ArangeAdd.aten_op
+        ArangeAdd(*init_data),
+        input_data(),
+        ArangeAdd.aten_op,
     )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
 @common.parametrize("test_data", ArangeAdd.test_data)
-def test_arange_start_step_tosa_u85(test_data: test_data_t):
+def test_arange_start_step_u85_BI(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = EthosU85PipelineBI[input_t](
-        ArangeAdd(*init_data), input_data(), ArangeAdd.aten_op
+        ArangeAdd(*init_data),
+        input_data(),
+        ArangeAdd.aten_op,
     )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
@@ -120,7 +133,10 @@ class LinspaceAdd(torch.nn.Module):
 def test_linspace_tosa_MI(test_data):
     input_data, init_data = test_data
     pipeline = TosaPipelineMI[input_t](
-        LinspaceAdd(*init_data), input_data(), LinspaceAdd.aten_op, LinspaceAdd.exir_op
+        LinspaceAdd(*init_data),
+        input_data(),
+        LinspaceAdd.aten_op,
+        LinspaceAdd.exir_op,
     )
     pipeline.run()
 
@@ -129,7 +145,10 @@ def test_linspace_tosa_MI(test_data):
 def test_linspace_tosa_BI(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = TosaPipelineBI[input_t](
-        LinspaceAdd(*init_data), input_data(), LinspaceAdd.aten_op, LinspaceAdd.exir_op
+        LinspaceAdd(*init_data),
+        input_data(),
+        LinspaceAdd.aten_op,
+        LinspaceAdd.exir_op,
     )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()

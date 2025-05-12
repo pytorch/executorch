@@ -12,6 +12,9 @@ from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+)
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_utils import get_resize_parameters, tosa_shape
 
@@ -36,9 +39,10 @@ class UpsampleNearest2dVisitor_0_80(NodeVisitor):
     ) -> None:
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
-        assert (
-            inputs[0].shape is not None and output.shape is not None
-        ), "Only static shapes are supported"
+        validate_num_inputs(self.target, inputs, 3)
+
+        if inputs[0].shape is None or output.shape is None:
+            raise ValueError("Only static shapes are supported")
 
         # tosa_shape output is NHWC, take HW
         input_size_yx = torch.tensor(
@@ -55,9 +59,12 @@ class UpsampleNearest2dVisitor_0_80(NodeVisitor):
         def in_int16_range(x):
             return torch.all(x >= -(2**15)) and torch.all(x <= 2**15 - 1)
 
-        assert in_int16_range(scale_n_yx)
-        assert in_int16_range(scale_d_yx)
-        assert in_int16_range(border_yx)
+        if not in_int16_range(scale_n_yx):
+            raise ValueError("scale_n_yx is out of the int16 range")
+        if not in_int16_range(scale_d_yx):
+            raise ValueError("scale_d_yx is out of the int16 range")
+        if not in_int16_range(border_yx):
+            raise ValueError("border_yx is out of the int16 range")
 
         attr = ts.TosaSerializerAttribute()
         attr.ResizeAttribute(
@@ -89,6 +96,8 @@ class UpsampleNearest2dVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         import serializer.tosa_serializer as ts
+
+        validate_num_inputs(self.target, inputs, 3)
 
         assert (
             inputs[0].shape is not None and output.shape is not None

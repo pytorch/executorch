@@ -375,6 +375,9 @@ def get_quant_properties(  # noqa: C901
             )
         ]
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
+    elif node.target in (torch.ops.aten.neg.default,):
+        quant_properties.quant_inputs = [_QuantProperty(0, input_act_qspec)]
+        quant_properties.quant_output = _QuantProperty(0, input_act_qspec)
     elif node.target in _one_to_one:
         quant_properties.quant_inputs = [_QuantProperty(0, input_act_qspec)]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
@@ -408,6 +411,9 @@ def get_quant_properties(  # noqa: C901
         shared_qspec = SharedQuantizationSpec(node.args[0])
         quant_properties.quant_inputs = [_QuantProperty(0, shared_qspec)]  # type: ignore[arg-type]
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
+    elif node.target in [torch.ops.aten.scalar_tensor.default]:
+        quant_properties.quant_inputs = []
+        quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     else:
         return None
 
@@ -455,5 +461,6 @@ def annotate_graph(  # type: ignore[return]
         if node.target in [
             torch.ops.aten.full_like.default,
             torch.ops.aten.full.default,
+            torch.ops.aten.scalar_tensor.default,
         ]:
             node.kwargs = {}

@@ -86,8 +86,8 @@ if [ "$BUILD_AARCH64" = true ]; then
         -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
         -DANDROID_ABI='arm64-v8a' \
-        -DANDROID_NATIVE_API_LEVEL=23 \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+        -DANDROID_PLATFORM=android-30 \
         -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
         -B$BUILD_ROOT
 
@@ -100,7 +100,7 @@ if [ "$BUILD_AARCH64" = true ]; then
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
         -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
         -DANDROID_ABI='arm64-v8a' \
-        -DANDROID_NATIVE_API_LEVEL=23 \
+        -DANDROID_PLATFORM=android-30 \
         -DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
         -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \

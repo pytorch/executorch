@@ -75,7 +75,7 @@ if(FETCH_ETHOS_U_CONTENT)
   endif()
 
   # Always patch the core_platform repo since this is fast enough.
-  set(core_platform_base_rev "b728c774158248ba2cad8e78a515809e1eb9b77f")
+  set(core_platform_base_rev "1916a9c984819c35b19c9e5c4c80d47e4e866420")
   set(patch_dir "${ET_DIR_PATH}/examples/arm/ethos-u-setup")
   execute_process(COMMAND bash -c "pwd && source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_platform ${core_platform_base_rev} ${patch_dir}"
     WORKING_DIRECTORY ${ET_DIR_PATH}
@@ -492,7 +492,6 @@ set_property(
   PROPERTY IMPORTED_LOCATION
            "${ET_BUILD_DIR_PATH}/kernels/portable/libportable_kernels.a"
 )
-
 add_library(quantized_ops_lib STATIC IMPORTED)
 set_property(
   TARGET quantized_ops_lib
@@ -505,7 +504,18 @@ set_property(
   PROPERTY IMPORTED_LOCATION
            "${ET_BUILD_DIR_PATH}/kernels/quantized/libquantized_kernels.a"
 )
-
+add_library(cortex_m_ops_lib STATIC IMPORTED)
+set_property(
+  TARGET cortex_m_ops_lib
+  PROPERTY IMPORTED_LOCATION
+           "${ET_BUILD_DIR_PATH}/backends/cortex_m/libcortex_m_ops_lib.a"
+)
+add_library(cortex_m_kernels STATIC IMPORTED)
+set_property(
+  TARGET cortex_m_kernels
+  PROPERTY IMPORTED_LOCATION
+           "${ET_BUILD_DIR_PATH}/backends/cortex_m/libcortex_m_kernels.a"
+)
 add_library(extension_runner_util STATIC IMPORTED)
 set_property(
   TARGET extension_runner_util
@@ -546,9 +556,11 @@ list(APPEND arm_executor_runner_link
   executorch
   "-Wl,--whole-archive"
   executorch_delegate_ethos_u
+  cortex_m_ops_lib
   quantized_ops_lib
   portable_ops_lib
   quantized_kernels
+  cortex_m_kernels
   portable_kernels
   "-Wl,--no-whole-archive"
   -Xlinker -Map=arm_executor_runner.map
@@ -561,7 +573,7 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
   set_property(
       TARGET etdump
       PROPERTY IMPORTED_LOCATION
-           "${ET_BUILD_DIR_PATH}/lib/libetdump.a"
+            "${ET_BUILD_DIR_PATH}/lib/libetdump.a"
   )
 
   if(CMAKE_BUILD_TYPE MATCHES "Debug")
@@ -574,7 +586,7 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
   set_property(
       TARGET ${FLATCCRT_LIB}
       PROPERTY IMPORTED_LOCATION
-           "${ET_BUILD_DIR_PATH}/lib/lib${FLATCCRT_LIB}.a"
+            "${ET_BUILD_DIR_PATH}/lib/lib${FLATCCRT_LIB}.a"
   )
 
   list(APPEND arm_executor_runner_link
