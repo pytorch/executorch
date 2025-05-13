@@ -37,7 +37,7 @@ def test_decompose_layernorm_tosa_MI():
     pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),
-        tosa_version="TOSA-0.80+MI",
+        quantize=False,
         ops_before_pass={
             "executorch_exir_dialects_edge__ops_aten_native_layer_norm_default": 1,
         },

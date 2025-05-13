@@ -67,21 +67,19 @@ class MeanDimTensor(torch.nn.Module):
     )
     ops_not_before_pass = (
         [
-            "executorch_exir_dialects_edge__ops_aten_view_copy_default",
-            "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default",
-            "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList",
             "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
+            "executorch_exir_dialects_edge__ops_aten_full_default",
+            "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList",
         ],
     )
     ops_after_pass = (
         {
-            "executorch_exir_dialects_edge__ops_aten_view_copy_default": 2,
-            "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default": 1,
-            "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList": 1,
             "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 1,
+            "executorch_exir_dialects_edge__ops_aten_full_default": 1,
+            "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList": 1,
         },
     )
-    ops_not_after_pass = ["executorch_exir_dialects_edge__ops_aten_mean_dim"]
+    ops_not_after_pass = (["executorch_exir_dialects_edge__ops_aten_mean_dim"],)
 
     def __init__(self):
         super(MeanDimTensor, self).__init__()

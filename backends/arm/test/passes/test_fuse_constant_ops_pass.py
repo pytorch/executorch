@@ -98,11 +98,11 @@ modules = {
 
 
 @common.parametrize("module", modules)
-def test_fuse_const_ops_tosa_MI(module):
+def test_fuse_const_ops_tosa_MI(module: torch.nn.Module):
     pipeline = PassPipeline[input_t](
         module=module,
         test_data=(torch.rand(1),),
-        tosa_version="TOSA-0.80+MI",
+        quantize=False,
         ops_before_pass=module.ops_before_pass,
         ops_after_pass=module.ops_after_pass,
         ops_not_after_pass=module.ops_not_after_pass,
@@ -113,8 +113,13 @@ def test_fuse_const_ops_tosa_MI(module):
 
 @unittest.skip("Test failing on internal CI")
 @common.parametrize("module", modules)
-def test_fuse_const_ops_tosa_BI(module):
+def test_fuse_const_ops_tosa_BI(module: torch.nn.Module):
     pipeline = TosaPipelineBI[input_t](
-        module, (torch.rand(10, 10),), [], [], use_to_edge_transform_and_lower=True
+        module,
+        (torch.rand(10, 10),),
+        [],
+        [],
+        quantize=True,
+        use_to_edge_transform_and_lower=True,
     )
     pipeline.run()

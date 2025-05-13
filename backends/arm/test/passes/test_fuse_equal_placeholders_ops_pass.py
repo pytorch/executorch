@@ -60,7 +60,7 @@ def test_fuse_equal_placeholders_constants_tosa_MI():
     pipeline = PassPipeline[input_t](
         module,
         data,
-        tosa_version="TOSA-0.80+MI",
+        quantize=False,
         ops_before_pass=module.ops_before_pass,
         ops_after_pass=module.ops_after_pass,
         passes_with_exported_program=[FuseEqualPlaceholdersPass],
@@ -81,7 +81,7 @@ def test_fuse_equal_placeholders_state_dict_tosa_MI():
     pipeline = PassPipeline[input_t](
         module,
         data,
-        tosa_version="TOSA-0.80+MI",
+        quantize=False,
         ops_before_pass=module.ops_before_pass,
         ops_after_pass=module.ops_after_pass,
         passes_with_exported_program=[FuseEqualPlaceholdersPass],
