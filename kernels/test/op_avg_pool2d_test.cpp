@@ -27,7 +27,7 @@ class OpAvgPool2DOutTest : public OperatorTest {
       executorch::aten::ArrayRef<int64_t> padding,
       bool ceil_mode,
       bool count_include_pad,
-      executorch::aten::optional<int64_t> divisor_override,
+      std::optional<int64_t> divisor_override,
       executorch::aten::Tensor& out) {
     return torch::executor::aten::avg_pool2d_outf(
         context_,
@@ -116,7 +116,7 @@ class OpAvgPool2DOutTest : public OperatorTest {
             padding_vec.data(), padding_vec.size());
     bool ceil_mode = false;
     bool count_include_pad = true;
-    executorch::aten::optional<int64_t> divisor_override;
+    std::optional<int64_t> divisor_override;
     executorch::aten::Tensor out = tf_dtype.zeros({2, 3, 3, 4});
     executorch::aten::Tensor out_expected = tf_dtype.make(
         {2, 3, 3, 4},
@@ -282,8 +282,7 @@ class OpAvgPool2DOutTest : public OperatorTest {
             padding_vec.data(), padding_vec.size());
     bool ceil_mode = false;
     bool count_include_pad = true;
-    executorch::aten::optional<int64_t> divisor_override =
-        executorch::aten::optional<int64_t>(10);
+    std::optional<int64_t> divisor_override = std::optional<int64_t>(10);
     executorch::aten::Tensor out = tfFloat.zeros({2, 3, 3, 4});
     executorch::aten::Tensor out_expected = tfFloat.make(
         {2, 3, 3, 4},
@@ -535,7 +534,7 @@ class OpAvgPool2DOutTest : public OperatorTest {
             padding_vec.data(), padding_vec.size());
     bool ceil_mode = true;
     bool count_include_pad = false;
-    executorch::aten::optional<int64_t> divisor_override;
+    std::optional<int64_t> divisor_override;
     executorch::aten::Tensor out = tfFloat.zeros({2, 3, 13, 7});
     executorch::aten::Tensor out_expected = tfFloat.make(
         {2, 3, 13, 7},
