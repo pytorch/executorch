@@ -587,7 +587,7 @@ def setup_common_args_and_variables():
 
     parser.add_argument(
         "--ci",
-        help="This flag is for Continuous Integration(CI) purpose and is NOT recommended to turn on for typical use cases.",
+        help="This flag is for Continuous Integration(CI) purpose and is NOT recommended to turn on for typical use cases. It will use random inputs instead of real inputs.",
         action="store_true",
         default=False,
     )
