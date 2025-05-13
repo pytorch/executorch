@@ -99,6 +99,15 @@ public class PromptFormat {
     }
   }
 
+  public static boolean shouldSkipToken(ModelType modelType, String token) {
+    switch (modelType) {
+      case QWEN_3:
+        return token.equals("<|im_end|>");
+      default:
+        return false;
+    }
+  }
+
   public static String getLlavaPresetPrompt() {
     return "A chat between a curious human and an artificial intelligence assistant. The assistant"
         + " gives helpful, detailed, and polite answers to the human's questions. USER: ";
