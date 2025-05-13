@@ -404,7 +404,27 @@ void add_conv2d_node(
 
   vkapi::ParamsBindList param_buffers;
   std::vector<PushConstantDataInfo> push_constants;
-  if (method == Conv2dMethod::Pointwise || method == Conv2dMethod::Depthwise) {
+  if (method == Conv2dMethod::Pointwise) {
+    const utils::ivec4 kernel_param_stride_pad = {
+        kernel_params.stride[0],
+        kernel_params.stride[1],
+        kernel_params.padding[0],
+        kernel_params.padding[1],
+    };
+
+    struct Conv2dPWParams final {
+      int in_group_size;
+      int dummy_padding;
+      OutputParams out_params;
+    } param{extra_params.in_group_size, 0, out_params};
+
+    push_constants = {
+        graph.logical_limits_pc_of(out),
+        PushConstantDataInfo(
+            &kernel_param_stride_pad, sizeof(kernel_param_stride_pad)),
+        PushConstantDataInfo(&param, sizeof(param)),
+    };
+  } else if (method == Conv2dMethod::Depthwise) {
     const utils::ivec4 kernel_param_size_stride = {
         kernel_params.kernel_size[0],
         kernel_params.kernel_size[1],
