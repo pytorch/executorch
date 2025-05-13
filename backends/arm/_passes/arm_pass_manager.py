@@ -17,7 +17,6 @@ from executorch.backends.arm._passes import (
     ConvertAnyDefaultDimDimsPass,
     ConvertExpandCopyToRepeatPass,
     ConvertFullLikeToFullPass,
-    ConvertMeanDimToAveragePoolPass,
     ConvertMinMaxPass,
     ConvertMmToBmmPass,
     ConvertSplitToSlicePass,
@@ -87,7 +86,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertSplitToSlicePass())
         self.add_pass(ConvertMmToBmmPass())
         self.add_pass(DecomposeLinearPass())
-        self.add_pass(ConvertMeanDimToAveragePoolPass())
+        self.add_pass(DecomposeMeanDimPass())
         self.add_pass(ConvertFullLikeToFullPass())
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
@@ -140,7 +139,6 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass())
         self.add_pass(DecomposeNotEqualPass())
-        self.add_pass(ConvertMeanDimToAveragePoolPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeSoftmaxPass())
         self.add_pass(DecomposeGeluPass())
