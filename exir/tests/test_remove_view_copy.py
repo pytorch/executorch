@@ -102,6 +102,7 @@ class TestRemoveViewCopy(unittest.TestCase):
             config=ExecutorchBackendConfig(
                 remove_view_copy=True,
                 memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+                do_quant_fusion_and_const_prop=False,
             ),
         )
 
