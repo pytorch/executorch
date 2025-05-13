@@ -99,7 +99,6 @@ def test_decompose_meandim_tosa_MI(module):
     pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),
-        tosa_version="TOSA-0.80+MI",
         ops_before_pass=module.ops_before_pass[0],
         ops_not_before_pass=module.ops_not_before_pass[0],
         ops_after_pass=module.ops_after_pass[0],
