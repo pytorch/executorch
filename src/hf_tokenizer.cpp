@@ -142,15 +142,8 @@ Error HFTokenizer::load(const std::string& path) {
 
     // Pull out the token strings
     try {
-      const std::string bos_token =
-	  parsed_config_json.contains("bos_token") && !parsed_config_json["bos_token"].is_null()
-	  ? parsed_config_json["bos_token"].get<std::string>()
-	  : "";
-
-      const std::string eos_token =
-	  parsed_config_json.contains("eos_token") && !parsed_config_json["eos_token"].is_null()
-	  ? parsed_config_json["eos_token"].get<std::string>()
-	  : "";
+      const std::string bos_token = parsed_config_json.at("bos_token");
+      const std::string eos_token = parsed_config_json.at("eos_token");
       const auto bos_res = special_token_map_->tryGetInteger(bos_token);
       const auto eos_res = special_token_map_->tryGetInteger(eos_token);
       if (!bos_res) {
