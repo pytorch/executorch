@@ -97,7 +97,7 @@ class Conv2dVisitor_0_80(NodeVisitor):
         if inputs[0].dtype == ts.DType.INT8:
             # int8 input requires quantization information
             input_qparams = get_input_qparams(node)
-            input_zp = input_qparams[0].zp
+            input_zp = input_qparams[0].get_zp_per_tensor()
 
         attr.ConvAttribute(
             pad=pad_attr,
@@ -178,13 +178,15 @@ class Conv2dVisitor_0_80(NodeVisitor):
         # integer value domain of the next op. Otherwise return float32 output.
         if inputs[0].dtype == ts.DType.INT8:
             # Get scale_factor from input, weight, and output.
-            input_scale = input_qparams[0].scale  # type: ignore[possibly-undefined]  # pyre-ignore [61]
-            weight_scale = input_qparams[1].scale  # pyre-ignore [61]
+            input_scale = input_qparams[0].get_scale_per_tensor()  # type: ignore[possibly-undefined]  # pyre-ignore [61]
+            weight_scale = input_qparams[1].get_scale_per_tensor()  # pyre-ignore [61]
             output_qargs = get_output_qparams(node)
             post_conv2d_scale = [
                 (inp * w) / out
                 for inp, w, out in zip(
-                    [input_scale], [weight_scale], [output_qargs[0].scale]
+                    [input_scale],
+                    [weight_scale],
+                    [output_qargs[0].get_scale_per_tensor()],
                 )
             ]
 
@@ -194,8 +196,8 @@ class Conv2dVisitor_0_80(NodeVisitor):
                 input_node=conv2d_res,  # type: ignore[possibly-undefined]
                 output_name=output.name,
                 output_type=output.dtype,
-                input_zp=0,
-                output_zp=output_qargs[0].zp,
+                input_zp=[0],
+                output_zp=[output_qargs[0].get_zp_per_tensor()],
                 per_channel=isinstance(weight_scale, torch.Tensor),
             )  # type: ignore[call-arg]
 
@@ -274,7 +276,7 @@ class Conv2dVisitor(NodeVisitor):
         if inputs[0].dtype == ts.DType.INT8:
             # int8 input requires quantization information
             input_qparams = get_input_qparams(node)
-            input_zp = input_qparams[0].zp
+            input_zp = input_qparams[0].get_zp_per_tensor()
 
         # The output type is int32 when input type is int8.
         conv2d_output_name = output.name
@@ -388,13 +390,15 @@ class Conv2dVisitor(NodeVisitor):
         # integer value domain of the next op. Otherwise return float32 output.
         if inputs[0].dtype == ts.DType.INT8:
             # Get scale_factor from input, weight, and output.
-            input_scale = input_qparams[0].scale  # type: ignore[possibly-undefined]  # pyre-ignore [61]
-            weight_scale = input_qparams[1].scale  # pyre-ignore [61]
+            input_scale = input_qparams[0].get_scale_per_tensor()  # type: ignore[possibly-undefined]  # pyre-ignore [61]
+            weight_scale = input_qparams[1].get_scale_per_tensor()  # pyre-ignore [61]
             output_qargs = get_output_qparams(node)
             post_conv2d_scale = [
                 (inp * w) / out
                 for inp, w, out in zip(
-                    [input_scale], [weight_scale], [output_qargs[0].scale]
+                    [input_scale],
+                    [weight_scale],
+                    [output_qargs[0].get_scale_per_tensor()],
                 )
             ]
             build_rescale(
@@ -403,8 +407,8 @@ class Conv2dVisitor(NodeVisitor):
                 input_node=conv2d_res,  # type: ignore[possibly-undefined]
                 output_name=output.name,
                 output_type=output.dtype,
-                input_zp=0,
-                output_zp=output_qargs[0].zp,
+                input_zp=[0],
+                output_zp=[output_qargs[0].get_zp_per_tensor()],
                 per_channel=isinstance(weight_scale, torch.Tensor),
                 rounding_mode=RoundingMode.SINGLE_ROUND,
             )

@@ -98,7 +98,7 @@ class InsertRescalePass(ExportPass):
                 continue
             # Copy users since we remove them while iterating, modyfing the node.users list.
             for user in copy(node.users):
-                if user.target is q_op:
+                if user.target == q_op:
                     self.fold_dq_q_to_rescale(node, user, graph_module)
                     modified = True
             if len(node.users) == 0:
