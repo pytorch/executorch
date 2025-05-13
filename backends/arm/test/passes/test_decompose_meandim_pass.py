@@ -20,25 +20,20 @@ class MeanDim(torch.nn.Module):
     Basic mean model using torch.mean with keepdim = True
     """
 
-    ops_before_pass = (
-        {
-            "executorch_exir_dialects_edge__ops_aten_mean_dim": 1,
-        },
-    )
-    ops_not_before_pass = (
-        [
-            "executorch_exir_dialects_edge__ops_aten_view_copy_default",
-            "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default",
-            "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList",
-            "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
-        ],
-    )
-    ops_after_pass = (
-        {
-            "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList": 1,
-            "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 1,
-        },
-    )
+    ops_before_pass = {
+        "executorch_exir_dialects_edge__ops_aten_mean_dim": 1,
+    }
+    ops_not_before_pass = [
+        "executorch_exir_dialects_edge__ops_aten_view_copy_default",
+        "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default",
+        "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList",
+        "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
+    ]
+    ops_after_pass = {
+        "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList": 1,
+        "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 1,
+    }
+
     ops_not_after_pass = [
         "executorch_exir_dialects_edge__ops_aten_view_copy_default",
         "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default",
@@ -60,26 +55,21 @@ class MeanDimTensor(torch.nn.Module):
     Basic mean model using torch.Tensor.mean with keepdim = False
     """
 
-    ops_before_pass = (
-        {
-            "executorch_exir_dialects_edge__ops_aten_mean_dim": 1,
-        },
-    )
-    ops_not_before_pass = (
-        [
-            "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
-            "executorch_exir_dialects_edge__ops_aten_full_default",
-            "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList",
-        ],
-    )
-    ops_after_pass = (
-        {
-            "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 1,
-            "executorch_exir_dialects_edge__ops_aten_full_default": 1,
-            "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList": 1,
-        },
-    )
-    ops_not_after_pass = (["executorch_exir_dialects_edge__ops_aten_mean_dim"],)
+    ops_before_pass = {
+        "executorch_exir_dialects_edge__ops_aten_mean_dim": 1,
+    }
+    ops_not_before_pass = [
+        "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
+        "executorch_exir_dialects_edge__ops_aten_full_default",
+        "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList",
+    ]
+    ops_after_pass = {
+        "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 1,
+        "executorch_exir_dialects_edge__ops_aten_full_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList": 1,
+    }
+
+    ops_not_after_pass = ["executorch_exir_dialects_edge__ops_aten_mean_dim"]
 
     def __init__(self):
         super(MeanDimTensor, self).__init__()
@@ -99,9 +89,9 @@ def test_decompose_meandim_tosa_MI(module):
     pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),
-        ops_before_pass=module.ops_before_pass[0],
-        ops_not_before_pass=module.ops_not_before_pass[0],
-        ops_after_pass=module.ops_after_pass[0],
+        ops_before_pass=module.ops_before_pass,
+        ops_not_before_pass=module.ops_not_before_pass,
+        ops_after_pass=module.ops_after_pass,
         ops_not_after_pass=module.ops_not_after_pass,
         pass_list=[DecomposeMeanDimPass],
     )
