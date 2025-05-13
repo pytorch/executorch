@@ -53,7 +53,7 @@ def get_upgraders() -> Dict[str, Tuple[str, str]]:
 
 class GraphModuleOpUpgrader:
     """This upgrader is able to upgrade the old version of ops in a given GraphModule, if all upgraders are available.
-    To use it, retrieve upgraders from somewhere (TorchScript API or new API) and pass it into this upgrader. In
+    To use it, retrieve an upgrader and pass it into this upgrader. In
     __init__() it does the following:
     1. parse the upgrader list and reorder for upgrading purpose.
     2. register old versions of operators as custom ops.
@@ -75,7 +75,7 @@ class GraphModuleOpUpgrader:
     },
 
     Note that we require the upgrader function to be runnable in Python (which is a stricter requirement than the
-    original TorchScript upgrader).
+    original, now deprecated TorchScript upgrader).
     """
 
     class UpgraderPass(_ExportPassBaseDeprecatedDoNotUse):
