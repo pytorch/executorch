@@ -59,6 +59,7 @@ print_configured_options()
 
 include(tools/cmake/Utils.cmake)
 include(CMakeDependentOption)
+include(ExternalProject)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -99,15 +100,6 @@ else()
   set(_default_release_disabled_options ON)
 endif()
 
-# Let users override which PAL defaults to use.
-#
-# TODO(dbort): Add another option that lets users point to a specific source
-# file; if set, would override the default option.
-set(EXECUTORCH_PAL_DEFAULT
-    "posix"
-    CACHE STRING
-          "Which PAL default implementation to use: one of {posix, minimal}"
-)
 
 if(NOT EXECUTORCH_ENABLE_LOGGING)
   # Avoid pulling in the logging strings, which can be large. Note that this
@@ -116,27 +108,7 @@ if(NOT EXECUTORCH_ENABLE_LOGGING)
   add_definitions(-DET_LOG_ENABLED=0)
 endif()
 
-# Configure log level. Must be one of debug, info, error, fatal.
-set(EXECUTORCH_LOG_LEVEL
-    "Info"
-    CACHE STRING "Build with the given ET_MIN_LOG_LEVEL value"
-)
-string(TOLOWER "${EXECUTORCH_LOG_LEVEL}" LOG_LEVEL_LOWER)
-if(LOG_LEVEL_LOWER STREQUAL "debug")
-  add_definitions(-DET_MIN_LOG_LEVEL=Debug)
-elseif(LOG_LEVEL_LOWER STREQUAL "info")
-  add_definitions(-DET_MIN_LOG_LEVEL=Info)
-elseif(LOG_LEVEL_LOWER STREQUAL "error")
-  add_definitions(-DET_MIN_LOG_LEVEL=Error)
-elseif(LOG_LEVEL_LOWER STREQUAL "fatal")
-  add_definitions(-DET_MIN_LOG_LEVEL=Fatal)
-else()
-  message(
-    SEND_ERROR
-      "Unknown log level \"${EXECUTORCH_LOG_LEVEL}\". Expected one of Debug, "
-      + "Info, Error, or Fatal."
-  )
-endif()
+add_definitions(-DET_MIN_LOG_LEVEL=${ET_MIN_LOG_LEVEL})
 
 option(EXECUTORCH_ENABLE_PROGRAM_VERIFICATION
        "Build with ET_ENABLE_PROGRAM_VERIFICATION"
@@ -259,6 +231,8 @@ cmake_dependent_option(
   EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." ON
   "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
 )
+
+add_subdirectory(third-party)
 
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
   set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
@@ -454,81 +428,6 @@ if(EXECUTORCH_USE_CPP_CODE_COVERAGE)
   endif()
 endif()
 
-#
-# flatc: Flatbuffer commandline tool to generate .h files from .fbs files
-#
-cmake_dependent_option(
-  EXECUTORCH_BUILD_FLATC "Build the flatc executable." ON
-  "NOT FLATC_EXECUTABLE" OFF
-)
-
-set(FLATBUFFERS_BUILD_FLATC OFF CACHE BOOL "")
-set(FLATBUFFERS_BUILD_FLATHASH OFF CACHE BOOL "")
-set(FLATBUFFERS_BUILD_FLATLIB OFF CACHE BOOL "")
-set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "")
-set(FLATBUFFERS_INSTALL OFF CACHE BOOL "")
-# exir lets users set the alignment of tensor data embedded in the flatbuffer,
-# and some users need an alignment larger than the default, which is typically
-# 32.
-set(FLATBUFFERS_MAX_ALIGNMENT 1024)
-
-if(EXECUTORCH_BUILD_FLATC)
-  if(FLATC_EXECUTABLE)
-    # We could ignore this, but it could lead to confusion about which `flatc`
-    # is actually being used.
-    message(
-      FATAL_ERROR "May not set both EXECUTORCH_BUILD_FLATC and FLATC_EXECUTABLE"
-    )
-  endif()
-
-  # Build flatc for the *host* to generate files as part of the build step.
-  include(ExternalProject)
-  ExternalProject_Add(
-    flatbuffers
-    PREFIX ${CMAKE_CURRENT_BINARY_DIR}/third-party/flatbuffers
-    BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/third-party/flatbuffers
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third-party/flatbuffers
-    CMAKE_ARGS -DFLATBUFFERS_BUILD_FLATC=ON
-               -DFLATBUFFERS_BUILD_FLATHASH=${FLATBUFFERS_BUILD_FLATHASH}
-               -DFLATBUFFERS_BUILD_FLATLIB=${FLATBUFFERS_BUILD_FLATLIB}
-               -DFLATBUFFERS_BUILD_TESTS=${FLATBUFFERS_BUILD_TESTS}
-               -DFLATBUFFERS_INSTALL=${FLATBUFFERS_INSTALL}
-               -DCMAKE_CXX_FLAGS="-DFLATBUFFERS_MAX_ALIGNMENT=${FLATBUFFERS_MAX_ALIGNMENT}"
-               # If building for iOS, "unset" these variables to rely on the host (macOS) defaults.
-               $<$<AND:$<BOOL:${CMAKE_TOOLCHAIN_IOS}>,$<BOOL:$<FILTER:${PLATFORM},EXCLUDE,^MAC>>>:-DCMAKE_OSX_SYSROOT=>
-    INSTALL_COMMAND ""
-    BUILD_BYPRODUCTS <BINARY_DIR>/flatc
-  )
-  ExternalProject_Get_Property(flatbuffers BINARY_DIR)
-  if(WIN32)
-    # flatbuffers does not use CMAKE_BUILD_TYPE. Internally, the build forces Release
-    # config, but from CMake's perspective the build type is always Debug.
-    set(FLATC_EXECUTABLE ${BINARY_DIR}/$<CONFIG>/flatc.exe)
-  elseif(CMAKE_GENERATOR STREQUAL "Xcode")
-    set(FLATC_EXECUTABLE ${BINARY_DIR}/$<CONFIG>/flatc)
-  else()
-    set(FLATC_EXECUTABLE ${BINARY_DIR}/flatc)
-  endif()
-  set(FLATC_EXECUTABLE_BUILT_FROM_SOURCE YES)
-endif()
-
-if(NOT FLATC_EXECUTABLE)
-  message(
-    WARNING "FLATC_EXECUTABLE not specified, looking for flatc"
-  )
-  find_program(FLATC_EXECUTABLE flatc)
-
-  if(NOT FLATC_EXECUTABLE)
-    message(FATAL_ERROR "FLATC_EXECUTABLE must be set when EXECUTORCH_BUILD_FLATC is disabled.")
-  endif()
-endif()
-
-add_executable(flatc IMPORTED GLOBAL)
-set_target_properties(flatc PROPERTIES IMPORTED_LOCATION ${FLATC_EXECUTABLE})
-
-if(FLATC_EXECUTABLE_BUILT_FROM_SOURCE)
-  add_dependencies(flatc flatbuffers)
-endif()
 
 #
 # program_schema: Generated .h files from schema/*.fbs inputs
@@ -549,17 +448,7 @@ list(FILTER _executorch_core__srcs EXCLUDE REGEX
 )
 
 # Add the source file that maps to the requested default PAL implementation.
-if(EXECUTORCH_PAL_DEFAULT MATCHES "^(posix|minimal)$")
-  message(STATUS "executorch: Using PAL default '${EXECUTORCH_PAL_DEFAULT}'")
-  list(APPEND _executorch_core__srcs
-       "runtime/platform/default/${EXECUTORCH_PAL_DEFAULT}.cpp"
-  )
-else()
-  message(
-    FATAL_ERROR "Unknown EXECUTORCH_PAL_DEFAULT \"${EXECUTORCH_PAL_DEFAULT}\". "
-                "Expected one of {posix, minimal}."
-  )
-endif()
+list(APPEND _executorch_core__srcs ${EXECUTORCH_PAL_DEFAULT_FILE_PATH})
 
 add_library(executorch_core ${_executorch_core__srcs})
 
@@ -637,6 +526,8 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   # optimized_portable_kernels can use it.
   find_package_torch_headers()
 endif()
+
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable/cpu/util)
 
 if(BUILD_EXECUTORCH_PORTABLE_OPS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
