@@ -714,6 +714,9 @@ class CustomBuild(build):
             "-DEXECUTORCH_ENABLE_LOGGING=ON",
             "-DEXECUTORCH_LOG_LEVEL=Info",
             "-DCMAKE_OSX_DEPLOYMENT_TARGET=10.15",
+            # Set a flag to override the compatiblity error caused by CMake 4.0.0+ dropping support for
+            # things like `cmake_minimum_required (VERSION 3.0.2 FATAL_ERROR)`
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
             # The separate host project is only required when cross-compiling,
             # and it can cause build race conditions (libflatcc.a errors) when
             # enabled. TODO(dbort): Remove this override once this option is
