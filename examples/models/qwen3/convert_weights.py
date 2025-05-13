@@ -117,7 +117,7 @@ def main():
     parser.add_argument("output", type=str, help="Path to the output checkpoint")
 
     args = parser.parse_args()
-    convert_weights(args.input_dir, args.output)
+    convert_weights(args.input_dir_or_checkpoint, args.output)
 
 
 if __name__ == "__main__":
