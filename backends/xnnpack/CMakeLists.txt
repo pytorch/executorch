@@ -92,7 +92,7 @@ endif()
 add_custom_command(
   OUTPUT ${_xnnpack_schema__outputs}
   COMMAND
-    ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
+    flatc --cpp --cpp-std c++11 --scoped-enums -o
     "${_xnnpack_schema__include_dir}/executorch/backends/xnnpack/serialization"
     ${_xnnpack_schema__srcs}
   COMMAND ${MV_COMMAND}
