@@ -623,6 +623,13 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_grid_sampler_2d",
+        deps = [
+            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+        ],
+    ),
+    op_target(
         name = "op_gt",
         deps = [
             ":scalar_utils",

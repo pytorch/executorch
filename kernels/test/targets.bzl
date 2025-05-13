@@ -236,6 +236,7 @@ def define_common_targets():
     _common_op_test("op_ge_test", ["aten", "portable"])
     _common_op_test("op_gelu_test", ["aten", "portable", "optimized"])
     _common_op_test("op_glu_test", ["aten", "portable"])
+    _common_op_test("op_grid_sampler_2d_test", ["aten", "portable"])
     _common_op_test("op_gt_test", ["aten", "portable"])
     _common_op_test("op_hardtanh_test", ["aten", "portable"])
     _common_op_test("op_index_put_test", ["aten", "portable"])
