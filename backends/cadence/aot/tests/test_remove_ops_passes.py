@@ -16,10 +16,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from executorch.backends.cadence.aot import compiler
 from executorch.backends.cadence.aot.compiler import export_to_edge
+from executorch.backends.cadence.aot.fuse_ops import FuseQuantDequantToRequantizePass
 from executorch.backends.cadence.aot.graph_builder import GraphBuilder
 
 from executorch.backends.cadence.aot.pass_utils import count_node, op_counts_match
-from executorch.backends.cadence.aot.quantizer.quantizer import CadenceDefaultQuantizer
 from executorch.backends.cadence.aot.remove_ops import (
     RemoveAliasCopyOpPass,
     RemoveBranchedQuantDequant,
@@ -42,9 +42,6 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from parameterized.parameterized import parameterized
 from pyre_extensions import none_throws
 
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-
-from torch.export import export_for_training
 from torch.fx.passes.infra.pass_base import PassResult
 
 
@@ -459,44 +456,53 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
 
     def test_remove_nop_quant_dequant(self):
-        class M(torch.nn.Module):
-            def __init__(self):
-                super(M, self).__init__()
-                self.linear = torch.nn.Linear(6, 12, bias=False)
-
-            def forward(self, x):
-                x = self.linear(x)
-                return x
-
-        inp = torch.randn(2, 8, 1, 6)
-
-        # Run the standard quant/convert steps, but without fusing
-        # this leaves two redundant quant/dequant pairs to test with
-        quantizer = CadenceDefaultQuantizer()
-        model_exp = export_for_training(M(), (inp,), strict=True).module()
-        prepared_model = prepare_pt2e(model_exp, quantizer)
-        prepared_model(inp)
-        converted_model = convert_pt2e(prepared_model)
-
-        graph_module = (
-            compiler.export_to_cadence(
-                converted_model,
-                (inp,),
-            )
-            .exported_program()
-            .graph_module
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(8, 8))
+        q0 = builder.call_operator(
+            op=exir_ops.edge.cadence.quantize_per_tensor.default,
+            args=(x, 0.01662161760032177, -4, -128, 127, torch.int8),
         )
-
-        # Expect all quantize ops to be removed by the pass
-        self.assertEqual(
-            count_node(graph_module, exir_ops.edge.cadence.quantize_per_tensor.default),
-            0,
+        dq0 = builder.call_operator(
+            op=exir_ops.edge.cadence.dequantize_per_tensor.default,
+            args=(q0, 0.01662161760032177, -4, -128, 127, torch.int8),
         )
+        q1 = builder.call_operator(
+            op=exir_ops.edge.cadence.quantize_per_tensor.default,
+            args=(x, 0.012577153742313385, -9, -128, 127, torch.int8),
+        )
+        builder.output([dq0, q1])
+        graph_module = builder.get_graph_module()
 
-        # Expect 1 dequantize op for the weights
+        # Expect the dq op to be removed by the pass
         self.assertEqual(
             count_node(
                 graph_module, exir_ops.edge.cadence.dequantize_per_tensor.default
+            ),
+            1,
+        )
+
+        # Expect 1 quantize op left since it has no matching dequant
+        self.assertEqual(
+            count_node(graph_module, exir_ops.edge.cadence.quantize_per_tensor.default),
+            2,
+        )
+
+        p = FuseQuantDequantToRequantizePass()
+
+        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+
+        # Expect the dq op to be removed by the pass
+        self.assertEqual(
+            count_node(
+                graph_after_passes, exir_ops.edge.cadence.dequantize_per_tensor.default
+            ),
+            0,
+        )
+
+        # Expect 1 quantize op left since it has no matching dequant
+        self.assertEqual(
+            count_node(
+                graph_after_passes, exir_ops.edge.cadence.quantize_per_tensor.default
             ),
             1,
         )
@@ -511,7 +517,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
         inputs = (x,)
 
         graph_module = (
-            compiler.export_to_edge(
+            export_to_edge(
                 model,
                 inputs,
             )

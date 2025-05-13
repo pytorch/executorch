@@ -29,29 +29,11 @@ function(executorch_print_configuration_summary)
   message(STATUS "  CMAKE_TOOLCHAIN_FILE          : ${CMAKE_TOOLCHAIN_FILE}")
   message(STATUS "  BUCK2                         : ${BUCK2}")
   message(STATUS "  PYTHON_EXECUTABLE             : ${PYTHON_EXECUTABLE}")
-  message(STATUS "  FLATC_EXECUTABLE              : ${FLATC_EXECUTABLE}")
-  message(
-    STATUS
-      "  EXECUTORCH_ENABLE_LOGGING              : ${EXECUTORCH_ENABLE_LOGGING}"
-  )
-  message(STATUS "  EXECUTORCH_ENABLE_PROGRAM_VERIFICATION : "
-                 "${EXECUTORCH_ENABLE_PROGRAM_VERIFICATION}"
-  )
-  message(
-    STATUS "  EXECUTORCH_LOG_LEVEL                   : ${EXECUTORCH_LOG_LEVEL}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_ANDROID_JNI           : "
-                 "${EXECUTORCH_BUILD_ANDROID_JNI}"
-  )
   message(STATUS "  EXECUTORCH_BUILD_ARM_BAREMETAL         : "
                  "${EXECUTORCH_BUILD_ARM_BAREMETAL}"
   )
   message(STATUS "  EXECUTORCH_BUILD_CADENCE               : "
                  "${EXECUTORCH_BUILD_CADENCE}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_COREML                : ${EXECUTORCH_BUILD_COREML}"
   )
   message(
     STATUS
@@ -84,10 +66,6 @@ function(executorch_print_configuration_summary)
   )
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_TRAINING    : "
                  "${EXECUTORCH_BUILD_EXTENSION_TRAINING}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_FLATC                 : ${EXECUTORCH_BUILD_FLATC}"
   )
   message(
     STATUS
@@ -320,6 +298,11 @@ function(resolve_python_executable)
     set(PYTHON_EXECUTABLE
         python
         PARENT_SCOPE
+    )
+  elseif(DEFINED ENV{VIRTUAL_ENV})
+    set(PYTHON_EXECUTABLE
+      $ENV{VIRTUAL_ENV}/bin/python3
+      PARENT_SCOPE
     )
   else()
     set(PYTHON_EXECUTABLE

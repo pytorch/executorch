@@ -266,16 +266,12 @@ def get_coreml_quantizer(pt2e_quantize: str):
 
 def get_vulkan_quantizer(pt2e_quantize: str):
     from executorch.backends.vulkan.quantizer.vulkan_quantizer import (
-        get_weight_quantization_config,
+        get_linear_weight_only_qcs_xnn_qconfig,
         VulkanQuantizer,
     )
 
     if pt2e_quantize == "vulkan_8w":
-        config = get_weight_quantization_config(
-            is_per_channel=True,
-            weight_qmin=-128,
-            weight_qmax=127,
-        )
+        config = get_linear_weight_only_qcs_xnn_qconfig(8)
     else:
         raise ValueError(f"Unsupported Vulkan quantizer specification {pt2e_quantize}")
 

@@ -43,7 +43,7 @@ set(qcir_schema_include_dir ${CMAKE_CURRENT_LIST_DIR}/aot/ir)
 set(qcir_schema_output ${qcir_schema_include_dir}/qcir_generated.h)
 add_custom_command(
   OUTPUT qcir_schema_output
-  COMMAND ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
+  COMMAND flatc --cpp --cpp-std c++11 --scoped-enums -o
           ${qcir_schema_include_dir} ${qcir_schema_include_dir}/qcir.fbs
   DEPENDS flatc
   COMMENT "Generating qualcomm ir schema headers"
@@ -94,7 +94,7 @@ endforeach()
 add_custom_command(
   OUTPUT ${_qnn_schema__outputs}
   COMMAND
-    ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
+    flatc --cpp --cpp-std c++11 --scoped-enums -o
     "${_qnn_schema__include_dir}/executorch/backends/qualcomm"
     ${_qnn_schema__srcs}
   WORKING_DIRECTORY ${EXECUTORCH_SOURCE_DIR}

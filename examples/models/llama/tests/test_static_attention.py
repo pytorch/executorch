@@ -2,7 +2,7 @@ import unittest
 
 import torch
 from executorch.examples.models.llama.attention import AttentionMHA, ForwardOptions
-from executorch.examples.models.llama.llama_transformer import Transformer
+from executorch.examples.models.llama.llama_transformer import construct_transformer
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.rope import Rope
 from executorch.examples.models.llama.static_attention import (
@@ -160,10 +160,10 @@ class StaticAttentionTest(unittest.TestCase):
             n_layers=4,
             vocab_size=128,
         )
-        mha_transformer = Transformer(config).eval()
+        mha_transformer = construct_transformer(config).eval()
 
         config.attention_type = "static"
-        static_transformer = Transformer(config).eval()
+        static_transformer = construct_transformer(config).eval()
         static_transformer.load_state_dict(mha_transformer.state_dict(), strict=False)
         for mha_layer, static_layer in zip(
             mha_transformer.layers, static_transformer.layers

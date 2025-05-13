@@ -236,24 +236,32 @@ def build_rescale_v0_80(
 # For TOSA spec v1.0 RESCALE operator requires multipler, shifts, input_zp and output_zp to be
 # const inputs. Create constant operators from the data already initialized.
 def create_const_ops_for_rescale(
-    tosa_fb, input_dtype, input_name, multipliers, shifts, input_zp, output_zp, ts
+    tosa_fb,
+    scale_32,
+    input_dtype,
+    node_name,
+    multipliers,
+    shifts,
+    input_zp,
+    output_zp,
+    output_dtype,
+    ts,
 ):
-    output_dtype = ts.DType.INT32 if input_dtype == ts.DType.INT8 else ts.DType.INT8
 
     multipliers = tosa_fb.addConst(
         (len(multipliers),),
-        ts.DType.INT32,
+        ts.DType.INT32 if scale_32 else ts.DType.INT16,
         multipliers,
-        name=input_name + "_multipliers",
+        name=node_name + "_multipliers",
     )
     shifts = tosa_fb.addConst(
-        (len(shifts),), ts.DType.INT8, shifts, name=input_name + "_shifts"
+        (len(shifts),), ts.DType.INT8, shifts, name=node_name + "_shifts"
     )
     input_zp = tosa_fb.addConst(
-        [1], input_dtype, [input_zp], name=input_name + "_input_zp"
+        [1], input_dtype, [input_zp], name=node_name + "_input_zp"
     )
     output_zp = tosa_fb.addConst(
-        [1], output_dtype, [output_zp], name=input_name + "_output_zp"
+        [1], output_dtype, [output_zp], name=node_name + "_output_zp"
     )
 
     return [multipliers.name, shifts.name, input_zp.name, output_zp.name]
@@ -273,22 +281,24 @@ def build_rescale(
     import serializer.tosa_serializer as ts  # type: ignore
     import tosa.Op as TosaOp  # type: ignore
 
-    input_name = input_node.name
-
-    multipliers, shifts = compute_multiplier_and_shift(scale, 32)
+    scaleWidth = 32
+    is_scale32 = True
+    multipliers, shifts = compute_multiplier_and_shift(scale, scaleWidth)
     rescale_inputs = create_const_ops_for_rescale(
         tosa_fb,
+        is_scale32,
         input_node.dtype,
-        input_name,
+        output_name,
         multipliers,
         shifts,
         input_zp,
         output_zp,
+        output_type,
         ts,
     )
     attr_rescale = ts.TosaSerializerAttribute()
     attr_rescale.RescaleAttribute(
-        scale32=True,
+        scale32=is_scale32,
         rounding_mode=rounding_mode,
         per_channel=per_channel,
         input_unsigned=False,

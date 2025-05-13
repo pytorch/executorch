@@ -24,6 +24,7 @@ from executorch.backends.arm._passes import (
     ConvertSqueezesToViewPass,
     ConvertToClampPass,
     DecomposeBatchNormPass,
+    DecomposeCosineSimilarityPass,
     DecomposeDivPass,
     DecomposeGeluPass,
     DecomposeLayerNormPass,
@@ -49,6 +50,7 @@ from executorch.backends.arm._passes import (
     MatchWhereSelfDtypePass,
     QuantizeOperatorArguments,
     RemoveClonePass,
+    ReplaceInfValues,
     ReplaceScalarWithTensorArgPassTOSABI,
     ReplaceScalarWithTensorArgPassTOSAMI,
     RetraceFoldedDtypesPass,
@@ -63,7 +65,7 @@ from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
 )
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
-from executorch.backends.xnnpack._passes.remove_getitem_op import RemoveGetItemPass
+from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_manager import PassManager
 from torch.fx import GraphModule
@@ -204,6 +206,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass())
         self.add_pass(DecomposeNotEqualPass())
+        self.add_pass(DecomposeCosineSimilarityPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeLeakyReLUPass())
         self.add_pass(DecomposeSqrtPass())
@@ -216,4 +219,5 @@ class ArmPassManager(PassManager):
             self.add_pass(DecomposeSoftmaxPass())
 
         self.add_pass(ConvertMinMaxPass())
+        self.add_pass(ReplaceInfValues())
         return self._transform(graph_module)
