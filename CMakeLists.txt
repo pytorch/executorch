@@ -49,6 +49,21 @@ project(executorch)
 
 include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
 
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
+announce_configured_options(CMAKE_CXX_STANDARD)
+
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Debug)
+endif()
+announce_configured_options(CMAKE_BUILD_TYPE)
+
+announce_configured_options(CMAKE_CXX_COMPILER_ID)
+announce_configured_options(CMAKE_TOOLCHAIN_FILE)
+announce_configured_options(BUCK2)
+announce_configured_options(PYTHON_EXECUTABLE)
+
 load_build_preset()
 include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
 
@@ -62,14 +77,6 @@ include(CMakeDependentOption)
 include(ExternalProject)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 17)
-endif()
-
-if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Debug)
-endif()
 
 # Setup RPATH.
 # See https://gitlab.kitware.com/cmake/community/-/wikis/doc/cmake/RPATH-handling
@@ -712,6 +719,3 @@ if(EXECUTORCH_BUILD_VULKAN)
 endif()
 
 include(Test.cmake)
-
-# Print all summary
-executorch_print_configuration_summary()

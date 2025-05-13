@@ -222,6 +222,3 @@ target_include_directories(
 )
 target_link_libraries(llama_main PUBLIC llama_runner ${link_libraries})
 target_compile_options(llama_main PUBLIC ${_common_compile_options})
-
-# Print all summary
-executorch_print_configuration_summary()
