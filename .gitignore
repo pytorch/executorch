@@ -40,3 +40,6 @@ xcuserdata/
 .swiftpm/
 *.xcworkspace/
 *.xcframework/
+
+# Android
+*.aar
