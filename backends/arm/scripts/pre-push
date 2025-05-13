@@ -76,7 +76,7 @@ for COMMIT in ${COMMITS}; do
 
     # lintrunner on latest patches.
     echo -e "${INFO} Lintrunner"
-    lintrunner --revision ${COMMIT}
+    MYPYPATH=./src/ lintrunner --revision ${COMMIT}^1
     if [[ $? != 0 ]]; then
         echo -e "${ERROR} Failed linting"
         FAILED=1
