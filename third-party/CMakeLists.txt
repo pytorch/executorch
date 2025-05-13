@@ -47,3 +47,50 @@ endif()
 # set(FLATBUFFERS_BUILD_FLATHASH OFF)
 # set(FLATBUFFERS_BUILD_FLATLIB OFF)
 # set(FLATBUFFERS_BUILD_TESTS OFF)
+
+# MARK: - flatcc
+
+# Similar to flatbuffers, we want to build flatcc for the host. See inline comments
+# in the flatbuffers ExternalProject_Add for more details.
+ExternalProject_Add(
+  flatcc_external_project
+  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatcc_external_project
+  SOURCE_DIR ${PROJECT_SOURCE_DIR}/third-party/flatcc
+  CMAKE_GENERATOR "Unix Makefiles"
+  CMAKE_ARGS -DFLATCC_RTONLY=OFF
+             -DFLATCC_TEST=OFF
+             -DFLATCC_REFLECTION=OFF
+             -DFLATCC_DEBUG_CLANG_SANITIZE=OFF
+             -DFLATCC_INSTALL=ON
+             -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
+             -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+             -DCMAKE_TOOLCHAIN_FILE=
+             $<$<AND:$<BOOL:${APPLE}>,$<BOOL:$<FILTER:${PLATFORM},EXCLUDE,^MAC>>>:-DCMAKE_OSX_SYSROOT=>
+             -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
+  BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatcc
+)
+ExternalProject_Get_Property(flatcc_external_project INSTALL_DIR)
+add_executable(flatcc_cli IMPORTED GLOBAL)
+add_dependencies(flatcc_cli flatcc_external_project)
+if(WIN32)
+  set_target_properties(flatcc_cli PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/${CMAKE_BUILD_TYPE}/flatcc)
+else()
+  set_target_properties(flatcc_cli PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/flatcc)
+endif()
+
+set(FLATCC_RTONLY ON CACHE BOOL "")
+set(FLATCC_TEST OFF CACHE BOOL "")
+set(FLATCC_REFLECTION OFF CACHE BOOL "")
+set(FLATCC_DEBUG_CLANG_SANITIZE OFF CACHE BOOL "")
+set(FLATCC_INSTALL OFF CACHE BOOL "")
+add_subdirectory(flatcc)
+# Fix for "relocation R_X86_64_32 against `.rodata' can not be used when making
+# a shared object; recompile with -fPIC" when building on some x86 linux
+# systems.
+#
+# Learn more: https://github.com/pytorch/executorch/pull/2467
+set_property(TARGET flatccrt PROPERTY POSITION_INDEPENDENT_CODE ON)
+install(
+  TARGETS flatccrt
+  DESTINATION ${CMAKE_BINARY_DIR}/lib
+)
