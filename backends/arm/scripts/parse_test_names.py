@@ -13,6 +13,7 @@ CUSTOM_EDGE_OPS = [
     "linear.default",
     "maximum.default",
     "adaptive_avg_pool2d.default",
+    "native_group_norm.default",
 ]
 ALL_EDGE_OPS = SAMPLE_INPUT.keys() | CUSTOM_EDGE_OPS
 
