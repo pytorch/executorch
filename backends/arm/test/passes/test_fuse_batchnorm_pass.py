@@ -136,12 +136,12 @@ modules = {
 
 
 @common.parametrize("module", modules)
-def test_fuse_batchnorm_tosa_MI(module):
+def test_fuse_batchnorm_tosa_MI(module: torch.nn.Module):
     """Test various cases where the batchnorm should and shouldn't be fused."""
     pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),
-        tosa_version="TOSA-0.80+MI",
+        quantize=False,
         ops_before_pass=module.ops_before_pass,
         ops_after_pass=module.ops_after_pass,
         passes_with_exported_program=[FuseBatchnorm2DPass],
