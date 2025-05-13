@@ -75,6 +75,7 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/repeat_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/select_copy_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/slice_util.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/delinearize_index.cpp"
     )
 add_library(aten_ops_cadence ${_aten_ops__srcs})
 target_link_libraries(aten_ops_cadence PUBLIC executorch)

@@ -28,7 +28,7 @@ cmake_install_executorch_lib() {
           -DCMAKE_INSTALL_PREFIX=cmake-out \
           -DCMAKE_BUILD_TYPE=Release \
           -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
-          -DOPTIMIZE_SIZE=ON \
+          -DEXECUTORCH_OPTIMIZE_SIZE=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           ${EXTRA_BUILD_ARGS} \
           -Bcmake-out .

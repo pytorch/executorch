@@ -14,7 +14,7 @@ import math
 import operator
 from collections import deque
 from numbers import Number
-from typing import cast, Sequence
+from typing import Any, Callable, cast
 
 # Import these for the cadence function signatures.
 import executorch.backends.cadence.aot.ops_registrations  # noqa: F401
@@ -881,9 +881,13 @@ class FuseMulIntoDequantPass(ExportPass):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class FuseTransposeOpPairsPass(FuseOpPairsAcrossBranchesPass):
+class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
     """
-    Fuse transpose op pairs to a single view op.
+    Fuse transpose or permute op pairs to a single view op.
+    (transpose or permutation) -> (quant or dequant) -> (transpose or permutation)
+    This happens when op2(op1) == identity, modulo unitary dimensions.
+    'unitary dimensions' example: a tensor of shape [1, 5, 30] is equivalent (in memory) to [5, 1, 30]
+    so transpose(1, 2) then transpose(0, 2) is a pseudo identity and should be fused.
     """
 
     # A list of ops that can be bypassed when looking for a
@@ -907,42 +911,20 @@ class FuseTransposeOpPairsPass(FuseOpPairsAcrossBranchesPass):
         if not super().can_fuse_for_chain(producer, consumer, consumer_op_packets):
             return False
 
-        def get_dims(node: torch.fx.Node) -> tuple[int, int]:
-            def canonicalize(dim: int) -> int:
-                if dim < 0:
-                    dim += len(node.meta["val"].shape)
-                return dim
-
-            return tuple(canonicalize(cast(int, d)) for d in node.args[1:3])
-
-        def is_equivalent(
-            shape: Sequence[int],
-            transpose0: tuple[int, int],
-            transpose1: tuple[int, int],
-        ) -> bool:
-            def permute_order(
-                order: Sequence[int], dims: tuple[int, int]
-            ) -> Sequence[int]:
-                new_order = list(order)
-                new_order[dims[0]], new_order[dims[1]] = (
-                    new_order[dims[1]],
-                    new_order[dims[0]],
-                )
-                return new_order
-
-            order = permute_order(range(len(shape)), transpose0)
-            order = permute_order(order, transpose1)
-
-            non_unit_dims = [dim for dim in range(len(shape)) if shape[dim] != 1]
-            non_unit_dims_permuted = [dim for dim in order if shape[dim] != 1]
-
-            return non_unit_dims == non_unit_dims_permuted
-
-        return is_equivalent(
-            cast(torch.fx.Node, producer.args[0]).meta["val"].shape,
-            get_dims(producer),
-            get_dims(consumer),
-        )
+        # checking that permut2(permut1(identity)) == identity, modulo unitary dimensions
+        input_shape = cast(torch.fx.Node, producer.args[0]).meta["val"].shape
+        ident_dims = list(range(len(input_shape)))
+        # this mapping helps to handle both transpose and permutations
+        f: dict[Any, Callable] = {
+            exir_ops.edge.aten.transpose_copy.int: get_transposed_dims,
+            exir_ops.edge.aten.permute_copy.default: get_permuted_dims,
+        }
+        in_dims = f[producer.target](producer, ident_dims)
+        out_dims = f[consumer.target](consumer, in_dims)
+        # Filtering out unitary dimensions
+        non_unit_ident_dims = [dim for dim in ident_dims if input_shape[dim] != 1]
+        non_unit_out_dims = [dim for dim in out_dims if input_shape[dim] != 1]
+        return non_unit_out_dims == non_unit_ident_dims
 
     def get_fused_node(
         self,
@@ -950,6 +932,9 @@ class FuseTransposeOpPairsPass(FuseOpPairsAcrossBranchesPass):
         consumer: torch.fx.Node,
         graph_module: torch.fx.GraphModule,
     ) -> torch.fx.Node:
+        # This step is important because of how we can fuse transpositions that are not perfectly
+        # reverse one of another but will be fused if there are unitary dimensions.
+        # The fused operation must have the same output shape as the consumer.
         output_shape = consumer.meta["val"].shape
         with graph_module.graph.inserting_after(consumer):
             view = graph_module.graph.call_function(
@@ -960,11 +945,17 @@ class FuseTransposeOpPairsPass(FuseOpPairsAcrossBranchesPass):
         return view
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        # Remove any dequantize op that has only quantize ops as its users.
+        # Remove any transpose/permutation op pair that cancel each other.
         self.find_and_fuse(
             graph_module,
-            producer_op_packets={exir_ops.edge.aten.transpose_copy},
-            consumer_op_packets={exir_ops.edge.aten.transpose_copy},
+            producer_op_packets={
+                exir_ops.edge.aten.transpose_copy,
+                exir_ops.edge.aten.permute_copy,
+            },
+            consumer_op_packets={
+                exir_ops.edge.aten.transpose_copy,
+                exir_ops.edge.aten.permute_copy,
+            },
             bypass_ops=self.bypass_ops,
         )
         result = super().call(graph_module)
@@ -1028,5 +1019,5 @@ class CadenceFuseOpsInGraph:
         FuseQuantDequantToRequantizePass,
         FuseMulIntoDequantPass,
         FuseFullThenReshapePass,
-        FuseTransposeOpPairsPass,
+        FuseTransposeOrPermuteOpPairsPass,
     ]
