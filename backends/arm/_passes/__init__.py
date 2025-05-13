@@ -47,7 +47,6 @@ from .insert_table_ops import InsertTableOpsPass  # noqa
 from .keep_dims_false_to_squeeze_pass import KeepDimsFalseToSqueezePass  # noqa
 from .match_arg_ranks_pass import MatchArgRanksPass  # noqa
 from .match_where_self_arg_dtype_pass import MatchWhereSelfDtypePass  # noqa
-from .meandim_to_averagepool_pass import ConvertMeanDimToAveragePoolPass  # noqa
 from .mm_to_bmm_pass import ConvertMmToBmmPass  # noqa
 from .remove_clone_pass import RemoveClonePass  # noqa
 from .replace_scalar_with_tensor_pass import (  # noqa
