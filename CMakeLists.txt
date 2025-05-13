@@ -128,74 +128,6 @@ else()
   set(CMAKE_CXX_FLAGS_RELEASE "-O2 ${CMAKE_CXX_FLAGS_RELEASE}")
 endif()
 
-option(EXECUTORCH_BUILD_ARM_BAREMETAL
-       "Build the Arm Baremetal flow for Cortex-M and Ethos-U" OFF
-)
-
-option(EXECUTORCH_BUILD_KERNELS_CUSTOM "Build the custom kernels" OFF)
-
-option(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT "Build the custom ops lib for AOT"
-       OFF
-)
-
-option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension"
-       OFF
-)
-
-option(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR "Build the Flat Tensor extension"
-       OFF
-)
-
-option(EXECUTORCH_BUILD_EXTENSION_LLM "Build the LLM extension"
-       OFF
-)
-
-option(EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" OFF)
-
-option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension"
-       OFF
-)
-
-option(EXECUTORCH_BUILD_EXTENSION_TENSOR "Build the Tensor extension" OFF)
-
-option(EXECUTORCH_BUILD_EXTENSION_TRAINING "Build the training extension" OFF)
-
-option(EXECUTORCH_BUILD_MPS "Build the MPS backend" OFF)
-
-option(EXECUTORCH_BUILD_NEURON "Build the backends/mediatek directory" OFF)
-
-option(EXECUTORCH_BUILD_OPENVINO "Build the Openvino backend" OFF)
-
-option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
-
-option(EXECUTORCH_BUILD_QNN "Build the Qualcomm backend" OFF)
-
-option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
-
-option(EXECUTORCH_BUILD_KERNELS_QUANTIZED "Build the quantized kernels" OFF)
-
-option(EXECUTORCH_BUILD_DEVTOOLS "Build the ExecuTorch Developer Tools")
-
-option(EXECUTORCH_BUILD_TESTS "Build CMake-based unit tests" OFF)
-
-option(EXECUTORCH_NNLIB_OPT "Build Cadence backend Hifi nnlib kernel" OFF)
-
-option(EXECUTORCH_CADENCE_CPU_RUNNER "Build Cadence backend CPU runner" OFF)
-
-option(EXECUTORCH_BUILD_SIZE_TEST "Build the size test" OFF)
-
-option(EXECUTORCH_BUILD_XNNPACK "Build the XNNPACK backend" OFF)
-
-option(EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" OFF)
-
-option(BUILD_EXECUTORCH_PORTABLE_OPS "Build portable_ops library" ON)
-
-option(EXECUTORCH_USE_DL "Use libdl library" ON)
-
-option(EXECUTORCH_BUILD_CADENCE "Build the Cadence DSP backend" OFF)
-
-option(EXECUTORCH_BUILD_CORTEX_M "Build the Cortex-M backend" OFF)
-
 #
 # pthreadpool: build pthreadpool library. Disable on unsupported platforms
 #
@@ -509,7 +441,7 @@ endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable/cpu/util)
 
-if(BUILD_EXECUTORCH_PORTABLE_OPS)
+if(EXECUTORCH_BUILD_PORTABLE_OPS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
 endif()
 
@@ -522,7 +454,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/configurations)
 #
 # gflags: Commandline flag host library.
 #
-option(EXECUTORCH_BUILD_GFLAGS "Build the gflags library." ON)
+
 if(EXECUTORCH_BUILD_GFLAGS)
   add_subdirectory(third-party/gflags)
 endif()
