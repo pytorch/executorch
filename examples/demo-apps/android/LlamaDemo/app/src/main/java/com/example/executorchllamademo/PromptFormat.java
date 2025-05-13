@@ -99,12 +99,19 @@ public class PromptFormat {
     }
   }
 
-  public static boolean shouldSkipToken(ModelType modelType, String token) {
+  public static String replaceSpecialToken(ModelType modelType, String token) {
     switch (modelType) {
       case QWEN_3:
-        return token.equals("<|im_end|>");
+        switch (token) {
+          case "<|im_end|>":
+            return "";
+          case "<think>":
+            return "Thinking...\n";
+          case "</think>":
+            return "\nDone thinking";
+        }
       default:
-        return false;
+        return token;
     }
   }
 

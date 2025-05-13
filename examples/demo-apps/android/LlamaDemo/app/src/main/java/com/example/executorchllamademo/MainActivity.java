@@ -90,9 +90,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
     if (result.equals(PromptFormat.getStopToken(mCurrentSettingsFields.getModelType()))) {
       return;
     }
-    if (PromptFormat.shouldSkipToken(mCurrentSettingsFields.getModelType(), result)) {
-      return;
-    }
+    result = PromptFormat.replaceSpecialToken(mCurrentSettingsFields.getModelType(), result);
     if (result.equals("\n\n") || result.equals("\n")) {
       if (!mResultMessage.getText().isEmpty()) {
         mResultMessage.appendText(result);
