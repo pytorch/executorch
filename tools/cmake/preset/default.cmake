@@ -54,6 +54,11 @@ define_overridable_option(
   "Build with ET_EVENT_TRACER_ENABLED"
   BOOL OFF
 )
+define_overridable_option(
+  EXECUTORCH_OPTIMIZE_SIZE
+  "Build executorch runtime optimizing for binary size"
+  BOOL OFF
+)
 
 # MARK: - Validations
 # At this point all the options should be configured with their final value.
