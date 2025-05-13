@@ -32,6 +32,7 @@
 #include <fstream>
 #include <limits>
 #include <unordered_set>
+#include "re2/re2.h"
 
 namespace tokenizers {
 
@@ -46,6 +47,20 @@ static Result<std::unique_ptr<IRegex>> _create_regex(
   return create_regex(pattern);
 }
 
+static Result<std::unique_ptr<IRegex>> _build_special_token_regex(
+    const std::vector<std::pair<std::string, std::uint64_t>>& special_encoder) {
+  std::string special_pattern;
+  for (const auto& ele : special_encoder) {
+    if (!special_pattern.empty()) {
+      special_pattern += "|";
+    }
+    special_pattern += re2::RE2::QuoteMeta(ele.first);
+  }
+  if (special_pattern.empty()) {
+    return static_cast<std::unique_ptr<IRegex>>(nullptr);
+  }
+  return _create_regex(special_pattern);
+}
 
 static Result<std::pair<std::string, uint64_t>> _parse(
     const std::string& line) {
@@ -138,7 +153,7 @@ Error Tiktoken::load(const std::string& path) {
 
   _regex = TK_UNWRAP(_create_regex(_pattern));
   special_token_regex_ =
-    TK_UNWRAP(detail::build_special_token_regex(TokenMap(special_token_map)));
+      TK_UNWRAP(_build_special_token_regex(special_token_map));
 
   // initialize vocab_size, bos_tok, eos_tok
   vocab_size_ = token_map_->size() + special_token_map_->size();

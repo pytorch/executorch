@@ -69,11 +69,6 @@ Error HFTokenizer::load(const std::string& path) {
         special_tokens,
         [](const auto& it) -> std::string { return it.at("content"); },
         [](const auto& it) -> std::uint64_t { return it.at("id"); }));
-
-    // Create special token regex to help later with encoding.
-    special_token_regex_ = TK_UNWRAP(detail::build_special_token_regex(special_token_map));
-
-    // Store for future use.
     special_token_map_.emplace(std::move(special_token_map));
   } catch (const json::out_of_range& e) {
     fprintf(stderr, "Could not parse special tokens: %s\n", e.what());
