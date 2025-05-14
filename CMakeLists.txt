@@ -49,6 +49,21 @@ project(executorch)
 
 include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
 
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
+announce_configured_options(CMAKE_CXX_STANDARD)
+
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Debug)
+endif()
+announce_configured_options(CMAKE_BUILD_TYPE)
+
+announce_configured_options(CMAKE_CXX_COMPILER_ID)
+announce_configured_options(CMAKE_TOOLCHAIN_FILE)
+announce_configured_options(BUCK2)
+announce_configured_options(PYTHON_EXECUTABLE)
+
 load_build_preset()
 include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
 
@@ -62,14 +77,6 @@ include(CMakeDependentOption)
 include(ExternalProject)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 17)
-endif()
-
-if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Debug)
-endif()
 
 # Setup RPATH.
 # See https://gitlab.kitware.com/cmake/community/-/wikis/doc/cmake/RPATH-handling
@@ -127,22 +134,6 @@ else()
   # -O2: Moderate opt.
   set(CMAKE_CXX_FLAGS_RELEASE "-O2 ${CMAKE_CXX_FLAGS_RELEASE}")
 endif()
-
-#
-# pthreadpool: build pthreadpool library. Disable on unsupported platforms
-#
-cmake_dependent_option(
-  EXECUTORCH_BUILD_PTHREADPOOL "Build pthreadpool library." ON
-  "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
-)
-
-#
-# cpuinfo: build cpuinfo library. Disable on unsupported platforms
-#
-cmake_dependent_option(
-  EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." ON
-  "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
-)
 
 add_subdirectory(third-party)
 
@@ -475,14 +466,6 @@ install(
 )
 install(FILES tools/cmake/executorch-config.cmake DESTINATION lib/cmake/ExecuTorch)
 
-#
-# executor_runner: Host tool that demonstrates program execution.
-#
-cmake_dependent_option(
-  EXECUTORCH_BUILD_EXECUTOR_RUNNER "Build the executor_runner executable" ON
-  "NOT CMAKE_TOOLCHAIN_IOS" OFF
-)
-
 # Add googletest if any test targets should be built
 if(BUILD_TESTING)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/googletest)
@@ -571,9 +554,7 @@ if(EXECUTORCH_BUILD_EXTENSION_TENSOR)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/tensor)
 endif()
 
-if(EXECUTORCH_BUILD_PTHREADPOOL
-   AND EXECUTORCH_BUILD_CPUINFO
-)
+if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_CPUINFO)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/threadpool)
 endif()
 
@@ -738,6 +719,3 @@ if(EXECUTORCH_BUILD_VULKAN)
 endif()
 
 include(Test.cmake)
-
-# Print all summary
-executorch_print_configuration_summary()
