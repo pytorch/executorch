@@ -264,7 +264,6 @@ for event_block in inspector.event_blocks:
     df = df[df.event_name == "native_call_convolution.out"]
     if len(df) > 0:
         slowest = df.loc[df["p50"].idxmax()]
-        assert slowest
         print(slowest.name)
         print()
         pp.pprint(slowest.stack_traces if slowest.stack_traces else "")
