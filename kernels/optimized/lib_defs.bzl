@@ -200,7 +200,7 @@ def define_libs(is_fbcode=False):
             exported_headers = native.glob([
                 "blas/**/*.h",
             ]),
-            compiler_flags = get_compiler_optimization_flags(),
+            compiler_flags = ["-Wno-pass-failed"] + get_compiler_optimization_flags(),
             header_namespace = "executorch/kernels/optimized",
             visibility = [
                 "//executorch/...",
@@ -235,6 +235,7 @@ def define_libs(is_fbcode=False):
                 "//executorch/extension/threadpool:threadpool",
                 "//executorch/kernels/optimized:libutils",
                 "//executorch/runtime/core/exec_aten:lib",
+                "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
             ],
             **get_apple_framework_deps_kwargs(is_fbcode),
         )
