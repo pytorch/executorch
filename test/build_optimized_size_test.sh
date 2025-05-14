@@ -27,7 +27,7 @@ cmake_install_executorch_lib() {
           -DCMAKE_BUILD_TYPE=MinSizeRel \
           -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
           -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-          -DOPTIMIZE_SIZE=ON \
+          -DEXECUTORCH_OPTIMIZE_SIZE=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           -Bcmake-out .
   cmake --build cmake-out -j9 --target install --config MinSizeRel

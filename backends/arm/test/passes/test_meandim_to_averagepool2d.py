@@ -58,7 +58,7 @@ modules = {
 
 
 @common.parametrize("module", modules)
-def test_meandim_to_avgpool_tosa_BI(module):
+def test_meandim_to_avgpool_tosa_BI(module: torch.nn.Module):
     """
     Tests the MeanDimToAveragePool2dPass which converts mean.dim to average_pool2d
     for the special case where dim is [-1, -2] and keepdim is True.
@@ -66,7 +66,7 @@ def test_meandim_to_avgpool_tosa_BI(module):
     pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),
-        tosa_version="TOSA-0.80+BI",
+        quantize=True,
         ops_before_pass=module.ops_before_pass,
         ops_after_pass=module.ops_after_pass,
         ops_not_after_pass=module.ops_not_after_pass,
