@@ -79,7 +79,6 @@ def test_decompose_vector_norm_tosa_BI(module):
     pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),
-        tosa_version="TOSA-0.80+BI",
         # The op is decomposed in legalization aten -> edge, so we are not able to check ops before
         ops_before_pass=None,
         ops_not_before_pass=None,
