@@ -59,7 +59,7 @@ from executorch.backends.arm._passes import (
     UnsqueezeScalarPlaceholdersPass,
 )
 
-from executorch.backends.arm.tosa_specification import Tosa_0_80, TosaSpecification
+from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
 )
@@ -92,7 +92,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ConvertAnyDefaultDimDimsPass())
         self.add_pass(MatchWhereSelfDtypePass())
-        if isinstance(self.tosa_spec, Tosa_0_80) and self.tosa_spec.is_U55_subset:
+        if self.tosa_spec.is_U55_subset:
             self.add_pass(CastToInt32Pass())
 
         self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
@@ -210,7 +210,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(DecomposeSiluPass())
 
-        if isinstance(self.tosa_spec, Tosa_0_80) and self.tosa_spec.is_U55_subset:
+        if self.tosa_spec.is_U55_subset:
             # Numerically stable softmax uses amax which is not supported on Ethos-U55
             self.add_pass(DecomposeSoftmaxUnstablePass())
         else:
