@@ -13,7 +13,7 @@ from executorch.backends.arm.operator_support.tosa_supported_operators import (
     register_tosa_support_check,
     SupportedTOSAOperatorCheck,
 )
-from executorch.backends.arm.tosa_specification import Tosa_0_80, TosaSpecification
+from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
 
 logger = logging.getLogger(__name__)
@@ -36,6 +36,6 @@ class RightShiftSupported(SupportedTOSAOperatorCheck):
     def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
 
         # TODO MLETORCH-525 Remove warning
-        if isinstance(tosa_spec, Tosa_0_80) and tosa_spec.is_U55_subset:
+        if tosa_spec.is_U55_subset:
             logging.warning(f"{node.target} may introduce one-off errors.")
         return True

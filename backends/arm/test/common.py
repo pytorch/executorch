@@ -259,17 +259,15 @@ def parametrize(
                     raise RuntimeError(
                         "xfail info needs to be str, or tuple[str, type[Exception]]"
                     )
-                pytest_param = pytest.param(
-                    test_parameters,
-                    id=id,
-                    marks=pytest.mark.xfail(
-                        reason=reason, raises=raises, strict=strict
-                    ),
+                # Set up our fail marker
+                marker = (
+                    pytest.mark.xfail(reason=reason, raises=raises, strict=strict),
                 )
             else:
-                pytest_param = pytest.param(test_parameters, id=id)
-            pytest_testsuite.append(pytest_param)
+                marker = ()
 
+            pytest_param = pytest.param(test_parameters, id=id, marks=marker)
+            pytest_testsuite.append(pytest_param)
         return pytest.mark.parametrize(arg_name, pytest_testsuite)(func)
 
     return decorator_func

@@ -58,6 +58,9 @@ def process_test_suites(
 def generate_cpp(
     native_functions_yaml_path: str, tags_path: str, output_dir: str
 ) -> None:
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
     output_file = os.path.join(output_dir, "op_tests.cpp")
     cpp_generator = VkCorrectnessTestFileGen(output_file)
 

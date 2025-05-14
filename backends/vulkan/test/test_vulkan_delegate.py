@@ -15,10 +15,19 @@ import torch
 from executorch.backends.transforms.convert_dtype_pass import I64toI32
 
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
+
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
 
-from executorch.exir import EdgeCompileConfig
-from torch.export import Dim, export, ExportedProgram
+from executorch.exir import (
+    EdgeCompileConfig,
+    EdgeProgramManager,
+    ExecutorchProgramManager,
+)
+
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+from torch.ao.quantization.quantizer import Quantizer
+from torch.export import Dim, export, export_for_training, ExportedProgram
 
 ctypes.CDLL("libvulkan.so.1")
 
@@ -30,11 +39,66 @@ from executorch.extension.pybindings.portable_lib import (  # @manual
 from executorch.extension.pytree import tree_flatten
 
 
-class TestBackends(unittest.TestCase):
-    _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
+def lower_module(
+    model: torch.nn.Module, sample_inputs: Tuple[torch.Tensor], dynamic_shapes=None
+) -> EdgeProgramManager:
+    compile_options = {}
+    edge_compile_config = EdgeCompileConfig(
         _skip_dim_order=False,  # TODO(T182928844): Delegate dim order op to backend.
     )
 
+    program: ExportedProgram = export(
+        model, sample_inputs, dynamic_shapes=dynamic_shapes, strict=True
+    )
+
+    edge_program = to_edge_transform_and_lower(
+        program,
+        compile_config=edge_compile_config,
+        transform_passes=[
+            I64toI32(edge_compile_config._skip_dim_order),
+        ],
+        partitioner=[VulkanPartitioner(compile_options)],
+    )
+
+    return edge_program
+
+
+def quantize_and_lower_module(
+    model: torch.nn.Module,
+    sample_inputs: Tuple[torch.Tensor],
+    quantizer: Quantizer,
+    dynamic_shapes=None,
+) -> EdgeProgramManager:
+    compile_options = {}
+    edge_compile_config = EdgeCompileConfig(
+        _skip_dim_order=False,  # TODO(T182928844): Delegate dim order op to backend.
+    )
+
+    program = export_for_training(
+        model, sample_inputs, dynamic_shapes=dynamic_shapes, strict=True
+    ).module()
+
+    program = prepare_pt2e(program, quantizer)  # pyre-ignore
+    # Calibrate
+    program(*sample_inputs)
+
+    program = convert_pt2e(program)
+
+    program = export(program, sample_inputs, dynamic_shapes=dynamic_shapes)
+
+    edge_program = to_edge_transform_and_lower(
+        program,
+        compile_config=edge_compile_config,
+        transform_passes=[
+            I64toI32(edge_compile_config._skip_dim_order),
+        ],
+        partitioner=[VulkanPartitioner(compile_options)],
+    )
+
+    return edge_program
+
+
+class TestVulkanBackend(unittest.TestCase):
     def assert_outputs_equal(
         self,
         model_output,
@@ -88,6 +152,59 @@ class TestBackends(unittest.TestCase):
                 )
             )
 
+    def check_no_delegation(self, et_program: ExecutorchProgramManager):
+        self.assertEqual(
+            len(et_program.executorch_program.execution_plan[0].delegates),
+            0,
+        )
+        return
+
+    def check_vk_delegation(self, et_program: ExecutorchProgramManager):
+        self.assertEqual(
+            et_program.executorch_program.execution_plan[0].delegates[0].id,
+            VulkanBackend.__name__,
+        )
+
+    def run_delegated_model_and_check_output(
+        self,
+        et_program: ExecutorchProgramManager,
+        model: torch.nn.Module,
+        sample_inputs: Tuple[torch.Tensor],
+        atol=1e-03,
+        rtol=1e-01,
+        test_inputs=None,
+        first_output_only=False,
+    ):
+        executorch_module = _load_for_executorch_from_buffer(et_program.buffer)
+        inputs_flattened, _ = tree_flatten(sample_inputs)
+
+        model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
+        ref_output = model(*sample_inputs)
+
+        self.assert_outputs_equal(
+            model_output,
+            ref_output,
+            atol=atol,
+            rtol=rtol,
+            first_output_only=first_output_only,
+        )
+
+        if test_inputs is not None:
+            for test_input in test_inputs:
+                test_inputs_flattened, _ = tree_flatten(test_input)
+                model_output = executorch_module.run_method(
+                    "forward", tuple(test_inputs_flattened)
+                )
+                ref_output = model(*test_input)
+
+                self.assert_outputs_equal(
+                    model_output,
+                    ref_output,
+                    atol=atol,
+                    rtol=rtol,
+                    first_output_only=first_output_only,
+                )
+
     def lower_module_and_test_output(
         self,
         model: torch.nn.Module,
@@ -105,80 +222,29 @@ class TestBackends(unittest.TestCase):
         outputs with the outputs of the eager module.
         """
 
-        def run_test():
-            compile_options = {}
+        # Validate that the model can execute in eager mode
+        model.eval()
+        model(*sample_inputs)
 
-            # At least model should run in eager mode.
-            model.eval()
-            model(*sample_inputs)
+        edge_program = lower_module(model, sample_inputs, dynamic_shapes=dynamic_shapes)
 
-            program: ExportedProgram = export(
-                model, sample_inputs, dynamic_shapes=dynamic_shapes, strict=True
-            )
+        et_program = edge_program.to_executorch()
 
-            edge_program = to_edge_transform_and_lower(
-                program,
-                compile_config=self._edge_compile_config,
-                transform_passes=[
-                    I64toI32(self._edge_compile_config._skip_dim_order),
-                ],
-                partitioner=[VulkanPartitioner(compile_options)],
-            )
-            executorch_program = edge_program.to_executorch()
+        if expect_no_delegates:
+            self.check_no_delegation(et_program)
+            return
 
-            if expect_no_delegates:
-                self.assertEqual(
-                    len(
-                        executorch_program.executorch_program.execution_plan[
-                            0
-                        ].delegates
-                    ),
-                    0,
-                )
-                return
-            else:
-                self.assertEqual(
-                    executorch_program.executorch_program.execution_plan[0]
-                    .delegates[0]
-                    .id,
-                    VulkanBackend.__name__,
-                )
+        self.check_vk_delegation(et_program)
 
-            executorch_module = _load_for_executorch_from_buffer(
-                executorch_program.buffer
-            )
-            inputs_flattened, _ = tree_flatten(sample_inputs)
-
-            model_output = executorch_module.run_method(
-                "forward", tuple(inputs_flattened)
-            )
-            ref_output = model(*sample_inputs)
-
-            self.assert_outputs_equal(
-                model_output,
-                ref_output,
-                atol=atol,
-                rtol=rtol,
-                first_output_only=first_output_only,
-            )
-
-            if test_inputs is not None:
-                for test_input in test_inputs:
-                    test_inputs_flattened, _ = tree_flatten(test_input)
-                    model_output = executorch_module.run_method(
-                        "forward", tuple(test_inputs_flattened)
-                    )
-                    ref_output = model(*test_input)
-
-                    self.assert_outputs_equal(
-                        model_output,
-                        ref_output,
-                        atol=atol,
-                        rtol=rtol,
-                        first_output_only=first_output_only,
-                    )
-
-        run_test()
+        self.run_delegated_model_and_check_output(
+            et_program,
+            model,
+            sample_inputs,
+            atol,
+            rtol,
+            test_inputs=test_inputs,
+            first_output_only=first_output_only,
+        )
 
     def test_vulkan_backend_add(self):
         # This test is the simplest test by manually lowering some submodules, we can use paritioner
@@ -942,6 +1008,7 @@ class TestBackends(unittest.TestCase):
             sample_inputs,
         )
 
+    @unittest.skip("layer norm compute shader not working with swiftshader")
     def test_vulkan_backend_native_layer_norm(self):
         class NativeLayerNormModule(torch.nn.Module):
             def __init__(self):

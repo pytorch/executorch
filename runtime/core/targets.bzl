@@ -41,6 +41,7 @@ def define_common_targets():
             "defines.h",
             "error.h",
             "freeable_buffer.h",
+            "function_ref.h",
             "result.h",
             "span.h",
         ],

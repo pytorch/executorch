@@ -66,6 +66,7 @@ set(lib_list
     etdump
     bundled_program
     extension_data_loader
+    extension_flat_tensor
     ${FLATCCRT_LIB}
     coreml_util
     coreml_inmemoryfs

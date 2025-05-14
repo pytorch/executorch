@@ -171,6 +171,101 @@
 using ssize_t = ptrdiff_t;
 #endif
 
+/**
+ * Platform-specific aligned memory allocation and deallocation.
+ *
+ * Usage:
+ *   void* ptr = ET_ALIGNED_ALLOC(alignment, size);
+ *   // use ptr...
+ *   ET_ALIGNED_FREE(ptr);
+ *
+ * Note: alignment must be a power of 2 and size must be an integral multiple of
+ * alignment.
+ */
+#if defined(_MSC_VER)
+#include <malloc.h>
+#define ET_ALIGNED_ALLOC(alignment, size) \
+  _aligned_malloc(((size + alignment - 1) & ~(alignment - 1)), (alignment))
+#define ET_ALIGNED_FREE(ptr) _aligned_free(ptr)
+#elif defined(__APPLE__)
+#include <stdlib.h> // For posix_memalign and free
+inline void* et_apple_aligned_alloc(size_t alignment, size_t size) {
+  void* ptr = nullptr;
+  // The address of the allocated memory must be a multiple of sizeof(void*).
+  if (alignment < sizeof(void*)) {
+    alignment = sizeof(void*);
+  }
+  if (posix_memalign(
+          &ptr, alignment, (size + alignment - 1) & ~(alignment - 1)) != 0) {
+    return nullptr;
+  }
+  return ptr;
+}
+#define ET_ALIGNED_ALLOC(alignment, size) \
+  et_apple_aligned_alloc((alignment), (size))
+#define ET_ALIGNED_FREE(ptr) free(ptr)
+#elif __has_builtin(__builtin_aligned_alloc) || defined(_ISOC11_SOURCE)
+// Linux and posix systems that support aligned_alloc and are >= C++17.
+#include <cstdlib>
+#define ET_ALIGNED_ALLOC(alignment, size) \
+  ::aligned_alloc(alignment, (size + alignment - 1) & ~(alignment - 1))
+#define ET_ALIGNED_FREE(ptr) free(ptr)
+#else
+// If the platform doesn't support aligned_alloc, fallback to malloc.
+#include <stdint.h>
+#include <cstdlib>
+inline void* et_aligned_malloc(size_t alignment, size_t size) {
+  // Place to store the offset to the original pointer.
+  size_t offset_size = sizeof(uint16_t);
+
+  // Malloc extra space for offset + alignment.
+  size_t alloc_size = size + offset_size + alignment - 1;
+  void* ptr = std::malloc(alloc_size);
+
+  if (ptr == nullptr) {
+    // Malloc failed.
+    return nullptr;
+  }
+
+  uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
+  // Align the address past addr + offset_size bytes.
+  // This provides space to store the offset before the aligned pointer.
+  addr = addr + offset_size;
+  uintptr_t aligned_ptr = (addr + alignment - 1) & ~(alignment - 1);
+
+  // Check that alignment didn't overflow the buffer.
+  if (reinterpret_cast<uintptr_t>(aligned_ptr) + size >
+      reinterpret_cast<uintptr_t>(ptr) + alloc_size) {
+    std::free(ptr);
+    return nullptr;
+  }
+
+  // Store the offset to the original pointer.
+  // Used to free the original allocated buffer.
+  *(reinterpret_cast<uint16_t*>(aligned_ptr) - 1) =
+      (uint16_t)(reinterpret_cast<uintptr_t>(aligned_ptr) -
+                 reinterpret_cast<uintptr_t>(ptr));
+
+  return reinterpret_cast<uint16_t*>(aligned_ptr);
+}
+
+inline void et_aligned_free(void* ptr) {
+  if (ptr == nullptr) {
+    return;
+  }
+
+  // Get the original pointer using the offset.
+  uint16_t* original_ptr = reinterpret_cast<uint16_t*>(
+      reinterpret_cast<uintptr_t>(ptr) -
+      *(reinterpret_cast<uint16_t*>(ptr) - 1));
+  std::free(original_ptr);
+}
+
+#define ET_ALIGNED_ALLOC(alignment, size) et_aligned_malloc((alignment), (size))
+#define ET_ALIGNED_FREE(ptr) et_aligned_free(ptr)
+
+#endif
+
 // DEPRECATED: Use the non-underscore-prefixed versions instead.
 // TODO(T199005537): Remove these once all users have stopped using them.
 #define __ET_DEPRECATED ET_DEPRECATED

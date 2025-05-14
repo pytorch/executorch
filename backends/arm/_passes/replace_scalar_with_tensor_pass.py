@@ -27,7 +27,9 @@ _common_ops: Dict[EdgeOpOverload, EdgeOpOverload] = {
     exir_ops.edge.aten.__lshift__.Scalar: exir_ops.edge.aten.bitwise_left_shift.Tensor,
     exir_ops.edge.aten.eq.Scalar: exir_ops.edge.aten.eq.Tensor,
     exir_ops.edge.aten.gt.Scalar: exir_ops.edge.aten.gt.Tensor,
+    exir_ops.edge.aten.ge.Scalar: exir_ops.edge.aten.ge.Tensor,
     exir_ops.edge.aten.lt.Scalar: exir_ops.edge.aten.lt.Tensor,
+    exir_ops.edge.aten.ne.Scalar: exir_ops.edge.aten.ne.Tensor,
     torch.ops.aten.add.Scalar: torch.ops.aten.add.Tensor,
     torch.ops.aten.sub.Scalar: torch.ops.aten.sub.Tensor,
     torch.ops.aten.mul.Scalar: torch.ops.aten.mul.Tensor,
@@ -36,7 +38,9 @@ _common_ops: Dict[EdgeOpOverload, EdgeOpOverload] = {
     torch.ops.aten.__lshift__.Scalar: torch.ops.aten.bitwise_left_shift.Tensor,
     torch.ops.aten.eq.Scalar: torch.ops.aten.eq.Tensor,
     torch.ops.aten.gt.Scalar: torch.ops.aten.gt.Tensor,
+    torch.ops.aten.ge.Scalar: torch.ops.aten.ge.Tensor,
     torch.ops.aten.lt.Scalar: torch.ops.aten.lt.Tensor,
+    torch.ops.aten.ne.Scalar: torch.ops.aten.ne.Tensor,
 }
 
 

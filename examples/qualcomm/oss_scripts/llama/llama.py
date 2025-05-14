@@ -390,6 +390,14 @@ class SingleLlama:
             fx_graph_module = torch.export.export(
                 self.llama_graph_module, self.inputs, strict=True
             ).module()
+
+            if QuantDtype == QuantDtype.use_16a4w_block:
+                conv_nodes = [
+                    n for n in fx_graph_module.graph.nodes if "conv" in n.name
+                ]
+                block_size_map = {n.name: (1, 64, 1, 1) for n in conv_nodes}
+                quantizer.set_block_size_map(block_size_map)
+
             fx_graph_module = prepare_pt2e(fx_graph_module, quantizer)
 
         logging.info("Quantizing the model...")
@@ -574,13 +582,14 @@ def compile(args, pte_filename, tokenizer):
         fixed_point_type["kv_type"] = torch.uint8
         if args.ptq == "8a8w":
             fixed_point_type["io_type"] = torch.uint8
-        elif args.ptq == "16a4w":
+        elif args.ptq in ("16a4w", "16a4w_block"):
             fixed_point_type["io_type"] = torch.uint16
         else:
             assert args.ptq in [
                 "8a8w",
                 "16a4w",
-            ], f"No support for quant type {args.ptq}. Support 8a8w and 16a4w."
+                "16a4w_block",
+            ], f"No support for quant type {args.ptq}. Support 8a8w, 16a4w and 16a4w_block."
         quant_dtype = getattr(QuantDtype, f"use_{args.ptq}")
 
     assert args.tokenizer_model is not None, "Need tokenizer model for calibration"
@@ -954,7 +963,7 @@ def _build_parser():
     parser.add_argument(
         "-P",
         "--ptq",
-        help="If specified, will do PTQ quantization. default is 16bits activation and 4bits weight. Support 8a8w and 16a4w.",
+        help="If specified, will do PTQ quantization. default is 16bits activation and 4bits weight. Support 8a8w, 16a4w and 16a4w_block.",
         type=str,
     )
 

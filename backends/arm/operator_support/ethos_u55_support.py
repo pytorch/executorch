@@ -134,11 +134,14 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.eq.Tensor,
         exir_ops.edge.aten.eq.Scalar,
         exir_ops.edge.aten.ge.Tensor,
+        exir_ops.edge.aten.ge.Scalar,
         exir_ops.edge.aten.gt.Tensor,
         exir_ops.edge.aten.gt.Scalar,
         exir_ops.edge.aten.le.Tensor,
         exir_ops.edge.aten.lt.Tensor,
         exir_ops.edge.aten.lt.Scalar,
+        exir_ops.edge.aten.ne.Tensor,
+        exir_ops.edge.aten.ne.Scalar,
         exir_ops.edge.aten.flip.default,  # REVERSE
         exir_ops.edge.aten.grid_sampler_2d,  # GATHER
         exir_ops.edge.aten.scatter.src,

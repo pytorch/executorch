@@ -45,11 +45,11 @@ executorch
 │   └── <a href="devtools/visualization">visualization</a> - Visualization tools for representing model structure and performance metrics.
 ├── <a href="docs">docs</a> - Static docs tooling and documentation source files.
 ├── <a href="examples">examples</a> - Examples of various user flows, such as model export, delegates, and runtime execution.
-├── <a href="exir">exir</a> - Ahead-of-time library: model capture and lowering APIs. EXport Intermediate Representation (EXIR) is a format for representing the result of <a href="https://pytorch.org/docs/main/export.ir_spec.html">torch.export</a>. This directory contains utilities and passes for lowering the EXIR graphs into different <a href="/docs/source/ir-exir.md">dialects</a> and eventually suitable to run on target hardware.
+├── <a href="exir">exir</a> - Ahead-of-time library: model capture and lowering APIs. EXport Intermediate Representation (EXIR) is a format for representing the result of <a href="https://pytorch.org/docs/stable/export.html">torch.export</a>. This directory contains utilities and passes for lowering the EXIR graphs into different <a href="docs/source/ir-exir.md">dialects</a> and eventually suitable to run on target hardware.
 │   ├── <a href="exir/_serialize">_serialize</a> - Serialize final export artifact.
 │   ├── <a href="exir/backend">backend</a> - Backend delegate ahead of time APIs.
 │   ├── <a href="exir/capture">capture</a> - Program capture.
-│   ├── <a href="exir/dialects">dialects</a> - Op sets for various dialects in the export process. Please refer to the <a href="/docs/source/ir-exir.md">EXIR spec</a> and the <a href="/docs/source/compiler-backend-dialect.md">backend dialect</a> doc for more details.
+│   ├── <a href="exir/dialects">dialects</a> - Op sets for various dialects in the export process. Please refer to the <a href="docs/source/ir-exir.md">EXIR spec</a> and the <a href="docs/source/compiler-backend-dialect.md">backend dialect</a> doc for more details.
 │   ├── <a href="exir/emit">emit</a> - Conversion from ExportedProgram to ExecuTorch execution instructions.
 │   ├── <a href="exir/operator">operator</a> - Operator node manipulation utilities.
 │   ├── <a href="exir/passes">passes</a> - Built-in compiler passes.
@@ -68,7 +68,7 @@ executorch
 │   ├── <a href="extension/memory_allocator">memory_allocator</a> - 1st party memory allocator implementations.
 │   ├── <a href="extension/module">module</a> - A simplified C++ wrapper for the runtime. An abstraction that deserializes and executes an ExecuTorch artifact (.pte file). Refer to the <a href="docs/source/extension-module.md">module documentation</a> for more information.
 │   ├── <a href="extension/parallel">parallel</a> - C++ threadpool integration.
-│   ├── <a href="extension/pybindings">pybindings</a> - Python API for executorch runtime. This is powering up the <a href="docs/source/runtime-python-api-reference.md">runtime Python API</a> for ExecuTorch.
+│   ├── <a href="extension/pybindings">pybindings</a> - Python API for executorch runtime. This is powering up the <a href="docs/source/runtime-python-api-reference.rst">runtime Python API</a> for ExecuTorch.
 │   ├── <a href="extension/pytree">pytree</a> - C++ and Python flattening and unflattening lib for pytrees.
 │   ├── <a href="extension/runner_util">runner_util</a> - Helpers for writing C++ PTE-execution tools.
 │   ├── <a href="extension/tensor">tensor</a> - Tensor maker and <code>TensorPtr</code>, details in <a href="docs/source/extension-tensor.md">this documentation</a>. For how to use <code>TensorPtr</code> and <code>Module</code>, please refer to the <a href="docs/source/using-executorch-cpp.md">"Using ExecuTorch with C++"</a> doc.
@@ -114,7 +114,7 @@ If you're completely new to open-source projects, GitHub, or ExecuTorch, please 
 1. If you've changed APIs or added a new tool or feature, [update the
    documentation](#updating-documentation).
 1. If you added an experimental API or deprecated an existing API, follow the
-   [API Life Cycle and Deprecation Policy](/docs/source/api-life-cycle.md).
+   [API Life Cycle and Deprecation Policy](docs/source/api-life-cycle.md).
 1. Make sure your code follows the [style guides](#coding-style) and passes the
    [lint checks](#lintrunner).
 1. If you haven't already, complete the [Contributor License Agreement ("CLA")](#contributor-license-agreement-cla).

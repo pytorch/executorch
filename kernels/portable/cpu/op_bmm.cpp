@@ -7,7 +7,6 @@
  */
 
 #include <executorch/kernels/portable/cpu/util/matmul_ops_util.h>
-#include <executorch/kernels/portable/cpu/vec_ops.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -37,26 +36,19 @@ Tensor& bmm_out(
       InvalidArgument,
       out);
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Half, in.scalar_type(), ctx, "bmm.out", CTYPE, [&]() {
-        const CTYPE* in_data = in.const_data_ptr<CTYPE>();
-        const CTYPE* mat2_data = mat2.const_data_ptr<CTYPE>();
-        CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
+  constexpr auto name = "bmm.out";
 
-        int64_t batch_size = in.size(0);
-        int64_t m = in.size(1);
-        int64_t n = in.size(2);
-        int64_t p = mat2.size(2);
+  auto in_type = in.scalar_type();
 
-        for (int i = 0; i < batch_size; ++i) {
-          const CTYPE* in_data_offset = in_data + i * m * n;
-          const CTYPE* mat2_data_offset = mat2_data + i * n * p;
-          CTYPE* out_data_offset = out_data + i * m * p;
-
-          vec_matmul<CTYPE>(
-              out_data_offset, in_data_offset, mat2_data_offset, m, n, p);
-        }
-      });
+  if (executorch::runtime::isComplexType(in_type)) {
+    ET_SWITCH_COMPLEXH_TYPES(in_type, ctx, name, CTYPE, [&]() {
+      internal::bmm_out_impl<CTYPE>(in, mat2, out);
+    });
+  } else {
+    ET_SWITCH_REALH_TYPES(in_type, ctx, name, CTYPE, [&]() {
+      internal::bmm_out_impl<CTYPE>(in, mat2, out);
+    });
+  }
 
   return out;
 }

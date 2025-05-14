@@ -29,12 +29,8 @@ ${layout_declare_tensor(3, "r", "t_bias", DTYPE, "texture2d")}
 
 layout(push_constant) uniform restrict Block {
   ivec4 out_limits;
-  ivec4 in_sizes;
-  ivec2 kernel_size;
   ivec2 stride;
   ivec2 padding;
-  ivec2 dilation;
-  ivec2 overlay_region;
   int in_group_size;
   int dummy_padding;
   float out_min;

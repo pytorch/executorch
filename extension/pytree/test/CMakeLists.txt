@@ -19,6 +19,6 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
-set(_test_srcs function_ref_test.cpp test_pytree.cpp)
+set(_test_srcs test_pytree.cpp)
 
 et_cxx_test(extension_pytree_test SOURCES ${_test_srcs} EXTRA_LIBS)

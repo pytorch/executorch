@@ -7,7 +7,7 @@ import itertools
 import unittest
 
 import torch
-from executorch.backends.arm.quantizer.arm_quantizer_utils import is_annotated
+from executorch.backends.arm.quantizer import is_annotated
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions

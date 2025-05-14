@@ -464,6 +464,16 @@ def make_test(  # noqa: C901
 
                 tester.assertEqual(str(expected), str(executorch_output))
 
+        def test_unsupported_input_type(tester):
+            exported_program, inputs = create_program(ModuleAdd())
+            executorch_module = load_fn(exported_program.buffer)
+
+            # Pass an unsupported input type to the module.
+            inputs = ([*inputs],)
+
+            # This should raise a Python error, not hit a fatal assert in the C++ code.
+            tester.assertRaises(RuntimeError, executorch_module, inputs)
+
         ######### RUN TEST CASES #########
         test_e2e(tester)
         test_multiple_entry(tester)
@@ -479,5 +489,6 @@ def make_test(  # noqa: C901
         test_method_meta(tester)
         test_bad_name(tester)
         test_verification_config(tester)
+        test_unsupported_input_type(tester)
 
     return wrapper

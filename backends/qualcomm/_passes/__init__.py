@@ -9,6 +9,7 @@ from .annotate_stack import AnnotateStack
 from .annotate_unbind import AnnotateUnbind
 from .convert_bmm_to_matmul import ConvertBmmToMatmul
 from .convert_conv1d_to_conv2d import ConvertConv1dToConv2d
+from .convert_square_to_pow import ConvertSquareToPow
 from .convert_upsample_bicubic2d import ConvertUpsampleBicubicWithBilinear
 from .decompose_any import DecomposeAny
 from .decompose_cdist import DecomposeCDist
@@ -42,6 +43,7 @@ __all__ = [
     AnnotateUnbind,
     ConvertBmmToMatmul,
     ConvertConv1dToConv2d,
+    ConvertSquareToPow,
     ConvertUpsampleBicubicWithBilinear,
     DecomposeAny,
     DecomposeCDist,

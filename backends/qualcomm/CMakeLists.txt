@@ -43,7 +43,7 @@ set(qcir_schema_include_dir ${CMAKE_CURRENT_LIST_DIR}/aot/ir)
 set(qcir_schema_output ${qcir_schema_include_dir}/qcir_generated.h)
 add_custom_command(
   OUTPUT qcir_schema_output
-  COMMAND ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
+  COMMAND flatc --cpp --cpp-std c++11 --scoped-enums -o
           ${qcir_schema_include_dir} ${qcir_schema_include_dir}/qcir.fbs
   DEPENDS flatc
   COMMENT "Generating qualcomm ir schema headers"
@@ -70,6 +70,7 @@ endif()
 
 include_directories(
   BEFORE ${_common_include_directories} ${QNN_SDK_ROOT}/include/QNN
+  ${QNN_SDK_ROOT}/share/QNN/converter/jni
   ${EXECUTORCH_SOURCE_DIR}/third-party/flatbuffers/include
   ${EXECUTORCH_SOURCE_DIR}/runtime/core/portable_type/c10
 )
@@ -93,7 +94,7 @@ endforeach()
 add_custom_command(
   OUTPUT ${_qnn_schema__outputs}
   COMMAND
-    ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
+    flatc --cpp --cpp-std c++11 --scoped-enums -o
     "${_qnn_schema__include_dir}/executorch/backends/qualcomm"
     ${_qnn_schema__srcs}
   WORKING_DIRECTORY ${EXECUTORCH_SOURCE_DIR}
@@ -117,6 +118,7 @@ add_library(qnn_backend STATIC)
 add_library(qnn_backend_cache STATIC)
 add_library(qnn_context STATIC)
 add_library(qnn_custom_protocol STATIC)
+add_library(qnn_dlc_manager STATIC)
 add_library(qnn_device STATIC)
 add_library(qnn_executorch_backend SHARED)
 add_library(qnn_executorch_header INTERFACE)
@@ -174,8 +176,11 @@ target_link_libraries(
   qnn_factory PRIVATE qnn_schema qnn_backend qnn_device qnn_context qnn_graph
           qnn_mem_manager qnn_custom_protocol
 )
+
+target_link_libraries(qnn_dlc_manager PRIVATE qnn_factory qnn_backend qnn_device qnn_context qnn_graph qnn_mem_manager)
+
 target_link_libraries(
-  qnn_manager PRIVATE qnn_factory wrappers qnn_schema utils shared_buffer
+  qnn_manager PRIVATE qnn_factory wrappers qnn_schema utils shared_buffer qnn_dlc_manager
 )
 target_link_libraries(
   qnn_executorch_backend PRIVATE qnn_executorch_header qnn_schema qnn_manager

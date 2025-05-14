@@ -8,90 +8,70 @@
 
 package org.pytorch.minibench;
 
-import android.os.Handler;
-import android.os.HandlerThread;
-import android.os.Looper;
-import android.os.Message;
-import org.pytorch.executorch.extension.llm.LlmCallback;
-import org.pytorch.executorch.extension.llm.LlmModule;
+import android.os.Debug;
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import org.pytorch.executorch.Module;
 
-/** A helper class to handle all model running logic within this class. */
-public class ModelRunner implements LlmCallback {
-  LlmModule mModule = null;
-
-  String mModelFilePath = "";
-  String mTokenizerFilePath = "";
-
-  ModelRunnerCallback mCallback = null;
-
-  HandlerThread mHandlerThread = null;
-  Handler mHandler = null;
-
+public class ModelRunner {
   /**
-   * ] Helper class to separate between UI logic and model runner logic. Automatically handle
-   * generate() request on worker thread.
-   *
-   * @param modelFilePath
-   * @param tokenizerFilePath
-   * @param callback
+   * @return list of #BenchmarkMetric
    */
-  ModelRunner(
-      String modelFilePath,
-      String tokenizerFilePath,
-      float temperature,
-      ModelRunnerCallback callback) {
-    mModelFilePath = modelFilePath;
-    mTokenizerFilePath = tokenizerFilePath;
-    mCallback = callback;
+  public void runBenchmark(
+      File model, int numWarmupIter, int numIter, List<BenchmarkMetric> results) {
+    long pssIdle = Debug.getPss();
 
-    mModule = new LlmModule(mModelFilePath, mTokenizerFilePath, 0.8f);
-    mHandlerThread = new HandlerThread("ModelRunner");
-    mHandlerThread.start();
-    mHandler = new ModelRunnerHandler(mHandlerThread.getLooper(), this);
+    List<Double> latency = new ArrayList<>();
 
-    mHandler.sendEmptyMessage(ModelRunnerHandler.MESSAGE_LOAD_MODEL);
-  }
+    long loadStart = System.nanoTime();
+    Module module = Module.load(model.getPath());
+    int errorCode = module.loadMethod("forward");
+    long loadEnd = System.nanoTime();
 
-  int generate(String prompt) {
-    Message msg = Message.obtain(mHandler, ModelRunnerHandler.MESSAGE_GENERATE, prompt);
-    msg.sendToTarget();
-    return 0;
-  }
-
-  void stop() {
-    mModule.stop();
-  }
-
-  @Override
-  public void onResult(String result) {
-    mCallback.onTokenGenerated(result);
-  }
-
-  @Override
-  public void onStats(float tps) {
-    mCallback.onStats("tokens/second: " + tps);
-  }
-}
-
-class ModelRunnerHandler extends Handler {
-  public static int MESSAGE_LOAD_MODEL = 1;
-  public static int MESSAGE_GENERATE = 2;
-
-  private final ModelRunner mModelRunner;
-
-  public ModelRunnerHandler(Looper looper, ModelRunner modelRunner) {
-    super(looper);
-    mModelRunner = modelRunner;
-  }
-
-  @Override
-  public void handleMessage(android.os.Message msg) {
-    if (msg.what == MESSAGE_LOAD_MODEL) {
-      int status = mModelRunner.mModule.load();
-      mModelRunner.mCallback.onModelLoaded(status);
-    } else if (msg.what == MESSAGE_GENERATE) {
-      mModelRunner.mModule.generate((String) msg.obj, mModelRunner);
-      mModelRunner.mCallback.onGenerationStopped();
+    for (int i = 0; i < numWarmupIter; i++) {
+      module.forward();
     }
+
+    for (int i = 0; i < numIter; i++) {
+      long start = System.nanoTime();
+      module.forward();
+      double forwardMs = (System.nanoTime() - start) * 1e-6;
+      latency.add(forwardMs);
+    }
+
+    final BenchmarkMetric.BenchmarkModel benchmarkModel =
+        BenchmarkMetric.extractBackendAndQuantization(model.getName().replace(".pte", ""));
+    // The list of metrics we have atm includes:
+    // Avg inference latency after N iterations
+    // Currently the result has large variance from outliers, so only use
+    // 80% samples in the middle (trimmean 0.2)
+    Collections.sort(latency);
+    int resultSize = latency.size();
+    List<Double> usedLatencyResults = latency.subList(resultSize / 10, resultSize * 9 / 10);
+
+    results.add(
+        new BenchmarkMetric(
+            benchmarkModel,
+            "avg_inference_latency(ms)",
+            latency.stream().mapToDouble(l -> l).average().orElse(0.0f),
+            0.0f));
+    results.add(
+        new BenchmarkMetric(
+            benchmarkModel,
+            "trimmean_inference_latency(ms)",
+            usedLatencyResults.stream().mapToDouble(l -> l).average().orElse(0.0f),
+            0.0f));
+    // Model load time
+    results.add(
+        new BenchmarkMetric(
+            benchmarkModel, "model_load_time(ms)", (loadEnd - loadStart) * 1e-6, 0.0f));
+    // Load status
+    results.add(new BenchmarkMetric(benchmarkModel, "load_status", errorCode, 0));
+    // RAM PSS usage
+    results.add(
+        new BenchmarkMetric(
+            benchmarkModel, "ram_pss_usage(mb)", (Debug.getPss() - pssIdle) / 1024, 0));
   }
 }

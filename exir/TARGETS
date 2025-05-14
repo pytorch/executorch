@@ -15,6 +15,7 @@ python_library(
         ":types",
         "//caffe2:torch",
         "//executorch/exir/operator:convert",
+        "//executorch/exir/operator:util",
         "//executorch/extension/pytree:pylib",
     ],
 )

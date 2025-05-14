@@ -127,7 +127,7 @@ class OpDynamicQuantizePerToken(NodeVisitor):
 
 @register_node_visitor
 class OpQuantizeAffine(NodeVisitor):
-    target = "quant.quantize_affine.default"
+    target = "torchao.quantize_affine.default"
 
     def define_node(
         self,

@@ -25,8 +25,8 @@ target_include_directories(
 
 target_include_directories(extension_training PUBLIC ${EXECUTORCH_ROOT}/..)
 target_compile_options(extension_training PUBLIC ${_common_compile_options})
-target_link_libraries(extension_training executorch_core
-    extension_data_loader extension_module_static extension_tensor extension_flat_tensor)
+target_link_libraries(extension_training executorch_core kernels_util_all_deps
+    extension_data_loader extension_module_static extension_tensor extension_flat_tensor )
 
 
 list(TRANSFORM _train_xor__srcs PREPEND "${EXECUTORCH_ROOT}/")

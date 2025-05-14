@@ -10,10 +10,13 @@ import torch
 from executorch.backends.xnnpack._passes.channels_last_tagged_reshape_pass import (
     ChannelsLastTaggedReshapePass,
 )
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+)
 from executorch.backends.xnnpack.test.test_xnnpack_utils_classes import (
     OpSequencesAddConv2d,
 )
-from executorch.backends.xnnpack.test.tester import RunPasses, Tester
+from executorch.backends.xnnpack.test.tester import Quantize, RunPasses, Tester
 
 
 class TestChannelsLastTaggedReshapePass(unittest.TestCase):
@@ -35,6 +38,10 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
     dequant_name = "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default"
     conv_name = "executorch_exir_dialects_edge__ops_aten_convolution_default"
     relu_name = "executorch_exir_dialects_edge__ops_aten_relu_default"
+    choose_qparams_name = (
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_choose_qparams_tensor"
+    )
+    dynamic_quant_name = "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_tensor"
 
     def test_fp32_channels_last_tagged_reshape_pass(self):
         for module, num_reshape in self.modules.items():
@@ -176,6 +183,40 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
                 {
                     self.to_copy_name: 4,
                 }
+            )
+            .run_method_and_compare_outputs()
+        )
+
+    class Conv2dDynamicQuant(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 10, 3)
+
+        def forward(self, x):
+            return self.conv(x)
+
+    def test_dq_conv2d_channels_last_tagged_reshape_pass(self) -> None:
+        (
+            Tester(self.Conv2dDynamicQuant().eval(), (torch.randn(1, 3, 8, 8),))
+            .quantize(
+                Quantize(
+                    quantization_config=get_symmetric_quantization_config(
+                        is_dynamic=True
+                    )
+                )
+            )
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            .check(
+                [
+                    self.to_copy_name,
+                    self.choose_qparams_name,
+                    self.dynamic_quant_name,
+                    self.dequant_name,
+                    self.conv_name,
+                    self.to_copy_name,
+                ]
             )
             .run_method_and_compare_outputs()
         )

@@ -45,6 +45,9 @@ from executorch.exir.passes.normalize_transpose_pass import NormalizeTransposePa
 from executorch.exir.passes.prune_empty_tensors_pass import PruneEmptyTensorsPass
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.remove_noop_pass import RemoveNoopPass, RemoveToCopyPass
+from executorch.exir.passes.remove_unused_parameters_pass import (
+    remove_unused_parameters_pass,
+)
 from executorch.exir.passes.replace_aten_with_edge_pass import OpReplacePass
 from executorch.exir.passes.replace_broken_ops_with_function_ops_pass import (
     ReplaceBrokenOpsWithFunctionalOpsPass,
@@ -71,6 +74,7 @@ __all__ = [
     "MemoryPlanningPass",
     "HintBasedSymShapeEvalPass",
     "insert_write_back_for_buffers_pass",
+    "remove_unused_parameters_pass",
     "weights_to_outputs_pass",
 ]
 

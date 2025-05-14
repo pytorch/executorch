@@ -49,7 +49,7 @@ def test_split_to_slice_tosa_BI(module):
     pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),
-        tosa_version="TOSA-0.80+BI",
+        quantize=True,
         ops_before_pass={
             "executorch_exir_dialects_edge__ops_aten_split_with_sizes_copy_default": 1,
         },

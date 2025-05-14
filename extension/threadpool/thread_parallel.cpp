@@ -54,7 +54,7 @@ bool parallel_for(
     const int64_t begin,
     const int64_t end,
     const int64_t grain_size,
-    const std::function<void(int64_t, int64_t)>& f) {
+    runtime::FunctionRef<void(int64_t, int64_t)> f) {
   ET_CHECK_OR_RETURN_FALSE(
       begin >= 0 && end >= 0 && end >= begin,
       "begin = %" PRId64 ", end = %" PRId64,

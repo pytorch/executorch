@@ -322,6 +322,38 @@ class OpMulOutTest : public OperatorTest {
     EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
     EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
   }
+
+  template <typename CTYPE, ScalarType DTYPE>
+  void test_complex_dtype() {
+    TensorFactory<DTYPE> tf;
+    const std::vector<int32_t> sizes = {2, 2};
+
+    // Create complex tensors with real and imaginary parts
+    Tensor x =
+        tf.make(sizes, {CTYPE(1, 2), CTYPE(3, 4), CTYPE(5, 6), CTYPE(7, 8)});
+
+    Tensor y =
+        tf.make(sizes, {CTYPE(2, 3), CTYPE(4, 5), CTYPE(6, 7), CTYPE(8, 9)});
+
+    // Expected result: (a+bi) * (c+di) = (ac-bd) + (ad+bc)i
+    // (1+2i) * (2+3i) = (1*2-2*3) + (1*3+2*2)i = -4 + 7i
+    // (3+4i) * (4+5i) = (3*4-4*5) + (3*5+4*4)i = -8 + 31i
+    // (5+6i) * (6+7i) = (5*6-6*7) + (5*7+6*6)i = -12 + 71i
+    // (7+8i) * (8+9i) = (7*8-8*9) + (7*9+8*8)i = -16 + 127i
+    Tensor expected = tf.make(
+        sizes, {CTYPE(-4, 7), CTYPE(-8, 31), CTYPE(-12, 71), CTYPE(-16, 127)});
+
+    Tensor out = tf.make(
+        {2, 2},
+        {
+            CTYPE(0, 0),
+            CTYPE(0, 0),
+            CTYPE(0, 0),
+            CTYPE(0, 0),
+        });
+    op_mul_out(x, y, out);
+    EXPECT_TENSOR_CLOSE(out, expected);
+  }
 };
 
 class OpMulScalarOutTest : public OperatorTest {
@@ -470,6 +502,16 @@ TEST_F(OpMulOutTest, BothScalarInputBroadcastTest) {
   test_both_scalar_input_broadcast<ScalarType::Int>();
   test_both_scalar_input_broadcast<ScalarType::Half>();
   test_both_scalar_input_broadcast<ScalarType::BFloat16>();
+}
+
+TEST_F(OpMulOutTest, AllComplexDtypesSupported) {
+#define TEST_ENTRY(ctype, dtype) test_complex_dtype<ctype, ScalarType::dtype>();
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    ET_FORALL_COMPLEX_TYPES(TEST_ENTRY);
+  } else {
+    ET_FORALL_COMPLEXH_TYPES(TEST_ENTRY);
+  }
+#undef TEST_ENTRY
 }
 
 TEST_F(OpMulOutTest, MismatchedOutputShapesDies) {

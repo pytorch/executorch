@@ -1471,11 +1471,13 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_symint) {
       // Shader params buffers
       {graph.logical_limits_ubo(a.value),
        graph.get_or_create_int_param_buffer(scalar)},
+      // Push constants
+      {},
       // Specialization Constants
       {},
       // Resizing Logic
-      nullptr,
-      {}));
+      {},
+      nullptr));
 
   out.staging = graph.set_output_tensor(out.value);
 

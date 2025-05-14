@@ -4,12 +4,14 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
-from typing import List
+from typing import Any, List
 
-import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
+)
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -29,15 +31,44 @@ class ExpVisitor_0_80_MI(NodeVisitor):
     def define_node(
         self,
         node: Node,
-        tosa_graph: ts.TosaSerializer,
+        tosa_graph: Any,
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
+        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
-        if len(node.all_input_nodes) != 1:
+        validate_num_inputs(self.target, inputs, 1)
+
+        if inputs[0].dtype != ts.DType.FP32 or output.dtype != ts.DType.FP32:
             raise ValueError(
-                f"Expected 1 input for {self.target}, got {len(node.all_input_nodes)}"
+                f"Input and output for {self.target} need to be FP32, got input dtype: "
+                f"{inputs[0].dtype} and output dtype: {output.dtype}"
             )
+
+        tosa_graph.addOperator(ts.TosaOp.Op().EXP, [inputs[0].name], [output.name])
+
+
+@register_node_visitor
+class ExpVisitor(NodeVisitor):
+    target = "aten.exp.default"
+
+    # BI case should be handled by op_table
+    tosa_specs = [TosaSpecification.create_from_string("TOSA-1.0+FP")]
+
+    def __init__(self, *args):
+        super().__init__(*args)
+
+    def define_node(
+        self,
+        node: Node,
+        tosa_graph: Any,
+        inputs: List[TosaArg],
+        output: TosaArg,
+    ) -> None:
+        import serializer.tosa_serializer as ts
+
+        validate_num_inputs(self.target, inputs, 1)
+
         if inputs[0].dtype != ts.DType.FP32 or output.dtype != ts.DType.FP32:
             raise ValueError(
                 f"Input and output for {self.target} need to be FP32, got input dtype: "

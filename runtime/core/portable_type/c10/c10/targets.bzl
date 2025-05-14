@@ -39,6 +39,7 @@ def define_common_targets():
         ]),
         visibility = [
             "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
         ],
         deps = select({
             "DEFAULT": [],

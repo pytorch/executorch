@@ -1,7 +1,7 @@
 # React Native Llama
 
 <p align="center">
-  <img src="./assets/images/rnllama.png" width="200" alt="rnllama Logo">
+  <img src="assets/images/rnllama.png" width="200" alt="rnllama Logo">
 </p>
 
 A React Native mobile application for running LLaMA language models using ExecuTorch. This example is for iOS only for now.

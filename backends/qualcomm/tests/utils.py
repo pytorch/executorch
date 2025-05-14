@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 import collections
 import copy
+import json
 import os
 import subprocess
 import tempfile
@@ -13,7 +14,6 @@ from typing import Callable, Dict, List, Optional, OrderedDict, Tuple
 
 import numpy as np
 import torch
-
 from executorch import exir
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import ModuleQConfig, QuantDtype
@@ -30,6 +30,7 @@ from executorch.backends.qualcomm.utils.utils import (
     to_edge_transform_and_lower_to_qnn,
 )
 from executorch.devtools import generate_etrecord, Inspector
+from executorch.devtools.inspector._inspector_utils import TimeScale
 from executorch.examples.qualcomm.utils import (
     generate_inputs,
     make_output_dir,
@@ -290,7 +291,12 @@ class TestQNN(unittest.TestCase):
                     outputs.append(output)
 
             def validate_profile():
-                inspector = Inspector(etdump_path=etdump_path, etrecord=etrecord_path)
+                inspector = Inspector(
+                    etdump_path=etdump_path,
+                    etrecord=etrecord_path,
+                    source_time_scale=TimeScale.CYCLES,
+                    target_time_scale=TimeScale.CYCLES,
+                )
                 self.assertTrue(
                     len(inspector.to_dataframe().index) == expected_profile_events
                 )
@@ -630,3 +636,111 @@ class TestQNN(unittest.TestCase):
             QCOM_PASS_ACTIVATE_KEY: True,
             QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY: {"division": division},
         }
+
+
+class QnnTool(TestQNN):
+    def __init__(
+        self,
+        tmp_dir,
+        pte_fname,
+        sample_input,
+        workspace="/data/local/tmp/qnn_executorch_test",
+    ):
+        self.qnn_sdk = os.environ.get("QNN_SDK_ROOT", None)
+        self.ndk = os.environ.get("ANDROID_NDK_ROOT", None)
+        assert self.qnn_sdk, "QNN_SDK_ROOT was not found in environment variable"
+        assert self.ndk, "ANDROID_NDK_ROOT was not found in environment"
+
+        self.tmp_dir = tmp_dir
+        self.workspace = workspace
+        self.adb = SimpleADB(
+            qnn_sdk=self.qnn_sdk,
+            build_path=self.build_folder,
+            pte_path=pte_fname,
+            workspace=self.workspace,
+            device_id=self.device,
+            host_id=self.host,
+            soc_model=self.model,
+            error_only=self.error_only,
+        )
+        self.sample_input = sample_input
+
+    def qnn_context_binary_generator(
+        self, dlc_name="forward_0.dlc", binary_name="forward.serialized"
+    ):
+        cmds = [
+            f"{self.qnn_sdk}/bin/x86_64-linux-clang/qnn-context-binary-generator",
+            "--backend",
+            f"{self.qnn_sdk}/lib/x86_64-linux-clang/libQnnHtp.so",
+            "--model",
+            f"{self.qnn_sdk}/lib/x86_64-linux-clang/libQnnModelDlc.so",
+            "--dlc_path",
+            f"{self.tmp_dir}/{dlc_name}",
+            "--binary_file",
+            f"{self.tmp_dir}/{binary_name}",
+        ]
+        result = subprocess.run(
+            " ".join(cmds),
+            shell=True,
+            executable="/bin/bash",
+            capture_output=True,
+        )
+        assert os.path.isfile(f"{self.tmp_dir}/{binary_name}.bin"), print(result.stderr)
+
+    def qnn_net_run(self, binary_name="forward.serialized"):
+        input_list = ""
+        for idx, _ in enumerate(self.sample_input):
+            input_name = f"input_{idx}_0.raw"
+            input_list += input_name + " "
+        input_list = input_list.strip() + "\n"
+        if self.enable_x86_64:
+            # TODO: Implement context binary consumption on x86_64 platform
+            return
+
+        else:
+            # Config for qnn-net-run
+            config = {
+                "backend_extension_config": {
+                    "backend_extensions": {
+                        "shared_library_path": "./libQnnHtpNetRunExtensions.so",
+                        "config_file_path": "config.json",
+                    }
+                },
+                "config": {
+                    "devices": [
+                        {
+                            "profiling_level": "linting",
+                            "cores": [
+                                {"perf_profile": "burst", "rpc_control_latency": 100}
+                            ],
+                        }
+                    ]
+                },
+            }
+
+            for file_name, data in config.items():
+                with open(f"{self.tmp_dir}/{file_name}.json", "w") as json_file:
+                    json.dump(data, json_file, indent=4)
+
+            files = [
+                f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtpNetRunExtensions.so",
+                f"{self.tmp_dir}/backend_extension_config.json",
+                f"{self.tmp_dir}/config.json",
+                f"{self.tmp_dir}/{binary_name}.bin",
+                f"{self.qnn_sdk}/bin/aarch64-android/qnn-net-run",
+            ]
+            cmds = [
+                f"export LD_LIBRARY_PATH={self.workspace} &&",
+                f"export ADSP_LIBRARY_PATH={self.workspace} &&",
+                f"cd {self.workspace} &&",
+                "./qnn-net-run",
+                "--backend libQnnHtp.so",
+                "--input_list input_list.txt",
+                f"--retrieve_context {binary_name}.bin",
+                "--use_native_input_files",
+                "--use_native_output_files",
+                "--config_file backend_extension_config.json",
+                "--profiling_level backend",
+            ]
+            self.adb.push(inputs=self.sample_input, input_list=input_list, files=files)
+            self.adb.execute(custom_runner_cmd=" ".join(cmds))

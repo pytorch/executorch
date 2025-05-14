@@ -1,0 +1,22 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+python_library(
+    name = "ops",
+    srcs = [
+        "operators.py",
+    ],
+    deps = [
+        "fbcode//caffe2:torch",
+    ],
+)
+
+define_common_targets()

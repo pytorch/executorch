@@ -18,6 +18,14 @@
 namespace vkcompute {
 namespace vkapi {
 
+enum class DeviceType : uint32_t {
+  UNKNOWN,
+  NVIDIA,
+  MALI,
+  ADRENO,
+  SWIFTSHADER,
+};
+
 struct PhysicalDevice final {
   // Handle
   VkPhysicalDevice handle;
@@ -37,9 +45,6 @@ struct PhysicalDevice final {
   VkPhysicalDeviceShaderFloat16Int8Features shader_float16_int8_types;
 #endif /* VK_KHR_shader_float16_int8 */
 
-  // Head of the linked list of extensions to be requested
-  void* extension_features;
-
   // Available GPU queues
   std::vector<VkQueueFamilyProperties> queue_families;
 
@@ -50,6 +55,10 @@ struct PhysicalDevice final {
   bool has_timestamps;
   float timestamp_period;
   size_t min_ubo_alignment;
+
+  // Device identity
+  std::string device_name;
+  DeviceType device_type;
 
   explicit PhysicalDevice(VkPhysicalDevice);
 };

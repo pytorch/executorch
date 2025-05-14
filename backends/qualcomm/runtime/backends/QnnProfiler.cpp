@@ -84,6 +84,22 @@ Qnn_ErrorHandle_t QnnProfile::ProfileData(
         "ProfileData failed to get events: %d", QNN_GET_ERROR_CODE(error));
     return error;
   }
+
+  auto get_unit = [](QnnProfile_EventUnit_t unit) {
+    switch (unit) {
+      case QNN_PROFILE_EVENTUNIT_MICROSEC:
+        return " (us)";
+      case QNN_PROFILE_EVENTUNIT_BYTES:
+        return " (bytes)";
+      case QNN_PROFILE_EVENTUNIT_COUNT:
+        return " (count)";
+      case QNN_PROFILE_EVENTUNIT_BACKEND:
+      // cycle unit is default appeared
+      case QNN_PROFILE_EVENTUNIT_CYCLES:
+      default:
+        return "";
+    }
+  };
   QnnProfile_EventData_t event_data;
   for (std::uint32_t i = 0; i < num_events; ++i) {
     error =
@@ -96,6 +112,16 @@ Qnn_ErrorHandle_t QnnProfile::ProfileData(
           QNN_GET_ERROR_CODE(error));
       return error;
     }
+    // add events for other important metrics, e.g. RPC execution time
+    std::string identifier =
+        std::string(event_data.identifier) + get_unit(event_data.unit);
+    executorch::runtime::event_tracer_log_profiling_delegate(
+        event_tracer,
+        identifier.c_str(),
+        /*delegate_debug_id=*/
+        static_cast<executorch::runtime::DebugHandle>(-1),
+        0,
+        event_data.value);
     // Check an event's sub events only if it relates to graph execution time
     // (and its sub events are the individual op executions):
     if (backend_->IsProfileEventTypeParentOfNodeTime(event_data.type)) {
@@ -109,6 +135,7 @@ Qnn_ErrorHandle_t QnnProfile::ProfileData(
             QNN_GET_ERROR_CODE(error));
         return error;
       }
+
       QnnProfile_EventData_t sub_event_data;
       for (std::uint32_t j = 0; j < num_sub_events; ++j) {
         error = qnn_interface.qnn_profile_get_event_data(

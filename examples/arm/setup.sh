@@ -17,6 +17,9 @@ et_dir=$(realpath $script_dir/../..)
 ARCH="$(uname -m)"
 OS="$(uname -s)"
 
+# Figure out if setup.sh was called or sourced and save it into "is_script_sourced"
+(return 0 2>/dev/null) && is_script_sourced=1 || is_script_sourced=0
+
 if [[ "${ARCH}" == "x86_64" ]]; then
     # FVPs
     corstone300_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64.tgz?rev=018659bd574f4e7b95fa647e7836ccf4&hash=22A79103C6FA5FFA7AFF3BE0447F3FF9"
@@ -57,37 +60,47 @@ fi
 
 # vela
 vela_repo_url="https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela"
-vela_rev="425541302c7e4b6fbeca7c0061286b131ee507c3"
-
-########
-### Optional user args
-########
-root_dir=${2:-"${script_dir}/ethos-u-scratch"}
-mkdir -p ${root_dir}
-root_dir=$(realpath ${root_dir})
-setup_path_script="${root_dir}/setup_path.sh"
-
+vela_rev="859cc066178a87ff28230c1ce9bd370f1e98aa5a"
 
 ########
 ### Functions
 ########
+function setup_root_dir() {
+    # Handle a different root_dir set by the user as argument to the
+    # script. This can only happen if the script is being executed and
+    # not sourced.
+    root_dir="${script_dir}/ethos-u-scratch"
+    if [[ $is_script_sourced -eq 0 ]]; then
+        root_dir=${2:-"${script_dir}/ethos-u-scratch"}
+    fi
+    mkdir -p ${root_dir}
+    root_dir=$(realpath ${root_dir})
+    setup_path_script="${root_dir}/setup_path.sh"
+}
 
-function setup_fvp() {
-
+function check_fvp_eula () {
     # Mandatory user arg --i-agree-to-the-contained-eula
     eula_acceptance="${1:-'.'}"
     eula_acceptance_by_variable="${ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA:-False}"
 
     if [[ "${eula_acceptance}" != "--i-agree-to-the-contained-eula" ]]; then
         if [[ ${eula_acceptance_by_variable} != "True" ]]; then
-        echo "Must pass first positional argument '--i-agree-to-the-contained-eula' to agree to EULA associated with downloading the FVP. Exiting!"
-        exit 1
+            echo "Must pass first positional argument '--i-agree-to-the-contained-eula' to agree to EULA associated with downloading the FVP."
+	    echo "Alternativly set environment variable ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA=True."
+	    echo "Exiting!"
+            exit 1
         else
-        echo "Arm EULA for FVP agreed to with ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA=True environment variable"
+            echo "Arm EULA for FVP agreed to with ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA=True environment variable"
         fi
     else
         shift; # drop this arg
     fi
+}
+
+function setup_fvp() {
+    # check EULA, forward argument
+    check_fvp_eula ${1:-'.'}
+
     if [[ "${OS}" != "Linux" ]]; then
         # Check if FVP is callable
         if command -v FVP_Corstone_SSE-300_Ethos-U55 &> /dev/null; then
@@ -181,14 +194,7 @@ function create_setup_path(){
     echo "hash FVP_Corstone_SSE-320" >> ${setup_path_script}
 }
 
-########
-### main
-########
-# Only run this if script is executed, not if it is sourced
-(return 0 2>/dev/null) && is_script_sourced=1 || is_script_sourced=0
-if [[ $is_script_sourced -eq 0 ]]
-    then
-    set -e
+function check_platform_support() {
     if [[ "${ARCH}" != "x86_64" ]] && [[ "${ARCH}" != "aarch64" ]] \
         && [[ "${ARCH}" != "arm64" ]]; then
         echo "[main] Error: only x86-64 & aarch64 architecture is supported for now!"
@@ -201,10 +207,23 @@ if [[ $is_script_sourced -eq 0 ]]
         echo "Supplied args: $*"
         exit 1
     fi
+}
+
+########
+### main
+########
+
+# script is not sourced! Lets run "main"
+if [[ $is_script_sourced -eq 0 ]]
+    then
+    set -e
+
+    check_platform_support
 
     cd "${script_dir}"
 
     # Setup the root dir
+    setup_root_dir
     cd "${root_dir}"
     echo "[main] Using root dir ${root_dir}"
 

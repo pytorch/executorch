@@ -35,15 +35,15 @@ from torch.fx import Node
 logger = logging.getLogger(__name__)
 
 
-def _get_first_delegation_tag(graph_module) -> str | None:
-    """Get the first delegation tag from the graph_module or return None."""
+def arm_get_first_delegation_tag(graph_module) -> str:
+    """Get the first delegation tag from the graph_module or return empty string."""
     for node in graph_module.graph.nodes:
         tag = node.meta.get("delegation_tag")
         if tag:
             return tag
 
     logger.debug("No delegation tag found in partition.")
-    return None
+    return ""
 
 
 @final
@@ -63,7 +63,6 @@ class TOSABackend(BackendDetails):
         artifact_path = None
         output_format = ""
         compile_flags = []
-        input_order = []
         for spec in compile_spec:
             if spec.key == "debug_artifact_path":
                 artifact_path = spec.value.decode()
@@ -71,8 +70,6 @@ class TOSABackend(BackendDetails):
                 output_format = spec.value.decode()
             if spec.key == "compile_flags":
                 compile_flags.append(spec.value.decode())
-            if spec.key == "input_order":
-                input_order = list(map(int, spec.value.decode().split(",")))
 
         # Check that the output format is set correctly in the compile spec
         if output_format != "tosa":
@@ -125,18 +122,12 @@ class TOSABackend(BackendDetails):
                     # This will only happen if an unpartitioned graph is passed without
                     # any checking of compatibility.
                     raise RuntimeError(f"{node.name} is unsupported op {node.op}")
-            except (AssertionError, RuntimeError, ValueError):
+            except Exception:
                 dbg_fail(node, graph_module, tosa_graph, artifact_path)
                 raise
 
-        if len(input_order) > 0:
-            if input_count != len(input_order):
-                raise RuntimeError(
-                    "The rank of the input order is not equal to amount of input tensors"
-                )
-
         if artifact_path:
-            tag = _get_first_delegation_tag(graph_module)
+            tag = arm_get_first_delegation_tag(graph_module)
             dbg_tosa_dump(
                 tosa_graph,
                 artifact_path,

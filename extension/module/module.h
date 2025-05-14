@@ -53,7 +53,7 @@ class Module {
    */
   explicit Module(
       const std::string& file_path,
-      const LoadMode load_mode = LoadMode::MmapUseMlock,
+      const LoadMode load_mode = LoadMode::File,
       std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
 
   /**
@@ -68,7 +68,7 @@ class Module {
   explicit Module(
       const std::string& file_path,
       const std::string& data_map_path,
-      const LoadMode load_mode = LoadMode::MmapUseMlock,
+      const LoadMode load_mode = LoadMode::File,
       std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
 
   /**
@@ -110,7 +110,7 @@ class Module {
   Module& operator=(const Module&) = delete;
   Module(Module&&) = delete;
   Module& operator=(Module&&) = delete;
-
+  virtual ~Module() = default;
   /**
    * Loads the program if needed.
    *
@@ -119,8 +119,7 @@ class Module {
    *
    * @returns An Error to indicate success or failure of the loading process.
    */
-  ET_NODISCARD
-  runtime::Error load(
+  ET_NODISCARD virtual runtime::Error load(
       const Program::Verification verification =
           Program::Verification::Minimal);
 
@@ -129,7 +128,7 @@ class Module {
    *
    * @returns true if the program is loaded, false otherwise.
    */
-  inline bool is_loaded() const {
+  virtual inline bool is_loaded() const {
     return program_ != nullptr;
   }
 
@@ -242,8 +241,7 @@ class Module {
    * @returns A Result object containing either a vector of output values
    *          from the method or an error to indicate failure.
    */
-  ET_NODISCARD
-  runtime::Result<std::vector<runtime::EValue>> execute(
+  ET_NODISCARD virtual runtime::Result<std::vector<runtime::EValue>> execute(
       const std::string& method_name,
       const std::vector<runtime::EValue>& input_values);
 
@@ -483,7 +481,7 @@ class Module {
 
   std::string file_path_;
   std::string data_map_path_;
-  LoadMode load_mode_{LoadMode::MmapUseMlock};
+  LoadMode load_mode_{LoadMode::File};
   std::shared_ptr<Program> program_;
   std::unique_ptr<runtime::DataLoader> data_loader_;
   std::unique_ptr<runtime::MemoryAllocator> memory_allocator_;

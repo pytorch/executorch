@@ -24,9 +24,6 @@ if [[ "$BUILD_TOOL" == "cmake" ]]; then
     CMAKE_ARGS="-DEXECUTORCH_BUILD_PYBIND=ON -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
     .ci/scripts/setup-linux.sh "$@"
 
-    # Install llama3_2_vision dependencies.
-    PYTHON_EXECUTABLE=python ./examples/models/llama3_2_vision/install_requirements.sh
-
     .ci/scripts/unittest-linux-cmake.sh
 elif [[ "$BUILD_TOOL" == "buck2" ]]; then
     # Removing this breaks sccache in the Buck build, apparently

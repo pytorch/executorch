@@ -1,4 +1,4 @@
-/* Copyright 2024 Arm Limited and/or its affiliates.
+/* Copyright 2024-2025 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -98,14 +98,14 @@ void ethosu_inference_end(struct ethosu_driver* drv, void*) {
 }
 
 // Callback invoked at start of ArmBackend::execute()
-void ArmBackend_execute_begin() {
+void EthosUBackend_execute_begin() {
   // Save Cortex-M cycle clock to calculate total CPU cycles used in
   // ArmBackend_execute_end()
   ethosu_ArmBackendExecuteCycleCountStart = ARM_PMU_Get_CCNTR();
 }
 
 // Callback invoked at end of ArmBackend::execute()
-void ArmBackend_execute_end() {
+void EthosUBackend_execute_end() {
   // Add Cortex-M cycle clock used during this ArmBackend::execute()
   ethosu_ArmBackendExecuteCycleCount +=
       (ARM_PMU_Get_CCNTR() - ethosu_ArmBackendExecuteCycleCountStart);

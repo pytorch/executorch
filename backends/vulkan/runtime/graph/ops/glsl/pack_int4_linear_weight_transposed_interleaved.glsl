@@ -10,13 +10,18 @@
 
 #define PRECISION ${PRECISION}
 
-${define_required_extensions("uint8")}
-${define_required_extensions("int8")}
+$if not NO_INT8_BUFFERS:
+  ${define_required_extensions("uint8")}
+$if STORAGE == "buffer":
+  ${define_required_extensions("int8")}
 
 layout(std430) buffer;
 
 ${layout_declare_tensor(B, "w", "t_qmat2", "uint8", STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "nchw_4x2", "uint8", "buffer")}
+$if NO_INT8_BUFFERS:
+  ${layout_declare_tensor(B, "r", "nchw_4x2", "uint", "buffer")}
+$else:
+  ${layout_declare_tensor(B, "r", "nchw_4x2", "uint8", "buffer")}
 
 layout(push_constant) uniform restrict Block {
   ivec4 qmat2_sizes;
@@ -24,17 +29,32 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-uint8_t get_first(const uint8_t packed) {
-  return uint8_t((packed & 0xF0) >> 4);
+$if NO_INT8_BUFFERS:
+  #define BUF_T uint
+$else:
+  #define BUF_T uint8_t
+
+$if STORAGE == "buffer":
+  #define UVEC4_T u8vec4
+$else:
+  #define UVEC4_T uvec4
+
+uint get_first(const BUF_T packed) {
+  return (packed & 0xF0) >> 4;
 }
 
-uint8_t get_second(const uint8_t packed) {
-  return uint8_t(packed & 0x0F);
+uint get_second(const BUF_T packed) {
+  return packed & 0x0F;
 }
 
-uint8_t combine(const uint8_t first, const uint8_t second) {
-  return uint8_t(first << 4 | second);
+uint combine(const uint first, const uint second) {
+  return (first << 4 | second);
 }
+
+$if NO_INT8_BUFFERS:
+  uint extract_comp(const uint packed4, const uint idx) {
+    return (packed4 >> (idx * 8)) & 0xFF;
+  }
 
 /*
  * This shader packs the weight tensor into a texture.
@@ -102,25 +122,32 @@ void main() {
   int in_numcols = qmat2_sizes.y;
   int in_num_int8_cols = qmat2_sizes.y >> 1;
 
-  uint8_t in_vals[8][2];
+  uint in_vals[8][2];
   for (int r = 0; r < 8; ++r) {
     if (in_row + r < in_numrows) {
-      uint8_t in_val_packed = nchw_4x2[(in_row + r) * in_num_int8_cols + in_int8_col];
+      uint scalar_idx = (in_row + r) * in_num_int8_cols + in_int8_col;
+      $if NO_INT8_BUFFERS:
+        BUF_T in_val_packed_texel = nchw_4x2[scalar_idx >> 2];
+        const uint packed_idx = scalar_idx % 4;
+        uint in_val_packed = extract_comp(in_val_packed_texel, packed_idx);
+      $else:
+        BUF_T in_val_packed = nchw_4x2[scalar_idx];
+
       in_vals[r][0] = get_first(in_val_packed);
       in_vals[r][1] = get_second(in_val_packed);
     } else {
-      in_vals[r][0] = uint8_t(254);
-      in_vals[r][1] = uint8_t(254);
+      in_vals[r][0] = uint(0);
+      in_vals[r][1] = uint(0);
     }
   }
 
-  u8vec4 out_tex_1 = u8vec4(
+  UVEC4_T out_tex_1 = UVEC4_T(
       combine(in_vals[0][0], in_vals[4][0]),
       combine(in_vals[1][0], in_vals[5][0]),
       combine(in_vals[2][0], in_vals[6][0]),
       combine(in_vals[3][0], in_vals[7][0]));
 
-  u8vec4 out_tex_2 = u8vec4(
+  UVEC4_T out_tex_2 = UVEC4_T(
       combine(in_vals[0][1], in_vals[4][1]),
       combine(in_vals[1][1], in_vals[5][1]),
       combine(in_vals[2][1], in_vals[6][1]),
@@ -131,6 +158,6 @@ void main() {
     t_qmat2[packed_pos.y * stride + packed_pos.x] = out_tex_1;
     t_qmat2[(packed_pos.y + 1) * stride + packed_pos.x] = out_tex_2;
   $else:
-    imageStore(t_qmat2, ivec3(packed_pos.xy, 0), out_tex_1);
-    imageStore(t_qmat2, ivec3(packed_pos.x, packed_pos.y + 1, 0), out_tex_2);
+    imageStore(t_qmat2, packed_pos.xy, out_tex_1);
+    imageStore(t_qmat2, ivec2(packed_pos.x, packed_pos.y + 1), out_tex_2);
 }

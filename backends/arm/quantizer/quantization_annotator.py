@@ -10,8 +10,7 @@ from typing import Callable, List, Optional
 
 import torch
 import torch.fx
-from executorch.backends.arm.quantizer import arm_quantizer_utils
-from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
+from executorch.backends.arm.quantizer import QuantizationConfig
 from executorch.backends.arm.tosa_utils import get_node_debug_info
 from torch.ao.quantization.quantizer import QuantizationSpecBase, SharedQuantizationSpec
 from torch.ao.quantization.quantizer.utils import (
@@ -19,6 +18,13 @@ from torch.ao.quantization.quantizer.utils import (
     _annotate_output_qspec,
 )
 from torch.fx import Node
+
+from .arm_quantizer_utils import (
+    is_annotated,
+    is_ok_for_quantization,
+    is_output_annotated,
+    mark_node_as_annotated,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +75,7 @@ def _is_ok_for_quantization(
     """
     # Check output
     if quant_properties.quant_output is not None:
-        if not arm_quantizer_utils.is_ok_for_quantization(node, gm):  # type: ignore[attr-defined]
+        if not is_ok_for_quantization(node, gm):  # type: ignore[attr-defined]
             logger.debug(
                 f"Could not quantize node due to output: "
                 f"{get_node_debug_info(node, gm)}"
@@ -87,7 +93,7 @@ def _is_ok_for_quantization(
 
         for n_arg in _as_list(node.args[quant_property.index]):
             assert isinstance(n_arg, Node)
-            if not arm_quantizer_utils.is_ok_for_quantization(n_arg, gm):  # type: ignore[attr-defined]
+            if not is_ok_for_quantization(n_arg, gm):  # type: ignore[attr-defined]
                 logger.debug(
                     f'could not quantize node due to input "{node}": '
                     f"{get_node_debug_info(node, gm)}"
@@ -99,7 +105,7 @@ def _is_ok_for_quantization(
 
 
 def _annotate_input(node: Node, quant_property: _QuantProperty):
-    assert not arm_quantizer_utils.is_annotated(node)
+    assert not is_annotated(node)
     if quant_property.optional and (
         quant_property.index >= len(node.args)
         or node.args[quant_property.index] is None
@@ -114,11 +120,11 @@ def _annotate_input(node: Node, quant_property: _QuantProperty):
         assert isinstance(n_arg, Node)
         _annotate_input_qspec_map(node, n_arg, qspec)
         if quant_property.mark_annotated:
-            arm_quantizer_utils.mark_node_as_annotated(n_arg)  # type: ignore[attr-defined]
+            mark_node_as_annotated(n_arg)  # type: ignore[attr-defined]
 
 
 def _annotate_output(node: Node, quant_property: _QuantProperty):
-    assert not arm_quantizer_utils.is_annotated(node)
+    assert not is_annotated(node)
     assert not quant_property.mark_annotated
     assert not quant_property.optional
     assert quant_property.index == 0, "Only one output annotation supported currently"
@@ -171,6 +177,8 @@ _one_to_one = [
     torch.ops.aten.reciprocal.default,
     torch.ops.aten.rsqrt.default,
     torch.ops.aten.sigmoid.default,
+    torch.ops.aten.cos.default,
+    torch.ops.aten.sin.default,
     torch.ops.aten.tanh.default,
     torch.ops.aten.sum.dim_IntList,
     torch.ops.aten.hardsigmoid.default,
@@ -215,6 +223,7 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.flip.default,
     torch.ops.aten.chunk.default,
     torch.ops.aten.contiguous.default,
+    torch.ops.aten.upsample_bilinear2d.vec,
     torch.ops.aten.upsample_nearest2d.vec,
     torch.ops.aten.pad.default,
     torch.ops.aten.amax.default,
@@ -242,6 +251,11 @@ _parent_shared_qspec = [
     torch.ops.aten.dropout_.default,
     torch.ops.aten.where,
     operator.getitem,
+]
+
+_one_to_one_shared_input_or_input_act_qspec = [
+    torch.ops.aten.adaptive_avg_pool2d.default,
+    torch.ops.aten.alias_copy.default,
 ]
 
 
@@ -332,10 +346,10 @@ def get_quant_properties(  # noqa: C901
             _QuantProperty(2, shared_qspec),  # type: ignore[arg-type]
         ]
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
-    elif node.target == torch.ops.aten.adaptive_avg_pool2d.default:
+    elif node.target in _one_to_one_shared_input_or_input_act_qspec:
         input_qspec = (
             SharedQuantizationSpec(node.args[0])  # type: ignore[arg-type]
-            if arm_quantizer_utils.is_output_annotated(node.args[0])  # type: ignore
+            if is_output_annotated(node.args[0])  # type: ignore
             else input_act_qspec
         )
         quant_properties.quant_inputs = [_QuantProperty(0, input_qspec)]  # type: ignore[arg-type]
@@ -361,6 +375,9 @@ def get_quant_properties(  # noqa: C901
             )
         ]
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
+    elif node.target in (torch.ops.aten.neg.default,):
+        quant_properties.quant_inputs = [_QuantProperty(0, input_act_qspec)]
+        quant_properties.quant_output = _QuantProperty(0, input_act_qspec)
     elif node.target in _one_to_one:
         quant_properties.quant_inputs = [_QuantProperty(0, input_act_qspec)]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
@@ -388,12 +405,15 @@ def get_quant_properties(  # noqa: C901
         if not isinstance(node.args[0], Node):
             return None
 
-        if not arm_quantizer_utils.is_output_annotated(node.args[0]):  # type: ignore[attr-defined]
+        if not is_output_annotated(node.args[0]):  # type: ignore[attr-defined]
             return None
 
         shared_qspec = SharedQuantizationSpec(node.args[0])
         quant_properties.quant_inputs = [_QuantProperty(0, shared_qspec)]  # type: ignore[arg-type]
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
+    elif node.target in [torch.ops.aten.scalar_tensor.default]:
+        quant_properties.quant_inputs = []
+        quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     else:
         return None
 
@@ -418,7 +438,7 @@ def annotate_graph(  # type: ignore[return]
         if node.op != "call_function":
             continue
 
-        if arm_quantizer_utils.is_annotated(node):
+        if is_annotated(node):
             continue
 
         if filter_fn is not None and not filter_fn(node):
@@ -434,12 +454,13 @@ def annotate_graph(  # type: ignore[return]
         if quant_properties.quant_output is not None:
             _annotate_output(node, quant_properties.quant_output)
 
-        arm_quantizer_utils.mark_node_as_annotated(node)  # type: ignore[attr-defined]
+        mark_node_as_annotated(node)  # type: ignore[attr-defined]
 
         # Quantization does not allow kwargs for some reason.
         # Remove from ops we know have and where we know it does not break anything.
         if node.target in [
             torch.ops.aten.full_like.default,
             torch.ops.aten.full.default,
+            torch.ops.aten.scalar_tensor.default,
         ]:
             node.kwargs = {}

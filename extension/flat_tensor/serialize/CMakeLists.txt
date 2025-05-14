@@ -30,7 +30,7 @@ function(generate_flat_tensor_schema _schema_srcs _schema_name)
   add_custom_command(
     OUTPUT ${_schema_outputs}
     COMMAND
-      ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --gen-mutable --scoped-enums -o
+      flatc --cpp --cpp-std c++11 --gen-mutable --scoped-enums -o
       "${_flat_tensor_schema__output_dir}" ${_schema_srcs}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     DEPENDS flatc ${_schema_srcs}
@@ -45,7 +45,7 @@ function(generate_flat_tensor_schema _schema_srcs _schema_name)
   # and some users need an alignment larger than the default, which is typically
   # 32.
   target_compile_definitions(
-    ${_schema_name} INTERFACE FLATBUFFERS_MAX_ALIGNMENT=${FLATBUFFERS_MAX_ALIGNMENT}
+    ${_schema_name} INTERFACE FLATBUFFERS_MAX_ALIGNMENT=${EXECUTORCH_FLATBUFFERS_MAX_ALIGNMENT}
   )
 
   target_include_directories(

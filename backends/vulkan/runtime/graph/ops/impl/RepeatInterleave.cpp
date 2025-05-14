@@ -64,14 +64,17 @@ void add_repeat_interleave_node(
        {in, vkapi::MemoryAccessType::READ}},
       // Parameter buffers
       {graph.logical_limits_ubo(in)},
+      // Push Constants
+      {},
       // Specialization Constants
       {graph.hashed_layout_of(out),
        graph.hashed_layout_of(in),
        nrepeats,
        repeat_dim},
+      // Resize Args
+      {num_repeats, dim},
       // Resizing Logic
-      resize_repeat_interleave_node,
-      {num_repeats, dim}));
+      resize_repeat_interleave_node));
 }
 
 void repeat_interleave(ComputeGraph& graph, const std::vector<ValueRef>& args) {

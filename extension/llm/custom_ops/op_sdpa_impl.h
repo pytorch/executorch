@@ -605,7 +605,11 @@ void cpu_flash_attention(
     */
     ET_CHECK_MSG(attn_mask.value().dim() == 2, "attn_mask must be 2D");
     ET_CHECK_MSG(
-        attn_mask.value().size(0) == qSize, "attn_mask shape mismatch");
+        attn_mask.value().size(0) == qSize,
+        "attn_mask shape mismatch"
+        "attn_mask.size(0)=%zd qSize=%" PRId64,
+        attn_mask.value().size(0),
+        qSize);
     ET_CHECK_MSG(
         attn_mask.value().size(1) == kvSize,
         "attn_mask shape mismatch"
@@ -964,27 +968,36 @@ void cpu_flash_attention(
                 tmp_max);
           }
           tmp_max = qk_max_data[row] > tmp_max ? qk_max_data[row] : tmp_max;
-          // qk <- exp(qk - max) and sum per row
-          tmp_sum = tmp_max;
-          _exp_reduce_sum_fusion_kernel(
-              qk_data + row * kvBlockSize,
-              kvBlockSize,
-              conditional_data_ptr(qk_data, qk_reduced_data) +
-                  row * kvBlockSize,
-              tmp_sum);
-          // exp_tmp <- exp(max[row] - max)
-          exp_tmp = std::exp(qk_max_data[row] - tmp_max);
-          // sum[row] <- sum + exp_tmp * sum[row]
-          qk_sum_data[row] = tmp_sum + exp_tmp * qk_sum_data[row];
-          // max[row] <- max
-          qk_max_data[row] = tmp_max;
-          // dst <- dst * exp_tmp
-          if (n > 0) {
-            vec::map<accum_t>(
-                [exp_tmp](Vec x) { return x * Vec(exp_tmp); },
-                dst_data + row * headSize,
-                dst_data + row * headSize,
-                headSize);
+          if (tmp_max == -std::numeric_limits<accum_t>::infinity()) {
+            // to avoid `nan = exp2f(-inf - (-inf))`
+            fill_stub(
+                conditional_data_ptr(qk_data, qk_reduced_data) +
+                    row * kvBlockSize,
+                static_cast<scalar_t>(0),
+                kvBlockSize);
+          } else {
+            // qk <- exp(qk - max) and sum per row
+            tmp_sum = tmp_max;
+            _exp_reduce_sum_fusion_kernel(
+                qk_data + row * kvBlockSize,
+                kvBlockSize,
+                conditional_data_ptr(qk_data, qk_reduced_data) +
+                    row * kvBlockSize,
+                tmp_sum);
+            // exp_tmp <- exp(max[row] - max)
+            exp_tmp = std::exp(qk_max_data[row] - tmp_max);
+            // sum[row] <- sum + exp_tmp * sum[row]
+            qk_sum_data[row] = tmp_sum + exp_tmp * qk_sum_data[row];
+            // max[row] <- max
+            qk_max_data[row] = tmp_max;
+            // dst <- dst * exp_tmp
+            if (n > 0) {
+              vec::map<accum_t>(
+                  [exp_tmp](Vec x) { return x * Vec(exp_tmp); },
+                  dst_data + row * headSize,
+                  dst_data + row * headSize,
+                  headSize);
+            }
           }
         }
 

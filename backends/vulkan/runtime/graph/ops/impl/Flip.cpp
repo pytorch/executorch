@@ -74,7 +74,11 @@ void add_flip_node(
           graph.sizes_ubo(out),
           graph.create_params_buffer(dim_bitmap),
       },
+      // Push Constants
+      {},
       // Specialization Constants
+      {},
+      // Resize Args
       {},
       // Resizing Logic
       resize_flip_node));

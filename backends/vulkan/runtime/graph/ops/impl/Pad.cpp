@@ -84,17 +84,20 @@ void add_constant_pad_nd_node(
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, vkapi::MemoryAccessType::WRITE},
-       {in, vkapi::MemoryAccessType::READ}},
+      {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers
       {t_out->sizes_ubo(),
        t_in->sizes_ubo(),
        graph.create_params_buffer(pad_param),
        graph.create_params_buffer(fill_value_val)},
+      // Push Constants
+      {},
       // Specialization Constants
       {},
-      resize_constant_pad_node,
-      {pad}));
+      // Resize Args
+      {pad},
+      // Resizing Logic
+      resize_constant_pad_node));
 }
 
 void constant_pad_nd(ComputeGraph& graph, const std::vector<ValueRef>& args) {

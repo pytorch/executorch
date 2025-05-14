@@ -111,6 +111,85 @@ class OpSumOutTest : public OperatorTest {
             self, optional_dim_list, /*keepdim=*/false, dtype, out));
   }
 
+  template <typename CTYPE, ScalarType DTYPE>
+  void test_complex_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    Tensor self = tf.make(
+        {2, 3, 2},
+        {CTYPE(1, 1),
+         CTYPE(2, 2),
+         CTYPE(3, 3),
+         CTYPE(4, 4),
+         CTYPE(5, 5),
+         CTYPE(6, 6),
+
+         CTYPE(7, 7),
+         CTYPE(8, 8),
+         CTYPE(9, 9),
+         CTYPE(10, 10),
+         CTYPE(11, 11),
+         CTYPE(12, 12)});
+
+    Tensor out1 = tf.make(
+        {2, 3, 1},
+        {
+            CTYPE(0, 0),
+            CTYPE(0, 0),
+            CTYPE(0, 0),
+            CTYPE(0, 0),
+            CTYPE(0, 0),
+            CTYPE(0, 0),
+        });
+    int64_t dims_1[1] = {2};
+    optional<ArrayRef<int64_t>> dim_list1{ArrayRef<int64_t>{dims_1, 1}};
+    optional<ScalarType> dtype = DTYPE;
+
+    op_sum_intlist_out(self, dim_list1, true, dtype, out1);
+
+    Tensor expected1 = tf.make(
+        {2, 3, 1},
+        {CTYPE(3, 3),
+         CTYPE(7, 7),
+         CTYPE(11, 11),
+
+         CTYPE(15, 15),
+         CTYPE(19, 19),
+         CTYPE(23, 23)});
+
+    EXPECT_TENSOR_CLOSE(out1, expected1);
+
+    Tensor out2 = tf.make(
+        {2, 1, 2},
+        {
+            CTYPE(0, 0),
+            CTYPE(0, 0),
+            CTYPE(0, 0),
+            CTYPE(0, 0),
+        });
+    int64_t dims_2[1] = {1};
+    optional<ArrayRef<int64_t>> dim_list2{ArrayRef<int64_t>{dims_2, 1}};
+
+    op_sum_intlist_out(self, dim_list2, true, dtype, out2);
+
+    Tensor expected2 = tf.make(
+        {2, 1, 2}, {CTYPE(9, 9), CTYPE(12, 12), CTYPE(27, 27), CTYPE(30, 30)});
+    EXPECT_TENSOR_CLOSE(out2, expected2);
+
+    Tensor out3 = tf.make(
+        {1, 1, 1},
+        {
+            CTYPE(0, 0),
+        });
+    optional<ArrayRef<int64_t>> null_dim_list;
+
+    op_sum_intlist_out(self, null_dim_list, true, dtype, out3);
+
+    Tensor expected3 = tf.make({1, 1, 1}, {CTYPE(78, 78)});
+
+    EXPECT_TENSOR_CLOSE(out3, expected3);
+  }
+
   template <ScalarType IN_DTYPE, ScalarType OUT_DTYPE>
   void test_sum_dim_out_dtype() {
     TensorFactory<IN_DTYPE> tf_in;
@@ -364,6 +443,16 @@ TEST_F(OpSumOutTest, TypeConversionTest) {
       0,
     }));
   // clang-format on
+}
+
+TEST_F(OpSumOutTest, AllComplexDtypesSupported) {
+#define TEST_ENTRY(ctype, dtype) test_complex_dtype<ctype, ScalarType::dtype>();
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    ET_FORALL_COMPLEX_TYPES(TEST_ENTRY);
+  } else {
+    ET_FORALL_COMPLEXH_TYPES(TEST_ENTRY);
+  }
+#undef TEST_ENTRY
 }
 
 TEST_F(OpSumOutTest, InfinityAndNANTest) {

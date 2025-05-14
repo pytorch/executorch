@@ -33,7 +33,7 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: ${{ inputs.docker-image }}
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -45,7 +45,7 @@ jobs:
     with:
       runner: macos-m1-stable
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux

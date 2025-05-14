@@ -402,9 +402,9 @@ class TestLinear(unittest.TestCase):
             .export()
             .check_count(
                 {
-                    "torch.ops.quant.choose_qparams_affine.default": 1 * num_linears,
-                    "torch.ops.quant.quantize_affine.default": 1 * num_linears,
-                    "torch.ops.quant.dequantize_affine.default": 2 * num_linears,
+                    "torch.ops.torchao.choose_qparams_affine.default": 1 * num_linears,
+                    "torch.ops.torchao.quantize_affine.default": 1 * num_linears,
+                    "torch.ops.torchao.dequantize_affine.default": 2 * num_linears,
                     "torch.ops.aten.linear.default": 1 * num_linears,
                 }
             )

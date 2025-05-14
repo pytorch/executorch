@@ -2,4 +2,5 @@
 # TODO: Make each example publish its own requirements.txt
 timm == 1.0.7
 torchsr == 1.0.4
+torchtune >= 0.6.1
 transformers ==4.47.1

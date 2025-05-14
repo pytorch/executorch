@@ -50,19 +50,22 @@ void add_copy_offset_node(
       },
       // Parameter buffers
       {},
+      // Push Constants
+      {
+          PushConstantDataInfo(&range, sizeof(range), sizeof(ivec4)),
+          PushConstantDataInfo(&src_offset, sizeof(src_offset), sizeof(ivec4)),
+          PushConstantDataInfo(&dst_offset, sizeof(dst_offset), sizeof(ivec4)),
+      },
       // Specialization Constants
       {graph.hashed_layout_of(out),
        graph.hashed_layout_of(in),
        (calc_out_pos_using_src_chnl      ? 1
             : calc_in_pos_using_dst_chnl ? 2
                                          : 0)},
-      nullptr,
+      // Resize Args
       {},
-      {
-          PushConstantDataInfo(&range, sizeof(range), sizeof(ivec4)),
-          PushConstantDataInfo(&src_offset, sizeof(src_offset), sizeof(ivec4)),
-          PushConstantDataInfo(&dst_offset, sizeof(dst_offset), sizeof(ivec4)),
-      }));
+      // Resizing Logic
+      nullptr));
 }
 
 void add_copy_packed_dim_offset_node(
@@ -138,22 +141,25 @@ void add_copy_packed_dim_offset_node(
       graph.create_local_wg_size(global_wg_size),
       // Inputs and Outputs
       {
-          {out, vkapi::MemoryAccessType::WRITE},
-          {out, vkapi::MemoryAccessType::READ},
-          {in, vkapi::MemoryAccessType::READ},
+          {out, vkapi::kWrite},
+          {out, vkapi::kRead},
+          {in, vkapi::kRead},
       },
       // Parameter buffers
       {},
-      // Specialization Constants
-      {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
-      nullptr,
-      {},
+      // Push Constants
       {
           PushConstantDataInfo(
               &final_range, sizeof(final_range), sizeof(ivec4)),
           PushConstantDataInfo(&src_offset, sizeof(src_offset), sizeof(ivec4)),
           PushConstantDataInfo(&dst_offset, sizeof(dst_offset), sizeof(ivec4)),
-      }));
+      },
+      // Specialization Constants
+      {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
+      // Resize Args
+      {},
+      // Resizing Logic
+      nullptr));
 }
 
 void add_copy_channel_offset_node(
@@ -248,22 +254,24 @@ void add_copy_channel_offset_node(
         local_size,
         // Inputs and Outputs
         {
-            {out, vkapi::MemoryAccessType::WRITE},
-            {out, vkapi::MemoryAccessType::READ},
-            {in, vkapi::MemoryAccessType::READ},
+            {out, vkapi::kWrite},
+            {out, vkapi::kRead},
+            {in, vkapi::kRead},
         },
         // Parameter buffers
         {},
-        // Specialization Constants
-        {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
-        nullptr,
-        {},
+        // Push Constants
         {graph.sizes_pc_of(out),
          graph.sizes_pc_of(in),
          PushConstantDataInfo(&range_params, sizeof(range_params)),
          PushConstantDataInfo(&offset_params, sizeof(offset_params)),
-         PushConstantDataInfo(
-             &src_channel_offset, sizeof(src_channel_offset))}));
+         PushConstantDataInfo(&src_channel_offset, sizeof(src_channel_offset))},
+        // Specialization Constants
+        {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
+        // Resize Args
+        {},
+        // Resizing Logic
+        nullptr));
   }
 }
 

@@ -27,7 +27,7 @@ from executorch.backends.arm.arm_backend import (
     is_tosa,
 )
 from executorch.backends.arm.ethosu_partitioner import EthosUPartitioner
-from executorch.backends.arm.quantizer.arm_quantizer import (
+from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
     TOSAQuantizer,
@@ -48,6 +48,7 @@ from executorch.backends.arm.test.tester.analyze_output_utils import (
 )
 from executorch.backends.arm.tosa_mapping import extract_tensor_meta
 from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
+from executorch.backends.arm.tosa_specification import TosaSpecification
 
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.devtools.backend_debug import get_delegation_info
@@ -564,7 +565,10 @@ class ArmTester(Tester):
         )
 
         graph = self.get_graph(self.cur)
-        dtype_dist_placeholders, dtype_dirst_tensors = _get_dtype_distribution(graph)
+        tosa_spec = get_tosa_spec(self.compile_spec)
+        dtype_dist_placeholders, dtype_dirst_tensors = _get_dtype_distribution(
+            graph, tosa_spec
+        )
         all_dtypes = set(dtype_dist_placeholders.keys()) | set(
             dtype_dirst_tensors.keys()
         )
@@ -659,7 +663,9 @@ class ArmTester(Tester):
             raise e
 
 
-def _get_dtype_distribution(graph: Graph) -> tuple[dict, dict]:
+def _get_dtype_distribution(
+    graph: Graph, tosa_spec: TosaSpecification
+) -> tuple[dict, dict]:
     """Counts the occurences of placeholder and call_function dtypes in a graph.
     The result is a tuple of Counters (placeholder_distribution, call_function_distribution)
     """
@@ -670,7 +676,7 @@ def _get_dtype_distribution(graph: Graph) -> tuple[dict, dict]:
             placeholder_dtypes.append(str(node.meta["val"].dtype))
         if node.op == "call_function":
             if "val" in node.meta:
-                dtype, _, _ = extract_tensor_meta(node.meta)
+                dtype, _, _ = extract_tensor_meta(node.meta, tosa_spec)
                 call_function_dtypes.append(ts.DTypeNames[dtype])
     return Counter(placeholder_dtypes), Counter(call_function_dtypes)
 

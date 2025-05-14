@@ -101,7 +101,7 @@ def main(args):
         ),
     )
     # rewrite default per-channel ptq config
-    quantizer.per_channel_quant_config = QuantizationConfig(
+    quantizer.default_quant_config.per_channel_quant_config = QuantizationConfig(
         input_activation=act_qspec,
         output_activation=act_qspec,
         weight=weight_qspec,
@@ -109,8 +109,8 @@ def main(args):
     )
 
     # rewrite default ptq config
-    q_config = quantizer.quant_config
-    quantizer.quant_config = QuantizationConfig(
+    q_config = quantizer.default_quant_config.quant_config
+    quantizer.default_quant_config.quant_config = QuantizationConfig(
         input_activation=act_qspec,
         output_activation=act_qspec,
         weight=q_config.weight,

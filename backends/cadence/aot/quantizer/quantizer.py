@@ -193,7 +193,6 @@ def get_cadence_default_quantizers() -> List[Quantizer]:
         CadenceAtenQuantizer(BmmPattern(), qconfig_A8W8),
         CadenceAtenQuantizer(Conv1dPattern(), qconfig_A8W8sym),
         CadenceAtenQuantizer(Conv2dPattern(), qconfig_A8W8sym),
-        CadenceAtenQuantizer(LayerNormPattern(), qconfig_A8W8),
         CadenceAtenQuantizer(LinearPattern(), qconfig_A8W8),
         CadenceAtenQuantizer(MatmulPattern(), qconfig_A8W8),
         CadenceAtenQuantizer(ReluPattern0(), qconfig_A8W8),
@@ -236,9 +235,21 @@ class CadenceNopQuantizer(CadenceQuantizer):
         super().__init__([])
 
 
+class CadenceWithLayerNormQuantizer(CadenceQuantizer):
+    """
+    Quantizer including layer norm
+    """
+
+    def __init__(self, quantizers: Optional[list[Quantizer]] = None) -> None:
+        if quantizers is None:
+            quantizers = get_cadence_default_quantizers()
+        quantizers.append(CadenceAtenQuantizer(LayerNormPattern(), qconfig_A8W8))
+        super().__init__(quantizers)
+
+
 class CadenceWakeWordQuantizer(CadenceQuantizer):
     """
-    Quantizer for WakeWord, including add
+    Quantizer for WakeWord, including add and cat
     """
 
     def __init__(self, quantizers: Optional[list[Quantizer]] = None) -> None:
