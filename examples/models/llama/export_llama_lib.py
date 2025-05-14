@@ -1273,6 +1273,7 @@ def _get_source_transforms(  # noqa
     preq_mode: Optional[str] = None,
     preq_group_size: Optional[int] = None,
     preq_embedding_quantize: Optional[str] = None,
+    local_global_attention: Optional[List[int]] = None,
 ) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
     """
     Return a list of functions that transform a graph.
@@ -1467,7 +1468,7 @@ def _get_source_transforms(  # noqa
     if vulkan:
         transforms.append(replace_with_vulkan_rotary_emb)
 
-    if getattr(args, "local_global_attention", None) is not None:
+    if local_global_attention:
         transforms.append(
             partial(
                 replace_kv_cache_with_ring_kv_cache,
