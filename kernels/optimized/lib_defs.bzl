@@ -2,10 +2,6 @@ load("@fbsource//tools/build_defs:default_platform_defs.bzl", "DEVSERVER_PLATFOR
 load("@fbsource//tools/build_defs:fb_native_wrapper.bzl", "fb_native")
 load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load(
-    "@fbsource//xplat/executorch/kernels/portable:op_registration_util.bzl",
-    "get_compiler_optimization_flags",
-)
 
 # Because vec exists as a collection of header files, compile and preprocessor
 # flags applied to the vec target do not have any effect, since no compilation
@@ -200,7 +196,12 @@ def define_libs(is_fbcode=False):
             exported_headers = native.glob([
                 "blas/**/*.h",
             ]),
-            compiler_flags = ["-Wno-pass-failed"] + get_compiler_optimization_flags(),
+            compiler_flags = ["-Wno-pass-failed"] + select({
+                "ovr_config//runtime:fbcode": [],
+                # TODO: replace with get_compiler_optimization_flags from op_registration_util.bzl when that
+                # is re-enabled.
+                "DEFAULT": ["-Os"],
+            }),
             header_namespace = "executorch/kernels/optimized",
             visibility = [
                 "//executorch/...",
