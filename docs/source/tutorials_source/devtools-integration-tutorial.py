@@ -189,7 +189,7 @@ from executorch.devtools import Inspector
 
 # sphinx_gallery_start_ignore
 inspector_patch = patch.object(Inspector, "__init__", return_value=None)
-inspector_patch_print = patch.object(Inspector, "print_data_tabular", return_value="")
+inspector_patch_print = patch.object(Inspector, "print_data_tabular", return_value=None)
 inspector_patch.start()
 inspector_patch_print.start()
 # sphinx_gallery_end_ignore
@@ -200,6 +200,19 @@ inspector = Inspector(etdump_path=etdump_path, etrecord=etrecord_path)
 inspector.event_blocks = []
 # sphinx_gallery_end_ignore
 inspector.print_data_tabular()
+
+# sphinx_gallery_start_ignore
+# Display the actural inspector tabular table image
+import matplotlib.image as mpimg
+import matplotlib.pyplot as plt
+
+# Load and display the image
+img = mpimg.imread("tabular_result.png")
+fig, ax = plt.subplots(figsize=(8, 6), dpi=150)  # Adjust figsize and dpi as needed
+ax.imshow(img)
+ax.axis("off")  # Hide axes
+plt.show()
+# sphinx_gallery_end_ignore
 
 # sphinx_gallery_start_ignore
 inspector_patch.stop()
