@@ -34,8 +34,7 @@ typedef NSNumber *ExecuTorchScalarValue
     NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(ScalarValue);
 typedef NSString *ExecuTorchStringValue
     NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(StringValue);
-typedef BOOL ExecuTorchBooleanValue
-    NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(BoolValue);
+typedef BOOL ExecuTorchBooleanValue NS_SWIFT_NAME(BoolValue);
 typedef NSInteger ExecuTorchIntegerValue
     NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(IntegerValue);
 typedef double ExecuTorchDoubleValue
