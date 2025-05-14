@@ -51,7 +51,7 @@ def qwen_3_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.
         new_key = get_mapped_key(key, inverted_mapping_dict)
         converted_state_dict[new_key] = value
 
-    # If lm_head.weight is not present, assume tied embeddings (e.g., 0.6b and 4b models)
+    # If lm_head.weight is not present in state dict, assume tied embeddings (e.g., 0.6b and 4b models)
     if "lm_head.weight" not in state_dict:
         converted_state_dict["output.weight"] = converted_state_dict[
             "tok_embeddings.weight"
@@ -86,18 +86,18 @@ def load_checkpoint_from_safetensors(input_dir: str) -> Dict:
         return state_dict
 
 
-def load_checkpoint(input_dir_or_checkpoint: str) -> Dict:
-    if os.path.isdir(input_dir_or_checkpoint):
-        return load_checkpoint_from_safetensors(input_dir_or_checkpoint)
-    else:
-        return torch.load(
-            input_dir_or_checkpoint, map_location="cpu", weights_only=True
-        )
+def load_checkpoint(input_dir: str) -> Dict:
+    pytorch_path = os.path.join(input_dir, "pytorch_model.bin")
+    if os.path.exists(pytorch_path):
+        print("Loading checkpoint from PyTorch .bin file")
+        return torch.load(pytorch_path, map_location="cpu", weights_only=True)
+    print("Loading checkpoint from safetensors directory")
+    return load_checkpoint_from_safetensors(input_dir)
 
 
-def convert_weights(input_dir_or_checkpoint: str, output_file: str) -> None:
+def convert_weights(input_dir: str, output_file: str) -> None:
     print("Loading checkpoint...")
-    sd = load_checkpoint(input_dir_or_checkpoint)
+    sd = load_checkpoint(input_dir)
     print("Converting checkpoint...")
     sd = qwen_3_tune_to_meta(sd)
     print("Saving checkpoint...")
@@ -110,14 +110,14 @@ def main():
         description="Convert Qwen3 weights to Meta format."
     )
     parser.add_argument(
-        "input_dir_or_checkpoint",
+        "input_dir",
         type=str,
-        help="Path to directory containing safetensor checkpoint files, or path to a PyTorch checkpoint file.",
+        help="Path to directory containing safetensor checkpoint files, or PyTorch checkpoint file.",
     )
     parser.add_argument("output", type=str, help="Path to the output checkpoint")
 
     args = parser.parse_args()
-    convert_weights(args.input_dir_or_checkpoint, args.output)
+    convert_weights(args.input_dir, args.output)
 
 
 if __name__ == "__main__":
