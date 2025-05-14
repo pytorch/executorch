@@ -16,6 +16,7 @@ runtime.python_library(
     ],
     deps = [
         "//executorch/backends/transforms:lib",
+        "//executorch/backends/transforms:remove_getitem_op",
         "//executorch/backends/xnnpack/_passes:xnnpack_passes",
         "//executorch/backends/xnnpack/operators:operators",
         "//executorch/backends/xnnpack/serialization:xnnpack_serializer",

@@ -59,7 +59,7 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     optimized_kernels
     ${_optimized_native_cpu_ops_lib_portable_kernels_lib}
     DEPS
-    executorch
+    executorch_core
   )
 
   install(TARGETS optimized_native_cpu_ops_lib DESTINATION lib)
