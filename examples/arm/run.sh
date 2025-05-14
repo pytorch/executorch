@@ -182,7 +182,7 @@ if [[ -z "$model_name" ]]; then
         "add"      # 1
         "add3"     # 2
         "qadd"     # 3
-        "qadd3"    # 4
+        "qadd2"    # 4
         "qops"     # 5
         "mv2"      # 6
     )
@@ -191,7 +191,7 @@ if [[ -z "$model_name" ]]; then
         "--delegate"            # 1 add
         "--delegate"            # 2 add3
         "--delegate --quantize" # 3 qadd
-        "--delegate --quantize" # 4 qadd3
+        "--delegate --quantize" # 4 qadd2
         "--delegate --quantize" # 5 qops
         "--delegate --quantize" # 6 mv2
     )

@@ -17,7 +17,6 @@ from executorch.backends.arm._passes import (
     ConvertAnyDefaultDimDimsPass,
     ConvertExpandCopyToRepeatPass,
     ConvertFullLikeToFullPass,
-    ConvertMeanDimToAveragePoolPass,
     ConvertMinMaxPass,
     ConvertMmToBmmPass,
     ConvertSplitToSlicePass,
@@ -37,6 +36,7 @@ from executorch.backends.arm._passes import (
     DecomposeSoftmaxPass,
     DecomposeSoftmaxUnstablePass,
     DecomposeSqrtPass,
+    DecomposeSumPass,
     DecomposeVarPass,
     FoldAndAnnotateQParamsPass,
     FuseBatchnorm2DPass,
@@ -45,7 +45,6 @@ from executorch.backends.arm._passes import (
     FuseQuantizedActivationPass,
     InsertRescalePass,
     InsertTableOpsPass,
-    KeepDimsFalseToSqueezePass,
     MatchArgRanksPass,
     MatchWhereSelfDtypePass,
     QuantizeOperatorArguments,
@@ -65,7 +64,7 @@ from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
 )
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
-from executorch.backends.xnnpack._passes.remove_getitem_op import RemoveGetItemPass
+from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_manager import PassManager
 from torch.fx import GraphModule
@@ -87,7 +86,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertSplitToSlicePass())
         self.add_pass(ConvertMmToBmmPass())
         self.add_pass(DecomposeLinearPass())
-        self.add_pass(ConvertMeanDimToAveragePoolPass())
+        self.add_pass(DecomposeMeanDimPass())
         self.add_pass(ConvertFullLikeToFullPass())
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
@@ -110,7 +109,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
-        self.add_pass(KeepDimsFalseToSqueezePass())
+        self.add_pass(DecomposeSumPass())
         self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSelectPass())
         self.add_pass(ConvertSqueezesToViewPass())
@@ -140,7 +139,6 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass())
         self.add_pass(DecomposeNotEqualPass())
-        self.add_pass(ConvertMeanDimToAveragePoolPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeSoftmaxPass())
         self.add_pass(DecomposeGeluPass())
@@ -163,7 +161,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
-        self.add_pass(KeepDimsFalseToSqueezePass())
+        self.add_pass(DecomposeSumPass())
         self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSelectPass())
         self.add_pass(ConvertSqueezesToViewPass())
@@ -220,4 +218,6 @@ class ArmPassManager(PassManager):
 
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ReplaceInfValues())
+        self.add_pass(DecomposeSumPass())
+
         return self._transform(graph_module)

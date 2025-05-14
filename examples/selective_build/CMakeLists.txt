@@ -135,6 +135,3 @@ target_link_libraries(
 )
 target_link_options_shared_lib(select_build_lib)
 target_compile_options(selective_build_test PUBLIC ${_common_compile_options})
-
-# Print all summary
-executorch_print_configuration_summary()

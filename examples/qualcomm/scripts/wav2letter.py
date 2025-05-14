@@ -134,10 +134,10 @@ def main(args):
 
     # retrieve dataset, will take some time to download
     data_num = 100
-    if args.compile_only:
+    if args.ci:
         inputs = [(torch.rand(1, 1, 700, 1),)]
         logging.warning(
-            "With compile_only, accuracy will be bad due to insufficient datasets for quantization."
+            "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
         )
     else:
         inputs, targets, input_list = get_dataset(
