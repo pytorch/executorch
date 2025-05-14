@@ -51,7 +51,7 @@ def get_dynamic_quant_recipe() -> ExportRecipe:
     )
 
 
-def get_8a4w_config(group_size: int=32) -> ExportRecipe:
+def get_8a4w_config(group_size: int = 32) -> ExportRecipe:
     # Create quantization recipe
     quant_recipe = QuantizationRecipe(
         quantizer=None,

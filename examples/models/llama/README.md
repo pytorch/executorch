@@ -398,7 +398,7 @@ LLAMA_CHECKPOINT=path/to/checkpoint.pth
 LLAMA_PARAMS=path/to/params.json
 
 # Set low-bit quantization parameters
-QLINEAR_BITWIDTH=3 # Can be 1-8
+QLINEAR_BITWIDTH=4 # Can be 1-8
 QLINEAR_GROUP_SIZE=128 # Must be multiple of 16
 QEMBEDDING_BITWIDTH=4 # Can be 1-8
 QEMBEDDING_GROUP_SIZE=32 # Must be multiple of 16
