@@ -48,6 +48,9 @@ project(executorch)
 # MARK: - Start EXECUTORCH_H12025_BUILD_MIGRATION --------------------------------------------------
 
 include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
+include(${PROJECT_SOURCE_DIR}/tools/cmake/Utils.cmake)
+include(CMakeDependentOption)
+include(ExternalProject)
 
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -64,10 +67,14 @@ if(NOT CMAKE_SYSTEM_PROCESSOR)
 endif()
 announce_configured_options(CMAKE_SYSTEM_PROCESSOR)
 
+if(NOT PYTHON_EXECUTABLE)
+  resolve_python_executable()
+endif()
+announce_configured_options(PYTHON_EXECUTABLE)
+
 announce_configured_options(CMAKE_CXX_COMPILER_ID)
 announce_configured_options(CMAKE_TOOLCHAIN_FILE)
 announce_configured_options(BUCK2)
-announce_configured_options(PYTHON_EXECUTABLE)
 
 load_build_preset()
 include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
@@ -76,10 +83,6 @@ include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
 print_configured_options()
 
 # MARK: - End EXECUTORCH_H12025_BUILD_MIGRATION ----------------------------------------------------
-
-include(tools/cmake/Utils.cmake)
-include(CMakeDependentOption)
-include(ExternalProject)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
