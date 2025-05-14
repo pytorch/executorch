@@ -72,7 +72,7 @@ def test_decompose_vector_norm_tosa_BI(module):
         }
     elif ord_val == 2:
         ops_after_pass = {
-            "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 1,
+            "executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar": 1,
             "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList": 1,
         }
 
