@@ -94,3 +94,14 @@ runtime.python_test(
         "libtorch",
     ],
 )
+
+runtime.python_test(
+    name = "test_xnnpack_recipes",
+    srcs = glob([
+        "recipes/*.py",
+    ]),
+    deps = [
+        "//executorch/backends/xnnpack:xnnpack_delegate",
+        "//executorch/export:lib",
+    ],
+)
