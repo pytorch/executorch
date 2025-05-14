@@ -550,6 +550,7 @@ Tutorials we recommend you complete before this:</div>
 <h3>Supported Chips:<a class="headerlink" href="#supported-chips" title="Permalink to this heading">¶</a></h3>
 <ul class="simple">
 <li><p>MediaTek Dimensity 9300 (D9300)</p></li>
+<li><p>MediaTek Dimensity 9400 (D9400)</p></li>
 </ul>
 </div>
 <div class="section" id="software">
@@ -562,28 +563,28 @@ Tutorials we recommend you complete before this:</div>
 <div class="section" id="setting-up-your-developer-environment">
 <h2>Setting up your developer environment<a class="headerlink" href="#setting-up-your-developer-environment" title="Permalink to this heading">¶</a></h2>
 <p>Follow the steps below to setup your build environment:</p>
-<ol class="arabic simple">
+<ol class="arabic">
 <li><p><strong>Setup ExecuTorch Environment</strong>: Refer to the <a class="reference internal" href="getting-started.html"><span class="doc std std-doc">Getting Started</span></a> guide for detailed instructions on setting up the ExecuTorch environment.</p></li>
-<li><p><strong>Setup MediaTek Backend Environment</strong></p></li>
-</ol>
-<ul>
-<li><p>Install the dependent libs. Ensure that you are inside <code class="docutils literal notranslate"><span class="pre">backends/mediatek/</span></code> directory</p>
+<li><p><strong>Setup MediaTek Backend Environment</strong></p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>pip3<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt
 </pre></div>
 </div>
 </li>
+</ol>
+<ul>
 <li><p>Install the two .whl downloaded from NeuroPilot Portal</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>pip3<span class="w"> </span>install<span class="w"> </span>mtk_neuron-8.2.13-py3-none-linux_x86_64.whl
-pip3<span class="w"> </span>install<span class="w"> </span>mtk_converter-8.9.1+public-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>pip3<span class="w"> </span>install<span class="w"> </span>mtk_neuron-8.2.19-py3-none-linux_x86_64.whl
+pip3<span class="w"> </span>install<span class="w"> </span>mtk_converter-8.13.0+public-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 </pre></div>
 </div>
 </li>
 <li><p>Set evironment variables for building backend</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">NEURON_BUFFER_ALLOCATOR_LIB</span><span class="o">=</span>&lt;path_to_buffer_allocator.so&gt;
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">NEURON_BUFFER_ALLOCATOR_LIB</span><span class="o">=</span>&lt;path_to_buffer_allocator&gt;
 </pre></div>
 </div>
 </li>
 </ul>
+<p>Additionally, make sure to copy <code class="docutils literal notranslate"><span class="pre">NeuronAdapter.h</span></code> to the following directory: <code class="docutils literal notranslate"><span class="pre">backends/mediatek/runtime/include/api/</span></code>.</p>
 </div>
 <div class="section" id="build">
 <h2>Build<a class="headerlink" href="#build" title="Permalink to this heading">¶</a></h2>
