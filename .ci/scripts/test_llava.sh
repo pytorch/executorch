@@ -93,8 +93,7 @@ cmake_build_llava_runner_for_android() {
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
         -DANDROID_ABI=arm64-v8a                                                 \
         ${LLAVA_COMMON_CMAKE_ARGS}                                              \
-        -DCMAKE_PREFIX_PATH="$python_lib"                  \
-        -DLLAVA_RUNNER_NO_TORCH_DUMMY_IMAGE=ON                                  \
+        -DCMAKE_PREFIX_PATH="$python_lib"                                       \
         -B${BUILD_DIR}/${dir}                                                   \
         ${dir}
 
@@ -107,11 +106,10 @@ export_llava() {
     $PYTHON_EXECUTABLE -m executorch.examples.models.llava.export_llava --pte-name llava.pte --with-artifacts
 }
 
-# Download a new image with different size, to test if the model can handle different image sizes
-prepare_image_tensor() {
+# Download a new image
+download_image() {
     echo "Downloading image"
     curl -o basketball.jpg https://upload.wikimedia.org/wikipedia/commons/7/73/Chicago_Bulls_and_New_Jersey_Nets%2C_March_28%2C_1991.jpg
-    $PYTHON_EXECUTABLE -m executorch.examples.models.llava.image_util --image-path basketball.jpg --output-path image.pt
 }
 
 run_and_verify() {
@@ -121,8 +119,8 @@ run_and_verify() {
         echo "Export failed. Abort"
         exit 1
     fi
-    if [[ ! -f "image.pt" ]]; then
-        echo "image.pt is missing."
+    if [[ ! -f "basketball.jpg" ]]; then
+        echo "basketball.jpg is missing."
         exit 1
     fi
     if [[ ! -f "tokenizer.bin" ]]; then
@@ -130,11 +128,9 @@ run_and_verify() {
         exit 1
     fi
 
-
-
     RUNTIME_ARGS="--model_path=llava.pte    \
         --tokenizer_path=tokenizer.bin      \
-        --image_path=image.pt               \
+        --image_path=basketball.jpg         \
         --prompt=ASSISTANT:                 \
         --temperature=0                     \
         --seq_len=650"
@@ -149,13 +145,8 @@ run_and_verify() {
 
     # verify result.txt
     RESULT=$(cat result.txt)
-    # set the expected prefix to be the same as prompt because there's a bug in sdpa_with_kv_cache that causes <unk> tokens.
-    if [[ "$(uname)" == "Darwin" ]]; then
-        EXPECTED_PREFIX="ASSISTANT: image captures a basketball game in progress, with several players on the court. One of the players is dribbling the ball, while the others are in various"
-    else
-        # set the expected prefix to be the same as prompt because there's a bug in sdpa_with_kv_cache that causes <unk> tokens.
-        EXPECTED_PREFIX="ASSISTANT: image"
-    fi
+    EXPECTED_PREFIX="ASSISTANT: image captures a basketball game in progress, with several players on the court. "
+
     if [[ "${RESULT}" == *"${EXPECTED_PREFIX}"* ]]; then
         echo "Expected result prefix: ${EXPECTED_PREFIX}"
         echo "Actual result: ${RESULT}"
@@ -184,5 +175,5 @@ fi
 export_llava
 
 # Step3. Run
-prepare_image_tensor
+download_image
 run_and_verify

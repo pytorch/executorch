@@ -177,8 +177,24 @@ backends/arm/scripts/build_portable_kernels.sh --et_build_root="${et_build_root}
 
 if [[ -z "$model_name" ]]; then
     # the test models run, and whether to delegate
-    test_model=( "softmax" "add" "add3" "mv2" )
-    model_compiler_flags=( "" "--delegate" "--delegate" "--delegate --quantize" )
+    test_model=(
+        "softmax"  # 0
+        "add"      # 1
+        "add3"     # 2
+        "qadd"     # 3
+        "qadd2"    # 4
+        "qops"     # 5
+        "mv2"      # 6
+    )
+    model_compiler_flags=(
+        ""                      # 0 softmax
+        "--delegate"            # 1 add
+        "--delegate"            # 2 add3
+        "--delegate --quantize" # 3 qadd
+        "--delegate --quantize" # 4 qadd2
+        "--delegate --quantize" # 5 qops
+        "--delegate --quantize" # 6 mv2
+    )
 else
     test_model=( "$model_name" )
     model_compiler_flags=( "$aot_arm_compiler_flag_delegate $aot_arm_compiler_flag_quantize $aot_arm_compiler_flags" )

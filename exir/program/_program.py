@@ -42,6 +42,7 @@ from executorch.exir.passes import (
     EdgeToBackendOpsPass,
     MemoryFormatOpsPass,
     OpReplacePass,
+    remove_unused_parameters_pass,
 )
 from executorch.exir.passes.external_constants_pass import (
     external_constants_pass,
@@ -800,6 +801,9 @@ def _generate_edge_program(
     gm_res = RemoveNonCoreAtenOpGraphAssertsPass()(gm)
     assert gm_res is not None
     gm = gm_res.graph_module
+
+    # Remove unused parameters
+    program = remove_unused_parameters_pass(program)
 
     if config._check_ir_validity:
         try:
