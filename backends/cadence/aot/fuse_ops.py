@@ -814,11 +814,61 @@ class FuseQuantDequantToRequantizePass(FuseOpPairsAcrossBranchesPass):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class FuseMulIntoDequantPass(ExportPass):
+class FuseMulScalarIntoDequantPass(ExportPass):
     """
-    Looks for the pattern where atem.mul is multiplying the outputs of dequantize
-    and aten.full. If found, updates the dequant scale to reflect the multiplication
-    and removes the full and mul nodes.
+    Looks for the pattern where aten.mul.Scalar is multiplying the
+     outputs of dequantize. If found, updates the dequant scale
+    to reflect the multiplication and removes the mul node.
+    """
+
+    def attempt_fusion(
+        self, graph_module: torch.fx.GraphModule, node: torch.fx.Node
+    ) -> None:
+        if node.target not in {
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.cadence.dequantize_per_tensor.default,
+        }:
+            return
+
+        # ensure that the single user of dequant is aten.mul.Scalar
+        user = list(node.users.keys())[0]
+        if len(node.users) != 1 or user.target != exir_ops.edge.aten.mul.Scalar:
+            return
+
+        # ensure that the other arg to mul is a node (i.e. not a constant)
+        if len(user.args) > 1 and isinstance(user.args[1], torch.fx.Node):
+            return
+
+        new_deq_args = list(node.args)
+        assert isinstance(node.args[1], Number)
+        assert isinstance(user.args[1], Number)
+        # pyre-ignore[58]: Unsupported operand *
+        new_deq_args[1] = node.args[1] * user.args[1]
+
+        logging.debug(
+            f"Fused {node} and {user} into {node}. Updated scale from {node.args[1]} to {new_deq_args[1]}"
+        )
+
+        user.replace_all_uses_with(node)
+        node.args = tuple(new_deq_args)
+
+        graph_module.graph.erase_node(user)
+
+        graph_module.recompile()
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        for node in graph_module.graph.nodes:
+            self.attempt_fusion(graph_module, node)
+        result = super().call(graph_module)
+        return result
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class FuseMulTensorIntoDequantPass(ExportPass):
+    """
+    Looks for the pattern where aten.mul is multiplying the outputs of dequantize
+    and aten.full, or vice versa. If found, updates the dequant scale to reflect
+    the multiplication and removes the full and mul nodes.
     """
 
     def attempt_fusion(
@@ -1017,7 +1067,8 @@ class CadenceFuseOpsInGraph:
         FuseCascadedTransposeOrPermuteOps,
         FuseCascadedViewOps,
         FuseQuantDequantToRequantizePass,
-        FuseMulIntoDequantPass,
+        FuseMulTensorIntoDequantPass,
+        FuseMulScalarIntoDequantPass,
         FuseFullThenReshapePass,
         FuseTransposeOrPermuteOpPairsPass,
     ]

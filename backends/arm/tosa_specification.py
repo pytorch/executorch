@@ -36,6 +36,7 @@ class TosaSpecification:
     """
 
     version: Version
+    is_U55_subset: bool
 
     def support_integer(self) -> bool:
         """
@@ -49,8 +50,12 @@ class TosaSpecification:
         """
         raise NotImplementedError
 
-    def __init__(self, version: Version):
+    def __init__(self, version: Version, extras: List[str]):
         self.version = version
+
+        self.is_U55_subset = "u55" in extras
+        if self.is_U55_subset:
+            extras.remove("u55")
 
     @staticmethod
     def create_from_string(repr: str) -> "TosaSpecification":
@@ -85,11 +90,10 @@ class TosaSpecification:
 class Tosa_0_80(TosaSpecification):
     profile: str
     level_8k: bool
-    is_U55_subset: bool
     available_profiles = ["BI", "MI"]  # MT is not defined
 
     def __init__(self, version: Version, extras: List[str]):
-        super().__init__(version)
+        super().__init__(version, extras)
         assert version >= Version("0.80") and version < Version("0.90")
 
         # Check that we only have one profile in the extensions list
@@ -105,9 +109,6 @@ class Tosa_0_80(TosaSpecification):
         self.level_8k = "8k" in extras
         if self.level_8k:
             extras.remove("8k")
-        self.is_U55_subset = "u55" in extras
-        if self.is_U55_subset:
-            extras.remove("u55")
 
         if len(extras) > 0:
             raise ValueError(f"Unhandled extras found: {extras}")
@@ -147,7 +148,7 @@ class Tosa_1_00(TosaSpecification):
     }
 
     def __init__(self, version: Version, extras: List[str]):
-        super().__init__(version)
+        super().__init__(version, extras)
 
         # Check that we have at least one profile in the extensions list
         if [e in Tosa_1_00.available_profiles for e in extras].count(True) == 0:
@@ -194,6 +195,8 @@ class Tosa_1_00(TosaSpecification):
         extensions = self._get_extensions_string()
         if self.level_8k:
             extensions += "+8k"
+        if self.is_U55_subset:
+            extensions += "+u55"
         return f"TOSA-{self.version}{self._get_profiles_string()}{extensions}"
 
     def __hash__(self) -> int:

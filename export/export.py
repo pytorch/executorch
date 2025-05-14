@@ -64,7 +64,7 @@ class Stage(ABC):
         """
         pass
 
-    def set_next_stage(self, next_stage: 'Stage') -> None:
+    def set_next_stage(self, next_stage: "Stage") -> None:
         """
         Set the next stage in the pipeline.
 
@@ -74,7 +74,7 @@ class Stage(ABC):
         self._next_stage = next_stage
 
     @property
-    def next_stage(self) -> Optional['Stage']:
+    def next_stage(self) -> Optional["Stage"]:
         """
         Get the next stage in the pipeline.
 
@@ -565,7 +565,6 @@ class ExportSession:
         )
         self._pipeline.append(executorch_stage)
 
-
         # Initialize stage artifacts
         self._exported_models: Dict[str, nn.Module] = {}
 
@@ -607,7 +606,9 @@ class ExportSession:
                 self._exported_program = stage.get_artifacts()
             elif stage_name == "edge_transform_and_lower":
                 # Run the edge transform and lower stage
-                stage.run(self._exported_program, {"constant_methods": self._constant_methods})
+                stage.run(
+                    self._exported_program, {"constant_methods": self._constant_methods}
+                )
                 self._edge_program_manager = stage.get_artifacts()
                 self._delegation_info = stage.delegation_info
             elif stage_name == "executorch":
