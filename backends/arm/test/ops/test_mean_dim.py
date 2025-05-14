@@ -53,6 +53,7 @@ def test_adaptive_avg_pool2d_tosa_BI(test_data):
         test_data(),
         AdaptiveAveragePool2d.aten_op,
         AdaptiveAveragePool2d.exir_op,
+        symmetric_io_quantization=True,
     ).run()
 
 
@@ -65,6 +66,7 @@ def test_adaptive_avg_pool2d_u55_BI(test_data):
         AdaptiveAveragePool2d.aten_op,
         AdaptiveAveragePool2d.exir_op,
         run_on_fvp=True,
+        symmetric_io_quantization=True,
     ).run()
 
 
@@ -77,21 +79,120 @@ def test_adaptive_avg_pool2d_u85_BI(test_data):
         AdaptiveAveragePool2d.aten_op,
         AdaptiveAveragePool2d.exir_op,
         run_on_fvp=True,
+        symmetric_io_quantization=True,
     ).run()
 
 
 class MeanDim(torch.nn.Module):
     test_data_suite: dict[str, tuple] = {
-        "zeros": lambda: (torch.zeros(1, 1280, 7, 7), -1, True),
-        "ones": lambda: (torch.ones(1, 1280, 7, 7), (-1, 2), False),
-        "rand": lambda: (
-            torch.rand(1, 1280, 7, 7),
-            (-1),
+        "rank_1_keepdim": lambda: (
+            torch.rand(7),
+            (0),
             True,
         ),
-        "randn": lambda: (
-            torch.randn(1, 1280, 7, 7),
-            (-1, -2, -3),
+        "rank_2_keepdim": lambda: (
+            torch.rand(7, 7),
+            (0, 1),
+            True,
+        ),
+        "rank_3_keepdim": lambda: (
+            torch.rand(7, 7, 7),
+            (0, 1, 2),
+            True,
+        ),
+        "rand_1_keepdim": lambda: (
+            torch.rand(1, 7, 7, 7),
+            (1),
+            True,
+        ),
+        "rand_2_keepdim": lambda: (
+            torch.rand(1, 7, 7, 7),
+            (2),
+            True,
+        ),
+        "rand_3_keepdim": lambda: (
+            torch.rand(1, 7, 7, 7),
+            (3),
+            True,
+        ),
+        "rand_12_keepdim": lambda: (
+            torch.rand(1, 7, 7, 7),
+            (1, 2),
+            True,
+        ),
+        "rand_13_keepdim": lambda: (
+            torch.rand(1, 7, 7, 7),
+            (1, 3),
+            True,
+        ),
+        "rand_23_keepdim": lambda: (
+            torch.rand(1, 7, 7, 7),
+            (2, 3),
+            True,
+        ),
+        "rand_123_keepdim": lambda: (
+            torch.rand(1, 7, 7, 7),
+            (1, 2, 3),
+            True,
+        ),
+        "rand_0123_keepdim": lambda: (
+            torch.rand(1, 7, 7, 7),
+            (0, 1, 2, 3),
+            True,
+        ),
+        "rank_1": lambda: (
+            torch.rand(7),
+            (-1),
+            False,
+        ),
+        "rank_2": lambda: (
+            torch.rand(7, 7),
+            (-2, -1),
+            False,
+        ),
+        "rank_3": lambda: (
+            torch.rand(7, 7, 7),
+            (-3, -2, -1),
+            False,
+        ),
+        "rand_1": lambda: (
+            torch.rand(1, 7, 7, 7),
+            (-3),
+            False,
+        ),
+        "rand_2": lambda: (
+            torch.rand(1, 7, 7, 7),
+            (-2),
+            False,
+        ),
+        "rand_3": lambda: (
+            torch.rand(1, 7, 7, 7),
+            (-1),
+            False,
+        ),
+        "rand_12": lambda: (
+            torch.rand(1, 7, 7, 7),
+            (-3, -2),
+            False,
+        ),
+        "rand_13": lambda: (
+            torch.rand(1, 7, 7, 7),
+            (-3, -1),
+            False,
+        ),
+        "rand_23": lambda: (
+            torch.rand(1, 7, 7, 7),
+            (-2, -1),
+            False,
+        ),
+        "rand_123": lambda: (
+            torch.rand(1, 7, 7, 7),
+            (-3, -2, -1),
+            False,
+        ),
+        "rand_0123": lambda: (
+            torch.rand(1, 7, 7, 7),
+            (-4, -3, -2, -1),
             False,
         ),
     }
@@ -124,9 +225,9 @@ def test_mean_dim_tosa_BI(test_data):
     pipeline = TosaPipelineBI[input_t](
         MeanDim(dim, keep_dim),
         (test_data,),
-        "torch.ops.aten.sum.dim_IntList",  # Just check for sum op included in the mean decomposition
+        [],  # Might be sum, avgpool, or both
+        symmetric_io_quantization=True,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
@@ -137,10 +238,10 @@ def test_mean_dim_u55_BI(test_data):
     pipeline = EthosU55PipelineBI[input_t](
         MeanDim(dim, keep_dim),
         (test_data,),
-        "torch.ops.aten.sum.dim_IntList",  # Just check for sum op included in the mean decomposition
+        [],  # Might be sum, avgpool, or both
         run_on_fvp=True,
-    )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
+        symmetric_io_quantization=True,
+    ).dump_artifact("export")
     pipeline.run()
 
 
@@ -151,8 +252,8 @@ def test_mean_dim_u85_BI(test_data):
     pipeline = EthosU85PipelineBI[input_t](
         MeanDim(dim, keep_dim),
         (test_data,),
-        "torch.ops.aten.sum.dim_IntList",  # Just check for sum op included in the mean decomposition
+        [],  # Might be sum, avgpool, or both
         run_on_fvp=True,
+        symmetric_io_quantization=True,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
