@@ -293,7 +293,9 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
         )
         quant_stage = (
             Quantize(
-                TOSAQuantizer(compile_spec).set_io(get_symmetric_quantization_config()),
+                TOSAQuantizer(tosa_profiles[tosa_version]).set_io(
+                    get_symmetric_quantization_config()
+                ),
                 get_symmetric_quantization_config(),
             )
             if symmetric_io_quantization
