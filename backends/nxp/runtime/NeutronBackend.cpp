@@ -18,6 +18,7 @@ using namespace std;
 
 namespace torch {
 namespace executor {
+namespace neutron {
 
 // All the memory need to be aligned with 16
 #define BUFFER_ALIGNMENT 16
@@ -407,5 +408,6 @@ Backend backend_id{"NeutronBackend", &backend};
 static auto registered = register_backend(backend_id);
 } // namespace
 
+} // namespace neutron
 } // namespace executor
 } // namespace torch
