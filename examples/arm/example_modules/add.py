@@ -9,5 +9,5 @@ class myModelAdd(torch.nn.Module):
         return x + x
 
 
-ModelUnderTest=myModelAdd()
+ModelUnderTest = myModelAdd()
 ModelInputs = (torch.ones(5),)
