@@ -114,7 +114,6 @@ __all__ = [
     "ExportedProgramDeserializer",
 ]
 
-from .upgrade import GraphModuleOpUpgrader
 
 log = logging.getLogger(__name__)
 
@@ -2220,12 +2219,8 @@ class GraphModuleDeserializer:
 
 
 class ExportedProgramDeserializer:
-    def __init__(self, expected_opset_version: Optional[Dict[str, int]] = None):
-        self.expected_opset_version: Dict[str, int] = {}
-        if expected_opset_version:
-            self.expected_opset_version.update(expected_opset_version)
-        if "aten" not in self.expected_opset_version:
-            self.expected_opset_version["aten"] = torch._C._get_max_operator_version()
+    def __init__(self):
+        pass
 
     def deserialize_range_constraints(
         self,
@@ -2278,13 +2273,6 @@ class ExportedProgramDeserializer:
             symbol_name_to_range,
             res.names_to_symbols,
         )
-        model_opset_version: Optional[Dict[str, int]] = exported_program.opset_version
-        self._validate_model_opset_version(model_opset_version)
-
-        upgrader = GraphModuleOpUpgrader(
-            self.expected_opset_version, model_opset_version
-        )
-
         exported_program = ep.ExportedProgram(
             root=res.graph_module,
             graph=res.graph_module.graph,
@@ -2296,56 +2284,7 @@ class ExportedProgramDeserializer:
             verifier=load_verifier(exported_program.dialect),
             constants=res.constants,
         )
-        return upgrader.upgrade(exported_program)
-
-    def _validate_model_opset_version(
-        self, model_opset_version: Optional[Dict[str, int]]
-    ):
-        """Compare model_opset_version with expected_opset_version and raise error if we can't resolve the version
-        difference.
-        E.g., model_opset_version = {"aten": 3, "custom": 4}
-        expected_opset_version = {"aten": 4, "custom": 4}
-        This means we can use an upgrader for ATen to reconcile the deserialized model.
-
-        The logic of this method:
-
-        For common op namespaces:
-        1. if model version < expected version, this case can be handled by upgraders.
-        2. if model version > expected version, we need downgraders but not implemented yet.
-        3. if model version == expected version, we don't need extra handling.
-
-        For op namespace only in model_opset_version, we should give a warning because it is missing from
-        expected_opset_version.
-        """
-        if not model_opset_version:
-            raise RuntimeError("Serialized model should have opset version.")
-        common_namespaces = {
-            key for key in model_opset_version if key in self.expected_opset_version
-        }
-        for namespace in common_namespaces:
-            model_version = model_opset_version[namespace]
-            assert isinstance(
-                model_version, int
-            ), f"model_opset_version value should be int, got {model_version}"
-
-            compiler_version = self.expected_opset_version[namespace]
-            assert isinstance(
-                compiler_version, int
-            ), f"expected_opset_version value should be int, got {compiler_version}"
-
-            # TODO(larryliu0820): Add support for upgrader & downgrader
-            if model_version != compiler_version:
-                raise NotImplementedError(
-                    f"Model opset version {model_opset_version} doesn't match to compiler opset version "
-                    f"{self.expected_opset_version}! Upgrader/downgrader is not implemented yet."
-                )
-        for namespace in model_opset_version:
-            if namespace in common_namespaces:
-                continue
-            log.warning(
-                "Compiler doesn't have a version table for op namespace: {ns}. ",
-                extra={"ns": namespace},
-            )
+        return exported_program
 
 
 class EnumEncoder(json.JSONEncoder):
@@ -2435,7 +2374,6 @@ def _dict_to_dataclass(cls, data):
 
 def deserialize(
     artifact: SerializedArtifact,
-    expected_opset_version: Optional[Dict[str, int]] = None,
 ) -> ep.ExportedProgram:
     assert isinstance(artifact.exported_program, bytes)
     exported_program_str = artifact.exported_program.decode("utf-8")
@@ -2443,7 +2381,7 @@ def deserialize(
     serialized_exported_program = _dict_to_dataclass(
         ExportedProgram, exported_program_dict
     )
-    return ExportedProgramDeserializer(expected_opset_version).deserialize(
+    return ExportedProgramDeserializer().deserialize(
         serialized_exported_program,
         artifact.state_dict,
         artifact.constants,
