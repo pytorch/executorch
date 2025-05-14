@@ -53,7 +53,7 @@ class Module {
    */
   explicit Module(
       const std::string& file_path,
-      const LoadMode load_mode = LoadMode::MmapUseMlock,
+      const LoadMode load_mode = LoadMode::File,
       std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
 
   /**
@@ -68,7 +68,7 @@ class Module {
   explicit Module(
       const std::string& file_path,
       const std::string& data_map_path,
-      const LoadMode load_mode = LoadMode::MmapUseMlock,
+      const LoadMode load_mode = LoadMode::File,
       std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
 
   /**
@@ -481,7 +481,7 @@ class Module {
 
   std::string file_path_;
   std::string data_map_path_;
-  LoadMode load_mode_{LoadMode::MmapUseMlock};
+  LoadMode load_mode_{LoadMode::File};
   std::shared_ptr<Program> program_;
   std::unique_ptr<runtime::DataLoader> data_loader_;
   std::unique_ptr<runtime::MemoryAllocator> memory_allocator_;
@@ -491,16 +491,6 @@ class Module {
   std::unique_ptr<NamedDataMap> data_map_;
 
  protected:
-  /**
-   * Get a method by method name.
-   *
-   * @param[in] method_name The name of the method to get.
-   *
-   * @returns A Result object containing either a pointer to the requested
-   *          method or an error to indicate failure.
-   */
-  ET_NODISCARD inline runtime::Result<Method*> get_method(
-      const std::string& method_name);
   std::unordered_map<std::string, MethodHolder> methods_;
 
   friend class ExecuTorchJni;
