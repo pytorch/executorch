@@ -9,7 +9,7 @@ from typing import cast
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import create_node
-from executorch.backends.arm.tosa_quant_utils import dq_op, q_op, QuantArgs
+from executorch.backends.arm.tosa_quant_utils import dq_ops, q_ops, QuantArgs
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch import Tensor
 from torch.fx import GraphModule, Node
@@ -94,11 +94,11 @@ class InsertRescalePass(ExportPass):
         for node in graph_module.graph.nodes:
             node = cast(Node, node)
 
-            if node.target is not dq_op:
+            if node.target not in dq_ops:
                 continue
             # Copy users since we remove them while iterating, modyfing the node.users list.
             for user in copy(node.users):
-                if user.target == q_op:
+                if user.target in q_ops:
                     self.fold_dq_q_to_rescale(node, user, graph_module)
                     modified = True
             if len(node.users) == 0:
