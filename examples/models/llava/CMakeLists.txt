@@ -208,6 +208,3 @@ endif()
 target_include_directories(llava_main PUBLIC ${_common_include_directories})
 target_link_libraries(llava_main PUBLIC llava_runner ${link_libraries})
 target_compile_options(llava_main PUBLIC ${_common_compile_options})
-
-# Print all summary
-executorch_print_configuration_summary()

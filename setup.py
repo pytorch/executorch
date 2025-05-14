@@ -714,11 +714,6 @@ class CustomBuild(build):
             "-DEXECUTORCH_ENABLE_LOGGING=ON",
             "-DEXECUTORCH_LOG_LEVEL=Info",
             "-DCMAKE_OSX_DEPLOYMENT_TARGET=10.15",
-            # The separate host project is only required when cross-compiling,
-            # and it can cause build race conditions (libflatcc.a errors) when
-            # enabled. TODO(dbort): Remove this override once this option is
-            # managed by cmake itself.
-            "-DEXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT=OFF",
             "-DEXECUTORCH_BUILD_TESTS=ON",
         ]
 
@@ -840,7 +835,7 @@ def get_ext_modules() -> List[Extension]:
 
     ext_modules = [
         BuiltFile(
-            src_dir="%CMAKE_CACHE_DIR%/third-party/flatbuffers_external_project",
+            src_dir="%CMAKE_CACHE_DIR%/third-party/flatbuffers_external_project/bin/%BUILD_TYPE%/",
             src_name="flatc",
             dst="executorch/data/bin/",
             is_executable=True,
