@@ -1,11 +1,11 @@
 import torch
 
-class myModel(torch.nn.Module):
+class myModelAdd(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
     def forward(self, x):
         return x + x
 
-ModelUnderTest=myModel()
+ModelUnderTest=myModelAdd()
 ModelInputs = (torch.ones(5),)
