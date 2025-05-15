@@ -48,10 +48,12 @@ public class LlmModule {
    */
   public LlmModule(
       int modelType, String modulePath, String tokenizerPath, float temperature, String dataPath) {
-    if (!new File(modulePath).canRead()) {
+    File modelFile = new File(modulePath);
+    if (!modelFile.canRead() || !modelFile.isFile()) {
       throw new RuntimeException("Cannot load model path " + modulePath);
     }
-    if (!new File(tokenizerPath).canRead()) {
+    File tokenizerFile = new File(tokenizerPath);
+    if (!tokenizerFile.canRead() || !tokenizerFile.isFile()) {
       throw new RuntimeException("Cannot load tokenizer path " + tokenizerPath);
     }
     mHybridData = initHybrid(modelType, modulePath, tokenizerPath, temperature, dataPath);

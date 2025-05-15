@@ -53,7 +53,8 @@ public class Module {
     if (!NativeLoader.isInitialized()) {
       NativeLoader.init(new SystemDelegate());
     }
-    if (!new File(modelPath).canRead()) {
+    File modelFile = new File(modelPath);
+    if (!modelFile.canRead() || !modelFile.isFile()) {
       throw new RuntimeException("Cannot load model path " + modelPath);
     }
     return new Module(new NativePeer(modelPath, loadMode));
