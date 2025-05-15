@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 MediaTek Inc.
+ * Copyright (c) 2025 MediaTek Inc.
  *
  * Licensed under the BSD License (the "License"); you may not use this file
  * except in compliance with the License. See the license file in the root
@@ -16,18 +16,33 @@
 
 #include <executorch/runtime/core/memory_allocator.h>
 
+#include <dlfcn.h>
+#include <iostream>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <new>
 
 #define GET_NEURON_ALLOCATOR \
-  ::torch::executor::neuron::BufferAllocator::GetInstance()
+  ::executorch::backends::neuron::BufferAllocator::GetInstance()
 
-// TODO: Move this code to the executorch::backends::neuron namespace.
-// The torch:: namespace is deprecated for ExecuTorch code.
-namespace torch {
-namespace executor {
+// Define the types for the function pointers
+typedef void* (*CreateFunc)();
+typedef void* (*AllocateFunc)(void*, size_t);
+typedef bool (*RemoveFunc)(void*, void*);
+typedef const void* (*FindFunc)(void*, void*);
+typedef void (*ClearFunc)(void*);
+
+static CreateFunc create_func = nullptr;
+static AllocateFunc allocate_func = nullptr;
+static RemoveFunc remove_func = nullptr;
+static FindFunc find_func = nullptr;
+static ClearFunc clear_func = nullptr;
+static void* handle = nullptr;
+static void* allocatorHandle = nullptr;
+
+namespace executorch {
+namespace backends {
 namespace neuron {
 
 struct BufferDeleter {
@@ -135,11 +150,9 @@ class BufferAllocator : public executorch::runtime::MemoryAllocator {
   }
 
  private:
-  std::map<void*, std::unique_ptr<MemoryUnit>> mPool;
-
   std::mutex mMutex;
 };
 
 } // namespace neuron
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch
