@@ -150,7 +150,9 @@ vkapi::ShaderInfo get_conv2d_shader(
       if (prepack_weights) {
         kernel_name = "conv2d";
       } else {
-        kernel_name = "conv2d_pw";
+        kernel_name = t_out.packed_dim() == WHCN::kWidthDim
+            ? "conv2d_pw_w_packed"
+            : "conv2d_pw";
       }
       break;
     case Conv2dMethod::SlidingWindow:
@@ -226,8 +228,7 @@ ValueRef prepack_weights(
 }
 
 void check_conv_args(const api::vTensor& in, const api::vTensor& out) {
-  VK_CHECK_COND(check_packed_dim_is(in, WHCN::kChannelsDim));
-  VK_CHECK_COND(check_packed_dim_is(out, WHCN::kChannelsDim));
+  VK_CHECK_COND(check_same_packed_dim(in, out));
 }
 
 struct Conv2dParams final {
@@ -304,6 +305,12 @@ utils::uvec3 create_conv2d_global_wg_size(
     const bool stride_equals_dilation) {
   if (method == Conv2dMethod::Pointwise) {
     const utils::uvec3 image_extents = graph.logical_limits_of(out);
+    if (graph.packed_dim_of(out) == (int)utils::kWidthPacked) {
+      return {
+          utils::div_up(image_extents[0u], 2u),
+          utils::div_up(image_extents[1u], 2u),
+          image_extents[2u]};
+    }
     return {
         utils::div_up(image_extents[0u], 2u),
         utils::div_up(image_extents[1u], 2u),
@@ -366,6 +373,11 @@ void add_conv2d_node(
   if (t_in->sizes().at(0) > 1) {
     VK_THROW("conv2d: input batch size > 1 is not supported yet!");
   }
+
+  if (method != Conv2dMethod::Pointwise) {
+    VK_CHECK_COND(check_packed_dim_is(*t_in, WHCN::kChannelsDim));
+  }
+
   check_conv_args(*t_in, *t_out);
 
   Kernel2dParams kernel_params = create_kernel2d_params(
@@ -520,9 +532,8 @@ void add_conv1d_node(
   vTensorPtr t_out = graph.get_tensor(out);
   const int64_t groups_val = graph.get_int(groups);
 
-  std::vector<int64_t> in_sizes = t_in->sizes();
-  std::vector<int64_t> weight_sizes = t_weight->sizes();
-  std::vector<int64_t> out_sizes = t_out->sizes();
+  const auto& in_sizes = t_in->sizes();
+  const auto& weight_sizes = t_weight->sizes();
 
   check_conv_args(*t_in, *t_out);
 
