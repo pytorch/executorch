@@ -719,6 +719,7 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
             preq_mode=args.preq_mode,
             preq_group_size=args.preq_group_size,
             preq_embedding_quantize=args.preq_embedding_quantize,
+            local_global_attention=args.local_global_attention,
         )
     )
 
@@ -1447,7 +1448,7 @@ def _get_source_transforms(  # noqa
         transforms.append(
             partial(
                 replace_kv_cache_with_ring_kv_cache,
-                layer_sizes=args.local_global_attention,
+                layer_sizes=local_global_attention,
             )
         )
 
