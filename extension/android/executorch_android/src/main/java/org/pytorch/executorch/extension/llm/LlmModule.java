@@ -12,8 +12,7 @@ import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.io.File;
 import org.pytorch.executorch.annotations.Experimental;
 
 /**
@@ -49,10 +48,10 @@ public class LlmModule {
    */
   public LlmModule(
       int modelType, String modulePath, String tokenizerPath, float temperature, String dataPath) {
-    if (!Files.isReadable(Paths.get(modulePath))) {
+    if (!new File(modulePath).canRead()) {
       throw new RuntimeException("Cannot load model path " + modulePath);
     }
-    if (!Files.isReadable(Paths.get(tokenizerPath))) {
+    if (!new File(tokenizerPath).canRead()) {
       throw new RuntimeException("Cannot load tokenizer path " + tokenizerPath);
     }
     mHybridData = initHybrid(modelType, modulePath, tokenizerPath, temperature, dataPath);

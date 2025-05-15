@@ -11,8 +11,7 @@ package org.pytorch.executorch;
 import android.util.Log;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.io.File;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import org.pytorch.executorch.annotations.Experimental;
@@ -54,7 +53,7 @@ public class Module {
     if (!NativeLoader.isInitialized()) {
       NativeLoader.init(new SystemDelegate());
     }
-    if (!Files.isReadable(Paths.get(modelPath))) {
+    if (!new File(modelPath).canRead()) {
       throw new RuntimeException("Cannot load model path " + modelPath);
     }
     return new Module(new NativePeer(modelPath, loadMode));
