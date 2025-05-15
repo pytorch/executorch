@@ -41,9 +41,14 @@ class ConvertSplitToSlicePass(ExportPass):
             dim = split_node.args[2] if len(split_node.args) > 2 else 0
             dim = (dim + rank) % rank
 
-            assert (
-                sum(split_lengths) == shape[dim]
-            ), "Given split lengths don't sum up to the size of the dimension."
+            # Validate that split lengths cover the entire dimension
+            length_sum = sum(split_lengths)
+            dim_size = shape[dim]
+            if length_sum != dim_size:
+                raise ValueError(
+                    f"Split sizes {split_lengths} sum to {length_sum}, "
+                    f"but dimension {dim} has size {dim_size}"
+                )
 
             # Convert split argument 'split_lengths' to slice arguments start and end.
             starts = [0] * len(split_lengths)
