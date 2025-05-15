@@ -30,7 +30,6 @@ from executorch.examples.models.llama.source_transformation.quantize import (
 from executorch.examples.models.llama.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
-from executorch.examples.models.llava.image_util import serialize_image
 from executorch.examples.models.llava.model import LlavaModel
 from executorch.exir import (
     EdgeCompileConfig,
@@ -44,7 +43,6 @@ from executorch.exir.passes.sym_shape_eval_pass import (
     ConstraintBasedSymShapeEvalPass,
     HintBasedSymShapeEvalPass,
 )
-
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.util.activation_memory_profiler import generate_memory_trace
 from pytorch_tokenizers.llama2c import Llama2cTokenizer as Tokenizer
@@ -265,13 +263,6 @@ def export_all(llava_model: LlavaModel):
     return executorch_program
 
 
-def get_image_tensor_for_llava_runner(llava_model):
-    # llava runner doesn't have image reader so an image tensor is needed.
-    (resized,) = llava_model.get_example_inputs()
-
-    serialize_image(resized, "image.pt")
-
-
 def get_tokenizer_for_llava_runner(llava_model):
     # serialize tokenizer into tokenizer.bin
     llava_model.tokenizer.save_vocabulary("./")
@@ -336,7 +327,6 @@ def main():
 
     # artifacts
     if args.with_artifacts:
-        get_image_tensor_for_llava_runner(llava_model)
         get_tokenizer_for_llava_runner(llava_model)
 
 

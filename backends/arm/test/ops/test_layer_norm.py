@@ -42,18 +42,21 @@ class LayerNorm(torch.nn.Module):
 
 input_t = tuple[torch.Tensor]
 test_data_suite = {
-    "randn_last_dim": ((torch.randn(1, 5, 5, 5),), LayerNorm([5])),
-    "rand_last_two_dims": ((torch.rand(1, 5, 5, 5),), LayerNorm([5, 5])),
-    "rand_last_two_dims_not_elementwise_affine": (
+    "randn_last_dim": lambda: ((torch.randn(1, 5, 5, 5),), LayerNorm([5])),
+    "rand_last_two_dims": lambda: ((torch.rand(1, 5, 5, 5),), LayerNorm([5, 5])),
+    "rand_last_two_dims_not_elementwise_affine": lambda: (
         (torch.rand(1, 5, 5, 5),),
         LayerNorm([5, 5], 1e-5, False),
     ),
-    "rand_last_two_dims_not_elementwise_affine_no_bias": (
+    "rand_last_two_dims_not_elementwise_affine_no_bias": lambda: (
         (torch.rand(1, 5, 5, 5),),
         LayerNorm([5, 5], 1e-5, False, False),
     ),
-    "randn_last_three_dims": ((torch.randn(1, 15, 10, 5),), LayerNorm([15, 10, 5])),
-    "randn_last_three_dims_no_bias": (
+    "randn_last_three_dims": lambda: (
+        (torch.randn(1, 15, 10, 5),),
+        LayerNorm([15, 10, 5]),
+    ),
+    "randn_last_three_dims_no_bias": lambda: (
         (torch.randn(1, 15, 10, 5),),
         LayerNorm([15, 10, 5], 1e-2, False, False),
     ),
@@ -62,9 +65,10 @@ test_data_suite = {
 
 @common.parametrize("test_data", test_data_suite)
 def test_native_layer_norm_tosa_MI(test_data):
+    test_data, model = test_data()
     pipeline = TosaPipelineMI[input_t](
-        test_data[1],
-        test_data[0],
+        model,
+        test_data,
         "torch.ops.aten.layer_norm.default",
     )
     pipeline.run()
@@ -72,36 +76,39 @@ def test_native_layer_norm_tosa_MI(test_data):
 
 @common.parametrize("test_data", test_data_suite)
 def test_native_layer_norm_tosa_BI(test_data):
+    test_data, model = test_data()
     pipeline = TosaPipelineBI[input_t](
-        test_data[1],
-        test_data[0],
+        model,
+        test_data,
         "torch.ops.aten.sub.Tensor",  # Just check for sub op included in the layernorm decomposition
+        symmetric_io_quantization=True,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 def test_native_layer_norm_u55_BI(test_data):
+    test_data, model = test_data()
     pipeline = EthosU55PipelineBI[input_t](
-        test_data[1],
-        test_data[0],
+        model,
+        test_data,
         "torch.ops.aten.sub.Tensor",  # Just check for sub op included in the layernorm decomposition
         run_on_fvp=True,
+        symmetric_io_quantization=True,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
 def test_native_layer_norm_u85_BI(test_data):
+    test_data, model = test_data()
     pipeline = EthosU85PipelineBI[input_t](
-        test_data[1],
-        test_data[0],
+        model,
+        test_data,
         "torch.ops.aten.sub.Tensor",  # Just check for sub op included in the layernorm decomposition
         run_on_fvp=True,
+        symmetric_io_quantization=True,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()

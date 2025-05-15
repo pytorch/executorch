@@ -123,6 +123,7 @@ class ShouldBuild:
                     cls.mps(),
                     cls.openvino(),
                     cls.xnnpack(),
+                    cls.neutron(),
                     cls.training(),
                 ]
             ),
@@ -145,6 +146,10 @@ class ShouldBuild:
         return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_XNNPACK", default=True)
 
     @classmethod
+    def neutron(cls) -> bool:
+        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_NEUTRON", default=False)
+
+    @classmethod
     def training(cls) -> bool:
         return cls._is_cmake_arg_enabled(
             "EXECUTORCH_BUILD_EXTENSION_TRAINING", default=False
@@ -155,10 +160,6 @@ class ShouldBuild:
         return cls._is_cmake_arg_enabled(
             "EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT", default=True
         )
-
-    @classmethod
-    def flatc(cls) -> bool:
-        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_FLATC", default=True)
 
 
 class Version:
@@ -682,7 +683,7 @@ class CustomBuild(build):
         default_parallel = str(os.cpu_count() - 1)
         self.parallel = os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL", default_parallel)
 
-    def run(self):
+    def run(self):  # noqa C901
         self.dump_options()
 
         cfg = get_build_type(self.debug)
@@ -713,11 +714,6 @@ class CustomBuild(build):
             "-DEXECUTORCH_ENABLE_LOGGING=ON",
             "-DEXECUTORCH_LOG_LEVEL=Info",
             "-DCMAKE_OSX_DEPLOYMENT_TARGET=10.15",
-            # The separate host project is only required when cross-compiling,
-            # and it can cause build race conditions (libflatcc.a errors) when
-            # enabled. TODO(dbort): Remove this override once this option is
-            # managed by cmake itself.
-            "-DEXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT=OFF",
             "-DEXECUTORCH_BUILD_TESTS=ON",
         ]
 
@@ -732,6 +728,9 @@ class CustomBuild(build):
 
             if ShouldBuild.xnnpack():
                 cmake_args += ["-DEXECUTORCH_BUILD_XNNPACK=ON"]
+
+            if ShouldBuild.neutron():
+                cmake_args += ["-DEXECUTORCH_BUILD_NEUTRON=ON"]
 
             if ShouldBuild.training():
                 build_args += ["--target", "_training_lib"]
@@ -833,23 +832,20 @@ class CustomBuild(build):
 
 def get_ext_modules() -> List[Extension]:
     """Returns the set of extension modules to build."""
-    ext_modules = []
-    if ShouldBuild.flatc():
-        ext_modules.extend(
-            [
-                BuiltFile(
-                    src_dir="%CMAKE_CACHE_DIR%/third-party/flatbuffers/%BUILD_TYPE%/",
-                    src_name="flatc",
-                    dst="executorch/data/bin/",
-                    is_executable=True,
-                ),
-                BuiltFile(
-                    src_dir="tools/wheel",
-                    src_name="pip_data_bin_init.py.in",
-                    dst="executorch/data/bin/__init__.py",
-                ),
-            ]
-        )
+
+    ext_modules = [
+        BuiltFile(
+            src_dir="%CMAKE_CACHE_DIR%/third-party/flatbuffers_external_project/bin/%BUILD_TYPE%/",
+            src_name="flatc",
+            dst="executorch/data/bin/",
+            is_executable=True,
+        ),
+        BuiltFile(
+            src_dir="tools/wheel",
+            src_name="pip_data_bin_init.py.in",
+            dst="executorch/data/bin/__init__.py",
+        ),
+    ]
 
     if ShouldBuild.pybindings():
         ext_modules.append(

@@ -17,6 +17,7 @@ namespace vkcompute {
 
 void check_linear_qcsnw_args(
     const ComputeGraph& graph,
+    const int quant_nbits,
     const ValueRef mat1,
     const ValueRef qmat2_data,
     const ValueRef scales,
@@ -31,13 +32,20 @@ void check_linear_qcsnw_args(
 
   VK_CHECK_COND(graph.packed_dim_of(mat1) == graph.packed_dim_of(out));
 
-  VK_CHECK_COND(
-      utils::val_at(-1, mat1_sizes) == utils::val_at(-1, qmat2_sizes));
-  VK_CHECK_COND(
-      utils::val_at(-1, scales_sizes) == utils::val_at(-2, qmat2_sizes));
+  if (quant_nbits == 4) {
+    VK_CHECK_COND(
+        utils::val_at(-1, mat1_sizes) == utils::val_at(-1, qmat2_sizes) * 2);
+    VK_CHECK_COND(
+        utils::val_at(-1, scales_sizes) == utils::val_at(-2, qmat2_sizes));
+  } else {
+    VK_CHECK_COND(
+        utils::val_at(-1, mat1_sizes) == utils::val_at(-1, qmat2_sizes));
+    VK_CHECK_COND(
+        utils::val_at(-1, scales_sizes) == utils::val_at(-2, qmat2_sizes));
+  }
 }
 
-void resize_linear_qcs8w_node(
+void resize_linear_qcsnw_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
@@ -48,7 +56,12 @@ void resize_linear_qcs8w_node(
   vTensorPtr qmat2 = graph->get_tensor(args[1].refs[1]);
 
   const int out_cols = utils::val_at(-2, mat1->sizes());
-  const int out_rows = utils::val_at(-1, qmat2->sizes());
+  int out_rows = utils::val_at(-1, qmat2->sizes());
+  // Byte dtype suggests 4-bit quantization in which case the weight tensor is
+  // packed with 2 values per byte.
+  if (qmat2->dtype() == vkapi::kByte) {
+    out_rows *= 2;
+  }
 
   std::vector<int64_t> new_out_sizes(3);
   if (mat1->sizes().size() == 2) {
@@ -128,39 +141,47 @@ void add_linear_qcs8w_node(
        {{mat1_W_packed, q_mat2, scales}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {},
+      // Push Constants
+      pcs,
       // Specialization Constants
       {},
-      // Resizing Logic
-      resize_linear_qcs8w_node,
+      // Resize Args
       {},
-      pcs));
+      // Resizing Logic
+      resize_linear_qcsnw_node));
   if (!graph.is_buffer_storage(out) &&
       graph.packed_dim_of(out) != WHCN::kWidthDim) {
     viewFn(graph, {out_W_packed, graph.add_none(), out});
   }
 }
 
-void add_linear_qcs8w_tiled_node(
+void add_linear_qcsnw_tiled_node(
     ComputeGraph& graph,
     const bool use_coop_algorithm,
+    const int quant_nbits,
     const ValueRef mat1,
     const ValueRef q_mat2_data,
     const ValueRef scales_data,
     const ValueRef out) {
-  utils::StorageType q_mat2_storage = utils::kTexture2D;
-
   uint32_t max_extent = graph.context()->adapter_ptr()->max_texture2d_dim();
   std::vector<int64_t> qmat2_orig_sizes = graph.sizes_of(q_mat2_data);
   const int64_t ndim = graph.dim_of(q_mat2_data);
   const int64_t K = qmat2_orig_sizes.at(ndim - 1);
   const int64_t N = qmat2_orig_sizes.at(ndim - 2);
 
-  if (N > max_extent * 4 || K > max_extent) {
-    q_mat2_storage = utils::kBuffer;
-  }
+  ValueRef q_mat2;
+  if (quant_nbits == 4) {
+    q_mat2 =
+        prepack_int4_linear_weight_transposed_interleaved(graph, q_mat2_data);
+  } else {
+    utils::StorageType q_mat2_storage = utils::kTexture2D;
+    if (N > max_extent * 4 || K > max_extent) {
+      q_mat2_storage = utils::kBuffer;
+    }
 
-  ValueRef q_mat2 = prepack_standard_hw_transposed(
-      graph, q_mat2_data, q_mat2_storage, utils::kWidthPacked);
+    q_mat2 = prepack_standard_hw_transposed(
+        graph, q_mat2_data, q_mat2_storage, utils::kWidthPacked);
+  }
 
   utils::StorageType scales_storage = utils::kTexture2D;
   if (N > max_extent) {
@@ -169,8 +190,14 @@ void add_linear_qcs8w_tiled_node(
   ValueRef scales =
       prepack_standard(graph, scales_data, scales_storage, utils::kWidthPacked);
 
-  std::string kernel_name =
-      use_coop_algorithm ? "linear_qcs8w_coop" : "linear_qcs8w_tiled";
+  std::string kernel_name;
+  if (quant_nbits == 4) {
+    kernel_name =
+        use_coop_algorithm ? "linear_qcs4w_coop" : "linear_qcs4w_tiled";
+  } else {
+    kernel_name =
+        use_coop_algorithm ? "linear_qcs8w_coop" : "linear_qcs8w_tiled";
+  }
   kernel_name.reserve(kShaderNameReserve);
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(mat1));
@@ -195,9 +222,16 @@ void add_linear_qcs8w_tiled_node(
     out_tile_nrows = 4;
   }
 
+  // Number of output texels in the output tile
+  uint32_t out_tile_ntxcols = 1;
+  if (quant_nbits == 4) {
+    out_tile_ntxcols = 2;
+  }
+
   utils::uvec3 out_limits = graph.logical_limits_of(out);
+  uint32_t global_wg_x = utils::div_up(out_limits[0], out_tile_ntxcols);
   utils::uvec3 global_wg_size = {
-      out_limits[0] * (utils::div_up(out_limits[1], out_tile_nrows)),
+      global_wg_x * (utils::div_up(out_limits[1], out_tile_nrows)),
       1,
       out_limits[2]};
 
@@ -215,13 +249,14 @@ void add_linear_qcs8w_tiled_node(
       {{out, vkapi::kWrite}, {{mat1, q_mat2, scales}, vkapi::kRead}},
       // Shader params buffers
       {},
+      // Push Constants
+      {{graph.sizes_pc_of(out), graph.sizes_pc_of(mat1)}},
       // Specialization Constants
       {},
-      // Resizing Logic
-      resize_linear_qcs8w_node,
+      // Resize Args
       {},
-      // Push Constants
-      {{graph.sizes_pc_of(out), graph.sizes_pc_of(mat1)}}));
+      // Resizing Logic
+      resize_linear_qcsnw_node));
 }
 
 bool can_use_tiled_impl(
@@ -235,7 +270,7 @@ bool can_use_tiled_impl(
 
   // Check if mat1 is not a 3D tensor or that batches = 1
   // TODO(ssjia): Add support for batches in the tiled impl
-  if (graph.dim_of(mat1) == 3 && graph.size_at<int>(-1, mat1) != 1) {
+  if (graph.dim_of(mat1) == 3 && graph.size_at<int>(0, mat1) != 1) {
     return false;
   }
   // Check that K is a multiple of 4
@@ -280,17 +315,27 @@ bool can_use_coop_impl(ComputeGraph& graph, const ValueRef mat1) {
 void weight_int8pack_mm(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
-  check_linear_qcsnw_args(graph, args[0], args[1], args[2], args[3]);
+  check_linear_qcsnw_args(graph, 8, args[0], args[1], args[2], args[3]);
   if (can_use_tiled_impl(graph, args[0], args[1], args[2], args[3])) {
     bool use_coop_algorithm = can_use_coop_impl(graph, args[0]);
-    return add_linear_qcs8w_tiled_node(
-        graph, use_coop_algorithm, args[0], args[1], args[2], args[3]);
+    return add_linear_qcsnw_tiled_node(
+        graph, use_coop_algorithm, 8, args[0], args[1], args[2], args[3]);
   }
   return add_linear_qcs8w_node(graph, args[0], args[1], args[2], args[3]);
 }
 
+void linear_qcs4w(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  check_linear_qcsnw_args(graph, 4, args[0], args[1], args[2], args[3]);
+
+  VK_CHECK_COND(can_use_tiled_impl(graph, args[0], args[1], args[2], args[3]));
+  bool use_coop_algorithm = can_use_coop_impl(graph, args[0]);
+  return add_linear_qcsnw_tiled_node(
+      graph, use_coop_algorithm, 4, args[0], args[1], args[2], args[3]);
+}
+
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten._weight_int8pack_mm.default, weight_int8pack_mm);
+  VK_REGISTER_OP(et_vk.linear_qcs4w.default, linear_qcs4w);
 }
 
 } // namespace vkcompute

@@ -305,22 +305,22 @@ conv3d_4x3_1x3x7x7_st3_pd0_dl1 = Conv3d(
 )
 
 test_modules = {
-    "2x2_3x2x40x40_nobias": conv3d_2x2_3x2x40x40_nobias,
-    "3x3_1x3x256x256_st1": conv3d_3x3_1x3x256x256_st1,
-    "3x3_1x3x12x12_st2_pd1": conv3d_3x3_1x3x12x12_st2_pd1,
-    "1x1_1x2x128x128_st1": conv3d_1x1_1x2x128x128_st1,
-    "2x2_1x1x14x13_st2_needs_adjust_pass": conv3d_2x2_1x1x14x13_st2,
-    "5x5_1x3x14x15_st3_pd1_needs_adjust_pass": conv3d_5x5_1x3x14x15_st3_pd1,
-    "7x7_1x3x16x16_st2_pd1_dl2_needs_adjust_pass": conv3d_7x7_1x3x16x16_st2_pd1_dl2,
-    "7x7_1x3x15x15_st1_pd0_dl1_needs_adjust_pass": conv3d_7x7_1x3x15x15_st1_pd0_dl1,
-    "5x5_1x3x14x14_st5_pd0_dl1_needs_adjust_pass": conv3d_5x5_1x3x14x14_st5_pd0_dl1,
-    "5x5_1x3x9x9_st5_pd0_dl1_needs_adjust_pass": conv3d_5x5_1x3x9x9_st5_pd0_dl1,
-    "3x3_1x3x9x8_st3_pd0_dl1_needs_adjust_pass": conv3d_3x3_1x3x9x8_st3_pd0_dl1,
-    "3x3_1x3x8x9_st3_pd0_dl1_needs_adjust_pass": conv3d_3x3_1x3x8x9_st3_pd0_dl1,
-    "3x4_1x3x7x7_st3_pd0_dl1_needs_adjust_pass": conv3d_3x4_1x3x7x7_st3_pd0_dl1,
-    "4x3_1x3x7x7_st3_pd0_dl1_needs_adjust_pass": conv3d_4x3_1x3x7x7_st3_pd0_dl1,
-    "5x5_3x2x128x128_st1": conv3d_5x5_3x2x128x128_st1,
-    "3x3_1x3x224x224_st2_pd1": conv3d_3x3_1x3x224x224_st2_pd1,
+    "2x2_3x2x40x40_nobias": lambda: conv3d_2x2_3x2x40x40_nobias,
+    "3x3_1x3x256x256_st1": lambda: conv3d_3x3_1x3x256x256_st1,
+    "3x3_1x3x12x12_st2_pd1": lambda: conv3d_3x3_1x3x12x12_st2_pd1,
+    "1x1_1x2x128x128_st1": lambda: conv3d_1x1_1x2x128x128_st1,
+    "2x2_1x1x14x13_st2_needs_adjust_pass": lambda: conv3d_2x2_1x1x14x13_st2,
+    "5x5_1x3x14x15_st3_pd1_needs_adjust_pass": lambda: conv3d_5x5_1x3x14x15_st3_pd1,
+    "7x7_1x3x16x16_st2_pd1_dl2_needs_adjust_pass": lambda: conv3d_7x7_1x3x16x16_st2_pd1_dl2,
+    "7x7_1x3x15x15_st1_pd0_dl1_needs_adjust_pass": lambda: conv3d_7x7_1x3x15x15_st1_pd0_dl1,
+    "5x5_1x3x14x14_st5_pd0_dl1_needs_adjust_pass": lambda: conv3d_5x5_1x3x14x14_st5_pd0_dl1,
+    "5x5_1x3x9x9_st5_pd0_dl1_needs_adjust_pass": lambda: conv3d_5x5_1x3x9x9_st5_pd0_dl1,
+    "3x3_1x3x9x8_st3_pd0_dl1_needs_adjust_pass": lambda: conv3d_3x3_1x3x9x8_st3_pd0_dl1,
+    "3x3_1x3x8x9_st3_pd0_dl1_needs_adjust_pass": lambda: conv3d_3x3_1x3x8x9_st3_pd0_dl1,
+    "3x4_1x3x7x7_st3_pd0_dl1_needs_adjust_pass": lambda: conv3d_3x4_1x3x7x7_st3_pd0_dl1,
+    "4x3_1x3x7x7_st3_pd0_dl1_needs_adjust_pass": lambda: conv3d_4x3_1x3x7x7_st3_pd0_dl1,
+    "5x5_3x2x128x128_st1": lambda: conv3d_5x5_3x2x128x128_st1,
+    "3x3_1x3x224x224_st2_pd1": lambda: conv3d_3x3_1x3x224x224_st2_pd1,
 }
 
 input_t = Tuple[torch.Tensor]
@@ -328,18 +328,18 @@ input_t = Tuple[torch.Tensor]
 
 @common.parametrize("test_module", test_modules)
 @pytest.mark.skip  # Not implemented, skip until it is.
-def test_convolution_3d_tosa_MI(test_module):
+def test_convolution_tosa_MI_3d(test_module):
     pipeline = TosaPipelineMI[input_t](
-        test_module, test_module.get_inputs(), aten_op, exir_op
+        test_module(), test_module().get_inputs(), aten_op, exir_op
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_modules)
 @pytest.mark.skip  # Not implemented, skip until it is.
-def test_convolution_3d_tosa_BI(test_module):
+def test_convolution_tosa_BI_3d(test_module):
     pipeline = TosaPipelineBI[input_t](
-        test_module, test_module.get_inputs(), aten_op, exir_op
+        test_module(), test_module().get_inputs(), aten_op, exir_op
     )
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
@@ -347,24 +347,32 @@ def test_convolution_3d_tosa_BI(test_module):
 
 @common.parametrize("test_module", test_modules)
 @pytest.mark.skip  # Not implemented, skip until it is.
-def test_convolution_3d_u55_BI(test_module):
+def test_convolution_u55_BI_3d(test_module):
     pipeline = EthosU55PipelineBI[input_t](
-        test_module, test_module.get_inputs(), aten_op, exir_op, run_on_fvp=True
+        test_module(),
+        test_module().get_inputs(),
+        aten_op,
+        exir_op,
+        run_on_fvp=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_modules)
 @pytest.mark.skip  # Not implemented, skip until it is.
-def test_convolution_3d_u85_BI(test_module):
+def test_convolution_u85_BI_3d(test_module):
     pipeline = EthosU85PipelineBI[input_t](
-        test_module, test_module.get_inputs(), aten_op, exir_op, run_on_fvp=True
+        test_module(),
+        test_module().get_inputs(),
+        aten_op,
+        exir_op,
+        run_on_fvp=True,
     )
     pipeline.run()
 
 
 reject_suite = {
-    "large_stride": Conv3d(
+    "large_stride": lambda: Conv3d(
         in_channels=1,
         out_channels=1,
         kernel_size=(2, 2, 1),
@@ -374,7 +382,7 @@ reject_suite = {
         height=14,
         batches=1,
     ),
-    "large_kernel_z": Conv3d(
+    "large_kernel_z": lambda: Conv3d(
         in_channels=1,
         out_channels=1,
         kernel_size=(2, 2, 2),
@@ -388,12 +396,11 @@ reject_suite = {
 
 
 @common.parametrize("module", reject_suite)
-def test_reject_convolution_3d_u55_BI(
-    module: Conv3d,
-):
+def test_convolution_u55_BI_not_delegated_3d(module: Conv3d):
     OpNotSupportedPipeline(
-        module,
-        module.get_inputs(),
-        "TOSA-0.80+BI+u55",
+        module(),
+        module().get_inputs(),
         {"executorch_exir_dialects_edge__ops_aten_convolution_default": 1},
+        quantize=True,
+        u55_subset=True,
     ).run()

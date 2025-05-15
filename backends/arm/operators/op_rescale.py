@@ -13,8 +13,11 @@ from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_quant_utils import create_const_ops_for_rescale
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+)
+from executorch.backends.arm.tosa_mapping import map_dtype, TosaArg
+from executorch.backends.arm.tosa_quant_utils import build_rescale
 
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from torch.fx import Node
@@ -34,6 +37,8 @@ class RescaleVisitor_0_80(NodeVisitor):
         output: TosaArg,
     ) -> None:
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
+
+        validate_num_inputs(self.target, inputs, 5)
 
         input_dtype = node.all_input_nodes[0].meta["val"].dtype
         output_dtype = cast(torch.dtype, node.args[1])
@@ -91,53 +96,31 @@ class RescaleVisitor_INT(NodeVisitor):
         import serializer.tosa_serializer as ts  # type: ignore
         from tosa.RoundingMode import RoundingMode  # type: ignore
 
-        input_dtype = node.all_input_nodes[0].meta["val"].dtype
+        validate_num_inputs(self.target, inputs, 5)
+
+        input_dtype = inputs[0].dtype
         output_dtype = cast(torch.dtype, node.args[1])
         scale = cast(float, node.args[2])
         input_zp = cast(int, node.args[3])
         output_zp = cast(int, node.args[4])
 
-        if input_dtype != torch.int8 and input_zp != 0:
+        if input_dtype != map_dtype(torch.int8, self.tosa_spec) and input_zp != 0:
             raise ValueError(
                 f"If input dtype is not int8, input_zp must be 0. Got input_dtype{input_dtype=}, {input_zp=}"
             )
         if output_dtype != torch.int8 and output_zp != 0:
             raise ValueError(
-                f"If output dtype is not int8, output_zp must be 0. Got {output_dtype=}, {output_zp=}"
+                f"If output dtype is not int8, output_zp must be 0. Got {ts.DTypeNames[output_dtype]}, {output_zp=}"
             )
 
-        # scale32 gives higher accuracy but for a higher HW cost.
-        # For now, always go for scale32.
-        scale_32 = True
-        scale_width = 32 if scale_32 else 16
-        multipliers, shifts = tosa_quant_utils.compute_multiplier_and_shift(
-            [scale], scale_width
-        )
-
-        rescale_inputs = create_const_ops_for_rescale(
+        build_rescale(
             tosa_graph,
-            input_dtype,
-            inputs[0].name,
-            multipliers,
-            shifts,
-            input_zp,
-            output_zp,
-            ts,
-        )
-
-        attr_rescale = ts.TosaSerializerAttribute()
-
-        attr_rescale.RescaleAttribute(
-            scale32=scale_32,
+            scale=[scale],
+            input_node=inputs[0],
+            output_name=output.name,
+            output_type=output.dtype,
+            input_zp=input_zp,
+            output_zp=output_zp,
             rounding_mode=RoundingMode.SINGLE_ROUND,
             per_channel=False,
-            input_unsigned=False,
-            output_unsigned=False,
-        )
-
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().RESCALE,
-            [inputs[0].name, *rescale_inputs],
-            [output.name],
-            attr_rescale,
         )
