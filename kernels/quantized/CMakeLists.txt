@@ -29,10 +29,6 @@ set(_common_compile_options -Wno-deprecated-declarations)
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
-if(NOT PYTHON_EXECUTABLE)
-  resolve_python_executable()
-endif()
-
 # Quantized ops kernel sources TODO(larryliu0820): use buck2 to gather the
 # sources
 list(TRANSFORM _quantized_kernels__srcs PREPEND "${EXECUTORCH_ROOT}/")
