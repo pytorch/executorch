@@ -14,7 +14,6 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-
 #include "jni_layer_constants.h"
 
 #include <executorch/extension/android/jni/log.h>
@@ -29,6 +28,12 @@
 #ifdef ET_USE_THREADPOOL
 #include <cpuinfo.h>
 #include <executorch/extension/threadpool/threadpool.h>
+#endif
+
+#ifdef EXECUTORCH_ANDROID_PROFILING
+#include <fcntl.h>
+#include <unistd.h>
+#include <executorch/devtools/etdump/etdump_flatcc.h>
 #endif
 
 #include <fbjni/ByteBuffer.h>
@@ -237,8 +242,12 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     } else if (loadMode == 3) {
       load_mode = Module::LoadMode::MmapUseMlockIgnoreErrors;
     }
-
-    module_ = std::make_unique<Module>(modelPath->toStdString(), load_mode);
+#ifdef EXECUTORCH_ANDROID_PROFILING
+    auto etdump_gen = std::make_unique<executorch::etdump::ETDumpGen>();
+#else
+    auto etdump_gen = nullptr;
+#endif
+    module_ = std::make_unique<Module>(modelPath->toStdString(), load_mode, std::move(etdump_gen));
 
 #ifdef ET_USE_THREADPOOL
     // Default to using cores/2 threadpool threads. The long-term plan is to
@@ -361,6 +370,27 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
       auto jevalue = JEValue::newJEValueFromEValue(result.get()[i]);
       jresult->setElement(i, *jevalue);
     }
+#ifdef EXECUTORCH_ANDROID_PROFILING
+    executorch::etdump::ETDumpGen* etdumpgen = (executorch::etdump::ETDumpGen*) module_->event_tracer();
+    auto etdump_data = etdumpgen->get_etdump_data();
+
+    if (etdump_data.buf != nullptr && etdump_data.size > 0) {
+      int etdump_file = open("/data/local/tmp/result.etdump", O_WRONLY | O_CREAT, 0644);
+      if (etdump_file == -1) {
+        ET_LOG(Error, "Cannot create result.etdump error: %d", errno);
+      }
+      ssize_t bytes_written = write(etdump_file, (uint8_t*)etdump_data.buf, etdump_data.size);
+      if (bytes_written == -1) {
+        ET_LOG(Error, "Cannot write result.etdump error: %d", errno);
+      } else {
+        ET_LOG(Info, "ETDump written %d bytes to file.", bytes_written);
+      }
+      close(etdump_file);
+      free(etdump_data.buf);
+    } else {
+      ET_LOG(Error, "No ETDump data available!");
+    }
+#endif
 
     return jresult;
   }
