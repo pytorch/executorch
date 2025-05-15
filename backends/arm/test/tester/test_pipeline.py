@@ -143,11 +143,13 @@ class BasePipelineMaker(Generic[T]):
                 f"Pos must be between [-{pipeline_length}, {pipeline_length}]"
             )
 
+        stage_id = func.__name__
         suffix = None
         if "suffix" in kwargs:
             suffix = kwargs.pop("suffix")
+            if stage_id == "dump_artifact":
+                args = (*args, suffix)
 
-        stage_id = func.__name__
         unique_stages = [
             "quantize",
             "export",
