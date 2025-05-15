@@ -50,12 +50,17 @@ class StrideSlice(NodeVisitor):
         dim = cast(int, node.args[1])
         if dim < 0:
             dim = dim % len(input_tensor.shape)
-        start = cast(int, node.args[2])
+
+        start = 0 if node.args[2] is None else cast(int, node.args[2])
         if start < 0:
             start = start % input_tensor.shape[dim]
-        end = min(cast(int, node.args[3]), input_tensor.shape[dim])
-        if end < 0:
-            end = end % input_tensor.shape[dim]
+
+        if len(node.args) > 3:
+            end = min(cast(int, node.args[3]), input_tensor.shape[dim])
+            if end < 0:
+                end = end % input_tensor.shape[dim]
+        else:
+            end = input_tensor.shape[dim]
 
         input_tensor_rank = len(input_tensor.shape)
         ranges = []
