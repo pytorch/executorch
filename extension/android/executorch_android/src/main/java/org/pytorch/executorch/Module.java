@@ -137,6 +137,10 @@ public class Module {
     return mNativePeer.readLogBuffer();
   }
 
+  public boolean etdump() {
+    return mNativePeer.etdump();
+  }
+
   /**
    * Explicitly destroys the native torch::jit::Module. Calling this method is not required, as the
    * native object will be destroyed when this object is garbage-collected. However, the timing of

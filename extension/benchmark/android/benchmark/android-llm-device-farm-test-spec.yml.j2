@@ -107,6 +107,7 @@ phases:
 
       - echo "Run benchmark"
       - |
+        adb -s $DEVICEFARM_DEVICE_UDID shell touch /data/local/tmp/result.etdump
         adb -s $DEVICEFARM_DEVICE_UDID shell am force-stop org.pytorch.minibench
 
         adb -s $DEVICEFARM_DEVICE_UDID shell dumpsys deviceidle force-idle

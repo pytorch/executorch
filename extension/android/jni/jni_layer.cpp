@@ -370,28 +370,6 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
       auto jevalue = JEValue::newJEValueFromEValue(result.get()[i]);
       jresult->setElement(i, *jevalue);
     }
-#ifdef EXECUTORCH_ANDROID_PROFILING
-    executorch::etdump::ETDumpGen* etdumpgen = (executorch::etdump::ETDumpGen*) module_->event_tracer();
-    auto etdump_data = etdumpgen->get_etdump_data();
-
-    if (etdump_data.buf != nullptr && etdump_data.size > 0) {
-      int etdump_file = open("/data/local/tmp/result.etdump", O_WRONLY | O_CREAT, 0644);
-      if (etdump_file == -1) {
-        ET_LOG(Error, "Cannot create result.etdump error: %d", errno);
-      }
-      ssize_t bytes_written = write(etdump_file, (uint8_t*)etdump_data.buf, etdump_data.size);
-      if (bytes_written == -1) {
-        ET_LOG(Error, "Cannot write result.etdump error: %d", errno);
-      } else {
-        ET_LOG(Info, "ETDump written %d bytes to file.", bytes_written);
-      }
-      close(etdump_file);
-      free(etdump_data.buf);
-    } else {
-      ET_LOG(Error, "No ETDump data available!");
-    }
-#endif
-
     return jresult;
   }
 
@@ -425,6 +403,35 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 #endif
   }
 
+  jboolean etdump() {
+#ifdef EXECUTORCH_ANDROID_PROFILING
+    executorch::etdump::ETDumpGen* etdumpgen = (executorch::etdump::ETDumpGen*) module_->event_tracer();
+    auto etdump_data = etdumpgen->get_etdump_data();
+
+    if (etdump_data.buf != nullptr && etdump_data.size > 0) {
+      int etdump_file = open("/data/local/tmp/result.etdump", O_WRONLY | O_CREAT, 0644);
+      if (etdump_file == -1) {
+        ET_LOG(Error, "Cannot create result.etdump error: %d", errno);
+        return false;
+      }
+      ssize_t bytes_written = write(etdump_file, (uint8_t*)etdump_data.buf, etdump_data.size);
+      if (bytes_written == -1) {
+        ET_LOG(Error, "Cannot write result.etdump error: %d", errno);
+        return false;
+      } else {
+        ET_LOG(Info, "ETDump written %d bytes to file.", bytes_written);
+      }
+      close(etdump_file);
+      free(etdump_data.buf);
+      return true;
+    } else {
+      ET_LOG(Error, "No ETDump data available!");
+    }
+#endif
+  return false;
+
+  }
+
   static void registerNatives() {
     registerHybrid({
         makeNativeMethod("initHybrid", ExecuTorchJni::initHybrid),
@@ -432,6 +439,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         makeNativeMethod("execute", ExecuTorchJni::execute),
         makeNativeMethod("loadMethod", ExecuTorchJni::load_method),
         makeNativeMethod("readLogBuffer", ExecuTorchJni::readLogBuffer),
+        makeNativeMethod("etdump", ExecuTorchJni::etdump),
     });
   }
 };
