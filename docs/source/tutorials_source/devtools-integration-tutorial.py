@@ -201,22 +201,15 @@ inspector.event_blocks = []
 # sphinx_gallery_end_ignore
 inspector.print_data_tabular()
 
-# sphinx_gallery_start_ignore
-# Display the actural inspector tabular table image
-import matplotlib.image as mpimg
-import matplotlib.pyplot as plt
-
-# Load and display the image
-img = mpimg.imread("tabular_result.png")
-fig, ax = plt.subplots(figsize=(8, 6), dpi=150)  # Adjust figsize and dpi as needed
-ax.imshow(img)
-ax.axis("off")  # Hide axes
-plt.show()
-# sphinx_gallery_end_ignore
+####################################
+#
+# Here is an example output:
+#
+# .. image:: ../_static/img/tabular_result.png
 
 # sphinx_gallery_start_ignore
-inspector_patch.stop()
-inspector_patch_print.stop()
+_ = inspector_patch.stop()
+_ = inspector_patch_print.stop()
 # sphinx_gallery_end_ignore
 
 ######################################################################
@@ -253,6 +246,21 @@ for event_block in inspector.event_blocks:
     print(df[["event_name", "raw"]])
     print()
 
+####################################
+# Exmaple output:
+#
+# Empty DataFrame
+# Columns: [event_name, raw]
+# Index: []
+
+# native_call_addmm.out [0.040962]
+# native_call_addmm.out [0.007191]
+# native_call_addmm.out [0.000691]
+#                event_name         raw
+# 14  native_call_addmm.out  [0.040962]
+# 20  native_call_addmm.out  [0.007191]
+# 26  native_call_addmm.out  [0.000691]
+
 ######################################################################
 # If a user wants to trace an operator back to their model code, they would do
 # something similar to finding the module hierarchy and stack trace of the
@@ -277,11 +285,36 @@ for event_block in inspector.event_blocks:
     df = df[df.event_name == "native_call_convolution.out"]
     if len(df) > 0:
         slowest = df.loc[df["p50"].idxmax()]
+        assert slowest is not None
         print(slowest.name)
         print()
         pp.pprint(slowest.stack_traces if slowest.stack_traces else "")
         print()
         pp.pprint(slowest.module_hierarchy if slowest.module_hierarchy else "")
+
+####################################
+# native_call_convolution.out
+
+# {'aten_convolution_default_1_': '  File '
+#                                 '"/home/gasoonjia/et_proj/et_debug_playground.py", '
+#                                 'line 34, in forward\n'
+#                                 '    x = F.max_pool2d(F.relu(self.conv2(x)), '
+#                                 '2)\n'}
+
+# {'aten_convolution_default_1_': {'L__self__': ('', '__main__.Net'),
+#                                  'L__self___conv2': ('conv2',
+#                                                      'torch.nn.modules.conv.Conv2d')}}
+# 6
+
+# {'aten_convolution_default_1_': '  File '
+#                                 '"/home/gasoonjia/et_proj/et_debug_playground.py", '
+#                                 'line 34, in forward\n'
+#                                 '    x = F.max_pool2d(F.relu(self.conv2(x)), '
+#                                 '2)\n'}
+
+# {'aten_convolution_default_1_': {'L__self__': ('', '__main__.Net'),
+#                                  'L__self___conv2': ('conv2',
+#                                                      'torch.nn.modules.conv.Conv2d')}}
 
 ######################################################################
 # If a user wants the total runtime of a module, they can use
@@ -293,6 +326,10 @@ print(inspector.find_total_for_module("L__self___conv2"))
 ######################################################################
 # Note: ``find_total_for_module`` is a special first class method of
 # `Inspector <../model-inspector.html>`__
+#
+# Example output:
+# 1.889086
+# 1.031719
 
 ######################################################################
 # Conclusion
