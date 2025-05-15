@@ -462,8 +462,13 @@ def annotate_neg(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.adaptive_avg_pool2d.default])
-def annotate_adaptive_avgpool2d(
+@register_annotator(
+    [
+        torch.ops.aten.adaptive_avg_pool1d.default,
+        torch.ops.aten.adaptive_avg_pool2d.default,
+    ]
+)
+def annotate_adaptive_avg_pool(
     node: Node, quantization_config: QuantizationConfig
 ) -> None:
     annotate_single_in_single_out(node, quantization_config)
@@ -1170,7 +1175,13 @@ def annotate_unbind(node: Node, quantization_config: QuantizationConfig) -> None
         )
 
 
-@register_annotator([torch.ops.aten.split.Tensor, torch.ops.aten.chunk.default])
+@register_annotator(
+    [
+        torch.ops.aten.split_with_sizes.default,
+        torch.ops.aten.split.Tensor,
+        torch.ops.aten.chunk.default,
+    ]
+)
 def annotate_chunk(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
         return

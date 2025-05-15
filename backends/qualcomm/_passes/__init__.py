@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from .annotate_adaptive_avg_pool1d import AnnotateAdaptiveAvgPool1D
 from .annotate_quant_attrs import AnnotateQuantAttrs
 from .annotate_stack import AnnotateStack
 from .annotate_unbind import AnnotateUnbind
@@ -38,6 +39,7 @@ from .tag_quant_io import TagQuantIO
 
 
 __all__ = [
+    AnnotateAdaptiveAvgPool1D,
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
