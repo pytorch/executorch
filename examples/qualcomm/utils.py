@@ -24,7 +24,10 @@ from executorch.backends.qualcomm.quantizer.quantizer import (
     QnnQuantizer,
     QuantDtype,
 )
-from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QcomChipset,
+    QnnExecuTorchOpPackageOptions,
+)
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
@@ -296,6 +299,7 @@ def build_executorch_binary(
     passes_job=None,
     qat_training_data=None,
     online_prepare=False,
+    op_package_options: QnnExecuTorchOpPackageOptions = None,
 ):
     """
     A function to generate an ExecuTorch binary for Qualcomm platforms.
@@ -316,6 +320,8 @@ def build_executorch_binary(
         passes_job (OrderedDict, optional): Custom passes job in capture_program, users can enable/disable specific passes or modify their attributes.
         qat_training_data (List[torch.Tensor], optional): A dataset for quantization aware training(QAT). Typically is a pair of tensors, such as [features, ground truth].
         online_prepare (bool, optional): Compose QNN graph on device if set to True.
+        op_package_options: Optional structure to specify op packages
+            loaded and used by the backend.
 
     Returns:
         None: The function writes the output to a specified .pte file.
@@ -329,6 +335,7 @@ def build_executorch_binary(
         online_prepare=online_prepare,
         shared_buffer=shared_buffer,
         dump_intermediate_outputs=dump_intermediate_outputs,
+        op_package_options=op_package_options,
     )
     if quant_dtype is not None or custom_quantizer is not None:
         captured_model = torch.export.export(model, inputs, strict=False).module()
