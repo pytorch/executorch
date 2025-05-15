@@ -34,12 +34,13 @@ typedef NSNumber *ExecuTorchScalarValue
     NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(ScalarValue);
 typedef NSString *ExecuTorchStringValue
     NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(StringValue);
-typedef BOOL ExecuTorchBooleanValue
-    NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(BoolValue);
+typedef BOOL ExecuTorchBooleanValue NS_SWIFT_NAME(BoolValue);
 typedef NSInteger ExecuTorchIntegerValue
     NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(IntegerValue);
 typedef double ExecuTorchDoubleValue
     NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(DoubleValue);
+typedef float ExecuTorchFloatValue
+    NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(FloatValue);
 
 /**
  * A dynamic value type used by ExecuTorch.
@@ -101,6 +102,13 @@ __attribute__((deprecated("This API is experimental.")))
 @property(nonatomic, readonly) ExecuTorchDoubleValue doubleValue NS_SWIFT_NAME(double);
 
 /**
+ * The float value if the tag is ExecuTorchValueTagDouble.
+ *
+ * @return An float representing the float value.
+ */
+ @property(nonatomic, readonly) ExecuTorchFloatValue floatValue NS_SWIFT_NAME(float);
+
+/**
  * Returns YES if the value is of type None.
  *
  * @return A BOOL indicating whether the value is None.
@@ -148,6 +156,13 @@ __attribute__((deprecated("This API is experimental.")))
  * @return A BOOL indicating whether the value is a double.
  */
 @property(nonatomic, readonly) BOOL isDouble;
+
+/**
+ * Returns YES if the value is a float.
+ *
+ * @return A BOOL indicating whether the value is a float.
+ */
+ @property(nonatomic, readonly) BOOL isFloat;
 
 /**
  * Creates an instance encapsulating a Tensor.

@@ -814,11 +814,61 @@ class FuseQuantDequantToRequantizePass(FuseOpPairsAcrossBranchesPass):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class FuseMulIntoDequantPass(ExportPass):
+class FuseMulScalarIntoDequantPass(ExportPass):
     """
-    Looks for the pattern where atem.mul is multiplying the outputs of dequantize
-    and aten.full. If found, updates the dequant scale to reflect the multiplication
-    and removes the full and mul nodes.
+    Looks for the pattern where aten.mul.Scalar is multiplying the
+     outputs of dequantize. If found, updates the dequant scale
+    to reflect the multiplication and removes the mul node.
+    """
+
+    def attempt_fusion(
+        self, graph_module: torch.fx.GraphModule, node: torch.fx.Node
+    ) -> None:
+        if node.target not in {
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.cadence.dequantize_per_tensor.default,
+        }:
+            return
+
+        # ensure that the single user of dequant is aten.mul.Scalar
+        user = list(node.users.keys())[0]
+        if len(node.users) != 1 or user.target != exir_ops.edge.aten.mul.Scalar:
+            return
+
+        # ensure that the other arg to mul is a node (i.e. not a constant)
+        if len(user.args) > 1 and isinstance(user.args[1], torch.fx.Node):
+            return
+
+        new_deq_args = list(node.args)
+        assert isinstance(node.args[1], Number)
+        assert isinstance(user.args[1], Number)
+        # pyre-ignore[58]: Unsupported operand *
+        new_deq_args[1] = node.args[1] * user.args[1]
+
+        logging.debug(
+            f"Fused {node} and {user} into {node}. Updated scale from {node.args[1]} to {new_deq_args[1]}"
+        )
+
+        user.replace_all_uses_with(node)
+        node.args = tuple(new_deq_args)
+
+        graph_module.graph.erase_node(user)
+
+        graph_module.recompile()
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        for node in graph_module.graph.nodes:
+            self.attempt_fusion(graph_module, node)
+        result = super().call(graph_module)
+        return result
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class FuseMulTensorIntoDequantPass(ExportPass):
+    """
+    Looks for the pattern where aten.mul is multiplying the outputs of dequantize
+    and aten.full, or vice versa. If found, updates the dequant scale to reflect
+    the multiplication and removes the full and mul nodes.
     """
 
     def attempt_fusion(
@@ -885,6 +935,9 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
     """
     Fuse transpose or permute op pairs to a single view op.
     (transpose or permutation) -> (quant or dequant) -> (transpose or permutation)
+    This happens when op2(op1) == identity, modulo unitary dimensions.
+    'unitary dimensions' example: a tensor of shape [1, 5, 30] is equivalent (in memory) to [5, 1, 30]
+    so transpose(1, 2) then transpose(0, 2) is a pseudo identity and should be fused.
     """
 
     # A list of ops that can be bypassed when looking for a
@@ -908,7 +961,7 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
         if not super().can_fuse_for_chain(producer, consumer, consumer_op_packets):
             return False
 
-        # checking that permut2(permut1(identify)) == identity
+        # checking that permut2(permut1(identity)) == identity, modulo unitary dimensions
         input_shape = cast(torch.fx.Node, producer.args[0]).meta["val"].shape
         ident_dims = list(range(len(input_shape)))
         # this mapping helps to handle both transpose and permutations
@@ -918,7 +971,10 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
         }
         in_dims = f[producer.target](producer, ident_dims)
         out_dims = f[consumer.target](consumer, in_dims)
-        return out_dims == ident_dims
+        # Filtering out unitary dimensions
+        non_unit_ident_dims = [dim for dim in ident_dims if input_shape[dim] != 1]
+        non_unit_out_dims = [dim for dim in out_dims if input_shape[dim] != 1]
+        return non_unit_out_dims == non_unit_ident_dims
 
     def get_fused_node(
         self,
@@ -926,6 +982,9 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
         consumer: torch.fx.Node,
         graph_module: torch.fx.GraphModule,
     ) -> torch.fx.Node:
+        # This step is important because of how we can fuse transpositions that are not perfectly
+        # reverse one of another but will be fused if there are unitary dimensions.
+        # The fused operation must have the same output shape as the consumer.
         output_shape = consumer.meta["val"].shape
         with graph_module.graph.inserting_after(consumer):
             view = graph_module.graph.call_function(
@@ -1008,7 +1067,8 @@ class CadenceFuseOpsInGraph:
         FuseCascadedTransposeOrPermuteOps,
         FuseCascadedViewOps,
         FuseQuantDequantToRequantizePass,
-        FuseMulIntoDequantPass,
+        FuseMulTensorIntoDequantPass,
+        FuseMulScalarIntoDequantPass,
         FuseFullThenReshapePass,
         FuseTransposeOrPermuteOpPairsPass,
     ]

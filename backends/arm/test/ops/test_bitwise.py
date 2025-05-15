@@ -22,19 +22,19 @@ input_t2 = Tuple[torch.Tensor, torch.Tensor]  # Input x, y
 
 class BitwiseBinary(torch.nn.Module):
     test_data: dict[input_t2] = {
-        "zeros": (
+        "zeros": lambda: (
             torch.zeros(1, 10, 10, 10, dtype=torch.int32),
             torch.zeros(1, 10, 10, 10, dtype=torch.int32),
         ),
-        "ones": (
+        "ones": lambda: (
             torch.ones(10, 10, 10, dtype=torch.int8),
             torch.ones(10, 10, 10, dtype=torch.int8),
         ),
-        "rand_rank2": (
+        "rand_rank2": lambda: (
             torch.randint(-128, 127, (10, 10), dtype=torch.int8),
             torch.randint(-128, 127, (10, 10), dtype=torch.int8),
         ),
-        "rand_rank4": (
+        "rand_rank4": lambda: (
             torch.randint(-128, -127, (1, 10, 10, 10), dtype=torch.int8),
             torch.randint(-128, 127, (1, 10, 10, 10), dtype=torch.int8),
         ),
@@ -67,13 +67,17 @@ class Or(BitwiseBinary):
 
 @common.parametrize("test_data", And().test_data)
 def test_bitwise_and_tensor_tosa_MI(test_data: input_t2):
-    pipeline = TosaPipelineMI[input_t2](And(), test_data, And().aten_op, And().exir_op)
+    pipeline = TosaPipelineMI[input_t2](
+        And(), test_data(), And().aten_op, And().exir_op
+    )
     pipeline.run()
 
 
 @common.parametrize("test_data", And().test_data)
 def test_bitwise_and_tensor_tosa_BI(test_data: input_t2):
-    pipeline = TosaPipelineBI[input_t2](And(), test_data, And().aten_op, And().exir_op)
+    pipeline = TosaPipelineBI[input_t2](
+        And(), test_data(), And().aten_op, And().exir_op
+    )
     pipeline.pop_stage("quantize")
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
@@ -83,7 +87,11 @@ def test_bitwise_and_tensor_tosa_BI(test_data: input_t2):
 def test_bitwise_and_tensor_u55_BI(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
-        And(), test_data, "TOSA-0.80+BI+u55", {And().exir_op: 1}
+        And(),
+        test_data(),
+        {And().exir_op: 1},
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 
@@ -93,7 +101,7 @@ def test_bitwise_and_tensor_u55_BI(test_data: input_t2):
 @common.XfailIfNoCorstone320
 def test_bitwise_and_tensor_u85_BI(test_data: input_t2):
     pipeline = EthosU85PipelineBI[input_t2](
-        And(), test_data, And().aten_op, And().exir_op, run_on_fvp=True
+        And(), test_data(), And().aten_op, And().exir_op, run_on_fvp=True
     )
     pipeline.pop_stage("quantize")
     pipeline.pop_stage("check.quant_nodes")
@@ -102,13 +110,17 @@ def test_bitwise_and_tensor_u85_BI(test_data: input_t2):
 
 @common.parametrize("test_data", Xor().test_data)
 def test_bitwise_xor_tensor_tosa_MI(test_data: input_t2):
-    pipeline = TosaPipelineMI[input_t2](Xor(), test_data, Xor().aten_op, Xor().exir_op)
+    pipeline = TosaPipelineMI[input_t2](
+        Xor(), test_data(), Xor().aten_op, Xor().exir_op
+    )
     pipeline.run()
 
 
 @common.parametrize("test_data", Xor().test_data)
 def test_bitwise_xor_tensor_tosa_BI(test_data: input_t2):
-    pipeline = TosaPipelineBI[input_t2](Xor(), test_data, Xor().aten_op, Xor().exir_op)
+    pipeline = TosaPipelineBI[input_t2](
+        Xor(), test_data(), Xor().aten_op, Xor().exir_op
+    )
     pipeline.pop_stage("quantize")
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
@@ -118,7 +130,11 @@ def test_bitwise_xor_tensor_tosa_BI(test_data: input_t2):
 def test_bitwise_xor_tensor_u55_BI(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
-        Xor(), test_data, "TOSA-0.80+BI+u55", {Xor().exir_op: 1}
+        Xor(),
+        test_data(),
+        {Xor().exir_op: 1},
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 
@@ -128,7 +144,7 @@ def test_bitwise_xor_tensor_u55_BI(test_data: input_t2):
 @common.XfailIfNoCorstone320
 def test_bitwise_xor_tensor_u85_BI(test_data: input_t2):
     pipeline = EthosU85PipelineBI[input_t2](
-        Xor(), test_data, Xor().aten_op, Xor().exir_op, run_on_fvp=True
+        Xor(), test_data(), Xor().aten_op, Xor().exir_op, run_on_fvp=True
     )
     pipeline.pop_stage("quantize")
     pipeline.pop_stage("check.quant_nodes")
@@ -137,13 +153,13 @@ def test_bitwise_xor_tensor_u85_BI(test_data: input_t2):
 
 @common.parametrize("test_data", Or().test_data)
 def test_bitwise_or_tensor_tosa_MI(test_data: input_t2):
-    pipeline = TosaPipelineMI[input_t2](Or(), test_data, Or().aten_op, Or().exir_op)
+    pipeline = TosaPipelineMI[input_t2](Or(), test_data(), Or().aten_op, Or().exir_op)
     pipeline.run()
 
 
 @common.parametrize("test_data", Or().test_data)
 def test_bitwise_or_tensor_tosa_BI(test_data: input_t2):
-    pipeline = TosaPipelineBI[input_t2](Or(), test_data, Or().aten_op, Or().exir_op)
+    pipeline = TosaPipelineBI[input_t2](Or(), test_data(), Or().aten_op, Or().exir_op)
     pipeline.pop_stage("quantize")
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
@@ -153,7 +169,11 @@ def test_bitwise_or_tensor_tosa_BI(test_data: input_t2):
 def test_bitwise_or_tensor_u55_BI(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
-        Or(), test_data, "TOSA-0.80+BI+u55", {Or().exir_op: 1}
+        Or(),
+        test_data(),
+        {Or().exir_op: 1},
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 
@@ -163,7 +183,11 @@ def test_bitwise_or_tensor_u55_BI(test_data: input_t2):
 @common.XfailIfNoCorstone320
 def test_bitwise_or_tensor_u85_BI(test_data: input_t2):
     pipeline = EthosU85PipelineBI[input_t2](
-        Or(), test_data, Or().aten_op, Or().exir_op, run_on_fvp=True
+        Or(),
+        test_data(),
+        Or().aten_op,
+        Or().exir_op,
+        run_on_fvp=True,
     )
     pipeline.pop_stage("quantize")
     pipeline.pop_stage("check.quant_nodes")

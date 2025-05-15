@@ -18,134 +18,6 @@
 # It should also be cmake-lint clean.
 #
 
-# Public function to print summary for all configurations. For new variables,
-# it's recommended to add them here.
-function(executorch_print_configuration_summary)
-  message(STATUS "")
-  message(STATUS "******** Summary ********")
-  message(STATUS "  CMAKE_BUILD_TYPE              : ${CMAKE_BUILD_TYPE}")
-  message(STATUS "  CMAKE_CXX_STANDARD            : ${CMAKE_CXX_STANDARD}")
-  message(STATUS "  CMAKE_CXX_COMPILER_ID         : ${CMAKE_CXX_COMPILER_ID}")
-  message(STATUS "  CMAKE_TOOLCHAIN_FILE          : ${CMAKE_TOOLCHAIN_FILE}")
-  message(STATUS "  BUCK2                         : ${BUCK2}")
-  message(STATUS "  PYTHON_EXECUTABLE             : ${PYTHON_EXECUTABLE}")
-  message(STATUS "  FLATC_EXECUTABLE              : ${FLATC_EXECUTABLE}")
-  message(
-    STATUS
-      "  EXECUTORCH_ENABLE_LOGGING              : ${EXECUTORCH_ENABLE_LOGGING}"
-  )
-  message(STATUS "  EXECUTORCH_ENABLE_PROGRAM_VERIFICATION : "
-                 "${EXECUTORCH_ENABLE_PROGRAM_VERIFICATION}"
-  )
-  message(
-    STATUS "  EXECUTORCH_LOG_LEVEL                   : ${EXECUTORCH_LOG_LEVEL}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_ANDROID_JNI           : "
-                 "${EXECUTORCH_BUILD_ANDROID_JNI}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_ARM_BAREMETAL         : "
-                 "${EXECUTORCH_BUILD_ARM_BAREMETAL}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_CADENCE               : "
-                 "${EXECUTORCH_BUILD_CADENCE}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_COREML                : ${EXECUTORCH_BUILD_COREML}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_CPUINFO               : ${EXECUTORCH_BUILD_CPUINFO}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_DEVTOOLS              : ${EXECUTORCH_BUILD_DEVTOOLS}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_EXECUTOR_RUNNER       : "
-                 "${EXECUTORCH_BUILD_EXECUTOR_RUNNER}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_DATA_LOADER : "
-                 "${EXECUTORCH_BUILD_EXTENSION_DATA_LOADER}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR : "
-                 "${EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_LLM         : "
-                 "${EXECUTORCH_BUILD_EXTENSION_LLM}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_MODULE      : "
-                 "${EXECUTORCH_BUILD_EXTENSION_MODULE}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL : "
-                 "${EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_TENSOR      : "
-                 "${EXECUTORCH_BUILD_EXTENSION_TENSOR}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_TRAINING    : "
-                 "${EXECUTORCH_BUILD_EXTENSION_TRAINING}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_FLATC                 : ${EXECUTORCH_BUILD_FLATC}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_GFLAGS                : ${EXECUTORCH_BUILD_GFLAGS}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_KERNELS_CUSTOM        : "
-                 "${EXECUTORCH_BUILD_KERNELS_CUSTOM}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT    : "
-                 "${EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_KERNELS_OPTIMIZED     : "
-                 "${EXECUTORCH_BUILD_KERNELS_OPTIMIZED}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_KERNELS_QUANTIZED     : "
-                 "${EXECUTORCH_BUILD_KERNELS_QUANTIZED}"
-  )
-  message(
-    STATUS "  EXECUTORCH_BUILD_MPS                   : ${EXECUTORCH_BUILD_MPS}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_NEURON                : ${EXECUTORCH_BUILD_NEURON}"
-  )
-  message(
-    STATUS
-    "  EXECUTORCH_BUILD_OPENVINO                : ${EXECUTORCH_BUILD_OPENVINO}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_PTHREADPOOL           : ${EXECUTORCH_BUILD_PTHREADPOOL}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_PYBIND                : ${EXECUTORCH_BUILD_PYBIND}"
-  )
-  message(
-    STATUS "  EXECUTORCH_BUILD_QNN                   : ${EXECUTORCH_BUILD_QNN}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_SIZE_TEST             : ${EXECUTORCH_BUILD_SIZE_TEST}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_TESTS                 : ${EXECUTORCH_BUILD_TESTS}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_VULKAN                : ${EXECUTORCH_BUILD_VULKAN}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_XNNPACK               : ${EXECUTORCH_BUILD_XNNPACK}"
-  )
-
-endfunction()
-
 # This is the funtion to use -Wl, --whole-archive to link static library NB:
 # target_link_options is broken for this case, it only append the interface link
 # options of the first library.
@@ -320,6 +192,11 @@ function(resolve_python_executable)
     set(PYTHON_EXECUTABLE
         python
         PARENT_SCOPE
+    )
+  elseif(DEFINED ENV{VIRTUAL_ENV})
+    set(PYTHON_EXECUTABLE
+      $ENV{VIRTUAL_ENV}/bin/python3
+      PARENT_SCOPE
     )
   else()
     set(PYTHON_EXECUTABLE
