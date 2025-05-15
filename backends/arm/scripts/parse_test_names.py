@@ -8,6 +8,7 @@ from executorch.exir.dialects.edge.spec.utils import SAMPLE_INPUT
 CUSTOM_EDGE_OPS = [
     "linspace.default",
     "eye.default",
+    "vector_norm.default",
     "hardsigmoid.default",
     "hardswish.default",
     "linear.default",
