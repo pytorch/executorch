@@ -26,10 +26,6 @@ set(_common_compile_options -Wno-deprecated-declarations)
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
-if(NOT PYTHON_EXECUTABLE)
-  resolve_python_executable()
-endif()
-
 # Portable kernel sources TODO(larryliu0820): use buck2 to gather the sources
 file(GLOB_RECURSE _portable_kernels__srcs
      "${CMAKE_CURRENT_SOURCE_DIR}/cpu/*.cpp"
