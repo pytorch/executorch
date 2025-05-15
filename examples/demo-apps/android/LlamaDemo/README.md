@@ -1,6 +1,6 @@
 # ExecuTorch Llama Android Demo App
 
-**[UPDATE - 05/15]** We have added support for running Qwen3 (0.6B, 1.7B, and 4B) models in demo apps on the [XNNPACK backend](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/delegates/xnnpack_README.md).
+**[UPDATE - 05/15]** We have added support for running Qwen3 (0.6B, 1.7B, and 4B) models in demo apps on the [XNNPACK backend](https://github.com/pytorch/executorch/tree/main/examples/models/qwen3#summary).
 
 We’re excited to share that the newly revamped Android demo app is live and includes many new updates to provide a more intuitive and smoother user experience with a chat use case! The primary goal of this app is to showcase how easily ExecuTorch can be integrated into an Android demo app and how to exercise the many features ExecuTorch and Llama models have to offer.
 
