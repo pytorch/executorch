@@ -54,6 +54,11 @@ if(NOT CMAKE_CXX_STANDARD)
 endif()
 announce_configured_options(CMAKE_CXX_STANDARD)
 
+if(NOT CMAKE_SYSTEM_PROCESSOR)
+  set(CMAKE_SYSTEM_PROCESSOR ${CMAKE_HOST_SYSTEM_PROCESSOR})
+endif()
+announce_configured_options(CMAKE_SYSTEM_PROCESSOR)
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
