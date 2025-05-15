@@ -625,6 +625,7 @@ void ComputeGraph::prepack() const {
   vkapi::VulkanFence fence = context_->fences().get_fence();
   context_->submit_cmd_to_gpu(fence.get_submit_handle(), /*final_use = */ true);
   fence.wait();
+  context_->fences().return_fence(fence);
 
   context_->flush();
 }
@@ -649,6 +650,7 @@ void ComputeGraph::execute() const {
   vkapi::VulkanFence fence = context_->fences().get_fence();
   context_->submit_cmd_to_gpu(fence.get_submit_handle());
   fence.wait();
+  context_->fences().return_fence(fence);
 }
 
 void ComputeGraph::resize_input(
