@@ -15,6 +15,9 @@
 #import <XCTest/XCTest.h>
 #import <executorch/runtime/platform/runtime.h>
 #import <model_logging_options.h>
+#import <multiarray.h>
+
+using namespace executorchcoreml;
 
 @interface ETCoreMLModelManagerTests : XCTestCase
 
@@ -110,7 +113,7 @@
     XCTAssertNotNil(inputs);
     MLMultiArray *output = [ETCoreMLTestUtils filledMultiArrayWithShape:inputs[0].shape dataType:inputs[0].dataType repeatedValue:@(0) error:&localError];
     NSArray<MLMultiArray *> *args = [inputs arrayByAddingObject:output];
-    XCTAssertTrue([self.modelManager executeModelWithHandle:handle 
+    XCTAssertTrue([self.modelManager executeModelWithHandle:handle
                                                        args:args
                                              loggingOptions:executorchcoreml::ModelLoggingOptions()
                                                 eventLogger:nullptr
@@ -145,6 +148,79 @@
     for (NSUInteger i = 0; i < output.count; i++) {
         NSNumber *value = [output objectAtIndexedSubscript:i];
         XCTAssertEqual(value.integerValue, x * y);
+    }
+}
+
+// See https://github.com/pytorch/executorch/pull/10465
+- (void)testAutoreleasepoolError {
+    NSURL *modelURL = [self.class bundledResourceWithName:@"add_coreml_all" extension:@"bin"];
+    NSError *localError = nil;
+    XCTAssertNotNil(modelURL);
+
+    NSData *modelData = [NSData dataWithContentsOfURL:modelURL];
+    MLModelConfiguration *configuration = [[MLModelConfiguration alloc] init];
+    configuration.computeUnits = MLComputeUnitsAll;
+    ModelHandle *modelHandle = [self.modelManager loadModelFromAOTData:modelData
+                                                           configuration:configuration
+                                                                   error:&localError];
+    XCTAssert(modelHandle);
+
+    ETCoreMLModel *model = [self.modelManager modelWithHandle:modelHandle];
+    XCTAssert(model);
+
+    NSArray<MLMultiArray *> *inputArrays =
+        [ETCoreMLTestUtils inputsForModel:model repeatedValues:@[@(2), @(3)] error:&localError];
+    XCTAssert(inputArrays);
+
+    std::vector<MultiArray> multiArrays;
+    multiArrays.reserve(inputArrays.count + model.orderedOutputNames.count);
+    for (MLMultiArray *array in inputArrays) {
+        auto dataTypeOpt = to_multiarray_data_type(array.dataType);
+        XCTAssert(dataTypeOpt.has_value());
+        auto dataType = dataTypeOpt.value();
+
+        std::vector<size_t> dims;
+        for (NSNumber *n in array.shape) {
+            dims.push_back(n.unsignedLongValue);
+        }
+
+        std::vector<ssize_t> strides(dims.size());
+        ssize_t currentStride = 1;
+        for (NSInteger i = dims.size() - 1; i >= 0; --i) {
+            strides[i] = currentStride;
+            currentStride *= dims[i];
+        }
+
+        multiArrays.emplace_back(array.dataPointer,
+                                 MultiArray::MemoryLayout(dataType, dims, strides));
+    }
+
+    auto inputLayout = multiArrays[0].layout();
+    size_t bufferSize = inputLayout.num_bytes();
+    for (NSUInteger i = 0; i < model.orderedOutputNames.count; ++i) {
+        multiArrays.emplace_back(calloc(1, bufferSize), inputLayout);
+    }
+    // corrupt first input shape to force error
+    {
+        auto originalLayout = multiArrays[0].layout();
+        auto corruptedDims = originalLayout.shape();
+        corruptedDims[0] += 1;
+        multiArrays[0] = MultiArray(multiArrays[0].data(),
+                                    MultiArray::MemoryLayout(originalLayout.dataType(),
+                                                             corruptedDims,
+                                                             originalLayout.strides()));
+    }
+
+    BOOL success = [self.modelManager executeModelWithHandle:modelHandle
+                                                    argsVec:multiArrays
+                                             loggingOptions:ModelLoggingOptions()
+                                                eventLogger:nullptr
+                                                      error:&localError];
+    XCTAssertFalse(success);
+    XCTAssertNotNil(localError);
+
+    for (size_t i = inputArrays.count; i < multiArrays.size(); ++i) {
+        free(multiArrays[i].data());
     }
 }
 

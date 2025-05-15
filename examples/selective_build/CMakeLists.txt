@@ -43,7 +43,7 @@ find_package(
   gflags REQUIRED PATHS ${CMAKE_CURRENT_BINARY_DIR}/../../third-party
 )
 
-target_include_directories(executorch INTERFACE ${_common_include_directories})
+target_include_directories(executorch_core INTERFACE ${_common_include_directories})
 
 # ------------------------------ OPTIONS BEGIN -------------------------------
 
@@ -91,7 +91,7 @@ if(EXECUTORCH_SELECT_OPS_YAML)
   # custom_kernels: C++ kernel implementations of custom ops
   #
   add_library(custom_kernels ${kernel_sources})
-  target_link_libraries(custom_kernels PRIVATE executorch)
+  target_link_libraries(custom_kernels PRIVATE executorch_core)
   target_compile_options(custom_kernels PUBLIC ${_common_compile_options})
 
   list(APPEND _kernel_lib custom_kernels)
@@ -117,7 +117,7 @@ generate_bindings_for_kernels(
 )
 
 gen_operators_lib(
-  LIB_NAME "select_build_lib" KERNEL_LIBS ${_kernel_lib} DEPS executorch
+  LIB_NAME "select_build_lib" KERNEL_LIBS ${_kernel_lib} DEPS executorch_core
 )
 
 list(TRANSFORM _executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
@@ -131,11 +131,7 @@ if(CMAKE_BUILD_TYPE EQUAL "Release")
   target_link_options(selective_build_test PRIVATE "LINKER:--gc-sections")
 endif()
 target_link_libraries(
-  selective_build_test PRIVATE executorch gflags select_build_lib
+  selective_build_test PRIVATE executorch_core gflags select_build_lib
 )
 target_link_options_shared_lib(select_build_lib)
-target_link_options_shared_lib(executorch)
 target_compile_options(selective_build_test PUBLIC ${_common_compile_options})
-
-# Print all summary
-executorch_print_configuration_summary()

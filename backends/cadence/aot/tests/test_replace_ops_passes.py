@@ -16,7 +16,6 @@ from executorch.backends.cadence.aot import compiler
 from executorch.backends.cadence.aot.compiler import (
     export_to_edge,
     quantize_and_export_to_edge,
-    quantize_pt2,
 )
 from executorch.backends.cadence.aot.graph_builder import (
     GraphBuilder,
@@ -41,7 +40,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceNopTransposeOrPermuteWithViewPass,
     ReplacePadWithCatPass,
     ReplacePermuteWithTransposePass,
-    ReplacePowWithMullPass,
+    ReplacePowWithMulPass,
     ReplaceRepeatWithCatPass,
     ReplaceScalarTensorWithFullPass,
     ReplaceScalarWithTensorArgPass,
@@ -113,9 +112,8 @@ class TestReplaceOpsPasses(unittest.TestCase):
         Y = torch.randn(y_shape)
         p = ReplaceMatmulWithTransposedMatmulPass()
         inputs = (X, Y)
-        quantized_model = quantize_pt2(model, inputs)
         graph_module = (
-            export_to_edge(quantized_model, inputs).exported_program().graph_module
+            quantize_and_export_to_edge(model, inputs).exported_program().graph_module
         )
         # pyre-fixme[16]: Optional type has no attribute `graph_module`
         graph_after_passes = p(graph_module).graph_module
@@ -1382,22 +1380,23 @@ class TestReplaceOpsPasses(unittest.TestCase):
             2,
         )
 
-    def test_replace_pow_with_mul(self):
+    @parameterized.expand([[2], [3], [4]])
+    def test_replace_pow_with_mul(self, exponent: int):
         class Pow(torch.nn.Module):
             def forward(self, input):
-                return torch.ops.aten.pow.Scalar(2, input)
+                return torch.ops.aten.pow.Tensor_Scalar(input, exponent)
 
         input = torch.randn(2, 1, 64)
 
         graph_module = export_to_edge(Pow(), (input,)).exported_program().graph_module
 
-        p = ReplacePowWithMullPass()
+        p = ReplacePowWithMulPass()
         graph_after_passes = cast(PassResult, p(graph_module)).graph_module
 
         self.assertEqual(
             count_node(
                 graph_after_passes,
-                exir_ops.edge.aten.pow.Scalar,
+                exir_ops.edge.aten.pow.Tensor_Scalar,
             ),
             0,
         )
@@ -1407,7 +1406,41 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 graph_after_passes,
                 exir_ops.edge.aten.mul.Tensor,
             ),
+            exponent - 1,
+        )
+
+    @parameterized.expand(
+        [
+            [1],
+            [1.5],
+        ]
+    )
+    def test_replace_pow_with_mul_not_applied(self, exponent):
+        class Pow(torch.nn.Module):
+            def forward(self, input):
+                return torch.ops.aten.pow.Tensor_Scalar(input, exponent)
+
+        input = torch.randn(2, 1, 64)
+
+        graph_module = export_to_edge(Pow(), (input,)).exported_program().graph_module
+
+        p = ReplacePowWithMulPass()
+        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.aten.pow.Tensor_Scalar,
+            ),
             1,
+        )
+
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.aten.mul.Tensor,
+            ),
+            0,
         )
 
 

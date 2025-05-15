@@ -22,12 +22,12 @@ BOT_AUTHORS = ["github-actions", "pytorchmergebot", "pytorch-bot"]
 
 LABEL_ERR_MSG_TITLE = "This PR needs a `release notes:` label"
 LABEL_ERR_MSG = f"""# {LABEL_ERR_MSG_TITLE}
-If your changes are user facing and intended to be a part of release notes, please use a label starting with `release notes:`.
+If your change should be included in the release notes (i.e. would users of this library care about this change?), please use a label starting with `release notes:`.
 
-If not, please add the `topic: not user facing` label.
+If not, please add the `release notes: none` label.
 
 To add a label, you can comment to pytorchbot, for example
-`@pytorchbot label "topic: not user facing"`
+`@pytorchbot label "release notes: none"`
 
 For more information, see
 https://github.com/pytorch/pytorch/wiki/PyTorch-AutoLabel-Bot#why-categorize-for-release-notes-and-how-does-it-work.
@@ -115,7 +115,7 @@ def has_required_labels(pr: "GitHubPR") -> bool:
     pr_labels = pr.get_labels()
     # Check if PR is not user facing
     is_not_user_facing_pr = any(
-        label.strip() == "topic: not user facing" for label in pr_labels
+        label.strip() == "release notes: none" for label in pr_labels
     )
     return is_not_user_facing_pr or any(
         label.strip() in get_release_notes_labels(pr.org, pr.project)

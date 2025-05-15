@@ -100,7 +100,7 @@ class _OpNamespace(types.ModuleType):
             parent_packet = getattr(self._op_namespace, op_name)
         except AttributeError as e:
             # Turn this into AttributeError so getattr(obj, key, default)
-            # works (this is called by TorchScript with __origin__)
+            # works
             raise AttributeError(
                 f"'_OpNamespace' '{self._dialect}.{self._name}' object has no attribute '{op_name}'"
             ) from e

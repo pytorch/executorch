@@ -52,7 +52,7 @@ def test_softmax_basic_tosa_MI():
     pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),
-        tosa_version="TOSA-0.80+MI",
+        quantize=False,
         ops_before_pass={
             "executorch_exir_dialects_edge__ops_aten__softmax_default": 1,
         },
@@ -79,7 +79,7 @@ def test_softmax_log_tosa_MI():
     pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),
-        tosa_version="TOSA-0.80+MI",
+        quantize=False,
         ops_before_pass={
             "executorch_exir_dialects_edge__ops_aten__log_softmax_default": 1,
         },

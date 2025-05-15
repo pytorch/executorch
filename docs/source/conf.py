@@ -18,9 +18,9 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
-import distutils.file_util
 import glob
 import os
+import shutil
 import sys
 from typing import Any
 
@@ -135,7 +135,7 @@ for i in range(len(sphinx_gallery_conf["examples_dirs"])):
     # Copy .md files from source dir to gallery dir
     for f in glob.glob(os.path.join(source_dir, "*.md")):
 
-        distutils.file_util.copy_file(f, gallery_dir, update=True)
+        shutil.copyfile(f, gallery_dir)
 
 source_suffix = [".rst", ".md"]
 

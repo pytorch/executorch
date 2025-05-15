@@ -1,5 +1,4 @@
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,115 +7,83 @@
 # Tests the repeat op which copies the data of the input tensor (possibly with new data format)
 #
 
-import unittest
+
 from typing import Sequence, Tuple
 
 import torch
 
-from executorch.backends.arm.quantizer import (
-    EthosUQuantizer,
-    get_symmetric_quantization_config,
-    TOSAQuantizer,
-)
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineBI,
+    EthosU85PipelineBI,
+    TosaPipelineBI,
+    TosaPipelineMI,
+)
 
-from executorch.backends.xnnpack.test.tester.tester import Quantize
-from executorch.exir.backend.backend_details import CompileSpec
-from parameterized import parameterized
+input_t1 = Tuple[torch.Tensor, torch.Tensor]  # Input x, Input y
+aten_op = "torch.ops.aten.repeat.default"
 
 
-class TestSimpleRepeat(unittest.TestCase):
-    """Tests Tensor.repeat for different ranks and dimensions."""
+"""Tests Tensor.repeat for different ranks and dimensions."""
 
-    class Repeat(torch.nn.Module):
-        # (input tensor, multiples)
-        test_parameters = [
-            (torch.randn(3), (2,)),
-            (torch.randn(3, 4), (2, 1)),
-            (torch.randn(1, 1, 2, 2), (1, 2, 3, 4)),
-            (torch.randn(3), (2, 2)),
-            (torch.randn(3), (1, 2, 3)),
-            (torch.randn((3, 3)), (2, 2, 2)),
-            (torch.randn((3, 3, 3)), (2, 1, 2, 4)),
-        ]
 
-        def forward(self, x: torch.Tensor, multiples: Sequence):
-            return x.repeat(multiples)
+class Repeat(torch.nn.Module):
+    # (input tensor, multiples)
+    test_parameters = {
+        "1_x_1": lambda: (torch.randn(3), (2,)),
+        "2_x_2": lambda: (torch.randn(3, 4), (2, 1)),
+        "4_x_4": lambda: (torch.randn(1, 1, 2, 2), (1, 2, 3, 4)),
+        "1_x_2": lambda: (torch.randn(3), (2, 2)),
+        "1_x_3": lambda: (torch.randn(3), (1, 2, 3)),
+        "2_x_3": lambda: (torch.randn((3, 3)), (2, 2, 2)),
+        "1_x_4": lambda: (torch.randn((3, 3, 3)), (2, 1, 2, 4)),
+    }
 
-    def _test_repeat_tosa_MI_pipeline(self, module: torch.nn.Module, test_data: Tuple):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
-            )
-            .export()
-            .check_count({"torch.ops.aten.repeat.default": 1})
-            .to_edge()
-            .partition()
-            .check_not(["torch.ops.aten.repeat.default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
+    def forward(self, x: torch.Tensor, multiples: Sequence):
+        return x.repeat(multiples)
 
-    def _test_repeat_tosa_BI_pipeline(self, module: torch.nn.Module, test_data: Tuple):
-        tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
-        compile_spec = common.get_tosa_compile_spec(tosa_spec)
-        quantizer = TOSAQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
-        (
-            ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
-            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
-            .export()
-            .check_count({"torch.ops.aten.repeat.default": 1})
-            .to_edge()
-            .partition()
-            .check_not(["torch.ops.aten.repeat.default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
-        )
 
-    def _test_repeat_ethosu_pipeline(
-        self, compile_spec: CompileSpec, module: torch.nn.Module, test_data: Tuple
-    ):
-        quantizer = EthosUQuantizer(compile_spec).set_io(
-            get_symmetric_quantization_config()
-        )
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=compile_spec,
-            )
-            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
-            .export()
-            .check_count({"torch.ops.aten.repeat.default": 1})
-            .to_edge()
-            .partition()
-            .check_not(["torch.ops.aten.repeat.default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-        )
+@common.parametrize("test_data", Repeat.test_parameters)
+def test_repeat_tosa_MI(test_data: Tuple):
+    pipeline = TosaPipelineMI[input_t1](
+        Repeat(),
+        test_data(),
+        aten_op,
+        exir_op=[],
+    )
+    pipeline.run()
 
-    @parameterized.expand(Repeat.test_parameters)
-    def test_repeat_tosa_MI(self, test_input, multiples):
-        self._test_repeat_tosa_MI_pipeline(self.Repeat(), (test_input, multiples))
 
-    @parameterized.expand(Repeat.test_parameters)
-    def test_repeat_tosa_BI(self, test_input, multiples):
-        self._test_repeat_tosa_BI_pipeline(self.Repeat(), (test_input, multiples))
+@common.parametrize("test_data", Repeat.test_parameters)
+def test_repeat_tosa_BI(test_data: Tuple):
+    pipeline = TosaPipelineBI[input_t1](
+        Repeat(),
+        test_data(),
+        aten_op,
+        exir_op=[],
+    )
+    pipeline.run()
 
-    @parameterized.expand(Repeat.test_parameters)
-    def test_repeat_u55_BI(self, test_input, multiples):
-        self._test_repeat_ethosu_pipeline(
-            common.get_u55_compile_spec(), self.Repeat(), (test_input, multiples)
-        )
 
-    @parameterized.expand(Repeat.test_parameters)
-    def test_repeat_u85_BI(self, test_input, multiples):
-        self._test_repeat_ethosu_pipeline(
-            common.get_u85_compile_spec(), self.Repeat(), (test_input, multiples)
-        )
+@common.parametrize("test_data", Repeat.test_parameters)
+def test_repeat_u55_BI(test_data: Tuple):
+    pipeline = EthosU55PipelineBI[input_t1](
+        Repeat(),
+        test_data(),
+        aten_op,
+        exir_ops=[],
+        run_on_fvp=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Repeat.test_parameters)
+def test_repeat_u85_BI(test_data: Tuple):
+    pipeline = EthosU85PipelineBI[input_t1](
+        Repeat(),
+        test_data(),
+        aten_op,
+        exir_ops=[],
+        run_on_fvp=False,
+    )
+    pipeline.run()

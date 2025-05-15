@@ -33,13 +33,13 @@ set_up_aot() {
   cmake .. \
       -DCMAKE_INSTALL_PREFIX=$PWD \
       -DEXECUTORCH_BUILD_QNN=ON \
+      -DANDROID_NATIVE_API_LEVEL=30 \
       -DQNN_SDK_ROOT=${QNN_SDK_ROOT} \
       -DEXECUTORCH_BUILD_DEVTOOLS=ON \
       -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
       -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
       -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
-      -DPYTHON_EXECUTABLE=python3 \
-      -DEXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT=OFF
+      -DPYTHON_EXECUTABLE=python3
   cmake --build $PWD --target "PyQnnManagerAdaptor" "PyQnnWrapperAdaptor" -j$(nproc)
   # install Python APIs to correct import path
   # The filename might vary depending on your Python and host version.

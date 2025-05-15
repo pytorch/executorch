@@ -757,7 +757,9 @@ struct PyModule final {
       } else if (py::isinstance<py::int_>(python_input)) {
         cpp_inputs.push_back(EValue(py::cast<int64_t>(python_input)));
       } else {
-        ET_ASSERT_UNREACHABLE_MSG("Unsupported pytype: %s", type_str.c_str());
+        throw std::runtime_error(
+            "Unsupported python type " + type_str +
+            ". Ensure that inputs are passed as a flat list of tensors.");
       }
     }
 

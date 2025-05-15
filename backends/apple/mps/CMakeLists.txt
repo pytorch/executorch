@@ -42,7 +42,7 @@ endforeach()
 add_custom_command(
   OUTPUT ${_mps_schema__outputs}
   COMMAND
-    ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
+    flatc --cpp --cpp-std c++11 --scoped-enums -o
     "${_mps_schema__include_dir}/executorch/backends/apple/mps"
     ${_mps_schema__srcs}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}

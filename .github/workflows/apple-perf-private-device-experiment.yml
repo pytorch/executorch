@@ -1,18 +1,16 @@
 name: apple-perf (private devices)
 
 on:
-  # TODO (huydhn): Disable the schedule run until we land the change to add device pool and device name
-  # to separate between public and private iOS devices
-  # schedule:
-  # - cron: 0 0,4,8,12,16,20 * * *
+  schedule:
+   - cron: 0 0,4,8,12,16,20 * * *
   pull_request:
     paths:
       - .github/workflows/apple-perf-private-device-experiment.yml
-  # push:
-  #   branches:
-  #     - main
-  #   paths:
-  #     - .github/workflows/apple-perf-private-device-experiment.yml
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/apple-perf-private-device-experiment.yml
   # Note: GitHub has an upper limit of 10 inputs
   workflow_dispatch:
     inputs:

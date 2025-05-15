@@ -6,6 +6,8 @@
 
 # pyre-strict
 
+import torch
+from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib  # noqa: F401
 from torchgen.model import FunctionSchema, SchemaKind
 from torchgen.native_function_generation import (
     functional_to_out_signature,
@@ -39,3 +41,28 @@ def gen_out_variant_schema(func_op_schema: str) -> str:
         raise RuntimeError(f"SchemaKind: {func.kind()} is not supported")
 
     return f"{namespace}::{schema}" if namespace else schema
+
+
+# TODO: move to torchao
+_QUANT_PRIMITIVES = [
+    torch.ops.quantized_decomposed.dequantize_per_channel.default,
+    torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+    torch.ops.quantized_decomposed.dequantize_per_tensor.tensor,
+    torch.ops.quantized_decomposed.convert_element_type.no_fuse,
+    torch.ops.quantized_decomposed.quantize_per_tensor.default,
+    torch.ops.quantized_decomposed.quantize_per_tensor.tensor,
+    torch.ops.quantized_decomposed.quantize_per_channel.default,
+    torch.ops.quantized_decomposed.choose_qparams.tensor,
+]
+try:
+    import torchao  # noqa: F401
+
+    _QUANT_PRIMITIVES.extend(
+        [
+            torch.ops.torchao.dequantize_affine.default,
+            torch.ops.torchao.quantize_affine.default,
+            torch.ops.torchao.choose_qparams_affine.default,
+        ]
+    )
+except ImportError:
+    pass

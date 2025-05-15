@@ -23,7 +23,7 @@ on:
         description: Target devices to run benchmark
         required: false
         type: string
-        default: google_pixel_3_private_rooted
+        default: samsung_galaxy_s22_private
       benchmark_configs:
         description: The list of configs used the benchmark
         required: false
@@ -39,7 +39,7 @@ on:
         description: Target devices to run benchmark
         required: false
         type: string
-        default: google_pixel_3_private_rooted
+        default: samsung_galaxy_s22_private
       benchmark_configs:
         description: The list of configs used the benchmark
         required: false
@@ -58,5 +58,5 @@ jobs:
       contents: read
     with:
       models: ${{ inputs.models || 'mv3,meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8,meta-llama/Llama-3.2-1B-Instruct-QLORA_INT4_EO8' }}
-      devices: google_pixel_3_private_rooted
+      devices: samsung_galaxy_s22_private
       benchmark_configs: ${{ inputs.benchmark_configs }}

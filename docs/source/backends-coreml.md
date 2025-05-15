@@ -192,3 +192,9 @@ python examples/apple/coreml/scripts/extract_coreml_models.py -m /path/to/model.
 ```
 
 Note that if the ExecuTorch model has graph breaks, there may be multiple extracted *.mlpackage files.
+
+## Common issues and what to do
+
+During lowering to the CoreML backend, you might see an error like: "ValueError: In op, of type [X], named [Y], the named input [Z] must have the same data type as the named input x. However, [Z] has dtype fp32 whereas x has dtype fp16."
+
+This happens because the model is in FP16, but CoreML interprets some of the arguments as FP32, which leads to a type mismatch.  The solution is to keep the PyTorch model in FP32.  Note that the model will be still be converted to FP16 during lowering to CoreML unless specified otherwise in the compute_precision [CoreML CompileSpec](#coreml-compilespec).  Also see the [related issue in coremltools](https://github.com/apple/coremltools/issues/2480).

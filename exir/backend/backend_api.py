@@ -204,12 +204,16 @@ def _insert_lowered_submodule(
     owning_graph_module = call_submodule_node.graph.owning_module
     # call delegate args should only use user_inputs
     call_delegate_args = []
-    # Preserve input order as user_inputs
-    for inp_name in submodule_program.graph_signature.user_inputs:
-        for inp_node in call_submodule_node.all_input_nodes:
-            if inp_node.name == inp_name:
-                call_delegate_args.append(inp_node)
-                break
+    # names of input_specs to delete
+    input_specs_to_delete = toplevel_input_specs_to_delete
+    # Delete owned constants from the call_submodule_node args
+    for call_sm_input in call_submodule_node.args:
+        if (
+            isinstance(call_sm_input, torch.fx.Node)
+            and call_sm_input.name in input_specs_to_delete.keys()
+        ):
+            continue
+        call_delegate_args.append(call_sm_input)
 
     def generate_debug_handle(ep: ExportedProgram) -> int:
         """
@@ -324,6 +328,7 @@ def _partition_and_lower_one_graph_module(
             toplevel_input_specs_to_delete,
             toplevel_output_specs_to_delete,
         )
+        owning_program._validate()
 
     return tagged_graph_module
 
@@ -742,6 +747,7 @@ def _(
     for method_name in method_to_edge_program.keys():
         if method_name in method_to_tagged_exported_program:
             tagged_exported_program = method_to_tagged_exported_program[method_name]
+            tagged_exported_program._validate()
             partitioned_and_lowered_exported_programs[method_name] = ExportedProgram(
                 root=tagged_exported_program.graph_module,
                 graph=tagged_exported_program.graph_module.graph,

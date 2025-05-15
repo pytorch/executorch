@@ -105,7 +105,10 @@ void add_slice_tensor_copy_node(
         {t_out->sizes_ubo(),
          t_in->sizes_ubo(),
          graph.create_params_buffer(params)},
-        spec_vars));
+        {},
+        spec_vars,
+        {},
+        nullptr));
 
   } else {
     // GPU's coordinate is in x = 0, y = 1, z = 2, w = 3
@@ -146,7 +149,10 @@ void add_slice_tensor_copy_node(
         {{out, vkapi::MemoryAccessType::WRITE},
          {in, vkapi::MemoryAccessType::READ}},
         {t_out->sizes_ubo(), graph.create_params_buffer(params)},
-        spec_vars));
+        {},
+        spec_vars,
+        {},
+        nullptr));
   }
 }
 

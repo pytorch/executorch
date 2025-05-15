@@ -1,7 +1,7 @@
-From 23712ff626db16793d428dddcb530f9e5faaa073 Mon Sep 17 00:00:00 2001
-From: Adrian Lundell <adrian.lundell@arm.com>
-Date: Thu, 3 Apr 2025 14:25:52 +0200
-Subject: [PATCH] Move input_data_sec to NOLOAD area
+From 42a16a7e9c73e79e55ee25534e3bbc39f169af62 Mon Sep 17 00:00:00 2001
+From: Per Held <per.held@arm.com>
+Date: Mon, 28 Apr 2025 10:56:09 +0200
+Subject: [PATCH 2/2] Move input_data_sec to NOLOAD area
 
 ---
  targets/corstone-300/platform.ld | 10 ++++++++--
@@ -9,13 +9,13 @@ Subject: [PATCH] Move input_data_sec to NOLOAD area
  2 files changed, 14 insertions(+), 4 deletions(-)
 
 diff --git a/targets/corstone-300/platform.ld b/targets/corstone-300/platform.ld
-index 1733509..3ccce64 100644
+index b746aa0..5043be2 100644
 --- a/targets/corstone-300/platform.ld
 +++ b/targets/corstone-300/platform.ld
-@@ -272,13 +272,12 @@ SECTIONS
+@@ -273,19 +273,25 @@ SECTIONS
      *(.bss.tensor_arena)
  #endif
-
+ 
 -    . = ALIGN(4);
 -    *(input_data_sec)
      . = ALIGN(16);
@@ -25,12 +25,11 @@ index 1733509..3ccce64 100644
      * (expected_output_data_sec)
 +    . = ALIGN(16);
      * (sec_command_stream, sec_weight_data, sec_input_data)
-     *(.got*)
-     *(.rodata*)
-@@ -287,6 +286,13 @@ SECTIONS
+     * (.got*)
+     * (ethosu_core_in_queue)
+     * (ethosu_core_out_queue)
      . = ALIGN(4);
    } > DDR :rom_dram
-
 +  .ddr_noload (NOLOAD) :
 +  {
 +    . = ALIGN(16);
@@ -38,26 +37,26 @@ index 1733509..3ccce64 100644
 +    . = ALIGN(16);
 +  } > DDR :null
 +
-   __eddr_data = ALIGN (4) ;
-   .sram.data : {
-     __sram_data_start__ = .;
+ 
+   __eddr_data = ALIGN(4);
+   .sram.data :
 diff --git a/targets/corstone-320/platform.ld b/targets/corstone-320/platform.ld
-index c8261c0..9b7e071 100644
+index 1f4f521..8c5e402 100644
 --- a/targets/corstone-320/platform.ld
 +++ b/targets/corstone-320/platform.ld
 @@ -268,8 +268,6 @@ SECTIONS
      *(network_model_sec)
  #endif
-
+ 
 -    . = ALIGN(4);
 -    *(input_data_sec)
      *(expected_output_data_sec)
      *(output_data_sec)
-
+ 
 @@ -279,6 +277,12 @@ SECTIONS
      __etext = .;
    } > DDR :rom_dram
-
+ 
 +  .ddr_noload (NOLOAD) :
 +  {
 +    . = ALIGN(16);
@@ -67,6 +66,6 @@ index c8261c0..9b7e071 100644
    .bss :
    {
      . = ALIGN(4);
---
+-- 
 2.43.0
 

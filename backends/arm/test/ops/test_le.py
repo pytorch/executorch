@@ -5,7 +5,6 @@
 
 from typing import Tuple
 
-import pytest
 import torch
 from executorch.backends.arm.test import common
 
@@ -57,63 +56,38 @@ op_le_rank4_randn = GreaterEqual(
 )
 
 test_data_common = {
-    "le_rank1_ones": op_le_rank1_ones,
-    "le_rank2_rand": op_le_rank2_rand,
-    "le_rank3_randn": op_le_rank3_randn,
-    "le_rank4_randn": op_le_rank4_randn,
+    "le_rank1_ones": lambda: op_le_rank1_ones,
+    "le_rank2_rand": lambda: op_le_rank2_rand,
+    "le_rank3_randn": lambda: op_le_rank3_randn,
+    "le_rank4_randn": lambda: op_le_rank4_randn,
 }
 
 
 @common.parametrize("test_module", test_data_common)
-def test_le_tosa_MI(test_module):
+def test_le_tensor_tosa_MI(test_module):
     pipeline = TosaPipelineMI[input_t](
-        test_module, test_module.get_inputs(), aten_op, exir_op
+        test_module(), test_module().get_inputs(), aten_op, exir_op
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_common)
-def test_le_tosa_BI(test_module):
+def test_le_tensor_tosa_BI(test_module):
     pipeline = TosaPipelineBI[input_t](
-        test_module, test_module.get_inputs(), aten_op, exir_op
+        test_module(), test_module().get_inputs(), aten_op, exir_op
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_common)
-def test_le_u55_BI(test_module):
+def test_le_tensor_u55_BI_not_delegated(test_module):
     # GREATER_EQUAL is not supported on U55. LE uses the GREATER_EQUAL Tosa operator.
     pipeline = OpNotSupportedPipeline[input_t](
-        test_module,
-        test_module.get_inputs(),
-        "TOSA-0.80+BI+u55",
+        test_module(),
+        test_module().get_inputs(),
         {exir_op: 1},
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_module", test_data_common)
-def test_le_u85_BI(test_module):
-    pipeline = EthosU85PipelineBI[input_t](
-        test_module,
-        test_module.get_inputs(),
-        aten_op,
-        exir_op,
-        run_on_fvp=False,
-        use_to_edge_transform_and_lower=True,
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_module", test_data_common)
-@pytest.mark.skip(reason="The same as test_le_u55_BI")
-def test_le_u55_BI_on_fvp(test_module):
-    # GREATER_EQUAL is not supported on U55. LE uses the GREATER_EQUAL Tosa operator.
-    pipeline = OpNotSupportedPipeline[input_t](
-        test_module,
-        test_module.get_inputs(),
-        "TOSA-0.80+BI+u55",
-        {exir_op: 1},
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 
@@ -123,11 +97,11 @@ def test_le_u55_BI_on_fvp(test_module):
     test_data_common,
     xfails={"le_rank4_randn": "4D fails because boolean Tensors can't be subtracted"},
 )
-@common.SkipIfNoCorstone320
-def test_le_u85_BI_on_fvp(test_module):
+@common.XfailIfNoCorstone320
+def test_le_tensor_u85_BI(test_module):
     pipeline = EthosU85PipelineBI[input_t](
-        test_module,
-        test_module.get_inputs(),
+        test_module(),
+        test_module().get_inputs(),
         aten_op,
         exir_op,
         run_on_fvp=True,

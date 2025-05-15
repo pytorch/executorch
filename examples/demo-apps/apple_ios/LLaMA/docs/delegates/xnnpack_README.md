@@ -85,7 +85,7 @@ python -m examples.models.llama.export_llama --checkpoint <path-to-your-checkpoi
 ### For LLaVA model
 * For the Llava 1.5 model, you can get it from Huggingface [here](https://huggingface.co/llava-hf/llava-1.5-7b-hf).
 * Run `examples/models/llava/install_requirements.sh` to install dependencies.
-* Run the following command to generate llava.pte, tokenizer.bin and an image tensor (serialized in TorchScript) image.pt.
+* Run the following command to generate llava.pte, tokenizer.bin and download an image basketball.jpg.
 
 ```
 python -m executorch.examples.models.llava.export_llava --pte-name llava.pte --with-artifacts

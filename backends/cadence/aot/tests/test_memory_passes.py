@@ -711,7 +711,6 @@ class TestMemTransform(unittest.TestCase):
             .exported_program()
             .graph_module
         )
-        graph_module.print_readable()
         self.assertEqual(count_node(graph_module, torch.ops.aten._cat_nop.out), 1)
         self.assertEqual(
             count_node(graph_module, torch.ops.aten._slice_copy_nop.Tensor_out), 0
@@ -741,7 +740,6 @@ class TestMemTransform(unittest.TestCase):
             .exported_program()
             .graph_module
         )
-        graph_module.print_readable()
         self.assertEqual(count_node(graph_module, torch.ops.aten._cat_nop.out), 2)
         self.assertEqual(count_node(graph_module, torch.ops.aten.cat.out), 0)
         self.verify_nop_memory_alloc(graph_module)

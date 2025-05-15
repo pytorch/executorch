@@ -52,8 +52,6 @@ function build_semihosting_executorch_runner() {
     find ${build_test_dir} -name "arm_executor_runner"
 }
 
-cd $et_root_dir && backends/arm/scripts/build_quantized_ops_aot_lib.sh
-
 # Use most optimal system_configs for testing
 build_semihosting_executorch_runner corstone-300 Ethos_U55_High_End_Embedded
 

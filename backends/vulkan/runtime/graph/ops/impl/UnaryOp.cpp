@@ -61,7 +61,11 @@ void add_unary_op_node(
        {in, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       ubos,
+      // Push Constants
+      {},
       // Specialization Constants
+      {},
+      // Resize Args
       {},
       // Resizing Logic
       resize_unary_op_node));

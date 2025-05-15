@@ -7,6 +7,8 @@ python_library(
         "ethosu_partitioner.py",
         "tosa_backend.py",
         "tosa_partitioner.py",
+        "vgf_backend.py",
+        "vgf_partitioner.py",
     ],
     deps = [
         ":arm_backend",

@@ -8,6 +8,8 @@
 
 #include <executorch/kernels/portable/cpu/pattern/bitwise_op.h>
 
+#include <functional>
+
 namespace torch {
 namespace executor {
 namespace native {
@@ -19,7 +21,7 @@ Tensor& bitwise_and_Tensor_out(
     Tensor& out) {
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "bitwise_and.Tensor_out";
-  return internal::bitwise_tensor_out<op_name>(ctx, a, b, out);
+  return internal::bitwise_tensor_out<std::bit_and, op_name>(ctx, a, b, out);
 }
 
 Tensor& bitwise_and_Scalar_out(
@@ -29,7 +31,7 @@ Tensor& bitwise_and_Scalar_out(
     Tensor& out) {
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "bitwise_and.Scalar_out";
-  return internal::bitwise_scalar_out<op_name>(ctx, a, b, out);
+  return internal::bitwise_scalar_out<std::bit_and, op_name>(ctx, a, b, out);
 }
 
 } // namespace native

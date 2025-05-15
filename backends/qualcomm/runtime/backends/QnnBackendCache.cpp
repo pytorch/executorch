@@ -134,20 +134,16 @@ Error QnnBackendCache::Configure() {
         QnnQcirCustomProtocol().DeserializeQcirCustomBuffer(
             qnn_context_blob_.buffer);
     if (status == Error::Ok) {
-      // online prepare or first stage of multi graph
-      state_ = ONLINE_PREPARE;
+      // first stage of multi graph
+      state_ = MULTI_GRAPH;
       auto context = qcir::GetContext(qcir_fbs_ptr);
       for (const auto& graph : *context->graphs()) {
         graph_names_.emplace_back(graph->name()->str());
       }
       return Error::Ok;
     }
-
-    QNN_EXECUTORCH_LOG_ERROR(
-        "Failed to parse QNN Graph Info. The cache "
-        "might be broken. Please consider to re-generate the "
-        "cache.");
-    InvalidateCache();
+    // online prepare
+    state_ = ONLINE_PREPARE;
   }
   return Error::Ok;
 }

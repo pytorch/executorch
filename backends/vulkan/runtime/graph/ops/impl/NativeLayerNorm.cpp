@@ -108,24 +108,25 @@ void add_native_layer_norm_node(
       global_size,
       local_size,
       // Inputs and Outputs
-      {{{out_val->at(0), out_val->at(1), out_val->at(2)},
-        vkapi::MemoryAccessType::WRITE},
-       {{in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
+      {{{out_val->at(0), out_val->at(1), out_val->at(2)}, vkapi::kWrite},
+       {{in, arg_weight, arg_bias}, vkapi::kRead}},
       // Shader params buffers
       {},
+      // Push Constants
+      {
+          graph.logical_limits_pc_of(out_val->at(0)),
+          graph.sizes_pc_of(out_val->at(0)),
+          PushConstantDataInfo(&epsilon, sizeof(epsilon)),
+      },
       // Specialization Constants
       {
           t_input->hashed_layout(),
           t_out->hashed_layout(),
       },
-      // Resizing Logic
-      resize_native_layer_norm_node,
+      // Resize Args
       {normalized_shape},
-      {
-          graph.logical_limits_pc_of(out_val->at(0)),
-          graph.sizes_pc_of(out_val->at(0)),
-          PushConstantDataInfo(&epsilon, sizeof(epsilon)),
-      }));
+      // Resizing Logic
+      resize_native_layer_norm_node));
 }
 
 void native_layer_norm(ComputeGraph& graph, const std::vector<ValueRef>& args) {

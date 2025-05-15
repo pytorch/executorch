@@ -126,10 +126,14 @@ void add_upsample_nearest2d_node(
       {graph.logical_limits_ubo(out),
        graph.logical_limits_ubo(in),
        graph.create_params_buffer(recip_scales)},
+      // Push Constants
+      {},
       // Specialization Constants
       {align_corners_val},
-      resize_upsample_nearest2d_node,
-      {output_sizes, scale_factors}));
+      // Resize Args
+      {output_sizes, scale_factors},
+      // Resizing Logic
+      resize_upsample_nearest2d_node));
 }
 
 void upsample_nearest2d(

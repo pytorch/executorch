@@ -381,7 +381,7 @@ def _fixup_output_node(gm: torch.fx.GraphModule) -> None:
 
 
 def arrange_graph_placeholders(
-    gm: torch.fx.GraphModule, owning_program: ExportedProgram
+    gm: torch.fx.GraphModule, owning_program: ExportedProgram, tag
 ) -> torch.fx.GraphModule:
     """
     Modifies the graph of the given graphmodule with one that contains the same nodes as the original,
@@ -411,9 +411,15 @@ def arrange_graph_placeholders(
         if node.op != "placeholder":
             continue
 
-        if node.name in graph_sign.inputs_to_parameters:
+        if (
+            node.name in graph_sign.inputs_to_parameters
+            and node.meta.get("delegation_tag", None) == tag
+        ):
             param_nodes.append(node)
-        elif node.name in graph_sign.inputs_to_buffers:
+        elif (
+            node.name in graph_sign.inputs_to_buffers
+            and node.meta.get("delegation_tag", None) == tag
+        ):
             buffer_nodes.append(node)
         else:
             input_nodes.append(node)
@@ -694,7 +700,7 @@ def create_exported_program_from_submodule(
             removed from the toplevel ExportedProgram.
     """
     # Arrange the submodule's placeholders in order
-    submodule = arrange_graph_placeholders(submodule, owning_program)
+    submodule = arrange_graph_placeholders(submodule, owning_program, tag)
 
     # TODO: we probably need to arrange the outputs wrt buffer mutations.
 
@@ -958,5 +964,3 @@ def _unsafe_adjust_original_program(  # noqa: C901
             if user_idx > idx:
                 user.args = (user.args[0], user_idx - (len(getitem_idxs) - i))
                 break
-
-    original_program._validate()

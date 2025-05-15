@@ -35,13 +35,13 @@ class SDPATest(unittest.TestCase):
             head_dim=head_dim,
             n_rep=n_rep,
             max_context_len=max_context_length,
-            enable_dynamic_shape=False,
         )
         input_pos = torch.tensor([0])
         query = torch.randn(1, 1, n_local_heads, head_dim)
         key = torch.randn(1, 1, n_local_heads, head_dim)
         value = torch.randn(1, 1, n_local_heads, head_dim)
         mask = torch.randn(max_context_length, max_context_length)
+        mask = mask[input_pos]
         query = query.transpose(1, 2)
         key = key.transpose(1, 2)
         value = value.transpose(1, 2)

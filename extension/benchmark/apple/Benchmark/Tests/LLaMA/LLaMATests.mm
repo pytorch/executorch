@@ -63,7 +63,7 @@ using namespace ::executorch::runtime;
       return [filename hasSuffix:@".pte"] && [filename.lowercaseString containsString:@"llama"];
     },
     @"tokenizer" : ^BOOL(NSString *filename) {
-      return [filename isEqual:@"tokenizer.bin"] || [filename isEqual:@"tokenizer.model"];
+      return [filename isEqual:@"tokenizer.bin"] || [filename isEqual:@"tokenizer.model"] || [filename isEqual:@"tokenizer.json"];
     },
   };
 }

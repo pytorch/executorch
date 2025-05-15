@@ -31,11 +31,11 @@ class Sqrt(torch.nn.Module):
         return torch.sqrt(x)
 
     test_data: Dict[str, input_t] = {
-        "sqrt_tensor_rank1_ones": (torch.ones(10),),
-        "sqrt_tensor_rank2_random": (torch.rand(5, 10),),
-        "sqrt_tensor_rank3_ones": (torch.ones(2, 3, 4),),
-        "sqrt_tensor_rank4_random": (torch.rand(1, 3, 8, 8),),
-        "sqrt_tensor_rank4_multibatch": (torch.rand(2, 3, 4, 4),),
+        "sqrt_tensor_rank1_ones": lambda: (torch.ones(10),),
+        "sqrt_tensor_rank2_random": lambda: (torch.rand(5, 10),),
+        "sqrt_tensor_rank3_ones": lambda: (torch.ones(2, 3, 4),),
+        "sqrt_tensor_rank4_random": lambda: (torch.rand(1, 3, 8, 8),),
+        "sqrt_tensor_rank4_multibatch": lambda: (torch.rand(2, 3, 4, 4),),
     }
 
 
@@ -47,7 +47,10 @@ fvp_xfails = {
 @common.parametrize("test_data", Sqrt.test_data)
 def test_sqrt_tosa_MI(test_data: Sqrt.input_t):
     pipeline = TosaPipelineMI[Sqrt.input_t](
-        Sqrt(), test_data, Sqrt.aten_op_MI, Sqrt.exir_op_MI
+        Sqrt(),
+        test_data(),
+        Sqrt.aten_op_MI,
+        Sqrt.exir_op_MI,
     )
     pipeline.run()
 
@@ -55,7 +58,10 @@ def test_sqrt_tosa_MI(test_data: Sqrt.input_t):
 @common.parametrize("test_data", Sqrt.test_data)
 def test_sqrt_tosa_BI(test_data: Sqrt.input_t):
     pipeline = TosaPipelineBI[Sqrt.input_t](
-        Sqrt(), test_data, Sqrt.aten_op_BI, Sqrt.exir_op_BI
+        Sqrt(),
+        test_data(),
+        Sqrt.aten_op_BI,
+        Sqrt.exir_op_BI,
     )
     pipeline.run()
 
@@ -64,7 +70,11 @@ def test_sqrt_tosa_BI(test_data: Sqrt.input_t):
 @common.XfailIfNoCorstone300
 def test_sqrt_u55_BI(test_data: Sqrt.input_t):
     pipeline = EthosU55PipelineBI[Sqrt.input_t](
-        Sqrt(), test_data, Sqrt.aten_op_BI, Sqrt.exir_op_BI, run_on_fvp=True
+        Sqrt(),
+        test_data(),
+        Sqrt.aten_op_BI,
+        Sqrt.exir_op_BI,
+        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -73,6 +83,10 @@ def test_sqrt_u55_BI(test_data: Sqrt.input_t):
 @common.XfailIfNoCorstone320
 def test_sqrt_u85_BI(test_data: Sqrt.input_t):
     pipeline = EthosU85PipelineBI[Sqrt.input_t](
-        Sqrt(), test_data, Sqrt.aten_op_BI, Sqrt.exir_op_BI, run_on_fvp=True
+        Sqrt(),
+        test_data(),
+        Sqrt.aten_op_BI,
+        Sqrt.exir_op_BI,
+        run_on_fvp=True,
     )
     pipeline.run()

@@ -7,7 +7,6 @@
 # Tests the expand op which copies the data of the input tensor (possibly with new data format)
 #
 
-import unittest
 
 from typing import Sequence, Tuple
 
@@ -15,153 +14,121 @@ import pytest
 
 import torch
 
-from executorch.backends.arm.quantizer import (
-    EthosUQuantizer,
-    get_symmetric_quantization_config,
-    TOSAQuantizer,
+from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineBI,
+    EthosU85PipelineBI,
+    TosaPipelineBI,
+    TosaPipelineMI,
 )
-from executorch.backends.arm.test import common, conftest
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.backends.arm.tosa_specification import TosaSpecification
 
-from executorch.backends.xnnpack.test.tester.tester import Quantize
-from executorch.exir.backend.backend_details import CompileSpec
-from parameterized import parameterized
+aten_op = "torch.ops.aten.expand.default"
+input_t1 = Tuple[torch.Tensor, torch.Tensor]  # Input x, Input y
 
 
-class TestSimpleExpand(unittest.TestCase):
-    """Tests the Tensor.expand which should be converted to a repeat op by a pass."""
+class Expand(torch.nn.Module):
+    # (input tensor, multiples)
+    test_parameters = {
+        "rand_1d_both": lambda: (torch.rand(1), (2,)),
+        "rand_1d": lambda: (torch.randn(1), (2, 2, 4)),
+        "rand_4d": lambda: (torch.randn(1, 1, 1, 5), (1, 4, -1, -1)),
+        "rand_batch_1": lambda: (torch.randn(1, 1), (1, 2, 2, 4)),
+        "rand_batch_2": lambda: (torch.randn(1, 1), (2, 2, 2, 4)),
+        "rand_mix_neg": lambda: (torch.randn(10, 1, 1, 97), (-1, 4, -1, -1)),
+        "rand_small_neg": lambda: (torch.rand(1, 1, 2, 2), (4, 3, -1, 2)),
+    }
 
-    class Expand(torch.nn.Module):
-        # (input tensor, multiples)
-        test_parameters = [
-            (torch.rand(1), (2,)),
-            (torch.randn(1), (2, 2, 4)),
-            (torch.randn(1, 1, 1, 5), (1, 4, -1, -1)),
-            (torch.randn(1, 1), (1, 2, 2, 4)),
-            (torch.randn(1, 1), (2, 2, 2, 4)),
-            (torch.randn(10, 1, 1, 97), (-1, 4, -1, -1)),
-            (torch.rand(1, 1, 2, 2), (4, 3, -1, 2)),
-            (torch.randn(1, 4), (1, -1)),
-            (torch.randn(1, 1, 192), (1, -1, -1)),
-        ]
+    test_reject_set = {
+        "rand_2d": lambda: (torch.randn(1, 4), (1, -1)),
+        "rand_neg_mul": lambda: (torch.randn(1, 1, 192), (1, -1, -1)),
+    }
 
-        def forward(self, x: torch.Tensor, m: Sequence):
-            return x.expand(m)
+    def forward(self, x: torch.Tensor, m: Sequence):
+        return x.expand(m)
 
-    def _test_expand_tosa_MI_pipeline(self, module: torch.nn.Module, test_data: Tuple):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
-            )
-            .export()
-            .check_count({"torch.ops.aten.expand.default": 1})
-            .to_edge()
-            .partition()
-            .check_not(["torch.ops.aten.expand.default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
 
-    def _test_expand_tosa_BI_pipeline(self, module: torch.nn.Module, test_data: Tuple):
-        tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
-        compile_spec = common.get_tosa_compile_spec(tosa_spec)
-        quantizer = TOSAQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
-        (
-            ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
-            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
-            .export()
-            .check_count({"torch.ops.aten.expand.default": 1})
-            .to_edge()
-            .partition()
-            .check_not(["torch.ops.aten.expand.default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
-        )
-
-    def _test_expand_ethosu_BI_pipeline(
-        self, compile_spec: CompileSpec, module: torch.nn.Module, test_data: Tuple
-    ):
-        quantizer = EthosUQuantizer(compile_spec).set_io(
-            get_symmetric_quantization_config()
-        )
-        tester = (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=compile_spec,
-            )
-            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
-            .export()
-            .check_count({"torch.ops.aten.expand.default": 1})
-            .to_edge()
-            .partition()
-            .check_not(["torch.ops.aten.expand.default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .serialize()
-        )
-        if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
-
-    @parameterized.expand(Expand.test_parameters)
-    def test_expand_tosa_MI(self, test_input, multiples):
-        self._test_expand_tosa_MI_pipeline(self.Expand(), (test_input, multiples))
-
-    @parameterized.expand(Expand.test_parameters)
-    def test_expand_tosa_BI(self, test_input, multiples):
-        self._test_expand_tosa_BI_pipeline(self.Expand(), (test_input, multiples))
-
-    @parameterized.expand(Expand.test_parameters[:-5])
-    @pytest.mark.corstone_fvp
-    def test_expand_u55_BI(self, test_input, multiples):
-        self._test_expand_ethosu_BI_pipeline(
-            common.get_u55_compile_spec(), self.Expand(), (test_input, multiples)
-        )
-
-    # MLETORCH-629: Expand does not work on FVP with batch>1
-    @parameterized.expand(Expand.test_parameters[-5:-2])
-    @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP
-    def test_expand_u55_BI_xfails_on_fvp(self, test_input, multiples):
-        self._test_expand_ethosu_BI_pipeline(
-            common.get_u55_compile_spec(), self.Expand(), (test_input, multiples)
-        )
-
-    @parameterized.expand(Expand.test_parameters[-2:])
-    @pytest.mark.xfail(
-        reason="MLETORCH-716: Node will be optimized away and Vela can't handle empty graphs"
+@common.parametrize("test_data", Expand.test_parameters | Expand.test_reject_set)
+def test_expand_tosa_MI(test_data: Tuple):
+    pipeline = TosaPipelineMI[input_t1](
+        Expand(),
+        test_data(),
+        aten_op,
+        exir_op=[],
     )
-    def test_expand_u55_BI_xfails(self, test_input, multiples):
-        self._test_expand_ethosu_BI_pipeline(
-            common.get_u55_compile_spec(), self.Expand(), (test_input, multiples)
-        )
+    pipeline.run()
 
-    @parameterized.expand(Expand.test_parameters[:-5])
-    @pytest.mark.corstone_fvp
-    def test_expand_u85_BI(self, test_input, multiples):
-        self._test_expand_ethosu_BI_pipeline(
-            common.get_u85_compile_spec(), self.Expand(), (test_input, multiples)
-        )
 
-    # MLETORCH-629: Expand does not work on FVP with batch>1
-    @parameterized.expand(Expand.test_parameters[-5:-2])
-    @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP
-    def test_expand_u85_BI_xfails_on_fvp(self, test_input, multiples):
-        self._test_expand_ethosu_BI_pipeline(
-            common.get_u85_compile_spec(), self.Expand(), (test_input, multiples)
-        )
-
-    @parameterized.expand(Expand.test_parameters[-2:])
-    @pytest.mark.xfail(
-        reason="MLETORCH-716: Node will be optimized away and Vela can't handle empty graphs"
+@common.parametrize("test_data", Expand.test_parameters | Expand.test_reject_set)
+def test_expand_tosa_BI(test_data: Tuple):
+    pipeline = TosaPipelineBI[input_t1](
+        Expand(),
+        test_data(),
+        aten_op,
+        exir_op=[],
     )
-    def test_expand_u85_xfails(self, test_input, multiples):
-        self._test_expand_ethosu_BI_pipeline(
-            common.get_u85_compile_spec(), self.Expand(), (test_input, multiples)
-        )
+    pipeline.run()
+
+
+x_fails = {
+    "rand_batch_2": "AssertionError: Output 0 does not match reference output.",
+    "rand_mix_neg": "AssertionError: Output 0 does not match reference output.",
+    "rand_small_neg": "AssertionError: Output 0 does not match reference output.",
+}
+
+
+@common.parametrize("test_data", Expand.test_parameters, x_fails)
+@common.XfailIfNoCorstone300
+def test_expand_u55_BI(test_data: Tuple):
+    pipeline = EthosU55PipelineBI[input_t1](
+        Expand(),
+        test_data(),
+        aten_op,
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Expand.test_parameters, x_fails)
+@common.XfailIfNoCorstone320
+def test_expand_u85_BI(test_data: Tuple):
+    pipeline = EthosU85PipelineBI[input_t1](
+        Expand(),
+        test_data(),
+        aten_op,
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Expand.test_reject_set)
+@common.XfailIfNoCorstone300
+@pytest.mark.xfail(
+    reason="MLETORCH-716: Node will be optimized away and Vela can't handle empty graphs"
+)
+def test_expand_u55_BI_failure_set(test_data: Tuple):
+    pipeline = EthosU55PipelineBI[input_t1](
+        Expand(),
+        test_data(),
+        aten_op,
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Expand.test_reject_set)
+@common.XfailIfNoCorstone320
+@pytest.mark.xfail(
+    reason="MLETORCH-716: Node will be optimized away and Vela can't handle empty graphs"
+)
+def test_expand_u85_BI_failure_set(test_data: Tuple):
+    pipeline = EthosU85PipelineBI[input_t1](
+        Expand(),
+        test_data(),
+        aten_op,
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.run()

@@ -88,6 +88,11 @@
   return [(ExecuTorchScalarValue)_value doubleValue];
 }
 
+- (ExecuTorchFloatValue)floatValue {
+  ET_CHECK(self.isFloat);
+  return [(ExecuTorchScalarValue)_value floatValue];
+}
+
 - (BOOL)isNone {
   return _tag == ExecuTorchValueTagNone;
 }
@@ -115,6 +120,11 @@
 }
 
 - (BOOL)isDouble {
+  return _tag == ExecuTorchValueTagDouble;
+}
+
+- (BOOL)isFloat {
+  // EValue does not have a separate tag for float.
   return _tag == ExecuTorchValueTagDouble;
 }
 

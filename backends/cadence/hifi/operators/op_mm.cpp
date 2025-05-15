@@ -76,8 +76,8 @@ Tensor& mm_out(
     WORD32 out_stride = p;
 
     WORD32* __restrict__ p_o =
-          (WORD32* __restrict__)kernels::allocate_temp_memory(
-              ctx, (n * p) * sizeof(WORD32));
+        (WORD32* __restrict__)kernels::allocate_temp_memory(
+            ctx, (n * p) * sizeof(WORD32));
 
     WORD32 p_inp_shape[2];
     p_inp_shape[0] = n;

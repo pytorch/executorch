@@ -3,13 +3,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import unittest
 
 from typing import Tuple
 
-import common
 import torch
 
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineBI,
     TosaPipelineMI,
@@ -32,90 +31,103 @@ MI:
 input_t1 = Tuple[torch.Tensor, torch.scalar_tensor]  # Input x, Input y
 
 
-class TestScalars(unittest.TestCase):
-    """Tests various scalar cases"""
+"""Tests various scalar cases"""
 
-    class Add(torch.nn.Module):
-        def forward(self, x, y):
-            return x + y
 
-    class Sub(torch.nn.Module):
-        def forward(self, x, y):
-            return x - y
+class Add(torch.nn.Module):
+    def forward(self, x, y):
+        return x + y
 
-    class Div(torch.nn.Module):
-        def forward(self, x, y):
-            return x / y
 
-    class Mul(torch.nn.Module):
-        def forward(self, x, y):
-            return x * y
+class Sub(torch.nn.Module):
+    def forward(self, x, y):
+        return x - y
 
-    class MulScalar(torch.nn.Module):
-        def forward(self, x, y):
-            return torch.ops.aten.mul.Scalar(x, y)
 
-    class DivScalar(torch.nn.Module):
-        def forward(self, x, y):
-            return torch.ops.aten.div.Scalar(x, y)
+class Div(torch.nn.Module):
+    def forward(self, x, y):
+        return x / y
 
-    class AddScalar(torch.nn.Module):
-        def forward(self, x, y):
-            return torch.ops.aten.add.Scalar(x, y)
 
-    class SubScalar(torch.nn.Module):
-        def forward(self, x, y):
-            return torch.ops.aten.sub.Scalar(x, y)
+class Mul(torch.nn.Module):
+    def forward(self, x, y):
+        return x * y
 
-    class AddInplace(torch.nn.Module):
-        def forward(self, x, y):
-            x += y
-            return x
 
-    class SubInplace(torch.nn.Module):
-        def forward(self, x, y):
-            x -= y
-            return x
+class MulScalar(torch.nn.Module):
+    def forward(self, x, y):
+        return torch.ops.aten.mul.Scalar(x, y)
 
-    class DivInplace(torch.nn.Module):
-        def forward(self, x, y):
-            x /= y
-            return x
 
-    class MulInplace(torch.nn.Module):
-        def forward(self, x, y):
-            x *= y
-            return x
+class DivScalar(torch.nn.Module):
+    def forward(self, x, y):
+        return torch.ops.aten.div.Scalar(x, y)
 
-    class AddConst(torch.nn.Module):
-        def forward(self, x):
-            x = 1.0 + x
-            return x
 
-    class ShiftInplaceSub(torch.nn.Module):
-        def forward(self, x):
-            x = x >> 4
-            x -= 10
-            return x
+class AddScalar(torch.nn.Module):
+    def forward(self, x, y):
+        return torch.ops.aten.add.Scalar(x, y)
+
+
+class SubScalar(torch.nn.Module):
+    def forward(self, x, y):
+        return torch.ops.aten.sub.Scalar(x, y)
+
+
+class AddInplace(torch.nn.Module):
+    def forward(self, x, y):
+        x += y
+        return x
+
+
+class SubInplace(torch.nn.Module):
+    def forward(self, x, y):
+        x -= y
+        return x
+
+
+class DivInplace(torch.nn.Module):
+    def forward(self, x, y):
+        x /= y
+        return x
+
+
+class MulInplace(torch.nn.Module):
+    def forward(self, x, y):
+        x *= y
+        return x
+
+
+class AddConst(torch.nn.Module):
+    def forward(self, x):
+        x = 1.0 + x
+        return x
+
+
+class ShiftInplaceSub(torch.nn.Module):
+    def forward(self, x):
+        x = x >> 4
+        x -= 10
+        return x
 
 
 # Inplace ops end with '_' (from aten naming)
 ops = [
-    ("Add", TestScalars.Add()),
-    ("Sub", TestScalars.Sub()),
-    ("Mul", TestScalars.Mul()),
-    ("Div", TestScalars.Div()),
-    ("Add_", TestScalars.AddInplace()),
-    ("Sub_", TestScalars.SubInplace()),
-    ("Mul_", TestScalars.MulInplace()),
-    ("Div_", TestScalars.DivInplace()),
-    ("MulScalar", TestScalars.MulScalar()),
-    ("DivScalar", TestScalars.DivScalar()),
-    ("AddScalar", TestScalars.AddScalar()),
-    ("SubScalar", TestScalars.SubScalar()),
+    ("Add", Add()),
+    ("Sub", Sub()),
+    ("Mul", Mul()),
+    ("Div", Div()),
+    ("Add_", AddInplace()),
+    ("Sub_", SubInplace()),
+    ("Mul_", MulInplace()),
+    ("Div_", DivInplace()),
+    ("MulScalar", MulScalar()),
+    ("DivScalar", DivScalar()),
+    ("AddScalar", AddScalar()),
+    ("SubScalar", SubScalar()),
 ]
 
-const_ops = [("Add", TestScalars.AddConst())]
+const_ops = [("Add", AddConst())]
 
 dtypes = [("int", 3), ("float", 3.0)]
 sizes = [("r1", (1)), ("r4", (2, 4, 5, 3))]
@@ -198,16 +210,18 @@ MI_xfails = {
 }
 
 
-@common.parametrize("tensor_scalar_tests", tensor_scalar_tests, MI_xfails)
-def test_MI(tensor_scalar_tests: list):
+@common.parametrize(
+    "tensor_scalar_tests",
+    tensor_scalar_tests,
+    MI_xfails,
+)
+def test_tosa_MI(tensor_scalar_tests: list):
     op, x, y = tensor_scalar_tests
     _test_add_tosa_MI_pipeline(op, (x, y))
 
 
 def _test_passes_tosa_BI_pipeline(module: torch.nn.Module, test_data: tuple):
-    pipeline = TransformAnnotationPassPipeline[input_t1](
-        module, test_data, tosa_version="TOSA-0.80+BI"
-    )
+    pipeline = TransformAnnotationPassPipeline[input_t1](module, test_data)
     pipeline.run()
 
 
@@ -221,39 +235,47 @@ passes_xfails = {
 
 
 @common.parametrize(
-    "tensor_scalar_tests", tensor_scalar_tests, passes_xfails, strict=False
+    "tensor_scalar_tests",
+    tensor_scalar_tests,
+    passes_xfails,
+    strict=False,
 )
-def test_passes_BI(tensor_scalar_tests: list):
+def test_scalars_tosa_BI_passes(tensor_scalar_tests: list):
     op, x, y = tensor_scalar_tests
     _test_passes_tosa_BI_pipeline(op, (x, y))
 
 
 # op(Scalar float, tensor) works if the scalar is constant.
 @common.parametrize("tensor_const_tests", tensor_const_tests)
-def test_MI_const(tensor_const_tests: list):
+def test_scalars_tosa_MI(tensor_const_tests: list):
     op, x = tensor_const_tests
     _test_add_tosa_MI_pipeline(op, (x,))
 
 
 @common.parametrize("tensor_scalar_tests", tensor_scalar_tests)
-def test_BI(tensor_scalar_tests: list):
+def test_scalars_tosa_BI(tensor_scalar_tests: list):
     op, x, y = tensor_scalar_tests
     _test_add_tosa_BI_pipeline(op, (x, y))
 
 
 # op(Scalar float, tensor) works if the scalar is constant.
 @common.parametrize("tensor_const_tests", tensor_const_tests)
-def test_BI_const(tensor_const_tests: list):
+def test_scalars_tosa_BI_const(tensor_const_tests: list):
     op, x = tensor_const_tests
     _test_add_tosa_BI_pipeline(op, (x,))
 
 
 def test_shift_sub_inplace_tosa_MI():
-    _test_add_tosa_MI_pipeline(TestScalars.ShiftInplaceSub(), (torch.IntTensor(5),))
+    _test_add_tosa_MI_pipeline(
+        ShiftInplaceSub(),
+        (torch.IntTensor(5),),
+    )
 
 
 # Do not check for quant nodes in the graph for rshift.
 def test_shift_sub_inplace_tosa_BI():
     _test_add_tosa_BI_pipeline(
-        TestScalars.ShiftInplaceSub(), (torch.IntTensor(5),), check_quant_nodes=False
+        ShiftInplaceSub(),
+        (torch.IntTensor(5),),
+        check_quant_nodes=False,
     )

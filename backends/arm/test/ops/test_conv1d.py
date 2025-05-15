@@ -250,27 +250,27 @@ two_conv1d = Conv1d(
 )
 
 test_modules = {
-    "2_3x2x40_nobias": conv1d_2_3x2x40_nobias,
-    "3_1x3x256_st1": conv1d_3_1x3x256_st1,
-    "3_1x3x12_st2_pd1": conv1d_3_1x3x12_st2_pd1,
-    "1_1x2x128_st1": conv1d_1_1x2x128_st1,
-    "2_1x2x14_st2": conv1d_2_1x2x14_st2,
-    "5_3x2x128_st1": conv1d_5_3x2x128_st1,
-    "3_1x3x224_st2_pd1": conv1d_3_1x3x224_st2_pd1,
-    "7_1x3x16_st2_pd1_dl2_needs_adjust_pass": conv1d_7_1x3x16_st2_pd1_dl2,
-    "7_1x3x15_st1_pd0_dl1_needs_adjust_pass": conv1d_7_1x3x15_st1_pd0_dl1,
-    "5_1x3x14_st5_pd0_dl1_needs_adjust_pass": conv1d_5_1x3x14_st5_pd0_dl1,
-    "5_1x3x9_st5_pd0_dl1_needs_adjust_pass": conv1d_5_1x3x9_st5_pd0_dl1,
-    "two_conv1d_nobias": two_conv1d_nobias,
-    "two_conv1d": two_conv1d,
+    "2_3x2x40_nobias": lambda: conv1d_2_3x2x40_nobias,
+    "3_1x3x256_st1": lambda: conv1d_3_1x3x256_st1,
+    "3_1x3x12_st2_pd1": lambda: conv1d_3_1x3x12_st2_pd1,
+    "1_1x2x128_st1": lambda: conv1d_1_1x2x128_st1,
+    "2_1x2x14_st2": lambda: conv1d_2_1x2x14_st2,
+    "5_3x2x128_st1": lambda: conv1d_5_3x2x128_st1,
+    "3_1x3x224_st2_pd1": lambda: conv1d_3_1x3x224_st2_pd1,
+    "7_1x3x16_st2_pd1_dl2_needs_adjust_pass": lambda: conv1d_7_1x3x16_st2_pd1_dl2,
+    "7_1x3x15_st1_pd0_dl1_needs_adjust_pass": lambda: conv1d_7_1x3x15_st1_pd0_dl1,
+    "5_1x3x14_st5_pd0_dl1_needs_adjust_pass": lambda: conv1d_5_1x3x14_st5_pd0_dl1,
+    "5_1x3x9_st5_pd0_dl1_needs_adjust_pass": lambda: conv1d_5_1x3x9_st5_pd0_dl1,
+    "two_conv1d_nobias": lambda: two_conv1d_nobias,
+    "two_conv1d": lambda: two_conv1d,
 }
 
 
 @common.parametrize("test_module", test_modules)
 def test_convolution_1d_tosa_MI(test_module):
     pipeline = TosaPipelineMI[input_t](
-        test_module,
-        test_module.get_inputs(),
+        test_module(),
+        test_module().get_inputs(),
         aten_op,
         exir_op,
     )
@@ -280,8 +280,8 @@ def test_convolution_1d_tosa_MI(test_module):
 @common.parametrize("test_module", test_modules)
 def test_convolution_1d_tosa_BI(test_module):
     pipeline = TosaPipelineBI[input_t](
-        test_module,
-        test_module.get_inputs(),
+        test_module(),
+        test_module().get_inputs(),
         aten_op,
         exir_op,
     )
@@ -290,35 +290,11 @@ def test_convolution_1d_tosa_BI(test_module):
 
 
 @common.parametrize("test_module", test_modules)
+@common.XfailIfNoCorstone300
 def test_convolution_1d_u55_BI(test_module):
     pipeline = EthosU55PipelineBI[input_t](
-        test_module,
-        test_module.get_inputs(),
-        aten_op,
-        exir_op,
-        run_on_fvp=False,
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_module", test_modules)
-def test_convolution_1d_u85_BI(test_module):
-    pipeline = EthosU85PipelineBI[input_t](
-        test_module,
-        test_module.get_inputs(),
-        aten_op,
-        exir_op,
-        run_on_fvp=False,
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_module", test_modules)
-@common.SkipIfNoCorstone300
-def test_convolution_1d_u55_BI_on_fvp(test_module):
-    pipeline = EthosU55PipelineBI[input_t](
-        test_module,
-        test_module.get_inputs(),
+        test_module(),
+        test_module().get_inputs(),
         aten_op,
         exir_op,
         run_on_fvp=True,
@@ -328,11 +304,11 @@ def test_convolution_1d_u55_BI_on_fvp(test_module):
 
 
 @common.parametrize("test_module", test_modules)
-@common.SkipIfNoCorstone320
-def test_convolution_1d_u85_BI_on_fvp(test_module):
+@common.XfailIfNoCorstone320
+def test_convolution_1d_u85_BI(test_module):
     pipeline = EthosU85PipelineBI[input_t](
-        test_module,
-        test_module.get_inputs(),
+        test_module(),
+        test_module().get_inputs(),
         aten_op,
         exir_op,
         run_on_fvp=True,

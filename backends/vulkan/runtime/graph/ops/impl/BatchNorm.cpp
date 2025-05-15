@@ -90,12 +90,19 @@ void add_native_batch_norm_node(
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out_ref),
       graph.create_local_wg_size(out_ref),
-      {{out_ref, vkapi::MemoryAccessType::WRITE},
-       {{in_ref, arg_weight, arg_bias, arg_mean, arg_var},
-        vkapi::MemoryAccessType::READ}},
+      {{out_ref, vkapi::kWrite},
+       {{in_ref, arg_weight, arg_bias, arg_mean, arg_var}, vkapi::kRead}},
       {t_out->logical_limits_ubo(),
        graph.create_params_buffer(epsilon),
-       graph.create_params_buffer(num_texel_per_batch)}));
+       graph.create_params_buffer(num_texel_per_batch)},
+      // Push Constants
+      {},
+      // Specialization Constants
+      {},
+      // Resize Args
+      {},
+      // Resizing Logic
+      nullptr));
 }
 
 void native_batch_norm(ComputeGraph& graph, const std::vector<ValueRef>& args) {

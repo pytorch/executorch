@@ -20,7 +20,7 @@ target_sources(
           llm_helper/token_embedding.cpp
 )
 
-target_link_libraries(llm_helper PRIVATE executorch)
+target_link_libraries(llm_helper PRIVATE executorch_core)
 target_include_directories(
   llm_helper PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} llm_helper/include
 )
