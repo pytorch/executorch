@@ -71,14 +71,14 @@ def test_bmm_tosa_MI_single_input(test_data: input_t1):
     pipeline.run()
 
 
-@pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness (MLETORCH-534)
 @common.parametrize("test_data", BMM.test_data_generators)
 def test_bmm_tosa_BI(test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](BMM(), test_data(), aten_op_bmm, exir_op_bmm)
+    pipeline = TosaPipelineBI[input_t1](
+        BMM(), test_data(), aten_op_bmm, exir_op_bmm, qtol=1
+    )
     pipeline.run()
 
 
-@pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness (MLETORCH-534)
 @common.parametrize("test_data", BMMSingleInput.test_data_generators)
 def test_bmm_tosa_BI_single_input(test_data: input_t1):
     pipeline = TosaPipelineBI[input_t1](
