@@ -178,10 +178,9 @@ def _prepare_genrule_and_lib(
         },
     }
     """
-    target = runtime.external_dep_location("gen-executorch")
     aten_src_path = runtime.external_dep_location("aten-src-path")
     genrule_cmd = [
-        "$(exe {})".format(target),
+        "$(exe //executorch/codegen:gen)",
         "--source-path=$(location //executorch/codegen:templates)",
         "--tags-path $(location {})/aten/src/ATen/native/tags.yaml".format(aten_src_path),
         "--aten_yaml_path $(location {})/aten/src/ATen/native/native_functions.yaml".format(aten_src_path),
@@ -262,7 +261,6 @@ def _prepare_custom_ops_genrule_and_lib(
     genrules = {}
     libs = {}
     aten_src_path = runtime.external_dep_location("aten-src-path")
-    target = runtime.external_dep_location("gen-executorch")
     genrule_name = name + "_gen"
 
     if custom_ops_yaml_path:
@@ -281,7 +279,7 @@ def _prepare_custom_ops_genrule_and_lib(
 
         # genrule for generating operator kernel bindings
         genrule_cmd = [
-            "$(exe {})".format(target),
+            "$(exe //executorch/codegen:gen)",
             "--source-path=$(location //executorch/codegen:templates)",
             "--tags-path $(location {})/aten/src/ATen/native/tags.yaml".format(aten_src_path),
             "--aten_yaml_path $(location {})/aten/src/ATen/native/native_functions.yaml".format(aten_src_path),
