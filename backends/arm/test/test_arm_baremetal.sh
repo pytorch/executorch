@@ -206,11 +206,11 @@ test_models_ethos-u85() { # End to End model tests using model_test.py
 
     # Ethos-U85
     echo "${TEST_SUITE_NAME}: Test ethos-u target Ethos-U85"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-256 --model=mv2  --extra_flags="-DET_ATOL=2.00 -DET_RTOL=2.00"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-512 --model=mv3  --extra_flags="-DET_ATOL=5.00 -DET_RTOL=5.00"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-256 --model=mv2 --extra_flags="-DET_ATOL=2.00 -DET_RTOL=2.00"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-512 --model=mv3 --extra_flags="-DET_ATOL=5.00 -DET_RTOL=5.00"
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=lstm --extra_flags="-DET_ATOL=0.03 -DET_RTOL=0.03"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=w2l  --extra_flags="-DET_ATOL=0.01 -DET_RTOL=0.01"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-256 --model=ic4  --extra_flags="-DET_ATOL=0.8 -DET_RTOL=0.8" --timeout=2400
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=w2l --extra_flags="-DET_ATOL=0.01 -DET_RTOL=0.01"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-256 --model=ic4 --extra_flags="-DET_ATOL=0.8 -DET_RTOL=0.8" --timeout=2400
 
     echo "${TEST_SUITE_NAME}: PASS"
     }
