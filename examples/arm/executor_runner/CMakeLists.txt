@@ -583,22 +583,16 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
             "${ET_BUILD_DIR_PATH}/lib/libetdump.a"
   )
 
-  if(CMAKE_BUILD_TYPE MATCHES "Debug")
-    set(FLATCCRT_LIB flatccrt_d)
-  else()
-    set(FLATCCRT_LIB flatccrt)
-  endif()
-
-  add_library(${FLATCCRT_LIB} STATIC IMPORTED)
+  add_library(flatccrt STATIC IMPORTED)
   set_property(
-      TARGET ${FLATCCRT_LIB}
+      TARGET flatccrt
       PROPERTY IMPORTED_LOCATION
-            "${ET_BUILD_DIR_PATH}/lib/lib${FLATCCRT_LIB}.a"
+            "${ET_BUILD_DIR_PATH}/lib/libflatccrt.a"
   )
 
   list(APPEND arm_executor_runner_link
     etdump
-    ${FLATCCRT_LIB}
+    flatccrt
   )
 endif()
 
