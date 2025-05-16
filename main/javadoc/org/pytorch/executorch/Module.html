@@ -244,7 +244,7 @@ public class <span class="typeNameLabel"><a href=Module.html>Module</a></span>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Module.html#destroy()>destroy</a>() </code>
                                             </th>
-                                            <td class="colLast">Explicitly destroys the native torch::jit::Module.</td>
+                                            <td class="colLast">Explicitly destroys the native Module object.</td>
                                         </tr>
                                         
                                         </tbody>
@@ -423,7 +423,7 @@ public class <span class="typeNameLabel"><a href=Module.html>Module</a></span>
                                     <li class="blockList">
                                         <h4>destroy</h4>
                                         <pre class="methodSignature"> void <a href=Module.html#destroy()>destroy</a>()</pre>
-                                        <div class="block"><p>Explicitly destroys the native torch::jit::Module. Calling this method is not required, as thenative object will be destroyed when this object is garbage-collected. However, the timing ofgarbage collection is not guaranteed, so proactively calling <code>{@code destroy}</code> can free memorymore quickly. See resetNative.</p></div>
+                                        <div class="block"><p>Explicitly destroys the native Module object. Calling this method is not required, as thenative object will be destroyed when this object is garbage-collected. However, the timing ofgarbage collection is not guaranteed, so proactively calling <code>{@code destroy}</code> can free memorymore quickly. See resetNative.</p></div>
                                         
                                         <!-- TODO missing return annotation -->
                                     </li>
