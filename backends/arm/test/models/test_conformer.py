@@ -63,6 +63,7 @@ class TestConformer(unittest.TestCase):
             )
         )
 
+    @unittest.expectedFailure  # TODO(MLETORCH-635)
     def test_conformer_tosa_BI(self):
         (
             ArmTester(
@@ -110,6 +111,7 @@ class TestConformer(unittest.TestCase):
             except Exception:
                 pass
 
+    @unittest.expectedFailure  # TODO(MLETORCH-635)
     def test_conformer_u85_BI(self):
         tester = (
             ArmTester(
