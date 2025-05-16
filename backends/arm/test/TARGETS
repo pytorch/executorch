@@ -45,6 +45,7 @@ python_library(
         "//executorch/backends/arm/quantizer:lib",
         "//executorch/backends/arm:tosa_mapping",
         "//executorch/devtools/backend_debug:delegation_info",
+        "//executorch/exir/backend:operator_support",
         "fbsource//third-party/pypi/tabulate:tabulate",
     ]
 )
