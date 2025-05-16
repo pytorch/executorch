@@ -36,9 +36,6 @@ list(APPEND _common_compile_options -DET_BUILD_WITH_BLAS)
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
-if(NOT PYTHON_EXECUTABLE)
-  resolve_python_executable()
-endif()
 # Build cpublas.
 list(TRANSFORM _optimized_cpublas__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(cpublas STATIC ${_optimized_cpublas__srcs})

@@ -603,9 +603,9 @@ def compile(args, pte_filename, tokenizer):
 
     for i in range(len(llama_instance_list)):
         if args.embedding_quantize:
-            llama_instance_list[i] = get_quant_embedding_transform(args)(
-                llama_instance_list[i]
-            )
+            llama_instance_list[i] = get_quant_embedding_transform(
+                embedding_quantize=args.embedding_quantize
+            )(llama_instance_list[i])
         llama_instance_list[i] = convert_linear_to_conv2d(llama_instance_list[i])
         llama_instance_list[i] = SingleLlama(
             llama_instance_list[i].eval(), pte_filename
