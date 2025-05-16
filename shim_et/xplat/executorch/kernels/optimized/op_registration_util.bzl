@@ -1,10 +1,3 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-#
-# This source code is licensed under both the MIT license found in the
-# LICENSE-MIT file in the root directory of this source tree and the Apache
-# License, Version 2.0 found in the LICENSE-APACHE file in the root directory
-# of this source tree.
-
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
 load(
@@ -106,7 +99,7 @@ def define_op_library(name, compiler_flags, deps):
             # pragma unroll fails with -Os, don't need to warn us and
             # fail Werror builds; see https://godbolt.org/z/zvf85vTsr
             "-Wno-pass-failed",
-        ] + get_compiler_optimization_flags(),
+        ] + compiler_flags + get_compiler_optimization_flags(),
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ] + augmented_deps + get_vec_deps(),

@@ -172,4 +172,3 @@ Go to `examples/demo-apps/android/LlamaDemo`,
 
 ## Reporting Issues
 If you encountered any bugs or issues following this tutorial please file a bug/issue here on [Github](https://github.com/pytorch/executorch/issues/new), or join our discord [here](https://lnkd.in/gWCM4ViK).
-
