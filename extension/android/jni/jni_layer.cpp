@@ -13,6 +13,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "jni_layer_constants.h"
@@ -398,13 +399,20 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
   facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> getUsedBackends(
       facebook::jni::alias_ref<jstring> methodName) {
     auto methodMeta = module_->method_meta(methodName->toStdString()).get();
+    std::unordered_set<std::string> backends;
+    for (auto i = 0; i < methodMeta.num_backends(); i++) {
+      backends.insert(methodMeta.get_backend_name(i).get());
+    }
+
     facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> ret =
         facebook::jni::JArrayClass<jstring>::newArray(
-            methodMeta.num_backends());
-    for (auto i = 0; i < methodMeta.num_backends(); i++) {
+          backends.size());
+    int i = 0;
+    for (auto s: backends) {
       facebook::jni::local_ref<facebook::jni::JString> backend_name =
-          facebook::jni::make_jstring(methodMeta.get_backend_name(i).get());
+          facebook::jni::make_jstring(s.c_str());
       (*ret)[i] = backend_name;
+      i++;
     }
     return ret;
   }
