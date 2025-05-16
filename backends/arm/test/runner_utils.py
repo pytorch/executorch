@@ -31,6 +31,7 @@ from executorch.exir.lowered_backend_module import LoweredBackendModule
 from torch.fx.node import Node
 
 from torch.overrides import TorchFunctionMode
+from tosa.TosaGraph import TosaGraph
 
 logger = logging.getLogger(__name__)
 
@@ -461,10 +462,19 @@ def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
     tosa_input_file = os.path.join(tmp, "output.tosa")
     with open(tosa_input_file, "wb") as f:
         f.write(tosa_fb)
+    tosa_graph = TosaGraph.GetRootAsTosaGraph(tosa_fb)
+    version = tosa_graph.Version()
+    major = version._Major()
+    minor = version._Minor()
+    patch = version._Patch()
+    if not ((major == 1 and minor == 0) or (major == 0 and minor == 80)):
+        raise RuntimeError(
+            f"Unsupported version in TOSA flatbuffer: version={major}.{minor}.{patch}"
+        )
 
     arm_backend_path = os.path.realpath(os.path.dirname(__file__) + "/..")
     tosa_schema_file = os.path.join(
-        arm_backend_path, "third-party/serialization_lib/schema/tosa.fbs"
+        arm_backend_path, f"tosa/schemas/tosa_{major}.{minor}.fbs"
     )
     assert os.path.exists(
         tosa_schema_file

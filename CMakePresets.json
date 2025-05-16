@@ -40,6 +40,20 @@
                 "CMAKE_BUILD_TYPE": "Debug",
                 "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/install/${presetName}"
             }
+        },
+        {
+          "name": "pybind",
+          "displayName": "Build pybindings exported in the wheel",
+          "inherits": ["common"],
+          "cacheVariables": {
+            "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/pybind.cmake",
+            "CMAKE_OSX_DEPLOYMENT_TARGET": "10.15"
+          },
+          "condition": {
+            "type": "inList",
+            "string": "${hostSystemName}",
+            "list": ["Darwin", "Linux", "Windows"]
+          }
         }
     ]
 }

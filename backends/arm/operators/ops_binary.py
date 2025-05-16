@@ -16,6 +16,7 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
+    validate_same_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 
@@ -37,12 +38,7 @@ def binary_operator_factory_0_80(bw_target: str, tosa_op):
             import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore  # noqa: F401
 
             validate_num_inputs(self.target, inputs, 2)
-
-            if not (inputs[0].dtype == inputs[1].dtype == output.dtype):
-                raise ValueError(
-                    "All inputs and outputs need same dtype."
-                    f"Got {inputs[0].dtype=}, {inputs[1].dtype=}, {output.dtype=}."
-                )
+            validate_same_dtype(self.target, [*inputs, output])
 
             tosa_graph.addOperator(
                 tosa_op, [inputs[0].name, inputs[1].name], [output.name]
@@ -68,12 +64,7 @@ def binary_operator_factory(bw_target: str, tosa_op):
             import serializer.tosa_serializer as ts  # type: ignore  # noqa: F401
 
             validate_num_inputs(self.target, inputs, 2)
-
-            if not (inputs[0].dtype == inputs[1].dtype == output.dtype):
-                raise ValueError(
-                    "All inputs and outputs need same dtype."
-                    f"Got {inputs[0].dtype=}, {inputs[1].dtype=}, {output.dtype=}."
-                )
+            validate_same_dtype(self.target, [*inputs, output])
 
             tosa_graph.addOperator(
                 tosa_op, [inputs[0].name, inputs[1].name], [output.name]
