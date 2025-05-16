@@ -25,7 +25,7 @@ class Where(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        conditional_input_node = node.args[0]
+        conditional_input_node = self.get_node(node.args[0])
         conditional_input_tensor = self.get_tensor(conditional_input_node, node)
         conditional_input_tensor_wrapper = self.define_tensor(
             conditional_input_node,
@@ -35,7 +35,7 @@ class Where(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        true_input_node = node.args[1]
+        true_input_node = self.get_node(node.args[1])
         true_input_tensor = self.get_tensor(true_input_node, node)
         true_input_tensor_wrapper = self.define_tensor(
             true_input_node,
@@ -45,7 +45,7 @@ class Where(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        false_input_node = node.args[2]
+        false_input_node = self.get_node(node.args[2])
         false_input_tensor = self.get_tensor(false_input_node, node)
         false_input_tensor_wrapper = self.define_tensor(
             false_input_node,

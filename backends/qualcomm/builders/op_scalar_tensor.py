@@ -13,7 +13,7 @@ from .node_visitor import NodeVisitor, register_node_visitor
 
 
 @register_node_visitor
-class Arange(NodeVisitor):
+class ScalarTensor(NodeVisitor):
     target = ["scalar_tensor.default"]
 
     def __init__(self, *args) -> None:
