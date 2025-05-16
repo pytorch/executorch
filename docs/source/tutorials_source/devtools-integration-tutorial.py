@@ -207,11 +207,6 @@ inspector.print_data_tabular()
 #
 # .. image:: ../_static/img/tabular_result.png
 
-# sphinx_gallery_start_ignore
-_ = inspector_patch.stop()
-_ = inspector_patch_print.stop()
-# sphinx_gallery_end_ignore
-
 ######################################################################
 # Analyzing with an Inspector
 # ---------------------------
