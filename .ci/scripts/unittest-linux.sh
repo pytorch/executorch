@@ -21,7 +21,8 @@ if [[ "$BUILD_TOOL" == "cmake" ]]; then
     source .ci/scripts/setup-vulkan-linux-deps.sh
 
     PYTHON_EXECUTABLE=python \
-    CMAKE_ARGS="-DEXECUTORCH_BUILD_PYBIND=ON -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
+    # We need the runner to test the built library.
+    CMAKE_ARGS="-DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON" \
     .ci/scripts/setup-linux.sh "$@"
 
     .ci/scripts/unittest-linux-cmake.sh
