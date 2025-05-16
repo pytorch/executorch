@@ -91,7 +91,7 @@ public class ModuleE2ETest {
     }
 
     @Test
-    public void testXnnpackBackendRequired() {
+    public void testXnnpackBackendRequired() throws IOException, URISyntaxException {
         File pteFile = new File(getTestFilePath("/mv3_xnnpack_fp32.pte"));
         InputStream inputStream = getClass().getResourceAsStream("/mv3_xnnpack_fp32.pte");
         FileUtils.copyInputStreamToFile(inputStream, pteFile);
