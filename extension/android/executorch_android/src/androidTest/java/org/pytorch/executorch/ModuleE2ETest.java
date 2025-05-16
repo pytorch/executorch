@@ -8,6 +8,7 @@
 
 package org.pytorch.executorch;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertFalse;
@@ -87,6 +88,13 @@ public class ModuleE2ETest {
 
         int bananaClass = 954;  // From ImageNet 1K
         assertEquals(bananaClass, argmax(scores));
+    }
+
+    @Test
+    public void testXnnpackBackendRequired() {
+        Module module = Module.load(getTestFilePath(filePath));
+        String[] expectedBackends = new String[] {"xnnpack"};
+        assertArrayEquals(expectedBackends, module.getUsedBackends("forward"));
     }
 
     @Test
