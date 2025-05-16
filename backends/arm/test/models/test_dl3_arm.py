@@ -54,9 +54,8 @@ def test_dl3_tosa_BI():
     pipeline.run()
 
 
-@pytest.mark.slow
 @common.XfailIfNoCorstone300
-@pytest.mark.xfail(reason="upsample_bilinear2d operator is not supported on U55")
+@pytest.mark.skip(reason="upsample_bilinear2d operator is not supported on U55")
 def test_dl3_u55_BI():
     pipeline = EthosU55PipelineBI[input_t](
         TestDl3.dl3,
@@ -69,8 +68,8 @@ def test_dl3_u55_BI():
     pipeline.run()
 
 
-@pytest.mark.slow
 @common.XfailIfNoCorstone320
+@pytest.mark.skip(reason="Runs out of memory on U85")
 def test_dl3_u85_BI():
     pipeline = EthosU85PipelineBI[input_t](
         TestDl3.dl3,
