@@ -128,7 +128,7 @@ class MinVisitor(NodeVisitor):
                 )
 
             operand_inputs, scale_back = tqutils.insert_rescale_ops_to_int32(
-                tosa_graph, inputs, node, self.tosa_specs
+                tosa_graph, inputs, node, self.tosa_spec
             )
 
             output.shape = tosa_shape(output.shape, output.dim_order)
@@ -154,5 +154,5 @@ class MinVisitor(NodeVisitor):
         if output.dtype == ts.DType.INT8:
             # insert RESCALE from int32 back to int8
             tqutils.insert_rescale_op_to_int8(
-                tosa_graph, min_output, scale_back, node, self.tosa_specs
+                tosa_graph, min_output, scale_back, node, self.tosa_spec
             )

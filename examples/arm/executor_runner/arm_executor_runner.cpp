@@ -128,16 +128,40 @@ const float et_rtol = 0.01;
  * The temp_allocation_pool is used for allocating temporary data during kernel
  * or delegate execution. This will be reset after each kernel or delegate call.
  * Currently a MemoryAllocator is used but a PlatformMemoryAllocator is probably
- * a better fit
+ * a better fit.
+ *
+ * The Corstone-300/Corstone-320 platforms have 2MB/4MB of SRAM respectively.
+ * For Shared_Sram, ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE is
+ * 2MB and the linker script places the .bss.tensor_arena symbol in the SRAM.
+ * For Dedicated_Sram, the .bss.tensor_arena symbol is placed in the DDR in the
+ * linker script. Hence, we allocate 128MB in DDR and 384KB in the SRAM
+ * (.bss.ethosu_scratch is placed in the SRAM). The examples/arm/CMakeLists.txt
+ * contains the logic for the sizes of
+ * ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE and
+ * ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE
  */
-#if !defined(ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE)
-#define ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE (1 * 1024 * 1024)
-#endif
 const size_t temp_allocation_pool_size =
-    ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE;
+    ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE;
 unsigned char __attribute__((
-    section("input_data_sec"),
+    section(".bss.tensor_arena"),
     aligned(16))) temp_allocation_pool[temp_allocation_pool_size];
+
+namespace executorch {
+namespace backends {
+namespace arm {
+#if defined(ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
+size_t ethosu_fast_scratch_size =
+    ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE;
+unsigned char __attribute__((section(".bss.ethosu_scratch"), aligned(16)))
+dedicated_sram[ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE];
+unsigned char* ethosu_fast_scratch = dedicated_sram;
+#else
+size_t ethosu_fast_scratch_size = 0;
+unsigned char* ethosu_fast_scratch = nullptr;
+#endif
+} // namespace arm
+} // namespace backends
+} // namespace executorch
 
 void et_pal_init(void) {
   // Enable ARM PMU Clock
@@ -207,7 +231,7 @@ namespace {
 class ArmMemoryAllocator : public executorch::runtime::MemoryAllocator {
  public:
   ArmMemoryAllocator(uint32_t size, uint8_t* base_address)
-      : MemoryAllocator(size, base_address), used_(0) {}
+      : MemoryAllocator(size, base_address), used_(0), peak_used_(0) {}
 
   void* allocate(size_t size, size_t alignment = kDefaultAlignment) override {
     void* ret = executorch::runtime::MemoryAllocator::allocate(size, alignment);
@@ -222,6 +246,8 @@ class ArmMemoryAllocator : public executorch::runtime::MemoryAllocator {
       } else {
         used_ = (used_ | (alignment - 1)) + 1 + size;
       }
+      if (used_ > peak_used_)
+        peak_used_ = used_;
     }
     return ret;
   }
@@ -231,13 +257,25 @@ class ArmMemoryAllocator : public executorch::runtime::MemoryAllocator {
     return used_;
   }
 
+  // Returns the peak memory usage of the allocator's memory buffer
+  // Peak usage is useful when doing multiple allocations & resets
+  size_t peak_used() const {
+    return peak_used_;
+  }
+
   // Returns the free size of the allocator's memory buffer.
   size_t free_size() const {
     return executorch::runtime::MemoryAllocator::size() - used_;
   }
 
+  void reset() {
+    executorch::runtime::MemoryAllocator::reset();
+    used_ = 0;
+  }
+
  private:
   size_t used_;
+  size_t peak_used_;
 };
 
 Result<BufferCleanup> prepare_input_tensors(
@@ -682,11 +720,11 @@ int main(int argc, const char* argv[]) {
   if (temp_allocator.size() > 0) {
     ET_LOG(
         Info,
-        "temp_allocator_used:       %zu / %zu free: %zu ( used: %zu %% ) ",
-        temp_allocator.used_size(),
+        "peak_temp_allocator:       %zu / %zu free: %zu ( used: %zu %% ) ",
+        temp_allocator.peak_used(),
         temp_allocator.size(),
         temp_allocator.free_size(),
-        100 * temp_allocator.used_size() / temp_allocator.size());
+        100 * temp_allocator.peak_used() / temp_allocator.size());
   }
 
   if (status != Error::Ok) {
