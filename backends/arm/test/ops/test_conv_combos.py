@@ -430,16 +430,8 @@ def test_convolution_2d_tosa_MI_avgpool2d(test_data: torch.Tensor):
     pipeline.run()
 
 
-x_fails = {
-    "combo_conv_avgpool_20_x_4d": "AssertionError: Output 0 does not match reference output.",
-    "combo_conv_avgpool_4d": "AssertionError: Output 0 does not match reference output.",
-    "combo_conv_avgpool_5_x_4d_randn": "AssertionError: Output 0 does not match reference output.",
-    "combo_conv_avgpool_2_x_4d": "AssertionError: Output 0 does not match reference output.",
-}
-
-
 @pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness (MLTORCH-307)
-@common.parametrize("test_data", ComboConvAvgPool2d.test_data, x_fails)
+@common.parametrize("test_data", ComboConvAvgPool2d.test_data)
 def test_convolution_2d_tosa_BI_avgpool2d(test_data: torch.Tensor):
     model = ComboConvAvgPool2d()
     pipeline = TosaPipelineBI[input_t1](

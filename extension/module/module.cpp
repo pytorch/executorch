@@ -138,6 +138,7 @@ runtime::Error Module::load(const Program::Verification verification) {
   if (!is_loaded()) {
     // Load the program
     if (!data_loader_) {
+      ET_LOG(Debug, "Loading model from: %s", file_path_.c_str());
       auto res = load_file(file_path_, load_mode_);
       if (!res.ok()) {
         return res.error();
@@ -146,6 +147,7 @@ runtime::Error Module::load(const Program::Verification verification) {
     }
     // If a .ptd path was given load it.
     if (data_map_path_ != "") {
+      ET_LOG(Debug, "Loading model from: %s", data_map_path_.c_str());
       auto res = load_file(data_map_path_, load_mode_);
       if (!res.ok()) {
         return res.error();
@@ -154,6 +156,7 @@ runtime::Error Module::load(const Program::Verification verification) {
     }
     // If we have a .ptd loader, then load the map.
     if (data_map_loader_) {
+      ET_LOG(Debug, "Loading model from: %s", data_map_path_.c_str());
       data_map_ =
           ET_UNWRAP_UNIQUE(FlatTensorDataMap::load(data_map_loader_.get()));
     }
