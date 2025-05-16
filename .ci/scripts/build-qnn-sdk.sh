@@ -39,8 +39,7 @@ set_up_aot() {
       -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
       -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
       -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
-      -DPYTHON_EXECUTABLE=python3 \
-      -DEXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT=OFF
+      -DPYTHON_EXECUTABLE=python3
   cmake --build $PWD --target "PyQnnManagerAdaptor" "PyQnnWrapperAdaptor" -j$(nproc)
   # install Python APIs to correct import path
   # The filename might vary depending on your Python and host version.

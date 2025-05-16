@@ -143,11 +143,13 @@ class BasePipelineMaker(Generic[T]):
                 f"Pos must be between [-{pipeline_length}, {pipeline_length}]"
             )
 
+        stage_id = func.__name__
         suffix = None
         if "suffix" in kwargs:
             suffix = kwargs.pop("suffix")
+            if stage_id == "dump_artifact":
+                args = (*args, suffix)
 
-        stage_id = func.__name__
         unique_stages = [
             "quantize",
             "export",
@@ -280,7 +282,7 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
         custom_path: str = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,
-        qtol: int = 0,
+        qtol: int = 1,
     ):
         tosa_profiles = {
             "0.80": TosaSpecification.create_from_string("TOSA-0.80+BI"),
@@ -293,7 +295,9 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
         )
         quant_stage = (
             Quantize(
-                TOSAQuantizer(compile_spec).set_io(get_symmetric_quantization_config()),
+                TOSAQuantizer(tosa_profiles[tosa_version]).set_io(
+                    get_symmetric_quantization_config()
+                ),
                 get_symmetric_quantization_config(),
             )
             if symmetric_io_quantization

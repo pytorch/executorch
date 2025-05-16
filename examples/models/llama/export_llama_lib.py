@@ -62,6 +62,7 @@ from .source_transformation.attention import replace_attention_to_attention_sha
 from .source_transformation.custom_kv_cache import (
     replace_kv_cache_with_custom_kv_cache,
     replace_kv_cache_with_quantized_kv_cache,
+    replace_kv_cache_with_ring_kv_cache,
 )
 
 from .source_transformation.quantize import (
@@ -151,6 +152,23 @@ def build_model(
     parser = build_args_parser()
     args = parser.parse_args(shlex.split(argString))
     return export_llama(args)
+
+
+def parse_list_of_ints(s):
+    import ast
+
+    try:
+        parsed = ast.literal_eval(s)
+        if isinstance(parsed, list) and all(isinstance(i, int) for i in parsed):
+            print(parsed)
+            return parsed
+        raise argparse.ArgumentTypeError(
+            "Must be a list of integers, e.g., [0, 16, 0, 16]"
+        )
+    except Exception:
+        raise argparse.ArgumentTypeError(
+            "Must be a list of integers, e.g., [0, 16, 0, 16]"
+        )
 
 
 def build_args_parser() -> argparse.ArgumentParser:
@@ -361,6 +379,15 @@ def build_args_parser() -> argparse.ArgumentParser:
         type=int,
         default=128,
         help="maximum length of context for model to remember",
+    )
+
+    parser.add_argument(
+        "--local_global_attention",
+        type=parse_list_of_ints,
+        default=None,
+        help="List of integers specifying local and global attention pattern, e.g., [0, 16, 0, 16] to specify that every other layer is sliding window of 16."
+        " [0, 16, 32] pattern specifes 2nd and 3rd layer has sliding window of 16 and 32 respecitvely. "
+        " [16] pattern specifies all layers have sliding window of 16.",
     )
 
     parser.add_argument("-2", "--fairseq2", action="store_true")
@@ -692,6 +719,7 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
             preq_mode=args.preq_mode,
             preq_group_size=args.preq_group_size,
             preq_embedding_quantize=args.preq_embedding_quantize,
+            local_global_attention=args.local_global_attention,
         )
     )
 
@@ -1246,6 +1274,7 @@ def _get_source_transforms(  # noqa
     preq_mode: Optional[str] = None,
     preq_group_size: Optional[int] = None,
     preq_embedding_quantize: Optional[str] = None,
+    local_global_attention: Optional[List[int]] = None,
 ) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
     """
     Return a list of functions that transform a graph.
@@ -1313,23 +1342,11 @@ def _get_source_transforms(  # noqa
         transformations based on the given checkpoint first. In those cases,
         this wil be a no-op.
         """
-
-        # Create a mock args object with the necessary attributes
-        class Args:
-            pass
-
-        args = Args()
-        args.checkpoint = checkpoint
-        args.tokenizer_path = tokenizer_path
-        args.embedding_quantize = embedding_quantize
-        args.use_shared_embedding = use_shared_embedding
-        args.use_qat = use_qat
-        args.use_lora = use_lora
-        args.preq_mode = preq_mode
-        args.preq_group_size = preq_group_size
-        args.preq_embedding_quantize = preq_embedding_quantize
-
-        transforms.append(get_quant_embedding_transform(args, checkpoint_dtype))
+        transforms.append(
+            get_quant_embedding_transform(
+                embedding_quantize, use_shared_embedding, checkpoint_dtype
+            )
+        )
 
     # quantization_mode should be applied after embedding_quantize
     # to support shared_embedding
@@ -1347,30 +1364,17 @@ def _get_source_transforms(  # noqa
         There are cases where this may be a no-op, namely, if all linears are
         quantized in the checkpoint.
         """
-
-        # Create a mock args object with the necessary attributes
-        class Args:
-            pass
-
-        args = Args()
-        args.checkpoint = checkpoint
-        args.tokenizer_path = tokenizer_path
-        args.quantization_mode = quantization_mode
-        args.group_size = group_size
-        args.use_shared_embedding = use_shared_embedding
-        args.calibration_tasks = calibration_tasks
-        args.calibration_limit = calibration_limit
-        args.calibration_seq_length = calibration_seq_length
-        args.use_shared_embedding = use_shared_embedding
-        args.use_qat = use_qat
-        args.use_lora = use_lora
-        args.preq_mode = preq_mode
-
         transforms.append(
             get_quant_weight_transform(
-                args=args,
+                quantization_mode=quantization_mode,
+                group_size=group_size,
                 computation_dtype=dtype_override,
                 checkpoint_dtype=checkpoint_dtype,
+                checkpoint_path=checkpoint,
+                tokenizer_path=tokenizer_path,
+                calibration_tasks=calibration_tasks,
+                calibration_limit=calibration_limit,
+                calibration_seq_length=calibration_seq_length,
             )
         )
 
@@ -1439,6 +1443,14 @@ def _get_source_transforms(  # noqa
 
     if vulkan:
         transforms.append(replace_with_vulkan_rotary_emb)
+
+    if local_global_attention:
+        transforms.append(
+            partial(
+                replace_kv_cache_with_ring_kv_cache,
+                layer_sizes=local_global_attention,
+            )
+        )
 
     return transforms
 

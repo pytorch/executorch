@@ -25,10 +25,6 @@ endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
-if(NOT PYTHON_EXECUTABLE)
-  resolve_python_executable()
-endif()
-
 # NB: Enabling this will serialize execution of delegate instances Keeping this
 # OFF by default to maintain existing behavior, to be revisited.
 option(EXECUTORCH_XNNPACK_SHARED_WORKSPACE
