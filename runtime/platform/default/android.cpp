@@ -43,9 +43,12 @@
 #define _ASSERT_PAL_INITIALIZED()                                   \
   do {                                                              \
     if (!initialized) {                                             \
-      __android_log_print(FATAL, "ExecuTorch", "%s",                \
-         "ExecuTorch PAL must be initialized before call to %s()",  \
-           ET_FUNCTION);                                            \
+      __android_log_print(                                          \
+          ANDROID_LOG_FATAL,                                        \
+          "ExecuTorch",                                             \
+          "%s",                                                     \
+          "ExecuTorch PAL must be initialized before call to %s()", \
+          ET_FUNCTION);                                             \
     }                                                               \
   } while (0)
 
@@ -134,7 +137,7 @@ et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
 #pragma weak et_pal_emit_log_message
 #endif // _MSC_VER
 void et_pal_emit_log_message(
-  ET_UNUSED et_timestamp_t timestamp,
+    ET_UNUSED et_timestamp_t timestamp,
     et_pal_log_level_t level,
     ET_UNUSED const char* filename,
     ET_UNUSED const char* function,
