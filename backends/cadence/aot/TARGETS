@@ -367,6 +367,7 @@ python_unittest(
         "fbsource//third-party/pypi/parameterized:parameterized",
         "//caffe2:torch",
         "//executorch/backends/cadence/aot:compiler",
+        "//executorch/backends/cadence/aot:graph_builder",
         "//executorch/backends/cadence/aot:ops_registrations",
         "//executorch/backends/cadence/aot:pass_utils",
         "//executorch/backends/cadence/aot:simplify_ops",

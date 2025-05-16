@@ -29,6 +29,7 @@ from executorch.backends.arm._passes import (
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
     DecomposeLinearPass,
+    DecomposeLinearVectorNormPass,
     DecomposeMeanDimPass,
     DecomposeNotEqualPass,
     DecomposeSelectPass,
@@ -86,6 +87,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertSplitToSlicePass())
         self.add_pass(ConvertMmToBmmPass())
         self.add_pass(DecomposeLinearPass())
+        self.add_pass(DecomposeLinearVectorNormPass())
         self.add_pass(DecomposeMeanDimPass())
         self.add_pass(ConvertFullLikeToFullPass())
         self.add_pass(ConvertToClampPass())
@@ -133,6 +135,7 @@ class ArmPassManager(PassManager):
         self.add_pass(FuseBatchnorm2DPass(exported_program))
         self.add_pass(ConvertMmToBmmPass())
         self.add_pass(DecomposeLinearPass())
+        self.add_pass(DecomposeLinearVectorNormPass())
         self.add_pass(DecomposeLeakyReLUPass())
         self.add_pass(DecomposeBatchNormPass())
         self.add_pass(DecomposeLayerNormPass())
@@ -207,6 +210,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeCosineSimilarityPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeLeakyReLUPass())
+        self.add_pass(DecomposeLinearVectorNormPass())
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(DecomposeSiluPass())
 

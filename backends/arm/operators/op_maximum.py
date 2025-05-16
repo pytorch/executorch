@@ -19,6 +19,7 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
+    validate_same_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -49,13 +50,7 @@ class MaxVisitor_0_80(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
-
-        if inputs[0].dtype != inputs[1].dtype and inputs[0].dtype != output.dtype:
-            raise TypeError(
-                f"Data type of inputs and output must be the same. Got input 0 dtype: "
-                f"{inputs[0].dtype}, input 1 dtype: {inputs[1].dtype} and output "
-                f"dtype: {output.dtype}"
-            )
+        validate_same_dtype(self.target, [*inputs, output])
 
         scale_back = 1.0
         max_output = output
@@ -118,13 +113,7 @@ class MaxVisitor(NodeVisitor):
         from tosa.NanPropagationMode import NanPropagationMode  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
-
-        if inputs[0].dtype != inputs[1].dtype and inputs[0].dtype != output.dtype:
-            raise TypeError(
-                f"Data type of inputs and output must be the same. Got input 0 dtype: "
-                f"{inputs[0].dtype}, input 1 dtype: {inputs[1].dtype} and output "
-                f"dtype: {output.dtype}"
-            )
+        validate_same_dtype(self.target, [*inputs, output])
 
         scale_back = 1.0
         max_output = output

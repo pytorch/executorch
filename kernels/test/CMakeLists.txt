@@ -42,11 +42,11 @@ foreach(kernel ${_kernels})
            "${_wrapper_dir}/supported_features.h"
     COMMAND mkdir -p ${_wrapper_dir}
     COMMAND
-      python kernels/test/gen_supported_features.py
+      ${PYTHON_EXECUTABLE} kernels/test/gen_supported_features.py
       kernels/${kernel}/test/supported_features_def.yaml >
       ${_wrapper_dir}/supported_features.cpp
     COMMAND
-      python kernels/test/gen_supported_features.py
+      ${PYTHON_EXECUTABLE} kernels/test/gen_supported_features.py
       kernels/test/supported_features.yaml >
       ${_wrapper_dir}/supported_features.h
     WORKING_DIRECTORY "${EXECUTORCH_ROOT}"
