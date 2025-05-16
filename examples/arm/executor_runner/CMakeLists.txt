@@ -8,7 +8,6 @@ project(arm_executor_runner)
 
 option(SEMIHOSTING "Enable semihosting" OFF)
 option(ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE "Set ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE to specify memory alloction pool size" OFF)
-option(ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE "Set ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE to specify temp alloction pool size" OFF)
 option(ET_BUNDLE_IO "Set to compile in BundleIO support" OFF)
 option(ET_ATOL "Set atol to use for BundleIO testing" OFF)
 option(ET_RTOL "Set rtol to use for BundleIO testing" OFF)
@@ -99,20 +98,45 @@ if(NOT ${SEMIHOSTING})
   get_filename_component(ET_PTE_FILE_PATH ${ET_PTE_FILE_PATH} REALPATH)
 endif()
 
+if(SYSTEM_CONFIG MATCHES "Ethos_U55")
+  add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-300 target)
+elseif(SYSTEM_CONFIG MATCHES "Ethos_U85")
+  add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-320 target)
+else()
+  message(FATAL_ERROR "Unsupported SYSTEM_CONFIG ${SYSTEM_CONFIG}.")
+endif()
 
+if(MEMORY_MODE MATCHES "Dedicated_Sram")
+  target_compile_definitions(ethosu_target_common INTERFACE
+    ETHOSU_MODEL=1
+    ETHOSU_ARENA=1)
+elseif(MEMORY_MODE MATCHES "Shared_Sram" OR MEMORY_MODE MATCHES "Sram_Only")
+  target_compile_definitions(ethosu_target_common INTERFACE
+    ETHOSU_MODEL=1
+    ETHOSU_ARENA=0)
+else()
+  message(FATAL_ERROR "Unsupported MEMORY_MODE ${MEMORY_MODE}. Memory_mode can be Shared_Sram, Sram_Only or Dedicated_Sram(applicable for the Ethos-U85)")
+endif()
+
+# By default, use 2MB of temporary scratch buffer
+# For Dedicated_Sram, use 128MB for the temporary scratch buffer and
+# 384KB for the fast scratch buffer(the cache, applicable only for Ethos-U65 and Ethos-U85)
+set(ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x200000)
+if(MEMORY_MODE MATCHES "Dedicated_Sram")
+  set(ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x8000000)
+  set(ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x60000)
+endif()
+message(STATUS "ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE = ${ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE}")
+message(STATUS "ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE = ${ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE}")
 
 # Dependencies from the Ethos-U Core This is the platform target of
 # Corstone-300, that includes ethosu_core_driver and bare-metal bringup
 # libraries. We link against ethosu_target_init which includes all of these
 # dependencies.
-if(SYSTEM_CONFIG STREQUAL "Ethos_U55_High_End_Embedded")
-  add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-300 target)
+if(SYSTEM_CONFIG MATCHES "Ethos_U55_High_End_Embedded")
   set(TARGET_BOARD "corstone-300")
-  if(MEMORY_MODE STREQUAL "Shared_Sram")
+  if(MEMORY_MODE MATCHES "Shared_Sram")
     target_compile_definitions(ethosu_target_common INTERFACE
-        # ETHOSU_MODEL=0 place pte file/data in SRAM area
-        # ETHOSU_MODEL=1 place pte file/data in DDR area
-        ETHOSU_MODEL=1
         # Configure NPU architecture timing adapters
         # This is just example numbers and you should make this match your hardware
         # SRAM
@@ -144,7 +168,7 @@ if(SYSTEM_CONFIG STREQUAL "Ethos_U55_High_End_Embedded")
         ETHOSU_TA_HISTBIN_1=0
         ETHOSU_TA_HISTCNT_1=0
         )
-  elseif(MEMORY_MODE STREQUAL "Sram_Only")
+  elseif(MEMORY_MODE MATCHES "Sram_Only")
     target_compile_definitions(ethosu_target_common INTERFACE
       # This is just example numbers and you should make this match your hardware
       # SRAM
@@ -180,14 +204,11 @@ if(SYSTEM_CONFIG STREQUAL "Ethos_U55_High_End_Embedded")
   else()
     message(FATAL_ERROR "Unsupported memory_mode ${MEMORY_MODE} for the Ethos-U55. The Ethos-U55 supports only Shared_Sram and Sram_Only.")
   endif()
-elseif(SYSTEM_CONFIG STREQUAL "Ethos_U55_Deep_Embedded")
+elseif(SYSTEM_CONFIG MATCHES "Ethos_U55_Deep_Embedded")
   add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-300 target)
   set(TARGET_BOARD "corstone-300")
-  if(MEMORY_MODE STREQUAL "Shared_Sram")
+  if(MEMORY_MODE MATCHES "Shared_Sram")
     target_compile_definitions(ethosu_target_common INTERFACE
-        # ETHOSU_MODEL=0 place pte file/data in SRAM area
-        # ETHOSU_MODEL=1 place pte file/data in DDR area
-        ETHOSU_MODEL=1
         # Configure NPU architecture timing adapters
         # This is just example numbers and you should make this match your hardware
         # SRAM
@@ -219,9 +240,8 @@ elseif(SYSTEM_CONFIG STREQUAL "Ethos_U55_Deep_Embedded")
         ETHOSU_TA_HISTBIN_1=0
         ETHOSU_TA_HISTCNT_1=0
         )
-    elseif(MEMORY_MODE STREQUAL "Sram_Only")
+    elseif(MEMORY_MODE MATCHES "Sram_Only")
       target_compile_definitions(ethosu_target_common INTERFACE
-      ETHOSU_MODEL=1
       # Configure NPU architecture timing adapters
       # This is just example numbers and you should make this match your hardware
       # SRAM
@@ -256,14 +276,11 @@ elseif(SYSTEM_CONFIG STREQUAL "Ethos_U55_Deep_Embedded")
     else()
       message(FATAL_ERROR "Unsupported memory_mode ${MEMORY_MODE} for the Ethos-U55. The Ethos-U55 supports only Shared_Sram and Sram_Only.")
   endif()
-elseif(SYSTEM_CONFIG STREQUAL "Ethos_U85_SYS_DRAM_Low")
+elseif(SYSTEM_CONFIG MATCHES "Ethos_U85_SYS_DRAM_Low")
   add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-320 target)
   set(TARGET_BOARD "corstone-320")
-  if(MEMORY_MODE STREQUAL "Dedicated_Sram")
+  if(MEMORY_MODE MATCHES "Dedicated_Sram")
     target_compile_definitions(ethosu_target_common INTERFACE
-        # ETHOSU_MODEL=0 place pte file/data in SRAM area
-        # ETHOSU_MODEL=1 place pte file/data in DDR area
-        ETHOSU_MODEL=1
         # Configure NPU architecture timing adapters
         # This is just example numbers and you should make this match your hardware
         # SRAM
@@ -295,11 +312,8 @@ elseif(SYSTEM_CONFIG STREQUAL "Ethos_U85_SYS_DRAM_Low")
         ETHOSU_TA_HISTBIN_1=0
         ETHOSU_TA_HISTCNT_1=0
         )
-  elseif(MEMORY_MODE STREQUAL "Sram_Only")
+  elseif(MEMORY_MODE MATCHES "Sram_Only")
       target_compile_definitions(ethosu_target_common INTERFACE
-      # ETHOSU_MODEL=0 place pte file/data in SRAM area
-      # ETHOSU_MODEL=1 place pte file/data in DDR area
-      ETHOSU_MODEL=1
       # Configure NPU architecture timing adapters
       # This is just example numbers and you should make this match your hardware
       # SRAM
@@ -333,13 +347,9 @@ elseif(SYSTEM_CONFIG STREQUAL "Ethos_U85_SYS_DRAM_Low")
       )
   endif()
 elseif(SYSTEM_CONFIG STREQUAL "Ethos_U85_SYS_DRAM_Mid" OR SYSTEM_CONFIG STREQUAL "Ethos_U85_SYS_DRAM_High")
-  add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-320 target)
   set(TARGET_BOARD "corstone-320")
-  if(MEMORY_MODE STREQUAL "Dedicated_Sram")
+  if(MEMORY_MODE MATCHES "Dedicated_Sram")
     target_compile_definitions(ethosu_target_common INTERFACE
-        # ETHOSU_MODEL=0 place pte file/data in SRAM area
-        # ETHOSU_MODEL=1 place pte file/data in DDR area
-        ETHOSU_MODEL=1
         # Configure NPU architecture timing adapters
         # This is just example numbers and you should make this match your hardware
         # SRAM
@@ -371,11 +381,8 @@ elseif(SYSTEM_CONFIG STREQUAL "Ethos_U85_SYS_DRAM_Mid" OR SYSTEM_CONFIG STREQUAL
         ETHOSU_TA_HISTBIN_1=0
         ETHOSU_TA_HISTCNT_1=0
         )
-  elseif(MEMORY_MODE STREQUAL "Sram_Only")
+  elseif(MEMORY_MODE MATCHES "Sram_Only")
     target_compile_definitions(ethosu_target_common INTERFACE
-    # ETHOSU_MODEL=0 place pte file/data in SRAM area
-    # ETHOSU_MODEL=1 place pte file/data in DDR area
-    ETHOSU_MODEL=1
     # Configure NPU architecture timing adapters
     # This is just example numbers and you should make this match your hardware
     # SRAM
@@ -434,7 +441,7 @@ endif()
 # the memory traffic of Region 1 should pass via the external memory(3) and the traffic for Region 2 should pass via the SRAM(0)
 #
 
-if(MEMORY_MODE STREQUAL "Sram_Only")
+if(MEMORY_MODE MATCHES "Sram_Only")
   target_compile_definitions(ethosu_core_driver PRIVATE
       NPU_QCONFIG=1
       NPU_REGIONCFG_0=1
@@ -445,7 +452,7 @@ if(MEMORY_MODE STREQUAL "Sram_Only")
       NPU_REGIONCFG_5=0
       NPU_REGIONCFG_6=0
       NPU_REGIONCFG_7=0)
-  elseif(MEMORY_MODE STREQUAL "Dedicated_Sram")
+  elseif(MEMORY_MODE MATCHES "Dedicated_Sram")
     target_compile_definitions(ethosu_core_driver PRIVATE
       NPU_QCONFIG=3
       NPU_REGIONCFG_0=3
@@ -632,8 +639,9 @@ if(ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE)
   target_compile_definitions(arm_executor_runner PUBLIC ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE=${ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE})
 endif()
 
-if(ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE)
-  target_compile_definitions(arm_executor_runner PUBLIC ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE=${ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE})
+target_compile_definitions(arm_executor_runner PUBLIC ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=${ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE})
+if(DEFINED ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
+  target_compile_definitions(arm_executor_runner PUBLIC ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=${ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE})
 endif()
 
 if(ET_BUNDLE_IO)

@@ -43,6 +43,18 @@ runtime.python_library(
 )
 
 runtime.python_library(
+    name = "operator_support",
+    srcs = [
+        "operator_support.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "//executorch/test/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+)
+
+runtime.python_library(
     name = "partitioner",
     srcs = [
         "partitioner.py",
