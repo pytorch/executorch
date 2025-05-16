@@ -754,7 +754,7 @@ Result<Method> Method::load(
     temp_allocator = platform_allocator;
   }
   Method method(program, memory_manager, event_tracer, temp_allocator);
-
+  ET_LOG(Debug, "Loading method: %s.", s_plan->name()->c_str());
   Error err = method.init(s_plan, named_data_map);
   if (err != Error::Ok) {
     return err;
@@ -1522,6 +1522,7 @@ Error Method::execute() {
       initialized(),
       NotSupported,
       "Cannot execute until method has been initialized.");
+  ET_LOG(Debug, "Executing method: %s.", method_meta().name());
 
   // Chains are executed sequentially today, but future async designs may
   // branch and run many in parallel or out of order.

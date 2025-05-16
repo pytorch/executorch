@@ -24,11 +24,7 @@ from executorch.backends.arm.operator_support.ethos_u55_support import (
     EthosU55NotSupported,
     EthosU55TransposeCheck,
 )
-from executorch.backends.arm.tosa_specification import (
-    Tosa_0_80,
-    Tosa_1_00,
-    TosaSpecification,
-)
+from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -129,9 +125,7 @@ def tosa_support_factory(
     if not tosa_spec.support_float():
         negative_checks.append(NeedsDecompositionCheck(reporter))
         negative_checks.append(CheckProperQuantization(reporter))
-    if (isinstance(tosa_spec, Tosa_0_80) and tosa_spec.is_U55_subset) or (
-        isinstance(tosa_spec, Tosa_1_00) and "u55" in tosa_spec.extensions
-    ):
+    if tosa_spec.is_U55_subset:
         negative_checks.append(EthosU55NotSupported(reporter))
         negative_checks.append(EthosU55DtypeSupport(reporter))
         negative_checks.append(EthosU55TransposeCheck(reporter))
@@ -312,6 +306,7 @@ class CheckProperQuantization(OperatorSupportBase):
         exir_ops.edge.aten.sub.Tensor,
         exir_ops.edge.aten.upsample_bilinear2d.vec,
         exir_ops.edge.aten.upsample_nearest2d.vec,
+        torch.ops.aten.scalar_tensor.default,
         *TableOps.included_ops(),
     )
 

@@ -15,9 +15,9 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
+    validate_same_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import Tosa_0_80, Tosa_1_00
 
 
 @register_node_visitor
@@ -36,10 +36,11 @@ class RshiftVisitor_0_80(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
+        validate_same_dtype(self.target, [*inputs, output])
 
         attr = ts.TosaSerializerAttribute()
         round = False
-        if isinstance(self.tosa_spec, Tosa_0_80) and self.tosa_spec.is_U55_subset:
+        if self.tosa_spec.is_U55_subset:
             # U55 only supports INT32 and round == True
             # TODO MLETORCH-525 Emulate round == False with different decomposition
             round = True
@@ -69,10 +70,11 @@ class RshiftVisitor(NodeVisitor):
         import serializer.tosa_serializer as ts
 
         validate_num_inputs(self.target, inputs, 2)
+        validate_same_dtype(self.target, [*inputs, output])
 
         attr = ts.TosaSerializerAttribute()
         round = False
-        if isinstance(self.tosa_spec, Tosa_1_00) and "u55" in self.tosa_spec.extensions:
+        if self.tosa_spec.is_U55_subset:
             # U55 only supports INT32 and round == True
             # TODO MLETORCH-525 Emulate round == False with different decomposition
             round = True
