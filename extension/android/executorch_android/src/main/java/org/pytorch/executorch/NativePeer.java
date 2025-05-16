@@ -59,7 +59,6 @@ class NativePeer {
   @DoNotStrip
   public native String[] getUsedBackends(String methodName);
 
-
   /** Retrieve the in-memory log buffer, containing the most recent ExecuTorch log entries. */
   @DoNotStrip
   public native String[] readLogBuffer();

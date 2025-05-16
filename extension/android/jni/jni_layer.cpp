@@ -395,14 +395,15 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 #endif
   }
 
-  facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>>
-  getUsedBackends(facebook::jni::alias_ref<jstring> methodName) {
+  facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> getUsedBackends(
+      facebook::jni::alias_ref<jstring> methodName) {
     auto methodMeta = module_->method_meta(methodName->toStdString()).get();
-    facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> ret
-    = facebook::jni::JArrayClass<jstring>::newArray(methodMeta.num_backends());
+    facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> ret =
+        facebook::jni::JArrayClass<jstring>::newArray(
+            methodMeta.num_backends());
     for (auto i = 0; i < methodMeta.num_backends(); i++) {
       facebook::jni::local_ref<facebook::jni::JString> backend_name =
-      facebook::jni::make_jstring(methodMeta.get_backend_name(i).get());
+          facebook::jni::make_jstring(methodMeta.get_backend_name(i).get());
       (*ret)[i] = backend_name;
     }
     return ret;
