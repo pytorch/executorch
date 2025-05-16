@@ -92,6 +92,11 @@ public class ModuleE2ETest {
 
     @Test
     public void testXnnpackBackendRequired() {
+        File pteFile = new File(getTestFilePath("/mv3_xnnpack_fp32.pte"));
+        InputStream inputStream = getClass().getResourceAsStream("/mv3_xnnpack_fp32.pte");
+        FileUtils.copyInputStreamToFile(inputStream, pteFile);
+        inputStream.close();
+
         Module module = Module.load(getTestFilePath("/mv3_xnnpack_fp32.pte"));
         String[] expectedBackends = new String[] {"xnnpack"};
         assertArrayEquals(expectedBackends, module.getUsedBackends("forward"));
