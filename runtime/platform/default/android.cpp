@@ -8,13 +8,7 @@
 
 /**
  * @file
- * Fallback PAL implementations for Android system.
- *
- * Note that this assumes that the platform defines the symbols used in this
- * file (like fprintf()), because this file will still be built even if the
- * functions are later overridden. When building for a platform that does not
- * provide the necessary symbols, clients can use Minimal.cpp instead, but they
- * will need to override all of the functions.
+ * Default PAL implementations for Android system.
  */
 
 // This cpp file will provide weak implementations of the symbols declared in
