@@ -97,7 +97,7 @@ class GreaterEqualVisitor(NodeVisitor):
         if inputs[0].dtype == ts.DType.INT8:
             # Rescale inputs to 32 bit
             rescaled_inputs, _ = tqutils.insert_rescale_ops_to_int32(
-                tosa_graph, inputs, node, self.tosa_specs
+                tosa_graph, inputs, node, self.tosa_spec
             )
 
             # Update IO

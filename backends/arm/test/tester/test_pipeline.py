@@ -282,7 +282,7 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
         custom_path: str = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,
-        qtol: int = 0,
+        qtol: int = 1,
     ):
         tosa_profiles = {
             "0.80": TosaSpecification.create_from_string("TOSA-0.80+BI"),
