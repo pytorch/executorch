@@ -10,10 +10,6 @@
 # ~~~
 cmake_minimum_required(VERSION 3.19)
 
-option(EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT
-       "Build the optimized ops library for AOT export usage" OFF
-)
-
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -91,7 +87,13 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
     # pybindings.
     if(TARGET portable_lib)
       add_library(quantized_pybind_kernels_lib ${_quantized_kernels__srcs})
-      target_link_libraries(quantized_pybind_kernels_lib PRIVATE portable_lib)
+      target_link_libraries(
+        quantized_pybind_kernels_lib
+        PRIVATE
+          portable_lib
+          executorch_core
+          kernels_util_all_deps
+      )
       target_compile_options(
         quantized_pybind_kernels_lib PUBLIC ${_common_compile_options}
       )
