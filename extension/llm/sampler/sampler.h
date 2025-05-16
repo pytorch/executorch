@@ -26,6 +26,8 @@ namespace extension {
 namespace llm {
 // A simple llama2 sampler.
 
+inline constexpr auto kTopp = 0.9f;
+
 template <typename T>
 struct ET_EXPERIMENTAL ProbIndex {
   T prob;
@@ -39,6 +41,8 @@ class ET_EXPERIMENTAL Sampler {
       float temperature,
       float topp,
       unsigned long long rng_seed);
+
+  Sampler(int32_t vocab_size, float temperature);
 
   template <typename T>
   int32_t sample(T* logits);
@@ -71,3 +75,9 @@ using ::executorch::extension::llm::ProbIndex;
 using ::executorch::extension::llm::Sampler;
 } // namespace executor
 } // namespace torch
+
+namespace executorch::llm {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch::extension::llm` namespaces.
+using ::executorch::extension::llm::kTopp;
+} // namespace executorch::llm

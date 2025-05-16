@@ -75,6 +75,33 @@ def get_conv2d_output_size(
     return torch.Size((in_size[0], out_channels, hout, wout))
 
 
+def get_im2row_output_size(
+    input: torch.Tensor,
+    kernel_size: Tuple[int],
+    dilation: Tuple[int],
+    padding: Tuple[int],
+    stride: Tuple[int],
+    channel_last: bool,
+) -> torch.Size:
+    if len(input.shape) == 3:
+        height_dim = 1 if channel_last else 2
+        input = input.unsqueeze(height_dim)
+
+    batch_size = input.shape[0]
+    n_input_plane = input.shape[3] if channel_last else input.shape[1]
+    input_height = input.shape[1] if channel_last else input.shape[2]
+    input_width = input.shape[2] if channel_last else input.shape[3]
+    output_height = (
+        input_height + 2 * padding[0] - (dilation[0] * (kernel_size[0] - 1) + 1)
+    ) // stride[0] + 1
+    output_width = (
+        input_width + 2 * padding[1] - (dilation[1] * (kernel_size[1] - 1) + 1)
+    ) // stride[1] + 1
+    n_output_plane = n_input_plane * kernel_size[0] * kernel_size[1]
+    output_size = torch.Size((batch_size, output_height * output_width, n_output_plane))
+    return torch.Size(output_size)
+
+
 # Return the overload packet for the edge op
 def get_edge_overload_packet(edge_op: EdgeOpOverload) -> EdgeOpOverloadPacket:
     edge_op_namespace, edge_op_name = (

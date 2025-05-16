@@ -22,6 +22,7 @@ import executorch.exir.serde.schema as schema
 import torch
 import torch.export.exported_program as ep
 from executorch.exir import delegate
+from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 from executorch.exir.backend.compile_spec_schema import (
     CompileSpec as delegate_CompileSpec,
 )
@@ -31,7 +32,7 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.lowered_backend_module import (
     LoweredBackendModule as ExirLoweredBackendModule,
 )
-from executorch.exir.serde.export_serialize import GraphModuleOpUpgrader, SerializeError
+from executorch.exir.serde.export_serialize import SerializeError
 from executorch.exir.serde.schema import (
     CompileSpec,
     LoweredBackendModule as SerdeLoweredBackendModule,
@@ -268,6 +269,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
         assert isinstance(serialized_artifact.exported_program, schema.ExportedProgram)
 
         serialized_processed_bytes = serialize_bytes(lowered_module.processed_bytes)
+        named_data_store = json.dumps(export_serialize._dataclass_to_dict(lowered_module.named_data_store_output),cls=export_serialize.EnumEncoder) if lowered_module.named_data_store_output else None
 
         serialized_lowered_module = SerdeLoweredBackendModule(
             original_module=serialized_artifact.exported_program,
@@ -276,6 +278,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
             processed_bytes=serialized_processed_bytes,
             compile_specs=serialized_compile_spec,
             backend_id=lowered_module.backend_id,
+            named_data_store=named_data_store,
         )
 
         json_lowered_module = json.dumps(
@@ -556,11 +559,19 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
             None,
         )
 
+        if serialized_lowered_module.named_data_store is None:
+            named_data_store = None
+        else:
+            named_data_store = export_serialize._dict_to_dataclass(NamedDataStoreOutput, json.loads(serialized_lowered_module.named_data_store))
+            for buffer in named_data_store.buffers:
+                buffer.buffer = base64.b64decode(buffer.buffer.encode("ascii"))
+
         lowered_module = ExirLoweredBackendModule(
             original_module,
             backend_id,
             processed_bytes,
             compile_specs,
+            named_data_store
         )
         self.module.register_module(serialized_lowered_module_arg.name, lowered_module)
         return self.graph.get_attr(serialized_lowered_module_arg.name)
@@ -606,12 +617,6 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             symbol_name_to_range,
             res.names_to_symbols,
         )
-        model_opset_version: Optional[Dict[str, int]] = exported_program.opset_version
-        self._validate_model_opset_version(model_opset_version)
-
-        upgrader = GraphModuleOpUpgrader(
-            self.expected_opset_version, model_opset_version
-        )
 
         dummy_g = torch.fx.Graph()
         dummy_g.output(())
@@ -645,7 +650,7 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
                     node.target,
                     getattr(res.graph_module, node.target),
                 )
-        return upgrader.upgrade(exported_program)
+        return exported_program
 
 
 def serialize(
@@ -672,7 +677,6 @@ def serialize(
 
 def deserialize(
     artifact: export_serialize.SerializedArtifact,
-    expected_opset_version: Optional[Dict[str, int]] = None,
 ) -> ep.ExportedProgram:
     assert isinstance(artifact.exported_program, bytes)
     exported_program_str = artifact.exported_program.decode("utf-8")
@@ -680,7 +684,7 @@ def deserialize(
     serialized_exported_program = export_serialize._dict_to_dataclass(
         schema.ExportedProgram, exported_program_dict
     )
-    return ExportedProgramDeserializer(expected_opset_version).deserialize(
+    return ExportedProgramDeserializer().deserialize(
         serialized_exported_program,
         artifact.state_dict,
         artifact.constants,
@@ -724,7 +728,6 @@ def load(
     f: Union[str, os.PathLike[str], io.BytesIO],
     *,
     extra_files: Optional[Dict[str, Any]] = None,
-    expected_opset_version: Optional[Dict[str, int]] = None,
 ) -> ep.ExportedProgram:
     if isinstance(f, (str, os.PathLike)):
         f = os.fspath(str(f))
@@ -785,6 +788,6 @@ def load(
         )
 
         # Deserialize ExportedProgram
-        ep = deserialize(artifact, expected_opset_version)
+        ep = deserialize(artifact)
 
         return ep

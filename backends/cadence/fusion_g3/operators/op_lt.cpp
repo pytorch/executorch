@@ -24,7 +24,7 @@ namespace impl {
 namespace G3 {
 namespace native {
 
-Tensor& lt_tensor_out(
+Tensor& lt_Tensor_out(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
@@ -134,14 +134,14 @@ Tensor& lt_tensor_out(
   } else {
     // @lint-ignore CLANGTIDY facebook-hte-CArray
     static constexpr const char op_name[] = "lt.Tensor_out";
-    torch::executor::native::internal::comparison_tensor_out<op_name>(
-        ctx, a, b, out);
+    torch::executor::native::internal::
+        comparison_tensor_out<std::less, op_name>(ctx, a, b, out);
   }
 
   return out;
 }
 
-Tensor& lt_scalar_out(
+Tensor& lt_Scalar_out(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
@@ -188,8 +188,8 @@ Tensor& lt_scalar_out(
   } else {
     // @lint-ignore CLANGTIDY facebook-hte-CArray
     static constexpr const char op_name[] = "lt.Scalar_out";
-    torch::executor::native::internal::comparison_scalar_out<op_name>(
-        ctx, a, b, out);
+    torch::executor::native::internal::
+        comparison_scalar_out<std::less, op_name>(ctx, a, b, out);
   }
 
   return out;

@@ -19,7 +19,7 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..
@@ -29,10 +29,6 @@ add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
 
 if(EXECUTORCH_CADENCE_CPU_RUNNER)
   include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
-
-  if(NOT PYTHON_EXECUTABLE)
-  resolve_python_executable()
-  endif()
 
   set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 

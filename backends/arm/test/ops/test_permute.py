@@ -1,165 +1,109 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import unittest
 
 from typing import Tuple
 
-import pytest
-
 import torch
 
-from executorch.backends.arm.quantizer.arm_quantizer import (
-    EthosUQuantizer,
-    get_symmetric_quantization_config,
-    TOSAQuantizer,
+from executorch.backends.arm.test import common
+
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineBI,
+    EthosU85PipelineBI,
+    TosaPipelineBI,
+    TosaPipelineMI,
 )
-from executorch.backends.arm.test import common, conftest
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.backends.arm.tosa_specification import TosaSpecification
-from executorch.backends.xnnpack.test.tester.tester import Quantize
-from executorch.exir.backend.compile_spec_schema import CompileSpec
-from parameterized import parameterized
 from torchvision.ops import Permute
 
-test_data_suite = [
+input_t1 = Tuple[torch.Tensor]  # Input x
+
+aten_op = "torch.ops.aten.permute.default"
+exir_op = "executorch_exir_dialects_edge__ops_aten_permute_default"
+
+test_data_suite = {
     # (test_name,test_data,dims)
-    ("rank_2", torch.rand(10, 10), [1, 0]),
-    ("rank_3", torch.rand(10, 10, 10), [2, 0, 1]),
-    ("rank_3", torch.rand(10, 10, 10), [1, 2, 0]),
-    ("rank_4", torch.rand(1, 5, 1, 10), [0, 2, 3, 1]),
-    ("rank_4", torch.rand(1, 2, 5, 10), [1, 0, 2, 3]),
-    ("rank_4", torch.rand(1, 10, 10, 5), [2, 0, 1, 3]),
-]
+    "rank_2": lambda: (torch.rand(10, 10), [1, 0]),
+    "rank_3": lambda: (torch.rand(10, 10, 10), [2, 0, 1]),
+    "rank_3_2": lambda: (torch.rand(10, 10, 10), [1, 2, 0]),
+    "rank_4": lambda: (torch.rand(1, 5, 1, 10), [0, 2, 3, 1]),
+    "rank_4_2": lambda: (torch.rand(1, 2, 5, 10), [1, 0, 2, 3]),
+    "rank_4_3": lambda: (torch.rand(1, 10, 10, 5), [2, 0, 1, 3]),
+}
 
 
-class TestPermute(unittest.TestCase):
-    """Tests Permute Operator."""
+class SimplePermute(torch.nn.Module):
 
-    class Permute(torch.nn.Module):
+    def __init__(self, dims: list[int]):
+        super().__init__()
 
-        def __init__(self, dims: list[int]):
-            super().__init__()
+        self.permute = Permute(dims=dims)
 
-            self.permute = Permute(dims=dims)
+    def forward(self, x):
+        return self.permute(x)
 
-        def forward(self, x):
-            return self.permute(x)
 
-    def _test_permute_tosa_MI_pipeline(
-        self,
-        module: torch.nn.Module,
-        test_data: Tuple[torch.tensor],
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
-            )
-            .export()
-            .check(["torch.ops.aten.permute.default"])
-            .check_not(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_permute_default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
+@common.parametrize("test_data", test_data_suite)
+def test_permute_tosa_MI(test_data: torch.Tensor):
+    test_data, dims = test_data()
+    pipeline = TosaPipelineMI[input_t1](
+        SimplePermute(dims=dims),
+        (test_data,),
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
 
-    def _test_permute_tosa_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
-    ):
-        tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
-        compile_spec = common.get_tosa_compile_spec(tosa_spec)
-        quantizer = TOSAQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
-        (
-            ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
-            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
-            .export()
-            .check_count({"torch.ops.aten.permute.default": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_permute_default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
 
-    def _test_permute_ethos_BI_pipeline(
-        self,
-        module: torch.nn.Module,
-        compile_spec: CompileSpec,
-        test_data: Tuple[torch.Tensor],
-    ):
-        quantizer = EthosUQuantizer(compile_spec).set_io(
-            get_symmetric_quantization_config()
-        )
-        tester = (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=compile_spec,
-            )
-            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
-            .export()
-            .check_count({"torch.ops.aten.permute.default": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_permute_default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .serialize()
-        )
-        if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
+@common.parametrize("test_data", test_data_suite)
+def test_permute_tosa_BI(test_data: torch.Tensor):
+    test_data, dims = test_data()
+    pipeline = TosaPipelineBI[input_t1](
+        SimplePermute(dims=dims),
+        (test_data,),
+        aten_op,
+        exir_op,
+        symmetric_io_quantization=True,
+    )
+    pipeline.run()
 
-    @parameterized.expand(test_data_suite)
-    def test_permute_tosa_MI(
-        self, test_name: str, test_data: torch.Tensor, dims: list[int]
-    ):
-        self._test_permute_tosa_MI_pipeline(self.Permute(dims=dims), (test_data,))
-        self._test_permute_tosa_MI_pipeline(self.Permute(dims=dims), (test_data,))
 
-    @parameterized.expand(test_data_suite)
-    def test_permute_tosa_BI(
-        self, test_name: str, test_data: torch.Tensor, dims: list[int]
-    ):
-        self._test_permute_tosa_BI_pipeline(self.Permute(dims=dims), (test_data,))
+x_fails = {
+    "rank_4_2": "AssertionError: Output 0 does not match reference output.",
+    "rank_4_3": "AssertionError: Output 0 does not match reference output.",
+}
 
-    # Expected to fail as TOSA.Transpose is not supported by Ethos-U55.
-    @parameterized.expand(test_data_suite[0:1])
-    @pytest.mark.corstone_fvp
-    def test_permute_u55_BI(
-        self, test_name: str, test_data: torch.Tensor, dims: list[int]
-    ):
-        self._test_permute_ethos_BI_pipeline(
-            self.Permute(dims=dims), common.get_u55_compile_spec(), (test_data,)
-        )
 
-    @parameterized.expand(test_data_suite[:-2])
-    @pytest.mark.corstone_fvp
-    def test_permute_u85_BI(
-        self, test_name: str, test_data: torch.Tensor, dims: list[int]
-    ):
-        self._test_permute_ethos_BI_pipeline(
-            self.Permute(dims=dims), common.get_u85_compile_spec(), (test_data,)
-        )
+@common.parametrize("test_data", test_data_suite, x_fails)
+@common.XfailIfNoCorstone300
+def test_permute_u55_BI(test_data):
+    test_data, dims = test_data()
+    pipeline = EthosU55PipelineBI[input_t1](
+        SimplePermute(dims=dims),
+        (test_data,),
+        aten_op,
+        exir_ops="executorch_exir_dialects_edge__ops_aten_permute_copy_default",
+        run_on_fvp=True,
+        symmetric_io_quantization=True,
+    )
+    pipeline.run()
 
-    # Fails since on FVP since N > 1 is not supported. MLETORCH-517
-    @parameterized.expand(test_data_suite[-2:])
-    @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP
-    def test_permute_u85_BI_xfails(
-        self, test_name: str, test_data: torch.Tensor, dims: list[int]
-    ):
-        self._test_permute_ethos_BI_pipeline(
-            self.Permute(dims=dims), common.get_u85_compile_spec(), (test_data,)
-        )
+
+# Fails since on FVP since N > 1 is not supported. MLETORCH-517
+@common.parametrize("test_data", test_data_suite, x_fails)
+@common.XfailIfNoCorstone320
+def test_permute_u85_BI(test_data: torch.Tensor):
+    test_data, dims = test_data()
+    pipeline = EthosU85PipelineBI[input_t1](
+        SimplePermute(dims=dims),
+        (test_data,),
+        aten_op,
+        exir_ops="executorch_exir_dialects_edge__ops_aten_permute_copy_default",
+        run_on_fvp=True,
+        symmetric_io_quantization=True,
+    )
+    pipeline.run()

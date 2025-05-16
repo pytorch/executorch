@@ -60,10 +60,10 @@ using namespace ::executorch::runtime;
 + (NSDictionary<NSString *, BOOL (^)(NSString *)> *)predicates {
   return @{
     @"model" : ^BOOL(NSString *filename){
-      return [filename hasSuffix:@".pte"] && [filename containsString:@"llama"];
+      return [filename hasSuffix:@".pte"] && [filename.lowercaseString containsString:@"llama"];
     },
     @"tokenizer" : ^BOOL(NSString *filename) {
-      return [filename isEqual:@"tokenizer.bin"] || [filename isEqual:@"tokenizer.model"];
+      return [filename isEqual:@"tokenizer.bin"] || [filename isEqual:@"tokenizer.model"] || [filename isEqual:@"tokenizer.json"];
     },
   };
 }
@@ -85,14 +85,18 @@ using namespace ::executorch::runtime;
       [testCase measureWithMetrics:@[ tokensPerSecondMetric, [XCTClockMetric new], [XCTMemoryMetric new] ]
                             block:^{
                               tokensPerSecondMetric.tokenCount = 0;
+                              // Create a GenerationConfig object
+                              ::executorch::extension::llm::GenerationConfig config{
+                                .max_new_tokens = 50,
+                                .warming = false,
+                              };
+
                               const auto status = runner->generate(
                                   "Once upon a time",
-                                  50,
+                                  config,
                                   [=](const std::string &token) {
                                     tokensPerSecondMetric.tokenCount++;
-                                  },
-                                  nullptr,
-                                  false);
+                                  });
                               XCTAssertEqual(status, Error::Ok);
                             }];
     },

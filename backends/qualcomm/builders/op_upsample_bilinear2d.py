@@ -16,7 +16,7 @@ from .qnn_constants import OpResizeBilinear, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class ResizeBilinear(NodeVisitor):
-    target = ["aten.upsample_bilinear2d.default"]
+    target = ["aten.upsample_bilinear2d.default", "aten.upsample_bilinear2d.vec"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

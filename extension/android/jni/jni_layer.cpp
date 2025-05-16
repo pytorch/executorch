@@ -408,14 +408,14 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 } // namespace executorch::extension
 
 #ifdef EXECUTORCH_BUILD_LLAMA_JNI
-extern void register_natives_for_llama();
+extern void register_natives_for_llm();
 #else
-// No op if we don't build llama
-void register_natives_for_llama() {}
+// No op if we don't build LLM
+void register_natives_for_llm() {}
 #endif
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
   return facebook::jni::initialize(vm, [] {
     executorch::extension::ExecuTorchJni::registerNatives();
-    register_natives_for_llama();
+    register_natives_for_llm();
   });
 }

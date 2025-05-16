@@ -32,7 +32,9 @@ class TestCoreMLQuantizer:
     ) -> None:
         assert quantization_type in {"PTQ", "QAT"}
 
-        pre_autograd_aten_dialect = export_for_training(model, example_inputs).module()
+        pre_autograd_aten_dialect = export_for_training(
+            model, example_inputs, strict=True
+        ).module()
 
         quantization_config = LinearQuantizerConfig.from_dict(
             {

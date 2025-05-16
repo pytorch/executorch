@@ -17,7 +17,7 @@ if(NOT ANDROID)
 endif()
 
 set(EXECUTORCH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 if(NOT ANDROID_PLATFORM)
@@ -72,6 +72,7 @@ list(
   link_libraries
   executorch
   extension_data_loader
+  extension_flat_tensor
   extension_module
   extension_runner_util
   extension_tensor

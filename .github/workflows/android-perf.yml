@@ -2,7 +2,7 @@ name: android-perf
 
 on:
   schedule:
-    - cron: 0 0 * * *
+    - cron: 0 0,8,16 * * *
   pull_request:
     paths:
       - .github/workflows/android-perf.yml
@@ -167,7 +167,7 @@ jobs:
     with:
       runner: linux.2xlarge.memory
       docker-image: executorch-ubuntu-22.04-qnn-sdk
-      submodules: 'true'
+      submodules: 'recursive'
       timeout: 60
       upload-artifact: android-models
       upload-artifact-to-s3: true
@@ -345,13 +345,17 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       upload-artifact: android-apps
       upload-artifact-to-s3: true
       script: |
         set -eux
+
+        # Use sccache for NDK compiler as well
+        export CMAKE_CXX_COMPILER_LAUNCHER=sccache
+        export CMAKE_C_COMPILER_LAUNCHER=sccache
 
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -363,7 +367,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
 
         mkdir -p aar-out
-        PYTHON_EXECUTABLE=python ANDROID_ABIS="arm64-v8a" BUILD_AAR_DIR=aar-out EXECUTORCH_BUILD_QNN=ON QNN_SDK_ROOT=/tmp/qnn/2.28.0.241029 bash build/build_android_library.sh
+        PYTHON_EXECUTABLE=python ANDROID_ABIS="arm64-v8a" BUILD_AAR_DIR=aar-out EXECUTORCH_BUILD_QNN=ON QNN_SDK_ROOT=/tmp/qnn/2.28.0.241029 bash scripts/build_android_library.sh
         mkdir -p extension/benchmark/android/benchmark/app/libs
         cp aar-out/executorch.aar extension/benchmark/android/benchmark/app/libs
         pushd extension/benchmark/android/benchmark
@@ -375,6 +379,7 @@ jobs:
         cp extension/benchmark/android/benchmark/app/build/outputs/apk/androidTest/debug/*.apk "${MINIBENCH_APP_DIR}"
 
   # Let's see how expensive this job is, we might want to tone it down by running it periodically
+  # CHANGE IF this job name 'benchmark-on-device' changed: extract_model_info() in executorch/.github/scripts/extract_benchmark_results.py
   benchmark-on-device:
     if: always()
     permissions:
@@ -391,7 +396,7 @@ jobs:
       fail-fast: false
     with:
       # Due to scheduling a job may be pushed beyond the default 60m threshold
-      timeout: 120
+      timeout: 240
       device-type: android
       runner: linux.2xlarge
       test-infra-ref: ''
@@ -401,6 +406,7 @@ jobs:
       android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/minibench/app-debug.apk
       android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/minibench/app-debug-androidTest.apk
       test-spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.config }}/android-llm-device-farm-test-spec.yml
+      new-output-format-flag: true
 
   upload-benchmark-results:
     needs:
@@ -460,6 +466,8 @@ jobs:
 
       - name: Extract the benchmark results JSON
         shell: bash
+        env:
+          DEVICE_TYPE: android
         run: |
           set -eux
 
@@ -471,6 +479,7 @@ jobs:
             ${CONDA_RUN} python .github/scripts/extract_benchmark_results.py \
               --artifacts "${ARTIFACTS_BY_JOB}" \
               --output-dir benchmark-results \
+              --app "${DEVICE_TYPE}" \
               --benchmark-configs benchmark-configs
           done
 

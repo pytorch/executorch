@@ -24,6 +24,7 @@ from torchvision import datasets, transforms  # type: ignore[import-untyped]
 
 # Logger for outputting progress for longer running evaluation
 logger = logging.getLogger(__name__)
+# Explicitly set logging level: MLETORCH-893
 logger.setLevel(logging.INFO)
 
 

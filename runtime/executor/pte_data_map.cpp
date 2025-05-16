@@ -10,7 +10,7 @@
 #include <executorch/schema/program_generated.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 namespace internal {
 
 /* static */ executorch::runtime::Result<PteDataMap> PteDataMap::create(
@@ -83,5 +83,5 @@ ET_NODISCARD executorch::runtime::Result<const char*> PteDataMap::get_key(
 }
 
 } // namespace internal
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch

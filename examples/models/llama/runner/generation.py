@@ -10,7 +10,7 @@ from typing import List, Optional
 
 import torch
 
-from executorch.extension.llm.tokenizer.utils import get_tokenizer
+from pytorch_tokenizers import get_tokenizer
 
 
 def sample_top_p(probs, p):

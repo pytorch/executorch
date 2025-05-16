@@ -1,14 +1,14 @@
 //
-//  ETCoreMLDefaultModelExecutor.m
-//  executorchcoreml_tests
+//  ETCoreMLDefaultModelExecutor.mm
 //
-//  Created by Gyan Sinha on 2/25/24.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
+// Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-#import <ETCoreMLAsset.h>
-#import <ETCoreMLDefaultModelExecutor.h>
-#import <ETCoreMLLogging.h>
-#import <ETCoreMLModel.h>
+#import "ETCoreMLAsset.h"
+#import "ETCoreMLDefaultModelExecutor.h"
+#import "ETCoreMLLogging.h"
+#import "ETCoreMLModel.h"
 
 @implementation ETCoreMLDefaultModelExecutor
 
@@ -27,7 +27,9 @@
                                                  eventLogger:(const executorchcoreml::ModelEventLogger* _Nullable __unused)eventLogger
                                                        error:(NSError * __autoreleasing *)error {
     if (self.ignoreOutputBackings) {
-        predictionOptions.outputBackings = @{};
+        if (@available(macOS 11.0, iOS 16.0, tvOS 16.0, watchOS 9.0, *)) {
+            predictionOptions.outputBackings = @{};
+        }
     }
 
     id<MLFeatureProvider> outputs = [self.model predictionFromFeatures:inputs
@@ -44,8 +46,7 @@
         if (!featureValue.multiArrayValue) {
             ETCoreMLLogErrorAndSetNSError(error,
                                           ETCoreMLErrorBrokenModel,
-                                          "%@: Model is broken, expected multiarray for output=%@.",
-                                          NSStringFromClass(self.class),
+                                          "Model is broken, expected multiarray for output=%@.",
                                           outputName);
             return nil;
         }

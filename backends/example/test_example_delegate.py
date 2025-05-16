@@ -46,7 +46,9 @@ class TestExampleDelegate(unittest.TestCase):
         )
 
         m = model.eval()
-        m = torch.export.export_for_training(m, copy.deepcopy(example_inputs)).module()
+        m = torch.export.export_for_training(
+            m, copy.deepcopy(example_inputs), strict=True
+        ).module()
         # print("original model:", m)
         quantizer = ExampleQuantizer()
         # quantizer = XNNPACKQuantizer()
@@ -82,7 +84,9 @@ class TestExampleDelegate(unittest.TestCase):
         )
 
         m = model.eval()
-        m = torch.export.export_for_training(m, copy.deepcopy(example_inputs)).module()
+        m = torch.export.export_for_training(
+            m, copy.deepcopy(example_inputs), strict=True
+        ).module()
         quantizer = ExampleQuantizer()
 
         m = prepare_pt2e(m, quantizer)
