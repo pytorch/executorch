@@ -44,16 +44,6 @@ class BMM(torch.nn.Module):
         return torch.bmm(x, y)
 
 
-class MatMul(torch.nn.Module):
-    test_data_generators = {
-        "rand_3d": lambda: (torch.rand(2, 3, 5), torch.rand(2, 5, 2)),
-        "rand_4d": lambda: (torch.rand(1, 2, 3, 5), torch.rand(1, 2, 5, 2)),
-    }
-
-    def forward(self, x, y):
-        return torch.matmul(x, y)
-
-
 class BMMSingleInput(torch.nn.Module):
     test_data_generators = {
         "rand_3d_1": lambda: (torch.rand(20, 3, 3),),
@@ -78,18 +68,6 @@ def test_bmm_tosa_MI_single_input(test_data: input_t1):
     pipeline = TosaPipelineMI[input_t1](
         BMMSingleInput(), test_data(), aten_op_bmm, exir_op_bmm
     )
-    pipeline.run()
-
-
-@common.parametrize("test_data", MatMul.test_data_generators)
-def test_mm_tosa_MI(test_data: input_t1):
-    pipeline = TosaPipelineMI[input_t1](MatMul(), test_data(), aten_op_mm, exir_op_mm)
-    pipeline.run()
-
-
-@common.parametrize("test_data", MatMul.test_data_generators)
-def test_mm_tosa_BI(test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](MatMul(), test_data(), aten_op_mm, exir_op_mm)
     pipeline.run()
 
 
