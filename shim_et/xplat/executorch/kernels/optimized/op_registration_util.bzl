@@ -265,3 +265,11 @@ OPTIMIZED_ATEN_OPS = (
         ],
     ),
 )
+
+def optimized_source_list():
+    """All the source file names from //executorch/kernels/optimized/cpu"""
+    return [op["name"] + ".cpp" for op in OPTIMIZED_ATEN_OPS]
+
+def optimized_header_list():
+    """All the header file names from //executorch/kernels/optimized/cpu"""
+    return ["binary_ops.h", "fft_utils.h", "moments_utils.h", "op_add_sub_impl.h",]
