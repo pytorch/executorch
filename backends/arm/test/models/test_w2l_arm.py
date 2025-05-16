@@ -5,7 +5,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
 import unittest
 from typing import Tuple
 
@@ -17,10 +16,6 @@ from executorch.backends.arm.test.tester.arm_tester import ArmTester
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torchaudio import models
-
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def get_test_inputs(batch_size, num_features, input_frames):
@@ -132,6 +127,7 @@ class TestW2L(unittest.TestCase):
     @pytest.mark.slow
     @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP  # TODO: MLETORCH-761
+    @pytest.mark.skip(reason="Intermittent timeout issue: MLETORCH-856")
     def test_w2l_u85_BI(self):
         tester = self._test_w2l_ethos_BI_pipeline(
             self.w2l,

@@ -172,10 +172,14 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
         quantization_config_dynamic = get_symmetric_quantization_config(
             is_per_channel=False, is_dynamic=True
         )
-        dynamic_quantizer.set_global(quantization_config_dynamic)
+        dynamic_quantizer.set_operator_type(
+            torch.ops.aten.linear.default, quantization_config_dynamic
+        )
         static_quantizer = XNNPACKQuantizer()
         quantization_config = get_symmetric_quantization_config(is_per_channel=True)
-        static_quantizer.set_global(quantization_config)
+        static_quantizer.set_operator_type(
+            torch.ops.aten.conv2d.default, quantization_config
+        )
         # Note that dynamic quantization must be applied first here.
         # this is because static quantizer also quantizes linear with static qspec
         # and if we apply static_quantizer first then dynamic_quantizer cannot be applied
@@ -271,10 +275,14 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
         quantization_config_dynamic = get_symmetric_quantization_config(
             is_per_channel=True, is_dynamic=True
         )
-        dynamic_quantizer.set_global(quantization_config_dynamic)
+        dynamic_quantizer.set_operator_type(
+            torch.ops.aten.linear.default, quantization_config_dynamic
+        )
         static_quantizer = XNNPACKQuantizer()
         quantization_config = get_symmetric_quantization_config(is_per_channel=True)
-        static_quantizer.set_global(quantization_config)
+        static_quantizer.set_operator_type(
+            torch.ops.aten.conv2d.default, quantization_config
+        )
         composed_quantizer = ComposableQuantizer(
             [embedding_quantizer, dynamic_quantizer, static_quantizer]
         )
@@ -326,7 +334,7 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
         m.train()
 
         # After export: this is not OK
-        m = export_for_training(m, example_inputs).module()
+        m = export_for_training(m, example_inputs, strict=True).module()
         with self.assertRaises(NotImplementedError):
             m.eval()
         with self.assertRaises(NotImplementedError):
@@ -380,7 +388,7 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
         m = M().train()
         example_inputs = (torch.randn(1, 3, 3, 3),)
         bn_train_op, bn_eval_op = self._get_bn_train_eval_ops()  # pyre-ignore[23]
-        m = export_for_training(m, example_inputs).module()
+        m = export_for_training(m, example_inputs, strict=True).module()
 
         def _assert_ops_are_correct(m: torch.fx.GraphModule, train: bool) -> None:
             bn_op = bn_train_op if train else bn_eval_op
@@ -449,10 +457,7 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
         quantizer.set_global(operator_config)
         example_inputs = (torch.randn(2, 2),)
         m = M().eval()
-        m = export_for_training(
-            m,
-            example_inputs,
-        ).module()
+        m = export_for_training(m, example_inputs, strict=True).module()
         weight_meta = None
         for n in m.graph.nodes:  # pyre-ignore[16]
             if (
@@ -481,7 +486,7 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
             get_symmetric_quantization_config(is_per_channel=True, is_qat=True)
         )
         m.conv_bn_relu = export_for_training(  # pyre-ignore[8]
-            m.conv_bn_relu, example_inputs
+            m.conv_bn_relu, example_inputs, strict=True
         ).module()
         m.conv_bn_relu = prepare_qat_pt2e(m.conv_bn_relu, quantizer)  # pyre-ignore[6,8]
         m(*example_inputs)
@@ -490,7 +495,7 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
         quantizer = XNNPACKQuantizer().set_module_type(
             torch.nn.Linear, get_symmetric_quantization_config(is_per_channel=False)
         )
-        m = export_for_training(m, example_inputs).module()
+        m = export_for_training(m, example_inputs, strict=True).module()
         m = prepare_pt2e(m, quantizer)  # pyre-ignore[6]
         m = convert_pt2e(m)
 
@@ -553,7 +558,7 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
             )
 
         m.conv_bn_relu = export_for_training(  # pyre-ignore[8]
-            m.conv_bn_relu, example_inputs
+            m.conv_bn_relu, example_inputs, strict=True
         ).module()
         for node in m.conv_bn_relu.graph.nodes:  # pyre-ignore[16]
             if node.op not in ["placeholder", "output", "get_attr"]:
@@ -568,7 +573,7 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
 
         def dynamic_quantize_pt2e(model, example_inputs) -> torch.fx.GraphModule:
             torch._dynamo.reset()
-            model = export_for_training(model, example_inputs).module()
+            model = export_for_training(model, example_inputs, strict=True).module()
             # Per channel quantization for weight
             # Dynamic quantization for activation
             # Please read a detail: https://fburl.com/code/30zds51q
@@ -625,7 +630,7 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
 
         example_inputs = (torch.randn(1, 3, 5, 5),)
         m = M()
-        m = export_for_training(m, example_inputs).module()
+        m = export_for_training(m, example_inputs, strict=True).module()
         quantizer = XNNPACKQuantizer().set_global(
             get_symmetric_quantization_config(),
         )
@@ -701,7 +706,6 @@ instantiate_parametrized_tests(TestQuantizePT2E)
 
 
 class TestNumericDebugger(TestCase):
-
     def _extract_debug_handles(self, model) -> Dict[str, int]:
         debug_handle_map: Dict[str, int] = {}
 
@@ -731,7 +735,7 @@ class TestNumericDebugger(TestCase):
     def test_quantize_pt2e_preserve_handle(self) -> None:
         m = TestHelperModules.Conv2dThenConv1d()
         example_inputs = m.example_inputs()
-        ep = export_for_training(m, example_inputs)
+        ep = export_for_training(m, example_inputs, strict=True)
         generate_numeric_debug_handle(ep)
         m = ep.module()
 
@@ -761,7 +765,7 @@ class TestNumericDebugger(TestCase):
     def test_extract_results_from_loggers(self) -> None:
         m = TestHelperModules.Conv2dThenConv1d()
         example_inputs = m.example_inputs()
-        ep = export_for_training(m, example_inputs)
+        ep = export_for_training(m, example_inputs, strict=True)
         generate_numeric_debug_handle(ep)
         m = ep.module()
         m_ref_logger = prepare_for_propagation_comparison(m)  # pyre-ignore[6]
@@ -779,18 +783,20 @@ class TestNumericDebugger(TestCase):
         ref_results = extract_results_from_loggers(m_ref_logger)
         quant_results = extract_results_from_loggers(m_quant_logger)
         comparison_results = compare_results(
-            ref_results, quant_results  # pyre-ignore[6]
+            ref_results,
+            quant_results,  # pyre-ignore[6]
         )
         for node_summary in comparison_results.values():
             if len(node_summary.results) > 0:
                 self.assertGreaterEqual(
-                    node_summary.results[0].sqnr, 35  # pyre-ignore[6]
+                    node_summary.results[0].sqnr,
+                    35,  # pyre-ignore[6]
                 )
 
     def test_extract_results_from_loggers_list_output(self) -> None:
         m = TestHelperModules.Conv2dWithSplit()
         example_inputs = m.example_inputs()
-        ep = export_for_training(m, example_inputs)
+        ep = export_for_training(m, example_inputs, strict=True)
         generate_numeric_debug_handle(ep)
         m = ep.module()
         m_ref_logger = prepare_for_propagation_comparison(m)  # pyre-ignore[6]
@@ -808,7 +814,8 @@ class TestNumericDebugger(TestCase):
         ref_results = extract_results_from_loggers(m_ref_logger)
         quant_results = extract_results_from_loggers(m_quant_logger)
         comparison_results = compare_results(
-            ref_results, quant_results  # pyre-ignore[6]
+            ref_results,
+            quant_results,  # pyre-ignore[6]
         )
         for node_summary in comparison_results.values():
             if len(node_summary.results) > 0:

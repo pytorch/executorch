@@ -13,8 +13,10 @@ def define_common_targets():
     runtime.cxx_library(
         name = "executor_runner_lib",
         srcs = ["executor_runner.cpp"],
+        compiler_flags = ["-Wno-global-constructors"],
         deps = [
             "//executorch/runtime/executor:program",
+            "//executorch/devtools/etdump:etdump_flatcc",
             "//executorch/extension/data_loader:file_data_loader",
             "//executorch/extension/evalue_util:print_evalue",
             "//executorch/extension/runner_util:inputs",
@@ -31,6 +33,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "executor_runner_lib_with_threadpool",
         srcs = ["executor_runner.cpp"],
+        compiler_flags = ["-Wno-global-constructors"],
         deps = [
             "//executorch/runtime/executor:program",
             "//executorch/extension/data_loader:file_data_loader",

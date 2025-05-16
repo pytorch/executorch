@@ -26,12 +26,8 @@ endif()
 
 set(_common_compile_options -Wno-deprecated-declarations)
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
-
-if(NOT PYTHON_EXECUTABLE)
-  resolve_python_executable()
-endif()
 
 # Quantized ops kernel sources TODO(larryliu0820): use buck2 to gather the
 # sources
@@ -142,13 +138,13 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
 endif()
 
 add_library(quantized_kernels ${_quantized_kernels__srcs})
-target_link_libraries(quantized_kernels PRIVATE executorch)
+target_link_libraries(quantized_kernels PRIVATE executorch_core kernels_util_all_deps)
 target_compile_options(quantized_kernels PUBLIC ${_common_compile_options})
 # Build a library for _quantized_kernels_srcs
 #
 # quantized_ops_lib: Register quantized ops kernels into Executorch runtime
 gen_operators_lib(
-  LIB_NAME "quantized_ops_lib" KERNEL_LIBS quantized_kernels DEPS executorch
+  LIB_NAME "quantized_ops_lib" KERNEL_LIBS quantized_kernels DEPS executorch_core
 )
 
 install(

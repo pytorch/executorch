@@ -38,6 +38,20 @@ enum class Tag : uint32_t {
 #undef DEFINE_TAG
 };
 
+#if ET_ENABLE_ENUM_STRINGS
+inline const char* tag_to_string(Tag tag) {
+  switch (tag) {
+#define CASE_TAG(x) \
+  case Tag::x:      \
+    return #x;
+    EXECUTORCH_FORALL_TAGS(CASE_TAG)
+#undef CASE_TAG
+    default:
+      return "Unknown";
+  }
+}
+#endif // ET_ENABLE_ENUM_STRINGS
+
 /**
  * Convert a tag value to a string representation. If ET_ENABLE_ENUM_STRINGS is
  * set (it is on by default), this will return a string name (for example,

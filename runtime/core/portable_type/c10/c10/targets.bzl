@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime", "is_arvr_mode")
 
 def get_sleef_preprocessor_flags():
     if runtime.is_oss:
@@ -25,6 +25,9 @@ def define_common_targets():
             "util/Half-inl.h",
             "util/TypeSafeSignMath.h",
             "util/bit_cast.h",
+            "util/complex.h",
+            "util/complex_math.h",
+            "util/complex_utils.h",
             "util/floating_point_utils.h",
             "util/irange.h",
         ],
@@ -36,6 +39,7 @@ def define_common_targets():
         ]),
         visibility = [
             "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
         ],
         deps = select({
             "DEFAULT": [],
@@ -73,19 +77,19 @@ def define_common_targets():
             # -Wmacro-redefined, and we only care about getting
             # reasonable vectorization and Sleef support.
             "-DCPU_CAPABILITY_AVX2",
+            "-DET_USE_PYTORCH_HEADERS",
             "-DHAVE_AVX2_CPU_DEFINITION",
             "-DSTANDALONE_TORCH_HEADER",
         ] + get_sleef_preprocessor_flags(),
         xplat_exported_deps = [
             "//xplat/caffe2:aten_header",
-            "//xplat/caffe2:generated_aten_config_header",
             "//xplat/caffe2/c10:c10_headers",
-        ],
+        ] + ["//xplat/caffe2:ovrsource_aten_Config.h" if is_arvr_mode() else "//xplat/caffe2:generated_aten_config_header",],
         exported_preprocessor_flags = select({
             # Intentionally punting on non-fbcode x86 sleef support
             # for now because of fbsource//third-party/sleef:sleef
             # linker failure.
             "ovr_config//cpu:arm64": get_sleef_preprocessor_flags(),
             "DEFAULT": [],
-        }) + ["-DSTANDALONE_TORCH_HEADER"],
+        }) + ["-DSTANDALONE_TORCH_HEADER"] + ([] if runtime.is_oss else ["-DET_USE_PYTORCH_HEADERS"]),
     )

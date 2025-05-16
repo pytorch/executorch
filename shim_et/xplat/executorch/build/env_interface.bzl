@@ -47,6 +47,7 @@ _EXTERNAL_DEPS = {
     "nlohmann_json": [], # Intentionally not supporting OSS buck build HF tokenizer.
     "prettytable": "//third-party:prettytable",
     "pybind11": "//third-party:pybind11",
+    "pcre2": "//extension/llm/tokenizers/third-party:pcre2",
     "re2": "//extension/llm/tokenizers/third-party:re2",
     "sentencepiece": [], # Intentionally not supporting OSS buck build of sentencepiece.
     "sentencepiece-py": [],
@@ -234,6 +235,7 @@ env = struct(
     genrule = native.genrule,
     is_oss = True,
     is_xplat = lambda: False,
+    is_arvr_mode = lambda: False,
     patch_deps = _patch_deps,
     patch_cxx_compiler_flags = _patch_cxx_compiler_flags,
     patch_executorch_genrule_cmd = _patch_executorch_genrule_cmd,

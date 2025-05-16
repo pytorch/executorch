@@ -115,7 +115,7 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
 class XnnpackDynamicallyQuantizedPartitioner(XnnpackPartitioner):
     def __init__(self):
         super().__init__(
-            config_precisions=ConfigPrecisionType.DYNAMIC_QUANT, per_op_mode=True
+            config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
         )
 
 

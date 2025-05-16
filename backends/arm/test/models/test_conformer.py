@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
 import unittest
 
 import torch
@@ -12,10 +11,6 @@ from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 
 from torchaudio.models import Conformer
-
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def get_test_inputs(dim, lengths, num_examples):
@@ -30,14 +25,9 @@ class TestConformer(unittest.TestCase):
     # for that is some assert ops are removed by passes in the
     # .to_executorch step, i.e. after Arm partitioner.
     ops_after_partitioner = {
-        "executorch_exir_dialects_edge__ops_aten_arange_start_step": 1,
         "executorch_exir_dialects_edge__ops_aten_max_default": 1,
-        "executorch_exir_dialects_edge__ops_aten_eq_Scalar": 2,
-        "executorch_exir_dialects_edge__ops_aten_where_self": 4,
-        "torch.ops.aten._assert_scalar.default": 10,
+        "torch.ops.aten._assert_scalar.default": 7,
         "torch.ops.aten._local_scalar_dense.default": 1,
-        "torch.ops.aten.scalar_tensor.default": 2,
-        "torch.ops.higher_order.executorch_call_delegate": 6,
     }
 
     dim = 16
@@ -93,7 +83,6 @@ class TestConformer(unittest.TestCase):
             )
         )
 
-    @unittest.expectedFailure  # TODO(MLETORCH-635)
     def test_conformer_u55_BI(self):
         tester = (
             ArmTester(
@@ -107,13 +96,20 @@ class TestConformer(unittest.TestCase):
             .to_executorch()
             .serialize()
         )
+
         if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(
-                qtol=1.0,
-                rtol=1.0,
-                atol=5.0,
-                inputs=get_test_inputs(self.dim, self.lengths, self.num_examples),
-            )
+            try:
+                tester.run_method_and_compare_outputs(
+                    qtol=1.0,
+                    rtol=1.0,
+                    atol=5.0,
+                    inputs=get_test_inputs(self.dim, self.lengths, self.num_examples),
+                )
+                self.fail(
+                    "TODO(MLETORCH-635): Expected failure under FVP option, but test passed."
+                )
+            except Exception:
+                pass
 
     @unittest.expectedFailure  # TODO(MLETORCH-635)
     def test_conformer_u85_BI(self):

@@ -44,7 +44,8 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
         "--glsl-paths {} ".format(" ".join(glsl_paths)) +
         "--output-path $OUT " +
         "--glslc-path=$(exe {}) ".format(glslc_path) +
-        "--tmp-dir-path=$OUT " +
+        "--tmp-dir-path=shader_cache " +
+        ("-f " if read_config("etvk", "force_shader_rebuild", "0") == "1" else " ") +
         select({
             "DEFAULT": "",
             "ovr_config//os:android": "--optimize",
@@ -279,6 +280,7 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 "//caffe2:torch",
                 "//executorch/exir:tensor",
+                "//executorch/exir/backend/canonical_partitioners:config_partitioner_lib",
                 "//executorch/backends/vulkan/serialization:lib",
             ]
         )
@@ -331,7 +333,6 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/backends/transforms:addmm_mm_to_linear",
                 "//executorch/backends/transforms:fuse_batch_norm_with_conv",
                 "//executorch/backends/transforms:fuse_conv_with_clamp",
-                "//executorch/backends/transforms:fuse_dequant_linear",
                 "//executorch/backends/transforms:fuse_view_copy",
                 "//executorch/backends/transforms:remove_clone_ops",
                 "//executorch/backends/transforms:view_copy_to_squeeze_unsqueeze",

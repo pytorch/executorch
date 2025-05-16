@@ -191,6 +191,21 @@ class ParallelLinear(torch.nn.Module):
         return a + b
 
 
+class SharedDQChain(torch.nn.Module):
+    def __init__(self, input_size, output_size):
+        super().__init__()
+        self.linear1_weight = torch.nn.Parameter(torch.rand(output_size, input_size))
+        self.linear1_bias = torch.nn.Parameter(torch.rand(output_size))
+
+        self.linear2_weight = torch.nn.Parameter(torch.rand(output_size, input_size))
+        self.linear2_bias = torch.nn.Parameter(torch.rand(output_size))
+
+    def forward(self, x):
+        a = torch.nn.functional.linear(x, self.linear1_weight, self.linear1_bias)
+        b = torch.nn.functional.linear(x, self.linear2_weight, self.linear2_bias)
+        return a + b
+
+
 class TestLinear(unittest.TestCase):
     """
     Test Class for XNNPACK Linear Operators.
@@ -203,6 +218,9 @@ class TestLinear(unittest.TestCase):
           on the Activation. This is sufficient because Per-Token Quantization on Activations
           should produce strictly better results compared to Per-Tensor Quantization
     """
+
+    def setUp(self):
+        torch._dynamo.reset()
 
     @staticmethod
     def _get_4b_dqconfig() -> QuantizationConfig:
@@ -384,9 +402,9 @@ class TestLinear(unittest.TestCase):
             .export()
             .check_count(
                 {
-                    "torch.ops.quant.choose_qparams_affine.default": 1 * num_linears,
-                    "torch.ops.quant.quantize_affine.default": 1 * num_linears,
-                    "torch.ops.quant.dequantize_affine.default": 2 * num_linears,
+                    "torch.ops.torchao.choose_qparams_affine.default": 1 * num_linears,
+                    "torch.ops.torchao.quantize_affine.default": 1 * num_linears,
+                    "torch.ops.torchao.dequantize_affine.default": 2 * num_linears,
                     "torch.ops.aten.linear.default": 1 * num_linears,
                 }
             )
@@ -520,6 +538,23 @@ class TestLinear(unittest.TestCase):
                 #     qtol=bool(quant_config), atol=atol
                 # )
 
+    def test_qd8_f32_per_channel_shared_dq_chain(self):
+        for use_bias in (False, True):
+            module = SharedDQChain(
+                input_size=13,
+                output_size=17,
+            )
+            inputs = (torch.randn(1, 2, 13),)
+
+            self._test_dqlinear(
+                module,
+                inputs,
+                dynamic_shapes=None,
+                is_per_channel=True,
+                linear_count=2,
+                uses_bias=use_bias,
+            )
+
     def _test_qd8_per_channel_linear(self, dtype: torch.dtype = torch.float):
         for uses_bias in (False, True):
             module = BaseLinear(
@@ -570,9 +605,7 @@ class TestLinear(unittest.TestCase):
 
                     if legacy_partitioner:
                         tester.to_edge()
-                        tester.partition(
-                            Partition(DynamicallyQuantizedPartitioner)
-                        ).dump_artifact()
+                        tester.partition(Partition(DynamicallyQuantizedPartitioner))
                         # should have [add]mm node
                         if uses_bias:
                             tester.check(
@@ -589,7 +622,7 @@ class TestLinear(unittest.TestCase):
                     else:
                         tester.to_edge_transform_and_lower(
                             ToEdgeTransformAndLower([DynamicallyQuantizedPartitioner])
-                        ).dump_artifact()
+                        )
                         # should not have a delegate node
                         tester.check_not(
                             [
@@ -682,7 +715,7 @@ class TestLinear(unittest.TestCase):
                     num_batch_dims=num_batch_dims,
                     uses_bias=use_bias,
                     dtype=torch.float16,
-                    atol=5e-2,  # TODO(T212995726): Investigate right atol for rand[n] inputs
+                    atol=5e-3,  # TODO(T212995726): Investigate right atol for rand[n] inputs
                 )
 
     def test_fp32_linear(self):

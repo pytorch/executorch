@@ -20,6 +20,9 @@ from executorch.exir.dialects._ops import ops as exir_ops
 class TestTagImplicitQDq(unittest.TestCase):
     PassStage = RunPasses([DuplicateDequantNodePass, TagImplicitQDqPass])
 
+    def setUp(self):
+        torch._dynamo.reset()
+
     class QDqModule(torch.nn.Module):
         def __init__(self):
             super().__init__()

@@ -24,7 +24,7 @@ namespace impl {
 namespace G3 {
 namespace native {
 
-Tensor& where_out(
+Tensor& where_self_out(
     KernelRuntimeContext& ctx,
     const Tensor& cond,
     const Tensor& a,

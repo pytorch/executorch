@@ -15,9 +15,11 @@ from executorch.examples.models.checkpoint import (
     get_checkpoint_dtype,
     get_default_model_resource_dir,
 )
-from executorch.examples.models.llama.llama_transformer import Transformer
 
+from executorch.examples.models.llama.llama_transformer import construct_transformer
 from executorch.examples.models.llama.model_args import ModelArgs
+from executorch.examples.models.llama.rope import Rope
+from torchao.utils import TorchAOBaseTensor
 
 try:
     from .fairseq2 import convert_to_llama_checkpoint
@@ -38,13 +40,12 @@ class Llama2Model(EagerModelBase):
         resource_dir = get_default_model_resource_dir(__file__)
 
         # Use single checkpoint file.
-        checkpoint_path = kwargs.get(
-            "checkpoint", resource_dir / "demo_rand_params.pth"
-        )
-        params_path = kwargs.get("params", resource_dir / "demo_config.json")
-
+        checkpoint_path = kwargs.get("checkpoint", None)
         # Check if checkpoint_dir was provided for a sharded checkpoint.
         checkpoint_dir = kwargs.get("checkpoint_dir", None)
+
+        # Params file.
+        params_path = kwargs.get("params", None)
 
         self.use_kv_cache = kwargs.get("use_kv_cache", False)
         self.use_sdpa_with_kv_cache_op = kwargs.get("use_sdpa_with_kv_cache", False)
@@ -66,6 +67,7 @@ class Llama2Model(EagerModelBase):
         # flake8: noqa: TOR102
         cps = []
         # Load sharded checkpoint.
+        checkpoint = {}
         if checkpoint_dir is not None:
             # Load multiple checkpoint; ignore the single path.
             checkpoint_path = None
@@ -93,7 +95,7 @@ class Llama2Model(EagerModelBase):
                     # Do not duplicate layers shared between each checkpoint.
                     checkpoint[key] = cps[0][key]
         # Load single checkpoint.
-        else:
+        elif checkpoint_path:
             checkpoint = torch.load(checkpoint_path, map_location=device, mmap=True)
 
         # If given checkpoint is fairseq, convert to llama checkpoint.
@@ -122,11 +124,12 @@ the checkpoint format to avoid generating faulty models.
 """
             )
 
-        # Get checkpoint dtype.
-        self.dtype = get_checkpoint_dtype(checkpoint)
+        # Get optional params.
+        params = {}
+        if params_path:
+            with open(params_path, "r") as f:
+                params = json.loads(f.read())
 
-        with open(params_path, "r") as f:
-            params = json.loads(f.read())
         output_prune_map = None
         if self.output_prune_map_path is not None:
             with open(self.output_prune_map_path, "r") as f:
@@ -171,7 +174,13 @@ the checkpoint format to avoid generating faulty models.
         # Within the device="meta" context, tensors that are created do not carry data.
         # They possess all other metadata a tensor carries such as size, stride, requires_grad.
         with torch.device("meta"):
-            self.model_ = Transformer(model_args)
+            # Model itself is loaded in default dtype, fp32.
+            self.model_ = construct_transformer(model_args)
+            # Get checkpoint dtype.
+            if checkpoint:
+                self.model_.checkpoint_dtype = get_checkpoint_dtype(checkpoint)
+            else:
+                self.model_.checkpoint_dtype = torch.float32
 
         if "int8" in str(checkpoint_path):
             print("Using int8 weight-only quantization!")
@@ -237,23 +246,31 @@ the checkpoint format to avoid generating faulty models.
             )
 
         missing, unexpected = None, None
-        try:
-            # assign=True: load params/buffers by assignment instead of performing an in-place copy.
-            # Because we are using device="meta", tensors do not have memory associated with them
-            # and an in-place copy is a no-op. Use assign=True in load_state_dict for this scenario.
+        # assign=True: load params/buffers by assignment instead of performing an in-place copy.
+        # Because we are using device="meta", tensors do not have memory associated with them
+        # and an in-place copy is a no-op. Use assign=True in load_state_dict for this scenario.
+
+        # Also, the checkpoint is loaded and dtype promoted to the transformer's dtype, which is
+        # by default initialized to fp32. This is fine because every other supported type
+        # losslessly converts to fp32, so we don't lose precision here.
+        if checkpoint:
             missing, unexpected = self.model_.load_state_dict(
                 checkpoint,
                 strict=False,
                 assign=True,
             )  # self.model_ = Transformer(gptconf)
-        except RuntimeError as e:
-            print(
-                "Could not load checkpoint into mode, defaulting to random uninitialized weights."
-            )
-            print(f"Error: {e}")
-            # Need to provide concrete (empty) values for meta-initialized tensors for quantization.
+            for param in self.model_.parameters():
+                if isinstance(param, TorchAOBaseTensor):
+                    param.requires_grad = False
+        else:
+            print("Checkpoint not provided, defaulting weights to zeros.")
             self.model_.to_empty(device="cpu")
-
+            # Need to provide concrete values for meta-initialized tensors for quantization.
+            # otherwise it is just filled with nan's.
+            for p in self.model_.parameters():
+                p.data.fill_(0)
+            for b in self.model_.buffers():
+                b.data.fill_(0)
         if missing:
             missing_weights = [fqn for fqn in missing if fqn.endswith(".weight")]
             if missing_weights:
@@ -277,14 +294,7 @@ the checkpoint format to avoid generating faulty models.
             self.model_ = prune_output_vocab(self.model_, output_prune_map)
 
     def get_eager_model(self) -> torch.nn.Module:
-        if self.dtype:
-            # convert to the type of the provided checkpoint
-            # input and output are torch.long, so signature unchanged
-            return self.model_.to(self.dtype)
-        else:
-            # int8 quantization code has some bf16,
-            # switch all to FP32
-            return self.model_.to(torch.float32)
+        return self.model_
 
     def get_example_inputs(self):
         if self.use_kv_cache:

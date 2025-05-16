@@ -179,6 +179,11 @@ utils::GPUMemoryLayout ComputeGraph::suggested_memory_layout(
   return utils::kChannelsPacked;
 }
 
+bool ComputeGraph::device_name_contains(const char* substr) {
+  return context_->adapter_ptr()->device_name().find(substr) !=
+      std::string::npos;
+}
+
 void ComputeGraph::check_no_active_value_ptrs() {
   VK_CHECK_COND(
       values_in_use_ == 0,
@@ -620,6 +625,7 @@ void ComputeGraph::prepack() const {
   vkapi::VulkanFence fence = context_->fences().get_fence();
   context_->submit_cmd_to_gpu(fence.get_submit_handle(), /*final_use = */ true);
   fence.wait();
+  context_->fences().return_fence(fence);
 
   context_->flush();
 }
@@ -644,6 +650,7 @@ void ComputeGraph::execute() const {
   vkapi::VulkanFence fence = context_->fences().get_fence();
   context_->submit_cmd_to_gpu(fence.get_submit_handle());
   fence.wait();
+  context_->fences().return_fence(fence);
 }
 
 void ComputeGraph::resize_input(

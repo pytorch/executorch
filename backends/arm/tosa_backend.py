@@ -11,14 +11,13 @@
 # JIT compiler flows.
 #
 import logging
-import os
 from typing import cast, final, List
 
-import serializer.tosa_serializer as ts  # type: ignore
+import executorch.backends.arm.tosa_specification as tosa_specification
 
 from executorch.backends.arm.arm_backend import get_tosa_spec
 from executorch.backends.arm.operators.node_visitor import get_node_visitors
-from executorch.backends.arm._passes.arm_pass_manager import (
+from executorch.backends.arm._passes import (
     ArmPassManager,
 )  # usort: skip
 from executorch.backends.arm.process_node import (
@@ -34,22 +33,17 @@ from torch.fx import Node
 
 # TOSA backend debug functionality
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
-TOSA_DBG_VERBOSE = os.environ.get("TOSA_DBG_VERBOSE") == "1"
-if TOSA_DBG_VERBOSE:
-    logging.basicConfig(level=logging.INFO)
-    logger.setLevel(logging.INFO)
 
 
-def _get_first_delegation_tag(graph_module) -> str | None:
-    """Get the first delegation tag from the graph_module or return None."""
+def arm_get_first_delegation_tag(graph_module) -> str:
+    """Get the first delegation tag from the graph_module or return empty string."""
     for node in graph_module.graph.nodes:
         tag = node.meta.get("delegation_tag")
         if tag:
             return tag
 
     logger.debug("No delegation tag found in partition.")
-    return None
+    return ""
 
 
 @final
@@ -69,7 +63,6 @@ class TOSABackend(BackendDetails):
         artifact_path = None
         output_format = ""
         compile_flags = []
-        input_order = []
         for spec in compile_spec:
             if spec.key == "debug_artifact_path":
                 artifact_path = spec.value.decode()
@@ -77,22 +70,37 @@ class TOSABackend(BackendDetails):
                 output_format = spec.value.decode()
             if spec.key == "compile_flags":
                 compile_flags.append(spec.value.decode())
-            if spec.key == "input_order":
-                input_order = list(map(int, spec.value.decode().split(",")))
 
         # Check that the output format is set correctly in the compile spec
-        assert output_format == "tosa", "output format must be tosa"
+        if output_format != "tosa":
+            raise ValueError(f'Invalid output format {output_format}, must be "tosa"')
 
         tosa_spec = get_tosa_spec(compile_spec)
-        assert (
-            tosa_spec is not None
-        ), "TOSA backend needs a TOSA version specified in the CompileSpec!"
+        if tosa_spec is None:
+            raise ValueError(
+                "TOSA backend needs a TOSA version specified in the CompileSpec"
+            )
 
         logger.info(f"Converting ExportedProgram to TOSA: {tosa_spec}")
 
         # Converted output for this subgraph, serializer needs path early as it emits
         # const data directly. Path created and data written only in debug builds.
+        if isinstance(tosa_spec, tosa_specification.Tosa_0_80):
+            import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
+        elif isinstance(tosa_spec, tosa_specification.Tosa_1_00):
+            import serializer.tosa_serializer as ts  # type: ignore
+        else:
+            raise RuntimeError(
+                f"Unknown TOSA version {tosa_spec}, no pip package installed to handle serialization to that version."
+            )
+
         tosa_graph = ts.TosaSerializer(artifact_path)
+
+        assert (
+            tosa_spec.version.major == ts.TOSA_VERSION_MAJOR
+            and tosa_spec.version.minor == ts.TOSA_VERSION_MINOR
+        ), f"TOSA serializer version ({ts.TOSA_VERSION_MAJOR}.{ts.TOSA_VERSION_MINOR}) doesn't match specification {tosa_spec}"
+
         graph_module = ArmPassManager(tosa_spec).transform_to_backend_pipeline(  # type: ignore
             exported_program=edge_program
         )
@@ -101,31 +109,29 @@ class TOSABackend(BackendDetails):
         input_count = 0
         for node in graph_module.graph.nodes:
             node = cast(Node, node)
-            if node.op == "call_function":
-                process_call_function(node, tosa_graph, node_visitors, tosa_spec)
-            elif node.op == "placeholder":
-                process_placeholder(node, tosa_graph, edge_program, tosa_spec)
-                if node.name in edge_program.graph_signature.user_inputs:
-                    input_count += 1
-            elif node.op == "output":
-                process_output(node, tosa_graph)
-            else:
-                # This will only happen if an unpartitioned graph is passed without
-                # any checking of compatibility.
-                dbg_fail(node, tosa_graph, artifact_path)
-
-        if len(input_order) > 0:
-            if input_count != len(input_order):
-                raise RuntimeError(
-                    "The rank of the input order is not equal to amount of input tensors"
-                )
+            try:
+                if node.op == "call_function":
+                    process_call_function(node, tosa_graph, node_visitors, tosa_spec)
+                elif node.op == "placeholder":
+                    process_placeholder(node, tosa_graph, edge_program, tosa_spec)
+                    if node.name in edge_program.graph_signature.user_inputs:
+                        input_count += 1
+                elif node.op == "output":
+                    process_output(node, tosa_graph)
+                else:
+                    # This will only happen if an unpartitioned graph is passed without
+                    # any checking of compatibility.
+                    raise RuntimeError(f"{node.name} is unsupported op {node.op}")
+            except Exception:
+                dbg_fail(node, graph_module, tosa_graph, artifact_path)
+                raise
 
         if artifact_path:
-            tag = _get_first_delegation_tag(graph_module)
+            tag = arm_get_first_delegation_tag(graph_module)
             dbg_tosa_dump(
                 tosa_graph,
                 artifact_path,
-                suffix="{}".format(f"_{tag}" if tag else ""),
+                suffix="{}".format(f"_{tag}" if tag else "") + (f"_{tosa_spec}"),
             )
 
         # Serialize and return the TOSA flatbuffer.

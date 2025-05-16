@@ -14,7 +14,7 @@ import os
 from typing import Any
 
 from examples.models import MODEL_NAME_TO_MODEL
-from examples.xnnpack import MODEL_NAME_TO_OPTIONS
+from examples.xnnpack import MODEL_NAME_TO_OPTIONS, QuantType
 
 DEFAULT_RUNNERS = {
     "linux": "linux.2xlarge",
@@ -33,7 +33,7 @@ CUSTOM_RUNNERS = {
         "dl3": "linux.4xlarge.memory",
         "emformer_join": "linux.4xlarge.memory",
         "emformer_predict": "linux.4xlarge.memory",
-        "phi-4-mini": "linux.4xlarge.memory",
+        "phi_4_mini": "linux.4xlarge.memory",
     }
 }
 
@@ -154,7 +154,7 @@ def export_models_for_ci() -> dict[str, dict]:
         if backend == "xnnpack":
             if name not in MODEL_NAME_TO_OPTIONS:
                 continue
-            if MODEL_NAME_TO_OPTIONS[name].quantization:
+            if MODEL_NAME_TO_OPTIONS[name].quantization != QuantType.NONE:
                 backend += "-quantization"
 
             if MODEL_NAME_TO_OPTIONS[name].delegation:

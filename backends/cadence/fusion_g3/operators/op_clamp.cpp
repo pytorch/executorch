@@ -330,7 +330,7 @@ Tensor& clamp_out(
   return out;
 }
 
-Tensor& clamp_tensor_out(
+Tensor& clamp_Tensor_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
     const optional<Tensor>& min_opt,

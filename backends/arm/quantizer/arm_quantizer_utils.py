@@ -11,7 +11,7 @@
 # Utility functions for TOSAQuantizer
 #
 
-from typing import cast
+from typing import cast, Sequence
 
 import torch
 from torch._subclasses import FakeTensor
@@ -76,9 +76,32 @@ def is_large_scalar(node: Node, gm: GraphModule):
 
 
 def is_non_float_tensor(node: Node) -> bool:
-    """Check if the input is not a float tensor, so that we can skip quantization for the node
-    since observers only works with float Tensors
+    """Check if the output of a node has a data type other than `torch.float32`.
+
+    If the output is not `torch.float32`, quantization cannot be performed, as
+    observers only work with floating-point tensors.
+
+    Args:
+        node (Node): The node to check the output(s) for.
+
+    Returns:
+        bool: `True` if the data type is not float32, otherwise `False`.
+
+    Note:
+        - If `node.meta["val"]` is a `list`, the function returns `True` if **any**
+          element is **not** an instance of `FakeTensor` or does **not** have
+          `torch.float32` as its data type.
+        - If node.meta["val"] is missing or is not an instance of `FakeTensor`, the
+          function returns True.
     """
+    if "val" in node.meta and isinstance(node.meta["val"], Sequence):
+        return any(
+            not isinstance(fake_tensor, FakeTensor)
+            or fake_tensor.dtype != torch.float32
+            for fake_tensor in node.meta["val"]
+        )
+
     if "val" not in node.meta or not isinstance(node.meta["val"], FakeTensor):
         return True
+
     return node.meta["val"].dtype != torch.float32

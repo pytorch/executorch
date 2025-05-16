@@ -82,7 +82,6 @@ class Conv2d(NodeVisitor):
         weight_quant_params = QuantParams.from_weights(
             kernel_node, self._exported_program
         )
-        fp32_static_weights = kernel_node.meta["val"].dtype == torch.float16
 
         if weight_quant_params is not None and weight_quant_params.per_channel:
             if is_transpose:
@@ -102,8 +101,8 @@ class Conv2d(NodeVisitor):
             convert_to_nhwc=True,
             swap_in_out_for_weights=is_depthwise_conv or is_transpose,
             quant_params=weight_quant_params,
-            fp32_static_weights=fp32_static_weights,
             groups=groups if is_transpose else 1,
+            force_fp32=True,
         )
         kwargs["filter_id"] = vals_to_ids[get_input_node(node, 1)]
 
@@ -127,13 +126,14 @@ class Conv2d(NodeVisitor):
             bias_quant_params = QuantParams.from_bias(
                 bias_node, weight_quant_params, input_quant_params
             )
+
             self.define_tensor(
                 get_input_node(node, 2),
                 xnn_graph,
                 vals_to_ids,
                 convert_to_nhwc=False,
                 quant_params=bias_quant_params,
-                fp32_static_weights=fp32_static_weights,
+                force_fp32=True,
             )
             kwargs["bias_id"] = vals_to_ids[get_input_node(node, 2)]
 

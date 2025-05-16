@@ -23,11 +23,7 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-
-if(NOT PYTHON_EXECUTABLE)
-  resolve_python_executable()
-endif()
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 # NB: Enabling this will serialize execution of delegate instances Keeping this
 # OFF by default to maintain existing behavior, to be revisited.
@@ -92,7 +88,7 @@ endif()
 add_custom_command(
   OUTPUT ${_xnnpack_schema__outputs}
   COMMAND
-    ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
+    flatc --cpp --cpp-std c++11 --scoped-enums -o
     "${_xnnpack_schema__include_dir}/executorch/backends/xnnpack/serialization"
     ${_xnnpack_schema__srcs}
   COMMAND ${MV_COMMAND}
@@ -116,7 +112,7 @@ set(xnnpack_third_party pthreadpool extension_threadpool cpuinfo)
 include(cmake/Dependencies.cmake)
 
 list(TRANSFORM _xnnpack_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
-add_library(xnnpack_backend STATIC ${_xnnpack_backend__srcs})
+add_library(xnnpack_backend ${_xnnpack_backend__srcs})
 target_link_libraries(
   xnnpack_backend PUBLIC ${xnnpack_third_party} executorch_core xnnpack_schema extension_threadpool
 )
@@ -146,6 +142,10 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
   list(APPEND xnn_executor_runner_libs $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
 endif()
 
+if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
+  list(APPEND xnn_executor_runner_libs quantized_ops_lib)
+endif()
+
 list(APPEND xnn_executor_runner_libs xnnpack_backend executorch)
 
 # ios can only build library but not binary
@@ -158,14 +158,7 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   add_executable(xnn_executor_runner ${_xnn_executor_runner__srcs})
 
   if(EXECUTORCH_ENABLE_EVENT_TRACER)
-    if(EXECUTORCH_BUILD_DEVTOOLS)
-      list(APPEND xnn_executor_runner_libs etdump)
-    else()
-      message(
-        SEND_ERROR
-          "Use of 'EXECUTORCH_ENABLE_EVENT_TRACER' requires 'EXECUTORCH_BUILD_DEVTOOLS' to be enabled."
-      )
-    endif()
+    list(APPEND xnn_executor_runner_libs etdump)
   endif()
 
   target_link_libraries(xnn_executor_runner gflags ${xnn_executor_runner_libs})

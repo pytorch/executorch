@@ -52,7 +52,7 @@ class TestQuantization(unittest.TestCase):
             m_copy = copy.deepcopy(m)
             # program capture
             m = torch.export.export_for_training(
-                m, copy.deepcopy(example_inputs)
+                m, copy.deepcopy(example_inputs), strict=True
             ).module()
 
             quantizer = XNNPACKQuantizer()
