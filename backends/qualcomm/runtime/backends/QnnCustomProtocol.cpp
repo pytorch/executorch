@@ -6,13 +6,13 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/qualcomm/aot/ir/qcir_utils.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
 
 namespace executorch {
 namespace backends {
 namespace qnn {
 
+// we still need this for on-device op validation of other backends
 void QnnQcirCustomProtocol::BuildQcirCustomBuffer(
     const QnnExecuTorchContextBinary& qcir_binary,
     const std::vector<uint8_t>& tensor_data) {
