@@ -30,14 +30,14 @@ add_custom_command(
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleStateful.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/delegated/ModuleAddMul.pte"
   COMMAND
-    python3 -m test.models.export_program --modules
+    ${PYTHON_EXECUTABLE} -m test.models.export_program --modules
     "ModuleAdd,ModuleAddHalf,ModuleAddMul,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleMultipleEntry,ModuleSimpleTrain,ModuleStateful"
     --outdir "${CMAKE_CURRENT_BINARY_DIR}" 2> /dev/null
   COMMAND
-    python3 -m test.models.export_program --modules "ModuleAddMul"
+    ${PYTHON_EXECUTABLE} -m test.models.export_program --modules "ModuleAddMul"
     --external-constants --outdir "${CMAKE_CURRENT_BINARY_DIR}" 2> /dev/null
   COMMAND
-    python3 -m test.models.export_delegated_program --modules "ModuleAddMul"
+    ${PYTHON_EXECUTABLE} -m test.models.export_delegated_program --modules "ModuleAddMul"
     --backend_id "StubBackend" --outdir "${CMAKE_CURRENT_BINARY_DIR}/delegated/" || true
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
 )

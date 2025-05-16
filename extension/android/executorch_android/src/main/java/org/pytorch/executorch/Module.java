@@ -153,7 +153,7 @@ public class Module {
   }
 
   /**
-   * Explicitly destroys the native torch::jit::Module. Calling this method is not required, as the
+   * Explicitly destroys the native Module object. Calling this method is not required, as the
    * native object will be destroyed when this object is garbage-collected. However, the timing of
    * garbage collection is not guaranteed, so proactively calling {@code destroy} can free memory
    * more quickly. See {@link com.facebook.jni.HybridData#resetNative}.
