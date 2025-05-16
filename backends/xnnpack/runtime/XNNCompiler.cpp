@@ -1448,7 +1448,6 @@ Error defineLogNode(
   return Error::Ok;
 }
 
-
 /*
 Define serialized ceiling node into the subgraph, using the remapped ids
 to map the serialized ids, to the new ids generated when defining the
