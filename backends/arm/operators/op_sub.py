@@ -163,7 +163,11 @@ class SubVisitor_INT(NodeVisitor):
         validate_same_dtype(self.target, [*inputs, output])
 
         # Handle int8 (quantized) and int32
-        assert inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]
+        supported_dtypes = [ts.DType.INT8, ts.DType.INT32]
+        if inputs[0].dtype not in supported_dtypes:
+            raise TypeError(
+                f'IO data type needs to be {supported_dtypes}, got "{inputs[0].dtype}"'
+            )
 
         scale_back = 1.0
         if inputs[0].dtype == ts.DType.INT8:
@@ -228,8 +232,15 @@ class SubVisitor_FP(SubVisitor_INT):
             super().define_node(node, tosa_graph, inputs, output)
         else:
             # FP32 Sub lowering
-            assert inputs[0].dtype == ts.DType.FP32
-            assert output.dtype == ts.DType.FP32
+            if (
+                inputs[0].dtype != ts.DType.FP32
+                or inputs[1].dtype != ts.DType.FP32
+                or output.dtype != ts.DType.FP32
+            ):
+                raise TypeError(
+                    f"All IO needs to have data type fp32. Got: {inputs[0].dtype}, "
+                    f"input 2: {inputs[1].dtype} and output: {output.dtype}"
+                )
 
             # MI lowering
             tosa_graph.addOperator(
