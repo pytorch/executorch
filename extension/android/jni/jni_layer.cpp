@@ -405,10 +405,9 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     }
 
     facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> ret =
-        facebook::jni::JArrayClass<jstring>::newArray(
-          backends.size());
+        facebook::jni::JArrayClass<jstring>::newArray(backends.size());
     int i = 0;
-    for (auto s: backends) {
+    for (auto s : backends) {
       facebook::jni::local_ref<facebook::jni::JString> backend_name =
           facebook::jni::make_jstring(s.c_str());
       (*ret)[i] = backend_name;
