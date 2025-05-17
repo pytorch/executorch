@@ -309,11 +309,9 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
         static_cast<uint64_t>(
             reinterpret_cast<uintptr_t>((handles.weight_data))),
         static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ethosu_scratch)),
-        nullptr};
-    size_t bases_size[ETHOSU_NUM_BASE_ADDRS] = {
-        handles.weight_data_size,
-        handles.scratch_data_size,
         0};
+    size_t bases_size[ETHOSU_NUM_BASE_ADDRS] = {
+        handles.weight_data_size, handles.scratch_data_size, 0};
     int result = 0;
     EXECUTORCH_PROF_START(
         event_tracer, event_tracer_local_scope, "+EthosUBackend::execute()NPU");
