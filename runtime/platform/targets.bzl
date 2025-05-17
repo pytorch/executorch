@@ -41,12 +41,15 @@ def define_common_targets():
     # client defined implementations will overide them.
     runtime.cxx_library(
         name = "platform_private",
-        srcs = _select_pal({
-            "minimal": ["default/minimal.cpp"],
-            "posix": ["default/posix.cpp"],
-        }),
+        srcs = select({
+            "ovr_config//os:android": ["default/android.cpp"],
+            "DEFAULT": _select_pal({
+                "minimal": ["default/minimal.cpp"],
+                "posix": ["default/posix.cpp"],
+        })}),
         deps = [
             ":pal_interface",
+            "fbsource//third-party/toolchains:log",
         ],
         visibility = [
             "//executorch/core/...",
