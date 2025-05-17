@@ -234,12 +234,20 @@ public class <span class="typeNameLabel"><a href=Module.html>Module</a></span>
                                         <tr id="i5" class="rowColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>&gt;</code>
                                             </td>
+                                            <th class="colSecond" scope="row"><code><a href=Module.html#getUsedBackends(String)>getUsedBackends</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> methodName) </code>
+                                            </th>
+                                            <td class="colLast">Returns the names of the methods in a certain method.</td>
+                                        </tr>
+                                        
+                                        <tr id="i6" class="altColor">
+                                            <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>&gt;</code>
+                                            </td>
                                             <th class="colSecond" scope="row"><code><a href=Module.html#readLogBuffer()>readLogBuffer</a>() </code>
                                             </th>
                                             <td class="colLast">Retrieve the in-memory log buffer, containing the most recent ExecuTorch log entries.</td>
                                         </tr>
                                         
-                                        <tr id="i6" class="altColor">
+                                        <tr id="i7" class="rowColor">
                                             <td class="colFirst"><code>void</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Module.html#destroy()>destroy</a>() </code>
@@ -394,6 +402,30 @@ public class <span class="typeNameLabel"><a href=Module.html>Module</a></span>
                                         <h4>loadMethod</h4>
                                         <pre class="methodSignature"> int <a href=Module.html#loadMethod(String)>loadMethod</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> methodName)</pre>
                                         <div class="block"><p>Load a method on this module. This might help with the first time inference performance,because otherwise the method is loaded lazily when it's execute. Note: this function issynchronous, and will block until the method is loaded. Therefore, it is recommended to callthis on a background thread. However, users need to make sure that they don't execute beforethis function returns.</p></div>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="getUsedBackends(String)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>getUsedBackends</h4>
+                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>&gt; <a href=Module.html#getUsedBackends(String)>getUsedBackends</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> methodName)</pre>
+                                        <div class="block"><p>Returns the names of the methods in a certain method.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>methodName</code> - method name to query</dd>
+                                            
+                                            
+                                        </dl>
                                         
                                         <!-- TODO missing return annotation -->
                                     </li>
