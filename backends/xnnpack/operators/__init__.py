@@ -24,6 +24,7 @@ from . import (  # noqa
     op_hardtanh,
     op_leaky_relu,
     op_linear,
+    op_log,
     op_matrix_multiplication,
     op_max_dim,
     op_max_pool2d,
