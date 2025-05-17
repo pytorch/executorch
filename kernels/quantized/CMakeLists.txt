@@ -115,6 +115,9 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
       target_link_libraries(
         quantized_ops_aot_lib PUBLIC quantized_ops_pybind_lib
       )
+      if (_WIN32)
+        target_link_libraries(quantized_ops_aot_lib PUBLIC quantized_ops_lib)
+      endif()
 
       # pip wheels will need to be able to find the dependent libraries. On
       # Linux, the .so has non-absolute dependencies on libs like
