@@ -87,7 +87,7 @@ test_pytest_models() { # Test ops and other things
     backends/arm/scripts/build_executorch.sh
 
     # Run arm baremetal pytest tests without FVP
-    pytest  --verbose --color=yes --numprocesses=auto backends/arm/test/models
+    pytest  --verbose --color=yes backends/arm/test/models
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -122,7 +122,7 @@ test_pytest_models_ethosu_fvp() { # Same as test_pytest but also sometime verify
     backends/arm/test/setup_testing.sh
 
     # Run arm baremetal pytest tests with FVP
-    pytest  --verbose --color=yes --numprocesses=auto backends/arm/test/models --arm_run_corstoneFVP
+    pytest  --verbose --color=yes backends/arm/test/models --arm_run_corstoneFVP
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
