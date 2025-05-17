@@ -188,14 +188,17 @@ cmake --build cmake-out -j9
 
 ## Use an example binary `executor_runner` to execute a .pte file
 
-First, generate an `add.pte` or other ExecuTorch program file using the
-instructions as described in
-[Preparing a Model](getting-started.md#preparing-the-model).
+First, generate a .pte file, either by exporting an example model or following
+the instructions in [Model Export and Lowering](using-executorch-export.md).
 
+To generate a simple model file, run the following command from the ExecuTorch directory. It
+will create a file named "add.pte" in the current directory.
+```
+python -m examples.portable.scripts.export --model_name="add"
+```
 Then, pass it to the command line tool:
-
 ```bash
-./cmake-out/executor_runner --model_path path/to/model.pte
+./cmake-out/executor_runner --model_path add.pte
 ```
 
 You should see the message "Model executed successfully" followed
