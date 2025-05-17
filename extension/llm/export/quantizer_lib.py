@@ -16,8 +16,8 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 
-from torch.ao.quantization.quantizer import Quantizer
-from torch.ao.quantization.quantizer.embedding_quantizer import EmbeddingQuantizer
+from torchao.quantization.pt2e.quantizer import Quantizer
+from torchao.quantization.pt2e.quantizer.embedding_quantizer import EmbeddingQuantizer
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -154,7 +154,7 @@ def get_qnn_quantizer(
             QnnQuantizer,
             QuantDtype,
         )
-        from torch.ao.quantization.observer import MinMaxObserver
+        from torchao.quantization.pt2e.observer import MinMaxObserver
 
     except ImportError:
         raise ImportError(

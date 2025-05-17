@@ -17,11 +17,11 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
     propagate_annotation,
     QuantizationConfig,
 )
-from torch.ao.quantization.fake_quantize import (
+from torchao.quantization.pt2e.fake_quantize import (
     FakeQuantize,
     FusedMovingAvgObsFakeQuantize,
 )
-from torch.ao.quantization.observer import (
+from torchao.quantization.pt2e.observer import (
     HistogramObserver,
     MinMaxObserver,
     MovingAverageMinMaxObserver,
@@ -29,13 +29,13 @@ from torch.ao.quantization.observer import (
     PerChannelMinMaxObserver,
     PlaceholderObserver,
 )
-from torch.ao.quantization.quantizer import QuantizationSpec, Quantizer
-from torch.ao.quantization.quantizer.utils import _get_module_name_filter
+from torchao.quantization.pt2e.quantizer import QuantizationSpec, Quantizer
+from torchao.quantization.pt2e.quantizer.utils import get_module_name_filter
 
 
 if TYPE_CHECKING:
-    from torch.ao.quantization.qconfig import _ObserverOrFakeQuantizeConstructor
     from torch.fx import Node
+    from torchao.quantization.pt2e import ObserverOrFakeQuantizeConstructor
 
 
 __all__ = [
@@ -140,7 +140,7 @@ def get_symmetric_quantization_config(
     weight_qscheme = (
         torch.per_channel_symmetric if is_per_channel else torch.per_tensor_symmetric
     )
-    weight_observer_or_fake_quant_ctr: _ObserverOrFakeQuantizeConstructor = (
+    weight_observer_or_fake_quant_ctr: ObserverOrFakeQuantizeConstructor = (
         MinMaxObserver
     )
     if is_qat:
@@ -228,7 +228,7 @@ def _get_not_module_type_or_name_filter(
     tp_list: list[Callable], module_name_list: list[str]
 ) -> Callable[[Node], bool]:
     module_type_filters = [_get_module_type_filter(tp) for tp in tp_list]
-    module_name_list_filters = [_get_module_name_filter(m) for m in module_name_list]
+    module_name_list_filters = [get_module_name_filter(m) for m in module_name_list]
 
     def not_module_type_or_name_filter(n: Node) -> bool:
         return not any(f(n) for f in module_type_filters + module_name_list_filters)
@@ -421,7 +421,7 @@ class XNNPACKQuantizer(Quantizer):
         module_name_list = list(self.module_name_config.keys())
         for module_name, config in self.module_name_config.items():
             self._annotate_all_patterns(
-                model, config, _get_module_name_filter(module_name)
+                model, config, get_module_name_filter(module_name)
             )
 
         tp_list = list(self.module_type_config.keys())
