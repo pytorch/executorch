@@ -12,33 +12,32 @@
 ExternalProject_Add(
   flatbuffers_external_project
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatbuffers_external_project
-  BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/flatbuffers_external_project
   SOURCE_DIR ${PROJECT_SOURCE_DIR}/third-party/flatbuffers
   # Always use Make to avoid needing to codesign flatc if the project is using Xcode.
   CMAKE_GENERATOR "Unix Makefiles"
   CMAKE_ARGS -DFLATBUFFERS_BUILD_FLATC=ON
-             -DFLATBUFFERS_INSTALL=OFF
+             -DFLATBUFFERS_INSTALL=ON
              -DFLATBUFFERS_BUILD_FLATHASH=OFF
              -DFLATBUFFERS_BUILD_FLATLIB=OFF
              -DFLATBUFFERS_BUILD_TESTS=OFF
+             -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
              -DCMAKE_CXX_FLAGS="-DFLATBUFFERS_MAX_ALIGNMENT=${EXECUTORCH_FLATBUFFERS_MAX_ALIGNMENT}"
              # Unset the toolchain to build for the host instead of the toolchain set for the project.
              -DCMAKE_TOOLCHAIN_FILE=
              # If building for iOS, "unset" these variables to rely on the host (macOS) defaults.
              $<$<AND:$<BOOL:${APPLE}>,$<BOOL:$<FILTER:${PLATFORM},EXCLUDE,^MAC>>>:-DCMAKE_OSX_SYSROOT=>
              -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
-  INSTALL_COMMAND ""
-  BUILD_BYPRODUCTS <BINARY_DIR>/flatc
+  BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc
 )
-ExternalProject_Get_Property(flatbuffers_external_project BINARY_DIR)
+ExternalProject_Get_Property(flatbuffers_external_project INSTALL_DIR)
 add_executable(flatc IMPORTED GLOBAL)
 add_dependencies(flatc flatbuffers_external_project)
 if(WIN32)
   # flatbuffers does not use CMAKE_BUILD_TYPE. Internally, the build forces Release
   # config, but from CMake's perspective the build type is always Debug.
-  set_target_properties(flatc PROPERTIES IMPORTED_LOCATION ${BINARY_DIR}/$<CONFIG>/flatc.exe)
+  set_target_properties(flatc PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/$<CONFIG>/bin/flatc.exe)
 else()
-  set_target_properties(flatc PROPERTIES IMPORTED_LOCATION ${BINARY_DIR}/flatc)
+  set_target_properties(flatc PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/flatc)
 endif()
 
 # TODO: re-enable once flatbuffers is added as a subdirectory.
@@ -69,11 +68,12 @@ ExternalProject_Add(
              -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
   BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatcc
 )
+file(REMOVE_RECURSE ${PROJECT_SOURCE_DIR}/third-party/flatcc/lib)
 ExternalProject_Get_Property(flatcc_external_project INSTALL_DIR)
 add_executable(flatcc_cli IMPORTED GLOBAL)
 add_dependencies(flatcc_cli flatcc_external_project)
 if(WIN32)
-  set_target_properties(flatcc_cli PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/${CMAKE_BUILD_TYPE}/flatcc)
+  set_target_properties(flatcc_cli PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/$<CONFIG>/bin/flatcc.exe)
 else()
   set_target_properties(flatcc_cli PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/flatcc)
 endif()
@@ -84,6 +84,11 @@ set(FLATCC_REFLECTION OFF CACHE BOOL "")
 set(FLATCC_DEBUG_CLANG_SANITIZE OFF CACHE BOOL "")
 set(FLATCC_INSTALL OFF CACHE BOOL "")
 add_subdirectory(flatcc)
+# Unfortunately flatcc writes libs directly in to the source tree [1]. So to
+# ensure the target lib is created last, force flatcc_cli to build first.
+#
+# [1] https://github.com/dvidelabs/flatcc/blob/896db54787e8b730a6be482c69324751f3f5f117/CMakeLists.txt#L168
+add_dependencies(flatccrt flatcc_cli)
 # Fix for "relocation R_X86_64_32 against `.rodata' can not be used when making
 # a shared object; recompile with -fPIC" when building on some x86 linux
 # systems.
