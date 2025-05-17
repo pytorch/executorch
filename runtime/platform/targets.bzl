@@ -49,6 +49,7 @@ def define_common_targets():
         })}),
         deps = [
             ":pal_interface",
+            "fbsource//third-party/toolchains:log",
         ],
         visibility = [
             "//executorch/core/...",
