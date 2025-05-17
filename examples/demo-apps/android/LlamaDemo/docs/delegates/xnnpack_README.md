@@ -183,6 +183,7 @@ If you need to use other dependencies (like tokenizer), please build from the lo
 ### Alternative 2: Command line
 Without Android Studio UI, we can run gradle directly to build the app. We need to set up the Android SDK path and invoke gradle.
 ```
+export ANDROID_SDK=<path_to_android_sdk_home>
 export ANDROID_HOME=<path_to_android_sdk_home>
 pushd examples/demo-apps/android/LlamaDemo
 ./gradlew :app:installDebug
