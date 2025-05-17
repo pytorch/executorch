@@ -47,19 +47,12 @@ from executorch.extension.pytree import tree_flatten
 
 from torch.ao.quantization import (  # @manual
     default_per_channel_symmetric_qnnpack_qconfig,
-    PlaceholderObserver,
     QConfig,
     QConfigMapping,
 )
 
 from torch.ao.quantization.backend_config.executorch import (
     get_executorch_backend_config,
-)
-
-from torch.ao.quantization.observer import (
-    per_channel_weight_observer_range_neg_127_to_127,
-    #    default_weight_observer,
-    weight_observer_range_neg_127_to_127,
 )
 from torch.ao.quantization.qconfig_mapping import (
     _get_default_qconfig_mapping_with_default_qconfig,
@@ -70,11 +63,18 @@ from torch.ao.quantization.quantize_fx import (
     _convert_to_reference_decomposed_fx,
     prepare_fx,
 )
-
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.export import export_for_training
 
 from torch.testing import FileCheck
+from torchao.quantization.pt2e import PlaceholderObserver
+
+from torchao.quantization.pt2e.observer import (
+    per_channel_weight_observer_range_neg_127_to_127,
+    #    default_weight_observer,
+    weight_observer_range_neg_127_to_127,
+)
+
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 def randomize_bn(num_features: int, dimensionality: int = 2) -> torch.nn.Module:

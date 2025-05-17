@@ -18,9 +18,9 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
     propagate_annotation,
     QuantizationConfig,
 )
-from torch.ao.quantization.observer import PerChannelMinMaxObserver
-from torch.ao.quantization.quantizer import QuantizationSpec, Quantizer
 from torch.fx import Node
+from torchao.quantization.pt2e.observer import PerChannelMinMaxObserver
+from torchao.quantization.pt2e.quantizer import QuantizationSpec, Quantizer
 
 
 __all__ = [

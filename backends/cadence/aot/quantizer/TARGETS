@@ -21,6 +21,7 @@ python_library(
     deps = [
         ":utils",
         "//caffe2:torch",
+        "//pytorch/ao:torchao",
     ],
 )
 

@@ -59,6 +59,9 @@ main() {
         # Build the package
         pip install . --no-build-isolation
 
+        # Install torchao
+        pip install third-party/ao
+
     else
         echo "Error: Argument is not valid: $build_type"
         exit 1  # Exit the script with an error code

@@ -242,8 +242,8 @@ class NodeVisitor:
         )
         # TODO: refactor this when target could be correctly detected
         per_block_encoding = {
-            exir_ops.edge.pt2e_quant.quantize_affine.default,
-            exir_ops.edge.pt2e_quant.dequantize_affine.default,
+            exir_ops.edge.torchao.quantize_affine.default,
+            exir_ops.edge.torchao.dequantize_affine.default,
         }
         if quant_attrs[QCOM_ENCODING] in per_block_encoding:
             return self.make_qnn_per_block_config(node, quant_attrs)
@@ -271,7 +271,7 @@ class NodeVisitor:
                     axis_order.index(x) for x in range(len(axis_order))
                 )
                 tensor = tensor.permute(origin_order)
-            tensor = torch.ops.pt2e_quant.quantize_affine(
+            tensor = torch.ops.torchao.quantize_affine(
                 tensor,
                 block_size=quant_attrs[QCOM_BLOCK_SIZE],
                 scale=quant_attrs[QCOM_SCALE],
