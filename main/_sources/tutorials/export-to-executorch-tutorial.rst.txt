@@ -1304,16 +1304,16 @@ call ``to_backend`` on it:
             def forward(self, a: "f32[2, 2]", x: "f32[2, 2]", b: "f32[2, 2]"):
                 # No stacktrace found for following nodes
                 lowered_module_0 = self.lowered_module_0
-                lowered_module_1 = self.lowered_module_1
-                executorch_call_delegate_1 = torch.ops.higher_order.executorch_call_delegate(lowered_module_1, a, x, b);  lowered_module_1 = None
-                getitem_1: "f32[2, 2]" = executorch_call_delegate_1[0];  executorch_call_delegate_1 = None
+                executorch_call_delegate = torch.ops.higher_order.executorch_call_delegate(lowered_module_0, a, x, b);  lowered_module_0 = None
+                getitem_1: "f32[2, 2]" = executorch_call_delegate[0];  executorch_call_delegate = None
             
                  # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:451 in forward, code: a = z - a
                 aten_sub_tensor: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_sub_Tensor(getitem_1, a);  getitem_1 = a = None
             
                 # No stacktrace found for following nodes
-                executorch_call_delegate = torch.ops.higher_order.executorch_call_delegate(lowered_module_0, aten_sub_tensor, x, b);  lowered_module_0 = aten_sub_tensor = x = b = None
-                getitem: "f32[2, 2]" = executorch_call_delegate[0];  executorch_call_delegate = None
+                lowered_module_1 = self.lowered_module_1
+                executorch_call_delegate_1 = torch.ops.higher_order.executorch_call_delegate(lowered_module_1, aten_sub_tensor, x, b);  lowered_module_1 = aten_sub_tensor = x = b = None
+                getitem: "f32[2, 2]" = executorch_call_delegate_1[0];  executorch_call_delegate_1 = None
                 return (getitem,)
             
     Graph signature: 
@@ -1531,7 +1531,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 4.052 seconds)
+   **Total running time of the script:** (0 minutes 3.826 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:

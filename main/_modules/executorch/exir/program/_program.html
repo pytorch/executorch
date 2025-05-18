@@ -527,7 +527,10 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._serialize._serialize</span><span class="w"> </span><span class="kn">import</span> <span class="n">serialize_for_executorch</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._serialize.data_serializer</span><span class="w"> </span><span class="kn">import</span> <span class="n">DataSerializer</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._warnings</span><span class="w"> </span><span class="kn">import</span> <span class="n">experimental</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.backend_api</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_backend</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.backend_api</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">MethodProgramsPartitionerSpec</span><span class="p">,</span>
+    <span class="n">to_backend</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">Partitioner</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.capture._config</span><span class="w"> </span><span class="kn">import</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">ExecutorchBackendConfig</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.delegate</span><span class="w"> </span><span class="kn">import</span> <span class="n">executorch_call_delegate</span><span class="p">,</span> <span class="n">is_lowered_module</span>
@@ -1743,10 +1746,16 @@
     <span class="k">if</span> <span class="n">transform_passes</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">edge_manager</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">transform_passes</span><span class="p">)</span>
 
-    <span class="k">if</span> <span class="n">partitioner</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">max_num_partitioners</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">partitioner_list</span> <span class="ow">in</span> <span class="n">partitioner</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+        <span class="n">max_num_partitioners</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">max_num_partitioners</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">partitioner_list</span><span class="p">))</span>
+
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_num_partitioners</span><span class="p">):</span>
+        <span class="n">method_to_partitioner</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">partitioner_list</span> <span class="ow">in</span> <span class="n">partitioner</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="k">for</span> <span class="n">curr_partitioner</span> <span class="ow">in</span> <span class="n">partitioner_list</span><span class="p">:</span>
-                <span class="n">edge_manager</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_backend</span><span class="p">({</span><span class="n">name</span><span class="p">:</span> <span class="n">curr_partitioner</span><span class="p">})</span>
+            <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">partitioner_list</span><span class="p">):</span>
+                <span class="n">method_to_partitioner</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">partitioner_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+        <span class="n">edge_manager</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">method_to_partitioner</span><span class="p">)</span>
 
     <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">_edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
         <span class="n">ops_set_to_not_decompose</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
@@ -1979,7 +1988,8 @@
 
     <span class="nd">@et_logger</span><span class="p">(</span><span class="s2">&quot;to_backend&quot;</span><span class="p">)</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">to_backend</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">partitioner</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Partitioner</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Partitioner</span><span class="p">]]</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">partitioner</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Partitioner</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Partitioner</span><span class="p">]],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;EdgeProgramManager&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns a semantically-equivalent program to the one given as input,</span>
@@ -2005,17 +2015,18 @@
 <span class="sd">            specified subgraphs lowered.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">new_edge_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">partitioner</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
-            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-                <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">partitioner</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
-                    <span class="n">new_edge_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">partitioner</span><span class="p">[</span><span class="n">name</span><span class="p">])</span>
-                <span class="k">else</span><span class="p">:</span>
-                    <span class="n">new_edge_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">program</span>
+        <span class="n">method_to_partitioner</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Partitioner</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">partitioner</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="n">method_to_partitioner</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">partitioner</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="p">}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">method_to_partitioner</span> <span class="o">=</span> <span class="n">partitioner</span>
 
-        <span class="k">else</span><span class="p">:</span>  <span class="c1"># apply partitioner to every method</span>
-            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-                <span class="n">new_edge_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">partitioner</span><span class="p">)</span>
+        <span class="n">method_to_programs_and_partitioners</span> <span class="o">=</span> <span class="n">MethodProgramsPartitionerSpec</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="p">,</span>
+            <span class="n">method_to_partitioner</span><span class="p">,</span>
+        <span class="p">)</span>
 
+        <span class="n">new_edge_programs</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="n">method_to_programs_and_partitioners</span><span class="p">)</span>
         <span class="n">config</span> <span class="o">=</span> <span class="n">EdgeCompileConfig</span><span class="p">(</span><span class="n">_check_ir_validity</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">EdgeProgramManager</span><span class="p">(</span>
             <span class="n">new_edge_programs</span><span class="p">,</span>
