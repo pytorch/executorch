@@ -7,6 +7,8 @@
 
 set -euo pipefail
 
+trap 'kill 0' SIGINT
+
 status=0
 green='\e[1;32m'; red='\e[1;31m'; cyan='\e[1;36m'; yellow='\e[1;33m'; reset='\e[0m'
 user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
@@ -18,13 +20,14 @@ running_jobs() {
 }
 
 while IFS=: read -r filepath url; do
-  fpath="$filepath"
   (
     code=$(curl -k -gsLm30 --retry 3 --retry-delay 3 --retry-connrefused -o /dev/null -w "%{http_code}" -I "$url") || code=000
     if [ "$code" -lt 200 ] || [ "$code" -ge 400 ]; then
+      sleep 1
       code=$(curl -k -gsLm30 --retry 3 --retry-delay 3 --retry-connrefused -o /dev/null -w "%{http_code}" -r 0-0 -A "$user_agent" "$url") || code=000
     fi
     if [ "$code" -lt 200 ] || [ "$code" -ge 400 ]; then
+      sleep 1
       request_id=$(curl -sS -G -H 'Accept: application/json' \
         --data-urlencode "host=$url" \
         --data-urlencode "max_nodes=1" \
@@ -46,11 +49,16 @@ while IFS=: read -r filepath url; do
         done
       fi
     fi
+    # Treat Cloudflare JS-challenge and rate-limit as success.
+    if [[ "$code" == "403" || "$code" == "429" || "$code" == "503" ]]; then
+      printf "${yellow}WARN %s${reset} ${cyan}%s${reset} %s\n" "$code" "$url" "$filepath"
+      exit 0
+    fi
     if [ "$code" -lt 200 ] || [ "$code" -ge 400 ]; then
-      printf "${red}%s${reset} ${yellow}%s${reset} %s\n" "$code" "$url" "$fpath" >&2
+      printf "${red}FAIL %s${reset} ${yellow}%s${reset} %s\n" "$code" "$url" "$filepath" >&2
       exit 1
     else
-      printf "${green}%s${reset} ${cyan}%s${reset} %s\n" "$code" "$url" "$fpath"
+      printf "${green} OK  %s${reset} ${cyan}%s${reset} %s\n" "$code" "$url" "$filepath"
       exit 0
     fi
   ) &
@@ -58,21 +66,27 @@ while IFS=: read -r filepath url; do
   while [ "$(running_jobs)" -ge "$max_jobs" ]; do
     sleep 1
   done
-done < <(
-  git --no-pager grep --no-color -I -P -o \
-    '(?!.*@lint-ignore)(?<!git\+)(?<!\$\{)https?://(?![^\s<>\")]*[<>\{\}\$])[^[:space:]<>\")\[\]\(\\]+' \
-    -- '*' \
-    ':(exclude).*' \
-    ':(exclude,glob)**/.*' \
-    ':(exclude,glob)**/*.lock' \
-    ':(exclude,glob)**/*.svg' \
-    ':(exclude,glob)**/*.xml' \
-    ':(exclude,glob)**/*.gradle*' \
-    ':(exclude,glob)**/*gradle*' \
-    ':(exclude,glob)**/third-party/**' \
-    ':(exclude,glob)**/third_party/**' \
+ done < <(
+  pattern='(?!.*@lint-ignore)(?<!git\+)(?<!\$\{)https?://(?![^/]*@)(?![^\s<>\")]*[<>\{\}\$])[^[:space:]<>")\[\]\\|]+'
+  excludes=(
+    ':(exclude,glob)**/.*'
+    ':(exclude,glob)**/*.lock'
+    ':(exclude,glob)**/*.svg'
+    ':(exclude,glob)**/*.xml'
+    ':(exclude,glob)**/*.gradle*'
+    ':(exclude,glob)**/*gradle*'
+    ':(exclude,glob)**/third-party/**'
+    ':(exclude,glob)**/third_party/**'
+  )
+  if [ $# -gt 0 ]; then
+    paths=("$@")
+  else
+    paths=('*')
+  fi
+  git --no-pager grep --no-color -I -P -o "$pattern" -- "${paths[@]}" "${excludes[@]}" \
   | sed -E 's/[^/[:alnum:]]+$//' \
   | grep -Ev '://(0\.0\.0\.0|127\.0\.0\.1|localhost)([:/])' \
+  | grep -Ev '://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' \
   | grep -Ev 'fwdproxy:8080' \
   || true
 )

@@ -30,6 +30,7 @@ libexecutorch.a,\
 libexecutorch_core.a,\
 libextension_apple.a,\
 libextension_data_loader.a,\
+libextension_flat_tensor.a,\
 libextension_module.a,\
 libextension_tensor.a,\
 :$HEADERS_PATH"
@@ -192,6 +193,7 @@ cmake_build() {
         -DEXECUTORCH_BUILD_MPS=$MPS \
         -DEXECUTORCH_BUILD_XNNPACK=$XNNPACK \
         -DEXECUTORCH_XNNPACK_SHARED_WORKSPACE=ON \
+        -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
         -DEXECUTORCH_BUILD_EXTENSION_APPLE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \

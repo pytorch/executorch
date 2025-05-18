@@ -13,6 +13,8 @@ from typing import cast, Mapping, Optional
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
+from executorch.exir.operator.util import _QUANT_PRIMITIVES
+from executorch.exir.passes.replace_aten_with_edge_pass import aten_to_edge
 from torch._export.utils import (
     get_buffer,
     get_lifted_tensor_constant,
@@ -25,35 +27,14 @@ from torch.export import ExportedProgram
 from torch.export.exported_program import InputKind, InputSpec, TensorArgument
 from torch.utils import _pytree as pytree
 
-
 # Avoid propagating constants for `exir.ops.edge.aten.full.default`.
 # Propagating aten.full can significantly increase compiled model size.
-_DEFAULT_SKIP_TARGETS = {exir_ops.edge.aten.full.default}
+_DEFAULT_SKIP_TARGETS_NO_QUANT = {exir_ops.edge.aten.full.default}
+_DEFAULT_SKIP_TARGETS = set(_DEFAULT_SKIP_TARGETS_NO_QUANT)
 
 # Do not const prop quantization primitives
-_QDQ_OPS = [
-    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
-    exir_ops.edge.quantized_decomposed.convert_element_type.no_fuse,
-    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-    exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
-    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-    exir_ops.edge.quantized_decomposed.choose_qparams.tensor,
-]
-try:
-    import torchao  # noqa: F401
-
-    _QDQ_OPS.extend(
-        [
-            exir_ops.edge.torchao.dequantize_affine.default,
-            exir_ops.edge.torchao.quantize_affine.default,
-            exir_ops.edge.torchao.choose_qparams_affine.default,
-        ]
-    )
-except ImportError:
-    pass
-_DEFAULT_SKIP_TARGETS.update(set(_QDQ_OPS))
+_QUANT_PRIMITIVES_EDGE = [aten_to_edge(op) for op in _QUANT_PRIMITIVES]
+_DEFAULT_SKIP_TARGETS.update(set(_QUANT_PRIMITIVES_EDGE))
 
 
 _PRIMITIVE_TYPES = (
@@ -68,6 +49,10 @@ _PRIMITIVE_TYPES = (
 )
 
 
+def get_default_skip_targets_no_quant() -> set[EdgeOpOverload]:
+    return _DEFAULT_SKIP_TARGETS_NO_QUANT
+
+
 def is_const(
     arg,
     exported_program: ExportedProgram,
@@ -80,6 +65,8 @@ def is_const(
             is_const(x, exported_program, const_node_to_tensor) for x in arg.values()
         )
     elif isinstance(arg, _PRIMITIVE_TYPES):
+        return True
+    elif arg is None:
         return True
     elif not isinstance(arg, torch.fx.Node):
         return False

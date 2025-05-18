@@ -11,10 +11,6 @@ if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
-if(NOT PYTHON_EXECUTABLE)
-  set(PYTHON_EXECUTABLE python3)
-endif()
-
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
@@ -119,7 +115,7 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   else()
     # If no portable_lib, custom_ops_aot_lib still gives the ability to use the
     # ops in PyTorch
-    target_link_libraries(custom_ops_aot_lib PUBLIC executorch_core)
+    target_link_libraries(custom_ops_aot_lib PUBLIC executorch_core kernels_util_all_deps)
   endif()
 
   target_link_libraries(

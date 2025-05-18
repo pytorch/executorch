@@ -164,7 +164,7 @@ The release build offers optimizations intended to improve performance and reduc
 To further optimize the release build for size, use both:
 ```bash
 -DCMAKE_BUILD_TYPE=Release \
--DOPTIMIZE_SIZE=ON
+-DEXECUTORCH_OPTIMIZE_SIZE=ON
 ```
 
 See [CMakeLists.txt](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt)

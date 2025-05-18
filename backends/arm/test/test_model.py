@@ -61,6 +61,12 @@ def get_args():
         default=None,
         help="Extra cmake flags to pass the when building the executor_runner",
     )
+    parser.add_argument(
+        "--timeout",
+        required=False,
+        default=60 * 10,
+        help="Timeout in seconds used when running the model",
+    )
     args = parser.parse_args()
 
     if args.model and "ethos-u" in args.target and args.system_config is None:
@@ -75,7 +81,7 @@ def get_args():
         if "u55" in args.target:
             args.memory_mode = "Shared_Sram"
         elif "u85" in args.target:
-            args.memory_mode = "Sram_Only"
+            args.memory_mode = "Dedicated_Sram_384KB"
         else:
             raise RuntimeError(f"Invalid target name {args.target}")
 
@@ -185,13 +191,14 @@ def build_ethosu_runtime(
     return elf_file
 
 
-def run_elf_with_fvp(script_path: str, elf_file: str, target: str):
+def run_elf_with_fvp(script_path: str, elf_file: str, target: str, timeout: int):
     run_external_cmd(
         [
             "bash",
             os.path.join(script_path, "run_fvp.sh"),
             f"--elf={elf_file}",
             f"--target={target}",
+            f"--timeout={timeout}",
         ]
     )
 
@@ -243,5 +250,5 @@ if __name__ == "__main__":
             )
             print(f"ELF file created: {elf_file} ")
 
-            run_elf_with_fvp(script_path, elf_file, args.target)
+            run_elf_with_fvp(script_path, elf_file, args.target, args.timeout)
         print(f"Model: {model_name} on {args.target} -> PASS")

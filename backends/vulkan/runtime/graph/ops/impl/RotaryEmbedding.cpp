@@ -67,7 +67,11 @@ void add_rotary_embedding_node(
        {{xq, xk, freqs_cos, freqs_sin}, vkapi::kRead}},
       // Parameter buffers
       {graph.logical_limits_ubo(xq_out), graph.logical_limits_ubo(xk_out)},
+      // Push Constants
+      {},
       // Specialization Constants
+      {},
+      // Resize Args
       {},
       // Resizing Logic
       resize_rotary_embedding_node));

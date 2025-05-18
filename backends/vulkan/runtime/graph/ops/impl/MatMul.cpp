@@ -88,8 +88,7 @@ void add_matmul_naive_buffer_node(
       global_size,
       graph.create_local_wg_size(global_size),
       // Inputs and Outputs
-      {{out, vkapi::MemoryAccessType::WRITE},
-       {{mat1, mat2}, vkapi::MemoryAccessType::READ}},
+      {{out, vkapi::kWrite}, {{mat1, mat2}, vkapi::kRead}},
       // Shader params buffers
       {
           graph.sizes_ubo(out),
@@ -100,11 +99,14 @@ void add_matmul_naive_buffer_node(
           graph.strides_ubo(mat2),
           graph.numel_ubo(out),
       },
+      // Push Constants
+      {},
       // Specialization Constants
       {mat2_is_transposed_val},
+      // Resize Args
+      {mat2_is_transposed},
       // Resizing Logic
-      resize_matmul_node,
-      {mat2_is_transposed}));
+      resize_matmul_node));
 }
 
 void add_matmul_naive_texture3d_node(
@@ -134,8 +136,7 @@ void add_matmul_naive_texture3d_node(
       global_wg_size,
       graph.create_local_wg_size(global_wg_size),
       // Inputs and Outputs
-      {{out, vkapi::MemoryAccessType::WRITE},
-       {{mat1, mat2}, vkapi::MemoryAccessType::READ}},
+      {{out, vkapi::kWrite}, {{mat1, mat2}, vkapi::kRead}},
       // Shader params buffers
       {
           graph.sizes_ubo(out),
@@ -143,13 +144,16 @@ void add_matmul_naive_texture3d_node(
           graph.sizes_ubo(mat1),
           graph.sizes_ubo(mat2),
       },
+      // Push Constants
+      {},
       // Specialization Constants
       {graph.hashed_layout_of(out),
        graph.hashed_layout_of(mat1),
        graph.hashed_layout_of(mat2)},
+      // Resize Args
+      {mat2_is_transposed},
       // Resizing Logic
-      resize_matmul_node,
-      {mat2_is_transposed}));
+      resize_matmul_node));
 }
 
 void add_matmul_optimized_node(
@@ -228,21 +232,23 @@ void add_matmul_optimized_node(
       global_size,
       local_size,
       // Inputs and Outputs
-      {{out, vkapi::MemoryAccessType::WRITE},
-       {{mat1_W_packed, mat2_packed}, vkapi::MemoryAccessType::READ}},
+      {{out, vkapi::kWrite}, {{mat1_W_packed, mat2_packed}, vkapi::kRead}},
       // Shader params buffers
       {
           graph.sizes_ubo(out),
           graph.sizes_ubo(mat1_W_packed),
           graph.sizes_ubo(mat2_packed),
       },
+      // Push Constants
+      {},
       // Specialization Constants
       {graph.hashed_layout_of(out),
        graph.hashed_layout_of(mat1_W_packed),
        graph.hashed_layout_of(mat2_packed)},
+      // Resize Args
+      {mat2_is_transposed},
       // Resizing Logic
-      resize_matmul_node,
-      {mat2_is_transposed}));
+      resize_matmul_node));
 }
 
 void add_matmul_node(

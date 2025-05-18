@@ -45,10 +45,6 @@ find_library(LIB_TORCH torch HINTS ${TORCH_INSTALL_PREFIX}/lib)
 find_library(LIB_TORCH_CPU torch_cpu HINTS ${TORCH_INSTALL_PREFIX}/lib)
 find_library(LIB_C10 c10 HINTS ${TORCH_INSTALL_PREFIX}/lib)
 
-if(NOT PYTHON_EXECUTABLE)
-  set(PYTHON_EXECUTABLE python3)
-endif()
-
 # Third party include paths
 
 set(VULKAN_THIRD_PARTY_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../../third-party)
@@ -81,7 +77,7 @@ function(vulkan_op_test test_name test_src)
     ${test_name}
     PRIVATE GTest::gtest_main
             vulkan_backend
-            executorch
+            executorch_core
             ${LIB_TORCH}
             ${LIB_TORCH_CPU}
             ${LIB_C10}

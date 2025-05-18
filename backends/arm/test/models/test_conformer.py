@@ -63,7 +63,6 @@ class TestConformer(unittest.TestCase):
             )
         )
 
-    @unittest.expectedFailure  # TODO(MLETORCH-635)
     def test_conformer_tosa_BI(self):
         (
             ArmTester(
@@ -83,7 +82,6 @@ class TestConformer(unittest.TestCase):
             )
         )
 
-    @unittest.expectedFailure  # TODO(MLETORCH-635)
     def test_conformer_u55_BI(self):
         tester = (
             ArmTester(
@@ -97,15 +95,21 @@ class TestConformer(unittest.TestCase):
             .to_executorch()
             .serialize()
         )
-        if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(
-                qtol=1.0,
-                rtol=1.0,
-                atol=5.0,
-                inputs=get_test_inputs(self.dim, self.lengths, self.num_examples),
-            )
 
-    @unittest.expectedFailure  # TODO(MLETORCH-635)
+        if conftest.is_option_enabled("corstone_fvp"):
+            try:
+                tester.run_method_and_compare_outputs(
+                    qtol=1.0,
+                    rtol=1.0,
+                    atol=5.0,
+                    inputs=get_test_inputs(self.dim, self.lengths, self.num_examples),
+                )
+                self.fail(
+                    "TODO(MLETORCH-635): Expected failure under FVP option, but test passed."
+                )
+            except Exception:
+                pass
+
     def test_conformer_u85_BI(self):
         tester = (
             ArmTester(
@@ -120,9 +124,15 @@ class TestConformer(unittest.TestCase):
             .serialize()
         )
         if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(
-                qtol=1.0,
-                rtol=1.0,
-                atol=5.0,
-                inputs=get_test_inputs(self.dim, self.lengths, self.num_examples),
-            )
+            try:
+                tester.run_method_and_compare_outputs(
+                    qtol=1.0,
+                    rtol=1.0,
+                    atol=5.0,
+                    inputs=get_test_inputs(self.dim, self.lengths, self.num_examples),
+                )
+                self.fail(
+                    "TODO(MLETORCH-635): Expected failure under FVP option, but test passed."
+                )
+            except Exception:
+                pass

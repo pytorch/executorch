@@ -12,6 +12,10 @@ from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+    validate_same_dtype,
+)
 
 from executorch.backends.arm.tosa_mapping import TosaArg
 
@@ -38,11 +42,8 @@ def unary_operator_factory_0_80(unary_target: str, tosa_op):
         ) -> None:
             import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore  # noqa: F401
 
-            if not (inputs[0].dtype == output.dtype):
-                raise ValueError(
-                    "All inputs and output need same dtype."
-                    f"Got {inputs[0].dtype=}, {output.dtype=}"
-                )
+            validate_num_inputs(self.target, inputs, 1)
+            validate_same_dtype(self.target, [*inputs, output])
 
             if self.target in fp_only_ops and not (inputs[0].dtype == ts.DType.FP32):
                 raise ValueError(
@@ -76,11 +77,8 @@ def unary_operator_factory(unary_target: str, tosa_op):
         ) -> None:
             import serializer.tosa_serializer as ts  # type: ignore  # noqa: F401
 
-            if not (inputs[0].dtype == output.dtype):
-                raise ValueError(
-                    "All inputs and output need same dtype."
-                    f"Got {inputs[0].dtype=}, {output.dtype=}"
-                )
+            validate_num_inputs(self.target, inputs, 1)
+            validate_same_dtype(self.target, [*inputs, output])
 
             if self.target in fp_only_ops and not (inputs[0].dtype == ts.DType.FP32):
                 raise ValueError(
