@@ -209,7 +209,7 @@ inspector.print_data_tabular()
 #
 # Here is an example output:
 #
-# .. image:: ../_static/img/tabular_result.png
+# .. image:: ../_static/img/inspector_tabular_output.png
 
 ######################################################################
 # Analyzing with an Inspector
