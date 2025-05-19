@@ -101,3 +101,16 @@ def define_common_targets():
                 ":specialized_kernel_generated_lib",
             ],
         )
+
+        if aten_mode:
+            # Make sure we can depend on both generated_lib and generated_lib_aten
+            # in the same binary.
+            runtime.cxx_test(
+                name = "test_generated_lib_and_aten",
+                srcs = ["test_generated_lib_and_aten.cpp"],
+                deps = [
+                    "//executorch/kernels/portable:generated_lib",
+                    "//executorch/kernels/portable:generated_lib_aten",
+                    "//executorch/runtime/kernel:operator_registry_aten",
+                ],
+            )

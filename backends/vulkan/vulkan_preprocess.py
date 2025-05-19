@@ -17,12 +17,12 @@ from executorch.backends.transforms.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
 from executorch.backends.transforms.fuse_conv_with_clamp import FuseClampPass
-from executorch.backends.transforms.fuse_dequant_linear import FuseDequantLinearPass
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
 from executorch.backends.transforms.view_copy_to_squeeze_unsqueeze import (
     ViewCopyToSqueezeUnsqueezePass,
 )
 from executorch.backends.vulkan._passes import (
+    FuseQuantizedOpsTransform,
     insert_prepack_nodes,
     RemoveLocalScalarDenseOpsTransform,
     RemoveRedundantOpsTransform,
@@ -47,7 +47,7 @@ from executorch.exir.backend.backend_details import (
 )
 from executorch.exir.backend.utils import DelegateMappingBuilder
 
-from executorch.exir.memory_planning import greedy
+from executorch.exir.memory_planning import greedy, MemoryPlanningAlgorithmSuite
 from executorch.exir.pass_base import ExportPass, PassBase
 
 from executorch.exir.passes import MemoryPlanningPass, SpecPropPass
@@ -152,7 +152,7 @@ class VulkanBackend(BackendDetails):
             [
                 RemoveRedundantOpsTransform(),
                 AddmmToLinearTransform(),
-                FuseDequantLinearPass(),
+                FuseQuantizedOpsTransform(program),
                 SqueezeUnsqueezeInputs(),
                 FuseViewCopyTransform(),
                 ViewCopyToSqueezeUnsqueezePass(),
@@ -199,11 +199,14 @@ class VulkanBackend(BackendDetails):
         # Finally, apply dynamic shape passes and memory planning pass. These passes
         # must be applied only when the graph structure is finalized.
         greedy_memory_planning = partial(greedy, allow_overlapping_allocations=False)
+        mem_planning_suite = MemoryPlanningAlgorithmSuite(
+            algo_list=[greedy_memory_planning]
+        )
         program = apply_passes(
             program,
             [
                 ConstraintBasedSymShapeEvalPass(),
-                MemoryPlanningPass(memory_planning_algo=greedy_memory_planning),
+                MemoryPlanningPass(memory_planning_algo=mem_planning_suite),
             ],
         )
 

@@ -60,8 +60,9 @@ import subprocess
 
 from distutils import log
 from distutils.sysconfig import get_python_lib
+from functools import cache
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from setuptools import Extension, setup
 from setuptools.command.build import build
@@ -69,33 +70,96 @@ from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py
 
 
+@cache
+def _cmake_args_defines() -> Dict[str, str]:
+    result = {}
+
+    args = re.split(r"\s+", os.environ.get("CMAKE_ARGS", ""))
+    for arg in args:
+        if arg.startswith("-D") and "=" in arg:
+            arg_key, value = arg.split("=")
+            key = arg_key[2:]  # Remove the leading "-D"
+            result[key] = value
+
+    return result
+
+
+def _is_macos() -> bool:
+    return sys.platform == "darwin"
+
+
 class ShouldBuild:
     """Indicates whether to build various components."""
 
     @staticmethod
-    def _is_env_enabled(env_var: str, default: bool = False) -> bool:
-        val = os.environ.get(env_var, None)
-        if val is None:
-            return default
-        if val in ("OFF", "0", ""):
+    def _is_truthy(value: Optional[str]) -> bool:
+        if (value is None) or (value.lower() in ("off", "0", "")):
             return False
         return True
 
+    @staticmethod
+    def _is_cmake_arg_enabled(var: str, default: bool) -> bool:
+        if os.environ.get(var) is not None:
+            raise RuntimeError(
+                f"Python wheel building does not support setting '{var}' using environment variables. Use CMAKE_ARGS='-D{var}=ON' instead."
+            )
+
+        value = _cmake_args_defines().get(var, None)
+        if value is None:
+            return default
+        return ShouldBuild._is_truthy(value)
+
     @classmethod
     def pybindings(cls) -> bool:
-        return cls._is_env_enabled("EXECUTORCH_BUILD_PYBIND", default=False)
+        return cls._is_cmake_arg_enabled(
+            "EXECUTORCH_BUILD_PYBIND",
+            # If the user hasn't specified anything, we want to turn this on if any
+            # bindings are requested explicitly.
+            #
+            # Please keep this in sync with `VALID_PYBINDS` in install_executorch.py.
+            default=any(
+                [
+                    cls.coreml(),
+                    cls.mps(),
+                    cls.openvino(),
+                    cls.xnnpack(),
+                    cls.neutron(),
+                    cls.training(),
+                ]
+            ),
+        )
+
+    @classmethod
+    def coreml(cls) -> bool:
+        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_COREML", default=_is_macos())
+
+    @classmethod
+    def mps(cls) -> bool:
+        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_MPS", default=False)
+
+    @classmethod
+    def openvino(cls) -> bool:
+        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_OPENVINO", default=False)
+
+    @classmethod
+    def xnnpack(cls) -> bool:
+        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_XNNPACK", default=True)
+
+    @classmethod
+    def neutron(cls) -> bool:
+        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_NEUTRON", default=False)
 
     @classmethod
     def training(cls) -> bool:
-        return cls._is_env_enabled("EXECUTORCH_BUILD_TRAINING", default=False)
+        return cls._is_cmake_arg_enabled(
+            "EXECUTORCH_BUILD_EXTENSION_TRAINING", default=False
+        )
 
     @classmethod
     def llama_custom_ops(cls) -> bool:
-        return cls._is_env_enabled("EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT", default=True)
-
-    @classmethod
-    def flatc(cls) -> bool:
-        return cls._is_env_enabled("EXECUTORCH_BUILD_FLATC", default=True)
+        return cls._is_cmake_arg_enabled(
+            "EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT", default=True
+        )
 
 
 class Version:
@@ -512,8 +576,7 @@ class CustomBuildPy(build_py):
             # In editable mode, the package directory is the original source directory
             dst_root = self.get_package_dir(".")
         else:
-            dst_root = os.path.join(self.build_lib, self.get_package_dir("executorch"))
-
+            dst_root = os.path.join(self.build_lib, "executorch")
         # Create the version file.
         Version.write_to_python_file(os.path.join(dst_root, "version.py"))
 
@@ -544,8 +607,8 @@ class CustomBuildPy(build_py):
         # be found in the pip package. This is the subset of headers that are
         # essential for building custom ops extensions.
         # TODO: Use cmake to gather the headers instead of hard-coding them here.
-        # For example: https://discourse.cmake.org/t/installing-headers-the-modern-
-        # way-regurgitated-and-revisited/3238/3
+        # For example:
+        # https://discourse.cmake.org/t/installing-headers-the-modern-way-regurgitated-and-revisited/3238/3
         for include_dir in [
             "runtime/core/",
             "runtime/kernel/",
@@ -620,7 +683,7 @@ class CustomBuild(build):
         default_parallel = str(os.cpu_count() - 1)
         self.parallel = os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL", default_parallel)
 
-    def run(self):
+    def run(self):  # noqa C901
         self.dump_options()
 
         cfg = get_build_type(self.debug)
@@ -651,11 +714,7 @@ class CustomBuild(build):
             "-DEXECUTORCH_ENABLE_LOGGING=ON",
             "-DEXECUTORCH_LOG_LEVEL=Info",
             "-DCMAKE_OSX_DEPLOYMENT_TARGET=10.15",
-            # The separate host project is only required when cross-compiling,
-            # and it can cause build race conditions (libflatcc.a errors) when
-            # enabled. TODO(dbort): Remove this override once this option is
-            # managed by cmake itself.
-            "-DEXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT=OFF",
+            "-DEXECUTORCH_BUILD_TESTS=ON",
         ]
 
         build_args = [f"-j{self.parallel}"]
@@ -666,11 +725,20 @@ class CustomBuild(build):
                 "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",  # add quantized ops to pybindings.
                 "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON",
             ]
+
+            if ShouldBuild.xnnpack():
+                cmake_args += ["-DEXECUTORCH_BUILD_XNNPACK=ON"]
+
+            if ShouldBuild.neutron():
+                cmake_args += ["-DEXECUTORCH_BUILD_NEUTRON=ON"]
+
             if ShouldBuild.training():
-                cmake_args += [
-                    "-DEXECUTORCH_BUILD_EXTENSION_TRAINING=ON",
-                ]
                 build_args += ["--target", "_training_lib"]
+
+            if ShouldBuild.coreml():
+                cmake_args += ["-DEXECUTORCH_BUILD_COREML=ON"]
+                build_args += ["--target", "executorchcoreml"]
+
             build_args += ["--target", "portable_lib"]
             # To link backends into the portable_lib target, callers should
             # add entries like `-DEXECUTORCH_BUILD_XNNPACK=ON` to the CMAKE_ARGS
@@ -764,23 +832,20 @@ class CustomBuild(build):
 
 def get_ext_modules() -> List[Extension]:
     """Returns the set of extension modules to build."""
-    ext_modules = []
-    if ShouldBuild.flatc():
-        ext_modules.extend(
-            [
-                BuiltFile(
-                    src_dir="%CMAKE_CACHE_DIR%/third-party/flatbuffers/%BUILD_TYPE%/",
-                    src_name="flatc",
-                    dst="executorch/data/bin/",
-                    is_executable=True,
-                ),
-                BuiltFile(
-                    src_dir="tools/wheel",
-                    src_name="pip_data_bin_init.py.in",
-                    dst="executorch/data/bin/__init__.py",
-                ),
-            ]
-        )
+
+    ext_modules = [
+        BuiltFile(
+            src_dir="%CMAKE_CACHE_DIR%/third-party/flatbuffers_external_project/bin/",
+            src_name="flatc",
+            dst="executorch/data/bin/",
+            is_executable=True,
+        ),
+        BuiltFile(
+            src_dir="tools/wheel",
+            src_name="pip_data_bin_init.py.in",
+            dst="executorch/data/bin/__init__.py",
+        ),
+    ]
 
     if ShouldBuild.pybindings():
         ext_modules.append(
@@ -800,8 +865,16 @@ def get_ext_modules() -> List[Extension]:
             ext_modules.append(
                 # Install the prebuilt pybindings extension wrapper for training
                 BuiltExtension(
-                    "_training_lib.*",
+                    "extension/training/_training_lib.*",
                     "executorch.extension.training.pybindings._training_lib",
+                )
+            )
+        if ShouldBuild.coreml():
+            ext_modules.append(
+                BuiltExtension(
+                    src="executorchcoreml.*",
+                    src_dir="backends/apple/coreml",
+                    modpath="executorch.backends.apple.coreml.executorchcoreml",
                 )
             )
     if ShouldBuild.llama_custom_ops():

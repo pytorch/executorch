@@ -1751,8 +1751,8 @@ class TestEmit(unittest.TestCase):
         module_1(*example_inputs)
         module_2(*example_inputs)
 
-        ep1 = export_for_training(module_1, example_inputs)
-        ep2 = export_for_training(module_2, example_inputs)
+        ep1 = export_for_training(module_1, example_inputs, strict=True)
+        ep2 = export_for_training(module_2, example_inputs, strict=True)
 
         edge_program_manager = exir.to_edge(
             {"forward1": ep1, "forward2": ep2},
@@ -1819,3 +1819,59 @@ class TestEmit(unittest.TestCase):
         ]
         self.assertEqual(external_map["net.linear.weight"], 0)
         self.assertEqual(external_map["net.linear.bias"], 1)
+
+    def test_emit_mutable_buffer_names(self) -> None:
+        class Net(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(2, 2)
+                self.register_buffer("buffer", torch.zeros(1, 2))
+
+            def forward(self, x):
+                self.buffer.add_(1)
+                return self.linear(x) + self.buffer
+
+        net = Net()
+
+        ep = export(net, (torch.randn(1, 2),), strict=True)
+        # Lower the graph to edge dialect.
+        ep = to_edge(ep)
+        # Lower the graph to executorch.
+        ep = ep.to_executorch(
+            config=ExecutorchBackendConfig(
+                emit_mutable_buffer_names=True,
+                memory_planning_pass=MemoryPlanningPass(alloc_mutable_buffers=False),
+            )
+        )
+        for val in ep.executorch_program.execution_plan[0].values:
+            if isinstance(val, Tensor) and val.extra_tensor_info:
+                self.assertEqual(val.extra_tensor_info.fully_qualified_name, "buffer")
+                self.assertEqual(val.allocation_info, None)
+
+    def test_emit_mutable_buffer_names_fails(self) -> None:
+        class Net(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(2, 2)
+                self.register_buffer("buffer", torch.zeros(1, 2))
+
+            def forward(self, x):
+                self.buffer.add_(1)
+                return self.linear(x) + self.buffer
+
+        net = Net()
+
+        ep = export(net, (torch.randn(1, 2),), strict=True)
+        # Lower the graph to edge dialect.
+        ep = to_edge(ep)
+        # Lower the graph to executorch.
+        # Must emit mutable buffer names if we don't allocate mutable buffers
+        with self.assertRaises(InternalError):
+            ep.to_executorch(
+                config=ExecutorchBackendConfig(
+                    emit_mutable_buffer_names=False,
+                    memory_planning_pass=MemoryPlanningPass(
+                        alloc_mutable_buffers=False
+                    ),
+                )
+            )

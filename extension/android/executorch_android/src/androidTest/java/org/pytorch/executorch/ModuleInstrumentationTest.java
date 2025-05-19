@@ -25,6 +25,8 @@ import org.junit.runner.RunWith;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.io.IOException;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -36,12 +38,13 @@ import androidx.test.InstrumentationRegistry;
 /** Unit tests for {@link Module}. */
 @RunWith(AndroidJUnit4.class)
 public class ModuleInstrumentationTest {
-    private static String TEST_FILE_NAME = "/add.pte";
+    private static String TEST_FILE_NAME = "/ModuleAdd.pte";
     private static String MISSING_FILE_NAME = "/missing.pte";
     private static String NON_PTE_FILE_NAME = "/test.txt";
     private static String FORWARD_METHOD = "forward";
     private static String NONE_METHOD = "none";
     private static int OK = 0x00;
+    private static int INVALID_STATE = 0x2;
     private static int INVALID_ARGUMENT = 0x12;
     private static int ACCESS_FAILED = 0x22;
 
@@ -93,20 +96,9 @@ public class ModuleInstrumentationTest {
         assertTrue(results[0].isTensor());
     }
 
-    @Test
+    @Test(expected = RuntimeException.class)
     public void testModuleLoadNonExistantFile() throws IOException{
         Module module = Module.load(getTestFilePath(MISSING_FILE_NAME));
-
-        EValue[] results = module.forward();
-        assertEquals(null, results);
-    }
-
-    @Test
-    public void testModuleLoadMethodNonExistantFile() throws IOException{
-        Module module = Module.load(getTestFilePath(MISSING_FILE_NAME));
-
-        int loadMethod = module.loadMethod(FORWARD_METHOD);
-        assertEquals(loadMethod, ACCESS_FAILED);
     }
 
     @Test
@@ -123,5 +115,64 @@ public class ModuleInstrumentationTest {
 
         int loadMethod = module.loadMethod(FORWARD_METHOD);
         assertEquals(loadMethod, INVALID_ARGUMENT);
+    }
+
+    @Test
+    public void testLoadOnDestroyedModule() throws IOException{
+        Module module = Module.load(getTestFilePath(TEST_FILE_NAME));
+
+        module.destroy();
+
+        int loadMethod = module.loadMethod(FORWARD_METHOD);
+        assertEquals(loadMethod, INVALID_STATE);
+    }
+
+    @Test
+    public void testForwardOnDestroyedModule() throws IOException{
+        Module module = Module.load(getTestFilePath(TEST_FILE_NAME));
+
+        int loadMethod = module.loadMethod(FORWARD_METHOD);
+        assertEquals(loadMethod, OK);
+
+        module.destroy();
+
+        EValue[] results = module.forward();
+        assertEquals(0, results.length);
+    }
+
+    @Test
+    public void testForwardFromMultipleThreads() throws InterruptedException, IOException {
+        Module module = Module.load(getTestFilePath(TEST_FILE_NAME));
+
+        int numThreads = 100;
+        CountDownLatch latch = new CountDownLatch(numThreads);
+        AtomicInteger completed = new AtomicInteger(0);
+
+        Runnable runnable = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    latch.countDown();
+                    latch.await(5000, java.util.concurrent.TimeUnit.MILLISECONDS);
+                    EValue[] results = module.forward();
+                    assertTrue(results[0].isTensor());
+                    completed.incrementAndGet();
+                } catch (InterruptedException e) {
+
+                }
+            }
+        };
+
+        Thread[] threads = new Thread[numThreads];
+        for (int i = 0; i < numThreads; i++) {
+            threads[i] = new Thread(runnable);
+            threads[i].start();
+        }
+
+        for (int i = 0; i < numThreads; i++) {
+            threads[i].join();
+        }
+
+        assertEquals(numThreads, completed.get());
     }
 }

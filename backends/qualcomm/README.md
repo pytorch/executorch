@@ -6,14 +6,14 @@ we reserve the right to modify interfaces and implementations.
 
 This backend is implemented on the top of
 [Qualcomm AI Engine Direct SDK](https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk).
-Please follow [tutorial](../../docs/source/build-run-qualcomm-ai-engine-direct-backend.md) to setup environment, build, and run executorch models by this backend (Qualcomm AI Engine Direct is also referred to as QNN in the source and documentation).
+Please follow [tutorial](../../docs/source/backends-qualcomm.md) to setup environment, build, and run executorch models by this backend (Qualcomm AI Engine Direct is also referred to as QNN in the source and documentation).
 
-A website version of the tutorial is [here](https://pytorch.org/executorch/stable/build-run-qualcomm-ai-engine-direct-backend.html).
+A website version of the tutorial is [here](https://pytorch.org/executorch/main/backends-qualcomm).
 
 ## Delegate Options
 
 Please check `generate_qnn_executorch_compiler_spec()` in
-[utils.py](./utils/utils.py) for supported SoC and inference type.
+[utils.py](utils/utils.py) for supported SoC and inference type.
 
 ### Supported Chipset
 - Snapdragon 8 Gen 1

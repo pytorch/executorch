@@ -5,7 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-set -euo pipefail
+set -euxo pipefail
 
 SOURCE_ROOT_DIR=""
 OUTPUT="cmake-out"
@@ -30,11 +30,14 @@ libexecutorch.a,\
 libexecutorch_core.a,\
 libextension_apple.a,\
 libextension_data_loader.a,\
+libextension_flat_tensor.a,\
 libextension_module.a,\
 libextension_tensor.a,\
 :$HEADERS_PATH"
 
 FRAMEWORK_BACKEND_COREML="backend_coreml:\
+libcoreml_util.a,\
+libcoreml_inmemoryfs.a,\
 libcoremldelegate.a,\
 :"
 
@@ -190,6 +193,7 @@ cmake_build() {
         -DEXECUTORCH_BUILD_MPS=$MPS \
         -DEXECUTORCH_BUILD_XNNPACK=$XNNPACK \
         -DEXECUTORCH_XNNPACK_SHARED_WORKSPACE=ON \
+        -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
         -DEXECUTORCH_BUILD_EXTENSION_APPLE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
@@ -204,7 +208,7 @@ cmake_build() {
     cmake --build . \
         --config "$mode" \
         --verbose
-    cd ..
+    cd -
 }
 
 for index in ${!PLATFORMS[*]}; do
@@ -282,5 +286,10 @@ for platform in "${PLATFORMS[@]}"; do
 done
 
 rm -rf "$HEADERS_PATH"
+
+echo "Running tests"
+
+cd "$SOURCE_ROOT_DIR"
+swift test
 
 echo "Build succeeded!"

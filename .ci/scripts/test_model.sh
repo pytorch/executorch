@@ -87,24 +87,20 @@ test_model() {
     bash examples/models/llava/install_requirements.sh
     STRICT="--no-strict"
   fi
-  if [[ "$MODEL_NAME" == "llama3_2_vision_encoder" || "$MODEL_NAME" == "llama3_2_text_decoder" ]]; then
-    # Install requirements for llama vision.
-    bash examples/models/llama3_2_vision/install_requirements.sh
-  fi
   if [[ "${MODEL_NAME}" == "qwen2_5" ]]; then
       # Install requirements for export_llama
       bash examples/models/llama/install_requirements.sh
       # Test export_llama script: python3 -m examples.models.llama.export_llama.
       # Use Llama random checkpoint with Qwen 2.5 1.5b model configuration.
-      "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama --model "${MODEL_NAME}" -c examples/models/llama/params/demo_rand_params.pth -p examples/models/qwen2_5/1_5b_config.json
+      "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama --model "${MODEL_NAME}" -p examples/models/qwen2_5/1_5b_config.json
       rm "./${MODEL_NAME}.pte"
       return  # Skip running with portable executor runnner since portable doesn't support Qwen's biased linears.
   fi
-  if [[ "${MODEL_NAME}" == "phi-4-mini" ]]; then
+  if [[ "${MODEL_NAME}" == "phi_4_mini" ]]; then
       # Install requirements for export_llama
       bash examples/models/llama/install_requirements.sh
       # Test export_llama script: python3 -m examples.models.llama.export_llama.
-      "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama --model "${MODEL_NAME}" -c examples/models/llama/params/demo_rand_params.pth -p examples/models/phi-4-mini/config.json
+      "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama --model "${MODEL_NAME}" -p examples/models/phi_4_mini/config.json
       run_portable_executor_runner
       rm "./${MODEL_NAME}.pte"
       return
@@ -205,7 +201,7 @@ test_model_with_qnn() {
   # TODO(guangyang): Make QNN chipset matches the target device
   QNN_CHIPSET=SM8450
 
-  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.scripts.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --compile_only $EXTRA_FLAGS
+  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.scripts.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --ci --compile_only $EXTRA_FLAGS
   EXPORTED_MODEL=$(find "./${EXPORT_SCRIPT}" -type f -name "${MODEL_NAME}*.pte" -print -quit)
 }
 
@@ -222,21 +218,24 @@ test_model_with_coreml() {
 
   DTYPE=float16
 
-  "${PYTHON_EXECUTABLE}" -m examples.apple.coreml.scripts.export --model_name="${MODEL_NAME}" --compute_precision "${DTYPE}"
+  "${PYTHON_EXECUTABLE}" -m examples.apple.coreml.scripts.export --model_name="${MODEL_NAME}" --compute_precision "${DTYPE}" --use_partitioner
   EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
-  # TODO:
+
   if [ -n "$EXPORTED_MODEL" ]; then
     EXPORTED_MODEL_WITH_DTYPE="${EXPORTED_MODEL%.pte}_${DTYPE}.pte"
     mv "$EXPORTED_MODEL" "$EXPORTED_MODEL_WITH_DTYPE"
     EXPORTED_MODEL="$EXPORTED_MODEL_WITH_DTYPE"
-    echo "Renamed file path: $EXPORTED_MODEL"
+    echo "OK exported model: $EXPORTED_MODEL"
   else
-    echo "No .pte file found"
+    echo "[error] failed to export model: no .pte file found"
     exit 1
   fi
 
   # Run the model
   if [ "${should_test}" = true ]; then
+    echo "Installing requirements needed to build coreml_executor_runner..."
+    backends/apple/coreml/scripts/install_requirements.sh
+
     echo "Testing exported model with coreml_executor_runner..."
     local out_dir=$(mktemp -d)
     COREML_EXECUTOR_RUNNER_OUT_DIR="${out_dir}" examples/apple/coreml/scripts/build_executor_runner.sh

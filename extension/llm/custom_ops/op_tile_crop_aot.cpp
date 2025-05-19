@@ -18,10 +18,15 @@ namespace executor {
 namespace native {
 
 Tensor&
+tile_crop_out_no_context(const Tensor& input, int64_t tile_size, Tensor& out);
+
+Tensor&
 tile_crop_out_no_context(const Tensor& input, int64_t tile_size, Tensor& out) {
   executorch::aten::RuntimeContext context{};
   return tile_crop_out_impl(context, input, tile_size, out);
 }
+
+at::Tensor tile_crop_aten(const at::Tensor& input, int64_t tile_size);
 
 at::Tensor tile_crop_aten(const at::Tensor& input, int64_t tile_size) {
   // max_num_tiles = 4, num_channels = 3.

@@ -2,6 +2,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from executorch.examples.models.llama.model import Llama2Model
+from executorch.examples.models.qwen2_5.convert_weights import convert_weights
 
 
 class Qwen2_5Model(Llama2Model):
@@ -11,4 +12,5 @@ class Qwen2_5Model(Llama2Model):
 
 __all__ = [
     "Qwen2_5Model",
+    "convert_weights",
 ]

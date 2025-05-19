@@ -11,6 +11,9 @@ from executorch.backends.xnnpack.test.tester import Tester
 
 
 class TestSliceCopy(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     def _test_slice_copy(self, module, inputs, copy_count=1, edge_copy_count=1):
         (
             Tester(module, inputs)
@@ -65,6 +68,18 @@ class TestSliceCopy(unittest.TestCase):
         inputs = (torch.randn(1, 1, 3, 3),)
         # Note that two of the slices are optimized away as they are identity.
         self._test_slice_copy(ConvSlice(), inputs, 4, 2)
+
+    def test_fp32_slice_copy_default_start(self):
+        """
+        XNNPACK supports default start in slice op.
+        """
+
+        class Slice(torch.nn.Module):
+            def forward(self, x):
+                return torch.ops.aten.slice.Tensor(x, 0, None, 2)
+
+        inputs = (torch.randn(5, 5),)
+        self._test_slice_copy(Slice(), inputs, 1, 1)
 
     def test_fp32_slice_copy_stride_non_1(self):
         """

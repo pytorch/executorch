@@ -5,20 +5,12 @@
 
 import logging
 import os
-import platform
 import random
 import shutil
-import subprocess
 import sys
 from typing import Any
 
 import pytest
-
-try:
-    import tosa_reference_model
-except ImportError:
-    logging.warning("tosa_reference_model not found, can't run reference model tests")
-    tosa_reference_model = None
 
 """
 This file contains the pytest hooks, fixtures etc. for the Arm test suite.
@@ -44,15 +36,29 @@ def pytest_configure(config):
             )
         # Only enable if we also have the TOSA reference model available.
         pytest._test_options["corstone_fvp"] = True  # type: ignore[attr-defined]
-    pytest._test_options["llama_inputs"] = config.option.llama_inputs  # type: ignore[attr-defined]
+
+    if getattr(config.option, "llama_inputs", False) and config.option.llama_inputs:
+        pytest._test_options["llama_inputs"] = config.option.llama_inputs  # type: ignore[attr-defined]
+
     pytest._test_options["fast_fvp"] = False  # type: ignore[attr-defined]
     if getattr(config.option, "fast_fvp", False):
         pytest._test_options["fast_fvp"] = config.option.fast_fvp  # type: ignore[attr-defined]
 
-    # TODO: remove this flag once we have a way to run the reference model tests with Buck
-    pytest._test_options["tosa_ref_model"] = False  # type: ignore[attr-defined]
-    if tosa_reference_model is not None:
-        pytest._test_options["tosa_ref_model"] = True  # type: ignore[attr-defined]
+    pytest._test_options["tosa_version"] = "0.80"  # type: ignore[attr-defined]
+    if config.option.arm_run_tosa_version:
+        pytest._test_options["tosa_version"] = config.option.arm_run_tosa_version
+
+    # Not all deployments of ET have the TOSA reference model available.
+    # Make sure we don't try to use it if it's not available.
+    try:
+        if pytest._test_options["tosa_version"] == "0.80":
+            import tosa_tools.v0_80.tosa_reference_model as tosa_reference_model
+        else:
+            import tosa_tools.tosa_ref_model as tosa_reference_model
+    except ImportError:
+        pytest._test_options["tosa_ref_model"] = False  # type: ignore[attr-defined]
+        tosa_reference_model = None  # noqa
+
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
 
@@ -75,11 +81,11 @@ def pytest_addoption(parser):
         nargs="+",
         help="List of two files. Firstly .pt file. Secondly .json",
     )
+    try_addoption("--arm_run_tosa_version", action="store", default="0.80")
 
 
 def pytest_sessionstart(session):
-    if not session.config.option.collectonly:
-        _load_libquantized_ops_aot_lib()
+    pass
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -169,32 +175,3 @@ def get_option(option: str) -> Any | None:
     if option in pytest._test_options:  # type: ignore[attr-defined]
         return pytest._test_options[option]  # type: ignore[attr-defined]
     return None
-
-
-def _load_libquantized_ops_aot_lib():
-    """
-    Find and load the libquantized_ops_aot_lib shared library.
-    """
-    so_ext = {
-        "Darwin": "dylib",
-        "Linux": "so",
-        "Windows": "dll",
-    }.get(platform.system(), None)
-
-    find_lib_cmd = [
-        "find",
-        "cmake-out-aot-lib",
-        "-name",
-        f"libquantized_ops_aot_lib.{so_ext}",
-    ]
-
-    res = subprocess.run(find_lib_cmd, capture_output=True)
-    if res.returncode == 0:
-        library_path = res.stdout.decode().strip()
-        import torch
-
-        torch.ops.load_library(library_path)
-    else:
-        raise RuntimeError(
-            f"Did not find libquantized_ops_aot_lib.{so_ext} in cmake-out-aot-lib. Did you build it?"
-        )

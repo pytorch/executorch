@@ -21,8 +21,7 @@ trap 'rm -rfv ${TMP_DIR}' EXIT
 
 # Setup MacOS dependencies as there is no Docker support on MacOS atm
 PYTHON_EXECUTABLE=python \
-EXECUTORCH_BUILD_PYBIND=ON \
-CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
+CMAKE_ARGS="-DEXECUTORCH_BUILD_PYBIND=ON -DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
 ${CONDA_RUN} --no-capture-output \
 .ci/scripts/setup-macos.sh "$@"
 
@@ -30,7 +29,6 @@ if [[ "$BUILD_TOOL" == "cmake" ]]; then
     # Install llama3_2_vision dependencies.
     PYTHON_EXECUTABLE=python \
     ${CONDA_RUN} --no-capture-output \
-    ./examples/models/llama3_2_vision/install_requirements.sh
 
     .ci/scripts/unittest-macos-cmake.sh
 elif [[ "$BUILD_TOOL" == "buck2" ]]; then

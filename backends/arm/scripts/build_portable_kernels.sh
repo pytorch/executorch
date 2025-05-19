@@ -75,7 +75,7 @@ cmake                                                 \
     -B"${et_build_dir}/examples/arm"                  \
     "${et_root_dir}/examples/arm"
 
-cmake --build "${et_build_dir}/examples/arm" --parallel --config ${build_type} --
+cmake --build "${et_build_dir}/examples/arm" -j$(nproc) --config ${build_type} --
 
 set +x
 

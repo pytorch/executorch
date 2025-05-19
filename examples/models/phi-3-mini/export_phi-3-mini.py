@@ -65,7 +65,7 @@ def export(args) -> None:
         xnnpack_quantizer.set_global(xnnpack_quant_config)
 
         model = export_for_training(
-            model, example_inputs, dynamic_shapes=dynamic_shapes
+            model, example_inputs, dynamic_shapes=dynamic_shapes, strict=True
         ).module()
         model = prepare_pt2e(model, xnnpack_quantizer)  # pyre-fixme[6]
         model(*example_inputs)
