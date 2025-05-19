@@ -311,30 +311,28 @@ class TestFusionPasses(TestFusionPassesBase):
         )
 
     def test_replace_quant_view_dequant_with_requantize(self):
-        class M(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                x = torch.ops.quantized_decomposed.quantize_per_tensor(
-                    x, 1.2, 3, 0, 127, torch.int8
-                )
-                x = x.view(-1)
-                x = torch.ops.quantized_decomposed.dequantize_per_tensor(
-                    x, 4.5, 6, 0, 127, torch.int8
-                )
-                return x
-
-        inputs = torch.randn(2, 12, 1, 6)
-        model = M()
-        graph_module = export_to_edge(model, (inputs,)).exported_program().graph_module
-        graph_module = FuseQuantDequantToRequantizePass()(graph_module).graph_module
-
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 12, 1, 6, dtype=torch.float32))
+        quant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(x, 1.2, 3, 0, 127, torch.int8),
+        )
+        view = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(quant, [-1])
+        )
+        dequant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(view, 4.5, 6, 0, 127, torch.int8),
+        )
+        builder.output(dequant)
+        original_graph = builder.get_graph_module()
+        converted_graph = FuseQuantDequantToRequantizePass()(
+            original_graph
+        ).graph_module
         self.check_op_counts(
-            graph_module,
+            converted_graph,
             expected_op_counts={
-                # Verify that no dequant/quant pair was replaced with requantize.
-                # quantize -> permute -> dequantize should not be replaced with requantize.
+                # Verify that dequant/quant pair was replaced with requantize.
                 exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: 0,
                 exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: 0,
                 exir_ops.edge.cadence.requantize.default: 1,
