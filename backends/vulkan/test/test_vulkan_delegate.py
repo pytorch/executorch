@@ -1801,3 +1801,44 @@ class TestVulkanBackend(unittest.TestCase):
             LinearModel(n_pca_basis, n_sh_basis, n_gaussians),
             (torch.ones(n_pca_basis),),
         )
+
+    def test_vulkan_backend_sym_size_int(self):
+        """
+        Test the sym_size.int operator with a model that:
+        1. Takes an input tensor with shape [1, M, K]
+        2. Reshapes it to [M, K]
+        3. Applies a linear layer
+        4. Reshapes the output back to [1, M, N]
+        """
+        K = 64  # Input feature dimension
+        N = 32  # Output feature dimension
+
+        class SymSizeModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(K, N)
+
+            def forward(self, x):
+                M = x.size(1)
+
+                reshaped = torch.reshape(x, [M, K])
+                output = self.linear(reshaped)
+                return torch.reshape(output, [1, M, N])
+
+        sample_inputs = (torch.randn(1, 64, K),)
+
+        batch = Dim("batch", min=1, max=128)
+        dynamic_shapes = {"x": {1: batch}}
+
+        test_inputs = [
+            (torch.randn(1, 32, K),),
+            (torch.randn(1, 96, K),),
+            (torch.randn(1, 128, K),),
+        ]
+
+        self.lower_module_and_test_output(
+            SymSizeModel(),
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            test_inputs=test_inputs,
+        )

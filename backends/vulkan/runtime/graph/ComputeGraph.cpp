@@ -156,6 +156,38 @@ ComputeGraph::~ComputeGraph() {
   context_->flush();
 }
 
+std::vector<int64_t> ComputeGraph::extract_int_or_symint_list(
+    const ValueRef idx) {
+  const Value& val = values_.at(idx);
+  std::vector<int64_t> result;
+
+  if (val.isIntList()) {
+    // If it's an IntList, return a copy of the list
+    return val.toConstIntList();
+  } else if (val.isValueList()) {
+    // If it's a ValueList, extract each element as an Int or SymInt
+    const std::vector<ValueRef>& value_list = val.toConstValueList();
+    result.reserve(value_list.size());
+
+    for (const ValueRef& ref : value_list) {
+      const Value& element = values_.at(ref);
+      if (element.isInt()) {
+        result.push_back(element.toInt());
+      } else if (element.isSymInt()) {
+        result.push_back(read_symint(ref));
+      } else {
+        VK_THROW(
+            "ValueList element is neither Int nor SymInt, but has type ",
+            element.type());
+      }
+    }
+    return result;
+  }
+
+  VK_THROW(
+      "Cannot extract int or symint list from Value with type ", val.type());
+}
+
 utils::StorageType ComputeGraph::suggested_storage_type() {
   if (config_.enable_storage_type_override) {
     return config_.storage_type_override;
