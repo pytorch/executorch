@@ -34,7 +34,6 @@ class TestConformer:
     # for that is some assert ops are removed by passes in the
     # .to_executorch step, i.e. after Arm partitioner.
     aten_ops = ["torch.ops.aten._assert_scalar.default"]
-    exir_ops = ["executorch_exir_dialects_edge__ops_aten_max_default"]
 
     dim = 16
     num_examples = 10
@@ -69,15 +68,15 @@ def test_conformer_tosa_MI():
     pipeline.run()
 
 
-@pytest.mark.xfail(reason="All IO needs to have the same data type (MLETORCH-635)")
 def test_conformer_tosa_BI():
     pipeline = TosaPipelineBI[input_t](
         TestConformer.conformer,
         TestConformer.model_example_inputs,
         aten_op=TestConformer.aten_ops,
-        exir_op=TestConformer.exir_ops,
+        exir_op=[],
         use_to_edge_transform_and_lower=True,
     )
+    pipeline.pop_stage("check_count.exir")
     pipeline.change_args(
         "run_method_and_compare_outputs",
         get_test_inputs(
@@ -98,7 +97,7 @@ def test_conformer_u55_BI():
         TestConformer.conformer,
         TestConformer.model_example_inputs,
         aten_ops=TestConformer.aten_ops,
-        exir_ops=TestConformer.exir_ops,
+        exir_ops=[],
         use_to_edge_transform_and_lower=True,
         run_on_fvp=True,
     )
@@ -120,7 +119,7 @@ def test_conformer_u85_BI():
         TestConformer.conformer,
         TestConformer.model_example_inputs,
         aten_ops=TestConformer.aten_ops,
-        exir_ops=TestConformer.exir_ops,
+        exir_ops=[],
         use_to_edge_transform_and_lower=True,
         run_on_fvp=True,
     )
