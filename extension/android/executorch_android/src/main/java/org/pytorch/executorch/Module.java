@@ -11,6 +11,7 @@ package org.pytorch.executorch;
 import android.util.Log;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
+import java.io.File;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import org.pytorch.executorch.annotations.Experimental;
@@ -51,6 +52,10 @@ public class Module {
   public static Module load(final String modelPath, int loadMode) {
     if (!NativeLoader.isInitialized()) {
       NativeLoader.init(new SystemDelegate());
+    }
+    File modelFile = new File(modelPath);
+    if (!modelFile.canRead() || !modelFile.isFile()) {
+      throw new RuntimeException("Cannot load model path " + modelPath);
     }
     return new Module(new NativePeer(modelPath, loadMode));
   }
@@ -132,6 +137,16 @@ public class Module {
     }
   }
 
+  /**
+   * Returns the names of the methods in a certain method.
+   *
+   * @param methodName method name to query
+   * @return an array of backend name
+   */
+  public String[] getUsedBackends(String methodName) {
+    return mNativePeer.getUsedBackends(methodName);
+  }
+
   /** Retrieve the in-memory log buffer, containing the most recent ExecuTorch log entries. */
   public String[] readLogBuffer() {
     return mNativePeer.readLogBuffer();
@@ -142,7 +157,7 @@ public class Module {
   }
 
   /**
-   * Explicitly destroys the native torch::jit::Module. Calling this method is not required, as the
+   * Explicitly destroys the native Module object. Calling this method is not required, as the
    * native object will be destroyed when this object is garbage-collected. However, the timing of
    * garbage collection is not guaranteed, so proactively calling {@code destroy} can free memory
    * more quickly. See {@link com.facebook.jni.HybridData#resetNative}.

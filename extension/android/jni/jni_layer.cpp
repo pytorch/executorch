@@ -13,6 +13,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include "jni_layer_constants.h"
 
@@ -403,6 +404,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 #endif
   }
 
+<<<<<<< HEAD
   jboolean etdump() {
 #ifdef EXECUTORCH_ANDROID_PROFILING
     executorch::etdump::ETDumpGen* etdumpgen = (executorch::etdump::ETDumpGen*) module_->event_tracer();
@@ -430,6 +432,25 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 #endif
   return false;
 
+=======
+  facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> getUsedBackends(
+      facebook::jni::alias_ref<jstring> methodName) {
+    auto methodMeta = module_->method_meta(methodName->toStdString()).get();
+    std::unordered_set<std::string> backends;
+    for (auto i = 0; i < methodMeta.num_backends(); i++) {
+      backends.insert(methodMeta.get_backend_name(i).get());
+    }
+
+    facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> ret =
+        facebook::jni::JArrayClass<jstring>::newArray(backends.size());
+    int i = 0;
+    for (auto s : backends) {
+      facebook::jni::local_ref<facebook::jni::JString> backend_name =
+          facebook::jni::make_jstring(s.c_str());
+      (*ret)[i] = backend_name;
+      i++;
+    }
+    return ret;
   }
 
   static void registerNatives() {
@@ -440,6 +461,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         makeNativeMethod("loadMethod", ExecuTorchJni::load_method),
         makeNativeMethod("readLogBuffer", ExecuTorchJni::readLogBuffer),
         makeNativeMethod("etdump", ExecuTorchJni::etdump),
+        makeNativeMethod("getUsedBackends", ExecuTorchJni::getUsedBackends),
     });
   }
 };
