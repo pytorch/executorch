@@ -712,7 +712,7 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
 endif()
 
-if(EXECUTORCH_BUILD_TORCHAO)
+if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
   # Currently only enable this on Arm-based Macs
   if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
     set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
