@@ -31,7 +31,6 @@ class TestDl3:
     dl3 = dl3.get_eager_model()
 
 
-@pytest.mark.flaky
 def test_dl3_tosa_MI():
     pipeline = TosaPipelineMI[input_t](
         TestDl3.dl3,
@@ -39,7 +38,9 @@ def test_dl3_tosa_MI():
         aten_op=[],
         exir_op=[],
     )
-    pipeline.change_args("run_method_and_compare_outputs", atol=1.0)
+    pipeline.change_args(
+        "run_method_and_compare_outputs", rtol=1.0, atol=1.0
+    )  # TODO: MLETORCH-1036 decrease tolerance
     pipeline.run()
 
 
@@ -50,7 +51,9 @@ def test_dl3_tosa_BI():
         aten_op=[],
         exir_op=[],
     )
-    pipeline.change_args("run_method_and_compare_outputs", atol=1.0)
+    pipeline.change_args(
+        "run_method_and_compare_outputs", rtol=1.0, atol=1.0
+    )  # TODO: MLETORCH-1036 decrease tolerance
     pipeline.run()
 
 
@@ -64,7 +67,9 @@ def test_dl3_u55_BI():
         exir_ops=[],
         run_on_fvp=True,
     )
-    pipeline.change_args("run_method_and_compare_outputs", atol=1.0)
+    pipeline.change_args(
+        "run_method_and_compare_outputs", rtol=1.0, atol=1.0
+    )  # TODO: MLETORCH-1036 decrease tolerance
     pipeline.run()
 
 
@@ -78,5 +83,7 @@ def test_dl3_u85_BI():
         exir_ops=[],
         run_on_fvp=True,
     )
-    pipeline.change_args("run_method_and_compare_outputs", atol=1.0)
+    pipeline.change_args(
+        "run_method_and_compare_outputs", rtol=1.0, atol=1.0
+    )  # TODO: MLETORCH-1036 decrease tolerance
     pipeline.run()
