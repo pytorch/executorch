@@ -3301,7 +3301,7 @@ TEST(VulkanComputeGraphOpsTest, test_to_copy) {
 vkapi::ShaderInfo pick_dynamic_dispatch_shader(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef> additional_args) {
+    const std::vector<ValueRef>& additional_args) {
   const ValueRef mat1 = args[1].refs[0];
 
   std::string kernel_name = "dynamic_dispatch_test";
@@ -3316,7 +3316,7 @@ vkapi::ShaderInfo pick_dynamic_dispatch_shader(
 utils::uvec3 pick_dynamic_dispatch_global_wg_size(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef> additional_args) {
+    const std::vector<ValueRef>& additional_args) {
   const ValueRef out = args[0].refs[0];
 
   return graph->logical_limits_of(out);
@@ -3325,14 +3325,14 @@ utils::uvec3 pick_dynamic_dispatch_global_wg_size(
 utils::uvec3 pick_dynamic_dispatch_local_wg_size(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef> additional_args) {
+    const std::vector<ValueRef>& additional_args) {
   return {64, 1, 1};
 }
 
 void resize_dynamic_dispatch_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef> additional_args) {
+    const std::vector<ValueRef>& additional_args) {
   const ValueRef out = args[0].refs[0];
   const ValueRef mat1 = args[1].refs[0];
 

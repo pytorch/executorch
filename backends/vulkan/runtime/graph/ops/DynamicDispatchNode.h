@@ -29,15 +29,15 @@ class DynamicDispatchNode final : public DispatchNode {
   using PickShaderFn = const std::function<vkapi::ShaderInfo(
       ComputeGraph*,
       const std::vector<ArgGroup>&,
-      const std::vector<ValueRef>)>;
+      const std::vector<ValueRef>&)>;
   using PickGlobalFn = const std::function<utils::uvec3(
       ComputeGraph*,
       const std::vector<ArgGroup>&,
-      const std::vector<ValueRef>)>;
+      const std::vector<ValueRef>&)>;
   using PickLocalFn = const std::function<utils::uvec3(
       ComputeGraph*,
       const std::vector<ArgGroup>&,
-      const std::vector<ValueRef>)>;
+      const std::vector<ValueRef>&)>;
 
   explicit DynamicDispatchNode(
       ComputeGraph& graph,

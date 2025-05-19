@@ -34,10 +34,10 @@ DynamicDispatchNode::DynamicDispatchNode(
           pick_local_wg_fn(&graph, args, resize_args),
           args,
           params,
+          push_constants,
           spec_vars,
-          resize_fn,
           resize_args,
-          push_constants),
+          resize_fn),
       pick_shader_fn_(pick_shader_fn),
       pick_global_wg_fn_(pick_global_wg_fn),
       pick_local_wg_fn_(pick_local_wg_fn) {}
