@@ -32,9 +32,9 @@
 #endif
 
 #ifdef EXECUTORCH_ANDROID_PROFILING
+#include <executorch/devtools/etdump/etdump_flatcc.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <executorch/devtools/etdump/etdump_flatcc.h>
 #endif
 
 #include <fbjni/ByteBuffer.h>
@@ -248,7 +248,8 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 #else
     auto etdump_gen = nullptr;
 #endif
-    module_ = std::make_unique<Module>(modelPath->toStdString(), load_mode, std::move(etdump_gen));
+    module_ = std::make_unique<Module>(
+        modelPath->toStdString(), load_mode, std::move(etdump_gen));
 
 #ifdef ET_USE_THREADPOOL
     // Default to using cores/2 threadpool threads. The long-term plan is to
@@ -406,16 +407,19 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 
   jboolean etdump() {
 #ifdef EXECUTORCH_ANDROID_PROFILING
-    executorch::etdump::ETDumpGen* etdumpgen = (executorch::etdump::ETDumpGen*) module_->event_tracer();
+    executorch::etdump::ETDumpGen* etdumpgen =
+        (executorch::etdump::ETDumpGen*)module_->event_tracer();
     auto etdump_data = etdumpgen->get_etdump_data();
 
     if (etdump_data.buf != nullptr && etdump_data.size > 0) {
-      int etdump_file = open("/data/local/tmp/result.etdump", O_WRONLY | O_CREAT, 0644);
+      int etdump_file =
+          open("/data/local/tmp/result.etdump", O_WRONLY | O_CREAT, 0644);
       if (etdump_file == -1) {
         ET_LOG(Error, "Cannot create result.etdump error: %d", errno);
         return false;
       }
-      ssize_t bytes_written = write(etdump_file, (uint8_t*)etdump_data.buf, etdump_data.size);
+      ssize_t bytes_written =
+          write(etdump_file, (uint8_t*)etdump_data.buf, etdump_data.size);
       if (bytes_written == -1) {
         ET_LOG(Error, "Cannot write result.etdump error: %d", errno);
         return false;
