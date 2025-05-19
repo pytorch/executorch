@@ -295,11 +295,12 @@ class TestFusionPasses(TestFusionPassesBase):
             args=(permute, 4.5, 6, 0, 127, torch.int8),
         )
         builder.output(dequant)
-        graph_module = FuseQuantDequantToRequantizePass(
+        original_graph = builder.get_graph_module()
+        converted_graph = FuseQuantDequantToRequantizePass(
             force_quant_dequant_fusion=False
-        )(builder.get_graph_module()).graph_module
+        )(original_graph).graph_module
         self.check_op_counts(
-            graph_module,
+            converted_graph,
             expected_op_counts={
                 # Verify that no dequant/quant pair was replaced with requantize.
                 # quantize -> permute -> dequantize should not be replaced with requantize.
