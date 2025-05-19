@@ -612,6 +612,11 @@ void ComputeGraph::prepare() {
   if (config_.enable_querypool) {
     context_->initialize_querypool();
   }
+
+  for (SharedObject& shared_object : shared_objects_) {
+    shared_object.allocate(this);
+    shared_object.bind_users(this);
+  }
 }
 
 void ComputeGraph::encode_prepack() {
@@ -635,11 +640,6 @@ void ComputeGraph::encode_execute() {
   context_->set_cmd(/*reusable = */ true);
 
   context_->cmd_reset_querypool();
-
-  for (SharedObject& shared_object : shared_objects_) {
-    shared_object.allocate(this);
-    shared_object.bind_users(this);
-  }
 
   for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
     node->encode(this);
