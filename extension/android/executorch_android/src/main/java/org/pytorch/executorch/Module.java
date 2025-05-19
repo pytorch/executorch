@@ -152,6 +152,14 @@ public class Module {
     return mNativePeer.readLogBuffer();
   }
 
+  /**
+   * Dump the ExecuTorch ETRecord file to /data/local/tmp/result.etdump.
+   *
+   * <p>Currently for internal (minibench) use only.
+   *
+   * @return true if the etdump was successfully written, false otherwise.
+   */
+  @Experimental
   public boolean etdump() {
     return mNativePeer.etdump();
   }
