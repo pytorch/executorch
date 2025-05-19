@@ -148,6 +148,7 @@ et_cxx_test(
   portable_kernels
   extension_data_loader
   extension_runner_util
+  program_schema
 )
 add_dependencies(tensor_parser_test generated_pte_files)
 set_property(TEST tensor_parser_test PROPERTY ENVIRONMENT ${test_env})
