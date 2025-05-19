@@ -12,6 +12,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/BindingUtils.h>
 
+#include <iostream>
+
 namespace vkcompute {
 
 DispatchNode::DispatchNode(
@@ -39,6 +41,8 @@ void DispatchNode::encode(ComputeGraph* graph) {
   if (!shader_) {
     return;
   }
+  std::cout << "dynamically dispatching... " << shader_.kernel_name
+            << std::endl;
   api::Context* const context = graph->context();
   vkapi::PipelineBarrier pipeline_barrier{};
 
