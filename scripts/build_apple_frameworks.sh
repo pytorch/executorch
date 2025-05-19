@@ -136,6 +136,7 @@ for arg in "$@"; do
       --optimized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" ;;
       --quantized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_QUANTIZED" ;;
       --xnnpack) set_cmake_options_override "EXECUTORCH_BUILD_XNNPACK" ;;
+      --torchao) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_TORCHAO" ;;
       *)
         echo -e "\033[31m[error] unknown option: ${arg}\033[0m"
         exit 1
@@ -280,7 +281,7 @@ for mode in "${MODES[@]}"; do
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_CUSTOM" "$FRAMEWORK_KERNELS_CUSTOM" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" "$FRAMEWORK_KERNELS_OPTIMIZED" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_QUANTIZED" "$FRAMEWORK_KERNELS_QUANTIZED" "$mode"
-
+  append_framework_flag "EXECUTORCH_BUILD_KERNELS_TORCHAO" "$FRAMEWORK_KERNELS_TORCHAO" "$mode"
   cd "${OUTPUT_DIR}"
   "$SOURCE_ROOT_DIR"/scripts/create_frameworks.sh "${FRAMEWORK_FLAGS[@]}"
 done
