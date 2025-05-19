@@ -641,6 +641,20 @@ def executorch_generated_lib(
     if not aten_mode and not functions_yaml_target and not custom_ops_yaml_target:
         fail("At least one of functions_yaml_target, custom_ops_yaml_target needs to be provided")
 
+    if dtype_selective_build:
+        if not is_xplat():
+            fail("Dtype_selective_build is only available in xplat.")
+        
+        # Dtype selective build is enabled on portable and optimized kernel libraries. 
+        if (not "//executorch/kernels/portable:operators" in kernel_deps) and (not "//executorch/kernels/optimized:optimized_operators" in kernel_deps):
+            fail("""Dtype_selective_build is enabled and kernel_deps does not contain portable or optimized dependencies.
+            Please add one of these to kernel_deps:
+            //executorch/kernels/portable:operators
+            //executorch/kernels/optimized:optimized_operators
+            This will tell the build system to rebuild portable/optimized with dtype selective build enabled.
+            Currently, kernel_deps contains {}.
+            """.format(kernel_deps))
+
     aten_suffix = "_aten" if aten_mode else ""
 
     # merge functions.yaml with fallback yaml
@@ -725,7 +739,7 @@ def executorch_generated_lib(
 
     portable_lib = []
     optimized_lib = []
-    if dtype_selective_build and is_xplat():
+    if dtype_selective_build:
         # Build portable headers lib. Used for portable and optimized kernel libraries.
         portable_header_lib = name + "_portable_header_lib"
         build_portable_header_lib(portable_header_lib, oplist_header_name, feature)
