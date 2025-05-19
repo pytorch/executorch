@@ -15,6 +15,7 @@
     },
     {
       "name": "macos-arm64",
+      "displayName": "Build everything buildable on macOS arm64",
       "inherits": ["common"],
       "generator": "Xcode",
       "cacheVariables": {
@@ -27,6 +28,20 @@
         "lhs": "${hostSystemName}",
         "type": "equals",
         "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "pybind",
+      "displayName": "Build pybindings exported in the wheel",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/pybind.cmake",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "10.15"
+      },
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Darwin", "Linux", "Windows"]
       }
     }
   ]

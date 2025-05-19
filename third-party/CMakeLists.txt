@@ -68,6 +68,7 @@ ExternalProject_Add(
              -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
   BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatcc
 )
+file(REMOVE_RECURSE ${PROJECT_SOURCE_DIR}/third-party/flatcc/lib)
 ExternalProject_Get_Property(flatcc_external_project INSTALL_DIR)
 add_executable(flatcc_cli IMPORTED GLOBAL)
 add_dependencies(flatcc_cli flatcc_external_project)
@@ -83,6 +84,11 @@ set(FLATCC_REFLECTION OFF CACHE BOOL "")
 set(FLATCC_DEBUG_CLANG_SANITIZE OFF CACHE BOOL "")
 set(FLATCC_INSTALL OFF CACHE BOOL "")
 add_subdirectory(flatcc)
+# Unfortunately flatcc writes libs directly in to the source tree [1]. So to
+# ensure the target lib is created last, force flatcc_cli to build first.
+#
+# [1] https://github.com/dvidelabs/flatcc/blob/896db54787e8b730a6be482c69324751f3f5f117/CMakeLists.txt#L168
+add_dependencies(flatccrt flatcc_cli)
 # Fix for "relocation R_X86_64_32 against `.rodata' can not be used when making
 # a shared object; recompile with -fPIC" when building on some x86 linux
 # systems.

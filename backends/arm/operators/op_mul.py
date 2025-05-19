@@ -189,14 +189,14 @@ class MulVisitor_INT(NodeVisitor):
             input_A,
             input_A_qargs.zp,
             [1.0],
-            tosa_spec=self.tosa_specs,
+            tosa_spec=self.tosa_spec,
         )
         input_B_rescaled = tqutils.build_rescale_to_int32(
             tosa_graph,
             input_B,
             input_B_qargs.zp,
             [1.0],
-            tosa_spec=self.tosa_specs,
+            tosa_spec=self.tosa_spec,
         )
 
         output_shape = tutils.tosa_shape(output.shape, output.dim_order)
@@ -211,7 +211,7 @@ class MulVisitor_INT(NodeVisitor):
         )
         output_scale = input_A_qargs.scale * input_B_qargs.scale
         tqutils.insert_rescale_op_to_int8(
-            tosa_graph, mul_output, output_scale, node, self.tosa_specs
+            tosa_graph, mul_output, output_scale, node, self.tosa_spec
         )
 
 

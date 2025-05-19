@@ -159,13 +159,11 @@ class SumVisitor_INT(NodeVisitor):
 
         # Rescale input to 32 bit
         rescaled_inputs, scale = tqutils.insert_rescale_ops_to_int32(
-            tosa_graph,
-            [tensor],
-            node,
+            tosa_graph, [tensor], node, self.tosa_spec
         )
 
         attr = ts.TosaSerializerAttribute()
-        attr.AxisAttribute(tensor.dim_order.index(dim))
+        attr.ReduceSumAttribute(tensor.dim_order.index(dim))
 
         intermediate = tosa_graph.addIntermediate(
             tutils.tosa_shape(output_shape, tensor.dim_order),
@@ -179,7 +177,9 @@ class SumVisitor_INT(NodeVisitor):
             attr,
         )
 
-        tqutils.insert_rescale_op_to_int8(tosa_graph, intermediate, scale, node)
+        tqutils.insert_rescale_op_to_int8(
+            tosa_graph, intermediate, scale, node, self.tosa_spec
+        )
 
 
 @register_node_visitor
@@ -212,7 +212,7 @@ class SumVisitor_FP(SumVisitor_INT):
         output_shape[dim] = 1  # Output shape is input shape with dim reduced
 
         attr = ts.TosaSerializerAttribute()
-        attr.AxisAttribute(tensor.dim_order.index(dim))
+        attr.ReduceSumAttribute(tensor.dim_order.index(dim))
 
         tosa_graph.addOperator(
             ts.TosaOp.Op().REDUCE_SUM,

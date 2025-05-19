@@ -8,6 +8,7 @@
 
 package org.pytorch.executorch;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertFalse;
@@ -87,6 +88,18 @@ public class ModuleE2ETest {
 
         int bananaClass = 954;  // From ImageNet 1K
         assertEquals(bananaClass, argmax(scores));
+    }
+
+    @Test
+    public void testXnnpackBackendRequired() throws IOException, URISyntaxException {
+        File pteFile = new File(getTestFilePath("/mv3_xnnpack_fp32.pte"));
+        InputStream inputStream = getClass().getResourceAsStream("/mv3_xnnpack_fp32.pte");
+        FileUtils.copyInputStreamToFile(inputStream, pteFile);
+        inputStream.close();
+
+        Module module = Module.load(getTestFilePath("/mv3_xnnpack_fp32.pte"));
+        String[] expectedBackends = new String[] {"XnnpackBackend"};
+        assertArrayEquals(expectedBackends, module.getUsedBackends("forward"));
     }
 
     @Test

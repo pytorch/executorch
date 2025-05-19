@@ -582,6 +582,7 @@ if(EXECUTORCH_BUILD_PYBIND)
       ${TORCH_PYTHON_LIBRARY}
       bundled_program
       etdump
+      flatccrt
       executorch
       extension_data_loader
       util

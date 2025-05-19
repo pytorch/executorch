@@ -14,6 +14,8 @@ CUSTOM_EDGE_OPS = [
     "linear.default",
     "maximum.default",
     "adaptive_avg_pool2d.default",
+    "bitwise_right_shift.Tensor",
+    "bitwise_left_shift.Tensor",
 ]
 ALL_EDGE_OPS = SAMPLE_INPUT.keys() | CUSTOM_EDGE_OPS
 

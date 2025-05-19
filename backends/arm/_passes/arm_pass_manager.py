@@ -10,6 +10,7 @@
 from executorch.backends.arm._passes import (
     AnnotateChannelsLastDimOrder,
     AnnotateDecomposedMatmulPass,
+    BroadcastArgsPass,
     CastInt64BuffersToInt32Pass,
     CastToInt32Pass,
     ComputeConstantOpsAOT,
@@ -104,6 +105,8 @@ class ArmPassManager(PassManager):
         self.add_pass(RetraceFoldedDtypesPass())
         self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
         self.add_pass(MatchArgRanksPass(exported_program))
+        if self.tosa_spec.is_U55_subset:
+            self.add_pass(BroadcastArgsPass())
         self.add_pass(ComputeConstantOpsAOT(exported_program))
 
         self.add_pass(RemoveClonePass())
