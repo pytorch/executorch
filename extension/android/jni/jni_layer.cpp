@@ -404,7 +404,6 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 #endif
   }
 
-<<<<<<< HEAD
   jboolean etdump() {
 #ifdef EXECUTORCH_ANDROID_PROFILING
     executorch::etdump::ETDumpGen* etdumpgen = (executorch::etdump::ETDumpGen*) module_->event_tracer();
@@ -430,9 +429,9 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
       ET_LOG(Error, "No ETDump data available!");
     }
 #endif
-  return false;
+    return false;
+  }
 
-=======
   facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> getUsedBackends(
       facebook::jni::alias_ref<jstring> methodName) {
     auto methodMeta = module_->method_meta(methodName->toStdString()).get();
