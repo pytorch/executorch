@@ -190,8 +190,10 @@ from executorch.devtools import Inspector
 # sphinx_gallery_start_ignore
 inspector_patch = patch.object(Inspector, "__init__", return_value=None)
 inspector_patch_print = patch.object(Inspector, "print_data_tabular", return_value=None)
+inspector_patch_find_total = patch.object(Inspector, "find_total_for_module", return_value=None)
 inspector_patch.start()
 inspector_patch_print.start()
+inspector_patch_find_total.start()
 # sphinx_gallery_end_ignore
 etrecord_path = "etrecord.bin"
 etdump_path = "etdump.etdp"
@@ -247,7 +249,7 @@ for event_block in inspector.event_blocks:
 # Empty DataFrame
 # Columns: [event_name, raw]
 # Index: []
-
+#
 # native_call_addmm.out [0.040962]
 # native_call_addmm.out [0.007191]
 # native_call_addmm.out [0.000691]
@@ -289,24 +291,24 @@ for event_block in inspector.event_blocks:
 
 ####################################
 # native_call_convolution.out
-
+#
 # {'aten_convolution_default_1_': '  File '
 #                                 '"/home/gasoonjia/et_proj/et_debug_playground.py", '
 #                                 'line 34, in forward\n'
 #                                 '    x = F.max_pool2d(F.relu(self.conv2(x)), '
 #                                 '2)\n'}
-
+#
 # {'aten_convolution_default_1_': {'L__self__': ('', '__main__.Net'),
 #                                  'L__self___conv2': ('conv2',
 #                                                      'torch.nn.modules.conv.Conv2d')}}
 # 6
-
+#
 # {'aten_convolution_default_1_': '  File '
 #                                 '"/home/gasoonjia/et_proj/et_debug_playground.py", '
 #                                 'line 34, in forward\n'
 #                                 '    x = F.max_pool2d(F.relu(self.conv2(x)), '
 #                                 '2)\n'}
-
+#
 # {'aten_convolution_default_1_': {'L__self__': ('', '__main__.Net'),
 #                                  'L__self___conv2': ('conv2',
 #                                                      'torch.nn.modules.conv.Conv2d')}}
@@ -325,6 +327,14 @@ print(inspector.find_total_for_module("L__self___conv2"))
 # Example output:
 # 1.889086
 # 1.031719
+
+# sphinx_gallery_start_ignore
+# Stop the patches
+inspector_patch.stop()
+inspector_patch_print.stop()
+inspector_patch_find_total.stop()
+# sphinx_gallery_end_ignore
+
 
 ######################################################################
 # Conclusion
