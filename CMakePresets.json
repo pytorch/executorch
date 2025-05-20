@@ -4,8 +4,7 @@
     {
       "name": "common",
       "hidden": true,
-      "binaryDir": "${sourceDir}/cmake-out",
-      "generator": "Unix Makefiles"
+      "binaryDir": "${sourceDir}/cmake-out"
     },
     {
       "name": "macos-arm64",
