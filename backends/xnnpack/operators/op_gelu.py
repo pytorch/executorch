@@ -20,7 +20,7 @@ from executorch.backends.xnnpack.utils.utils import get_input_node
 
 
 @register_node_visitor
-class LogVisitor(NodeVisitor):
+class GeluVisitor(NodeVisitor):
     target = "aten.gelu.default"
 
     def __init__(self, *args) -> None:
