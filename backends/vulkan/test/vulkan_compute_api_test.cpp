@@ -2753,43 +2753,8 @@ void test_mm(
     utils::StorageType storage_type,
     utils::GPUMemoryLayout memory_layout,
     bool prepack = true) {
-  GraphConfig config;
-  config.set_storage_type_override(storage_type);
-  ComputeGraph graph(config);
-
-  std::vector<int64_t> mat1_size = {M, K};
-  std::vector<int64_t> mat2_size = {K, N};
-  std::vector<int64_t> out_size = {M, N};
-  if (B > 1) {
-    mat1_size.resize(3);
-    mat1_size = {B, M, K};
-    mat2_size.resize(3);
-    mat2_size = {B, K, N};
-    out_size.resize(3);
-    out_size = {B, M, N};
-  }
-
-  IOValueRef mat2{};
-
-  CREATE_WEIGHT_TENSOR(mat2_w, mat2_size, dtype, 2.0f);
-
-  // Build graph
-
-  IOValueRef mat1 = graph.add_input_tensor(mat1_size, dtype, memory_layout);
-
-  if (prepack) {
-    mat2.value = mat2_w;
-  } else {
-    mat2.value = graph.add_tensor(mat2_size, dtype, memory_layout);
-    mat2.staging = graph.set_input_tensor(mat2.value);
-  }
-
-  IOValueRef out;
-  out.value = graph.add_tensor(out_size, dtype, memory_layout);
-
-  VK_GET_OP_FN("aten.mm.default")(graph, {mat1.value, mat2.value, out.value});
-
-  out.staging = graph.set_output_tensor(out.value);
+  ComputeGraph graph = build_mm_graph(
+      B, M, K, N, dtype, storage_type, memory_layout, prepack, 2.0f);
 
   graph.prepare();
   graph.encode_prepack();
@@ -2853,6 +2818,60 @@ TEST(VulkanComputeGraphOpsTest, mm_smoke_test) {
   CALL_TEST_FN_FOR_C_PACKED(RUN_TESTS);
 
 #undef RUN_TESTS
+}
+
+void test_mm_with_resize_reencode(
+    int B,
+    int M,
+    int K,
+    int N,
+    vkapi::ScalarType dtype,
+    utils::StorageType storage_type,
+    utils::GPUMemoryLayout memory_layout) {
+  ASSERT_TRUE(M > 1);
+
+  ComputeGraph graph = build_mm_graph(
+      B, M, K, N, dtype, storage_type, memory_layout, false, 2.0f);
+
+  graph.prepare();
+  graph.encode_prepack();
+  graph.prepack();
+  graph.encode_execute();
+
+  for (int i = 1; i < 4; i++) {
+    float val_mat1 = i;
+    float val_mat2 = i + 1;
+    float val_out = K * (val_mat1 * val_mat2);
+    execute_graph_and_check_output(graph, {val_mat1, val_mat2}, {val_out});
+  }
+
+  // Switch to GEMV mode
+  int new_K = K / 2;
+  std::vector<int64_t> new_mat1_size = {1, new_K};
+  std::vector<int64_t> new_mat2_size = {new_K, N};
+  graph.resize_input(0, new_mat1_size);
+  graph.resize_input(1, new_mat2_size);
+  graph.propagate_resize();
+
+  graph.encode_execute();
+
+  for (int i = 1; i < 4; i++) {
+    float val_mat1 = i;
+    float val_mat2 = i + 1;
+    float val_out = new_K * (val_mat1 * val_mat2);
+    execute_graph_and_check_output(graph, {val_mat1, val_mat2}, {val_out});
+  }
+}
+
+TEST(VulkanComputeGraphOpsTest, test_graph_resize_reencode) {
+  test_mm_with_resize_reencode(
+      /*B = */ 1,
+      /*M = */ 31,
+      /*K = */ 127,
+      /*N = */ 23,
+      vkapi::kFloat,
+      utils::kTexture3D,
+      utils::kWidthPacked);
 }
 
 void test_max_pool2d(
