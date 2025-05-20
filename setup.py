@@ -835,7 +835,7 @@ def get_ext_modules() -> List[Extension]:
 
     ext_modules = [
         BuiltFile(
-            src_dir="%CMAKE_CACHE_DIR%/third-party/flatbuffers_external_project/bin/%BUILD_TYPE%/",
+            src_dir="%CMAKE_CACHE_DIR%/third-party/flatbuffers_external_project/bin/",
             src_name="flatc",
             dst="executorch/data/bin/",
             is_executable=True,

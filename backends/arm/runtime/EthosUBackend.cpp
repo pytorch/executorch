@@ -189,8 +189,6 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     // the end of the execution of the Ethos-U custom delegate
     char* ethosu_scratch =
         static_cast<char*>(temp_allocator->allocate(handles.scratch_data_size));
-    extern size_t ethosu_fast_scratch_size;
-    extern unsigned char* ethosu_fast_scratch;
     ET_LOG(
         Debug,
         "EthosUBackend::execute: Running program data:\n  cmd %p %zu\n  weight %p %zu\n  scratch %p %zu\n  fast scratch %p %zu\n",
@@ -200,8 +198,8 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
         handles.weight_data_size,
         ethosu_scratch,
         handles.scratch_data_size,
-        ethosu_fast_scratch,
-        ethosu_fast_scratch_size);
+        nullptr,
+        0);
 
     // Write argument values (from EValue tensor) into Ethos-U scratch
     // TODO(MLETORCH-123): Optimise into direct write from Vela into the SRAM
@@ -311,12 +309,9 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
         static_cast<uint64_t>(
             reinterpret_cast<uintptr_t>((handles.weight_data))),
         static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ethosu_scratch)),
-        static_cast<uint64_t>(
-            reinterpret_cast<uintptr_t>(ethosu_fast_scratch))};
+        0};
     size_t bases_size[ETHOSU_NUM_BASE_ADDRS] = {
-        handles.weight_data_size,
-        handles.scratch_data_size,
-        ethosu_fast_scratch_size};
+        handles.weight_data_size, handles.scratch_data_size, 0};
     int result = 0;
     EXECUTORCH_PROF_START(
         event_tracer, event_tracer_local_scope, "+EthosUBackend::execute()NPU");

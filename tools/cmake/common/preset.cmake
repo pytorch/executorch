@@ -76,7 +76,7 @@ macro(define_overridable_option NAME DESCRIPTION VALUE_TYPE DEFAULT_VALUE)
     message(FATAL_ERROR "Invalid option (${NAME}) value type '${VALUE_TYPE}', must be either STRING or BOOL")
   endif()
 
-  if(DEFINED ${NAME})
+  if(DEFINED ${NAME} AND NOT DEFINED CACHE{${NAME}})
     set(${NAME} ${${NAME}} CACHE ${VALUE_TYPE} ${DESCRIPTION} FORCE)
   else()
     set(${NAME} ${DEFAULT_VALUE} CACHE ${VALUE_TYPE} ${DESCRIPTION})

@@ -48,7 +48,6 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass,
     ReplaceSplitWithSlicePass,
     ReplaceSqueezeAndUnsqueezeWithViewPass,
-    ReplaceTCopyWithTransposePass,
     ReplaceTransposedConvWithLinearPass,
     ReplaceTrivialConvWithLinear,
     ReplaceWhereWithFullArgsWithWhereScalar,
@@ -365,37 +364,6 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.unsafe_split.Tensor),
-            0,
-        )
-
-    @parameterized.expand(
-        [
-            [(16, 32)],
-            [(1, 240)],
-            [(4, 16)],
-        ]
-    )
-    @torch.no_grad()
-    def test_replace_t_copy_with_transpose(self, shape: Tuple[int]):
-        class TCopy(torch.nn.Module):
-            def forward(self, x: torch.Tensor):
-                return exir_ops.edge.aten.t_copy(x)
-
-        w = torch.randn(shape)
-        inputs = (w,)
-        p1 = ReplaceTCopyWithTransposePass()
-        p2 = ReplacePermuteWithTransposePass()
-        model = TCopy()
-        graph_module = export_to_edge(model, inputs).exported_program().graph_module
-        graph_after_passes = cast(
-            PassResult, p2(cast(PassResult, p1(graph_module)).graph_module)
-        ).graph_module
-        self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.aten.transpose_copy.int),
-            1,
-        )
-        self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.aten.t_copy),
             0,
         )
 

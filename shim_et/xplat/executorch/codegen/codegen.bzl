@@ -1,6 +1,12 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_default_executorch_platforms", "is_xplat", "runtime", "struct_to_json")
 load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
 load("@fbsource//xplat/executorch/kernels/portable:op_registration_util.bzl", "portable_header_list", "portable_source_list")
+load("@fbsource//xplat/executorch/kernels/optimized:op_registration_util.bzl", "optimized_header_list", "optimized_source_list")
+load(
+    "@fbsource//xplat/executorch/kernels/optimized:lib_defs.bzl",
+    "get_vec_deps",
+    "get_vec_preprocessor_flags",
+)
 
 # Headers that declare the function signatures of the C++ functions that
 # map to entries in functions.yaml and custom_ops.yaml.
@@ -178,10 +184,9 @@ def _prepare_genrule_and_lib(
         },
     }
     """
-    target = runtime.external_dep_location("gen-executorch")
     aten_src_path = runtime.external_dep_location("aten-src-path")
     genrule_cmd = [
-        "$(exe {})".format(target),
+        "$(exe //executorch/codegen:gen)",
         "--source-path=$(location //executorch/codegen:templates)",
         "--tags-path $(location {})/aten/src/ATen/native/tags.yaml".format(aten_src_path),
         "--aten_yaml_path $(location {})/aten/src/ATen/native/native_functions.yaml".format(aten_src_path),
@@ -262,7 +267,6 @@ def _prepare_custom_ops_genrule_and_lib(
     genrules = {}
     libs = {}
     aten_src_path = runtime.external_dep_location("aten-src-path")
-    target = runtime.external_dep_location("gen-executorch")
     genrule_name = name + "_gen"
 
     if custom_ops_yaml_path:
@@ -281,7 +285,7 @@ def _prepare_custom_ops_genrule_and_lib(
 
         # genrule for generating operator kernel bindings
         genrule_cmd = [
-            "$(exe {})".format(target),
+            "$(exe //executorch/codegen:gen)",
             "--source-path=$(location //executorch/codegen:templates)",
             "--tags-path $(location {})/aten/src/ATen/native/tags.yaml".format(aten_src_path),
             "--aten_yaml_path $(location {})/aten/src/ATen/native/native_functions.yaml".format(aten_src_path),
@@ -386,52 +390,60 @@ def exir_custom_ops_aot_lib(
             force_static = False,
         )
 
-# Used for dtype selective build. Genrules to copy source and header files.
-def portable_outs(target_name, file_list):
-    outs = {}
-    for file in file_list:
-        outs[file] = ["{}/{}".format(target_name, file)]
-    return outs
-
-def copy_portable_source_files(name):
-    target_name = "portable_source_files"
+def copy_files(genrule_name, target, file_list):
+    """
+    Copy files from `target` to current directory.
+        genrule_name: name of this copy genrule.
+        target: a runtime.filegroup that globs together files.
+            eg. //executorch/kernels/portable/cpu:portable_source_files.
+        file_list: list of filenames, used to generate the outfiles.
+            eg. //executorch/kernels/portable/cpu:portable_source_list.
+    """
+    target_name = target.split(":")[1]
     runtime.genrule(
-        name = name,
-        cmd = "cp -f -r $(location //executorch/kernels/portable/cpu:{}) $OUT/".format(target_name),
-        outs = portable_outs(target_name, portable_source_list()),
+        name = genrule_name,
+        cmd = "cp -f -r $(location {}) $OUT/".format(target),
+        outs = {file: ["{}/{}".format(target_name, file)] for file in file_list},
         default_outs = ["."],
     )
 
-def copy_portable_header_files(name):
-    target_name = "portable_header_files"
-    runtime.genrule(
+def build_portable_header_lib(name, oplist_header_name, feature = None):
+    """Build the portable headers into a header-only library.
+    Ensures that includes work across portable and optimized libs.
+    #include "executorch/kernels/portable/cpu/<header.h>"
+    """
+    # Copy portable header files.
+    portable_header_files = {}
+    genrule_name = name + "_copy_portable_header"
+    copy_files(genrule_name, "//executorch/kernels/portable/cpu:portable_header_files", portable_header_list())
+    for header in portable_header_list():
+        portable_header_files[header] = ":{}[{}]".format(genrule_name, header)
+
+    # Include dtype header.
+    portable_header_files["selected_op_variants.h"] = ":{}[selected_op_variants]".format(oplist_header_name)
+
+    # Build portable headers lib.
+    runtime.cxx_library(
         name = name,
-        cmd = "cp -f -r $(location //executorch/kernels/portable/cpu:{}) $OUT/".format(target_name),
-        outs = portable_outs(target_name, portable_header_list()),
-        default_outs = ["."],
+        srcs = [],
+        exported_headers = portable_header_files,
+        exported_preprocessor_flags = ["-DEXECUTORCH_SELECTIVE_BUILD_DTYPE"],
+        # header_namespace is only available in xplat. See https://fburl.com/code/we2gvopk
+        header_namespace = "executorch/kernels/portable/cpu",
+        feature = feature,
     )
 
-def build_portable_lib(name, oplist_header_name, feature = None, expose_operator_symbols = False):
+def build_portable_lib(name, oplist_header_name, portable_header_lib, feature = None, expose_operator_symbols = False):
     """Build portable lib from source. We build from source so that the generated header file,
     selected_op_variants.h, can be used to selectively build the lib for different dtypes.
     """
 
     # Copy portable cpp files.
     portable_source_files = []
-    copy_portable_source_files_genrule = name + "_copy_portable_source"
-    copy_portable_source_files(copy_portable_source_files_genrule)
+    genrule_name = name + "_copy_portable_source"
+    copy_files(genrule_name, "//executorch/kernels/portable/cpu:portable_source_files", portable_source_list())
     for op in portable_source_list():
-        portable_source_files.append(":{}[{}]".format(copy_portable_source_files_genrule, op))
-
-    # Copy portable header files.
-    portable_header_files = {}
-    copy_portable_header_files_genrule = name + "_copy_portable_header"
-    copy_portable_header_files(copy_portable_header_files_genrule)
-    for header in portable_header_list():
-        portable_header_files[header] = ":{}[{}]".format(copy_portable_header_files_genrule, header)
-
-    # Include dtype header.
-    portable_header_files["selected_op_variants.h"] = ":{}[selected_op_variants]".format(oplist_header_name)
+        portable_source_files.append(":{}[{}]".format(genrule_name, op))
 
     # For shared library build, we don't want to expose symbols of
     # kernel implementation (ex torch::executor::native::tanh_out)
@@ -451,12 +463,93 @@ def build_portable_lib(name, oplist_header_name, feature = None, expose_operator
     runtime.cxx_library(
         name = name,
         srcs = portable_source_files,
-        exported_headers = portable_header_files,
         exported_preprocessor_flags = ["-DEXECUTORCH_SELECTIVE_BUILD_DTYPE"],
-        deps = ["//executorch/kernels/portable/cpu/pattern:all_deps", "//executorch/kernels/portable/cpu/util:all_deps"],
+        deps = ["//executorch/kernels/portable/cpu/pattern:all_deps", "//executorch/kernels/portable/cpu/util:all_deps"] +  [":" + portable_header_lib],
         # header_namespace is only available in xplat. See https://fburl.com/code/we2gvopk
         header_namespace = "executorch/kernels/portable/cpu",
         compiler_flags = compiler_flags,
+        # WARNING: using a deprecated API to avoid being built into a shared
+        # library. In the case of dynamically loading so library we don't want
+        # it to depend on other so libraries because that way we have to
+        # specify library directory path.
+        force_static = True,
+        # link_whole is necessary because the operators register themselves
+        # via static initializers that run at program startup.
+        # @lint-ignore BUCKLINT link_whole
+        link_whole = True,
+        feature = feature,
+    )
+
+def build_optimized_lib(name, oplist_header_name, portable_header_lib, feature = None, expose_operator_symbols = False):
+    """Build optimized lib from source. We build from source so that the generated header file,
+    selected_op_variants.h, can be used to selectively build the lib for different dtypes.
+    """
+
+    # Copy optimized cpp files.
+    optimized_source_files = []
+    source_genrule = name + "_copy_optimized_source"
+    copy_files(source_genrule, "//executorch/kernels/optimized/cpu:optimized_source_files", optimized_source_list())
+    for op in optimized_source_list():
+        optimized_source_files.append(":{}[{}]".format(source_genrule, op))
+
+    # Copy optimized header files.
+    optimized_header_files = {}
+    header_genrule = name + "_copy_optimized_header"
+    copy_files(header_genrule, "//executorch/kernels/optimized/cpu:optimized_header_files", optimized_header_list())
+    for header in optimized_header_list():
+        optimized_header_files[header] = ":{}[{}]".format(header_genrule, header)
+
+    # For shared library build, we don't want to expose symbols of
+    # kernel implementation (ex torch::executor::native::tanh_out)
+    # to library users. They should use kernels through registry only.
+    # With visibility=hidden, linker won't expose kernel impl symbols
+    # so it can prune unregistered kernels.
+    # Currently fbcode links all dependent libraries through shared
+    # library, and it blocks users like unit tests to use kernel
+    # implementation directly. So we enable this for xplat only.
+    compiler_flags = ["-Wno-missing-prototypes", "-Wno-pass-failed","-Wno-global-constructors","-Wno-shadow",]
+    if not expose_operator_symbols:
+        # Removing '-fvisibility=hidden' exposes operator symbols.
+        # This allows operators to be called outside of the kernel registry.
+        compiler_flags += ["-fvisibility=hidden"]
+
+    # Set up dependencies.
+    optimized_lib_deps = [
+        "//executorch/kernels/optimized/cpu:add_sub_impl",
+        "//executorch/kernels/optimized/cpu:binary_ops",
+        "//executorch/kernels/optimized/cpu:fft_utils",
+        "//executorch/kernels/optimized/cpu:moments_utils",
+        "//executorch/kernels/optimized:libblas",
+        "//executorch/kernels/optimized:libutils",
+        "//executorch/kernels/optimized:libvec",
+        "//executorch/kernels/portable/cpu/pattern:all_deps", 
+        "//executorch/kernels/portable/cpu/util:all_deps",
+        "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
+        "//executorch/runtime/kernel:kernel_includes",
+        ":" + portable_header_lib,
+    ] + get_vec_deps()
+    
+    # Build optimized lib.
+    runtime.cxx_library(
+        name = name,
+        srcs = optimized_source_files,
+        exported_preprocessor_flags = ["-DEXECUTORCH_SELECTIVE_BUILD_DTYPE"],
+        deps = optimized_lib_deps,
+        # header_namespace is only available in xplat. See https://fburl.com/code/we2gvopk
+        header_namespace = "executorch/kernels/optimized/cpu",
+        compiler_flags = compiler_flags,
+        preprocessor_flags = get_vec_preprocessor_flags(),
+        # sleef needs to be added as a direct dependency of the operator target when building for Android,
+        # or a linker error may occur. Not sure why this happens; it seems that fbandroid_platform_deps of
+        # dependencies are not transitive
+        fbandroid_platform_deps = [
+            (
+                "^android-arm64.*$",
+                [
+                    "fbsource//third-party/sleef:sleef_arm",
+                ],
+            ),
+        ],
         # WARNING: using a deprecated API to avoid being built into a shared
         # library. In the case of dynamically loading so library we don't want
         # it to depend on other so libraries because that way we have to
@@ -631,14 +724,29 @@ def executorch_generated_lib(
         )
 
     portable_lib = []
-    if dtype_selective_build and is_xplat() and "//executorch/kernels/portable:operators" in kernel_deps:
-        # Remove portable from kernel_deps as we're building it from source.
-        kernel_deps.remove("//executorch/kernels/portable:operators")
+    optimized_lib = []
+    if dtype_selective_build and is_xplat():
+        # Build portable headers lib. Used for portable and optimized kernel libraries.
+        portable_header_lib = name + "_portable_header_lib"
+        build_portable_header_lib(portable_header_lib, oplist_header_name, feature)
+        
+        if "//executorch/kernels/portable:operators" in kernel_deps:
+            # Remove portable from kernel_deps as we're building it from source.
+            kernel_deps.remove("//executorch/kernels/portable:operators")
 
-        # Build portable lib.
-        portable_lib_name = name + "_portable_lib"
-        build_portable_lib(portable_lib_name, oplist_header_name, feature, expose_operator_symbols)
-        portable_lib = [":{}".format(portable_lib_name)]
+            # Build portable lib.
+            portable_lib_name = name + "_portable_lib"
+            build_portable_lib(portable_lib_name, oplist_header_name, portable_header_lib, feature, expose_operator_symbols)
+            portable_lib = [":{}".format(portable_lib_name)]
+            
+        if "//executorch/kernels/optimized:optimized_operators" in kernel_deps:
+            # Remove optimized from kernel_deps as we're building it from source.
+            kernel_deps.remove("//executorch/kernels/optimized:optimized_operators")
+            
+            # Build optimized lib.
+            optimized_lib_name = name + "_optimized_lib"
+            build_optimized_lib(optimized_lib_name, oplist_header_name, portable_header_lib, feature, expose_operator_symbols)
+            optimized_lib = [":{}".format(optimized_lib_name)]
 
     # Exports headers that declare the function signatures of the C++ functions
     # that map to entries in `functions.yaml` and `custom_ops.yaml`.
@@ -692,7 +800,7 @@ def executorch_generated_lib(
                 "//executorch/kernels/prim_ops:prim_ops_registry" + aten_suffix,
                 "//executorch/runtime/core:evalue" + aten_suffix,
                 "//executorch/codegen:macros",
-            ] + deps + kernel_deps + portable_lib,
+            ] + deps + kernel_deps + portable_lib + optimized_lib,
             exported_deps = [
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
