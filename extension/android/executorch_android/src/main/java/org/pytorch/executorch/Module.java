@@ -49,11 +49,19 @@ public class Module {
 
   private final HybridData mHybridData;
 
+  private final MethodMetadata[] mMethodMetadata;
+
   @DoNotStrip
   private static native HybridData initHybrid(String moduleAbsolutePath, int loadMode);
 
   private Module(String moduleAbsolutePath, int loadMode) {
     mHybridData = initHybrid(moduleAbsolutePath, loadMode);
+
+    populateMethodMeta();
+  }
+
+  void populateMethodMeta() {
+    mMethodMetadata = new MethodMetadata[1];
   }
 
   /** Lock protecting the non-thread safe methods in mHybridData. */
