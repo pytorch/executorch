@@ -104,7 +104,7 @@ class Conv2d(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[str, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        input_node = node.args[0]
+        input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         assert (
             input_tensor.dim() == 4
@@ -117,7 +117,7 @@ class Conv2d(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        filter_node = node.args[1]
+        filter_node = self.get_node(node.args[1])
         filter_tensor = get_parameter(filter_node, self.edge_program)
         # weight of pytorch OIHW(conv2d) | IOHW(conv_transpose2d), yet QNN is HWIO
         is_transpose_conv = cast(bool, node.args[6])
@@ -133,7 +133,7 @@ class Conv2d(NodeVisitor):
         conv_input_tensors = [input_tensor_wrapper, filter_tensor_wrapper]
 
         if node.args[2] is not None:
-            bias_node = node.args[2]
+            bias_node = self.get_node(node.args[2])
             bias_tensor = get_parameter(bias_node, self.edge_program)
             bias_tensor_wrapper = self.define_tensor(
                 bias_node,
