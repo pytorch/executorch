@@ -134,14 +134,13 @@ class ComputeFunction:
         if not self.selector.is_root_operator(f"{f.namespace}::{f.func.name}"):
             return None
 
+        if Variant.function not in f.variants and Variant.method not in f.variants:
+            raise Exception(  # noqa: TRY002
+                f"Expected one of function or method to be in variants for {f.func.name}"
+            )
+
         if Variant.function not in f.variants and Variant.method in f.variants:
             is_method_variant = True
-
-        # only valid remaining case is only function is in f.variants
-        elif not (Variant.function in f.variants and Variant.method not in f.variants):
-            raise Exception(  # noqa: TRY002
-                f"Can't handle native function {f.func} with the following variant specification {f.variants}."
-            )
 
         sig: CppSignature | ExecutorchCppSignature = (
             CppSignatureGroup.from_native_function(
