@@ -57,14 +57,6 @@ def test_conformer_tosa_MI():
         exir_op=[],
         use_to_edge_transform_and_lower=True,
     )
-    pipeline.change_args(
-        "run_method_and_compare_outputs",
-        get_test_inputs(
-            TestConformer.dim, TestConformer.lengths, TestConformer.num_examples
-        ),
-        rtol=1.0,
-        atol=5.0,
-    )
     pipeline.run()
 
 
@@ -83,7 +75,7 @@ def test_conformer_tosa_BI():
             TestConformer.dim, TestConformer.lengths, TestConformer.num_examples
         ),
         rtol=1.0,
-        atol=5.0,
+        atol=3.0,
     )
     pipeline.run()
 
