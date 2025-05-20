@@ -640,7 +640,8 @@ def skip_annotation(
     for node in graph_module.graph.nodes:
         if node.op == "call_module":
             graph_module.set_submodule(
-                node.name, convert_pt2e(graph_module.get_submodule(node.name))
+                node.name,
+                convert_pt2e(graph_module.get_submodule(node.name)),
             )
     # canonicalize graph for lowering again
     graph_module, edge_prog_mgrs = _canonicalize_graph_with_lowered_module(

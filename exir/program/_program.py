@@ -1283,7 +1283,7 @@ def to_edge_transform_and_lower(
 
 @experimental(
     """
-    This is an experimental API which overloads to_edge by preserving specified ops to not be decomposed. 
+    This is an experimental API which overloads to_edge by preserving specified ops to not be decomposed.
     This function will be combined with to_edge in the future.
     """
 )
