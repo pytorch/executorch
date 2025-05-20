@@ -223,7 +223,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
   std::unique_ptr<Module> module_;
 
  public:
-  constexpr static auto kJavaDescriptor = "Lorg/pytorch/executorch/NativePeer;";
+  constexpr static auto kJavaDescriptor = "Lorg/pytorch/executorch/Module;";
 
   static facebook::jni::local_ref<jhybriddata> initHybrid(
       facebook::jni::alias_ref<jclass>,
@@ -269,13 +269,6 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
       }
     }
 #endif
-  }
-
-  facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> forward(
-      facebook::jni::alias_ref<
-          facebook::jni::JArrayClass<JEValue::javaobject>::javaobject>
-          jinputs) {
-    return execute_method("forward", jinputs);
   }
 
   facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> execute(
@@ -459,9 +452,8 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
   static void registerNatives() {
     registerHybrid({
         makeNativeMethod("initHybrid", ExecuTorchJni::initHybrid),
-        makeNativeMethod("forward", ExecuTorchJni::forward),
-        makeNativeMethod("execute", ExecuTorchJni::execute),
-        makeNativeMethod("loadMethod", ExecuTorchJni::load_method),
+        makeNativeMethod("executeNative", ExecuTorchJni::execute),
+        makeNativeMethod("loadMethodNative", ExecuTorchJni::load_method),
         makeNativeMethod("readLogBuffer", ExecuTorchJni::readLogBuffer),
         makeNativeMethod("etdump", ExecuTorchJni::etdump),
         makeNativeMethod("getUsedBackends", ExecuTorchJni::getUsedBackends),
