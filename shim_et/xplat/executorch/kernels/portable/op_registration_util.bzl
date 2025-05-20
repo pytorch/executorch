@@ -1333,7 +1333,3 @@ CUSTOM_OPS = (
 def portable_source_list():
     """All the source file names from //executorch/kernels/portable/cpu/"""
     return [op["name"] + ".cpp" for op in ATEN_OPS + CUSTOM_OPS]
-
-def portable_header_list():
-    """All the header file names from //executorch/kernels/portable/cpu/"""
-    return ["selective_build.h", "scalar_utils.h", "math_constants.h", "vec_ops.h"]
