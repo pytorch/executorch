@@ -42,7 +42,7 @@ class ModuleInstrumentationTest {
         inputStream.close()
     }
 
-    @Rule
+    @get:Rule
     var runtimePermissionRule: GrantPermissionRule =
         GrantPermissionRule.grant(Manifest.permission.READ_EXTERNAL_STORAGE)
 

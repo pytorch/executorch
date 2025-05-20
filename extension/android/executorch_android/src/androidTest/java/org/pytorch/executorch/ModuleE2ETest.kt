@@ -26,8 +26,8 @@ import java.net.URISyntaxException
 /** Unit tests for [Module].  */
 @RunWith(AndroidJUnit4::class)
 class ModuleE2ETest {
-    @Rule
-    var mRuntimePermissionRule: GrantPermissionRule =
+    @get:Rule
+    var runtimePermissionRule: GrantPermissionRule =
         GrantPermissionRule.grant(Manifest.permission.READ_EXTERNAL_STORAGE)
 
     @Throws(IOException::class, URISyntaxException::class)

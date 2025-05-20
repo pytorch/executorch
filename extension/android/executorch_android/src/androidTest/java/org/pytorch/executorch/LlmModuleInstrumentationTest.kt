@@ -50,8 +50,8 @@ class LlmModuleInstrumentationTest : LlmCallback {
             LlmModule(getTestFilePath(TEST_FILE_NAME), getTestFilePath(TOKENIZER_FILE_NAME), 0.0f)
     }
 
-    @Rule
-    var mRuntimePermissionRule: GrantPermissionRule =
+    @get:Rule
+    var runtimePermissionRule: GrantPermissionRule =
         GrantPermissionRule.grant(Manifest.permission.READ_EXTERNAL_STORAGE)
 
     @Test
