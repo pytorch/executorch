@@ -642,23 +642,18 @@ def executorch_generated_lib(
         fail("At least one of functions_yaml_target, custom_ops_yaml_target needs to be provided")
 
     if dtype_selective_build:
-        if not is_xplat():
-            warning("""
-            !!WARNING!! Dtype_selective_build is only available in xplat.
-            Proceeding without dtype selective build for lib: {}.""".format(name))
-        
-        # Dtype selective build is enabled on portable and optimized kernel libraries. 
         if (not "//executorch/kernels/portable:operators" in kernel_deps) and (not "//executorch/kernels/optimized:optimized_operators" in kernel_deps):
-            warning("""
-            !!WARNING!! Dtype_selective_build is enabled but kernel_deps does not contain portable or optimized dependencies.
-            Please add one of these to kernel_deps in `executorch_generated_lib`:
+            fail("""
+            !!WARNING!! Dtype selective build is available for the portable and optimized kernel libraries.
+            If you are using those, please add them to `kernel_deps` in `executorch_generated_lib`:
             //executorch/kernels/portable:operators
             //executorch/kernels/optimized:optimized_operators
-            This will tell the build system to rebuild portable/optimized with dtype selective build enabled.
+            This will tell the build system to rebuild portable/optimized with the dtype selective build header.
             For examples, see: //executorch/examples/selective_build/targets.bzl
             Currently, kernel_deps contains {}.
 
-            Proceeding without dtype selective build.
+            If you have a custom kernel library, please remove `dtype_selective_build=True`
+            and use regular selective build.
             """.format(kernel_deps))
 
     aten_suffix = "_aten" if aten_mode else ""
