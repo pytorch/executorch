@@ -107,6 +107,7 @@ phases:
 
       - echo "Run benchmark"
       - |
+        adb -s $DEVICEFARM_DEVICE_UDID shell touch /data/local/tmp/result.etdump
         adb -s $DEVICEFARM_DEVICE_UDID shell am force-stop org.pytorch.minibench
 
         adb -s $DEVICEFARM_DEVICE_UDID shell dumpsys deviceidle force-idle
@@ -146,6 +147,8 @@ phases:
         adb -s $DEVICEFARM_DEVICE_UDID shell run-as org.pytorch.minibench ls -la files/
         # Trying to pull the file using adb ends up with permission error, but this works too, so why not
         echo "${BENCHMARK_RESULTS}" > $DEVICEFARM_LOG_DIR/benchmark_results.json
+
+        adb -s $DEVICEFARM_DEVICE_UDID pull /data/local/tmp/result.etdump $DEVICEFARM_LOG_DIR/result.etdump
 
 artifacts:
   # By default, Device Farm will collect your artifacts from the $DEVICEFARM_LOG_DIR directory.
