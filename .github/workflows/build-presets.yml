@@ -65,4 +65,30 @@ jobs:
 
         ./install_requirements.sh > /dev/null
         cmake --preset ${{ matrix.preset }}
-        cmake --build cmake-out -j$(( $(nproc) - 1 ))
+
+  windows:
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [pybind]
+    with:
+      job-name: build
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      submodules: recursive
+      timeout: 90
+      script: |
+        set -eux
+        conda init powershell
+        powershell -Command "& {
+          \$ErrorActionPreference = 'Stop'
+          Set-PSDebug -Trace 1
+
+          conda create --yes --quiet -n et python=3.12
+          conda activate et
+
+          python install_requirements.py
+          cmake --preset ${{ matrix.preset }}
+          \$numCores = [System.Environment]::GetEnvironmentVariable('NUMBER_OF_PROCESSORS') - 1
+          cmake --build cmake-out -j \$numCores
+        }"
