@@ -12,7 +12,6 @@ from torch.ao.ns.fx.utils import compute_sqnr
 from torch.ao.quantization import (
     default_dynamic_fake_quant,
     default_dynamic_qconfig,
-    observer,
     QConfig,
     QConfigMapping,
 )
@@ -28,16 +27,16 @@ from torch.ao.quantization.quantize_fx import (
     convert_to_reference_fx,
     prepare_fx,
 )
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.export import export_for_training
 from torch.testing._internal.common_quantization import (
     NodeSpec as ns,
-    PT2EQuantizationTestCase,
     skip_if_no_torchvision,
     skipIfNoQNNPACK,
     TestHelperModules,
 )
 from torch.testing._internal.common_quantized import override_quantized_engine
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.testing.pt2e.utils import PT2EQuantizationTestCase
 
 
 @skipIfNoQNNPACK
@@ -575,7 +574,7 @@ class TestXNNPACKQuantizer(PT2EQuantizationTestCase):
             torch.ops.quantized_decomposed.quantize_per_channel.default: 0,
             torch.ops.quantized_decomposed.dequantize_per_channel.default: 2,
         }
-        act_affine_quant_obs = observer.PlaceholderObserver.with_args(
+        act_affine_quant_obs = torch.ao.quantization.PlaceholderObserver.with_args(
             dtype=torch.qint8,
             qscheme=torch.per_tensor_affine,
             quant_min=-128,
@@ -621,7 +620,7 @@ class TestXNNPACKQuantizer(PT2EQuantizationTestCase):
             torch.ops.quantized_decomposed.quantize_per_channel.default: 0,
             torch.ops.quantized_decomposed.dequantize_per_channel.default: 2,
         }
-        act_affine_quant_obs = observer.PlaceholderObserver.with_args(
+        act_affine_quant_obs = torch.ao.quantization.PlaceholderObserver.with_args(
             dtype=torch.qint8,
             qscheme=torch.per_tensor_affine,
             quant_min=-128,
@@ -718,7 +717,7 @@ class TestXNNPACKQuantizer(PT2EQuantizationTestCase):
             torch.ops.quantized_decomposed.quantize_per_tensor.default: 0,
             torch.ops.quantized_decomposed.dequantize_per_tensor.default: 0,
         }
-        act_affine_quant_obs = observer.PlaceholderObserver.with_args(
+        act_affine_quant_obs = torch.ao.quantization.PlaceholderObserver.with_args(
             dtype=torch.qint8,
             qscheme=torch.per_tensor_affine,
             quant_min=-128,

@@ -112,9 +112,9 @@ class AnnotateQuantAttrs(ExportPass):
             offsets = self._expand(quant_attrs[QCOM_ZERO_POINTS], dim, axis)
             param = param.sub(offsets).mul(scales).to(torch.float32).contiguous()
         elif quant_attrs[QCOM_ENCODING] in [
-            exir_ops.edge.pt2e_quant.dequantize_affine.default
+            exir_ops.edge.torchao.dequantize_affine.default
         ]:
-            param = torch.ops.pt2e_quant.dequantize_affine(
+            param = torch.ops.torchao.dequantize_affine(
                 param,
                 block_size=quant_attrs[QCOM_BLOCK_SIZE],
                 scale=quant_attrs[QCOM_SCALE],

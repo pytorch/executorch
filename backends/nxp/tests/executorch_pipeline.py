@@ -20,7 +20,7 @@ from executorch.exir import (
     to_edge_transform_and_lower,
 )
 from torch import nn
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 def _quantize_model(model, calibration_inputs: list[tuple[torch.Tensor]]):

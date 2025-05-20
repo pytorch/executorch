@@ -28,12 +28,12 @@ from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 from executorch.extension.pytree import tree_flatten
-from torch.ao.quantization.backend_config.executorch import (
-    get_executorch_backend_config,
-)
-from torch.ao.quantization.observer import (
+from torch.ao.quantization import (
     default_dynamic_quant_observer,
     default_per_channel_weight_observer,
+)
+from torch.ao.quantization.backend_config.executorch import (
+    get_executorch_backend_config,
 )
 from torch.ao.quantization.qconfig_mapping import QConfig, QConfigMapping
 from torch.ao.quantization.quantize_fx import (
