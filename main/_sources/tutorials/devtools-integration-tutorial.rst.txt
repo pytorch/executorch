@@ -251,6 +251,7 @@ To visualize all runtime events, call Inspector's ``print_data_tabular``.
 
     from executorch.devtools import Inspector
 
+
     etrecord_path = "etrecord.bin"
     etdump_path = "etdump.etdp"
     inspector = Inspector(etdump_path=etdump_path, etrecord=etrecord_path)
@@ -260,17 +261,23 @@ To visualize all runtime events, call Inspector's ``print_data_tabular``.
 
 
 
-
 .. rst-class:: sphx-glr-script-out
 
  .. code-block:: none
 
+    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/executorch/devtools/inspector/_inspector.py:1056: UserWarning: Output Buffer not found. Tensor Debug Data will not be available.
+      warnings.warn(
 
-    False
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 210-218
+.. GENERATED FROM PYTHON SOURCE LINES 202-205
+
+Here is an example output:
+
+.. image:: ../_static/img/inspector_tabular_output.png
+
+.. GENERATED FROM PYTHON SOURCE LINES 208-216
 
 Analyzing with an Inspector
 ---------------------------
@@ -281,7 +288,7 @@ analysis about their model performance.
 
 Below are examples usages, with both ``EventBlock`` and ``DataFrame`` approaches.
 
-.. GENERATED FROM PYTHON SOURCE LINES 218-227
+.. GENERATED FROM PYTHON SOURCE LINES 216-225
 
 .. code-block:: default
 
@@ -301,12 +308,12 @@ Below are examples usages, with both ``EventBlock`` and ``DataFrame`` approaches
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 228-230
+.. GENERATED FROM PYTHON SOURCE LINES 226-228
 
 If a user wants the raw profiling results, they would do something similar to
 finding the raw runtime data of an ``addmm.out`` event.
 
-.. GENERATED FROM PYTHON SOURCE LINES 230-243
+.. GENERATED FROM PYTHON SOURCE LINES 228-243
 
 .. code-block:: default
 
@@ -317,14 +324,31 @@ finding the raw runtime data of an ``addmm.out`` event.
             if event.name == "native_call_addmm.out":
                 print(event.name, event.perf_data.raw if event.perf_data else "")
 
+        print()
         # Via Dataframe
         df = event_block.to_dataframe()
         df = df[df.event_name == "native_call_addmm.out"]
-        print(df[["event_name", "raw"]])
-        print()
+        if len(df) > 0:
+            print(df[["event_name", "raw"]])
+            print()
 
 
 
+
+
+.. rst-class:: sphx-glr-script-out
+
+ .. code-block:: none
+
+
+    native_call_addmm.out [0.040962]
+    native_call_addmm.out [0.007191]
+    native_call_addmm.out [0.000691]
+
+                   event_name         raw
+    14  native_call_addmm.out  [0.040962]
+    20  native_call_addmm.out  [0.007191]
+    26  native_call_addmm.out  [0.000691]
 
 
 
@@ -360,7 +384,7 @@ slowest ``convolution.out`` call.
         df = df[df.event_name == "native_call_convolution.out"]
         if len(df) > 0:
             slowest = df.loc[df["p50"].idxmax()]
-            assert slowest
+            assert slowest is not None
             print(slowest.name)
             print()
             pp.pprint(slowest.stack_traces if slowest.stack_traces else "")
@@ -371,15 +395,40 @@ slowest ``convolution.out`` call.
 
 
 
+.. rst-class:: sphx-glr-script-out
+
+ .. code-block:: none
+
+    native_call_convolution.out
+
+    {'aten_convolution_default_1_': '  File "devtools-integration-tutorial.py", '
+                                    'line 82, in forward\n'
+                                    '    x = F.max_pool2d(F.relu(self.conv2(x)), '
+                                    '2)\n'}
+
+    {'aten_convolution_default_1_': {'L__self__': ('', '__main__.Net'),
+                                     'L__self___conv2': ('conv2',
+                                                         'torch.nn.modules.conv.Conv2d')}}
+    6
+
+    {'aten_convolution_default_1_': '  File "devtools-integration-tutorial.py", '
+                                    'line 82, in forward\n'
+                                    '    x = F.max_pool2d(F.relu(self.conv2(x)), '
+                                    '2)\n'}
+
+    {'aten_convolution_default_1_': {'L__self__': ('', '__main__.Net'),
+                                     'L__self___conv2': ('conv2',
+                                                         'torch.nn.modules.conv.Conv2d')}}
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 275-277
+
+.. GENERATED FROM PYTHON SOURCE LINES 289-291
 
 If a user wants the total runtime of a module, they can use
 ``find_total_for_module``.
 
-.. GENERATED FROM PYTHON SOURCE LINES 277-281
+.. GENERATED FROM PYTHON SOURCE LINES 291-295
 
 .. code-block:: default
 
@@ -395,18 +444,19 @@ If a user wants the total runtime of a module, they can use
 
  .. code-block:: none
 
-    0.0
-    0.0
+    1.889086
+    1.031719
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 282-284
+.. GENERATED FROM PYTHON SOURCE LINES 296-299
 
 Note: ``find_total_for_module`` is a special first class method of
 `Inspector <../model-inspector.html>`__
 
-.. GENERATED FROM PYTHON SOURCE LINES 286-300
+
+.. GENERATED FROM PYTHON SOURCE LINES 301-315
 
 Conclusion
 ----------
@@ -426,7 +476,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 2.101 seconds)
+   **Total running time of the script:** (0 minutes 2.212 seconds)
 
 
 .. _sphx_glr_download_tutorials_devtools-integration-tutorial.py:
