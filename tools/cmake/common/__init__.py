@@ -9,9 +9,10 @@ import shutil
 import subprocess
 import tempfile
 import unittest
-from dataclasses import dataclass
 from functools import cache
 from typing import Any, Dict, List, Optional
+
+from tools.cmake.cmake_cache import CMakeCache
 
 # Files to copy from this directory into the temporary workspaces.
 TESTABLE_CMAKE_FILES = [
@@ -65,31 +66,6 @@ def _create_file_tree(tree: Dict[Any, Any], cwd: str) -> None:
             _create_file_tree(tree=value, cwd=new_cwd)
         else:
             raise AssertionError("invalid tree value", value)
-
-
-@dataclass
-class _CacheValue:
-    value_type: str
-    value: str
-
-
-# Get the key/value pair listed in a CMakeCache.txt file.
-@cache
-def _list_cmake_cache(cache_path: str) -> Dict[str, _CacheValue]:
-    result = {}
-    with open(cache_path, "r") as cache_file:
-        for line in cache_file:
-            line = line.strip()
-            if "=" in line:
-                key, value = line.split("=", 1)
-                value_type = ""
-                if ":" in key:
-                    key, value_type = key.split(":")
-                result[key.strip()] = _CacheValue(
-                    value_type=value_type,
-                    value=value.strip(),
-                )
-    return result
 
 
 class CMakeTestCase(unittest.TestCase):
@@ -157,12 +133,10 @@ class CMakeTestCase(unittest.TestCase):
         expected_value: str,
         expected_type: str,
     ):
-        cache = _list_cmake_cache(
-            os.path.join(self.workspace, "cmake-out", "CMakeCache.txt")
+        cache = CMakeCache(os.path.join(self.workspace, "cmake-out", "CMakeCache.txt"))
+        self.assertEqual(
+            cache.get(key).value, expected_value, f"unexpected value for {key}"
         )
         self.assertEqual(
-            cache[key].value, expected_value, f"unexpected value for {key}"
-        )
-        self.assertEqual(
-            cache[key].value_type, expected_type, f"unexpected value type for {key}"
+            cache.get(key).value_type, expected_type, f"unexpected value type for {key}"
         )

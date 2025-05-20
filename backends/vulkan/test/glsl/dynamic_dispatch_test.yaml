@@ -1,0 +1,7 @@
+dynamic_dispatch_test:
+  parameter_names_with_default_values:
+    OFFSET: 2.25
+  shader_variants:
+    - NAME: dynamic_dispatch_test_var1
+    - NAME: dynamic_dispatch_test_var2
+      OFFSET: 5.5
