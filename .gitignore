@@ -43,15 +43,13 @@ xcuserdata/
 
 # misc
 /.vscode/
-backends/apple/coreml/executorchcoreml.cpython-312-darwin.so
+*.so
+*.dylib
 /cmake_wrapper.sh
 /data/
 /devtools/bundled_program/serialize/
 /exir/_serialize/program.fbs
 /exir/_serialize/scalar_type.fbs
-/extension/llm/custom_ops/libcustom_ops_aot_lib.dylib
-/extension/pybindings/_portable_lib.cpython-312-darwin.so
 /include/
-/kernels/quantized/libquantized_ops_aot_lib.dylib
 /share/
 /version.py
