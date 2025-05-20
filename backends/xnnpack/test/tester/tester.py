@@ -55,7 +55,11 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
 )
 from executorch.exir.program._program import _transform
 from torch._export.pass_base import PassType
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torch.ao.quantization.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
+)
 from torch.ao.quantization.quantizer.quantizer import Quantizer
 from torch.export import export, ExportedProgram
 from torch.testing import FileCheck
@@ -150,10 +154,11 @@ class Quantize(Stage):
         quantization_config: Optional[QuantizationConfig] = None,
         calibrate: bool = True,
         calibration_samples: Optional[Sequence[Any]] = None,
+        is_qat: Optional[bool] = False,
     ):
         self.quantizer = quantizer or XNNPACKQuantizer()
         self.quantization_config = (
-            quantization_config or get_symmetric_quantization_config()
+            quantization_config or get_symmetric_quantization_config(is_qat=is_qat)
         )
         self.calibrate = calibrate
         self.calibration_samples = calibration_samples
@@ -161,15 +166,22 @@ class Quantize(Stage):
         self.quantizer.set_global(self.quantization_config)
 
         self.converted_graph = None
+        self.is_qat = is_qat
 
     def run(
         self, artifact: torch.nn.Module, inputs: Optional[Tuple[torch.Tensor]]
     ) -> None:
         assert inputs is not None
+        if self.is_qat:
+            artifact.train()
         captured_graph = export_for_training(artifact, inputs, strict=True).module()
 
         assert isinstance(captured_graph, torch.fx.GraphModule)
-        prepared = prepare_pt2e(captured_graph, self.quantizer)
+
+        if self.is_qat:
+            prepared = prepare_qat_pt2e(captured_graph, self.quantizer)
+        else:
+            prepared = prepare_pt2e(captured_graph, self.quantizer)
 
         if self.calibrate:
             # Calibrate prepared model to provide data to quantization observers.
