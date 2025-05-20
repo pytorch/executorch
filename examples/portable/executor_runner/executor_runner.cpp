@@ -18,6 +18,8 @@
  * all fp32 tensors.
  */
 
+#include <chrono>
+#include <fstream>
 #include <iostream>
 #include <memory>
 
@@ -57,6 +59,7 @@ DEFINE_int32(
     cpu_threads,
     -1,
     "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
+DEFINE_bool(dump_statistics, false, "Dump inference statistics.");
 
 using executorch::extension::FileDataLoader;
 using executorch::runtime::Error;
@@ -241,8 +244,15 @@ int main(int argc, char** argv) {
   // be used by a single thread at at time, but it can be reused.
   //
   EventTraceManager tracer;
+  auto before_load = std::chrono::high_resolution_clock::now();
   Result<Method> method = program->load_method(
       method_name, &memory_manager, tracer.get_event_tracer());
+  auto after_load = std::chrono::high_resolution_clock::now();
+  double interval_load =
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          after_load - before_load)
+          .count() /
+      1000.0;
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
@@ -250,56 +260,62 @@ int main(int argc, char** argv) {
       (uint32_t)method.error());
   ET_LOG(Info, "Method loaded.");
 
-  et_timestamp_t time_spent_executing = 0;
-  // Run the model.
-  for (uint32_t i = 0; i < FLAGS_num_executions; i++) {
-    ET_LOG(Debug, "Preparing inputs.");
-    // Allocate input tensors and set all of their elements to 1. The `inputs`
-    // variable owns the allocated memory and must live past the last call to
-    // `execute()`.
-    //
-    // NOTE: we have to re-prepare input tensors on every execution
-    // because inputs whose space gets reused by memory planning (if
-    // any such inputs exist) will not be preserved for the next
-    // execution.
-    auto inputs = executorch::extension::prepare_input_tensors(*method);
-    ET_CHECK_MSG(
-        inputs.ok(),
-        "Could not prepare inputs: 0x%" PRIx32,
-        (uint32_t)inputs.error());
-    ET_LOG(Debug, "Inputs prepared.");
+  et_timestamp_t time_spent_executing = 0, time_spent_executing_1st = 0;
+  auto inputs = executorch::extension::prepare_input_tensors(*method);
+  ET_LOG(Debug, "Preparing inputs.");
+  // Allocate input tensors and set all of their elements to 1. The `inputs`
+  // variable owns the allocated memory and must live past the last call to
+  // `execute()`.
+  //
+  // NOTE: we have to re-prepare input tensors on every execution
+  // because inputs whose space gets reused by memory planning (if
+  // any such inputs exist) will not be preserved for the next
+  // execution.
 
-    const et_timestamp_t before_execute =
-        executorch::runtime::pal_current_ticks();
-    Error status = method->execute();
-    const et_timestamp_t after_execute =
-        executorch::runtime::pal_current_ticks();
-    time_spent_executing += after_execute - before_execute;
+  ET_CHECK_MSG(
+      inputs.ok(),
+      "Could not prepare inputs: 0x%" PRIx32,
+      (uint32_t)inputs.error());
+  ET_LOG(Debug, "Inputs prepared.");
+  auto before_exec = std::chrono::high_resolution_clock::now();
+  Error status = method->execute();
+  auto after_exec = std::chrono::high_resolution_clock::now();
+  double interval_1st_infs =
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          after_exec - before_exec)
+          .count() /
+      1000.0;
+  ET_CHECK_MSG(
+      status == Error::Ok,
+      "Execution of method %s failed with status 0x%" PRIx32,
+      method_name,
+      (uint32_t)status);
+
+  // Run the model.
+  before_exec = std::chrono::high_resolution_clock::now();
+  for (uint32_t i = 0; i < FLAGS_num_executions; i++) {
+    status = method->execute();
     ET_CHECK_MSG(
         status == Error::Ok,
         "Execution of method %s failed with status 0x%" PRIx32,
         method_name,
         (uint32_t)status);
   }
-  const auto tick_ratio = et_pal_ticks_to_ns_multiplier();
-  constexpr auto NANOSECONDS_PER_MILLISECOND = 1000000;
-  ET_LOG(
-      Info,
-      "Model executed successfully %" PRIu32 " time(s) in %f ms.",
-      FLAGS_num_executions,
-      static_cast<double>(time_spent_executing) * tick_ratio.numerator /
-          tick_ratio.denominator / NANOSECONDS_PER_MILLISECOND);
+  after_exec = std::chrono::high_resolution_clock::now();
+  double interval_infs = std::chrono::duration_cast<std::chrono::microseconds>(
+                             after_exec - before_exec)
+                             .count() /
+      1000.0 / FLAGS_num_executions;
 
-  // Print the outputs.
-  std::vector<EValue> outputs(method->outputs_size());
-  ET_LOG(Info, "%zu outputs: ", outputs.size());
-  Error status = method->get_outputs(outputs.data(), outputs.size());
-  ET_CHECK(status == Error::Ok);
-  // Print the first and last 100 elements of long lists of scalars.
-  std::cout << executorch::extension::evalue_edge_items(100);
-  for (int i = 0; i < outputs.size(); ++i) {
-    std::cout << "Output " << i << ": " << outputs[i] << std::endl;
+  if (FLAGS_dump_statistics) {
+    auto output_file_name = "statistics.txt";
+    std::ofstream fout(output_file_name);
+    fout << "load: " + std::to_string(interval_load)
+         << "\n1st: " + std::to_string(interval_1st_infs)
+         << "\navg: " + std::to_string(interval_infs) << std::endl;
+    fout.close();
   }
+  ET_LOG(Info, "Model executed successfully.");
 
   if (tracer.get_event_tracer()) {
     // Dump ETDump data containing profiling/debugging data to file specified in
