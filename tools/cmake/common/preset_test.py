@@ -8,8 +8,6 @@ import os
 
 from tools.cmake.common import CMakeTestCase, TESTABLE_CMAKE_FILES
 
-from . import _list_cmake_cache
-
 
 class TestPreset(CMakeTestCase):
 
@@ -223,9 +221,6 @@ class TestPreset(CMakeTestCase):
         )
         self.run_cmake()
         self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "default value", "STRING")
-
-        # Since we cache the get operations, clear it so that it's read again for tests.
-        _list_cmake_cache.cache_clear()
 
         self.run_cmake(cmake_args=["-DEXECUTORCH_TEST_MESSAGE='cli value'"])
         self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "cli value", "STRING")
