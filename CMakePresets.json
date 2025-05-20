@@ -1,11 +1,5 @@
 {
-  "version": 10,
-  "cmakeMinimumRequired": {
-    "major": 3,
-    "minor": 31,
-    "patch": 0
-  },
-  "$comment": "On-device AI across mobile, embedded and edge for PyTorch.",
+  "version": 6,
   "configurePresets": [
     {
       "name": "common",

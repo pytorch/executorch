@@ -32,10 +32,10 @@ add_custom_command(
   COMMAND
     ${PYTHON_EXECUTABLE} -m test.models.export_program --modules
     "ModuleAdd,ModuleAddHalf,ModuleAddMul,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleMultipleEntry,ModuleSimpleTrain,ModuleStateful"
-    --outdir "${CMAKE_CURRENT_BINARY_DIR}" 2> /dev/null
+    --outdir "${CMAKE_CURRENT_BINARY_DIR}"
   COMMAND
     ${PYTHON_EXECUTABLE} -m test.models.export_program --modules "ModuleAddMul"
-    --external-constants --outdir "${CMAKE_CURRENT_BINARY_DIR}" 2> /dev/null
+    --external-constants --outdir "${CMAKE_CURRENT_BINARY_DIR}"
   COMMAND
     ${PYTHON_EXECUTABLE} -m test.models.export_delegated_program --modules "ModuleAddMul"
     --backend_id "StubBackend" --outdir "${CMAKE_CURRENT_BINARY_DIR}/delegated/" || true
