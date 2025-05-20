@@ -407,6 +407,28 @@ def copy_files(genrule_name, target, file_list):
         default_outs = ["."],
     )
 
+def get_portable_lib_deps():
+    return [
+        "//executorch/kernels/portable/cpu:math_constants",
+        "//executorch/kernels/portable/cpu:scalar_utils",
+        "//executorch/kernels/portable/cpu:vec_ops",
+        "//executorch/kernels/portable/cpu/pattern:all_deps",
+        "//executorch/kernels/portable/cpu/util:all_deps",
+    ]
+
+def get_optimized_lib_deps():
+    return [
+        "//executorch/kernels/optimized/cpu:add_sub_impl",
+        "//executorch/kernels/optimized/cpu:binary_ops",
+        "//executorch/kernels/optimized/cpu:fft_utils",
+        "//executorch/kernels/optimized/cpu:moments_utils",
+        "//executorch/kernels/optimized:libblas",
+        "//executorch/kernels/optimized:libutils",
+        "//executorch/kernels/optimized:libvec",
+        "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
+        "//executorch/runtime/kernel:kernel_includes",
+    ] + get_vec_deps()
+
 def build_portable_header_lib(name, oplist_header_name, feature = None):
     """Build the portable headers into a header-only library.
     Ensures that includes work across portable and optimized libs.
@@ -453,13 +475,7 @@ def build_portable_lib(name, oplist_header_name, portable_header_lib, feature = 
         name = name,
         srcs = portable_source_files,
         exported_preprocessor_flags = ["-DEXECUTORCH_SELECTIVE_BUILD_DTYPE"],
-        deps = [
-            "//executorch/kernels/portable/cpu:math_constants",
-            "//executorch/kernels/portable/cpu:scalar_utils",
-            "//executorch/kernels/portable/cpu:vec_ops",
-            "//executorch/kernels/portable/cpu/pattern:all_deps",
-            "//executorch/kernels/portable/cpu/util:all_deps",
-        ] +  [":" + portable_header_lib],
+        deps = get_portable_lib_deps() + [":" + portable_header_lib],
         compiler_flags = compiler_flags,
         # WARNING: using a deprecated API to avoid being built into a shared
         # library. In the case of dynamically loading so library we don't want
@@ -499,30 +515,12 @@ def build_optimized_lib(name, oplist_header_name, portable_header_lib, feature =
         # This allows operators to be called outside of the kernel registry.
         compiler_flags += ["-fvisibility=hidden"]
 
-    # Set up dependencies.
-    portable_lib_deps = [
-        "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
-        "//executorch/runtime/kernel:kernel_includes",
-        "//executorch/kernels/portable/cpu:scalar_utils",
-        "//executorch/kernels/portable/cpu/pattern:all_deps",
-        "//executorch/kernels/portable/cpu/util:all_deps",
-    ]
-    optimized_lib_deps = [
-        "//executorch/kernels/optimized/cpu:add_sub_impl",
-        "//executorch/kernels/optimized/cpu:binary_ops",
-        "//executorch/kernels/optimized/cpu:fft_utils",
-        "//executorch/kernels/optimized/cpu:moments_utils",
-        "//executorch/kernels/optimized:libblas",
-        "//executorch/kernels/optimized:libutils",
-        "//executorch/kernels/optimized:libvec",
-    ] + get_vec_deps()
-
     # Build optimized lib.
     runtime.cxx_library(
         name = name,
         srcs = optimized_source_files,
         exported_preprocessor_flags = ["-DEXECUTORCH_SELECTIVE_BUILD_DTYPE"],
-        deps = portable_lib_deps + optimized_lib_deps + [":" + portable_header_lib],
+        deps = get_portable_lib_deps() + get_optimized_lib_deps() + [":" + portable_header_lib],
         compiler_flags = compiler_flags,
         preprocessor_flags = get_vec_preprocessor_flags(),
         # sleef needs to be added as a direct dependency of the operator target when building for Android,
@@ -651,7 +649,7 @@ def executorch_generated_lib(
                 there are undefined symbols otherwise. Please try to use xplat, or talk to the
                 executorch team. Setting expose_operator_symbols=True is not recommended as the
                 exposed symbols may clash (duplicate symbols errors) if multiple
-                excutorch_generated_libs are included by a parent library.""")
+                executorch_generated_libs are included by a parent library.""")
 
         if (not "//executorch/kernels/portable:operators" in kernel_deps) and (not "//executorch/kernels/optimized:optimized_operators" in kernel_deps):
             fail("""
@@ -766,8 +764,6 @@ def executorch_generated_lib(
             platforms = platforms,
         )
 
-    portable_lib = []
-    optimized_lib = []
     if dtype_selective_build:
         # Build portable headers lib. Used for portable and optimized kernel libraries.
         portable_header_lib = name + "_portable_header_lib"
@@ -780,7 +776,7 @@ def executorch_generated_lib(
             # Build portable lib.
             portable_lib_name = name + "_portable_lib"
             build_portable_lib(portable_lib_name, oplist_header_name, portable_header_lib, feature, expose_operator_symbols)
-            portable_lib = [":{}".format(portable_lib_name)]
+            kernel_deps.append(":{}".format(portable_lib_name))
 
         if "//executorch/kernels/optimized:optimized_operators" in kernel_deps:
             # Remove optimized from kernel_deps as we're building it from source.
@@ -789,7 +785,7 @@ def executorch_generated_lib(
             # Build optimized lib.
             optimized_lib_name = name + "_optimized_lib"
             build_optimized_lib(optimized_lib_name, oplist_header_name, portable_header_lib, feature, expose_operator_symbols)
-            optimized_lib = [":{}".format(optimized_lib_name)]
+            kernel_deps.append(":{}".format(optimized_lib_name))
 
     # Exports headers that declare the function signatures of the C++ functions
     # that map to entries in `functions.yaml` and `custom_ops.yaml`.
@@ -843,7 +839,7 @@ def executorch_generated_lib(
                 "//executorch/kernels/prim_ops:prim_ops_registry" + aten_suffix,
                 "//executorch/runtime/core:evalue" + aten_suffix,
                 "//executorch/codegen:macros",
-            ] + deps + kernel_deps + portable_lib + optimized_lib,
+            ] + deps + kernel_deps,
             exported_deps = [
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
