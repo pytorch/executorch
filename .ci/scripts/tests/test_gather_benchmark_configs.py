@@ -84,7 +84,9 @@ class TestGatehrBenchmarkConfigs(unittest.TestCase):
             self.assertIn("enabled_config2", result)
 
     def test_disabled_configs_have_github_links(self):
-        github_issue_regex = re.compile(r"https://github\.com/.+/.+/issues/\d+")  # @lint-ignore
+        github_issue_regex = re.compile(
+            r"https://github\.com/.+/.+/issues/\d+"  # @lint-ignore
+        )
 
         for (
             model_name,
