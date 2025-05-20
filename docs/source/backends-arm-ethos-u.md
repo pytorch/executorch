@@ -33,7 +33,7 @@ from executorch.exir import (
     ExecutorchBackendConfig,
     to_edge_transform_and_lower,
 )
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchvision.models import mobilenetv2
 
 mobilenet_v2 = mobilenetv2.mobilenet_v2(

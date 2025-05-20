@@ -17,7 +17,6 @@ from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.ao.quantization.observer import HistogramObserver
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer.quantizer import (
     QuantizationAnnotation,
     QuantizationSpec,
@@ -25,6 +24,7 @@ from torch.ao.quantization.quantizer.quantizer import (
 )
 from torch.export import export, export_for_training
 from torch.fx import GraphModule
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 @dataclass(eq=True, frozen=True)
