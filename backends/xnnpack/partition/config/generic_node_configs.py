@@ -357,6 +357,13 @@ class LeakyReLUConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32]
 
 
+class LogConfig(GenericNodePartitionerConfig):
+    target_name = "log.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
 class MeanDimConfig(GenericNodePartitionerConfig):
     target_name = "mean.dim"
 
