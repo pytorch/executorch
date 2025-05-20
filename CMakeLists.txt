@@ -714,23 +714,14 @@ endif()
 
 if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
   # Currently only enable this on Arm-based Macs
-  if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
-    set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
-    set(TORCHAO_BUILD_CPU_AARCH64 ON)
-    add_subdirectory(
-      ${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/experimental
-      ${CMAKE_CURRENT_BINARY_DIR}/third-party/ao/torchao/experimental
-    )
-    target_link_options_shared_lib(torchao_ops_executorch)
-    list(APPEND link_libraries torchao_ops_executorch)
-    if(EXECUTORCH_BUILD_MPS)
-      add_subdirectory(
-        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/experimental/ops/mps
-        ${CMAKE_CURRENT_BINARY_DIR}/third-party/ao/torchao/experimental/ops/mps)
-      target_link_options_shared_lib(torchao_ops_mps_executorch)
-      list(APPEND link_libraries torchao_ops_mps_executorch)
-    endif()
-  endif()
+  set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
+  set(TORCHAO_BUILD_CPU_AARCH64 ON)
+
+  # Set ExecuTorch headers and core library so TorchAO can register ops against them
+  set(EXECUTORCH_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR})
+  set(EXECUTORCH_LIBRARIES executorch_core)
+
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/experimental)
 endif()
 
 if(EXECUTORCH_BUILD_VULKAN)
