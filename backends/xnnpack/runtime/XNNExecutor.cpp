@@ -106,11 +106,11 @@ ET_NODISCARD Error XNNExecutor::prepare_args(EValue** args) {
           err == Error::Ok,
           Internal,
           "Failed to retrieve dim order from tensor!");
-      ET_CHECK_OR_RETURN_ERROR(
-          is_contiguous_dim_order(dim_order, tensor->dim()),
-          Internal,
-          "Expecting default dim_order but got a non default dim_order tensor for external input %u",
-          i);
+      // ET_CHECK_OR_RETURN_ERROR(
+      //     is_contiguous_dim_order(dim_order, tensor->dim()),
+      //     Internal,
+      //     "Expecting default dim_order but got a non default dim_order tensor for external input %u",
+      //     i);
       size_t dims[XNN_MAX_TENSOR_DIMS];
       ET_CHECK_OR_RETURN_ERROR(
           num_dims <= XNN_MAX_TENSOR_DIMS,
