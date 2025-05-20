@@ -174,7 +174,7 @@ class AddVisitor_INT(NodeVisitor):
         scale_back = 1.0
         if inputs[0].dtype == ts.DType.INT8:
             rescaled_inputs, scale_back = tqutils.insert_rescale_ops_to_int32(
-                tosa_graph, inputs, node, self.tosa_specs
+                tosa_graph, inputs, node, self.tosa_spec
             )
         else:
             # input[0].dtype == ts.DType.INT32
@@ -202,7 +202,7 @@ class AddVisitor_INT(NodeVisitor):
             # Scale output back to 8 bit
             # pyre-ignore
             tqutils.insert_rescale_op_to_int8(
-                tosa_graph, add_output, scale_back, node, self.tosa_specs
+                tosa_graph, add_output, scale_back, node, self.tosa_spec
             )  # type: ignore[possibly-undefined]
 
 

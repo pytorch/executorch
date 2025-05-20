@@ -284,31 +284,6 @@ class ReplaceSelectWithViewOpPass(ExportPass):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
-class ReplaceTCopyWithTransposePass(ExportPass):
-    """
-    Replace t_copy with transpose_copy.int. If the input is 1D, the t_copy is
-    a nop. t_copy is not supported, so this is an opt_level=0 pass.
-    """
-
-    def call_operator(self, op, args, kwargs, meta):
-        if get_edge_overload_packet(op) != exir_ops.edge.aten.t_copy:
-            return super().call_operator(op, args, kwargs, meta)
-
-        # Get the input tensor shape
-        in_tensor = args[0].to_tensor() if isinstance(args[0], ProxyValue) else args[0]
-
-        # If the input is a 1D tensor, this t_copy is a nop, so return the input
-        if in_tensor.dim() <= 1:
-            return args[0]
-
-        assert in_tensor.dim() == 2, "t_copy expects a tensor with <= 2 dimensions"
-        transpose_args = (args[0], 0, 1)
-        return super().call_operator(
-            exir_ops.edge.aten.transpose_copy.int, transpose_args, kwargs, meta
-        )
-
-
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceMMWithAddMMPass(ExportPass):
     """
     This pass replaces mm with addmm by introducing a zero bias.
@@ -2407,7 +2382,6 @@ class CadenceReplaceOpsInGraph:
     passes = [
         ReplaceEmptyTensorsWithFullPass,
         ReplaceFunctionallyEquivalentOpTargets,
-        ReplaceTCopyWithTransposePass,
         ReplacePermuteWithTransposePass,
         ReplaceScalarWithTensorArgPass,
         ReplaceConvolutionOptionalArgsWithConcreteArgsPass,

@@ -139,6 +139,7 @@ union XNodeUnion {
   XNNConcatenate5: _XNNCat,
   XNNConvTranspose2d: _XNNNodeConv,
   XNNReciprocalSquareRoot: _XNNNode1x1,
+  XNNLog: _XNNNode1x1,
 }
 
 union XValueUnion {

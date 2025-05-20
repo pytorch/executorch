@@ -96,20 +96,9 @@ public class ModuleInstrumentationTest {
         assertTrue(results[0].isTensor());
     }
 
-    @Test
+    @Test(expected = RuntimeException.class)
     public void testModuleLoadNonExistantFile() throws IOException{
         Module module = Module.load(getTestFilePath(MISSING_FILE_NAME));
-
-        EValue[] results = module.forward();
-        assertEquals(null, results);
-    }
-
-    @Test
-    public void testModuleLoadMethodNonExistantFile() throws IOException{
-        Module module = Module.load(getTestFilePath(MISSING_FILE_NAME));
-
-        int loadMethod = module.loadMethod(FORWARD_METHOD);
-        assertEquals(loadMethod, ACCESS_FAILED);
     }
 
     @Test
@@ -146,11 +135,11 @@ public class ModuleInstrumentationTest {
         assertEquals(loadMethod, OK);
 
         module.destroy();
-        
+
         EValue[] results = module.forward();
         assertEquals(0, results.length);
     }
-    
+
     @Test
     public void testForwardFromMultipleThreads() throws InterruptedException, IOException {
         Module module = Module.load(getTestFilePath(TEST_FILE_NAME));
@@ -169,7 +158,7 @@ public class ModuleInstrumentationTest {
                     assertTrue(results[0].isTensor());
                     completed.incrementAndGet();
                 } catch (InterruptedException e) {
-        
+
                 }
             }
         };

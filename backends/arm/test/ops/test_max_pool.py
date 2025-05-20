@@ -26,6 +26,8 @@ test_data_suite = {
     "ones": lambda: (torch.ones(1, 16, 50, 32), [4, 2, 0]),
     "rand": lambda: (torch.rand(1, 16, 52, 16), [4, 3, 0]),
     "non_divisible": lambda: (torch.rand(1, 16, 112, 112), [3, 2, 1]),
+    "non_divisible_window_height": lambda: (torch.rand(1, 16, 56, 56), [3, (2, 1), 1]),
+    "non_divisible_window_width": lambda: (torch.rand(1, 16, 56, 56), [3, (1, 2), 1]),
 }
 
 test_data_suite_mult_batches = {

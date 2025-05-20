@@ -16,9 +16,10 @@ from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
     register_cadence_pass,
 )
-
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, ProxyValue
+from torch.fx.operator_schemas import get_signature_for_torch_op
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
@@ -109,8 +110,44 @@ class SimplifySliceOpPass(ExportPass):
         return super().call_operator(op, new_args, kwargs, meta)
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class BindOptionalArgsPass(ExportPass):
+    """Bind all optional args and kwargs."""
+
+    def call_operator(self, op, args, kwargs, meta):
+        if not isinstance(op, EdgeOpOverload):
+            return super().call_operator(op, args, kwargs, meta)
+        assert callable(op)
+
+        torch_op_schemas = get_signature_for_torch_op(op._op)
+        if len(torch_op_schemas) == 0:
+            return super().call_operator(op, args, kwargs, meta)
+
+        matched_schemas = []
+        # Iterate through all of the schema until we find one that matches
+        # If one matches, populate `new_args_and_kwargs` with the new args/kwargs
+        # values. If none matches, `new_args_and_kwargs` will be None
+        for candidate_signature in torch_op_schemas:
+            try:
+                candidate_signature.bind(*args, **kwargs)
+                matched_schemas.append(candidate_signature)
+            except TypeError:
+                continue
+
+        if len(matched_schemas) != 1:
+            # Did not match any schema. Cannot normalize
+            return super().call_operator(op, args, kwargs, meta)
+
+        sig = matched_schemas[0]
+        bound_args = sig.bind(*args, **kwargs)
+        bound_args.apply_defaults()
+
+        return super().call_operator(op, bound_args.args, bound_args.kwargs, meta)
+
+
 # This class encapsulates all the functions that simplify the op's args
 class CadenceSimplifyOpsInGraph:
     passes = [
         SimplifySliceOpPass,
+        BindOptionalArgsPass,
     ]

@@ -153,9 +153,12 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
         def in_int16_range(x):
             return torch.all(x >= -(2**15)) and torch.all(x <= 2**15 - 1)
 
-        assert in_int16_range(scale_n_yx)
-        assert in_int16_range(scale_d_yx)
-        assert in_int16_range(border_yx)
+        if not in_int16_range(scale_n_yx):
+            raise ValueError("scale_n_yx is out of the int16 range")
+        if not in_int16_range(scale_d_yx):
+            raise ValueError("scale_d_yx is out of the int16 range")
+        if not in_int16_range(border_yx):
+            raise ValueError("border_yx is out of the int16 range")
 
         scales = [scale_n_yx[0], scale_d_yx[0], scale_n_yx[1], scale_d_yx[1]]
 

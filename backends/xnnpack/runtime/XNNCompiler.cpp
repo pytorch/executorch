@@ -1419,6 +1419,36 @@ Error defineReciprocalSquareRootNode(
 }
 
 /*
+Define serialized log node into the subgraph, using the remapped ids
+to map the serialized ids, to the new ids generated when defining the
+tensor value
+*/
+Error defineLogNode(
+    xnn_subgraph_t subgraph_ptr,
+    const std::unordered_map<uint32_t, uint32_t>& remapped_ids,
+    const NodePtr node,
+    const fb_xnnpack::XNNGraph* graph) noexcept {
+  MAYBE_UNUSED(graph);
+
+  auto graph_node = node->xnode_union_as_XNNLog();
+
+  xnn_status status = xnn_define_log(
+      subgraph_ptr,
+      remapped_ids.at(graph_node->input_id()),
+      remapped_ids.at(graph_node->output_id()),
+      graph_node->flags());
+
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to create log node %i with code: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+
+  return Error::Ok;
+}
+
+/*
 Define serialized ceiling node into the subgraph, using the remapped ids
 to map the serialized ids, to the new ids generated when defining the
 tensor value
@@ -1981,6 +2011,7 @@ DefineNodeFunc getDefineNodeFunc(fb_xnnpack::XNodeUnion nodeType) {
     _DEFINE(Ceiling)
     _DEFINE(Hardswish)
     _DEFINE(LeakyReLU)
+    _DEFINE(Log)
     _DEFINE(Maximum)
     _DEFINE(Negate)
     _DEFINE(Square)

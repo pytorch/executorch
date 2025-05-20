@@ -24,6 +24,7 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
 from executorch.exir.error import InternalError
 from executorch.exir.operator.convert import (
+    _get_overload_schema,
     get_out_args_from_opoverload,
     is_out_variant,
     to_out_variant,
@@ -63,6 +64,7 @@ from torch import fx
 from torch._subclasses import FakeTensor
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 from torch.fx.passes.shape_prop import TensorMetadata
+from torchgen.model import SchemaKind
 
 __all__ = [
     "ExportPass",
@@ -257,7 +259,6 @@ to_out_var_skiplist: Set[Callable[[Any], Any]] = {
     memory.alloc,
     memory.view,
     executorch_call_delegate,
-    torch.ops.aten.copy_.default,
 }
 to_out_var_skiplist.update(_EXECUTORCH_SYM_OPS)
 
@@ -346,6 +347,8 @@ class ToOutVarPass(PassBase):
             elif getattr(target, "__module__", None) in ("builtins", "_operator"):
                 continue
             elif target in to_out_var_skiplist:
+                continue
+            elif _get_overload_schema(target).kind() == SchemaKind.inplace:
                 continue
             if not isinstance(
                 target, (torch._ops.OpOverload, EdgeOpOverload, BackendOpOverload)

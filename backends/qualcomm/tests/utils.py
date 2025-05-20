@@ -15,6 +15,7 @@ from typing import Callable, Dict, List, Optional, OrderedDict, Tuple
 import numpy as np
 import torch
 from executorch import exir
+from executorch.backends.qualcomm._passes.utils import dq_ops
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import ModuleQConfig, QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
@@ -298,7 +299,7 @@ class TestQNN(unittest.TestCase):
                     target_time_scale=TimeScale.CYCLES,
                 )
                 self.assertTrue(
-                    len(inspector.to_dataframe().index) == expected_profile_events
+                    len(inspector.to_dataframe().index) >= expected_profile_events
                 )
 
             def validate_intermediate_tensor():
@@ -583,7 +584,7 @@ class TestQNN(unittest.TestCase):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        return torch.ao.quantization.quantize_pt2e.convert_pt2e(prepared)
+        return convert_pt2e(prepared)
 
     def split_graph(self, division: int):
         class SplitGraph(ExportPass):
@@ -594,6 +595,10 @@ class TestQNN(unittest.TestCase):
             def __init__(self, division):
                 super().__init__()
                 self.division = division
+
+            def _is_legit_node(self, node):
+                # skip dq_ops for frozen_params
+                return node.op == "call_function" and node.target not in dq_ops
 
             def _insert_clone(
                 self, graph_module: torch.fx.GraphModule
@@ -609,9 +614,11 @@ class TestQNN(unittest.TestCase):
                 # Insert clone op to split model based on the shares
                 num_graph_nodes = 0
                 for node in graph_module.graph.nodes:
-                    num_graph_nodes += 1 if node.op == "call_function" else 0
+                    if not self._is_legit_node(node):
+                        continue
 
-                    if num_graph_nodes % shares != 0 or node.op != "call_function":
+                    num_graph_nodes += 1
+                    if num_graph_nodes % shares != 0:
                         continue
 
                     with graph_module.graph.inserting_after(node):

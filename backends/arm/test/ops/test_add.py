@@ -60,6 +60,10 @@ class Add2(torch.nn.Module):
             10000 * torch.randn(1, 1, 4, 4),
             torch.randn(1, 1, 4, 1),
         ),
+        "4d_randn_1_mutltiple_broadcasts": lambda: (
+            torch.randn(1, 4, 4, 1),
+            torch.ones(1, 1, 4, 4),
+        ),
     }
 
 

@@ -864,3 +864,30 @@ class TestRemoveOpsPasses(unittest.TestCase):
 
         # Ensure both cat nodes were removed
         self.assertEqual(count_node(graph_module, exir_ops.edge.aten.cat.default), 0)
+
+    def test_remove_cat_from_slice_copy_second_input(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 4))
+        y = builder.placeholder("y", torch.randn(2, 4))
+        cat = builder.call_operator(
+            op=exir_ops.edge.aten.cat.default,
+            args=((x, y), 1),
+        )
+        slice_copy = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(cat, 1, 5, 7, 1),
+        )
+        builder.output([slice_copy])
+        graph_module = builder.get_graph_module()
+
+        inputs = (torch.randn(2, 4), torch.randn(2, 4))
+        expected_outputs = graph_module(*inputs)[0]
+
+        p = RemoveCatFromSliceCopyPass()
+        graph_module = cast(PassResult, p(graph_module)).graph_module
+
+        # Cat should be removed.
+        self.assertEqual(count_node(graph_module, exir_ops.edge.aten.cat.default), 0)
+
+        # Output should remain the same.
+        self.assertTrue(torch.equal(graph_module(*inputs)[0], expected_outputs))

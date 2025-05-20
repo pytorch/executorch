@@ -251,8 +251,8 @@ def qat_train(ori_model, captured_model, quantizer, dataset):
         loss.backward()
         optimizer.step()
 
-    return torch.ao.quantization.quantize_pt2e.convert_pt2e(
-        torch.ao.quantization.move_exported_model_to_eval(annotated_model)
+    return convert_pt2e(
+        torch.ao.quantization.move_exported_model_to_eval(annotated_model),
     )
 
 

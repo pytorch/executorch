@@ -111,7 +111,7 @@ def export_text_model(llava, embeddings, dynamic_shapes):
         quantization_mode=args.quantization_mode,
         group_size=args.group_size,
         computation_dtype=dtype_override,
-        checkpoint_path=args.checkpoint_path,
+        checkpoint_path=args.checkpoint,
         tokenizer_path=args.tokenizer_path,
         calibration_tasks=args.calibration_tasks,
         calibration_limit=args.calibration_limit,
