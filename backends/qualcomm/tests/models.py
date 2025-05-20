@@ -1311,6 +1311,23 @@ class ResidualBlockModule(torch.nn.Module):
         return x6
 
 
+class ResizeBicubic(torch.nn.Module):
+    def __init__(self, size, scale_factor, align_corners):
+        super().__init__()
+        self.align_corners = align_corners
+        self.scale_factor = scale_factor
+        self.size = size
+
+    def forward(self, x):
+        return torch.nn.functional.interpolate(
+            x,
+            size=self.size,
+            scale_factor=self.scale_factor,
+            mode="bicubic",
+            align_corners=self.align_corners,
+        )
+
+
 class ResizeBilinear2D(torch.nn.Module):
     def __init__(self):
         super().__init__()
