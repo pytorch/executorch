@@ -103,7 +103,6 @@ def get_passes_dependency_for_capture_program():
         AnnotateStack: [RemoveRedundancy],
         AnnotateUnbind: [RemoveRedundancy],
         ConvertBmmToMatmul: [RecomposePixelUnshuffle],
-        ConvertConv1dToConv2d: [FoldQDQ],
         ConvertUpsampleBicubicWithBilinear: [RemoveRedundancy],
         DecomposeAny: [RemoveRedundancy],
         DecomposeLinalgVectorNorm: [RemoveRedundancy],

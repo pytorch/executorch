@@ -17,6 +17,7 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.operators.operator_validation_utils import (
+    adjust_pooling_pad_if_needed,
     validate_num_inputs,
     validate_same_dtype,
 )
@@ -62,6 +63,20 @@ class AvgPool2dVisitor_0_80_BI(NodeVisitor):
             ]
         except IndexError:
             pad_size_list = [0, 0, 0, 0]
+
+        # Adjust the padding as necessary
+        pad_size_list[1] = adjust_pooling_pad_if_needed(
+            input_tensor.shape[2],
+            kernel_size_list[0],
+            stride_size_list[0],
+            pad_size_list[1],
+        )
+        pad_size_list[3] = adjust_pooling_pad_if_needed(
+            input_tensor.shape[3],
+            kernel_size_list[1],
+            stride_size_list[1],
+            pad_size_list[3],
+        )
 
         attr = ts.TosaSerializerAttribute()
         attr.PoolAttribute(
@@ -191,6 +206,20 @@ class AvgPool2dVisitor(NodeVisitor):
             ]
         except IndexError:
             pad_size_list = [0, 0, 0, 0]
+
+        # Adjust the padding as necessary
+        pad_size_list[1] = adjust_pooling_pad_if_needed(
+            input_tensor.shape[2],
+            kernel_size_list[0],
+            stride_size_list[0],
+            pad_size_list[1],
+        )
+        pad_size_list[3] = adjust_pooling_pad_if_needed(
+            input_tensor.shape[3],
+            kernel_size_list[1],
+            stride_size_list[1],
+            pad_size_list[3],
+        )
 
         attr = ts.TosaSerializerAttribute()
         attr.AvgPool2dAttribute(
