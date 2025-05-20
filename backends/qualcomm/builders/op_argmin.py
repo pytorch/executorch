@@ -27,7 +27,7 @@ class Argmin(NodeVisitor):
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
         op_wrapper_list = []
-        input_node = node.args[0]
+        input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         output_tensor = self.get_tensor(node, node)
         argmin_inp_tensor_wrapper = self.define_tensor(
