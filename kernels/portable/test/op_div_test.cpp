@@ -32,7 +32,7 @@ class OpDivScalarOutKernelTest : public OperatorTest {
   Tensor& op_div_out_mode(
       const Tensor& a,
       const Tensor& b,
-      executorch::aten::optional<executorch::aten::string_view> mode,
+      std::optional<std::string_view> mode,
       Tensor& out) {
     return torch::executor::aten::div_outf(context_, a, b, mode, out);
   }
@@ -43,7 +43,7 @@ class OpDivScalarModeOutKernelTest : public OperatorTest {
   Tensor& op_div_scalar_mode_out(
       const Tensor& a,
       const Scalar& b,
-      executorch::aten::optional<executorch::aten::string_view> mode,
+      std::optional<std::string_view> mode,
       Tensor& out) {
     return torch::executor::aten::div_outf(context_, a, b, mode, out);
   }
@@ -60,7 +60,7 @@ TEST_F(OpDivScalarOutKernelTest, SanityCheckModeTrunc) {
   op_div_out_mode(
       tf_a.make(sizes, {1, 2, 4, -9}),
       tf_a.make(sizes, {2, 2, 2, 2}),
-      executorch::aten::optional<executorch::aten::string_view>("trunc"),
+      std::optional<std::string_view>("trunc"),
       out);
 
   // Check that it matches the expected output.
@@ -78,7 +78,7 @@ TEST_F(OpDivScalarOutKernelTest, SanityCheckModeFloor) {
   op_div_out_mode(
       tf_a.make(sizes, {1, 2, 4, -9}),
       tf_a.make(sizes, {2, 2, 2, 2}),
-      executorch::aten::optional<executorch::aten::string_view>("floor"),
+      std::optional<std::string_view>("floor"),
       out);
 
   // Check that it matches the expected output.
@@ -95,7 +95,7 @@ TEST_F(OpDivScalarModeOutKernelTest, SanityCheckModeTrunc) {
   op_div_scalar_mode_out(
       tf.make(sizes, {1, 2, 4, -9}),
       2,
-      executorch::aten::optional<executorch::aten::string_view>("trunc"),
+      std::optional<std::string_view>("trunc"),
       out);
 
   // Check that it matches the expected output.
@@ -112,7 +112,7 @@ TEST_F(OpDivScalarModeOutKernelTest, SanityCheckModeFloor) {
   op_div_scalar_mode_out(
       tf.make(sizes, {1, 2, 4, -9}),
       2,
-      executorch::aten::optional<executorch::aten::string_view>("floor"),
+      std::optional<std::string_view>("floor"),
       out);
 
   // Check that it matches the expected output.
