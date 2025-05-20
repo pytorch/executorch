@@ -153,6 +153,18 @@ public class Module {
   }
 
   /**
+   * Dump the ExecuTorch ETRecord file to /data/local/tmp/result.etdump.
+   *
+   * <p>Currently for internal (minibench) use only.
+   *
+   * @return true if the etdump was successfully written, false otherwise.
+   */
+  @Experimental
+  public boolean etdump() {
+    return mNativePeer.etdump();
+  }
+
+  /**
    * Explicitly destroys the native Module object. Calling this method is not required, as the
    * native object will be destroyed when this object is garbage-collected. However, the timing of
    * garbage collection is not guaranteed, so proactively calling {@code destroy} can free memory

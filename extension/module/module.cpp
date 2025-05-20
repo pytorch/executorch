@@ -240,6 +240,12 @@ runtime::Result<std::vector<runtime::EValue>> Module::execute(
   auto& method = methods_.at(method_name).method;
   auto& inputs = methods_.at(method_name).inputs;
 
+  ET_CHECK_OR_RETURN_ERROR(
+      input_values.size() <= inputs.size(),
+      InvalidArgument,
+      "input size: %zu does not match method input size: %zu",
+      input_values.size(),
+      inputs.size());
   for (size_t i = 0; i < input_values.size(); ++i) {
     if (!input_values[i].isNone()) {
       inputs[i] = input_values[i];

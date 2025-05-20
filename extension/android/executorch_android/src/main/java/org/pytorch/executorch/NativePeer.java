@@ -62,4 +62,7 @@ class NativePeer {
   /** Retrieve the in-memory log buffer, containing the most recent ExecuTorch log entries. */
   @DoNotStrip
   public native String[] readLogBuffer();
+
+  @DoNotStrip
+  public native boolean etdump();
 }
