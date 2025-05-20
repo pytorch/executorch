@@ -3297,3 +3297,140 @@ TEST(VulkanComputeGraphOpsTest, test_to_copy) {
     test_to_copy();
   }
 }
+
+vkapi::ShaderInfo pick_dynamic_dispatch_shader(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& additional_args) {
+  const ValueRef mat1 = args[1].refs[0];
+
+  std::string kernel_name = "dynamic_dispatch_test";
+  if (graph->size_at<int32_t>(-2, mat1) == 1) {
+    kernel_name += "_var1";
+  } else {
+    kernel_name += "_var2";
+  }
+  return VK_KERNEL_FROM_STR(kernel_name);
+}
+
+utils::uvec3 pick_dynamic_dispatch_global_wg_size(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& additional_args) {
+  const ValueRef out = args[0].refs[0];
+
+  return graph->logical_limits_of(out);
+}
+
+utils::uvec3 pick_dynamic_dispatch_local_wg_size(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& additional_args) {
+  return {64, 1, 1};
+}
+
+void resize_dynamic_dispatch_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& additional_args) {
+  const ValueRef out = args[0].refs[0];
+  const ValueRef mat1 = args[1].refs[0];
+
+  std::vector<int64_t> out_sizes = graph->sizes_of(mat1);
+  out_sizes.at(out_sizes.size() - 2) = 1;
+
+  graph->get_tensor(out)->virtual_resize(out_sizes);
+}
+
+void add_dynamic_dispatch_test_node(
+    ComputeGraph& graph,
+    const ValueRef mat1,
+    const ValueRef mat2,
+    const ValueRef out) {
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
+      graph,
+      pick_dynamic_dispatch_shader,
+      pick_dynamic_dispatch_global_wg_size,
+      pick_dynamic_dispatch_local_wg_size,
+      // Inputs and Outputs
+      {{out, vkapi::kWrite}, {{mat1, mat2}, vkapi::kRead}},
+      // Shader params buffers
+      {},
+      // Push Constants
+      {graph.sizes_pc_of(out),
+       graph.sizes_pc_of(mat1),
+       graph.sizes_pc_of(mat2)},
+      // Specialization constants
+      {},
+      // Resize Logic
+      {},
+      resize_dynamic_dispatch_node));
+}
+
+vkcompute::ComputeGraph build_dynamic_dispatch_test_graph(int M, int N) {
+  using namespace vkcompute;
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  vkapi::ScalarType dtype = vkapi::kFloat;
+  utils::StorageType in_out_stype = utils::kTexture3D;
+  utils::GPUMemoryLayout memory_layout = utils::kWidthPacked;
+
+  std::vector<int64_t> mat1_size = {M, N};
+  std::vector<int64_t> mat2_size = {M, N};
+  std::vector<int64_t> out_size = {1, N};
+
+  IOValueRef mat1 =
+      graph.add_input_tensor(mat1_size, dtype, in_out_stype, memory_layout);
+  IOValueRef mat2{};
+
+  mat2.value = graph.add_tensor(mat2_size, dtype, in_out_stype, memory_layout);
+  mat2.staging = graph.set_input_tensor(mat2.value);
+
+  IOValueRef out;
+  out.value = graph.add_tensor(out_size, dtype, in_out_stype, memory_layout);
+
+  add_dynamic_dispatch_test_node(graph, mat1, mat2, out);
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  return graph;
+}
+
+void test_dynamic_dispatch(int M, int N) {
+  ComputeGraph graph = build_dynamic_dispatch_test_graph(M, N);
+
+  graph.prepare();
+  graph.encode_prepack();
+  graph.prepack();
+  graph.encode_execute();
+
+  for (int i = 1; i < 4; i++) {
+    float val_mat1 = i;
+    float val_mat2 = i + 1;
+    // 5.3 is a hardcoded offset in the compute shader
+    float val_out = M * (val_mat1 * val_mat2) + 5.5;
+    execute_graph_and_check_output(graph, {val_mat1, val_mat2}, {val_out});
+  }
+
+  // Switch to GEMV mode
+  int new_N = N / 2;
+  std::vector<int64_t> new_mat1_size = {1, new_N};
+  std::vector<int64_t> new_mat2_size = {1, new_N};
+  graph.resize_input(0, new_mat1_size);
+  graph.resize_input(1, new_mat2_size);
+  graph.propagate_resize();
+
+  graph.encode_execute();
+
+  for (int i = 1; i < 4; i++) {
+    float val_mat1 = i;
+    float val_mat2 = i + 1;
+    float val_out = (val_mat1 * val_mat2) + 2.25;
+    execute_graph_and_check_output(graph, {val_mat1, val_mat2}, {val_out});
+  }
+}
+
+TEST(VulkanComputeGraphOpsTest, test_dynamic_dispatch_graph) {
+  test_dynamic_dispatch(128, 128);
+}
