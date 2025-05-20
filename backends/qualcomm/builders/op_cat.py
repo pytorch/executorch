@@ -32,7 +32,7 @@ class Cat(NodeVisitor):
         list_of_tensor_wrappers = []
 
         for tensor_input in list_of_tensors:
-            input_tensor = self.get_tensor(tensor_input, node)
+            input_tensor = self.get_tensor(self.get_node(tensor_input), node)
             list_of_tensor_wrappers.append(
                 self.define_tensor(
                     tensor_input,

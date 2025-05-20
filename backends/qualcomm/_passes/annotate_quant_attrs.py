@@ -7,10 +7,8 @@ import operator
 from typing import Any, Dict
 
 import torch
-from executorch.backends.qualcomm.builders.utils import get_parameter, set_parameter
+from executorch.backends.qualcomm.builders.utils import get_parameter
 from executorch.backends.qualcomm.utils.constants import (
-    QCOM_AXIS,
-    QCOM_BLOCK_SIZE,
     QCOM_DTYPE,
     QCOM_ENCODING,
     QCOM_QUANT_ATTRS,
@@ -18,11 +16,8 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_QUANT_MIN,
     QCOM_REQUANTIZE,
     QCOM_SCALE,
-    QCOM_SCALES,
     QCOM_ZERO_POINT,
-    QCOM_ZERO_POINTS,
 )
-from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 from .utils import dq_ops, get_quant_attrs, q_ops
@@ -101,43 +96,9 @@ class AnnotateQuantAttrs(ExportPass):
                     n.args[0].meta.setdefault(QCOM_REQUANTIZE, {})
                     n.args[0].meta[QCOM_REQUANTIZE][user_node.name] = dq_attrs
 
-    # Dequant all the fold_quant parameters back to fp32.
-    # If an operation is not supported by QNN and got fallback, it will expect a fp32 param.
-    def _dequant_fold_params(self, n, quant_attrs, param):
-        if quant_attrs[QCOM_ENCODING] in [
-            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default
-        ]:
-            dim, axis = param.dim(), quant_attrs[QCOM_AXIS]
-            scales = self._expand(quant_attrs[QCOM_SCALES], dim, axis)
-            offsets = self._expand(quant_attrs[QCOM_ZERO_POINTS], dim, axis)
-            param = param.sub(offsets).mul(scales).to(torch.float32).contiguous()
-        elif quant_attrs[QCOM_ENCODING] in [
-            exir_ops.edge.pt2e_quant.dequantize_affine.default
-        ]:
-            param = torch.ops.pt2e_quant.dequantize_affine(
-                param,
-                block_size=quant_attrs[QCOM_BLOCK_SIZE],
-                scale=quant_attrs[QCOM_SCALE],
-                zero_point=quant_attrs[QCOM_ZERO_POINT],
-                input_dtype=quant_attrs[QCOM_DTYPE],
-                quant_min=quant_attrs[QCOM_QUANT_MIN],
-                quant_max=quant_attrs[QCOM_QUANT_MAX],
-                output_dtype=torch.float32,
-            )
-        else:
-            scale = quant_attrs[QCOM_SCALE]
-            offset = quant_attrs[QCOM_ZERO_POINT]
-            param = param.sub(offset).mul(scale).to(torch.float32).contiguous()
-
-        set_parameter(param, n.args[0], self.edge_program)
-        n.args[0].meta["val"] = param
-
     def _annotate_quant_attrs(
         self, graph_module: torch.fx.GraphModule
     ) -> torch.fx.GraphModule:
-        # Keep track of const params that has been dequant, so it does not get
-        # dequant multiple times if the const param has more than 1 user
-        visited_const_param = set()
         for n in graph_module.graph.nodes:
             self._annotate_requant(n)
             # With fold_quant enabled, check if the input of dq op is quantized param.
@@ -148,10 +109,6 @@ class AnnotateQuantAttrs(ExportPass):
                 continue
             quant_attrs = get_quant_attrs(self.edge_program, n)
             self._annotate_source_nodes(n, quant_attrs)
-
-            if param is not None and n.args[0] not in visited_const_param:
-                visited_const_param.add(n.args[0])
-                self._dequant_fold_params(n, quant_attrs, param)
 
         return graph_module
 

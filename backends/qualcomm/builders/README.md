@@ -227,7 +227,7 @@ Now, we can start to fill in function body step by step:
 
 2. Define input gamma / beta tensors:
     ```python
-        weight_node = node.args[2]
+        weight_node = self.get_node(node.args[2])
         weight_tensor = get_parameter(weight_node, self.edge_program)
         weight_tensor_wrapper = self.define_tensor(
             weight_node,
@@ -237,7 +237,7 @@ Now, we can start to fill in function body step by step:
             nodes_to_wrappers,
         )
 
-        bias_node = node.args[3]
+        bias_node = self.get_node(node.args[3])
         bias_tensor = get_parameter(bias_node, self.edge_program)
         bias_tensor_wrapper = self.define_tensor(
             bias_node,

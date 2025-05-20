@@ -12,7 +12,10 @@ import torch
 from executorch.backends.qualcomm.builders import node_visitor
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
-from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_AXIS_ORDER,
+    QCOM_BYPASS_NODE,
+)
 
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
@@ -46,7 +49,6 @@ class QnnOperatorSupport(OperatorSupportBase):
         skip_node_op_set: set = None,
     ):
         self.node_visitors = node_visitor.get_node_visitors(edge_program)
-
         self.skip_node_op_set = skip_node_op_set
         self.skip_node_id_set = skip_node_id_set
         self.nodes_to_wrappers = defaultdict(dict)
@@ -70,6 +72,8 @@ class QnnOperatorSupport(OperatorSupportBase):
             node.target in allow_list_operator
             # bypass if custom op appears
             or OpContextLoader.namespace == node.target.namespace
+            # bypass dequantize op for parameters & buffers
+            or node.meta.get(QCOM_BYPASS_NODE, False)
         ):
             return True
 

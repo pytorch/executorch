@@ -10,10 +10,6 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/utils/BindingUtils.h>
-
-#include <iostream>
-
 namespace vkcompute {
 
 DynamicDispatchNode::DynamicDispatchNode(
