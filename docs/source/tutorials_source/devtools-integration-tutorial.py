@@ -187,22 +187,22 @@ with open(save_path, "wb") as f:
 
 from executorch.devtools import Inspector
 
-# sphinx_gallery_start_ignore
-inspector_patch = patch.object(Inspector, "__init__", return_value=None)
-inspector_patch_print = patch.object(Inspector, "print_data_tabular", return_value=None)
-inspector_patch_find_total = patch.object(
-    Inspector, "find_total_for_module", return_value=None
-)
-inspector_patch.start()
-inspector_patch_print.start()
-inspector_patch_find_total.start()
-# sphinx_gallery_end_ignore
+# # sphinx_gallery_start_ignore
+# inspector_patch = patch.object(Inspector, "__init__", return_value=None)
+# inspector_patch_print = patch.object(Inspector, "print_data_tabular", return_value=None)
+# inspector_patch_find_total = patch.object(
+#     Inspector, "find_total_for_module", return_value=None
+# )
+# inspector_patch.start()
+# inspector_patch_print.start()
+# inspector_patch_find_total.start()
+# # sphinx_gallery_end_ignore
 etrecord_path = "etrecord.bin"
 etdump_path = "etdump.etdp"
 inspector = Inspector(etdump_path=etdump_path, etrecord=etrecord_path)
-# sphinx_gallery_start_ignore
-inspector.event_blocks = []
-# sphinx_gallery_end_ignore
+# # sphinx_gallery_start_ignore
+# inspector.event_blocks = []
+# # sphinx_gallery_end_ignore
 inspector.print_data_tabular()
 
 ####################################
@@ -326,16 +326,13 @@ print(inspector.find_total_for_module("L__self___conv2"))
 # Note: ``find_total_for_module`` is a special first class method of
 # `Inspector <../model-inspector.html>`__
 #
-# Example output:
-# 1.889086
-# 1.031719
 
-# sphinx_gallery_start_ignore
-# Stop the patches
-inspector_patch.stop()
-inspector_patch_print.stop()
-inspector_patch_find_total.stop()
-# sphinx_gallery_end_ignore
+# # sphinx_gallery_start_ignore
+# # Stop the patches
+# inspector_patch.stop()
+# inspector_patch_print.stop()
+# inspector_patch_find_total.stop()
+# # sphinx_gallery_end_ignore
 
 
 ######################################################################
