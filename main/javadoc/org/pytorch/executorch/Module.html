@@ -202,12 +202,20 @@ public class <span class="typeNameLabel"><a href=Module.html>Module</a></span>
                                         <tr id="i1" class="rowColor">
                                             <td class="colFirst"><code>static <a href=Module.html>Module</a></code>
                                             </td>
+                                            <th class="colSecond" scope="row"><code><a href=Module.html#load(String,int,int)>load</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> modelPath, int loadMode, int numThreads) </code>
+                                            </th>
+                                            <td class="colLast">Loads a serialized ExecuTorch module from the specified path on the disk.</td>
+                                        </tr>
+                                        
+                                        <tr id="i2" class="altColor">
+                                            <td class="colFirst"><code>static <a href=Module.html>Module</a></code>
+                                            </td>
                                             <th class="colSecond" scope="row"><code><a href=Module.html#load(String)>load</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> modelPath) </code>
                                             </th>
                                             <td class="colLast">Loads a serialized ExecuTorch module from the specified path on the disk to run on CPU.</td>
                                         </tr>
                                         
-                                        <tr id="i2" class="altColor">
+                                        <tr id="i3" class="rowColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;<a href=EValue.html>EValue</a>&gt;</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Module.html#forward(Array)>forward</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;<a href=EValue.html>EValue</a>&gt; inputs) </code>
@@ -215,7 +223,7 @@ public class <span class="typeNameLabel"><a href=Module.html>Module</a></span>
                                             <td class="colLast">Runs the 'forward' method of this module with the specified arguments.</td>
                                         </tr>
                                         
-                                        <tr id="i3" class="rowColor">
+                                        <tr id="i4" class="altColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;<a href=EValue.html>EValue</a>&gt;</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Module.html#execute(String,Array)>execute</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> methodName, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;<a href=EValue.html>EValue</a>&gt; inputs) </code>
@@ -223,7 +231,7 @@ public class <span class="typeNameLabel"><a href=Module.html>Module</a></span>
                                             <td class="colLast">Runs the specified method of this module with the specified arguments.</td>
                                         </tr>
                                         
-                                        <tr id="i4" class="altColor">
+                                        <tr id="i5" class="rowColor">
                                             <td class="colFirst"><code>int</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Module.html#loadMethod(String)>loadMethod</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> methodName) </code>
@@ -231,7 +239,7 @@ public class <span class="typeNameLabel"><a href=Module.html>Module</a></span>
                                             <td class="colLast">Load a method on this module.</td>
                                         </tr>
                                         
-                                        <tr id="i5" class="rowColor">
+                                        <tr id="i6" class="altColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>&gt;</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Module.html#getUsedBackends(String)>getUsedBackends</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> methodName) </code>
@@ -239,7 +247,7 @@ public class <span class="typeNameLabel"><a href=Module.html>Module</a></span>
                                             <td class="colLast">Returns the names of the methods in a certain method.</td>
                                         </tr>
                                         
-                                        <tr id="i6" class="altColor">
+                                        <tr id="i7" class="rowColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>&gt;</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Module.html#readLogBuffer()>readLogBuffer</a>() </code>
@@ -247,7 +255,7 @@ public class <span class="typeNameLabel"><a href=Module.html>Module</a></span>
                                             <td class="colLast">Retrieve the in-memory log buffer, containing the most recent ExecuTorch log entries.</td>
                                         </tr>
                                         
-                                        <tr id="i7" class="rowColor">
+                                        <tr id="i8" class="altColor">
                                             <td class="colFirst"><code>boolean</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Module.html#etdump()>etdump</a>() </code>
@@ -255,7 +263,7 @@ public class <span class="typeNameLabel"><a href=Module.html>Module</a></span>
                                             <td class="colLast">Dump the ExecuTorch ETRecord file to /data/local/tmp/result.etdump.</td>
                                         </tr>
                                         
-                                        <tr id="i8" class="altColor">
+                                        <tr id="i9" class="rowColor">
                                             <td class="colFirst"><code>void</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Module.html#destroy()>destroy</a>() </code>
@@ -316,6 +324,38 @@ public class <span class="typeNameLabel"><a href=Module.html>Module</a></span>
                                             
                                             
                                             <dd><code>loadMode</code> - load mode for the module.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="load(String,int,int)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>load</h4>
+                                        <pre class="methodSignature"> static <a href=Module.html>Module</a> <a href=Module.html#load(String,int,int)>load</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> modelPath, int loadMode, int numThreads)</pre>
+                                        <div class="block"><p>Loads a serialized ExecuTorch module from the specified path on the disk.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>modelPath</code> - path to file that contains the serialized ExecuTorch module.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>loadMode</code> - load mode for the module.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>numThreads</code> - the number of threads to use for inference.</dd>
                                             
                                             
                                         </dl>
