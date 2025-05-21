@@ -23,6 +23,7 @@ class BaseConfig:
     These are specific to the specific model, e.g. whether it’s Qwen3 0.6B or Phi-4-mini.
     for each of these different models, you can expect each of these fields to change.
     """
+
     model_class: str = "llama"
     params: Optional[str] = None
     checkpoint: Optional[str] = None
@@ -40,6 +41,7 @@ class ModelConfig:
     optimizations / actual configurations. The same ModelConfig can be applied
     to different models.
     """
+
     dtype_override: str = "fp32"
     enable_dynamic_shape: bool = True
     use_shared_embedding: bool = False
@@ -66,17 +68,6 @@ class ExportConfig:
 
 
 @dataclass
-<<<<<<< HEAD
-=======
-class KVCacheConfig:
-    use_kv_cache: Optional[bool] = None
-    quantize_kv_cache: Optional[bool] = None
-    local_global_attention: List[int] = None
-    # ...potentially more in the future such as cache eviction strategy
-
-
-@dataclass
->>>>>>> ec85c4be2 (Add new export LLM config)
 class DebugConfig:
     profile_memory: bool = False
     profile_path: Optional[str] = None
