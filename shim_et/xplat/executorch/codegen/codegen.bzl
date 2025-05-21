@@ -655,6 +655,23 @@ def executorch_generated_lib(
             If you have a custom kernel library, please remove `dtype_selective_build=True`
             and use regular selective build.
             """.format(kernel_deps))
+        
+        # Dtype selective build requires that the portable/optimized kernel libraries are not passed into `deps`.
+        if ("//executorch/kernels/portable:operators" in kernel_deps):
+            index = 0
+            for dep in deps:
+                index = index + 1
+                portable = name + "_check_portable_" + dep.split(":")[1] + str(index)
+                message = "Dtype selective build requires that the portable library is not passed into `deps`. This will cause duplicate symbol errors in the build. Please remove it from `deps` and place it into `kernel_deps`"
+                check_recursive_dependencies(portable, dep, "//executorch/kernels/portable:operators", message)
+        if ("//executorch/kernels/optimized:optimized_operators" in kernel_deps):
+            index = 0
+            for dep in deps:
+                index = index + 1
+                optimized = name + "_check_optimized_" + dep.split(":")[1] + str(index)
+                message = "Dtype selective build requires that the optimized library is not passed into `deps`. This will cause duplicate symbol errors in the build. Please remove it from `deps` and place it into `kernel_deps`"
+                check_recursive_dependencies(optimized, dep, "//executorch/kernels/optimized:optimized_operators", message)
+
 
     aten_suffix = "_aten" if aten_mode else ""
 
@@ -869,4 +886,32 @@ def executorch_ops_check(
         outs = {"selected_operators.yaml": ["selected_operators.yaml"]},
         default_outs = ["."],
         **kwargs,
+    )
+
+def check_recursive_dependencies(
+    name,
+    parent,
+    child,
+    message = "",
+    **kwargs,
+):
+    """
+    Checks if child is a transitive dependency of parent and fails if it is.
+    The query runs the equivalent of `buck2 uquery "allpaths(parent, child)".
+    The path from parent->child is available in the out file and error message.
+    """
+    message = "Dependency violation: '{}' should not depend on '{}'. {}".format(parent, child, message)
+
+    if parent == child:
+        fail(message)
+
+    runtime.genrule(
+        name = name,
+        macros_only = False,
+        cmd = 'mkdir -p $OUT;paths="$(query_targets allpaths({}, {}))"; echo "$paths" > $OUT/dep.txt; if [ -z "$paths" ]; then echo "Dependencies look good"; else echo {}. This will cause duplicate symbol errors when building with dtype selective build. The dependency path is: "$paths"; fail; fi'.format(parent, child, message),
+        define_static_target = False,
+        # The path is saved to $OUT/dep.txt and can be accessed via genrule_name[result].
+        outs = {"result": ["dep.txt"]},
+        default_outs = ["."],
+        platforms = kwargs.pop("platforms", get_default_executorch_platforms()),
     )
