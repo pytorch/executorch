@@ -391,8 +391,6 @@ exclude_patterns = [
     "backends/vulkan/quantizer/**",
     "backends/vulkan/test/**",
     "backends/cadence/aot/quantizer/**",
-    "backends/qualcomm/quantizer/**",
-    "examples/qualcomm/**",
     "backends/xnnpack/quantizer/**",
     "backends/xnnpack/test/**",
     "exir/tests/test_passes.py",
