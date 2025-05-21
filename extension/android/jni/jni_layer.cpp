@@ -6,6 +6,15 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/extension/android/jni/jni_layer_constants.h>
+#include <executorch/extension/android/jni/log.h>
+#include <executorch/extension/module/module.h>
+#include <executorch/extension/runner_util/inputs.h>
+#include <executorch/extension/tensor/tensor.h>
+#include <executorch/runtime/core/portable_type/tensor_impl.h>
+#include <executorch/runtime/platform/log.h>
+#include <executorch/runtime/platform/platform.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <cassert>
 #include <chrono>
 #include <iostream>
@@ -15,16 +24,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include "jni_layer_constants.h"
-
-#include <executorch/extension/android/jni/log.h>
-#include <executorch/extension/module/module.h>
-#include <executorch/extension/runner_util/inputs.h>
-#include <executorch/extension/tensor/tensor.h>
-#include <executorch/runtime/core/portable_type/tensor_impl.h>
-#include <executorch/runtime/platform/log.h>
-#include <executorch/runtime/platform/platform.h>
-#include <executorch/runtime/platform/runtime.h>
 
 #ifdef ET_USE_THREADPOOL
 #include <cpuinfo.h>
