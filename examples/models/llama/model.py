@@ -8,7 +8,6 @@
 
 import json
 import os
-from typing import Dict, Tuple
 
 import torch
 from executorch.examples.models.checkpoint import (
@@ -46,6 +45,10 @@ class Llama2Model(EagerModelBase):
 
         # Params file.
         params_path = kwargs.get("params", None)
+
+        # Adapter
+        adapter_checkpoint = kwargs.get("adapter_checkpoint", None)
+        adapter_config = kwargs.get("adapter_config", None)
 
         self.use_kv_cache = kwargs.get("use_kv_cache", False)
         self.use_sdpa_with_kv_cache_op = kwargs.get("use_sdpa_with_kv_cache", False)
@@ -130,6 +133,21 @@ the checkpoint format to avoid generating faulty models.
             with open(params_path, "r") as f:
                 params = json.loads(f.read())
 
+        # Get adapter checkpoint and config.
+        adapter_checkpoint = {}
+        adapter_config = {}
+        adapter_checkpoint_path = kwargs.get("adapter_checkpoint", None)
+        if adapter_checkpoint_path:
+            adapter_checkpoint = torch.load(
+                adapter_checkpoint_path, map_location=device, mmap=True
+            )
+            from torchtune.models import convert_weights
+            adapter_checkpoint = convert_weights.tune_to_meta(adapter_checkpoint)
+            adapter_config = kwargs.get("adapter_config", None)
+            with open(adapter_config, "r") as f:
+                adapter_config = json.loads(f.read())
+            checkpoint.update(adapter_checkpoint)
+
         output_prune_map = None
         if self.output_prune_map_path is not None:
             with open(self.output_prune_map_path, "r") as f:
@@ -154,6 +172,7 @@ the checkpoint format to avoid generating faulty models.
             output_prune_map=output_prune_map,
             enable_dynamic_shape=self.enable_dynamic_shape,
             **params,
+            **adapter_config,
         )
 
         if model_args.use_scaled_rope:
