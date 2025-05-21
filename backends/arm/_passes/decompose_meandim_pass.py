@@ -8,6 +8,8 @@ from math import prod
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
+from executorch.backends.arm.operator_support.pool_2d_support import AvgPool2dSupported
+from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
@@ -60,6 +62,14 @@ class DecomposeMeanDimPass(ArmPass):
         x = view_copy.default(x, new_shape=(h)) # Squeeze dims since keepdims = False
     """
 
+    def __init__(self, graph_module, tosa_spec):
+        super().__init__()
+        self._graph_module = graph_module
+        self._tosa_spec = tosa_spec
+        self._avg_pool_checker = AvgPool2dSupported(
+            self._tosa_spec, WhyNoPartitionReporter()
+        )
+
     def call_operator(self, op, args, kwargs, meta):
         if op not in (exir_ops.edge.aten.mean.dim, torch.ops.aten.mean.dim):
             return super().call_operator(op, args, kwargs, meta)
@@ -86,13 +96,11 @@ class DecomposeMeanDimPass(ArmPass):
 
             x = super().call_operator(view_op, (x, new_shape), {}, meta, True)
 
-        # Reduce (h,w) by avg pool
-        dims_to_reduce_by_avgpool = [dim for dim in dims_to_reduce if dim >= 2]
-        x = self._reduce_by_average_pool(op, x, dims_to_reduce_by_avgpool, meta)
+        # Reduce (h,w) dims by avg pool if possible
+        x, dims_to_reduce = self._reduce_by_average_pool(op, x, dims_to_reduce, meta)
 
-        # Reduce (n, c) by reduce sum
-        dims_to_reduce_by_sum = [dim for dim in dims_to_reduce if dim < 2]
-        x = self._reduce_by_sum(op, x, dims_to_reduce_by_sum, meta, dtype)
+        # Reduce remaining dims by sum
+        x = self._reduce_by_sum(op, x, dims_to_reduce, meta, dtype)
 
         # Reshape to correct output shape if necessary
         if x.data.size() != output_shape:
@@ -116,22 +124,41 @@ class DecomposeMeanDimPass(ArmPass):
         return super().call_operator(mul_op, (sum, full), {}, meta, True)
 
     def _reduce_by_average_pool(self, op, input_node, dims, meta):
-        if len(dims) == 0:
-            return input_node
+        dims_to_reduce_by_avgpool = [dim for dim in dims if dim >= 2]
+        if len(dims_to_reduce_by_avgpool) == 0:
+            return input_node, dims
+
+        dims_to_reduce_by_sum = [dim for dim in dims if dim < 2]
 
         avgpool_op = get_avgpool(op)
         input_shape = input_node.data.size()
 
         stride = [1, 1]
-        if dims in ([2, 3], [3, 2]):
+        if dims_to_reduce_by_avgpool in ([2, 3], [3, 2]):
             kernel_size = [input_shape[2], input_shape[3]]
-        elif dims == [3]:
+        elif dims_to_reduce_by_avgpool == [3]:
             kernel_size = [1, input_shape[3]]
-        elif dims == [2]:
+        elif dims_to_reduce_by_avgpool == [2]:
             kernel_size = [input_shape[2], 1]
         else:
-            raise RuntimeError(f"Bad dims {dims} for {op} decomposition of mean_dim.")
+            raise RuntimeError(
+                f"Bad dims {dims_to_reduce_by_avgpool} for {op} decomposition of mean_dim."
+            )
 
-        return super().call_operator(
-            avgpool_op, (input_node, kernel_size, stride), {}, meta, True
+        args = (input_node, kernel_size, stride)
+
+        avg_pool_node = self._graph_module.graph.create_node(
+            "call_function", avgpool_op, args
         )
+        is_supported = self._avg_pool_checker.is_node_tosa_supported(
+            avg_pool_node, self._tosa_spec
+        )
+
+        if is_supported:
+            return (
+                super().call_operator(avgpool_op, args, {}, meta, True),
+                dims_to_reduce_by_sum,
+            )
+
+        else:
+            return input_node, dims
