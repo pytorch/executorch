@@ -7,7 +7,7 @@
 
 set -e
 
-APP_PATH="executorch-examples/apple/ExecuTorchDemo/ExecuTorchDemo"
+APP_PATH="executorch-examples/mv3/apple/ExecuTorchDemo/ExecuTorchDemo"
 MODEL_NAME="mv3"
 SIMULATOR_NAME="executorch"
 

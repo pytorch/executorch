@@ -17,14 +17,16 @@
 cmake_minimum_required(VERSION 3.19)
 project(executorch)
 
+if(ANDROID)
+  set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY BOTH)
+  set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH)
+endif()
+
 find_package(executorch CONFIG REQUIRED COMPONENTS vulkan_backend)
 find_package(GTest CONFIG REQUIRED)
 
 # Only build tests if Vulkan was compiled
-find_library(LIB_VULKAN_BACKEND vulkan_backend)
-
-if(LIB_VULKAN_BACKEND)
-
+if(TARGET vulkan_backend)
   if(NOT EXECUTORCH_ROOT)
     set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
   endif()
@@ -80,7 +82,7 @@ if(LIB_VULKAN_BACKEND)
   )
   target_include_directories(vulkan_compute_api_test PRIVATE ${COMMON_INCLUDES})
   target_link_libraries(
-    vulkan_compute_api_test PRIVATE GTest::gtest_main vulkan_backend executorch
+    vulkan_compute_api_test PRIVATE GTest::gtest_main vulkan_backend executorch_core
                                     test_shaderlib
   )
   target_compile_options(vulkan_compute_api_test PRIVATE ${VULKAN_CXX_FLAGS})

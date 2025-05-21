@@ -5,20 +5,24 @@
 
 # pyre-unsafe
 
-from typing import List
+from typing import Any, List
 
-import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
+)
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from torch.fx import Node
 
 
 @register_node_visitor
-class CatVisitor(NodeVisitor):
+class CatVisitor_0_80(NodeVisitor):
     target = "aten.cat.default"
+
+    tosa_specs = NodeVisitor.tosa_specs_0_80
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -26,10 +30,13 @@ class CatVisitor(NodeVisitor):
     def define_node(
         self,
         node: Node,
-        tosa_graph: ts.TosaSerializer,
+        tosa_graph: Any,
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
+        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
+
+        validate_num_inputs(self.target, inputs, [1, 2])
 
         tensors = inputs[0].special
         dim = 0 if len(inputs) < 2 else inputs[1].number
@@ -39,6 +46,43 @@ class CatVisitor(NodeVisitor):
 
         attr = ts.TosaSerializerAttribute()
         attr.AxisAttribute(dim)
+
+        tosa_graph.addOperator(
+            ts.TosaOp.Op().CONCAT,
+            [tensor.name for tensor in tensors],
+            [output.name],
+            attr,
+        )
+
+
+@register_node_visitor
+class CatVisitor(NodeVisitor):
+    target = "aten.cat.default"
+
+    tosa_specs = NodeVisitor.tosa_specs_1_00
+
+    def __init__(self, *args):
+        super().__init__(*args)
+
+    def define_node(
+        self,
+        node: Node,
+        tosa_graph: Any,
+        inputs: List[TosaArg],
+        output: TosaArg,
+    ) -> None:
+        import serializer.tosa_serializer as ts
+
+        validate_num_inputs(self.target, inputs, [1, 2])
+
+        tensors = inputs[0].special
+        dim = 0 if len(inputs) < 2 else inputs[1].number
+        rank = len(output.shape)
+        dim = (dim + rank) % rank
+        dim = output.dim_order.index(dim)
+
+        attr = ts.TosaSerializerAttribute()
+        attr.ConcatAttribute(dim)
 
         tosa_graph.addOperator(
             ts.TosaOp.Op().CONCAT,

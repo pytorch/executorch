@@ -35,6 +35,7 @@ def define_common_targets():
             "//executorch/backends/qualcomm/runtime:runtime",
             "fbsource//third-party/pybind11:pybind11",
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
+            "fbsource//third-party/qualcomm/qnn/qnn-{0}:app_sources".format(get_qnn_library_version()),
         ],
         external_deps = [
             "libtorch_python",
@@ -68,6 +69,7 @@ def define_common_targets():
             "//executorch/backends/qualcomm/runtime:runtime",
             "fbsource//third-party/pybind11:pybind11",
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
+            "fbsource//third-party/qualcomm/qnn/qnn-{0}:app_sources".format(get_qnn_library_version()),
         ],
         external_deps = [
             "libtorch_python",
@@ -95,5 +97,6 @@ def define_common_targets():
             "//executorch/backends/qualcomm/runtime:runtime",
             "fbsource//third-party/pybind11:pybind11",
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
+            "fbsource//third-party/qualcomm/qnn/qnn-{0}:app_sources".format(get_qnn_library_version()),
         ],
     )

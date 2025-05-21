@@ -14,20 +14,6 @@ on:
     - cron: '0 0 * * *'
 
 jobs:
-  check-urls:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Check URLs
-        run: bash ./scripts/check_urls.sh
-
-  check-xrefs:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Check Links
-        run: bash ./scripts/check_xrefs.sh
-
   build:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
@@ -41,7 +27,7 @@ jobs:
       job-name: Build doc
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
-      submodules: 'true'
+      submodules: 'recursive'
       repository: pytorch/executorch
       upload-artifact: docs
       timeout: 90

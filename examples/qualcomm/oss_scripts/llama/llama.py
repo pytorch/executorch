@@ -82,7 +82,7 @@ from pytorch_tokenizers import get_tokenizer, TiktokenTokenizer
 from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
 
 from torch.ao.quantization.observer import MinMaxObserver
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 sys.setrecursionlimit(4096)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -603,9 +603,9 @@ def compile(args, pte_filename, tokenizer):
 
     for i in range(len(llama_instance_list)):
         if args.embedding_quantize:
-            llama_instance_list[i] = get_quant_embedding_transform(args)(
-                llama_instance_list[i]
-            )
+            llama_instance_list[i] = get_quant_embedding_transform(
+                embedding_quantize=args.embedding_quantize
+            )(llama_instance_list[i])
         llama_instance_list[i] = convert_linear_to_conv2d(llama_instance_list[i])
         llama_instance_list[i] = SingleLlama(
             llama_instance_list[i].eval(), pte_filename

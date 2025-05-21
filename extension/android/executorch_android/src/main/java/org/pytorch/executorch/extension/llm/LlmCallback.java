@@ -31,8 +31,7 @@ public interface LlmCallback {
   /**
    * Called when the statistics for the generate() is available.
    *
-   * The result will be a JSON string. See extension/llm/stats.h for the field
-   * definitions.
+   * <p>The result will be a JSON string. See extension/llm/stats.h for the field definitions.
    *
    * @param stats JSON string containing the statistics for the generate()
    */

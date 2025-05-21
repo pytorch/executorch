@@ -164,7 +164,7 @@ The release build offers optimizations intended to improve performance and reduc
 To further optimize the release build for size, use both:
 ```bash
 -DCMAKE_BUILD_TYPE=Release \
--DOPTIMIZE_SIZE=ON
+-DEXECUTORCH_OPTIMIZE_SIZE=ON
 ```
 
 See [CMakeLists.txt](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt)
@@ -284,7 +284,7 @@ Note, some backends may require additional dependencies and certain versions of 
 3. Copy over the generated `.xcframework` bundles to your Xcode project, link them against
 your targets and don't forget to add an extra linker flag `-all_load`.
 
-Check out the [iOS Demo App](demo-apps-ios.md) tutorial for more info.
+Check out the [iOS Demo App](https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo) tutorial for more info.
 
 
 ## Next steps
@@ -292,5 +292,5 @@ Check out the [iOS Demo App](demo-apps-ios.md) tutorial for more info.
 You have successfully cross-compiled `executor_runner` binary to iOS and Android platforms. You can start exploring advanced features and capabilities. Here is a list of sections you might want to read next:
 
 * [Selective build](kernel-library-selective-build.md) to build the runtime that links to only kernels used by the program, which can provide significant binary size savings.
-* Tutorials on building [Android](https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app) and [iOS](demo-apps-ios.md) demo apps.
+* Tutorials on building [Android](https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app) and [iOS](https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo) demo apps.
 * Tutorials on deploying applications to embedded devices such as [ARM Cortex-M/Ethos-U](backends-arm-ethos-u.md) and [XTensa HiFi DSP](backends-cadence.md).

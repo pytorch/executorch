@@ -228,7 +228,7 @@ enum class SupportedTensorDtypes {
 namespace internal {
 
 template <typename CTYPE_COMPUTE, const char* op_name>
-load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn(
+load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_impl(
     const Tensor& t,
     SupportedTensorDtypes dtypes) {
   switch (dtypes) {
@@ -251,6 +251,10 @@ load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn(
   return nullptr;
 }
 
+// NOTE: applying the #ifdef EXECUTORCH_SELECTIVE_BUILD_DTYPE
+// technique used for get_load_to_compute_fn in this path was a size
+// regression rather than an improvement. Haven't fully investigated
+// why; just be aware when trying to improve size further.
 template <typename CTYPE_COMPUTE, const char* op_name>
 store_compute_to_tensor_fn<CTYPE_COMPUTE> get_store_compute_to_tensor_fn(
     const Tensor& t,
@@ -285,10 +289,52 @@ store_compute_to_tensor_fn<CTYPE_COMPUTE> get_store_compute_to_tensor_fn(
   return nullptr;
 }
 
+#ifndef EXECUTORCH_SELECTIVE_BUILD_DTYPE
+inline constexpr const char kGenericElementwiseOpName[] =
+    "generic_elementwise_op";
+#endif // EXECUTORCH_SELECTIVE_BUILD_DTYPE
+
+template <typename CTYPE_COMPUTE, const char* op_name>
+load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn(
+    const Tensor& t,
+    SupportedTensorDtypes dtypes) {
+  // NOTE: Selective build relies on the operator name being passed
+  // here. When it's *not* active, using the same operator name
+  // everywhere saves on size because we don't require a new template
+  // instantiation for every operator.
+  return get_load_to_compute_fn_impl<
+      CTYPE_COMPUTE,
+#ifdef EXECUTORCH_SELECTIVE_BUILD_DTYPE
+      op_name
+#else // EXECUTORCH_SELECTIVE_BUILD_DTYPE
+      kGenericElementwiseOpName
+#endif // EXECUTORCH_SELECTIVE_BUILD_DTYPE
+      >(t, dtypes);
+}
+
 bool check_tensor_dtype(
     const Tensor t,
     SupportedTensorDtypes dtypes,
     const ScalarType compute_type);
+
+/// Return the one output type we are willing to emit specialized code
+/// to handle, given a compute type of CTYPE_COMMON and supported
+/// output types of out_dtypes.
+template <typename CTYPE_COMPUTE>
+inline constexpr ScalarType specialized_output_scalar_type(
+    SupportedTensorDtypes out_dtypes) {
+  switch (out_dtypes) {
+    case SupportedTensorDtypes::BOOL_OR_BYTE:
+      return ScalarType::Bool;
+    case SupportedTensorDtypes::REALHBBF16:
+    case SupportedTensorDtypes::REALHBF16:
+    case SupportedTensorDtypes::FLOATHBF16:
+    case SupportedTensorDtypes::INTB:
+    case SupportedTensorDtypes::SAME_AS_COMPUTE:
+    case SupportedTensorDtypes::SAME_AS_COMMON:
+      return CppTypeToScalarType<CTYPE_COMPUTE>::value;
+  }
+}
 
 } // namespace internal
 } // namespace utils

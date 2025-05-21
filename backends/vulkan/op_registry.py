@@ -228,6 +228,8 @@ def update_features(aten_op):
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
         exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        # Symbolic integer ops
+        torch.ops.aten.sym_size.int,
     ]
 )
 def register_ephemeral_op(features: OpFeatures):
@@ -377,7 +379,12 @@ def register_mm_op(features: OpFeatures):
     return features
 
 
-@update_features(exir_ops.edge.aten._weight_int8pack_mm.default)
+@update_features(
+    [
+        exir_ops.edge.aten._weight_int8pack_mm.default,
+        exir_ops.edge.et_vk.linear_qcs4w.default,
+    ]
+)
 def register_int8_mm_op(features: OpFeatures):
     features.texture_impl = TextureImplFeatures(
         uses_axis_map=False,
@@ -500,6 +507,7 @@ def register_sdpa_ops(features: OpFeatures):
     features.texture_impl = TextureImplFeatures(
         valid_packed_dims={PackedDim.WIDTH},
     )
+    features.resize_fn = True
     return features
 
 
@@ -540,6 +548,7 @@ def register_view_op(features: OpFeatures):
         exir_ops.edge.aten.ones.default,
         exir_ops.edge.aten.ones_like.default,
         exir_ops.edge.aten.upsample_nearest2d.vec,
+        exir_ops.edge.aten.upsample_bilinear2d.vec,
         exir_ops.edge.aten.zeros.default,
         exir_ops.edge.aten.zeros_like.default,
         exir_ops.edge.et_vk.grid_priors.default,

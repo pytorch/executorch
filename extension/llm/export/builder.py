@@ -29,18 +29,17 @@ from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackend
 
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes import MemoryPlanningPass
-from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
 
 from executorch.extension.llm.export.export_passes import RemoveRedundantTransposes
 from pytorch_tokenizers import get_tokenizer
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer import Quantizer
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
 from torch.export import export_for_training, ExportedProgram
 from torch.nn.attention import SDPBackend
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchao.utils import unwrap_tensor_subclass
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -374,7 +373,7 @@ class LLMEdgeManager:
                 ), "Please run export() first"
                 m = prepare_pt2e(
                     self.pre_autograd_graph_module,  # pyre-ignore[6]
-                    composed_quantizer,
+                    composed_quantizer,  # pyre-ignore[6]
                 )
                 logging.info(
                     f"Calibrating with tasks: {self.calibration_tasks}, limit: {self.calibration_limit}, calibration_data: {self.calibration_data}, tokenizer_path: {self.tokenizer_path}, seq_length: {self.calibration_seq_length}"
@@ -504,13 +503,7 @@ class LLMEdgeManager:
         """
         Lower the model to executorch and get an ExecutorchProgram.
         """
-        to_executorch_passes = [
-            # If there are Linear operations left in the graph, let's execute
-            # them with the optimized op_linear rather than materializing a
-            # transpose followed by a regular op_mm.
-            ConvertToLinearPass(),
-            QuantFusionPass(),
-        ]
+        to_executorch_passes = []
         if passes:
             # pyre-fixme[6]: In call `list.extend`, for 1st positional argument,
             # expected `Iterable[Union[ConvertToLinearPass, QuantFusionPass]]` but
@@ -518,6 +511,15 @@ class LLMEdgeManager:
             to_executorch_passes.extend(passes)
 
         assert self.edge_manager, "Need to run export_to_edge() first"
+
+        # If there are Linear operations left in the graph, let's execute
+        # them with the optimized op_linear rather than materializing a
+        # transpose followed by a regular op_mm.
+        # TODO: ConvertToLinearPass is not a sound pass and must be called before
+        # const propagation.  It requires fixing:
+        # https://github.com/pytorch/executorch/issues/10499
+        self.edge_manager.transform([ConvertToLinearPass()])
+
         self.export_program = self.edge_manager.to_executorch(
             ExecutorchBackendConfig(
                 extract_delegate_segments=True,
@@ -526,6 +528,7 @@ class LLMEdgeManager:
                 # Optional[PassResult]]]` but got `List[Union[ConvertToLinearPass,
                 # QuantFusionPass]]`.
                 passes=to_executorch_passes,
+                do_quant_fusion_and_const_prop=True,
                 memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
             )

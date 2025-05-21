@@ -10,7 +10,8 @@ from typing import Callable, List, Optional
 
 import torch
 import torch.fx
-from executorch.backends.arm.quantizer import arm_quantizer_utils, QuantizationConfig
+import torch.nn.functional as F
+from executorch.backends.arm.quantizer import QuantizationConfig
 from executorch.backends.arm.tosa_utils import get_node_debug_info
 from torch.ao.quantization.quantizer import QuantizationSpecBase, SharedQuantizationSpec
 from torch.ao.quantization.quantizer.utils import (
@@ -18,6 +19,13 @@ from torch.ao.quantization.quantizer.utils import (
     _annotate_output_qspec,
 )
 from torch.fx import Node
+
+from .arm_quantizer_utils import (
+    is_annotated,
+    is_ok_for_quantization,
+    is_output_annotated,
+    mark_node_as_annotated,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +76,7 @@ def _is_ok_for_quantization(
     """
     # Check output
     if quant_properties.quant_output is not None:
-        if not arm_quantizer_utils.is_ok_for_quantization(node, gm):  # type: ignore[attr-defined]
+        if not is_ok_for_quantization(node, gm):  # type: ignore[attr-defined]
             logger.debug(
                 f"Could not quantize node due to output: "
                 f"{get_node_debug_info(node, gm)}"
@@ -86,7 +94,7 @@ def _is_ok_for_quantization(
 
         for n_arg in _as_list(node.args[quant_property.index]):
             assert isinstance(n_arg, Node)
-            if not arm_quantizer_utils.is_ok_for_quantization(n_arg, gm):  # type: ignore[attr-defined]
+            if not is_ok_for_quantization(n_arg, gm):  # type: ignore[attr-defined]
                 logger.debug(
                     f'could not quantize node due to input "{node}": '
                     f"{get_node_debug_info(node, gm)}"
@@ -98,7 +106,7 @@ def _is_ok_for_quantization(
 
 
 def _annotate_input(node: Node, quant_property: _QuantProperty):
-    assert not arm_quantizer_utils.is_annotated(node)
+    assert not is_annotated(node)
     if quant_property.optional and (
         quant_property.index >= len(node.args)
         or node.args[quant_property.index] is None
@@ -113,11 +121,11 @@ def _annotate_input(node: Node, quant_property: _QuantProperty):
         assert isinstance(n_arg, Node)
         _annotate_input_qspec_map(node, n_arg, qspec)
         if quant_property.mark_annotated:
-            arm_quantizer_utils.mark_node_as_annotated(n_arg)  # type: ignore[attr-defined]
+            mark_node_as_annotated(n_arg)  # type: ignore[attr-defined]
 
 
 def _annotate_output(node: Node, quant_property: _QuantProperty):
-    assert not arm_quantizer_utils.is_annotated(node)
+    assert not is_annotated(node)
     assert not quant_property.mark_annotated
     assert not quant_property.optional
     assert quant_property.index == 0, "Only one output annotation supported currently"
@@ -135,29 +143,33 @@ def _match_pattern(
 
     Each 'pattern' element is composed of a list of disjunctive nodes types.
     """
-    assert len(pattern) == 2, "Only two-nodes patterns supported currently"
-
-    if node.target in pattern[0]:
-        assert len(node.users) != 0
-        parent = node
-        child = next(iter(node.users))
-    elif node.target in pattern[1]:
-        assert len(node.args) != 0
-        parent = node.args[0]  # type: ignore[assignment]
-        child = node
-    else:
-        return False
-
-    if len(parent.users) != 1:
-        return False
-
-    if parent.target not in pattern[0] or child.target not in pattern[1]:
-        return False
-
+    assert len(pattern) > 0, "No pattern provided"
     if filter_fn is not None:
-        return filter_fn(parent) and filter_fn(child)
-
-    return True
+        if not filter_fn(node):
+            return False
+    if len(pattern) == 1:
+        # Base case where it has passed the filter_fn. Simply look if node.target is in pattern.
+        return node.target in pattern[0]
+    if node.target not in [op for sub_pattern in pattern for op in sub_pattern]:
+        # node.target not in pattern. No need to look at the rest of the pattern.
+        return False
+    # Find the index of this node's target in pattern
+    idx = [node.target in sub_pattern for sub_pattern in pattern].index(True)
+    left_pattern = pattern[:idx]
+    # Exclude idx as this contains node.target which we have already matched
+    right_pattern = pattern[idx + 1 :]
+    left_condition = True
+    right_condition = True
+    # Recursively look at the rest of the pattern by calling this function for
+    # node's input and user node with updated patterns.
+    if len(left_pattern) > 0:
+        parent = node.all_input_nodes[0]
+        if len(parent.users) != 1:
+            return False
+        left_condition = _match_pattern(parent, left_pattern, filter_fn)
+    if len(right_pattern) > 0:
+        right_condition = _match_pattern(list(node.users)[0], right_pattern, filter_fn)
+    return left_condition and right_condition
 
 
 _one_to_one = [
@@ -170,6 +182,8 @@ _one_to_one = [
     torch.ops.aten.reciprocal.default,
     torch.ops.aten.rsqrt.default,
     torch.ops.aten.sigmoid.default,
+    torch.ops.aten.cos.default,
+    torch.ops.aten.sin.default,
     torch.ops.aten.tanh.default,
     torch.ops.aten.sum.dim_IntList,
     torch.ops.aten.hardsigmoid.default,
@@ -270,6 +284,58 @@ def get_quant_properties(  # noqa: C901
             [
                 torch.ops.aten.conv1d.default,
                 torch.ops.aten.conv2d.default,
+                torch.ops.aten.conv2d.padding,
+            ],
+            [torch.ops.aten.batch_norm.default, F.batch_norm],
+            [torch.ops.aten.relu.default, torch.ops.aten.hardtanh.default],
+        ],
+        filter_fn=any_or_hardtanh_min_zero,
+    ):
+        if node.target in (
+            torch.ops.aten.conv1d.default,
+            torch.ops.aten.conv2d.default,
+            torch.ops.aten.conv2d.padding,
+        ):
+            quant_properties.quant_inputs = [
+                _QuantProperty(0, input_act_qspec),
+                _QuantProperty(1, weight_qspec, mark_annotated=True),
+                _QuantProperty(2, bias_qspec, optional=True, mark_annotated=True),
+            ]
+        elif node.target in (
+            torch.ops.aten.relu.default,
+            torch.ops.aten.hardtanh.default,
+        ):
+            quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
+
+    elif _match_pattern(
+        node,
+        [
+            [
+                torch.ops.aten.conv1d.default,
+                torch.ops.aten.conv2d.default,
+                torch.ops.aten.conv2d.padding,
+            ],
+            [torch.ops.aten.batch_norm.default, F.batch_norm],
+        ],
+    ):
+        if node.target in (
+            torch.ops.aten.conv1d.default,
+            torch.ops.aten.conv2d.default,
+            torch.ops.aten.conv2d.padding,
+        ):
+            quant_properties.quant_inputs = [
+                _QuantProperty(0, input_act_qspec),
+                _QuantProperty(1, weight_qspec, mark_annotated=True),
+                _QuantProperty(2, bias_qspec, optional=True, mark_annotated=True),
+            ]
+        elif node.target in [torch.ops.aten.batch_norm.default, F.batch_norm]:
+            quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
+    elif _match_pattern(
+        node,
+        [
+            [
+                torch.ops.aten.conv1d.default,
+                torch.ops.aten.conv2d.default,
                 torch.ops.aten.linear.default,
                 torch.ops.aten.conv2d.padding,
             ],
@@ -340,7 +406,7 @@ def get_quant_properties(  # noqa: C901
     elif node.target in _one_to_one_shared_input_or_input_act_qspec:
         input_qspec = (
             SharedQuantizationSpec(node.args[0])  # type: ignore[arg-type]
-            if arm_quantizer_utils.is_output_annotated(node.args[0])  # type: ignore
+            if is_output_annotated(node.args[0])  # type: ignore
             else input_act_qspec
         )
         quant_properties.quant_inputs = [_QuantProperty(0, input_qspec)]  # type: ignore[arg-type]
@@ -366,6 +432,9 @@ def get_quant_properties(  # noqa: C901
             )
         ]
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
+    elif node.target in (torch.ops.aten.neg.default,):
+        quant_properties.quant_inputs = [_QuantProperty(0, input_act_qspec)]
+        quant_properties.quant_output = _QuantProperty(0, input_act_qspec)
     elif node.target in _one_to_one:
         quant_properties.quant_inputs = [_QuantProperty(0, input_act_qspec)]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
@@ -393,12 +462,15 @@ def get_quant_properties(  # noqa: C901
         if not isinstance(node.args[0], Node):
             return None
 
-        if not arm_quantizer_utils.is_output_annotated(node.args[0]):  # type: ignore[attr-defined]
+        if not is_output_annotated(node.args[0]):  # type: ignore[attr-defined]
             return None
 
         shared_qspec = SharedQuantizationSpec(node.args[0])
         quant_properties.quant_inputs = [_QuantProperty(0, shared_qspec)]  # type: ignore[arg-type]
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
+    elif node.target in [torch.ops.aten.scalar_tensor.default]:
+        quant_properties.quant_inputs = []
+        quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     else:
         return None
 
@@ -423,7 +495,7 @@ def annotate_graph(  # type: ignore[return]
         if node.op != "call_function":
             continue
 
-        if arm_quantizer_utils.is_annotated(node):
+        if is_annotated(node):
             continue
 
         if filter_fn is not None and not filter_fn(node):
@@ -439,12 +511,13 @@ def annotate_graph(  # type: ignore[return]
         if quant_properties.quant_output is not None:
             _annotate_output(node, quant_properties.quant_output)
 
-        arm_quantizer_utils.mark_node_as_annotated(node)  # type: ignore[attr-defined]
+        mark_node_as_annotated(node)  # type: ignore[attr-defined]
 
         # Quantization does not allow kwargs for some reason.
         # Remove from ops we know have and where we know it does not break anything.
         if node.target in [
             torch.ops.aten.full_like.default,
             torch.ops.aten.full.default,
+            torch.ops.aten.scalar_tensor.default,
         ]:
             node.kwargs = {}

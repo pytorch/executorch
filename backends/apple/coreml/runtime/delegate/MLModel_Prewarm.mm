@@ -107,26 +107,29 @@ id<MLFeatureProvider> _Nullable get_zeroed_inputs(MLModel *model, NSError * __au
 @implementation MLModel (Prewarm)
 
 - (BOOL)prewarmUsingState:(nullable id)state error:(NSError * __autoreleasing *)error {
+    NSError *localError = nil;
+    BOOL result = NO;
     @autoreleasepool {
-        id<MLFeatureProvider> inputs = ::get_zeroed_inputs(self, error);
-        if (!inputs) {
-            return NO;
-        }
-
-
-        id<MLFeatureProvider> outputs = nil;
-        if (state != nil) {
+        id<MLFeatureProvider> inputs = ::get_zeroed_inputs(self, &localError);
+        if (inputs) {
+            id<MLFeatureProvider> outputs = nil;
+            if (state) {
 #if MODEL_STATE_IS_SUPPORTED
-            if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 11.0, *)) {
-                outputs = [self predictionFromFeatures:inputs usingState:(MLState *)state error:error];
-                return outputs != nil;
-            }
+                if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 11.0, *)) {
+                    outputs = [self predictionFromFeatures:inputs usingState:(MLState *)state error:&localError];
+                }
 #endif
+            }
+            if (!outputs) {
+                outputs = [self predictionFromFeatures:inputs error:&localError];
+            }
+            result = outputs != nil;
         }
-
-        outputs = [self predictionFromFeatures:inputs error:error];
-        return outputs != nil;
     }
+    if (!result && error) {
+        *error = localError;
+    }
+    return result;
 }
 
 

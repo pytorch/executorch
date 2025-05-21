@@ -28,10 +28,11 @@ class NativePeer {
   private final HybridData mHybridData;
 
   @DoNotStrip
-  private static native HybridData initHybrid(String moduleAbsolutePath, int loadMode);
+  private static native HybridData initHybrid(
+      String moduleAbsolutePath, int loadMode, int numThreads);
 
-  NativePeer(String moduleAbsolutePath, int loadMode) {
-    mHybridData = initHybrid(moduleAbsolutePath, loadMode);
+  NativePeer(String moduleAbsolutePath, int loadMode, int numThreads) {
+    mHybridData = initHybrid(moduleAbsolutePath, loadMode, numThreads);
   }
 
   /** Clean up the native resources associated with this instance */
@@ -55,7 +56,14 @@ class NativePeer {
   @DoNotStrip
   public native int loadMethod(String methodName);
 
+  /** Return the list of backends used by a method */
+  @DoNotStrip
+  public native String[] getUsedBackends(String methodName);
+
   /** Retrieve the in-memory log buffer, containing the most recent ExecuTorch log entries. */
   @DoNotStrip
   public native String[] readLogBuffer();
+
+  @DoNotStrip
+  public native boolean etdump();
 }

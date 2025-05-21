@@ -14,9 +14,9 @@
 import logging
 from typing import final, List
 
-from executorch.backends.arm import TOSABackend
-
 from executorch.backends.arm.arm_vela import vela_compile
+
+from executorch.backends.arm.tosa_backend import TOSABackend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
@@ -35,19 +35,16 @@ class EthosUBackend(BackendDetails):
 
     @staticmethod
     def _compile_tosa_flatbuffer(
-        tosa_flatbuffer: bytes, compile_spec: list[CompileSpec]
+        tosa_flatbuffer: bytes, compile_spec: List[CompileSpec]
     ) -> bytes:
         """
         Static helper method to do the compilation of the TOSA flatbuffer
         representation to a target specific binary stream.
         """
         compile_flags = []
-        input_order = []
         for spec in compile_spec:
             if spec.key == "compile_flags":
                 compile_flags.append(spec.value.decode())
-            if spec.key == "input_order":
-                input_order = list(map(int, spec.value.decode().split(",")))
 
         if len(compile_flags) == 0:
             # Not testing for compile_flags correctness here, just that they are
@@ -60,7 +57,6 @@ class EthosUBackend(BackendDetails):
         binary = vela_compile(
             tosa_flatbuffer,
             compile_flags,
-            input_order,
             verbose=logger.getEffectiveLevel() == logging.INFO,
         )
         return binary

@@ -221,7 +221,13 @@ def dump_context_from_pte(pte_path):
                     delegate.processed.index
                 ].data
                 binary = qnn_mgr.StripProtocol(processed_bytes)
-                with open(f"{ctx_path}/{execution_plan.name}_{i}.bin", "wb") as f:
+                file_extension = ".bin"
+                if len(binary) == 0:
+                    binary = processed_bytes
+                    file_extension = ".dlc"
+                with open(
+                    f"{ctx_path}/{execution_plan.name}_{i}{file_extension}", "wb"
+                ) as f:
                     f.write(binary)
 
 
@@ -601,8 +607,8 @@ def skip_annotation(
     from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
         flatbuffer_to_option,
     )
-    from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
     from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
+    from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
     def prepare_subgm(subgm, subgm_name):
         # prepare current submodule for quantization annotation
@@ -634,7 +640,8 @@ def skip_annotation(
     for node in graph_module.graph.nodes:
         if node.op == "call_module":
             graph_module.set_submodule(
-                node.name, convert_pt2e(graph_module.get_submodule(node.name))
+                node.name,
+                convert_pt2e(graph_module.get_submodule(node.name)),
             )
     # canonicalize graph for lowering again
     graph_module, edge_prog_mgrs = _canonicalize_graph_with_lowered_module(
@@ -1181,6 +1188,8 @@ def generate_qnn_executorch_compiler_spec(
 
     if saver:
         qnn_executorch_options.library_path = "libQnnSaver.so"
+        qnn_executorch_options.saver = True
+        qnn_executorch_options.saver_output_dir = "saver_output"
 
     if optrace:
         qnn_executorch_options.profile_level = QnnExecuTorchProfileLevel.kProfileOptrace

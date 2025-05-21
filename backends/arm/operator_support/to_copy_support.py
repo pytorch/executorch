@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
+import copy
 import logging
 
 import torch
@@ -42,7 +43,9 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         dtypes1: SupportedTypeDict,
         dtypes2: SupportedTypeDict,
     ) -> SupportedTypeDict:
-        merged_dtypes = dtypes1
+        merged_dtypes = copy.deepcopy(
+            dtypes1
+        )  # Use deepcopy to avoid unintentionally modifying SUPPORTED_INT_TYPES
         for k, v in dtypes2.items():
             merged_dtypes[k] = merged_dtypes.get(k, []) + v
         return merged_dtypes
@@ -77,7 +80,6 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
     ) -> bool:
         assert node.target in self.targets
 
-        assert tosa_spec.support_integer()
         supported_dtypes = (
             self.ALL_SUPPORTED_TYPES
             if tosa_spec.support_float()
