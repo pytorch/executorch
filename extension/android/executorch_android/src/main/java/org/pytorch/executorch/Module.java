@@ -28,14 +28,6 @@ import org.pytorch.executorch.annotations.Experimental;
 @Experimental
 public class Module {
 
-  static {
-    if (!NativeLoader.isInitialized()) {
-      NativeLoader.init(new SystemDelegate());
-    }
-    // Loads libexecutorch.so from jniLibs
-    NativeLoader.loadLibrary("executorch");
-  }
-
   /** Load mode for the module. Load the whole file as a buffer. */
   public static final int LOAD_MODE_FILE = 0;
 
@@ -57,6 +49,8 @@ public class Module {
       String moduleAbsolutePath, int loadMode, int initHybrid);
 
   private Module(String moduleAbsolutePath, int loadMode, int numThreads) {
+    Runtime runtime = Runtime.getRuntime();
+
     mHybridData = initHybrid(moduleAbsolutePath, loadMode, numThreads);
 
     mMethodMetadata = populateMethodMeta();

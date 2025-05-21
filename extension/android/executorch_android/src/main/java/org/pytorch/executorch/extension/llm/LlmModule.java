@@ -27,13 +27,6 @@ public class LlmModule {
   public static final int MODEL_TYPE_TEXT = 1;
   public static final int MODEL_TYPE_TEXT_VISION = 2;
 
-  static {
-    if (!NativeLoader.isInitialized()) {
-      NativeLoader.init(new SystemDelegate());
-    }
-    NativeLoader.loadLibrary("executorch");
-  }
-
   private final HybridData mHybridData;
   private static final int DEFAULT_SEQ_LEN = 128;
   private static final boolean DEFAULT_ECHO = true;
@@ -48,6 +41,8 @@ public class LlmModule {
    */
   public LlmModule(
       int modelType, String modulePath, String tokenizerPath, float temperature, String dataPath) {
+    Runtime runtime = Runtime.getRuntime();
+
     File modelFile = new File(modulePath);
     if (!modelFile.canRead() || !modelFile.isFile()) {
       throw new RuntimeException("Cannot load model path " + modulePath);
