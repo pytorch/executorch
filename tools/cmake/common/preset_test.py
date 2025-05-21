@@ -201,12 +201,11 @@ class TestPreset(CMakeTestCase):
         # Setting the value after should not affect the cache.
         self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "default value", "STRING")
 
-    def test_define_overridable_option_cli_override_with_set_override(self):
+    def test_define_overridable_option_override_existing_cache_with_cli(self):
         _cmake_lists_txt = """
             cmake_minimum_required(VERSION 3.24)
             project(test_preset)
             include(${PROJECT_SOURCE_DIR}/preset.cmake)
-            set(EXECUTORCH_TEST_MESSAGE "set value")
             add_subdirectory(example)
         """
         _example_cmake_lists_txt = """
@@ -220,9 +219,11 @@ class TestPreset(CMakeTestCase):
                 },
             }
         )
+        self.run_cmake()
+        self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "default value", "STRING")
+
         self.run_cmake(cmake_args=["-DEXECUTORCH_TEST_MESSAGE='cli value'"])
-        # If an option is set through cmake, it should NOT be overridable from the CLI.
-        self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "set value", "STRING")
+        self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "cli value", "STRING")
 
     def test_set_overridable_option_before(self):
         _cmake_lists_txt = """
