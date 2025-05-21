@@ -35,9 +35,9 @@ from executorch.extension.export_util.utils import export_to_edge, save_pte_prog
 
 from executorch.extension.llm.export.export_passes import RemoveRedundantTransposes
 from pytorch_tokenizers import get_tokenizer
-from torch.ao.quantization.quantizer import TorchQuantizer
+from torch.ao.quantization.quantizer import Quantizer as TorchQuantizer
 from torch.ao.quantization.quantizer.composable_quantizer import (
-    TorchComposableQuantizer,
+    ComposableQuantizer as TorchComposableQuantizer,
 )
 
 from torch.export import export_for_training, ExportedProgram
