@@ -20,6 +20,7 @@ project(llama_runner)
 
 # Duplicating options as root CMakeLists.txt
 option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
+option(EXECUTORCH_BUILD_KERNELS_TORCHAO "Build the torchao kernels" OFF)
 
 include(CMakeDependentOption)
 #
@@ -134,6 +135,12 @@ if(EXECUTORCH_BUILD_TORCHAO)
       list(APPEND link_libraries torchao_ops_mps_executorch)
     endif()
   endif()
+endif()
+
+if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
+  target_link_options_shared_lib(torchao_ops_executorch)
+  list(APPEND link_libraries torchao_ops_executorch)
+  list(APPEND link_libraries torchao_kernels_aarch64)
 endif()
 
 set(XNNPACK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack)
