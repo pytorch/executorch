@@ -31,7 +31,11 @@ public class Module {
       NativeLoader.init(new SystemDelegate());
     }
     // Loads libexecutorch.so from jniLibs
-    NativeLoader.loadLibrary("executorch");
+    try {
+      NativeLoader.loadLibrary("executorch");
+    } catch (UnsatisfiedLinkError e) {
+      Log.e("ExecuTorch", "Failed to load libexecutorch.so", e);
+    }
   }
 
   /** Load mode for the module. Load the whole file as a buffer. */
