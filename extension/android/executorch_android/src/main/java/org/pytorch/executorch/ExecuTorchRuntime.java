@@ -11,9 +11,7 @@ package org.pytorch.executorch;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
 
-/**
- * Class for entire ExecuTorch Runtime related functions.
- */
+/** Class for entire ExecuTorch Runtime related functions. */
 public class ExecuTorchRuntime {
 
   static {
@@ -28,9 +26,7 @@ public class ExecuTorchRuntime {
 
   private ExecuTorchRuntime() {}
 
-  /**
-   * Get the runtime instance.
-   */
+  /** Get the runtime instance. */
   public static ExecuTorchRuntime getRuntime() {
     return sInstance;
   }
