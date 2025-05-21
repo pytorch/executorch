@@ -456,7 +456,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         makeNativeMethod("initHybrid", ExecuTorchJni::initHybrid),
         makeNativeMethod("executeNative", ExecuTorchJni::execute),
         makeNativeMethod("loadMethodNative", ExecuTorchJni::load_method),
-        makeNativeMethod("readLogBuffer", ExecuTorchJni::readLogBuffer),
+        makeNativeMethod("readLogBufferNative", ExecuTorchJni::readLogBuffer),
         makeNativeMethod("etdump", ExecuTorchJni::etdump),
         makeNativeMethod("getUsedBackends", ExecuTorchJni::getUsedBackends),
     });

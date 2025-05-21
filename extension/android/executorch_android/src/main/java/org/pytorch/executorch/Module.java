@@ -167,8 +167,12 @@ public class Module {
   public native String[] getUsedBackends(String methodName);
 
   /** Retrieve the in-memory log buffer, containing the most recent ExecuTorch log entries. */
+  public String[] readLogBuffer() {
+    return readLogBufferNative();
+  }
+
   @DoNotStrip
-  public native String[] readLogBuffer();
+  private native String[] readLogBufferNative();
 
   /**
    * Dump the ExecuTorch ETRecord file to /data/local/tmp/result.etdump.
