@@ -1964,7 +1964,7 @@ def check_for_sev(org: str, project: str, skip_mandatory_checks: bool) -> None:
     response = cast(
         Dict[str, Any],
         gh_fetch_json_list(
-            "https://api.github.com/search/issues",
+            "https://api.github.com/search/issues",  # @lint-ignore
             params={"q": f'repo:{org}/{project} is:open is:issue label:"ci: sev"'},
         ),
     )
