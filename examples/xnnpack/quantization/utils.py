@@ -11,7 +11,7 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from .. import QuantType
 
@@ -33,7 +33,7 @@ def quantize(
         is_dynamic=is_dynamic,
     )
     quantizer.set_global(operator_config)
-    m = prepare_pt2e(model, quantizer)
+    m = prepare_pt2e(model, quantizer)  # pyre-ignore[6]
     # calibration
     m(*example_inputs)
     m = convert_pt2e(m)
