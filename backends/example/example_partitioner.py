@@ -21,7 +21,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.graph_module import get_control_flow_submodules
 from torch.export import ExportedProgram
 from torch.fx.passes.operator_support import OperatorSupportBase
-from torchao.quantization.pt2e.graph_utils import find_sequential_partitions
+from torchao.quantization.pt2e import find_sequential_partitions
 
 
 @final
