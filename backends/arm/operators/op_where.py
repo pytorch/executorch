@@ -41,7 +41,7 @@ class WhereVisitor_0_80_BI(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 3)
         # Not first input, which is condition tensor.
-        validate_same_dtype(self.target, inputs[1:])
+        validate_same_dtype(self.target, inputs[1:], ts)
 
         if inputs[0].dtype is not ts.DType.BOOL:
             raise ValueError("Input 0 needs to have dtype BOOL")
@@ -128,7 +128,7 @@ class WhereVisitor_INT(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 3)
         # Not first input, which is condition tensor.
-        validate_same_dtype(self.target, inputs[1:])
+        validate_same_dtype(self.target, inputs[1:], ts)
 
         if inputs[0].dtype is not ts.DType.BOOL:
             raise ValueError("Input 0 needs to have dtype BOOL")
