@@ -56,6 +56,15 @@ class ModuleInstrumentationTest {
     }
 
     @Test
+    @Throws(IOException::class, URISyntaxException::class)
+    fun testMethodMetadata() {
+        val module = Module.load(getTestFilePath(TEST_FILE_NAME))
+
+        Assert.assertArrayEquals(arrayOf("forward"), module.getMethods())
+        Assert.assertTrue(module.getMethodMetadata("forward").backends.isEmpty())
+    }
+
+    @Test
     @Throws(IOException::class)
     fun testModuleLoadMethodAndForward() {
         val module = Module.load(getTestFilePath(TEST_FILE_NAME))
@@ -91,7 +100,7 @@ class ModuleInstrumentationTest {
         Assert.assertEquals(loadMethod.toLong(), INVALID_ARGUMENT.toLong())
     }
 
-    @Test
+    @Test(expected = RuntimeException::class)
     @Throws(IOException::class)
     fun testNonPteFile() {
         val module = Module.load(getTestFilePath(NON_PTE_FILE_NAME))

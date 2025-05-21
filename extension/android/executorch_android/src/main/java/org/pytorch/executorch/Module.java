@@ -14,6 +14,8 @@ import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
 import java.io.File;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import org.pytorch.executorch.annotations.Experimental;
@@ -48,12 +50,27 @@ public class Module {
 
   private final HybridData mHybridData;
 
+  private final Map<String, MethodMetadata> mMethodMetadata;
+
   @DoNotStrip
   private static native HybridData initHybrid(
       String moduleAbsolutePath, int loadMode, int initHybrid);
 
   private Module(String moduleAbsolutePath, int loadMode, int numThreads) {
     mHybridData = initHybrid(moduleAbsolutePath, loadMode, numThreads);
+
+    mMethodMetadata = populateMethodMeta();
+  }
+
+  Map<String, MethodMetadata> populateMethodMeta() {
+    String[] methods = getMethods();
+    Map<String, MethodMetadata> metadata = new HashMap<String, MethodMetadata>();
+    for (int i = 0; i < methods.length; i++) {
+      String name = methods[i];
+      metadata.put(name, new MethodMetadata().setName(name).setBackends(getUsedBackends(name)));
+    }
+
+    return metadata;
   }
 
   /** Lock protecting the non-thread safe methods in mHybridData. */
@@ -158,13 +175,34 @@ public class Module {
   private native int loadMethodNative(String methodName);
 
   /**
-   * Returns the names of the methods in a certain method.
+   * Returns the names of the backends in a certain method.
    *
    * @param methodName method name to query
    * @return an array of backend name
    */
   @DoNotStrip
-  public native String[] getUsedBackends(String methodName);
+  private native String[] getUsedBackends(String methodName);
+
+  /**
+   * Returns the names of methods.
+   *
+   * @return name of methods in this Module
+   */
+  @DoNotStrip
+  public native String[] getMethods();
+
+  /**
+   * Get the corresponding @MethodMetadata for a method
+   *
+   * @param name method name
+   * @return @MethodMetadata for this method
+   */
+  public MethodMetadata getMethodMetadata(String name) {
+    if (!mMethodMetadata.containsKey(name)) {
+      throw new RuntimeException("method " + name + "does not exist for this module");
+    }
+    return mMethodMetadata.get(name);
+  }
 
   /** Retrieve the in-memory log buffer, containing the most recent ExecuTorch log entries. */
   public String[] readLogBuffer() {
