@@ -83,7 +83,7 @@ public class Module {
     if (!modelFile.canRead() || !modelFile.isFile()) {
       throw new RuntimeException("Cannot load model path " + modelPath);
     }
-    return new Module((modelPath, loadMode, numThreads);
+    return new Module(modelPath, loadMode, numThreads);
   }
 
   /**
