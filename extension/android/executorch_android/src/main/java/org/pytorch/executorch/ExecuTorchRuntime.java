@@ -11,7 +11,10 @@ package org.pytorch.executorch;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
 
-class Runtime {
+/**
+ * Class for entire ExecuTorch Runtime related functions.
+ */
+public class ExecuTorchRuntime {
 
   static {
     if (!NativeLoader.isInitialized()) {
@@ -21,14 +24,14 @@ class Runtime {
     NativeLoader.loadLibrary("executorch");
   }
 
-  private static final Runtime sInstance = new Runtime();
+  private static final ExecuTorchRuntime sInstance = new ExecuTorchRuntime();
 
-  private Runtime() {}
+  private ExecuTorchRuntime() {}
 
   /**
    * Get the runtime instance.
    */
-  static Runtime getRuntime() {
+  public static ExecuTorchRuntime getRuntime() {
     return sInstance;
   }
 }

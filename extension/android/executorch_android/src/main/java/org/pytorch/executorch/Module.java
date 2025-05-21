@@ -11,8 +11,7 @@ package org.pytorch.executorch;
 import android.util.Log;
 import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
-import com.facebook.soloader.nativeloader.NativeLoader;
-import com.facebook.soloader.nativeloader.SystemDelegate;
+
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
@@ -49,7 +48,7 @@ public class Module {
       String moduleAbsolutePath, int loadMode, int initHybrid);
 
   private Module(String moduleAbsolutePath, int loadMode, int numThreads) {
-    Runtime runtime = Runtime.getRuntime();
+    ExecuTorchRuntime runtime = ExecuTorchRuntime.getRuntime();
 
     mHybridData = initHybrid(moduleAbsolutePath, loadMode, numThreads);
 
