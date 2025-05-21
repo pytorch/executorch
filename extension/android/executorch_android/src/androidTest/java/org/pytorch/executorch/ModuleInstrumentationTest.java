@@ -109,7 +109,7 @@ public class ModuleInstrumentationTest {
         assertEquals(loadMethod, INVALID_ARGUMENT);
     }
 
-    @Test
+    @Test(expected = RuntimeException.class)
     public void testNonPteFile() throws IOException{
         Module module = Module.load(getTestFilePath(NON_PTE_FILE_NAME));
 

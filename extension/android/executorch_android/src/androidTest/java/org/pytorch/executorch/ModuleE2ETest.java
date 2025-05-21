@@ -99,7 +99,7 @@ public class ModuleE2ETest {
 
         Module module = Module.load(getTestFilePath("/mv3_xnnpack_fp32.pte"));
         String[] expectedBackends = new String[] {"XnnpackBackend"};
-        assertArrayEquals(expectedBackends, module.getUsedBackends("forward"));
+        assertArrayEquals(expectedBackends, module.getMethodMetadata("forward").getBackends());
     }
 
     @Test

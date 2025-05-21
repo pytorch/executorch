@@ -429,6 +429,26 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     return false;
   }
 
+  facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> getMethods() {
+    const auto& names_result = module_->method_names();
+    if (!names_result.ok()) {
+      facebook::jni::throwNewJavaException(
+          facebook::jni::gJavaLangIllegalArgumentException,
+          "Cannot get load module");
+    }
+    const auto& methods = names_result.get();
+    facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> ret =
+        facebook::jni::JArrayClass<jstring>::newArray(methods.size());
+    int i = 0;
+    for (auto s : methods) {
+      facebook::jni::local_ref<facebook::jni::JString> method_name =
+          facebook::jni::make_jstring(s.c_str());
+      (*ret)[i] = method_name;
+      i++;
+    }
+    return ret;
+  }
+
   facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> getUsedBackends(
       facebook::jni::alias_ref<jstring> methodName) {
     auto methodMeta = module_->method_meta(methodName->toStdString()).get();
@@ -456,6 +476,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         makeNativeMethod("loadMethodNative", ExecuTorchJni::load_method),
         makeNativeMethod("readLogBuffer", ExecuTorchJni::readLogBuffer),
         makeNativeMethod("etdump", ExecuTorchJni::etdump),
+        makeNativeMethod("getMethods", ExecuTorchJni::getMethods),
         makeNativeMethod("getUsedBackends", ExecuTorchJni::getUsedBackends),
     });
   }

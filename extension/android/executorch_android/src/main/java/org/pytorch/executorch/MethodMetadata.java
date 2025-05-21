@@ -8,13 +8,33 @@
 
 package org.pytorch.executorch;
 
-/**
- * Helper class to access the metadata for a method from a Module
- */
+/** Helper class to access the metadata for a method from a Module */
 public class MethodMetadata {
-    private String name;
+  private String mName;
 
-    public String getName() {
-        return name;
-    }
+  private String[] mBackends;
+
+  MethodMetadata setName(String name) {
+    mName = name;
+    return this;
+  }
+
+  /**
+   * @return Method name
+   */
+  public String getName() {
+    return mName;
+  }
+
+  MethodMetadata setBackends(String[] backends) {
+    mBackends = backends;
+    return this;
+  }
+
+  /**
+   * @return Backends used for this method
+   */
+  public String[] getBackends() {
+    return mBackends;
+  }
 }
