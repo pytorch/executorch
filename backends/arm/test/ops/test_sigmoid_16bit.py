@@ -18,8 +18,8 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 )
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.xnnpack.test.tester import Quantize
-from torch.ao.quantization.observer import HistogramObserver
-from torch.ao.quantization.quantizer import QuantizationSpec
+from torchao.quantization.pt2e import HistogramObserver
+from torchao.quantization.pt2e.quantizer import QuantizationSpec
 
 
 def _get_16_bit_quant_config():
