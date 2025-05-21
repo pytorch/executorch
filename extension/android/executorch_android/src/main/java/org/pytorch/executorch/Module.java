@@ -56,9 +56,8 @@ public class Module {
   private static native HybridData initHybrid(
       String moduleAbsolutePath, int loadMode, int initHybrid);
 
-<<<<<<< HEAD
-  private Module(String moduleAbsolutePath, int loadMode) {
-    mHybridData = initHybrid(moduleAbsolutePath, loadMode);
+  private Module(String moduleAbsolutePath, int loadMode, int numThreads) {
+    mHybridData = initHybrid(moduleAbsolutePath, loadMode, numThreads);
 
     mMethodMetadata = populateMethodMeta();
   }
@@ -72,10 +71,6 @@ public class Module {
     }
 
     return metadata;
-=======
-  private Module(String moduleAbsolutePath, int loadMode, int numThreads) {
-    mHybridData = initHybrid(moduleAbsolutePath, loadMode, numThreads);
->>>>>>> jni-layer-cpp
   }
 
   /** Lock protecting the non-thread safe methods in mHybridData. */
