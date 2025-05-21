@@ -153,7 +153,7 @@ def get_qnn_quantizer(
             QnnQuantizer,
             QuantDtype,
         )
-        from torch.ao.quantization.observer import MinMaxObserver
+        from torchao.quantization.pt2e import MinMaxObserver
 
     except ImportError:
         raise ImportError(
