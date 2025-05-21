@@ -17,7 +17,7 @@ import nncf.experimental.torch.fx as nncf_fx  # type: ignore[import-untyped]
 import torch.fx
 
 from nncf.common.graph.graph import NNCFGraph  # type: ignore[import-untyped]
-from torchao.quantization.pt2e.observer import (
+from torchao.quantization.pt2e import (
     HistogramObserver,
     PerChannelMinMaxObserver,
     UniformQuantizationObserverBase,
