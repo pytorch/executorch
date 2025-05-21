@@ -1147,6 +1147,7 @@ def get_reduce_op_inputs():
         "aten.hardsigmoid.default",
         "aten.leaky_relu.default",
         "aten.round.default",
+        "aten.tan.default",
     ]
 )
 def get_unary_ops_inputs():
@@ -1161,22 +1162,6 @@ def get_unary_ops_inputs():
     test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     test_suite.atol = "1e-4"
     test_suite.rtol = "1e-4"
-    return test_suite
-
-
-# separate test suite from unary_ops for learning purposes
-@register_test_suite("aten.tan.default")
-def get_tan_inputs():
-    test_suite = VkTestSuite(
-        [
-            (M1,),
-            (M1, M2),
-            (S1, M1, M2),
-            (S1, S2, S2, M2),
-        ]
-    )
-    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
-    test_suite.dtypes = ["at::kFloat"]
     return test_suite
 
 
