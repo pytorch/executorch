@@ -389,12 +389,7 @@ exclude_patterns = [
     "backends/arm/quantizer/**",
     "backends/arm/test/ops/**",
     "backends/cadence/aot/quantizer/**",
-    "backends/qualcomm/quantizer/**",
-    "examples/qualcomm/**",
-    "extension/llm/export/builder.py",
-    "extension/llm/export/quantizer_lib.py",
     "exir/tests/test_memory_planning.py",
-    "backends/transforms/duplicate_dynamic_quant_chain.py",
     "exir/backend/test/demos/test_xnnpack_qnnpack.py",
 ]
 
