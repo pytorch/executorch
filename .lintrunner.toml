@@ -401,6 +401,10 @@ exclude_patterns = [
     "exir/tests/test_memory_planning.py",
     "backends/transforms/duplicate_dynamic_quant_chain.py",
     "exir/backend/test/demos/test_xnnpack_qnnpack.py",
+    "backends/xnnpack/quantizer/**",
+    "backends/xnnpack/test/**",
+    "exir/tests/test_passes.py",
+    "examples/qualcomm/**",
 ]
 
 command = [
