@@ -6,6 +6,15 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/extension/android/jni/jni_layer_constants.h>
+#include <executorch/extension/android/jni/log.h>
+#include <executorch/extension/module/module.h>
+#include <executorch/extension/runner_util/inputs.h>
+#include <executorch/extension/tensor/tensor.h>
+#include <executorch/runtime/core/portable_type/tensor_impl.h>
+#include <executorch/runtime/platform/log.h>
+#include <executorch/runtime/platform/platform.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <cassert>
 #include <chrono>
 #include <iostream>
@@ -15,16 +24,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include "jni_layer_constants.h"
-
-#include <executorch/extension/android/jni/log.h>
-#include <executorch/extension/module/module.h>
-#include <executorch/extension/runner_util/inputs.h>
-#include <executorch/extension/tensor/tensor.h>
-#include <executorch/runtime/core/portable_type/tensor_impl.h>
-#include <executorch/runtime/platform/log.h>
-#include <executorch/runtime/platform/platform.h>
-#include <executorch/runtime/platform/runtime.h>
 
 #ifdef ET_USE_THREADPOOL
 #include <cpuinfo.h>
@@ -228,11 +227,15 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
   static facebook::jni::local_ref<jhybriddata> initHybrid(
       facebook::jni::alias_ref<jclass>,
       facebook::jni::alias_ref<jstring> modelPath,
-      jint loadMode) {
-    return makeCxxInstance(modelPath, loadMode);
+      jint loadMode,
+      jint numThreads) {
+    return makeCxxInstance(modelPath, loadMode, numThreads);
   }
 
-  ExecuTorchJni(facebook::jni::alias_ref<jstring> modelPath, jint loadMode) {
+  ExecuTorchJni(
+      facebook::jni::alias_ref<jstring> modelPath,
+      jint loadMode,
+      jint numThreads) {
     Module::LoadMode load_mode = Module::LoadMode::Mmap;
     if (loadMode == 0) {
       load_mode = Module::LoadMode::File;
@@ -259,11 +262,10 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     // Based on testing, this is almost universally faster than using all
     // cores, as efficiency cores can be quite slow. In extreme cases, using
     // all cores can be 10x slower than using cores/2.
-    //
-    // TODO Allow overriding this default from Java.
     auto threadpool = executorch::extension::threadpool::get_threadpool();
     if (threadpool) {
-      int thread_count = cpuinfo_get_processors_count() / 2;
+      int thread_count =
+          numThreads != 0 ? numThreads : cpuinfo_get_processors_count() / 2;
       if (thread_count > 0) {
         threadpool->_unsafe_reset_threadpool(thread_count);
       }
@@ -474,7 +476,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         makeNativeMethod("initHybrid", ExecuTorchJni::initHybrid),
         makeNativeMethod("executeNative", ExecuTorchJni::execute),
         makeNativeMethod("loadMethodNative", ExecuTorchJni::load_method),
-        makeNativeMethod("readLogBuffer", ExecuTorchJni::readLogBuffer),
+        makeNativeMethod("readLogBufferNative", ExecuTorchJni::readLogBuffer),
         makeNativeMethod("etdump", ExecuTorchJni::etdump),
         makeNativeMethod("getMethods", ExecuTorchJni::getMethods),
         makeNativeMethod("getUsedBackends", ExecuTorchJni::getUsedBackends),

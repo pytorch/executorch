@@ -53,8 +53,10 @@ public class Module {
   private final Map<String, MethodMetadata> mMethodMetadata;
 
   @DoNotStrip
-  private static native HybridData initHybrid(String moduleAbsolutePath, int loadMode);
+  private static native HybridData initHybrid(
+      String moduleAbsolutePath, int loadMode, int initHybrid);
 
+<<<<<<< HEAD
   private Module(String moduleAbsolutePath, int loadMode) {
     mHybridData = initHybrid(moduleAbsolutePath, loadMode);
 
@@ -70,6 +72,10 @@ public class Module {
     }
 
     return metadata;
+=======
+  private Module(String moduleAbsolutePath, int loadMode, int numThreads) {
+    mHybridData = initHybrid(moduleAbsolutePath, loadMode, numThreads);
+>>>>>>> jni-layer-cpp
   }
 
   /** Lock protecting the non-thread safe methods in mHybridData. */
@@ -83,11 +89,24 @@ public class Module {
    * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
    */
   public static Module load(final String modelPath, int loadMode) {
+    return load(modelPath, loadMode, 0);
+  }
+
+  /**
+   * Loads a serialized ExecuTorch module from the specified path on the disk.
+   *
+   * @param modelPath path to file that contains the serialized ExecuTorch module.
+   * @param loadMode load mode for the module. See constants in {@link Module}.
+   * @param numThreads the number of threads to use for inference. A value of 0 defaults to a
+   *     hardware-specific default.
+   * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
+   */
+  public static Module load(final String modelPath, int loadMode, int numThreads) {
     File modelFile = new File(modelPath);
     if (!modelFile.canRead() || !modelFile.isFile()) {
       throw new RuntimeException("Cannot load model path " + modelPath);
     }
-    return new Module(modelPath, loadMode);
+    return new Module(modelPath, loadMode, numThreads);
   }
 
   /**
@@ -191,8 +210,12 @@ public class Module {
   }
 
   /** Retrieve the in-memory log buffer, containing the most recent ExecuTorch log entries. */
+  public String[] readLogBuffer() {
+    return readLogBufferNative();
+  }
+
   @DoNotStrip
-  public native String[] readLogBuffer();
+  private native String[] readLogBufferNative();
 
   /**
    * Dump the ExecuTorch ETRecord file to /data/local/tmp/result.etdump.
