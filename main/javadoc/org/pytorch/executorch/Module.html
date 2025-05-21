@@ -242,12 +242,20 @@ public class <span class="typeNameLabel"><a href=Module.html>Module</a></span>
                                         <tr id="i6" class="altColor">
                                             <td class="colFirst"><code>native <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>&gt;</code>
                                             </td>
-                                            <th class="colSecond" scope="row"><code><a href=Module.html#getUsedBackends(String)>getUsedBackends</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> methodName) </code>
+                                            <th class="colSecond" scope="row"><code><a href=Module.html#getMethods()>getMethods</a>() </code>
                                             </th>
-                                            <td class="colLast">Returns the names of the methods in a certain method.</td>
+                                            <td class="colLast">Returns the names of methods.</td>
                                         </tr>
                                         
                                         <tr id="i7" class="rowColor">
+                                            <td class="colFirst"><code><a href=MethodMetadata.html>MethodMetadata</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Module.html#getMethodMetadata(String)>getMethodMetadata</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> name) </code>
+                                            </th>
+                                            <td class="colLast">Get the corresponding @MethodMetadata for a method</td>
+                                        </tr>
+                                        
+                                        <tr id="i8" class="altColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>&gt;</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Module.html#readLogBuffer()>readLogBuffer</a>() </code>
@@ -255,7 +263,7 @@ public class <span class="typeNameLabel"><a href=Module.html>Module</a></span>
                                             <td class="colLast">Retrieve the in-memory log buffer, containing the most recent ExecuTorch log entries.</td>
                                         </tr>
                                         
-                                        <tr id="i8" class="altColor">
+                                        <tr id="i9" class="rowColor">
                                             <td class="colFirst"><code>native boolean</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Module.html#etdump()>etdump</a>() </code>
@@ -263,7 +271,7 @@ public class <span class="typeNameLabel"><a href=Module.html>Module</a></span>
                                             <td class="colLast">Dump the ExecuTorch ETRecord file to /data/local/tmp/result.etdump.</td>
                                         </tr>
                                         
-                                        <tr id="i9" class="rowColor">
+                                        <tr id="i10" class="altColor">
                                             <td class="colFirst"><code>void</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Module.html#destroy()>destroy</a>() </code>
@@ -455,22 +463,37 @@ public class <span class="typeNameLabel"><a href=Module.html>Module</a></span>
                                     </li>
                                 </ul>
                                 
-                                <a id="getUsedBackends(String)">
+                                <a id="getMethods()">
                                     <!--   -->
                                 </a>
                                 <ul class=
                                               "blockList"
                                           >
                                     <li class="blockList">
-                                        <h4>getUsedBackends</h4>
-                                        <pre class="methodSignature"> native <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>&gt; <a href=Module.html#getUsedBackends(String)>getUsedBackends</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> methodName)</pre>
-                                        <div class="block"><p>Returns the names of the methods in a certain method.</p></div>
+                                        <h4>getMethods</h4>
+                                        <pre class="methodSignature"> native <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>&gt; <a href=Module.html#getMethods()>getMethods</a>()</pre>
+                                        <div class="block"><p>Returns the names of methods.</p></div>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="getMethodMetadata(String)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>getMethodMetadata</h4>
+                                        <pre class="methodSignature"> <a href=MethodMetadata.html>MethodMetadata</a> <a href=Module.html#getMethodMetadata(String)>getMethodMetadata</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> name)</pre>
+                                        <div class="block"><p>Get the corresponding @MethodMetadata for a method</p></div>
                                         
                                         <dl>
                                             <dt><span class="paramLabel">Parameters:</span></dt>
                                             
                                             
-                                            <dd><code>methodName</code> - method name to query</dd>
+                                            <dd><code>name</code> - method name</dd>
                                             
                                             
                                         </dl>
