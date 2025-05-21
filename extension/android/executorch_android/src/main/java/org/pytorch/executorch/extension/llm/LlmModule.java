@@ -14,6 +14,7 @@ import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
 import java.io.File;
 import org.pytorch.executorch.annotations.Experimental;
+import org.pytorch.executorch.Runtime;
 
 /**
  * LlmModule is a wrapper around the Executorch LLM. It provides a simple interface to generate text
@@ -28,11 +29,9 @@ public class LlmModule {
   public static final int MODEL_TYPE_TEXT_VISION = 2;
 
   static {
-    if (!NativeLoader.isInitialized()) {
-      NativeLoader.init(new SystemDelegate());
+    if (!Runtime.isInitialized()) {
+        throw new IllegalStateException("ExecuTorch runtime not initialized.");
     }
-    NativeLoader.loadLibrary("executorch");
-  }
 
   private final HybridData mHybridData;
   private static final int DEFAULT_SEQ_LEN = 128;
