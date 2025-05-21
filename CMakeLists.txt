@@ -252,6 +252,25 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
   )
 endif()
 
+if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
+  # Currently only enable this on Arm-based Macs
+  set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
+  set(TORCHAO_BUILD_CPU_AARCH64 ON)
+  set(TORCHAO_ENABLE_ARM_NEON_DOT ON)
+
+  # Set ExecuTorch headers and core library so TorchAO can register ops against them
+  set(EXECUTORCH_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/..)
+  set(EXECUTORCH_LIBRARIES executorch)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/experimental)
+  target_link_options_shared_lib(torchao_ops_executorch)
+  list(APPEND _dep_libs torchao_ops_executorch)
+endif()
+
+if(EXECUTORCH_BUILD_TESTS)
+  set(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
+  include(CTest)
+endif()
+
 # TODO(dbort): Fix these warnings and remove this flag.
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
@@ -710,18 +729,6 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   endif()
   target_link_libraries(executor_runner ${_executor_runner_libs})
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
-endif()
-
-if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
-  # Currently only enable this on Arm-based Macs
-  set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
-  set(TORCHAO_BUILD_CPU_AARCH64 ON)
-
-  # Set ExecuTorch headers and core library so TorchAO can register ops against them
-  set(EXECUTORCH_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR})
-  set(EXECUTORCH_LIBRARIES executorch_core)
-
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/experimental)
 endif()
 
 if(EXECUTORCH_BUILD_VULKAN)
