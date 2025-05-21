@@ -32,11 +32,6 @@ from torch.ao.quantization.qconfig import (
     weight_observer_range_neg_127_to_127,
 )
 from torch.ao.quantization.qconfig_mapping import QConfigMapping
-from torch.ao.quantization.quantize_pt2e import (
-    convert_pt2e,
-    prepare_pt2e,
-    prepare_qat_pt2e,
-)
 from torch.ao.quantization.quantizer import Quantizer
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
 from torch.ao.quantization.quantizer.embedding_quantizer import EmbeddingQuantizer
@@ -50,6 +45,11 @@ from torch.testing._internal.common_utils import (
     instantiate_parametrized_tests,
     TemporaryFileName,
     TestCase,
+)
+from torchao.quantization.pt2e.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
 )
 
 
