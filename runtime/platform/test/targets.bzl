@@ -40,7 +40,7 @@ def define_common_targets():
             "stub_platform.cpp",
         ],
         exported_headers = [
-            "stub_platform.h",
+            "pal_spy.h",
         ],
         deps = [
             "//executorch/runtime/platform:compiler",
@@ -55,10 +55,25 @@ def define_common_targets():
         srcs = [
             "executor_pal_override_test.cpp",
         ],
+        headers = [
+            "stub_platform.h",
+        ],
         deps = [
             # This must come first to ensure that the weak platform
             # calls are overriden.
             # buildifier: do not sort
+            ":stub_platform",
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "runtime_platform_override_test",
+        srcs = [
+            "executor_pal_runtime_override_test.cpp",
+        ],
+        deps = [
             ":stub_platform",
             "//executorch/runtime/core:core",
             "//executorch/runtime/platform:platform",
