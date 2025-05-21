@@ -21,6 +21,7 @@ from torchao.quantization.pt2e.quantizer import (
     Quantizer,
 )
 
+
 def get_uint8_tensor_spec(observer_or_fake_quant_ctr):
     return QuantizationSpec(
         dtype=torch.uint8,
