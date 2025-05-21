@@ -615,7 +615,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">torchvision.models.mobilenetv2</span><span class="w"> </span><span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.apple.coreml.quantizer</span><span class="w"> </span><span class="kn">import</span> <span class="n">CoreMLQuantizer</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.apple.coreml.partition</span><span class="w"> </span><span class="kn">import</span> <span class="n">CoreMLPartitioner</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">torch.ao.quantization.quantize_pt2e</span><span class="w"> </span><span class="kn">import</span> <span class="n">convert_pt2e</span><span class="p">,</span> <span class="n">prepare_pt2e</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.pt2e.quantize_pt2e</span><span class="w"> </span><span class="kn">import</span> <span class="n">convert_pt2e</span><span class="p">,</span> <span class="n">prepare_pt2e</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge_transform_and_lower</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.apple.coreml.compiler</span><span class="w"> </span><span class="kn">import</span> <span class="n">CoreMLBackend</span>
 
