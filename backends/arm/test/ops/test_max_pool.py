@@ -19,7 +19,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineMI,
 )
 
-
 test_data_suite = {
     # (test_name, test_data, [kernel_size, stride, padding])
     "zeros": lambda: (torch.zeros(1, 1, 4, 8), [2, 2, 1]),
@@ -34,6 +33,20 @@ test_data_suite_mult_batches = {
     "randn": lambda: (torch.randn(5, 16, 50, 32), [4, 2, 0]),
 }
 
+test_data_suite_dilation = [
+    # Simple dilation=2 on 8x8 input, kernel=3, stride=1, no padding
+    ("dilation2", torch.rand(1, 1, 8, 8), [3, 1, 0, 2]),
+    # Input is 6x6, kernel=3, stride=1, dilation=2.
+    # Padding=1 expands the effective input to 8x8.
+    ("pad_then_dil2", torch.rand(1, 1, 6, 6), [3, 1, 1, 2]),
+    # Input is 16x16, kernel=2x2, stride=2x2, dilation=1 (no dilation).
+    # Padding of 1 ensures the input size remains divisible by stride
+    # after padding.
+    ("even_kernel_fast", torch.rand(1, 3, 16, 16), [(2, 2), (2, 2), (1, 1), 1]),
+    # Multi-batch, multi-channel input (N=4, C=3), kernel=3x3,
+    # stride=3x3, no padding, dilation=1.
+    ("mb_ch_dil1", torch.rand(4, 3, 12, 12), [(3, 3), (3, 3), 0, 1]),
+]
 
 aten_op = "torch.ops.aten.max_pool2d.default"
 exir_op = "executorch_exir_dialects_edge__ops_aten_max_pool2d_default"
@@ -47,10 +60,14 @@ class MaxPool2d(torch.nn.Module):
         kernel_size: int | Tuple[int, int],
         stride: int | Tuple[int, int],
         padding: int | Tuple[int, int],
+        dilation: int | Tuple[int, int] = 1,
     ):
         super().__init__()
         self.max_pool_2d = torch.nn.MaxPool2d(
-            kernel_size=kernel_size, stride=stride, padding=padding
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
         )
 
     def forward(self, x):
@@ -179,4 +196,42 @@ def test_max_pool2d_u55_BI_failure_set(test_data: Tuple):
         use_to_edge_transform_and_lower=True,
     )
     pipeline.pop_stage("check_count.exir")
+    pipeline.run()
+
+
+# Convert the list of (name, tensor, params) into the dict-of-lambdas shape
+dilation_test_data = {
+    name: (lambda data=data, params=params: (data, params))
+    for name, data, params in test_data_suite_dilation
+}
+
+
+@common.parametrize("test_data", dilation_test_data)
+def test_max_pool2d_tosa_MI_dilation(test_data):
+    """
+    TOSA MI pipeline with dilation > 1 (and dilation=1 sanity cases).
+    """
+    data, model_params = test_data()
+    pipeline = TosaPipelineMI[input_t1](
+        MaxPool2d(*model_params),
+        (data,),
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", dilation_test_data)
+def test_max_pool2d_tosa_BI_dilation(test_data):
+    """
+    TOSA BI pipeline with dilation > 1 (and dilation=1 sanity cases).
+    """
+    data, model_params = test_data()
+    pipeline = TosaPipelineBI[input_t1](
+        MaxPool2d(*model_params),
+        (data,),
+        aten_op,
+        exir_op,
+        symmetric_io_quantization=True,
+    )
     pipeline.run()
