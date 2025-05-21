@@ -49,7 +49,8 @@ public class Module {
   private final HybridData mHybridData;
 
   @DoNotStrip
-  private static native HybridData initHybrid(String moduleAbsolutePath, int loadMode, int initHybrid);
+  private static native HybridData initHybrid(
+      String moduleAbsolutePath, int loadMode, int initHybrid);
 
   private Module(String moduleAbsolutePath, int loadMode, int numThreads) {
     mHybridData = initHybrid(moduleAbsolutePath, loadMode, numThreads);
