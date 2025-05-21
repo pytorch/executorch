@@ -126,6 +126,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Maximum length of the generated response sequence.",
     )
 
+    parser.add_argument(
+        "--cpu_threads",
+        type=int,
+        default=4,
+        help="Number of CPU threads to use for inference.",
+    )
+
     return parser
 
 
@@ -133,6 +140,7 @@ def main() -> None:
     parser = build_args_parser()
     args = parser.parse_args()
     validate_args(args)
+    portable_lib._unsafe_reset_threadpool(args.cpu_threads)
     runner = NativeLlamaRunner(args)
     generated_tokens = runner.text_completion(
         prompt=args.prompt,
