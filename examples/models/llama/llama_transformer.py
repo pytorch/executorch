@@ -18,6 +18,7 @@ from executorch.examples.models.llama.attention import (
     ForwardOptions,
 )
 
+from executorch.examples.models.llama.lora import LoRALinear
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.norm import RMSNorm
 from executorch.examples.models.llama.rope import Rope
@@ -254,7 +255,83 @@ def construct_transformer(model_args: ModelArgs) -> Transformer:
     layers = torch.nn.ModuleList()
     cls = ATTENTION_REGISTRY[model_args.attention_type]
     for layer_id in range(model_args.n_layers):
-        attention = cls(model_args, layer_id, rope)
+        wq = (
+            LoRALinear(
+                in_dim=model_args.dim,
+                out_dim=model_args.n_heads * model_args.head_dim,
+                rank=model_args.r,
+                alpha=model_args.lora_alpha,
+                dropout=0.0,
+                use_bias=model_args.attention_qkv_bias,
+            )
+            if model_args.target_modules is not None
+            and "q_proj" in model_args.target_modules
+            else (
+                torch.nn.Linear(
+                    model_args.dim,
+                    model_args.n_heads * model_args.head_dim,
+                    bias=model_args.attention_qkv_bias,
+                )
+            )
+        )
+
+        wk = (
+            LoRALinear(
+                in_dim=model_args.dim,
+                out_dim=model_args.n_kv_heads * model_args.head_dim,
+                rank=model_args.r,
+                alpha=model_args.lora_alpha,
+                dropout=0.0,
+                use_bias=model_args.attention_qkv_bias,
+            )
+            if model_args.target_modules is not None
+            and "k_proj" in model_args.target_modules
+            else (
+                torch.nn.Linear(
+                    model_args.dim,
+                    model_args.n_kv_heads * model_args.head_dim,
+                    bias=model_args.attention_qkv_bias,
+                )
+            )
+        )
+        wv = (
+            LoRALinear(
+                in_dim=model_args.dim,
+                out_dim=model_args.n_kv_heads * model_args.head_dim,
+                rank=model_args.r,
+                alpha=model_args.lora_alpha,
+                dropout=0.0,
+                use_bias=model_args.attention_qkv_bias,
+            )
+            if model_args.target_modules is not None
+            and "v_proj" in model_args.target_modules
+            else (
+                torch.nn.Linear(
+                    model_args.dim,
+                    model_args.n_kv_heads * model_args.head_dim,
+                    bias=model_args.attention_qkv_bias,
+                )
+            )
+        )
+
+        wo = (
+            LoRALinear(
+                in_dim=model_args.n_kv_heads * model_args.head_dim,
+                out_dim=model_args.dim,
+                rank=model_args.r,
+                alpha=model_args.lora_alpha,
+                dropout=0.0,
+                use_bias=model_args.attention_qkv_bias,
+            )
+            if model_args.target_modules is not None
+            and "output_proj" in model_args.target_modules
+            else (
+                torch.nn.Linear(
+                    model_args.n_heads * model_args.head_dim, model_args.dim, bias=False
+                )
+            )
+        )
+        attention = cls(model_args, layer_id, rope, wq, wk, wv, wo)
         transformer_block = TransformerBlock(model_args, attention)
         layers.append(transformer_block)
 

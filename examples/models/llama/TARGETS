@@ -13,6 +13,7 @@ runtime.python_library(
     name = "llama_transformer",
     srcs = [
         "llama_transformer.py",
+        "lora.py",
         "rope.py",
         "attention.py",
         "model_args.py",

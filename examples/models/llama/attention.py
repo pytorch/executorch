@@ -324,7 +324,28 @@ class RingKVCache(KVCache):
 
 @register_attention("mha")
 class AttentionMHA(Attention):
-    def __init__(self, args: ModelArgs, layer_id: int, rope: Rope):
+    def __init__(
+        self,
+        args: ModelArgs,
+        layer_id: int,
+        rope: Rope,
+        wq: Optional[nn.Module] = None,
+        wk: Optional[nn.Module] = None,
+        wv: Optional[nn.Module] = None,
+        wo: Optional[nn.Module] = None,
+    ):
+        """
+        Multi-head attention layer.
+
+        Args:
+            args (ModelArgs): Model configuration parameters.
+            layer_id (int): Layer index.
+            rope (Rope): Rotary position embedding module.
+            wq (Optional[nn.Module]): Query projection module. If None, use regular nn.Linear.
+            wk (Optional[nn.Module]): Key projection module. If None, use regular nn.Linear.
+            wv (Optional[nn.Module]): Value projection module. If None, use regular nn.Linear.
+            wo (Optional[nn.Module]): Output projection module. If None, use regular nn.Linear.
+        """
         super().__init__()
         self.use_kv_cache = args.use_kv_cache
         self.n_heads = args.n_heads
@@ -349,19 +370,34 @@ class AttentionMHA(Attention):
             self.q_norm_fn = RMSNorm(q_norm_dim, eps=args.norm_eps)
             self.k_norm_fn = RMSNorm(k_norm_dim, eps=args.norm_eps)
 
-        self.wq = nn.Linear(
-            self.dim, self.n_heads * self.head_dim, bias=self.attention_qkv_bias
+        self.wq = (
+            wq
+            if wq is not None
+            else nn.Linear(
+                self.dim, self.n_heads * self.head_dim, bias=self.attention_qkv_bias
+            )
         )
-        self.wk = nn.Linear(
-            self.dim, self.n_kv_heads * self.head_dim, bias=self.attention_qkv_bias
+        self.wk = (
+            wk
+            if wk is not None
+            else nn.Linear(
+                self.dim, self.n_kv_heads * self.head_dim, bias=self.attention_qkv_bias
+            )
         )
-        self.wv = nn.Linear(
-            self.dim, self.n_kv_heads * self.head_dim, bias=self.attention_qkv_bias
+        self.wv = (
+            wv
+            if wv is not None
+            else nn.Linear(
+                self.dim, self.n_kv_heads * self.head_dim, bias=self.attention_qkv_bias
+            )
         )
-        self.wo = nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
+        self.wo = (
+            wo
+            if wo is not None
+            else nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
+        )
 
         self.layer_id = layer_id
-
         self.rope = rope
 
         causal_mask = torch.tril(
