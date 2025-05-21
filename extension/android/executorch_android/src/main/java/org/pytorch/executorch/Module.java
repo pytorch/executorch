@@ -9,6 +9,8 @@
 package org.pytorch.executorch;
 
 import android.util.Log;
+import com.facebook.jni.HybridData;
+import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
 import java.io.File;
@@ -24,6 +26,14 @@ import org.pytorch.executorch.annotations.Experimental;
 @Experimental
 public class Module {
 
+  static {
+    if (!NativeLoader.isInitialized()) {
+      NativeLoader.init(new SystemDelegate());
+    }
+    // Loads libexecutorch.so from jniLibs
+    NativeLoader.loadLibrary("executorch");
+  }
+
   /** Load mode for the module. Load the whole file as a buffer. */
   public static final int LOAD_MODE_FILE = 0;
 
@@ -36,10 +46,17 @@ public class Module {
   /** Load mode for the module. Use memory locking and ignore errors. */
   public static final int LOAD_MODE_MMAP_USE_MLOCK_IGNORE_ERRORS = 3;
 
-  /** Reference to the NativePeer object of this module. */
-  private NativePeer mNativePeer;
+  private final HybridData mHybridData;
 
-  /** Lock protecting the non-thread safe methods in NativePeer. */
+  @DoNotStrip
+  private static native HybridData initHybrid(
+      String moduleAbsolutePath, int loadMode, int initHybrid);
+
+  private Module(String moduleAbsolutePath, int loadMode, int numThreads) {
+    mHybridData = initHybrid(moduleAbsolutePath, loadMode, numThreads);
+  }
+
+  /** Lock protecting the non-thread safe methods in mHybridData. */
   private Lock mLock = new ReentrantLock();
 
   /**
@@ -50,14 +67,24 @@ public class Module {
    * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
    */
   public static Module load(final String modelPath, int loadMode) {
-    if (!NativeLoader.isInitialized()) {
-      NativeLoader.init(new SystemDelegate());
-    }
+    return load(modelPath, loadMode, 0);
+  }
+
+  /**
+   * Loads a serialized ExecuTorch module from the specified path on the disk.
+   *
+   * @param modelPath path to file that contains the serialized ExecuTorch module.
+   * @param loadMode load mode for the module. See constants in {@link Module}.
+   * @param numThreads the number of threads to use for inference. A value of 0 defaults to a
+   *     hardware-specific default.
+   * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
+   */
+  public static Module load(final String modelPath, int loadMode, int numThreads) {
     File modelFile = new File(modelPath);
     if (!modelFile.canRead() || !modelFile.isFile()) {
       throw new RuntimeException("Cannot load model path " + modelPath);
     }
-    return new Module(new NativePeer(modelPath, loadMode));
+    return new Module(modelPath, loadMode, numThreads);
   }
 
   /**
@@ -70,10 +97,6 @@ public class Module {
     return load(modelPath, LOAD_MODE_FILE);
   }
 
-  Module(NativePeer nativePeer) {
-    this.mNativePeer = nativePeer;
-  }
-
   /**
    * Runs the 'forward' method of this module with the specified arguments.
    *
@@ -83,16 +106,7 @@ public class Module {
    * @return return value from the 'forward' method.
    */
   public EValue[] forward(EValue... inputs) {
-    try {
-      mLock.lock();
-      if (mNativePeer == null) {
-        Log.e("ExecuTorch", "Attempt to use a destroyed module");
-        return new EValue[0];
-      }
-      return mNativePeer.forward(inputs);
-    } finally {
-      mLock.unlock();
-    }
+    return execute("forward", inputs);
   }
 
   /**
@@ -105,15 +119,18 @@ public class Module {
   public EValue[] execute(String methodName, EValue... inputs) {
     try {
       mLock.lock();
-      if (mNativePeer == null) {
+      if (!mHybridData.isValid()) {
         Log.e("ExecuTorch", "Attempt to use a destroyed module");
         return new EValue[0];
       }
-      return mNativePeer.execute(methodName, inputs);
+      return executeNative(methodName, inputs);
     } finally {
       mLock.unlock();
     }
   }
+
+  @DoNotStrip
+  private native EValue[] executeNative(String methodName, EValue... inputs);
 
   /**
    * Load a method on this module. This might help with the first time inference performance,
@@ -127,15 +144,18 @@ public class Module {
   public int loadMethod(String methodName) {
     try {
       mLock.lock();
-      if (mNativePeer == null) {
+      if (!mHybridData.isValid()) {
         Log.e("ExecuTorch", "Attempt to use a destroyed module");
         return 0x2; // InvalidState
       }
-      return mNativePeer.loadMethod(methodName);
+      return loadMethodNative(methodName);
     } finally {
       mLock.unlock();
     }
   }
+
+  @DoNotStrip
+  private native int loadMethodNative(String methodName);
 
   /**
    * Returns the names of the methods in a certain method.
@@ -143,14 +163,16 @@ public class Module {
    * @param methodName method name to query
    * @return an array of backend name
    */
-  public String[] getUsedBackends(String methodName) {
-    return mNativePeer.getUsedBackends(methodName);
-  }
+  @DoNotStrip
+  public native String[] getUsedBackends(String methodName);
 
   /** Retrieve the in-memory log buffer, containing the most recent ExecuTorch log entries. */
   public String[] readLogBuffer() {
-    return mNativePeer.readLogBuffer();
+    return readLogBufferNative();
   }
+
+  @DoNotStrip
+  private native String[] readLogBufferNative();
 
   /**
    * Dump the ExecuTorch ETRecord file to /data/local/tmp/result.etdump.
@@ -160,9 +182,8 @@ public class Module {
    * @return true if the etdump was successfully written, false otherwise.
    */
   @Experimental
-  public boolean etdump() {
-    return mNativePeer.etdump();
-  }
+  @DoNotStrip
+  public native boolean etdump();
 
   /**
    * Explicitly destroys the native Module object. Calling this method is not required, as the
@@ -173,13 +194,11 @@ public class Module {
   public void destroy() {
     if (mLock.tryLock()) {
       try {
-        mNativePeer.resetNative();
+        mHybridData.resetNative();
       } finally {
-        mNativePeer = null;
         mLock.unlock();
       }
     } else {
-      mNativePeer = null;
       Log.w(
           "ExecuTorch",
           "Destroy was called while the module was in use. Resources will not be immediately"

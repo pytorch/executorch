@@ -24,10 +24,10 @@ from executorch.exir import (
     ExecutorchProgramManager,
 )
 
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-
 from torch.ao.quantization.quantizer import Quantizer
 from torch.export import Dim, export, export_for_training, ExportedProgram
+
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 ctypes.CDLL("libvulkan.so.1")
 

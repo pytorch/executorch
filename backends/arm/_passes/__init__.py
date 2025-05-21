@@ -15,6 +15,7 @@ from .conv1d_unsqueeze_pass import Conv1dUnsqueezePass  # noqa
 from .convert_any_default_dim_dims_pass import ConvertAnyDefaultDimDimsPass  # noqa
 from .convert_expand_copy_to_repeat import ConvertExpandCopyToRepeatPass  # noqa
 from .convert_full_like_to_full_pass import ConvertFullLikeToFullPass  # noqa
+from .convert_int_pow_to_mul import ConvertIntPowToMuls  # noqa
 from .convert_minmax_pass import ConvertMinMaxPass  # noqa
 from .convert_split_to_slice import ConvertSplitToSlicePass  # noqa
 from .convert_squeezes_to_view import ConvertSqueezesToViewPass  # noqa
