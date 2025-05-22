@@ -14,6 +14,7 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
+    validate_same_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_utils import get_resize_parameters, tosa_shape
@@ -40,6 +41,7 @@ class UpsampleNearest2dVisitor_0_80(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 3)
+        validate_same_dtype(self.target, [inputs[0], output])
 
         if inputs[0].shape is None or output.shape is None:
             raise ValueError("Only static shapes are supported")
@@ -98,10 +100,10 @@ class UpsampleNearest2dVisitor(NodeVisitor):
         import serializer.tosa_serializer as ts
 
         validate_num_inputs(self.target, inputs, 3)
+        validate_same_dtype(self.target, [inputs[0], output])
 
-        assert (
-            inputs[0].shape is not None and output.shape is not None
-        ), "Only static shapes are supported"
+        if inputs[0].shape is None or output.shape is None:
+            raise ValueError("Only static shapes are supported")
 
         # tosa_shape output is NHWC, take HW
         input_size_yx = torch.tensor(
@@ -118,9 +120,12 @@ class UpsampleNearest2dVisitor(NodeVisitor):
         def in_int16_range(x):
             return torch.all(x >= -(2**15)) and torch.all(x <= 2**15 - 1)
 
-        assert in_int16_range(scale_n_yx)
-        assert in_int16_range(scale_d_yx)
-        assert in_int16_range(border_yx)
+        if not in_int16_range(scale_n_yx):
+            raise ValueError("scale_n_yx is out of the int16 range")
+        if not in_int16_range(scale_d_yx):
+            raise ValueError("scale_d_yx is out of the int16 range")
+        if not in_int16_range(border_yx):
+            raise ValueError("border_yx is out of the int16 range")
 
         scales = [scale_n_yx[0], scale_d_yx[0], scale_n_yx[1], scale_d_yx[1]]
         scales_tensor = tosa_graph.addConst(

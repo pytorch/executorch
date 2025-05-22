@@ -334,10 +334,9 @@ def quantized_add_meta(
     out_scale: float,
     out_zero_point: int,
 ) -> torch.Tensor:
-    out_size = X.size()
-    if list(X.size()) == [1]:
-        out_size = Y.size()
 
+    # Determine output shape by broadcasting X and Y
+    out_size = torch.broadcast_shapes(X.size(), Y.size())
     return X.new_empty(out_size, dtype=X.dtype)
 
 
@@ -352,10 +351,8 @@ def quantized_add_per_tensor_meta(
     out_scale: float,
     out_zero_point: int,
 ) -> torch.Tensor:
-    out_size = X.size()
-    if list(X.size()) == [1]:
-        out_size = Y.size()
 
+    out_size = torch.broadcast_shapes(X.size(), Y.size())
     return X.new_empty(out_size, dtype=X.dtype)
 
 

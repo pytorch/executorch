@@ -14,7 +14,8 @@ from executorch.backends.mediatek import (
     NeuropilotQuantizer,
     Precision,
 )
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from executorch.exir.backend.backend_details import CompileSpec
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 def build_executorch_binary(
@@ -48,7 +49,7 @@ def build_executorch_binary(
     edge_compile_config = exir.EdgeCompileConfig(_check_ir_validity=False)
     # skipped op names are used for deeplabV3 model
     neuro_partitioner = NeuropilotPartitioner(
-        [],
+        [CompileSpec("platform-config", b"mt6989")],
         op_names_to_skip={
             "aten_convolution_default_106",
             "aten_convolution_default_107",

@@ -107,7 +107,16 @@ def export_text_model(llava, embeddings, dynamic_shapes):
             "4,32",
         ]
     )
-    quant_transform = get_quant_weight_transform(args, dtype_override)
+    quant_transform = get_quant_weight_transform(
+        quantization_mode=args.quantization_mode,
+        group_size=args.group_size,
+        computation_dtype=dtype_override,
+        checkpoint_path=args.checkpoint,
+        tokenizer_path=args.tokenizer_path,
+        calibration_tasks=args.calibration_tasks,
+        calibration_limit=args.calibration_limit,
+        calibration_seq_length=args.calibration_seq_length,
+    )
     _, quantizers, _ = get_quantizer_and_quant_params(args)
     source_transforms = []
     if llava.use_sdpa_with_kv_cache_op:

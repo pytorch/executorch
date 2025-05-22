@@ -25,7 +25,9 @@ import torch
 import torch.fx
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
+    get_arg,
     register_cadence_pass,
+    set_arg,
 )
 
 from executorch.backends.cadence.aot.simplify_ops import SimplifySliceOpPass
@@ -37,7 +39,7 @@ from executorch.exir.pass_base import ExportPass, NodeMetadata, PassResult, Prox
 from executorch.exir.pass_manager import PassManager, PassType
 from executorch.exir.passes import dead_code_elimination_pass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
-from torch.fx.node import Argument
+from torch.fx.node import Argument, Node
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
@@ -771,65 +773,52 @@ class RemoveBranchedQuantDequant(ExportPass):
 
 
 class RemoveCatFromSliceCopyPass(ExportPass):
-    def _remove_unused_cat(  # noqa: C901
-        self, graph_module: torch.fx.GraphModule
-    ) -> None:
-        slice_copy_nodes = [
-            node
-            for node in graph_module.graph.nodes
-            if node.target == exir_ops.edge.aten.slice_copy.Tensor
-        ]
-        for slice_copy_node in slice_copy_nodes:
-            slice_dim, start_idx, end_idx, step = 0, 0, float("inf"), 1
-            input_node, *other_args = slice_copy_node.args
-            if len(other_args) >= 1:
-                slice_dim = other_args[0]
-            if len(other_args) >= 2:
-                start_idx = other_args[1]
-            if len(other_args) >= 3:
-                end_idx = other_args[2]
-            if len(other_args) >= 4:
-                step = other_args[3]
-            if step != 1:
+    """
+    Simplifies cat->slice_copy chains where one of the cat inputs can be directly passed
+    to the slice_copy.
+    """
+
+    def _remove_unused_cat(self, graph_module: torch.fx.GraphModule) -> None:
+        for slice_copy_node in graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        ):
+            cat_node = cast(Node, get_arg(slice_copy_node, 0, "input"))
+            slice_dim = cast(int, get_arg(slice_copy_node, 1, "dim", default=0))
+            start_idx = cast(int, get_arg(slice_copy_node, 2, "start", default=None))
+            end_idx = cast(int, get_arg(slice_copy_node, 3, "end", default=None))
+            step = cast(int, get_arg(slice_copy_node, 4, "step", default=1))
+
+            if cat_node.target != exir_ops.edge.aten.cat.default or step != 1:
                 continue
-            slice_copy_dtype = slice_copy_node.meta["val"].dtype
-            if input_node.target != exir_ops.edge.aten.cat.default:
-                continue
-            cat_dtype = input_node.meta["val"].dtype
-            if slice_copy_dtype != cat_dtype:
-                continue
-            cat_dim = input_node.args[1:]
-            if len(cat_dim) == 0:
-                cat_dim = 0
+
+            # Make sure cat and slice happens on the same dimension.
+            cat_dim = cast(Node, get_arg(cat_node, 1, "dim", default=0))
             if cat_dim != slice_dim:
                 continue
-            cat_output_shape = input_node.meta["val"].shape
-            start_idx = (
-                cat_output_shape[cat_dim] + start_idx if start_idx < 0 else start_idx
-            )
-            end_idx = (
-                cat_output_shape[cat_dim]
-                if end_idx > cat_output_shape[cat_dim]
-                else end_idx
-            )
-            base_idx = 0
-            cat_input_to_keep = None
-            for cat_input_node in input_node.args[0]:
-                cat_input_dtype = cat_input_node.meta["val"].dtype
-                if slice_copy_dtype != cat_input_dtype:
-                    continue
+
+            # Canonicalize slice indices.
+            cat_output_shape = cat_node.meta["val"].shape
+            if start_idx is None:
+                start_idx = 0
+            elif start_idx < 0:
+                start_idx += cat_output_shape[cat_dim]
+            if end_idx is None or end_idx > cat_output_shape[cat_dim]:
+                end_idx = cat_output_shape[cat_dim]
+            elif end_idx < 0:
+                end_idx += cat_output_shape[cat_dim]
+
+            offset = 0
+            for cat_input_node in cast(List[Node], get_arg(cat_node, 0, "tensors")):
                 cat_input_shape = cat_input_node.meta["val"].shape
 
-                # check if the slice range overlaps with the cat range
-                if (
-                    base_idx <= start_idx
-                    and end_idx <= list(cat_input_shape)[cat_dim] + base_idx
-                ):
-                    cat_input_to_keep = cat_input_node
+                # Check if the slice range overlaps with the cat input range.
+                if offset <= start_idx and end_idx <= offset + cat_input_shape[cat_dim]:
+                    slice_copy_node.replace_input_with(cat_node, cat_input_node)
+                    set_arg(slice_copy_node, 2, "start", start_idx - offset)
+                    set_arg(slice_copy_node, 3, "end", end_idx - offset)
                     break
-                base_idx += list(cat_input_shape)[cat_dim]
-            if cat_input_to_keep is not None:
-                slice_copy_node.replace_input_with(input_node, cat_input_to_keep)
+
+                offset += cat_input_shape[cat_dim]
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         self._remove_unused_cat(graph_module)

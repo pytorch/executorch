@@ -30,10 +30,6 @@ add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
 if(EXECUTORCH_CADENCE_CPU_RUNNER)
   include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
-  if(NOT PYTHON_EXECUTABLE)
-  resolve_python_executable()
-  endif()
-
   set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
   # Find prebuilt libraries. executorch package should contain portable_ops_lib,

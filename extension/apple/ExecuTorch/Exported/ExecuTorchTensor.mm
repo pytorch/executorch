@@ -100,12 +100,12 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
   return _tensor->numel();
 }
 
-- (void)bytesWithHandler:(void (^)(const void *pointer, NSInteger count, ExecuTorchDataType type))handler {
+- (void)bytesWithHandler:(NS_NOESCAPE void (^)(const void *pointer, NSInteger count, ExecuTorchDataType type))handler {
   ET_CHECK(handler);
   handler(_tensor->unsafeGetTensorImpl()->data(), self.count, self.dataType);
 }
 
-- (void)mutableBytesWithHandler:(void (^)(void *pointer, NSInteger count, ExecuTorchDataType dataType))handler {
+- (void)mutableBytesWithHandler:(NS_NOESCAPE void (^)(void *pointer, NSInteger count, ExecuTorchDataType dataType))handler {
   ET_CHECK(handler);
   handler(_tensor->unsafeGetTensorImpl()->mutable_data(), self.count, self.dataType);
 }

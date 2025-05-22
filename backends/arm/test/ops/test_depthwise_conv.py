@@ -202,13 +202,13 @@ def test_convolution_2d_tosa_BI_depth_wise(test_module: torch.nn.Module):
 
 
 x_fails = {
-    "3x3_2x8x198x198_gp8_st3": "MLETORCH-516: AssertionError: Output 0 does not match reference output.",
-    "two_dw_conv2d": "MLETORCH-516: AssertionError: Output 0 does not match reference output.",
+    "3x3_2x8x198x198_gp8_st3": "MLETORCH-517: Operators fail with batches > 1",
+    "two_dw_conv2d": "MLETORCH-517: Operators fail with batches > 1",
 }
 
 
-@common.parametrize("test_module", testsuite_conv2d, x_fails)
 @common.XfailIfNoCorstone300  # TODO: MLETORCH-516
+@common.parametrize("test_module", testsuite_conv2d, x_fails)
 def test_convolution_2d_u55_BI_depth_wise(test_module: torch.nn.Module):
     pipeline = EthosU55PipelineBI[input_t](
         test_module(),
@@ -233,9 +233,22 @@ def test_convolution_1d_u55_BI_depth_wise(test_module: torch.nn.Module):
     pipeline.run()
 
 
-@common.parametrize("test_module", testsuite_conv1d | testsuite_conv2d, x_fails)
 @common.XfailIfNoCorstone320  # TODO: MLETORCH-516
+@common.parametrize("test_module", testsuite_conv2d, x_fails)
 def test_convolution_2d_u85_BI_depth_wise(test_module: torch.nn.Module):
+    pipeline = EthosU85PipelineBI[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        aten_ops=[],
+        exir_ops=exir_op,
+        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone320  # TODO: MLETORCH-516
+@common.parametrize("test_module", testsuite_conv1d, x_fails)
+def test_convolution_1d_u85_BI_depth_wise(test_module: torch.nn.Module):
     pipeline = EthosU85PipelineBI[input_t](
         test_module(),
         test_module().get_inputs(),

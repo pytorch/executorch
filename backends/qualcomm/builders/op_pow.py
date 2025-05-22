@@ -37,7 +37,7 @@ class PowTensorTensor(NodeVisitor):
         pow_output_tensors = [output_tensor_wrapper]
 
         # tensor input
-        input_node = node.args[0]
+        input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
 
         tensor_type = PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
@@ -51,7 +51,7 @@ class PowTensorTensor(NodeVisitor):
         )
 
         # exp input
-        exp_node = node.args[1]
+        exp_node = self.get_node(node.args[1])
         exp_tensor = self.get_tensor(exp_node, node)
         exp_tensor_wrapper = self.define_tensor(
             exp_node,

@@ -175,7 +175,7 @@ __attribute__((deprecated("This API is experimental.")))
  *   - the total number of elements,
  *   - and the data type.
  */
-- (void)bytesWithHandler:(void (^)(const void *pointer, NSInteger count, ExecuTorchDataType dataType))handler
+- (void)bytesWithHandler:(NS_NOESCAPE void (^)(const void *pointer, NSInteger count, ExecuTorchDataType dataType))handler
     NS_SWIFT_NAME(bytes(_:));
 
 /**
@@ -186,7 +186,7 @@ __attribute__((deprecated("This API is experimental.")))
  *   - the total number of elements,
  *   - and the data type.
  */
-- (void)mutableBytesWithHandler:(void (^)(void *pointer, NSInteger count, ExecuTorchDataType dataType))handler
+- (void)mutableBytesWithHandler:(NS_NOESCAPE void (^)(void *pointer, NSInteger count, ExecuTorchDataType dataType))handler
     NS_SWIFT_NAME(mutableBytes(_:));
 
 /**

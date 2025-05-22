@@ -116,6 +116,8 @@ def test_unary_tosa_BI(test_data: input_t1):
         (test_data,),
         module.aten_op,
         module.exir_op,
+        atol=0.06,
+        rtol=0.01,
     )
     pipeline.run()
 

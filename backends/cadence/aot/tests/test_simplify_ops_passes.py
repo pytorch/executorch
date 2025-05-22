@@ -13,8 +13,12 @@ from typing import cast, Optional, Tuple
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
 from executorch.backends.cadence.aot.compiler import export_to_edge
+from executorch.backends.cadence.aot.graph_builder import single_op_builder
 from executorch.backends.cadence.aot.pass_utils import count_node
-from executorch.backends.cadence.aot.simplify_ops import SimplifySliceOpPass
+from executorch.backends.cadence.aot.simplify_ops import (
+    BindOptionalArgsPass,
+    SimplifySliceOpPass,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from parameterized.parameterized import parameterized
 from torch.fx.passes.infra.pass_base import PassResult
@@ -111,4 +115,34 @@ class TestSimplifyOpsPasses(unittest.TestCase):
         )
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.full.default), 1
+        )
+
+    def test_simplify_slice_op_args(self) -> None:
+        x = torch.rand(4, 5)
+        gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 1),
+            kwargs={"end": 3},
+        )
+        self.assertEqual(
+            [
+                (n.args[1:], n.kwargs)
+                for n in gm.graph.find_nodes(
+                    op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+                )
+            ],
+            [((1,), {"end": 3})],
+        )
+
+        gm = BindOptionalArgsPass().call(gm).graph_module
+
+        self.assertEqual(
+            [
+                (n.args[1:], n.kwargs)
+                for n in gm.graph.find_nodes(
+                    op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+                )
+            ],
+            [((1, None, 3, 1), {})],
         )

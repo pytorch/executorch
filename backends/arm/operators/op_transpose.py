@@ -15,6 +15,7 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
+    validate_same_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 
@@ -41,6 +42,7 @@ class TransposeVisitor_0_80(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
+        validate_same_dtype(self.target, [inputs[0], output])
 
         output_rank = len(output.shape)
         perms = [dim % output_rank for dim in inputs[1].special]
@@ -73,6 +75,7 @@ class TransposeVisitor(NodeVisitor):
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
+        validate_same_dtype(self.target, [inputs[0], output])
 
         output_rank = len(output.shape)
         perms = [dim % output_rank for dim in inputs[1].special]

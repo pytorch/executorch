@@ -17,28 +17,12 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.operators.operator_validation_utils import (
+    adjust_pooling_pad_if_needed,
     validate_num_inputs,
+    validate_same_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
-
-
-# Similarly to Conv2d, the TOSA spec requires that following is exactly divisible:
-# `(input + 2 * pad - kernel_size) / stride`
-# PyTorch however, does not require this, so as needed, we must adjust the padding.
-def adjust_pad_if_needed(
-    input_size: int, kernel_size: int, stride: int, pad: int
-) -> int:
-    if pad == 0:
-        return pad
-
-    mod_remainder = (input_size + 2 * pad - kernel_size) % stride
-
-    # No need to adjust
-    if mod_remainder == 0:
-        return pad
-
-    return pad - mod_remainder
 
 
 @register_node_visitor
@@ -63,6 +47,7 @@ class MaxPool2dVisitor_0_80(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, [3, 4])
+        validate_same_dtype(self.target, [inputs[0], output])
 
         input_tensor = inputs[0]
         kernel_size = inputs[1].special
@@ -80,13 +65,13 @@ class MaxPool2dVisitor_0_80(NodeVisitor):
             pad_size_list = [0, 0, 0, 0]
 
         # Adjust the padding as necessary
-        pad_size_list[1] = adjust_pad_if_needed(
+        pad_size_list[1] = adjust_pooling_pad_if_needed(
             input_tensor.shape[2],
             kernel_size[0],
             stride[0],
             pad_size_list[1],
         )
-        pad_size_list[3] = adjust_pad_if_needed(
+        pad_size_list[3] = adjust_pooling_pad_if_needed(
             input_tensor.shape[3],
             kernel_size[1],
             stride[1],
@@ -147,6 +132,7 @@ class MaxPool2dVisitor(NodeVisitor):
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, [3, 4])
+        validate_same_dtype(self.target, [inputs[0], output])
 
         input_tensor = inputs[0]
         kernel_size = inputs[1].special
@@ -164,13 +150,13 @@ class MaxPool2dVisitor(NodeVisitor):
             pad_size_list = [0, 0, 0, 0]
 
         # Adjust the padding as necessary
-        pad_size_list[1] = adjust_pad_if_needed(
+        pad_size_list[1] = adjust_pooling_pad_if_needed(
             input_tensor.shape[2],
             kernel_size[0],
             stride[0],
             pad_size_list[1],
         )
-        pad_size_list[3] = adjust_pad_if_needed(
+        pad_size_list[3] = adjust_pooling_pad_if_needed(
             input_tensor.shape[3],
             kernel_size[1],
             stride[1],

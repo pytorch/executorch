@@ -16,8 +16,9 @@ from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
     register_cadence_pass,
 )
-
+from executorch.backends.cadence.aot.utils import rebind
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, ProxyValue
 
 
@@ -109,8 +110,23 @@ class SimplifySliceOpPass(ExportPass):
         return super().call_operator(op, new_args, kwargs, meta)
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class BindOptionalArgsPass(ExportPass):
+    """Bind all optional args and kwargs."""
+
+    def call_operator(self, op, args, kwargs, meta):
+        if not isinstance(op, EdgeOpOverload):
+            return super().call_operator(op, args, kwargs, meta)
+
+        if (updated_args := rebind(op, args, kwargs)) is not None:
+            args, kwargs = updated_args
+
+        return super().call_operator(op, args, kwargs, meta)
+
+
 # This class encapsulates all the functions that simplify the op's args
 class CadenceSimplifyOpsInGraph:
     passes = [
         SimplifySliceOpPass,
+        BindOptionalArgsPass,
     ]

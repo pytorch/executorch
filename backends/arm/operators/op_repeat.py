@@ -14,6 +14,7 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
+    validate_same_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_utils import tosa_shape
@@ -38,6 +39,7 @@ class RepeatVisitor_0_80(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
+        validate_same_dtype(self.target, [inputs[0], output])
 
         multiples = inputs[1].special
 
@@ -67,6 +69,7 @@ class RepeatVisitor(NodeVisitor):
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
+        validate_same_dtype(self.target, [inputs[0], output])
 
         multiples = inputs[1].special
 

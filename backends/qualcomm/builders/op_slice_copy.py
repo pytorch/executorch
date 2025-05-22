@@ -26,7 +26,7 @@ class StrideSlice(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        input_node = node.args[0]
+        input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         tensor_type = PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
 
@@ -50,12 +50,17 @@ class StrideSlice(NodeVisitor):
         dim = cast(int, node.args[1])
         if dim < 0:
             dim = dim % len(input_tensor.shape)
-        start = cast(int, node.args[2])
+
+        start = 0 if node.args[2] is None else cast(int, node.args[2])
         if start < 0:
             start = start % input_tensor.shape[dim]
-        end = min(cast(int, node.args[3]), input_tensor.shape[dim])
-        if end < 0:
-            end = end % input_tensor.shape[dim]
+
+        if len(node.args) > 3:
+            end = min(cast(int, node.args[3]), input_tensor.shape[dim])
+            if end < 0:
+                end = end % input_tensor.shape[dim]
+        else:
+            end = input_tensor.shape[dim]
 
         input_tensor_rank = len(input_tensor.shape)
         ranges = []

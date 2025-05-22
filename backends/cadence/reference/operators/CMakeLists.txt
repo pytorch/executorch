@@ -14,10 +14,6 @@ endif()
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
-if(NOT PYTHON_EXECUTABLE)
-  resolve_python_executable()
-endif()
-
 # ATen compliant ops that are needed to run this model.
 set(_aten_ops__srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/op_add.cpp"

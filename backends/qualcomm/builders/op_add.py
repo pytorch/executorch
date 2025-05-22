@@ -37,7 +37,7 @@ class Add(NodeVisitor):
 
         add_input_tensors = []
         for index in range(2):
-            input_node = node.args[index]
+            input_node = self.get_node(node.args[index])
             input_tensor = self.get_tensor(input_node, node)
             tensor_type = PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
 

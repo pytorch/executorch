@@ -34,8 +34,7 @@ typedef NSNumber *ExecuTorchScalarValue
     NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(ScalarValue);
 typedef NSString *ExecuTorchStringValue
     NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(StringValue);
-typedef BOOL ExecuTorchBooleanValue
-    NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(BoolValue);
+typedef BOOL ExecuTorchBooleanValue NS_SWIFT_NAME(BoolValue);
 typedef NSInteger ExecuTorchIntegerValue
     NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(IntegerValue);
 typedef double ExecuTorchDoubleValue
@@ -51,7 +50,7 @@ typedef float ExecuTorchFloatValue
  */
 NS_SWIFT_NAME(Value)
 __attribute__((deprecated("This API is experimental.")))
-@interface ExecuTorchValue : NSObject
+@interface ExecuTorchValue : NSObject <NSCopying>
 
 /**
  * The tag that indicates the dynamic type of the value.
@@ -209,6 +208,12 @@ __attribute__((deprecated("This API is experimental.")))
 + (instancetype)valueWithDouble:(ExecuTorchDoubleValue)value
     NS_SWIFT_NAME(init(_:));
 
+/**
+ * Returns a copy of the value.
+ *
+ * @return A new ExecuTorchValue instance that is a duplicate of the current value.
+ */
+ - (instancetype)copy;
 
 /**
  * Determines whether the current Value is equal to another Value.

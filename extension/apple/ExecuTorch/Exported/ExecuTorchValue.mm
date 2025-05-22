@@ -57,6 +57,15 @@
   return self;
 }
 
+- (instancetype)copy {
+  return [self copyWithZone:nil];
+}
+
+- (instancetype)copyWithZone:(nullable NSZone *)zone {
+  return [[ExecuTorchValue allocWithZone:zone] initWithTag:_tag
+                                                     value:[_value copyWithZone:zone]];
+}
+
 - (ExecuTorchValueTag)tag {
   return _tag;
 }

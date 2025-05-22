@@ -18,10 +18,6 @@ endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
-if(NOT PYTHON_EXECUTABLE)
-  resolve_python_executable()
-endif()
-
 set(_common_compile_options -Wno-deprecated-declarations)
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)

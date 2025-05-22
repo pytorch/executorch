@@ -27,7 +27,7 @@ class Matmul(NodeVisitor):
     ) -> PyQnnWrapper.PyQnnOpWrapper:
         matmul_input_tensors = []
         for index in range(2):
-            input_node = node.args[index]
+            input_node = self.get_node(node.args[index])
             input_tensor = self.get_tensor(input_node, node)
 
             input_tensor_wrapper = self.define_tensor(
