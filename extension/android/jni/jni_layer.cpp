@@ -480,7 +480,6 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     facebook::jni::local_ref<facebook::jni::JArrayInt> ret =
         facebook::jni::JArrayInt::newArray(num_inputs);
 
-    int i = 0;
     for (int i = 0; i < num_inputs; i++) {
       ret->pin()[i] = static_cast<uint32_t>(method_meta.input_tag(i).get());
     }
@@ -495,7 +494,6 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     facebook::jni::local_ref<facebook::jni::JArrayInt> ret =
         facebook::jni::JArrayInt::newArray(num_outputs);
 
-    int i = 0;
     for (int i = 0; i < num_outputs; i++) {
       ret->pin()[i] = static_cast<uint32_t>(method_meta.output_tag(i).get());
     }

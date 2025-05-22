@@ -11,9 +11,6 @@ import android.Manifest
 import androidx.test.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
-import java.io.File
-import java.io.IOException
-import java.net.URISyntaxException
 import org.apache.commons.io.FileUtils
 import org.json.JSONException
 import org.json.JSONObject
@@ -24,6 +21,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.pytorch.executorch.extension.llm.LlmCallback
 import org.pytorch.executorch.extension.llm.LlmModule
+import java.io.File
+import java.io.IOException
+import java.net.URISyntaxException
 
 /** Unit tests for [org.pytorch.executorch.extension.llm.LlmModule]. */
 @RunWith(AndroidJUnit4::class)
@@ -101,7 +101,8 @@ class LlmModuleInstrumentationTest : LlmCallback {
             val promptEvalEndMs = jsonObject.getInt("prompt_eval_end_ms")
             tps = numGeneratedTokens.toFloat() / (inferenceEndMs - promptEvalEndMs) * 1000
             tokensPerSecond.add(tps)
-        } catch (_: JSONException) {}
+        } catch (_: JSONException) {
+        }
     }
 
     companion object {
