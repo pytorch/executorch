@@ -183,8 +183,8 @@ class TensorTest: XCTestCase {
 
   func testWithUnsafeMutableBytesFloat16() throws {
     var data: [Float16] = [1, 2, 3, 4]
-    let tensor = data.withUnsafeMutableBytes { buf in
-      Tensor(bytes: buf.baseAddress!, shape: [4], dataType: .half)
+    let tensor = data.withUnsafeMutableBytes { buffer in
+      Tensor(bytes: buffer.baseAddress!, shape: [4], dataType: .half)
     }
     try tensor.withUnsafeMutableBytes { (buffer: UnsafeMutableBufferPointer<Float16>) in
       for i in buffer.indices {
