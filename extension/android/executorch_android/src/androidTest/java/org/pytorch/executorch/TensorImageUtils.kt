@@ -16,11 +16,9 @@ import java.nio.FloatBuffer
  * [android.media.Image] source.
  */
 object TensorImageUtils {
-    @JvmField
-    var TORCHVISION_NORM_MEAN_RGB: FloatArray = floatArrayOf(0.485f, 0.456f, 0.406f)
+    @JvmField var TORCHVISION_NORM_MEAN_RGB: FloatArray = floatArrayOf(0.485f, 0.456f, 0.406f)
 
-    @JvmField
-    var TORCHVISION_NORM_STD_RGB: FloatArray = floatArrayOf(0.229f, 0.224f, 0.225f)
+    @JvmField var TORCHVISION_NORM_STD_RGB: FloatArray = floatArrayOf(0.229f, 0.224f, 0.225f)
 
     /**
      * Creates new [Tensor] from full [android.graphics.Bitmap], normalized with specified in
@@ -146,9 +144,9 @@ object TensorImageUtils {
     private fun checkRotateCWDegrees(rotateCWDegrees: Int) {
         require(
             !(rotateCWDegrees != 0 &&
-                    rotateCWDegrees != 90 &&
-                    rotateCWDegrees != 180 &&
-                    rotateCWDegrees != 270)
+                rotateCWDegrees != 90 &&
+                rotateCWDegrees != 180 &&
+                rotateCWDegrees != 270)
         ) {
             "rotateCWDegrees must be one of 0, 90, 180, 270"
         }

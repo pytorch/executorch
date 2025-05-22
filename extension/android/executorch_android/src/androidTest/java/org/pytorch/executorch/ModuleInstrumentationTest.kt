@@ -11,18 +11,18 @@ import android.Manifest
 import androidx.test.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
-import org.apache.commons.io.FileUtils
-import org.junit.Assert
-import org.junit.Before
-import org.junit.Rule
-import org.junit.Test
-import org.junit.runner.RunWith
 import java.io.File
 import java.io.IOException
 import java.net.URISyntaxException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import org.apache.commons.io.FileUtils
+import org.junit.Assert
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
 
 /** Unit tests for [Module]. */
 @RunWith(AndroidJUnit4::class)
@@ -152,8 +152,7 @@ class ModuleInstrumentationTest {
                 val results = module.forward()
                 Assert.assertTrue(results[0].isTensor)
                 completed.incrementAndGet()
-            } catch (_: InterruptedException) {
-            }
+            } catch (_: InterruptedException) {}
         }
 
         val threads = arrayOfNulls<Thread>(numThreads)

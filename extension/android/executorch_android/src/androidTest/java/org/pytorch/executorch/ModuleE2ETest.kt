@@ -13,15 +13,15 @@ import android.graphics.BitmapFactory
 import androidx.test.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
+import java.io.File
+import java.io.IOException
+import java.net.URISyntaxException
 import org.apache.commons.io.FileUtils
 import org.junit.Assert
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.pytorch.executorch.TensorImageUtils.bitmapToFloat32Tensor
-import java.io.File
-import java.io.IOException
-import java.net.URISyntaxException
 
 /** Unit tests for [Module]. */
 @RunWith(AndroidJUnit4::class)
@@ -68,8 +68,9 @@ class ModuleE2ETest {
         inputStream.close()
 
         val module = Module.load(getTestFilePath("/mv3_xnnpack_fp32.pte"))
+        val expectedBackends = arrayOf("XnnpackBackend")
         Assert.assertArrayEquals(
-            arrayOf("XnnpackBackend"),
+            expectedBackends,
             module.getMethodMetadata("forward").getBackends(),
         )
     }
