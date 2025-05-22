@@ -154,6 +154,7 @@ cmake_install_executorch_libraries() {
     rm -rf cmake-out
     retry cmake --preset llm \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
+        -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
         -DEXECUTORCH_BUILD_QNN="$QNN" \
         -DQNN_SDK_ROOT="$QNN_SDK_ROOT" \
         -Bcmake-out .
