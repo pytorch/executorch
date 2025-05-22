@@ -20,9 +20,9 @@ from executorch.exir._warnings import experimental
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.capture import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.pass_manager import PassType
-from torch.ao.quantization.quantizer import Quantizer
 from torch.export import ExportedProgram
 from torchao.core.config import AOBaseConfig
+from torchao.quantization.pt2e.quantizer import Quantizer
 
 
 class Mode(str, Enum):

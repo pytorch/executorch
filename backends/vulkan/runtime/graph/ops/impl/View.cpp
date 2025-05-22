@@ -48,9 +48,9 @@ void resize_view_node(
   if (extra_args[0] == kDummyValueRef || graph->val_is_none(extra_args[0])) {
     out->virtual_resize(in->sizes());
   } else {
-    IntListPtr view_sizes = graph->get_int_list(extra_args[0]);
-    std::vector<int64_t> out_sizes =
-        compute_out_sizes(in->sizes(), *view_sizes);
+    std::vector<int64_t> view_sizes =
+        graph->extract_int_or_symint_list(extra_args[0]);
+    std::vector<int64_t> out_sizes = compute_out_sizes(in->sizes(), view_sizes);
     out->virtual_resize(out_sizes);
   }
 }

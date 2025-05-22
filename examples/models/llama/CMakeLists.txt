@@ -118,6 +118,7 @@ if(EXECUTORCH_BUILD_TORCHAO)
   if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
     set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
     set(TORCHAO_BUILD_CPU_AARCH64 ON)
+    set(TORCHAO_ENABLE_ARM_NEON_DOT ON)
     add_subdirectory(
       ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental
       ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental

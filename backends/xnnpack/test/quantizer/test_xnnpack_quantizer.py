@@ -28,7 +28,6 @@ from torch.ao.quantization.quantize_fx import (
     convert_to_reference_fx,
     prepare_fx,
 )
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.export import export_for_training
 from torch.testing._internal.common_quantization import (
     NodeSpec as ns,
@@ -38,6 +37,7 @@ from torch.testing._internal.common_quantization import (
     TestHelperModules,
 )
 from torch.testing._internal.common_quantized import override_quantized_engine
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 @skipIfNoQNNPACK
