@@ -8,7 +8,7 @@
 
 
 import unittest
-from typing import Tuple
+from typing import Final, List, Tuple
 
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
@@ -19,7 +19,8 @@ from executorch.backends.cadence.aot.compiler import (
 )
 from executorch.backends.cadence.aot.fuse_ops import (
     FuseFullThenReshapePass,
-    FuseMulIntoDequantPass,
+    FuseMulScalarIntoDequantPass,
+    FuseMulTensorIntoDequantPass,
     FuseQuantDequantToRequantizePass,
     FuseTransposeOrPermuteOpPairsPass,
 )
@@ -247,32 +248,28 @@ class TestFusionPasses(TestFusionPassesBase):
         )
 
     def test_force_quant_dequant_fusion(self):
-        class M(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                x = torch.ops.quantized_decomposed.quantize_per_tensor(
-                    x, 1.2, 3, 0, 127, torch.int8
-                )
-                x = torch.permute(x, [2, 0, 1, 3])
-                x = torch.ops.quantized_decomposed.dequantize_per_tensor(
-                    x, 4.5, 6, 0, 127, torch.int8
-                )
-                return x
-
-        inputs = torch.randn(2, 12, 1, 6)
-        model = M()
-        graph_module = export_to_edge(model, (inputs,)).exported_program().graph_module
-
-        graph_module = FuseQuantDequantToRequantizePass(
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 12, 1, 6, dtype=torch.float32))
+        quant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(x, 1.2, 3, 0, 127, torch.int8),
+        )
+        permute = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(quant, [2, 0, 1, 3])
+        )
+        dequant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(permute, 4.5, 6, 0, 127, torch.int8),
+        )
+        builder.output(dequant)
+        original_graph = builder.get_graph_module()
+        converted_graph = FuseQuantDequantToRequantizePass(
             force_quant_dequant_fusion=True
-        )(graph_module).graph_module
+        )(original_graph).graph_module
         self.check_op_counts(
-            graph_module,
+            converted_graph,
             expected_op_counts={
-                # Verify that no dequant/quant pair was replaced with requantize.
-                # quantize -> permute -> dequantize should not be replaced with requantize.
+                # Verify that dequant/quant pair was replaced with requantize.
                 exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: 0,
                 exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: 0,
                 exir_ops.edge.cadence.requantize.default: 1,
@@ -280,27 +277,26 @@ class TestFusionPasses(TestFusionPassesBase):
         )
 
     def test_no_replace_quant_permute_dequant_with_requantize(self):
-        class M(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                x = torch.ops.quantized_decomposed.quantize_per_tensor(
-                    x, 1.2, 3, 0, 127, torch.int8
-                )
-                x = torch.permute(x, [2, 0, 1, 3])
-                x = torch.ops.quantized_decomposed.dequantize_per_tensor(
-                    x, 4.5, 6, 0, 127, torch.int8
-                )
-                return x
-
-        inputs = torch.randn(2, 12, 1, 6)
-        model = M()
-        graph_module = export_to_edge(model, (inputs,)).exported_program().graph_module
-
-        graph_module = FuseQuantDequantToRequantizePass()(graph_module).graph_module
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 12, 1, 6, dtype=torch.float32))
+        quant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(x, 1.2, 3, 0, 127, torch.int8),
+        )
+        permute = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(quant, [2, 0, 1, 3])
+        )
+        dequant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(permute, 4.5, 6, 0, 127, torch.int8),
+        )
+        builder.output(dequant)
+        original_graph = builder.get_graph_module()
+        converted_graph = FuseQuantDequantToRequantizePass(
+            force_quant_dequant_fusion=False
+        )(original_graph).graph_module
         self.check_op_counts(
-            graph_module,
+            converted_graph,
             expected_op_counts={
                 # Verify that no dequant/quant pair was replaced with requantize.
                 # quantize -> permute -> dequantize should not be replaced with requantize.
@@ -311,30 +307,28 @@ class TestFusionPasses(TestFusionPassesBase):
         )
 
     def test_replace_quant_view_dequant_with_requantize(self):
-        class M(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                x = torch.ops.quantized_decomposed.quantize_per_tensor(
-                    x, 1.2, 3, 0, 127, torch.int8
-                )
-                x = x.view(-1)
-                x = torch.ops.quantized_decomposed.dequantize_per_tensor(
-                    x, 4.5, 6, 0, 127, torch.int8
-                )
-                return x
-
-        inputs = torch.randn(2, 12, 1, 6)
-        model = M()
-        graph_module = export_to_edge(model, (inputs,)).exported_program().graph_module
-        graph_module = FuseQuantDequantToRequantizePass()(graph_module).graph_module
-
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 12, 1, 6, dtype=torch.float32))
+        quant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(x, 1.2, 3, 0, 127, torch.int8),
+        )
+        view = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(quant, [-1])
+        )
+        dequant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(view, 4.5, 6, 0, 127, torch.int8),
+        )
+        builder.output(dequant)
+        original_graph = builder.get_graph_module()
+        converted_graph = FuseQuantDequantToRequantizePass()(
+            original_graph
+        ).graph_module
         self.check_op_counts(
-            graph_module,
+            converted_graph,
             expected_op_counts={
-                # Verify that no dequant/quant pair was replaced with requantize.
-                # quantize -> permute -> dequantize should not be replaced with requantize.
+                # Verify that dequant/quant pair was replaced with requantize.
                 exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: 0,
                 exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: 0,
                 exir_ops.edge.cadence.requantize.default: 1,
@@ -435,18 +429,28 @@ class TestFusionPasses(TestFusionPassesBase):
         )
 
     def test_fuse_mul_into_dequant(self):
-        class M(torch.nn.Module):
-            def forward(self, x):
-                x0 = torch.ops.quantized_decomposed.dequantize_per_tensor(
-                    x, 1.5, 0, 0, 255, torch.uint8
-                )
-                x1 = torch.full([4, 32], 3, dtype=torch.float32)
-                x2 = x0 * x1
-                return x2
+        INPUT_SHAPE: Final[List[int]] = [4, 32]
+        DEQUANT_SCALE: Final[float] = 1.5
+        FULL_VALUE: Final[float] = 3
 
-        inputs = (torch.randint(0, 255, [4, 32], dtype=torch.uint8),)
-        graph_module = export_to_edge(M(), inputs).exported_program().graph_module
-        graph_module = FuseMulIntoDequantPass()(graph_module).graph_module
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(*INPUT_SHAPE, dtype=torch.float32))
+        dequant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(x, DEQUANT_SCALE, 0, 0, 255, torch.uint8),
+        )
+        full = builder.call_operator(
+            op=exir_ops.edge.aten.full.default,
+            args=(INPUT_SHAPE, FULL_VALUE),
+        )
+        mul = builder.call_operator(
+            op=exir_ops.edge.aten.mul.Tensor,
+            args=(dequant, full),
+        )
+        builder.output(mul)
+        graph_module = FuseMulTensorIntoDequantPass()(
+            builder.get_graph_module()
+        ).graph_module
 
         # verify that the mul and full ops were removed
         self.check_op_counts(
@@ -465,7 +469,48 @@ class TestFusionPasses(TestFusionPassesBase):
                 == exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
             ):
                 deq_scale = node.args[1]
-        self.assertEqual(deq_scale, 4.5)
+        self.assertEqual(deq_scale, DEQUANT_SCALE * FULL_VALUE)
+
+    def test_fuse_mul_scalar_into_dequant(self):
+        dequant_scale = 0.006
+        mul_value = 0.3
+
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3, 4, dtype=torch.float32))
+        quant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(x, 1, 0, -128, 127, torch.int8),
+        )
+        dequant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(quant, dequant_scale, 5, -128, 127, torch.int8),
+        )
+        mul_scalar = builder.call_operator(
+            op=exir_ops.edge.aten.mul.Scalar,
+            args=(dequant, mul_value),
+        )
+        builder.output(mul_scalar)
+        graph_module = builder.get_graph_module()
+
+        graph_module = FuseMulScalarIntoDequantPass()(graph_module).graph_module
+
+        # verify that the mul and full ops were removed
+        self.check_op_counts(
+            graph_module,
+            expected_op_counts={
+                exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: 1,
+                exir_ops.edge.aten.mul.Scalar: 0,
+            },
+        )
+
+        # verify that the dequant scale value was updated correctly
+        for node in graph_module.graph.nodes:
+            if (
+                node.target
+                == exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
+            ):
+                deq_scale = node.args[1]
+        self.assertEqual(deq_scale, dequant_scale * mul_value)
 
     def test_fuse_then_transpose_pass(self):
         # Create a graph with full -> transpose.
@@ -584,6 +629,28 @@ class TestFuseTransposeOpPairsPass(TestFusionPassesBase):
                 exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
                 False,
             ),
+            # transpose -> quant -> transpose is not the reverse BUT there is a UNITARY dimension
+            # so it ends up being the same on memory => fuse
+            (
+                True,
+                [0, 1],
+                True,
+                [0, 2],
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                True,
+                [5, 40, 1],
+            ),
+            # transpose -> quant -> transpose is not the reverse, and unitary dimensions
+            # don't help => don't fuse
+            (
+                True,
+                [0, 1],
+                True,
+                [1, 3],
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                False,
+                [5, 40, 1, 4],
+            ),
             # permutation -> quant -> opposite permutation => fuse
             (
                 False,
@@ -621,6 +688,28 @@ class TestFuseTransposeOpPairsPass(TestFusionPassesBase):
                 exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
                 False,
                 [4, 4, 4],
+            ),
+            # permutation -> quant -> a non reverse permutation BUT there is a UNITARY dimension
+            # so it ends up being the same on memory => fuse
+            (
+                False,
+                [1, 3, 2, 0],
+                False,
+                [3, 2, 1, 0],
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                True,
+                [3, 1, 8, 10],
+            ),
+            # permutation -> quant -> a non reverse permutation, and unitary dimensions
+            # don't help => don't fuse
+            (
+                False,
+                [1, 3, 2, 0],
+                False,
+                [3, 1, 2, 0],
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                False,
+                [3, 1, 8, 10],
             ),
             # transpose -> quant -> transpose as a permutation => fuse
             (

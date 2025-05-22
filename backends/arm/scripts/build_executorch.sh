@@ -82,7 +82,6 @@ if [ "$build_with_etdump" = true ] ; then
         -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON       \
         -DEXECUTORCH_BUILD_DEVTOOLS=ON                    \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON               \
-        -DEXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT=ON      \
         -DFLATCC_ALLOW_WERROR=OFF                         \
         -B"${et_build_host_dir}"                          \
         "${et_root_dir}"
@@ -111,7 +110,6 @@ if [ "$build_with_etdump" = true ] ; then
     # Add DevTools flags use in the Target build below
     build_with_etdump_flags="-DEXECUTORCH_BUILD_DEVTOOLS=ON                    \
                             -DEXECUTORCH_ENABLE_EVENT_TRACER=ON               \
-                            -DEXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT=OFF     \
                             -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=OFF      \
                             -DFLATCC_ALLOW_WERROR=OFF                         \
                             -DFLATCC_EXECUTABLE=${et_build_host_dir}/bin/flatcc "
@@ -129,6 +127,7 @@ cmake                                                 \
     -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON           \
     -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON       \
+    -DEXECUTORCH_BUILD_CORTEX_M=ON                    \
     -DEXECUTORCH_ENABLE_LOGGING=ON                    \
     ${build_devtools_flags}                           \
     ${build_with_etdump_flags}                        \

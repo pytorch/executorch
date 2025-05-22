@@ -83,13 +83,11 @@ test_pytest_ops() { # Test ops and other things
 test_pytest_models() { # Test ops and other things
     echo "${TEST_SUITE_NAME}: Run pytest"
 
-    examples/models/llama3_2_vision/install_requirements.sh
-
     # Prepare for pytest
     backends/arm/scripts/build_executorch.sh
 
     # Run arm baremetal pytest tests without FVP
-    pytest  --verbose --color=yes --numprocesses=auto backends/arm/test/models
+    pytest  --verbose --color=yes backends/arm/test/models
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -117,8 +115,6 @@ test_pytest_ops_ethosu_fvp() { # Same as test_pytest but also sometime verify us
 test_pytest_models_ethosu_fvp() { # Same as test_pytest but also sometime verify using Corstone FVP
     echo "${TEST_SUITE_NAME}: Run pytest with fvp"
 
-    examples/models/llama3_2_vision/install_requirements.sh
-
     # Prepare Corstone-3x0 FVP for pytest
     backends/arm/scripts/build_executorch.sh
     backends/arm/scripts/build_portable_kernels.sh
@@ -126,7 +122,7 @@ test_pytest_models_ethosu_fvp() { # Same as test_pytest but also sometime verify
     backends/arm/test/setup_testing.sh
 
     # Run arm baremetal pytest tests with FVP
-    pytest  --verbose --color=yes --numprocesses=auto backends/arm/test/models --arm_run_corstoneFVP
+    pytest  --verbose --color=yes backends/arm/test/models --arm_run_corstoneFVP
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -154,6 +150,13 @@ test_run_ethosu_fvp() { # End to End model tests using run.sh
     echo "${TEST_SUITE_NAME}: Test ethos-u target Ethos-U85"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=add
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=mul
+
+    # Cortex-M op tests
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qadd --bundleio
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qops --bundleio
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qops --bundleio --no_delegate --portable_kernels="aten::sub.out,aten::add.out,aten::mul.out"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=qops --bundleio
+
     echo "${TEST_SUITE_NAME}: PASS"
     }
 
@@ -203,11 +206,14 @@ test_models_ethos-u85() { # End to End model tests using model_test.py
 
     # Ethos-U85
     echo "${TEST_SUITE_NAME}: Test ethos-u target Ethos-U85"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-256 --model=mv2  --extra_flags="-DET_ATOL=2.00 -DET_RTOL=2.00"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-512 --model=mv3  --extra_flags="-DET_ATOL=5.00 -DET_RTOL=5.00"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-256 --model=mv2 --extra_flags="-DET_ATOL=2.00 -DET_RTOL=2.00"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-512 --model=mv3 --extra_flags="-DET_ATOL=5.00 -DET_RTOL=5.00"
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=lstm --extra_flags="-DET_ATOL=0.03 -DET_RTOL=0.03"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=w2l  --extra_flags="-DET_ATOL=0.01 -DET_RTOL=0.01"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-256 --model=ic4  --extra_flags="-DET_ATOL=0.8 -DET_RTOL=0.8" --timeout=2400
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=w2l --extra_flags="-DET_ATOL=0.01 -DET_RTOL=0.01"
+    # Temporarily not test inception_v4 on Ethos-U85. To support inception_v4 properly on Ethos-U85, we need to run the model in Dedicated_Sram memory mode with
+    # 384KB(or another amount lower than 2MB) of SRAM passed as fast scratch area. The PR adding support for Dedicated_Sram(https://github.com/pytorch/executorch/pull/10714) 
+    # was reverted due to a change required in an internal variant of the examples/arm/executor_runner/arm_executor_runner.cpp
+    # python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-256 --model=ic4 --extra_flags="-DET_ATOL=0.8 -DET_RTOL=0.8" --timeout=2400
 
     echo "${TEST_SUITE_NAME}: PASS"
     }

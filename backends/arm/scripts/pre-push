@@ -8,11 +8,13 @@
 # non-interactive mode. "$#" gives the number of positional arguments.
 [ "$#" -eq 0 ] && is_script_interactive=1 || is_script_interactive=0
 
-RESET='\e[0m'
-RED='\e[31m'
-GREEN='\e[32m'
-YELLOW='\e[33m'
-BLUE='\e[34m'
+if [ $is_script_interactive -eq 1 ]; then
+    RESET='\e[0m'
+    RED='\e[31m'
+    GREEN='\e[32m'
+    YELLOW='\e[33m'
+    BLUE='\e[34m'
+fi
 
 INFO="${BLUE}[INFO]${RESET}"
 WARNING="${YELLOW}[WARNING]${RESET}"
@@ -74,7 +76,7 @@ for COMMIT in ${COMMITS}; do
 
     # lintrunner on latest patches.
     echo -e "${INFO} Lintrunner"
-    lintrunner --revision ${COMMIT}
+    MYPYPATH=./src/ lintrunner --revision ${COMMIT}^1
     if [[ $? != 0 ]]; then
         echo -e "${ERROR} Failed linting"
         FAILED=1

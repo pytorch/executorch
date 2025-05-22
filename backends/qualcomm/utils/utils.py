@@ -607,8 +607,8 @@ def skip_annotation(
     from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
         flatbuffer_to_option,
     )
-    from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
     from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
+    from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
     def prepare_subgm(subgm, subgm_name):
         # prepare current submodule for quantization annotation
@@ -640,7 +640,8 @@ def skip_annotation(
     for node in graph_module.graph.nodes:
         if node.op == "call_module":
             graph_module.set_submodule(
-                node.name, convert_pt2e(graph_module.get_submodule(node.name))
+                node.name,
+                convert_pt2e(graph_module.get_submodule(node.name)),
             )
     # canonicalize graph for lowering again
     graph_module, edge_prog_mgrs = _canonicalize_graph_with_lowered_module(

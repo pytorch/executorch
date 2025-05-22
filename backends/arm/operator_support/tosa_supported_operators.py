@@ -24,11 +24,7 @@ from executorch.backends.arm.operator_support.ethos_u55_support import (
     EthosU55NotSupported,
     EthosU55TransposeCheck,
 )
-from executorch.backends.arm.tosa_specification import (
-    Tosa_0_80,
-    Tosa_1_00,
-    TosaSpecification,
-)
+from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -129,9 +125,7 @@ def tosa_support_factory(
     if not tosa_spec.support_float():
         negative_checks.append(NeedsDecompositionCheck(reporter))
         negative_checks.append(CheckProperQuantization(reporter))
-    if (isinstance(tosa_spec, Tosa_0_80) and tosa_spec.is_U55_subset) or (
-        isinstance(tosa_spec, Tosa_1_00) and "u55" in tosa_spec.extensions
-    ):
+    if tosa_spec.is_U55_subset:
         negative_checks.append(EthosU55NotSupported(reporter))
         negative_checks.append(EthosU55DtypeSupport(reporter))
         negative_checks.append(EthosU55TransposeCheck(reporter))
@@ -262,28 +256,23 @@ class NeedsDecompositionCheck(OperatorSupportBase):
 
         if node.op != "call_function":
             return True
-        if node.target == exir_ops.edge.aten.mean.dim:
-            dim = node.args[1]
-            needs_decomp = dim != [-1, -2]
-        else:
-            needs_decomp = node.target in [
-                exir_ops.edge.aten.div.Tensor,
-                exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
-                exir_ops.edge.aten.native_layer_norm.default,
-                exir_ops.edge.aten.mean.dim,
-                exir_ops.edge.aten._softmax.default,
-                exir_ops.edge.aten._log_softmax.default,
-                exir_ops.edge.aten.var.correction,
-                exir_ops.edge.aten.var.dim,
-                exir_ops.edge.aten.add.Scalar,
-                exir_ops.edge.aten.sqrt.default,
-                exir_ops.edge.aten.sub.Scalar,
-                exir_ops.edge.aten.mul.Scalar,
-                exir_ops.edge.aten.ne.Tensor,
-                exir_ops.edge.aten.ne.Scalar,
-                exir_ops.edge.aten.div.Scalar,
-                exir_ops.edge.aten.leaky_relu.default,
-            ]
+        needs_decomp = node.target in [
+            exir_ops.edge.aten.div.Tensor,
+            exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
+            exir_ops.edge.aten.native_layer_norm.default,
+            exir_ops.edge.aten._softmax.default,
+            exir_ops.edge.aten._log_softmax.default,
+            exir_ops.edge.aten.var.correction,
+            exir_ops.edge.aten.var.dim,
+            exir_ops.edge.aten.add.Scalar,
+            exir_ops.edge.aten.sqrt.default,
+            exir_ops.edge.aten.sub.Scalar,
+            exir_ops.edge.aten.mul.Scalar,
+            exir_ops.edge.aten.ne.Tensor,
+            exir_ops.edge.aten.ne.Scalar,
+            exir_ops.edge.aten.div.Scalar,
+            exir_ops.edge.aten.leaky_relu.default,
+        ]
         if needs_decomp:
             self.reporter.report_reject(node, "Needs to be decomposed.")
             return False
@@ -317,6 +306,7 @@ class CheckProperQuantization(OperatorSupportBase):
         exir_ops.edge.aten.sub.Tensor,
         exir_ops.edge.aten.upsample_bilinear2d.vec,
         exir_ops.edge.aten.upsample_nearest2d.vec,
+        torch.ops.aten.scalar_tensor.default,
         *TableOps.included_ops(),
     )
 

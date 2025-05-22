@@ -71,8 +71,6 @@ from executorch.exir.tests.models import MLP, Mul
 from functorch.experimental import control_flow
 
 from torch import nn
-
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer import QuantizationSpec
 from torch.export import export
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
@@ -81,6 +79,8 @@ from torch.fx.experimental.proxy_tensor import make_fx
 from torch.library import impl, Library
 from torch.testing import FileCheck
 from torch.utils import _pytree as pytree
+
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 # pyre-ignore
@@ -1823,3 +1823,34 @@ class TestPasses(unittest.TestCase):
         self.assertTrue(
             torch.allclose(output_no_dim_order[0], output_no_dim_order_revert[0])
         )
+
+    def test_constant_prop_pass_none(self) -> None:
+        """
+        This checks that None arguments are treated as constants in constant_prop_pass.
+        """
+
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.cst = torch.ones(3, 3, 3, dtype=torch.int8)
+                self.w = torch.ones(3, 3, 3, dtype=torch.int8)
+
+            def forward(self, x):
+                # Note: using e.g aten.linear would not work as None is not in the graph
+                a = torch.ops.aten.convolution.default(
+                    self.cst, self.w, None, [1], [0], [1], False, [0], 1
+                )
+                return a + x
+
+        mod = M()
+        x = torch.randn([3, 3, 3])
+        mod(x)
+        edge = to_edge(
+            export(mod, (x,), strict=True),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        # 2 constants: self.w and self.cst
+        self.assertEqual(2, len(edge.exported_program().constants))
+        pass_result = constant_prop_pass(edge.exported_program())
+        # 1 constant: a (= self.w @ self.cst)
+        self.assertEqual(1, len(pass_result.constants))

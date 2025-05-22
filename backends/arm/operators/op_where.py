@@ -12,6 +12,7 @@ from executorch.backends.arm.operators.node_visitor import (
 
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
+    validate_same_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -39,14 +40,11 @@ class WhereVisitor_0_80_BI(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 3)
+        # Not first input, which is condition tensor.
+        validate_same_dtype(self.target, inputs[1:])
 
         if inputs[0].dtype is not ts.DType.BOOL:
             raise ValueError("Input 0 needs to have dtype BOOL")
-        if inputs[1].dtype != inputs[2].dtype:
-            raise ValueError(
-                "Non-condition tensors must have same data type, got "
-                f"{inputs[1].dtype} and {inputs[2].dtype}"
-            )
         for input_ in inputs[1:]:
             if input_.dtype not in supported_dtypes:
                 raise ValueError(
@@ -68,8 +66,6 @@ class WhereVisitor_0_80_BI(NodeVisitor):
         output: TosaArg,
     ) -> None:
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-
-        validate_num_inputs(self.target, inputs, 3)
 
         bi_supported_dtypes = [
             ts.DType.INT8,
@@ -98,8 +94,6 @@ class WhereVisitor_0_80_MI(WhereVisitor_0_80_BI):
         output: TosaArg,
     ) -> None:
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-
-        validate_num_inputs(self.target, inputs, 3)
 
         mi_supported_dtypes = [
             ts.DType.FP16,
@@ -133,14 +127,11 @@ class WhereVisitor_INT(NodeVisitor):
         import serializer.tosa_serializer as ts
 
         validate_num_inputs(self.target, inputs, 3)
+        # Not first input, which is condition tensor.
+        validate_same_dtype(self.target, inputs[1:])
 
         if inputs[0].dtype is not ts.DType.BOOL:
             raise ValueError("Input 0 needs to have dtype BOOL")
-        if inputs[1].dtype != inputs[2].dtype:
-            raise ValueError(
-                "Non-condition tensors must have same data type, got "
-                f"{inputs[1].dtype} and {inputs[2].dtype}"
-            )
         for input_ in inputs[1:]:
             if input_.dtype not in supported_dtypes:
                 raise ValueError(
@@ -162,8 +153,6 @@ class WhereVisitor_INT(NodeVisitor):
         output: TosaArg,
     ) -> None:
         import serializer.tosa_serializer as ts
-
-        validate_num_inputs(self.target, inputs, 3)
 
         bi_supported_dtypes = [
             ts.DType.INT8,
@@ -192,8 +181,6 @@ class WhereVisitor_FP(WhereVisitor_INT):
         output: TosaArg,
     ) -> None:
         import serializer.tosa_serializer as ts
-
-        validate_num_inputs(self.target, inputs, 3)
 
         mi_supported_dtypes = [
             ts.DType.FP16,
