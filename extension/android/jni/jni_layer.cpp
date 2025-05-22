@@ -453,8 +453,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 
   facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> getUsedBackends(
       facebook::jni::alias_ref<jstring> methodName) {
-    auto method_meta =
-        module_->method_meta(methodName->toStdString()).get();
+    auto method_meta = module_->method_meta(methodName->toStdString()).get();
     std::unordered_set<std::string> backends;
     for (auto i = 0; i < method_meta.num_backends(); i++) {
       backends.insert(method_meta.get_backend_name(i).get());
@@ -474,8 +473,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 
   facebook::jni::local_ref<facebook::jni::JArrayInt> getInputTags(
       facebook::jni::alias_ref<jstring> methodName) {
-    auto method_meta =
-        module_->method_meta(methodName->toStdString()).get();
+    auto method_meta = module_->method_meta(methodName->toStdString()).get();
     auto num_inputs = method_meta.num_inputs();
     facebook::jni::local_ref<facebook::jni::JArrayInt> ret =
         facebook::jni::JArrayInt::newArray(num_inputs);
@@ -488,8 +486,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 
   facebook::jni::local_ref<facebook::jni::JArrayInt> getOutputTags(
       facebook::jni::alias_ref<jstring> methodName) {
-    auto method_meta =
-        module_->method_meta(methodName->toStdString()).get();
+    auto method_meta = module_->method_meta(methodName->toStdString()).get();
     auto num_outputs = method_meta.num_outputs();
     facebook::jni::local_ref<facebook::jni::JArrayInt> ret =
         facebook::jni::JArrayInt::newArray(num_outputs);
