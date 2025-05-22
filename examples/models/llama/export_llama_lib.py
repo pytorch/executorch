@@ -583,7 +583,6 @@ def export_llama(
     elif isinstance(export_options, DictConfig):
         # Hydra CLI.
         llm_config = export_options  # noqa: F841
-        pass
     else:
         raise ValueError(
             "Input to export_llama must be either of type argparse.Namespace or LlmConfig"

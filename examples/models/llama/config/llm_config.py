@@ -264,5 +264,7 @@ class BackendConfig:
 class LlmConfig:
     base: BaseConfig = field(default_factory=BaseConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
+    export: ExportConfig = field(default_factory=ExportConfig)
+    debug: DebugConfig = field(default_factory=DebugConfig)
     quantization: QuantizationConfig = field(default_factory=QuantizationConfig)
     backend: BackendConfig = field(default_factory=BackendConfig)
