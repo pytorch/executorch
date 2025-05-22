@@ -13,7 +13,7 @@
 import contextlib
 import logging
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from unittest.mock import patch
 
 import torch
@@ -35,10 +35,6 @@ from executorch.extension.export_util.utils import export_to_edge, save_pte_prog
 
 from executorch.extension.llm.export.export_passes import RemoveRedundantTransposes
 from pytorch_tokenizers import get_tokenizer
-from torch.ao.quantization.quantizer import Quantizer as TorchQuantizer
-from torch.ao.quantization.quantizer.composable_quantizer import (
-    ComposableQuantizer as TorchComposableQuantizer,
-)
 
 from torch.export import export_for_training, ExportedProgram
 from torch.nn.attention import SDPBackend
@@ -354,9 +350,7 @@ class LLMEdgeManager:
             print(f"{task}: {res}")
         logging.info("Calibration finish...")
 
-    def pt2e_quantize(
-        self, quantizers: Optional[List[Union[Quantizer, TorchQuantizer]]]
-    ) -> "LLMEdgeManager":
+    def pt2e_quantize(self, quantizers: Optional[Quantizer]) -> "LLMEdgeManager":
         """
         Quantize the model via pt2e flow and retrieve LLMEdgeManager including the quantized model.
         Args:
@@ -374,10 +368,7 @@ class LLMEdgeManager:
                 if self.verbose:
                     logging.info(f"Applied quantizers: {quantizers}")
 
-                if any(isinstance(q, Quantizer) for q in quantizers):
-                    composed_quantizer = ComposableQuantizer(quantizers)
-                else:
-                    composed_quantizer = TorchComposableQuantizer(quantizers)
+                composed_quantizer = ComposableQuantizer(quantizers)
 
                 assert (
                     self.pre_autograd_graph_module is not None
