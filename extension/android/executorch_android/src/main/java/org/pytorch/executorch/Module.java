@@ -59,7 +59,13 @@ public class Module {
     Map<String, MethodMetadata> metadata = new HashMap<String, MethodMetadata>();
     for (int i = 0; i < methods.length; i++) {
       String name = methods[i];
-      metadata.put(name, new MethodMetadata().setName(name).setBackends(getUsedBackends(name)));
+      metadata.put(
+          name,
+          new MethodMetadata()
+              .setName(name)
+              .setBackends(getUsedBackends(name))
+              .setInputTags(getInputTags(name))
+              .setOutputTags(getOutputTags(name)));
     }
 
     return metadata;
@@ -203,6 +209,12 @@ public class Module {
 
   @DoNotStrip
   private native String[] readLogBufferNative();
+
+  @DoNotStrip
+  private native int[] getInputTags(String method);
+
+  @DoNotStrip
+  private native int[] getOutputTags(String method);
 
   /**
    * Dump the ExecuTorch ETRecord file to /data/local/tmp/result.etdump.

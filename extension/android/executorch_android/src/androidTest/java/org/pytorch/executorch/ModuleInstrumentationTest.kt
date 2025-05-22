@@ -62,6 +62,8 @@ class ModuleInstrumentationTest {
 
         Assert.assertArrayEquals(arrayOf("forward"), module.getMethods())
         Assert.assertTrue(module.getMethodMetadata("forward").backends.isEmpty())
+        Assert.assertArrayEquals(intArrayOf(1, 1, 3), module.getMethodMetadata("forward").inputTags)
+        Assert.assertArrayEquals(intArrayOf(1), module.getMethodMetadata("forward").outputTags)
     }
 
     @Test
