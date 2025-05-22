@@ -69,7 +69,7 @@ class ModuleE2ETest {
 
         val module = Module.load(getTestFilePath("/mv3_xnnpack_fp32.pte"))
         val expectedBackends = arrayOf("XnnpackBackend")
-        Assert.assertArrayEquals(expectedBackends, module.getUsedBackends("forward"))
+        Assert.assertArrayEquals(expectedBackends, module.getMethodMetadata("forward").getBackends())
     }
 
     @Test
