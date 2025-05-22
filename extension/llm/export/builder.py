@@ -350,7 +350,7 @@ class LLMEdgeManager:
             print(f"{task}: {res}")
         logging.info("Calibration finish...")
 
-    def pt2e_quantize(self, quantizers: Optional[Quantizer]) -> "LLMEdgeManager":
+    def pt2e_quantize(self, quantizers: Optional[List[Quantizer]]) -> "LLMEdgeManager":
         """
         Quantize the model via pt2e flow and retrieve LLMEdgeManager including the quantized model.
         Args:
@@ -367,9 +367,7 @@ class LLMEdgeManager:
             with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
                 if self.verbose:
                     logging.info(f"Applied quantizers: {quantizers}")
-
                 composed_quantizer = ComposableQuantizer(quantizers)
-
                 assert (
                     self.pre_autograd_graph_module is not None
                 ), "Please run export() first"
