@@ -105,8 +105,13 @@ phases:
           echo "*.model tokenizer files found in /data/local/tmp/minibench/"
         fi
 
+      - echo "Collect device state before running"
+      - |
+        adb -s $DEVICEFARM_DEVICE_UDID shell 'cat /sys/devices/system/cpu/cpu*/cpufreq/stats/time_in_state /sys/devices/system/cpu/cpu*/cpufreq/stats/trans_table' > $DEVICEFARM_LOG_DIR/state_before.txt
+
       - echo "Run benchmark"
       - |
+        adb -s $DEVICEFARM_DEVICE_UDID shell touch /data/local/tmp/result.etdump
         adb -s $DEVICEFARM_DEVICE_UDID shell am force-stop org.pytorch.minibench
 
         adb -s $DEVICEFARM_DEVICE_UDID shell dumpsys deviceidle force-idle
@@ -127,7 +132,10 @@ phases:
           adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.BenchmarkActivity \
             --es "model_dir" "/data/local/tmp/minibench"
         fi
-
+        
+      - echo "Collect device state after running"
+      - |
+        adb -s $DEVICEFARM_DEVICE_UDID shell 'cat /sys/devices/system/cpu/cpu*/cpufreq/stats/time_in_state /sys/devices/system/cpu/cpu*/cpufreq/stats/trans_table' > $DEVICEFARM_LOG_DIR/state_after.txt
 
   post_test:
     commands:
@@ -146,6 +154,8 @@ phases:
         adb -s $DEVICEFARM_DEVICE_UDID shell run-as org.pytorch.minibench ls -la files/
         # Trying to pull the file using adb ends up with permission error, but this works too, so why not
         echo "${BENCHMARK_RESULTS}" > $DEVICEFARM_LOG_DIR/benchmark_results.json
+
+        adb -s $DEVICEFARM_DEVICE_UDID pull /data/local/tmp/result.etdump $DEVICEFARM_LOG_DIR/result.etdump
 
 artifacts:
   # By default, Device Farm will collect your artifacts from the $DEVICEFARM_LOG_DIR directory.

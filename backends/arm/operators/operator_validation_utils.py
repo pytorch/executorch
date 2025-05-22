@@ -99,3 +99,40 @@ def validate_same_dtype(op_name: str, tensors: List[Any]):
                 f"{op_name}: Expected all tensors to have dtype {reference_dtype}, but "
                 f"found inconsistent dtype {tensor.dtype}."
             )
+
+
+def adjust_pooling_pad_if_needed(
+    input_size: int, kernel_size: int, stride: int, pad: int
+) -> int:
+    """
+    Calculates the padding that needs to be removed to a pooling window to make it
+    divisible by the kernels stride. All inputs should correspond to the same dimension.
+
+    Parameters:
+    -----------
+    input_size : int
+        The size of the input to the operator.
+
+    kernel_size : int
+        The size of the kernel.
+
+    stride : int
+        The size of the stride.
+
+    pad : int
+        The amount of padding.
+
+    Output:
+    -------
+    An int, representing the padding to remove to make the window divisible.
+    """
+    if pad == 0:
+        return pad
+
+    mod_remainder = (input_size + 2 * pad - kernel_size) % stride
+
+    # No need to adjust
+    if mod_remainder == 0:
+        return pad
+
+    return pad - mod_remainder

@@ -101,10 +101,6 @@ def is_tensor_node(node: torch.fx.Node) -> bool:
     """
     Returns true if the given node produces a tensor value, or a collection of tensor values
     """
-    # All nodes with tensor values are tagged by the SpecPropPass transform
-    if "spec" in node.meta:
-        return True
-
     if "val" not in node.meta:
         return False
 

@@ -22,7 +22,7 @@ class ComputeGraph;
 /*
  * Represents a single shader execution op in a ML model.
  */
-class DispatchNode final : public ExecuteNode {
+class DispatchNode : public ExecuteNode {
   friend class ComputeGraph;
 
  public:
@@ -43,9 +43,9 @@ class DispatchNode final : public ExecuteNode {
   void encode(ComputeGraph* graph) override;
 
  protected:
-  const vkapi::ShaderInfo shader_;
-  const utils::uvec3 global_workgroup_size_;
-  const utils::WorkgroupSize local_workgroup_size_;
+  vkapi::ShaderInfo shader_;
+  utils::uvec3 global_workgroup_size_;
+  utils::WorkgroupSize local_workgroup_size_;
   const vkapi::ParamsBindList params_;
   const vkapi::SpecVarList spec_vars_;
   const std::vector<PushConstantDataInfo> push_constants_;

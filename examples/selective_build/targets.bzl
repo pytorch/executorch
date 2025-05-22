@@ -69,6 +69,19 @@ def define_common_targets():
         visibility = ["//executorch/..."],
     )
 
+    executorch_generated_lib(
+        name = "select_ops_in_dict_lib_optimized",
+        functions_yaml_target = "//executorch/kernels/optimized:optimized.yaml",
+        kernel_deps = [
+            "//executorch/kernels/optimized:optimized_operators",
+        ],
+        deps = [
+            ":select_ops_in_dict",
+        ],
+        dtype_selective_build = True,
+        visibility = ["//executorch/..."],
+    )
+
     # Select all ops from a yaml file
     et_operator_library(
         name = "select_ops_from_yaml",
@@ -121,6 +134,8 @@ def define_common_targets():
         lib.append(":select_ops_in_list_lib")
     elif select_ops == "dict":
         lib.append(":select_ops_in_dict_lib")
+    elif select_ops == "dict_optimized":
+        lib.append(":select_ops_in_dict_lib_optimized")
     elif select_ops == "yaml":
         lib.append(":select_ops_from_yaml_lib")
     elif select_ops == "model":
