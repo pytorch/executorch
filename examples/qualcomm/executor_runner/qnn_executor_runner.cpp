@@ -481,6 +481,12 @@ int main(int argc, char** argv) {
 
       ++inference_index;
     }
+    ET_LOG(
+        Info,
+        "%d inference took %f ms, avg %f ms",
+        inference_index,
+        elapsed_time,
+        elapsed_time / inference_index);
   } else {
     // if no input is provided, fill the inputs with default values
     auto inputs = prepare_input_tensors(*method);
