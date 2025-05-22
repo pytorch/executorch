@@ -11,10 +11,13 @@ package org.pytorch.executorch;
 import static org.junit.Assert.assertNotNull;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
-import org.junit.runner.RunWith;
-import org.junit.Test;
 
-/** Unit tests for {@link ExecuTorchRuntime}. */
+import org.junit.Test;
+import org.junit.runner.RunWith;
+
+/**
+ * Unit tests for {@link ExecuTorchRuntime}.
+ */
 @RunWith(AndroidJUnit4.class)
 public class RuntimeInstrumentationTest {
 
