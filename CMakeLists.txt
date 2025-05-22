@@ -48,6 +48,33 @@ project(executorch)
 # MARK: - Start EXECUTORCH_H12025_BUILD_MIGRATION --------------------------------------------------
 
 include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
+include(${PROJECT_SOURCE_DIR}/tools/cmake/Utils.cmake)
+include(CMakeDependentOption)
+include(ExternalProject)
+
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
+announce_configured_options(CMAKE_CXX_STANDARD)
+
+if(NOT CMAKE_SYSTEM_PROCESSOR)
+  set(CMAKE_SYSTEM_PROCESSOR ${CMAKE_HOST_SYSTEM_PROCESSOR})
+endif()
+announce_configured_options(CMAKE_SYSTEM_PROCESSOR)
+
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Debug)
+endif()
+announce_configured_options(CMAKE_BUILD_TYPE)
+
+if(NOT PYTHON_EXECUTABLE)
+  resolve_python_executable()
+endif()
+announce_configured_options(PYTHON_EXECUTABLE)
+
+announce_configured_options(CMAKE_CXX_COMPILER_ID)
+announce_configured_options(CMAKE_TOOLCHAIN_FILE)
+announce_configured_options(BUCK2)
 
 load_build_preset()
 include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
@@ -57,19 +84,7 @@ print_configured_options()
 
 # MARK: - End EXECUTORCH_H12025_BUILD_MIGRATION ----------------------------------------------------
 
-include(tools/cmake/Utils.cmake)
-include(CMakeDependentOption)
-include(ExternalProject)
-
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 17)
-endif()
-
-if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Debug)
-endif()
 
 # Setup RPATH.
 # See https://gitlab.kitware.com/cmake/community/-/wikis/doc/cmake/RPATH-handling
@@ -107,9 +122,6 @@ if(NOT EXECUTORCH_ENABLE_PROGRAM_VERIFICATION)
   add_definitions(-DET_ENABLE_PROGRAM_VERIFICATION=0)
 endif()
 
-option(EXECUTORCH_ENABLE_EVENT_TRACER "Build with ET_EVENT_TRACER_ENABLED=ON"
-       OFF
-)
 if(EXECUTORCH_ENABLE_EVENT_TRACER)
   add_definitions(-DET_EVENT_TRACER_ENABLED)
 endif()
@@ -123,100 +135,13 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
 endif()
 
-option(OPTIMIZE_SIZE "Build executorch runtime optimizing for binary size" OFF)
-if(OPTIMIZE_SIZE)
+if(EXECUTORCH_OPTIMIZE_SIZE)
   # -Os: Optimize for size.
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Os")
 else()
   # -O2: Moderate opt.
   set(CMAKE_CXX_FLAGS_RELEASE "-O2 ${CMAKE_CXX_FLAGS_RELEASE}")
 endif()
-
-option(EXECUTORCH_BUILD_ANDROID_JNI "Build Android JNI" OFF)
-
-option(EXECUTORCH_BUILD_ARM_BAREMETAL
-       "Build the Arm Baremetal flow for Cortex-M and Ethos-U" OFF
-)
-
-option(EXECUTORCH_BUILD_KERNELS_CUSTOM "Build the custom kernels" OFF)
-
-option(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT "Build the custom ops lib for AOT"
-       OFF
-)
-
-option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension"
-       OFF
-)
-
-option(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR "Build the Flat Tensor extension"
-       OFF
-)
-
-option(EXECUTORCH_BUILD_EXTENSION_LLM "Build the LLM extension"
-       OFF
-)
-
-option(EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" OFF)
-
-option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension"
-       OFF
-)
-
-option(EXECUTORCH_BUILD_EXTENSION_TENSOR "Build the Tensor extension" OFF)
-
-option(EXECUTORCH_BUILD_EXTENSION_TRAINING "Build the training extension" OFF)
-
-option(EXECUTORCH_BUILD_MPS "Build the MPS backend" OFF)
-
-option(EXECUTORCH_BUILD_NEURON "Build the backends/mediatek directory" OFF)
-
-option(EXECUTORCH_BUILD_OPENVINO "Build the Openvino backend" OFF)
-
-option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
-
-option(EXECUTORCH_BUILD_QNN "Build the Qualcomm backend" OFF)
-
-option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
-
-option(EXECUTORCH_BUILD_KERNELS_QUANTIZED "Build the quantized kernels" OFF)
-
-option(EXECUTORCH_BUILD_DEVTOOLS "Build the ExecuTorch Developer Tools")
-
-option(EXECUTORCH_BUILD_TESTS "Build CMake-based unit tests" OFF)
-
-option(EXECUTORCH_NNLIB_OPT "Build Cadence backend Hifi nnlib kernel" OFF)
-
-option(EXECUTORCH_CADENCE_CPU_RUNNER "Build Cadence backend CPU runner" OFF)
-
-option(EXECUTORCH_BUILD_SIZE_TEST "Build the size test" OFF)
-
-option(EXECUTORCH_BUILD_XNNPACK "Build the XNNPACK backend" OFF)
-
-option(EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" OFF)
-
-option(BUILD_EXECUTORCH_PORTABLE_OPS "Build portable_ops library" ON)
-
-option(EXECUTORCH_USE_DL "Use libdl library" ON)
-
-option(EXECUTORCH_BUILD_CADENCE "Build the Cadence DSP backend" OFF)
-
-option(EXECUTORCH_BUILD_CORTEX_M "Build the Cortex-M backend" OFF)
-
-#
-# pthreadpool: build pthreadpool library. Disable on unsupported platforms
-#
-cmake_dependent_option(
-  EXECUTORCH_BUILD_PTHREADPOOL "Build pthreadpool library." ON
-  "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
-)
-
-#
-# cpuinfo: build cpuinfo library. Disable on unsupported platforms
-#
-cmake_dependent_option(
-  EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." ON
-  "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
-)
 
 add_subdirectory(third-party)
 
@@ -334,11 +259,6 @@ if(EXECUTORCH_BUILD_TESTS)
   include(CTest)
 endif()
 
-if(NOT PYTHON_EXECUTABLE)
-  resolve_python_executable()
-endif()
-message(STATUS "Using python executable '${PYTHON_EXECUTABLE}'")
-
 # TODO(dbort): Fix these warnings and remove this flag.
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
@@ -442,6 +362,9 @@ add_library(executorch_core ${_executorch_core__srcs})
 add_library(executorch_no_prim_ops ALIAS executorch_core)
 
 target_link_libraries(executorch_core PRIVATE program_schema)
+if(ANDROID)
+  target_link_libraries(executorch_core PUBLIC log)
+endif()
 if(EXECUTORCH_USE_DL)
   # Check if dl exists for this toolchain and only then link it.
   find_library(DL_LIBRARY_EXISTS NAMES dl)
@@ -515,7 +438,7 @@ endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable/cpu/util)
 
-if(BUILD_EXECUTORCH_PORTABLE_OPS)
+if(EXECUTORCH_BUILD_PORTABLE_OPS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
 endif()
 
@@ -528,7 +451,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/configurations)
 #
 # gflags: Commandline flag host library.
 #
-option(EXECUTORCH_BUILD_GFLAGS "Build the gflags library." ON)
+
 if(EXECUTORCH_BUILD_GFLAGS)
   add_subdirectory(third-party/gflags)
 endif()
@@ -548,14 +471,6 @@ install(
   DESTINATION ${_common_include_directories}
 )
 install(FILES tools/cmake/executorch-config.cmake DESTINATION lib/cmake/ExecuTorch)
-
-#
-# executor_runner: Host tool that demonstrates program execution.
-#
-cmake_dependent_option(
-  EXECUTORCH_BUILD_EXECUTOR_RUNNER "Build the executor_runner executable" ON
-  "NOT CMAKE_TOOLCHAIN_IOS" OFF
-)
 
 # Add googletest if any test targets should be built
 if(BUILD_TESTING)
@@ -645,9 +560,7 @@ if(EXECUTORCH_BUILD_EXTENSION_TENSOR)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/tensor)
 endif()
 
-if(EXECUTORCH_BUILD_PTHREADPOOL
-   AND EXECUTORCH_BUILD_CPUINFO
-)
+if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_CPUINFO)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/threadpool)
 endif()
 
@@ -672,6 +585,7 @@ if(EXECUTORCH_BUILD_PYBIND)
       ${TORCH_PYTHON_LIBRARY}
       bundled_program
       etdump
+      flatccrt
       executorch
       extension_data_loader
       util
@@ -742,10 +656,6 @@ if(EXECUTORCH_BUILD_PYBIND)
   install(TARGETS portable_lib
           LIBRARY DESTINATION executorch/extension/pybindings
   )
-
-  if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
-
-  endif()
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
@@ -788,11 +698,7 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   endif()
 
   if(EXECUTORCH_ENABLE_EVENT_TRACER)
-    if(EXECUTORCH_BUILD_DEVTOOLS)
-      list(APPEND _executor_runner_libs etdump flatccrt)
-    else()
-      message(SEND_ERROR "Use of 'EXECUTORCH_ENABLE_EVENT_TRACER' requires 'EXECUTORCH_BUILD_DEVTOOLS' to be enabled.")
-    endif()
+    list(APPEND _executor_runner_libs etdump flatccrt)
   endif()
 
   if(EXECUTORCH_BUILD_COREML)
@@ -816,6 +722,3 @@ if(EXECUTORCH_BUILD_VULKAN)
 endif()
 
 include(Test.cmake)
-
-# Print all summary
-executorch_print_configuration_summary()

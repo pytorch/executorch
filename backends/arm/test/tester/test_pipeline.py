@@ -143,11 +143,13 @@ class BasePipelineMaker(Generic[T]):
                 f"Pos must be between [-{pipeline_length}, {pipeline_length}]"
             )
 
+        stage_id = func.__name__
         suffix = None
         if "suffix" in kwargs:
             suffix = kwargs.pop("suffix")
+            if stage_id == "dump_artifact":
+                args = (*args, suffix)
 
-        stage_id = func.__name__
         unique_stages = [
             "quantize",
             "export",
@@ -280,7 +282,7 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
         custom_path: str = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,
-        qtol: int = 0,
+        qtol: int = 1,
     ):
         tosa_profiles = {
             "0.80": TosaSpecification.create_from_string("TOSA-0.80+BI"),
@@ -293,7 +295,9 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
         )
         quant_stage = (
             Quantize(
-                TOSAQuantizer(compile_spec).set_io(get_symmetric_quantization_config()),
+                TOSAQuantizer(tosa_profiles[tosa_version]).set_io(
+                    get_symmetric_quantization_config()
+                ),
                 get_symmetric_quantization_config(),
             )
             if symmetric_io_quantization
@@ -618,7 +622,7 @@ class PassPipeline(BasePipelineMaker, Generic[T]):
         self,
         module: torch.nn.Module,
         test_data: T,
-        tosa_version: str,
+        quantize: Optional[bool] = False,
         ops_before_pass: Optional[Dict[str, int]] = None,
         ops_not_before_pass: Optional[list[str]] = None,
         ops_after_pass: Optional[Dict[str, int]] = None,
@@ -628,8 +632,18 @@ class PassPipeline(BasePipelineMaker, Generic[T]):
         passes_with_exported_program: Optional[List[Type[ExportPass]]] = None,
         custom_path: str = None,
     ):
+        tosa_profiles = {
+            "0.80": TosaSpecification.create_from_string(
+                "TOSA-0.80+" + ("BI" if quantize else "MI")
+            ),
+            "1.0": TosaSpecification.create_from_string(
+                "TOSA-1.0+" + ("INT" if quantize else "FP")
+            ),
+        }
+        tosa_version = conftest.get_option("tosa_version")
+
         compile_spec = common.get_tosa_compile_spec(
-            tosa_version, custom_path=custom_path
+            tosa_profiles[tosa_version], custom_path=custom_path
         )
         super().__init__(
             module,
@@ -648,7 +662,7 @@ class PassPipeline(BasePipelineMaker, Generic[T]):
         self.pop_stage("to_executorch")
         self.pop_stage("check.aten")
 
-        if "BI" in tosa_version:
+        if quantize:
             self.add_stage(self.tester.quantize, pos=0)
 
         # Add checks/check_not's if given

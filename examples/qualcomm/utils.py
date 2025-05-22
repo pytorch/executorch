@@ -34,7 +34,7 @@ from executorch.backends.qualcomm.utils.utils import (
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from torch.ao.quantization.observer import MovingAverageMinMaxObserver
-from torch.ao.quantization.quantize_pt2e import (
+from torchao.quantization.pt2e.quantize_pt2e import (
     convert_pt2e,
     prepare_pt2e,
     prepare_qat_pt2e,
@@ -251,8 +251,8 @@ def qat_train(ori_model, captured_model, quantizer, dataset):
         loss.backward()
         optimizer.step()
 
-    return torch.ao.quantization.quantize_pt2e.convert_pt2e(
-        torch.ao.quantization.move_exported_model_to_eval(annotated_model)
+    return convert_pt2e(
+        torch.ao.quantization.move_exported_model_to_eval(annotated_model),
     )
 
 
@@ -583,6 +583,13 @@ def setup_common_args_and_variables():
         "--enable_x86_64",
         help="Enable unittest to be executed on x86_64 platform",
         action="store_true",
+    )
+
+    parser.add_argument(
+        "--ci",
+        help="This flag is for Continuous Integration(CI) purpose and is NOT recommended to turn on for typical use cases. It will use random inputs instead of real inputs.",
+        action="store_true",
+        default=False,
     )
 
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.

@@ -1,20 +1,14 @@
 {
-  "version": 10,
-  "cmakeMinimumRequired": {
-    "major": 3,
-    "minor": 31,
-    "patch": 0
-  },
-  "$comment": "On-device AI across mobile, embedded and edge for PyTorch.",
+  "version": 6,
   "configurePresets": [
     {
       "name": "common",
       "hidden": true,
-      "binaryDir": "${sourceDir}/cmake-out",
-      "generator": "Unix Makefiles"
+      "binaryDir": "${sourceDir}/cmake-out"
     },
     {
       "name": "macos-arm64",
+      "displayName": "Build everything buildable on macOS arm64",
       "inherits": ["common"],
       "generator": "Xcode",
       "cacheVariables": {
@@ -27,6 +21,20 @@
         "lhs": "${hostSystemName}",
         "type": "equals",
         "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "pybind",
+      "displayName": "Build pybindings exported in the wheel",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/pybind.cmake",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "10.15"
+      },
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Darwin", "Linux", "Windows"]
       }
     }
   ]
