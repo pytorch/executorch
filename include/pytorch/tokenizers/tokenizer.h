@@ -56,6 +56,10 @@ class Tokenizer {
     return eos_tok_;
   }
 
+  virtual bool is_loaded() const {
+    return initialized_;
+  }
+
  protected:
   bool initialized_ = false;
   int32_t vocab_size_ = 0;
