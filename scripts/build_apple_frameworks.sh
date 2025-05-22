@@ -33,7 +33,7 @@ libextension_data_loader.a,\
 libextension_flat_tensor.a,\
 libextension_module.a,\
 libextension_tensor.a,\
-:$HEADERS_PATH"
+:$HEADERS_PATH:ExecuTorch"
 
 FRAMEWORK_BACKEND_COREML="backend_coreml:\
 libcoreml_util.a,\
