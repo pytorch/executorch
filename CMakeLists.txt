@@ -362,6 +362,9 @@ add_library(executorch_core ${_executorch_core__srcs})
 add_library(executorch_no_prim_ops ALIAS executorch_core)
 
 target_link_libraries(executorch_core PRIVATE program_schema)
+if(ANDROID)
+  target_link_libraries(executorch_core PUBLIC log)
+endif()
 if(EXECUTORCH_USE_DL)
   # Check if dl exists for this toolchain and only then link it.
   find_library(DL_LIBRARY_EXISTS NAMES dl)
@@ -653,10 +656,6 @@ if(EXECUTORCH_BUILD_PYBIND)
   install(TARGETS portable_lib
           LIBRARY DESTINATION executorch/extension/pybindings
   )
-
-  if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
-
-  endif()
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
