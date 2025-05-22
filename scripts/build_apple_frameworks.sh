@@ -240,7 +240,12 @@ sed -i '' '1i\
 cp -r $HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10 "$HEADERS_PATH/"
 
 cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"*.h "$HEADERS_PATH/executorch"
-cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"*.modulemap "$HEADERS_PATH"
+cat > "$HEADERS_PATH/module.modulemap" << 'EOF'
+module ExecuTorch {
+  umbrella header "ExecuTorch/ExecuTorch.h"
+  export *
+}
+EOF
 
 echo "Creating frameworks"
 
