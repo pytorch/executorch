@@ -8,9 +8,9 @@
 
 package org.pytorch.executorch;
 
+import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
-import com.facebook.jni.annotations.DoNotStrip;
 
 /** Class for entire ExecuTorch Runtime related functions. */
 public class ExecuTorchRuntime {

@@ -6,23 +6,26 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <jni.h>
 #include <fbjni/fbjni.h>
+#include <jni.h>
 
-#include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/kernel/operator_registry.h>
 
 namespace executorch_jni {
 namespace runtime = ::executorch::ET_RUNTIME_NAMESPACE;
 
 class AndroidRuntimeJni : public facebook::jni::JavaClass<AndroidRuntimeJni> {
  public:
-  constexpr static const char* kJavaDescriptor = "Lorg/pytorch/executorch/ExecuTorchRuntime;";
+  constexpr static const char* kJavaDescriptor =
+      "Lorg/pytorch/executorch/ExecuTorchRuntime;";
 
   static void registerNatives() {
     javaClassStatic()->registerNatives({
-        makeNativeMethod("getRegisteredOps", AndroidRuntimeJni::getRegisteredOps),
-        makeNativeMethod("getRegisteredBackends", AndroidRuntimeJni::getRegisteredBackends),
+        makeNativeMethod(
+            "getRegisteredOps", AndroidRuntimeJni::getRegisteredOps),
+        makeNativeMethod(
+            "getRegisteredBackends", AndroidRuntimeJni::getRegisteredBackends),
     });
   }
 
@@ -33,8 +36,8 @@ class AndroidRuntimeJni : public facebook::jni::JavaClass<AndroidRuntimeJni> {
     auto result = facebook::jni::JArrayClass<jstring>::newArray(kernels.size());
 
     for (size_t i = 0; i < kernels.size(); ++i) {
-        auto op = facebook::jni::make_jstring(kernels[i].name_);
-        result->setElement(i, op.get());
+      auto op = facebook::jni::make_jstring(kernels[i].name_);
+      result->setElement(i, op.get());
     }
 
     return result;
@@ -47,15 +50,15 @@ class AndroidRuntimeJni : public facebook::jni::JavaClass<AndroidRuntimeJni> {
     auto result = facebook::jni::JArrayClass<jstring>::newArray(num_backends);
 
     for (int i = 0; i < num_backends; ++i) {
-        auto name_result = runtime::get_backend_name(i);
-        const char* name = "";
+      auto name_result = runtime::get_backend_name(i);
+      const char* name = "";
 
-        if (name_result.ok()) {
-            name = *name_result;
-        }
+      if (name_result.ok()) {
+        name = *name_result;
+      }
 
-        auto backend_str = facebook::jni::make_jstring(name);
-        result->setElement(i, backend_str.get());
+      auto backend_str = facebook::jni::make_jstring(name);
+      result->setElement(i, backend_str.get());
     }
 
     return result;
