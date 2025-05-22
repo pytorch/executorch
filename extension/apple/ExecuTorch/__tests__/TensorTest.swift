@@ -148,6 +148,54 @@ class TensorTest: XCTestCase {
     }
   }
 
+  func testWithUnsafeBytes() throws {
+    var data: [Float] = [1, 2, 3, 4, 5, 6]
+    let tensor = data.withUnsafeMutableBytes {
+      Tensor(bytesNoCopy: $0.baseAddress!, shape: [2, 3], dataType: .float)
+    }
+    let array: [Float] = try tensor.withUnsafeBytes { Array($0) }
+    XCTAssertEqual(array, data)
+  }
+
+  func testWithUnsafeMutableBytes() throws {
+    var data = [1, 2, 3, 4]
+    let tensor = data.withUnsafeMutableBytes {
+      Tensor(bytes: $0.baseAddress!, shape: [4], dataType: .long)
+    }
+    try tensor.withUnsafeMutableBytes { (buffer: UnsafeMutableBufferPointer<Int>) in
+      for i in buffer.indices {
+        buffer[i] *= 2
+      }
+    }
+    try tensor.withUnsafeBytes { buffer in
+      XCTAssertEqual(Array(buffer), [2, 4, 6, 8])
+    }
+  }
+
+  func testWithUnsafeBytesFloat16() throws {
+    var data: [Float16] = [1, 2, 3, 4, 5, 6]
+    let tensor = data.withUnsafeMutableBytes {
+      Tensor(bytesNoCopy: $0.baseAddress!, shape: [6], dataType: .half)
+    }
+    let array: [Float16] = try tensor.withUnsafeBytes { Array($0) }
+    XCTAssertEqual(array, data)
+  }
+
+  func testWithUnsafeMutableBytesFloat16() throws {
+    var data: [Float16] = [1, 2, 3, 4]
+    let tensor = data.withUnsafeMutableBytes { buf in
+      Tensor(bytes: buf.baseAddress!, shape: [4], dataType: .half)
+    }
+    try tensor.withUnsafeMutableBytes { (buffer: UnsafeMutableBufferPointer<Float16>) in
+      for i in buffer.indices {
+        buffer[i] *= 2
+      }
+    }
+    try tensor.withUnsafeBytes { buffer in
+      XCTAssertEqual(Array(buffer), data.map { $0 * 2 })
+    }
+  }
+
   func testInitWithTensor() {
     var data: [Int] = [10, 20, 30, 40]
     let tensor1 = data.withUnsafeMutableBytes {
@@ -618,7 +666,7 @@ class TensorTest: XCTestCase {
       }
     }
   }
-  
+
   func testZeros() {
     let tensor = Tensor.zeros(shape: [2, 3], dataType: .double)
     XCTAssertEqual(tensor.shape, [2, 3])
