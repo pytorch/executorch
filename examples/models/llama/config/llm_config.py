@@ -169,7 +169,8 @@ class QuantizationConfig:
     calibration_data: Optional[str] = None
 
     def __post_init__(self):
-        self._validate_qmode()
+        if self.qmode:
+            self._validate_qmode()
 
     def _validate_qmode(self) -> None:
         choices = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w"]
