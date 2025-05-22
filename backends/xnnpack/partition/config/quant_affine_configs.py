@@ -42,7 +42,8 @@ class DeQuantizeAffineConfig(QDQAffineConfigs):
     target_name = "dequantize_affine.default"
 
     def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
-        torchao.quantization.quant_primitives  # noqa
+        import torchao.quantization.quant_primitives  # noqa
+
         return torch.ops.torchao.dequantize_affine.default
 
 
@@ -50,5 +51,6 @@ class ChooseQParamsAffineConfig(QDQAffineConfigs):
     target_name = "choose_qparams_affine.default"
 
     def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
-        torchao.quantization.quant_primitives  # noqa
+        import torchao.quantization.quant_primitives  # noqa
+
         return torch.ops.torchao.choose_qparams_affine.default
