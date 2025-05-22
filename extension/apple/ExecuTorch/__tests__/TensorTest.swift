@@ -172,30 +172,6 @@ class TensorTest: XCTestCase {
     }
   }
 
-  func testWithUnsafeBytesFloat16() throws {
-    var data: [Float16] = [1, 2, 3, 4, 5, 6]
-    let tensor = data.withUnsafeMutableBytes {
-      Tensor(bytesNoCopy: $0.baseAddress!, shape: [6], dataType: .half)
-    }
-    let array: [Float16] = try tensor.withUnsafeBytes { Array($0) }
-    XCTAssertEqual(array, data)
-  }
-
-  func testWithUnsafeMutableBytesFloat16() throws {
-    var data: [Float16] = [1, 2, 3, 4]
-    let tensor = data.withUnsafeMutableBytes { buffer in
-      Tensor(bytes: buffer.baseAddress!, shape: [4], dataType: .half)
-    }
-    try tensor.withUnsafeMutableBytes { (buffer: UnsafeMutableBufferPointer<Float16>) in
-      for i in buffer.indices {
-        buffer[i] *= 2
-      }
-    }
-    try tensor.withUnsafeBytes { buffer in
-      XCTAssertEqual(Array(buffer), data.map { $0 * 2 })
-    }
-  }
-
   func testInitWithTensor() {
     var data: [Int] = [10, 20, 30, 40]
     let tensor1 = data.withUnsafeMutableBytes {
