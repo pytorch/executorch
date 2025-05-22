@@ -465,7 +465,7 @@ def build_portable_lib(name, oplist_header_name, portable_header_lib, feature = 
     # library, and it blocks users like unit tests to use kernel
     # implementation directly. So we enable this for xplat only.
     compiler_flags = ["-Wno-missing-prototypes"]
-    if not expose_operator_symbols:
+    if not expose_operator_symbols and is_xplat():
         # Removing '-fvisibility=hidden' exposes operator symbols.
         # This allows operators to be called outside of the kernel registry.
         compiler_flags += ["-fvisibility=hidden"]
@@ -510,7 +510,7 @@ def build_optimized_lib(name, oplist_header_name, portable_header_lib, feature =
     # library, and it blocks users like unit tests to use kernel
     # implementation directly. So we enable this for xplat only.
     compiler_flags = ["-Wno-missing-prototypes", "-Wno-pass-failed","-Wno-global-constructors","-Wno-shadow",]
-    if not expose_operator_symbols:
+    if not expose_operator_symbols and is_xplat():
         # Removing '-fvisibility=hidden' exposes operator symbols.
         # This allows operators to be called outside of the kernel registry.
         compiler_flags += ["-fvisibility=hidden"]
