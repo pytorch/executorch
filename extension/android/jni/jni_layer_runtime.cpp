@@ -17,7 +17,7 @@ namespace runtime = ::executorch::ET_RUNTIME_NAMESPACE;
 
 class AndroidRuntimeJni : public facebook::jni::JavaClass<AndroidRuntimeJni> {
  public:
-  constexpr static const char* kJavaDescriptor = "Lorg/pytorch/executorch/Runtime;";
+  constexpr static const char* kJavaDescriptor = "Lorg/pytorch/executorch/ExecuTorchRuntime;";
 
   static void registerNatives() {
     javaClassStatic()->registerNatives({
