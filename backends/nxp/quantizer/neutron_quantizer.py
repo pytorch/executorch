@@ -28,16 +28,17 @@ from executorch.backends.nxp.quantizer.utils import (
     is_annotated,
     no_outside_users,
 )
-from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
+from torch import fx
+from torchao.quantization.pt2e import HistogramObserver, MinMaxObserver
+from torchao.quantization.pt2e.quantizer import (
+    ComposableQuantizer,
+    DerivedQuantizationSpec,
     OperatorConfig,
     QuantizationAnnotation,
     QuantizationConfig,
     QuantizationSpec,
+    Quantizer,
 )
-from torch import fx
-from torchao.quantization.pt2e.observer import HistogramObserver, MinMaxObserver
-from torchao.quantization.pt2e.quantizer import DerivedQuantizationSpec, Quantizer
-from torchao.quantization.pt2e.quantizer.composable_quantizer import ComposableQuantizer
 
 
 class NeutronAtenQuantizer(Quantizer):
