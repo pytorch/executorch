@@ -74,8 +74,12 @@ using namespace ::executorch::runtime;
   NSString *tokenizerPath = resources[@"tokenizer"];
   return @{
     @"generate" : ^(XCTestCase *testCase){
-      auto __block runner = std::make_unique<example::Runner>(
+      auto __block runner = example::Runner::create(
           modelPath.UTF8String, tokenizerPath.UTF8String);
+      if (!runner) {
+        XCTFail("Failed to create runner");
+        return;
+      }
       const auto status = runner->load();
       if (status != Error::Ok) {
         XCTFail("Load failed with error %i", status);

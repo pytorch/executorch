@@ -105,6 +105,10 @@ phases:
           echo "*.model tokenizer files found in /data/local/tmp/minibench/"
         fi
 
+      - echo "Collect device state before running"
+      - |
+        adb -s $DEVICEFARM_DEVICE_UDID shell 'cat /sys/devices/system/cpu/cpu*/cpufreq/stats/time_in_state /sys/devices/system/cpu/cpu*/cpufreq/stats/trans_table' > $DEVICEFARM_LOG_DIR/state_before.txt
+
       - echo "Run benchmark"
       - |
         adb -s $DEVICEFARM_DEVICE_UDID shell touch /data/local/tmp/result.etdump
@@ -128,7 +132,10 @@ phases:
           adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.BenchmarkActivity \
             --es "model_dir" "/data/local/tmp/minibench"
         fi
-
+        
+      - echo "Collect device state after running"
+      - |
+        adb -s $DEVICEFARM_DEVICE_UDID shell 'cat /sys/devices/system/cpu/cpu*/cpufreq/stats/time_in_state /sys/devices/system/cpu/cpu*/cpufreq/stats/trans_table' > $DEVICEFARM_LOG_DIR/state_after.txt
 
   post_test:
     commands:

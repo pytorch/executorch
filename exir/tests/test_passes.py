@@ -71,8 +71,6 @@ from executorch.exir.tests.models import MLP, Mul
 from functorch.experimental import control_flow
 
 from torch import nn
-
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer import QuantizationSpec
 from torch.export import export
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
@@ -81,6 +79,8 @@ from torch.fx.experimental.proxy_tensor import make_fx
 from torch.library import impl, Library
 from torch.testing import FileCheck
 from torch.utils import _pytree as pytree
+
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 # pyre-ignore

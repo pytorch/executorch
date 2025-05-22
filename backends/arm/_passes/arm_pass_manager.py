@@ -18,6 +18,7 @@ from executorch.backends.arm._passes import (
     ConvertAnyDefaultDimDimsPass,
     ConvertExpandCopyToRepeatPass,
     ConvertFullLikeToFullPass,
+    ConvertIntPowToMuls,
     ConvertMinMaxPass,
     ConvertMmToBmmPass,
     ConvertSplitToSlicePass,
@@ -131,6 +132,7 @@ class ArmPassManager(PassManager):
 
     def _tosa_080_MI_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
         self.add_pass(DecomposeSqrtPass())
+        self.add_pass(ConvertIntPowToMuls())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSAMI())
         self.add_pass(FuseQuantizedActivationPass())
         self.add_pass(RemoveGetItemPass())
@@ -138,7 +140,6 @@ class ArmPassManager(PassManager):
         self.add_pass(FuseBatchnorm2DPass(exported_program))
         self.add_pass(ConvertMmToBmmPass())
         self.add_pass(DecomposeLinearPass())
-        self.add_pass(DecomposeLinearVectorNormPass())
         self.add_pass(DecomposeLeakyReLUPass())
         self.add_pass(DecomposeBatchNormPass())
         self.add_pass(DecomposeLayerNormPass())
