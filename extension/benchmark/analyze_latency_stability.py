@@ -1,5 +1,6 @@
 import argparse
 import os
+import re
 import sys
 from datetime import datetime
 
@@ -20,6 +21,59 @@ def normalize_tab_name(name):
     """Normalize tab name for better matching"""
     # Convert to lowercase and remove spaces
     return name.lower().replace(" ", "")
+
+
+def parse_model_device(sheet_name):
+    """Extract model and device from sheet name using the 'model+device' pattern"""
+    parts = sheet_name.split("+", 1)
+    if len(parts) < 2:
+        return sheet_name, "Unknown"
+    return parts[0], parts[1]
+
+
+def extract_model_device_os(sheet_name):
+    """
+    Extract model, device, and OS from sheet name
+    Format expected: model+device_osname
+    Returns: (model, device_base, os_version)
+    """
+    model, device_full = parse_model_device(sheet_name)
+
+    # Use regex to separate device base name from OS version
+    # Pattern looks for device name followed by underscore or android/ios
+    match = re.match(r"(.*?)(android|ios|_)(.*)", device_full, re.IGNORECASE)
+
+    if match:
+        device_base = match.group(1).rstrip("_")
+        os_name = match.group(2)
+        os_version = match.group(3)
+        return model, device_base, f"{os_name}{os_version}"
+    else:
+        # If no OS version found, return the device as is with empty OS
+        return model, device_full, ""
+
+
+def is_matching_dataset(primary_sheet, reference_sheet):
+    """
+    Check if two datasets match for comparison based on model and device
+    Allows different OS versions for the same device
+    """
+    primary_model, primary_device, primary_os = extract_model_device_os(primary_sheet)
+    reference_model, reference_device, reference_os = extract_model_device_os(
+        reference_sheet
+    )
+
+    # Model must match exactly
+    if primary_model != reference_model:
+        return False
+
+    # Device base name must match exactly
+    if primary_device != reference_device:
+        return False
+
+    # If we get here, model and device base match, so it's a valid comparison
+    # even if OS versions differ
+    return True
 
 
 def analyze_latency_stability(
@@ -135,8 +189,9 @@ def analyze_latency_stability(
             }
 
     # Process primary datasets
-    print_section_header("LATENCY STABILITY ANALYSIS - PRIMARY DATASETS")
+    print_section_header("ANALYZING PRIMARY DATASETS")
     for sheet, info in primary_datasets.items():
+        # Generate dataset report
         generate_dataset_report(
             sheet,
             info["model"],
@@ -151,25 +206,47 @@ def analyze_latency_stability(
         if len(info["df"]) > 5:  # Only create plot if enough data points
             generate_time_series_plot(sheet, info["df"], output_dir, "Primary")
 
+    # Process reference datasets if provided
+    if reference_file:
+        print_section_header("ANALYZING REFERENCE DATASETS")
+        for sheet, info in reference_datasets.items():
+            # Generate dataset report
+            generate_dataset_report(
+                sheet,
+                info["model"],
+                info["device"],
+                "Reference",
+                info["df"],
+                info["metrics"],
+                output_dir,
+            )
+
+            # Generate time series plot
+            if len(info["df"]) > 5:  # Only create plot if enough data points
+                generate_time_series_plot(sheet, info["df"], output_dir, "Reference")
+
     # Generate comparison reports for matching datasets
     if reference_file:
         print_section_header("PRIVATE VS PUBLIC STABILITY COMPARISON")
         matches_found = False
 
-        for sheet, priv_info in primary_datasets.items():
-            normalized_primary = normalize_tab_name(sheet)
+        for primary_sheet, primary_info in primary_datasets.items():
             found_match = False
 
-            for ref_sheet in reference_datasets:
-                normalized_ref = normalize_tab_name(ref_sheet)
-                if normalized_primary == normalized_ref:
+            for ref_sheet, ref_info in reference_datasets.items():
+                if is_matching_dataset(primary_sheet, ref_sheet):
                     # Found a match
+                    print(
+                        f"Matched: {primary_sheet} (Private) with {ref_sheet} (Public)"
+                    )
                     generate_comparison_report(
-                        sheet,
-                        priv_info["model"],
-                        priv_info["device"],
-                        priv_info["metrics"],
-                        reference_datasets[ref_sheet]["metrics"],
+                        primary_sheet,
+                        ref_sheet,
+                        primary_info["model"],
+                        primary_info["device"],
+                        ref_info["device"],
+                        primary_info["metrics"],
+                        ref_info["metrics"],
                         output_dir,
                     )
                     found_match = True
@@ -177,7 +254,7 @@ def analyze_latency_stability(
                     break
 
             if not found_match:
-                print(f"Warning: No matching reference dataset for {sheet}")
+                print(f"Warning: No matching reference dataset for {primary_sheet}")
 
         if not matches_found:
             print("No matching datasets found between primary and reference files.")
@@ -187,20 +264,13 @@ def analyze_latency_stability(
     generate_intra_primary_summary(primary_datasets, output_dir)
 
     # Generate summary report for all datasets
+    print_section_header("COMPREHENSIVE STABILITY SUMMARY")
     generate_summary_report(
         primary_datasets, reference_datasets if reference_file else None, output_dir
     )
 
     print(f"\nAnalysis complete. Results saved to {output_dir}/")
     return primary_datasets, reference_datasets if reference_file else None
-
-
-def parse_model_device(sheet_name):
-    """Extract model and device from sheet name using the 'model+device' pattern"""
-    parts = sheet_name.split("+", 1)
-    if len(parts) < 2:
-        return sheet_name, "Unknown"
-    return parts[0], parts[1]
 
 
 def calculate_stability_metrics(df, raw_col, trimmed_col=None, tps_col=None):
@@ -586,19 +656,29 @@ def generate_time_series_plot(dataset_name, df, output_dir, dataset_type):
 
 
 def generate_comparison_report(
-    sheet_name, model, device, primary_metrics, reference_metrics, output_dir
+    primary_sheet,
+    reference_sheet,
+    model,
+    primary_device,
+    reference_device,
+    primary_metrics,
+    reference_metrics,
+    output_dir,
 ):
     """Generate a comparison report between primary and reference datasets"""
-    report_file = f"{output_dir}/{sheet_name}_private_vs_public_comparison.txt"
+    report_file = f"{output_dir}/{primary_sheet}_vs_{reference_sheet}_comparison.txt"
 
     # Create a string buffer to hold the report content
     report_content = []
 
     # Header
-    report_content.append(f"Private vs Public Stability Comparison: {sheet_name}")
+    report_content.append(f"Private vs Public Stability Comparison")
     report_content.append("=" * 80)
+    report_content.append(f"Private Dataset: {primary_sheet}")
+    report_content.append(f"Public Dataset: {reference_sheet}")
     report_content.append(f"Model: {model}")
-    report_content.append(f"Device: {device}")
+    report_content.append(f"Private Device: {primary_device}")
+    report_content.append(f"Public Device: {reference_device}")
     report_content.append("")
 
     # Create comparison table
@@ -890,6 +970,20 @@ def generate_comparison_report(
                 f"  Public environment has lower mean latency, indicating better performance."
             )
 
+    # Note about OS version difference if applicable
+    _, primary_device_base, primary_os = extract_model_device_os(primary_sheet)
+    _, reference_device_base, reference_os = extract_model_device_os(reference_sheet)
+
+    if primary_os != reference_os and primary_os and reference_os:
+        report_content.append("")
+        report_content.append(
+            f"  Note: This comparison is between {primary_device_base} with {primary_os} (Private) and"
+        )
+        report_content.append(
+            f"  {reference_device_base} with {reference_os} (Public). OS version differences may"
+        )
+        report_content.append("  contribute to observed stability variations.")
+
     # Recommendation
     report_content.append("")
     report_content.append("Recommendation:")
@@ -1006,11 +1100,21 @@ def generate_intra_primary_summary(primary_datasets, output_dir):
         )
         report_content.append("")
 
-    # Device-based comparison if multiple devices exist
-    devices = df["Device"].unique()
-    if len(devices) > 1:
-        report_content.append("Device-based Comparison:")
-        device_stats = df.groupby("Device").agg(
+    # Device-based comparison
+    # First, extract base device names for grouping
+    device_base_map = {}
+    for sheet_name in primary_datasets:
+        _, device_base, _ = extract_model_device_os(sheet_name)
+        device_base_map[sheet_name] = device_base
+
+    # Add base device to DataFrame
+    df["Device Base"] = df["Sheet"].map(device_base_map)
+
+    # Group by base device
+    device_bases = df["Device Base"].unique()
+    if len(device_bases) > 1:
+        report_content.append("Device-based Comparison (Grouped by Base Device):")
+        device_stats = df.groupby("Device Base").agg(
             {
                 "Stability Score": ["mean", "min", "max"],
                 "CV (%)": ["mean", "min", "max"],
@@ -1032,6 +1136,44 @@ def generate_intra_primary_summary(primary_datasets, output_dir):
         )
         report_content.append("")
 
+    # OS version comparison if multiple OS versions exist
+    os_versions = {}
+    for sheet_name in primary_datasets:
+        _, _, os_version = extract_model_device_os(sheet_name)
+        if os_version:  # Only include if OS version was extracted
+            os_versions[sheet_name] = os_version
+
+    if os_versions and len(set(os_versions.values())) > 1:
+        # Add OS version to DataFrame
+        df["OS Version"] = df["Sheet"].map(os_versions)
+
+        # Remove rows with no OS version
+        df_os = df[df["OS Version"].notna()]
+
+        if len(df_os) > 0:
+            report_content.append("OS Version Comparison:")
+            os_stats = df_os.groupby("OS Version").agg(
+                {
+                    "Stability Score": ["mean", "min", "max"],
+                    "CV (%)": ["mean", "min", "max"],
+                }
+            )
+
+            # Sort by mean stability score (descending)
+            os_stats = os_stats.sort_values(
+                ("Stability Score", "mean"), ascending=False
+            )
+
+            report_content.append(
+                tabulate(os_stats, headers="keys", tablefmt="grid", floatfmt=".2f")
+            )
+
+            best_os = os_stats["Stability Score"]["mean"].idxmax()
+            report_content.append(
+                f"  Most stable OS version: {best_os} (Avg. Score: {os_stats.loc[best_os, ('Stability Score', 'mean')]:.1f}/100)"
+            )
+            report_content.append("")
+
     # Insights and recommendations
     report_content.append("Insights and Recommendations:")
 
@@ -1047,8 +1189,8 @@ def generate_intra_primary_summary(primary_datasets, output_dir):
             f"  - {least_stable_model} shows more variability and may need further optimization."
         )
 
-    if len(devices) > 1:
-        device_cv = df.groupby("Device")["CV (%)"].mean()
+    if len(device_bases) > 1:
+        device_cv = df.groupby("Device Base")["CV (%)"].mean()
         most_stable_device = device_cv.idxmin()
         least_stable_device = device_cv.idxmax()
         report_content.append(
@@ -1058,16 +1200,30 @@ def generate_intra_primary_summary(primary_datasets, output_dir):
             f"  - {least_stable_device} shows higher variability and may not be ideal for latency-sensitive applications."
         )
 
+    if os_versions and len(set(os_versions.values())) > 1 and len(df_os) > 0:
+        os_cv = df_os.groupby("OS Version")["CV (%)"].mean()
+        most_stable_os = os_cv.idxmin()
+        least_stable_os = os_cv.idxmax()
+        report_content.append(
+            f"  - {most_stable_os} provides better stability than {least_stable_os} across tested devices."
+        )
+
     # General recommendations
     report_content.append(
         "  - For critical applications requiring consistent performance, prefer:"
     )
-    report_content.append(
-        f"    * Model: {best_model if len(models) > 1 else df['Model'].iloc[0]}"
-    )
-    report_content.append(
-        f"    * Device: {best_device if len(devices) > 1 else df['Device'].iloc[0]}"
-    )
+    if len(models) > 1:
+        report_content.append(f"    * Model: {best_model}")
+    else:
+        report_content.append(f"    * Model: {df['Model'].iloc[0]}")
+
+    if len(device_bases) > 1:
+        report_content.append(f"    * Device: {best_device}")
+    else:
+        report_content.append(f"    * Device: {df['Device Base'].iloc[0]}")
+
+    if os_versions and len(set(os_versions.values())) > 1 and len(df_os) > 0:
+        report_content.append(f"    * OS Version: {best_os}")
 
     # Join all content with newlines to create the full report
     full_report = "\n".join(report_content)
@@ -1089,10 +1245,6 @@ def generate_summary_report(primary_datasets, reference_datasets, output_dir):
     report_content = []
 
     # Header
-    report_content.append("*" * 80)
-    report_content.append("*" * 80)
-    report_content.append("*" * 80)
-    report_content.append("")
     report_content.append("Comprehensive Latency Stability Analysis Summary")
     report_content.append("=" * 80)
     report_content.append("")
@@ -1100,11 +1252,16 @@ def generate_summary_report(primary_datasets, reference_datasets, output_dir):
     # Primary datasets summary
     primary_data = []
     for sheet_name, info in primary_datasets.items():
+        model, device_base, os_version = extract_model_device_os(sheet_name)
+        device_display = (
+            f"{device_base} ({os_version})" if os_version else info["device"]
+        )
+
         primary_data.append(
             {
                 "Dataset": sheet_name,
-                "Model": info["model"],
-                "Device": info["device"],
+                "Model": model,
+                "Device": device_display,
                 "Mean Latency (ms)": info["metrics"]["mean_raw_latency"],
                 "CV (%)": info["metrics"]["cv_raw_latency"],
                 "Stability Score": info["metrics"]["stability_score"],
@@ -1128,11 +1285,16 @@ def generate_summary_report(primary_datasets, reference_datasets, output_dir):
     if reference_datasets:
         reference_data = []
         for sheet_name, info in reference_datasets.items():
+            model, device_base, os_version = extract_model_device_os(sheet_name)
+            device_display = (
+                f"{device_base} ({os_version})" if os_version else info["device"]
+            )
+
             reference_data.append(
                 {
                     "Dataset": sheet_name,
-                    "Model": info["model"],
-                    "Device": info["device"],
+                    "Model": model,
+                    "Device": device_display,
                     "Mean Latency (ms)": info["metrics"]["mean_raw_latency"],
                     "CV (%)": info["metrics"]["cv_raw_latency"],
                     "Stability Score": info["metrics"]["stability_score"],
@@ -1158,19 +1320,36 @@ def generate_summary_report(primary_datasets, reference_datasets, output_dir):
 
         # Comparison summary for matching datasets
         comparison_data = []
-        for sheet_name in primary_datasets:
-            normalized_primary = normalize_tab_name(sheet_name)
-            for ref_sheet in reference_datasets:
-                normalized_ref = normalize_tab_name(ref_sheet)
-                if normalized_primary == normalized_ref:
-                    primary_metrics = primary_datasets[sheet_name]["metrics"]
-                    reference_metrics = reference_datasets[ref_sheet]["metrics"]
+        for primary_sheet, primary_info in primary_datasets.items():
+            for ref_sheet, ref_info in reference_datasets.items():
+                if is_matching_dataset(primary_sheet, ref_sheet):
+                    primary_metrics = primary_info["metrics"]
+                    reference_metrics = ref_info["metrics"]
+
+                    # Extract model and device info for display
+                    model, primary_device_base, primary_os = extract_model_device_os(
+                        primary_sheet
+                    )
+                    _, reference_device_base, reference_os = extract_model_device_os(
+                        ref_sheet
+                    )
+
+                    primary_device_display = (
+                        f"{primary_device_base} ({primary_os})"
+                        if primary_os
+                        else primary_info["device"]
+                    )
+                    reference_device_display = (
+                        f"{reference_device_base} ({reference_os})"
+                        if reference_os
+                        else ref_info["device"]
+                    )
 
                     comparison_data.append(
                         {
-                            "Dataset": sheet_name,
-                            "Model": primary_datasets[sheet_name]["model"],
-                            "Device": primary_datasets[sheet_name]["device"],
+                            "Dataset": f"{model} on {primary_device_base}",
+                            "Private Device": primary_device_display,
+                            "Public Device": reference_device_display,
                             "Private Score": primary_metrics["stability_score"],
                             "Public Score": reference_metrics["stability_score"],
                             "Score Diff": primary_metrics["stability_score"]
@@ -1181,6 +1360,7 @@ def generate_summary_report(primary_datasets, reference_datasets, output_dir):
                             - reference_metrics["cv_raw_latency"],
                         }
                     )
+                    break  # Only use the first matching reference dataset
 
         if comparison_data:
             comparison_df = pd.DataFrame(comparison_data).sort_values(
@@ -1239,6 +1419,33 @@ def generate_summary_report(primary_datasets, reference_datasets, output_dir):
     report_content.append(
         f"    Model: {best_primary['Model']}, Device: {best_primary['Device']}"
     )
+
+    # OS version insights if available
+    os_versions = {}
+    for sheet_name in primary_datasets:
+        _, _, os_version = extract_model_device_os(sheet_name)
+        if os_version:
+            os_versions[sheet_name] = os_version
+
+    if os_versions and len(set(os_versions.values())) > 1:
+        # Add OS version to primary DataFrame
+        primary_df["OS Version"] = primary_df["Dataset"].map(
+            lambda x: extract_model_device_os(x)[2]
+        )
+
+        # Remove rows with no OS version
+        df_os = primary_df[primary_df["OS Version"].notna()]
+
+        if len(df_os) > 0:
+            os_stats = (
+                df_os.groupby("OS Version")["Stability Score"]
+                .mean()
+                .sort_values(ascending=False)
+            )
+            best_os = os_stats.index[0]
+            report_content.append(
+                f"  - Most stable OS version: {best_os} (Avg. Score: {os_stats.iloc[0]:.1f}/100)"
+            )
 
     # General recommendations
     report_content.append("")
