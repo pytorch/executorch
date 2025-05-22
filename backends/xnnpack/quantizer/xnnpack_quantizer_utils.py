@@ -23,6 +23,7 @@ from torchao.quantization.pt2e.quantizer import (
     OperatorPatternType,
     QuantizationAnnotation,
     QuantizationConfig,
+    QuantizationSpec,
     SharedQuantizationSpec,
 )
 from torchao.quantization.pt2e.utils import (
@@ -36,6 +37,7 @@ __all__ = [
     "OperatorConfig",
     "OperatorPatternType",
     "QuantizationConfig",
+    "QuantizationSpec",
     "get_input_act_qspec",
     "get_output_act_qspec",
     "get_weight_qspec",
