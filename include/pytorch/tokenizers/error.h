@@ -55,6 +55,9 @@ enum class Error : error_code_t {
 
   /// Decode failure.
   DecodeFailure = 0x08,
+
+  /// No suitable regex implementation found.
+  RegexFailure = 0x09,
 };
 
 } // namespace tokenizers

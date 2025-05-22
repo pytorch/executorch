@@ -26,8 +26,8 @@ def define_common_targets():
     runtime.cxx_library(
         name = "regex",
         srcs = [
-            "src/regex.cpp",
             "src/re2_regex.cpp",
+            "src/regex.cpp",
         ],
         exported_deps = [
             ":headers",
@@ -44,8 +44,7 @@ def define_common_targets():
         name = "regex_lookahead",
         srcs = [
             "src/pcre2_regex.cpp",
-            "src/regex.cpp",
-            "src/re2_regex.cpp",
+            "src/regex_lookahead.cpp",
             "src/std_regex.cpp",
         ],
         exported_deps = [
@@ -53,10 +52,11 @@ def define_common_targets():
         ],
         exported_external_deps = [
             "pcre2",
-            "re2",
         ],
-        preprocessor_flags = ["-DSUPPORT_REGEX_LOOKAHEAD=ON"],
-        visibility = ["//pytorch/tokenizers/..."],
+        visibility = [
+            "@EXECUTORCH_CLIENTS",
+            "//pytorch/tokenizers/...",
+        ],
         header_namespace = "",
         platforms = PLATFORMS,
     )
@@ -110,29 +110,6 @@ def define_common_targets():
             ":headers",
         ],
         exported_external_deps = [
-            "re2",
-        ],
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-            "//pytorch/tokenizers/...",
-        ],
-        platforms = PLATFORMS,
-    )
-
-    runtime.cxx_library(
-        name = "tiktoken_lookahead",
-        srcs = [
-            "src/tiktoken.cpp",
-        ],
-        deps = [
-            ":regex_lookahead",
-        ],
-        exported_deps = [
-            ":bpe_tokenizer_base",
-            ":headers",
-        ],
-        exported_external_deps = [
-            "pcre2",
             "re2",
         ],
         visibility = [

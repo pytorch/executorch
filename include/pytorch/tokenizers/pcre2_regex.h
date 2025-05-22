@@ -45,7 +45,7 @@ class Pcre2Regex : public IRegex {
   pcre2_code* regex_;
   pcre2_match_data* match_data_;
 
-  friend Result<std::unique_ptr<IRegex>> create_regex(
+  friend Result<std::unique_ptr<IRegex>> create_fallback_regex(
       const std::string& pattern);
 };
 

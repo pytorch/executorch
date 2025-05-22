@@ -38,11 +38,24 @@ class IRegex {
 };
 
 /**
- * @brief Creates a regex instance. Tries RE2 first, falls back to std::regex.
+ * @brief Creates a regex instance. If no strong symbol defined, only
+ * uses RE2. This is a weak symbol to allow other regex libraries to be
+ * used.
  *
  * @param pattern The regex pattern to compile.
  * @return A unique pointer to an IRegex-compatible object.
  */
 Result<std::unique_ptr<IRegex>> create_regex(const std::string& pattern);
+
+/**
+ * @brief Creates a fallback regex instance. If no strong symbol defined,
+ * returns Error, otherwise uses PCRE2 and std::regex.
+ * This is a weak symbol to allow other regex libraries to be used.
+ *
+ * @param pattern The regex pattern to compile.
+ * @return A unique pointer to an IRegex-compatible object.
+ */
+Result<std::unique_ptr<IRegex>> create_fallback_regex(
+    const std::string& pattern) TK_WEAK;
 
 } // namespace tokenizers
