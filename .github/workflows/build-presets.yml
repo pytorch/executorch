@@ -27,12 +27,12 @@ jobs:
       runner: macos-latest-xlarge
       python-version: 3.12
       submodules: recursive
-      timeout: 90
+      timeout: 900
       script: |
         set -eux
         ${CONDA_RUN} ./install_requirements.sh > /dev/null
         ${CONDA_RUN} cmake --preset ${{ matrix.preset }}
-        ${CONDA_RUN} cmake --build cmake-out --parallel
+        ${CONDA_RUN} cmake --build cmake-out -j16
 
   linux:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
