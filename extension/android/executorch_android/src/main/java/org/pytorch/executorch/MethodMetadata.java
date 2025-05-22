@@ -11,8 +11,9 @@ package org.pytorch.executorch;
 /** Helper class to access the metadata for a method from a Module */
 public class MethodMetadata {
   private String mName;
-
   private String[] mBackends;
+  private int[] mInputTags;
+  private int[] mOutputTags;
 
   MethodMetadata setName(String name) {
     mName = name;
@@ -36,5 +37,29 @@ public class MethodMetadata {
    */
   public String[] getBackends() {
     return mBackends;
+  }
+
+  /**
+   * @return Output tags
+   */
+  public int[] getOutputTags() {
+    return mOutputTags;
+  }
+
+  MethodMetadata setOutputTags(int[] outputTags) {
+    mOutputTags = outputTags;
+    return this;
+  }
+
+  /**
+   * @return Input tags
+   */
+  public int[] getInputTags() {
+    return mInputTags;
+  }
+
+  MethodMetadata setInputTags(int[] inputTags) {
+    mInputTags = inputTags;
+    return this;
   }
 }
