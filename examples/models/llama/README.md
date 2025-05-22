@@ -295,6 +295,7 @@ Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the 
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_XNNPACK=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+        -DSUPPORT_REGEX_LOOKAHEAD=ON
         -Bcmake-out/examples/models/llama \
         examples/models/llama
 
@@ -353,6 +354,7 @@ cmake  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DSUPPORT_REGEX_LOOKAHEAD=ON
     -Bcmake-out-android/examples/models/llama \
     examples/models/llama
 
@@ -398,7 +400,7 @@ LLAMA_CHECKPOINT=path/to/checkpoint.pth
 LLAMA_PARAMS=path/to/params.json
 
 # Set low-bit quantization parameters
-QLINEAR_BITWIDTH=3 # Can be 1-8
+QLINEAR_BITWIDTH=4 # Can be 1-8
 QLINEAR_GROUP_SIZE=128 # Must be multiple of 16
 QEMBEDDING_BITWIDTH=4 # Can be 1-8
 QEMBEDDING_GROUP_SIZE=32 # Must be multiple of 16

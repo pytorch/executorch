@@ -11,7 +11,3 @@
 # Ensure that CMAKE_ARGS is defined before referencing it. Defaults to empty
 # if not defined.
 export CMAKE_ARGS="${CMAKE_ARGS:-}"
-
-# Link the XNNPACK backend into the pybindings runtime so that users can execute
-# ExecuTorch programs that delegate to it.
-CMAKE_ARGS="${CMAKE_ARGS} -DEXECUTORCH_BUILD_PYBIND=ON -DEXECUTORCH_BUILD_XNNPACK=ON"

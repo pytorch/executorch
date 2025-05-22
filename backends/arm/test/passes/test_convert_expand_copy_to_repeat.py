@@ -35,7 +35,7 @@ def test_expand_to_repeat_tosa_BI():
     pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),
-        tosa_version="TOSA-0.80+BI",
+        quantize=True,
         ops_before_pass={
             "executorch_exir_dialects_edge__ops_aten_expand_copy_default": 1,
         },

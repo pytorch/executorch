@@ -31,7 +31,7 @@ define_overridable_option(
 )
 define_overridable_option(
   EXECUTORCH_PAL_DEFAULT
-  "Which PAL default implementation to use. Choices: posix, minimal"
+  "Which PAL default implementation to use. Choices: posix, minimal, android"
   STRING "posix"
 )
 define_overridable_option(
@@ -75,6 +75,11 @@ define_overridable_option(
   BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT
+  "Build the optimized ops library for AOT export usage"
+  BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
   "Build the Data Loader extension"
   BOOL OFF
@@ -107,6 +112,11 @@ define_overridable_option(
 define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_TRAINING
   "Build the training extension"
+  BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_APPLE
+  "Build the Apple extension"
   BOOL OFF
 )
 define_overridable_option(
@@ -205,11 +215,68 @@ define_overridable_option(
   BOOL ON
 )
 
+if(EXECUTORCH_BUILD_ARM_BAREMETAL)
+  set(_default_executorch_build_pthreadpool OFF)
+  set(_default_executorch_build_cpuinfo OFF)
+else()
+  set(_default_executorch_build_pthreadpool ON)
+  set(_default_executorch_build_cpuinfo ON)
+endif()
+define_overridable_option(
+  EXECUTORCH_BUILD_PTHREADPOOL
+  "Build pthreadpool library."
+  BOOL ${_default_executorch_build_pthreadpool}
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_CPUINFO
+  "Build cpuinfo library."
+  BOOL ${_default_executorch_build_cpuinfo}
+)
+
+# TODO(jathu): move this to platform specific presets when created
+set(_default_executorch_build_executor_runner ON)
+if(APPLE AND "${SDK_NAME}" STREQUAL "iphoneos")
+  set(_default_executorch_build_executor_runner OFF)
+elseif(DEFINED EXECUTORCH_BUILD_PRESET_FILE)
+  set(_default_executorch_build_executor_runner OFF)
+endif()
+define_overridable_option(
+  EXECUTORCH_BUILD_EXECUTOR_RUNNER
+  "Build the executor_runner executable"
+  BOOL ${_default_executorch_build_executor_runner}
+)
+
+# NB: Enabling this will serialize execution of delegate instances Keeping this
+# OFF by default to maintain existing behavior, to be revisited.
+define_overridable_option(
+  EXECUTORCH_XNNPACK_SHARED_WORKSPACE
+  "Enable workspace sharing across different delegate instances"
+  BOOL ON
+)
+# Keeping this OFF by default due to regressions in decode and model load with
+# kleidi kernels
+define_overridable_option(
+  EXECUTORCH_XNNPACK_ENABLE_KLEIDI
+  "Enable Arm Kleidi kernels"
+  BOOL OFF
+)
+# Turning this on cache weights between partitions and methods. If weights
+# are shared across methods/partitions then this can reduce load time and
+# memory usage
+#
+# Keeping this off maintains existing behavior. Turning this on serializes
+# execution and initialization of delegates, to be revisited
+define_overridable_option(
+  EXECUTORCH_XNNPACK_ENABLE_WEIGHT_CACHE
+  "Enable weights cache to cache and manage all packed weights"
+  BOOL OFF
+)
+
 # MARK: - Validations
 # At this point all the options should be configured with their final value.
 
 if(NOT EXISTS ${EXECUTORCH_PAL_DEFAULT_FILE_PATH})
-  message(FATAL_ERROR "PAL default implementation (EXECUTORCH_PAL_DEFAULT=${EXECUTORCH_PAL_DEFAULT}) file not found: ${EXECUTORCH_PAL_DEFAULT_FILE_PATH}. Choices: posix, minimal")
+  message(FATAL_ERROR "PAL default implementation (EXECUTORCH_PAL_DEFAULT=${EXECUTORCH_PAL_DEFAULT}) file not found: ${EXECUTORCH_PAL_DEFAULT_FILE_PATH}. Choices: posix, minimal, android")
 endif()
 
 
@@ -230,5 +297,14 @@ endif()
 if(EXECUTORCH_ENABLE_EVENT_TRACER)
   if(NOT EXECUTORCH_BUILD_DEVTOOLS)
     message(FATAL_ERROR "Use of 'EXECUTORCH_ENABLE_EVENT_TRACER' requires 'EXECUTORCH_BUILD_DEVTOOLS' to be enabled.")
+  endif()
+endif()
+
+
+if(EXECUTORCH_BUILD_ARM_BAREMETAL)
+  if(EXECUTORCH_BUILD_PTHREADPOOL)
+    message(FATAL_ERROR "Cannot enable both EXECUTORCH_BUILD_PTHREADPOOL and EXECUTORCH_BUILD_ARM_BAREMETAL")
+  elseif(EXECUTORCH_BUILD_CPUINFO)
+    message(FATAL_ERROR "Cannot enable both EXECUTORCH_BUILD_CPUINFO and EXECUTORCH_BUILD_ARM_BAREMETAL")
   endif()
 endif()

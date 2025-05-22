@@ -56,10 +56,10 @@ from executorch.exir import (
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.extension.export_util.utils import save_pte_program
 from tabulate import tabulate
+from torch.utils.data import DataLoader
 
 # Quantize model if required using the standard export quantizaion flow.
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torch.utils.data import DataLoader
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory

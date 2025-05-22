@@ -6,11 +6,16 @@
 
 import logging
 from enum import Enum
-from typing import Tuple
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
-from executorch.examples.models.llama.attention import KVCache
+from executorch.examples.models.llama.attention import (
+    _create_causal_mask_for_ring_buffer,
+    CachePositionsManager,
+    KVCache,
+    RingKVCache,
+)
 
 from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib  # noqa: F401
 
@@ -75,6 +80,7 @@ class QuantizedKVCache(nn.Module):
             self.register_buffer(
                 "v_cache_zero_points", torch.ones(scale_shape, dtype=torch.int8)
             )
+        self.cache_type = cache_type
 
     def _quantize(self, value):
         (
@@ -93,7 +99,7 @@ class QuantizedKVCache(nn.Module):
         )
         return quantized_value, scales, zero_points
 
-    def _quantize_and_update(self, input_pos, k_val, v_val):
+    def _quantize_and_update(self, input_pos, k_val, v_val, indices=None):
         quantized_k_val, k_scales, k_zero_points = self._quantize(k_val)
         quantized_v_val, v_scales, v_zero_points = self._quantize(v_val)
 
@@ -104,17 +110,48 @@ class QuantizedKVCache(nn.Module):
 
         if self.use_custom_update_cache_op:
             start_pos = input_pos[0].item()
-            _ = torch.ops.llama.update_cache(quantized_k_val, self.k_cache, start_pos)
-            _ = torch.ops.llama.update_cache(k_scales, self.k_cache_scales, start_pos)
-            _ = torch.ops.llama.update_cache(
-                k_zero_points, self.k_cache_zero_points, start_pos
-            )
-            _ = torch.ops.llama.update_cache(quantized_v_val, self.v_cache, start_pos)
-            _ = torch.ops.llama.update_cache(v_scales, self.v_cache_scales, start_pos)
-            _ = torch.ops.llama.update_cache(
-                v_zero_points, self.v_cache_zero_points, start_pos
-            )
+            if indices is not None:
+                _ = torch.ops.llama.update_cache_with_indices(
+                    quantized_k_val, self.k_cache, start_pos, indices
+                )
+                _ = torch.ops.llama.update_cache_with_indices(
+                    k_scales, self.k_cache_scales, start_pos, indices
+                )
+                _ = torch.ops.llama.update_cache_with_indices(
+                    k_zero_points, self.k_cache_zero_points, start_pos, indices
+                )
+                _ = torch.ops.llama.update_cache_with_indices(
+                    quantized_v_val, self.v_cache, start_pos, indices
+                )
+                _ = torch.ops.llama.update_cache_with_indices(
+                    v_scales, self.v_cache_scales, start_pos, indices
+                )
+                _ = torch.ops.llama.update_cache_with_indices(
+                    v_zero_points, self.v_cache_zero_points, start_pos, indices
+                )
+            else:
+                _ = torch.ops.llama.update_cache(
+                    quantized_k_val, self.k_cache, start_pos
+                )
+                _ = torch.ops.llama.update_cache(
+                    k_scales, self.k_cache_scales, start_pos
+                )
+                _ = torch.ops.llama.update_cache(
+                    k_zero_points, self.k_cache_zero_points, start_pos
+                )
+                _ = torch.ops.llama.update_cache(
+                    quantized_v_val, self.v_cache, start_pos
+                )
+                _ = torch.ops.llama.update_cache(
+                    v_scales, self.v_cache_scales, start_pos
+                )
+                _ = torch.ops.llama.update_cache(
+                    v_zero_points, self.v_cache_zero_points, start_pos
+                )
         else:
+            assert indices is None, "Indices not supported for this path"
+            # Following is also broken because in prefill input_pos = [0]
+            # but we need to update some slice of cache
             self.k_cache[:, input_pos] = quantized_k_val
             self.k_cache_scales[:, input_pos] = k_scales
             self.k_cache_zero_points[:, input_pos] = k_zero_points
@@ -122,8 +159,8 @@ class QuantizedKVCache(nn.Module):
             self.v_cache_scales[:, input_pos] = v_scales
             self.v_cache_zero_points[:, input_pos] = v_zero_points
 
-    def _update_and_return_float_values(self, input_pos, k_val, v_val):
-        self._quantize_and_update(input_pos, k_val, v_val)
+    def _update_and_return_float_values(self, input_pos, k_val, v_val, indices=None):
+        self._quantize_and_update(input_pos, k_val, v_val, indices)
 
         k_out = torch.ops.quantized_decomposed.dequantize_per_token(
             self.k_cache,
@@ -144,38 +181,51 @@ class QuantizedKVCache(nn.Module):
             self.cache_fp_type,
         )
 
-        # When returning float values we jsut use the last value
+        # When returning float values we just use the last value
         # instead of dequantized value.
         start_pos = input_pos[0].item()
         if self.use_custom_update_cache_op:
-            _ = torch.ops.llama.update_cache(k_val, k_out, start_pos)
-            _ = torch.ops.llama.update_cache(v_val, v_out, start_pos)
+            if indices is not None:
+                _ = torch.ops.llama.update_cache_with_indices(
+                    k_val, k_out, start_pos, indices
+                )
+                _ = torch.ops.llama.update_cache_with_indices(
+                    v_val, v_out, start_pos, indices
+                )
+            else:
+                _ = torch.ops.llama.update_cache(k_val, k_out, start_pos)
+                _ = torch.ops.llama.update_cache(v_val, v_out, start_pos)
         else:
             k_out[:, input_pos] = k_val
             v_out[:, input_pos] = v_val
 
         return k_out, v_out
 
-    def _update_and_return_quantized_values(self, input_pos, k_val, v_val):
-        self._quantize_and_update(input_pos, k_val, v_val)
+    def _update_and_return_quantized_values(
+        self, input_pos, k_val, v_val, indices=None
+    ):
+        self._quantize_and_update(input_pos, k_val, v_val, indices)
 
         return self.k_cache, self.v_cache
 
-    def update(self, input_pos, k_val, v_val):
+    def update(self, input_pos, k_val, v_val, indices=None):
         """
         k_val, v_val: [B, H, S, D]
         return: [B, H, S, D]
         However the storage is [B, S, H, D] so we incur transpose in, transpose out
         This shall be removed by subsequent post-export graph pass
         """
+
         k_val = k_val.transpose(1, 2)
         v_val = v_val.transpose(1, 2)
 
         if self.return_float_values:
-            k_out, v_out = self._update_and_return_float_values(input_pos, k_val, v_val)
+            k_out, v_out = self._update_and_return_float_values(
+                input_pos, k_val, v_val, indices
+            )
         else:
             k_out, v_out = self._update_and_return_quantized_values(
-                input_pos, k_val, v_val
+                input_pos, k_val, v_val, indices
             )
         return k_out.transpose(1, 2), v_out.transpose(1, 2)
 
@@ -277,14 +327,28 @@ class CustomKVCache(nn.Module):
         )
 
     def update(
-        self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
+        self,
+        input_pos: torch.Tensor,
+        k_val: torch.Tensor,
+        v_val: torch.Tensor,
+        indices: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # input_pos: [S], k_val: [B, H, S, D]
         k_val = k_val.transpose(1, 2)
         v_val = v_val.transpose(1, 2)
         start_pos = input_pos[0].item()
-        _ = torch.ops.llama.update_cache(k_val, self.k_cache, start_pos)
-        _ = torch.ops.llama.update_cache(v_val, self.v_cache, start_pos)
+
+        if indices is not None:
+            _ = torch.ops.llama.update_cache_with_indices(
+                k_val, self.k_cache, start_pos, indices
+            )
+            _ = torch.ops.llama.update_cache_with_indices(
+                v_val, self.v_cache, start_pos, indices
+            )
+        else:
+            _ = torch.ops.llama.update_cache(k_val, self.k_cache, start_pos)
+            _ = torch.ops.llama.update_cache(v_val, self.v_cache, start_pos)
+
         return (
             self.k_cache.transpose(1, 2),
             self.v_cache.transpose(1, 2),
@@ -324,4 +388,199 @@ def _replace_kv_cache_with_custom_kv_cache(module):
             )
         else:
             _replace_kv_cache_with_custom_kv_cache(child)
+    return module
+
+
+class QuantizedRingKVCache(QuantizedKVCache):
+    def __init__(
+        self,
+        max_batch_size,
+        max_context_length,
+        n_heads,
+        head_dim,
+        cache_type: QuantizedCacheType = QuantizedCacheType.AffineSymmetric,
+        use_custom_update_cache_op: bool = False,
+    ):
+        # Look at attention.py for explanation on why max_context_length * 2
+        super().__init__(
+            max_batch_size,
+            max_context_length * 2,
+            n_heads,
+            head_dim,
+            cache_type,
+            use_custom_update_cache_op,
+        )
+        self.cache_positions_manager = CachePositionsManager(self.max_context_length)
+        self.is_ring_buffer = True
+        self.window_size = max_context_length
+
+    def create_causal_mask_for_ring_buffer(self, start_pos, seq_len):
+        cache_positions = self.cache_positions_manager.cache_positions
+        return _create_causal_mask_for_ring_buffer(
+            cache_positions, self.window_size, start_pos, seq_len
+        )
+
+    def update(self, input_pos, k_val, v_val):
+        """
+        k_val, v_val: [B, H, S, D]
+        return: [B, H, S, D]
+        However the storage is [B, S, H, D] so we incur transpose in, transpose out
+        This shall be removed by subsequent post-export graph pass
+        """
+        # Need to transpose for two reasons
+        # 1. kv cache is stored as [B, S, H, D]
+        # 2. If seq_len = k_val.size(2), we wont be able be able to optimize
+        #    away transpose at the output of k, v projection
+        seq_len = k_val.transpose(1, 2).size(1)
+        assert seq_len <= self.k_cache.size(
+            1
+        ), f"Update sequence length({seq_len}) for kv cache must be smaller than the cache size({self.k_cache.size(2)})"
+        indices = self.cache_positions_manager.calculate_positions_and_update_indices(
+            input_pos, seq_len
+        )
+        indices = indices.unsqueeze(0)
+
+        return super().update(input_pos, k_val, v_val, indices)
+
+    @classmethod
+    def from_quantized_kv_cache(
+        cls,
+        kv_cache,
+        sliding_window_size,
+    ):
+        assert isinstance(
+            kv_cache, QuantizedKVCache
+        ), "For QuantizedRingKVCache expect QuantizedKVCache as input kv_cache"
+        max_batch_size, _, n_heads, head_dim = kv_cache.k_cache.shape
+        return cls(
+            max_batch_size,
+            sliding_window_size,
+            n_heads,
+            head_dim,
+            kv_cache.cache_type,
+            kv_cache.use_custom_update_cache_op,
+        )
+
+
+class CustomRingKVCache(CustomKVCache):
+    def __init__(
+        self,
+        max_batch_size,
+        max_context_length,
+        n_heads,
+        head_dim,
+        dtype=torch.float32,
+    ):
+        # Look at attention.py for explanation on why max_context_length * 2
+        super().__init__(
+            max_batch_size, max_context_length * 2, n_heads, head_dim, dtype
+        )
+        self.cache_positions_manager = CachePositionsManager(self.max_context_length)
+        self.is_ring_buffer = True
+        self.window_size = max_context_length
+
+    def create_causal_mask_for_ring_buffer(self, start_pos, seq_len):
+        cache_positions = self.cache_positions_manager.cache_positions
+        return _create_causal_mask_for_ring_buffer(
+            cache_positions, self.window_size, start_pos, seq_len
+        )
+
+    def update(self, input_pos, k_val, v_val):
+        """
+        k_val, v_val: [B, H, S, D]
+        return: [B, H, S, D]
+        However the storage is [B, S, H, D] so we incur transpose in, transpose out
+        This shall be removed by subsequent post-export graph pass
+        """
+        # Need to transpose for two reasons
+        # 1. kv cache is stored as [B, S, H, D]
+        # 2. If seq_len = k_val.size(2), we wont be able be able to optimize
+        #    away transpose at the output of k, v projection
+        seq_len = k_val.transpose(1, 2).size(1)
+        assert seq_len <= self.k_cache.size(
+            1
+        ), f"Update sequence length({seq_len}) for kv cache must be smaller than the cache size({self.k_cache.size(2)})"
+        indices = self.cache_positions_manager.calculate_positions_and_update_indices(
+            input_pos, seq_len
+        )
+        indices = indices.unsqueeze(0)
+
+        return super().update(input_pos, k_val, v_val, indices)
+
+    @classmethod
+    def from_custom_kv_cache(
+        cls,
+        kv_cache,
+        sliding_window_size,
+    ):
+        max_batch_size, n_heads, _, head_dim = kv_cache.k_cache.shape
+        if isinstance(kv_cache, CustomKVCache):
+            # If replacing custom kv cache, then the shape is [B, S, H, D]
+            max_batch_size, _, n_heads, head_dim = kv_cache.k_cache.shape
+        return cls(
+            max_batch_size,
+            sliding_window_size,
+            n_heads,
+            head_dim,
+            dtype=kv_cache.k_cache.dtype,
+        )
+
+
+def _replace_kv_cache_with_ring_kv_cache(attention, layer_size):
+    sliding_window_size = layer_size
+    assert (
+        getattr(attention, "kv_cache", None) is not None
+    ), "Attention module must have kv_cache module"
+    kv_cache = attention.kv_cache
+    if isinstance(kv_cache, KVCache):
+        attention.kv_cache = RingKVCache(
+            kv_cache.max_batch_size,
+            sliding_window_size,
+            kv_cache.n_heads,
+            kv_cache.head_dim,
+            kv_cache.enable_dynamic_shape,
+            kv_cache.k_cache.dtype,
+        )
+    elif isinstance(kv_cache, CustomKVCache):
+        attention.kv_cache = CustomRingKVCache.from_custom_kv_cache(
+            kv_cache, layer_size
+        )
+    elif isinstance(kv_cache, QuantizedKVCache):
+        attention.kv_cache = QuantizedRingKVCache.from_quantized_kv_cache(
+            kv_cache, layer_size
+        )
+
+
+def replace_kv_cache_with_ring_kv_cache(module, layer_sizes):
+    # This is needed to ensure that custom ops are registered
+    from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
+
+    assert len(module.layers) >= len(
+        layer_sizes
+    ), f"Length of layer sizes {len(layer_sizes)} must match the number of layers in the module {len(module.layers)}."
+    multiplier = len(module.layers) // len(layer_sizes)
+    modulo = len(module.layers) % len(layer_sizes)
+    assert (
+        modulo == 0
+    ), f"num layers specified must be multiple of model layers in order to specify pattern. pattern: {layer_sizes} model's num layers {len(module.layers)}"
+    layer_sizes = layer_sizes * multiplier
+    logging.info(
+        f"Applying local sliding window attention with following pattern {layer_sizes}."
+    )
+    assert len(layer_sizes) == len(
+        module.layers
+    ), f"Length of layer sizes {len(layer_sizes)} must match the number of layers in the module {len(module.layers)}."
+    for i, transformer_block in enumerate(module.layers):
+        sliding_window_size = layer_sizes[i]
+        if sliding_window_size == 0:
+            continue
+        assert (
+            getattr(transformer_block, "attention", None) is not None
+        ), f"Transfomer block must have attention module. Transformer block {transformer_block}"
+        attention = transformer_block.attention
+        _replace_kv_cache_with_ring_kv_cache(attention, sliding_window_size)
+        # if attention's sdpa is custom sdpa then we have to make sure
+        # it is not doing causal attention
+        if "SDPACustom" in attention.SDPA.__class__.__name__:
+            attention.SDPA.use_attention_mask = True
     return module

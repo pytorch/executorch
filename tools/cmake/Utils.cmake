@@ -18,30 +18,6 @@
 # It should also be cmake-lint clean.
 #
 
-# Public function to print summary for all configurations. For new variables,
-# it's recommended to add them here.
-function(executorch_print_configuration_summary)
-  message(STATUS "")
-  message(STATUS "******** Summary ********")
-  message(STATUS "  CMAKE_BUILD_TYPE              : ${CMAKE_BUILD_TYPE}")
-  message(STATUS "  CMAKE_CXX_STANDARD            : ${CMAKE_CXX_STANDARD}")
-  message(STATUS "  CMAKE_CXX_COMPILER_ID         : ${CMAKE_CXX_COMPILER_ID}")
-  message(STATUS "  CMAKE_TOOLCHAIN_FILE          : ${CMAKE_TOOLCHAIN_FILE}")
-  message(STATUS "  BUCK2                         : ${BUCK2}")
-  message(STATUS "  PYTHON_EXECUTABLE             : ${PYTHON_EXECUTABLE}")
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_CPUINFO               : ${EXECUTORCH_BUILD_CPUINFO}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_EXECUTOR_RUNNER       : "
-                 "${EXECUTORCH_BUILD_EXECUTOR_RUNNER}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_PTHREADPOOL           : ${EXECUTORCH_BUILD_PTHREADPOOL}"
-  )
-endfunction()
-
 # This is the funtion to use -Wl, --whole-archive to link static library NB:
 # target_link_options is broken for this case, it only append the interface link
 # options of the first library.

@@ -59,6 +59,18 @@ test_modules = {
         AvgPool2d((4, 6), (1, 2), (2, 3)),
         (torch.rand(1, 16, 50, 32),),
     ),
+    "non_divisible_window": lambda: (
+        AvgPool2d(3, 2, 1),
+        (torch.rand(1, 16, 112, 112),),
+    ),
+    "non_divisible_window_height": lambda: (
+        AvgPool2d(3, (2, 1), 1),
+        (torch.rand(1, 16, 56, 56),),
+    ),
+    "non_divisible_window_width": lambda: (
+        AvgPool2d(3, (1, 2), 1),
+        (torch.rand(1, 16, 56, 56),),
+    ),
 }
 
 

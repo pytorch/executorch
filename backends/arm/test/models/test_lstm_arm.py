@@ -1,19 +1,23 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
 # Copyright 2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-
-import unittest
+from typing import Tuple
 
 import torch
 
-from executorch.backends.arm.test import common, conftest
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineBI,
+    EthosU85PipelineBI,
+    TosaPipelineBI,
+    TosaPipelineMI,
+)
 
 from torch.nn.quantizable.modules import rnn
+
+input_t = Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]  #  (h0, c0)
 
 
 def get_test_inputs():
@@ -23,7 +27,7 @@ def get_test_inputs():
     )
 
 
-class TestLSTM(unittest.TestCase):
+class TestLSTM:
     """Tests quantizable LSTM module."""
 
     """
@@ -37,69 +41,60 @@ class TestLSTM(unittest.TestCase):
     # Used e.g. for quantization calibration and shape extraction in the tester
     model_example_inputs = get_test_inputs()
 
-    def test_lstm_tosa_MI(self):
-        (
-            ArmTester(
-                self.lstm,
-                example_inputs=self.model_example_inputs,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
-            )
-            .export()
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=get_test_inputs())
-        )
 
-    def test_lstm_tosa_BI(self):
-        (
-            ArmTester(
-                self.lstm,
-                example_inputs=self.model_example_inputs,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
-            )
-            .quantize()
-            .export()
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(atol=3e-1, qtol=1, inputs=get_test_inputs())
-        )
+def test_lstm_tosa_MI():
+    pipeline = TosaPipelineMI[input_t](
+        TestLSTM.lstm,
+        TestLSTM.model_example_inputs,
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.change_args("run_method_and_compare_outputs", get_test_inputs(), atol=3e-1)
+    pipeline.run()
 
-    def test_lstm_u55_BI(self):
-        tester = (
-            ArmTester(
-                self.lstm,
-                example_inputs=self.model_example_inputs,
-                compile_spec=common.get_u55_compile_spec(),
-            )
-            .quantize()
-            .export()
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .serialize()
-        )
-        if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(
-                atol=3e-1, qtol=1, inputs=get_test_inputs()
-            )
 
-    def test_lstm_u85_BI(self):
-        tester = (
-            ArmTester(
-                self.lstm,
-                example_inputs=self.model_example_inputs,
-                compile_spec=common.get_u85_compile_spec(),
-            )
-            .quantize()
-            .export()
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .serialize()
-        )
-        if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(
-                atol=3e-1, qtol=1, inputs=get_test_inputs()
-            )
+def test_lstm_tosa_BI():
+    pipeline = TosaPipelineBI[input_t](
+        TestLSTM.lstm,
+        TestLSTM.model_example_inputs,
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.change_args(
+        "run_method_and_compare_outputs", get_test_inputs(), atol=3e-1, qtol=1.0
+    )
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone300
+def test_lstm_u55_BI():
+    pipeline = EthosU55PipelineBI[input_t](
+        TestLSTM.lstm,
+        TestLSTM.model_example_inputs,
+        aten_ops=[],
+        exir_ops=[],
+        use_to_edge_transform_and_lower=True,
+        run_on_fvp=True,
+    )
+    pipeline.change_args(
+        "run_method_and_compare_outputs", get_test_inputs(), atol=3e-1, qtol=1.0
+    )
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone320
+def test_lstm_u85_BI():
+    pipeline = EthosU85PipelineBI[input_t](
+        TestLSTM.lstm,
+        TestLSTM.model_example_inputs,
+        aten_ops=[],
+        exir_ops=[],
+        use_to_edge_transform_and_lower=True,
+        run_on_fvp=True,
+    )
+    pipeline.change_args(
+        "run_method_and_compare_outputs", get_test_inputs(), atol=3e-1, qtol=1.0
+    )
+    pipeline.run()
