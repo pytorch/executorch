@@ -43,7 +43,7 @@ from executorch.backends.mediatek import (
     Precision,
 )
 from executorch.exir.backend.backend_details import CompileSpec
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from tqdm import tqdm
 
 warnings.filterwarnings("ignore")

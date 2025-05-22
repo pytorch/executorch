@@ -1,6 +1,6 @@
 # XNNPACK Backend
 
-The XNNPACK delegate is the ExecuTorch solution for CPU execution on mobile CPUs. [XNNPACK](https://github.com/google/XNNPACK/tree/master) is a library that provides optimized kernels for machine learning operators on Arm and x86 CPUs. 
+The XNNPACK delegate is the ExecuTorch solution for CPU execution on mobile CPUs. [XNNPACK](https://github.com/google/XNNPACK/tree/master) is a library that provides optimized kernels for machine learning operators on Arm and x86 CPUs.
 
 ## Features
 
@@ -18,7 +18,7 @@ The XNNPACK delegate is the ExecuTorch solution for CPU execution on mobile CPUs
 
 ## Development Requirements
 
-The XNNPACK delegate does not introduce any development system requirements beyond those required by 
+The XNNPACK delegate does not introduce any development system requirements beyond those required by
 the core ExecuTorch runtime.
 
 ----
@@ -63,7 +63,7 @@ After generating the XNNPACK-delegated .pte, the model can be tested from Python
 
 ## Quantization
 
-The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. To quantize a PyTorch model for the XNNPACK backend, use the `XNNPACKQuantizer`. `Quantizers` are backend specific, which means the `XNNPACKQuantizer` is configured to quantize models to leverage the quantized operators offered by the XNNPACK Library. 
+The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. To quantize a PyTorch model for the XNNPACK backend, use the `XNNPACKQuantizer`. `Quantizers` are backend specific, which means the `XNNPACKQuantizer` is configured to quantize models to leverage the quantized operators offered by the XNNPACK Library.
 
 ### Supported Quantization Schemes
 The XNNPACK delegate supports the following quantization schemes:
@@ -94,7 +94,7 @@ from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import XNNPACKQuantizer
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import to_edge_transform_and_lower
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer.xnnpack_quantizer import get_symmetric_quantization_config
 
 model = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval()
