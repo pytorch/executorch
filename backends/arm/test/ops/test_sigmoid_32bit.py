@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import pytest
 import torch
 from executorch.backends.arm.quantizer import TOSAQuantizer
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
@@ -107,33 +106,32 @@ class SigmoidAddSigmoid(torch.nn.Module):
 
 
 @common.parametrize("test_data", test_data_suite)
-@pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
 def test_sigmoid_tosa_BI(test_data):
     pipeline = TosaPipelineBI(
         Sigmoid(),
         (test_data(),),
         Sigmoid.aten_op,
         Sigmoid.exir_op,
+        qtol=1,
     )
     pipeline.change_args("quantize", get_32bit_sigmoid_quantizer())
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
-@pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
 def test_sigmoid_tosa_BI_add_sigmoid(test_data):
     pipeline = TosaPipelineBI(
         SigmoidAddSigmoid(),
         (test_data(),),
         Sigmoid.aten_op,
         Sigmoid.exir_op,
+        qtol=1,
     )
     pipeline.change_args("quantize", get_32bit_sigmoid_quantizer())
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
-@pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
 def test_sigmoid_u55_BI(test_data):
     pipeline = OpNotSupportedPipeline(
         Sigmoid(),
@@ -147,7 +145,6 @@ def test_sigmoid_u55_BI(test_data):
 
 
 @common.parametrize("test_data", test_data_suite)
-@pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
 def test_sigmoid_u55_BI_add_sigmoid(test_data):
     pipeline = OpNotSupportedPipeline(
         SigmoidAddSigmoid(),
@@ -162,9 +159,7 @@ def test_sigmoid_u55_BI_add_sigmoid(test_data):
 
 
 @common.parametrize("test_data", test_data_suite)
-@pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
 @common.XfailIfNoCorstone320
-@pytest.mark.flaky(reruns=5)
 def test_sigmoid_u85_BI(test_data):
     pipeline = EthosU85PipelineBI(
         Sigmoid(),
@@ -180,15 +175,8 @@ def test_sigmoid_u85_BI(test_data):
 @common.parametrize(
     "test_data",
     test_data_suite,
-    xfails={
-        "ramp": "AssertionError: Output 0 does not match reference output.",
-        "rand": "AssertionError: Output 0 does not match reference output.",
-        "rand_4d": "AssertionError: Output 0 does not match reference output.",
-    },
 )
-@pytest.mark.flaky(reruns=32)  # Flaky due to Vela bug: MLBEDSW-10642
 @common.XfailIfNoCorstone320
-@pytest.mark.flaky(reruns=5)
 def test_sigmoid_u85_BI_add_sigmoid(test_data):
     pipeline = EthosU85PipelineBI(
         SigmoidAddSigmoid(),
