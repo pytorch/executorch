@@ -28,9 +28,6 @@ extension Int32: Scalar { static var dataType: DataType { .int } }
 extension Int64: Scalar { static var dataType: DataType { .long } }
 @available(*, deprecated, message: "This API is experimental.")
 extension Int: Scalar { static var dataType: DataType { .long } }
-@available(macOS 11.0, *)
-@available(*, deprecated, message: "This API is experimental.")
-extension Float16: Scalar { static var dataType: DataType { .half } }
 @available(*, deprecated, message: "This API is experimental.")
 extension Float: Scalar { static var dataType: DataType { .float } }
 @available(*, deprecated, message: "This API is experimental.")
