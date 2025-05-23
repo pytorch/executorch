@@ -138,15 +138,27 @@ create_xcframework() {
                 echo "No .swiftmodule file found in ${module_source_dir}"
                 exit 1
             fi
-
-            local dir_suffix
-            dir_suffix=$(echo "$dir" | cut -d'/' -f1 | tr '[:upper:]' '[:lower:]' | sed 's/[\/\.~]/_/g')
-            for slice_path in "${xcframework}/${dir_suffix}-"*; do
-                if [ -d "${slice_path}/Headers" ]; then
-                    echo " - Copying ${swiftmodule_file##*/} to ${slice_path}/Headers/${swift_module}.swiftmodule"
-                    cp "${swiftmodule_file}" "${slice_path}/Headers/${swift_module}.swiftmodule"
-                fi
-            done
+            local base=$(basename "$swiftmodule_file" .swiftmodule)
+            local arch="${base%%-*}"
+            local rest="${base#*-apple-}"
+            local platform_tag
+            local variant
+            if [[ "$rest" == *-simulator ]]; then
+                platform_tag="${rest%-simulator}"
+                variant="-simulator"
+            else
+                platform_tag="$rest"
+                variant=""
+            fi
+            local slice_name="${platform_tag}-${arch}${variant}"
+            local slice_path="${xcframework}/${slice_name}"
+            if [ ! -d "$slice_path" ]; then
+                echo "Warning: slice '${slice_name}' not found in ${xcframework}, skipping"
+                continue
+            fi
+            echo " - Copying ${swift_module}.swiftmodule into slice ${slice_name}"
+            cp "$swiftmodule_file" "${slice_path}/${swift_module}.swiftmodule"
+            ln -sf "../${swift_module}.swiftmodule" "${slice_path}/Headers/${swift_module}.swiftmodule"
         done
     fi
 
