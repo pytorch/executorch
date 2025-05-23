@@ -33,7 +33,8 @@ class ReplaceIndexPutInput(ExportPass):
                     copy_node := list(node.users)[0]
                 ) and copy_node.target == exir_ops.edge.aten.copy.default:
                     m_buffer_node = copy_node.args[0]
-                    bad_frozen_node = node.args[0]
+                    dq_node = node.args[0]
+                    bad_frozen_node = dq_node.args[0]
                     if QCOM_QUANT_ATTRS in bad_frozen_node.meta:
                         m_buffer_node.meta[QCOM_QUANT_ATTRS] = bad_frozen_node.meta[
                             QCOM_QUANT_ATTRS
@@ -43,8 +44,8 @@ class ReplaceIndexPutInput(ExportPass):
                                 m_buffer_node.meta[QCOM_QUANT_ATTRS][QCOM_ENCODING]
                             ]
                         )
-                    with graph.inserting_after(bad_frozen_node):
-                        node.replace_input_with(bad_frozen_node, m_buffer_node)
+                    with graph.inserting_after(dq_node):
+                        node.replace_input_with(dq_node, m_buffer_node)
                 else:
                     continue
 
