@@ -4,9 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import string
-from logging import FATAL
-from tokenize import String
 from typing import Optional, Tuple
 
 import torch
@@ -106,7 +103,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             or node.name == "output"
             and node.args[0][0]
             .meta["val"]
-            .is_contiguous()  # Need to consider output trace so out matches
+            .is_contiguous()
         )
 
     def can_be_converted_to_nhwc(self, node: torch.fx.Node) -> bool:
@@ -287,12 +284,6 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 return
         elif self.is_nhwc_node(input_node):
             return
-        # if (
-        #     self.is_nhwc_node(input_node)
-        #     or input_node.op == "placeholder"
-        #     and not input_node.meta["val"][0].is_contiguous()
-        # ):
-        #     return
 
         if not self.can_be_converted_to_nhwc(input_node):
             raise AssertionError(
@@ -360,16 +351,6 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 return
         elif self.is_nchw_node(input_node):
             return
-        # TODO
-        # meta trace happens before passes. At the end of pass, meta gets regenerated. eager mode assumes in/out stay same for conv. Linear has implicit nchw conv
-        # if (
-        #     self.is_nchw_node(
-        #         input_node
-        #     )  # This is triggering as x (placeholder) is tagged as nchw
-        #     or input_node.op == "placeholder"
-        #     and input_node.meta["val"][0].is_contiguous()
-        # ):
-        #     return
 
         if ChannelsLastTaggedReshapePass.PARTNER_NODE in input_node.meta:
             # Already has an associated NCHW node

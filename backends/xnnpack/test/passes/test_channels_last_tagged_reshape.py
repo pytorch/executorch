@@ -44,20 +44,20 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
     )
     dynamic_quant_name = "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_tensor"
 
-    # def test_fp32_channels_last_tagged_reshape_pass(self):
-    #     for module, num_reshape in self.modules.items():
-    #         (
-    #             Tester(module, (torch.randn(1, 1, 6, 6),))
-    #             .export()
-    #             .to_edge()
-    #             .run_passes(self.PassStage)
-    #             .check_count(
-    #                 {
-    #                     self.to_copy_name: num_reshape,
-    #                 }
-    #             )
-    #             .run_method_and_compare_outputs()
-    #         )
+    def test_fp32_channels_last_tagged_reshape_pass(self):
+        for module, num_reshape in self.modules.items():
+            (
+                Tester(module, (torch.randn(1, 1, 6, 6),))
+                .export()
+                .to_edge()
+                .run_passes(self.PassStage)
+                .check_count(
+                    {
+                        self.to_copy_name: num_reshape,
+                    }
+                )
+                .run_method_and_compare_outputs()
+            )
 
     class LinearConv(torch.nn.Module):
         def __init__(self):
@@ -141,26 +141,26 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
 
         tester.export().to_edge_transform_and_lower().to_executorch().serialize().run_method_and_compare_outputs()
 
-    # def test_qs8_channels_last_tagged_reshape_pass(self):
-    #     for module, num_reshape in self.modules.items():
-    #         (
-    #             Tester(module, (torch.randn(1, 1, 6, 6),))
-    #             .quantize()
-    #             .export()
-    #             .to_edge()
-    #             .run_passes(self.PassStage)
-    #             .check(
-    #                 [
-    #                     self.quant_name,
-    #                     self.dequant_name,
-    #                     self.to_copy_name,
-    #                     self.quant_name,
-    #                     self.dequant_name,
-    #                 ]
-    #                 * num_reshape
-    #             )
-    #             .run_method_and_compare_outputs()
-    #         )
+    def test_qs8_channels_last_tagged_reshape_pass(self):
+        for module, num_reshape in self.modules.items():
+            (
+                Tester(module, (torch.randn(1, 1, 6, 6),))
+                .quantize()
+                .export()
+                .to_edge()
+                .run_passes(self.PassStage)
+                .check(
+                    [
+                        self.quant_name,
+                        self.dequant_name,
+                        self.to_copy_name,
+                        self.quant_name,
+                        self.dequant_name,
+                    ]
+                    * num_reshape
+                )
+                .run_method_and_compare_outputs()
+            )
 
     class ConvRelu(torch.nn.Module):
         def __init__(self):
@@ -171,39 +171,39 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
         def forward(self, x):
             return self.relu(self.conv(x))
 
-    # def test_fp32_channels_last_tagged_reshape_pass_conv_relu(self):
-    #     (
-    #         Tester(self.ConvRelu().eval(), (torch.randn(1, 1, 6, 6),))
-    #         .export()
-    #         .to_edge()
-    #         .run_passes(self.PassStage)
-    #         .check(
-    #             [self.to_copy_name, self.conv_name, self.relu_name, self.to_copy_name]
-    #         )
-    #         .run_method_and_compare_outputs()
-    #     )
+    def test_fp32_channels_last_tagged_reshape_pass_conv_relu(self):
+        (
+            Tester(self.ConvRelu().eval(), (torch.randn(1, 1, 6, 6),))
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            .check(
+                [self.to_copy_name, self.conv_name, self.relu_name, self.to_copy_name]
+            )
+            .run_method_and_compare_outputs()
+        )
 
-    # def test_qs8_channels_last_tagged_reshape_pass_conv_relu(self):
-    #     (
-    #         Tester(self.ConvRelu().eval(), (torch.randn(1, 1, 6, 6),))
-    #         .quantize()
-    #         .export()
-    #         .to_edge()
-    #         .run_passes(self.PassStage)
-    #         .check(
-    #             [
-    #                 self.to_copy_name,
-    #                 self.quant_name,
-    #                 self.dequant_name,
-    #                 self.conv_name,
-    #                 self.relu_name,
-    #                 self.quant_name,
-    #                 self.dequant_name,
-    #                 self.to_copy_name,
-    #             ]
-    #         )
-    #         .run_method_and_compare_outputs()
-    #     )
+    def test_qs8_channels_last_tagged_reshape_pass_conv_relu(self):
+        (
+            Tester(self.ConvRelu().eval(), (torch.randn(1, 1, 6, 6),))
+            .quantize()
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            .check(
+                [
+                    self.to_copy_name,
+                    self.quant_name,
+                    self.dequant_name,
+                    self.conv_name,
+                    self.relu_name,
+                    self.quant_name,
+                    self.dequant_name,
+                    self.to_copy_name,
+                ]
+            )
+            .run_method_and_compare_outputs()
+        )
 
     class Conv2dBnHardtanhMeanSequenceModule(torch.nn.Module):
         def __init__(self):
@@ -278,28 +278,28 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
         def forward(self, x):
             return self.conv(x)
 
-    # def test_dq_conv2d_channels_last_tagged_reshape_pass(self) -> None:
-    #     (
-    #         Tester(self.Conv2dDynamicQuant().eval(), (torch.randn(1, 3, 8, 8),))
-    #         .quantize(
-    #             Quantize(
-    #                 quantization_config=get_symmetric_quantization_config(
-    #                     is_dynamic=True
-    #                 )
-    #             )
-    #         )
-    #         .export()
-    #         .to_edge()
-    #         .run_passes(self.PassStage)
-    #         .check(
-    #             [
-    #                 self.to_copy_name,
-    #                 self.choose_qparams_name,
-    #                 self.dynamic_quant_name,
-    #                 self.dequant_name,
-    #                 self.conv_name,
-    #                 self.to_copy_name,
-    #             ]
-    #         )
-    #         .run_method_and_compare_outputs()
-    #     )
+    def test_dq_conv2d_channels_last_tagged_reshape_pass(self) -> None:
+        (
+            Tester(self.Conv2dDynamicQuant().eval(), (torch.randn(1, 3, 8, 8),))
+            .quantize(
+                Quantize(
+                    quantization_config=get_symmetric_quantization_config(
+                        is_dynamic=True
+                    )
+                )
+            )
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            .check(
+                [
+                    self.to_copy_name,
+                    self.choose_qparams_name,
+                    self.dynamic_quant_name,
+                    self.dequant_name,
+                    self.conv_name,
+                    self.to_copy_name,
+                ]
+            )
+            .run_method_and_compare_outputs()
+        )
