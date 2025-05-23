@@ -229,46 +229,46 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             x = torch.mean(x, (-1, -2), keepdim=True)
             return x
 
-    # def test_fp32_channels_last_tagged_reshape_pass_conv_bn_hardtanh_mean_seq(self):
-    # Copy #1 is for input to conv, nchw -> nhwc
-    # Copy #2 is for conv to _native_batch_norm_legit_no_training, nhwc -> nchw
-    # Copy #3 is for input to mean, nchw -> nhwc
-    # Copy #4 is for output, nhwc -> nchw
+    def test_fp32_channels_last_tagged_reshape_pass_conv_bn_hardtanh_mean_seq(self):
+        # Copy #1 is for input to conv, nchw -> nhwc
+        # Copy #2 is for conv to _native_batch_norm_legit_no_training, nhwc -> nchw
+        # Copy #3 is for input to mean, nchw -> nhwc
+        # Copy #4 is for output, nhwc -> nchw
 
-    # The graph looks like:
-    # graph():
-    #     %arg0_1 : [#users=1] = placeholder[target=arg0_1]
-    #     %aten__to_copy_default : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%arg0_1,), kwargs = {memory_format: torch.channels_last})
-    #     %_param_constant0 : [#users=1] = get_attr[target=_param_constant0]
-    #     %_param_constant1 : [#users=1] = get_attr[target=_param_constant1]
-    #     %aten_convolution_default : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten__to_copy_default, %_param_constant0, %_param_constant1, [2, 2], [1, 1], [1, 1], False, [0, 0], 1), kwargs = {})
-    #     %aten__to_copy_default_1 : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%aten_convolution_default,), kwargs = {memory_format: torch.contiguous_format})
-    #     %_param_constant2 : [#users=1] = get_attr[target=_param_constant2]
-    #     %_param_constant3 : [#users=1] = get_attr[target=_param_constant3]
-    #     %_tensor_constant0 : [#users=1] = get_attr[target=_tensor_constant0]
-    #     %_tensor_constant1 : [#users=1] = get_attr[target=_tensor_constant1]
-    #     %aten__native_batch_norm_legit_no_training_default : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten__to_copy_default_1, %_param_constant2, %_param_constant3, %_tensor_constant0, %_tensor_constant1, 0.1, 1e-05), kwargs = {})
-    #     %getitem : [#users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default, 0), kwargs = {})
-    #     %aten_hardtanh_default : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem, 0, 6), kwargs = {})
-    #     %aten__to_copy_default_2 : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%aten_hardtanh_default,), kwargs = {memory_format: torch.channels_last})
-    #     %aten_mean_dim : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.mean.dim](args = (%aten__to_copy_default_2, [-1, -2], True), kwargs = {})
-    #     %aten__to_copy_default_3 : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%aten_mean_dim,), kwargs = {memory_format: torch.contiguous_format})
-    #     return [aten__to_copy_default_3]
-    # (
-    #     Tester(
-    #         self.Conv2dBnHardtanhMeanSequenceModule().eval(),
-    #         (torch.randn(1, 1, 6, 6),),
-    #     )
-    #     .export()
-    #     .to_edge()
-    #     .run_passes(self.PassStage)
-    #     .check_count(
-    #         {
-    #             self.to_copy_name: 4,
-    #         }
-    #     )
-    #     .run_method_and_compare_outputs()
-    # )
+        # The graph looks like:
+        # graph():
+        #     %arg0_1 : [#users=1] = placeholder[target=arg0_1]
+        #     %aten__to_copy_default : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%arg0_1,), kwargs = {memory_format: torch.channels_last})
+        #     %_param_constant0 : [#users=1] = get_attr[target=_param_constant0]
+        #     %_param_constant1 : [#users=1] = get_attr[target=_param_constant1]
+        #     %aten_convolution_default : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten__to_copy_default, %_param_constant0, %_param_constant1, [2, 2], [1, 1], [1, 1], False, [0, 0], 1), kwargs = {})
+        #     %aten__to_copy_default_1 : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%aten_convolution_default,), kwargs = {memory_format: torch.contiguous_format})
+        #     %_param_constant2 : [#users=1] = get_attr[target=_param_constant2]
+        #     %_param_constant3 : [#users=1] = get_attr[target=_param_constant3]
+        #     %_tensor_constant0 : [#users=1] = get_attr[target=_tensor_constant0]
+        #     %_tensor_constant1 : [#users=1] = get_attr[target=_tensor_constant1]
+        #     %aten__native_batch_norm_legit_no_training_default : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten__to_copy_default_1, %_param_constant2, %_param_constant3, %_tensor_constant0, %_tensor_constant1, 0.1, 1e-05), kwargs = {})
+        #     %getitem : [#users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default, 0), kwargs = {})
+        #     %aten_hardtanh_default : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem, 0, 6), kwargs = {})
+        #     %aten__to_copy_default_2 : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%aten_hardtanh_default,), kwargs = {memory_format: torch.channels_last})
+        #     %aten_mean_dim : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.mean.dim](args = (%aten__to_copy_default_2, [-1, -2], True), kwargs = {})
+        #     %aten__to_copy_default_3 : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%aten_mean_dim,), kwargs = {memory_format: torch.contiguous_format})
+        #     return [aten__to_copy_default_3]
+        (
+            Tester(
+                self.Conv2dBnHardtanhMeanSequenceModule().eval(),
+                (torch.randn(1, 1, 6, 6),),
+            )
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            .check_count(
+                {
+                    self.to_copy_name: 4,
+                }
+            )
+            .run_method_and_compare_outputs()
+        )
 
     class Conv2dDynamicQuant(torch.nn.Module):
         def __init__(self):
