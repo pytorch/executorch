@@ -1107,7 +1107,7 @@ def _export_llama(llm_config, args) -> LLMEdgeManager:  # noqa: C901
             use_kv_cache=llm_config.model.use_kv_cache,
             embedding_quantize=llm_config.quantization.embedding_quantize,
             pt2e_quantize=llm_config.quantization.pt2e_quantize,
-            coreml_ios=llm_config.backend.coreml.ios_version,
+            coreml_ios=llm_config.backend.coreml.ios,
             coreml_quantize=llm_config.backend.coreml.quantize,
             coreml_compute_units=llm_config.backend.coreml.compute_units,
             use_qnn_sha=llm_config.backend.qnn.use_sha,
