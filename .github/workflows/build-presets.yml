@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        preset: [macos, ios, ios-simulator, pybind, llm]
+        preset: [android-arm64-v8a, android-x86_64, macos, ios, ios-simulator, pybind, llm]
     with:
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
