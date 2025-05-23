@@ -88,10 +88,18 @@ void main() {
     ipos[i] = pos[i] * stride - padding;
   }
 
-  vec4 sum[TILE_SIZE_X * TILE_SIZE_Y];
-  sum[0] = texelFetch(t_bias, ivec2(gpos.z, 0), 0);
-  for (int i = 1; i < TILE_SIZE_X * TILE_SIZE_Y; ++i) {
-    sum[i] = sum[0];
+  // Final output array where each element is a tensor value.
+  // Tuple of consecutive 4 elements represents a single output texel.
+  float sum[TILE_SIZE_X * TILE_SIZE_Y * 4];
+
+  const vec4 bias = texelFetch(t_bias, ivec2(gpos.z, 0), 0);
+
+  // Initialize the output array with the bias value
+  for (int i = 0; i < TILE_SIZE_X * TILE_SIZE_Y * 4; i += 4) {
+    sum[i] = bias.x;
+    sum[i + 1] = bias.y;
+    sum[i + 2] = bias.z;
+    sum[i + 3] = bias.w;
   }
 
   int z4 = 0;
@@ -100,14 +108,26 @@ void main() {
     // During prepacking, the weight tensor has been permuted so that the
     // channel (IC) dim is along the x-axis, and the batch (OC) dim is along
     // the z-axis.
-    const vec4 ktex_0 = texelFetchOffset(t_kernel, ivec2(z, gpos.z), 0, ivec2(0, 0));
-    const vec4 ktex_1 = texelFetchOffset(t_kernel, ivec2(z, gpos.z), 0, ivec2(1, 0));
-    const vec4 ktex_2 = texelFetchOffset(t_kernel, ivec2(z, gpos.z), 0, ivec2(2, 0));
-    const vec4 ktex_3 = texelFetchOffset(t_kernel, ivec2(z, gpos.z), 0, ivec2(3, 0));
+    float kernel_values[4 * 4]; // 4 channels, 4 elements per channel
 
-#pragma unroll
+    // Load kernel values from texels to array
+    for (int i = 0; i < 4; ++i) {
+      const vec4 k_tex = texelFetch(t_kernel, ivec2(z + i, gpos.z), 0);
+      kernel_values[i * 4 + 0] = k_tex.x;
+      kernel_values[i * 4 + 1] = k_tex.y;
+      kernel_values[i * 4 + 2] = k_tex.z;
+      kernel_values[i * 4 + 3] = k_tex.w;
+    }
+
     for (int i = 0; i < TILE_SIZE_X * TILE_SIZE_Y; ++i) {
       const vec4 in_tex = texelFetch(t_in, ivec3(ipos[i], z4), 0);
+      // Load the input texel into an array
+      float tex_values[4];
+      tex_values[0] = in_tex.x;
+      tex_values[1] = in_tex.y;
+      tex_values[2] = in_tex.z;
+      tex_values[3] = in_tex.w;
+
       // For 2x2 tile size algorithm works as follows.
       // To explain the calculations below, the contents of one in_tex and the
       // group of 4 texels loaded from t_kernel are shown:
@@ -141,10 +161,12 @@ void main() {
       //
       //  which is what is expressed in the following calculations. This is done
       //  for each output position.
-      sum[i] = fma(in_tex.xxxx, ktex_0, sum[i]);
-      sum[i] = fma(in_tex.yyyy, ktex_1, sum[i]);
-      sum[i] = fma(in_tex.zzzz, ktex_2, sum[i]);
-      sum[i] = fma(in_tex.wwww, ktex_3, sum[i]);
+      for (int j = 0; j < 4; ++j) {
+        sum[i * 4 + j] = tex_values[0] * kernel_values[0 + j] + sum[i * 4 + j];
+        sum[i * 4 + j] = tex_values[1] * kernel_values[4 + j] + sum[i * 4 + j];
+        sum[i * 4 + j] = tex_values[2] * kernel_values[8 + j] + sum[i * 4 + j];
+        sum[i * 4 + j] = tex_values[3] * kernel_values[12 + j] + sum[i * 4 + j];
+      }
     }
   }
 
@@ -152,7 +174,7 @@ void main() {
     const uint index = (shared_mem_stride * i) + gl_LocalInvocationIndex;
     const ivec3 pos = pos_shared[offset_pos_index(index)];
     if (all(lessThan(pos, out_limits.xyz))) {
-      imageStore(t_out, pos, op(sum[i], out_min, out_max));
+      imageStore(t_out, pos, op(vec4(sum[i * 4], sum[i * 4 + 1], sum[i * 4 + 2], sum[i * 4 + 3]), out_min, out_max));
     }
   }
 }
