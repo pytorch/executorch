@@ -31,6 +31,7 @@ from executorch.exir import (
 )
 from executorch.exir.backend.backend_api import validation_disabled
 from executorch.exir.backend.partitioner import Partitioner
+from executorch.exir.dim_order_utils import get_memory_format
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 
 from executorch.exir.print_program import pretty_print, print_program
@@ -521,10 +522,13 @@ class Tester:
         # create random tensor inputs with the shapes given above:
         random_inputs = []
         for arg_idx in range(len(self.example_inputs)):
+            memFormat = get_memory_format(
+                list(self.example_inputs[arg_idx].dim_order())
+            )
             random_inputs.append(
-                torch.randn(input_shapes[arg_idx]).to(
-                    dtype=self.example_inputs[arg_idx].dtype
-                )
+                torch.randn(input_shapes[arg_idx])
+                .to(dtype=self.example_inputs[arg_idx].dtype)
+                .to(memory_format=memFormat)
             )
 
         yield tuple(random_inputs)

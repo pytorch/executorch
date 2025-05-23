@@ -62,8 +62,22 @@
         "algorithm": "cpp",
         "iterator": "cpp",
         "tuple": "cpp",
-        "span": "cpp"
+        "span": "cpp",
+        "*.inc": "cpp",
+        "alignedvector3": "cpp"
     },
     "C_Cpp.default.compilerPath": "/library/developer/commandlinetools/usr/bin/c++",
-    "python.analysis.typeCheckingMode": "off"
+    "python.analysis.typeCheckingMode": "off",
+    "python.testing.unittestArgs": [
+        "-v",
+        "-s",
+        "./backends",
+        "-p",
+        "test_*.py"
+    ],
+    "python.testing.pytestEnabled": true,
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestArgs": [
+        "."
+    ]
 }

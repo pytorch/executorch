@@ -7,6 +7,7 @@
 import unittest
 
 import torch
+from backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
 from executorch.backends.xnnpack._passes.channels_last_tagged_reshape_pass import (
     ChannelsLastTaggedReshapePass,
 )
@@ -58,48 +59,87 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
     #             .run_method_and_compare_outputs()
     #         )
 
-    # def test_channels_last_input_graph_transformation(self):
-    #     # Define a simple module for testing
-    #     class SimpleModule(torch.nn.Module):
-    #         def __init__(self):
-    #             super().__init__()
-    #             self.conv = torch.nn.Conv2d(3, 3, 3)
-    #         def forward(self, x):
-    #             return self.conv(x)
-    #     # Create a tester instance with NHWC input
-    #     tester = Tester(SimpleModule().eval(), (torch.randn(1, 3, 3, 3).to(memory_format=torch.channels_last),))
-    #     # Run the export and pass stages
-    #     tester.export().to_edge().run_passes(self.PassStage)
-    #     # Check the graph for expected nodes
-    #     tester.check_count({
-    #         "executorch_exir_dialects_edge__ops_aten__to_copy_default": 2, # should be 1 but its 2
-    #         "executorch_exir_dialects_edge__ops_aten_convolution_default": 1
-    #     })
-    #     tester.dump_artifact()
+    class LinearConv(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 3, 3)
+            self.linear1 = torch.nn.Linear(4, 3)
 
-    def test_nhwc_input(self):
-        class SimpleModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.conv = torch.nn.Conv2d(3, 3, 3)
-            def forward(self, x):
-                return self.conv(x)
+        def forward(self, x):
+            y = self.linear1(x)
+            return self.conv1(y)
 
-        tester = Tester(SimpleModule().eval(), (torch.randn(1, 3, 8, 8).to(memory_format=torch.channels_last),))
+    def test_conv_linear_dim_order_swaps_on_nhwc_input(self):
+        tester = Tester(
+            self.LinearConv().eval(),
+            (torch.randn(1, 3, 6, 4).to(memory_format=torch.channels_last),),
+        )
 
-        tester2 = Tester(SimpleModule().eval(), (torch.randn(1, 3, 8, 8).to(memory_format=torch.channels_last),))
-        tester2.export().to_edge().run_passes(self.PassStage).dump_artifact()
+        tester.export().to_edge_transform_and_lower().to_executorch().serialize().run_method_and_compare_outputs()
 
+    def test_conv_linear_dim_order_swaps_on_nchw_input(self):
+        tester = Tester(
+            self.LinearConv().eval(),
+            (torch.randn(1, 3, 6, 4),),
+        )
 
-        tester.export() \
-              .to_edge_transform_and_lower() \
-                .dump_artifact()\
-              .to_executorch() \
-                .dump_artifact()\
-              .serialize() \
-              .run_method_and_compare_outputs()
+        tester.export().to_edge_transform_and_lower().to_executorch().serialize().run_method_and_compare_outputs()
 
+    class ConvLinearConv(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 3, 3)
+            self.linear1 = torch.nn.Linear(4, 4)
 
+        def forward(self, x):
+            y = self.conv1(x)
+            return self.linear1(y)
+
+    def test_linear_conv_dim_order_swaps_on_nhwc_input(self):
+        tester = Tester(
+            self.ConvLinearConv().eval(),
+            (torch.randn(1, 3, 6, 6).to(memory_format=torch.channels_last),),
+        )
+
+        tester.export().to_edge_transform_and_lower().to_executorch().serialize().run_method_and_compare_outputs()
+
+    def test_linear_conv_dim_order_swaps_on_nchw_input(self):
+        tester = Tester(
+            self.ConvLinearConv().eval(),
+            (torch.randn(1, 3, 6, 6),),
+        )
+
+        tester.export().to_edge_transform_and_lower().to_executorch().serialize().run_method_and_compare_outputs()
+
+    class Bilinear(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+
+        def forward(self, x):
+            return torch.nn.functional.interpolate(
+                x, scale_factor=2, mode="bilinear", align_corners=True
+            )
+
+    def test_nhwc_input_on_nhwc_op(self):
+        tester = Tester(
+            self.Bilinear().eval(),
+            (
+                torch.arange(8)
+                .reshape(1, 2, 2, 2)
+                .to(torch.float32)
+                .to(memory_format=torch.channels_last),
+            ),
+        )
+
+        tester.export().to_edge_transform_and_lower().to_executorch().serialize().run_method_and_compare_outputs()
+
+    def test_nchw_input_on_nhwc_op(self):
+        tester = Tester(
+            self.Bilinear().eval(),
+            (torch.arange(8).reshape(1, 2, 2, 2).to(torch.float32),),
+        )
+
+        tester.export().to_edge_transform_and_lower().to_executorch().serialize().run_method_and_compare_outputs()
 
     # def test_qs8_channels_last_tagged_reshape_pass(self):
     #     for module, num_reshape in self.modules.items():
@@ -190,45 +230,45 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             return x
 
     # def test_fp32_channels_last_tagged_reshape_pass_conv_bn_hardtanh_mean_seq(self):
-        # Copy #1 is for input to conv, nchw -> nhwc
-        # Copy #2 is for conv to _native_batch_norm_legit_no_training, nhwc -> nchw
-        # Copy #3 is for input to mean, nchw -> nhwc
-        # Copy #4 is for output, nhwc -> nchw
+    # Copy #1 is for input to conv, nchw -> nhwc
+    # Copy #2 is for conv to _native_batch_norm_legit_no_training, nhwc -> nchw
+    # Copy #3 is for input to mean, nchw -> nhwc
+    # Copy #4 is for output, nhwc -> nchw
 
-        # The graph looks like:
-        # graph():
-        #     %arg0_1 : [#users=1] = placeholder[target=arg0_1]
-        #     %aten__to_copy_default : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%arg0_1,), kwargs = {memory_format: torch.channels_last})
-        #     %_param_constant0 : [#users=1] = get_attr[target=_param_constant0]
-        #     %_param_constant1 : [#users=1] = get_attr[target=_param_constant1]
-        #     %aten_convolution_default : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten__to_copy_default, %_param_constant0, %_param_constant1, [2, 2], [1, 1], [1, 1], False, [0, 0], 1), kwargs = {})
-        #     %aten__to_copy_default_1 : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%aten_convolution_default,), kwargs = {memory_format: torch.contiguous_format})
-        #     %_param_constant2 : [#users=1] = get_attr[target=_param_constant2]
-        #     %_param_constant3 : [#users=1] = get_attr[target=_param_constant3]
-        #     %_tensor_constant0 : [#users=1] = get_attr[target=_tensor_constant0]
-        #     %_tensor_constant1 : [#users=1] = get_attr[target=_tensor_constant1]
-        #     %aten__native_batch_norm_legit_no_training_default : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten__to_copy_default_1, %_param_constant2, %_param_constant3, %_tensor_constant0, %_tensor_constant1, 0.1, 1e-05), kwargs = {})
-        #     %getitem : [#users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default, 0), kwargs = {})
-        #     %aten_hardtanh_default : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem, 0, 6), kwargs = {})
-        #     %aten__to_copy_default_2 : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%aten_hardtanh_default,), kwargs = {memory_format: torch.channels_last})
-        #     %aten_mean_dim : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.mean.dim](args = (%aten__to_copy_default_2, [-1, -2], True), kwargs = {})
-        #     %aten__to_copy_default_3 : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%aten_mean_dim,), kwargs = {memory_format: torch.contiguous_format})
-        #     return [aten__to_copy_default_3]
-        # (
-        #     Tester(
-        #         self.Conv2dBnHardtanhMeanSequenceModule().eval(),
-        #         (torch.randn(1, 1, 6, 6),),
-        #     )
-        #     .export()
-        #     .to_edge()
-        #     .run_passes(self.PassStage)
-        #     .check_count(
-        #         {
-        #             self.to_copy_name: 4,
-        #         }
-        #     )
-        #     .run_method_and_compare_outputs()
-        # )
+    # The graph looks like:
+    # graph():
+    #     %arg0_1 : [#users=1] = placeholder[target=arg0_1]
+    #     %aten__to_copy_default : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%arg0_1,), kwargs = {memory_format: torch.channels_last})
+    #     %_param_constant0 : [#users=1] = get_attr[target=_param_constant0]
+    #     %_param_constant1 : [#users=1] = get_attr[target=_param_constant1]
+    #     %aten_convolution_default : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten__to_copy_default, %_param_constant0, %_param_constant1, [2, 2], [1, 1], [1, 1], False, [0, 0], 1), kwargs = {})
+    #     %aten__to_copy_default_1 : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%aten_convolution_default,), kwargs = {memory_format: torch.contiguous_format})
+    #     %_param_constant2 : [#users=1] = get_attr[target=_param_constant2]
+    #     %_param_constant3 : [#users=1] = get_attr[target=_param_constant3]
+    #     %_tensor_constant0 : [#users=1] = get_attr[target=_tensor_constant0]
+    #     %_tensor_constant1 : [#users=1] = get_attr[target=_tensor_constant1]
+    #     %aten__native_batch_norm_legit_no_training_default : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten__to_copy_default_1, %_param_constant2, %_param_constant3, %_tensor_constant0, %_tensor_constant1, 0.1, 1e-05), kwargs = {})
+    #     %getitem : [#users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default, 0), kwargs = {})
+    #     %aten_hardtanh_default : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem, 0, 6), kwargs = {})
+    #     %aten__to_copy_default_2 : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%aten_hardtanh_default,), kwargs = {memory_format: torch.channels_last})
+    #     %aten_mean_dim : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.mean.dim](args = (%aten__to_copy_default_2, [-1, -2], True), kwargs = {})
+    #     %aten__to_copy_default_3 : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%aten_mean_dim,), kwargs = {memory_format: torch.contiguous_format})
+    #     return [aten__to_copy_default_3]
+    # (
+    #     Tester(
+    #         self.Conv2dBnHardtanhMeanSequenceModule().eval(),
+    #         (torch.randn(1, 1, 6, 6),),
+    #     )
+    #     .export()
+    #     .to_edge()
+    #     .run_passes(self.PassStage)
+    #     .check_count(
+    #         {
+    #             self.to_copy_name: 4,
+    #         }
+    #     )
+    #     .run_method_and_compare_outputs()
+    # )
 
     class Conv2dDynamicQuant(torch.nn.Module):
         def __init__(self):

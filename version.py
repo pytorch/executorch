@@ -1,4 +1,4 @@
 from typing import Optional
 __all__ = ["__version__", "git_version"]
-__version__ = "0.7.0a0+108a8d9"
-git_version: Optional[str] = '108a8d906981f33253cf4d3130470de3cec802e2'
+__version__ = "0.7.0a0+9d726e8"
+git_version: Optional[str] = '9d726e8df2397b4d35bfa845ddbc9ac7c0a1457c'

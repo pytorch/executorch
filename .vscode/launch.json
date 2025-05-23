@@ -12,6 +12,15 @@
             "args": [
                 "--model_path=./add.pte",
             ]
-        }
+        },
+        {
+            "name": "Debug python proj",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "unittest",
+            "args": [
+                "./backends/xnnpack/test/passes/test_channels_last_tagged_reshape.py"
+            ]
+        },
     ]
 }

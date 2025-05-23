@@ -12,7 +12,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/compiler.h>
