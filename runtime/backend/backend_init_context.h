@@ -25,6 +25,7 @@ class BackendInitContext final {
       const char* method_name = nullptr,
       const NamedDataMap* named_data_map = nullptr)
       : runtime_allocator_(runtime_allocator),
+        event_tracer_(event_tracer),
         method_name_(method_name),
         named_data_map_(named_data_map) {}
 
