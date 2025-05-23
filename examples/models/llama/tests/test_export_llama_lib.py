@@ -7,6 +7,7 @@
 import unittest
 
 from executorch.devtools.backend_debug import get_delegation_info
+from executorch.examples.models.llama.config.llm_config import LlmConfig
 from executorch.examples.models.llama.export_llama_lib import (
     _export_llama,
     build_args_parser,
@@ -34,13 +35,20 @@ class ExportLlamaLibTest(unittest.TestCase):
         # we cannot test quantization args in this way
         # since quantization requires promoting meta tensors
         # to device=cpu, which requires real weights.
+
+        llm_config = LlmConfig()
+        llm_config.model.use_sdpa_with_kv_cache = True
+        llm_config.model.use_kv_cache = True
+        llm_config.debug.verbose = True
+
+        # We still need args for backward compatibility during transition
         parser = build_args_parser()
         args = parser.parse_args([])
         args.use_sdpa_with_kv_cache = True
         args.use_kv_cache = True
         args.verbose = True
 
-        builder = _export_llama(args)
+        builder = _export_llama(llm_config, args)
         graph_module = builder.edge_manager.exported_program().graph_module
         delegation_info = get_delegation_info(graph_module)
 
