@@ -153,7 +153,7 @@ class TensorTest: XCTestCase {
     let tensor = data.withUnsafeMutableBytes {
       Tensor(bytesNoCopy: $0.baseAddress!, shape: [2, 3], dataType: .float)
     }
-    let array: [Float] = try tensor.withUnsafeBytes { Array($0) }
+    let array = try tensor.withUnsafeBytes([Float].init)
     XCTAssertEqual(array, data)
   }
 
