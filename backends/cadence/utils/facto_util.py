@@ -7,17 +7,16 @@
 # pyre-strict
 
 import copy
+from functools import lru_cache
 from typing import List, OrderedDict, Tuple
 
 import torch
 from facto.inputgen.argtuple.gen import ArgumentTupleGenerator
 from facto.inputgen.specs.model import ConstraintProducer as cp
-from facto.inputgen.utils.random_manager import random_manager
 from facto.inputgen.variable.type import ScalarDtype
 from facto.specdb.db import SpecDictDB
 
 # seed to generate identical cases every run to reproduce from bisect
-random_manager.seed(1729)
 MAX_CASES = 50
 
 
@@ -104,6 +103,7 @@ def apply_scalar_contraints(op_name: str) -> list[ScalarDtype]:
             return [ScalarDtype.float, ScalarDtype.int]
 
 
+@lru_cache(maxsize=None)
 def facto_testcase_gen(op_name: str) -> List[Tuple[List[str], OrderedDict[str, str]]]:
     # minimal example to test add.Tensor using FACTO
     spec = SpecDictDB[op_name]
