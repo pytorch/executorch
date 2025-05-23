@@ -154,7 +154,7 @@ void et_pal_emit_log_message(
   } else if (level == 'E') {
     android_log_level = ANDROID_LOG_ERROR;
   } else if (level == 'F') {
-    android_log_level = ANDROID_LOG_FATAL;
+    android_log_level = ANDROID_LOG_ERROR;
   }
 
   __android_log_print(android_log_level, "ExecuTorch", "%s", message);
