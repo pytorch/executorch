@@ -295,6 +295,7 @@ Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the 
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_XNNPACK=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+        -DSUPPORT_REGEX_LOOKAHEAD=ON
         -Bcmake-out/examples/models/llama \
         examples/models/llama
 
@@ -353,6 +354,7 @@ cmake  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DSUPPORT_REGEX_LOOKAHEAD=ON
     -Bcmake-out-android/examples/models/llama \
     examples/models/llama
 

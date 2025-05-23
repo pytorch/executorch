@@ -5,6 +5,8 @@
 
 from typing import Callable
 
+import pytest
+
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -152,3 +154,26 @@ def test_linspace_tosa_BI(test_data: test_data_t):
     )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
+
+
+skip_str = "aten.arange.default is decomposed to aten.arange.start_step, so it will never exist in a lowered graph."
+
+
+@pytest.mark.skip(reason=skip_str)
+def test_arange_tosa_MI():
+    pass
+
+
+@pytest.mark.skip(reason=skip_str)
+def test_arange_tosa_BI():
+    pass
+
+
+@pytest.mark.skip(reason=skip_str)
+def test_arange_u55_BI():
+    pass
+
+
+@pytest.mark.skip(reason=skip_str)
+def test_arange_u85_BI():
+    pass

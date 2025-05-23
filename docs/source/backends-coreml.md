@@ -104,7 +104,7 @@ import torchvision.models as models
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 from executorch.backends.apple.coreml.quantizer import CoreMLQuantizer
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from executorch.exir import to_edge_transform_and_lower
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 

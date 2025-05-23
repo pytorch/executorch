@@ -30,7 +30,7 @@ class LayerNormVisitor(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        input_node = node.args[0]
+        input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
@@ -53,7 +53,7 @@ class LayerNormVisitor(NodeVisitor):
         axis = [len(input_tensor.shape) - 1]
         axis_shape = [len(axis)]
 
-        weight_node = node.args[2]
+        weight_node = self.get_node(node.args[2])
         weight_tensor = get_parameter(weight_node, self.edge_program)
         weight_tensor_wrapper = self.define_tensor(
             weight_node,
@@ -65,7 +65,7 @@ class LayerNormVisitor(NodeVisitor):
 
         layer_norm_input_tensors = [input_tensor_wrapper, weight_tensor_wrapper]
 
-        bias_node = node.args[3]
+        bias_node = self.get_node(node.args[3])
         if bias_node is not None:
             bias_tensor = get_parameter(bias_node, self.edge_program)
             bias_tensor_wrapper = self.define_tensor(
