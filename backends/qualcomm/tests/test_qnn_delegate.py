@@ -23,8 +23,10 @@ from executorch.backends.qualcomm._passes.utils import (
 )
 
 from executorch.backends.qualcomm.tests.utils import (
+    convert_pt2e,
     generate_context_binary,
     ModuleQConfig,
+    prepare_pt2e,
     QnnTool,
     QuantDtype,
     TestQNN,
@@ -44,9 +46,9 @@ from executorch.backends.qualcomm.utils.utils import (
     dump_context_from_pte,
     from_context_binary,
     generate_htp_compiler_spec,
-    generate_multi_graph_program,
     generate_qnn_executorch_compiler_spec,
     PyQnnManagerAdaptor,
+    QnnPartitioner,
     skip_annotation,
     to_edge_transform_and_lower_to_qnn,
     update_spill_fill_size,
@@ -87,8 +89,12 @@ from executorch.examples.models.mobilenet_v3 import MV3Model
 from executorch.examples.models.torchvision_vit.model import TorchVisionViTModel
 
 from executorch.examples.models.wav2letter import Wav2LetterModel
-from executorch.exir import to_edge
-from executorch.exir.backend.backend_api import disable_validation
+from executorch.exir import EdgeProgramManager, to_edge
+from executorch.exir.backend.backend_api import (
+    disable_validation,
+    MethodProgramsPartitionerSpec,
+    to_backend,
+)
 
 
 class TestQNNFloatingPointOperator(TestQNN):
@@ -116,6 +122,11 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_adaptive_avg_pool2d(self):
         module = AdaptiveAvgPool2D()  # noqa: F405
         sample_input = (torch.randn(1, 512, 7, 7),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_alias(self):
+        module = Alias()  # noqa: F405
+        sample_input = (torch.randn(1, 10),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_amax(self):
@@ -1153,6 +1164,12 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_adaptive_avg_pool2d(self):
         module = AdaptiveAvgPool2D()  # noqa: F405
         sample_input = (torch.randn(1, 512, 7, 7),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_alias(self):
+        module = Alias()  # noqa: F405
+        sample_input = (torch.randn(1, 10),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -2462,35 +2479,37 @@ class TestQNNFloatingPointUtils(TestQNN):
         graph_names = ["seq_conv", "single_conv"]
         backend_options = generate_htp_compiler_spec(
             use_fp16=True,
+            use_weight_sharing=True,
         )
         compiler_specs = [
             generate_qnn_executorch_compiler_spec(
                 soc_model=self.chipset_table[TestQNN.model],
                 backend_options=backend_options,
-                multiple_graphs=True,
-                weight_sharing=True,
                 graph_name=graph_name,
             )
             for graph_name in graph_names
         ]
-        edge_progs = [
-            to_edge_transform_and_lower_to_qnn(module, sample_input, compiler_spec)
-            for module, sample_input, compiler_spec in zip(
-                modules, sample_inputs, compiler_specs
+        # TODO: retire capture_program once we figure out how to extract
+        #       intermediate graph from official lowering API
+        edge_progs = {
+            graph_name: capture_program(module, sample_input).exported_program
+            for graph_name, module, sample_input in zip(
+                graph_names, modules, sample_inputs
             )
-        ]
-        prog_mgr, _ = generate_multi_graph_program(
-            compiler_specs=compiler_specs[0],
-            processed_bytes=[
-                edge_prog.exported_program().graph_module.lowered_module_0.processed_bytes
-                for edge_prog in edge_progs
-            ],
+        }
+        partitioners = {
+            graph_name: QnnPartitioner(compiler_spec)
+            for graph_name, compiler_spec in zip(graph_names, compiler_specs)
+        }
+        lowered_ep_dict = to_backend(
+            MethodProgramsPartitionerSpec(edge_progs, partitioners)
         )
+        executorch_prog = EdgeProgramManager(lowered_ep_dict).to_executorch()
         for index, module in enumerate(modules):
             self.verify_output(
                 module=module,
                 sample_inputs=sample_inputs[index],
-                executorch_prog=prog_mgr,
+                executorch_prog=executorch_prog,
                 method_index=index,
             )
 
@@ -2531,7 +2550,7 @@ class TestQNNFloatingPointUtils(TestQNN):
 
     def test_qnn_backend_online_prepare(self):
         if self.enable_x86_64:
-            self.skipTest("online prepare is not supported on host machine")
+            self.skipTest("TODO: add online_prepare support on host platform")
 
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
@@ -3107,37 +3126,43 @@ class TestQNNQuantizedUtils(TestQNN):
         graph_names = ["seq_conv", "single_conv"]
         backend_options = generate_htp_compiler_spec(
             use_fp16=False,
+            use_weight_sharing=True,
         )
         compiler_specs = [
             generate_qnn_executorch_compiler_spec(
                 soc_model=self.chipset_table[TestQNN.model],
                 backend_options=backend_options,
-                multiple_graphs=True,
-                weight_sharing=True,
                 graph_name=graph_name,
             )
             for graph_name in graph_names
         ]
-        edge_progs = [
-            to_edge_transform_and_lower_to_qnn(
-                self.get_qdq_module(module, sample_input), sample_input, compiler_spec
+        # TODO: retire capture_program once we figure out how to extract
+        #       intermediate graph from official lowering API
+        for i, module in enumerate(modules):
+            module_exported = torch.export.export(module, sample_inputs[i]).module()
+            module_prepared = prepare_pt2e(module_exported, make_quantizer())
+            module_prepared(*sample_inputs[i])
+            modules[i] = convert_pt2e(module_prepared)
+
+        edge_progs = {
+            graph_name: capture_program(module, sample_input).exported_program
+            for graph_name, module, sample_input in zip(
+                graph_names, modules, sample_inputs
             )
-            for module, sample_input, compiler_spec in zip(
-                modules, sample_inputs, compiler_specs
-            )
-        ]
-        prog_mgr, _ = generate_multi_graph_program(
-            compiler_specs=compiler_specs[0],
-            processed_bytes=[
-                edge_prog.exported_program().graph_module.lowered_module_0.processed_bytes
-                for edge_prog in edge_progs
-            ],
+        }
+        partitioners = {
+            graph_name: QnnPartitioner(compiler_spec)
+            for graph_name, compiler_spec in zip(graph_names, compiler_specs)
+        }
+        lowered_ep_dict = to_backend(
+            MethodProgramsPartitionerSpec(edge_progs, partitioners)
         )
+        executorch_prog = EdgeProgramManager(lowered_ep_dict).to_executorch()
         for index, module in enumerate(modules):
             self.verify_output(
                 module=module,
                 sample_inputs=sample_inputs[index],
-                executorch_prog=prog_mgr,
+                executorch_prog=executorch_prog,
                 method_index=index,
             )
 
@@ -3180,7 +3205,7 @@ class TestQNNQuantizedUtils(TestQNN):
 
     def test_qnn_backend_online_prepare(self):
         if self.enable_x86_64:
-            self.skipTest("online prepare is not supported on host machine")
+            self.skipTest("TODO: add online_prepare support on host platform")
 
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(

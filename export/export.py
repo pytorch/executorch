@@ -14,9 +14,9 @@ from executorch.runtime import Runtime, Verification
 from tabulate import tabulate
 from torch import nn
 from torch.ao.quantization import allow_exported_model_train_eval
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.export import ExportedProgram
 from torchao.quantization import quantize_
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchao.utils import unwrap_tensor_subclass
 
 from .recipe import ExportRecipe

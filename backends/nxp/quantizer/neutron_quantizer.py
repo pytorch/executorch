@@ -7,6 +7,9 @@
 from typing import List, Optional, Tuple, Union
 
 import torch
+from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
+    NeutronAtenPassManager,
+)
 
 from executorch.backends.nxp.quantizer.patterns import (
     AddmmPattern,
@@ -28,16 +31,17 @@ from executorch.backends.nxp.quantizer.utils import (
     is_annotated,
     no_outside_users,
 )
-from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
+from torch import fx
+from torchao.quantization.pt2e import HistogramObserver, MinMaxObserver
+from torchao.quantization.pt2e.quantizer import (
+    ComposableQuantizer,
+    DerivedQuantizationSpec,
     OperatorConfig,
     QuantizationAnnotation,
     QuantizationConfig,
     QuantizationSpec,
+    Quantizer,
 )
-from torch import fx
-from torch.ao.quantization.observer import HistogramObserver, MinMaxObserver
-from torch.ao.quantization.quantizer import DerivedQuantizationSpec, Quantizer
-from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
 
 
 class NeutronAtenQuantizer(Quantizer):
@@ -202,4 +206,5 @@ class NeutronQuantizer(ComposableQuantizer):
     def transform_for_annotation(
         self, model: torch.fx.GraphModule
     ) -> torch.fx.GraphModule:
-        return model
+        pass_runner = NeutronAtenPassManager()
+        return pass_runner(model).graph_module

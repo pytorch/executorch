@@ -6,8 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-@testable import ExecuTorch
-
+import ExecuTorch
 import XCTest
 
 class TensorTest: XCTestCase {
@@ -145,6 +144,30 @@ class TensorTest: XCTestCase {
     tensor.bytes { pointer, count, dataType in
       let updatedData = Array(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Int32.self), count: count))
       XCTAssertEqual(updatedData, [2, 4, 6, 8])
+    }
+  }
+
+  func testWithUnsafeBytes() throws {
+    var data: [Float] = [1, 2, 3, 4, 5, 6]
+    let tensor = data.withUnsafeMutableBytes {
+      Tensor(bytesNoCopy: $0.baseAddress!, shape: [2, 3], dataType: .float)
+    }
+    let array = try tensor.withUnsafeBytes([Float].init)
+    XCTAssertEqual(array, data)
+  }
+
+  func testWithUnsafeMutableBytes() throws {
+    var data = [1, 2, 3, 4]
+    let tensor = data.withUnsafeMutableBytes {
+      Tensor(bytes: $0.baseAddress!, shape: [4], dataType: .long)
+    }
+    try tensor.withUnsafeMutableBytes { (buffer: UnsafeMutableBufferPointer<Int>) in
+      for i in buffer.indices {
+        buffer[i] *= 2
+      }
+    }
+    try tensor.withUnsafeBytes { buffer in
+      XCTAssertEqual(Array(buffer), [2, 4, 6, 8])
     }
   }
 
@@ -618,7 +641,7 @@ class TensorTest: XCTestCase {
       }
     }
   }
-  
+
   func testZeros() {
     let tensor = Tensor.zeros(shape: [2, 3], dataType: .double)
     XCTAssertEqual(tensor.shape, [2, 3])

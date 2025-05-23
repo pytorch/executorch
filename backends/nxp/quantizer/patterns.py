@@ -14,7 +14,7 @@ import torch
 from executorch.backends.nxp.quantizer.utils import get_bias_qparams
 from torch import fx
 from torch._ops import OpOverload
-from torch.ao.quantization.quantizer import (
+from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
     FixedQParamsQuantizationSpec,
     SharedQuantizationSpec,

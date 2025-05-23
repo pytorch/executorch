@@ -53,3 +53,6 @@ xcuserdata/
 /include/
 /share/
 /version.py
+
+# Android
+*.aar
