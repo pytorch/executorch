@@ -41,7 +41,6 @@ def validate_num_inputs(op_name: str, inputs: List[Any], expected: int | List[in
     )
 
     validate_num_inputs(self.target, inputs, [3, 4])
-
     """
     if isinstance(expected, int):
         expected = [expected]
@@ -51,3 +50,89 @@ def validate_num_inputs(op_name: str, inputs: List[Any], expected: int | List[in
             f"{op_name}: Expected number of input(s) to be "
             f"[{expected_str}], got {len(inputs)}"
         )
+
+
+def validate_same_dtype(op_name: str, tensors: List[Any]):
+    """
+    Validates that all given tensors have the same dtype attribute.
+
+    This function checks whether all items in the `tensors` list have the same
+    `dtype` as the first item.
+
+    Parameters:
+    -----------
+    op_name : str
+        The name of the operation for which the dtype validation is being performed.
+        Used in the error message to provide context.
+
+    tensors : List[Any]
+        A list of tensors to be validated, each is assumed to have a `dtype` attribute.
+
+    Raises:
+    -------
+    ValueError
+        If the dtype of any item in the list does not match the dtype of the first item,
+        a `ValueError` is raised with a message indicating the operation name and the
+        mismatch in dtypes.
+
+    Example:
+    --------
+    # Example usage:
+    from executorch.backends.arm.operators.operator_validation_utils import (
+        validate_same_dtype,
+    )
+
+    validate_same_dtype(self.target, [input1, input2, output])
+
+    """
+    if not tensors:
+        raise ValueError(
+            f"{op_name}: Input tensor list is empty, cannot validate dtypes"
+        )
+
+    # Get dtype of the first tensor to reference for comparison
+    reference_dtype = tensors[0].dtype
+
+    for tensor in tensors:
+        if tensor.dtype != reference_dtype:
+            raise ValueError(
+                f"{op_name}: Expected all tensors to have dtype {reference_dtype}, but "
+                f"found inconsistent dtype {tensor.dtype}."
+            )
+
+
+def adjust_pooling_pad_if_needed(
+    input_size: int, kernel_size: int, stride: int, pad: int
+) -> int:
+    """
+    Calculates the padding that needs to be removed to a pooling window to make it
+    divisible by the kernels stride. All inputs should correspond to the same dimension.
+
+    Parameters:
+    -----------
+    input_size : int
+        The size of the input to the operator.
+
+    kernel_size : int
+        The size of the kernel.
+
+    stride : int
+        The size of the stride.
+
+    pad : int
+        The amount of padding.
+
+    Output:
+    -------
+    An int, representing the padding to remove to make the window divisible.
+    """
+    if pad == 0:
+        return pad
+
+    mod_remainder = (input_size + 2 * pad - kernel_size) % stride
+
+    # No need to adjust
+    if mod_remainder == 0:
+        return pad
+
+    return pad - mod_remainder
