@@ -123,7 +123,7 @@ def prepare_and_convert_pt2(
     assert isinstance(model_gm, torch.fx.GraphModule)
 
     # Prepare
-    prepared_model = prepare_pt2e(model_gm, quantizer)  # pyre-ignore[6]
+    prepared_model = prepare_pt2e(model_gm, quantizer)
 
     # Calibrate
     # If no calibration data is provided, use the inputs

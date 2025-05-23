@@ -37,13 +37,13 @@ def get_vec_deps():
         # various ovr_configs are not available in oss
         deps = select({
             "ovr_config//os:iphoneos-arm64": [
-                "fbsource//third-party/sleef:sleef_arm",
+                "fbsource//third-party/sleef:sleef",
             ] if not runtime.is_oss else [],
             "ovr_config//os:macos-arm64": [
-                "fbsource//third-party/sleef:sleef_arm",
+                "fbsource//third-party/sleef:sleef",
             ] if not runtime.is_oss else [],
             "ovr_config//os:android-arm64": [
-                "fbsource//third-party/sleef:sleef_arm",
+                "fbsource//third-party/sleef:sleef",
             ] if not runtime.is_oss else [],
             "DEFAULT": [],
         })
@@ -141,7 +141,7 @@ def define_libs(is_fbcode=False):
                 (
                     DEVSERVER_PLATFORM_REGEX,
                     [
-                        "fbsource//third-party/sleef:sleef_arm",
+                        "fbsource//third-party/sleef:sleef",
                     ],
                 ),
             ],
@@ -150,7 +150,7 @@ def define_libs(is_fbcode=False):
             (
                 "^android-arm64.*$",
                 [
-                    "fbsource//third-party/sleef:sleef_arm",
+                    "fbsource//third-party/sleef:sleef",
                 ],
             ),
         ],

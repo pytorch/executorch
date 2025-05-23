@@ -118,7 +118,7 @@ def define_op_library(name, compiler_flags, deps):
             (
                 "^android-arm64.*$",
                 [
-                    "fbsource//third-party/sleef:sleef_arm",
+                    "fbsource//third-party/sleef:sleef",
                 ],
             ),
         ],
