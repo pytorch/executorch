@@ -20,23 +20,35 @@ android {
         minSdk = 23
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        externalNativeBuild {
+            cmake {
+                abiFilters "arm64-v8a"
+                targets "executorch_jni"
+                arguments "-DBUILD_TESTING=OFF", "-DCMAKE_INSTALL_PREFIX=/Users/hsz/executorch/cmake-out-android-arm64-v8a", "-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH"
+            }
+        }
+
+        compileOptions {
+            sourceCompatibility = JavaVersion.VERSION_1_8
+            targetCompatibility = JavaVersion.VERSION_1_8
+        }
+
+        sourceSets {
+            androidTest {
+                resources.srcDirs += ['src/androidTest/resources']
+            }
+        }
+
+        kotlinOptions {
+            jvmTarget = "1.8"
+        }
     }
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
-    }
-
-    sourceSets {
-        main {
-            jniLibs.srcDirs = ['../../../cmake-out-android-so/']
+    externalNativeBuild {
+        cmake {
+            path "../CMakeLists.txt"
         }
-        androidTest {
-            resources.srcDirs += [ 'src/androidTest/resources' ]
-        }
-    }
-    kotlinOptions {
-        jvmTarget = "1.8"
     }
 }
 

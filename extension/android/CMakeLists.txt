@@ -192,3 +192,5 @@ target_include_directories(
 target_compile_options(executorch_jni PUBLIC ${_common_compile_options})
 
 target_link_libraries(executorch_jni ${link_libraries} log)
+
+set_target_properties(executorch_jni PROPERTIES OUTPUT_NAME executorch)
