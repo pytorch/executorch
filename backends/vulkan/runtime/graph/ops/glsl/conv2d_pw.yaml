@@ -9,8 +9,8 @@ conv2d_pw:
     OPERATOR: X
     NDIM: 3
     DTYPE: float
-    TILE_SIZE_X: 2
-    TILE_SIZE_Y: 2
+    TILE_SIZE_X: 1
+    TILE_SIZE_Y: 4
   generate_variant_forall:
     DTYPE:
       - VALUE: half
