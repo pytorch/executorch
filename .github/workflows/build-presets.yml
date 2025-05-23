@@ -39,7 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        preset: [pybind, llm]
+        preset: [linux, pybind, llm]
         runner: [linux.2xlarge, linux.arm64.2xlarge]
         docker-image: [executorch-ubuntu-22.04-clang12, executorch-ubuntu-22.04-gcc11-aarch64]
         # Excluding specific runner + docker image combinations that don't make sense:
