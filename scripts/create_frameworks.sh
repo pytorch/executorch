@@ -13,14 +13,15 @@ function usage() {
     echo ""
     echo "Usage: $0 --directory=<dir> --framework=<lib> [--output=<output>]"
     echo "  --directory: Directory containing the libs"
-    echo "  --framework: Framework to create in the format 'target:lib1,lib2:headers'"
+    echo "  --framework: Framework to create in the format 'target:lib1,lib2:headers:swiftmodule'"
     echo "               'target' is the name of the target library."
     echo "               'lib1,lib2' is a comma-separated list of input libraries."
     echo "               'headers' is an optional path to a directory with headers."
+    echo "               ':swiftmodule' is an optional module name to embed its .swiftmodule folder"
     echo "  --output: Optional output directory. Defaults to the current directory."
     echo ""
     echo "Example:"
-    echo "$0 --directory=ios-arm64 --directory=ios-arm64-simulator --framework=\"mylib:lib1.a,lib2.a:include\" --output=output/dir"
+    echo "$0 --directory=ios-arm64 --directory=ios-arm64-simulator --framework=\"mylib:lib1.a,lib2.a:include:MyModule\" --output=output/dir"
     exit 1
 }
 
@@ -58,6 +59,8 @@ create_xcframework() {
     libraries_list=$(echo "$1" | cut -d: -f2 | tr ',' '\n')
     local headers_directory
     headers_directory=$(echo "$1" | cut -d: -f3)
+    local swift_module
+    swift_module=$(echo "$1" | cut -d: -f4)
     local dir
     local libraries=()
     local merged_libs=()
@@ -117,7 +120,47 @@ create_xcframework() {
 
     echo -e "\nCreating XCFramework ${xcframework}"
 
+    # Create the new .xcframework.
     xcodebuild -create-xcframework "${libraries[@]}" -output "${xcframework}"
+
+    # Copy the .swiftmodule files into the .xcframework if applicable.
+    if [[ -n "$swift_module" ]]; then
+        echo -e "\nCopying Swift module ${swift_module}.swiftmodule into ${xcframework}"
+        for dir in "${directories[@]}"; do
+            local module_source_dir="${dir}/${swift_module}.swiftmodule"
+            if [ ! -d "$module_source_dir" ]; then
+                echo "Swiftmodule directory ${module_source_dir} does not exist"
+                exit 1
+            fi
+            local swiftmodule_file
+            swiftmodule_file=$(find "$module_source_dir" -maxdepth 1 -type f -name '*.swiftmodule' | head -n1)
+            if [[ -z "$swiftmodule_file" ]]; then
+                echo "No .swiftmodule file found in ${module_source_dir}"
+                exit 1
+            fi
+            local base=$(basename "$swiftmodule_file" .swiftmodule)
+            local arch="${base%%-*}"
+            local rest="${base#*-apple-}"
+            local platform_tag
+            local variant
+            if [[ "$rest" == *-simulator ]]; then
+                platform_tag="${rest%-simulator}"
+                variant="-simulator"
+            else
+                platform_tag="$rest"
+                variant=""
+            fi
+            local slice_name="${platform_tag}-${arch}${variant}"
+            local slice_path="${xcframework}/${slice_name}"
+            if [ ! -d "$slice_path" ]; then
+                echo "Warning: slice '${slice_name}' not found in ${xcframework}, skipping"
+                continue
+            fi
+            echo " - Copying ${swift_module}.swiftmodule into slice ${slice_name}"
+            cp "$swiftmodule_file" "${slice_path}/${swift_module}.swiftmodule"
+            ln -sf "../${swift_module}.swiftmodule" "${slice_path}/Headers/${swift_module}.swiftmodule"
+        done
+    fi
 
     echo -e "\nDeleting intermediate libraries:"
     for merged_lib in "${merged_libs[@]}"; do
