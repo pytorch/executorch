@@ -1017,7 +1017,6 @@ def _sanity_check_graph_for_non_decomp_ops(
 def _remove_invalid_ops_for_not_decompose(
     ops_to_not_decompose: List[torch._ops.OpOverload],
 ) -> List[torch._ops.OpOverload]:
-    print("START FUNC")
     _logged_warnings = set()
 
     def log_warning(warn_str):
