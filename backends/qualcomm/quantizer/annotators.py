@@ -1170,7 +1170,13 @@ def annotate_unbind(node: Node, quantization_config: QuantizationConfig) -> None
         )
 
 
-@register_annotator([torch.ops.aten.split.Tensor, torch.ops.aten.chunk.default])
+@register_annotator(
+    [
+        torch.ops.aten.split.Tensor,
+        torch.ops.aten.chunk.default,
+        torch.ops.aten.split_with_sizes.default,
+    ]
+)
 def annotate_chunk(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
         return
