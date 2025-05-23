@@ -12,8 +12,9 @@ import torch
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 
 from torch._ops import OpOverload
-from torch.ao.quantization.quantizer import Quantizer
 from torch.fx import GraphModule
+from torchao.quantization.pt2e import UniformQuantizationObserverBase
+from torchao.quantization.pt2e.quantizer import Quantizer
 
 from .annotators import OP_ANNOTATOR
 
@@ -130,9 +131,7 @@ class ModuleQConfig:
     is_qat: bool = False
     is_conv_per_channel: bool = False
     is_linear_per_channel: bool = False
-    act_observer: Optional[
-        torch.ao.quantization.observer.UniformQuantizationObserverBase
-    ] = None
+    act_observer: Optional[UniformQuantizationObserverBase] = None
 
     def __post_init__(self):
         if (self.quant_dtype, self.is_qat) not in QUANT_CONFIG_DICT:
