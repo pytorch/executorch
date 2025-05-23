@@ -41,7 +41,7 @@ def quantize(  # noqa C901
     checkpoint_dtype: Optional[DType] = None,
     checkpoint_path: Optional[Path] = None,
     # following arguments only available when setting int4 or gptq quantization.
-    group_size: Optional[int] = 128,
+    group_size: Optional[int] = None,
     # following arguments are only used for GPTQ
     calibration_tasks: Optional[list] = None,
     calibration_limit: Optional[int] = None,
@@ -146,9 +146,9 @@ def quantize(  # noqa C901
             print("quantized model:", model)
         return model
     elif qmode == "8da4w":
-        # Check for required args
         if group_size is None:
-            raise Exception("For 8da4w quantization, group size must be specified.")
+            # TODO: Default value for group size for 8da4w. Need this here for refactor, will clean this up.
+            group_size = 128
 
         from torchao.quantization import int8_dynamic_activation_int4_weight, quantize_
         from torchao.utils import unwrap_tensor_subclass
@@ -784,8 +784,12 @@ class QuantizedGroupEmbedding(torch.nn.Module):
 ############################ Source Transform Start #######################
 
 
-def get_quant_embedding_transform(args, dtype_override: Optional[DType] = None):
-    if args.embedding_quantize.startswith("torchao:"):
+def get_quant_embedding_transform(
+    embedding_quantize: str,
+    use_shared_embedding: bool = False,
+    dtype_override: Optional[DType] = None,
+):
+    if embedding_quantize.startswith("torchao:"):
         from torchao.experimental.quant_api import (
             EmbeddingQuantizer,
             SharedEmbeddingQuantizer,
@@ -793,7 +797,7 @@ def get_quant_embedding_transform(args, dtype_override: Optional[DType] = None):
         from torchao.quantization.granularity import PerAxis, PerGroup
         from torchao.quantization.quant_api import MappingType
 
-        quant_args = args.embedding_quantize.split(":")[1].split(",")
+        quant_args = embedding_quantize.split(":")[1].split(",")
         if len(quant_args) == 2:
             bitwidth, group_size = quant_args
             is_asymmetric = True
@@ -814,7 +818,7 @@ def get_quant_embedding_transform(args, dtype_override: Optional[DType] = None):
 
         def _torchao_embedding_quantizer(model):
             with torch.no_grad():
-                if not args.use_shared_embedding:
+                if not use_shared_embedding:
                     EmbeddingQuantizer(
                         weight_dtype=weight_dtype,
                         granularity=granularity,
@@ -831,7 +835,7 @@ def get_quant_embedding_transform(args, dtype_override: Optional[DType] = None):
 
         return _torchao_embedding_quantizer
 
-    bitwidth, group_size = args.embedding_quantize.split(",")
+    bitwidth, group_size = embedding_quantize.split(",")
     if group_size == "none" or group_size == "None" or group_size == "0":
         group_size = None
     else:
@@ -848,34 +852,27 @@ def get_quant_embedding_transform(args, dtype_override: Optional[DType] = None):
 
 
 def get_quant_weight_transform(
-    args,
+    quantization_mode: str,
+    group_size: Optional[int] = None,
     computation_dtype: Optional[DType] = None,
     checkpoint_dtype: Optional[DType] = None,
+    checkpoint_path: Optional[Path] = None,
+    tokenizer_path: Optional[Path] = None,
+    calibration_tasks: Optional[list] = None,
+    calibration_limit: Optional[int] = None,
+    calibration_seq_length: Optional[int] = None,
 ):
-    # If these optional args are None, don't provide them to quantize().
-    quant_args_str = [
-        "group_size",
-        "calibration_tasks",
-        "calibration_limit",
-        "calibration_seq_length",
-    ]
-    arg_dict = vars(args)
-    quant_args = {
-        param: val
-        for param in quant_args_str
-        if (val := arg_dict.get(param)) is not None
-    }
-
     return partial(
         quantize,
-        **quant_args,
-        qmode=args.quantization_mode,
+        qmode=quantization_mode,
         computation_dtype=computation_dtype,
         checkpoint_dtype=checkpoint_dtype,
-        checkpoint_path=(Path(path) if (path := args.checkpoint) is not None else None),
-        tokenizer_path=(
-            Path(path) if (path := args.tokenizer_path) is not None else None
-        ),
+        checkpoint_path=(Path(path) if (path := checkpoint_path) is not None else None),
+        group_size=group_size,
+        calibration_tasks=calibration_tasks,
+        calibration_limit=calibration_limit,
+        calibration_seq_length=calibration_seq_length,
+        tokenizer_path=(Path(path) if (path := tokenizer_path) is not None else None),
     )
 
 

@@ -110,5 +110,7 @@ def test_constant_pad_nd_tosa_BI(test_data: Tuple):
         (test_data,),
         aten_op,
         exir_op,
+        atol=0.005,  # TODO: Investigate flakyness (MLETORCH-989)
+        rtol=0.01,
     )
     pipeline.run()

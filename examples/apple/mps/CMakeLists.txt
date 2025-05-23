@@ -98,12 +98,6 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   add_executable(mps_executor_runner ${_mps_executor_runner__srcs})
 
   if(CMAKE_BUILD_TYPE MATCHES "Debug")
-    set(FLATCC_LIB flatccrt_d)
-  else()
-    set(FLATCC_LIB flatccrt)
-  endif()
-
-  if(CMAKE_BUILD_TYPE MATCHES "Debug")
     target_link_options(mps_executor_runner PUBLIC -fsanitize=undefined)
   endif()
 
@@ -113,7 +107,7 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
     executorch
     gflags
     etdump
-    ${FLATCC_LIB}
+    flatccrt
     mpsdelegate
     mps_portable_ops_lib
     ${mps_executor_runner_libs}

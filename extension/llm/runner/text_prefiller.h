@@ -49,6 +49,23 @@ class ET_EXPERIMENTAL TextPrefiller {
       std::vector<uint64_t>& prompt_tokens,
       int64_t& start_pos);
 
+  /**
+   * Load the necessary resources for the TextPrefiller.
+   * This method should be called before using the prefill methods.
+   */
+  ::executorch::runtime::Error load() {
+    return text_decoder_runner_->load();
+  }
+
+  /**
+   * Check if the TextPrefiller has been successfully loaded.
+   * @return True if the resources are loaded, false otherwise.
+   */
+  bool inline is_loaded() const {
+    // Implementation to check if resources are loaded
+    return text_decoder_runner_->is_method_loaded();
+  }
+
  private:
   /**
    * Note: TextPrefiller does not own the TextDecoderRunner instance.

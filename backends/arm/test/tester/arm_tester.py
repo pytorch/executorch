@@ -62,6 +62,11 @@ from executorch.exir import (
 )
 from executorch.exir.backend.backend_api import validation_disabled
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.backend.operator_support import (
+    DontPartition,
+    DontPartitionModule,
+    DontPartitionName,
+)
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.pass_base import ExportPass
@@ -331,14 +336,23 @@ class ArmTester(Tester):
         to_edge_and_lower_stage: Optional[ToEdgeTransformAndLower] = None,
         partitioners: Optional[List[Partitioner]] = None,
         edge_compile_config: Optional[EdgeCompileConfig] = None,
+        additional_checks: Optional[
+            List[Union[DontPartition | DontPartitionModule | DontPartitionName]]
+        ] = None,
     ):
         if to_edge_and_lower_stage is None:
             if partitioners is None:
                 arm_partitioner = None
                 if is_tosa(self.compile_spec):
-                    arm_partitioner = TOSAPartitioner(compile_spec=self.compile_spec)
+                    arm_partitioner = TOSAPartitioner(
+                        compile_spec=self.compile_spec,
+                        additional_checks=additional_checks,
+                    )
                 elif is_ethosu(self.compile_spec):
-                    arm_partitioner = EthosUPartitioner(compile_spec=self.compile_spec)
+                    arm_partitioner = EthosUPartitioner(
+                        compile_spec=self.compile_spec,
+                        additional_checks=additional_checks,
+                    )
                 else:
                     raise ValueError("compile spec doesn't target any Arm Partitioner")
                 partitioners = [arm_partitioner]

@@ -48,21 +48,33 @@ project(executorch)
 # MARK: - Start EXECUTORCH_H12025_BUILD_MIGRATION --------------------------------------------------
 
 include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
+include(${PROJECT_SOURCE_DIR}/tools/cmake/Utils.cmake)
+include(CMakeDependentOption)
+include(ExternalProject)
 
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 announce_configured_options(CMAKE_CXX_STANDARD)
 
+if(NOT CMAKE_SYSTEM_PROCESSOR)
+  set(CMAKE_SYSTEM_PROCESSOR ${CMAKE_HOST_SYSTEM_PROCESSOR})
+endif()
+announce_configured_options(CMAKE_SYSTEM_PROCESSOR)
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
 announce_configured_options(CMAKE_BUILD_TYPE)
 
+if(NOT PYTHON_EXECUTABLE)
+  resolve_python_executable()
+endif()
+announce_configured_options(PYTHON_EXECUTABLE)
+
 announce_configured_options(CMAKE_CXX_COMPILER_ID)
 announce_configured_options(CMAKE_TOOLCHAIN_FILE)
 announce_configured_options(BUCK2)
-announce_configured_options(PYTHON_EXECUTABLE)
 
 load_build_preset()
 include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
@@ -71,10 +83,6 @@ include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
 print_configured_options()
 
 # MARK: - End EXECUTORCH_H12025_BUILD_MIGRATION ----------------------------------------------------
-
-include(tools/cmake/Utils.cmake)
-include(CMakeDependentOption)
-include(ExternalProject)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -251,11 +259,6 @@ if(EXECUTORCH_BUILD_TESTS)
   include(CTest)
 endif()
 
-if(NOT PYTHON_EXECUTABLE)
-  resolve_python_executable()
-endif()
-message(STATUS "Using python executable '${PYTHON_EXECUTABLE}'")
-
 # TODO(dbort): Fix these warnings and remove this flag.
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
@@ -359,6 +362,9 @@ add_library(executorch_core ${_executorch_core__srcs})
 add_library(executorch_no_prim_ops ALIAS executorch_core)
 
 target_link_libraries(executorch_core PRIVATE program_schema)
+if(ANDROID)
+  target_link_libraries(executorch_core PUBLIC log)
+endif()
 if(EXECUTORCH_USE_DL)
   # Check if dl exists for this toolchain and only then link it.
   find_library(DL_LIBRARY_EXISTS NAMES dl)
@@ -579,6 +585,7 @@ if(EXECUTORCH_BUILD_PYBIND)
       ${TORCH_PYTHON_LIBRARY}
       bundled_program
       etdump
+      flatccrt
       executorch
       extension_data_loader
       util
@@ -649,10 +656,6 @@ if(EXECUTORCH_BUILD_PYBIND)
   install(TARGETS portable_lib
           LIBRARY DESTINATION executorch/extension/pybindings
   )
-
-  if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
-
-  endif()
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
