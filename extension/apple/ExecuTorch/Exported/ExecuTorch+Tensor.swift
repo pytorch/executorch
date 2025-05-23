@@ -11,43 +11,40 @@
 /// A protocol that types conform to in order to be used as tensor element types.
 /// Provides the mapping from the Swift type to the underlying `DataType`.
 @available(*, deprecated, message: "This API is experimental.")
-protocol Scalar {
+public protocol Scalar {
   /// The `DataType` corresponding to this scalar type.
   static var dataType: DataType { get }
 }
 
 @available(*, deprecated, message: "This API is experimental.")
-extension UInt8: Scalar { static var dataType: DataType { .byte } }
+public extension UInt8: Scalar { static var dataType: DataType { .byte } }
 @available(*, deprecated, message: "This API is experimental.")
-extension Int8: Scalar { static var dataType: DataType { .char } }
+public extension Int8: Scalar { static var dataType: DataType { .char } }
 @available(*, deprecated, message: "This API is experimental.")
-extension Int16: Scalar { static var dataType: DataType { .short } }
+public extension Int16: Scalar { static var dataType: DataType { .short } }
 @available(*, deprecated, message: "This API is experimental.")
-extension Int32: Scalar { static var dataType: DataType { .int } }
+public extension Int32: Scalar { static var dataType: DataType { .int } }
 @available(*, deprecated, message: "This API is experimental.")
-extension Int64: Scalar { static var dataType: DataType { .long } }
+public extension Int64: Scalar { static var dataType: DataType { .long } }
 @available(*, deprecated, message: "This API is experimental.")
-extension Int: Scalar { static var dataType: DataType { .long } }
-@available(macOS 11.0, *)
+public extension Int: Scalar { static var dataType: DataType { .long } }
 @available(*, deprecated, message: "This API is experimental.")
-extension Float16: Scalar { static var dataType: DataType { .half } }
+public extension Float: Scalar { static var dataType: DataType { .float } }
 @available(*, deprecated, message: "This API is experimental.")
-extension Float: Scalar { static var dataType: DataType { .float } }
+public extension Double: Scalar { static var dataType: DataType { .double } }
 @available(*, deprecated, message: "This API is experimental.")
-extension Double: Scalar { static var dataType: DataType { .double } }
+public extension Bool: Scalar { static var dataType: DataType { .bool } }
 @available(*, deprecated, message: "This API is experimental.")
-extension Bool: Scalar { static var dataType: DataType { .bool } }
+public extension UInt16: Scalar { static var dataType: DataType { .uInt16 } }
 @available(*, deprecated, message: "This API is experimental.")
-extension UInt16: Scalar { static var dataType: DataType { .uInt16 } }
+public extension UInt32: Scalar { static var dataType: DataType { .uInt32 } }
 @available(*, deprecated, message: "This API is experimental.")
-extension UInt32: Scalar { static var dataType: DataType { .uInt32 } }
+public extension UInt64: Scalar { static var dataType: DataType { .uInt64 } }
 @available(*, deprecated, message: "This API is experimental.")
-extension UInt64: Scalar { static var dataType: DataType { .uInt64 } }
-@available(*, deprecated, message: "This API is experimental.")
-extension UInt: Scalar { static var dataType: DataType { .uInt64 } }
+public extension UInt: Scalar { static var dataType: DataType { .uInt64 } }
 
 @available(*, deprecated, message: "This API is experimental.")
-extension Tensor {
+public extension Tensor {
   /// Calls the closure with a typed, immutable buffer pointer over the tensor’s elements.
   ///
   /// - Parameter body: A closure that receives an `UnsafeBufferPointer<T>` bound to the tensor’s data.
