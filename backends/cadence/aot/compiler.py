@@ -343,6 +343,9 @@ def quantize_and_export_to_cadence(
     """
     quantized_model = quantize_pt2(model, inputs)
 
+    import fbvscode
+    fbvscode.set_trace()
+
     return _lower_ep_to_cadence(
         quantized_model,
         opt_level=opt_level,
