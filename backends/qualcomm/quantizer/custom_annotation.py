@@ -17,13 +17,13 @@ from executorch.backends.qualcomm.quantizer.quantizer import (
     QuantizationConfig,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
-from torch.ao.quantization.observer import FixedQParamsObserver, MinMaxObserver
-from torch.ao.quantization.quantizer import (
+from torch.fx import Node
+from torchao.quantization.pt2e import FixedQParamsObserver, MinMaxObserver
+from torchao.quantization.pt2e.quantizer import (
     QuantizationAnnotation,
     QuantizationSpec,
     SharedQuantizationSpec,
 )
-from torch.fx import Node
 
 
 def annotate_mimi_decoder(gm: torch.fx.GraphModule):

@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from torch.ao.quantization.observer import UniformQuantizationObserverBase
+from torchao.quantization.pt2e import UniformQuantizationObserverBase
 
 
 # TODO move to torch/ao/quantization/observer.py.

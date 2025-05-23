@@ -14,17 +14,7 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
-from torch.ao.quantization import (
-    compare_results,
-    CUSTOM_KEY,
-    default_per_channel_symmetric_qnnpack_qconfig,
-    extract_results_from_loggers,
-    generate_numeric_debug_handle,
-    NUMERIC_DEBUG_HANDLE_KEY,
-    observer,
-    prepare_for_propagation_comparison,
-)
-from torch.ao.quantization.pt2e.graph_utils import bfs_trace_with_node_process
+from torch.ao.quantization import default_per_channel_symmetric_qnnpack_qconfig
 from torch.ao.quantization.qconfig import (
     float_qparams_weight_only_qconfig,
     per_channel_weight_observer_range_neg_127_to_127,
@@ -32,25 +22,40 @@ from torch.ao.quantization.qconfig import (
     weight_observer_range_neg_127_to_127,
 )
 from torch.ao.quantization.qconfig_mapping import QConfigMapping
-from torch.ao.quantization.quantizer import Quantizer
-from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
-from torch.ao.quantization.quantizer.embedding_quantizer import EmbeddingQuantizer
 from torch.export import export_for_training
 from torch.testing._internal.common_quantization import (
     NodeSpec as ns,
-    PT2EQuantizationTestCase,
     TestHelperModules,
 )
+
 from torch.testing._internal.common_utils import (
     instantiate_parametrized_tests,
     TemporaryFileName,
     TestCase,
 )
+from torchao.quantization.pt2e import (
+    allow_exported_model_train_eval,
+    compare_results,
+    CUSTOM_KEY,
+    extract_results_from_loggers,
+    generate_numeric_debug_handle,
+    NUMERIC_DEBUG_HANDLE_KEY,
+    observer,
+    prepare_for_propagation_comparison,
+)
+
+from torchao.quantization.pt2e.graph_utils import bfs_trace_with_node_process
 from torchao.quantization.pt2e.quantize_pt2e import (
     convert_pt2e,
     prepare_pt2e,
     prepare_qat_pt2e,
 )
+from torchao.quantization.pt2e.quantizer import (
+    ComposableQuantizer,
+    EmbeddingQuantizer,
+    Quantizer,
+)
+from torchao.testing.pt2e.utils import PT2EQuantizationTestCase
 
 
 class TestQuantizePT2E(PT2EQuantizationTestCase):
@@ -404,7 +409,7 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
             m.train()
 
         # After wrapping: does not error and swaps the ops accordingly
-        torch.ao.quantization.allow_exported_model_train_eval(m)  # pyre-ignore[6]
+        allow_exported_model_train_eval(m)  # pyre-ignore[6]
         m.eval()
         _assert_ops_are_correct(m, train=False)  # pyre-ignore[6]
         m.train()
@@ -419,7 +424,7 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
             m.train()
 
         # After prepare and after wrapping: does not error and swaps the ops accordingly
-        torch.ao.quantization.allow_exported_model_train_eval(m)
+        allow_exported_model_train_eval(m)
         m.eval()
         _assert_ops_are_correct(m, train=False)
         m.train()
@@ -433,7 +438,7 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
             m.train()
 
         # After convert and after wrapping: does not error and swaps the ops accordingly
-        torch.ao.quantization.allow_exported_model_train_eval(m)
+        allow_exported_model_train_eval(m)
         m.eval()
         _assert_ops_are_correct(m, train=False)
         m.train()
