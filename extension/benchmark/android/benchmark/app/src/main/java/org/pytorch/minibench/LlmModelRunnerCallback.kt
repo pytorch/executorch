@@ -6,9 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-
 package org.pytorch.minibench
-
 
 /**
  * A helper interface within the app for MainActivity and Benchmarking to handle callback from
