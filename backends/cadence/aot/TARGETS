@@ -211,6 +211,7 @@ python_library(
     typing = True,
     deps = [
         ":pass_utils",
+        ":utils",
         "//executorch/backends/cadence/aot:pass_utils",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",

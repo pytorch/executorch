@@ -39,6 +39,7 @@ target_link_libraries(
   qnn_executorch_backend
   executorch_core
   extension_data_loader
+  extension_flat_tensor
   extension_module
   extension_tensor
   gflags
@@ -87,6 +88,7 @@ target_link_libraries(
   qnn_executorch_backend
   executorch_core
   extension_data_loader
+  extension_flat_tensor
   extension_module
   extension_tensor
   gflags

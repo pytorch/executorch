@@ -6,17 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <cassert>
-#include <chrono>
-#include <iostream>
-#include <memory>
-#include <sstream>
-#include <string>
-#include <unordered_map>
-#include <vector>
-
-#include "jni_layer_constants.h"
-
+#include <executorch/extension/android/jni/jni_layer_constants.h>
 #include <executorch/extension/android/jni/log.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/runner_util/inputs.h>
@@ -25,10 +15,25 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <cassert>
+#include <chrono>
+#include <iostream>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 #ifdef ET_USE_THREADPOOL
 #include <cpuinfo.h>
 #include <executorch/extension/threadpool/threadpool.h>
+#endif
+
+#ifdef EXECUTORCH_ANDROID_PROFILING
+#include <executorch/devtools/etdump/etdump_flatcc.h>
+#include <fcntl.h>
+#include <unistd.h>
 #endif
 
 #include <fbjni/ByteBuffer.h>
@@ -217,16 +222,20 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
   std::unique_ptr<Module> module_;
 
  public:
-  constexpr static auto kJavaDescriptor = "Lorg/pytorch/executorch/NativePeer;";
+  constexpr static auto kJavaDescriptor = "Lorg/pytorch/executorch/Module;";
 
   static facebook::jni::local_ref<jhybriddata> initHybrid(
       facebook::jni::alias_ref<jclass>,
       facebook::jni::alias_ref<jstring> modelPath,
-      jint loadMode) {
-    return makeCxxInstance(modelPath, loadMode);
+      jint loadMode,
+      jint numThreads) {
+    return makeCxxInstance(modelPath, loadMode, numThreads);
   }
 
-  ExecuTorchJni(facebook::jni::alias_ref<jstring> modelPath, jint loadMode) {
+  ExecuTorchJni(
+      facebook::jni::alias_ref<jstring> modelPath,
+      jint loadMode,
+      jint numThreads) {
     Module::LoadMode load_mode = Module::LoadMode::Mmap;
     if (loadMode == 0) {
       load_mode = Module::LoadMode::File;
@@ -237,8 +246,13 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     } else if (loadMode == 3) {
       load_mode = Module::LoadMode::MmapUseMlockIgnoreErrors;
     }
-
-    module_ = std::make_unique<Module>(modelPath->toStdString(), load_mode);
+#ifdef EXECUTORCH_ANDROID_PROFILING
+    auto etdump_gen = std::make_unique<executorch::etdump::ETDumpGen>();
+#else
+    auto etdump_gen = nullptr;
+#endif
+    module_ = std::make_unique<Module>(
+        modelPath->toStdString(), load_mode, std::move(etdump_gen));
 
 #ifdef ET_USE_THREADPOOL
     // Default to using cores/2 threadpool threads. The long-term plan is to
@@ -248,23 +262,15 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     // Based on testing, this is almost universally faster than using all
     // cores, as efficiency cores can be quite slow. In extreme cases, using
     // all cores can be 10x slower than using cores/2.
-    //
-    // TODO Allow overriding this default from Java.
     auto threadpool = executorch::extension::threadpool::get_threadpool();
     if (threadpool) {
-      int thread_count = cpuinfo_get_processors_count() / 2;
+      int thread_count =
+          numThreads != 0 ? numThreads : cpuinfo_get_processors_count() / 2;
       if (thread_count > 0) {
         threadpool->_unsafe_reset_threadpool(thread_count);
       }
     }
 #endif
-  }
-
-  facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> forward(
-      facebook::jni::alias_ref<
-          facebook::jni::JArrayClass<JEValue::javaobject>::javaobject>
-          jinputs) {
-    return execute_method("forward", jinputs);
   }
 
   facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> execute(
@@ -361,7 +367,6 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
       auto jevalue = JEValue::newJEValueFromEValue(result.get()[i]);
       jresult->setElement(i, *jevalue);
     }
-
     return jresult;
   }
 
@@ -395,13 +400,86 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 #endif
   }
 
+  jboolean etdump() {
+#ifdef EXECUTORCH_ANDROID_PROFILING
+    executorch::etdump::ETDumpGen* etdumpgen =
+        (executorch::etdump::ETDumpGen*)module_->event_tracer();
+    auto etdump_data = etdumpgen->get_etdump_data();
+
+    if (etdump_data.buf != nullptr && etdump_data.size > 0) {
+      int etdump_file =
+          open("/data/local/tmp/result.etdump", O_WRONLY | O_CREAT, 0644);
+      if (etdump_file == -1) {
+        ET_LOG(Error, "Cannot create result.etdump error: %d", errno);
+        return false;
+      }
+      ssize_t bytes_written =
+          write(etdump_file, (uint8_t*)etdump_data.buf, etdump_data.size);
+      if (bytes_written == -1) {
+        ET_LOG(Error, "Cannot write result.etdump error: %d", errno);
+        return false;
+      } else {
+        ET_LOG(Info, "ETDump written %d bytes to file.", bytes_written);
+      }
+      close(etdump_file);
+      free(etdump_data.buf);
+      return true;
+    } else {
+      ET_LOG(Error, "No ETDump data available!");
+    }
+#endif
+    return false;
+  }
+
+  facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> getMethods() {
+    const auto& names_result = module_->method_names();
+    if (!names_result.ok()) {
+      facebook::jni::throwNewJavaException(
+          facebook::jni::gJavaLangIllegalArgumentException,
+          "Cannot get load module");
+    }
+    const auto& methods = names_result.get();
+    facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> ret =
+        facebook::jni::JArrayClass<jstring>::newArray(methods.size());
+    int i = 0;
+    for (auto s : methods) {
+      facebook::jni::local_ref<facebook::jni::JString> method_name =
+          facebook::jni::make_jstring(s.c_str());
+      (*ret)[i] = method_name;
+      i++;
+    }
+    return ret;
+  }
+
+  facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> getUsedBackends(
+      facebook::jni::alias_ref<jstring> methodName) {
+    auto methodMeta = module_->method_meta(methodName->toStdString()).get();
+    std::unordered_set<std::string> backends;
+    for (auto i = 0; i < methodMeta.num_backends(); i++) {
+      backends.insert(methodMeta.get_backend_name(i).get());
+    }
+
+    facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> ret =
+        facebook::jni::JArrayClass<jstring>::newArray(backends.size());
+    int i = 0;
+    for (auto s : backends) {
+      facebook::jni::local_ref<facebook::jni::JString> backend_name =
+          facebook::jni::make_jstring(s.c_str());
+      (*ret)[i] = backend_name;
+      i++;
+    }
+    return ret;
+  }
+
   static void registerNatives() {
     registerHybrid({
         makeNativeMethod("initHybrid", ExecuTorchJni::initHybrid),
-        makeNativeMethod("forward", ExecuTorchJni::forward),
-        makeNativeMethod("execute", ExecuTorchJni::execute),
-        makeNativeMethod("loadMethod", ExecuTorchJni::load_method),
-        makeNativeMethod("readLogBuffer", ExecuTorchJni::readLogBuffer),
+        makeNativeMethod("executeNative", ExecuTorchJni::execute),
+        makeNativeMethod("loadMethodNative", ExecuTorchJni::load_method),
+        makeNativeMethod("readLogBufferNative", ExecuTorchJni::readLogBuffer),
+        makeNativeMethod("etdump", ExecuTorchJni::etdump),
+        makeNativeMethod("getMethods", ExecuTorchJni::getMethods),
+        makeNativeMethod("getUsedBackends", ExecuTorchJni::getUsedBackends),
     });
   }
 };
@@ -413,9 +491,11 @@ extern void register_natives_for_llm();
 // No op if we don't build LLM
 void register_natives_for_llm() {}
 #endif
+extern void register_natives_for_runtime();
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
   return facebook::jni::initialize(vm, [] {
     executorch::extension::ExecuTorchJni::registerNatives();
     register_natives_for_llm();
+    register_natives_for_runtime();
   });
 }

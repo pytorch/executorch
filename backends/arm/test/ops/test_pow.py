@@ -71,6 +71,10 @@ class Pow_TensorScalar(torch.nn.Module):
             torch.abs(torch.randn((1, 2, 3, 6))),
             6.789,
         ),
+        "neg_base_exp_pos_integer": lambda: (
+            -torch.abs(torch.randn((1, 2, 3, 6))) - 10,
+            3,
+        ),
     }
 
     def __init__(self, exp):

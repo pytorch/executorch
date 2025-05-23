@@ -62,8 +62,7 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
           implementation, logger, options->soc_info(), htp_options);
 
       backend_params->qnn_backend_cache_ptr_ =
-          std::make_unique<HtpBackendCache>(
-              qnn_context_blob, options->graph_name()->str());
+          std::make_unique<HtpBackendCache>(qnn_context_blob);
 
       backend_params->qnn_context_ptr_ = std::make_unique<HtpContext>(
           implementation,

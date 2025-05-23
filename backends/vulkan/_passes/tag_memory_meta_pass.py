@@ -6,7 +6,7 @@
 
 import logging
 from copy import deepcopy
-from typing import Any, Set
+from typing import Any, Optional, Set
 
 import executorch.backends.vulkan.utils as utils
 
@@ -94,7 +94,7 @@ class TagMemoryMetaPass(ExportPass):
     def propose_node_storage(
         self,
         node: torch.fx.Node,
-    ) -> VkStorageType:
+    ) -> Optional[VkStorageType]:
         """
         Uses the operator registry to determine the storage type that should be used for
         a given node. The storage type is determined with the following priorities:
@@ -114,6 +114,9 @@ class TagMemoryMetaPass(ExportPass):
            opinionated user can be found, then proceed to the last step.
         4. Use the default storage type setting.
         """
+        if not utils.is_tensor_node(node):
+            return None
+
         # The node may have an input/output tensor that is too big to be stored in a
         # texture. In this case, buffer storage must be used. Note that the partitioner
         # has already checked for the fact that buffer storage is supported by the
@@ -154,12 +157,15 @@ class TagMemoryMetaPass(ExportPass):
         self,
         node: torch.fx.Node,
         storage: VkStorageType,
-    ) -> VkMemoryLayout:
+    ) -> Optional[VkMemoryLayout]:
         """
         Performs the same steps as propose_node_storage, but detects the memory layout
         that should be used for the specific storage type. The same prioritization logic
         is applied.
         """
+        if not utils.is_tensor_node(node):
+            return None
+
         valid_layouts: Set[VkMemoryLayout] = utils.all_memory_layouts
         # pyre-ignore
         if has_impl(node.target):

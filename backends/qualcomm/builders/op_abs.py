@@ -35,7 +35,7 @@ class Abs(NodeVisitor):
         )
         abs_output_tensors = [output_tensor_wrapper]
 
-        input_node = node.args[0]
+        input_node = self.get_node(node.args[0])
         input_tensor_wrapper = self.define_tensor(
             input_node,
             node,

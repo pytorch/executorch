@@ -13,7 +13,7 @@ tosa_reference_model_url="https://git.gitlab.arm.com/tosa/tosa-reference-model.g
 tosa_reference_model_0_80_branch="v0.80"
 tosa_reference_model_0_80_rev="70ed0b40fa831387e36abdb4f7fb9670a3464f5a"
 tosa_serialization_lib_0_80_rev="v0.80.1"
-tosa_reference_model_1_0_rev="4d17b5b960cd986d8cb8052188fbe3ae494789e8"
+tosa_reference_model_1_0_rev="d102f426dd2e3c1f25bbf23292ec8ee51aa9c677"
 
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 
