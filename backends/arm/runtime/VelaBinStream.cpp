@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Arm Limited and/or its affiliates.
+ * Copyright 2023, 2025 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -71,9 +71,10 @@ bool vela_bin_read(const char* data, VelaHandles* handles, int size) {
     } else if (!strncmp(b->name, "weight_data", strlen("weight_data"))) {
       handles->weight_data = b->data;
       handles->weight_data_size = b->size;
-    } else if (!strncmp(b->name, "scratch_data", strlen("scratch_data"))) {
-      handles->scratch_data = b->data;
-      handles->scratch_data_size = b->size;
+    } else if (!strncmp(b->name, "scratch_size", strlen("scratch_size"))) {
+      const uint32_t* scratch_size_ptr =
+          reinterpret_cast<const uint32_t*>(b->data);
+      handles->scratch_data_size = *scratch_size_ptr;
     } else if (!strncmp(b->name, "inputs", strlen("inputs"))) {
       handles->inputs = (VelaIOs*)b->data;
     } else if (!strncmp(b->name, "outputs", strlen("outputs"))) {
