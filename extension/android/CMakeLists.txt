@@ -6,7 +6,9 @@
 
 cmake_minimum_required(VERSION 3.24) # 3.24 is required for WHOLE_ARCHIVE
 
-project(executorch_jni)
+if(NOT EXECUTORCH_ROOT)
+  set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+endif()
 
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -16,7 +18,6 @@ if(NOT ANDROID)
   message(FATAL_ERROR "This directory is for Android build only")
 endif()
 
-set(EXECUTORCH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
@@ -60,8 +61,6 @@ set_target_properties(fbjni PROPERTIES
   IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/libs/android.${ANDROID_ABI}/libfbjni.so"
 )
 
-set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../lib/cmake/ExecuTorch)
-find_package(executorch CONFIG REQUIRED)
 target_link_options_shared_lib(executorch)
 
 add_library(executorch_jni SHARED jni/jni_layer.cpp jni/log.cpp jni/jni_layer_runtime.cpp)
@@ -152,12 +151,12 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
   target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_LLAMA_JNI=1)
   add_subdirectory(
     ${EXECUTORCH_ROOT}/examples/models/llava/runner
-    ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llava/runner
+    ${CMAKE_CURRENT_BINARY_DIR}/examples/models/llava/runner
   )
 
   add_subdirectory(
     ${EXECUTORCH_ROOT}/examples/models/llama/runner
-    ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llama/runner
+    ${CMAKE_CURRENT_BINARY_DIR}/examples/models/llama/runner
   )
 
   if(NEURON_BUFFER_ALLOCATOR_LIB)
