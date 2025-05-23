@@ -59,7 +59,7 @@ public class Module {
     Map<String, MethodMetadata> metadata = new HashMap<String, MethodMetadata>();
     for (int i = 0; i < methods.length; i++) {
       String name = methods[i];
-      metadata.put(name, new MethodMetadata().setName(name).setBackends(getUsedBackends(name)));
+      metadata.put(name, new MethodMetadata().setName(name));
     }
 
     return metadata;

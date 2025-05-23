@@ -1176,7 +1176,7 @@ def get_tan_inputs():
         ]
     )
     test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
-    test_suite.dtypes = ["at::kFloat"]
+    test_suite.dtypes = ["at::kFloat", "at::kHalf"]
     return test_suite
 
 
