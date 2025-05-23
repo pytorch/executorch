@@ -17,31 +17,31 @@ public protocol Scalar {
 }
 
 @available(*, deprecated, message: "This API is experimental.")
-public extension UInt8: Scalar { static var dataType: DataType { .byte } }
+extension UInt8: Scalar { public static var dataType: DataType { .byte } }
 @available(*, deprecated, message: "This API is experimental.")
-public extension Int8: Scalar { static var dataType: DataType { .char } }
+extension Int8: Scalar { public static var dataType: DataType { .char } }
 @available(*, deprecated, message: "This API is experimental.")
-public extension Int16: Scalar { static var dataType: DataType { .short } }
+extension Int16: Scalar { public static var dataType: DataType { .short } }
 @available(*, deprecated, message: "This API is experimental.")
-public extension Int32: Scalar { static var dataType: DataType { .int } }
+extension Int32: Scalar { public static var dataType: DataType { .int } }
 @available(*, deprecated, message: "This API is experimental.")
-public extension Int64: Scalar { static var dataType: DataType { .long } }
+extension Int64: Scalar { public static var dataType: DataType { .long } }
 @available(*, deprecated, message: "This API is experimental.")
-public extension Int: Scalar { static var dataType: DataType { .long } }
+extension Int: Scalar { public static var dataType: DataType { .long } }
 @available(*, deprecated, message: "This API is experimental.")
-public extension Float: Scalar { static var dataType: DataType { .float } }
+extension Float: Scalar { public static var dataType: DataType { .float } }
 @available(*, deprecated, message: "This API is experimental.")
-public extension Double: Scalar { static var dataType: DataType { .double } }
+extension Double: Scalar { public static var dataType: DataType { .double } }
 @available(*, deprecated, message: "This API is experimental.")
-public extension Bool: Scalar { static var dataType: DataType { .bool } }
+extension Bool: Scalar { public static var dataType: DataType { .bool } }
 @available(*, deprecated, message: "This API is experimental.")
-public extension UInt16: Scalar { static var dataType: DataType { .uInt16 } }
+extension UInt16: Scalar { public static var dataType: DataType { .uInt16 } }
 @available(*, deprecated, message: "This API is experimental.")
-public extension UInt32: Scalar { static var dataType: DataType { .uInt32 } }
+extension UInt32: Scalar { public static var dataType: DataType { .uInt32 } }
 @available(*, deprecated, message: "This API is experimental.")
-public extension UInt64: Scalar { static var dataType: DataType { .uInt64 } }
+extension UInt64: Scalar { public static var dataType: DataType { .uInt64 } }
 @available(*, deprecated, message: "This API is experimental.")
-public extension UInt: Scalar { static var dataType: DataType { .uInt64 } }
+extension UInt: Scalar { public static var dataType: DataType { .uInt64 } }
 
 @available(*, deprecated, message: "This API is experimental.")
 public extension Tensor {
