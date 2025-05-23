@@ -31,7 +31,7 @@ define_overridable_option(
 )
 define_overridable_option(
   EXECUTORCH_PAL_DEFAULT
-  "Which PAL default implementation to use. Choices: posix, minimal, android"
+  "Which PAL default implementation to use. Choices: posix, minimal"
   STRING "posix"
 )
 define_overridable_option(
@@ -276,7 +276,7 @@ define_overridable_option(
 # At this point all the options should be configured with their final value.
 
 if(NOT EXISTS ${EXECUTORCH_PAL_DEFAULT_FILE_PATH})
-  message(FATAL_ERROR "PAL default implementation (EXECUTORCH_PAL_DEFAULT=${EXECUTORCH_PAL_DEFAULT}) file not found: ${EXECUTORCH_PAL_DEFAULT_FILE_PATH}. Choices: posix, minimal, android")
+  message(FATAL_ERROR "PAL default implementation (EXECUTORCH_PAL_DEFAULT=${EXECUTORCH_PAL_DEFAULT}) file not found: ${EXECUTORCH_PAL_DEFAULT_FILE_PATH}. Choices: posix, minimal")
 endif()
 
 
