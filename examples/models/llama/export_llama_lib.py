@@ -651,11 +651,19 @@ def _prepare_for_llama_export(llm_config, args) -> LLMEdgeManager:
     Returns a LLMEdgeManager prior to calling export_to_edge with quantizers
     """
     # load model from checkpoint and params.json
-    checkpoint_path = canonical_path(llm_config.base.checkpoint) if llm_config.base.checkpoint else None
-    checkpoint_dir = (
-        canonical_path(llm_config.base.checkpoint_dir) if llm_config.base.checkpoint_dir else None
+    checkpoint_path = (
+        canonical_path(llm_config.base.checkpoint)
+        if llm_config.base.checkpoint
+        else None
     )
-    params_path = canonical_path(llm_config.base.params) if llm_config.base.params else None
+    checkpoint_dir = (
+        canonical_path(llm_config.base.checkpoint_dir)
+        if llm_config.base.checkpoint_dir
+        else None
+    )
+    params_path = (
+        canonical_path(llm_config.base.params) if llm_config.base.params else None
+    )
     output_dir_path = canonical_path(llm_config.export.output_dir, dir=True)
     weight_type = WeightType.FAIRSEQ2 if llm_config.base.fairseq2 else WeightType.LLAMA
 
@@ -744,7 +752,7 @@ def _prepare_for_llama_export(llm_config, args) -> LLMEdgeManager:
             preq_mode=llm_config.base.preq_mode,
             preq_group_size=llm_config.base.preq_group_size,
             preq_embedding_quantize=llm_config.base.preq_embedding_quantize,
-            local_global_attention=llm_config.model.local_global_attention
+            local_global_attention=llm_config.model.local_global_attention,
         )
     )
 
@@ -804,9 +812,9 @@ def _validate_args(llm_config):
             f"max_context_length {llm_config.export.max_context_length} must be >= max_seq_len {llm_config.export.max_seq_length}. max_context_length impacts kv cache size that is used to remember history, while max_seq_length refers to user prompt length. Please use --max_context_length to specify context length."
         )
     if llm_config.model.enable_dynamic_shape and (
-        llm_config.backend.coreml.enabled or 
-        llm_config.backend.mps.enabled or 
-        llm_config.backend.qnn.enabled
+        llm_config.backend.coreml.enabled
+        or llm_config.backend.mps.enabled
+        or llm_config.backend.qnn.enabled
     ):
         raise ValueError(
             "Dynamic shape is not supported with coreml, MPS or qnn backends."
@@ -1050,7 +1058,9 @@ def _to_edge_and_lower_llama(  # noqa: C901
 def _export_llama(llm_config, args) -> LLMEdgeManager:  # noqa: C901
     _validate_args(llm_config)
 
-    pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(llm_config)
+    pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(
+        llm_config
+    )
 
     additional_passes = []
     if llm_config.base.model_class in TORCHTUNE_DEFINED_MODELS:
