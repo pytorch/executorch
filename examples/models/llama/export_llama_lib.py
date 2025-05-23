@@ -619,7 +619,6 @@ def export_llama(
             )
         checkpoint = download_and_convert_hf_checkpoint(repo_id, convert_weights)
         llm_config.base.checkpoint = checkpoint
-        args.checkpoint = checkpoint
 
     if llm_config.debug.profile_path is not None:
         try:
@@ -745,6 +744,7 @@ def _prepare_for_llama_export(llm_config, args) -> LLMEdgeManager:
             preq_mode=llm_config.base.preq_mode,
             preq_group_size=llm_config.base.preq_group_size,
             preq_embedding_quantize=llm_config.base.preq_embedding_quantize,
+            local_global_attention=llm_config.model.local_global_attention
         )
     )
 
@@ -1067,7 +1067,6 @@ def _export_llama(llm_config, args) -> LLMEdgeManager:  # noqa: C901
     if pt2e_quant_params is not None and pt2e_quant_params.quantize_linear is not None:
         # Force xnnpack to be true if pt2e_quant_params is not None and xnnpack is False
         llm_config.backend.xnnpack.enabled = True
-        args.xnnpack = True
 
     if llm_config.backend.xnnpack.enabled:
         builder = _to_edge_and_lower_llama_xnnpack(
@@ -1188,6 +1187,8 @@ def _load_llama_model(
     output_prune_map_path: Optional[str] = None,
     metadata_str: Optional[str] = None,
     dtype_override: Optional[DType] = None,
+    use_qnn: bool = False,
+    export_only: bool = False,
     args,
 ) -> "LLMEdgeManager":
     """
@@ -1248,8 +1249,8 @@ def _load_llama_model(
         calibration_seq_length=calibration_seq_length,
         calibration_data=calibration_data,
         tokenizer_path=tokenizer_path,
-        use_legacy_export=args.qnn,
-        save_exported_program=args.export_only,
+        use_legacy_export=use_qnn,
+        save_exported_program=export_only,
         verbose=verbose,
         metadata=_load_llama_model_metadata(
             weight_type,
@@ -1372,23 +1373,11 @@ def _get_source_transforms(  # noqa
         transformations based on the given checkpoint first. In those cases,
         this wil be a no-op.
         """
-
-        # Create a mock args object with the necessary attributes
-        class Args:
-            pass
-
-        args = Args()
-        args.checkpoint = checkpoint
-        args.tokenizer_path = tokenizer_path
-        args.embedding_quantize = embedding_quantize
-        args.use_shared_embedding = use_shared_embedding
-        args.use_qat = use_qat
-        args.use_lora = use_lora
-        args.preq_mode = preq_mode
-        args.preq_group_size = preq_group_size
-        args.preq_embedding_quantize = preq_embedding_quantize
-
-        transforms.append(get_quant_embedding_transform(args, checkpoint_dtype))
+        transforms.append(
+            get_quant_embedding_transform(
+                embedding_quantize, use_shared_embedding, checkpoint_dtype
+            )
+        )
 
     # quantization_mode should be applied after embedding_quantize
     # to support shared_embedding
@@ -1406,30 +1395,17 @@ def _get_source_transforms(  # noqa
         There are cases where this may be a no-op, namely, if all linears are
         quantized in the checkpoint.
         """
-
-        # Create a mock args object with the necessary attributes
-        class Args:
-            pass
-
-        args = Args()
-        args.checkpoint = checkpoint
-        args.tokenizer_path = tokenizer_path
-        args.quantization_mode = quantization_mode
-        args.group_size = group_size
-        args.use_shared_embedding = use_shared_embedding
-        args.calibration_tasks = calibration_tasks
-        args.calibration_limit = calibration_limit
-        args.calibration_seq_length = calibration_seq_length
-        args.use_shared_embedding = use_shared_embedding
-        args.use_qat = use_qat
-        args.use_lora = use_lora
-        args.preq_mode = preq_mode
-
         transforms.append(
             get_quant_weight_transform(
-                args=args,
+                quantization_mode=quantization_mode,
+                group_size=group_size,
                 computation_dtype=dtype_override,
                 checkpoint_dtype=checkpoint_dtype,
+                checkpoint_path=checkpoint,
+                tokenizer_path=tokenizer_path,
+                calibration_tasks=calibration_tasks,
+                calibration_limit=calibration_limit,
+                calibration_seq_length=calibration_seq_length,
             )
         )
 
@@ -1503,7 +1479,7 @@ def _get_source_transforms(  # noqa
         transforms.append(
             partial(
                 replace_kv_cache_with_ring_kv_cache,
-                layer_sizes=args.local_global_attention,
+                layer_sizes=local_global_attention,
             )
         )
 

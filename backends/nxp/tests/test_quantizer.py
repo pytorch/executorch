@@ -8,7 +8,7 @@
 import executorch.backends.nxp.tests.models as models
 import torch
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 def _get_target_name(node):

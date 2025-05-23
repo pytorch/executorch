@@ -35,11 +35,11 @@ from executorch.extension.export_util.utils import export_to_edge, save_pte_prog
 
 from executorch.extension.llm.export.export_passes import RemoveRedundantTransposes
 from pytorch_tokenizers import get_tokenizer
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer import Quantizer
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
 from torch.export import export_for_training, ExportedProgram
 from torch.nn.attention import SDPBackend
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchao.utils import unwrap_tensor_subclass
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -373,7 +373,7 @@ class LLMEdgeManager:
                 ), "Please run export() first"
                 m = prepare_pt2e(
                     self.pre_autograd_graph_module,  # pyre-ignore[6]
-                    composed_quantizer,
+                    composed_quantizer,  # pyre-ignore[6]
                 )
                 logging.info(
                     f"Calibrating with tasks: {self.calibration_tasks}, limit: {self.calibration_limit}, calibration_data: {self.calibration_data}, tokenizer_path: {self.tokenizer_path}, seq_length: {self.calibration_seq_length}"

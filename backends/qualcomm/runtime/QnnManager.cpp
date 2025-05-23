@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/qualcomm/aot/ir/qcir_utils.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/runtime/SharedBuffer.h>
 #include <executorch/backends/qualcomm/runtime/Utils.h>
@@ -59,7 +58,9 @@ QnnManager::QnnManager(
         EnumNameQcomChipset(options_->soc_info()->soc_model()));
     QNN_EXECUTORCH_LOG_INFO(
         "backend_type: %s", EnumNameQnnExecuTorchBackendType(backend_type));
-    QNN_EXECUTORCH_LOG_INFO("graph_name: %s", options_->graph_name()->c_str());
+    for (auto name : *options_->graph_name()) {
+      QNN_EXECUTORCH_LOG_INFO("graph_name: %s", name->c_str());
+    }
     QNN_EXECUTORCH_LOG_INFO("library_path: %s", library_path.c_str());
     QNN_EXECUTORCH_LOG_INFO("dump intermediate outputs: %s", IsTensorDump());
     QNN_EXECUTORCH_LOG_INFO(
@@ -281,6 +282,10 @@ Error QnnManager::Init() {
       LoadQnnLibrary() == Error::Ok, Internal, "Fail to load Qnn library");
   logger_ = std::make_unique<QnnLogger>(
       qnn_loaded_backend_, LoggingCallback, options_->log_level());
+  std::vector<std::string> graph_names;
+  for (auto name : *options_->graph_name()) {
+    graph_names.emplace_back(name->str());
+  }
   if (backend_params_ptr_->backend_init_state_ ==
       BackendInitializeState::UNINITIALIZED) {
     QNN_EXECUTORCH_LOG_INFO(
@@ -298,7 +303,8 @@ Error QnnManager::Init() {
         Internal,
         "Failed to load Qnn backend.");
     ET_CHECK_OR_RETURN_ERROR(
-        backend_params_ptr_->qnn_backend_cache_ptr_->Configure() == Error::Ok,
+        backend_params_ptr_->qnn_backend_cache_ptr_->Configure(graph_names) ==
+            Error::Ok,
         Internal,
         "Fail to configure Qnn backend cache");
     ET_CHECK_OR_RETURN_ERROR(
@@ -560,126 +566,6 @@ Error QnnManager::CompileDlc() {
         Internal,
         "Fail to allocate tensor for Dlc with graph_name: %s",
         graphInfo.graphName);
-  }
-
-  return Error::Ok;
-}
-
-Error QnnManager::CompileQcir() {
-  QnnQcirCustomProtocol qnn_qcir_custom_protocol;
-  auto [status, qcir_fbs_size, tensor_size, qcir_fbs_ptr, tensor_ptr] =
-      qnn_qcir_custom_protocol.DeserializeQcirCustomBuffer(
-          qnn_context_blob_.buffer);
-
-  if (status != Error::Ok) {
-    QNN_EXECUTORCH_LOG_ERROR("Failed to verify QnnQcirCustomProtocol");
-    return Error::Internal;
-  }
-
-  auto context = qcir::GetContext(qcir_fbs_ptr);
-  for (const auto& graph : *context->graphs()) {
-    // qcir tensors to TensorWrapper
-    std::vector<std::shared_ptr<TensorWrapper>> graph_inputs, graph_outputs,
-        tensors;
-    for (const auto& tensor : *graph->tensors()) {
-      tensors.emplace_back(CreateTensorWrapper(ToTensor(
-          tensor, static_cast<uint8_t*>(tensor_ptr) + tensor->offset())));
-      if (tensor->type() == qcir::TensorType::WRITE) {
-        graph_inputs.push_back(tensors.back());
-      } else if (tensor->type() == qcir::TensorType::READ) {
-        graph_outputs.push_back(tensors.back());
-      }
-    }
-    std::vector<std::shared_ptr<OpWrapper>> op_wrappers;
-    // qcir graph node to OpWrapper
-    for (const auto& node : *graph->nodes()) {
-      std::shared_ptr<OpWrapper> op = std::make_shared<OpWrapper>(
-          node->name()->str(),
-          node->package_name()->str(),
-          node->type_name()->str());
-
-      // qcir input tensors to OpWrapper input tensors
-      std::vector<std::shared_ptr<TensorWrapper>> inputs;
-      for (uint32_t index : *node->inputs()) {
-        inputs.push_back(tensors[index]);
-      }
-      op->AddInputTensors(inputs);
-
-      // qcir output tensors to OpWrapper output tensors
-      std::vector<std::shared_ptr<TensorWrapper>> outputs;
-      for (uint32_t index : *node->outputs()) {
-        outputs.push_back(tensors[index]);
-      }
-      op->AddOutputTensors(outputs);
-
-      // qcir operator param to OpWrapper param
-      for (uint32_t index : *node->params()) {
-        const auto& tensor = graph->tensors()->Get(index);
-        std::string name = tensor->name()->str();
-        Qnn_DataType_t dtype = ToDataType(tensor->dtype());
-        const uint8_t* data_ptr =
-            static_cast<uint8_t*>(tensor_ptr) + tensor->offset();
-        if (tensor->shape()->size() != 0) {
-          // add tensor param
-          op->AddTensorParam(
-              name,
-              dtype,
-              tensor->shape()->size(),
-              tensor->shape()->data(),
-              data_ptr);
-        } else {
-          // add scalar param
-          switch (dtype) {
-            case Qnn_DataType_t::QNN_DATATYPE_INT_32:
-              op->AddScalarParam(
-                  name, dtype, *reinterpret_cast<const int32_t*>(data_ptr));
-              break;
-            case Qnn_DataType_t::QNN_DATATYPE_INT_16:
-              op->AddScalarParam(
-                  name, dtype, *reinterpret_cast<const int16_t*>(data_ptr));
-              break;
-            case Qnn_DataType_t::QNN_DATATYPE_INT_8:
-              op->AddScalarParam(name, dtype, static_cast<int8_t>(*data_ptr));
-              break;
-            case Qnn_DataType_t::QNN_DATATYPE_UINT_32:
-              op->AddScalarParam(
-                  name, dtype, *reinterpret_cast<const uint32_t*>(data_ptr));
-              break;
-            case Qnn_DataType_t::QNN_DATATYPE_UINT_16:
-              op->AddScalarParam(
-                  name, dtype, *reinterpret_cast<const uint16_t*>(data_ptr));
-              break;
-            case Qnn_DataType_t::QNN_DATATYPE_UINT_8:
-              op->AddScalarParam(name, dtype, *data_ptr);
-              break;
-            case Qnn_DataType_t::QNN_DATATYPE_FLOAT_32:
-            case Qnn_DataType_t::QNN_DATATYPE_FLOAT_16:
-              op->AddScalarParam(
-                  name, dtype, *reinterpret_cast<const float*>(data_ptr));
-              break;
-            case Qnn_DataType_t::QNN_DATATYPE_BOOL_8:
-              op->AddScalarParam(name, dtype, *data_ptr);
-              break;
-            default:
-              QNN_EXECUTORCH_LOG_ERROR(
-                  "Invalid scalar type: %s", tensor->name()->c_str());
-              break;
-          }
-        }
-      }
-      op_wrappers.emplace_back(std::move(op));
-    }
-    ET_CHECK_OR_RETURN_ERROR(
-        Compile(graph->name()->str(), op_wrappers) == Error::Ok,
-        Internal,
-        "Fail to compile graph from qcir with graph_name: %s",
-        graph->name()->str().c_str());
-    ET_CHECK_OR_RETURN_ERROR(
-        AllocateTensor(graph->name()->str(), graph_inputs, graph_outputs) ==
-            Error::Ok,
-        Internal,
-        "Fail to allocate tensor for qcir with graph_name: %s",
-        graph->name()->str().c_str());
   }
 
   return Error::Ok;
