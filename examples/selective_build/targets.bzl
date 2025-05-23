@@ -65,7 +65,7 @@ def define_common_targets():
         deps = [
             ":select_ops_in_dict",
         ],
-        dtype_selective_build = True,
+        dtype_selective_build = is_xplat(),
         visibility = ["//executorch/..."],
     )
 
@@ -78,7 +78,7 @@ def define_common_targets():
         deps = [
             ":select_ops_in_dict",
         ],
-        dtype_selective_build = True,
+        dtype_selective_build = is_xplat(),
         visibility = ["//executorch/..."],
     )
 
