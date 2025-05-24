@@ -701,7 +701,7 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -715,6 +715,9 @@ jobs:
         PYTHON_EXECUTABLE=python \
         CMAKE_ARGS="-DEXECUTORCH_BUILD_NXP_NEUTRON=ON" \
         .ci/scripts/setup-linux.sh --build-tool "cmake"
+
+        PYTHON_EXECUTABLE=python bash examples/nxp/setup.sh
+        pip install -r backends/nxp/requirements-tests.txt
         
         # Run pytest
         PYTHON_EXECUTABLE=python bash backends/nxp/run_unittests.sh
