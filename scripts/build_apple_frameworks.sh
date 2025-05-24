@@ -19,6 +19,7 @@ OPTIMIZED=OFF
 PORTABLE=OFF
 QUANTIZED=OFF
 XNNPACK=OFF
+TORCHAO=OFF
 HEADERS_PATH="include"
 
 PLATFORMS=("ios" "simulator" "macos")
@@ -74,6 +75,10 @@ libquantized_kernels.a,\
 libquantized_ops_lib.a,\
 :"
 
+FRAMEWORK_KERNELS_TORCHAO="kernels_torchao:\
+libtorchao_ops_executorch.a,\
+:"
+
 usage() {
   echo "Usage: $0 [SOURCE_ROOT_DIR] [OPTIONS]"
   echo "Build frameworks for Apple platforms."
@@ -92,6 +97,7 @@ usage() {
   echo "  --portable           Build the Portable kernels."
   echo "  --quantized          Build the Quantized kernels."
   echo "  --xnnpack            Build the XNNPACK backend."
+  echo "  --torchao            Build the TorchAO kernels."
   echo
   echo "Example:"
   echo "  $0 /path/to/source/root --output=cmake-out --toolchain=/path/to/toolchain --python=/path/to/python3 --coreml --mps --xnnpack"
@@ -121,6 +127,7 @@ for arg in "$@"; do
       --portable) PORTABLE=ON ;;
       --quantized) QUANTIZED=ON ;;
       --xnnpack) XNNPACK=ON ;;
+      --torchao) TORCHAO=ON ;;
       *)
       if [[ -z "$SOURCE_ROOT_DIR" ]]; then
           SOURCE_ROOT_DIR="$arg"
@@ -201,6 +208,7 @@ cmake_build() {
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM=$CUSTOM \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=$OPTIMIZED \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=$QUANTIZED \
+        -DEXECUTORCH_BUILD_KERNELS_TORCHAO=$TORCHAO \
         -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="$(pwd)" \
         ${platform_flag:+-DPLATFORM=$platform_flag} \
         ${platform_target:+-DDEPLOYMENT_TARGET=$platform_target} \
@@ -280,6 +288,7 @@ for mode in "${MODES[@]}"; do
   append_framework_flag "$OPTIMIZED" "$FRAMEWORK_KERNELS_OPTIMIZED" "$mode"
   append_framework_flag "$PORTABLE" "$FRAMEWORK_KERNELS_PORTABLE" "$mode"
   append_framework_flag "$QUANTIZED" "$FRAMEWORK_KERNELS_QUANTIZED" "$mode"
+  append_framework_flag "$TORCHAO" "$FRAMEWORK_KERNELS_TORCHAO" "$mode"
 
   "$SOURCE_ROOT_DIR"/scripts/create_frameworks.sh "${FRAMEWORK_FLAGS[@]}"
 done
