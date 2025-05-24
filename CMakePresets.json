@@ -58,6 +58,20 @@
       }
     },
     {
+      "name": "linux",
+      "displayName": "Build everything buildable on Linux",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "CMAKE_SYSTEM_NAME": "Linux",
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/linux.cmake"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Linux"
+      }
+    },
+    {
       "name": "pybind",
       "displayName": "Build pybindings exported in the wheel",
       "inherits": ["common"],
