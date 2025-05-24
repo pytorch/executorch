@@ -20,6 +20,7 @@ from .decompose_silu import DecomposeSilu
 from .expand_broadcast_tensor_shape import ExpandBroadcastTensorShape
 from .fixed_linear_keep_dim import FixedLinearKeepDim
 from .fold_qdq import FoldQDQ
+from .fuse_consecutive_cast import FuseConsecutiveCast
 from .fuse_consecutive_transpose import FuseConsecutiveTranspose
 from .i64_to_i32 import I64toI32
 from .insert_io_qdq import InsertIOQDQ
@@ -54,6 +55,7 @@ __all__ = [
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
     FoldQDQ,
+    FuseConsecutiveCast,
     FuseConsecutiveTranspose,
     I64toI32,
     InsertIOQDQ,
