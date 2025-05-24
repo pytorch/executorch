@@ -209,11 +209,6 @@ define_overridable_option(
   "Build the Cortex-M backend"
   BOOL OFF
 )
-define_overridable_option(
-  EXECUTORCH_BUILD_GFLAGS
-  "Build the gflags library."
-  BOOL ON
-)
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   set(_default_executorch_build_pthreadpool OFF)

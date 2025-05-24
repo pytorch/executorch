@@ -62,6 +62,11 @@ if(NOT CMAKE_SYSTEM_PROCESSOR)
 endif()
 announce_configured_options(CMAKE_SYSTEM_PROCESSOR)
 
+if(NOT CMAKE_SYSTEM_NAME)
+  set(CMAKE_SYSTEM_NAME ${CMAKE_HOST_SYSTEM_NAME})
+endif()
+announce_configured_options(CMAKE_SYSTEM_NAME)
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
@@ -76,7 +81,7 @@ announce_configured_options(CMAKE_CXX_COMPILER_ID)
 announce_configured_options(CMAKE_TOOLCHAIN_FILE)
 announce_configured_options(BUCK2)
 
-load_build_preset()
+load_executorch_build_preset_file()
 include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
 
 # Print all the configs that were called with announce_configured_options.
@@ -448,14 +453,6 @@ endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/configurations)
 
-#
-# gflags: Commandline flag host library.
-#
-
-if(EXECUTORCH_BUILD_GFLAGS)
-  add_subdirectory(third-party/gflags)
-endif()
-
 # Install `executorch` library as well as `executorch-config.cmake` under
 # ${CMAKE_INSTALL_PREFIX}/
 install(DIRECTORY runtime/core/  DESTINATION include/executorch/runtime/core FILES_MATCHING PATTERN "*.h")
@@ -471,11 +468,6 @@ install(
   DESTINATION ${_common_include_directories}
 )
 install(FILES tools/cmake/executorch-config.cmake DESTINATION lib/cmake/ExecuTorch)
-
-# Add googletest if any test targets should be built
-if(BUILD_TESTING)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/googletest)
-endif()
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
