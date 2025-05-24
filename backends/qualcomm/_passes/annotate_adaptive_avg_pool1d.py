@@ -12,23 +12,24 @@ from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 from .utils import get_quant_attrs
 
 
-class AnnotateStack(ExportPass):
+class AnnotateAdaptiveAvgPool1D(ExportPass):
     """
     Add "quant_attrs" to graph nodes' meta from the QDQ information
     generated after quantization process.
+    adaptive_avg_pool1d got decomposed to unsqueeze -> adaptive_avg_pool2d -> squeeze
     """
 
-    decomp_ops = [torch.ops.aten.stack.default]
+    decomp_ops = [torch.ops.aten.adaptive_avg_pool2d.default]
 
     def __init__(self, edge_program: torch.export.ExportedProgram):
-        super(AnnotateStack, self).__init__()
+        super(AnnotateAdaptiveAvgPool1D, self).__init__()
         self.edge_program = edge_program
 
-    def _annotate_stack(self, graph_module: torch.fx.GraphModule):
+    def _annotate_adaptive_avg_pool1d(self, graph_module: torch.fx.GraphModule):
         partitions = get_source_partitions(
-            graph_module.graph, [torch.stack, torch.ops.aten.stack.default, "stack"]
+            graph_module.graph, [torch.ops.aten.adaptive_avg_pool1d.default]
         )
-        for _, src_partitions in partitions.items():
+        for src_partitions in partitions.values():
             for src_partition in src_partitions:
                 output = src_partition.output_nodes[0]
                 if (list(output.users)[0].target) in q_ops:
@@ -39,6 +40,6 @@ class AnnotateStack(ExportPass):
                         n.meta[QCOM_QUANT_ATTRS] = quant_attrs.copy()
 
     def call(self, graph_module: torch.fx.GraphModule):
-        self._annotate_stack(graph_module)
+        self._annotate_adaptive_avg_pool1d(graph_module)
         graph_module.recompile()
         return PassResult(graph_module, True)
