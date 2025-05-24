@@ -11,7 +11,6 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
-from executorch.backends.qualcomm._passes.utils import dq_ops
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_AXIS,
     QCOM_AXIS_ORDER,
@@ -77,6 +76,18 @@ PER_TENSOR_ENCODING = {
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+}
+
+q_ops = {
+    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+}
+
+dq_ops = {
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
 }
 
 
