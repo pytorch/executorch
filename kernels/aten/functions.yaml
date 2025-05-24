@@ -315,6 +315,8 @@
 
 - op: prod.out
 
+- op: randn.out
+
 - op: reciprocal.out
 
 - op: relu.out
