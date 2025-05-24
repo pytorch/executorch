@@ -317,6 +317,8 @@
 
 - op: rand.out
 
+- op: randn.out
+
 - op: reciprocal.out
 
 - op: relu.out

@@ -719,6 +719,12 @@
       kernel_name: torch::executor::rand_out
   tags: nondeterministic_seeded
 
+- op: randn.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::randn_out
+  tags: nondeterministic_seeded
+
 - op: reciprocal.out
   kernels:
     - arg_meta: null
