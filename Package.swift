@@ -15,7 +15,7 @@
 //
 // For details on building frameworks locally or using prebuilt binaries,
 // see the documentation:
-// https://pytorch.org/executorch/main/using-executorch-ios.html
+// https://pytorch.org/executorch/main/using-executorch-ios
 
 import PackageDescription
 
@@ -77,7 +77,9 @@ let package = Package(
         name: "\(key)_dependencies",
         dependencies: [.target(name: key)],
         path: ".Package.swift/\(key)",
-        linkerSettings:
+        linkerSettings: [
+          .linkedLibrary("c++")
+        ] +
           (value["frameworks"] as? [String] ?? []).map { .linkedFramework($0) } +
           (value["libraries"] as? [String] ?? []).map { .linkedLibrary($0) }
       ),

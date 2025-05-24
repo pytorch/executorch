@@ -131,6 +131,6 @@ create an issue on [github](https://www.github.com/pytorch/executorch/issues).
 
 
 ## See Also
-For more information about the XNNPACK Delegate, please check out the following resources:
-- [ExecuTorch XNNPACK Delegate](https://pytorch.org/executorch/0.2/native-delegates-executorch-xnnpack-delegate.html)
-- [Building and Running ExecuTorch with XNNPACK Backend](https://pytorch.org/executorch/0.2/native-delegates-executorch-xnnpack-delegate.html)
+For more information about the XNNPACK Backend, please check out the following resources:
+- [XNNPACK Backend](https://pytorch.org/executorch/main/backends-xnnpack)
+- [XNNPACK Backend Internals](https://pytorch.org/executorch/main/backend-delegates-xnnpack-reference)

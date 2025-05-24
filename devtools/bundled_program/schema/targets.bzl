@@ -74,6 +74,7 @@ def define_common_targets():
         visibility = [
             "//executorch/devtools/bundled_program/...",
             "//executorch/extension/pybindings/...",
+            "//executorch/extension/module/...",
         ],
         exported_headers = {
             OUTPUT_BUNDLED_HEADER: ":{}[{}]".format(BUNDLED_GEN_RULE_NAME, OUTPUT_BUNDLED_HEADER),

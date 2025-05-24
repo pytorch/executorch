@@ -42,11 +42,11 @@ foreach(kernel ${_kernels})
            "${_wrapper_dir}/supported_features.h"
     COMMAND mkdir -p ${_wrapper_dir}
     COMMAND
-      python kernels/test/gen_supported_features.py
+      ${PYTHON_EXECUTABLE} kernels/test/gen_supported_features.py
       kernels/${kernel}/test/supported_features_def.yaml >
       ${_wrapper_dir}/supported_features.cpp
     COMMAND
-      python kernels/test/gen_supported_features.py
+      ${PYTHON_EXECUTABLE} kernels/test/gen_supported_features.py
       kernels/test/supported_features.yaml >
       ${_wrapper_dir}/supported_features.h
     WORKING_DIRECTORY "${EXECUTORCH_ROOT}"
@@ -186,6 +186,7 @@ set(all_test_sources
     "op_mul_test.cpp"
     "op_pow_test.cpp"
     "op_native_batch_norm_test.cpp"
+    "op_native_dropout_test.cpp"
     "op_native_group_norm_test.cpp"
     "op_native_layer_norm_test.cpp"
     "op_ne_test.cpp"
@@ -242,6 +243,7 @@ set(all_test_sources
     "op_upsample_bilinear2d_test.cpp"
     "op_upsample_nearest2d_test.cpp"
     "op_var_test.cpp"
+    "op_view_as_real_copy_test.cpp"
     "op_view_copy_test.cpp"
     "op_where_test.cpp"
     "op_zeros_test.cpp"
@@ -274,7 +276,9 @@ set(_optimized_kernels_test_sources
     "op_add_test.cpp"
     "op_bmm_test.cpp"
     "op_div_test.cpp"
+    "op_elu_test.cpp"
     "op_exp_test.cpp"
+    "op_fft_c2r_test.cpp"
     "op_fft_r2c_test.cpp"
     "op_gelu_test.cpp"
     "op_le_test.cpp"

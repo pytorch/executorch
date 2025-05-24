@@ -9,9 +9,10 @@
 import operator
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import PassResult
 
 
 def get_layer_norm_decomposition(op) -> tuple:
@@ -40,7 +41,7 @@ def get_layer_norm_decomposition(op) -> tuple:
     raise RuntimeError(f"Can't get layer_norm composition for op {op}")
 
 
-class DecomposeLayerNormPass(ExportPass):
+class DecomposeLayerNormPass(ArmPass):
     """
     layernorm is defined as: ((x - E[x]) / sqrt(Var[x] + eps)) * weights + bias
     Decompose layernorm(x, normalized_shape, weights, bias, eps) to a sequence of:
@@ -111,24 +112,39 @@ class DecomposeLayerNormPass(ExportPass):
                     var_op,
                     args=(x, dims),
                     kwargs={"correction": 0, "keepdim": keepdim},
+                    from_node=node,
                 )
                 full = create_node(
                     graph_module.graph,
                     full_op,
                     args=(epsilon_reshaped_shape, epsilon),
                     kwargs={"dtype": dtype},
+                    from_node=node,
                 )
-                add0 = create_node(graph_module.graph, add_op, args=(var, full))
-                rsqrt = create_node(graph_module.graph, rsqrt_op, args=(add0,))
-                mul0 = create_node(graph_module.graph, mul_op, args=(sub, rsqrt))
+                add0 = create_node(
+                    graph_module.graph, add_op, args=(var, full), from_node=node
+                )
+                rsqrt = create_node(
+                    graph_module.graph, rsqrt_op, args=(add0,), from_node=node
+                )
+                mul0 = create_node(
+                    graph_module.graph, mul_op, args=(sub, rsqrt), from_node=node
+                )
                 if weights is not None:
                     weights_reshaped = create_node(
                         graph_module.graph,
                         view_op,
                         args=(weights, weights_reshaped_shape),
+                        from_node=node,
                     )
                     mul1 = create_node(
-                        graph_module.graph, mul_op, args=(mul0, weights_reshaped)
+                        graph_module.graph,
+                        mul_op,
+                        args=(
+                            mul0,
+                            weights_reshaped,
+                        ),
+                        from_node=node,
                     )
                 else:
                     mul1 = mul0
@@ -136,10 +152,16 @@ class DecomposeLayerNormPass(ExportPass):
                 if bias is not None:
                     bias_reshaped_shape = weights_reshaped_shape
                     bias_reshaped = create_node(
-                        graph_module.graph, view_op, args=(bias, bias_reshaped_shape)
+                        graph_module.graph,
+                        view_op,
+                        args=(bias, bias_reshaped_shape),
+                        from_node=node,
                     )
                     output = create_node(
-                        graph_module.graph, add_op, args=(mul1, bias_reshaped)
+                        graph_module.graph,
+                        add_op,
+                        args=(mul1, bias_reshaped),
+                        from_node=node,
                     )
 
                 users = [user for user in node.users if node != user]

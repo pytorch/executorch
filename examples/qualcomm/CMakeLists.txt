@@ -35,7 +35,7 @@ find_package(gflags REQUIRED)
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 # Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+set(_common_include_directories ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/json/single_include)
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
@@ -67,6 +67,9 @@ target_include_directories(
   PUBLIC
     ${_common_include_directories}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/json/single_include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/llama.cpp-unicode/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/llama.cpp-unicode/src
 )
 
 # find RE2 for tokenizer

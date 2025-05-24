@@ -47,6 +47,21 @@
 
 #endif
 
+/**
+ * This hack is for separating out ATen mode vs non-ATen mode. In ATen mode,
+ * we use the ATen types directly. In non-ATen mode, we use the portable types.
+ * To avoid duplicate symbols and/or duplicate operator registration, when a
+ * user depends on both the ATen mode and non-ATen mode versions of the
+ * ExecuTorch library.
+ */
+#ifndef ET_RUNTIME_NAMESPACE
+#if defined(USE_ATEN_LIB)
+#define ET_RUNTIME_NAMESPACE runtime::aten
+#else
+#define ET_RUNTIME_NAMESPACE runtime
+#endif
+#endif
+
 namespace executorch {
 namespace aten {
 
@@ -94,6 +109,18 @@ inline ssize_t compute_numel(const SizesType* sizes, ssize_t dim) {
   return static_cast<ssize_t>(
       c10::multiply_integers(c10::ArrayRef<SizesType>(sizes, dim)));
 }
+
+#undef ET_PRI_TENSOR_SIZE
+#define ET_PRI_TENSOR_SIZE PRId64
+
+#undef ET_PRI_TENSOR_DIM
+#define ET_PRI_TENSOR_DIM PRId64
+
+#undef ET_PRI_TENSOR_NUMEL
+#define ET_PRI_TENSOR_NUMEL PRId64
+
+#undef ET_PRI_SIZES_AND_STRIDES
+#define ET_PRI_SIZES_AND_STRIDES PRId64
 
 #else // Use executor types
 

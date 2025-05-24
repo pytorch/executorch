@@ -14,7 +14,8 @@ from executorch.backends.mediatek import (
     NeuropilotQuantizer,
     Precision,
 )
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from executorch.exir.backend.backend_details import CompileSpec
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 def build_executorch_binary(
@@ -30,7 +31,9 @@ def build_executorch_binary(
         if quant_dtype not in Precision:
             raise AssertionError(f"No support for Precision {quant_dtype}.")
 
-        captured_model = torch.export.export_for_training(model, inputs).module()
+        captured_model = torch.export.export_for_training(
+            model, inputs, strict=True
+        ).module()
         annotated_model = prepare_pt2e(captured_model, quantizer)
         print("Quantizing the model...")
         # calibration
@@ -46,7 +49,7 @@ def build_executorch_binary(
     edge_compile_config = exir.EdgeCompileConfig(_check_ir_validity=False)
     # skipped op names are used for deeplabV3 model
     neuro_partitioner = NeuropilotPartitioner(
-        [],
+        [CompileSpec("platform-config", b"mt6989")],
         op_names_to_skip={
             "aten_convolution_default_106",
             "aten_convolution_default_107",
