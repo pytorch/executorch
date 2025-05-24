@@ -8,6 +8,10 @@ add_subdirectory(json)
 
 if(EXECUTORCH_BUILD_PYBIND)
   add_subdirectory(pybind11)
+add_subdirectory(gflags)
+
+if(BUILD_TESTING)
+  add_subdirectory(googletest)
 endif()
 
 # MARK: - flatbuffers

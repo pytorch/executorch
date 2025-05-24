@@ -13,7 +13,6 @@
       "generator": "Xcode",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third-party/ios-cmake/ios.toolchain.cmake",
-        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/macos.cmake",
         "PLATFORM": "MAC_ARM64",
         "DEPLOYMENT_TARGET": "10.15"
       },
@@ -30,7 +29,6 @@
       "generator": "Xcode",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third-party/ios-cmake/ios.toolchain.cmake",
-        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/ios.cmake",
         "PLATFORM": "OS64",
         "DEPLOYMENT_TARGET": "17.0"
       },
@@ -47,7 +45,6 @@
       "generator": "Xcode",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third-party/ios-cmake/ios.toolchain.cmake",
-        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/ios.cmake",
         "PLATFORM": "SIMULATORARM64",
         "DEPLOYMENT_TARGET": "17.0"
       },
@@ -62,8 +59,7 @@
       "displayName": "Build everything buildable on Linux",
       "inherits": ["common"],
       "cacheVariables": {
-        "CMAKE_SYSTEM_NAME": "Linux",
-        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/linux.cmake"
+        "CMAKE_SYSTEM_NAME": "Linux"
       },
       "condition": {
         "lhs": "${hostSystemName}",
