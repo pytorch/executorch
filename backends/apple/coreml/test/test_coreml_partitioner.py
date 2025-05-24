@@ -90,6 +90,13 @@ class TestCoreMLPartitioner(unittest.TestCase):
                     q, k, v, attn_mask=mask
                 )
 
+                # triu/tril should be ignored by do_not_decompose
+                # because otherwise they fail during CoreML lowering
+                offset1 = torch.triu(mask, diagonal=1)
+                offset2 = torch.tril(mask)
+                offset = offset1 + offset2
+                offset = torch.sum(offset)
+
                 # Add non-functional and alias ops
                 # These will be removed by ExecuTorch in non-decomposition
                 # table because they cannot be functionalized
@@ -102,7 +109,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
                 out = out.sub_(4.0)
                 out = torch.ops.aten.view_copy.default(out, (-1,))
                 out = out.select(0, 0)
-                return out
+                return out + offset
 
         model = Model()
         model.eval()
@@ -118,6 +125,13 @@ class TestCoreMLPartitioner(unittest.TestCase):
         mask = torch.randn(seq_len, max_seq_length)
         example_inputs = (q, k, v, mask)
         ep = torch.export.export(model, example_inputs, strict=True)
+        self.assertTrue(
+            "torch.ops.aten.triu.default" in ep.graph_module.code,
+        )
+        self.assertTrue(
+            "torch.ops.aten.tril.default" in ep.graph_module.code,
+        )
+
         coreml_partitioner = CoreMLPartitioner()
 
         # Using to_edge_transform_and_lower, we expect SDPA will be preserved and show up in delegated graph
