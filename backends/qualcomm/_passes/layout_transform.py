@@ -38,6 +38,8 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.native_group_norm.default,
         exir_ops.edge.aten.pixel_shuffle.default,
         exir_ops.edge.aten.pixel_unshuffle.default,
+        exir_ops.edge.aten.upsample_bicubic2d.default,
+        exir_ops.edge.aten.upsample_bicubic2d.vec,
         exir_ops.edge.aten.upsample_bilinear2d.default,
         exir_ops.edge.aten.upsample_bilinear2d.vec,
         exir_ops.edge.aten.upsample_nearest2d.default,
