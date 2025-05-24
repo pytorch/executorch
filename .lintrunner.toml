@@ -390,7 +390,6 @@ exclude_patterns = [
     "backends/arm/test/ops/**",
     "backends/vulkan/quantizer/**",
     "backends/vulkan/test/**",
-    "backends/cadence/aot/quantizer/**",
     "backends/qualcomm/quantizer/**",
     "examples/qualcomm/**",
     "backends/xnnpack/quantizer/**",
