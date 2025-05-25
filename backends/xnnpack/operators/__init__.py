@@ -20,6 +20,7 @@ from . import (  # noqa
     op_dynamic_quantize_ops,
     op_elu,
     op_floor,
+    op_gelu,
     op_hardswish,
     op_hardtanh,
     op_leaky_relu,
