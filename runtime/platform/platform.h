@@ -11,6 +11,10 @@
  * Platform abstraction layer to allow individual platform libraries to override
  * symbols in ExecuTorch. PAL functions are defined as C functions so a platform
  * library implementer can use C in lieu of C++.
+ *
+ * The et_pal_ methods should not be called directly. Use the corresponding
+ * methods in the executorch::runtime namespace instead to appropriately
+ * dispatch through the PAL function table.
  */
 
 #pragma once
@@ -53,12 +57,14 @@ typedef struct {
  * to initialize any global state. Typically overridden by PAL implementer.
  */
 void et_pal_init(void) ET_INTERNAL_PLATFORM_WEAKNESS;
+typedef void (*et_pal_init_t)(void);
 
 /**
  * Immediately abort execution, setting the device into an error state, if
  * available.
  */
 ET_NORETURN void et_pal_abort(void) ET_INTERNAL_PLATFORM_WEAKNESS;
+typedef void (*et_pal_abort_t)(void);
 
 /**
  * Return a monotonically non-decreasing timestamp in system ticks.
@@ -66,6 +72,7 @@ ET_NORETURN void et_pal_abort(void) ET_INTERNAL_PLATFORM_WEAKNESS;
  * @retval Timestamp value in system ticks.
  */
 et_timestamp_t et_pal_current_ticks(void) ET_INTERNAL_PLATFORM_WEAKNESS;
+typedef et_timestamp_t (*et_pal_current_ticks_t)(void);
 
 /**
  * Return the conversion rate from system ticks to nanoseconds as a fraction.
@@ -79,6 +86,7 @@ et_timestamp_t et_pal_current_ticks(void) ET_INTERNAL_PLATFORM_WEAKNESS;
  *
  * @retval The ratio of nanoseconds to system ticks.
  */
+typedef et_tick_ratio_t (*et_pal_ticks_to_ns_multiplier_t)(void);
 et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void)
     ET_INTERNAL_PLATFORM_WEAKNESS;
 
@@ -114,6 +122,14 @@ void et_pal_emit_log_message(
     size_t line,
     const char* message,
     size_t length) ET_INTERNAL_PLATFORM_WEAKNESS;
+typedef void (*et_pal_emit_log_message_t)(
+    et_timestamp_t timestamp,
+    et_pal_log_level_t level,
+    const char* filename,
+    const char* function,
+    size_t line,
+    const char* message,
+    size_t length);
 
 /**
  * NOTE: Core runtime code must not call this directly. It may only be called by
@@ -126,6 +142,7 @@ void et_pal_emit_log_message(
  *     et_pal_free().
  */
 void* et_pal_allocate(size_t size) ET_INTERNAL_PLATFORM_WEAKNESS;
+typedef void* (*et_pal_allocate_t)(size_t size);
 
 /**
  * Frees memory allocated by et_pal_allocate().
@@ -133,5 +150,128 @@ void* et_pal_allocate(size_t size) ET_INTERNAL_PLATFORM_WEAKNESS;
  * @param[in] ptr Pointer to memory to free. May be nullptr.
  */
 void et_pal_free(void* ptr) ET_INTERNAL_PLATFORM_WEAKNESS;
+typedef void (*et_pal_free_t)(void* ptr);
 
 } // extern "C"
+
+namespace executorch {
+namespace runtime {
+
+/**
+ * Table of pointers to platform abstraction layer functions.
+ */
+struct pal_table {
+  // Note that this struct cannot contain constructors in order to ensure that
+  // the singleton instance can be initialized without relying on a global
+  // constructor. If it does require a global constructor, there can be a race
+  // between the init of the default PAL and the user static registration code.
+  static pal_table create(
+      et_pal_emit_log_message_t emit_log_message,
+      const char* source_filename);
+
+  static pal_table create(
+      et_pal_init_t init,
+      et_pal_abort_t abort,
+      et_pal_current_ticks_t current_ticks,
+      et_pal_ticks_to_ns_multiplier_t ticks_to_ns_multiplier,
+      et_pal_emit_log_message_t emit_log_message,
+      et_pal_allocate_t allocate,
+      et_pal_free_t free,
+      const char* source_filename);
+
+  et_pal_init_t init = nullptr;
+  et_pal_abort_t abort = nullptr;
+  et_pal_current_ticks_t current_ticks = nullptr;
+  et_pal_ticks_to_ns_multiplier_t ticks_to_ns_multiplier = nullptr;
+  et_pal_emit_log_message_t emit_log_message = nullptr;
+  et_pal_allocate_t allocate = nullptr;
+  et_pal_free_t free = nullptr;
+
+  // An optional metadata field, indicating the name of the source
+  // file that registered the PAL implementation.
+  const char* source_filename;
+};
+
+/**
+ * Override the PAL functions with user implementations. Any null entries in the
+ * table are unchanged and will keep the default implementation.
+ *
+ * Returns true if the registration was successful, false otherwise.
+ */
+bool register_pal(pal_table impl);
+
+/**
+ * Returns the PAL function table, which contains function pointers to the
+ * active implementation of each PAL function.
+ */
+const pal_table* get_pal_impl();
+
+/**
+ * Initialize the platform abstraction layer.
+ *
+ * This function should be called before any other function provided by the PAL
+ * to initialize any global state. Typically overridden by PAL implementer.
+ */
+void pal_init();
+
+/**
+ * Immediately abort execution, setting the device into an error state, if
+ * available.
+ */
+ET_NORETURN void pal_abort();
+
+/**
+ * Return a monotonically non-decreasing timestamp in system ticks.
+ *
+ * @retval Timestamp value in system ticks.
+ */
+et_timestamp_t pal_current_ticks();
+
+/**
+ * Return the conversion rate from system ticks to nanoseconds as a fraction.
+ * To convert a system ticks to nanoseconds, multiply the tick count by the
+ * numerator and then divide by the denominator:
+ *   nanoseconds = ticks * numerator / denominator
+ *
+ * The utility method executorch::runtime::ticks_to_ns(et_timestamp_t) can also
+ * be used to perform the conversion for a given tick count. It is defined in
+ * torch/executor/runtime/platform/clock.h.
+ *
+ * @retval The ratio of nanoseconds to system ticks.
+ */
+et_tick_ratio_t pal_ticks_to_ns_multiplier();
+
+/**
+ * Severity level of a log message. Values must map to printable 7-bit ASCII
+ * uppercase letters.
+ */
+void pal_emit_log_message(
+    et_timestamp_t timestamp,
+    et_pal_log_level_t level,
+    const char* filename,
+    const char* function,
+    size_t line,
+    const char* message,
+    size_t length);
+
+/**
+ * NOTE: Core runtime code must not call this directly. It may only be called by
+ * a MemoryAllocator wrapper.
+ *
+ * Allocates size bytes of memory.
+ *
+ * @param[in] size Number of bytes to allocate.
+ * @returns the allocated memory, or nullptr on failure. Must be freed using
+ *     et_pal_free().
+ */
+void* pal_allocate(size_t size);
+
+/**
+ * Frees memory allocated by et_pal_allocate().
+ *
+ * @param[in] ptr Pointer to memory to free. May be nullptr.
+ */
+void pal_free(void* ptr);
+
+} // namespace runtime
+} // namespace executorch
