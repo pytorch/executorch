@@ -261,12 +261,24 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
             event_tracer,
             "+EthosUBackend::execute()handles.input.permute_CHW_to_HWC()");
         // permuted byte copy CHW to HWC
+        int c, h, w;
+        if (tensor_in.dim() == 4) {
+          c = tensor_in.size(1);
+          h = tensor_in.size(2);
+          w = tensor_in.size(3);
+        } else if (tensor_in.dim() == 5) {
+          c = tensor_in.size(2);
+          h = tensor_in.size(3);
+          w = tensor_in.size(4);
+        } else {
+          ET_LOG(
+              Error,
+              "Unsupported input tensor dimension %d, expected 4 or 5",
+              tensor_in.dim());
+          return Error::InvalidProgram;
+        }
         permute_CHW_to_HWC(
-            tensor_in.mutable_data_ptr<char>(),
-            scratch_addr,
-            tensor_in.size(1),
-            tensor_in.size(2),
-            tensor_in.size(3));
+            tensor_in.mutable_data_ptr<char>(), scratch_addr, c, h, w);
       } else if (both_char or both_int or both_short) {
         EXECUTORCH_PROF_SCOPE(
             event_tracer, "+EthosUBackend::execute()handles.input.memcpy()");
@@ -364,12 +376,24 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
             "+EthosUBackend::execute()handles.output.permute_HWC_to_CHW()");
 
         char* output_address = (char*)output_addr;
+        int c, h, w;
+        if (tensor_out.dim() == 4) {
+          c = tensor_out.size(1);
+          h = tensor_out.size(2);
+          w = tensor_out.size(3);
+        } else if (tensor_out.dim() == 5) {
+          c = tensor_out.size(2);
+          h = tensor_out.size(3);
+          w = tensor_out.size(4);
+        } else {
+          ET_LOG(
+              Error,
+              "Unsupported output tensor dimension %d, expected 4 or 5",
+              tensor_out.dim());
+          return Error::InvalidProgram;
+        }
         permute_HWC_to_CHW(
-            output_address,
-            tensor_out.mutable_data_ptr<char>(),
-            tensor_out.size(1),
-            tensor_out.size(2),
-            tensor_out.size(3));
+            output_address, tensor_out.mutable_data_ptr<char>(), c, h, w);
       } else {
         EXECUTORCH_PROF_SCOPE(
             event_tracer, "+EthosUBackend::execute()handles.output.move()");
@@ -427,6 +451,14 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       permuted_shape = tensor.size(0) == io->shape[0] &&
           tensor.size(1) == io->shape[3] && tensor.size(2) == io->shape[1] &&
           tensor.size(3) == io->shape[2];
+      if (permuted_shape) {
+        ET_LOG(Debug, "Tensor input/output %d will be permuted", index);
+      }
+    } else if (tensor.dim() == 5) {
+      // Same as above, but for 5D tensors.
+      permuted_shape = tensor.size(0) == io->shape[0] &&
+          tensor.size(1) == io->shape[1] && tensor.size(2) == io->shape[4] &&
+          tensor.size(3) == io->shape[2] && tensor.size(4) == io->shape[3];
       if (permuted_shape) {
         ET_LOG(Debug, "Tensor input/output %d will be permuted", index);
       }
