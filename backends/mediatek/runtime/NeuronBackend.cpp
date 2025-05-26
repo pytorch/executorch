@@ -12,8 +12,8 @@
 #include "NeuronPayloadHeader.h"
 #include "api/NeuronAdapter.h"
 
-#include "executorch/runtime/core/error.h"
 #include <executorch/runtime/executor/pte_data_map.h>
+#include "executorch/runtime/core/error.h"
 
 #include <algorithm>
 #include <memory>
@@ -70,19 +70,30 @@ Result<DelegateHandle*> NeuronBackend::init(
           setting.mImportForever);
     } else if (std::strcmp(compile_spec.key, kSharedWeightsKey) == 0) {
       setting.mSharedWeights = true;
-      std::string shared_weights_key(static_cast<char*>(compile_spec.value.buffer), compile_spec.value.nbytes);
-      LogInfo("NeuronBackend", "SharedWeights Enabled for %s", shared_weights_key.c_str());
+      std::string shared_weights_key(
+          static_cast<char*>(compile_spec.value.buffer),
+          compile_spec.value.nbytes);
+      LogInfo(
+          "NeuronBackend",
+          "SharedWeights Enabled for %s",
+          shared_weights_key.c_str());
 
       const NamedDataMap* named_data_map = context.get_named_data_map();
-      Result<FreeableBuffer> shared_weights = named_data_map->get_data(shared_weights_key.c_str());
+      Result<FreeableBuffer> shared_weights =
+          named_data_map->get_data(shared_weights_key.c_str());
 
       if (shared_weights.ok()) {
-        LogInfo("NeuronBackend", "Loaded shared weights from named_data_map. Size: %zu", shared_weights.get().size());
+        LogInfo(
+            "NeuronBackend",
+            "Loaded shared weights from named_data_map. Size: %zu",
+            shared_weights.get().size());
         FreeableBuffer& buffer = shared_weights.get();
         delegate->SetSharedWeights(buffer);
         // neuron_shared_weights_.push_back(std::move(shared_weights.get()));
       } else {
-        LogError("NeuronBackend", "Failed to load shared weights from named_data_map.");
+        LogError(
+            "NeuronBackend",
+            "Failed to load shared weights from named_data_map.");
         return nullptr;
       }
     } else {
@@ -148,7 +159,8 @@ Error NeuronExecuTorchDelegate::execute(
 
   bool has_shared_weights_input = neuron_shared_weights_.size() > 0;
 
-  size_t inputCount = has_shared_weights_input ? mInputSizes.size() + 1 : mInputSizes.size();
+  size_t inputCount =
+      has_shared_weights_input ? mInputSizes.size() + 1 : mInputSizes.size();
   size_t outputCount = mOutputSizes.size();
 
   for (int i = 0; i < inputCount; i++) {

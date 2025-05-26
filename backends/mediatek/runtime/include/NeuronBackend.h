@@ -28,9 +28,9 @@ namespace executorch {
 namespace backends {
 namespace neuron {
 
+using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
-using executorch::runtime::EValue;
 
 class NeuronBackend final : public ::executorch::runtime::BackendInterface {
  public:
@@ -75,7 +75,6 @@ struct NeuronDelegateSetting {
 
 class NeuronExecuTorchDelegate {
  public:
-  
   struct InputOutputInfo {
     void* data_ptr;
     size_t size;
@@ -171,12 +170,14 @@ class NeuronExecuTorchDelegate {
 
   int CheckDimOrder(EValue** args) const {
     // bool has_shared_weights_input = neuron_shared_weights_.size() > 0;
-    // size_t data_input_count = has_shared_weights_input ? mInputSizes.size() - 1 : mInputSizes.size();
+    // size_t data_input_count = has_shared_weights_input ? mInputSizes.size() -
+    // 1 : mInputSizes.size();
     size_t data_input_count = mInputSizes.size();
     for (int i = 0; i < data_input_count; i++) {
       auto tensor_in = args[i]->toTensor();
       LogInfo("NeuronBackend", "Checking dim order for input %d", i);
-      if (!runtime::is_contiguous_dim_order(tensor_in.dim_order().data(), tensor_in.dim())) {
+      if (!runtime::is_contiguous_dim_order(
+              tensor_in.dim_order().data(), tensor_in.dim())) {
         return NEURON_BAD_DATA;
       }
     }
@@ -186,7 +187,8 @@ class NeuronExecuTorchDelegate {
 
   int PrepareInputsOuputs(EValue** args) const {
     bool has_shared_weights_input = neuron_shared_weights_.size() > 0;
-    // size_t data_input_count = has_shared_weights_input ? mInputSizes.size() - 1 : mInputSizes.size();
+    // size_t data_input_count = has_shared_weights_input ? mInputSizes.size() -
+    // 1 : mInputSizes.size();
     size_t data_input_count = mInputSizes.size();
     size_t data_output_count = mOutputSizes.size();
 
@@ -201,11 +203,13 @@ class NeuronExecuTorchDelegate {
     // Prepare shared weights if any as the last model input
     if (has_shared_weights_input) {
       FreeableBuffer& buffer = neuron_shared_weights_.at(0);
-      mInputs.push_back(InputOutputInfo{const_cast<void*>(buffer.data()), buffer.size()});
+      mInputs.push_back(
+          InputOutputInfo{const_cast<void*>(buffer.data()), buffer.size()});
     }
 
     // Prepare output data
-    for (int o = data_output_count; o < data_input_count + data_output_count; o++) {
+    for (int o = data_output_count; o < data_input_count + data_output_count;
+         o++) {
       auto tensor_out = args[o]->toTensor();
       auto data_ptr = tensor_out.data_ptr();
       auto data_size = tensor_out.nbytes();
