@@ -236,8 +236,8 @@ class NeutronBackend final : public PyTorchBackendInterface {
     //    cfg->mcfg.kernels
     const uint8_t* transpositionFlags =
         static_cast<const uint8_t*>(processed->data());
-    uint32_t numInputs = transpositionFlags[INPUT_TENSOR_FORMAT_LEN_POS];
-    uint32_t numOutputs = transpositionFlags[OUTPUT_TENSOR_FORMAT_LEN_POS];
+    int numInputs = transpositionFlags[INPUT_TENSOR_FORMAT_LEN_POS];
+    int numOutputs = transpositionFlags[OUTPUT_TENSOR_FORMAT_LEN_POS];
     cfg->inputTranspositionFlags =
         INPUT_TENSOR_FORMAT_ARRAY_ADDR(transpositionFlags);
     cfg->outputTranspositionFlags =

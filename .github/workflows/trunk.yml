@@ -245,7 +245,7 @@ jobs:
         toolchain_cmake=$(realpath ${toolchain_cmake})
 
         # Build and test size test
-        bash test/build_size_test.sh "-DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON"
+        bash test/build_size_test.sh "-DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON -DEXECUTORCH_BUILD_NXP_NEUTRON=ON"
         elf="cmake-out/test/size_test"
 
         # Dump basic info
@@ -269,6 +269,15 @@ jobs:
         else
           echo "Fail $size > $threshold"
           exit 1
+        fi
+
+        # Build check for the neutron backend library
+        lib_neutron = "cmake-out/backends/nxp/libexecutorch_delegate_neutron.a"
+        if [ ! -f $(lib_neutron) ]; then
+            echo "Neutron backend library not found!"
+            exit 1
+        else
+            echo "Neutron backend library built."
         fi
 
   test-coreml-delegate:
