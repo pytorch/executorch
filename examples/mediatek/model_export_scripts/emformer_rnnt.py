@@ -8,19 +8,20 @@ import sys
 
 if os.getcwd() not in sys.path:
     sys.path.append(os.getcwd())
+import argparse
 import json
 import os
+
 import numpy as np
-import argparse
 
 import torch
-from executorch.examples.models.emformer_rnnt import (
-    EmformerRnntTranscriberModel,
-    EmformerRnntPredictorModel,
-    EmformerRnntJoinerModel,
-)
-from executorch.backends.mediatek import Precision
 from aot_utils.oss_utils.utils import build_executorch_binary
+from executorch.backends.mediatek import Precision
+from executorch.examples.models.emformer_rnnt import (
+    EmformerRnntJoinerModel,
+    EmformerRnntPredictorModel,
+    EmformerRnntTranscriberModel,
+)
 
 
 if __name__ == "__main__":
@@ -45,10 +46,10 @@ if __name__ == "__main__":
     transcriber = EmformerRnntTranscriberModel()
     t_model = transcriber.get_eager_model()
     inputs = transcriber.get_example_inputs()
-    pte_filename = 'emformer_rnnt_t_mtk'
+    pte_filename = "emformer_rnnt_t_mtk"
     build_executorch_binary(
         t_model.eval(),
-       inputs,
+        inputs,
         f"{args.artifact}/{pte_filename}",
         [inputs],
         quant_dtype=Precision.A8W8,
@@ -79,7 +80,7 @@ if __name__ == "__main__":
             "aten_unsqueeze_copy_default_19",
         },
     )
-    
+
     # save data to inference on device
     input_list_file = f"{args.artifact}/input_list_t.txt"
     with open(input_list_file, "w") as f:
@@ -98,7 +99,7 @@ if __name__ == "__main__":
     predictor = EmformerRnntPredictorModel()
     p_model = predictor.get_eager_model()
     inputs = predictor.get_example_inputs()
-    pte_filename = 'emformer_rnnt_p_mtk'
+    pte_filename = "emformer_rnnt_p_mtk"
     build_executorch_binary(
         p_model.eval(),
         inputs,
@@ -135,7 +136,7 @@ if __name__ == "__main__":
     joiner = EmformerRnntJoinerModel()
     j_model = joiner.get_eager_model()
     inputs = joiner.get_example_inputs()
-    pte_filename = 'emformer_rnnt_j_mtk'
+    pte_filename = "emformer_rnnt_j_mtk"
     build_executorch_binary(
         j_model.eval(),
         inputs,
@@ -159,4 +160,3 @@ if __name__ == "__main__":
     for idx, data in enumerate(golden):
         file_name = f"{args.artifact}/golden_j_0_{idx}.bin"
         data.detach().numpy().tofile(file_name)
-

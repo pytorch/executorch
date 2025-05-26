@@ -14,10 +14,8 @@ import random
 import numpy as np
 
 import torch
+from aot_utils.oss_utils.utils import build_executorch_binary
 from executorch.backends.mediatek import Precision
-from aot_utils.oss_utils.utils import (
-    build_executorch_binary,
-)
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 
 
@@ -124,7 +122,7 @@ if __name__ == "__main__":
         f"{args.artifact}/{pte_filename}",
         inputs,
         quant_dtype=Precision.A8W8,
-        skip_op_name = {
+        skip_op_name={
             "aten_convolution_default_106",
             "aten_convolution_default_107",
         },

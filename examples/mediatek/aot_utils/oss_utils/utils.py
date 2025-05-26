@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import os
-from typing import Optional, Dict
+from typing import Dict, Optional
 
 import torch
 from executorch import exir
@@ -25,7 +25,7 @@ def build_executorch_binary(
     dataset,
     quant_dtype: Optional[Precision] = None,
     skip_op_name: Optional[set] = None,
-    skip_op_type: Optional[set] = None
+    skip_op_type: Optional[set] = None,
 ):
     if quant_dtype is not None:
         quantizer = NeuropilotQuantizer()

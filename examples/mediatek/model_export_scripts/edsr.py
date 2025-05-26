@@ -13,10 +13,8 @@ if os.getcwd() not in sys.path:
 import numpy as np
 
 import torch
+from aot_utils.oss_utils.utils import build_executorch_binary
 from executorch.backends.mediatek import Precision
-from aot_utils.oss_utils.utils import (
-    build_executorch_binary,
-)
 from executorch.examples.models.edsr import EdsrModel
 
 from PIL import Image

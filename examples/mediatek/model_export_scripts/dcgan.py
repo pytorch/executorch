@@ -8,18 +8,16 @@ import sys
 
 if os.getcwd() not in sys.path:
     sys.path.append(os.getcwd())
+import argparse
 import json
 import os
+
+import dcgan_main
 import numpy as np
-import argparse
 
 import torch
-import dcgan_main
+from aot_utils.oss_utils.utils import build_executorch_binary, make_output_dir
 from executorch.backends.mediatek import Precision
-from aot_utils.oss_utils.utils import (
-    build_executorch_binary,
-    make_output_dir,
-)
 
 
 class NhwcWrappedModel(torch.nn.Module):
@@ -42,8 +40,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-a",
         "--artifact",
-        help="path for storing generated artifacts by this example. "
-        "Default ./dcgan",
+        help="path for storing generated artifacts by this example. " "Default ./dcgan",
         default="./dcgan",
         type=str,
     )
@@ -99,4 +96,3 @@ if __name__ == "__main__":
     file_name = f"{args.artifact}/goldenD_0_0.bin"
     goldenD = netD_instance(inputD)
     goldenD.detach().numpy().tofile(file_name)
-

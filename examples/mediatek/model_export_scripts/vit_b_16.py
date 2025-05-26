@@ -8,17 +8,15 @@ import sys
 
 if os.getcwd() not in sys.path:
     sys.path.append(os.getcwd())
-import json
-import numpy as np
 import argparse
+import json
+
+import numpy as np
 
 import torch
+from aot_utils.oss_utils.utils import build_executorch_binary, make_output_dir
 from executorch.backends.mediatek import Precision
 from executorch.examples.models.torchvision_vit import TorchVisionViTModel
-from aot_utils.oss_utils.utils import (
-    build_executorch_binary,
-    make_output_dir,
-)
 
 
 class NhwcWrappedModel(torch.nn.Module):
@@ -66,7 +64,7 @@ if __name__ == "__main__":
         f"{args.artifact}/{pte_filename}",
         [inputs],
         quant_dtype=Precision.A8W8,
-        skip_op_name = {
+        skip_op_name={
             "aten_permute_copy_default_4",
             "aten_permute_copy_default_18",
             "aten_permute_copy_default_32",
@@ -92,4 +90,3 @@ if __name__ == "__main__":
     file_name = f"{args.artifact}/golden_0_0.bin"
     golden = instance(inputs[0])
     golden.detach().numpy().tofile(file_name)
-
