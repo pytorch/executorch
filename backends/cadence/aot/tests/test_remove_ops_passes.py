@@ -467,10 +467,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
 
         # Expect the linalg_vector_norm op to be removed by the pass
         self.assertEqual(
-            count_node(graph_module, exir_ops.edge.aten.linalg_vector_norm.default)
-            + count_node(
-                graph_module, exir_ops.edge.cadence.linalg_vector_norm.default
-            ),
+            count_node(graph_module, exir_ops.edge.aten.linalg_vector_norm.default),
             0,
         )
 
