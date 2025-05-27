@@ -25,6 +25,7 @@ from executorch.backends.qualcomm._passes import (
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
     FoldQDQ,
+    FuseConsecutiveCast,
     FuseConsecutiveTranspose,
     I64toI32,
     InsertIOQDQ,
@@ -182,6 +183,7 @@ class QnnPassManager(PassManager):
 
     # Before quantizer
     def transform_for_annotation_pipeline(self, graph_module: GraphModule):
+        self.add_pass(RemoveRedundancy(quantization_capture=True))
         self.add_pass(ReduceDynamicRange())
         self.add_pass(RecomposePixelUnshuffle(quantization_capture=True))
         self.add_pass(ReplaceArangeArgs())
@@ -214,5 +216,6 @@ class QnnPassManager(PassManager):
         self.add_pass(InsertRequantize())
         self.add_pass(InsertIOQDQ(exported_program))
         self.add_pass(LayoutTransform(exported_program, insert_permute=True))
+        self.add_pass(FuseConsecutiveCast())
         self.add_pass(FuseConsecutiveTranspose())
         return self._transform(exported_program.graph_module)

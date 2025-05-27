@@ -4,8 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import operator
-import re
-import time
 import warnings
 from collections import OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -51,14 +49,8 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_QUANTIZED_IO,
 )
 
-from executorch.exir import (
-    EdgeCompileConfig,
-    ExecutorchProgramManager,
-    ExirExportedProgram,
-    to_edge,
-)
+from executorch.exir import EdgeCompileConfig, ExirExportedProgram, to_edge
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.exir.capture import ExecutorchBackendConfig
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.program._program import (
     EdgeProgramManager,
@@ -382,6 +374,7 @@ def to_edge_transform_and_lower_to_qnn(
 def capture_program(
     module: Union[torch.nn.Module, torch.fx.GraphModule],
     inputs: Tuple[torch.Tensor],
+    dep_table: Optional[Dict] = None,
     passes_job: OrderedDict = None,
     dynamic_shapes: Dict = None,
 ) -> exir.ExirExportedProgram:
@@ -393,6 +386,7 @@ def capture_program(
     Args:
         module (Union[torch.nn.Module, torch.fx.GraphModule]): The PyTorch module or fx.GraphModule to be captured.
         inputs (Tuple[torch.Tensor]): The input tensors for the module.
+        dep_table (Optional[Dict]): Dependency table for the transformation passes.
         passes_job (OrderedDict, optional): Ordered dictionary of transformation passes.
         dynamic_shapes (Dict, optional): Information about dynamic shapes.
 
@@ -413,7 +407,9 @@ def capture_program(
     core_ep = ExirExportedProgram(decomposed_ep, False)
     edge_ep = core_ep.to_edge(qnn_edge_config())
     transform_passes = QnnPassManager().get_to_edge_transform_passes(
-        edge_ep.exported_program, passes_job=passes_job
+        edge_ep.exported_program,
+        passes_job=passes_job,
+        dep_table=dep_table,
     )
     edge_ep.transform(*transform_passes)
     return edge_ep
@@ -856,219 +852,11 @@ def draw_graph(title, path, graph_module: torch.fx.GraphModule):
         f.write(graph.get_dot_graph().create_svg())
 
 
-def generate_multi_graph_program(
-    compiler_specs: List[CompileSpec],
-    processed_bytes: List[bytes],
-    input_nodes_dict: List[torch.fx.Node] = None,
-    output_nodes_dict: List[torch.fx.Node] = None,
-    backend_config: ExecutorchBackendConfig = None,
-    constant_methods: Optional[Dict[str, Any]] = None,
-) -> ExecutorchProgramManager:
-    # compile multiple graphs in qcir into single context binary
-    (
-        graph_inputs,
-        graph_outputs,
-        qnn_in_order,
-        executorch_in_order,
-        executorch_out_order,
-    ) = ({}, {}, {}, {}, {})
-    qnn_mgr = PyQnnManagerAdaptor.QnnManager(
-        generate_qnn_executorch_option(compiler_specs), processed_bytes
-    )
-    assert qnn_mgr.Init().value == 0, "failed to load processed bytes"
-    binary_info = bytes(qnn_mgr.Compile())
-    assert len(binary_info) != 0, "failed to generate QNN context binary"
-    graph_names = qnn_mgr.GetGraphNames()
-    for graph_name in graph_names:
-        graph_inputs[graph_name] = qnn_mgr.GetGraphInputs(graph_name)
-        graph_outputs[graph_name] = qnn_mgr.GetGraphOutputs(graph_name)
-
-    # We need to obtain the order of the IOs to correctly map QNN with nn.module
-    for graph_name in graph_names:
-        if input_nodes_dict:
-            # input
-            input_names = [node.name for node in input_nodes_dict[graph_name]]
-            qnn_input_names = [
-                wrapper.GetName() for wrapper in graph_inputs[graph_name]
-            ]
-            # The input of intermideate module including call_function node
-            # could not be reorder by node name
-            if len(input_names) == len(qnn_input_names):
-                input_order_list = []
-                for input_name in input_names:
-                    # e.g., input_0_tokens_0
-                    pattern = rf"^input_(\d+)_({input_name})_(\d+)$"
-                    for j in range(len(qnn_input_names)):
-                        if re.match(pattern, qnn_input_names[j]):
-                            input_order_list.append(j)
-                            break
-                assert len(input_order_list) == len(
-                    input_names
-                ), "Order list length is different from names"
-                executorch_in_order[graph_name] = input_order_list
-                qnn_in_order[graph_name] = sorted(
-                    range(len(input_order_list)), key=lambda k: input_order_list[k]
-                )
-        if output_nodes_dict:
-            # output
-            get_item_list = output_nodes_dict[graph_name][0].args[0]
-            output_order_list = [item.args[1] for item in get_item_list]
-            executorch_out_order[graph_name] = output_order_list
-
-    qnn_mgr.Destroy()
-
-    # build custom ops with different graph signatures
-    compiler_options = flatbuffer_to_option(compiler_specs[0].value)
-    bundle_progs = [
-        from_context_binary(
-            ctx_path=binary_info,
-            op_name=f"loader_{graph_name}_{int(time.time())}",
-            soc_model=compiler_options.soc_info.soc_model,
-            custom_info={
-                "graph_inputs": graph_inputs[graph_name],
-                "graph_outputs": graph_outputs[graph_name],
-                "graph_name": graph_name,
-                "qnn_in_order": qnn_in_order.get(graph_name, None),
-                "executorch_in_order": executorch_in_order.get(graph_name, None),
-                "executorch_out_order": executorch_out_order.get(graph_name, None),
-            },
-        )
-        for graph_name in graph_names
-    ]
-    # leverage ExecutorchProgramManager for generating pte with multi-methods
-    edge_prog_mgr = to_edge(
-        {
-            graph_name: bundle_prog["exported_program"]
-            for graph_name, bundle_prog in zip(graph_names, bundle_progs)
-        },
-        constant_methods=constant_methods,
-        # do not alter name for custom op
-        compile_config=EdgeCompileConfig(_use_edge_ops=False),
-    )
-    # restore meta losed in generating EdgeProgramManager
-    for graph_name in graph_names:
-        for n in edge_prog_mgr._edge_programs[graph_name].graph.nodes:
-            if graph_name in n.name:
-                n.meta[OpContextLoader.meta_ctx_bin] = binary_info
-                break
-
-    edge_prog_mgr = edge_prog_mgr.to_backend(QnnPartitioner(compiler_specs))
-    exec_prog = edge_prog_mgr.to_executorch(
-        config=backend_config or ExecutorchBackendConfig()
-    )
-    return exec_prog, bundle_progs
-
-
-def generate_composite_llama_program(
-    llama_model: torch.nn.Module,
-    graph_names: List[str],
-    sample_inputs_list: List[Tuple[Any]],
-    lower_module_dict: Dict[str, List[LoweredBackendModule]],
-    call_delegate_node_name_dict: Dict[str, List[str]],
-    call_delegate_inputs_dict: Dict[str, List[Tuple[str, int | None]]],
-    outputs_dict: Dict[str, List[Tuple[str, int]]],
-    embedding_quantize: str,
-    backend_config: ExecutorchBackendConfig = None,
-    constant_methods: Optional[Dict[str, Any]] = None,
-) -> ExecutorchProgramManager:
-    class CompositeLlamaModule(torch.nn.Module):
-        def __init__(
-            self,
-            llama_model,
-            lower_module_list,
-            call_delegate_node_name_list,
-            call_delegate_inputs_list,
-            outputs_list,
-            embedding_quantize,
-        ) -> None:
-            super().__init__()
-            self.llama_model = llama_model
-            self.lower_module_list = lower_module_list
-            self.call_delegate_node_name_list = call_delegate_node_name_list
-            self.call_delegate_inputs_list = call_delegate_inputs_list
-            self.outputs_list = outputs_list
-            self.embedding_quantize = embedding_quantize
-
-        def reorder(
-            self,
-            call_delegate_inputs: List[Tuple[str, int | None]],
-            module_inputs: dict[str, torch.Tensor],
-            all_ret: dict[str, torch.Tensor],
-        ) -> Tuple[torch.Tensor]:
-            ret = []
-            for name, index in call_delegate_inputs:
-                if index is not None:
-                    # Get tensor from previous results
-                    ret.append(all_ret[name][index])
-                else:
-                    # Get tensor from the inputs of module
-                    ret.append(module_inputs[name])
-            return tuple(ret)
-
-        def forward(
-            self,
-            tokens: torch.Tensor,
-            atten_mask: torch.Tensor,
-            input_pos: Optional[torch.Tensor] = None,
-            *args,
-        ) -> Tuple[torch.Tensor]:
-            all_ret = {}
-            module_input_dict = {
-                "tokens": tokens,
-                "atten_mask": atten_mask,
-                "input_pos": input_pos,
-            }
-            for num, arg in enumerate(args):
-                module_input_dict[f"args_{num}"] = arg
-
-            if self.embedding_quantize:
-                hidden_states = self.llama_model.tok_embeddings(tokens)
-                module_input_dict["quantized_decomposed_embedding_4bit_dtype"] = (
-                    hidden_states
-                )
-
-            for lower_module, call_delegate_node_name, call_delegate_inputs in zip(
-                self.lower_module_list,
-                self.call_delegate_node_name_list,
-                self.call_delegate_inputs_list,
-            ):
-                inp = self.reorder(call_delegate_inputs, module_input_dict, all_ret)
-                ret = lower_module(*inp)
-                all_ret[call_delegate_node_name] = ret
-            llama_outputs = []
-            for output_src_name, index in self.outputs_list:
-                llama_outputs.append(all_ret[output_src_name][index])
-            return tuple(llama_outputs)
-
-    progs_dict = {}
-    for graph_name, sample_inputs in zip(graph_names, sample_inputs_list):
-        composite_llama_module = CompositeLlamaModule(
-            llama_model,
-            lower_module_dict[graph_name],
-            call_delegate_node_name_dict[graph_name],
-            call_delegate_inputs_dict[graph_name],
-            outputs_dict[graph_name],
-            embedding_quantize,
-        )
-        prog = torch.export.export(composite_llama_module, sample_inputs, strict=True)
-        progs_dict[graph_name] = prog
-    # leverage ExecutorchProgramManager for generating pte with multi-methods
-    edge_prog_mgr = to_edge(
-        progs_dict,
-        constant_methods=constant_methods,
-        # do not alter name for custom op
-        compile_config=EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=False),
-    )
-    exec_prog = edge_prog_mgr.to_executorch(
-        config=backend_config or ExecutorchBackendConfig()
-    )
-    return exec_prog
-
-
 def generate_htp_compiler_spec(
     use_fp16: bool,
     use_dlbc: bool = False,
     use_multi_contexts: bool = False,
+    use_weight_sharing: bool = False,
 ) -> QnnExecuTorchBackendOptions:
     """
     Helper function generating backend options for QNN HTP
@@ -1082,6 +870,8 @@ def generate_htp_compiler_spec(
         use_multi_contexts: When multiple contexts are generated inside the same
             pte, it is possible to reserve a single spill-fill allocation that
             could be re-used across all the splits.
+        use_weight_sharing: Used with multiple_graphs, where model size will be
+            reduced when operations have the same weights across multiple graphs.
 
     Returns:
         QnnExecuTorchHtpBackendOptions: backend options for QNN HTP.
@@ -1097,6 +887,7 @@ def generate_htp_compiler_spec(
     # TODO: enable voting mechanism in runtime and make this as an option
     htp_options.performance_mode = QnnExecuTorchHtpPerformanceMode.kHtpBurst
     htp_options.use_multi_contexts = use_multi_contexts
+    htp_options.use_weight_sharing = use_weight_sharing
     htp_options.use_dlbc = use_dlbc
     return QnnExecuTorchBackendOptions(
         backend_type=QnnExecuTorchBackendType.kHtpBackend,
@@ -1115,8 +906,6 @@ def generate_qnn_executorch_compiler_spec(
     optrace: bool = False,
     shared_buffer: bool = False,
     is_from_context_binary: bool = False,
-    multiple_graphs: bool = False,
-    weight_sharing: bool = False,
     graph_name: str = "forward",
 ) -> List[CompileSpec]:
     """
@@ -1145,10 +934,7 @@ def generate_qnn_executorch_compiler_spec(
         shared_buffer: Enables usage of shared buffer between application
             and backend for graph I/O.
         is_from_context_binary: True if current graph comes from pre-built context binary.
-        multiple_graphs: True if multiple methods are expected to have in single .pte file.
-            Please see test cases for post-processing example.
-        weight_sharing: Used with multiple_graphs, where model size will be reduced when operations have the same weights across multiple graphs.
-        graph_name: Assign unique graph name if 'multiple_graphs' is used.
+        graph_name: Assign unique graph name if lowering multiple methods.
 
     Returns:
         List[CompileSpec]: Compiler specs for Qualcomm AI Engine Direct.
@@ -1168,16 +954,10 @@ def generate_qnn_executorch_compiler_spec(
             stacklevel=1,
         )
 
-    if weight_sharing and not multiple_graphs:
-        warnings.warn(
-            "Weight sharing is intended for multiple graphs scenario, please ensure if there are multiple graphs",
-            stacklevel=1,
-        )
-
     qnn_executorch_options = QnnExecuTorchOptions(
         _soc_info_table[soc_model], backend_options
     )
-    qnn_executorch_options.graph_name = graph_name
+    qnn_executorch_options.graph_name = [graph_name]
     qnn_executorch_options.log_level = (
         QnnExecuTorchLogLevel.kLogLevelDebug
         if debug
@@ -1213,15 +993,6 @@ def generate_qnn_executorch_compiler_spec(
     qnn_executorch_options.shared_buffer = shared_buffer
     qnn_executorch_options.online_prepare = online_prepare
     qnn_executorch_options.is_from_context_binary = is_from_context_binary
-    qnn_executorch_options.multiple_graphs = multiple_graphs
-
-    if multiple_graphs:
-        # enable weight sharing mechanism if multiple graphs appear
-        if (
-            backend_options.backend_type == QnnExecuTorchBackendType.kHtpBackend
-            and weight_sharing
-        ):
-            backend_options.htp_options.use_weight_sharing = True
 
     return [
         CompileSpec(QCOM_QNN_COMPILE_SPEC, option_to_flatbuffer(qnn_executorch_options))

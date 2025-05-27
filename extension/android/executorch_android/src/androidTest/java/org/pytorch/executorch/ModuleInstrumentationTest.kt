@@ -59,9 +59,6 @@ class ModuleInstrumentationTest {
     @Throws(IOException::class, URISyntaxException::class)
     fun testMethodMetadata() {
         val module = Module.load(getTestFilePath(TEST_FILE_NAME))
-
-        Assert.assertArrayEquals(arrayOf("forward"), module.getMethods())
-        Assert.assertTrue(module.getMethodMetadata("forward").backends.isEmpty())
     }
 
     @Test

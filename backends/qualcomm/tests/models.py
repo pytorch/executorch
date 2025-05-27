@@ -10,6 +10,17 @@ import torch
 # module with related operator only
 
 
+# Ensure alias_copy is removed in remove_redundancy pass
+class Alias(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, x):
+        alias_x = torch.ops.aten.alias.default(x)
+        return self.relu(alias_x)
+
+
 class And(torch.nn.Module):
     def __init__(self, pos, neg):
         super().__init__()
@@ -164,6 +175,16 @@ class Cast(torch.nn.Module):
 
     def forward(self, x):
         return x.type(torch.IntTensor)
+
+
+class CastMultiUsers(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        index = x.to(torch.long)
+        res = torch.gather(y, dim=1, index=index)
+        return res + index.to(torch.int32)
 
 
 class Cat2(torch.nn.Module):
@@ -727,6 +748,34 @@ class FullLike(torch.nn.Module):
 
     def forward(self, x):
         return torch.min(x, torch.full_like(x, self.fill))
+
+
+class Gather(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.gather(x, dim=1, index=y)
+
+
+class GatherArgmin(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        indice = torch.argmin(x, dim=1, keepdim=True)
+        return torch.gather(x, dim=1, index=indice)
+
+
+class GatherWhere(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        index = torch.where(y > 0, torch.Tensor([1]).int(), torch.Tensor([1]).int()).to(
+            torch.int64
+        )
+        return torch.gather(x, x.dim() - 1, index)
 
 
 class Gelu(torch.nn.Module):
@@ -1396,6 +1445,14 @@ class SliceCopy(torch.nn.Module):
     def forward(self, x, y):
         seq_length = y.size()[1]
         return x[:, :seq_length] + self.position_ids[:, :seq_length]
+
+
+class SliceCopyDefaultParameter(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.cat([x[:1], x[1:]], dim=1)
 
 
 class SliceCopyWithStep(torch.nn.Module):

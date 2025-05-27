@@ -57,7 +57,7 @@ def define_common_targets():
         exported_deps = select({
             "DEFAULT": [],
             "ovr_config//cpu:arm64": [
-                "fbsource//third-party/sleef:sleef_arm",
+                "fbsource//third-party/sleef:sleef",
             ] if not runtime.is_oss else [],
             # fbsource//third-party/sleef:sleef currently fails to
             # link with missing symbols, hence the fbcode-specific dep below.

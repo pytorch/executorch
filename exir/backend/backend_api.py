@@ -574,6 +574,7 @@ def lower_all_submodules_to_backend(
     # We just map the method_to_submodule_nodes directly to the method_to_partitioned_exported_programs
     method_to_partitioned_program = {
         method_name: [
+            # perform deep copy here in case backends change graph inside preprocess method
             copy.deepcopy(node.meta["submodule_program"])
             for node in call_submodule_nodes
         ]

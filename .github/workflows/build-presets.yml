@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        preset: [macos-arm64, pybind]
+        preset: [macos, ios, ios-simulator, pybind, llm]
     with:
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -32,14 +32,14 @@ jobs:
         set -eux
         ${CONDA_RUN} ./install_requirements.sh > /dev/null
         ${CONDA_RUN} cmake --preset ${{ matrix.preset }}
-        ${CONDA_RUN} cmake --build cmake-out --parallel
+        ${CONDA_RUN} cmake --build cmake-out -j$(( $(sysctl -n hw.ncpu) - 1 ))
 
   linux:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     strategy:
       fail-fast: false
       matrix:
-        preset: [pybind]
+        preset: [linux, pybind, llm]
         runner: [linux.2xlarge, linux.arm64.2xlarge]
         docker-image: [executorch-ubuntu-22.04-clang12, executorch-ubuntu-22.04-gcc11-aarch64]
         # Excluding specific runner + docker image combinations that don't make sense:
@@ -65,4 +65,4 @@ jobs:
 
         ./install_requirements.sh > /dev/null
         cmake --preset ${{ matrix.preset }}
-        cmake --build cmake-out --parallel
+        cmake --build cmake-out -j$(( $(nproc) - 1 ))

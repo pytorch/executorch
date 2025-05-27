@@ -342,7 +342,8 @@ targets = [
     "ethos-u85-1024",
     "ethos-u85-2048",
     "vgf",
-    "TOSA",
+    "TOSA-0.80+BI",
+    "TOSA-1.0+INT",
 ]
 
 

@@ -88,7 +88,7 @@ add_subdirectory(runner)
 set(link_libraries executorch gflags)
 set(_srcs main.cpp)
 
-if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+if(TARGET optimized_native_cpu_ops_lib)
   list(
     APPEND
     link_libraries
@@ -108,7 +108,7 @@ endif()
 target_link_options_shared_lib(quantized_ops_lib)
 list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+if(TARGET custom_ops)
   target_link_options_shared_lib(custom_ops)
   list(APPEND link_libraries custom_ops)
 endif()

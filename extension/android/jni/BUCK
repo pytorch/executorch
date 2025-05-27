@@ -28,7 +28,7 @@ non_fbcode_target(_kind = executorch_generated_lib,
 
 non_fbcode_target(_kind = fb_android_cxx_library,
     name = "executorch_jni",
-    srcs = ["jni_layer.cpp", "log.cpp"],
+    srcs = ["jni_layer.cpp", "log.cpp", "jni_layer_runtime.cpp"],
     allow_jni_merging = False,
     compiler_flags = ET_JNI_COMPILER_FLAGS,
     soname = "libexecutorch.$(ext)",
@@ -49,7 +49,7 @@ non_fbcode_target(_kind = fb_android_cxx_library,
 
 non_fbcode_target(_kind = fb_android_cxx_library,
     name = "executorch_jni_full",
-    srcs = ["jni_layer.cpp", "log.cpp"],
+    srcs = ["jni_layer.cpp", "log.cpp", "jni_layer_runtime.cpp"],
     allow_jni_merging = False,
     compiler_flags = ET_JNI_COMPILER_FLAGS,
     soname = "libexecutorch.$(ext)",
@@ -74,6 +74,7 @@ non_fbcode_target(_kind = fb_android_cxx_library,
     srcs = [
         "jni_layer.cpp",
         "jni_layer_llama.cpp",
+        "jni_layer_runtime.cpp",
     ],
     allow_jni_merging = False,
     compiler_flags = ET_JNI_COMPILER_FLAGS + [
@@ -111,6 +112,10 @@ non_fbcode_target(_kind = runtime.cxx_library,
 
 runtime.export_file(
     name = "jni_layer.cpp",
+)
+
+runtime.export_file(
+    name = "jni_layer_runtime.cpp",
 )
 
 runtime.cxx_library(
