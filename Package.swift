@@ -89,7 +89,7 @@ let package = Package(
       name: "tests",
       dependencies: [
         .target(name: "executorch_debug"),
-        .target(name: "kernels_portable"),
+        .target(name: "kernels_optimized"),
       ],
       path: "extension/apple/ExecuTorch/__tests__",
       resources: [
@@ -99,7 +99,7 @@ let package = Package(
         .linkedLibrary("c++"),
         .unsafeFlags([
           "-Xlinker", "-force_load",
-          "-Xlinker", "cmake-out/kernels_portable.xcframework/macos-arm64/libkernels_portable_macos.a",
+          "-Xlinker", "cmake-out/kernels_optimized.xcframework/macos-arm64/libkernels_optimized_macos.a",
         ])
       ]
     )
