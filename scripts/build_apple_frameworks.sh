@@ -19,6 +19,7 @@ OPTIMIZED=OFF
 PORTABLE=OFF
 QUANTIZED=OFF
 XNNPACK=OFF
+TORCHAO=OFF
 HEADERS_PATH="include"
 
 PLATFORMS=("ios" "simulator" "macos")
@@ -74,6 +75,11 @@ libquantized_kernels.a,\
 libquantized_ops_lib.a,\
 :"
 
+FRAMEWORK_KERNELS_TORCHAO="kernels_torchao:\
+libtorchao_ops_executorch.a,\
+libtorchao_kernels_aarch64.a,\
+:$HEADERS_PATH/torchao"
+
 usage() {
   echo "Usage: $0 [SOURCE_ROOT_DIR] [OPTIONS]"
   echo "Build frameworks for Apple platforms."
@@ -92,6 +98,7 @@ usage() {
   echo "  --portable           Build the Portable kernels."
   echo "  --quantized          Build the Quantized kernels."
   echo "  --xnnpack            Build the XNNPACK backend."
+  echo "  --torchao            Build the TorchAO kernels."
   echo
   echo "Example:"
   echo "  $0 /path/to/source/root --output=cmake-out --toolchain=/path/to/toolchain --python=/path/to/python3 --coreml --mps --xnnpack"
@@ -100,35 +107,36 @@ usage() {
 
 for arg in "$@"; do
   case $arg in
-      -h|--help) usage ;;
-      --output=*) OUTPUT="${arg#*=}" ;;
-      --Release)
-        if [[ ! " ${MODES[*]:-} " =~ \bRelease\b ]]; then
-          MODES+=("Release")
-        fi
-        ;;
-      --Debug)
-        if [[ ! " ${MODES[*]:-} " =~ \bDebug\b ]]; then
-          MODES+=("Debug")
-        fi
-        ;;
-      --toolchain=*) TOOLCHAIN="${arg#*=}" ;;
-      --python=*) PYTHON="${arg#*=}" ;;
-      --coreml) COREML=ON ;;
-      --custom) CUSTOM=ON ;;
-      --mps) MPS=ON ;;
-      --optimized) OPTIMIZED=ON ;;
-      --portable) PORTABLE=ON ;;
-      --quantized) QUANTIZED=ON ;;
-      --xnnpack) XNNPACK=ON ;;
-      *)
-      if [[ -z "$SOURCE_ROOT_DIR" ]]; then
-          SOURCE_ROOT_DIR="$arg"
-      else
-          echo "Invalid argument: $arg"
-          exit 1
-      fi
-      ;;
+  -h | --help) usage ;;
+  --output=*) OUTPUT="${arg#*=}" ;;
+  --Release)
+    if [[ ! " ${MODES[*]:-} " =~ \bRelease\b ]]; then
+      MODES+=("Release")
+    fi
+    ;;
+  --Debug)
+    if [[ ! " ${MODES[*]:-} " =~ \bDebug\b ]]; then
+      MODES+=("Debug")
+    fi
+    ;;
+  --toolchain=*) TOOLCHAIN="${arg#*=}" ;;
+  --python=*) PYTHON="${arg#*=}" ;;
+  --coreml) COREML=ON ;;
+  --custom) CUSTOM=ON ;;
+  --mps) MPS=ON ;;
+  --optimized) OPTIMIZED=ON ;;
+  --portable) PORTABLE=ON ;;
+  --quantized) QUANTIZED=ON ;;
+  --xnnpack) XNNPACK=ON ;;
+  --torchao) TORCHAO=ON ;;
+  *)
+    if [[ -z "$SOURCE_ROOT_DIR" ]]; then
+      SOURCE_ROOT_DIR="$arg"
+    else
+      echo "Invalid argument: $arg"
+      exit 1
+    fi
+    ;;
   esac
 done
 
@@ -137,13 +145,16 @@ if [ ${#MODES[@]} -eq 0 ]; then
 fi
 
 if [[ -z "$SOURCE_ROOT_DIR" ]]; then
-    SOURCE_ROOT_DIR=$(pwd)
+  SOURCE_ROOT_DIR=$(pwd)
 fi
 
 if [[ -z "$TOOLCHAIN" ]]; then
-    TOOLCHAIN="$SOURCE_ROOT_DIR/third-party/ios-cmake/ios.toolchain.cmake"
+  TOOLCHAIN="$SOURCE_ROOT_DIR/third-party/ios-cmake/ios.toolchain.cmake"
 fi
-[[ -f "$TOOLCHAIN" ]] || { echo >&2 "Toolchain file $TOOLCHAIN does not exist."; exit 1; }
+[[ -f "$TOOLCHAIN" ]] || {
+  echo >&2 "Toolchain file $TOOLCHAIN does not exist."
+  exit 1
+}
 
 BUCK2=$("$PYTHON" "$SOURCE_ROOT_DIR/tools/cmake/resolve_buck.py" --cache_dir="$SOURCE_ROOT_DIR/buck2-bin")
 
@@ -175,40 +186,45 @@ echo "Building libraries"
 rm -rf "$OUTPUT" && mkdir -p "$OUTPUT" && cd "$OUTPUT" || exit 1
 
 cmake_build() {
-    local platform=$1
-    local platform_flag=$2
-    local platform_target=$3
-    local mode=$4
-    echo "Building for $platform ($mode) with flag $platform_flag"
-    mkdir -p "$platform" && cd "$platform" || exit 1
-    cmake "$SOURCE_ROOT_DIR" -G Xcode \
-        -DCMAKE_BUILD_TYPE="$mode" \
-        -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
-        -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD="c++17" \
-        -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY="libc++" \
-        -DCMAKE_C_FLAGS="-ffile-prefix-map=$SOURCE_ROOT_DIR=/executorch -fdebug-prefix-map=$SOURCE_ROOT_DIR=/executorch" \
-        -DCMAKE_CXX_FLAGS="-ffile-prefix-map=$SOURCE_ROOT_DIR=/executorch -fdebug-prefix-map=$SOURCE_ROOT_DIR=/executorch" \
-        -DPYTHON_EXECUTABLE="$PYTHON" \
-        -DEXECUTORCH_BUILD_COREML=$COREML \
-        -DEXECUTORCH_BUILD_MPS=$MPS \
-        -DEXECUTORCH_BUILD_XNNPACK=$XNNPACK \
-        -DEXECUTORCH_XNNPACK_SHARED_WORKSPACE=ON \
-        -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
-        -DEXECUTORCH_BUILD_EXTENSION_APPLE=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-        -DEXECUTORCH_BUILD_KERNELS_CUSTOM=$CUSTOM \
-        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=$OPTIMIZED \
-        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=$QUANTIZED \
-        -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="$(pwd)" \
-        ${platform_flag:+-DPLATFORM=$platform_flag} \
-        ${platform_target:+-DDEPLOYMENT_TARGET=$platform_target} \
-        --log-level=VERBOSE
-    cmake --build . \
-        --config "$mode" \
-        --verbose
-    cd -
+  local platform=$1
+  local platform_flag=$2
+  local platform_target=$3
+  local mode=$4
+  echo "Building for $platform ($mode) with flag $platform_flag"
+  mkdir -p "$platform" && cd "$platform" || exit 1
+  cmake "$SOURCE_ROOT_DIR" -G Xcode \
+    -DCMAKE_PREFIX_PATH=$(python -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())') \
+    -DCMAKE_BUILD_TYPE="$mode" \
+    -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
+    -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
+    -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="" \
+    -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
+    -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD="c++17" \
+    -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY="libc++" \
+    -DCMAKE_C_FLAGS="-ffile-prefix-map=$SOURCE_ROOT_DIR=/executorch -fdebug-prefix-map=$SOURCE_ROOT_DIR=/executorch" \
+    -DCMAKE_CXX_FLAGS="-ffile-prefix-map=$SOURCE_ROOT_DIR=/executorch -fdebug-prefix-map=$SOURCE_ROOT_DIR=/executorch" \
+    -DPYTHON_EXECUTABLE="$PYTHON" \
+    -DEXECUTORCH_BUILD_COREML=$COREML \
+    -DEXECUTORCH_BUILD_MPS=$MPS \
+    -DEXECUTORCH_BUILD_XNNPACK=$XNNPACK \
+    -DEXECUTORCH_XNNPACK_SHARED_WORKSPACE=ON \
+    -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
+    -DEXECUTORCH_BUILD_EXTENSION_APPLE=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=$CUSTOM \
+    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=$OPTIMIZED \
+    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=$QUANTIZED \
+    -DEXECUTORCH_BUILD_KERNELS_TORCHAO=$TORCHAO \
+    -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="$(pwd)" \
+    ${platform_flag:+-DPLATFORM=$platform_flag} \
+    ${platform_target:+-DDEPLOYMENT_TARGET=$platform_target} \
+    --log-level=VERBOSE
+  cmake --build . \
+    --config "$mode" \
+    --verbose
+  cd -
 }
 
 for index in ${!PLATFORMS[*]}; do
@@ -223,8 +239,16 @@ mkdir -p "$HEADERS_PATH"
 
 "$SOURCE_ROOT_DIR"/scripts/print_exported_headers.py --buck2=$(realpath "$BUCK2") --targets \
   //extension/module: \
-  //extension/tensor: \
-| rsync -av --files-from=- "$SOURCE_ROOT_DIR" "$HEADERS_PATH/executorch"
+  //extension/tensor: |
+  rsync -av --files-from=- "$SOURCE_ROOT_DIR" "$HEADERS_PATH/executorch"
+
+# Export TorchAO headers
+mkdir -p "$HEADERS_PATH/torchao"
+
+rsync -av \
+  "$SOURCE_ROOT_DIR/third-party/ao/torchao/experimental/ops" \
+  "$SOURCE_ROOT_DIR/third-party/ao/torchao/experimental/kernels" \
+  "$HEADERS_PATH/torchao"
 
 # HACK: XCFrameworks don't appear to support exporting any build
 # options, but we need the following:
@@ -234,8 +258,8 @@ mkdir -p "$HEADERS_PATH"
 sed -i '' '1i\
 #define C10_USING_CUSTOM_GENERATED_MACROS
 ' \
-"$HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Macros.h" \
-"$HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Export.h"
+  "$HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Macros.h" \
+  "$HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Export.h"
 
 cp -r $HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10 "$HEADERS_PATH/"
 
@@ -280,6 +304,7 @@ for mode in "${MODES[@]}"; do
   append_framework_flag "$OPTIMIZED" "$FRAMEWORK_KERNELS_OPTIMIZED" "$mode"
   append_framework_flag "$PORTABLE" "$FRAMEWORK_KERNELS_PORTABLE" "$mode"
   append_framework_flag "$QUANTIZED" "$FRAMEWORK_KERNELS_QUANTIZED" "$mode"
+  append_framework_flag "$TORCHAO" "$FRAMEWORK_KERNELS_TORCHAO" "$mode"
 
   "$SOURCE_ROOT_DIR"/scripts/create_frameworks.sh "${FRAMEWORK_FLAGS[@]}"
 done
