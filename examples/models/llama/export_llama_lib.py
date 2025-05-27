@@ -1226,11 +1226,6 @@ def _load_llama_model(
         EagerModelFactory.create_model(
             module_name,
             model_class_name,
-            checkpoint=checkpoint,
-            checkpoint_dir=checkpoint_dir,
-            params=params_path,
-            fairseq2=weight_type == WeightType.FAIRSEQ2,
-            dtype=torch_dtype,
             llm_config=llm_config,
         )
     )
