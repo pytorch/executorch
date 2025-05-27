@@ -27,7 +27,7 @@ public class PromptFormat {
       case LLAVA_1_5:
         return "USER: ";
       case QWEN_3:
-        return "<|im_start|>system\n" + "You are a helpful assistant.\n" + "<|im_end|>\n";
+        return "";
       default:
         return SYSTEM_PLACEHOLDER;
     }
@@ -47,7 +47,7 @@ public class PromptFormat {
       case QWEN_3:
         return "<|im_start|>user\n"
             + USER_PLACEHOLDER
-            + "\n<|im_end|>\n"
+            + "<|im_end|>\n"
             + "<|im_start|>assistant\n"
             + THINKING_MODE_PLACEHOLDER;
       case LLAVA_1_5:
@@ -84,7 +84,7 @@ public class PromptFormat {
       case LLAVA_1_5:
         return "</s>";
       case QWEN_3:
-        return "<|endoftext|>";
+        return "<|im_end|>";
       default:
         return "";
     }
@@ -93,7 +93,7 @@ public class PromptFormat {
   public static String getThinkingModeToken(ModelType modelType, boolean thinkingMode) {
     switch (modelType) {
       case QWEN_3:
-        return thinkingMode ? "" : "<think>\n\n</think>\n\n\n";
+        return thinkingMode ? "" : "<think>\n\n</think>\n\n";
       default:
         return "";
     }

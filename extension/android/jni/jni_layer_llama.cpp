@@ -180,8 +180,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       std::filesystem::path op_package_fs = model_path_fs.parent_path() / "libQnnTMANOpPackage.so";
       std::string op_package_str = op_package_fs.string() + ":TMANOpPackageInterfaceProvider:HTP";
 
-      std::string quant_attrs_str = model_path_fs.stem().string() + "_quant_attrs.txt";
-      std::filesystem::path quant_attrs_fs = model_path_fs.parent_path() / quant_attrs_str;
+      std::filesystem::path quant_attrs_fs = model_path_fs.parent_path() / "quant_attrs.txt";
 
       std::ifstream quant_attrs_file(quant_attrs_fs.string());
       if (!quant_attrs_file.is_open()) {

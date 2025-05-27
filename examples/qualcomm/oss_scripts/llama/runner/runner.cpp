@@ -192,35 +192,35 @@ Error Runner::load() {
   }
 
   // llama3 tokenizer
-  tokenizer_ = example::get_tiktoken_for_llama();
+  tokenizer_ = std::make_unique<tokenizers::HFTokenizer>();
   auto err = tokenizer_->load(tokenizer_path_);
   if (err != tokenizers::Error::Ok) {
     ET_LOG(
         Info,
-        "Failed to load %s as a Tiktoken artifact, trying BPE tokenizer",
+        "Failed to load %s as a HF tokenizer artifact, trying Tiktoken",
         tokenizer_path_.c_str());
     tokenizer_.reset();
-    // llama2 tokenizer
-    tokenizer_ = std::make_unique<tokenizers::Llama2cTokenizer>();
-    err = tokenizer_->load(tokenizer_path_);
-    llama_version_ = LlamaVersion::kLlama2;
+    tokenizer_ = example::get_tiktoken_for_llama();
+    auto err = tokenizer_->load(tokenizer_path_);
     if (err != tokenizers::Error::Ok) {
       ET_LOG(
           Info,
-          "Failed to load %s as a llama2.c tokenizer artifact",
+          "Failed to load %s as a Tiktoken artifact, trying BPE tokenizer",
           tokenizer_path_.c_str());
       tokenizer_.reset();
-      tokenizer_ = std::make_unique<tokenizers::HFTokenizer>();
+      // llama2 tokenizer
+      tokenizer_ = std::make_unique<tokenizers::Llama2cTokenizer>();
       err = tokenizer_->load(tokenizer_path_);
       ET_CHECK_MSG(
           err == tokenizers::Error::Ok,
           "failed to load tokenizer %s",
           tokenizer_path_.c_str());
+      llama_version_ = LlamaVersion::kLlama2;
+    } else {
       eos_id_.insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
       llama_version_ = LlamaVersion::kLlama3;
     }
   } else {
-    eos_id_.insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
     llama_version_ = LlamaVersion::kLlama3;
   }
   bos_id_ = tokenizer_->bos_tok();
@@ -517,9 +517,11 @@ Error Runner::generate(
   ET_CHECK_MSG(!prompt.empty(), "prompt cannot be null");
 
   int32_t seq_len = config.seq_len;
+  // The passed in seq_len could be too short. Use context_len_ for now
+  seq_len = context_len_;
   seq_len = (seq_len > 0 && seq_len <= context_len_) ? seq_len : context_len_;
   tokenizers::Result<std::vector<uint64_t>> encode_res =
-      tokenizer_->encode(prompt, n_bos_, 0);
+      tokenizer_->encode(prompt, 0, 0);  // set to 0 to avoid bos at the beginning
   ET_CHECK_TK_OK_OR_RETURN_ERROR(
       encode_res.error(), "failed to encode prompt %s", prompt.c_str());
 

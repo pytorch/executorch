@@ -36,6 +36,7 @@ import java.io.FileOutputStream;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.net.URL;
+import android.util.Log;
 
 public class SettingsActivity extends AppCompatActivity {
 
@@ -332,12 +333,14 @@ public class SettingsActivity extends AppCompatActivity {
   private static class ModelInfo {
     String modelName;
     String tokenizerUrl;
+    String tokenizerConfigUrl;
     String modelUrl;
     String quantAttrsUrl;
 
-    ModelInfo(String modelName, String tokenizerUrl, String modelUrl, String quantAttrsUrl) {
+    ModelInfo(String modelName, String tokenizerUrl, String tokenizerConfigUrl, String modelUrl, String quantAttrsUrl) {
       this.modelName = modelName;
       this.tokenizerUrl = tokenizerUrl;
+      this.tokenizerConfigUrl = tokenizerConfigUrl;
       this.modelUrl = modelUrl;
       this.quantAttrsUrl = quantAttrsUrl;
     }
@@ -345,35 +348,105 @@ public class SettingsActivity extends AppCompatActivity {
 
   // Construct the model info array
   private final ModelInfo[] modelInfoArray = new ModelInfo[] {
+    // new ModelInfo(
+    //   "bitnet-b1.58-2B-4T",
+    //   "https://huggingface.co/JY-W/test_model/resolve/main/tokenizer.json?download=true",
+    //   "https://huggingface.co/JY-W/test_model/resolve/main/kv_llama_qnn.pte?download=true",
+    //   "https://huggingface.co/JY-W/test_model/resolve/main/kv_llama_qnn_quant_attrs.txt?download=true"
+    // ),
+    // new ModelInfo(
+    //   "llama-3.1-8B-Instruct",
+    //   "https://huggingface.co/JY-W/test_model/resolve/main/llama_3_1_8b_bitdistiller_tokenizer.json?download=true",
+    //   "https://huggingface.co/JY-W/test_model/resolve/main/llama_3_1_8b_instruct_bitdistiller.pte?download=true",
+    //   "https://huggingface.co/JY-W/test_model/resolve/main/llama_3_1_8b_bitdistiller_quant_attrs.txt?download=true"
+    // ),
+    // new ModelInfo(
+    //   "llama-3.1-8B-Instruct-LongContext",
+    //   "https://huggingface.co/JY-W/test_model/resolve/main/llama_3_1_8b_bitdistiller_tokenizer.json?download=true",
+    //   "https://huggingface.co/JY-W/test_model/resolve/main/llama_3_1_8b_instruct_bitdistiller_ctx1024.pte?download=true",
+    //   "https://huggingface.co/JY-W/test_model/resolve/main/llama_3_1_8b_bitdistiller_ctx1024_quant_attrs.txt?download=true"
+    // ),
+    // new ModelInfo(
+    //   "Qwen-3-8B",
+    //   "https://huggingface.co/Qwen/Qwen3-8B/resolve/main/tokenizer.json?download=true",
+    //   "https://huggingface.co/JY-W/test_model/resolve/main/qwen3_8b_bitdistiller.pte?download=true",
+    //   "https://huggingface.co/JY-W/test_model/resolve/main/qwen3_8b_bitdistiller_quant_attrs.txt?download=true"
+    // ),
+    // new ModelInfo(
+    //   "Qwen-3-8B-LongContext",
+    //   "https://huggingface.co/JY-W/test_model/resolve/main/qwen3_8b_tokenizer.json?download=true",
+    //   "https://huggingface.co/JY-W/test_model/resolve/main/qwen3_8b_bitdistiller_ctx1024.pte?download=true",
+    //   "https://huggingface.co/JY-W/test_model/resolve/main/qwen3_8b_bitdistiller_ctx1024_quant_attrs.txt?download=true"
+    // )
     new ModelInfo(
-      "bitnet-b1.58-2B-4T",
-      "https://huggingface.co/JY-W/test_model/resolve/main/tokenizer.json?download=true",
-      "https://huggingface.co/JY-W/test_model/resolve/main/kv_llama_qnn.pte?download=true",
-      "https://huggingface.co/JY-W/test_model/resolve/main/kv_llama_qnn_quant_attrs.txt?download=true"
+      "BitNet-b1.58-2B-4T-Fast",
+      "https://huggingface.co/BitDistiller/BitNet-2B-4T-pte/resolve/main/tokenizer.json?download=true",
+      "https://huggingface.co/BitDistiller/BitNet-2B-4T-pte/resolve/main/tokenizer_config.json?download=true",
+      "https://huggingface.co/BitDistiller/BitNet-2B-4T-pte/resolve/main/model.pte?download=true",
+      "https://huggingface.co/BitDistiller/BitNet-2B-4T-pte/resolve/main/quant_attrs.txt?download=true"
     ),
     new ModelInfo(
-      "llama-3.1-8B-Instruct",
-      "https://huggingface.co/JY-W/test_model/resolve/main/llama_3_1_8b_bitdistiller_tokenizer.json?download=true",
-      "https://huggingface.co/JY-W/test_model/resolve/main/llama_3_1_8b_instruct_bitdistiller.pte?download=true",
-      "https://huggingface.co/JY-W/test_model/resolve/main/llama_3_1_8b_bitdistiller_quant_attrs.txt?download=true"
+      "BitNet-b1.58-2B-4T",
+      "https://huggingface.co/BitDistiller/BitNet-2B-4T-pte/resolve/main/tokenizer.json?download=true",
+      "https://huggingface.co/BitDistiller/BitNet-2B-4T-pte/resolve/main/tokenizer_config.json?download=true",
+      "https://huggingface.co/BitDistiller/BitNet-2B-4T-pte/resolve/main/model_1k.pte?download=true",
+      "https://huggingface.co/BitDistiller/BitNet-2B-4T-pte/resolve/main/quant_attrs_1k.txt?download=true"
     ),
     new ModelInfo(
-      "llama-3.1-8B-Instruct-LongContext",
-      "https://huggingface.co/JY-W/test_model/resolve/main/llama_3_1_8b_bitdistiller_tokenizer.json?download=true",
-      "https://huggingface.co/JY-W/test_model/resolve/main/llama_3_1_8b_instruct_bitdistiller_ctx1024.pte?download=true",
-      "https://huggingface.co/JY-W/test_model/resolve/main/llama_3_1_8b_bitdistiller_ctx1024_quant_attrs.txt?download=true"
+      "BitNet-b1.58-2B-4T-LongContext",
+      "https://huggingface.co/BitDistiller/BitNet-2B-4T-pte/resolve/main/tokenizer.json?download=true",
+      "https://huggingface.co/BitDistiller/BitNet-2B-4T-pte/resolve/main/tokenizer_config.json?download=true",
+      "https://huggingface.co/BitDistiller/BitNet-2B-4T-pte/resolve/main/model_4k.pte?download=true",
+      "https://huggingface.co/BitDistiller/BitNet-2B-4T-pte/resolve/main/quant_attrs_4k.txt?download=true"
+    ),
+    new ModelInfo(
+      "Llama-3.1-8B-Instruct-Fast",
+      "https://huggingface.co/BitDistiller/Llama-3.1-8B-Instruct-w2g64-pte/resolve/main/tokenizer.json?download=true",
+      "https://huggingface.co/BitDistiller/Llama-3.1-8B-Instruct-w2g64-pte/resolve/main/tokenizer_config.json?download=true",
+      "https://huggingface.co/BitDistiller/Llama-3.1-8B-Instruct-w2g64-pte/resolve/main/model.pte?download=true",
+      "https://huggingface.co/BitDistiller/Llama-3.1-8B-Instruct-w2g64-pte/resolve/main/quant_attrs.txt?download=true"
+    ),
+    new ModelInfo(
+      "Llama-3.1-8B-Instruct",
+      "https://huggingface.co/BitDistiller/Llama-3.1-8B-Instruct-w2g64-pte/resolve/main/tokenizer.json?download=true",
+      "https://huggingface.co/BitDistiller/Llama-3.1-8B-Instruct-w2g64-pte/resolve/main/tokenizer_config.json?download=true",
+      "https://huggingface.co/BitDistiller/Llama-3.1-8B-Instruct-w2g64-pte/resolve/main/model_1k.pte?download=true",
+      "https://huggingface.co/BitDistiller/Llama-3.1-8B-Instruct-w2g64-pte/resolve/main/quant_attrs_1k.txt?download=true"
+    ),
+    new ModelInfo(
+      "Llama-3.1-8B-Instruct-LongContext",
+      "https://huggingface.co/BitDistiller/Llama-3.1-8B-Instruct-w2g64-pte/resolve/main/tokenizer.json?download=true",
+      "https://huggingface.co/BitDistiller/Llama-3.1-8B-Instruct-w2g64-pte/resolve/main/tokenizer_config.json?download=true",
+      "https://huggingface.co/BitDistiller/Llama-3.1-8B-Instruct-w2g64-pte/resolve/main/model_4k.pte?download=true",
+      "https://huggingface.co/BitDistiller/Llama-3.1-8B-Instruct-w2g64-pte/resolve/main/quant_attrs_4k.txt?download=true"
+    ),
+    new ModelInfo(
+      "Qwen-3-8B-Fast",
+      "https://huggingface.co/BitDistiller/Qwen-8B-w2g64-pte/resolve/main/tokenizer.json?download=true",
+      "https://huggingface.co/BitDistiller/Qwen-8B-w2g64-pte/resolve/main/tokenizer_config.json?download=true",
+      "https://huggingface.co/BitDistiller/Qwen-8B-w2g64-pte/resolve/main/model.pte?download=true",
+      "https://huggingface.co/BitDistiller/Qwen-8B-w2g64-pte/resolve/main/quant_attrs.txt?download=true"
     ),
     new ModelInfo(
       "Qwen-3-8B",
-      "https://huggingface.co/Qwen/Qwen3-8B/resolve/main/tokenizer.json?download=true",
-      "https://huggingface.co/JY-W/test_model/resolve/main/qwen3_8b_bitdistiller.pte?download=true",
-      "https://huggingface.co/JY-W/test_model/resolve/main/qwen3_8b_bitdistiller_quant_attrs.txt?download=true"
+      "https://huggingface.co/BitDistiller/Qwen-8B-w2g64-pte/resolve/main/tokenizer.json?download=true",
+      "https://huggingface.co/BitDistiller/Qwen-8B-w2g64-pte/resolve/main/tokenizer_config.json?download=true",
+      "https://huggingface.co/BitDistiller/Qwen-8B-w2g64-pte/resolve/main/model_1k.pte?download=true",
+      "https://huggingface.co/BitDistiller/Qwen-8B-w2g64-pte/resolve/main/quant_attrs_1k.pte?download=true"
+    ),
+    new ModelInfo(
+      "Qwen-3-8B-LongContext",
+      "https://huggingface.co/BitDistiller/Qwen-8B-w2g64-pte/resolve/main/tokenizer.json?download=true",
+      "https://huggingface.co/BitDistiller/Qwen-8B-w2g64-pte/resolve/main/tokenizer_config.json?download=true",
+      "https://huggingface.co/BitDistiller/Qwen-8B-w2g64-pte/resolve/main/model_4k.pte?download=true",
+      "https://huggingface.co/BitDistiller/Qwen-8B-w2g64-pte/resolve/main/quant_attrs_4k.pte?download=true"
     )
   };
 
-  private final String mOpPackageUrl = "https://huggingface.co/JY-W/test_model/resolve/main/libQnnTMANOpPackage.so?download=true";
+  // private final String mOpPackageUrl = "https://huggingface.co/JY-W/test_model/resolve/main/libQnnTMANOpPackage.so?download=true";
+  private final String mOpPackageUrl = "https://huggingface.co/BitDistiller/BitNet-2B-4T-pte/resolve/main/libQnnTMANOpPackage.so?download=true";
 
-  private void downloadFileFromUrl(String fileUrl, String fileName, boolean overwrite) {
+  private void downloadFileFromUrl(String fileUrl, String fileName, File outputFile, boolean overwrite) {
     ProgressDialog progressDialog = new ProgressDialog(this);
     progressDialog.setTitle("Downloading " + fileName + "...");
     progressDialog.setMessage("Please wait...");
@@ -386,8 +459,6 @@ public class SettingsActivity extends AppCompatActivity {
 
     new Thread(() -> {
         try {
-            File outputDir = getExternalFilesDir(null);
-            File outputFile = new File(outputDir, fileName);
             if (!outputFile.exists() || overwrite) {
                 URL url = new URL(fileUrl);
                 HttpURLConnection connection = (HttpURLConnection) url.openConnection();
@@ -437,44 +508,50 @@ public class SettingsActivity extends AppCompatActivity {
   }
 
   private void downloadModel(ModelInfo modelInfo) {
-    String modelFileName = modelInfo.modelName + ".pte";
-    String tokenizerFileName = modelInfo.modelName + "_tokenizer.json";
-    String quantAttrsFileName = modelInfo.modelName + "_quant_attrs.txt";
+    String modelFileName = "model.pte";
+    String tokenizerFileName = "tokenizer.json";
+    String tokenizerConfigFileName = "tokenizer_config.json";
+    String quantAttrsFileName = "quant_attrs.txt";
     String opPackageFileName = "libQnnTMANOpPackage.so";
 
-    File modelFile = new File(getExternalFilesDir(null), modelFileName);
-    File tokenizerFile = new File(getExternalFilesDir(null), tokenizerFileName);
-    File quantAttrsFile = new File(getExternalFilesDir(null), quantAttrsFileName);
-    File opPackageFile = new File(getExternalFilesDir(null), opPackageFileName);
+    File modelDir = getExternalFilesDir(modelInfo.modelName);
+    File modelFile = new File(modelDir, modelFileName);
+    File tokenizerFile = new File(modelDir, tokenizerFileName);
+    File tokenizerConfigFile = new File(modelDir, tokenizerConfigFileName);
+    File quantAttrsFile = new File(modelDir, quantAttrsFileName);
+    File opPackageFile = new File(modelDir, opPackageFileName);
 
-    if (modelFile.exists() || tokenizerFile.exists() || quantAttrsFile.exists() || opPackageFile.exists()) {
+    if (modelFile.exists() || tokenizerFile.exists() || tokenizerConfigFile.exists() || quantAttrsFile.exists() || opPackageFile.exists()) {
       runOnUiThread(() -> {
           new AlertDialog.Builder(this)
             .setTitle("Overwrite Existing Files")
             .setMessage("Some files for this model already exist. Do you want to overwrite them?")
             .setPositiveButton("Yes", (dialog, which) -> {
-              downloadFileFromUrl(modelInfo.modelUrl, modelFileName, true);
-              downloadFileFromUrl(modelInfo.tokenizerUrl, tokenizerFileName, true);
-              downloadFileFromUrl(modelInfo.quantAttrsUrl, quantAttrsFileName, true);
-              downloadFileFromUrl(mOpPackageUrl, opPackageFileName, true);
+              downloadFileFromUrl(modelInfo.modelUrl, modelFileName, modelFile, true);
+              downloadFileFromUrl(modelInfo.tokenizerUrl, tokenizerFileName, tokenizerFile, true);
+              downloadFileFromUrl(modelInfo.tokenizerConfigUrl, tokenizerConfigFileName, tokenizerConfigFile, true);
+              downloadFileFromUrl(modelInfo.quantAttrsUrl, quantAttrsFileName, quantAttrsFile, true);
+              downloadFileFromUrl(mOpPackageUrl, opPackageFileName, opPackageFile, true);
             })
             .setNegativeButton("No", (dialog, which) -> {
-              downloadFileFromUrl(modelInfo.modelUrl, modelFileName, false);
-              downloadFileFromUrl(modelInfo.tokenizerUrl, tokenizerFileName, false);
-              downloadFileFromUrl(modelInfo.quantAttrsUrl, quantAttrsFileName, false);
-              downloadFileFromUrl(mOpPackageUrl, opPackageFileName, false);
+              downloadFileFromUrl(modelInfo.modelUrl, modelFileName, modelFile, false);
+              downloadFileFromUrl(modelInfo.tokenizerUrl, tokenizerFileName, tokenizerFile, false);
+              downloadFileFromUrl(modelInfo.tokenizerConfigUrl, tokenizerConfigFileName, tokenizerConfigFile, false);
+              downloadFileFromUrl(modelInfo.quantAttrsUrl, quantAttrsFileName, quantAttrsFile, false);
+              downloadFileFromUrl(mOpPackageUrl, opPackageFileName, opPackageFile, false);
             })
             .show();
       });
     } else {
-      downloadFileFromUrl(modelInfo.modelUrl, modelFileName, true);
-      downloadFileFromUrl(modelInfo.tokenizerUrl, tokenizerFileName, true);
-      downloadFileFromUrl(modelInfo.quantAttrsUrl, quantAttrsFileName, true);
-      downloadFileFromUrl(mOpPackageUrl, opPackageFileName, true);
+      downloadFileFromUrl(modelInfo.modelUrl, modelFileName, modelFile, true);
+      downloadFileFromUrl(modelInfo.tokenizerUrl, tokenizerFileName, tokenizerFile, true);
+      downloadFileFromUrl(modelInfo.tokenizerConfigUrl, tokenizerConfigFileName, tokenizerConfigFile, true);
+      downloadFileFromUrl(modelInfo.quantAttrsUrl, quantAttrsFileName, quantAttrsFile, true);
+      downloadFileFromUrl(mOpPackageUrl, opPackageFileName, opPackageFile, true);
     }
     mModelFilePath = modelFile.getAbsolutePath();
     mModelTextView.setText(getFilenameFromPath(mModelFilePath));
-    mTokenizerFilePath = tokenizerFile.getAbsolutePath();
+    mTokenizerFilePath = modelDir.getAbsolutePath();
     mTokenizerTextView.setText(getFilenameFromPath(mTokenizerFilePath));
   }
 
