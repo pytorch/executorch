@@ -659,6 +659,75 @@
 </div>
 <p>For more information, see <a class="reference internal" href="executorch-runtime-api-reference.html"><span class="doc std std-doc">Runtime API Reference</span></a>.</p>
 </div>
+<div class="section" id="advanced-topics">
+<h2>Advanced Topics<a class="headerlink" href="#advanced-topics" title="Permalink to this heading">¶</a></h2>
+<p>While many models will “just work” following the steps above, some more complex models may require additional work to export. These include models with state and models with complex control flow or auto-regressive generation.
+See the <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/models/llama">Llama model</a> for example use of these techniques.</p>
+<div class="section" id="state-management">
+<h3>State Management<a class="headerlink" href="#state-management" title="Permalink to this heading">¶</a></h3>
+<p>Some types of models maintain internal state, such as KV caches in transformers. There are two ways to manage state within ExecuTorch. The first is to bring the state out as model inputs and outputs, effectively making the core model stateless. This is sometimes referred to as managing the state as IO.</p>
+<p>The second approach is to leverage mutable buffers within the model directly. A mutable buffer can be registered using the PyTorch <a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.register_buffer">register_buffer</a> API on <code class="docutils literal notranslate"><span class="pre">nn.Module</span></code>. Storage for the buffer is managed by the framework, and any mutations to the buffer within the model are written back at the end of method execution.</p>
+<p>Mutable buffers have several limitations:</p>
+<ul class="simple">
+<li><p>Export of mutability can be fragile.</p>
+<ul>
+<li><p>Consider explicitly calling <code class="docutils literal notranslate"><span class="pre">detach()</span></code> on tensors before assigning to a buffer if you encounter export-time errors related to gradients.</p></li>
+<li><p>Ensure that any operations done on a mutable buffer are done with in-place operations (typipcally ending in <code class="docutils literal notranslate"><span class="pre">_</span></code>).</p></li>
+<li><p>Do not reassign the buffer variable. Instead, use <code class="docutils literal notranslate"><span class="pre">copy_</span></code> to update the entire buffer content.</p></li>
+</ul>
+</li>
+<li><p>Mutable buffers are not shared between multiple methods within a .pte.</p></li>
+<li><p>In-place operations are replaced with non-in place variants, and the resulting tensor is written back at the end of the method execution. This can be a performance bottleneck when using <code class="docutils literal notranslate"><span class="pre">index_put_</span></code>.</p></li>
+<li><p>Buffer mutations are not supported on all backends and may cause graph breaks and memory transfers back to CPU.</p></li>
+</ul>
+<p>Support for mutation is expiremental and may change in the future.</p>
+</div>
+<div class="section" id="dynamic-control-flow">
+<h3>Dynamic Control Flow<a class="headerlink" href="#dynamic-control-flow" title="Permalink to this heading">¶</a></h3>
+<p>Control flow is considered dynamic if the path taken is not fixed at export-time. This is commonly the case when if or loop conditions depend on the value of a Tensor, such as a generator loop that terminates when an
+end-of-sequence token is generated. Shape-dependent control flow can also be dynamic if the tensor shape depends on the input.</p>
+<p>To make dynamic if statements exportable, they can be written using <a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.cond.html">torch.cond</a>. Dynamic loops are not currently supported on ExecuTorch. The general approach to
+enable this type of model is to export the body of the loop as a method, and then handle loop logic from the application code. This is common for handling generator loops in auto-regressive models, such as transformer incremental
+decoding.</p>
+</div>
+<div class="section" id="multi-method-models">
+<h3>Multi-method Models<a class="headerlink" href="#multi-method-models" title="Permalink to this heading">¶</a></h3>
+<p>ExecuTorch allows for bundling of multiple methods with a single .pte file. This can be useful for more complex model architectures, such as encoder-decoder models.</p>
+<p>The include multiple methods in a .pte, each method must be exported individually with <code class="docutils literal notranslate"><span class="pre">torch.export.export</span></code>, yielding one <code class="docutils literal notranslate"><span class="pre">ExportedProgram</span></code> per method. These can be passed as a dictionary into <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower</span></code>:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">encode_ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<span class="n">decode_ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<span class="n">lowered</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">({</span>
+    <span class="s2">&quot;encode&quot;</span><span class="p">:</span> <span class="n">encode_ep</span><span class="p">,</span>
+    <span class="s2">&quot;decode&quot;</span><span class="p">:</span> <span class="n">decode_ep</span><span class="p">,</span>
+<span class="p">})</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>At runtime, the method name can be passed to <code class="docutils literal notranslate"><span class="pre">load_method</span></code> and <code class="docutils literal notranslate"><span class="pre">execute</span></code> on the <code class="docutils literal notranslate"><span class="pre">Module</span></code> class.</p>
+<p>Multi-method .ptes have several caveats:</p>
+<ul class="simple">
+<li><p>Methods are individually memory-planned. Activation memory is not current re-used between methods. For advanced use cases, a <a class="reference internal" href="compiler-memory-planning.html"><span class="doc std std-doc">custom memory plan</span></a> or <a class="reference external" href="https://docs.pytorch.org/executorch/stable/runtime-overview.html#operating-system-considerations">custom memory allocators</a> can be used to overlap the allocations.</p></li>
+<li><p>Mutable buffers are not shared between methods.</p></li>
+<li><p>PyTorch export does not currently allow for exporting methods on a module other than <code class="docutils literal notranslate"><span class="pre">forward</span></code>. To work around this, it is common to create wrapper <code class="docutils literal notranslate"><span class="pre">nn.Modules</span></code> for each method.</p></li>
+</ul>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span>
+<span class="k">class</span><span class="w"> </span><span class="nc">EncodeWrapper</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="n">model</span>
+    
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">DecodeWrapper</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="c1"># ...</span>
+
+<span class="n">encode_ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">EncodeWrapper</span><span class="p">(</span><span class="n">model</span><span class="p">),</span> <span class="o">...</span><span class="p">)</span>
+<span class="n">decode_ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">DecodeWrapper</span><span class="p">(</span><span class="n">model</span><span class="p">),</span> <span class="o">...</span><span class="p">)</span>
+<span class="c1"># ...</span>
+</pre></div>
+</div>
+</div>
+</div>
 <div class="section" id="next-steps">
 <h2>Next Steps<a class="headerlink" href="#next-steps" title="Permalink to this heading">¶</a></h2>
 <p>The PyTorch and ExecuTorch export and lowering APIs provide a high level of customizability to meet the needs of diverse hardware and models. See <a class="reference external" href="https://pytorch.org/docs/main/export.html">torch.export</a> and <a class="reference internal" href="export-to-executorch-api-reference.html"><span class="doc std std-doc">Export API Reference</span></a> for more information.</p>
@@ -730,6 +799,12 @@
 </ul>
 </li>
 <li><a class="reference internal" href="#testing-the-model">Testing the Model</a></li>
+<li><a class="reference internal" href="#advanced-topics">Advanced Topics</a><ul>
+<li><a class="reference internal" href="#state-management">State Management</a></li>
+<li><a class="reference internal" href="#dynamic-control-flow">Dynamic Control Flow</a></li>
+<li><a class="reference internal" href="#multi-method-models">Multi-method Models</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#next-steps">Next Steps</a></li>
 </ul>
 </li>

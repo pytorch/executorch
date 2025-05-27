@@ -696,11 +696,15 @@ cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class
 </div>
 <div class="section" id="use-an-example-binary-executor-runner-to-execute-a-pte-file">
 <h2>Use an example binary <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> to execute a .pte file<a class="headerlink" href="#use-an-example-binary-executor-runner-to-execute-a-pte-file" title="Permalink to this heading">¶</a></h2>
-<p>First, generate an <code class="docutils literal notranslate"><span class="pre">add.pte</span></code> or other ExecuTorch program file using the
-instructions as described in
-<a class="reference internal" href="getting-started.html#preparing-the-model"><span class="std std-doc">Preparing a Model</span></a>.</p>
+<p>First, generate a .pte file, either by exporting an example model or following
+the instructions in <a class="reference internal" href="using-executorch-export.html"><span class="doc std std-doc">Model Export and Lowering</span></a>.</p>
+<p>To generate a simple model file, run the following command from the ExecuTorch directory. It
+will create a file named “add.pte” in the current directory.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">python</span> <span class="o">-</span><span class="n">m</span> <span class="n">examples</span><span class="o">.</span><span class="n">portable</span><span class="o">.</span><span class="n">scripts</span><span class="o">.</span><span class="n">export</span> <span class="o">--</span><span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;add&quot;</span>
+</pre></div>
+</div>
 <p>Then, pass it to the command line tool:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./cmake-out/executor_runner<span class="w"> </span>--model_path<span class="w"> </span>path/to/model.pte
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./cmake-out/executor_runner<span class="w"> </span>--model_path<span class="w"> </span>add.pte
 </pre></div>
 </div>
 <p>You should see the message “Model executed successfully” followed
