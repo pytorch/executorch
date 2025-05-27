@@ -96,10 +96,6 @@ in the example), and a list of dynamic shapes (covered later).
 
  .. code-block:: none
 
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, p_conv_weight: "f32[16, 3, 3, 3]", p_conv_bias: "f32[16]", x: "f32[1, 3, 256, 256]"):
@@ -186,21 +182,17 @@ different than the ones we used while tracing, we will run into an error:
 
  .. code-block:: none
 
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
     tensor([[2., 2., 2.],
             [2., 2., 2.],
             [2., 2., 2.]])
     Traceback (most recent call last):
       File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 114, in <module>
         print(aten_dialect.module()(torch.ones(3, 2), torch.ones(3, 2)))
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 830, in call_wrapped
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 833, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 406, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 409, in __call__
         raise e
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 393, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 396, in __call__
         return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
         return self._call_impl(*args, **kwargs)
@@ -208,13 +200,15 @@ different than the ones we used while tracing, we will run into an error:
         return inner()
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1784, in inner
         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 849, in _fn
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 856, in _fn
         return fn(*args, **kwargs)
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 82, in _check_input_constraints_pre_hook
         _check_input_constraints_for_graph(
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 398, in _check_input_constraints_for_graph
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 420, in _check_input_constraints_for_graph
+        _check_symint(
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 384, in _check_symint
         raise RuntimeError(
-    RuntimeError: Expected input at *args[0].shape[1] to be equal to 3, but got 2
+    RuntimeError: Expected input at *args[0].shape[1] to be equal to 3, but got 2. If you meant for this dimension to be dynamic, please re-export and specify dynamic_shapes (e.g. with Dim.DYNAMIC)
 
 
 
@@ -247,15 +241,11 @@ To express that some input shapes are dynamic, we can insert dynamic
 
  .. code-block:: none
 
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
     ExportedProgram:
         class GraphModule(torch.nn.Module):
-            def forward(self, x: "f32[3, s0]", y: "f32[3, s0]"):
+            def forward(self, x: "f32[3, s27]", y: "f32[3, s27]"):
                  # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:100 in forward, code: return x + y
-                add: "f32[3, s0]" = torch.ops.aten.add.Tensor(x, y);  x = y = None
+                add: "f32[3, s27]" = torch.ops.aten.add.Tensor(x, y);  x = y = None
                 return (add,)
             
     Graph signature: 
@@ -266,7 +256,7 @@ To express that some input shapes are dynamic, we can insert dynamic
         # outputs
         add: USER_OUTPUT
     
-    Range constraints: {s0: VR[1, 10]}
+    Range constraints: {s27: VR[1, 10]}
 
 
 
@@ -322,11 +312,11 @@ Now let's try running the model with different shapes:
     Traceback (most recent call last):
       File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 148, in <module>
         print(aten_dialect.module()(torch.ones(3, 15), torch.ones(3, 15)))
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 830, in call_wrapped
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 833, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 406, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 409, in __call__
         raise e
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 393, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 396, in __call__
         return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
         return self._call_impl(*args, **kwargs)
@@ -334,21 +324,23 @@ Now let's try running the model with different shapes:
         return inner()
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1784, in inner
         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 849, in _fn
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 856, in _fn
         return fn(*args, **kwargs)
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 82, in _check_input_constraints_pre_hook
         _check_input_constraints_for_graph(
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 386, in _check_input_constraints_for_graph
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 420, in _check_input_constraints_for_graph
+        _check_symint(
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 373, in _check_symint
         raise RuntimeError(
     RuntimeError: Expected input at *args[0].shape[1] to be <= 10, but got 15
     Traceback (most recent call last):
       File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 154, in <module>
         print(aten_dialect.module()(torch.ones(3, 3), torch.ones(3, 2)))
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 830, in call_wrapped
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 833, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 406, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 409, in __call__
         raise e
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 393, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 396, in __call__
         return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
         return self._call_impl(*args, **kwargs)
@@ -356,11 +348,13 @@ Now let's try running the model with different shapes:
         return inner()
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1784, in inner
         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 849, in _fn
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 856, in _fn
         return fn(*args, **kwargs)
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 82, in _check_input_constraints_pre_hook
         _check_input_constraints_for_graph(
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 350, in _check_input_constraints_for_graph
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 420, in _check_input_constraints_for_graph
+        _check_symint(
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 332, in _check_symint
         raise RuntimeError(
     RuntimeError: Expected input at *args[1].shape[1] to be equal to 3, but got 2
 
@@ -439,10 +433,6 @@ model properly for a specific backend.
 
  .. code-block:: none
 
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
     Pre-Autograd ATen Dialect Graph
     GraphModule(
       (conv): Module()
@@ -459,57 +449,9 @@ model properly for a specific backend.
         return pytree.tree_unflatten((relu,), self._out_spec)
     
     # To see more debug info, please use `graph_module.print_readable()`
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
     /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/ao/quantization/utils.py:408: UserWarning: must run observer before calling calculate_qparams. Returning default values.
       warnings.warn(
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/ao/quantization/observer.py:1333: UserWarning: must run observer before calling calculate_qparams.                                    Returning default scale and zero point 
+    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/ao/quantization/observer.py:1338: UserWarning: must run observer before calling calculate_qparams.                                    Returning default scale and zero point 
       warnings.warn(
     Quantized Graph
     GraphModule(
@@ -532,10 +474,6 @@ model properly for a specific backend.
         return pytree.tree_unflatten((dequantize_per_tensor_default_2,), self._out_spec)
     
     # To see more debug info, please use `graph_module.print_readable()`
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
     ATen Dialect Graph
     ExportedProgram:
         class GraphModule(torch.nn.Module):
@@ -620,12 +558,6 @@ The lowering is done through the ``to_edge`` API.
 
  .. code-block:: none
 
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
     Edge Dialect Graph
     ExportedProgram:
         class GraphModule(torch.nn.Module):
@@ -694,26 +626,14 @@ there is only one program, it will by default be saved to the name "forward".
 
  .. code-block:: none
 
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    Edge Dialect graph of encode
+    Edge Dialect graph of decode
     ExportedProgram:
         class GraphModule(torch.nn.Module):
-            def forward(self, x: "f32[1, 10]"):
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:257 in forward, code: return torch.nn.functional.linear(x, torch.randn(5, 10))
-                aten_randn_default: "f32[5, 10]" = executorch_exir_dialects_edge__ops_aten_randn_default([5, 10], device = device(type='cpu'), pin_memory = False)
-                aten_permute_copy_default: "f32[10, 5]" = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
-                aten_mm_default: "f32[1, 5]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
+            def forward(self, x: "f32[1, 5]"):
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:262 in forward, code: return torch.nn.functional.linear(x, torch.randn(10, 5))
+                aten_randn_default: "f32[10, 5]" = executorch_exir_dialects_edge__ops_aten_randn_default([10, 5], device = device(type='cpu'), pin_memory = False)
+                aten_permute_copy_default: "f32[5, 10]" = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
+                aten_mm_default: "f32[1, 10]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
                 return (aten_mm_default,)
             
     Graph signature: 
@@ -725,14 +645,14 @@ there is only one program, it will by default be saved to the name "forward".
     
     Range constraints: {}
 
-    Edge Dialect graph of decode
+    Edge Dialect graph of encode
     ExportedProgram:
         class GraphModule(torch.nn.Module):
-            def forward(self, x: "f32[1, 5]"):
-                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:262 in forward, code: return torch.nn.functional.linear(x, torch.randn(10, 5))
-                aten_randn_default: "f32[10, 5]" = executorch_exir_dialects_edge__ops_aten_randn_default([10, 5], device = device(type='cpu'), pin_memory = False)
-                aten_permute_copy_default: "f32[5, 10]" = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
-                aten_mm_default: "f32[1, 10]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
+            def forward(self, x: "f32[1, 10]"):
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:257 in forward, code: return torch.nn.functional.linear(x, torch.randn(5, 10))
+                aten_randn_default: "f32[5, 10]" = executorch_exir_dialects_edge__ops_aten_randn_default([5, 10], device = device(type='cpu'), pin_memory = False)
+                aten_permute_copy_default: "f32[10, 5]" = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
+                aten_mm_default: "f32[1, 5]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
                 return (aten_mm_default,)
             
     Graph signature: 
@@ -797,12 +717,6 @@ rather than the ``torch.ops.aten`` namespace.
 
  .. code-block:: none
 
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
     Edge Dialect Graph
     ExportedProgram:
         class GraphModule(torch.nn.Module):
@@ -934,12 +848,6 @@ lowering process.
 
  .. code-block:: none
 
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
     LoweredBackendModule()
     BackendWithCompilerDemo
     b'1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>2#'
@@ -1031,14 +939,6 @@ can compose this lowered module with another module.
 
  .. code-block:: none
 
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py:108: UserWarning: Attempted to insert a get_attr Node with no underlying reference in the owning GraphModule! Call GraphModule.add_submodule to add the necessary submodule, GraphModule.add_parameter to add the necessary Parameter, or nn.Module.register_buffer to add the necessary buffer
-      getattr_node = gm.graph.get_attr(lifted_node)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
     Edge Dialect graph
     ExportedProgram:
         class GraphModule(torch.nn.Module):
@@ -1148,12 +1048,6 @@ partition those nodes into subgraphs, and then create a
 
  .. code-block:: none
 
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
     Edge Dialect graph
     ExportedProgram:
         class GraphModule(torch.nn.Module):
@@ -1292,12 +1186,6 @@ call ``to_backend`` on it:
 
  .. code-block:: none
 
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
     Delegated program
     ExportedProgram:
         class GraphModule(torch.nn.Module):
@@ -1492,21 +1380,6 @@ Here is an example for an entire end-to-end workflow:
 
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
-      torch._C._set_onednn_allow_tf32(_allow_tf32)
-
 
 
 
@@ -1531,7 +1404,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 3.939 seconds)
+   **Total running time of the script:** (0 minutes 3.883 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:
