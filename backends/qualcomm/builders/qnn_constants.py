@@ -253,6 +253,12 @@ class OpGather:
 
 
 @dataclass(init=False, frozen=True)
+class OpGatherElements:
+    op_name: str = "GatherElements"
+    param_axis: str = "axis"
+
+
+@dataclass(init=False, frozen=True)
 class OpGatherND:
     op_name: str = "GatherNd"
     param_batch_dims: str = "batch_dims"
