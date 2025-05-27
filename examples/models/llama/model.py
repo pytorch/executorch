@@ -36,19 +36,18 @@ from ..model_base import EagerModelBase
 
 
 class Llama2Model(EagerModelBase):
-    def __init__(self, **kwargs):
+    def __init__(self, llm_config):
         resource_dir = get_default_model_resource_dir(__file__)
 
+        self.llm_config = llm_config
+        
         # Use single checkpoint file.
-        checkpoint_path = kwargs.get("checkpoint", None)
+        checkpoint_path = self.llm_config.base.checkpoint
         # Check if checkpoint_dir was provided for a sharded checkpoint.
-        checkpoint_dir = kwargs.get("checkpoint_dir", None)
+        checkpoint_dir = self.llm_config.base.checkpoint_dir
 
         # Params file.
-        params_path = kwargs.get("params", None)
-
-        self.llm_config = kwargs.get("llm_config")
-        assert self.llm_config is not None, "llm_config must be provided"
+        params_path = self.llm_config.base.params
         
         self.use_kv_cache = self.llm_config.model.use_kv_cache
         self.use_sdpa_with_kv_cache_op = self.llm_config.model.use_sdpa_with_kv_cache
