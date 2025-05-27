@@ -5,7 +5,12 @@ from typing import Any
 
 import yaml
 
-from executorch.codegen.model import ETKernelIndex, ETKernelKey
+try:
+    from executorch.codegen.model import ETKernelIndex, ETKernelKey
+except ImportError:
+    # If we build from source, executorch.codegen is not available.
+    # We can use relative import instead.
+    from .model import ETKernelIndex, ETKernelKey  # type: ignore[assignment]
 from torchgen.gen import LineLoader, parse_native_yaml
 from torchgen.model import (
     BackendMetadata,
