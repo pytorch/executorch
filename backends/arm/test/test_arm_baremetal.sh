@@ -105,11 +105,11 @@ test_pytest_ops_ethosu_fvp() { # Same as test_pytest but also sometime verify us
     # Prepare Corstone-3x0 FVP for pytest
     backends/arm/scripts/build_executorch.sh
     backends/arm/scripts/build_portable_kernels.sh
-    # Build semihosting version of the runner used by pytest testing when using --arm_run_corstoneFVP
+    # Build semihosting version of the runner used by pytest testing when
     backends/arm/test/setup_testing.sh
 
     # Run arm baremetal pytest tests with FVP
-    pytest  --verbose --color=yes --numprocesses=auto backends/arm/test/ --ignore=backends/arm/test/models --arm_run_corstoneFVP
+    pytest  --verbose --color=yes --numprocesses=auto backends/arm/test/ --ignore=backends/arm/test/models
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -119,11 +119,11 @@ test_pytest_models_ethosu_fvp() { # Same as test_pytest but also sometime verify
     # Prepare Corstone-3x0 FVP for pytest
     backends/arm/scripts/build_executorch.sh
     backends/arm/scripts/build_portable_kernels.sh
-    # Build semihosting version of the runner used by pytest testing when using --arm_run_corstoneFVP
+    # Build semihosting version of the runner used by pytest testing
     backends/arm/test/setup_testing.sh
 
     # Run arm baremetal pytest tests with FVP
-    pytest  --verbose --color=yes backends/arm/test/models --arm_run_corstoneFVP
+    pytest  --verbose --color=yes backends/arm/test/models
     echo "${TEST_SUITE_NAME}: PASS"
 }
 

@@ -259,25 +259,31 @@ class NeedsDecompositionCheck(OperatorSupportBase):
 
         if node.op != "call_function":
             return True
-        needs_decomp = node.target in [
-            exir_ops.edge.aten.div.Tensor,
-            exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
-            exir_ops.edge.aten.native_layer_norm.default,
-            exir_ops.edge.aten._softmax.default,
-            exir_ops.edge.aten._log_softmax.default,
-            exir_ops.edge.aten.var.correction,
-            exir_ops.edge.aten.var.dim,
-            exir_ops.edge.aten.add.Scalar,
-            exir_ops.edge.aten.sqrt.default,
-            exir_ops.edge.aten.sub.Scalar,
-            exir_ops.edge.aten.mul.Scalar,
-            exir_ops.edge.aten.ne.Tensor,
-            exir_ops.edge.aten.ne.Scalar,
-            exir_ops.edge.aten.div.Scalar,
-            exir_ops.edge.aten.leaky_relu.default,
-        ]
-        if needs_decomp:
-            self.reporter.report_reject(node, "Needs to be decomposed.")
+
+        needs_decomp_dict = {
+            exir_ops.edge.aten.div.Tensor: None,
+            exir_ops.edge.aten._native_batch_norm_legit_no_training.default: "BatchNorm2D with track_running_stats==True not immediately following a convolution is not supported for quantized TOSA backends.",
+            exir_ops.edge.aten.native_layer_norm.default: None,
+            exir_ops.edge.aten._softmax.default: None,
+            exir_ops.edge.aten._log_softmax.default: None,
+            exir_ops.edge.aten.var.correction: None,
+            exir_ops.edge.aten.var.dim: None,
+            exir_ops.edge.aten.add.Scalar: None,
+            exir_ops.edge.aten.sqrt.default: None,
+            exir_ops.edge.aten.sub.Scalar: None,
+            exir_ops.edge.aten.mul.Scalar: None,
+            exir_ops.edge.aten.ne.Tensor: None,
+            exir_ops.edge.aten.ne.Scalar: None,
+            exir_ops.edge.aten.div.Scalar: None,
+            exir_ops.edge.aten.leaky_relu.default: None,
+        }
+
+        if node.target in needs_decomp_dict:
+            reject_message = needs_decomp_dict[node.target]
+            if reject_message is None:
+                reject_message = "Op needs to be decomposed into other ops before quantization to get quantized properly."
+
+            self.reporter.report_reject(node, reject_message)
             return False
         else:
             return True
