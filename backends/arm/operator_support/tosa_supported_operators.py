@@ -28,6 +28,8 @@ from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
+
+from torch._subclasses.fake_tensor import FakeTensor
 from torch.export.graph_signature import InputKind
 from torch.fx.passes.operator_support import any_chain, chain, OperatorSupportBase
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
@@ -116,6 +118,7 @@ def tosa_support_factory(
     negative_checks: list[OperatorSupportBase] = [
         CheckInt64Inputs(exported_program, reporter),
         CheckFloat64Inputs(exported_program, reporter),
+        RankCheck(reporter, max_rank=5),
         *[
             reporter.wrap_check(check, f"Rejected by {check.__class__.__name__}")
             for check in (additional_checks if additional_checks else [])
@@ -471,6 +474,54 @@ class CheckFloat64Inputs(OperatorSupportBase):
                 self.reporter.report_reject(
                     node,
                     f"Had float64 input {input_node.name} that couldn't be handled.",
+                )
+                return False
+        return True
+
+
+class RankCheck(OperatorSupportBase):
+    """Makes sure that nodes with input or output tensors with rank > max_rank are not partitioned"""
+
+    def __init__(self, reporter: WhyNoPartitionReporter, max_rank: int):
+        self.reporter = reporter
+        self.max_rank = max_rank
+        super().__init__()
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        input_nodes = node.all_input_nodes
+        # check if any input node has an unsupported rank
+        for input_node in input_nodes:
+            input_node_shape = get_first_fake_tensor(input_node).shape
+            if len(input_node_shape) > self.max_rank:
+                self.reporter.report_reject(
+                    node,
+                    f"{node.name} has input_node {input_node.name} with shape {input_node_shape}, "
+                    f"rank {len(input_node_shape)} which is unsupported. "
+                    f"Max supported rank is {self.max_rank}.",
+                )
+                return False
+
+        meta_val = node.meta["val"]
+        if isinstance(
+            meta_val, (Sequence, torch.fx.immutable_collections.immutable_list)
+        ):
+            for val in meta_val:
+                if isinstance(val, FakeTensor):
+                    if len(val.shape) > self.max_rank:
+                        self.reporter.report_reject(
+                            node,
+                            f"{node.name} has a shape {val.shape}, rank {len(val.shape)} which is unsupported."
+                            f"Max supported rank is {self.max_rank}.",
+                        )
+                        return False
+        elif isinstance(meta_val, FakeTensor):
+            if len(meta_val.shape) > self.max_rank:
+                self.reporter.report_reject(
+                    node,
+                    f"{node.name} has shape {meta_val.shape}, rank={len(meta_val.shape)} which is unsupported."
+                    f"Max supported rank is {self.max_rank}.",
                 )
                 return False
         return True
