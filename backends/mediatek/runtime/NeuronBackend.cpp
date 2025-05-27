@@ -89,7 +89,6 @@ Result<DelegateHandle*> NeuronBackend::init(
             shared_weights.get().size());
         FreeableBuffer& buffer = shared_weights.get();
         delegate->SetSharedWeights(buffer);
-        // neuron_shared_weights_.push_back(std::move(shared_weights.get()));
       } else {
         LogError(
             "NeuronBackend",
@@ -101,10 +100,6 @@ Result<DelegateHandle*> NeuronBackend::init(
     }
   }
   auto Payload = NeuronPayload(processed->data(), processed->size());
-
-  if (setting.mSharedWeights) {
-    Payload.Header.InputCount++; /* TODO: refine this */
-  }
 
   LogInfo(
       "NeuronBackend",
@@ -164,8 +159,8 @@ Error NeuronExecuTorchDelegate::execute(
   size_t outputCount = mOutputSizes.size();
 
   for (int i = 0; i < inputCount; i++) {
-    auto data_ptr = mInputs[i].data_ptr;
-    auto data_size = mInputs[i].size;
+    auto data_ptr = mPreparedInputs[i].data_ptr;
+    auto data_size = mPreparedInputs[i].size;
     if (IsCached</*isInput=*/true>(i, data_ptr)) {
       continue;
     };
@@ -181,8 +176,8 @@ Error NeuronExecuTorchDelegate::execute(
   }
 
   for (int o = 0; o < outputCount; o++) {
-    auto data_ptr = mInputs[o].data_ptr;
-    auto data_size = mInputs[o].size;
+    auto data_ptr = mPreparedOutputs[o].data_ptr;
+    auto data_size = mPreparedOutputs[o].size;
     if (IsCached</*isInput=*/false>(o, data_ptr)) {
       continue;
     };
