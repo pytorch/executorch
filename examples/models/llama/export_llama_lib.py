@@ -29,6 +29,7 @@ from executorch.devtools.backend_debug import print_delegation_info
 
 from executorch.devtools.etrecord import generate_etrecord as generate_etrecord_func
 
+from executorch.examples.models.llama.config.llm_config import LlmConfig
 from executorch.examples.models.llama.config.llm_config_utils import (
     convert_args_to_llm_config,
 )
@@ -1198,6 +1199,7 @@ def _load_llama_model(
     use_qnn: bool = False,
     export_only: bool = False,
     args,
+    llm_config: Optional[LlmConfig] = None,
 ) -> "LLMEdgeManager":
     """
     A helper util that builds a Llama2 model. It returns a LLMEdgeManager that
