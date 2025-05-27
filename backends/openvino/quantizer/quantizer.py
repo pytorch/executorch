@@ -17,12 +17,12 @@ import nncf.experimental.torch.fx as nncf_fx  # type: ignore[import-untyped]
 import torch.fx
 
 from nncf.common.graph.graph import NNCFGraph  # type: ignore[import-untyped]
-from torch.ao.quantization.observer import (
+from torchao.quantization.pt2e import (
     HistogramObserver,
     PerChannelMinMaxObserver,
     UniformQuantizationObserverBase,
 )
-from torch.ao.quantization.quantizer.quantizer import (
+from torchao.quantization.pt2e.quantizer import (
     EdgeOrNode,
     QuantizationAnnotation,
     QuantizationSpec,

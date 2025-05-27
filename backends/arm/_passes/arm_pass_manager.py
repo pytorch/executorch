@@ -90,7 +90,9 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertMmToBmmPass())
         self.add_pass(DecomposeLinearPass())
         self.add_pass(DecomposeLinearVectorNormPass())
-        self.add_pass(DecomposeMeanDimPass())
+        self.add_pass(
+            DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec)
+        )
         self.add_pass(ConvertFullLikeToFullPass())
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
@@ -116,7 +118,7 @@ class ArmPassManager(PassManager):
         self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(DecomposeSumPass())
-        self.add_pass(Conv1dUnsqueezePass(exported_program))
+        self.add_pass(Conv1dUnsqueezePass())
         self.add_pass(DecomposeSelectPass())
         self.add_pass(ConvertSqueezesToViewPass())
 
@@ -144,7 +146,9 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeBatchNormPass())
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
-        self.add_pass(DecomposeMeanDimPass())
+        self.add_pass(
+            DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec)
+        )
         self.add_pass(DecomposeNotEqualPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeSoftmaxPass())
@@ -169,7 +173,7 @@ class ArmPassManager(PassManager):
         self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(DecomposeSumPass())
-        self.add_pass(Conv1dUnsqueezePass(exported_program))
+        self.add_pass(Conv1dUnsqueezePass())
         self.add_pass(DecomposeSelectPass())
         self.add_pass(ConvertSqueezesToViewPass())
 
@@ -209,7 +213,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ScalarsToAttributePass())
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
-        self.add_pass(DecomposeMeanDimPass())
+        self.add_pass(DecomposeMeanDimPass(graph_module, self.tosa_spec))
         self.add_pass(DecomposeNotEqualPass())
         self.add_pass(DecomposeCosineSimilarityPass())
         self.add_pass(DecomposeDivPass())

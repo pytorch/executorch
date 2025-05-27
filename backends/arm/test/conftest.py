@@ -44,7 +44,7 @@ def pytest_configure(config):
     if getattr(config.option, "fast_fvp", False):
         pytest._test_options["fast_fvp"] = config.option.fast_fvp  # type: ignore[attr-defined]
 
-    pytest._test_options["tosa_version"] = "0.80"  # type: ignore[attr-defined]
+    pytest._test_options["tosa_version"] = "1.0"  # type: ignore[attr-defined]
     if config.option.arm_run_tosa_version:
         pytest._test_options["tosa_version"] = config.option.arm_run_tosa_version
 
@@ -81,7 +81,7 @@ def pytest_addoption(parser):
         nargs="+",
         help="List of two files. Firstly .pt file. Secondly .json",
     )
-    try_addoption("--arm_run_tosa_version", action="store", default="0.80")
+    try_addoption("--arm_run_tosa_version", action="store", default="1.0")
 
 
 def pytest_sessionstart(session):
