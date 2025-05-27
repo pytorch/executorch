@@ -22,8 +22,8 @@ bool check_repeat_interleave_args(
   ET_CHECK_OR_RETURN_FALSE(
       repeats.scalar_type() == ScalarType::Int ||
           repeats.scalar_type() == ScalarType::Long,
-      "repeats must be int or long; repeats.scalar_type() = %d",
-      static_cast<int>(repeats.scalar_type()));
+      "repeats must be int or long; repeats.scalar_type() = %s",
+      toString(repeats.scalar_type()));
   ET_CHECK_OR_RETURN_FALSE(
       repeats.dim() == 1,
       "repeats must be 1-D; repeats.dim() = %" ET_PRI_TENSOR_DIM,

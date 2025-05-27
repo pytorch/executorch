@@ -17,53 +17,7 @@ namespace executor {
 namespace native {
 namespace internal {
 
-#define DEFINE_BINARY_OPERATOR_TEMPLATE(name, op) \
-  template <typename T>                           \
-  T name(const T val_a, const T val_b) {          \
-    return val_a op val_b;                        \
-  }
-
-DEFINE_BINARY_OPERATOR_TEMPLATE(eq, ==)
-DEFINE_BINARY_OPERATOR_TEMPLATE(ne, !=)
-DEFINE_BINARY_OPERATOR_TEMPLATE(ge, >=)
-DEFINE_BINARY_OPERATOR_TEMPLATE(le, <=)
-DEFINE_BINARY_OPERATOR_TEMPLATE(gt, >)
-DEFINE_BINARY_OPERATOR_TEMPLATE(lt, <)
-
-template <typename T>
-using comparison_fn = T (*)(const T, const T);
-
-template <typename T, const char* op_name>
-constexpr comparison_fn<T> get_comparison_fn() {
-  std::string_view op = op_name;
-  if (op == "eq.Tensor_out" || op == "eq.Scalar_out") {
-    return eq;
-  }
-  if (op == "ne.Tensor_out" || op == "ne.Scalar_out") {
-    return ne;
-  }
-  if (op == "ge.Tensor_out" || op == "ge.Scalar_out") {
-    return ge;
-  }
-  if (op == "le.Tensor_out" || op == "le.Scalar_out") {
-    return le;
-  }
-  if (op == "gt.Tensor_out" || op == "gt.Scalar_out") {
-    return gt;
-  }
-  if (op == "lt.Tensor_out" || op == "lt.Scalar_out") {
-    return lt;
-  }
-  return nullptr;
-};
-
-template <typename T, const char* op_name>
-struct ComparisonFnForOp {
-  static constexpr auto value = get_comparison_fn<T, op_name>();
-  static_assert(value != nullptr, "unknown op_name!");
-};
-
-template <const char* op_name>
+template <template <typename> class Comparison, const char* op_name>
 Tensor& comparison_tensor_out(
     KernelRuntimeContext& ctx,
     const Tensor& a,
@@ -96,7 +50,7 @@ Tensor& comparison_tensor_out(
         op_name,
         utils::SupportedTensorDtypes::REALHBBF16>(
         // TODO: rewrite this to be vectorization-capable.
-        ComparisonFnForOp<CTYPE_COMPUTE, op_name>::value,
+        Comparison<CTYPE_COMPUTE>(),
         ctx,
         a,
         utils::SupportedTensorDtypes::REALHBBF16,
@@ -108,7 +62,7 @@ Tensor& comparison_tensor_out(
   return out;
 }
 
-template <const char* op_name>
+template <template <typename> class Comparison, const char* op_name>
 Tensor& comparison_scalar_out(
     KernelRuntimeContext& ctx,
     const Tensor& a,
@@ -136,7 +90,7 @@ Tensor& comparison_scalar_out(
         utils::SupportedTensorDtypes::REALHBBF16>(
         [val_b](const CTYPE_COMPUTE val_a) {
           // TODO: rewrite this to be vectorization-capable.
-          return ComparisonFnForOp<CTYPE_COMPUTE, op_name>::value(val_a, val_b);
+          return Comparison<CTYPE_COMPUTE>()(val_a, val_b);
         },
         ctx,
         a,

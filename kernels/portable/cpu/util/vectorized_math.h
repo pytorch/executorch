@@ -14,6 +14,28 @@
 #include <ATen/cpu/vec/vec.h>
 #endif // ET_USE_PYTORCH_HEADERS
 
+#include <iostream>
+#include <type_traits>
+
+#ifdef ET_USE_PYTORCH_HEADERS
+namespace executorch {
+inline namespace math {
+namespace internal {
+template <typename T>
+auto convert_to_vectorized_n_of_float(at::vec::Vectorized<T> vec) {
+  static constexpr auto float_vec_size = at::vec::Vectorized<float>::size();
+  static constexpr auto t_vec_size = at::vec::Vectorized<T>::size();
+  static constexpr auto result_size =
+      t_vec_size < float_vec_size ? 1 : t_vec_size / float_vec_size;
+  static_assert(result_size >= 1);
+  return at::vec::convert<float, result_size, T, 1, /*keep=*/true>(
+      at::vec::VectorizedN<T, 1>(vec));
+}
+} // namespace internal
+} // namespace math
+} // namespace executorch
+#endif // ET_USE_PYTORCH_HEADERS
+
 #define _ET_INTERNAL_STD_MATH_FUNC(name) \
   namespace executorch {                 \
   inline namespace math {                \
@@ -26,18 +48,18 @@
  * Internal-usage macro for making a vectorized variant of a unary
  * function available in the executorch::math namespace.
  */
-#define ET_INTERNAL_VECTORIZED_FLOAT_UNARY_FUNC(func_name)               \
-  namespace executorch {                                                 \
-  inline namespace math {                                                \
-  template <typename T>                                                  \
-  auto func_name(at::vec::Vectorized<T> vec) {                           \
-    if constexpr (!::executorch::runtime::is_floating_point<T>::value) { \
-      return at::vec::convert<float>(vec).func_name();                   \
-    } else {                                                             \
-      return vec.func_name();                                            \
-    }                                                                    \
-  }                                                                      \
-  }                                                                      \
+#define ET_INTERNAL_VECTORIZED_FLOAT_UNARY_FUNC(func_name)                \
+  namespace executorch {                                                  \
+  inline namespace math {                                                 \
+  template <typename T>                                                   \
+  auto func_name(at::vec::Vectorized<T> vec) {                            \
+    if constexpr (!::executorch::runtime::is_floating_point<T>::value) {  \
+      return internal::convert_to_vectorized_n_of_float(vec).func_name(); \
+    } else {                                                              \
+      return vec.func_name();                                             \
+    }                                                                     \
+  }                                                                       \
+  }                                                                       \
   }
 
 #define ET_INTERNAL_VECTORIZED_FLOAT_BINARY_FUNC(func_name)                  \
@@ -46,8 +68,11 @@
   template <typename T>                                                      \
   auto func_name(at::vec::Vectorized<T> vec0, at::vec::Vectorized<T> vec1) { \
     if constexpr (!::executorch::runtime::is_floating_point<T>::value) {     \
-      return at::vec::convert<float>(vec0).func_name(                        \
-          at::vec::convert<float>(vec1));                                    \
+      const auto vec_float0 =                                                \
+          internal::convert_to_vectorized_n_of_float(vec0);                  \
+      const auto vec_float1 =                                                \
+          internal::convert_to_vectorized_n_of_float(vec1);                  \
+      return vec_float0.func_name(vec_float1);                               \
     } else {                                                                 \
       return vec0.func_name(vec1);                                           \
     }                                                                        \
@@ -100,11 +125,23 @@ ET_INTERNAL_VECTORIZED_STD_FLOAT_UNARY_FUNC(sin)
 ET_INTERNAL_VECTORIZED_STD_FLOAT_UNARY_FUNC(sinh)
 ET_INTERNAL_VECTORIZED_STD_FLOAT_UNARY_FUNC(sqrt)
 ET_INTERNAL_VECTORIZED_STD_FLOAT_UNARY_FUNC(round)
-ET_INTERNAL_VECTORIZED_STD_FLOAT_UNARY_FUNC(rsqrt)
 ET_INTERNAL_VECTORIZED_STD_FLOAT_UNARY_FUNC(tan)
 ET_INTERNAL_VECTORIZED_STD_FLOAT_UNARY_FUNC(tanh)
 ET_INTERNAL_VECTORIZED_STD_FLOAT_UNARY_FUNC(trunc)
 ET_INTERNAL_VECTORIZED_STD_FLOAT_UNARY_FUNC(lgamma)
+
+#ifdef ET_USE_PYTORCH_HEADERS
+ET_INTERNAL_VECTORIZED_FLOAT_BINARY_FUNC(rsqrt)
+#endif // ET_USE_PYTORCH_HEADERS
+
+namespace executorch {
+inline namespace math {
+template <typename T, std::enable_if_t<std::is_floating_point_v<T>>>
+T rsqrt(T x) {
+  return T(1) / std::sqrt(x);
+}
+} // namespace math
+} // namespace executorch
 
 ET_INTERNAL_VECTORIZED_STD_FLOAT_BINARY_FUNC(atan2)
 ET_INTERNAL_VECTORIZED_STD_FLOAT_BINARY_FUNC(fmod)

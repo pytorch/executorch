@@ -24,6 +24,7 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
 from executorch.exir.error import InternalError
 from executorch.exir.operator.convert import (
+    _get_overload_schema,
     get_out_args_from_opoverload,
     is_out_variant,
     to_out_variant,
@@ -45,6 +46,9 @@ from executorch.exir.passes.normalize_transpose_pass import NormalizeTransposePa
 from executorch.exir.passes.prune_empty_tensors_pass import PruneEmptyTensorsPass
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.remove_noop_pass import RemoveNoopPass, RemoveToCopyPass
+from executorch.exir.passes.remove_unused_parameters_pass import (
+    remove_unused_parameters_pass,
+)
 from executorch.exir.passes.replace_aten_with_edge_pass import OpReplacePass
 from executorch.exir.passes.replace_broken_ops_with_function_ops_pass import (
     ReplaceBrokenOpsWithFunctionalOpsPass,
@@ -60,6 +64,7 @@ from torch import fx
 from torch._subclasses import FakeTensor
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 from torch.fx.passes.shape_prop import TensorMetadata
+from torchgen.model import SchemaKind
 
 __all__ = [
     "ExportPass",
@@ -71,6 +76,7 @@ __all__ = [
     "MemoryPlanningPass",
     "HintBasedSymShapeEvalPass",
     "insert_write_back_for_buffers_pass",
+    "remove_unused_parameters_pass",
     "weights_to_outputs_pass",
 ]
 
@@ -253,7 +259,6 @@ to_out_var_skiplist: Set[Callable[[Any], Any]] = {
     memory.alloc,
     memory.view,
     executorch_call_delegate,
-    torch.ops.aten.copy_.default,
 }
 to_out_var_skiplist.update(_EXECUTORCH_SYM_OPS)
 
@@ -342,6 +347,8 @@ class ToOutVarPass(PassBase):
             elif getattr(target, "__module__", None) in ("builtins", "_operator"):
                 continue
             elif target in to_out_var_skiplist:
+                continue
+            elif _get_overload_schema(target).kind() == SchemaKind.inplace:
                 continue
             if not isinstance(
                 target, (torch._ops.OpOverload, EdgeOpOverload, BackendOpOverload)

@@ -25,6 +25,9 @@ def define_common_targets():
             "util/Half-inl.h",
             "util/TypeSafeSignMath.h",
             "util/bit_cast.h",
+            "util/complex.h",
+            "util/complex_math.h",
+            "util/complex_utils.h",
             "util/floating_point_utils.h",
             "util/irange.h",
         ],
@@ -36,6 +39,7 @@ def define_common_targets():
         ]),
         visibility = [
             "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
         ],
         deps = select({
             "DEFAULT": [],
@@ -52,11 +56,12 @@ def define_common_targets():
         visibility = [
             "//executorch/kernels/optimized/...",
             "//executorch/kernels/portable/cpu/util/...",
+            "@EXECUTORCH_CLIENTS",
         ],
         exported_deps = select({
             "DEFAULT": [],
             "ovr_config//cpu:arm64": [
-                "fbsource//third-party/sleef:sleef_arm",
+                "fbsource//third-party/sleef:sleef",
             ] if not runtime.is_oss else [],
             # fbsource//third-party/sleef:sleef currently fails to
             # link with missing symbols, hence the fbcode-specific dep below.

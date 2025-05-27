@@ -32,11 +32,6 @@ from torch.ao.quantization.qconfig import (
     weight_observer_range_neg_127_to_127,
 )
 from torch.ao.quantization.qconfig_mapping import QConfigMapping
-from torch.ao.quantization.quantize_pt2e import (
-    convert_pt2e,
-    prepare_pt2e,
-    prepare_qat_pt2e,
-)
 from torch.ao.quantization.quantizer import Quantizer
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
 from torch.ao.quantization.quantizer.embedding_quantizer import EmbeddingQuantizer
@@ -50,6 +45,11 @@ from torch.testing._internal.common_utils import (
     instantiate_parametrized_tests,
     TemporaryFileName,
     TestCase,
+)
+from torchao.quantization.pt2e.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
 )
 
 
@@ -172,10 +172,14 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
         quantization_config_dynamic = get_symmetric_quantization_config(
             is_per_channel=False, is_dynamic=True
         )
-        dynamic_quantizer.set_global(quantization_config_dynamic)
+        dynamic_quantizer.set_operator_type(
+            torch.ops.aten.linear.default, quantization_config_dynamic
+        )
         static_quantizer = XNNPACKQuantizer()
         quantization_config = get_symmetric_quantization_config(is_per_channel=True)
-        static_quantizer.set_global(quantization_config)
+        static_quantizer.set_operator_type(
+            torch.ops.aten.conv2d.default, quantization_config
+        )
         # Note that dynamic quantization must be applied first here.
         # this is because static quantizer also quantizes linear with static qspec
         # and if we apply static_quantizer first then dynamic_quantizer cannot be applied
@@ -271,10 +275,14 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
         quantization_config_dynamic = get_symmetric_quantization_config(
             is_per_channel=True, is_dynamic=True
         )
-        dynamic_quantizer.set_global(quantization_config_dynamic)
+        dynamic_quantizer.set_operator_type(
+            torch.ops.aten.linear.default, quantization_config_dynamic
+        )
         static_quantizer = XNNPACKQuantizer()
         quantization_config = get_symmetric_quantization_config(is_per_channel=True)
-        static_quantizer.set_global(quantization_config)
+        static_quantizer.set_operator_type(
+            torch.ops.aten.conv2d.default, quantization_config
+        )
         composed_quantizer = ComposableQuantizer(
             [embedding_quantizer, dynamic_quantizer, static_quantizer]
         )

@@ -23,10 +23,10 @@ namespace backends {
 namespace xnnpack {
 namespace delegate {
 
+using executorch::ET_RUNTIME_NAMESPACE::NamedDataMap;
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
-using executorch::runtime::NamedDataMap;
 using executorch::runtime::Result;
 
 /*
@@ -204,8 +204,9 @@ const uint8_t* getConstantDataPtr(
         if (!buffer.ok()) {
           ET_LOG(
               Error,
-              "Failed to get constant data for key %s",
-              data_name.c_str());
+              "Failed to get constant data for key %s from named_data_map. Error code: %u",
+              data_name.c_str(),
+              static_cast<uint32_t>(buffer.error()));
           return nullptr;
         }
         const uint8_t* data_ptr =
@@ -512,11 +513,6 @@ Error defineTensor(
             buffer_ptr == nullptr,
             Internal,
             "Dynamically quantized tensor should not have constant data but found non-nullptr");
-        // TODO(T179441835): Dynamic Quantization with num_nonbatch_dims > 1
-        ET_CHECK_OR_RETURN_ERROR(
-            qparams->num_nonbatch_dims() == 1,
-            Internal,
-            "Dynamically Quantized Tensors currently only support per token quantization");
         status = xnn_define_dynamically_quantized_tensor_value(
             /*subgraph=*/subgraph_ptr,
             /*datatype=*/getDataType(tensor_value->datatype()),
@@ -1172,7 +1168,7 @@ Error defineStaticTransposeNode(
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
       Internal,
-      "Failed to create sigmoid node %i with code: %s",
+      "Failed to create static transpose node %i with code: %s",
       node->debug_handle(),
       xnn_status_to_string(status));
 
@@ -1416,6 +1412,36 @@ Error defineReciprocalSquareRootNode(
       status == xnn_status_success,
       Internal,
       "Failed to create reciprocal square root node %i with code: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+
+  return Error::Ok;
+}
+
+/*
+Define serialized log node into the subgraph, using the remapped ids
+to map the serialized ids, to the new ids generated when defining the
+tensor value
+*/
+Error defineLogNode(
+    xnn_subgraph_t subgraph_ptr,
+    const std::unordered_map<uint32_t, uint32_t>& remapped_ids,
+    const NodePtr node,
+    const fb_xnnpack::XNNGraph* graph) noexcept {
+  MAYBE_UNUSED(graph);
+
+  auto graph_node = node->xnode_union_as_XNNLog();
+
+  xnn_status status = xnn_define_log(
+      subgraph_ptr,
+      remapped_ids.at(graph_node->input_id()),
+      remapped_ids.at(graph_node->output_id()),
+      graph_node->flags());
+
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to create log node %i with code: %s",
       node->debug_handle(),
       xnn_status_to_string(status));
 
@@ -1985,6 +2011,7 @@ DefineNodeFunc getDefineNodeFunc(fb_xnnpack::XNodeUnion nodeType) {
     _DEFINE(Ceiling)
     _DEFINE(Hardswish)
     _DEFINE(LeakyReLU)
+    _DEFINE(Log)
     _DEFINE(Maximum)
     _DEFINE(Negate)
     _DEFINE(Square)

@@ -67,6 +67,10 @@ using ignore_first_yield_second = T;
 template <typename CTYPE_COMPUTE, typename Op, typename... Args>
 constexpr bool can_use_vectorized() {
   using Vec = at::vec::Vectorized<CTYPE_COMPUTE>;
+  // NOTE: if we start building optimized kernels on platforms that
+  // ATen Vectorized doesn't support well, we will want to add a way
+  // to check that Vectorized actually does something on our target
+  // platform. For now, I see no concrete need for that.
   if constexpr (std::is_invocable_v<
                     Op,
                     ignore_first_yield_second<Args, Vec>...>) {
@@ -158,7 +162,7 @@ inline void dtype_specialized_elementwise_fn_impl(
       return;
     }
   }
-#endif
+#endif // ET_USE_PYTORCH_HEADERS
 
   ::executorch::extension::parallel_for(
       0,

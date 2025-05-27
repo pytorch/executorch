@@ -6,6 +6,8 @@
 
 - op: _fake_quantize_per_tensor_affine_cachemask_tensor_qparams.out
 
+- op: _fft_c2r.out
+
 - op: _fft_r2c.out
 
 - op: _linalg_det.result
@@ -198,6 +200,8 @@
 - op: hardtanh.out
 
 - op: index_put.out
+
+- op: index_put_
 
 - op: index_select.out
 
@@ -422,6 +426,8 @@
 - op: var.correction_out
 
 - op: var.out
+
+- op: view_as_real_copy.out
 
 - op: view_copy.out
 

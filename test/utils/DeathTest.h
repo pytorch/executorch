@@ -15,6 +15,10 @@
 
 #include <gtest/gtest.h>
 
+#ifndef ET_BUILD_MODE_COV
+#define ET_BUILD_MODE_COV 0
+#endif // ET_BUILD_MODE_COV
+
 #if ET_BUILD_MODE_COV
 
 /**
