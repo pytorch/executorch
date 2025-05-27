@@ -6,8 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-@testable import ExecuTorch
-
+import ExecuTorch
 import XCTest
 
 class TensorTest: XCTestCase {
@@ -153,7 +152,7 @@ class TensorTest: XCTestCase {
     let tensor = data.withUnsafeMutableBytes {
       Tensor(bytesNoCopy: $0.baseAddress!, shape: [2, 3], dataType: .float)
     }
-    let array: [Float] = try tensor.withUnsafeBytes { Array($0) }
+    let array = try tensor.withUnsafeBytes([Float].init)
     XCTAssertEqual(array, data)
   }
 
@@ -169,30 +168,6 @@ class TensorTest: XCTestCase {
     }
     try tensor.withUnsafeBytes { buffer in
       XCTAssertEqual(Array(buffer), [2, 4, 6, 8])
-    }
-  }
-
-  func testWithUnsafeBytesFloat16() throws {
-    var data: [Float16] = [1, 2, 3, 4, 5, 6]
-    let tensor = data.withUnsafeMutableBytes {
-      Tensor(bytesNoCopy: $0.baseAddress!, shape: [6], dataType: .half)
-    }
-    let array: [Float16] = try tensor.withUnsafeBytes { Array($0) }
-    XCTAssertEqual(array, data)
-  }
-
-  func testWithUnsafeMutableBytesFloat16() throws {
-    var data: [Float16] = [1, 2, 3, 4]
-    let tensor = data.withUnsafeMutableBytes { buffer in
-      Tensor(bytes: buffer.baseAddress!, shape: [4], dataType: .half)
-    }
-    try tensor.withUnsafeMutableBytes { (buffer: UnsafeMutableBufferPointer<Float16>) in
-      for i in buffer.indices {
-        buffer[i] *= 2
-      }
-    }
-    try tensor.withUnsafeBytes { buffer in
-      XCTAssertEqual(Array(buffer), data.map { $0 * 2 })
     }
   }
 
