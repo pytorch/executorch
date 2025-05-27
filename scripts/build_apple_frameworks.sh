@@ -158,17 +158,13 @@ cmake_build() {
   local mode=$4
   echo "Building for $platform ($mode) with flag $platform_flag"
   mkdir -p "$platform" && cd "$platform" || exit 1
-
   cmake "$SOURCE_ROOT_DIR" -G Xcode \
     -DCMAKE_PREFIX_PATH=$(python -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())') \
-    -DCMAKE_INSTALL_PREFIX="$OUTPUT" \
-    -DEXECUTORCH_ENABLE_LOGGING=1 \
     -DCMAKE_BUILD_TYPE="$mode" \
-    -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
-    -DTORCHAO_BUILD_EXECUTORCH_OPS=ON \
     -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
     -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
     -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="" \
+    -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
     -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD="c++17" \
     -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY="libc++" \
     -DCMAKE_C_FLAGS="-ffile-prefix-map=$SOURCE_ROOT_DIR=/executorch -fdebug-prefix-map=$SOURCE_ROOT_DIR=/executorch" \
@@ -191,8 +187,9 @@ cmake_build() {
     ${platform_flag:+-DPLATFORM=$platform_flag} \
     ${platform_target:+-DDEPLOYMENT_TARGET=$platform_target} \
     --log-level=VERBOSE
-
-  cmake --build . --config "$mode" --target install --verbose
+  cmake --build . \
+    --config "$mode" \
+    --verbose
   cd -
 }
 
