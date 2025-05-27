@@ -118,7 +118,7 @@ class ArmPassManager(PassManager):
         self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(DecomposeSumPass())
-        self.add_pass(Conv1dUnsqueezePass(exported_program))
+        self.add_pass(Conv1dUnsqueezePass())
         self.add_pass(DecomposeSelectPass())
         self.add_pass(ConvertSqueezesToViewPass())
 
@@ -173,7 +173,7 @@ class ArmPassManager(PassManager):
         self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(DecomposeSumPass())
-        self.add_pass(Conv1dUnsqueezePass(exported_program))
+        self.add_pass(Conv1dUnsqueezePass())
         self.add_pass(DecomposeSelectPass())
         self.add_pass(ConvertSqueezesToViewPass())
 
