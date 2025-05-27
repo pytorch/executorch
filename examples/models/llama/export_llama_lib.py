@@ -805,10 +805,6 @@ def _qmode_type(value):
 
 
 def _validate_args(llm_config):
-    """
-    TODO: Combine all the backends under --backend args
-    """
-
     if llm_config.export.max_context_length < llm_config.export.max_seq_length:
         raise ValueError(
             f"max_context_length {llm_config.export.max_context_length} must be >= max_seq_len {llm_config.export.max_seq_length}. max_context_length impacts kv cache size that is used to remember history, while max_seq_length refers to user prompt length. Please use --max_context_length to specify context length."
@@ -1498,9 +1494,9 @@ def _get_source_transforms(  # noqa
     return transforms
 
 
-def get_llama_model(args):
-    _validate_args(args)
-    e_mgr = _prepare_for_llama_export(args)
+def get_llama_model(llm_config: LlmConfig):
+    _validate_args(llm_config)
+    e_mgr = _prepare_for_llama_export(llm_config)
     model = (
         e_mgr.model.eval().to(device="cuda")
         if torch.cuda.is_available()
