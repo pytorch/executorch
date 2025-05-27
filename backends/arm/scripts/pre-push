@@ -181,31 +181,6 @@ for COMMIT in ${COMMITS}; do
     op_test_files=$(echo $commit_files | grep -oE 'backends/arm/test/ops/\S+')
     if [ "$op_test_files" ]; then
 
-        # TODO: These checks can be removed when all unittests are refactored.
-        if grep -icq "SkipIfNoCorstone" $op_test_files; then
-            echo -e "${ERROR} @SkipIfNoCorstone300/320 is deprecated;"\
-                "please use XfailIfNoCorstone300/320 instead." >&2
-            FAILED=1
-        fi
-
-        if grep -icq "conftest.expectedFailureOnFVP" $op_test_files; then
-            echo -e "${ERROR} @conftest.expectedFailureOnFVP is deprecated;"\
-                "please use XfailIfCorstone300/320 instead." >&2
-            FAILED=1
-        fi
-
-        if grep -icq "unittest.TestCase" $op_test_files; then
-            echo -e "${ERROR} Use of the Unittest test framework is deprecated;"\
-            "please use Pytest instead." >&2
-            FAILED=1
-        fi
-
-        if grep -icq "on_fvp(" $op_test_files; then
-            echo -e "${ERROR} All unittests should run on FVP if relevant,"\
-            "on_fvp suffix can be excluded." >&2
-            FAILED=1
-        fi
-
         # Check that the tested op and target is parsed correctly from the test name
         test_names=$(grep -h "def test_" $op_test_files | cut -d"(" -f1 | cut -d" " -f2)
         python ./backends/arm/scripts/parse_test_names.py $test_names
