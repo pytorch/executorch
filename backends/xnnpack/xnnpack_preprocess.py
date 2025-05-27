@@ -145,9 +145,6 @@ class XnnpackBackend(BackendDetails):
 
         node_to_external_map = generate_node_to_external_map(ep, graph_module)
 
-        # Make sure all inputs are contiguous_format or NCHW or default dim order
-        assert_default_dim_order(graph_module)
-
         # TODO retrace the graph module to lift the new params may have
         # been added to the graph in passes
 
