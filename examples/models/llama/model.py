@@ -16,6 +16,7 @@ from executorch.examples.models.checkpoint import (
     get_default_model_resource_dir,
 )
 
+from executorch.examples.models.llama.config.llm_config import LlmConfig
 from executorch.examples.models.llama.llama_transformer import construct_transformer
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.rope import Rope
@@ -36,11 +37,11 @@ from ..model_base import EagerModelBase
 
 
 class Llama2Model(EagerModelBase):
-    def __init__(self, llm_config):
+    def __init__(self, llm_config: LlmConfig):
         resource_dir = get_default_model_resource_dir(__file__)
 
         self.llm_config = llm_config
-        
+
         # Use single checkpoint file.
         checkpoint_path = self.llm_config.base.checkpoint
         # Check if checkpoint_dir was provided for a sharded checkpoint.
@@ -48,7 +49,7 @@ class Llama2Model(EagerModelBase):
 
         # Params file.
         params_path = self.llm_config.base.params
-        
+
         self.use_kv_cache = self.llm_config.model.use_kv_cache
         self.use_sdpa_with_kv_cache_op = self.llm_config.model.use_sdpa_with_kv_cache
         self.generate_full_logits = self.llm_config.debug.generate_full_logits
@@ -101,7 +102,7 @@ class Llama2Model(EagerModelBase):
             checkpoint = torch.load(checkpoint_path, map_location=device, mmap=True)
 
         # If given checkpoint is fairseq, convert to llama checkpoint.
-        fairseq2_checkpoint = kwargs.get("fairseq2", False)
+        fairseq2_checkpoint = llm_config.base.fairseq2
         if fairseq2_checkpoint:
             print("Using fairseq2 checkpoint")
             checkpoint = convert_to_llama_checkpoint(checkpoint=checkpoint)
@@ -337,12 +338,15 @@ the checkpoint format to avoid generating faulty models.
         ], f"Quantization mode {self.llm_config.base.preq_mode} is not compatible with SpinQuant."
         assert self.llm_config.base.preq_group_size, "preq_group_size must be specified"
         assert self.llm_config.model.dtype_override, "dtype_override must be specified"
-        
+
         from .source_transformation.pre_quantization import (
             transform_linear_for_pre_quantization,
         )
 
-        assert self.llm_config.base.preq_group_size == model_args.quantization_args["group_size"]
+        assert (
+            self.llm_config.base.preq_group_size
+            == model_args.quantization_args["group_size"]
+        )
 
         mapping = {
             "fp32": torch.float32,
