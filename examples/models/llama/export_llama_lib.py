@@ -29,6 +29,7 @@ from executorch.devtools.backend_debug import print_delegation_info
 
 from executorch.devtools.etrecord import generate_etrecord as generate_etrecord_func
 
+from executorch.examples.models.llama.config.llm_config import LlmConfig
 from executorch.examples.models.llama.config.llm_config_utils import (
     convert_args_to_llm_config,
 )
@@ -156,7 +157,8 @@ def build_model(
     argString = f"--model {model} --checkpoint {checkpoint} --params {params} {extra_opts} --output-dir {output_dir}"
     parser = build_args_parser()
     args = parser.parse_args(shlex.split(argString))
-    return export_llama(args)
+    llm_config = convert_args_to_llm_config(args)
+    return export_llama(llm_config)
 
 
 def parse_list_of_ints(s):
@@ -578,15 +580,10 @@ def export_llama(
 ) -> str:
     if isinstance(export_options, argparse.Namespace):
         # Legacy CLI.
-        args = export_options
         llm_config = convert_args_to_llm_config(export_options)
     elif isinstance(export_options, DictConfig):
         # Hydra CLI.
         llm_config = export_options
-        # Create an args object for backward compatibility during transition
-        args = argparse.Namespace()
-        for key, value in llm_config.items():
-            setattr(args, key, value)
     else:
         raise ValueError(
             "Input to export_llama must be either of type argparse.Namespace or LlmConfig"
@@ -625,7 +622,7 @@ def export_llama(
             from executorch.util.python_profiler import CProfilerFlameGraph
 
             with CProfilerFlameGraph(llm_config.debug.profile_path):
-                builder = _export_llama(llm_config, args)
+                builder = _export_llama(llm_config)
                 assert (
                     filename := builder.get_saved_pte_filename()
                 ) is not None, "Fail to get file name from builder"
@@ -636,14 +633,14 @@ def export_llama(
             )
             return ""
     else:
-        builder = _export_llama(llm_config, args)
+        builder = _export_llama(llm_config)
         assert (
             filename := builder.get_saved_pte_filename()
         ) is not None, "Fail to get file name from builder"
         return filename
 
 
-def _prepare_for_llama_export(llm_config, args) -> LLMEdgeManager:
+def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
     """
     Helper function for export_llama. Loads the model from checkpoint and params,
     and sets up a LLMEdgeManager with initial transforms and dtype conversion.
@@ -671,7 +668,7 @@ def _prepare_for_llama_export(llm_config, args) -> LLMEdgeManager:
     dtype_override = DType[llm_config.model.dtype_override]
 
     edge_manager = _load_llama_model(
-        llm_config.base.model_class,
+        llm_config,
         checkpoint=checkpoint_path,
         checkpoint_dir=checkpoint_dir,
         params_path=params_path,
@@ -694,7 +691,6 @@ def _prepare_for_llama_export(llm_config, args) -> LLMEdgeManager:
         dtype_override=dtype_override,
         use_qnn=llm_config.backend.qnn.enabled,
         export_only=llm_config.export.export_only,
-        args=args,
     )
 
     # At this point, the model is loaded in the default fp32.
@@ -805,10 +801,6 @@ def _qmode_type(value):
 
 
 def _validate_args(llm_config):
-    """
-    TODO: Combine all the backends under --backend args
-    """
-
     if llm_config.export.max_context_length < llm_config.export.max_seq_length:
         raise ValueError(
             f"max_context_length {llm_config.export.max_context_length} must be >= max_seq_len {llm_config.export.max_seq_length}. max_context_length impacts kv cache size that is used to remember history, while max_seq_length refers to user prompt length. Please use --max_context_length to specify context length."
@@ -1057,7 +1049,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
     return builder
 
 
-def _export_llama(llm_config, args) -> LLMEdgeManager:  # noqa: C901
+def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
     _validate_args(llm_config)
 
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(
@@ -1069,7 +1061,7 @@ def _export_llama(llm_config, args) -> LLMEdgeManager:  # noqa: C901
         additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
 
     # export_to_edge
-    builder_exported = _prepare_for_llama_export(llm_config, args).export()
+    builder_exported = _prepare_for_llama_export(llm_config).export()
     builder_exported.run_canonical_optimizations()
     modelname = builder_exported.modelname
 
@@ -1177,7 +1169,7 @@ def _load_llama_model_metadata(
 
 
 def _load_llama_model(
-    modelname: str = "llama3",
+    llm_config: LlmConfig,
     *,
     checkpoint: Optional[str] = None,
     checkpoint_dir: Optional[str] = None,
@@ -1201,7 +1193,6 @@ def _load_llama_model(
     dtype_override: Optional[DType] = None,
     use_qnn: bool = False,
     export_only: bool = False,
-    args,
 ) -> "LLMEdgeManager":
     """
     A helper util that builds a Llama2 model. It returns a LLMEdgeManager that
@@ -1210,6 +1201,7 @@ def _load_llama_model(
         An instance of LLMEdgeManager which contains the eager mode model.
     """
 
+    modelname = llm_config.base.model_class
     if modelname in EXECUTORCH_DEFINED_MODELS:
         module_name = "llama"
         model_class_name = "Llama2Model"  # TODO: Change to "LlamaModel" in examples/models/llama/model.py.
@@ -1222,26 +1214,11 @@ def _load_llama_model(
     else:
         raise ValueError(f"{modelname} is not a valid Llama model.")
 
-    torch_dtype = dtype_override.to_torch_dtype() if dtype_override else None
-
     model, example_inputs, example_kwarg_inputs, dynamic_shapes = (
         EagerModelFactory.create_model(
             module_name,
             model_class_name,
-            checkpoint=checkpoint,
-            checkpoint_dir=checkpoint_dir,
-            params=params_path,
-            use_kv_cache=use_kv_cache,
-            use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
-            generate_full_logits=generate_full_logits,
-            fairseq2=weight_type == WeightType.FAIRSEQ2,
-            max_seq_len=max_seq_len,
-            max_context_len=max_context_len,
-            enable_dynamic_shape=enable_dynamic_shape,
-            input_prune_map_path=input_prune_map_path,
-            output_prune_map_path=output_prune_map_path,
-            dtype=torch_dtype,
-            args=args,
+            llm_config=llm_config,
         )
     )
 
@@ -1498,9 +1475,9 @@ def _get_source_transforms(  # noqa
     return transforms
 
 
-def get_llama_model(args):
-    _validate_args(args)
-    e_mgr = _prepare_for_llama_export(args)
+def get_llama_model(llm_config: LlmConfig):
+    _validate_args(llm_config)
+    e_mgr = _prepare_for_llama_export(llm_config)
     model = (
         e_mgr.model.eval().to(device="cuda")
         if torch.cuda.is_available()
