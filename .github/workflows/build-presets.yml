@@ -71,6 +71,7 @@ jobs:
         # Build Arm Zephyr Preset
         cmake --preset ${{ matrix.preset }}
         cmake --build cmake-out -j$(( $(nproc) - 1 ))
+
   linux:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     strategy:
@@ -117,26 +118,9 @@ jobs:
       timeout: 90
       script: |
         set -eux
-        conda init powershell
-        powershell -Command "& {
-          Set-PSDebug -Trace 1
-          \$ErrorActionPreference = 'Stop'
-          \$PSNativeCommandUseErrorActionPreference = \$true
+        conda create --yes --quiet -n et python=3.12
+        conda activate et
 
-          conda create --yes --quiet -n et python=3.12
-          conda activate et
-          python install_requirements.py
-
-          cmake --preset ${{ matrix.preset }} -T ClangCL
-          if (\$LASTEXITCODE -ne 0) {
-            Write-Host "CMake configuration was unsuccessful. Exit code: \$LASTEXITCODE."
-            exit \$LASTEXITCODE
-          }
-
-          \$numCores = [System.Environment]::GetEnvironmentVariable('NUMBER_OF_PROCESSORS') - 1
-          cmake --build cmake-out -j \$numCores
-          if (\$LASTEXITCODE -ne 0) {
-            Write-Host "CMake build was unsuccessful. Exit code: \$LASTEXITCODE."
-            exit \$LASTEXITCODE
-          }
-        }"
+        ./install_requirements.sh
+        cmake -G "Visual Studio 17 2022" -T ClangCL --preset ${{ matrix.preset }}
+        cmake --build cmake-out -j$(( $(nproc) - 1 ))

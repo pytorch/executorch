@@ -74,6 +74,12 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 announce_configured_options(CMAKE_BUILD_TYPE)
 
+if(WIN32)
+  if(NOT "${CMAKE_GENERATOR_TOOLSET}" STREQUAL "" AND NOT CMAKE_GENERATOR_TOOLSET MATCHES "Clang")
+    message(FATAL_ERROR "Windows requires clang. Pass '-T ClangCL' in the cmake build command. Current CMAKE_GENERATOR_TOOLSET: ${CMAKE_GENERATOR_TOOLSET}")
+  endif()
+endif()
+
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
 endif()
