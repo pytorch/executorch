@@ -211,6 +211,7 @@ python_library(
     typing = True,
     deps = [
         ":pass_utils",
+        ":utils",
         "//executorch/backends/cadence/aot:pass_utils",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
@@ -387,6 +388,7 @@ python_unittest(
         "//caffe2:torch",
         "//executorch/backends/cadence/aot:compiler",
         "//executorch/backends/cadence/aot:fuse_ops",
+        "//executorch/backends/cadence/aot:graph_builder",
         "//executorch/backends/cadence/aot:ops_registrations",
         "//executorch/backends/cadence/aot:pass_utils",
         "//executorch/backends/cadence/aot:reorder_ops",

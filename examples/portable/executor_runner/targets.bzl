@@ -84,8 +84,8 @@ def define_common_targets():
             "//executorch/kernels/optimized:optimized_oplist",
             "//executorch/kernels/portable:executorch_aten_ops",
             "//executorch/kernels/portable:executorch_custom_ops",
-            "//executorch/kernels/portable:operators",
         ],
+        kernel_deps = ["//executorch/kernels/portable:operators",],
         custom_ops_aten_kernel_deps = [
             "//executorch/kernels/portable:operators_aten",
         ],

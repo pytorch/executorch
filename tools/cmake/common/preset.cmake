@@ -39,7 +39,7 @@ function(print_configured_options)
     endif()
   endforeach()
 
-  message(STATUS "--- Configurated Options ---\n")
+  message(STATUS "--- Configured Options ---\n")
   foreach(_option IN LISTS _options)
     string(LENGTH "${_option}" _option_length)
     math(EXPR num_spaces "${_longest_name_length} - ${_option_length}")
@@ -54,7 +54,7 @@ function(print_configured_options)
       message(STATUS "${_option}${padding} x (unset)")
     endif()
   endforeach()
-  message(STATUS "---------------------------")
+  message(STATUS "--------------------------")
 endfunction()
 
 
@@ -89,11 +89,9 @@ endmacro()
 # Set an overridable option.
 macro(set_overridable_option NAME VALUE)
   # If the user has explitily set the option, do not override it.
-  if(DEFINED ${NAME})
-    return()
+  if(NOT DEFINED ${NAME})
+    set(${NAME} ${VALUE} CACHE STRING "")
   endif()
-
-  set(${NAME} ${VALUE} CACHE STRING "")
 endmacro()
 
 # Detemine the build preset and load it.

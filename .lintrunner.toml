@@ -378,3 +378,47 @@ command = [
     '--',
     '@{{PATHSFILE}}',
 ]
+
+[[linter]]
+code = "TORCH_AO_IMPORT"
+include_patterns = ["**/*.py"]
+exclude_patterns = [
+    "third-party/**",
+    # TODO: remove exceptions as we migrate
+    # backends
+    "backends/arm/quantizer/**",
+    "backends/arm/test/ops/**",
+    "backends/vulkan/quantizer/**",
+    "backends/vulkan/test/**",
+    "backends/qualcomm/quantizer/**",
+    "examples/qualcomm/**",
+    "backends/xnnpack/quantizer/**",
+    "backends/xnnpack/test/**",
+    "exir/tests/test_passes.py",
+    "extension/llm/export/builder.py",
+    "extension/llm/export/quantizer_lib.py",
+    "exir/tests/test_memory_planning.py",
+    "backends/transforms/duplicate_dynamic_quant_chain.py",
+    "exir/backend/test/demos/test_xnnpack_qnnpack.py",
+]
+
+command = [
+  "python3",
+  "-m",
+  "lintrunner_adapters",
+  "run",
+  "grep_linter",
+  "--pattern=\\bfrom torch\\.ao\\.quantization\\.(?:quantizer|observer|quantize_pt2e|pt2e)(?:\\.[A-Za-z0-9_]+)*\\b",
+  "--linter-name=TorchAOImport",
+  "--error-name=Prohibited torch.ao.quantization import",
+  """--error-description=\
+  Imports from torch.ao.quantization are not allowed. \
+  Please import from torchao.quantization.pt2e instead.\n \
+  * torchao.quantization.pt2e (includes all the utils, including observers, fake quants etc.) \n \
+  * torchao.quantization.pt2e.quantizer (quantizer related objects and utils) \n \
+  * torchao.quantization.pt2e.quantize_pt2e (prepare_pt2e, prepare_qat_pt2e, convert_pt2e) \n\n \
+  If you need something from torch.ao.quantization, you can add your file to an exclude_patterns for TORCH_AO_IMPORT in .lintrunner.toml. \
+  """,
+  "--",
+  "@{{PATHSFILE}}",
+]
