@@ -1226,7 +1226,7 @@ def _load_llama_model(
         EagerModelFactory.create_model(
             module_name,
             model_class_name,
-            llm_config=llm_config,
+            model_args={"llm_config": llm_config},
         )
     )
 
