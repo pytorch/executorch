@@ -74,7 +74,6 @@ def test_max_pool2d_tosa_BI(test_data: torch.Tensor):
         (test_data,),
         aten_op,
         exir_op,
-        symmetric_io_quantization=True,
     )
     pipeline.run()
 
@@ -88,7 +87,6 @@ def test_max_pool2d_u55_BI(test_data: torch.Tensor):
         (test_data,),
         aten_op,
         exir_ops=[],
-        symmetric_io_quantization=True,
         run_on_fvp=True,
     ).run()
 
@@ -102,7 +100,6 @@ def test_max_pool2d_u85_BI(test_data: torch.Tensor):
         (test_data,),
         aten_op,
         exir_ops=[],
-        symmetric_io_quantization=True,
         run_on_fvp=True,
     ).run()
 
@@ -127,7 +124,6 @@ def test_max_pool2d_tosa_BI_mult_batches(test_data: torch.Tensor):
         (test_data,),
         aten_op,
         exir_op,
-        symmetric_io_quantization=True,
     )
     pipeline.run()
 
@@ -145,7 +141,6 @@ def test_max_pool2d_u55_BI_mult_batches(test_data: torch.Tensor):
         aten_op,
         exir_ops=[],
         run_on_fvp=True,
-        symmetric_io_quantization=True,
         use_to_edge_transform_and_lower=True,
     ).run()
 
@@ -160,7 +155,6 @@ def test_max_pool2d_u85_BI_mult_batches(test_data: torch.Tensor):
         aten_op,
         exir_op,
         run_on_fvp=True,
-        symmetric_io_quantization=True,
         use_to_edge_transform_and_lower=True,
     ).run()
 
@@ -182,7 +176,6 @@ def test_max_pool2d_u55_BI_failure_set(test_data: Tuple):
         aten_op,
         exir_op,
         run_on_fvp=False,
-        symmetric_io_quantization=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.pop_stage("check_count.exir")
