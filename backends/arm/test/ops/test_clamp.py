@@ -77,7 +77,6 @@ def test_clamp_tosa_BI(test_data):
         (input_tensor,),
         aten_op,
         exir_op,
-        symmetric_io_quantization=True,
     )
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
 
@@ -97,7 +96,6 @@ def test_clamp_u55_BI(test_data):
         aten_op,
         exir_op,
         run_on_fvp=True,
-        symmetric_io_quantization=True,
     )
 
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
@@ -117,7 +115,6 @@ def test_clamp_u85_BI(test_data):
         aten_op,
         exir_op,
         run_on_fvp=True,
-        symmetric_io_quantization=True,
     )
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
 

@@ -44,13 +44,13 @@ def get_vec_deps():
                 "fbsource//third-party/sleef:sleef",
             ] if not runtime.is_oss else [],
             "ovr_config//os:iphoneos": [
-                "fbsource//third-party/sleef:sleef_arm",
+                "fbsource//third-party/sleef:sleef",
             ] if not runtime.is_oss else [],
             "ovr_config//os:macos-arm64": [
-                "fbsource//third-party/sleef:sleef_arm",
+                "fbsource//third-party/sleef:sleef",
             ] if not runtime.is_oss else [],
             "ovr_config//os:android-arm64": [
-                "fbsource//third-party/sleef:sleef_arm",
+                "fbsource//third-party/sleef:sleef",
             ] if not runtime.is_oss else [],
             "DEFAULT": [],
         })
@@ -104,7 +104,7 @@ def define_libs():
                 (
                     DEVSERVER_PLATFORM_REGEX,
                     [
-                        "fbsource//third-party/sleef:sleef_arm",
+                        "fbsource//third-party/sleef:sleef",
                     ],
                 ),
             ],
@@ -113,7 +113,7 @@ def define_libs():
             (
                 "^android-arm64.*$",
                 [
-                    "fbsource//third-party/sleef:sleef_arm",
+                    "fbsource//third-party/sleef:sleef",
                 ],
             ),
         ],

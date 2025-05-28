@@ -233,6 +233,26 @@ def annotate_lt(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.masked_fill.Tensor])
+def annotate_masked_fill(node: Node, quantization_config: QuantizationConfig) -> None:
+    if _is_annotated([node]):
+        return
+
+    input_qspec_map = {}
+    for input_node in node.args:
+        assert isinstance(input_node, Node)
+        if _is_float_tensor(input_node):
+            input_qspec_map[input_node] = quantization_config.input_activation
+
+    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        input_qspec_map=input_qspec_map,
+        output_qspec=(
+            quantization_config.output_activation if _is_float_tensor(node) else None
+        ),
+        _annotated=True,
+    )
+
+
 @register_annotator([torch.ops.aten.mul, torch.ops.aten.mul.Tensor])
 def annotate_mul(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
@@ -462,8 +482,13 @@ def annotate_neg(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.adaptive_avg_pool2d.default])
-def annotate_adaptive_avgpool2d(
+@register_annotator(
+    [
+        torch.ops.aten.adaptive_avg_pool1d.default,
+        torch.ops.aten.adaptive_avg_pool2d.default,
+    ]
+)
+def annotate_adaptive_avgpool(
     node: Node, quantization_config: QuantizationConfig
 ) -> None:
     annotate_single_in_single_out(node, quantization_config)
@@ -750,7 +775,7 @@ def annotate_elu(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.embedding.default])
+@register_annotator([torch.ops.aten.embedding.default, torch.ops.aten.gather.default])
 def annotate_embedding(node: Node, quantization_config: QuantizationConfig) -> None:
     weight = node.args[0]
 

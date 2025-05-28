@@ -18,6 +18,7 @@ from typing import Any, Optional, Tuple
 
 import torch
 from torch.nn.modules import Module
+from torch.utils._pytree import tree_flatten
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms  # type: ignore[import-untyped]
 
@@ -26,20 +27,6 @@ from torchvision import datasets, transforms  # type: ignore[import-untyped]
 logger = logging.getLogger(__name__)
 # Explicitly set logging level: MLETORCH-893
 logger.setLevel(logging.INFO)
-
-
-def flatten_args(args) -> tuple | list:
-    flattened_args: list = []
-    if isinstance(args, torch.Tensor):
-        return [args]
-
-    for arg in args:
-        if isinstance(arg, (tuple, list)):
-            flattened_args.extend(arg)
-        else:
-            flattened_args.append(arg)
-
-    return tuple(flattened_args)
 
 
 class GenericModelEvaluator:
@@ -72,8 +59,8 @@ class GenericModelEvaluator:
         - Maximum percentage error
         - Mean absolute error
         """
-        fp32_outputs = flatten_args(self.fp32_model(*self.example_input))
-        int8_outputs = flatten_args(self.int8_model(*self.example_input))
+        fp32_outputs, _ = tree_flatten(self.fp32_model(*self.example_input))
+        int8_outputs, _ = tree_flatten(self.int8_model(*self.example_input))
 
         model_error_dict = defaultdict(list)
 
