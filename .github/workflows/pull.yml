@@ -24,7 +24,7 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-gcc9
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -60,13 +60,13 @@ jobs:
           - runner: linux.arm64.2xlarge
             docker-image: executorch-ubuntu-22.04-clang12
           # TODO: Need to figure out why buck2 doesnt work on Graviton instances.
-          - runner: linux.arm64.2xlarge 
+          - runner: linux.arm64.2xlarge
             build-tool: buck2
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
       docker-image: ${{ matrix.docker-image }}
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -106,7 +106,7 @@ jobs:
           - model: emformer_join
             backend: xnnpack-quantization-delegation
             runner: linux.4xlarge.memory
-          - model: phi-4-mini
+          - model: phi_4_mini
             backend: portable
             runner: linux.4xlarge.memory
           - model: llama3_2_vision_encoder
@@ -119,7 +119,7 @@ jobs:
     with:
       runner: ${{ matrix.runner }}
       docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -165,7 +165,7 @@ jobs:
     with:
       runner: ${{ matrix.runner }}
       docker-image: ${{ matrix.docker-image }}
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
       script: |
@@ -197,7 +197,7 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -222,7 +222,7 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -246,7 +246,7 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -270,7 +270,7 @@ jobs:
     with:
       runner: linux.24xlarge
       docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -290,6 +290,36 @@ jobs:
         # run e2e (export, tokenizer and runner)
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llava.sh
 
+  test-moshi-linux:
+    name: test-moshi-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+
+        # install Mimi requirements
+        bash examples/models/moshi/mimi/install_requirements.sh
+
+        # reinstall executorch
+        bash ./install_executorch.sh
+
+        # run python unittest
+        python -m unittest examples.models.moshi.mimi.test_mimi
+
   test-quantized-aot-lib-linux:
     name: test-quantized-aot-lib-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -301,7 +331,7 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -312,35 +342,6 @@ jobs:
         BUILD_TOOL="cmake"
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
         PYTHON_EXECUTABLE=python bash examples/xnnpack/quantization/test_quantize.sh "${BUILD_TOOL}" mv2
-
-  test-pybind-build-linux:
-    name: test-pybind-build-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-    with:
-      runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'true'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        # build module for executorch.extension.pybindings.portable_lib
-        BUILD_TOOL="cmake"
-        PYTHON_EXECUTABLE=python \
-        EXECUTORCH_BUILD_XNNPACK=ON \
-        EXECUTORCH_BUILD_PYBIND=ON \
-        bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
-
-        # see if we can import the module successfully
-        python -c "from executorch.extension.pybindings import portable_lib; print('success!')"
 
   test-binary-size-linux-gcc:
     name: test-binary-size-linux-gcc
@@ -353,7 +354,7 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-gcc9
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -370,7 +371,7 @@ jobs:
         size=${arr[4]}
         # threshold=48120 on devserver with gcc11.4
         # todo(lfq): update once binary size is below 50kb.
-        threshold="51504"
+        threshold="51408"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
         else
@@ -389,7 +390,7 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -405,9 +406,7 @@ jobs:
         output=$(ls -la cmake-out/test/size_test)
         arr=($output)
         size=${arr[4]}
-        # threshold=48120 on devserver with gcc11.4
-        # todo(lfq): update once binary size is below 50kb.
-        threshold="51784"
+        threshold="47560"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
         else
@@ -420,7 +419,6 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    needs: test-llama-runner-linux
 
   unittest:
     uses: ./.github/workflows/_unittest.yml
@@ -453,37 +451,38 @@ jobs:
       build-tool: buck2
       docker-image: executorch-ubuntu-22.04-clang12
 
-  unittest-arm:
+  unittest-arm-backend-with-no-fvp:
+    name: unittest-arm-backend-with-no-fvp
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
+    strategy:
+      matrix:
+        include:
+          - test_arm_baremetal: test_pytest_ops
+          - test_arm_baremetal: test_pytest_models
+      fail-fast: false
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-arm-sdk
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
-        set -eux
-
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        BUILD_TOOL="cmake"
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
 
-        # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        PYTHON_EXECUTABLE=python \
-        EXECUTORCH_BUILD_PYBIND=ON \
-        EXECUTORCH_BUILD_ARM_BAREMETAL=ON \
-        .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
-
-        # Install Arm dependencies
         .ci/scripts/setup-arm-baremetal-tools.sh
 
-        # Run pytest without simulator
-        backends/arm/test/test_arm_baremetal.sh test_pytest
+        ARM_TEST=${{ matrix.test_arm_baremetal }}
+
+        # Test test_arm_baremetal.sh with test
+        backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
 
   test-llama-runner-qnn-linux:
     name: test-llama-runner-qnn-linux
@@ -500,7 +499,7 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-qnn-sdk
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
       script: |
@@ -535,7 +534,7 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-qnn-sdk
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 180
       script: |
@@ -545,7 +544,6 @@ jobs:
 
         BUILD_TOOL="cmake"
 
-        ./install_requirements.sh --use-pt-pinned-commit
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
 
@@ -569,7 +567,7 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-qnn-sdk
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 180
       script: |
@@ -591,7 +589,7 @@ jobs:
     with:
       runner: linux.24xlarge
       docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -618,7 +616,7 @@ jobs:
     with:
       runner: linux.24xlarge
       docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -645,7 +643,7 @@ jobs:
     with:
       runner: linux.24xlarge
       docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -672,7 +670,7 @@ jobs:
     with:
       runner: linux.24xlarge
       docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -699,7 +697,7 @@ jobs:
     with:
       runner: linux.24xlarge
       docker-image: executorch-ubuntu-22.04-mediatek-sdk
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
@@ -708,3 +706,25 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         # placeholder for mediatek to add more tests
+
+  test-openvino-linux:
+    name: test-openvino-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-gcc9
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-openvino.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_openvino.sh

@@ -6,6 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
+import os
 import platform
 import re
 import subprocess
@@ -67,7 +68,10 @@ TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
 # NOTE: If a newly-fetched version of the executorch repo changes the value of
 # NIGHTLY_VERSION, you should re-run this script to install the necessary
 # package versions.
-NIGHTLY_VERSION = "dev20250311"
+#
+# NOTE: If you're changing, make the corresponding change in .ci/docker/ci_commit_pins/pytorch.txt
+# by picking the hash from the same date in https://hud.pytorch.org/hud/pytorch/pytorch/nightly/
+NIGHTLY_VERSION = "dev20250422"
 
 
 def install_requirements(use_pytorch_nightly):
@@ -76,7 +80,7 @@ def install_requirements(use_pytorch_nightly):
         # Setting use_pytorch_nightly to false to test the pinned PyTorch commit. Note
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
-        f"torch==2.7.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torch",
+        f"torch==2.8.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torch",
         (
             f"torchvision==0.22.0.{NIGHTLY_VERSION}"
             if use_pytorch_nightly
@@ -113,10 +117,13 @@ def install_requirements(use_pytorch_nightly):
 
     LOCAL_REQUIREMENTS = [
         "third-party/ao",  # We need the latest kernels for fast iteration, so not relying on pypi.
+        "extension/llm/tokenizers",  # TODO(larryliu0820): Setup a pypi package for this.
     ]
 
     # Install packages directly from local copy instead of pypi.
     # This is usually not recommended.
+    new_env = os.environ.copy()
+    new_env["USE_CPP"] = "1"  # install torchao kernels
     subprocess.run(
         [
             sys.executable,
@@ -127,6 +134,7 @@ def install_requirements(use_pytorch_nightly):
             "--no-build-isolation",
             *LOCAL_REQUIREMENTS,
         ],
+        env=new_env,
         check=True,
     )
 
@@ -143,8 +151,6 @@ def main(args):
 
 
 if __name__ == "__main__":
-    import os
-
     # Before doing anything, cd to the directory containing this script.
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     if not python_is_compatible():

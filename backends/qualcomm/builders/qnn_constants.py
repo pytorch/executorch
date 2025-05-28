@@ -15,6 +15,13 @@ QNN_OP_PACKAGE_NAME_QTI_AISW = "qti.aisw"
 
 
 @dataclass(init=False, frozen=True)
+class OpArgmin:
+    op_name: str = "Argmin"
+    param_axis: str = "axis"
+    param_keep_dims: str = "keep_dims"
+
+
+@dataclass(init=False, frozen=True)
 class OpBatchnorm:
     op_name: str = "Batchnorm"
 
@@ -48,6 +55,14 @@ class OpConv2d:
 @dataclass(init=False, frozen=True)
 class OpConvert:
     op_name: str = "Convert"
+
+
+@dataclass(init=False, frozen=True)
+class OpCumulativeSum:
+    op_name = "CumulativeSum"
+    param_axis = "axis"
+    param_exclusive = "exclusive"
+    param_reverse = "reverse"
 
 
 @dataclass(init=False, frozen=True)
@@ -86,6 +101,11 @@ class OpElementWiseAdd:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseAnd:
+    op_name: str = "ElementWiseAnd"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseCeil:
     op_name = "ElementWiseCeil"
 
@@ -98,6 +118,11 @@ class OpElementWiseCos:
 @dataclass(init=False, frozen=True)
 class OpElementWiseDivide:
     op_name: str = "ElementWiseDivide"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseExp:
+    op_name: str = "ElementWiseExp"
 
 
 @dataclass(init=False, frozen=True)
@@ -194,8 +219,19 @@ class OpElementWiseSelect:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseSquareRoot:
+    op_name = "ElementWiseSquareRoot"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseSubtract:
     op_name = "ElementWiseSubtract"
+
+
+@dataclass(init=False, frozen=True)
+class OpElu:
+    op_name: str = "Elu"
+    param_alpha: str = "alpha"
 
 
 @dataclass(init=False, frozen=True)
@@ -213,6 +249,12 @@ class OpFullyConnected:
 @dataclass(init=False, frozen=True)
 class OpGather:
     op_name: str = "Gather"
+    param_axis: str = "axis"
+
+
+@dataclass(init=False, frozen=True)
+class OpGatherElements:
+    op_name: str = "GatherElements"
     param_axis: str = "axis"
 
 
@@ -329,16 +371,16 @@ class OpQuantize:
 
 
 @dataclass(init=False, frozen=True)
-class OpReduceMean:
-    op_name: str = "ReduceMean"
+class OpReduceMax:
+    op_name: str = "ReduceMax"
     param_axes: str = "axes"
     param_keep_dims: str = "keep_dims"
 
 
 @dataclass(init=False, frozen=True)
-class OpArgmin:
-    op_name: str = "Argmin"
-    param_axis: str = "axis"
+class OpReduceMean:
+    op_name: str = "ReduceMean"
+    param_axes: str = "axes"
     param_keep_dims: str = "keep_dims"
 
 
@@ -424,11 +466,6 @@ class OpSplit:
 
 
 @dataclass(init=False, frozen=True)
-class OpSqrt:
-    op_name: str = "ElementWiseSquareRoot"
-
-
-@dataclass(init=False, frozen=True)
 class OpSqueeze:
     op_name: str = "Squeeze"
 
@@ -474,3 +511,9 @@ class OpTransposeConv2d:
     param_pad_amount: str = "pad_amount"
     param_group: str = "group"
     param_output_padding: str = "output_padding"
+
+
+@dataclass(init=False, frozen=True)
+class OpUnpack:
+    op_name: str = "UnPack"
+    param_axis: str = "axis"

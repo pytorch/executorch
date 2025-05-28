@@ -17,7 +17,7 @@ namespace native {
 Tensor& acosh_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   static constexpr const char op_name[] = "acosh.out";
   return internal::unary_ufunc_realhbbf16_to_floathbf16<op_name>(
-      [](auto x) { return std::acosh(x); }, ctx, in, out);
+      [](auto x) { return executorch::math::acosh(x); }, ctx, in, out);
 }
 
 } // namespace native

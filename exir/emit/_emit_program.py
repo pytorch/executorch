@@ -118,6 +118,7 @@ def emit_program(
     methods: Union[ExportedProgram, Dict[str, ExportedProgram]],
     emit_stacktrace: bool = False,
     prim_getters: Optional[Dict[str, Any]] = None,
+    emit_mutable_buffer_names: bool = False,
 ) -> EmitterOutput:
     """
     Given a exported program, it returns the program in the format
@@ -163,6 +164,7 @@ def emit_program(
             operator_cache={},
             delegate_cache={},
             emit_stacktrace=emit_stacktrace,
+            emit_mutable_buffer_names=emit_mutable_buffer_names,
         )
 
         gm = _remove_non_user_outputs(exported_program)

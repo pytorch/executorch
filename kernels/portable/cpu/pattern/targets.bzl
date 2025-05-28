@@ -11,7 +11,7 @@ def define_common_targets():
     # build, where the portable ops are built from source and linked with :all_deps
     runtime.cxx_library(
         name = "all_deps",
-        deps = [
+        exported_deps = [
             "//executorch/kernels/portable/cpu/pattern:pattern",
             "//executorch/kernels/portable/cpu/pattern:bitwise_op",
             "//executorch/kernels/portable/cpu/pattern:comparison_op",
@@ -49,18 +49,14 @@ def define_common_targets():
 
     runtime.cxx_library(
         name = "pattern",
-        srcs = [
-            "pattern.cpp",
-        ],
+        srcs = ["pattern.cpp"],
         exported_headers = [
             "pattern.h",
         ],
         compiler_flags = ["-Wno-missing-prototypes"],
         exported_deps = [
-            "//executorch/kernels/portable/cpu/util:elementwise_util",
-        ],
-        deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/runtime/kernel:kernel_includes",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],

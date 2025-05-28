@@ -372,7 +372,6 @@ ATEN_OPS = (
         name = "op_bmm",
         deps = [
             "//executorch/kernels/portable/cpu/util:matmul_ops_util",
-            ":vec_ops",
         ],
     ),
     op_target(
@@ -483,6 +482,13 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_elu",
+        deps = [
+            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+        ],
+    ),
+    op_target(
         name = "op_embedding",
         deps = [
             "//executorch/kernels/portable/cpu/util:kernel_ops_util",
@@ -527,6 +533,7 @@ ATEN_OPS = (
         name = "op_expm1",
         deps = [
             "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -875,6 +882,12 @@ ATEN_OPS = (
         deps = [
             ":vec_ops",
             "//executorch/kernels/portable/cpu/util:normalization_ops_util",
+        ],
+    ),
+    op_target(
+        name = "op_native_dropout",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -1263,6 +1276,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_view_as_real_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_view_copy",
         deps = [
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
@@ -1315,7 +1334,3 @@ CUSTOM_OPS = (
 def portable_source_list():
     """All the source file names from //executorch/kernels/portable/cpu/"""
     return [op["name"] + ".cpp" for op in ATEN_OPS + CUSTOM_OPS]
-
-def portable_header_list():
-    """All the header file names from //executorch/kernels/portable/cpu/"""
-    return ["selective_build.h", "scalar_utils.h", "math_constants.h", "vec_ops.h"]

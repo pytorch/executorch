@@ -329,6 +329,11 @@
     - arg_meta: null
       kernel_name: torch::executor::eq_tensor_out
 
+- op: elu.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::elu_out
+
 - op: erf.out
   kernels:
     - arg_meta: null
@@ -446,6 +451,11 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::index_put_out
+
+- op: index_put_
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::index_put_
 
 - op: index_select.out
   kernels:
@@ -621,6 +631,12 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::narrow_copy_out
+
+- op: native_dropout.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::native_dropout_out
+  tags: nondeterministic_seeded
 
 - op: native_group_norm.out
   kernels:
@@ -951,6 +967,11 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::var_out
+
+- op: view_as_real_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::view_as_real_copy_out
 
 - op: view_copy.out
   kernels:

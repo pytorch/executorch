@@ -12,7 +12,19 @@ def define_arm_tests():
     test_files.remove("passes/test_ioquantization_pass.py")
 
     # Operators
-    test_files += native.glob(["ops/test_linear.py"])
+    test_files += [
+        "ops/test_avg_pool2d.py",
+        "ops/test_linear.py", 
+        "ops/test_slice.py",
+        "ops/test_sigmoid.py",
+        "ops/test_tanh.py",
+        "ops/test_cos.py",
+    ]
+
+    # Quantization
+    test_files += [
+        "quantizer/test_generic_annotater.py",
+    ]
 
     TESTS = {}
 

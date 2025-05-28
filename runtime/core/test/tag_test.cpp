@@ -37,6 +37,20 @@ TEST(TagToString, TagValues) {
   EXPECT_STREQ("Bool", name.data());
 }
 
+TEST(TagToString, PrintTag) {
+  const char* name = tag_to_string(Tag::Tensor);
+  EXPECT_STREQ("Tensor", name);
+
+  name = tag_to_string(Tag::Int);
+  EXPECT_STREQ("Int", name);
+
+  name = tag_to_string(Tag::Double);
+  EXPECT_STREQ("Double", name);
+
+  name = tag_to_string(Tag::Bool);
+  EXPECT_STREQ("Bool", name);
+}
+
 TEST(TagToString, TagNameBufferSize) {
   // Validate that kTagNameBufferSize is large enough to hold the all tag
   // strings without truncation.

@@ -15,6 +15,9 @@ from collections import Counter, OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
 
 import torch
+from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
+    DuplicateDynamicQuantChainPass,
+)
 from executorch.backends.xnnpack._passes import XNNPACKPassManager
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
@@ -52,11 +55,15 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
 )
 from executorch.exir.program._program import _transform
 from torch._export.pass_base import PassType
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer.quantizer import Quantizer
 from torch.export import export, ExportedProgram
 from torch.testing import FileCheck
 from torch.utils._pytree import tree_flatten
+from torchao.quantization.pt2e.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
+)
 
 
 class Stage(ABC):
@@ -147,10 +154,11 @@ class Quantize(Stage):
         quantization_config: Optional[QuantizationConfig] = None,
         calibrate: bool = True,
         calibration_samples: Optional[Sequence[Any]] = None,
+        is_qat: Optional[bool] = False,
     ):
         self.quantizer = quantizer or XNNPACKQuantizer()
         self.quantization_config = (
-            quantization_config or get_symmetric_quantization_config()
+            quantization_config or get_symmetric_quantization_config(is_qat=is_qat)
         )
         self.calibrate = calibrate
         self.calibration_samples = calibration_samples
@@ -158,15 +166,22 @@ class Quantize(Stage):
         self.quantizer.set_global(self.quantization_config)
 
         self.converted_graph = None
+        self.is_qat = is_qat
 
     def run(
         self, artifact: torch.nn.Module, inputs: Optional[Tuple[torch.Tensor]]
     ) -> None:
         assert inputs is not None
-        captured_graph = export_for_training(artifact, inputs).module()
+        if self.is_qat:
+            artifact.train()
+        captured_graph = export_for_training(artifact, inputs, strict=True).module()
 
         assert isinstance(captured_graph, torch.fx.GraphModule)
-        prepared = prepare_pt2e(captured_graph, self.quantizer)
+
+        if self.is_qat:
+            prepared = prepare_qat_pt2e(captured_graph, self.quantizer)
+        else:
+            prepared = prepare_pt2e(captured_graph, self.quantizer)
 
         if self.calibrate:
             # Calibrate prepared model to provide data to quantization observers.
@@ -177,6 +192,8 @@ class Quantize(Stage):
                 prepared(*inputs)
 
         converted = convert_pt2e(prepared)
+        DuplicateDynamicQuantChainPass()(converted)
+
         self.converted_graph = converted
 
     @property
@@ -306,9 +323,8 @@ class ToEdgeTransformAndLower(Stage):
         self.edge_dialect_program = None
 
     def run(self, artifact: ExportedProgram, inputs=None) -> None:
-        artifact_to_run = copy.deepcopy(artifact)
         self.edge_dialect_program = to_edge_transform_and_lower(
-            artifact_to_run,
+            artifact,
             compile_config=self.edge_compile_conf,
             partitioner=self.partitioners,
         )

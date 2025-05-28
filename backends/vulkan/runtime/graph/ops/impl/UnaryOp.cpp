@@ -61,7 +61,11 @@ void add_unary_op_node(
        {in, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       ubos,
+      // Push Constants
+      {},
       // Specialization Constants
+      {},
+      // Resize Args
       {},
       // Resizing Logic
       resize_unary_op_node));
@@ -149,6 +153,7 @@ DEFINE_HARDSHRINK_FN(hardshrink);
 DEFINE_ACTIVATION_FN(hardswish);
 DEFINE_ACTIVATION_FN(hardsigmoid);
 DEFINE_LEAKY_RELU_FN(leaky_relu);
+DEFINE_ACTIVATION_FN(round);
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.abs.default, abs);
@@ -168,6 +173,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.hardswish.default, hardswish);
   VK_REGISTER_OP(aten.hardsigmoid.default, hardsigmoid);
   VK_REGISTER_OP(aten.leaky_relu.default, leaky_relu);
+  VK_REGISTER_OP(aten.round.default, round);
 }
 
 } // namespace vkcompute

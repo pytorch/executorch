@@ -14,10 +14,11 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Type, U
 
 import executorch.backends.xnnpack.test.tester.tester as tester
 
-import serializer.tosa_serializer as ts  # type: ignore[import-untyped]
-
 import torch.fx
 import torch.utils._pytree as pytree
+
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore[import-untyped]
+from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 
 from executorch.backends.arm.arm_backend import (
     get_intermediate_path,
@@ -26,7 +27,7 @@ from executorch.backends.arm.arm_backend import (
     is_tosa,
 )
 from executorch.backends.arm.ethosu_partitioner import EthosUPartitioner
-from executorch.backends.arm.quantizer.arm_quantizer import (
+from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
     TOSAQuantizer,
@@ -47,6 +48,7 @@ from executorch.backends.arm.test.tester.analyze_output_utils import (
 )
 from executorch.backends.arm.tosa_mapping import extract_tensor_meta
 from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
+from executorch.backends.arm.tosa_specification import TosaSpecification
 
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.devtools.backend_debug import get_delegation_info
@@ -60,10 +62,18 @@ from executorch.exir import (
 )
 from executorch.exir.backend.backend_api import validation_disabled
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.backend.operator_support import (
+    DontPartition,
+    DontPartitionModule,
+    DontPartitionName,
+)
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.pass_base import ExportPass
-from executorch.exir.program._program import _update_exported_program_graph_module
+from executorch.exir.program._program import (
+    _copy_module,
+    _update_exported_program_graph_module,
+)
 
 from tabulate import tabulate
 
@@ -204,6 +214,7 @@ class RunPasses(tester.RunPasses):
         """Passes are run in the order they are passed: first pass_list, second pass_functions,
         and lastly passes_with_exported_program."""
         self.pass_with_exported_program = passes_with_exported_program
+
         super().__init__(pass_list, pass_functions)
 
     def run(
@@ -325,14 +336,23 @@ class ArmTester(Tester):
         to_edge_and_lower_stage: Optional[ToEdgeTransformAndLower] = None,
         partitioners: Optional[List[Partitioner]] = None,
         edge_compile_config: Optional[EdgeCompileConfig] = None,
+        additional_checks: Optional[
+            List[Union[DontPartition | DontPartitionModule | DontPartitionName]]
+        ] = None,
     ):
         if to_edge_and_lower_stage is None:
             if partitioners is None:
                 arm_partitioner = None
                 if is_tosa(self.compile_spec):
-                    arm_partitioner = TOSAPartitioner(compile_spec=self.compile_spec)
+                    arm_partitioner = TOSAPartitioner(
+                        compile_spec=self.compile_spec,
+                        additional_checks=additional_checks,
+                    )
                 elif is_ethosu(self.compile_spec):
-                    arm_partitioner = EthosUPartitioner(compile_spec=self.compile_spec)
+                    arm_partitioner = EthosUPartitioner(
+                        compile_spec=self.compile_spec,
+                        additional_checks=additional_checks,
+                    )
                 else:
                     raise ValueError("compile spec doesn't target any Arm Partitioner")
                 partitioners = [arm_partitioner]
@@ -376,6 +396,7 @@ class ArmTester(Tester):
         rtol=1e-03,
         qtol=0,
         error_callbacks=None,
+        run_eager_mode=False,
     ):
         """
         Compares the run_artifact output of 'stage' with the output of a reference stage.
@@ -391,12 +412,23 @@ class ArmTester(Tester):
             inputs (Optional[Tuple[torch.Tensor]]): Allows you to input custom input data.
                 The default is random data.
         """
-        edge_stage = self.stages[self.stage_name(tester.ToEdge)]
-        if edge_stage is None:
-            edge_stage = self.stages[self.stage_name(tester.ToEdgeTransformAndLower)]
-        assert (
-            edge_stage is not None
-        ), "To compare outputs, at least the ToEdge or ToEdgeTransformAndLower stage needs to be run."
+
+        if not run_eager_mode:
+            edge_stage = self.stages[self.stage_name(tester.ToEdge)]
+            if edge_stage is None:
+                edge_stage = self.stages[
+                    self.stage_name(tester.ToEdgeTransformAndLower)
+                ]
+            assert (
+                edge_stage is not None
+            ), "To compare outputs, at least the ToEdge or ToEdgeTransformAndLower stage needs to be run."
+        else:
+            # Run models in eager mode. We do this when we want to check that the passes
+            # are numerically accurate and the exported graph is correct.
+            export_stage = self.stages[self.stage_name(tester.Export)]
+            assert (
+                export_stage is not None
+            ), "To compare outputs in eager mode, the model must be at Export stage"
 
         stage = stage or self.cur
         test_stage = self.stages[stage]
@@ -409,6 +441,7 @@ class ArmTester(Tester):
 
         exported_program = self.stages[self.stage_name(tester.Export)].artifact
         output_nodes = get_output_nodes(exported_program)
+
         output_qparams = get_output_quantization_params(output_nodes)
 
         quantization_scales = []
@@ -433,9 +466,19 @@ class ArmTester(Tester):
             reference_outputs, _ = pytree.tree_flatten(
                 reference_stage.run_artifact(reference_input)
             )
-            test_outputs, _ = pytree.tree_flatten(
-                test_stage.run_artifact(reference_input)
-            )
+
+            if run_eager_mode:
+                # Run exported module directly
+                test_outputs, _ = pytree.tree_flatten(
+                    self._calculate_reference_output(
+                        exported_program.module(), reference_input
+                    )
+                )
+            else:
+                # Run lowered model with target
+                test_outputs, _ = pytree.tree_flatten(
+                    test_stage.run_artifact(reference_input)
+                )
 
             for reference_output, test_output, quantization_scale in zip(
                 reference_outputs, test_outputs, quantization_scales
@@ -536,7 +579,10 @@ class ArmTester(Tester):
         )
 
         graph = self.get_graph(self.cur)
-        dtype_dist_placeholders, dtype_dirst_tensors = _get_dtype_distribution(graph)
+        tosa_spec = get_tosa_spec(self.compile_spec)
+        dtype_dist_placeholders, dtype_dirst_tensors = _get_dtype_distribution(
+            graph, tosa_spec
+        )
         all_dtypes = set(dtype_dist_placeholders.keys()) | set(
             dtype_dirst_tensors.keys()
         )
@@ -561,6 +607,32 @@ class ArmTester(Tester):
         to_print += _format_dict(dtype_dist, print_table) + "\n"
         _dump_str(to_print, path_to_dump)
         return self
+
+    def run_transform_for_annotation_pipeline(
+        self, stage: str | None = None
+    ) -> torch.fx.GraphModule:
+        """Run transform_for_annotation_pipeline on exported program to ensure
+        passes do not break the initial model before quantization.
+
+        There are caveats to this however. As we register buffers to the graph modules
+        the resulting exported graph can fail. Use this only to compare numerical correctness
+        in eager mode.
+
+        Returns exported program with passes applied.
+        """
+
+        if stage is None:
+            stage = self.cur
+        # We need to clone the artifact in order to ensure that the state_dict is preserved after passes are run.
+        artifact = self.get_artifact(stage)
+        if self.cur == self.stage_name(tester.Export):
+            new_gm = ArmPassManager(get_tosa_spec(self.compile_spec)).transform_for_annotation_pipeline(  # type: ignore[arg-type]
+                graph_module=artifact.graph_module
+            )
+        else:
+            raise RuntimeError("Can only run passes on Export stage.")
+        _copy_module(artifact.graph_module, new_gm)
+        return artifact
 
     @staticmethod
     def _calculate_reference_output(
@@ -605,7 +677,9 @@ class ArmTester(Tester):
             raise e
 
 
-def _get_dtype_distribution(graph: Graph) -> tuple[dict, dict]:
+def _get_dtype_distribution(
+    graph: Graph, tosa_spec: TosaSpecification
+) -> tuple[dict, dict]:
     """Counts the occurences of placeholder and call_function dtypes in a graph.
     The result is a tuple of Counters (placeholder_distribution, call_function_distribution)
     """
@@ -616,7 +690,7 @@ def _get_dtype_distribution(graph: Graph) -> tuple[dict, dict]:
             placeholder_dtypes.append(str(node.meta["val"].dtype))
         if node.op == "call_function":
             if "val" in node.meta:
-                dtype, _, _ = extract_tensor_meta(node.meta)
+                dtype, _, _ = extract_tensor_meta(node.meta, tosa_spec)
                 call_function_dtypes.append(ts.DTypeNames[dtype])
     return Counter(placeholder_dtypes), Counter(call_function_dtypes)
 

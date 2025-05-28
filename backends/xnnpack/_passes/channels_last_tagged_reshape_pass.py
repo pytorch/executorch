@@ -8,6 +8,7 @@ from typing import Optional, Tuple
 
 import torch
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
+from executorch.backends.xnnpack.utils.quant_utils import is_dynamic_qdq
 from executorch.backends.xnnpack.utils.utils import is_param_node
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
@@ -283,6 +284,14 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             ]
         else:
             # Need to create NHWC node
+            # Check if input uses dynamic quantization
+            is_dynamic_input = is_dynamic_qdq(input_node)
+
+            if is_dynamic_input:
+                # Trace back to original source node
+                while getattr(input_node, "args", None):
+                    input_node = input_node.args[0]
+
             with graph_module.graph.inserting_after(input_node):
                 input_node_nhwc = self.create_call_function_node(
                     graph_module=graph_module,
@@ -290,7 +299,11 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                     args=(input_node,),
                     memory_format=torch.channels_last,
                 )
-            self.mark_as_nhwc_node(input_node_nhwc)
+
+            if is_dynamic_input:
+                # Replace downstream input_nodes with NHWC node
+                input_node.replace_all_uses_with(input_node_nhwc)
+                input_node_nhwc.args = (input_node,)
 
         self.insert_copy_and_assign_partner_nodes_quantization_sensitive(
             graph_module=graph_module,

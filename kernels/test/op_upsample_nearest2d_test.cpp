@@ -411,3 +411,37 @@ TEST_F(OpUpsampleNearest2dTest, ZeroComputedOutputSizeDies) {
               {scale_factors.data(), scale_factors.size()}),
           out));
 }
+
+TEST_F(OpUpsampleNearest2dTest, SmokeTestChannelsLast) {
+  TensorFactory<ScalarType::Float> tf;
+
+  const auto input = tf.make_channels_last(
+      {1, 2, 2, 2},
+      {
+          0.1,
+          2.1,
+          0.2,
+          2.2,
+          1.1,
+          3.1,
+          1.2,
+          3.2,
+      });
+  std::array<int64_t, 2> output_size = {4, 4};
+  auto out = tf.zeros_channels_last({1, 2, 4, 4});
+
+  op_upsample_nearest2d_out(
+      input,
+      OptionalArrayRef<int64_t>({output_size.data(), output_size.size()}),
+      {},
+      out);
+
+  const auto expected = tf.make_channels_last(
+      {1, 2, 4, 4},
+      {0.1000, 2.1000, 0.1000, 2.1000, 0.2000, 2.2000, 0.2000, 2.2000,
+       0.1000, 2.1000, 0.1000, 2.1000, 0.2000, 2.2000, 0.2000, 2.2000,
+       1.1000, 3.1000, 1.1000, 3.1000, 1.2000, 3.2000, 1.2000, 3.2000,
+       1.1000, 3.1000, 1.1000, 3.1000, 1.2000, 3.2000, 1.2000, 3.2000});
+
+  EXPECT_TENSOR_EQ(out, expected);
+}

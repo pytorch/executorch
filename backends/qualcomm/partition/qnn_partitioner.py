@@ -5,14 +5,17 @@
 # LICENSE file in the root directory of this source tree.
 import copy
 from collections import defaultdict
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import torch
 from executorch.backends.qualcomm.builders import node_visitor
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
-from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_AXIS_ORDER,
+    QCOM_BYPASS_NODE,
+)
 
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
@@ -24,6 +27,7 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.utils import tag_constant_data
+from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
 
@@ -33,7 +37,7 @@ from .common_defs import (
     not_supported_operator,
     to_be_implemented_operator,
 )
-from .utils import generate_qnn_executorch_option
+from .utils import filter_fn, generate_qnn_executorch_option, get_skip_decomp_table
 
 
 class QnnOperatorSupport(OperatorSupportBase):
@@ -45,7 +49,6 @@ class QnnOperatorSupport(OperatorSupportBase):
         skip_node_op_set: set = None,
     ):
         self.node_visitors = node_visitor.get_node_visitors(edge_program)
-
         self.skip_node_op_set = skip_node_op_set
         self.skip_node_id_set = skip_node_id_set
         self.nodes_to_wrappers = defaultdict(dict)
@@ -69,6 +72,8 @@ class QnnOperatorSupport(OperatorSupportBase):
             node.target in allow_list_operator
             # bypass if custom op appears
             or OpContextLoader.namespace == node.target.namespace
+            # bypass dequantize op for parameters & buffers
+            or node.meta.get(QCOM_BYPASS_NODE, False)
         ):
             return True
 
@@ -174,3 +179,10 @@ class QnnPartitioner(Partitioner):
         return PartitionResult(
             tagged_exported_program=edge_program, partition_tags=self.partition_tags
         )
+
+    # override
+    def ops_to_not_decompose(
+        self, ep: ExportedProgram
+    ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
+        do_not_decompose = get_skip_decomp_table()
+        return (do_not_decompose, filter_fn)

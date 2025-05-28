@@ -11,7 +11,7 @@ huggingface page [llava-hf/llava-1.5-7b-hf](https://huggingface.co/llava-hf/llav
 
 
 <p align="center">
-      <img src="./llava_via_xnnpack.gif" width=300>
+      <img src="llava_via_xnnpack.gif" width=300>
       <br>
       <em>
       Running Llava1.5 7B on Android phone
@@ -26,16 +26,23 @@ model) for general-purpose visual and language understanding, achieving
 impressive chat capabilities mimicking spirits of the cutting edge multimodal
 models and setting a high bar for accuracy on Science QA.
 
-## Instructions
+## Instructions to run Llava on Android/iOS
 
 First you need to generate a .PTE file for the model, along with input image,
 and other artifacts. Then you need either a C++ runner, or Android or iOS
 application to test things out on device.
 
+### Host machine requirements
+
+The biggest requirement is to have a host machine with at least 32GiB memory, preferably 64GiB.
+
+The model weights is 15GiB, and the other memory usage at export stage (`export_llava`) is around 10GiB. So you need at least 25GiB memory to run the export script.
+
+
 ### Generate ExecuTorch .PTE and other artifacts
 
-Run the following command to generate `llava.pte`, `tokenizer.bin` and an image
-tensor (serialized in TorchScript) `image.pt`.
+Run the following command to generate `llava.pte`, `tokenizer.bin` and an image `basketball.jpg`.
+
 
 Prerequisite: run `install_executorch.sh` to install ExecuTorch and run
 `examples/models/llava/install_requirements.sh` to install dependencies.
@@ -56,11 +63,6 @@ python -m executorch.examples.models.llava.test.test_pte llava.pte
 See or run `.ci/scripts/test_llava.sh` shell script to build a C++ runner. This
 script also has preliminary support to build the C++ runner for Android.
 
-This also has an image utility Python script to generate image in PyTorch
-loadable format. Alternatively, we are working on generating image format which
-doesn't need PyTorch to load an image. Motivation for this is to build the C++
-runner on Android.
-
 Then you should be able to find `llava_main` binary:
 
 ```bash
@@ -68,6 +70,13 @@ cmake-out/examples/models/llava/llava_main
 ```
 
 ### Build Mobile Apps
+
+#### Device Requirements
+
+To run the Android/iOS apps, you need a device with at least 12GiB memory.
+
+- iPhone 13 Pro or above
+- Samsung Galaxy S23 or above
 
 #### Android
 
@@ -88,8 +97,8 @@ Run:
 cmake-out/examples/models/llava/llava_main \
     --model_path=llava.pte                 \
     --tokenizer_path=tokenizer.bin         \
-    --image_path=image.pt                  \
-    --prompt="ASSISTANT:" \
+    --image_path=basketball.jpg            \
+    --prompt="ASSISTANT:"                  \
     --seq_len=768                          \
     --temperature=0
 ```

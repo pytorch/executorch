@@ -6,7 +6,6 @@
 # pyre-unsafe
 
 import logging
-import os
 from typing import Callable, List, Optional, Sequence, Tuple
 
 import torch
@@ -25,7 +24,7 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
-from executorch.exir.backend.utils import tag_constant_data
+from executorch.exir.backend.utils import tag_constant_data, WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
@@ -33,11 +32,6 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
-TOSA_DBG_VERBOSE = os.environ.get("TOSA_DBG_VERBOSE") == "1"
-if TOSA_DBG_VERBOSE:
-    logging.basicConfig(level=logging.INFO)
-    logger.setLevel(logging.INFO)
 
 
 def is_quant_node(node: torch.fx.node.Node) -> bool:
@@ -78,9 +72,13 @@ class TOSAPartitioner(Partitioner):
 
         logger.info(f"Partitioning for {self.delegation_spec.backend_id}: {tosa_spec}")
 
+        reporter = WhyNoPartitionReporter()
+        operator_support = tosa_support_factory(
+            tosa_spec, exported_program, reporter, self.additional_checks
+        )
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
-            tosa_support_factory(tosa_spec, exported_program, self.additional_checks),
+            operator_support,
             allows_single_node_partition=True,
         )
         partition_list = capability_partitioner.propose_partitions()
@@ -98,7 +96,9 @@ class TOSAPartitioner(Partitioner):
 
             # De-tag outmost q-nodes upwards and dq-nodes downwards.
             # De-tag if at least one input/ output is not part of partition.
-            for node in partition.nodes:
+            for node in exported_program.graph_module.graph.nodes:
+                if not is_partitioned(node):
+                    continue
                 if is_quant_node(node):
                     for input in node.all_input_nodes:
                         if not is_partitioned(input):
@@ -119,14 +119,17 @@ class TOSAPartitioner(Partitioner):
                         if is_partitioned(input):
                             continue
                         if get_first_fake_tensor(input).dtype.is_floating_point:
-                            logger.info(
-                                f"Not partitioning {node.name} becuase input {input.name} has floating point dtype."
+                            reporter.report_reject(
+                                node,
+                                f"Was first node in partition and input {input.name} had fp dtype.",
                             )
                             del node.meta["delegation_tag"]
                             break
 
         tag_constant_data(exported_program)
-
+        logger.info(f"The following nodes were rejected for {tosa_spec}:")
+        logger.info("\n" + reporter.get_table_report())
+        logger.info("(Placeholders and outputs are not included in this list)")
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags
         )
@@ -169,7 +172,10 @@ class TOSAPartitioner(Partitioner):
 
         ops_to_not_decompose = [
             torch.ops.aten.linear.default,
+            torch.ops.aten.upsample_bilinear2d.vec,
             torch.ops.aten.upsample_nearest2d.vec,
+            torch.ops.aten.eye.default,
+            torch.ops.aten.linspace.default,
         ] + ops_to_not_decompose_if_quant_op
 
         return (ops_to_not_decompose, filter_fn)

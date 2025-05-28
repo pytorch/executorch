@@ -35,7 +35,9 @@ class InstanceNorm(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        input_node, weight_node, bias_node = node.args[0:3]
+        input_node = self.get_node(node.args[0])
+        weight_node = self.get_node(node.args[1])
+        bias_node = self.get_node(node.args[2])
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,

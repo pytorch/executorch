@@ -117,7 +117,12 @@ def test_softplus_tosa_BI(test_data: input_t1):
 # Since GELU will not be quantized by TosaQuantizer, the Dropout's input will not be quantized either.
 # If so, the Dropout should not be partitioned by TosaPartitioner for TOSA BI profile. This test tests that the
 # partitioner indeed does not partition the Dropout (clone) for TOSA BI.
-@common.parametrize("test_data", test_data)
+@common.parametrize(
+    "test_data",
+    test_data,
+    {"3d_rand": "MLETORCH-909: Partition test to not rely on unsupported ops"},
+    strict=False,
+)
 def test_linear_residaul_tosa_MI(test_data: input_t1):
     pipeline = TosaPipelineMI[input_t1](
         LinearResidualModule(),
@@ -145,7 +150,12 @@ def test_linear_residaul_tosa_MI(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data)
+@common.parametrize(
+    "test_data",
+    test_data,
+    {"3d_rand": "MLETORCH-855: Issue with Quantization folding."},
+    strict=False,
+)
 def test_linear_residual_tosa_BI(test_data: input_t1):
     pipeline = TosaPipelineBI[input_t1](
         LinearResidualModule(),

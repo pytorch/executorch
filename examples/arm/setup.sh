@@ -17,6 +17,9 @@ et_dir=$(realpath $script_dir/../..)
 ARCH="$(uname -m)"
 OS="$(uname -s)"
 
+# Figure out if setup.sh was called or sourced and save it into "is_script_sourced"
+(return 0 2>/dev/null) && is_script_sourced=1 || is_script_sourced=0
+
 if [[ "${ARCH}" == "x86_64" ]]; then
     # FVPs
     corstone300_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64.tgz?rev=018659bd574f4e7b95fa647e7836ccf4&hash=22A79103C6FA5FFA7AFF3BE0447F3FF9"
@@ -55,45 +58,49 @@ else
     echo "[main] Error: only x86-64 & aarch64/arm64 architecture is supported for now!"; exit 1;
 fi
 
-# ethos-u
-ethos_u_repo_url="https://review.mlplatform.org/ml/ethos-u/ethos-u"
-ethos_u_base_rev="24.08"
-
-# tosa reference model
-tosa_reference_model_url="https://review.mlplatform.org/tosa/reference_model"
-tosa_reference_model_rev="70ed0b40fa831387e36abdb4f7fb9670a3464f5a"
-
 # vela
 vela_repo_url="https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela"
-vela_rev="425541302c7e4b6fbeca7c0061286b131ee507c3"
-
-########
-### Optional user args
-########
-root_dir=${2:-"${script_dir}/ethos-u-scratch"}
-mkdir -p ${root_dir}
-root_dir=$(realpath ${root_dir})
-setup_path_script="${root_dir}/setup_path.sh"
-
+vela_rev="8cac2b9a7204b57125a8718049519b091a98846c"
 
 ########
 ### Functions
 ########
+function setup_root_dir() {
+    # Handle a different root_dir set by the user as argument to the
+    # script. This can only happen if the script is being executed and
+    # not sourced.
+    root_dir="${script_dir}/ethos-u-scratch"
+    if [[ $is_script_sourced -eq 0 ]]; then
+        root_dir=${2:-"${script_dir}/ethos-u-scratch"}
+    fi
+    mkdir -p ${root_dir}
+    root_dir=$(realpath ${root_dir})
+    setup_path_script="${root_dir}/setup_path.sh"
+}
 
-function setup_fvp() {
-
+function check_fvp_eula () {
     # Mandatory user arg --i-agree-to-the-contained-eula
     eula_acceptance="${1:-'.'}"
+    eula_acceptance_by_variable="${ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA:-False}"
+
     if [[ "${eula_acceptance}" != "--i-agree-to-the-contained-eula" ]]; then
-        if [[ ${ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA} != "True" ]]; then
-        echo "Must pass first positional argument '--i-agree-to-the-contained-eula' to agree to EULA associated with downloading the FVP. Exiting!"
-        exit 1
+        if [[ ${eula_acceptance_by_variable} != "True" ]]; then
+            echo "Must pass first positional argument '--i-agree-to-the-contained-eula' to agree to EULA associated with downloading the FVP."
+	    echo "Alternativly set environment variable ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA=True."
+	    echo "Exiting!"
+            exit 1
         else
-        echo "Arm EULA for FVP agreed to with ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA=True environment variable"
+            echo "Arm EULA for FVP agreed to with ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA=True environment variable"
         fi
     else
         shift; # drop this arg
     fi
+}
+
+function setup_fvp() {
+    # check EULA, forward argument
+    check_fvp_eula ${1:-'.'}
+
     if [[ "${OS}" != "Linux" ]]; then
         # Check if FVP is callable
         if command -v FVP_Corstone_SSE-300_Ethos-U55 &> /dev/null; then
@@ -158,14 +165,6 @@ function setup_toolchain() {
     tar xf "${toolchain_dir}.tar.xz"
 }
 
-function setup_tosa_reference_model() {
-    # reference_model flatbuffers version clashes with Vela.
-    # go with Vela's since it newer.
-    # Vela's flatbuffer requirement is expected to loosen, then remove this. MLETORCH-565
-    pip install tosa-tools@git+${tosa_reference_model_url}@${tosa_reference_model_rev} --no-dependencies flatbuffers
-
-}
-
 function setup_vela() {
     pip install ethos-u-vela@git+${vela_repo_url}@${vela_rev}
 }
@@ -195,14 +194,7 @@ function create_setup_path(){
     echo "hash FVP_Corstone_SSE-320" >> ${setup_path_script}
 }
 
-########
-### main
-########
-# Only run this if script is executed, not if it is sourced
-(return 0 2>/dev/null) && is_script_sourced=1 || is_script_sourced=0
-if [[ $is_script_sourced -eq 0 ]]
-    then
-    set -e
+function check_platform_support() {
     if [[ "${ARCH}" != "x86_64" ]] && [[ "${ARCH}" != "aarch64" ]] \
         && [[ "${ARCH}" != "arm64" ]]; then
         echo "[main] Error: only x86-64 & aarch64 architecture is supported for now!"
@@ -215,10 +207,23 @@ if [[ $is_script_sourced -eq 0 ]]
         echo "Supplied args: $*"
         exit 1
     fi
+}
+
+########
+### main
+########
+
+# script is not sourced! Lets run "main"
+if [[ $is_script_sourced -eq 0 ]]
+    then
+    set -e
+
+    check_platform_support
 
     cd "${script_dir}"
 
     # Setup the root dir
+    setup_root_dir
     cd "${root_dir}"
     echo "[main] Using root dir ${root_dir}"
 
@@ -235,7 +240,7 @@ if [[ $is_script_sourced -eq 0 ]]
     create_setup_path
 
     # Setup the tosa_reference_model
-    setup_tosa_reference_model
+    $et_dir/backends/arm/scripts/install_reference_model.sh ${root_dir}
 
     # Setup vela and patch in codegen fixes
     setup_vela

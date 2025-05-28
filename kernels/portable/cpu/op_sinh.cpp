@@ -17,7 +17,7 @@ namespace native {
 Tensor& sinh_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   static constexpr const char op_name[] = "sinh.out";
   return internal::unary_ufunc_realhbbf16_to_floathbf16<op_name>(
-      [](auto x) { return std::sinh(x); }, ctx, in, out);
+      [](auto x) { return executorch::math::sinh(x); }, ctx, in, out);
 }
 
 } // namespace native

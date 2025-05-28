@@ -14,7 +14,7 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       upload-artifact: android-apps
@@ -22,18 +22,30 @@ jobs:
       script: |
         set -eux
 
+        # Use sccache for NDK compiler as well
+        export CMAKE_CXX_COMPILER_LAUNCHER=sccache
+        export CMAKE_C_COMPILER_LAUNCHER=sccache
+
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool buck2
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
+        mkdir -p ${ARTIFACTS_DIR_NAME}/
 
         # Build LLM Demo for Android
         export BUILD_AAR_DIR=aar-out
-        bash build/build_android_library.sh ${ARTIFACTS_DIR_NAME}
-        bash .ci/scripts/build_android_instrumentation.sh ${ARTIFACTS_DIR_NAME}
+        mkdir -p $BUILD_AAR_DIR
+        bash scripts/build_android_library.sh
+        cp ${BUILD_AAR_DIR}/executorch.aar $ARTIFACTS_DIR_NAME
+
+        mkdir -p ${ARTIFACTS_DIR_NAME}/library_test_dir
+        bash extension/android/executorch_android/android_test_setup.sh
+        (cd extension/android; ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:assembleAndroidTest)
+        cp extension/android/executorch_android/build/outputs/apk/androidTest/debug/executorch_android-debug-androidTest.apk "${ARTIFACTS_DIR_NAME}/library_test_dir"
 
         mkdir -p ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom
+        bash examples/models/llama/install_requirements.sh
         bash ".ci/scripts/test_llama.sh" -model stories110M -build_tool cmake -dtype fp16 -mode portable -upload ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom
 
         mkdir -p examples/demo-apps/android/LlamaDemo/app/libs
@@ -94,8 +106,7 @@ jobs:
           curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/llm_demo/app-debug.apk
           curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/llm_demo/app-debug-androidTest.apk
           curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/fp32-xnnpack-custom/model.zip
-          curl -o android-test-debug.apk https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/library_test_dir/executorch-debug.apk
-          curl -o android-test-debug-androidTest.apk https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/library_test_dir/executorch-debug-androidTest.apk
+          curl -o android-test-debug-androidTest.apk https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/library_test_dir/executorch_android-debug-androidTest.apk
           unzip model.zip
           mv *.pte model.pte
 
@@ -119,12 +130,13 @@ jobs:
         with:
           api-level: ${{ env.API_LEVEL }}
           arch: x86_64
-          script: ./build/run_android_emulator.sh
+          script: ./scripts/run_android_emulator.sh
           # NB: This is to boot the emulator faster following the instructions on
           # https://github.com/ReactiveCircus/android-emulator-runner. The max number
           # of cores we can set is 6, any higher number will be reduced to 6.
           cores: 6
-          ram-size: 12288M
+          ram-size: 16384M
+          heap-size: 12288M
           force-avd-creation: false
           disable-animations: true
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none

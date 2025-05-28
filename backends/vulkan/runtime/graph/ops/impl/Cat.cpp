@@ -80,7 +80,7 @@ void add_cat_default_node(
       // concatenating channels
       src_offset[3] = is_concat_channel ? in_channel_size : 0;
       add_copy_offset_node(
-          graph, input_ref, range, src_offset, dst_offset, out);
+          graph, input_ref, range, src_offset, dst_offset, out, true, false);
       dst_offset[dim_xyz_index] +=
           is_concat_channel ? in_channel_size : range[dim_xyz_index];
     }
