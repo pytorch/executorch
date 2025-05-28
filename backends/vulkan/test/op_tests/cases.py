@@ -1120,10 +1120,10 @@ def get_reduce_inputs(is_softmax: bool = False, is_variance: bool = False):
             # Alternating unbiased for comprehensive testing for variance.
             # We also pass in a True for keep_dim to be consistent with other ops.
             unbiased = (i % 2) == 0
-            test_cases.append((shape, dim, unbiased, True))
+            test_cases.append((shape, dim, unbiased, bool_arg))
     else:
         for i, (shape, dim) in enumerate(shapes_and_dims):
-            test_cases.append((shape, dim, True))
+            test_cases.append((shape, dim, bool_arg))
 
     return test_cases
 
