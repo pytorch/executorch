@@ -56,9 +56,7 @@ void add_var_buffer_node(
 
   std::vector<PushConstantDataInfo> push_constants;
   int32_t unbiased_int = static_cast<int32_t>(unbiased);
-  push_constants.emplace_back(
-      PushConstantDataInfo(
-        &unbiased_int, sizeof(unbiased_int)));
+  push_constants.emplace_back(&unbiased_int, sizeof(unbiased_int));
 
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
@@ -133,9 +131,7 @@ void add_var_texture_node(
 
   std::vector<PushConstantDataInfo> push_constants;
   int32_t unbiased_int = static_cast<int32_t>(unbiased);
-  push_constants.emplace_back(
-      PushConstantDataInfo(
-        &unbiased_int, sizeof(unbiased_int)));
+  push_constants.emplace_back(&unbiased_int, sizeof(unbiased_int));
 
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
