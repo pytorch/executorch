@@ -156,6 +156,7 @@ jobs:
           "kernels_optimized"
           "kernels_portable"
           "kernels_quantized"
+          "threadpool"
         )
 
         .ci/scripts/setup-conda.sh
