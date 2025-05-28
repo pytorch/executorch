@@ -39,8 +39,9 @@ void add_var_buffer_node(
   int32_t reduce_dim = normalize(dim, ndim);
   reduce_dim = nchw_dim_to_whcn_dim(reduce_dim, ndim);
 
-  std::string kernel_name = "var_buffer";
+  std::string kernel_name = "var";
   kernel_name.reserve(kShaderNameReserve);
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   const uint32_t nworkers_per_group = 4;
@@ -56,7 +57,8 @@ void add_var_buffer_node(
   std::vector<PushConstantDataInfo> push_constants;
   int32_t unbiased_int = static_cast<int32_t>(unbiased);
   push_constants.emplace_back(
-      PushConstantDataInfo(&unbiased_int, sizeof(unbiased_int)));
+      PushConstantDataInfo(
+        &unbiased_int, sizeof(unbiased_int)));
 
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
@@ -103,6 +105,7 @@ void add_var_texture_node(
 
   std::string kernel_name = "var";
   kernel_name.reserve(kShaderNameReserve);
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   // This should match the value of MAX_NTHREADS in the softmax shader.
@@ -131,7 +134,8 @@ void add_var_texture_node(
   std::vector<PushConstantDataInfo> push_constants;
   int32_t unbiased_int = static_cast<int32_t>(unbiased);
   push_constants.emplace_back(
-      PushConstantDataInfo(&unbiased_int, sizeof(unbiased_int)));
+      PushConstantDataInfo(
+        &unbiased_int, sizeof(unbiased_int)));
 
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
