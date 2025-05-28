@@ -99,7 +99,6 @@ def test_avg_pool2d_tosa_BI(test_module):
         input_tensor,
         aten_op,
         exir_op,
-        symmetric_io_quantization=True,
         run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     if conftest.is_option_enabled("tosa_ref_model"):
@@ -118,7 +117,6 @@ def test_avg_pool2d_u55_BI(test_module):
         aten_op,
         exir_op,
         run_on_fvp=True,
-        symmetric_io_quantization=True,
     )
     pipeline.change_args("run_method_and_compare_outputs", qtol=1, atol=1, rtol=1)
     pipeline.run()
@@ -135,7 +133,6 @@ def test_avg_pool2d_u85_BI(test_module):
         aten_op,
         exir_op,
         run_on_fvp=True,
-        symmetric_io_quantization=True,
     )
     pipeline.change_args("run_method_and_compare_outputs", qtol=1, atol=1, rtol=1)
 
@@ -164,7 +161,7 @@ reject_modules = {
 
 
 @common.parametrize("reject_module", reject_modules)
-def test_avg_pool2d_tosa_BI_not_delegated(reject_module):
+def test_avg_pool2d_u55_BI_not_delegated(reject_module):
 
     model, test_data = reject_module()
 
@@ -174,5 +171,6 @@ def test_avg_pool2d_tosa_BI_not_delegated(reject_module):
         non_delegated_ops={},
         n_expected_delegates=0,
         quantize=True,
+        u55_subset=True,
     )
     pipeline.run()

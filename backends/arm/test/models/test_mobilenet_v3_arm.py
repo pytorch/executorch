@@ -53,7 +53,6 @@ def test_mv3_tosa_BI():
 
 
 @pytest.mark.slow
-@pytest.mark.corstone_fvp
 @common.XfailIfNoCorstone300
 def test_mv3_u55_BI():
     pipeline = EthosU55PipelineBI[input_t](
@@ -70,7 +69,6 @@ def test_mv3_u55_BI():
 
 
 @pytest.mark.slow
-@pytest.mark.corstone_fvp
 @common.XfailIfNoCorstone320
 def test_mv3_u85_BI():
     pipeline = EthosU85PipelineBI[input_t](
