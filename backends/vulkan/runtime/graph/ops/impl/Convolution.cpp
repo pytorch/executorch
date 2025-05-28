@@ -402,7 +402,6 @@ void add_conv2d_node(
     wg_size = {wg_size[0] * wg_size[1] * wg_size[2], 1, 1};
   } else if (method == Conv2dMethod::Pointwise) {
     wg_size = {wg_size[0] * wg_size[1], wg_size[2], 1};
-  }
 
   utils::uvec3 local_wg_size;
   if (method == Conv2dMethod::Pointwise) {
