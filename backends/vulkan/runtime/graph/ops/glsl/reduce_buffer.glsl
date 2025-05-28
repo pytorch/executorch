@@ -31,14 +31,23 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 layout(constant_id = 3) const int reduce_dim = 0;
 
+$if VARIANCE_MODE:
+  #define VARIANCE_MODE
+
 #define NWORKERS 4
 #define MAX_THREADS 16
 
-shared T shared_sum[NWORKERS];
+shared T shared_accum[NWORKERS];
+#ifdef VARIANCE_MODE
 shared T shared_sum_sq[NWORKERS];
 shared int shared_count[NWORKERS];
+#endif
 
 #include "indexing_utils.h"
+
+#define INIT_ACCUM(first_val) ${INIT_ACCUM}
+#define UPDATE_ACCUM(accum, new_val) ${UPDATE_ACCUM}
+#define POSTPROCESS(accum) ${POSTPROCESS}
 
 void main() {
   const ivec4 out_idx = ivec4(
@@ -49,9 +58,11 @@ void main() {
 
   const uint tid = gl_LocalInvocationID[reduce_dim];
 
-  shared_sum[tid] = T(0);
+  shared_accum[tid] = T(0);
+#ifdef VARIANCE_MODE
   shared_sum_sq[tid] = T(0);
   shared_count[tid] = 0;
+#endif
   barrier();
 
   const int R = in_sizes[reduce_dim];
@@ -65,9 +76,25 @@ void main() {
   uint len = q + (tid < rem ? 1u : 0u);
   uint base = tid * q + min(tid, rem);
 
-  T sum = T(0);
+  // Get the first value for initializing the accumulator if needed
+  T first_val = T(0);
+  if (R > 0) {
+    ivec4 first_idx = out_idx;
+    first_idx[reduce_dim] = 0;
+
+    if (reduce_dim == 2) {
+      first_idx[reduce_dim + 1] = 0;
+    }
+
+    first_val = in_buf[tidx_to_bufi(first_idx, in_strides)];
+  }
+
+  // Initialize accumulator
+  T accum = INIT_ACCUM(first_val);
+#ifdef VARIANCE_MODE
   T sum_sq = T(0);
   int count = 0;
+#endif
 
   ivec4 in_idx = out_idx;
   for (uint off = 0u; off < len; ++off) {
@@ -83,39 +110,55 @@ void main() {
 
     T v = in_buf[tidx_to_bufi(in_idx, in_strides)];
 
-    sum += v;
+    accum = UPDATE_ACCUM(accum, v);
+
+#ifdef VARIANCE_MODE
     sum_sq += v * v;
     count += 1;
+#endif
   }
 
-  shared_sum[tid] = sum;
+  shared_accum[tid] = accum;
+#ifdef VARIANCE_MODE
   shared_sum_sq[tid] = sum_sq;
   shared_count[tid] = count;
+#endif
   barrier();
 
   if (tid == 0u) {
-    T tot_sum = T(0);
-    T tot_sum_sq = T(0);
-    int tot_count = 0;
+    T result = shared_accum[0];
 
-    for (uint i = 0; i < N; ++i) {
-      tot_sum += shared_sum[i];
+#ifdef VARIANCE_MODE
+    T tot_sum = shared_accum[0];
+    T tot_sum_sq = shared_sum_sq[0];
+    int tot_count = shared_count[0];
+#endif
+
+    for (uint i = 1; i < N; ++i) {
+#ifdef VARIANCE_MODE
+      tot_sum += shared_accum[i];
       tot_sum_sq += shared_sum_sq[i];
       tot_count += shared_count[i];
+#else
+      result = UPDATE_ACCUM(result, shared_accum[i]);
+#endif
     }
 
-    T var;
+#ifdef VARIANCE_MODE
     if (tot_count > 0) {
       T mean = tot_sum / T(tot_count);
-      var = (tot_sum_sq / T(tot_count)) - (mean * mean);
+      result = (tot_sum_sq / T(tot_count)) - (mean * mean);
       if (pc.unbiased != 0 && tot_count > 1) {
-        var *= T(tot_count) / T(tot_count - 1);
+        result *= T(tot_count) / T(tot_count - 1);
       }
-    } else{
+    } else {
       // NaN to match PyTorch behavior
-      var = T(0.0/0.0);
+      result = T(0.0/0.0);
     }
+#else
+    result = POSTPROCESS(result);
+#endif
 
-    out_buf[tidx_to_bufi(out_idx, out_strides)] = var;
+    out_buf[tidx_to_bufi(out_idx, out_strides)] = result;
   }
 }
