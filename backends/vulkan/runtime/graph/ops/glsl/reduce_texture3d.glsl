@@ -46,10 +46,10 @@ $if VARIANCE_MODE:
 // work group will write into its assigned element in the shared array.
 #define MAX_NTHREADS 16
 
-shared vec4 shared_vecs[MAX_NTHREADS];
+shared VEC4_T shared_vecs[MAX_NTHREADS];
 // Second accumulator for variance mode - used for sum of values, prev
 // accumulator is used for sum of squares
-shared vec4 shared_sum_sq[MAX_NTHREADS];
+shared VEC4_T shared_sum_sq[MAX_NTHREADS];
 shared int shared_count[MAX_NTHREADS];
 
 #include "indexing_utils.h"
@@ -58,9 +58,9 @@ int tid_to_smi(const ivec2 tid) {
   return tid.x + tid.y * NWORKERS;
 }
 
-vec4 calculate_variance(vec4 sum, vec4 sum_sq, int count) {
-  vec4 mean = sum / float(count);
-  vec4 variance = (sum_sq / float(count)) - (mean * mean);
+VEC4_T calculate_variance(VEC4_T sum, VEC4_T sum_sq, int count) {
+  VEC4_T mean = sum / float(count);
+  VEC4_T variance = (sum_sq / float(count)) - (mean * mean);
 
   if ((pc.unbiased != 0) && (count > 1)) {
     variance = variance * (float(count) / float(count - 1.0));
@@ -111,10 +111,10 @@ void reduce_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
   const int smi = tid_to_smi(tid);
 
   scan_pos[reduce_dim] = 0;
-  vec4 accum = INIT_ACCUM(load_texel(tin, scan_pos));
+  VEC4_T accum = INIT_ACCUM(load_texel(tin, scan_pos));
 
 #ifdef VARIANCE_MODE
-  vec4 sum_sq = VEC4_T(0);
+  VEC4_T sum_sq = VEC4_T(0);
   int count = 0;
 #endif
 
@@ -123,7 +123,7 @@ void reduce_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
   // the reduction row
   for (int i = tid.x; i < tin_sizes[reduce_dim];
        i += NWORKERS, scan_pos[reduce_dim] += NWORKERS) {
-    vec4 val = load_texel(tin, scan_pos);
+    VEC4_T val = load_texel(tin, scan_pos);
     accum = UPDATE_ACCUM(accum, val);
 #ifdef VARIANCE_MODE
     sum_sq += val * val;
@@ -166,7 +166,7 @@ void reduce_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
         scan_pos[packed_dim] == (tin_limits[packed_dim] - 1);
 
 #ifdef VARIANCE_MODE
-    vec4 variance = calculate_variance(accum, sum_sq, count);
+    VEC4_T variance = calculate_variance(accum, sum_sq, count);
 #endif
 
     // Explicitly set padding elements to 0
@@ -208,10 +208,10 @@ void reduce_packed_dim(const ivec2 tid, ivec3 scan_pos) {
   const int reduce_len = tin_sizes[packed_dim] - nspill;
 
   scan_pos[reduce_dim] = 0;
-  vec4 accum = INIT_ACCUM(vec4(load_texel(tin, scan_pos).x));
+  VEC4_T accum = INIT_ACCUM(VEC4_T(load_texel(tin, scan_pos).x));
 
 #ifdef VARIANCE_MODE
-  vec4 sum_sq = VEC4_T(0);
+  VEC4_T sum_sq = VEC4_T(0);
   int count = 0;
 #endif
 
@@ -220,7 +220,7 @@ void reduce_packed_dim(const ivec2 tid, ivec3 scan_pos) {
   scan_pos[reduce_dim] = tid.x;
   for (int i = tid.x * 4; i < reduce_len;
        i += NWORKERS * 4, scan_pos[reduce_dim] += NWORKERS) {
-    vec4 val = load_texel(tin, scan_pos);
+    VEC4_T val = load_texel(tin, scan_pos);
     accum = UPDATE_ACCUM(accum, val);
 #ifdef VARIANCE_MODE
     sum_sq += val * val;
@@ -231,7 +231,7 @@ void reduce_packed_dim(const ivec2 tid, ivec3 scan_pos) {
   // element of the texel needs to be processed individually such that the
   // padding elements are ignored
   if (scan_pos[reduce_dim] == tin_limits[reduce_dim] - 1 && nspill > 0) {
-    const vec4 val = load_texel(tin, scan_pos);
+    const VEC4_T val = load_texel(tin, scan_pos);
     for (int i = 0; i < nspill; i++) {
       accum.x = UPDATE_ACCUM(accum.x, val[i]);
 #ifdef VARIANCE_MODE
@@ -280,7 +280,7 @@ void reduce_packed_dim(const ivec2 tid, ivec3 scan_pos) {
     }
 
     scan_pos[reduce_dim] = tid.x;
-    write_texel(tout, scan_pos, vec4(variance, 0, 0, 0));
+    write_texel(tout, scan_pos, VEC4_T(variance, 0, 0, 0));
 #else
     // Each element of the texel is itself a partial maximum; iterate over the
     // texel to find the actual maximum
@@ -290,7 +290,7 @@ void reduce_packed_dim(const ivec2 tid, ivec3 scan_pos) {
     }
 
     scan_pos[reduce_dim] = tid.x;
-    write_texel(tout, scan_pos, POSTPROCESS(vec4(accum_final, 0, 0, 0)));
+    write_texel(tout, scan_pos, POSTPROCESS(VEC4_T(accum_final, 0, 0, 0)));
 #endif
   }
 }

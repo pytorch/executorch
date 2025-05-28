@@ -60,8 +60,7 @@ void add_reduce_buffer_node(
 
   std::vector<PushConstantDataInfo> push_constants;
   int32_t unbiased_int = static_cast<int32_t>(unbiased);
-  push_constants.emplace_back(
-      PushConstantDataInfo(&unbiased_int, sizeof(unbiased_int)));
+  push_constants.emplace_back(&unbiased_int, sizeof(unbiased_int));
 
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
@@ -137,8 +136,7 @@ void add_reduce_texture_node(
 
   std::vector<PushConstantDataInfo> push_constants;
   int32_t unbiased_int = static_cast<int32_t>(unbiased);
-  push_constants.emplace_back(
-      PushConstantDataInfo(&unbiased_int, sizeof(unbiased_int)));
+  push_constants.emplace_back(&unbiased_int, sizeof(unbiased_int));
 
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
@@ -180,16 +178,8 @@ void add_reduce_node(
   void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
     const IntListPtr dims_list = graph.get_int_list(args[1]);            \
     VK_CHECK_COND(dims_list->size() == 1);                               \
-    return add_reduce_node(                                              \
-        graph, args[0], dims_list->at(0), args[out_arg_idx], #op_name);  \
-  }
-
-#define DEFINE_VAR_FN(op_name, out_arg_idx)                              \
-  void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
-    const IntListPtr dims_list = graph.get_int_list(args[1]);            \
-    VK_CHECK_COND(dims_list->size() == 1);                               \
     bool unbiased = false;                                               \
-    if (args.size() > 2) {                                               \
+    if (strcmp(#op_name, "var") == 0 && args.size() > 2) {               \
       unbiased = graph.get_bool(args[2]);                                \
     }                                                                    \
     return add_reduce_node(                                              \
@@ -205,7 +195,7 @@ DEFINE_REDUCE_FN(sum, 4)
 DEFINE_REDUCE_FN(mean, 4)
 DEFINE_REDUCE_FN(amax, 3)
 DEFINE_REDUCE_FN(amin, 3)
-DEFINE_VAR_FN(var, 4)
+DEFINE_REDUCE_FN(var, 4)
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.sum.dim_IntList, sum);
