@@ -32,16 +32,68 @@ void resize_reduce_node(
   out->virtual_resize(new_sizes);
 }
 
-void add_reduce_node(
+void add_reduce_buffer_node(
     ComputeGraph& graph,
     ValueRef in,
     const int dim,
     ValueRef out,
-    const std::string& op_name) {
-  VK_CHECK_COND(
-      !graph.is_buffer_storage(in) && !graph.is_buffer_storage(out),
-      "Vulkan reduction only supports texture storage");
+    const std::string& op_name,
+    bool unbiased = false) {
+  const int64_t ndim = graph.dim_of(in);
+  int32_t reduce_dim = normalize(dim, ndim);
+  reduce_dim = nchw_dim_to_whcn_dim(reduce_dim, ndim);
 
+  std::string kernel_name = op_name;
+  kernel_name.reserve(kShaderNameReserve);
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
+
+  const uint32_t nworkers_per_group = 4;
+
+  utils::uvec3 global_wg_size = {
+      graph.size_at<uint32_t>(-1, out),
+      graph.size_at<uint32_t>(-2, out),
+      graph.size_at<uint32_t>(-3, out) * graph.size_at<uint32_t>(-4, out)};
+
+  utils::uvec3 local_wg_size{1, 1, 1};
+  local_wg_size[reduce_dim] = nworkers_per_group;
+
+  std::vector<PushConstantDataInfo> push_constants;
+  int32_t unbiased_int = static_cast<int32_t>(unbiased);
+  push_constants.emplace_back(
+      PushConstantDataInfo(&unbiased_int, sizeof(unbiased_int)));
+
+  graph.execute_nodes().emplace_back(new DispatchNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      global_wg_size,
+      local_wg_size,
+      // Inputs and Outputs
+      {{out, vkapi::kWrite}, {in, vkapi::kRead}},
+      // Shader params buffers
+      {
+          graph.sizes_ubo(in),
+          graph.strides_ubo(in),
+          graph.sizes_ubo(out),
+          graph.strides_ubo(out),
+      },
+      // Push Constants
+      push_constants,
+      // Specialization Constants
+      {reduce_dim},
+      // Resize Args
+      {dim},
+      // Resizing Logic
+      resize_reduce_node));
+}
+
+void add_reduce_texture_node(
+    ComputeGraph& graph,
+    ValueRef in,
+    const int dim,
+    ValueRef out,
+    const std::string& op_name,
+    bool unbiased = false) {
   const int64_t ndim = graph.dim_of(in);
 
   int32_t reduce_dim = dim;
@@ -55,9 +107,9 @@ void add_reduce_node(
     VK_CHECK_COND(graph.concat_dim_of(out) != reduce_dim);
   }
 
-  vkapi::ShaderInfo shader_descriptor;
   std::string kernel_name = op_name;
   kernel_name.reserve(kShaderNameReserve);
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   // This should match the value of MAX_NTHREADS in the softmax shader.
@@ -83,6 +135,11 @@ void add_reduce_node(
     group_dim = other_dim_2;
   }
 
+  std::vector<PushConstantDataInfo> push_constants;
+  int32_t unbiased_int = static_cast<int32_t>(unbiased);
+  push_constants.emplace_back(
+      PushConstantDataInfo(&unbiased_int, sizeof(unbiased_int)));
+
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       // shader_descriptor,
@@ -94,13 +151,29 @@ void add_reduce_node(
       // Shader params buffers
       {graph.logical_limits_ubo(in), graph.sizes_ubo(in)},
       // Push Constants
-      {},
+      push_constants,
       // Specialization Constants
       {graph.packed_dim_of(out), reduce_dim, group_dim},
       // Resize Args
       {dim},
       // Resizing Logic
       resize_reduce_node));
+}
+
+void add_reduce_node(
+    ComputeGraph& graph,
+    ValueRef in,
+    const int dim,
+    ValueRef out,
+    const std::string& op_name,
+    bool unbiased = false) {
+  bool is_buffer = graph.is_buffer_storage(in) || graph.is_buffer_storage(out);
+
+  if (is_buffer) {
+    add_reduce_buffer_node(graph, in, dim, out, op_name, unbiased);
+  } else {
+    add_reduce_texture_node(graph, in, dim, out, op_name, unbiased);
+  }
 }
 
 #define DEFINE_REDUCE_FN(op_name, out_arg_idx)                           \
@@ -111,16 +184,35 @@ void add_reduce_node(
         graph, args[0], dims_list->at(0), args[out_arg_idx], #op_name);  \
   }
 
+#define DEFINE_VAR_FN(op_name, out_arg_idx)                              \
+  void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
+    const IntListPtr dims_list = graph.get_int_list(args[1]);            \
+    VK_CHECK_COND(dims_list->size() == 1);                               \
+    bool unbiased = false;                                               \
+    if (args.size() > 2) {                                               \
+      unbiased = graph.get_bool(args[2]);                                \
+    }                                                                    \
+    return add_reduce_node(                                              \
+        graph,                                                           \
+        args[0],                                                         \
+        dims_list->at(0),                                                \
+        args[out_arg_idx],                                               \
+        #op_name,                                                        \
+        unbiased);                                                       \
+  }
+
 DEFINE_REDUCE_FN(sum, 4)
 DEFINE_REDUCE_FN(mean, 4)
 DEFINE_REDUCE_FN(amax, 3)
 DEFINE_REDUCE_FN(amin, 3)
+DEFINE_VAR_FN(var, 4)
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.sum.dim_IntList, sum);
   VK_REGISTER_OP(aten.mean.dim, mean);
   VK_REGISTER_OP(aten.amax.default, amax);
   VK_REGISTER_OP(aten.amin.default, amin);
+  VK_REGISTER_OP(aten.var.dim, var);
 }
 
 } // namespace vkcompute
