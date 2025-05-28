@@ -17,11 +17,7 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 from executorch.examples.models.llama.config.llm_config import LlmConfig
-from executorch.examples.models.llama.config.llm_config_utils import (
-    convert_args_to_llm_config,
-)
 from executorch.examples.models.llama.export_llama_lib import (
-    build_args_parser,
     get_quantizer_and_quant_params,
 )
 from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
@@ -96,12 +92,8 @@ def export_text_model(llava, embeddings, dynamic_shapes):
         dynamic_shapes=dynamic_shapes,
     )
 
-    # (Legacy) parse args then convert to LlmConfig.
-    parser = build_args_parser()
-    args = parser.parse_args()
-    llm_config = convert_args_to_llm_config(args)
-
     # Manually set some LlmConfig options.
+    llm_config = LlmConfig()
     llm_config.base.params = "params.json"
     llm_config.backend.xnnpack.enabled = True
     llm_config.quantization.qmode = "8da4w"

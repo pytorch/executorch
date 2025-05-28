@@ -48,7 +48,7 @@ class ExportLlamaLibTest(unittest.TestCase):
         args.use_kv_cache = True
         args.verbose = True
 
-        builder = _export_llama(llm_config, args)
+        builder = _export_llama(llm_config)
         graph_module = builder.edge_manager.exported_program().graph_module
         delegation_info = get_delegation_info(graph_module)
 

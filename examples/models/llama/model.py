@@ -8,7 +8,7 @@
 
 import json
 import os
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import torch
 from executorch.examples.models.checkpoint import (
@@ -37,17 +37,13 @@ from ..model_base import EagerModelBase
 
 
 class Llama2Model(EagerModelBase):
-    def __init__(self, llm_config: LlmConfig):
+    def __init__(self, llm_config: Optional[LlmConfig] = None):
         resource_dir = get_default_model_resource_dir(__file__)
 
-        self.llm_config = llm_config
+        self.llm_config = llm_config if llm_config else LlmConfig()
 
-        # Use single checkpoint file.
         checkpoint_path = self.llm_config.base.checkpoint
-        # Check if checkpoint_dir was provided for a sharded checkpoint.
         checkpoint_dir = self.llm_config.base.checkpoint_dir
-
-        # Params file.
         params_path = self.llm_config.base.params
 
         self.use_kv_cache = self.llm_config.model.use_kv_cache
