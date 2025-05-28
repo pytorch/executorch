@@ -43,8 +43,8 @@ layout(constant_id = 5) const int group_dim = 1;
 // work group will write into its assigned element in the shared array.
 #define MAX_NTHREADS 16
 
-shared vec4 shared_sum[MAX_NTHREADS];
-shared vec4 shared_sum_sq[MAX_NTHREADS];
+shared VEC4_T shared_sum[MAX_NTHREADS];
+shared VEC4_T shared_sum_sq[MAX_NTHREADS];
 shared int shared_count[MAX_NTHREADS];
 
 #include "indexing_utils.h"
@@ -53,9 +53,9 @@ int tid_to_smi(const ivec2 tid) {
   return tid.x + tid.y * NWORKERS;
 }
 
-vec4 calculate_variance(vec4 sum, vec4 sum_sq, int count) {
-  vec4 mean = sum / float(count);
-  vec4 variance = (sum_sq / float(count)) - (mean * mean);
+VEC4_T calculate_variance(VEC4_T sum, VEC4_T sum_sq, int count) {
+  VEC4_T mean = sum / float(count);
+  VEC4_T variance = (sum_sq / float(count)) - (mean * mean);
 
   if ((pc.unbiased != 0) && (count > 1)) {
     variance = variance * (float(count) / float(count - 1.0));
@@ -68,14 +68,14 @@ void reduce_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
   // shared memory index of this thread
   const int smi = tid_to_smi(tid);
 
-  vec4 sum = VEC4_T(0);
-  vec4 sum_sq = VEC4_T(0);
+  VEC4_T sum = VEC4_T(0);
+  VEC4_T sum_sq = VEC4_T(0);
   int count = 0;
 
   scan_pos[reduce_dim] = tid.x;
   for (int i = tid.x; i < tin_sizes[reduce_dim];
        i += NWORKERS, scan_pos[reduce_dim] += NWORKERS) {
-    vec4 val = load_texel(tin, scan_pos);
+    VEC4_T val = load_texel(tin, scan_pos);
     sum += val;
     sum_sq += val * val;
     count += 1;
@@ -109,7 +109,7 @@ void reduce_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
     const bool is_last_texel =
         scan_pos[packed_dim] == (tin_limits[packed_dim] - 1);
 
-    vec4 variance = calculate_variance(sum, sum_sq, count);
+    VEC4_T variance = calculate_variance(sum, sum_sq, count);
 
     // Explicitly set padding elements to 0
     if (is_last_texel && nspill > 0) {
@@ -141,8 +141,8 @@ void reduce_packed_dim(const ivec2 tid, ivec3 scan_pos) {
   // handled specially if it has padding elements.
   const int reduce_len = tin_sizes[packed_dim] - nspill;
 
-  vec4 sum = VEC4_T(0);
-  vec4 sum_sq = VEC4_T(0);
+  VEC4_T sum = VEC4_T(0);
+  VEC4_T sum_sq = VEC4_T(0);
   int count = 0;
 
   // Partially accumulate over elements i, i + NWORKERS, i + 2*NWORKERS, ... of
@@ -150,7 +150,7 @@ void reduce_packed_dim(const ivec2 tid, ivec3 scan_pos) {
   scan_pos[reduce_dim] = tid.x;
   for (int i = tid.x * 4; i < reduce_len;
        i += NWORKERS * 4, scan_pos[reduce_dim] += NWORKERS) {
-    vec4 val = load_texel(tin, scan_pos);
+    VEC4_T val = load_texel(tin, scan_pos);
     sum += val;
     sum_sq += val * val;
     count += 4;
@@ -159,7 +159,7 @@ void reduce_packed_dim(const ivec2 tid, ivec3 scan_pos) {
   // element of the texel needs to be processed individually such that the
   // padding elements are ignored
   if (scan_pos[reduce_dim] == tin_limits[reduce_dim] - 1 && nspill > 0) {
-    const vec4 val = load_texel(tin, scan_pos);
+    const VEC4_T val = load_texel(tin, scan_pos);
     for (int i = 0; i < nspill; i++) {
       sum.x += val[i];
       sum_sq.x += val[i] * val[i];
@@ -198,7 +198,7 @@ void reduce_packed_dim(const ivec2 tid, ivec3 scan_pos) {
     }
 
     scan_pos[reduce_dim] = tid.x;
-    write_texel(tout, scan_pos, vec4(variance, 0, 0, 0));
+    write_texel(tout, scan_pos, VEC4_T(variance, 0, 0, 0));
   }
 }
 
