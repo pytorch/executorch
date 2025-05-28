@@ -38,6 +38,8 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#extension GL_EXT_control_flow_attributes : require
+
 /*
  * Computes a 2D pointwise convolution of an NxN output tile. Calculating an
  * output tile for pointwise convolution is more efficient because the kernel
@@ -105,7 +107,7 @@ void main() {
     float kernel_values[4 * 4]; // 4 channels, 4 elements per channel
 
     // Load kernel values from texels to array
-    for (int i = 0; i < 4; ++i) {
+    [[unroll]] for (int i = 0; i < 4; ++i) {
       const vec4 k_tex = texelFetch(t_kernel, ivec2(z + i, gpos.z), 0);
       kernel_values[i * 4 + 0] = k_tex.x;
       kernel_values[i * 4 + 1] = k_tex.y;
