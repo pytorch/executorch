@@ -605,7 +605,7 @@ contain the graph representation of a method.</p>
 <span class="n">a</span> <span class="o">=</span> <span class="n">MyModule</span><span class="p">()</span>
 <span class="n">tracing_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),)</span>
 <span class="n">aten_dialect_program</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">tracing_inputs</span><span class="p">)</span>
-<span class="n">edge_dialect_program</span><span class="p">:</span> <span class="n">exir</span><span class="o">.</span><span class="n">EdgeProgramManager</span> <span class="o">=</span> <span class="n">exir</span><span class="o">.</span><span class="n">to_edge</span><span class="p">(</span><span class="n">aten_dialect</span><span class="p">)</span>
+<span class="n">edge_dialect_program</span><span class="p">:</span> <span class="n">exir</span><span class="o">.</span><span class="n">EdgeProgramManager</span> <span class="o">=</span> <span class="n">exir</span><span class="o">.</span><span class="n">to_edge</span><span class="p">(</span><span class="n">aten_dialect_program</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">edge_dialect_program</span><span class="o">.</span><span class="n">exported_program</span><span class="p">)</span>
 </pre></div>
 </div>
