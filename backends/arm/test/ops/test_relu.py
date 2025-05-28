@@ -60,7 +60,6 @@ def test_relu_tosa_BI(test_data: torch.Tensor):
         (test_data(),),
         aten_op,
         exir_op,
-        symmetric_io_quantization=True,
     )
     pipeline.run()
 
@@ -73,7 +72,6 @@ def test_relu_u55_BI(test_data: torch.Tensor):
         aten_op,
         exir_op,
         run_on_fvp=False,
-        symmetric_io_quantization=True,
     )
     pipeline.run()
 
@@ -86,6 +84,5 @@ def test_relu_u85_BI(test_data: torch.Tensor):
         aten_op,
         exir_op,
         run_on_fvp=False,
-        symmetric_io_quantization=True,
     )
     pipeline.run()
