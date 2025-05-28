@@ -19,8 +19,8 @@ class MergeOneOfTwoBN(torch.nn.Module):
         "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
     }
     ops_after_pass = {
-        "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 1,
-        "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
+        "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 0,
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 2,
     }
 
     def __init__(self, affine: bool):
@@ -91,8 +91,8 @@ class MergeMultipleUsersBN(torch.nn.Module):
         "executorch_exir_dialects_edge__ops_aten_convolution_default": 3,
     }
     ops_after_pass = {
-        "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 1,
-        "executorch_exir_dialects_edge__ops_aten_convolution_default": 3,
+        "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 0,
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 4,
     }
 
     def __init__(self, affine: bool):
@@ -116,7 +116,9 @@ class MergeMultipleUsersBN(torch.nn.Module):
 
     def forward(self, x):
         x1 = self.conv2d(x)
-        x = self.batch_norm2d(x1)  # Can't be fused since x1 has multiple users
+        x = self.batch_norm2d(
+            x1
+        )  # Replaces bn wih a new conv since x1 has multiple users
         x = self.relu6(x)
         y = self.conv2d2(x1)
         z = self.conv2d2(x)
@@ -137,7 +139,8 @@ modules = {
 
 @common.parametrize("module", modules)
 def test_fuse_batchnorm_tosa_MI(module: torch.nn.Module):
-    """Test various cases where the batchnorm should and shouldn't be fused."""
+    """Test various cases where the batchnorm should either be fused with a previous
+    conv, or converted to a new conv."""
     pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),
