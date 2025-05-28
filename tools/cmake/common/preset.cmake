@@ -89,11 +89,9 @@ endmacro()
 # Set an overridable option.
 macro(set_overridable_option NAME VALUE)
   # If the user has explitily set the option, do not override it.
-  if(DEFINED ${NAME})
-    return()
+  if(NOT DEFINED ${NAME})
+    set(${NAME} ${VALUE} CACHE STRING "")
   endif()
-
-  set(${NAME} ${VALUE} CACHE STRING "")
 endmacro()
 
 # Detemine the build preset and load it.
