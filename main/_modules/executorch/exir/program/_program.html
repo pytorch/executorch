@@ -1521,6 +1521,13 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">_remove_invalid_ops_for_not_decompose</span><span class="p">(</span>
     <span class="n">ops_to_not_decompose</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span><span class="p">],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span><span class="p">]:</span>
+    <span class="n">_logged_warnings</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">log_warning</span><span class="p">(</span><span class="n">warn_str</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">warn_str</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_logged_warnings</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="n">warn_str</span><span class="p">)</span>
+            <span class="n">_logged_warnings</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">warn_str</span><span class="p">)</span>
+
     <span class="c1"># To address https://github.com/pytorch/executorch/issues/8781</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">keep</span><span class="p">(</span><span class="n">op</span><span class="p">):</span>
         <span class="c1"># Explicit allow list</span>
@@ -1538,18 +1545,18 @@
         <span class="n">schema</span> <span class="o">=</span> <span class="n">op</span><span class="o">.</span><span class="n">_schema</span>
         <span class="n">native_schema</span> <span class="o">=</span> <span class="n">_pybind_schema_to_native_schema</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">native_schema</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">logging</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="n">log_warning</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;Torchgen is not able to parse the schema of </span><span class="si">{</span><span class="n">op</span><span class="o">.</span><span class="n">_schema</span><span class="si">}</span><span class="s2">.  This is not fatal.&quot;</span>
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">native_schema</span><span class="o">.</span><span class="n">is_mutable</span><span class="p">:</span>
-                <span class="n">logging</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                <span class="n">log_warning</span><span class="p">(</span>
                     <span class="sa">f</span><span class="s2">&quot;Op </span><span class="si">{</span><span class="n">op</span><span class="si">}</span><span class="s2"> was requested for preservation by partitioner.  This request is ignored because it is mutable.&quot;</span>
                 <span class="p">)</span>
                 <span class="k">return</span> <span class="kc">False</span>
 
             <span class="k">if</span> <span class="n">native_schema</span><span class="o">.</span><span class="n">aliased_return_names</span><span class="p">()</span> <span class="o">!=</span> <span class="p">[</span><span class="kc">None</span><span class="p">]:</span>
-                <span class="n">logging</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                <span class="n">log_warning</span><span class="p">(</span>
                     <span class="sa">f</span><span class="s2">&quot;Op </span><span class="si">{</span><span class="n">op</span><span class="si">}</span><span class="s2"> was requested for preservation by partitioner.  This request is ignored because it aliases output.&quot;</span>
                 <span class="p">)</span>
                 <span class="k">return</span> <span class="kc">False</span>
@@ -1571,7 +1578,7 @@
             <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">unbind</span><span class="o">.</span><span class="n">int</span><span class="p">,</span>
             <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">split_with_sizes</span><span class="o">.</span><span class="n">default</span><span class="p">,</span>
         <span class="p">]:</span>
-            <span class="n">logging</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="n">log_warning</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;Op </span><span class="si">{</span><span class="n">op</span><span class="si">}</span><span class="s2"> was requested for preservation by partitioner.  This request is ignored because it is in a blocklist.&quot;</span>
             <span class="p">)</span>
             <span class="k">return</span> <span class="kc">False</span>
