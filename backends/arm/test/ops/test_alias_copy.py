@@ -64,6 +64,7 @@ def test_alias_tosa_BI(test_data: input_t1):
 
 
 @common.parametrize("test_data", AliasCopy.test_data)
+@common.XfailIfNoCorstone300
 def test_alias_u55_BI(test_data: input_t1):
     EthosU55PipelineBI[input_t1](
         AliasCopy(),
@@ -74,6 +75,7 @@ def test_alias_u55_BI(test_data: input_t1):
 
 
 @common.parametrize("test_data", AliasCopy.test_data)
+@common.XfailIfNoCorstone320
 def test_alias_u85_BI(test_data: input_t1):
     EthosU85PipelineBI[input_t1](
         AliasCopy(),
