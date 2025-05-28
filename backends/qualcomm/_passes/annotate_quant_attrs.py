@@ -7,6 +7,7 @@ import operator
 from typing import Any, Dict
 
 import torch
+from executorch.backends.qualcomm.builders.node_visitor import dq_ops, q_ops
 from executorch.backends.qualcomm.builders.utils import get_parameter
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
@@ -20,7 +21,7 @@ from executorch.backends.qualcomm.utils.constants import (
 )
 from executorch.exir.pass_base import ExportPass, PassResult
 
-from .utils import dq_ops, get_quant_attrs, q_ops
+from .utils import get_quant_attrs
 
 
 class AnnotateQuantAttrs(ExportPass):
