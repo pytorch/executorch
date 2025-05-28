@@ -162,11 +162,11 @@ class QuantizationConfig:
     pt2e_quantize: Optional[Pt2eQuantize] = None
     group_size: Optional[int] = None
     use_spin_quant: Optional[SpinQuant] = None
-    use_qat: Optional[bool] = None
+    use_qat: bool = False
     calibration_tasks: Optional[List[str]] = None
     calibration_limit: Optional[int] = None
     calibration_seq_length: Optional[int] = None
-    calibration_data: Optional[str] = None
+    calibration_data: str = "Once upon a time"
 
     def __post_init__(self):
         if self.qmode:
@@ -243,7 +243,7 @@ class QNNConfig:
 
 @dataclass
 class MPSConfig:
-    enabled: Optional[bool] = False
+    enabled: bool = False
 
 
 @dataclass
