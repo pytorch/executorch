@@ -14,8 +14,8 @@
 
 #define VEC4_T ${texel_type(DTYPE)}
 
-#define TILE_SIZE_X ${TILE_SIZE_X}us
-#define TILE_SIZE_Y ${TILE_SIZE_Y}us
+#define TILE_SIZE_X uint16_t(${TILE_SIZE_X})
+#define TILE_SIZE_Y uint16_t(${TILE_SIZE_Y})
 
 #define op(X, A, B) ${OPERATOR}
 
@@ -67,8 +67,8 @@ void main() {
   // | pos[2] | pos[3] |
   // +--------+--------+
   uint16_t pos[TILE_SIZE_X * TILE_SIZE_Y * 2];
-  for (uint16_t y = 0us, i = 0us; y < TILE_SIZE_Y; ++y) {
-    for (uint16_t x = 0us; x < TILE_SIZE_X; ++x) {
+  for (uint16_t y = uint16_t(0), i = uint16_t(0); y < TILE_SIZE_Y; ++y) {
+    for (uint16_t x = uint16_t(0); x < TILE_SIZE_X; ++x) {
       pos[i * 2] = out_pos_xy[0] * TILE_SIZE_X + x;
       pos[i * 2 + 1] = out_pos_xy[1] * TILE_SIZE_Y + y;
       i++;
