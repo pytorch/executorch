@@ -284,7 +284,7 @@ class TestReorderPasses(unittest.TestCase):
             < get_node_pos(converted_graph, exir_ops.edge.aten.permute_copy.default)
         )
 
-    def test_postpone_dequantize1(self):
+    def test_postpone_dequantize(self):
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(1, 16, 32, 6, dtype=torch.float32))
         weights = builder.placeholder(
