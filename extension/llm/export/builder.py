@@ -35,6 +35,8 @@ from executorch.extension.export_util.utils import export_to_edge, save_pte_prog
 
 from executorch.extension.llm.export.export_passes import RemoveRedundantTransposes
 from pytorch_tokenizers import get_tokenizer
+
+# TODO: remove these once pt2e migration from torch.ao to torchao is complete
 from torch.ao.quantization.quantizer import Quantizer as TorchQuantizer
 from torch.ao.quantization.quantizer.composable_quantizer import (
     ComposableQuantizer as TorchComposableQuantizer,
@@ -374,10 +376,14 @@ class LLMEdgeManager:
                 if self.verbose:
                     logging.info(f"Applied quantizers: {quantizers}")
 
-                if any(isinstance(q, Quantizer) for q in quantizers):
+                if all(isinstance(q, Quantizer) for q in quantizers):
                     composed_quantizer = ComposableQuantizer(quantizers)
-                else:
+                elif all(isinstance(q, TorchQuantizer) for q in quantizers):
                     composed_quantizer = TorchComposableQuantizer(quantizers)
+                else:
+                    raise ValueError(
+                        "Quantizers must be either Quantizer or TorchQuantizer"
+                    )
 
                 assert (
                     self.pre_autograd_graph_module is not None
