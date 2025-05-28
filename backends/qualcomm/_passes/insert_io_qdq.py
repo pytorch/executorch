@@ -7,6 +7,8 @@ from typing import Dict
 
 import torch
 
+from executorch.backends.qualcomm.builders.node_visitor import q_ops
+
 from executorch.backends.qualcomm.builders.utils import is_parameter
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_ENCODING,
@@ -15,8 +17,6 @@ from executorch.backends.qualcomm.utils.constants import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
-
-from .utils import q_ops
 
 
 class InsertIOQDQ(ExportPass):
