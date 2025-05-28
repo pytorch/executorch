@@ -21,18 +21,8 @@ namespace llm {
 // NOTE: we observed ~2x loading performance increase on iPhone 15
 // and a ~5% improvement on Galaxy S22 by switching to
 // FileDataLoader instead of MmapDataLoader + UseMlockIgnoreErrors.
-TextDecoderRunner::TextDecoderRunner(
-    Module* module,
-    bool use_kv_cache,
-    int32_t vocab_size,
-    float temperature)
-    : module_(module),
-      sampler_(std::make_unique<Sampler>(
-          vocab_size,
-          temperature,
-          kTopp,
-          static_cast<unsigned long long>(std::time(nullptr)))),
-      use_kv_cache_(use_kv_cache) {}
+TextDecoderRunner::TextDecoderRunner(Module* module, bool use_kv_cache)
+    : module_(module), use_kv_cache_(use_kv_cache) {}
 
 // This function is functional, meaning it shouldn't modify any state of the
 // input. It should be safe to call multiple times with the same inputs. The

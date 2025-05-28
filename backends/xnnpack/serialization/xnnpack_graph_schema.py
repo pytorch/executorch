@@ -292,6 +292,11 @@ class XNNCeiling(XNNNode1x1):
 
 
 @dataclass
+class XNNGelu(XNNNode1x1):
+    pass
+
+
+@dataclass
 class XNNHardswish(XNNNode1x1):
     pass
 
@@ -307,6 +312,11 @@ class XNNLeakyReLU:
     input_id: int
     output_id: int
     flags: int
+
+
+@dataclass
+class XNNLog(XNNNode1x1):
+    pass
 
 
 @dataclass
@@ -379,6 +389,8 @@ XNodeUnion = Union[
     XNNScaledDotProductAttention,
     XNNBatchMatrixMultiply,
     XNNReciprocalSquareRoot,
+    XNNLog,
+    XNNGelu,
 ]
 
 

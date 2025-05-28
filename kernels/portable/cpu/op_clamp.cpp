@@ -134,9 +134,12 @@ Tensor& clamp_out(
   static constexpr const char op_name[] = "clamp.out";
 
   ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        [has_min, min_opt, has_max, max_opt](const CTYPE_COMPUTE val_in) {
-          CTYPE_COMPUTE val_out = val_in;
+    utils::apply_unitensor_elementwise_fn<
+        CTYPE_COMPUTE,
+        op_name,
+        utils::SupportedTensorDtypes::SAME_AS_COMMON>(
+        [has_min, min_opt, has_max, max_opt](const auto val_in) {
+          auto val_out = val_in;
           if (has_min) {
             val_out = utils::max_override(
                 val_out, utils::scalar_to<CTYPE_COMPUTE>(min_opt.value()));
@@ -150,8 +153,7 @@ Tensor& clamp_out(
         ctx,
         in,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::SAME_AS_COMMON);
+        out);
   });
 
   return out;
@@ -210,11 +212,15 @@ Tensor& clamp_tensor_out(
   static constexpr const char op_name[] = "clamp.Tensor_out";
 
   ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_tritensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+    utils::apply_tritensor_elementwise_fn<
+        CTYPE_COMPUTE,
+        op_name,
+        utils::SupportedTensorDtypes::REALHBBF16>(
         [has_min, has_max](
             const CTYPE_COMPUTE val_in,
             const CTYPE_COMPUTE val_min,
             const CTYPE_COMPUTE val_max) {
+          // TODO: rewrite this to be vectorization-capable.
           CTYPE_COMPUTE val_out = val_in;
           if (has_min) {
             val_out = utils::max_override(val_out, val_min);
@@ -231,8 +237,7 @@ Tensor& clamp_tensor_out(
         utils::SupportedTensorDtypes::REALHBBF16,
         max,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::REALHBBF16);
+        out);
   });
 
   return out;

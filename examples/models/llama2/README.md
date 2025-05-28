@@ -41,7 +41,7 @@ You can export and run the original Llama 2 7B model.
     ```
 4. Create tokenizer.bin.
     ```
-    python -m extension.llm.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
+    python -m pytorch_tokenizers.tools.llama2c.convert -t <tokenizer.model> -o tokenizer.bin
     ```
 
     Pass the converted `tokenizer.bin` file instead of `tokenizer.model` for subsequent steps.

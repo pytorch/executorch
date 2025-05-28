@@ -59,7 +59,7 @@ namespace internal {
  * and dtype. The function fn specifies the math operation which is applied to
  * the input tensor element-wise.
  */
-Tensor& unary_ufunc_realh(
+Tensor& unary_ufunc_realhbf16(
     double (*fn)(double),
     KernelRuntimeContext& ctx,
     const Tensor& in,

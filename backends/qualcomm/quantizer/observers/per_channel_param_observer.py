@@ -109,6 +109,5 @@ class PerChannelParamObserver(UniformQuantizationObserverBase):
             self.quant_max,
         )
 
-    @torch.jit.export
     def calculate_qparams(self):
         return self._calculate_qparams(self.min_val, self.max_val)

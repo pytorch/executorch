@@ -11,7 +11,7 @@ Here are supported models:
 
 Pretrained models are not included in this repo. Users are suggested to download them [here](https://ai.meta.com/resources/models-and-libraries/llama-downloads/).
 
-This page contains the basic recipe for running Llama. See [Llama utils page](./UTILS.md) page for more advanced use-cases such as fine-tuning and running smaller models for educational purposes.
+This page contains the basic recipe for running Llama. See [Llama utils page](UTILS.md) page for more advanced use-cases such as fine-tuning and running smaller models for educational purposes.
 
 # What is Llama?
 Llama is a collection of large language models that use publicly available data for training. These models are based on the transformer architecture, which allows it to process input sequences of arbitrary length and generate output sequences of variable length. One of the key features of Llama models is its ability to generate coherent and contextually relevant text. This is achieved through the use of attention mechanisms, which allow the model to focus on different parts of the input sequence as it generates output. Additionally, Llama models use a technique called “masked language modeling” to pre-train the model on a large corpus of text, which helps it learn to predict missing words in a sentence.
@@ -80,12 +80,12 @@ Llama 3.2 1B and 3B performance was measured on Android OnePlus 12 device. The p
 <table>
   <tr>
     <td>
-        <img src="./Android3_2_1B_bf16.gif" width="300">
+        <img src="Android3_2_1B_bf16.gif" width="300">
         <br>
         <em> Llama3.2 1B, unquantized, BF16 on Android phone. </em>
     </td>
     <td>
-      <img src="./Android3_2_3B_SpinQuant.gif" width="300">
+      <img src="Android3_2_3B_SpinQuant.gif" width="300">
       <br>
       <em>
       Llama3.2 3B, 4bit quantized (SpinQuant) on Android phone
@@ -129,7 +129,7 @@ Llama 3 8B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 
 
 <p align="center">
       <br>
-      <img src="./llama_via_xnnpack.gif" width=300>
+      <img src="llama_via_xnnpack.gif" width=300>
       <br>
       <em>
       Llama3.1 8B, 4bit quantized on Android phone
@@ -143,7 +143,7 @@ Llama 3 8B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 
 ## Tested on
 
 - MacOS M1/M2, Linux.
-- For Llama 3 8B, your device may require at least 32GB RAM. If this is a constraint for you, please try the [smaller stories model](./UTILS.md).
+- For Llama 3 8B, your device may require at least 32GB RAM. If this is a constraint for you, please try the [smaller stories model](UTILS.md).
 
 ## Step 1: Setup
 > :warning: **double check your python environment**: make sure `conda activate <VENV>` is run before all the bash and python scripts.
@@ -177,6 +177,7 @@ python -m examples.models.llama.export_llama \
   --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
   --output_name="llama3_2.pte"
 ```
+For convenience, an [exported ExecuTorch bf16 model](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/llama3_2-1B.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/ExportRecipe_1B.ipynb).
 
 - To use **SpinQuant**, here are two ways:
     - Download directly from [Llama website](https://www.llama.com/llama-downloads). The model weights are prequantized and can be exported to `pte` file directly.
@@ -206,6 +207,8 @@ python -m examples.models.llama.export_llama \
    --use_spin_quant native \
    --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
 ```
+For convenience, an [exported ExecuTorch SpinQuant model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_SpinQuant_INT4_EO8.ipynb).
+
 
 - To use **QAT+LoRA**, download directly from [Llama website](https://www.llama.com/llama-downloads). The model weights are prequantized and can be exported to `pte` file directly by:
 
@@ -234,6 +237,7 @@ python -m examples.models.llama.export_llama \
    --output_name "llama3_2.pte" \
    --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
 ```
+For convenience, an [exported ExecuTorch QAT+LoRA model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-QLORA_INT4_EO8.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_QLORA_INT4_EO8.ipynb).
 
 ### Option B: Download and export Llama 3 8B instruct model
 
@@ -291,6 +295,7 @@ Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the 
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_XNNPACK=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+        -DSUPPORT_REGEX_LOOKAHEAD=ON
         -Bcmake-out/examples/models/llama \
         examples/models/llama
 
@@ -303,6 +308,8 @@ Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the 
     ```
 
 To build for CoreML backend and validate on Mac, replace `-DEXECUTORCH_BUILD_XNNPACK=ON` with `-DEXECUTORCH_BUILD_COREML=ON`
+
+If you an error about "RE2 failed to compile pattern with lookahead:...SUPPORT_REGEX_LOOKAHEAD=ON", add "-DSUPPORT_REGEX_LOOKAHEAD=ON" when building the runner.
 
 ## Step 4: Run benchmark on Android phone
 
@@ -347,6 +354,7 @@ cmake  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DSUPPORT_REGEX_LOOKAHEAD=ON
     -Bcmake-out-android/examples/models/llama \
     examples/models/llama
 
@@ -371,14 +379,14 @@ adb push cmake-out-android/examples/models/llama/llama_main /data/local/tmp/llam
 ```
 adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --tokenizer_path <tokenizer.model> --prompt \"What is the capital of France?\" --seq_len 120" --warmup=1
 ```
-## Step 6: Build Mobile apps
+## Step 5: Build Mobile apps
 
 ### iOS
 
-Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-ios.html) to for full instructions on building the iOS LLAMA Demo App. Rename `tokenizer.model` file to `tokenizer.bin` because the demo app looks for the tokenizer file with .bin extension.
+Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-ios) to for full instructions on building the iOS LLAMA Demo App. Rename `tokenizer.model` file to `tokenizer.bin` because the demo app looks for the tokenizer file with .bin extension.
 
 ### Android
-Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-android.html) to for full instructions on building the Android LLAMA Demo App.
+Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-android) to for full instructions on building the Android LLAMA Demo App.
 
 ## Running with low-bit kernels
 
@@ -392,7 +400,7 @@ LLAMA_CHECKPOINT=path/to/checkpoint.pth
 LLAMA_PARAMS=path/to/params.json
 
 # Set low-bit quantization parameters
-QLINEAR_BITWIDTH=3 # Can be 1-8
+QLINEAR_BITWIDTH=4 # Can be 1-8
 QLINEAR_GROUP_SIZE=128 # Must be multiple of 16
 QEMBEDDING_BITWIDTH=4 # Can be 1-8
 QEMBEDDING_GROUP_SIZE=32 # Must be multiple of 16
@@ -412,7 +420,7 @@ python -m examples.models.llama.export_llama \
 ```
 
 A few notes:
-- If your model shares embedding/unembedding weights (like Llama1B and Llama3B do), you can add `--use_shared_embedding` to take advantage of this and reduce memory.  When this option is enabled, you can specify whether embeddings are quantized with weight zeros or not by specifying a third argument.  For example, `-E "torchao:4,32,true"` means that the embedding is quantized to 4-bits with group_size=32 and uses weight zeros (this is the default behavior if you simply use `-E "torchao:4,32"`), whereas `-E "torchao:4,32,false"` means that the embedding is quantized to 4-bits with group_size=32, but is quantized with scales-only.  If `--use_shared_embedding` is specified, the unembedding (i.e., the final linear layer) is quantized in the same way, but also uses 8-bit dynamically quantized activations.
+- If your model shares embedding/unembedding weights (like Llama1B and Llama3B do), you can add `--use_shared_embedding` to take advantage of this and reduce memory.  When this option is enabled, you can specify whether embeddings are quantized asymmetrically or not by specifying a third argument.  For example, `-E "torchao:4,32,true"` means that the embedding is quantized to 4-bits with group_size=32 and is asymmetric (this is the default behavior if you simply use `-E "torchao:4,32"`), whereas `-E "torchao:4,32,false"` means that the embedding is quantized to 4-bits with group_size=32 and is symmetric.  If `--use_shared_embedding` is specified, the unembedding (i.e., the final linear layer) is quantized in the same way, but also uses 8-bit dynamically quantized activations.
 - To do channelwise quantization, specify group_size to 0.  This works for both linear and embedding layers.
 
 Once the model is exported, we need to build ExecuTorch and the runner with the low-bit kernels.
@@ -427,7 +435,7 @@ cmake -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-    -DEXECUTORCH_BUILD_XNNPACK=ON \
+    -DEXECUTORCH_BUILD_XNNPACK=OFF \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
@@ -492,7 +500,7 @@ python -m examples.models.llama.eval_llama \
 	--max_context_len <max context length>
 ```
 
-See [Llama utils page](./UTILS.md) page for more advanced use-cases such as fine-tuning and running smaller models for educational purposes, and quick iteration and verification.
+See [Llama utils page](UTILS.md) page for more advanced use-cases such as fine-tuning and running smaller models for educational purposes, and quick iteration and verification.
 
 # What is coming next?
 ## Quantization
@@ -544,3 +552,22 @@ clang: error: linker command failed with exit code 1 (use -v to see invocation)
 ```
 It's a known issue for Xcode version 15.1.
 Mitigation: update to most recent Xcode version, clean and rebuild.
+
+- If you encounter issues with missing abseil-cpp or re2, try running `git submodule update --init --recursive` to pull in those submodules.
+Example error:
+```
+CMake Error at runner/CMakeLists.txt:68 (add_subdirectory):
+  The source directory
+
+    /Users/../executorch/extension/llm/tokenizers/third-party/abseil-cpp
+
+  does not contain a CMakeLists.txt file.
+
+
+CMake Error at runner/CMakeLists.txt:72 (add_subdirectory):
+  The source directory
+
+    /Users/../executorch/extension/llm/tokenizers/third-party/re2
+
+  does not contain a CMakeLists.txt file.
+```

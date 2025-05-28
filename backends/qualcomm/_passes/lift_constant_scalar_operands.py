@@ -47,17 +47,27 @@ SCALAR_OPS = {
     aten.pow.Tensor_Scalar: TensorOpInfo(aten.pow.Tensor_Tensor, False, False),
     # The scalar number arg[1] is missing when using default. Result in a corner case to deal
     aten.leaky_relu.default: TensorOpInfo(aten.prelu.default, True, False),
+    aten.leaky_relu_.default: TensorOpInfo(aten.prelu.default, True, False),
     aten.where.ScalarOther: TensorOpInfo(aten.where.self, False, True),
     aten.where.Scalar: TensorOpInfo(aten.where.self, False, True),
+    aten.masked_fill.Scalar: TensorOpInfo(aten.masked_fill.Tensor, False, False),
 }
 
 
-SKIP_LIFT_OPS = {aten.full_like.default, aten.arange.start_step}
+SKIP_LIFT_OPS = {
+    aten.full_like.default,
+    aten.arange.start_step,
+    aten.arange.default,
+    aten.scalar_tensor.default,
+    aten.elu.default,
+}
 
 
 class LiftConstantScalarOperands(ExportPass):
     """
-    Lift constant scalar so that we can use observer of quantizer
+    Lift constant scalar so that we can use observer of quantizer.
+    For floating point model, lift constant scalar to avoid
+    creating temporary tensors for scalar node in the operation builder
     """
 
     def __init__(self):
@@ -69,7 +79,7 @@ class LiftConstantScalarOperands(ExportPass):
         # For dtype, in some cases, we cannot use node.args[0] as scalar dtype.
         # Ex: Where op args[0] can be bool, however, we probably want args[1] and args[2] to be dtype same as node.meta["val"] instead of bool type
         tensor = torch.tensor(
-            [const_val],
+            const_val,
             dtype=(
                 node.args[0].meta["val"].dtype
                 if not is_float_tensor(node)

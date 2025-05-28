@@ -270,6 +270,26 @@ ssize_t compute_numel(
     const ::executorch::runtime::etensor::TensorImpl::SizesType* sizes,
     ssize_t dim);
 
+/// Appropriate format specifier for the result of calling
+/// size(). Must be used instead of using zd directly to support ATen
+/// mode.
+#define ET_PRI_TENSOR_SIZE "zd"
+
+/// Appropriate format specifier for the result of calling
+/// dim(). Must be used instead of using zd directly to support ATen
+/// mode.
+#define ET_PRI_TENSOR_DIM "zd"
+
+/// Appropriate format specifier for the result of calling
+/// numel(). Must be used instead of using zd directly to support ATen
+/// mode.
+#define ET_PRI_TENSOR_NUMEL "zd"
+
+// Appropriate format specifier for elements of sizes() and
+// strides(). Must be used instead of using d directly to support ATen
+// mode.
+#define ET_PRI_SIZES_AND_STRIDES "d"
+
 } // namespace etensor
 } // namespace runtime
 } // namespace executorch

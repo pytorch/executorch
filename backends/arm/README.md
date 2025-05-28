@@ -80,28 +80,10 @@ test                            #  Root test folder
 Some example commands to run these tests follow. Run a single test:
 
 ```
-python -m unittest backends.arm.test.ops.test_add.TestSimpleAdd -k test_add2_tosa_BI
-```
-
-or with pytest
-
-```
 pytest -c /dev/null -v -n auto backends/arm/test/ops/test_add.py -k test_add2_tosa_BI
 ```
 
-Or all tests in "TestSimpleAdd":
-
-```
-python -m unittest backends.arm.test.ops.test_add.TestSimpleAdd
-```
-
 Or discover and run many tests:
-
-```
-python -m unittest discover -s backends/arm/test/ops/
-```
-
-or with pytest
 
 ```
 pytest -c /dev/null -v -n auto backends/arm/test/ops/
@@ -119,7 +101,7 @@ backends/arm/test/setup_testing.sh
 The you can run the tests with
 
 ```
-pytest -c /dev/null -v -n auto backends/arm/test --arm_run_corstoneFVP
+pytest -c /dev/null -v -n auto backends/arm/test
 ```
 
 ## Passes

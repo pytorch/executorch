@@ -143,9 +143,10 @@ Tensor& sub_out(
     return out;
   }
   if ((b_dim == 0) && float_types) {
+    // Precompute the value of b * alpha since it's a constant.
+    const float val_b = alpha_val * b.const_data_ptr<float>()[0];
     for (int i = 0; i < a.numel(); i++)
-      out.mutable_data_ptr<float>()[i] =
-          a.const_data_ptr<float>()[i] - b.const_data_ptr<float>()[0];
+      out.mutable_data_ptr<float>()[i] = a.const_data_ptr<float>()[i] - val_b;
     return out;
   }
 

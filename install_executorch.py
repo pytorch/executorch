@@ -53,7 +53,7 @@ def clean():
 
 
 # Please keep this insync with `ShouldBuild.pybindings` in setup.py.
-VALID_PYBINDS = ["coreml", "mps", "xnnpack", "training"]
+VALID_PYBINDS = ["coreml", "mps", "xnnpack", "training", "openvino"]
 
 
 ################################################################################
@@ -120,8 +120,10 @@ def check_and_update_submodules():
     if missing_submodules:
         logger.warning("Some required submodules are missing. Updating submodules...")
         try:
-            subprocess.check_call(["git", "submodule", "sync"])
-            subprocess.check_call(["git", "submodule", "update", "--init"])
+            subprocess.check_call(["git", "submodule", "sync", "--recursive"])
+            subprocess.check_call(
+                ["git", "submodule", "update", "--init", "--recursive"]
+            )
         except subprocess.CalledProcessError as e:
             logger.error(f"Error updating submodules: {e}")
             exit(1)
@@ -130,13 +132,10 @@ def check_and_update_submodules():
         for path, file in missing_submodules.items():
             if not check_folder(path, file):
                 logger.error(f"{file} not found in {path}.")
-                logger.error("Please run `git submodule update --init`.")
+                logger.error(
+                    "Submodule update failed. Please run `git submodule update --init --recursive` manually."
+                )
                 exit(1)
-    # Go into tokenizers submodule and install its submodules
-    tokenizers_path = get_required_submodule_paths().get("tokenizers", None)
-    if tokenizers_path:
-        with pushd(tokenizers_path):
-            subprocess.check_call(["git", "submodule", "update", "--init"])
     logger.info("All required submodules are present.")
 
 
@@ -207,14 +206,10 @@ def main(args):
     use_pytorch_nightly = True
 
     wants_pybindings_off, pybind_defines = _list_pybind_defines(args)
-    if not wants_pybindings_off:
-        if len(pybind_defines) > 0:
-            # If the user explicitly provides a list of bindings, just use them
-            cmake_args += pybind_defines
-        else:
-            # If the user has not set pybindings off but also has not provided
-            # a list, then turn on xnnpack by default
-            cmake_args.append("-DEXECUTORCH_BUILD_XNNPACK=ON")
+    if wants_pybindings_off:
+        cmake_args.append("-DEXECUTORCH_BUILD_PYBIND=OFF")
+    else:
+        cmake_args += pybind_defines
 
     if args.clean:
         clean()

@@ -381,14 +381,13 @@ static Kernel prim_ops[] = {
 
 };
 
-executorch::runtime::Span<const executorch::runtime::Kernel> kernel_span(
-    prim_ops,
-    prim_ops + sizeof(prim_ops) / sizeof(Kernel));
+executorch::runtime::Span<const executorch::ET_RUNTIME_NAMESPACE::Kernel>
+    kernel_span(prim_ops, prim_ops + sizeof(prim_ops) / sizeof(Kernel));
 
 // Return value not used. Keep the static variable assignment to register
 // operators in static initialization time.
 auto success_with_kernel_reg =
-    executorch::runtime::register_kernels(kernel_span);
+    executorch::ET_RUNTIME_NAMESPACE::register_kernels(kernel_span);
 
 } // namespace
 } // namespace function

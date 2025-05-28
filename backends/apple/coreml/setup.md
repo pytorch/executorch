@@ -4,18 +4,10 @@ This is a tutorial for setting up the Core ML backend.
 
 ## AOT Setup
 
-1. Follow the instructions described in [Setting Up ExecuTorch](/docs/source/getting-started-setup.md) to set up ExecuTorch environment.
+1. Follow the instructions described in [Setting Up ExecuTorch](../../../docs/source/getting-started-setup.rst) to set up ExecuTorch environment.
 
-2. Run `install_requirements.sh` to install dependencies required by the **Core ML** backend.
 
-```
-cd executorch
-
-./backends/apple/coreml/scripts/install_requirements.sh
-
-```
-
-3. Run the example script to validate that the **Core ML** backend is set up correctly.
+2. Run the example script to validate that the **Core ML** backend is set up correctly.
 
 ```
 cd executorch
@@ -26,7 +18,7 @@ python3 -m examples.apple.coreml.scripts.export --model_name add
 
 ```
 
-4. You can now integrate the **Core ML** backend in code.
+3. You can now integrate the **Core ML** backend in code.
 
 ```python
 # Delegate to Core ML backend
@@ -36,7 +28,7 @@ delegated_program_manager = edge_program_manager.to_backend(CoreMLPartitioner())
 
 ## Integrating Core ML delegate into runtime.
 
-1. Follow the instructions described in [Building with CMake](/docs/source/runtime-build-and-cross-compilation.md#building-with-cmake) to set up CMake build system.
+1. Follow the instructions described in [Building with CMake](../../../docs/source/using-executorch-cpp.md#building-with-cmake) to set up CMake build system.
 
 2. Install [Xcode](https://developer.apple.com/xcode/).
 

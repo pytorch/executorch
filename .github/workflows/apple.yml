@@ -5,6 +5,8 @@ on:
     branches:
       - main
       - release/*
+    tags:
+      - ciflow/trunk/*
   pull_request:
     paths:
       - .ci/scripts/setup-ios.sh
@@ -37,7 +39,7 @@ jobs:
         id: set_version
         shell: bash
         run: |
-          VERSION="0.5.0.$(TZ='PST8PDT' date +%Y%m%d)"
+          VERSION="0.7.0.$(TZ='PST8PDT' date +%Y%m%d)"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   build-demo-ios:
@@ -154,6 +156,7 @@ jobs:
           "kernels_optimized"
           "kernels_portable"
           "kernels_quantized"
+          "threadpool"
         )
 
         .ci/scripts/setup-conda.sh
@@ -171,8 +174,7 @@ jobs:
         backends/apple/mps/install_requirements.sh
 
         # Build iOS Frameworks
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        scripts/build_apple_frameworks.sh --Release --Debug --coreml --custom --mps --optimized --portable --quantized --xnnpack
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output scripts/build_apple_frameworks.sh
 
         # Bundle iOS Frameworks
         for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
@@ -312,8 +314,7 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Build ExecuTorch iOS frameworks"
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-          scripts/build_apple_frameworks.sh --Release --Debug --coreml --custom --mps --optimized --portable --quantized --xnnpack
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output scripts/build_apple_frameworks.sh
         echo "::endgroup::"
 
         echo "::group::Build ExecuTorch benchmark app"

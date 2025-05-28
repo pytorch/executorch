@@ -1,0 +1,27 @@
+name: check-c10-sync
+
+on:
+  pull_request:
+    paths:
+      - .ci/docker/ci_commit_pins/pytorch.txt
+      - .ci/scripts/compare_dirs.sh
+      - runtime/core/portable_type/c10/**
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  check-c10-sync:
+    permissions:
+      id-token: write
+      contents: read
+    name: check-c10-sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Clone PyTorch
+        run: |
+          .ci/scripts/check_c10_sync.sh

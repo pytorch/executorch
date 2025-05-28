@@ -4,8 +4,8 @@
 # except in compliance with the License. See the license file in the root
 # directory of this source tree for more details.
 
-from torch.ao.quantization.quantizer import Quantizer
 from torch.fx import GraphModule
+from torchao.quantization.pt2e.quantizer import Quantizer
 
 from .._passes.decompose_scaled_dot_product_attention import (
     DecomposeScaledDotProductAttention,

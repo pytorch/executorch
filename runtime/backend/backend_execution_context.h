@@ -12,7 +12,7 @@
 #include <executorch/runtime/core/memory_allocator.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 
 /**
  * BackendExecutionContext will be used to inject run time context.
@@ -68,13 +68,13 @@ class BackendExecutionContext final {
   const char* method_name_ = nullptr;
 };
 
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
 
 namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::BackendExecutionContext;
+using ::executorch::ET_RUNTIME_NAMESPACE::BackendExecutionContext;
 } // namespace executor
 } // namespace torch

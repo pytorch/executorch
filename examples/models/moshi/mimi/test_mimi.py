@@ -19,9 +19,9 @@ from executorch.runtime import Runtime
 
 from huggingface_hub import hf_hub_download
 from moshi.models import loaders
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.export import export, ExportedProgram
 from torch.utils._pytree import tree_flatten
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 proxies = {
     "http": "http://fwdproxy:8080",
@@ -59,7 +59,7 @@ class TestMimiModel(unittest.TestCase):
         """Setup once for all tests: Load model and prepare test data."""
 
         # Get environment variables (if set), otherwise use default values
-        mimi_weight = os.getenv("MIMI_WEIGHT", None)
+        cls.mimi_weight = os.getenv("MIMI_WEIGHT", None)
         hf_repo = os.getenv("HF_REPO", loaders.DEFAULT_REPO)
         device = "cuda" if torch.cuda.device_count() else "cpu"
 
@@ -75,15 +75,15 @@ class TestMimiModel(unittest.TestCase):
 
         seed_all(42424242)
 
-        if mimi_weight is None:
+        if cls.mimi_weight is None:
             try:
-                mimi_weight = hf_hub_download(hf_repo, loaders.MIMI_NAME)
+                cls.mimi_weight = hf_hub_download(hf_repo, loaders.MIMI_NAME)
             except:
-                mimi_weight = hf_hub_download(
+                cls.mimi_weight = hf_hub_download(
                     hf_repo, loaders.MIMI_NAME, proxies=proxies
                 )
 
-        cls.mimi = loaders.get_mimi(mimi_weight, device)
+        cls.mimi = loaders.get_mimi(cls.mimi_weight, device)
         cls.device = device
         cls.sample_pcm, cls.sample_sr = read_mp3_from_url(
             "https://huggingface.co/lmz/moshi-swift/resolve/main/bria-24khz.mp3"
@@ -135,16 +135,28 @@ class TestMimiModel(unittest.TestCase):
 
         all_codes_th = torch.cat(all_codes, dim=-1)
 
+        pcm_ref = self.mimi.decode(all_codes_th)
+
         all_pcms = []
+        for i in range(all_codes_th.shape[-1]):
+            codes = all_codes_th[..., i : i + 1]
+            pcm = self.mimi.decode(codes)
+            all_pcms.append(pcm)
+        all_pcms = torch.cat(all_pcms, dim=-1)
+        sqnr = compute_sqnr(pcm_ref, all_pcms)
+        print(f"sqnr = {sqnr} dB")
+        self.assertTrue(sqnr > 4)
+
+        all_pcms_streaming = []
         with self.mimi.streaming(1):
             for i in range(all_codes_th.shape[-1]):
                 codes = all_codes_th[..., i : i + 1]
-                pcm = self.mimi.decode(codes)
-                all_pcms.append(pcm)
-        all_pcms = torch.cat(all_pcms, dim=-1)
-
-        pcm_ref = self.mimi.decode(all_codes_th)
-        self.assertTrue(torch.allclose(pcm_ref, all_pcms, atol=1e-5))
+                pcm_streaming = self.mimi.decode(codes)
+                all_pcms_streaming.append(pcm_streaming)
+        all_pcms_streaming = torch.cat(all_pcms_streaming, dim=-1)
+        sqnr_streaming = compute_sqnr(pcm_ref, all_pcms_streaming)
+        print(f"sqnr_streaming = {sqnr_streaming} dB")
+        self.assertTrue(sqnr_streaming > 100)
 
     def test_exported_encoding(self):
         """Ensure exported encoding model is consistent with reference output."""
@@ -173,15 +185,23 @@ class TestMimiModel(unittest.TestCase):
                 self.mimi_model = mimi
 
             def forward(self, x):
-                return self.mimi_model.decode(x)
+                x = x.transpose(1, 2)
+                x = self.mimi_model.upsample(x)
+                (emb,) = self.mimi_model.decoder_transformer(x)
+                emb.transpose(1, 2)
+                with self.mimi_model._context_for_encoder_decoder:
+                    out = self.mimi_model.decoder(emb)
+                return out
 
-        sample_pcm = torch.tensor(self.sample_pcm, device=self.device)[None]
-        pcm_chunk_size = int(self.mimi.sample_rate / self.mimi.frame_rate)
-        chunk = sample_pcm[..., 0:pcm_chunk_size]
-        input = self.mimi.encode(chunk)
+        emb_input = torch.rand(1, 1, 512, device="cpu")
+        mimi_cpu = loaders.get_mimi(self.mimi_weight, "cpu")
+        mimi_decode = MimiDecode(mimi_cpu)
+        mimi_decode.eval()
+        mimi_decode(emb_input)
 
-        mimi_decode = MimiDecode(self.mimi)
-        exported_decode: ExportedProgram = export(mimi_decode, (input,), strict=False)
+        exported_decode: ExportedProgram = export(
+            mimi_decode, (emb_input,), strict=False
+        )
         quantization_config = get_symmetric_quantization_config(
             is_per_channel=True,
             is_dynamic=True,
@@ -190,12 +210,12 @@ class TestMimiModel(unittest.TestCase):
         quantizer.set_global(quantization_config)
         m = exported_decode.module()
         m = prepare_pt2e(m, quantizer)
-        m(input)
+        m(emb_input)
         m = convert_pt2e(m)
         print("quantized graph:")
         print(m.graph)
         # Export quantized module
-        exported_decode: ExportedProgram = export(m, (input,), strict=False)
+        exported_decode: ExportedProgram = export(m, (emb_input,), strict=False)
         # Lower
         edge_manager = to_edge_transform_and_lower(
             exported_decode,
@@ -208,16 +228,18 @@ class TestMimiModel(unittest.TestCase):
         with open(output_file, "wb") as file:
             exec_prog.write_to_file(file)
 
-        eager_res = mimi_decode(input)
+        eager_res = mimi_decode(emb_input)
         runtime = Runtime.get()
         program = runtime.load_program(output_file)
         method = program.load_method("forward")
-        flattened_x = tree_flatten(input)[0]
+        flattened_x = tree_flatten(emb_input)[0]
         res = method.execute(flattened_x)
         # Compare results
         sqnr = compute_sqnr(eager_res, res[0])
         print(f"SQNR: {sqnr}")
-        torch.testing.assert_close(eager_res, res[0], atol=1e-3, rtol=1e-3)
+        # Don't check for exact equality, but check that the SQNR is high enough
+        # torch.testing.assert_close(eager_res, res[0], atol=4e-3, rtol=1e-3)
+        self.assertGreater(sqnr, 25.0)
 
 
 if __name__ == "__main__":

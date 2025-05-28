@@ -52,7 +52,6 @@ void add_copy_offset_node(
 // It copies the texture extents specified by the range, src_offset, and
 // dst_offset (all are in texture coordinate (x, y, z) from the input image to
 // the output image.
-//
 void add_copy_packed_dim_offset_node(
     ComputeGraph& graph,
     const ValueRef in,

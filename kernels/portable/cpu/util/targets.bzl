@@ -11,7 +11,8 @@ def define_common_targets():
     # build, where the portable ops are built from source and linked with :all_deps
     runtime.cxx_library(
         name = "all_deps",
-        deps = [
+        exported_deps = [
+            "//executorch/extension/threadpool:threadpool",
             "//executorch/kernels/portable/cpu/util:functional_util",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:kernel_ops_util",
@@ -32,7 +33,7 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/util:slice_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:upsample_util",
-            "//executorch/runtime/kernel:thread_parallel_interface",
+            "//executorch/kernels/portable/cpu/util:vectorized_math",
         ],
         visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     )
@@ -110,9 +111,10 @@ def define_common_targets():
             ":broadcast_indexes_range",
             ":broadcast_util",
             ":dtype_util",
+            ":vectorized_math",
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
             "//executorch/runtime/kernel:kernel_runtime_context",
-            "//executorch/runtime/kernel:thread_parallel_interface",
+            "//executorch/extension/threadpool:threadpool",
         ],
         deps = [
             "//executorch/kernels/portable/cpu:scalar_utils",
@@ -246,7 +248,7 @@ def define_common_targets():
         srcs = [],
         exported_headers = ["functional_util.h"],
         exported_deps = [
-            "//executorch/runtime/kernel:thread_parallel_interface",
+            "//executorch/extension/threadpool:threadpool",
         ],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
@@ -261,6 +263,9 @@ def define_common_targets():
         srcs = [],
         exported_headers = ["math_util.h"],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
+        exported_deps = [
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
+        ],
     )
 
     runtime.cxx_library(
@@ -308,6 +313,16 @@ def define_common_targets():
         ],
     )
 
+    runtime.cxx_library(
+        name = "vectorized_math",
+        exported_headers = ["vectorized_math.h"],
+        visibility = ["//executorch/..."],
+        exported_deps = [
+            "//executorch/runtime/core/portable_type:portable_type",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+        ],
+    )
+
     # Utility functions that can be used by operators that perform reduction
     for aten_mode in get_aten_mode_options():
         suffix = "_aten" if aten_mode else ""
@@ -320,7 +335,7 @@ def define_common_targets():
                 "//executorch/runtime/core/exec_aten/util:tensor_util{}".format(suffix),
             ],
             exported_deps = [
-                "//executorch/runtime/kernel:thread_parallel_interface",
+                "//executorch/extension/threadpool:threadpool",
             ],
             exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
             visibility = [
