@@ -150,7 +150,6 @@ class VulkanBackend(BackendDetails):
         program = apply_passes(
             program,
             [
-                RemoveRedundantOpsTransform(),
                 AddmmToLinearTransform(),
                 FuseQuantizedOpsTransform(program),
                 SqueezeUnsqueezeInputs(),
@@ -158,6 +157,7 @@ class VulkanBackend(BackendDetails):
                 ViewCopyToSqueezeUnsqueezePass(),
                 FuseBatchNormWithConvPass(program),
                 FuseClampPass(),
+                RemoveRedundantOpsTransform(),
             ],
         )
 
