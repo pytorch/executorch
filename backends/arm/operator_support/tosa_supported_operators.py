@@ -28,6 +28,8 @@ from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
+
+from torch._subclasses.fake_tensor import FakeTensor
 from torch.export.graph_signature import InputKind
 from torch.fx.passes.operator_support import any_chain, chain, OperatorSupportBase
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
@@ -116,6 +118,7 @@ def tosa_support_factory(
     negative_checks: list[OperatorSupportBase] = [
         CheckInt64Inputs(exported_program, reporter),
         CheckFloat64Inputs(exported_program, reporter),
+        RankCheck(reporter, max_rank=5),
         *[
             reporter.wrap_check(check, f"Rejected by {check.__class__.__name__}")
             for check in (additional_checks if additional_checks else [])
@@ -256,25 +259,31 @@ class NeedsDecompositionCheck(OperatorSupportBase):
 
         if node.op != "call_function":
             return True
-        needs_decomp = node.target in [
-            exir_ops.edge.aten.div.Tensor,
-            exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
-            exir_ops.edge.aten.native_layer_norm.default,
-            exir_ops.edge.aten._softmax.default,
-            exir_ops.edge.aten._log_softmax.default,
-            exir_ops.edge.aten.var.correction,
-            exir_ops.edge.aten.var.dim,
-            exir_ops.edge.aten.add.Scalar,
-            exir_ops.edge.aten.sqrt.default,
-            exir_ops.edge.aten.sub.Scalar,
-            exir_ops.edge.aten.mul.Scalar,
-            exir_ops.edge.aten.ne.Tensor,
-            exir_ops.edge.aten.ne.Scalar,
-            exir_ops.edge.aten.div.Scalar,
-            exir_ops.edge.aten.leaky_relu.default,
-        ]
-        if needs_decomp:
-            self.reporter.report_reject(node, "Needs to be decomposed.")
+
+        needs_decomp_dict = {
+            exir_ops.edge.aten.div.Tensor: None,
+            exir_ops.edge.aten._native_batch_norm_legit_no_training.default: "BatchNorm2D with track_running_stats==True not immediately following a convolution is not supported for quantized TOSA backends.",
+            exir_ops.edge.aten.native_layer_norm.default: None,
+            exir_ops.edge.aten._softmax.default: None,
+            exir_ops.edge.aten._log_softmax.default: None,
+            exir_ops.edge.aten.var.correction: None,
+            exir_ops.edge.aten.var.dim: None,
+            exir_ops.edge.aten.add.Scalar: None,
+            exir_ops.edge.aten.sqrt.default: None,
+            exir_ops.edge.aten.sub.Scalar: None,
+            exir_ops.edge.aten.mul.Scalar: None,
+            exir_ops.edge.aten.ne.Tensor: None,
+            exir_ops.edge.aten.ne.Scalar: None,
+            exir_ops.edge.aten.div.Scalar: None,
+            exir_ops.edge.aten.leaky_relu.default: None,
+        }
+
+        if node.target in needs_decomp_dict:
+            reject_message = needs_decomp_dict[node.target]
+            if reject_message is None:
+                reject_message = "Op needs to be decomposed into other ops before quantization to get quantized properly."
+
+            self.reporter.report_reject(node, reject_message)
             return False
         else:
             return True
@@ -471,6 +480,54 @@ class CheckFloat64Inputs(OperatorSupportBase):
                 self.reporter.report_reject(
                     node,
                     f"Had float64 input {input_node.name} that couldn't be handled.",
+                )
+                return False
+        return True
+
+
+class RankCheck(OperatorSupportBase):
+    """Makes sure that nodes with input or output tensors with rank > max_rank are not partitioned"""
+
+    def __init__(self, reporter: WhyNoPartitionReporter, max_rank: int):
+        self.reporter = reporter
+        self.max_rank = max_rank
+        super().__init__()
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        input_nodes = node.all_input_nodes
+        # check if any input node has an unsupported rank
+        for input_node in input_nodes:
+            input_node_shape = get_first_fake_tensor(input_node).shape
+            if len(input_node_shape) > self.max_rank:
+                self.reporter.report_reject(
+                    node,
+                    f"{node.name} has input_node {input_node.name} with shape {input_node_shape}, "
+                    f"rank {len(input_node_shape)} which is unsupported. "
+                    f"Max supported rank is {self.max_rank}.",
+                )
+                return False
+
+        meta_val = node.meta["val"]
+        if isinstance(
+            meta_val, (Sequence, torch.fx.immutable_collections.immutable_list)
+        ):
+            for val in meta_val:
+                if isinstance(val, FakeTensor):
+                    if len(val.shape) > self.max_rank:
+                        self.reporter.report_reject(
+                            node,
+                            f"{node.name} has a shape {val.shape}, rank {len(val.shape)} which is unsupported."
+                            f"Max supported rank is {self.max_rank}.",
+                        )
+                        return False
+        elif isinstance(meta_val, FakeTensor):
+            if len(meta_val.shape) > self.max_rank:
+                self.reporter.report_reject(
+                    node,
+                    f"{node.name} has shape {meta_val.shape}, rank={len(meta_val.shape)} which is unsupported."
+                    f"Max supported rank is {self.max_rank}.",
                 )
                 return False
         return True
