@@ -11,11 +11,13 @@ import PackageDescription
 
 let version = "__VERSION__"
 let url = "https://ossci-ios.s3.amazonaws.com/executorch/"
-let debug = "_debug"
-let deliverables = [
+let debug_suffix = "_debug"
+let dependencies_suffix = "_with_dependencies"
+
+let products = [
   "backend_coreml": [
     "sha256": "__SHA256_backend_coreml__",
-    "sha256" + debug: "__SHA256_backend_coreml_debug__",
+    "sha256" + debug_suffix: "__SHA256_backend_coreml_debug__",
     "frameworks": [
       "Accelerate",
       "CoreML",
@@ -26,7 +28,7 @@ let deliverables = [
   ],
   "backend_mps": [
     "sha256": "__SHA256_backend_mps__",
-    "sha256" + debug: "__SHA256_backend_mps_debug__",
+    "sha256" + debug_suffix: "__SHA256_backend_mps_debug__",
     "frameworks": [
       "Metal",
       "MetalPerformanceShaders",
@@ -35,42 +37,75 @@ let deliverables = [
   ],
   "backend_xnnpack": [
     "sha256": "__SHA256_backend_xnnpack__",
-    "sha256" + debug: "__SHA256_backend_xnnpack_debug__",
+    "sha256" + debug_suffix: "__SHA256_backend_xnnpack_debug__",
+    "targets": [
+      "threadpool",
+    ],
   ],
   "executorch": [
     "sha256": "__SHA256_executorch__",
-    "sha256" + debug: "__SHA256_executorch_debug__",
+    "sha256" + debug_suffix: "__SHA256_executorch_debug__",
+    "libraries": [
+      "c++",
+    ],
   ],
   "kernels_custom": [
     "sha256": "__SHA256_kernels_custom__",
-    "sha256" + debug: "__SHA256_kernels_custom_debug__",
+    "sha256" + debug_suffix: "__SHA256_kernels_custom_debug__",
   ],
   "kernels_optimized": [
     "sha256": "__SHA256_kernels_optimized__",
-    "sha256" + debug: "__SHA256_kernels_optimized_debug__",
+    "sha256" + debug_suffix: "__SHA256_kernels_optimized_debug__",
+    "frameworks": [
+      "Accelerate",
+    ],
+    "targets": [
+      "threadpool",
+    ],
   ],
   "kernels_portable": [
     "sha256": "__SHA256_kernels_portable__",
-    "sha256" + debug: "__SHA256_kernels_portable_debug__",
+    "sha256" + debug_suffix: "__SHA256_kernels_portable_debug__",
   ],
   "kernels_quantized": [
     "sha256": "__SHA256_kernels_quantized__",
-    "sha256" + debug: "__SHA256_kernels_quantized_debug__",
+    "sha256" + debug_suffix: "__SHA256_kernels_quantized_debug__",
   ],
 ].reduce(into: [String: [String: Any]]()) {
   $0[$1.key] = $1.value
-  $0[$1.key + debug] = $1.value
+  $0[$1.key + debug_suffix] = $1.value
 }
 .reduce(into: [String: [String: Any]]()) {
   var newValue = $1.value
-  if $1.key.hasSuffix(debug) {
+  if $1.key.hasSuffix(debug_suffix) {
     $1.value.forEach { key, value in
-      if key.hasSuffix(debug) {
-        newValue[String(key.dropLast(debug.count))] = value
+      if key.hasSuffix(debug_suffix) {
+        newValue[String(key.dropLast(debug_suffix.count))] = value
       }
     }
   }
-  $0[$1.key] = newValue.filter { key, _ in !key.hasSuffix(debug) }
+  $0[$1.key] = newValue.filter { key, _ in !key.hasSuffix(debug_suffix) }
+}
+
+let targets = [
+  "threadpool": [
+    "sha256": "__SHA256_threadpool__",
+    "sha256" + debug_suffix: "__SHA256_threadpool_debug__",
+  ],
+].reduce(into: [String: [String: Any]]()) {
+  $0[$1.key] = $1.value
+  $0[$1.key + debug_suffix] = $1.value
+}
+.reduce(into: [String: [String: Any]]()) {
+  var newValue = $1.value
+  if $1.key.hasSuffix(debug_suffix) {
+    $1.value.forEach { key, value in
+      if key.hasSuffix(debug_suffix) {
+        newValue[String(key.dropLast(debug_suffix.count))] = value
+      }
+    }
+  }
+  $0[$1.key] = newValue.filter { key, _ in !key.hasSuffix(debug_suffix) }
 }
 
 let package = Package(
@@ -79,10 +114,18 @@ let package = Package(
     .iOS(.v17),
     .macOS(.v10_15),
   ],
-  products: deliverables.keys.map { key in
-    .library(name: key, targets: ["\(key)_dependencies"])
+  products: products.keys.map { key in
+    .library(name: key, targets: ["\(key)\(dependencies_suffix)"])
   }.sorted { $0.name < $1.name },
-  targets: deliverables.flatMap { key, value -> [Target] in
+  targets: targets.flatMap { key, value -> [Target] in
+    [
+      .binaryTarget(
+        name: key,
+        url: "\(url)\(key)-\(version).zip",
+        checksum: value["sha256"] as? String ?? ""
+      ),
+    ]
+  } + products.flatMap { key, value -> [Target] in
     [
       .binaryTarget(
         name: key,
@@ -90,12 +133,13 @@ let package = Package(
         checksum: value["sha256"] as? String ?? ""
       ),
       .target(
-        name: "\(key)_dependencies",
-        dependencies: [.target(name: key)],
+        name: "\(key)\(dependencies_suffix)",
+        dependencies:([key] +
+          (value["targets"] as? [String] ?? []).map {
+            target in key.hasSuffix(debug_suffix) ? target + debug_suffix : target
+          }).map { .target(name: $0) },
         path: ".Package.swift/\(key)",
-        linkerSettings: [
-          .linkedLibrary("c++")
-        ] +
+        linkerSettings:
           (value["frameworks"] as? [String] ?? []).map { .linkedFramework($0) } +
           (value["libraries"] as? [String] ?? []).map { .linkedLibrary($0) }
       ),
