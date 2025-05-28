@@ -30,6 +30,12 @@ libextension_module.a,\
 libextension_tensor.a,\
 :$HEADERS_RELATIVE_PATH:ExecuTorch"
 
+FRAMEWORK_THREADPOOL="threadpool:\
+libcpuinfo.a,\
+libextension_threadpool.a,\
+libpthreadpool.a,\
+:"
+
 FRAMEWORK_BACKEND_COREML="backend_coreml:\
 libcoreml_util.a,\
 libcoreml_inmemoryfs.a,\
@@ -42,9 +48,6 @@ libmpsdelegate.a,\
 
 FRAMEWORK_BACKEND_XNNPACK="backend_xnnpack:\
 libXNNPACK.a,\
-libcpuinfo.a,\
-libextension_threadpool.a,\
-libpthreadpool.a,\
 libxnnpack_backend.a,\
 libmicrokernels-prod.a,\
 :"
@@ -57,6 +60,7 @@ FRAMEWORK_KERNELS_OPTIMIZED="kernels_optimized:\
 libcpublas.a,\
 liboptimized_kernels.a,\
 liboptimized_native_cpu_ops_lib.a,\
+libportable_kernels.a,\
 :"
 
 FRAMEWORK_KERNELS_PORTABLE="kernels_portable:\
@@ -226,6 +230,7 @@ for mode in "${MODES[@]}"; do
   done
 
   append_framework_flag "" "$FRAMEWORK_EXECUTORCH" "$mode"
+  append_framework_flag "" "$FRAMEWORK_THREADPOOL" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_COREML" "$FRAMEWORK_BACKEND_COREML" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_MPS" "$FRAMEWORK_BACKEND_MPS" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_XNNPACK" "$FRAMEWORK_BACKEND_XNNPACK" "$mode"
