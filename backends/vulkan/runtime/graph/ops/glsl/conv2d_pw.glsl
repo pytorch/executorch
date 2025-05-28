@@ -49,8 +49,14 @@ void main() {
   const uint div_by_x = gl_GlobalInvocationID.x / out_limits_scaled.x;
   const ivec3 gpos = ivec3(
     gl_GlobalInvocationID.x % out_limits_scaled.x,
-    div_by_x % out_limits_scaled.y,
-    div_by_x / out_limits_scaled.y);
+    div_by_x,
+    gl_GlobalInvocationID.y);
+
+  // If the top left position is out of bounds, then this invocation will have
+  // no work to do.
+  if (gpos.y >= out_limits_scaled.y || gpos.z >= out_limits.z) {
+    return;
+  }
 
   // If the top left position is out of bounds, then this invocation will have
   // no work to do.
