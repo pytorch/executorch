@@ -37,7 +37,7 @@ void test_unary_t_to_float() {
   static_assert(decltype(result_vec)::size() >= at::vec::Vectorized<T>::size());
   result_vec.store(result_floats, at::vec::Vectorized<T>::size());
   for (const auto ii : c10::irange(at::vec::Vectorized<T>::size())) {
-    EXPECT_EQ(result_floats[ii], std::expf(ii)) << ii;
+    EXPECT_EQ(result_floats[ii], std::exp((float)ii)) << ii;
   }
 }
 
@@ -62,7 +62,7 @@ TEST(VectorizedMathTest, BasicBinary) {
   const auto result_vec = executorch::math::pow(x_vec, y_vec);
   result_vec.store(result_floats);
   for (const auto ii : c10::irange(at::vec::Vectorized<float>::size())) {
-    EXPECT_FLOAT_EQ(result_floats[ii], std::powf(ii, 2));
+    EXPECT_FLOAT_EQ(result_floats[ii], std::pow((float)ii, 2.0f));
   }
 }
 
@@ -76,7 +76,7 @@ void test_binary_t_to_float() {
   static_assert(decltype(result_vec)::size() >= at::vec::Vectorized<T>::size());
   result_vec.store(result_floats, at::vec::Vectorized<T>::size());
   for (const auto ii : c10::irange(at::vec::Vectorized<T>::size())) {
-    EXPECT_EQ(result_floats[ii], std::powf(ii, 2)) << ii;
+    EXPECT_EQ(result_floats[ii], std::pow((float)ii, 2.0f)) << ii;
   }
 }
 

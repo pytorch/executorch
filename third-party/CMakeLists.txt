@@ -6,6 +6,10 @@
 
 add_subdirectory(json)
 
+if(EXECUTORCH_BUILD_PYBIND)
+  add_subdirectory(pybind11)
+endif()
+
 # MARK: - flatbuffers
 
 if(WIN32)
