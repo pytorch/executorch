@@ -44,16 +44,20 @@ class View(torch.nn.Module):
         "rand_4d_2_4_same": lambda: (torch.rand(2, 3, 2, 3), (2, 3, 3, 2)),
     }
 
-    def forward(self, x: torch.Tensor, new_shape):
-        return x.view(new_shape)
+    def __init__(self, new_shape):
+        super().__init__()
+        self.new_shape = new_shape
+
+    def forward(self, x: torch.Tensor):
+        return x.view(self.new_shape)
 
 
 @common.parametrize("test_data", View.needs_transpose_tests)
 def test_view_tosa_MI(test_data: Tuple):
     test_tensor, new_shape = test_data()
     pipeline = TosaPipelineMI[input_t1](
-        View(),
-        (test_tensor, new_shape),
+        View(new_shape),
+        (test_tensor,),
         aten_op,
         exir_op=[],
     )
@@ -64,32 +68,49 @@ def test_view_tosa_MI(test_data: Tuple):
 def test_view_tosa_BI(test_data: Tuple):
     test_tensor, new_shape = test_data()
     pipeline = TosaPipelineBI[input_t1](
-        View(),
-        (test_tensor, new_shape),
+        View(new_shape),
+        (test_tensor,),
         aten_op,
         exir_op=[],
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", View.needs_transpose_tests)
+xfails = {
+    "rand_4d_neg": "MLETORCH-517: Multiple batches not supported",
+    "rand_4d_4d_small": "MLETORCH-517: Multiple batches not supported",
+    "rand_4d_4d": "MLETORCH-517: Multiple batches not supported",
+    "rand_4d_2d": "MLETORCH-517: Multiple batches not supported",
+    "rand_4d_3d": "MLETORCH-517: Multiple batches not supported",
+    "rand_4d_1": "MLETORCH-517: Multiple batches not supported",
+    "rand_4d_2": "MLETORCH-517: Multiple batches not supported",
+    "rand_4d_2_4_big": "MLETORCH-517: Multiple batches not supported",
+    "rand_4d_4_3": "MLETORCH-517: Multiple batches not supported",
+    "rand_4d_4_2": "MLETORCH-517: Multiple batches not supported",
+    "rand_4d_2_4_same": "MLETORCH-517: Multiple batches not supported",
+}
+
+
+@common.parametrize("test_data", View.needs_transpose_tests, xfails=xfails)
+@common.XfailIfNoCorstone300
 def test_view_u55_BI(test_data: Tuple):
     test_tensor, new_shape = test_data()
     pipeline = EthosU55PipelineBI[input_t1](
-        View(),
-        (test_tensor, new_shape),
+        View(new_shape),
+        (test_tensor,),
         aten_op,
         exir_ops=[],
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", View.needs_transpose_tests)
+@common.parametrize("test_data", View.needs_transpose_tests, xfails=xfails)
+@common.XfailIfNoCorstone320
 def test_view_u85_BI(test_data: Tuple):
     test_tensor, new_shape = test_data()
     pipeline = EthosU85PipelineBI[input_t1](
-        View(),
-        (test_tensor, new_shape),
+        View(new_shape),
+        (test_tensor,),
         aten_op,
         exir_ops=[],
     )
