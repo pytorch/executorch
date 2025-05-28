@@ -925,7 +925,7 @@
 					"$(SRCROOT)/../include/executorch/runtime/core/portable_type/c10",
 					"$(SRCROOT)/../sdk",
 					"$(SRCROOT)/../util",
-					"$(SRCROOT)/../../third-party/nlohmann_json/single_include",
+					"$(SRCROOT)/../../../../../third-party/json/single_include",
 					"$(SRCROOT)/../../third-party/coremltools/deps/protobuf/src",
 				);
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -957,7 +957,7 @@
 					"$(SRCROOT)/../include/executorch/runtime/core/portable_type/c10",
 					"$(SRCROOT)/../sdk",
 					"$(SRCROOT)/../util",
-					"$(SRCROOT)/../../third-party/nlohmann_json/single_include",
+					"$(SRCROOT)/../../../../../third-party/json/single_include",
 					"$(SRCROOT)/../../third-party/coremltools/deps/protobuf/src",
 				);
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
