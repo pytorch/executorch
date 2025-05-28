@@ -138,7 +138,7 @@ curl -LO "https://github.com/facebook/buck2/releases/download/${BUCK2_RELEASE_DA
 zstd -cdq "$BUCK2_ARCHIVE" > "$BUCK2" && chmod +x "$BUCK2"
 rm "$BUCK2_ARCHIVE"
 
-./scripts/build_apple_frameworks.sh --buck2="$(realpath $BUCK2)" --coreml --custom --mps --optimized --portable --quantized --xnnpack
+./scripts/build_apple_frameworks.sh
 ```
 
  After the build finishes successfully, the resulting frameworks can be found in the `cmake-out` directory. Copy them to your project and link them against your targets.
