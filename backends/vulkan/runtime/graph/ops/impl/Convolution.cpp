@@ -305,8 +305,8 @@ utils::uvec3 create_conv2d_global_wg_size(
   if (method == Conv2dMethod::Pointwise) {
     const utils::uvec3 image_extents = graph.logical_limits_of(out);
     return {
-        utils::div_up(image_extents[0u], 2u),
-        utils::div_up(image_extents[1u], 2u),
+        utils::div_up(image_extents[0u], 1u),
+        utils::div_up(image_extents[1u], 4u),
         image_extents[2u]};
   } else if (method == Conv2dMethod::Depthwise && stride_equals_dilation) {
     const utils::uvec3 image_extents = graph.create_global_wg_size(out);
@@ -398,8 +398,10 @@ void add_conv2d_node(
   utils::uvec3 wg_size = create_conv2d_global_wg_size(
       graph, method, out, weight_data, stride_equals_dilation);
 
-  if (method == Conv2dMethod::Pointwise || method == Conv2dMethod::Depthwise) {
+  if (method == Conv2dMethod::Depthwise) {
     wg_size = {wg_size[0] * wg_size[1] * wg_size[2], 1, 1};
+  } else if (method == Conv2dMethod::Pointwise) {
+    wg_size = {wg_size[0] * wg_size[1], wg_size[2], 1};
   }
 
   vkapi::ParamsBindList param_buffers;

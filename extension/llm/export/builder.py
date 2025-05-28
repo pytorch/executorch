@@ -384,7 +384,7 @@ class LLMEdgeManager:
                 ), "Please run export() first"
                 m = prepare_pt2e(
                     self.pre_autograd_graph_module,  # pyre-ignore[6]
-                    composed_quantizer,  # pyre-ignore[6]
+                    composed_quantizer,
                 )
                 logging.info(
                     f"Calibrating with tasks: {self.calibration_tasks}, limit: {self.calibration_limit}, calibration_data: {self.calibration_data}, tokenizer_path: {self.tokenizer_path}, seq_length: {self.calibration_seq_length}"

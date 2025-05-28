@@ -386,11 +386,8 @@ exclude_patterns = [
     "third-party/**",
     # TODO: remove exceptions as we migrate
     # backends
-    "backends/arm/quantizer/**",
-    "backends/arm/test/ops/**",
     "backends/vulkan/quantizer/**",
     "backends/vulkan/test/**",
-    "backends/cadence/aot/quantizer/**",
     "backends/xnnpack/quantizer/**",
     "backends/xnnpack/test/**",
     "exir/tests/test_passes.py",

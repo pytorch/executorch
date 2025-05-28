@@ -16,7 +16,7 @@ import numpy as np
 import torch
 import torchao
 from executorch import exir
-from executorch.backends.qualcomm._passes.utils import dq_ops
+from executorch.backends.qualcomm.builders.node_visitor import dq_ops
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import ModuleQConfig, QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
