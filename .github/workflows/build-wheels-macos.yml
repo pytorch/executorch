@@ -6,6 +6,9 @@ on:
     paths:
       - .ci/**/*
       - .github/workflows/build-wheels-macos.yml
+      - examples/**/*
+      - pyproject.toml
+      - setup.py
   push:
     branches:
       - nightly
@@ -57,6 +60,8 @@ jobs:
       pre-script: ${{ matrix.pre-script }}
       post-script: ${{ matrix.post-script }}
       package-name: ${{ matrix.package-name }}
-      runner-type: macos-m1-stable
+      # Meta's macOS runners do not have Xcode, so use GitHub's runners.
+      runner-type: macos-latest-xlarge
+      setup-miniconda: true
       smoke-test-script: ${{ matrix.smoke-test-script }}
       trigger-event: ${{ github.event_name }}

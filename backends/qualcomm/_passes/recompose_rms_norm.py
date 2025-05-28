@@ -4,17 +4,19 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import torch
+
+from executorch.backends.qualcomm.builders.node_visitor import dq_ops
 from executorch.backends.qualcomm.builders.utils import get_parameter, is_parameter
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
-from .utils import dq_ops
-
 
 class RecomposeRmsNorm(ExportPass):
     """
     Merge decomposed operators back to one super node.
+    TODO: After replacing export_to_edge with to_edge_transform_and_lowering
+    in examples/models/llama/export_llama_lib.py, this pass can be removed
     """
 
     def __init__(self, edge_program: torch.export.ExportedProgram):

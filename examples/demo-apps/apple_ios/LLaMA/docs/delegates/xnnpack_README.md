@@ -13,20 +13,22 @@ More specifically, it covers:
 ## Setup ExecuTorch
 In this section, we will need to set up the ExecuTorch repo first with Conda environment management. Make sure you have Conda available in your system (or follow the instructions to install it [here](https://conda.io/projects/conda/en/latest/user-guide/install/index.html)). The commands below are running on Linux (CentOS).
 
-Create a Conda environment
-
-```
-conda create -n et_xnnpack python=3.10.0
-conda activate et_xnnpack
-```
-
 Checkout ExecuTorch repo and sync submodules
 
 ```
-git clone https://github.com/pytorch/executorch.git
-cd executorch
-git submodule sync
-git submodule update --init
+git clone -b viable/strict https://github.com/pytorch/executorch.git && cd executorch
+```
+
+Create either a Python virtual environment:
+
+```
+python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
+```
+
+Or a Conda environment:
+
+```
+conda create -n et_xnnpack python=3.10.0 && conda activate et_xnnpack
 ```
 
 Install dependencies
@@ -34,10 +36,7 @@ Install dependencies
 ```
 ./install_executorch.sh
 ```
-Optional: Use the --pybind flag to install with pybindings.
-```
-./install_executorch.sh --pybind xnnpack
-```
+
 ## Prepare Models
 In this demo app, we support text-only inference with up-to-date Llama models and image reasoning inference with LLaVA 1.5.
 * You can request and download model weights for Llama through Meta official [website](https://llama.meta.com/).
@@ -45,14 +44,16 @@ In this demo app, we support text-only inference with up-to-date Llama models an
 * Install the required packages to export the model:
 
 ```
-sh examples/models/llama/install_requirements.sh
+./examples/models/llama/install_requirements.sh
 ```
+
 ### For Llama 3.2 1B and 3B SpinQuant models
 Meta has released prequantized INT4 SpinQuant Llama 3.2 models that ExecuTorch supports on the XNNPACK backend.
 * Export Llama model and generate .pte file as below:
 ```
 python -m examples.models.llama.export_llama --model "llama3_2" --checkpoint <path-to-your-checkpoint.pth> --params <path-to-your-params.json> -kv --use_sdpa_with_kv_cache -X -d fp32 --xnnpack-extended-ops --preq_mode 8da4w_output_8da8w --preq_group_size 32 --max_seq_length 2048 --max_context_length 2048 --preq_embedding_quantize 8,0 --use_spin_quant native --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name "llama3_2_spinquant.pte"
 ```
+For convenience, an [exported ExecuTorch SpinQuant model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_SpinQuant_INT4_EO8.ipynb).
 
 ### For Llama 3.2 1B and 3B QAT+LoRA models
 Meta has released prequantized INT4 QAT+LoRA Llama 3.2 models that ExecuTorch supports on the XNNPACK backend.
@@ -60,6 +61,7 @@ Meta has released prequantized INT4 QAT+LoRA Llama 3.2 models that ExecuTorch su
 ```
 python -m examples.models.llama.export_llama --model "llama3_2" --checkpoint <path-to-your-checkpoint.pth> --params <path-to-your-params.json> -qat -lora 16 -kv --use_sdpa_with_kv_cache -X -d fp32 --xnnpack-extended-ops --preq_mode 8da4w_output_8da8w --preq_group_size 32 --max_seq_length 2048 --max_context_length 2048 --preq_embedding_quantize 8,0 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name "llama3_2_qat_lora.pte"
 ```
+For convenience, an [exported ExecuTorch QAT+LoRA model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-QLORA_INT4_EO8.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_QLORA_INT4_EO8.ipynb).
 
 ### For Llama 3.2 1B and 3B BF16 models
 We have supported BF16 as a data type on the XNNPACK backend for Llama 3.2 1B/3B models.
@@ -69,8 +71,9 @@ We have supported BF16 as a data type on the XNNPACK backend for Llama 3.2 1B/3B
 ```
 python -m examples.models.llama.export_llama --model "llama3_2" --checkpoint <path-to-your-checkpoint.pth> --params <path-to-your-params.json> -kv --use_sdpa_with_kv_cache -X -d bf16 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="llama3_2_bf16.pte"
 ```
+For convenience, an [exported ExecuTorch bf16 model](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/llama3_2-1B.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/ExportRecipe_1B.ipynb).
 
-For more detail using Llama 3.2 lightweight models including prompt template, please go to our official [website](https://www.llama.com/docs/model-cards-and-prompt-formats/llama3_2#-llama-3.2-lightweight-models-(1b/3b)-).
+For more detail using Llama 3.2 lightweight models including prompt template, please go to our official [website](https://www.llama.com/docs/model-cards-and-prompt-formats/llama3_2/#-llama-3.2-lightweight-models-(1b/3b)-).
 
 ### For Llama 3.1 and Llama 2 models
 
@@ -82,7 +85,7 @@ python -m examples.models.llama.export_llama --checkpoint <path-to-your-checkpoi
 ### For LLaVA model
 * For the Llava 1.5 model, you can get it from Huggingface [here](https://huggingface.co/llava-hf/llava-1.5-7b-hf).
 * Run `examples/models/llava/install_requirements.sh` to install dependencies.
-* Run the following command to generate llava.pte, tokenizer.bin and an image tensor (serialized in TorchScript) image.pt.
+* Run the following command to generate llava.pte, tokenizer.bin and download an image basketball.jpg.
 
 ```
 python -m executorch.examples.models.llava.export_llava --pte-name llava.pte --with-artifacts
@@ -112,27 +115,13 @@ There are two options to add ExecuTorch runtime package into your XCode project:
 
 The current XCode project is pre-configured to automatically download and link the latest prebuilt package via Swift Package Manager.
 
-If you have an old ExecuTorch package cached before in XCode, or are running into any package dependencies issues (incorrect checksum hash, missing package, outdated package), close XCode and run the following command in terminal inside your ExecuTorch directory
-
-```
-rm -rf \
-  ~/Library/org.swift.swiftpm \
-  ~/Library/Caches/org.swift.swiftpm \
-  ~/Library/Caches/com.apple.dt.Xcode \
-  ~/Library/Developer/Xcode/DerivedData \
-  examples/demo-apps/apple_ios/LLaMA/LLaMA.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
-```
-
-The command above will clear all the package cache, and when you re-open the XCode project, it should re-download the latest package and link them correctly.
-
 #### (Optional) Changing the prebuilt package version
 While we recommended using the latest prebuilt package pre-configured with the XCode project, you can also change the package version manually to your desired version.
 
 Go to Project Navigator, click on LLaMA. `Project --> LLaMA --> Package Dependencies`, and update the package dependencies to any of the available options below:
 
-- Branch --> swiftpm-0.5.0.20250228 (amend to match the latest nightly build)
-- Branch --> swiftpm-0.5.0
-- Branch --> swiftpm-0.4.0
+- Branch --> swiftpm-0.7.0.20250401 (amend to match the latest nightly build)
+- Branch --> swiftpm-0.6.0
 
 ### 2.2 Manually build the package locally and link them
 
@@ -145,11 +134,11 @@ BUCK2_RELEASE_DATE="2024-12-16"
 BUCK2_ARCHIVE="buck2-aarch64-apple-darwin.zst"
 BUCK2=".venv/bin/buck2"
 
-curl -LO "https://github.com/facebook/buck2/releases/download/$BUCK2_RELEASE_DATE/$BUCK2_ARCHIVE"
+curl -LO "https://github.com/facebook/buck2/releases/download/${BUCK2_RELEASE_DATE}/${BUCK2_ARCHIVE}"
 zstd -cdq "$BUCK2_ARCHIVE" > "$BUCK2" && chmod +x "$BUCK2"
 rm "$BUCK2_ARCHIVE"
 
-./scripts/build_apple_frameworks.sh --buck2="$(realpath $BUCK2)" --coreml --custom --mps --optimized --portable --quantized --xnnpack
+./scripts/build_apple_frameworks.sh
 ```
 
  After the build finishes successfully, the resulting frameworks can be found in the `cmake-out` directory. Copy them to your project and link them against your targets.
@@ -174,7 +163,7 @@ If you cannot add the package into your app target (it's greyed out), it might h
 
 
 
- More details on integrating and Running ExecuTorch on Apple Platforms, check out the detailed guide [here](https://pytorch.org/executorch/main/apple-runtime.html#local-build).
+ More details on integrating and Running ExecuTorch on Apple Platforms, check out the detailed guide [here](https://pytorch.org/executorch/main/using-executorch-ios#local-build).
 
 ### 3. Configure Build Schemes
 
@@ -186,7 +175,7 @@ Navigate to `Product --> Scheme --> Edit Scheme --> Info --> Build Configuration
 
 We recommend that you only use the Debug build scheme during development, where you might need to access additional logs. Debug build has logging overhead and will impact inferencing performance, while release build has compiler optimizations enabled and all logging overhead removed.
 
-For more details integrating and Running ExecuTorch on Apple Platforms or building the package locally, checkout this [link](https://pytorch.org/executorch/main/apple-runtime.html).
+For more details integrating and Running ExecuTorch on Apple Platforms or building the package locally, checkout this [link](https://pytorch.org/executorch/main/using-executorch-ios).
 
 ### 4. Build and Run the project
 

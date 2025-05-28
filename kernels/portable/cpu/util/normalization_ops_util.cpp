@@ -84,15 +84,24 @@ bool check_layer_norm_args(
   size_t ndim = normalized_shape.size();
   ET_CHECK_OR_RETURN_FALSE(
       ndim >= 1,
-      "Expected normalized_shape to be at least 1-dimensional, i.e., containing at least one element.");
+      "Expected normalized_shape to be at least 1-dimensional, i.e., containing at least one element; ndim = %zu",
+      ndim);
   ET_CHECK_OR_RETURN_FALSE(
       in.dim() >= static_cast<ssize_t>(ndim),
-      "Expected input tensor to have rank >= the length of normalized_shape.");
+      "Expected input tensor to have rank >= the length of normalized_shape; in.dim() = %" ET_PRI_TENSOR_DIM
+      ", ndim = %zu",
+      in.dim(),
+      ndim);
   size_t shift = in.dim() - ndim;
   for (const auto d : c10::irange(ndim)) {
     ET_CHECK_OR_RETURN_FALSE(
         in.size(d + shift) == normalized_shape[d],
-        "Expected normalized_shape to match the sizes of input's rightmost dimensions.");
+        "Expected normalized_shape to match the sizes of input's rightmost dimensions; in.size(%zu) = %" ET_PRI_TENSOR_SIZE
+        ", normalized_shape[%zu] = %" PRId64,
+        d + shift,
+        in.size(d + shift),
+        d,
+        normalized_shape[d]);
   }
   executorch::aten::SizesType shape[ndim];
   for (const auto i : c10::irange(ndim)) {
@@ -146,18 +155,34 @@ bool check_group_norm_args(
   ET_LOG_AND_RETURN_IF_FALSE(in.size(1) == C);
   ET_LOG_AND_RETURN_IF_FALSE(in.numel() == N * C * HxW);
   ET_CHECK_OR_RETURN_FALSE(
-      group > 0, "Expected number of groups to be greater than 0");
+      group > 0,
+      "Expected number of groups to be greater than 0; group = %" PRId64,
+      group);
   ET_CHECK_OR_RETURN_FALSE(
       C % group == 0,
-      "Expected number of channels in input to be divisible by number of groups");
+      "Expected number of channels in input to be divisible by number of groups; C = %" PRId64
+      ", group = %" PRId64 ", C %% group = %" PRId64,
+      C,
+      group,
+      C % group);
   ET_CHECK_OR_RETURN_FALSE(
       !weight.has_value() ||
           (weight.value().dim() == 1 && weight.value().size(0) == C),
-      "Expected weight to be a vector of size equal to the number of channels in input");
+      "Expected weight to be a vector of size equal to the number of channels in input; weight.has_value() = %d, weight.dim() = %" ET_PRI_TENSOR_DIM
+      ", weight.size(0) = %" ET_PRI_TENSOR_SIZE ", C = %" PRId64,
+      weight.has_value(),
+      weight.has_value() ? weight.value().dim() : -1,
+      weight.has_value() ? weight.value().size(0) : -1,
+      C);
   ET_CHECK_OR_RETURN_FALSE(
       !bias.has_value() ||
           (bias.value().dim() == 1 && bias.value().size(0) == C),
-      "Expected bias to be a vector of size equal to the number of channels in input");
+      "Expected bias to be a vector of size equal to the number of channels in input; bias.has_value() = %d, bias.dim() = %" ET_PRI_TENSOR_DIM
+      ", bias.size(0) = %" ET_PRI_TENSOR_SIZE ", C = %" PRId64,
+      bias.has_value(),
+      bias.has_value() ? bias.value().dim() : -1,
+      bias.has_value() ? bias.value().size(0) : -1,
+      C);
 
   if (weight.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, weight.value()));

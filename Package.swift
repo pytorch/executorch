@@ -15,12 +15,14 @@
 //
 // For details on building frameworks locally or using prebuilt binaries,
 // see the documentation:
-// https://pytorch.org/executorch/main/using-executorch-ios.html
+// https://pytorch.org/executorch/main/using-executorch-ios
 
 import PackageDescription
 
-let debug = "_debug"
-let deliverables = [
+let debug_suffix = "_debug"
+let dependencies_suffix = "_with_dependencies"
+
+let products = [
   "backend_coreml": [
     "frameworks": [
       "Accelerate",
@@ -37,26 +39,35 @@ let deliverables = [
       "MetalPerformanceShadersGraph",
     ],
   ],
-  "backend_xnnpack": [:],
-  "executorch": [:],
+  "backend_xnnpack": [
+    "targets": [
+      "threadpool",
+    ],
+  ],
+  "executorch": [
+    "libraries": [
+      "c++",
+    ],
+  ],
   "kernels_custom": [:],
-  "kernels_optimized": [:],
+  "kernels_optimized": [
+    "frameworks": [
+      "Accelerate",
+    ],
+    "targets": [
+      "threadpool",
+    ],
+  ],
   "kernels_portable": [:],
   "kernels_quantized": [:],
 ].reduce(into: [String: [String: Any]]()) {
   $0[$1.key] = $1.value
-  $0[$1.key + debug] = $1.value
-}.reduce(into: [String: [String: Any]]()) {
-  var newValue = $1.value
-  if $1.key.hasSuffix(debug) {
-    $1.value.forEach { key, value in
-      if key.hasSuffix(debug) {
-        newValue[String(key.dropLast(debug.count))] = value
-      }
-    }
-  }
-  $0[$1.key] = newValue.filter { key, _ in !key.hasSuffix(debug) }
+  $0[$1.key + debug_suffix] = $1.value
 }
+
+let targets = [
+  "threadpool",
+].flatMap { [$0, $0 + debug_suffix] }
 
 let package = Package(
   name: "executorch",
@@ -64,23 +75,49 @@ let package = Package(
     .iOS(.v17),
     .macOS(.v10_15),
   ],
-  products: deliverables.keys.map { key in
-    .library(name: key, targets: ["\(key)_dependencies"])
+  products: products.keys.map { key in
+    .library(name: key, targets: ["\(key)\(dependencies_suffix)"])
   }.sorted { $0.name < $1.name },
-  targets: deliverables.flatMap { key, value -> [Target] in
+  targets: targets.map { key in
+    .binaryTarget(
+      name: key,
+      path: "cmake-out/\(key).xcframework"
+    )
+  } + products.flatMap { key, value -> [Target] in
     [
       .binaryTarget(
         name: key,
         path: "cmake-out/\(key).xcframework"
       ),
       .target(
-        name: "\(key)_dependencies",
-        dependencies: [.target(name: key)],
+        name: "\(key)\(dependencies_suffix)",
+        dependencies:([key] +
+          (value["targets"] as? [String] ?? []).map {
+            target in key.hasSuffix(debug_suffix) ? target + debug_suffix : target
+          }).map { .target(name: $0) },
         path: ".Package.swift/\(key)",
         linkerSettings:
           (value["frameworks"] as? [String] ?? []).map { .linkedFramework($0) } +
           (value["libraries"] as? [String] ?? []).map { .linkedLibrary($0) }
       ),
     ]
-  }
+  } + [
+    .testTarget(
+      name: "tests",
+      dependencies: [
+        .target(name: "executorch\(debug_suffix)"),
+        .target(name: "kernels_optimized\(dependencies_suffix)"),
+      ],
+      path: "extension/apple/ExecuTorch/__tests__",
+      resources: [
+        .copy("resources/add.pte"),
+      ],
+      linkerSettings: [
+        .unsafeFlags([
+          "-Xlinker", "-force_load",
+          "-Xlinker", "cmake-out/kernels_optimized.xcframework/macos-arm64/libkernels_optimized_macos.a",
+        ])
+      ]
+    )
+  ]
 )

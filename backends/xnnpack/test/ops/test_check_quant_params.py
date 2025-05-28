@@ -9,11 +9,14 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
 )
 from executorch.backends.xnnpack.utils.utils import get_param_tensor
 from executorch.exir import to_edge_transform_and_lower
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.export import export_for_training
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 class TestCheckQuantParams(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     def create_invalid_value_injector(
         self, invalid_value, is_per_channel=False, is_zp=False
     ):
@@ -46,9 +49,10 @@ class TestCheckQuantParams(unittest.TestCase):
         return inject_invalid_scale_in_per_tensor
 
     def _test_check_quant_message(self, ep_modifier, expected_message):
+        torch._dynamo.reset()
         mod = torch.nn.Linear(10, 10)
         quantizer = XNNPACKQuantizer()
-        captured = export_for_training(mod, (torch.randn(1, 10),)).module()
+        captured = export_for_training(mod, (torch.randn(1, 10),), strict=True).module()
         quantizer.set_global(get_symmetric_quantization_config(is_per_channel=True))
         prepared = prepare_pt2e(captured, quantizer)
 
@@ -61,10 +65,9 @@ class TestCheckQuantParams(unittest.TestCase):
         with self.assertRaises(ValueError) as context:
             to_edge_transform_and_lower(aten, partitioner=[XnnpackPartitioner()])
 
-        self.assertEquals(str(context.exception), expected_message)
+        self.assertEqual(str(context.exception), expected_message)
 
     def test_in_per_tensor_quant(self):
-
         for invalid_scale in [
             float("nan"),
             float("inf"),

@@ -11,6 +11,9 @@ from executorch.backends.xnnpack.test.tester import Tester
 
 
 class TestCeil(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     class Ceil(torch.nn.Module):
         def __init__(self):
             super().__init__()

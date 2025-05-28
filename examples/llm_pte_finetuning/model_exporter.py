@@ -48,7 +48,7 @@ def main() -> None:
     loss_fn = config.instantiate(cfg.loss)
 
     ds = config.instantiate(cfg.dataset, tokenizer)
-    train_set, val_set = torch.utils.data.random_split(ds, [0.8, 0.2])
+    train_set, _ = torch.utils.data.random_split(ds, [0.8, 0.2])
     train_dataloader = get_dataloader(cfg, train_set, tokenizer, loss_fn)
 
     max_seq_len = cfg.tokenizer.max_seq_len

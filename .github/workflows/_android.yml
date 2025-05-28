@@ -14,13 +14,17 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       upload-artifact: android-apps
       upload-artifact-to-s3: true
       script: |
         set -eux
+
+        # Use sccache for NDK compiler as well
+        export CMAKE_CXX_COMPILER_LAUNCHER=sccache
+        export CMAKE_C_COMPILER_LAUNCHER=sccache
 
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -36,8 +40,9 @@ jobs:
         cp ${BUILD_AAR_DIR}/executorch.aar $ARTIFACTS_DIR_NAME
 
         mkdir -p ${ARTIFACTS_DIR_NAME}/library_test_dir
-        bash .ci/scripts/build_android_instrumentation.sh
-        cp ${BUILD_AAR_DIR}/executorch_android/build/outputs/apk/androidTest/debug/executorch_android-debug-androidTest.apk "${ARTIFACTS_DIR_NAME}/library_test_dir"
+        bash extension/android/executorch_android/android_test_setup.sh
+        (cd extension/android; ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:assembleAndroidTest)
+        cp extension/android/executorch_android/build/outputs/apk/androidTest/debug/executorch_android-debug-androidTest.apk "${ARTIFACTS_DIR_NAME}/library_test_dir"
 
         mkdir -p ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom
         bash examples/models/llama/install_requirements.sh
@@ -130,7 +135,8 @@ jobs:
           # https://github.com/ReactiveCircus/android-emulator-runner. The max number
           # of cores we can set is 6, any higher number will be reduced to 6.
           cores: 6
-          ram-size: 12288M
+          ram-size: 16384M
+          heap-size: 12288M
           force-avd-creation: false
           disable-animations: true
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none

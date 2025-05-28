@@ -36,7 +36,7 @@ class LoadStateDictTest : public ::testing::Test {
     // Load data map.
     // The eager linear model is defined at:
     // //executorch/test/models/linear_model.py
-    const char* path = std::getenv("ET_MODULE_LINEAR_DATA_PATH");
+    const char* path = std::getenv("ET_MODULE_ADD_MUL_DATA_PATH");
     Result<FileDataLoader> loader = FileDataLoader::from(path);
     ASSERT_EQ(loader.error(), Error::Ok);
 

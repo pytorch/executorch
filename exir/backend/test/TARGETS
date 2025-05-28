@@ -190,6 +190,59 @@ python_unittest(
 )
 
 python_unittest(
+    name = "test_to_backend_multi_method",
+    srcs = [
+        "test_to_backend_multi_method.py",
+    ],
+    preload_deps = [
+        "//executorch/kernels/portable:custom_ops_generated_lib",
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+        "//executorch/runtime/executor/test:test_backend_compiler_lib",
+    ],
+    deps = [
+        ":backend_with_preprocess_all_demo",
+        "//caffe2:torch",
+        "//caffe2/functorch:functorch_src",
+        "//executorch/exir/backend/test:backend_with_compiler_demo",
+        "//executorch/exir:delegate",
+        "//executorch/exir:graph_module",
+        "//executorch/exir:lib",
+        "//executorch/exir:lowered_backend_module",
+        "//executorch/exir:print_program",
+        "//executorch/exir:schema",
+        "//executorch/exir/backend:backend_api",
+        "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/exir/backend:partitioner",
+        "//executorch/exir/dialects:lib",
+        "//executorch/extension/pybindings:portable_lib",  # @manual
+        "//executorch/extension/pytree:pylib",
+    ],
+)
+
+python_library(
+    name = "backend_with_preprocess_all_demo",
+    srcs = [
+        "backend_with_preprocess_all_demo.py"
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//caffe2/functorch:functorch_src",
+        "//executorch/exir:delegate",
+        "//executorch/exir:graph_module",
+        "//executorch/exir:lib",
+        "//executorch/exir:lowered_backend_module",
+        "//executorch/exir:print_program",
+        "//executorch/exir:schema",
+        "//executorch/exir/backend:backend_api",
+        "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/exir/backend:partitioner",
+        "//executorch/exir/dialects:lib",
+        "//executorch/extension/pybindings:portable_lib",  # @manual
+        "//executorch/extension/pytree:pylib",
+    ],
+)
+
+python_unittest(
     name = "test_debug_handle_map",
     srcs = [
         "test_debug_handle_map.py",

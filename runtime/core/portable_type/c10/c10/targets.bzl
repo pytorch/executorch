@@ -25,6 +25,9 @@ def define_common_targets():
             "util/Half-inl.h",
             "util/TypeSafeSignMath.h",
             "util/bit_cast.h",
+            "util/complex.h",
+            "util/complex_math.h",
+            "util/complex_utils.h",
             "util/floating_point_utils.h",
             "util/irange.h",
         ],
@@ -36,6 +39,7 @@ def define_common_targets():
         ]),
         visibility = [
             "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
         ],
         deps = select({
             "DEFAULT": [],
@@ -49,11 +53,15 @@ def define_common_targets():
     runtime.cxx_library(
         name = "aten_headers_for_executorch",
         srcs = [],
-        visibility = ["//executorch/kernels/optimized/..."],
+        visibility = [
+            "//executorch/kernels/optimized/...",
+            "//executorch/kernels/portable/cpu/util/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
         exported_deps = select({
             "DEFAULT": [],
             "ovr_config//cpu:arm64": [
-                "fbsource//third-party/sleef:sleef_arm",
+                "fbsource//third-party/sleef:sleef",
             ] if not runtime.is_oss else [],
             # fbsource//third-party/sleef:sleef currently fails to
             # link with missing symbols, hence the fbcode-specific dep below.
@@ -61,6 +69,7 @@ def define_common_targets():
         fbcode_exported_deps = ([
             "//caffe2:aten-headers-cpu",
             "//caffe2:generated-config-header",
+            "//caffe2:torch_standalone_headers",
             "//caffe2/c10:c10_headers",
         ] + select({
             "DEFAULT": [],
@@ -79,6 +88,7 @@ def define_common_targets():
         ] + get_sleef_preprocessor_flags(),
         xplat_exported_deps = [
             "//xplat/caffe2:aten_header",
+            "//xplat/caffe2:torch_standalone_headers",
             "//xplat/caffe2/c10:c10_headers",
         ] + ["//xplat/caffe2:ovrsource_aten_Config.h" if is_arvr_mode() else "//xplat/caffe2:generated_aten_config_header",],
         exported_preprocessor_flags = select({
@@ -87,5 +97,5 @@ def define_common_targets():
             # linker failure.
             "ovr_config//cpu:arm64": get_sleef_preprocessor_flags(),
             "DEFAULT": [],
-        }) + ["-DET_USE_PYTORCH_HEADERS", "-DSTANDALONE_TORCH_HEADER"],
+        }) + ["-DSTANDALONE_TORCH_HEADER"] + ([] if runtime.is_oss else ["-DET_USE_PYTORCH_HEADERS"]),
     )

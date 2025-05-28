@@ -8,12 +8,45 @@ import torch
 
 
 # module with related operator only
+
+
+# Ensure alias_copy is removed in remove_redundancy pass
+class Alias(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, x):
+        alias_x = torch.ops.aten.alias.default(x)
+        return self.relu(alias_x)
+
+
+class And(torch.nn.Module):
+    def __init__(self, pos, neg):
+        super().__init__()
+        self.pos = pos
+        self.neg = neg
+
+    def forward(self, x, y):
+        bitwise_and = torch.bitwise_and(x, y).bool()
+        return torch.where(bitwise_and, self.pos, self.neg)
+
+
 class Abs(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
     def forward(self, x):
         return torch.abs(x)
+
+
+class AdaptiveAvgPool1D(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        adaptive_avg_pool = torch.nn.AdaptiveAvgPool1d(1)
+        return adaptive_avg_pool(x)
 
 
 class AdaptiveAvgPool2D(torch.nn.Module):
@@ -59,6 +92,16 @@ class Any(torch.nn.Module):
         return torch.any(x, dim=self.dim, keepdim=self.keepdim)
 
 
+class AMax(torch.nn.Module):
+    def __init__(self, dim=None, keepdim=False):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x):
+        return torch.amax(x, dim=self.dim, keepdim=self.keepdim)
+
+
 class Arange(torch.nn.Module):
     def __init__(self, start, end, step, dtype):
         super().__init__()
@@ -87,7 +130,7 @@ class Argmin(torch.nn.Module):
 
 class ArgminViewSqueezeConv2D(torch.nn.Module):
     def __init__(self):
-        # This model is mainly to test the PASS TensorI64toI32
+        # This model is mainly to test the PASS I64toI32
         super().__init__()
         self.conv = torch.nn.Conv2d(
             in_channels=3, out_channels=16, kernel_size=3, stride=1, padding=1
@@ -143,6 +186,16 @@ class Cast(torch.nn.Module):
         return x.type(torch.IntTensor)
 
 
+class CastMultiUsers(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        index = x.to(torch.long)
+        res = torch.gather(y, dim=1, index=index)
+        return res + index.to(torch.int32)
+
+
 class Cat2(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -165,6 +218,14 @@ class Cat4(torch.nn.Module):
 
     def forward(self, x, y):
         return torch.cat((y, y, x, x), axis=2)
+
+
+class CDist(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.cdist(x, y, p=2)
 
 
 class Ceil(torch.nn.Module):
@@ -222,9 +283,7 @@ class CompositeDelegateModule(torch.nn.Module):
     def __init__(
         self,
         compiler_specs,
-        partitioner_type,
-        capture_method,
-        lowered_method,
+        to_edge_transform_and_lower_method,
         quantize_method=None,
     ) -> None:
         super().__init__()
@@ -242,15 +301,15 @@ class CompositeDelegateModule(torch.nn.Module):
         ]
         self.lowered_modules = []
         for module, sample_input in zip(self.modules, self.sample_inputs):
-            partitioner = partitioner_type(compiler_specs)
             if quantize_method:
                 module = quantize_method(module, sample_input)
-            edge_prog = capture_method(module, sample_input)
-            edge_prog.exported_program = lowered_method(
-                edge_prog.exported_program, partitioner
+            edge_prog = to_edge_transform_and_lower_method(
+                module, sample_input, compiler_specs
             )
             self.lowered_modules.append(
-                edge_prog.exported_program.graph_module._modules.get("lowered_module_0")
+                edge_prog.exported_program().graph_module._modules.get(
+                    "lowered_module_0"
+                )
             )
 
     def forward(self, x, y):
@@ -462,6 +521,17 @@ class Conv2dSingle(torch.nn.Module):
         return self.conv(x)
 
 
+class ConvTranspose1dSingle(torch.nn.Module):
+    def __init__(self, bias=True):
+        super().__init__()
+        self.conv_transpose = torch.nn.ConvTranspose1d(
+            in_channels=1, out_channels=3, kernel_size=3, stride=2, padding=1, bias=bias
+        )
+
+    def forward(self, x):
+        return self.conv_transpose(x)
+
+
 class ConvTranspose2dSingle(torch.nn.Module):
     def __init__(self, bias=True):
         super().__init__()
@@ -536,6 +606,14 @@ class Cos(torch.nn.Module):
         return torch.cos(x)
 
 
+class CumSum(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return x.cumsum(dim=0)
+
+
 class Div(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -601,6 +679,15 @@ class EinsumOuterProductRelu(torch.nn.Module):
         return torch.relu(torch.einsum("i,j->ij", i, j))
 
 
+class Elu(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.elu = torch.nn.ELU(alpha=0.5)
+
+    def forward(self, i):
+        return self.elu(i)
+
+
 class Embedding(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -645,6 +732,14 @@ class ExpandAs(torch.nn.Module):
         return y.expand_as(x)
 
 
+class ExpM1(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.special.expm1(x)
+
+
 class Full(torch.nn.Module):
     def __init__(self, fill, shape):
         super().__init__()
@@ -662,6 +757,34 @@ class FullLike(torch.nn.Module):
 
     def forward(self, x):
         return torch.min(x, torch.full_like(x, self.fill))
+
+
+class Gather(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.gather(x, dim=1, index=y)
+
+
+class GatherArgmin(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        indice = torch.argmin(x, dim=1, keepdim=True)
+        return torch.gather(x, dim=1, index=indice)
+
+
+class GatherWhere(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        index = torch.where(y > 0, torch.Tensor([1]).int(), torch.Tensor([1]).int()).to(
+            torch.int64
+        )
+        return torch.gather(x, x.dim() - 1, index)
 
 
 class Gelu(torch.nn.Module):
@@ -832,9 +955,9 @@ class LeakyReLUDefault(torch.nn.Module):
 
 
 class LeakyReLUCustom(torch.nn.Module):
-    def __init__(self, coeff):
+    def __init__(self, coeff, inplace=False):
         super().__init__()
-        self.leaky_relu = torch.nn.LeakyReLU(coeff)
+        self.leaky_relu = torch.nn.LeakyReLU(coeff, inplace=inplace)
 
     def forward(self, x):
         return self.leaky_relu(x)
@@ -1235,6 +1358,16 @@ class RmsNorm(torch.nn.Module):
         return self.rms(x)
 
 
+class Roll(torch.nn.Module):
+    def __init__(self, shifts, dims=None):
+        super().__init__()
+        self.shifts = shifts
+        self.dims = dims
+
+    def forward(self, x):
+        return torch.roll(x, shifts=self.shifts, dims=self.dims)
+
+
 class Rsqrt(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1333,6 +1466,14 @@ class SliceCopy(torch.nn.Module):
         return x[:, :seq_length] + self.position_ids[:, :seq_length]
 
 
+class SliceCopyDefaultParameter(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.cat([x[:1], x[1:]], dim=1)
+
+
 class SliceCopyWithStep(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1371,6 +1512,15 @@ class SqrtConstant(torch.nn.Module):
         return x / torch.sqrt(torch.tensor([64.0]))
 
 
+class SquaredReLU(torch.nn.Module):
+    def __init__(self, inplace=False):
+        super().__init__()
+        self.relu = torch.nn.ReLU(inplace=inplace)
+
+    def forward(self, x):
+        return torch.square(self.relu(x))
+
+
 class Squeeze(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1383,8 +1533,8 @@ class Stack(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self, x, y):
-        return torch.stack((x, y))
+    def forward(self, x, y, z):
+        return torch.stack((x, y, z))
 
 
 class Sub(torch.nn.Module):
@@ -1409,6 +1559,18 @@ class SubConstantLong(torch.nn.Module):
 
     def forward(self, x):
         return 10 - x
+
+
+class SimpleSubModules(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.add = Add()
+        self.sub = Sub()
+
+    def forward(self, a, b, c, d):
+        lhs = self.add(a, b)
+        rhs = self.sub(c, d)
+        return torch.mul(lhs, rhs)
 
 
 class SumIntList(torch.nn.Module):
@@ -1493,3 +1655,50 @@ class WhereConstant(torch.nn.Module):
 
     def forward(self, x):
         return torch.where(x >= torch.zeros(x.shape), self.pos, self.neg)
+
+
+class WhereConstantOther(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.where(x >= 0, torch.ones(x.shape), 0)
+
+
+class WhereConstantAll(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.where(x >= 0, 1, 0)
+
+
+class WhereConstantInf(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.nn.functional.softmax(
+            torch.where(x >= 0, 0.1, float("-inf")), dim=-1
+        )
+
+
+class MaskedFill(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, attn_mask):
+        return attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(
+            attn_mask == 0, float(0.0)
+        )
+
+
+# Mimi Decoder has 0D tensor which QNN cannot handle.
+class ZeroDimTensor(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        input1 = torch.zeros(1)
+        selected_element = torch.select(input1, 0, 0)
+        return torch.add(x, selected_element)

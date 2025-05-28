@@ -27,13 +27,19 @@ list(PREPEND _qaihub_llama2_7b_runner__srcs
 # build qaihub llama2 7b runner
 add_executable(qaihub_llama2_7b_runner ${_qaihub_llama2_7b_runner__srcs})
 target_include_directories(
-  qaihub_llama2_7b_runner PUBLIC ${_common_include_directories} ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizers/include
+  qaihub_llama2_7b_runner PUBLIC 
+    ${_common_include_directories} 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizers/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizers/third-party/json/single_include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizers/third-party/llama.cpp-unicode/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizers/third-party/llama.cpp-unicode/src
 )
 target_link_libraries(
   qaihub_llama2_7b_runner
   qnn_executorch_backend
   executorch_core
   extension_data_loader
+  extension_flat_tensor
   extension_module
   extension_tensor
   gflags
@@ -69,7 +75,12 @@ list(
 # build qaihub llama3 8b runner
 add_executable(qaihub_llama3_8b_runner ${_qaihub_llama3_8b_runner__srcs})
 target_include_directories(
-  qaihub_llama3_8b_runner PUBLIC ${_common_include_directories} ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizers/include
+  qaihub_llama3_8b_runner PUBLIC 
+    ${_common_include_directories} 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizers/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizers/third-party/json/single_include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizers/third-party/llama.cpp-unicode/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizers/third-party/llama.cpp-unicode/src
 )
 
 target_link_libraries(
@@ -77,6 +88,7 @@ target_link_libraries(
   qnn_executorch_backend
   executorch_core
   extension_data_loader
+  extension_flat_tensor
   extension_module
   extension_tensor
   gflags

@@ -64,7 +64,7 @@ set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../lib/cmake/ExecuTorch)
 find_package(executorch CONFIG REQUIRED)
 target_link_options_shared_lib(executorch)
 
-add_library(executorch_jni SHARED jni/jni_layer.cpp jni/log.cpp)
+add_library(executorch_jni SHARED jni/jni_layer.cpp jni/log.cpp jni/jni_layer_runtime.cpp)
 
 set(link_libraries)
 list(
@@ -72,12 +72,23 @@ list(
   link_libraries
   executorch
   extension_data_loader
+  extension_flat_tensor
   extension_module
   extension_runner_util
   extension_tensor
   extension_threadpool
   fbjni
 )
+
+if(EXECUTORCH_ANDROID_PROFILING)
+  list(
+    APPEND
+    link_libraries
+    etdump
+    flatccrt
+  )
+  target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_ANDROID_PROFILING=1)
+endif()
 
 if(TARGET optimized_native_cpu_ops_lib)
   list(

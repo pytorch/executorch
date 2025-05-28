@@ -85,7 +85,7 @@ class OpChooseQparamsAffine(OpSkipOps):
     do nothing if node is choose_qparams_affine.default
     """
 
-    target = "quant.choose_qparams_affine.default"
+    target = "torchao.choose_qparams_affine.default"
 
 
 @register_node_visitor

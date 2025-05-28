@@ -27,7 +27,7 @@ class Pad(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        input_node = node.args[0]
+        input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         pad_inp_tensor_wrapper = self.define_tensor(
             input_node,
@@ -53,14 +53,14 @@ class Pad(NodeVisitor):
         pad_amount = np.reshape(cast(List[int], node.args[1]), (-1, 2))[::-1].astype(
             np.uint32
         )
-        # fullfill the pad amount for each idex of tensor
+        # fulfill the pad amount for each idex of tensor
         if zero_amounts := pad_amount_shape[0] - pad_amount.shape[0]:
             pad_amount = np.concatenate(
                 (np.array([(0, 0)] * zero_amounts), pad_amount)
             ).astype(np.uint32)
 
         if QCOM_AXIS_ORDER in node.meta:
-            pad_amount = np.transpose(pad_amount, node.meta[QCOM_AXIS_ORDER])
+            pad_amount = pad_amount[list(node.meta[QCOM_AXIS_ORDER])]
         pad_amount_val = node.args[2]
 
         pad_op = PyQnnWrapper.PyQnnOpWrapper(

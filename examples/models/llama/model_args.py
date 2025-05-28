@@ -5,7 +5,7 @@ from typing import Dict, Optional
 @dataclass
 class ModelArgs:
     dim: int = 4096
-    n_layers: int = 32
+    n_layers: int = 8
     n_heads: int = 32
     n_kv_heads: Optional[int] = None
     vocab_size: int = 512  # Arbitrary value, should be defined later by tokenizer.
@@ -14,7 +14,7 @@ class ModelArgs:
     multiple_of: int = 256  # make SwiGLU hidden layer size multiple of large power of 2
     ffn_dim_multiplier: Optional[float] = None
     norm_eps: float = 1e-5
-    max_batch_size: int = 32
+    max_batch_size: int = 1
     max_seq_len: int = 2048
     max_context_len: int = 2048
     moe: bool = False  # True to enable the MoE (Mixture of Experts)
@@ -38,6 +38,7 @@ class ModelArgs:
     apply_embedding: bool = True  # Use embedding inside the transformer
     apply_output: bool = True  # Use output layer (unembedding) inside the transformer
     use_qk_norm: bool = False  # apply normalization to q and k in the attention
+    qk_norm_before_rope: bool = False  # when to apply qk norm
     use_hf_rope: bool = False  # Use HuggingFace's RoPE implementation
     partial_rotary_factor: float = 1.0
     rope_theta: Optional[float] = (
@@ -46,6 +47,7 @@ class ModelArgs:
     rope_freq_base: float = 10000.0  # The base frequency for RoPE. Keep it for BC.
     use_scaled_rope: bool = False  # Use scaled RoPE, introduced in llama3.1.
     rope_scale_factor: int = 8
+    high_freq_factor: int = 4
     # Additional Model Metadata needed at runtime
     bos_idx: int = 1
     eos_idx: int = 3

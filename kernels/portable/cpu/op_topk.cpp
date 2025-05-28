@@ -30,7 +30,13 @@ bool check_topk_args(
     dim += nonzero_dim(in);
   }
   ET_CHECK_OR_RETURN_FALSE(
-      k >= 0 && k <= nonempty_size(in, dim), "selected index k out of range");
+      k >= 0 && k <= nonempty_size(in, dim),
+      "selected index k out of range; k = %" PRId64 ", dim = %" PRId64
+      ", in.dim() = %" ET_PRI_TENSOR_DIM ", nonempty_size(in, dim) = %zd",
+      k,
+      dim,
+      in.dim(),
+      nonempty_size(in, dim));
   return true;
 }
 

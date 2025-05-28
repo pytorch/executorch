@@ -3217,6 +3217,423 @@
     other: T6
     __ret_0: T17
 
+- func: aten::elu
+  namespace: edge
+  inherits: aten::elu
+  type_alias:
+    T0: [Bool]
+    T1: [Bool, Float, Int]
+    T2: [Double]
+    T3: [Float]
+    T4: [Half]
+    T5: [Int]
+  type_constraint:
+  - self: T2
+    alpha: T0
+    scale: T0
+    input_scale: T1
+    __ret_0: T2
+  - self: T2
+    alpha: T0
+    scale: T1
+    input_scale: T0
+    __ret_0: T2
+  - self: T2
+    alpha: T0
+    scale: T1
+    input_scale: T3
+    __ret_0: T2
+  - self: T2
+    alpha: T0
+    scale: T1
+    input_scale: T5
+    __ret_0: T2
+  - self: T2
+    alpha: T0
+    scale: T3
+    input_scale: T1
+    __ret_0: T2
+  - self: T2
+    alpha: T0
+    scale: T5
+    input_scale: T1
+    __ret_0: T2
+  - self: T2
+    alpha: T1
+    scale: T0
+    input_scale: T0
+    __ret_0: T2
+  - self: T2
+    alpha: T1
+    scale: T0
+    input_scale: T3
+    __ret_0: T2
+  - self: T2
+    alpha: T1
+    scale: T0
+    input_scale: T5
+    __ret_0: T2
+  - self: T2
+    alpha: T1
+    scale: T3
+    input_scale: T0
+    __ret_0: T2
+  - self: T2
+    alpha: T1
+    scale: T3
+    input_scale: T3
+    __ret_0: T2
+  - self: T2
+    alpha: T1
+    scale: T3
+    input_scale: T5
+    __ret_0: T2
+  - self: T2
+    alpha: T1
+    scale: T5
+    input_scale: T0
+    __ret_0: T2
+  - self: T2
+    alpha: T1
+    scale: T5
+    input_scale: T3
+    __ret_0: T2
+  - self: T2
+    alpha: T1
+    scale: T5
+    input_scale: T5
+    __ret_0: T2
+  - self: T2
+    alpha: T3
+    scale: T0
+    input_scale: T1
+    __ret_0: T2
+  - self: T2
+    alpha: T3
+    scale: T1
+    input_scale: T0
+    __ret_0: T2
+  - self: T2
+    alpha: T3
+    scale: T1
+    input_scale: T3
+    __ret_0: T2
+  - self: T2
+    alpha: T3
+    scale: T1
+    input_scale: T5
+    __ret_0: T2
+  - self: T2
+    alpha: T3
+    scale: T3
+    input_scale: T1
+    __ret_0: T2
+  - self: T2
+    alpha: T3
+    scale: T5
+    input_scale: T1
+    __ret_0: T2
+  - self: T2
+    alpha: T5
+    scale: T0
+    input_scale: T1
+    __ret_0: T2
+  - self: T2
+    alpha: T5
+    scale: T1
+    input_scale: T0
+    __ret_0: T2
+  - self: T2
+    alpha: T5
+    scale: T1
+    input_scale: T3
+    __ret_0: T2
+  - self: T2
+    alpha: T5
+    scale: T1
+    input_scale: T5
+    __ret_0: T2
+  - self: T2
+    alpha: T5
+    scale: T3
+    input_scale: T1
+    __ret_0: T2
+  - self: T2
+    alpha: T5
+    scale: T5
+    input_scale: T1
+    __ret_0: T2
+  - self: T3
+    alpha: T0
+    scale: T0
+    input_scale: T1
+    __ret_0: T3
+  - self: T3
+    alpha: T0
+    scale: T1
+    input_scale: T0
+    __ret_0: T3
+  - self: T3
+    alpha: T0
+    scale: T1
+    input_scale: T3
+    __ret_0: T3
+  - self: T3
+    alpha: T0
+    scale: T1
+    input_scale: T5
+    __ret_0: T3
+  - self: T3
+    alpha: T0
+    scale: T3
+    input_scale: T1
+    __ret_0: T3
+  - self: T3
+    alpha: T0
+    scale: T5
+    input_scale: T1
+    __ret_0: T3
+  - self: T3
+    alpha: T1
+    scale: T0
+    input_scale: T0
+    __ret_0: T3
+  - self: T3
+    alpha: T1
+    scale: T0
+    input_scale: T3
+    __ret_0: T3
+  - self: T3
+    alpha: T1
+    scale: T0
+    input_scale: T5
+    __ret_0: T3
+  - self: T3
+    alpha: T1
+    scale: T3
+    input_scale: T0
+    __ret_0: T3
+  - self: T3
+    alpha: T1
+    scale: T3
+    input_scale: T3
+    __ret_0: T3
+  - self: T3
+    alpha: T1
+    scale: T3
+    input_scale: T5
+    __ret_0: T3
+  - self: T3
+    alpha: T1
+    scale: T5
+    input_scale: T0
+    __ret_0: T3
+  - self: T3
+    alpha: T1
+    scale: T5
+    input_scale: T3
+    __ret_0: T3
+  - self: T3
+    alpha: T1
+    scale: T5
+    input_scale: T5
+    __ret_0: T3
+  - self: T3
+    alpha: T3
+    scale: T0
+    input_scale: T1
+    __ret_0: T3
+  - self: T3
+    alpha: T3
+    scale: T1
+    input_scale: T0
+    __ret_0: T3
+  - self: T3
+    alpha: T3
+    scale: T1
+    input_scale: T3
+    __ret_0: T3
+  - self: T3
+    alpha: T3
+    scale: T1
+    input_scale: T5
+    __ret_0: T3
+  - self: T3
+    alpha: T3
+    scale: T3
+    input_scale: T1
+    __ret_0: T3
+  - self: T3
+    alpha: T3
+    scale: T5
+    input_scale: T1
+    __ret_0: T3
+  - self: T3
+    alpha: T5
+    scale: T0
+    input_scale: T1
+    __ret_0: T3
+  - self: T3
+    alpha: T5
+    scale: T1
+    input_scale: T0
+    __ret_0: T3
+  - self: T3
+    alpha: T5
+    scale: T1
+    input_scale: T3
+    __ret_0: T3
+  - self: T3
+    alpha: T5
+    scale: T1
+    input_scale: T5
+    __ret_0: T3
+  - self: T3
+    alpha: T5
+    scale: T3
+    input_scale: T1
+    __ret_0: T3
+  - self: T3
+    alpha: T5
+    scale: T5
+    input_scale: T1
+    __ret_0: T3
+  - self: T4
+    alpha: T0
+    scale: T0
+    input_scale: T1
+    __ret_0: T4
+  - self: T4
+    alpha: T0
+    scale: T1
+    input_scale: T0
+    __ret_0: T4
+  - self: T4
+    alpha: T0
+    scale: T1
+    input_scale: T3
+    __ret_0: T4
+  - self: T4
+    alpha: T0
+    scale: T1
+    input_scale: T5
+    __ret_0: T4
+  - self: T4
+    alpha: T0
+    scale: T3
+    input_scale: T1
+    __ret_0: T4
+  - self: T4
+    alpha: T0
+    scale: T5
+    input_scale: T1
+    __ret_0: T4
+  - self: T4
+    alpha: T1
+    scale: T0
+    input_scale: T0
+    __ret_0: T4
+  - self: T4
+    alpha: T1
+    scale: T0
+    input_scale: T3
+    __ret_0: T4
+  - self: T4
+    alpha: T1
+    scale: T0
+    input_scale: T5
+    __ret_0: T4
+  - self: T4
+    alpha: T1
+    scale: T3
+    input_scale: T0
+    __ret_0: T4
+  - self: T4
+    alpha: T1
+    scale: T3
+    input_scale: T3
+    __ret_0: T4
+  - self: T4
+    alpha: T1
+    scale: T3
+    input_scale: T5
+    __ret_0: T4
+  - self: T4
+    alpha: T1
+    scale: T5
+    input_scale: T0
+    __ret_0: T4
+  - self: T4
+    alpha: T1
+    scale: T5
+    input_scale: T3
+    __ret_0: T4
+  - self: T4
+    alpha: T1
+    scale: T5
+    input_scale: T5
+    __ret_0: T4
+  - self: T4
+    alpha: T3
+    scale: T0
+    input_scale: T1
+    __ret_0: T4
+  - self: T4
+    alpha: T3
+    scale: T1
+    input_scale: T0
+    __ret_0: T4
+  - self: T4
+    alpha: T3
+    scale: T1
+    input_scale: T3
+    __ret_0: T4
+  - self: T4
+    alpha: T3
+    scale: T1
+    input_scale: T5
+    __ret_0: T4
+  - self: T4
+    alpha: T3
+    scale: T3
+    input_scale: T1
+    __ret_0: T4
+  - self: T4
+    alpha: T3
+    scale: T5
+    input_scale: T1
+    __ret_0: T4
+  - self: T4
+    alpha: T5
+    scale: T0
+    input_scale: T1
+    __ret_0: T4
+  - self: T4
+    alpha: T5
+    scale: T1
+    input_scale: T0
+    __ret_0: T4
+  - self: T4
+    alpha: T5
+    scale: T1
+    input_scale: T3
+    __ret_0: T4
+  - self: T4
+    alpha: T5
+    scale: T1
+    input_scale: T5
+    __ret_0: T4
+  - self: T4
+    alpha: T5
+    scale: T3
+    input_scale: T1
+    __ret_0: T4
+  - self: T4
+    alpha: T5
+    scale: T5
+    input_scale: T1
+    __ret_0: T4
+
 - func: aten::embedding
   namespace: edge
   inherits: aten::embedding

@@ -6,8 +6,8 @@
 # pyre-unsafe
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass
 
 # For BI case
 torch_softmax = (torch.ops.aten.softmax.int, torch.ops.aten.log_softmax.int)
@@ -45,7 +45,7 @@ def get_logsoftmax_ops(op) -> tuple:
     raise RuntimeError(f"Can't get softmax decomposition ops for op {op}")
 
 
-class DecomposeSoftmaxUnstablePass(ExportPass):
+class DecomposeSoftmaxUnstablePass(ArmPass):
     """
     This pass decomposes log softmax or softmax into more primitive ops.
 
@@ -66,10 +66,10 @@ class DecomposeSoftmaxUnstablePass(ExportPass):
         _input = args[0]
         dim = [args[1]]
 
-        op1 = super().call_operator(exp_op, (_input,), {}, meta)
-        op2 = super().call_operator(sum_op, (op1, dim, True), {}, meta)
-        op3 = super().call_operator(reciprocal_op, (op2,), {}, meta)
-        op4 = super().call_operator(mul_op, (op1, op3), {}, meta)
+        op1 = super().call_operator(exp_op, (_input,), {}, meta, True)
+        op2 = super().call_operator(sum_op, (op1, dim, True), {}, meta, True)
+        op3 = super().call_operator(reciprocal_op, (op2,), {}, meta, True)
+        op4 = super().call_operator(mul_op, (op1, op3), {}, meta, True)
         if op in log_softmax:
-            op4 = super().call_operator(log_op, (op4,), {}, meta)
+            op4 = super().call_operator(log_op, (op4,), {}, meta, True)
         return op4

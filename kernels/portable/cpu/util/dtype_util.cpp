@@ -23,8 +23,6 @@ bool check_tensor_dtype(
       return executorch::runtime::tensor_is_realhbbf16_type(t);
     case SupportedTensorDtypes::REALHBF16:
       return executorch::runtime::tensor_is_realhbf16_type(t);
-    case SupportedTensorDtypes::REALH:
-      return executorch::runtime::tensor_is_realh_type(t);
     case SupportedTensorDtypes::FLOATHBF16:
       return executorch::runtime::tensor_is_floating_type(t);
     case SupportedTensorDtypes::INTB:

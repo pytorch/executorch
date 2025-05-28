@@ -289,7 +289,7 @@ class BackendIntegrationTest : public ::testing::TestWithParam<bool> {
     ASSERT_EQ(StubBackend::register_singleton(), Error::Ok);
 
     // Paths to the test program files.
-    program_path_ = std::getenv("ET_MODULE_ADD_MUL_PATH");
+    program_path_ = std::getenv("ET_MODULE_ADD_MUL_DELEGATED_PATH");
     ASSERT_FALSE(program_path_.empty());
     program_nosegments_path_ = std::getenv("ET_MODULE_ADD_MUL_NOSEGMENTS_PATH");
     ASSERT_FALSE(program_nosegments_path_.empty());
@@ -656,8 +656,8 @@ class DelegateDataAlignmentTest : public ::testing::TestWithParam<bool> {
       // The delegate data inline alignment used by the -da1024 file.
       return 1024;
     } else {
-      // A small alignment that's compatible with any realistic alignment.
-      return 4;
+      // Minimum alignment expected by program.cpp.
+      return alignof(std::max_align_t);
     }
   }
 

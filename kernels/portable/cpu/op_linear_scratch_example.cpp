@@ -41,13 +41,25 @@ bool check_linear_scratch_example_args(
     Tensor& out,
     Tensor& scratch) {
   ET_CHECK_OR_RETURN_FALSE(
-      input.size(1) == weight.size(1), "Unexpected weight size 1");
+      input.size(1) == weight.size(1),
+      "Unexpected weight size 1; input.size(1) = %" ET_PRI_TENSOR_SIZE
+      ", weight.size(1) = %" ET_PRI_TENSOR_SIZE,
+      input.size(1),
+      weight.size(1));
 
   ET_CHECK_OR_RETURN_FALSE(
-      scratch.size(0) == input.size(0), "Unexpected scratch size 0");
+      scratch.size(0) == input.size(0),
+      "Unexpected scratch size 0; scratch.size(0) = %" ET_PRI_TENSOR_SIZE
+      ", input.size(0) = %" ET_PRI_TENSOR_SIZE,
+      scratch.size(0),
+      input.size(0));
 
   ET_CHECK_OR_RETURN_FALSE(
-      scratch.size(1) == weight.size(0), "Unexpected scratch size 1");
+      scratch.size(1) == weight.size(0),
+      "Unexpected scratch size 1; scratch.size(1) = %" ET_PRI_TENSOR_SIZE
+      ", weight.size(0) = %" ET_PRI_TENSOR_SIZE,
+      scratch.size(1),
+      weight.size(0));
 
   return true;
 }
