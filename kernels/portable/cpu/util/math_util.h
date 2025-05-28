@@ -151,11 +151,22 @@ at::vec::Vectorized<T> min_override(
 }
 
 template <typename T>
+at::vec::Vectorized<T> min_override(at::vec::Vectorized<T> a, T b) {
+  return min_override(a, at::vec::Vectorized<T>(b));
+}
+
+template <typename T>
 at::vec::Vectorized<T> max_override(
     at::vec::Vectorized<T> a,
     at::vec::Vectorized<T> b) {
   return at::vec::maximum(a, b);
 }
+
+template <typename T>
+at::vec::Vectorized<T> max_override(at::vec::Vectorized<T> a, T b) {
+  return max_override(a, at::vec::Vectorized<T>(b));
+}
+
 #endif
 /**
  * There is a slight difference in how std::fmod works compared to how ATen

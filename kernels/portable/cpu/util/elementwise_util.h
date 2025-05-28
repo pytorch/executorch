@@ -131,11 +131,22 @@ inline void dtype_specialized_elementwise_fn_impl(
             const auto vectorized_end = end - (end % Vec::size());
             // Scalar prologue.
             for (const auto idx : c10::irange(begin, vectorized_begin)) {
+              // In debug mode, always use Vectorized so that even
+              // small-sized tests will test whether using Vectorized broke our
+              // lambda.
+#ifndef NDEBUG
+              std::array<Vec, kNumInputs> loaded_inputs;
+#else // NDEBUG
               std::array<CTYPE_COMPUTE, kNumInputs> loaded_inputs;
+#endif // NDEBUG
               for (const auto input_idx : c10::irange(kNumInputs)) {
                 loaded_inputs[input_idx] = inputs_data_ptrs[input_idx][idx];
               }
+#ifndef NDEBUG
+              std::apply(compute_fun, loaded_inputs).store(&data_out[idx], 1);
+#else // NDEBUG
               data_out[idx] = std::apply(compute_fun, loaded_inputs);
+#endif // NDEBUG
             }
 
             // Main vectorized loop.
@@ -152,11 +163,19 @@ inline void dtype_specialized_elementwise_fn_impl(
 
             // Scalar epilogue.
             for (const auto idx : c10::irange(vectorized_end, end)) {
+#ifndef NDEBUG
+              std::array<Vec, kNumInputs> loaded_inputs;
+#else // NDEBUG
               std::array<CTYPE_COMPUTE, kNumInputs> loaded_inputs;
+#endif // NDEBUG
               for (const auto input_idx : c10::irange(kNumInputs)) {
                 loaded_inputs[input_idx] = inputs_data_ptrs[input_idx][idx];
               }
+#ifndef NDEBUG
+              std::apply(compute_fun, loaded_inputs).store(&data_out[idx], 1);
+#else // NDEBUG
               data_out[idx] = std::apply(compute_fun, loaded_inputs);
+#endif // NDEBUG
             }
           });
       return;

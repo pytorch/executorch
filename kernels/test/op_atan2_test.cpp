@@ -47,17 +47,16 @@ TEST(OpAtan2OutTest, SmokeTest) {
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
-TEST(OpAtan2OutTest, SmokeTestNoBroadcasting) {
+TEST(OpAtan2OutTest, SmokeTestNoBroadcastingSameDtype) {
   TensorFactory<ScalarType::Double> tfDouble;
-  TensorFactory<ScalarType::Float> tfFloat;
 
   std::vector<double> a(18);
   std::iota(a.begin(), a.end(), -8);
   std::vector<double> b(18, 2.0);
   Tensor self = tfDouble.make({18}, a);
   Tensor other = tfDouble.make({18}, b);
-  Tensor out = tfFloat.zeros({18});
-  Tensor out_expected = tfFloat.make(
+  Tensor out = tfDouble.zeros({18});
+  Tensor out_expected = tfDouble.make(
       {18},
       {-1.3258176636680326,
        -1.2924966677897853,

@@ -55,7 +55,7 @@ TEST_F(OpPowTest, TensorTensorSanityCheck) {
 }
 
 TEST_F(OpPowTest, TensorTensorSanityCheckLargerNoBroadcasting) {
-  TensorFactory<ScalarType::Byte> tf;
+  TensorFactory<ScalarType::Float> tf;
   Tensor self = tf.full({18}, 2);
   Tensor exp = tf.full({18}, 4);
   Tensor out = tf.zeros({18});
