@@ -1,4 +1,4 @@
-ET_PLATFORM[sdk=iphonesimulator*] = ios-simulator
+ET_PLATFORM[sdk=iphonesimulator*] = simulator
 ET_PLATFORM[sdk=iphoneos*] = ios
 ET_PLATFORM[sdk=macos*] = macos
 
