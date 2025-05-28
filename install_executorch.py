@@ -191,6 +191,8 @@ def _list_pybind_defines(args) -> Tuple[bool, List[str]]:
             cmake_args.append("-DEXECUTORCH_BUILD_EXTENSION_TRAINING=ON")
         else:
             cmake_args.append(f"-DEXECUTORCH_BUILD_{pybind_arg.upper()}=ON")
+            if pybind_arg == "xnnpack":
+                cmake_args.append("-DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON")
 
     return False, cmake_args
 
