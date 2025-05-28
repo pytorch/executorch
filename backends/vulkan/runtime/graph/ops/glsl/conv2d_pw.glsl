@@ -14,7 +14,6 @@
 
 #define TILE_SIZE_X ${TILE_SIZE_X}
 #define TILE_SIZE_Y ${TILE_SIZE_Y}
-#define LOCAL_WG_SIZE 64
 
 #define op(X, A, B) ${OPERATOR}
 
@@ -39,11 +38,6 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-// For performance improvement, reduce register usage by caching positions in shared memory.
-// Offset index by 1 every 16 points to avoid bank access conflict.
-#define offset_pos_index(index) (index + ((index) >> 4))
-shared ivec3 pos_shared[offset_pos_index(LOCAL_WG_SIZE * TILE_SIZE_X * TILE_SIZE_Y)];
-
 /*
  * Computes a 2D pointwise convolution of an NxN output tile. Calculating an
  * output tile for pointwise convolution is more efficient because the kernel
@@ -51,27 +45,17 @@ shared ivec3 pos_shared[offset_pos_index(LOCAL_WG_SIZE * TILE_SIZE_X * TILE_SIZE
  */
 void main() {
   const ivec2 out_limits_scaled = (out_limits.xy + ivec2(TILE_SIZE_X - 1, TILE_SIZE_Y - 1)) / ivec2(TILE_SIZE_X, TILE_SIZE_Y);
-  const uint shared_mem_stride = LOCAL_WG_SIZE;
 
   const uint div_by_x = gl_GlobalInvocationID.x / out_limits_scaled.x;
   const ivec3 gpos = ivec3(
     gl_GlobalInvocationID.x % out_limits_scaled.x,
-    div_by_x % out_limits_scaled.y,
-    div_by_x / out_limits_scaled.y);
+    div_by_x,
+    gl_GlobalInvocationID.y);
 
-  // Output position for TILE_SIZE = 2
-  // +--------+--------+
-  // | pos[0] | pos[1] |
-  // +--------+--------+
-  // | pos[2] | pos[3] |
-  // +--------+--------+
-  ivec2 pos[TILE_SIZE_X * TILE_SIZE_Y];
-  for (int y = 0, i = 0; y < TILE_SIZE_Y; ++y) {
-    for (int x = 0; x < TILE_SIZE_X; ++x) {
-      pos[i] = ivec2(gpos.x * TILE_SIZE_X + x, gpos.y * TILE_SIZE_Y + y);
-      pos_shared[offset_pos_index((shared_mem_stride * i) + gl_LocalInvocationIndex)] = ivec3(pos[i], gpos.z);
-      i++;
-    }
+  // If the top left position is out of bounds, then this invocation will have
+  // no work to do.
+  if (gpos.y >= out_limits_scaled.y || gpos.z >= out_limits.z) {
+    return;
   }
 
   // If the top left position is out of bounds, then this invocation will have
@@ -80,12 +64,26 @@ void main() {
     return;
   }
 
+  // Output position for TILE_SIZE = 2
+  // +--------+--------+
+  // | pos[0] | pos[1] |
+  // +--------+--------+
+  // | pos[2] | pos[3] |
+  // +--------+--------+
+  ivec3 pos[TILE_SIZE_X * TILE_SIZE_Y];
+  for (int y = 0, i = 0; y < TILE_SIZE_Y; ++y) {
+    for (int x = 0; x < TILE_SIZE_X; ++x) {
+      pos[i] = ivec3(gpos.x * TILE_SIZE_X + x, gpos.y * TILE_SIZE_Y + y, gpos.z);
+      i++;
+    }
+  }
+
   // Compute the index of the input texture that needs to be loaded for each
   // output position. Note that negative indices can be produced indicating that
   // the top-left element is in a region added by padding.
   ivec2 ipos[TILE_SIZE_X * TILE_SIZE_Y];
   for (int i = 0; i < TILE_SIZE_X * TILE_SIZE_Y; ++i) {
-    ipos[i] = pos[i] * stride - padding;
+    ipos[i] = pos[i].xy * stride - padding;
   }
 
   // Final output array where each element is a tensor value.
@@ -171,10 +169,8 @@ void main() {
   }
 
   for (int i = 0; i < TILE_SIZE_X * TILE_SIZE_Y; ++i) {
-    const uint index = (shared_mem_stride * i) + gl_LocalInvocationIndex;
-    const ivec3 pos = pos_shared[offset_pos_index(index)];
-    if (all(lessThan(pos, out_limits.xyz))) {
-      imageStore(t_out, pos, op(vec4(sum[i * 4], sum[i * 4 + 1], sum[i * 4 + 2], sum[i * 4 + 3]), out_min, out_max));
+    if (all(lessThan(pos[i], out_limits.xyz))) {
+      imageStore(t_out, pos[i], op(vec4(sum[i * 4], sum[i * 4 + 1], sum[i * 4 + 2], sum[i * 4 + 3]), out_min, out_max));
     }
   }
 }
