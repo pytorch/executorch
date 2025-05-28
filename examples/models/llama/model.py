@@ -98,7 +98,7 @@ class Llama2Model(EagerModelBase):
             checkpoint = torch.load(checkpoint_path, map_location=device, mmap=True)
 
         # If given checkpoint is fairseq, convert to llama checkpoint.
-        fairseq2_checkpoint = llm_config.base.fairseq2
+        fairseq2_checkpoint = self.llm_config.base.fairseq2
         if fairseq2_checkpoint:
             print("Using fairseq2 checkpoint")
             checkpoint = convert_to_llama_checkpoint(checkpoint=checkpoint)
