@@ -65,7 +65,6 @@ def test_clone_tosa_BI(test_data):
         test_data(),
         aten_op,
         exir_op,
-        symmetric_io_quantization=True,
     )
     pipeline.run()
 
@@ -82,7 +81,6 @@ def test_clone_u55_BI(test_data):
         aten_op,
         exir_op,
         run_on_fvp=True,
-        symmetric_io_quantization=True,
     )
 
     pipeline.run()
@@ -100,7 +98,6 @@ def test_clone_u85_BI(test_data):
         aten_op,
         exir_op,
         run_on_fvp=True,
-        symmetric_io_quantization=True,
     )
 
     pipeline.run()
