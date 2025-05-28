@@ -275,6 +275,7 @@ def quantize_and_export_to_edge(
     quantizer: Optional[CadenceQuantizer] = None,
     dump_graphs: bool = False,
     constant_methods: Optional[dict[str, object]] = None,
+    calibration_data: Optional[list[tuple[object, ...]]] = None,
 ) -> EdgeProgramManager:
     """
     Trace, quantize and lower a model/inputs pair to edge IR.
@@ -283,6 +284,7 @@ def quantize_and_export_to_edge(
         model,
         inputs,
         quantizer=quantizer,
+        calibration_data=calibration_data,
         dump_graphs=dump_graphs,
     )
 
