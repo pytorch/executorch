@@ -44,7 +44,7 @@ class EagerLlamaRunner(LlamaRunner):
             vocab_size=params["vocab_size"],
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
-        manager: LLMEdgeManager = _prepare_for_llama_export(llm_config, None)
+        manager: LLMEdgeManager = _prepare_for_llama_export(llm_config)
         self.model = manager.model.eval().to(device=self.device)
 
     def forward(

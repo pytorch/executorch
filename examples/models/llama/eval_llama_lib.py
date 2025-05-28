@@ -207,7 +207,7 @@ def gen_eval_wrapper(
         llm_config
     )
     # GPTFastEvalWrapper: Create a wrapper around a pre-exported model
-    manager: LLMEdgeManager = _prepare_for_llama_export(llm_config, args)
+    manager: LLMEdgeManager = _prepare_for_llama_export(llm_config)
 
     if len(quantizers) != 0:
         manager = manager.export().pt2e_quantize(quantizers)
@@ -360,7 +360,7 @@ def eval_llama_with_attention_sink(model_name: str, args: argparse.ArgumentParse
     assert llm_config.export.max_seq_length == sink_size + window_size
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    manager: LLMEdgeManager = _prepare_for_llama_export(llm_config, args)
+    manager: LLMEdgeManager = _prepare_for_llama_export(llm_config)
     model = manager.model.eval().to(device=device)
     tokenizer = get_tokenizer(llm_config.base.tokenizer_path)
 
