@@ -49,6 +49,15 @@ python_library(
 )
 
 python_library(
+    name = "intermediate_output_capturer",
+    srcs = [
+        "_intermediate_output_capturer.py",
+    ],
+    deps = [
+    ],
+)
+
+python_library(
     name = "lib",
     srcs = ["__init__.py"],
     deps = [

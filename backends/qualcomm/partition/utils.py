@@ -57,7 +57,7 @@ def get_skip_decomp_table() -> List[torch._ops.OperatorBase]:
         torch.ops.aten.upsample_bicubic2d.vec,
         # This request is ignored because it is in a blocklist. Refer to exir/program/_program.py
         torch.ops.aten.unbind.int,
-        torch.ops.pt2e_quant.quantize_affine.default,
-        torch.ops.pt2e_quant.dequantize_affine.default,
+        torch.ops.torchao.quantize_affine.default,
+        torch.ops.torchao.dequantize_affine.default,
     ]
     return do_not_decompose
