@@ -63,6 +63,11 @@ class DecomposeSumPass(ExportPass):
             case _:
                 raise ValueError(f"Invalid number of arguments ({len(args)}) provided.")
 
+        # If dims is None, sum over all dimensions
+        if dims is None:
+            shape = input_node.data.size()
+            dims = list(range(len(shape)))
+
         view_op, sum_op = _get_sum_decomp(op)
 
         for dim in dims:
