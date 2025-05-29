@@ -517,8 +517,7 @@
 <li><p><code class="docutils literal notranslate"><span class="pre">backend_mps</span></code> - MPS backend</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">backend_xnnpack</span></code> - XNNPACK backend</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">kernels_custom</span></code> - Custom kernels for LLMs</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">kernels_optimized</span></code> - Optimized kernels</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">kernels_portable</span></code> - Portable kernels (naive implementation used as a reference)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">kernels_optimized</span></code> - Accelerated generic CPU kernels</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">kernels_quantized</span></code> - Quantized kernels</p></li>
 </ul>
 <p>Link your binary with the ExecuTorch runtime and any backends or kernels used by the exported ML model. It is recommended to link the core runtime to the components that use ExecuTorch directly, and link kernels and backends against the main app target.</p>
@@ -562,7 +561,7 @@
 <span class="w">      </span><span class="n">dependencies</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">        </span><span class="p">.</span><span class="n">product</span><span class="p">(</span><span class="n">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;executorch&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">package</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;executorch&quot;</span><span class="p">),</span>
 <span class="w">        </span><span class="p">.</span><span class="n">product</span><span class="p">(</span><span class="n">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;backend_xnnpack&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">package</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;executorch&quot;</span><span class="p">),</span>
-<span class="w">        </span><span class="p">.</span><span class="n">product</span><span class="p">(</span><span class="n">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;kernels_portable&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">package</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;executorch&quot;</span><span class="p">),</span>
+<span class="w">        </span><span class="p">.</span><span class="n">product</span><span class="p">(</span><span class="n">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;kernels_optimized&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">package</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;executorch&quot;</span><span class="p">),</span>
 <span class="w">        </span><span class="c1">// Add other backends and kernels as needed.</span>
 <span class="w">      </span><span class="p">]),</span>
 <span class="w">  </span><span class="p">]</span>
