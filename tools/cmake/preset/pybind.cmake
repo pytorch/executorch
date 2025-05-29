@@ -23,7 +23,7 @@ set_overridable_option(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set_overridable_option(EXECUTORCH_BUILD_COREML ON)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  # Linux-specific code here
+  set_overridable_option(EXECUTORCH_BUILD_COREML ON)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL "WIN32")
   # Windows or other OS-specific code here
 else()
