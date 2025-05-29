@@ -9,6 +9,7 @@ from collections import OrderedDict
 from typing import Dict
 
 from executorch.backends.qualcomm._passes import (
+    AnnotateAdaptiveAvgPool1D,
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
@@ -21,6 +22,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeEinsum,
     DecomposeExpM1,
     DecomposeLinalgVectorNorm,
+    DecomposeRoll,
     DecomposeSilu,
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
@@ -74,6 +76,7 @@ def get_capture_program_passes():
     # The second value in each tuple in `default_passes_and_setting` indicates whether the corresponding pass is activated by default.
     # If a pass is activated, it will be executed by default.
     default_passes_and_setting = [
+        (AnnotateAdaptiveAvgPool1D, True),
         (AnnotateQuantAttrs, True),
         (AnnotateStack, True),
         (AnnotateUnbind, True),
@@ -129,11 +132,11 @@ class QnnPassManager(PassManager):
         dep_table: Dict = None,
     ):
         # TODO: remove this workaround when target could be correctly detected
-        from executorch.backends.qualcomm._passes import utils
+        from executorch.backends.qualcomm.builders import node_visitor
         from executorch.exir.dialects._ops import ops as exir_ops
 
-        utils.q_ops.add(exir_ops.edge.pt2e_quant.quantize_affine.default)
-        utils.dq_ops.add(exir_ops.edge.pt2e_quant.dequantize_affine.default)
+        node_visitor.q_ops.add(exir_ops.edge.torchao.quantize_affine.default)
+        node_visitor.dq_ops.add(exir_ops.edge.torchao.dequantize_affine.default)
 
         passes_job = (
             passes_job if passes_job is not None else get_capture_program_passes()
@@ -189,6 +192,7 @@ class QnnPassManager(PassManager):
         self.add_pass(ReplaceArangeArgs())
         self.add_pass(DecomposeCDist())
         self.add_pass(DecomposeScaledDotProductAttention())
+        self.add_pass(DecomposeRoll())
         self.add_pass(DecomposeSilu())
         self.add_pass(DecomposeEinsum())
         self.add_pass(DecomposeExpM1())
@@ -200,6 +204,7 @@ class QnnPassManager(PassManager):
     def transform_for_export_pipeline(self, exported_program: ExportedProgram):
         self.add_pass(DecomposeCDist())
         self.add_pass(DecomposeScaledDotProductAttention())
+        self.add_pass(DecomposeRoll())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(DecomposeExpM1())
         # this pass will rewrite state_dict, it needs to be accomplished before
