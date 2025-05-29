@@ -271,6 +271,34 @@ class TestPreset(CMakeTestCase):
         self.run_cmake()
         self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "move fast", "STRING")
 
+    def test_set_overridable_option_loaded_from_file(self):
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            include(${PROJECT_SOURCE_DIR}/build/my_preset.cmake)
+            include(${PROJECT_SOURCE_DIR}/build/default.cmake)
+        """
+        _my_preset_txt = """
+            set_overridable_option(EXECUTORCH_FOO "hello world")
+        """
+        _default_preset_txt = """
+            define_overridable_option(EXECUTORCH_TEST_MESSAGE "test message" STRING "move fast")
+            define_overridable_option(EXECUTORCH_FOO "another test message" STRING "break things")
+        """
+        self.create_workspace(
+            {
+                "CMakeLists.txt": _cmake_lists_txt,
+                "build": {
+                    "my_preset.cmake": _my_preset_txt,
+                    "default.cmake": _default_preset_txt,
+                },
+            }
+        )
+        self.run_cmake(cmake_args=["-DEXECUTORCH_TEST_MESSAGE='from the cli'"])
+        self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "from the cli", "STRING")
+        self.assert_cmake_cache("EXECUTORCH_FOO", "hello world", "STRING")
+
     def test_set_overridable_option_with_cli_override(self):
         _cmake_lists_txt = """
             cmake_minimum_required(VERSION 3.24)

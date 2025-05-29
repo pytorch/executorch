@@ -1017,6 +1017,13 @@ def _sanity_check_graph_for_non_decomp_ops(
 def _remove_invalid_ops_for_not_decompose(
     ops_to_not_decompose: List[torch._ops.OpOverload],
 ) -> List[torch._ops.OpOverload]:
+    _logged_warnings = set()
+
+    def log_warning(warn_str):
+        if warn_str not in _logged_warnings:
+            logging.warn(warn_str)
+            _logged_warnings.add(warn_str)
+
     # To address https://github.com/pytorch/executorch/issues/8781
     def keep(op):
         # Explicit allow list
@@ -1034,18 +1041,18 @@ def _remove_invalid_ops_for_not_decompose(
         schema = op._schema
         native_schema = _pybind_schema_to_native_schema(schema)
         if native_schema is None:
-            logging.warn(
+            log_warning(
                 f"Torchgen is not able to parse the schema of {op._schema}.  This is not fatal."
             )
         else:
             if native_schema.is_mutable:
-                logging.warn(
+                log_warning(
                     f"Op {op} was requested for preservation by partitioner.  This request is ignored because it is mutable."
                 )
                 return False
 
             if native_schema.aliased_return_names() != [None]:
-                logging.warn(
+                log_warning(
                     f"Op {op} was requested for preservation by partitioner.  This request is ignored because it aliases output."
                 )
                 return False
@@ -1067,7 +1074,7 @@ def _remove_invalid_ops_for_not_decompose(
             torch.ops.aten.unbind.int,
             torch.ops.aten.split_with_sizes.default,
         ]:
-            logging.warn(
+            log_warning(
                 f"Op {op} was requested for preservation by partitioner.  This request is ignored because it is in a blocklist."
             )
             return False
