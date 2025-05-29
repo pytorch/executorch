@@ -13,12 +13,14 @@ import torch.fx
 import torch.nn.functional as F
 from executorch.backends.arm.quantizer import QuantizationConfig
 from executorch.backends.arm.tosa_utils import get_node_debug_info
-from torch.ao.quantization.quantizer import QuantizationSpecBase, SharedQuantizationSpec
-from torch.ao.quantization.quantizer.utils import (
-    _annotate_input_qspec_map,
-    _annotate_output_qspec,
-)
+
 from torch.fx import Node
+from torchao.quantization.pt2e.quantizer import (
+    annotate_input_qspec_map,
+    annotate_output_qspec,
+    QuantizationSpecBase,
+    SharedQuantizationSpec,
+)
 
 from .arm_quantizer_utils import (
     is_annotated,
@@ -119,7 +121,7 @@ def _annotate_input(node: Node, quant_property: _QuantProperty):
         strict=True,
     ):
         assert isinstance(n_arg, Node)
-        _annotate_input_qspec_map(node, n_arg, qspec)
+        annotate_input_qspec_map(node, n_arg, qspec)
         if quant_property.mark_annotated:
             mark_node_as_annotated(n_arg)  # type: ignore[attr-defined]
 
@@ -130,7 +132,7 @@ def _annotate_output(node: Node, quant_property: _QuantProperty):
     assert not quant_property.optional
     assert quant_property.index == 0, "Only one output annotation supported currently"
 
-    _annotate_output_qspec(node, quant_property.qspec)
+    annotate_output_qspec(node, quant_property.qspec)
 
 
 def _match_pattern(
@@ -237,9 +239,8 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.clamp.Tensor,
 ]
 
-# Operators that can inherit the quantization specs from its parent node
-# as SharedQuantizationSpec.
-_parent_shared_qspec = [
+_one_to_one_shared_input_or_input_act_qspec = [
+    torch.ops.aten.clone.default,
     torch.ops.aten.hardtanh.default,
     torch.ops.aten.hardtanh_.default,
     torch.ops.aten.relu.default,
@@ -254,11 +255,6 @@ _parent_shared_qspec = [
     torch.ops.aten.flatten.using_ints,
     torch.ops.aten.dropout.default,
     torch.ops.aten.dropout_.default,
-    torch.ops.aten.where,
-    operator.getitem,
-]
-
-_one_to_one_shared_input_or_input_act_qspec = [
     torch.ops.aten.adaptive_avg_pool2d.default,
     torch.ops.aten.alias_copy.default,
 ]
@@ -404,6 +400,9 @@ def get_quant_properties(  # noqa: C901
         ]
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
     elif node.target in _one_to_one_shared_input_or_input_act_qspec:
+        if not isinstance(node.args[0], Node):
+            return None
+
         input_qspec = (
             SharedQuantizationSpec(node.args[0])  # type: ignore[arg-type]
             if is_output_annotated(node.args[0])  # type: ignore
@@ -458,19 +457,16 @@ def get_quant_properties(  # noqa: C901
             ),
         ]
         quant_properties.quant_output = None
-    elif node.target in _parent_shared_qspec:
-        if not isinstance(node.args[0], Node):
-            return None
-
-        if not is_output_annotated(node.args[0]):  # type: ignore[attr-defined]
-            return None
-
-        shared_qspec = SharedQuantizationSpec(node.args[0])
-        quant_properties.quant_inputs = [_QuantProperty(0, shared_qspec)]  # type: ignore[arg-type]
-        quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
     elif node.target in [torch.ops.aten.scalar_tensor.default]:
         quant_properties.quant_inputs = []
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
+    elif node.target in [operator.getitem]:
+        if not is_output_annotated(node.args[0]):  # type: ignore[attr-defined, arg-type]
+            return None
+
+        shared_qspec = SharedQuantizationSpec(node.args[0])  # type: ignore[arg-type]
+        quant_properties.quant_inputs = [_QuantProperty(0, shared_qspec)]  # type: ignore[arg-type]
+        quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
     else:
         return None
 

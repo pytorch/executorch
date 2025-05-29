@@ -565,8 +565,6 @@ if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_CPUINFO)
 endif()
 
 if(EXECUTORCH_BUILD_PYBIND)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pybind11)
-
   if(NOT EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
   endif()
@@ -602,7 +600,7 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs portable_ops_lib)
   endif()
 
-  if(EXECUTORCH_BUILD_COREML)
+  if(EXECUTORCH_BUILD_COREML AND APPLE)
     list(APPEND _dep_libs coremldelegate)
   endif()
 
@@ -701,7 +699,7 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     list(APPEND _executor_runner_libs etdump flatccrt)
   endif()
 
-  if(EXECUTORCH_BUILD_COREML)
+  if(EXECUTORCH_BUILD_COREML AND APPLE)
     list(APPEND _executor_runner_libs coremldelegate)
   endif()
 
