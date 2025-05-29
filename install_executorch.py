@@ -205,7 +205,4 @@ def main(args):
 if __name__ == "__main__":
     # Before doing anything, cd to the directory containing this script.
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
-    if not python_is_compatible():
-        sys.exit(1)
-
     main(sys.argv[1:])
