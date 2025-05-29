@@ -105,36 +105,43 @@ let packageProducts: [Product] = products.keys.map { key in
 }.sorted { $0.name < $1.name }
 
 var packageTargets: [Target] = []
+
 for (key, value) in targets {
-  packageTargets.append(
-    .binaryTarget(
-      name: key,
-      url: "\(url)\(key)-\(version).zip",
-      checksum: value["sha256"] as? String ?? ""
-    )
+  let binaryTarget: Target = .binaryTarget(
+    name: key,
+    url: "\(url)\(key)-\(version).zip",
+    checksum: value["sha256"] as? String ?? ""
   )
+  packageTargets.append(binaryTarget)
 }
+
 for (key, value) in products {
-  packageTargets.append(
-    .binaryTarget(
-      name: key,
-      url: "\(url)\(key)-\(version).zip",
-      checksum: value["sha256"] as? String ?? ""
-    )
+  let binaryTarget: Target = .binaryTarget(
+    name: key,
+    url: "\(url)\(key)-\(version).zip",
+    checksum: value["sha256"] as? String ?? ""
   )
-  packageTargets.append(
-    .target(
-      name: "\(key)\(dependencies_suffix)",
-      dependencies: ([key] +
-        (value["targets"] as? [String] ?? []).map { target in
-          key.hasSuffix(debug_suffix) ? target + debug_suffix : target
-        }).map { .target(name: $0) },
-      path: ".Package.swift/\(key)",
-      linkerSettings:
-        (value["frameworks"] as? [String] ?? []).map { .linkedFramework($0) } +
-        (value["libraries"] as? [String] ?? []).map { .linkedLibrary($0) }
-    )
+  packageTargets.append(binaryTarget)
+
+  let targetName = "\(key)\(dependencies_suffix)"
+  let rawDeps = [key] + (value["targets"] as? [String] ?? []).map { t in
+    key.hasSuffix(debug_suffix) ? t + debug_suffix : t
+  }
+  let deps: [Target.Dependency] = rawDeps.map { .target(name: $0) }
+  let path = ".Package.swift/\(key)"
+
+  let frameworks = value["frameworks"] as? [String] ?? []
+  let libraries = value["libraries"] as? [String] ?? []
+  let frameworkSettings: [LinkerSetting] = frameworks.map { .linkedFramework($0) }
+  let librarySettings: [LinkerSetting] = libraries.map { .linkedLibrary($0) }
+
+  let productTarget: Target = .target(
+    name: targetName,
+    dependencies: deps,
+    path: path,
+    linkerSettings: frameworkSettings + librarySettings
   )
+  packageTargets.append(productTarget)
 }
 
 let package = Package(
