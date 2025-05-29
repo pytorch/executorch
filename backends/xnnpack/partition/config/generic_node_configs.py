@@ -343,6 +343,13 @@ class FloorConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32]
 
 
+class GeluConfig(GenericNodePartitionerConfig):
+    target_name = "gelu.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
 class HardswishConfig(GenericNodePartitionerConfig):
     target_name = "hardswish.default"
 

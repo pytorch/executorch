@@ -15,9 +15,9 @@ from typing import cast, Sequence
 
 import torch
 from torch._subclasses import FakeTensor
-
-from torch.ao.quantization.quantizer import QuantizationAnnotation
 from torch.fx import GraphModule, Node
+
+from torchao.quantization.pt2e.quantizer import QuantizationAnnotation
 
 
 def is_annotated(node: Node) -> bool:
