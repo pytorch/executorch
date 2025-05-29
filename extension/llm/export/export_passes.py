@@ -3,6 +3,7 @@ import logging
 import torch
 
 from executorch.exir.pass_base import ExportPass
+from executorch.exir.program._program import _update_exported_program_graph_module
 from torch._subclasses import FakeTensor
 from torch.fx.passes.infra.pass_base import PassResult
 
@@ -97,6 +98,14 @@ class RemoveRedundantTransposes(ExportPass):
         graph_module.recompile()
 
         return PassResult(graph_module, graph_changed)
+
+
+def remove_redundant_transposes(
+    ep: torch.export.ExportedProgram,
+) -> torch.export.ExportedProgram:
+    res = RemoveRedundantTransposes()(ep.graph_module)
+    assert res is not None
+    return _update_exported_program_graph_module(ep, res.graph_module)
 
 
 class ReplaceSDPAWithCustomSDPAPass(ExportPass):

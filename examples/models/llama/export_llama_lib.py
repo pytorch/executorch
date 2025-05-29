@@ -21,6 +21,8 @@ from json import JSONDecodeError
 from pathlib import Path
 from typing import Callable, List, Optional, Union
 
+import executorch
+
 import pkg_resources
 import torch
 
@@ -50,6 +52,7 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_qnn_quantizer,
     get_vulkan_quantizer,
 )
+from executorch.extension.llm.export.recipes import get_llm_recipe
 from executorch.util.activation_memory_profiler import generate_memory_trace
 
 from ..model_factory import EagerModelFactory
@@ -546,6 +549,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="If true, stops right after torch.export() and saves the exported model.",
     )
+
+    parser.add_argument(
+        "--recipe_flow",
+        default=False,
+        action="store_true",
+        help="Experimental feature, this will use the executorch.export + recipe based flow",
+    )
     return parser
 
 
@@ -610,6 +620,9 @@ def export_llama(args) -> str:
                 "Please run `pip install snakeviz` to install required dependencies for cProfiler flamegraph."
             )
             return ""
+    elif args.recipe_flow:
+        filename = _recipe_based_export_llama(args)
+        return filename
     else:
         builder = _export_llama(args)
         assert (
@@ -1100,6 +1113,24 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
 
     builder.save_to_pte(output_file)
     return builder
+
+
+def _recipe_based_export_llama(args) -> str:  # noqa: C901
+    _validate_args(args)
+    assert args.xnnpack, "Recipe based flow only supports xnnpack backend currently."
+
+    builder = _prepare_for_llama_export(args)
+    session = executorch.export.export(
+        builder.model,
+        [builder.example_inputs],
+        get_llm_recipe(args),
+        dynamic_shapes=builder._get_dynamic_shape(),
+    )
+
+    session.print_delegation_info()
+    session.save_to_pte(builder.modelname)
+
+    return builder.modelname
 
 
 def _load_llama_model_metadata(
