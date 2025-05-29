@@ -1,12 +1,3 @@
-// swift-tools-version:5.9
-/*
- * Copyright (c) Meta Platforms, Inc. and affiliates.
- * All rights reserved.
- *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree.
- */
-
 import PackageDescription
 
 let version = "__VERSION__"
@@ -100,48 +91,38 @@ let targets = deliverables([
   ],
 ])
 
-let packageProducts: [Product] = products.keys.map { key in
+let packageProducts: [Product] = products.keys.map { key -> Product in
   .library(name: key, targets: ["\(key)\(dependencies_suffix)"])
 }.sorted { $0.name < $1.name }
 
-var packageTargets: [Target] = []
-
-for (key, value) in targets {
-  let binaryTarget: Target = .binaryTarget(
-    name: key,
-    url: "\(url)\(key)-\(version).zip",
-    checksum: value["sha256"] as? String ?? ""
-  )
-  packageTargets.append(binaryTarget)
+let packageTargets: [Target] = targets.flatMap { key, value -> [Target] in
+  [
+    .binaryTarget(
+      name: key,
+      url: "\(url)\(key)-\(version).zip",
+      checksum: value["sha256"] as? String ?? ""
+    ),
+  ]
 }
 
-for (key, value) in products {
-  let binaryTarget: Target = .binaryTarget(
-    name: key,
-    url: "\(url)\(key)-\(version).zip",
-    checksum: value["sha256"] as? String ?? ""
-  )
-  packageTargets.append(binaryTarget)
-
-  let targetName = "\(key)\(dependencies_suffix)"
-  let rawDeps = [key] + (value["targets"] as? [String] ?? []).map { t in
-    key.hasSuffix(debug_suffix) ? t + debug_suffix : t
-  }
-  let deps: [Target.Dependency] = rawDeps.map { .target(name: $0) }
-  let path = ".Package.swift/\(key)"
-
-  let frameworks = value["frameworks"] as? [String] ?? []
-  let libraries = value["libraries"] as? [String] ?? []
-  let frameworkSettings: [LinkerSetting] = frameworks.map { .linkedFramework($0) }
-  let librarySettings: [LinkerSetting] = libraries.map { .linkedLibrary($0) }
-
-  let productTarget: Target = .target(
-    name: targetName,
-    dependencies: deps,
-    path: path,
-    linkerSettings: frameworkSettings + librarySettings
-  )
-  packageTargets.append(productTarget)
+let productTargets: [Target] = products.flatMap { key, value -> [Target] in
+  [
+    .binaryTarget(
+      name: key,
+      url: "\(url)\(key)-\(version).zip",
+      checksum: value["sha256"] as? String ?? ""
+    ),
+    .target(
+      name: "\(key)\(dependencies_suffix)",
+      dependencies: ([key] + (value["targets"] as? [String] ?? []).map { target in
+        key.hasSuffix(debug_suffix) ? target + debug_suffix : target
+      }).map { .target(name: $0) },
+      path: ".Package.swift/\(key)",
+      linkerSettings:
+        (value["frameworks"] as? [String] ?? []).map { .linkedFramework($0) } +
+        (value["libraries"] as? [String] ?? []).map { .linkedLibrary($0) }
+    ),
+  ]
 }
 
 let package = Package(
@@ -151,5 +132,5 @@ let package = Package(
     .macOS(.v10_15),
   ],
   products: packageProducts,
-  targets: packageTargets
+  targets: packageTargets + productTargets
 )
