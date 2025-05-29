@@ -134,7 +134,9 @@ def check_and_update_submodules():
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Install executorch in your Python environment."
+    )
     parser.add_argument(
         "--clean",
         action="store_true",
