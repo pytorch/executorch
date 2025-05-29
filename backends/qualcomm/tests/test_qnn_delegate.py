@@ -3681,7 +3681,7 @@ class TestExampleLLMScript(TestQNN):
         if self.pre_gen_pte:
             cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
 
-        golden_start_with = "<|begin_of_text|><|start_header_id|>user<|end_header_id|>"
+        golden_start_with = "<|start_header_id|>user<|end_header_id|>"
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
             conn = listener.accept()
