@@ -257,13 +257,24 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
   set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
   set(TORCHAO_BUILD_CPU_AARCH64 ON)
   set(TORCHAO_ENABLE_ARM_NEON_DOT ON)
+  set(TORCHAO_BUILD_ATEN_OPS OFF)
 
   # Set ExecuTorch headers and core library so TorchAO can register ops against them
   set(EXECUTORCH_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/..)
   set(EXECUTORCH_LIBRARIES executorch)
+
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/experimental)
+
+  # Ensure torchao_ops_executorch can find and link pthreadpool
+  target_include_directories(torchao_ops_executorch PRIVATE ${PTHREADPOOL_SOURCE_DIR}/include)
+  target_link_libraries(torchao_ops_executorch PRIVATE pthreadpool)
+
+  # Only call this on torchao_ops_executorch — pthreadpool is not a shared lib
   target_link_options_shared_lib(torchao_ops_executorch)
+
+  # Ensure pthreadpool is included in the packaged framework
   list(APPEND _dep_libs torchao_ops_executorch)
+  list(APPEND _dep_libs pthreadpool)
 endif()
 
 if(EXECUTORCH_BUILD_TESTS)
