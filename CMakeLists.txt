@@ -39,14 +39,16 @@
 # ~~~
 # cmake-format -i CMakeLists.txt
 # ~~~
-# It should also be cmake-lint clean.
+# It should also be checked with a linter via
+# ~~~
+# cmake-lint CMakeLists.txt
+# ~~~
 #
 
 cmake_minimum_required(VERSION 3.24)
 project(executorch)
 
 # MARK: - Start EXECUTORCH_H12025_BUILD_MIGRATION
-# --------------------------------------------------
 
 include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
 include(${PROJECT_SOURCE_DIR}/tools/cmake/Utils.cmake)
@@ -84,7 +86,6 @@ include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
 print_configured_options()
 
 # MARK: - End EXECUTORCH_H12025_BUILD_MIGRATION
-# ----------------------------------------------------
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -95,7 +96,8 @@ set(CMAKE_SKIP_BUILD_RPATH OFF)
 # Don't use the install-rpath during the build phase
 set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 # Automatically add all linked folders that are NOT in the build directory to
-# the rpath (per library?) TODO: Doesn't work for us right now because we are
+# the rpath (per library?)
+# TODO: Doesn't work for us right now because we are
 # not installing .so's into the correct locations. For example we have
 # libcustom_ops_aot_lib.so depending on _portable_lib.so, which was eventually
 # put under <site-packages>/executorch/extension/pybindings/ but this rpath is
