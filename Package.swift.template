@@ -38,36 +38,23 @@ let products = deliverables([
   "backend_coreml": [
     "sha256": "__SHA256_backend_coreml__",
     "sha256" + debug_suffix: "__SHA256_backend_coreml_debug__",
-    "frameworks": [
-      "Accelerate",
-      "CoreML",
-    ],
-    "libraries": [
-      "sqlite3",
-    ],
+    "frameworks": ["Accelerate", "CoreML"],
+    "libraries": ["sqlite3"],
   ],
   "backend_mps": [
     "sha256": "__SHA256_backend_mps__",
     "sha256" + debug_suffix: "__SHA256_backend_mps_debug__",
-    "frameworks": [
-      "Metal",
-      "MetalPerformanceShaders",
-      "MetalPerformanceShadersGraph",
-    ],
+    "frameworks": ["Metal", "MetalPerformanceShaders", "MetalPerformanceShadersGraph"],
   ],
   "backend_xnnpack": [
     "sha256": "__SHA256_backend_xnnpack__",
     "sha256" + debug_suffix: "__SHA256_backend_xnnpack_debug__",
-    "targets": [
-      "threadpool",
-    ],
+    "targets": ["threadpool"],
   ],
   "executorch": [
     "sha256": "__SHA256_executorch__",
     "sha256" + debug_suffix: "__SHA256_executorch_debug__",
-    "libraries": [
-      "c++",
-    ],
+    "libraries": ["c++"],
   ],
   "kernels_custom": [
     "sha256": "__SHA256_kernels_custom__",
@@ -76,12 +63,8 @@ let products = deliverables([
   "kernels_optimized": [
     "sha256": "__SHA256_kernels_optimized__",
     "sha256" + debug_suffix: "__SHA256_kernels_optimized_debug__",
-    "frameworks": [
-      "Accelerate",
-    ],
-    "targets": [
-      "threadpool",
-    ],
+    "frameworks": ["Accelerate"],
+    "targets": ["threadpool"],
   ],
   "kernels_portable": [
     "sha256": "__SHA256_kernels_portable__",
@@ -100,7 +83,7 @@ let targets = deliverables([
   ],
 ])
 
-let packageProducts: [Product] = products.keys.map { key in
+let packageProducts: [Product] = products.keys.map { key -> Product in
   .library(name: key, targets: ["\(key)\(dependencies_suffix)"])
 }.sorted { $0.name < $1.name }
 
@@ -120,17 +103,17 @@ for (key, value) in products {
     url: "\(url)\(key)-\(version).zip",
     checksum: value["sha256"] as? String ?? ""
   ))
-  packageTargets.append(.target(
+  let target: Target = .target(
     name: "\(key)\(dependencies_suffix)",
-    dependencies:
-      ([key] + (value["targets"] as? [String] ?? []).map { target in
-        key.hasSuffix(debug_suffix) ? target + debug_suffix : target
-      }).map { .target(name: $0) },
+    dependencies: ([key] + (value["targets"] as? [String] ?? []).map {
+      key.hasSuffix(debug_suffix) ? $0 + debug_suffix : $0
+    }).map { .target(name: $0) },
     path: ".Package.swift/\(key)",
     linkerSettings:
       (value["frameworks"] as? [String] ?? []).map { .linkedFramework($0) } +
       (value["libraries"] as? [String] ?? []).map { .linkedLibrary($0) }
-  ))
+  )
+  packageTargets.append(target)
 }
 
 let package = Package(
