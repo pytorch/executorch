@@ -22,7 +22,27 @@ import PackageDescription
 let debug_suffix = "_debug"
 let dependencies_suffix = "_with_dependencies"
 
-let products = [
+func deliverables(_ dict: [String: [String: Any]]) -> [String: [String: Any]] {
+  dict
+    .reduce(into: [String: [String: Any]]()) { result, pair in
+      let (key, value) = pair
+      result[key] = value
+      result[key + debug_suffix] = value
+    }
+    .reduce(into: [String: [String: Any]]()) { result, pair in
+      let (key, value) = pair
+      var newValue = value
+      if key.hasSuffix(debug_suffix) {
+        for (k, v) in value where k.hasSuffix(debug_suffix) {
+          let trimmed = String(k.dropLast(debug_suffix.count))
+          newValue[trimmed] = v
+        }
+      }
+      result[key] = newValue.filter { !$0.key.hasSuffix(debug_suffix) }
+    }
+}
+
+let products = deliverables([
   "backend_coreml": [
     "frameworks": [
       "Accelerate",
@@ -60,14 +80,42 @@ let products = [
   ],
   "kernels_portable": [:],
   "kernels_quantized": [:],
-].reduce(into: [String: [String: Any]]()) {
-  $0[$1.key] = $1.value
-  $0[$1.key + debug_suffix] = $1.value
+])
+
+let targets = deliverables([
+  "threadpool": [:],
+])
+
+let packageProducts: [Product] = products.keys.map { key -> Product in
+  .library(name: key, targets: ["\(key)\(dependencies_suffix)"])
+}.sorted { $0.name < $1.name }
+
+var packageTargets: [Target] = []
+
+for (key, value) in targets {
+  packageTargets.append(.binaryTarget(
+    name: key,
+    path: "cmake-out/\(key).xcframework"
+  ))
 }
 
-let targets = [
-  "threadpool",
-].flatMap { [$0, $0 + debug_suffix] }
+for (key, value) in products {
+  packageTargets.append(.binaryTarget(
+    name: key,
+    path: "cmake-out/\(key).xcframework"
+  ))
+  let target: Target = .target(
+    name: "\(key)\(dependencies_suffix)",
+    dependencies: ([key] + (value["targets"] as? [String] ?? []).map {
+      key.hasSuffix(debug_suffix) ? $0 + debug_suffix : $0
+    }).map { .target(name: $0) },
+    path: ".Package.swift/\(key)",
+    linkerSettings:
+      (value["frameworks"] as? [String] ?? []).map { .linkedFramework($0) } +
+      (value["libraries"] as? [String] ?? []).map { .linkedLibrary($0) }
+  )
+  packageTargets.append(target)
+}
 
 let package = Package(
   name: "executorch",
@@ -75,33 +123,8 @@ let package = Package(
     .iOS(.v17),
     .macOS(.v10_15),
   ],
-  products: products.keys.map { key in
-    .library(name: key, targets: ["\(key)\(dependencies_suffix)"])
-  }.sorted { $0.name < $1.name },
-  targets: targets.map { key in
-    .binaryTarget(
-      name: key,
-      path: "cmake-out/\(key).xcframework"
-    )
-  } + products.flatMap { key, value -> [Target] in
-    [
-      .binaryTarget(
-        name: key,
-        path: "cmake-out/\(key).xcframework"
-      ),
-      .target(
-        name: "\(key)\(dependencies_suffix)",
-        dependencies:([key] +
-          (value["targets"] as? [String] ?? []).map {
-            target in key.hasSuffix(debug_suffix) ? target + debug_suffix : target
-          }).map { .target(name: $0) },
-        path: ".Package.swift/\(key)",
-        linkerSettings:
-          (value["frameworks"] as? [String] ?? []).map { .linkedFramework($0) } +
-          (value["libraries"] as? [String] ?? []).map { .linkedLibrary($0) }
-      ),
-    ]
-  } + [
+  products: packageProducts,
+  targets: packageTargets + [
     .testTarget(
       name: "tests",
       dependencies: [
