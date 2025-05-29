@@ -104,11 +104,14 @@ auto convert_to_vectorized_n_of_float(at::vec::Vectorized<T> vec) {
 #endif // ET_USE_PYTORCH_HEADERS
 
 // To simplify client code, we provide coverage for a bunch of float ops (the
-// same ones listed in ATen vml.h) here.
+// same ones listed in ATen vml.h, plus acosh, asinh, atanh) here.
 ET_INTERNAL_VECTORIZED_STD_FLOAT_UNARY_FUNC(abs)
 ET_INTERNAL_VECTORIZED_STD_FLOAT_UNARY_FUNC(acos)
+ET_INTERNAL_VECTORIZED_STD_FLOAT_UNARY_FUNC(acosh)
 ET_INTERNAL_VECTORIZED_STD_FLOAT_UNARY_FUNC(asin)
+ET_INTERNAL_VECTORIZED_STD_FLOAT_UNARY_FUNC(asinh)
 ET_INTERNAL_VECTORIZED_STD_FLOAT_UNARY_FUNC(atan)
+ET_INTERNAL_VECTORIZED_STD_FLOAT_UNARY_FUNC(atanh)
 ET_INTERNAL_VECTORIZED_STD_FLOAT_UNARY_FUNC(ceil)
 ET_INTERNAL_VECTORIZED_STD_FLOAT_UNARY_FUNC(cos)
 ET_INTERNAL_VECTORIZED_STD_FLOAT_UNARY_FUNC(cosh)
@@ -131,12 +134,30 @@ ET_INTERNAL_VECTORIZED_STD_FLOAT_UNARY_FUNC(trunc)
 ET_INTERNAL_VECTORIZED_STD_FLOAT_UNARY_FUNC(lgamma)
 
 #ifdef ET_USE_PYTORCH_HEADERS
-ET_INTERNAL_VECTORIZED_FLOAT_BINARY_FUNC(rsqrt)
+ET_INTERNAL_VECTORIZED_FLOAT_UNARY_FUNC(reciprocal)
+ET_INTERNAL_VECTORIZED_FLOAT_UNARY_FUNC(rsqrt)
 #endif // ET_USE_PYTORCH_HEADERS
 
 namespace executorch {
 inline namespace math {
-template <typename T, std::enable_if_t<std::is_floating_point_v<T>>>
+inline float reciprocal(float x) {
+  return 1.0f / x;
+}
+
+inline double reciprocal(double x) {
+  return 1.0 / x;
+}
+
+template <
+    typename Integer,
+    std::enable_if_t<std::is_integral_v<Integer>, bool> = true>
+double reciprocal(Integer x) {
+  return reciprocal((double)x);
+}
+
+template <
+    typename T,
+    std::enable_if_t<std::is_floating_point_v<T>, bool> = true>
 T rsqrt(T x) {
   return T(1) / std::sqrt(x);
 }

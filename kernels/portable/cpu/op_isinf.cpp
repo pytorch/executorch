@@ -17,8 +17,9 @@ namespace native {
 Tensor& isinf_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   // Lambda is syntactic sugar needed to workaround compilation on some older
   // non-compatible distros where isnan is returning int rather than bool
-  return internal::unary_ufunc_realhb_to_bool(
-      [](double x) -> bool { return std::isinf(x); }, ctx, in, out);
+  static constexpr const char op_name[] = "isinf.out";
+  return internal::unary_ufunc_realhb_to_bool<op_name>(
+      [](auto x) -> bool { return std::isinf(x); }, ctx, in, out);
 }
 
 } // namespace native
