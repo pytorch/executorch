@@ -100,59 +100,45 @@ let targets = deliverables([
   ],
 ])
 
+let packageProducts = products.keys.map { key in
+  .library(name: key, targets: ["\(key)\(dependencies_suffix)"])
+}.sorted { $0.name < $1.name }
+
+let packageTargets: [Target] = targets.flatMap { key, value -> [Target] in
+  [
+    .binaryTarget(
+      name: key,
+      url: "\(url)\(key)-\(version).zip",
+      checksum: value["sha256"] as? String ?? ""
+    ),
+  ]
+} + products.flatMap { key, value -> [Target] in
+  [
+    .binaryTarget(
+      name: key,
+      url: "\(url)\(key)-\(version).zip",
+      checksum: value["sha256"] as? String ?? ""
+    ),
+    .target(
+      name: "\(key)\(dependencies_suffix)",
+      dependencies: ([key] +
+        (value["targets"] as? [String] ?? []).map {
+          target in key.hasSuffix(debug_suffix) ? target + debug_suffix : target
+        }).map { .target(name: $0) },
+      path: ".Package.swift/\(key)",
+      linkerSettings:
+        (value["frameworks"] as? [String] ?? []).map { .linkedFramework($0) } +
+        (value["libraries"] as? [String] ?? []).map { .linkedLibrary($0) }
+    ),
+  ]
+}
+
 let package = Package(
   name: "executorch",
   platforms: [
     .iOS(.v17),
     .macOS(.v10_15),
   ],
-  products: products.keys.map { key in
-    .library(name: key, targets: ["\(key)\(dependencies_suffix)"])
-  }.sorted { $0.name < $1.name },
-  targets: targets.flatMap { key, value -> [Target] in
-    [
-      .binaryTarget(
-        name: key,
-        url: "\(url)\(key)-\(version).zip",
-        checksum: value["sha256"] as? String ?? ""
-      ),
-    ]
-  } + products.flatMap { key, value -> [Target] in
-    [
-      .binaryTarget(
-        name: key,
-        url: "\(url)\(key)-\(version).zip",
-        checksum: value["sha256"] as? String ?? ""
-      ),
-      .target(
-        name: "\(key)\(dependencies_suffix)",
-        dependencies:([key] +
-          (value["targets"] as? [String] ?? []).map {
-            target in key.hasSuffix(debug_suffix) ? target + debug_suffix : target
-          }).map { .target(name: $0) },
-        path: ".Package.swift/\(key)",
-        linkerSettings:
-          (value["frameworks"] as? [String] ?? []).map { .linkedFramework($0) } +
-          (value["libraries"] as? [String] ?? []).map { .linkedLibrary($0) }
-      ),
-    ]
-  } + [
-    .testTarget(
-      name: "tests",
-      dependencies: [
-        .target(name: "executorch\(debug_suffix)"),
-        .target(name: "kernels_optimized\(dependencies_suffix)"),
-      ],
-      path: "extension/apple/ExecuTorch/__tests__",
-      resources: [
-        .copy("resources/add.pte"),
-      ],
-      linkerSettings: [
-        .unsafeFlags([
-          "-Xlinker", "-force_load",
-          "-Xlinker", "cmake-out/kernels_optimized.xcframework/macos-arm64/libkernels_optimized_macos.a",
-        ])
-      ]
-    )
-  ]
+  products: packageProducts,
+  targets: packageTargets
 )
