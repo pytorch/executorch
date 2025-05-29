@@ -46,17 +46,14 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
  * size is only 1x1, making it easier to re-use loaded texels from t_kernel.
  */
 void main() {
-  const ivec2 out_limits_scaled = (out_limits.xy + ivec2(TILE_SIZE_X - 1, TILE_SIZE_Y - 1)) / ivec2(TILE_SIZE_X, TILE_SIZE_Y);
+  const int out_limits_scaled[2] = {out_limits.x + (TILE_SIZE_X - 1) * TILE_SIZE_X, out_limits.y + (TILE_SIZE_Y - 1) * TILE_SIZE_Y};
 
-  const uint div_by_x = gl_GlobalInvocationID.x / out_limits_scaled.x;
-  const ivec3 gpos = ivec3(
-    gl_GlobalInvocationID.x % out_limits_scaled.x,
-    div_by_x,
-    gl_GlobalInvocationID.y);
+  const int div_by_x = int(gl_GlobalInvocationID.x / out_limits_scaled[0]);
+  const int out_pos[3] = {int(gl_GlobalInvocationID.x % out_limits_scaled[0]), div_by_x, int(gl_GlobalInvocationID.y)};
 
   // If the top left position is out of bounds, then this invocation will have
   // no work to do.
-  if (gpos.y >= out_limits_scaled.y || gpos.z >= out_limits.z) {
+  if (out_pos[1] >= out_limits_scaled[1] || out_pos[2] >= out_limits.z) {
     return;
   }
 
@@ -69,8 +66,8 @@ void main() {
   int pos[TILE_SIZE_X * TILE_SIZE_Y * 2];
   for (int y = 0, i = 0; y < TILE_SIZE_Y; ++y) {
     for (int x = 0; x < TILE_SIZE_X; ++x) {
-      pos[i * 2] = gpos.x * TILE_SIZE_X + x;
-      pos[i * 2 + 1] = gpos.y * TILE_SIZE_Y + y;
+      pos[i * 2] = out_pos[0] * TILE_SIZE_X + x;
+      pos[i * 2 + 1] = out_pos[1] * TILE_SIZE_Y + y;
       i++;
     }
   }
@@ -88,7 +85,7 @@ void main() {
   // Tuple of consecutive 4 elements represents a single output texel.
   float sum[TILE_SIZE_X * TILE_SIZE_Y * 4];
 
-  const vec4 bias = texelFetch(t_bias, ivec2(gpos.z, 0), 0);
+  const vec4 bias = texelFetch(t_bias, ivec2(out_pos[2], 0), 0);
 
   // Initialize the output array with the bias value
   for (int i = 0; i < TILE_SIZE_X * TILE_SIZE_Y * 4; i += 4) {
@@ -108,7 +105,7 @@ void main() {
 
     // Load kernel values from texels to array
     [[unroll]] for (int i = 0; i < 4; ++i) {
-      const vec4 k_tex = texelFetch(t_kernel, ivec2(z + i, gpos.z), 0);
+      const vec4 k_tex = texelFetch(t_kernel, ivec2(z + i, out_pos[2]), 0);
       kernel_values[i * 4 + 0] = k_tex.x;
       kernel_values[i * 4 + 1] = k_tex.y;
       kernel_values[i * 4 + 2] = k_tex.z;
@@ -167,7 +164,7 @@ void main() {
   }
 
   for (int i = 0; i < TILE_SIZE_X * TILE_SIZE_Y; ++i) {
-    const ivec3 pos_l = ivec3(pos[i * 2], pos[i * 2 + 1], gpos.z);
+    const ivec3 pos_l = ivec3(pos[i * 2], pos[i * 2 + 1], out_pos[2]);
     if (all(lessThan(pos_l, out_limits.xyz))) {
       imageStore(t_out, pos_l, op(vec4(sum[i * 4], sum[i * 4 + 1], sum[i * 4 + 2], sum[i * 4 + 3]), out_min, out_max));
     }
