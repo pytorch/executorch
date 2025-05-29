@@ -127,7 +127,8 @@ vkapi::ShaderInfo get_conv2d_shader(
     const Conv2dMethod method,
     const ValueRef weight,
     const bool clamp_out = false,
-    const bool stride_equals_dilation = false) {
+    const bool stride_equals_dilation = false,
+    const bool stride_1_padding_0 = false) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
   switch (method) {
@@ -150,7 +151,7 @@ vkapi::ShaderInfo get_conv2d_shader(
       if (prepack_weights) {
         kernel_name = "conv2d";
       } else {
-        kernel_name = "conv2d_pw";
+        kernel_name = stride_1_padding_0 ? "conv2d_pw_s1p0" : "conv2d_pw";
       }
       break;
     case Conv2dMethod::SlidingWindow:
@@ -382,6 +383,10 @@ void add_conv2d_node(
       (kernel_params.stride[0] == kernel_params.dilation[0] &&
        kernel_params.stride[1] == kernel_params.dilation[1]);
 
+  const bool stride_1_padding_0 =
+      (kernel_params.stride[0] == 1 && kernel_params.stride[1] == 1 &&
+       kernel_params.padding[0] == 0 && kernel_params.padding[1] == 0);
+
   OutputParams out_params = {out_min_val, out_max_val};
 
   check_conv2d_params(kernel_params, transposed_val);
@@ -393,7 +398,8 @@ void add_conv2d_node(
       method,
       weight_data,
       clamp_out,
-      stride_equals_dilation);
+      stride_equals_dilation,
+      stride_1_padding_0);
 
   utils::uvec3 wg_size = create_conv2d_global_wg_size(
       graph, method, out, weight_data, stride_equals_dilation);
