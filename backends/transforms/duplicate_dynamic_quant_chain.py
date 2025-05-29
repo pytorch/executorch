@@ -9,13 +9,11 @@ import operator
 
 import torch
 
-from torch.ao.quantization.pt2e.utils import (
-    _filter_sym_size_users,
-    _is_valid_annotation,
-)
-
 from torch.fx.node import map_arg
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
+
+from torchao.quantization.pt2e.quantizer import is_valid_annotation
+from torchao.quantization.pt2e.utils import _filter_sym_size_users
 
 
 logger = logging.getLogger(__name__)
@@ -129,7 +127,7 @@ def _maybe_duplicate_dynamic_quantize_chain(
     dq_node_users = list(dq_node.users.copy())
     for user in dq_node_users:
         annotation = user.meta.get("quantization_annotation", None)
-        if not _is_valid_annotation(annotation):
+        if not is_valid_annotation(annotation):
             return
         with gm.graph.inserting_after(dq_node):
             new_node = gm.graph.node_copy(dq_node)
