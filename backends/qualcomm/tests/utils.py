@@ -14,8 +14,9 @@ from typing import Callable, Dict, List, Optional, OrderedDict, Tuple
 
 import numpy as np
 import torch
+import torchao
 from executorch import exir
-from executorch.backends.qualcomm._passes.utils import dq_ops
+from executorch.backends.qualcomm.builders.node_visitor import dq_ops
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import ModuleQConfig, QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
@@ -537,8 +538,8 @@ class TestQNN(unittest.TestCase):
             torch.ops.quantized_decomposed.dequantize_per_tensor.default,
             torch.ops.quantized_decomposed.quantize_per_channel.default,
             torch.ops.quantized_decomposed.dequantize_per_channel.default,
-            torch.ops.pt2e_quant.quantize_affine.default,
-            torch.ops.pt2e_quant.dequantize_affine.default,
+            torch.ops.torchao.quantize_affine.default,
+            torch.ops.torchao.dequantize_affine.default,
         }
         if not bypass_check:
             self.assertTrue(nodes.intersection(q_and_dq))
@@ -569,7 +570,7 @@ class TestQNN(unittest.TestCase):
         quantizer.set_submodule_qconfig_list(submodule_qconfig_list)
 
         prepared = prepare_qat_pt2e(m, quantizer)
-        return torch.ao.quantization.move_exported_model_to_train(prepared)
+        return torchao.quantization.pt2e.move_exported_model_to_train(prepared)
 
     def get_converted_sgd_trained_module(
         self,
