@@ -100,21 +100,25 @@ let targets = deliverables([
   ],
 ])
 
-let packageTargets: [Target] = targets.flatMap { key, value -> [Target] in
-  [
+var packageTargets: [Target] = []
+for (key, value) in targets {
+  packageTargets.append(
     .binaryTarget(
       name: key,
       url: "\(url)\(key)-\(version).zip",
       checksum: value["sha256"] as? String ?? ""
-    ),
-  ]
-} + products.flatMap { key, value -> [Target] in
-  [
+    )
+  )
+}
+for (key, value) in products {
+  packageTargets.append(
     .binaryTarget(
       name: key,
       url: "\(url)\(key)-\(version).zip",
       checksum: value["sha256"] as? String ?? ""
-    ),
+    )
+  )
+  packageTargets.append(
     .target(
       name: "\(key)\(dependencies_suffix)",
       dependencies: ([key] + (value["targets"] as? [String] ?? []).map { target in
@@ -124,8 +128,8 @@ let packageTargets: [Target] = targets.flatMap { key, value -> [Target] in
       linkerSettings:
         (value["frameworks"] as? [String] ?? []).map { .linkedFramework($0) }
         + (value["libraries"] as? [String] ?? []).map { .linkedLibrary($0) }
-    ),
-  ]
+    )
+  )
 }
 
 let package = Package(
