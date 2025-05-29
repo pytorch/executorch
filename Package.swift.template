@@ -100,7 +100,7 @@ let targets = deliverables([
   ],
 ])
 
-let packageProducts = products.keys.map { key in
+let packageProducts: [Product] = products.keys.map { key in
   .library(name: key, targets: ["\(key)\(dependencies_suffix)"])
 }.sorted { $0.name < $1.name }
 
