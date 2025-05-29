@@ -114,22 +114,6 @@ target_include_directories(
 target_compile_options(xnnpack_backend PUBLIC ${_common_compile_options})
 target_link_options_shared_lib(xnnpack_backend)
 
-if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
-  list(APPEND xnn_executor_runner_libs optimized_native_cpu_ops_lib)
-else()
-  list(APPEND xnn_executor_runner_libs portable_ops_lib)
-endif()
-
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  list(APPEND xnn_executor_runner_libs $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
-endif()
-
-if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
-  list(APPEND xnn_executor_runner_libs quantized_ops_lib)
-endif()
-
-list(APPEND xnn_executor_runner_libs xnnpack_backend executorch)
-
 # ios can only build library but not binary
 if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   #
@@ -139,11 +123,6 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   list(TRANSFORM _xnn_executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
   add_executable(xnn_executor_runner ${_xnn_executor_runner__srcs})
 
-  if(EXECUTORCH_ENABLE_EVENT_TRACER)
-    list(APPEND xnn_executor_runner_libs etdump)
-  endif()
-
-  target_link_libraries(xnn_executor_runner gflags ${xnn_executor_runner_libs})
   target_compile_options(xnn_executor_runner PUBLIC ${_common_compile_options})
   if(EXECUTORCH_BUILD_PTHREADPOOL)
     target_link_libraries(xnn_executor_runner extension_threadpool pthreadpool)
@@ -153,7 +132,6 @@ endif()
 
 install(
   TARGETS xnnpack_backend
-  DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
