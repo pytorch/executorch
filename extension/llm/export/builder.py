@@ -13,7 +13,7 @@
 import contextlib
 import logging
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from unittest.mock import patch
 
 import torch
@@ -35,11 +35,17 @@ from executorch.extension.export_util.utils import export_to_edge, save_pte_prog
 
 from executorch.extension.llm.export.export_passes import RemoveRedundantTransposes
 from pytorch_tokenizers import get_tokenizer
-from torch.ao.quantization.quantizer import Quantizer
-from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
+
+# TODO: remove these once pt2e migration from torch.ao to torchao is complete
+from torch.ao.quantization.quantizer import Quantizer as TorchQuantizer
+from torch.ao.quantization.quantizer.composable_quantizer import (
+    ComposableQuantizer as TorchComposableQuantizer,
+)
+
 from torch.export import export_for_training, ExportedProgram
 from torch.nn.attention import SDPBackend
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantizer import ComposableQuantizer, Quantizer
 from torchao.utils import unwrap_tensor_subclass
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -350,7 +356,9 @@ class LLMEdgeManager:
             print(f"{task}: {res}")
         logging.info("Calibration finish...")
 
-    def pt2e_quantize(self, quantizers: Optional[List[Quantizer]]) -> "LLMEdgeManager":
+    def pt2e_quantize(
+        self, quantizers: Optional[List[Union[Quantizer, TorchQuantizer]]]
+    ) -> "LLMEdgeManager":
         """
         Quantize the model via pt2e flow and retrieve LLMEdgeManager including the quantized model.
         Args:
@@ -367,7 +375,16 @@ class LLMEdgeManager:
             with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
                 if self.verbose:
                     logging.info(f"Applied quantizers: {quantizers}")
-                composed_quantizer = ComposableQuantizer(quantizers)
+
+                if all(isinstance(q, Quantizer) for q in quantizers):
+                    composed_quantizer = ComposableQuantizer(quantizers)
+                elif all(isinstance(q, TorchQuantizer) for q in quantizers):
+                    composed_quantizer = TorchComposableQuantizer(quantizers)
+                else:
+                    raise ValueError(
+                        "Quantizers must be either Quantizer or TorchQuantizer"
+                    )
+
                 assert (
                     self.pre_autograd_graph_module is not None
                 ), "Please run export() first"
