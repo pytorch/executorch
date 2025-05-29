@@ -50,10 +50,6 @@ def clean():
     print("Done cleaning build artifacts.")
 
 
-# Please keep this insync with `ShouldBuild.pybindings` in setup.py.
-VALID_PYBINDS = ["coreml", "mps", "xnnpack", "training", "openvino"]
-
-
 ################################################################################
 # Git submodules
 ################################################################################
