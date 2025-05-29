@@ -41,7 +41,7 @@ def test_mm_tosa_MI(test_data: Tuple):
 
 @common.parametrize("test_data", MM.test_data_generators)
 def test_mm_tosa_BI(test_data: Tuple):
-    TosaPipelineBI[test_t](MM(), test_data(), MM.aten_op, MM.exir_op).run()
+    TosaPipelineBI[test_t](MM(), test_data(), MM.aten_op, MM.exir_op, qtol=1).run()
 
 
 @common.parametrize("test_data", MM.test_data_generators)

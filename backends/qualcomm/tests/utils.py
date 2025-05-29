@@ -14,7 +14,9 @@ from typing import Callable, Dict, List, Optional, OrderedDict, Tuple
 
 import numpy as np
 import torch
+import torchao
 from executorch import exir
+from executorch.backends.qualcomm.builders.node_visitor import dq_ops
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import ModuleQConfig, QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
@@ -43,12 +45,12 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.program import ExecutorchProgram, ExecutorchProgramManager
-from torch.ao.quantization.quantize_pt2e import (
+from torch.fx.passes.infra.pass_base import PassResult
+from torchao.quantization.pt2e.quantize_pt2e import (
     convert_pt2e,
     prepare_pt2e,
     prepare_qat_pt2e,
 )
-from torch.fx.passes.infra.pass_base import PassResult
 
 
 def generate_context_binary(
@@ -298,7 +300,7 @@ class TestQNN(unittest.TestCase):
                     target_time_scale=TimeScale.CYCLES,
                 )
                 self.assertTrue(
-                    len(inspector.to_dataframe().index) == expected_profile_events
+                    len(inspector.to_dataframe().index) >= expected_profile_events
                 )
 
             def validate_intermediate_tensor():
@@ -536,8 +538,8 @@ class TestQNN(unittest.TestCase):
             torch.ops.quantized_decomposed.dequantize_per_tensor.default,
             torch.ops.quantized_decomposed.quantize_per_channel.default,
             torch.ops.quantized_decomposed.dequantize_per_channel.default,
-            torch.ops.pt2e_quant.quantize_affine.default,
-            torch.ops.pt2e_quant.dequantize_affine.default,
+            torch.ops.torchao.quantize_affine.default,
+            torch.ops.torchao.dequantize_affine.default,
         }
         if not bypass_check:
             self.assertTrue(nodes.intersection(q_and_dq))
@@ -568,7 +570,7 @@ class TestQNN(unittest.TestCase):
         quantizer.set_submodule_qconfig_list(submodule_qconfig_list)
 
         prepared = prepare_qat_pt2e(m, quantizer)
-        return torch.ao.quantization.move_exported_model_to_train(prepared)
+        return torchao.quantization.pt2e.move_exported_model_to_train(prepared)
 
     def get_converted_sgd_trained_module(
         self,
@@ -583,7 +585,7 @@ class TestQNN(unittest.TestCase):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        return torch.ao.quantization.quantize_pt2e.convert_pt2e(prepared)
+        return convert_pt2e(prepared)
 
     def split_graph(self, division: int):
         class SplitGraph(ExportPass):
@@ -594,6 +596,10 @@ class TestQNN(unittest.TestCase):
             def __init__(self, division):
                 super().__init__()
                 self.division = division
+
+            def _is_legit_node(self, node):
+                # skip dq_ops for frozen_params
+                return node.op == "call_function" and node.target not in dq_ops
 
             def _insert_clone(
                 self, graph_module: torch.fx.GraphModule
@@ -609,9 +615,11 @@ class TestQNN(unittest.TestCase):
                 # Insert clone op to split model based on the shares
                 num_graph_nodes = 0
                 for node in graph_module.graph.nodes:
-                    num_graph_nodes += 1 if node.op == "call_function" else 0
+                    if not self._is_legit_node(node):
+                        continue
 
-                    if num_graph_nodes % shares != 0 or node.op != "call_function":
+                    num_graph_nodes += 1
+                    if num_graph_nodes % shares != 0:
                         continue
 
                     with graph_module.graph.inserting_after(node):

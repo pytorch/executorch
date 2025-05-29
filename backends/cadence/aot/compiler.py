@@ -37,9 +37,9 @@ from executorch.exir.passes import ToOutVarPass
 from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
 from executorch.exir.program._program import to_edge_with_preserved_ops
 from torch._inductor.decomposition import remove_decompositions
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from torch.export.exported_program import ExportedProgram
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from .passes import get_cadence_passes
 
@@ -275,6 +275,7 @@ def quantize_and_export_to_edge(
     quantizer: Optional[CadenceQuantizer] = None,
     dump_graphs: bool = False,
     constant_methods: Optional[dict[str, object]] = None,
+    calibration_data: Optional[list[tuple[object, ...]]] = None,
 ) -> EdgeProgramManager:
     """
     Trace, quantize and lower a model/inputs pair to edge IR.
@@ -283,6 +284,7 @@ def quantize_and_export_to_edge(
         model,
         inputs,
         quantizer=quantizer,
+        calibration_data=calibration_data,
         dump_graphs=dump_graphs,
     )
 

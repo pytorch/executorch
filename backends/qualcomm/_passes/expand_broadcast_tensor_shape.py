@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
+from executorch.backends.qualcomm.builders.node_visitor import dq_ops
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
@@ -45,9 +46,13 @@ class ExpandBroadcastTensorShape(ExportPass):
                                 exir_ops.edge.aten.view_copy.default,
                                 (arg, tuple(new_rank)),
                             )
+                            # try skip dq_ops to get correct param node if applicable
+                            arg_meta = (
+                                arg.args[0].meta if arg.target in dq_ops else arg.meta
+                            )
                             # meta needs to be copied elementwisely for fake-tensor
                             # to be updated correctly and not affect meta of arg
-                            for k, v in arg.meta.items():
+                            for k, v in arg_meta.items():
                                 reshape_node.meta[k] = v
                             reshape_node.meta["val"] = reshape_node.meta["val"].reshape(
                                 new_rank

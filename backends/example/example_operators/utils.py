@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from torch.ao.quantization.quantizer.quantizer import QuantizationAnnotation
+from torchao.quantization.pt2e.quantizer import QuantizationAnnotation
 
 
 def _nodes_are_annotated(node_list):

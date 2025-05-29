@@ -25,7 +25,6 @@
 		03F181542D7262FC0058BDF9 /* executorch in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181532D7262FC0058BDF9 /* executorch */; };
 		03F181562D7262FC0058BDF9 /* kernels_custom in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181552D7262FC0058BDF9 /* kernels_custom */; };
 		03F181582D7262FC0058BDF9 /* kernels_optimized in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181572D7262FC0058BDF9 /* kernels_optimized */; };
-		03F1815A2D7262FC0058BDF9 /* kernels_portable in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181592D7262FC0058BDF9 /* kernels_portable */; };
 		03F1815C2D7262FC0058BDF9 /* kernels_quantized in Frameworks */ = {isa = PBXBuildFile; productRef = 03F1815B2D7262FC0058BDF9 /* kernels_quantized */; };
 		30AA4B602DC0766800B1BE50 /* pcre2_regex.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 30AA4B5A2DC0766800B1BE50 /* pcre2_regex.cpp */; };
 		30AA4B612DC0766800B1BE50 /* regex.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 30AA4B5D2DC0766800B1BE50 /* regex.cpp */; };
@@ -126,7 +125,6 @@
 				03F1814E2D7262FC0058BDF9 /* backend_coreml in Frameworks */,
 				03F181522D7262FC0058BDF9 /* backend_xnnpack in Frameworks */,
 				03F181562D7262FC0058BDF9 /* kernels_custom in Frameworks */,
-				03F1815A2D7262FC0058BDF9 /* kernels_portable in Frameworks */,
 				03F181582D7262FC0058BDF9 /* kernels_optimized in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -740,10 +738,6 @@
 		03F181572D7262FC0058BDF9 /* kernels_optimized */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = kernels_optimized;
-		};
-		03F181592D7262FC0058BDF9 /* kernels_portable */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = kernels_portable;
 		};
 		03F1815B2D7262FC0058BDF9 /* kernels_quantized */ = {
 			isa = XCSwiftPackageProductDependency;
