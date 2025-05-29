@@ -11,7 +11,7 @@ The ExecuTorch Runtime for iOS and macOS is distributed as a collection of prebu
 * `backend_mps` - MPS backend
 * `backend_xnnpack` - XNNPACK backend
 * `kernels_custom` - Custom kernels for LLMs
-* `kernels_optimized` - Accelerated CPU kernels
+* `kernels_optimized` - Accelerated generic CPU kernels
 * `kernels_quantized` - Quantized kernels
 
 Link your binary with the ExecuTorch runtime and any backends or kernels used by the exported ML model. It is recommended to link the core runtime to the components that use ExecuTorch directly, and link kernels and backends against the main app target.
