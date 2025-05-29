@@ -135,7 +135,7 @@ sudo /Applications/CMake.app/Contents/bin/cmake-gui --install
 For example, the following command will build the ExecuTorch Runtime along with all available kernels and backends for the Apple platform in both Release and Debug modes:
 
 ```bash
-./scripts/build_apple_frameworks.sh --Release --Debug --coreml --mps --xnnpack --custom --optimized --portable --quantized
+./scripts/build_apple_frameworks.sh
 ```
 
 After the build finishes successfully, the resulting frameworks can be found in the `cmake-out` directory.
