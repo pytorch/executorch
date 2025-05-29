@@ -100,38 +100,37 @@ let targets = deliverables([
   ],
 ])
 
-let packageProducts: [Product] = products.keys.map { key -> Product in
+let packageProducts: [Product] = products.keys.map { key in
   .library(name: key, targets: ["\(key)\(dependencies_suffix)"])
 }.sorted { $0.name < $1.name }
 
-let packageTargets: [Target] = targets.flatMap { key, value -> [Target] in
-  [
-    .binaryTarget(
-      name: key,
-      url: "\(url)\(key)-\(version).zip",
-      checksum: value["sha256"] as? String ?? ""
-    ),
-  ]
+var packageTargets: [Target] = []
+
+for (key, value) in targets {
+  packageTargets.append(.binaryTarget(
+    name: key,
+    url: "\(url)\(key)-\(version).zip",
+    checksum: value["sha256"] as? String ?? ""
+  ))
 }
 
-let productTargets: [Target] = products.flatMap { key, value -> [Target] in
-  [
-    .binaryTarget(
-      name: key,
-      url: "\(url)\(key)-\(version).zip",
-      checksum: value["sha256"] as? String ?? ""
-    ),
-    .target(
-      name: "\(key)\(dependencies_suffix)",
-      dependencies: ([key] + (value["targets"] as? [String] ?? []).map { target in
+for (key, value) in products {
+  packageTargets.append(.binaryTarget(
+    name: key,
+    url: "\(url)\(key)-\(version).zip",
+    checksum: value["sha256"] as? String ?? ""
+  ))
+  packageTargets.append(.target(
+    name: "\(key)\(dependencies_suffix)",
+    dependencies:
+      ([key] + (value["targets"] as? [String] ?? []).map { target in
         key.hasSuffix(debug_suffix) ? target + debug_suffix : target
       }).map { .target(name: $0) },
-      path: ".Package.swift/\(key)",
-      linkerSettings:
-        (value["frameworks"] as? [String] ?? []).map { .linkedFramework($0) } +
-        (value["libraries"] as? [String] ?? []).map { .linkedLibrary($0) }
-    ),
-  ]
+    path: ".Package.swift/\(key)",
+    linkerSettings:
+      (value["frameworks"] as? [String] ?? []).map { .linkedFramework($0) } +
+      (value["libraries"] as? [String] ?? []).map { .linkedLibrary($0) }
+  ))
 }
 
 let package = Package(
@@ -141,5 +140,5 @@ let package = Package(
     .macOS(.v10_15),
   ],
   products: packageProducts,
-  targets: packageTargets + productTargets
+  targets: packageTargets
 )
