@@ -179,7 +179,7 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
     return replace_linear(module)
 
 
-def dump_context_from_pte(pte_path):
+def dump_context_from_pte(pte_path) -> List[str]:
     """
     Dump compiled binaries under the same directory of pte_path.
     For partitioned graph, there will be multiple files with names f"{graph_name}_{index}".
@@ -206,6 +206,7 @@ def dump_context_from_pte(pte_path):
         generate_qnn_executorch_option(dummy_compiler_specs)
     )
     qnn_mgr.Init()
+    dumpfiles = []
     for execution_plan in program.execution_plan:
         for i, delegate in enumerate(execution_plan.delegates):
             if delegate.id == "QnnBackend":
@@ -217,10 +218,11 @@ def dump_context_from_pte(pte_path):
                 if len(binary) == 0:
                     binary = processed_bytes
                     file_extension = ".dlc"
-                with open(
-                    f"{ctx_path}/{execution_plan.name}_{i}{file_extension}", "wb"
-                ) as f:
+                dump_file = f"{ctx_path}/{execution_plan.name}_{i}{file_extension}"
+                with open(dump_file, "wb") as f:
                     f.write(binary)
+                dumpfiles.append(dump_file)
+    return dumpfiles
 
 
 def update_spill_fill_size(
