@@ -154,7 +154,6 @@ jobs:
           "backend_xnnpack"
           "kernels_custom"
           "kernels_optimized"
-          "kernels_portable"
           "kernels_quantized"
           "threadpool"
         )
