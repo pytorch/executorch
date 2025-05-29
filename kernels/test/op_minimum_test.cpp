@@ -266,3 +266,17 @@ TEST_F(OpMinimumOutTest, DynamicShapeUnbound) {
   op_minimum_out(x, y, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
+
+TEST_F(OpMinimumOutTest, SmokeTestLarger) {
+  TensorFactory<ScalarType::Float> tfFloat;
+
+  std::vector<float> a(18);
+  std::iota(a.begin(), a.end(), -8);
+  Tensor self = tfFloat.make({18}, a);
+  Tensor other = tfFloat.full({18}, 4);
+  Tensor out = tfFloat.zeros({18});
+  Tensor out_expected = tfFloat.make(
+      {18}, {-8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 4, 4, 4, 4, 4});
+  op_minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
