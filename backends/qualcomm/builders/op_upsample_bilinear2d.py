@@ -45,23 +45,23 @@ class ResizeBilinear(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        reisze_bilinear_op = PyQnnWrapper.PyQnnOpWrapper(
+        resize_bilinear_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpResizeBilinear.op_name,
         )
-        reisze_bilinear_op.AddInputTensors([input_tensor_wrapper])
-        reisze_bilinear_op.AddOutputTensors([output_tensor_wrapper])
+        resize_bilinear_op.AddInputTensors([input_tensor_wrapper])
+        resize_bilinear_op.AddOutputTensors([output_tensor_wrapper])
 
-        reisze_bilinear_op.AddScalarParam(
+        resize_bilinear_op.AddScalarParam(
             OpResizeBilinear.param_align_corners,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
             {QCOM_DATA: node.args[2]},
         )
-        reisze_bilinear_op.AddScalarParam(
+        resize_bilinear_op.AddScalarParam(
             OpResizeBilinear.param_half_pixel_centers,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
             {QCOM_DATA: not node.args[2]},
         )
 
-        return reisze_bilinear_op
+        return resize_bilinear_op

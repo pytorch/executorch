@@ -409,6 +409,16 @@ class OpReshape:
 
 
 @dataclass(init=False, frozen=True)
+class OpResize:
+    op_name: str = "Resize"
+    param_exclude_outside: str = "exclude_outside"
+    param_transformation_mode: str = "transformation_mode"
+    param_interpolation_mode: str = "interpolation_mode"
+    param_nearest_mode: str = "nearest_mode"
+    param_cubic_coeff: str = "cubic_coeff"
+
+
+@dataclass(init=False, frozen=True)
 class OpResizeBilinear:
     op_name: str = "ResizeBilinear"
     param_align_corners: str = "align_corners"
