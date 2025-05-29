@@ -37,7 +37,7 @@ from executorch.examples.qualcomm.utils import (
 from huggingface_hub import hf_hub_download
 from moshi.models import loaders
 
-from torch.ao.quantization.observer import MinMaxObserver
+from torchao.quantization.pt2e import MinMaxObserver
 
 
 def seed_all(seed):
