@@ -131,9 +131,9 @@ inline void dtype_specialized_elementwise_fn_impl(
             const auto vectorized_end = end - (end % Vec::size());
             // Scalar prologue.
             for (const auto idx : c10::irange(begin, vectorized_begin)) {
-              // In debug mode, always use Vectorized so that even
-              // small-sized tests will test whether using Vectorized broke our
-              // lambda.
+          // In debug mode, always use Vectorized so that even
+          // small-sized tests will test whether using Vectorized broke our
+          // lambda.
 #ifndef NDEBUG
               std::array<Vec, kNumInputs> loaded_inputs;
 #else // NDEBUG
