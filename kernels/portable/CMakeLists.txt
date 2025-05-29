@@ -69,8 +69,15 @@ if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   target_compile_options(optimized_portable_kernels PUBLIC ${_common_compile_options})
   target_include_directories(optimized_portable_kernels PRIVATE ${TORCH_INCLUDE_DIRS})
   target_compile_definitions(optimized_portable_kernels PRIVATE ET_USE_PYTORCH_HEADERS)
+  gen_selected_ops(LIB_NAME "optimized_portable_ops_lib" OPS_SCHEMA_YAML "${_yaml}")
+  generate_bindings_for_kernels(
+    LIB_NAME "optimized_portable_ops_lib" FUNCTIONS_YAML "${_yaml}"
+  )
+  gen_operators_lib(
+    LIB_NAME "optimized_portable_ops_lib" KERNEL_LIBS optimized_portable_kernels DEPS executorch_core
+  )
   install(
-    TARGETS optimized_portable_kernels
+    TARGETS optimized_portable_kernels optimized_portable_ops_lib
     DESTINATION lib
   )
 endif()
