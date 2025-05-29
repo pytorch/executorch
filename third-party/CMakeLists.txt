@@ -10,6 +10,10 @@ if(EXECUTORCH_BUILD_PYBIND)
   add_subdirectory(pybind11)
 endif()
 
+if(BUILD_TESTING)
+  add_subdirectory(googletest)
+endif()
+
 # MARK: - flatbuffers
 
 if(WIN32)
