@@ -143,6 +143,11 @@ else()
   set(CMAKE_CXX_FLAGS_RELEASE "-O2 ${CMAKE_CXX_FLAGS_RELEASE}")
 endif()
 
+if(EXECUTORCH_BUILD_TESTS)
+  set(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
+  include(CTest)
+endif()
+
 add_subdirectory(third-party)
 
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
@@ -252,11 +257,6 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
   set(CMAKE_POSITION_INDEPENDENT_CODE
       ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
   )
-endif()
-
-if(EXECUTORCH_BUILD_TESTS)
-  set(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
-  include(CTest)
 endif()
 
 # TODO(dbort): Fix these warnings and remove this flag.
@@ -472,11 +472,6 @@ install(
 )
 install(FILES tools/cmake/executorch-config.cmake DESTINATION lib/cmake/ExecuTorch)
 
-# Add googletest if any test targets should be built
-if(BUILD_TESTING)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/googletest)
-endif()
-
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
 endif()
@@ -565,8 +560,6 @@ if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_CPUINFO)
 endif()
 
 if(EXECUTORCH_BUILD_PYBIND)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pybind11)
-
   if(NOT EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
   endif()
@@ -602,7 +595,7 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs portable_ops_lib)
   endif()
 
-  if(EXECUTORCH_BUILD_COREML)
+  if(EXECUTORCH_BUILD_COREML AND APPLE)
     list(APPEND _dep_libs coremldelegate)
   endif()
 
@@ -701,7 +694,7 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     list(APPEND _executor_runner_libs etdump flatccrt)
   endif()
 
-  if(EXECUTORCH_BUILD_COREML)
+  if(EXECUTORCH_BUILD_COREML AND APPLE)
     list(APPEND _executor_runner_libs coremldelegate)
   endif()
 
