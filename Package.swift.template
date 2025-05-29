@@ -104,7 +104,7 @@ let packageProducts: [Product] = products.keys.map { key in
   .library(name: key, targets: ["\(key)\(dependencies_suffix)"])
 }.sorted { $0.name < $1.name }
 
-let packageTargets: [Target] = targets.flatMap { key, value -> [Target] in
+let binaryTargetsFromTargets: [Target] = targets.flatMap { key, value -> [Target] in
   [
     .binaryTarget(
       name: key,
@@ -112,7 +112,9 @@ let packageTargets: [Target] = targets.flatMap { key, value -> [Target] in
       checksum: value["sha256"] as? String ?? ""
     ),
   ]
-} + products.flatMap { key, value -> [Target] in
+}
+
+let packageTargetsFromProducts: [Target] = products.flatMap { key, value -> [Target] in
   [
     .binaryTarget(
       name: key,
@@ -132,6 +134,8 @@ let packageTargets: [Target] = targets.flatMap { key, value -> [Target] in
     ),
   ]
 }
+
+let packageTargets: [Target] = binaryTargetsFromTargets + packageTargetsFromProducts
 
 let package = Package(
   name: "executorch",
