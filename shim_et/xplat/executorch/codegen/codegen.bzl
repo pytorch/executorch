@@ -644,8 +644,7 @@ def executorch_generated_lib(
 
     if dtype_selective_build:
         if not expose_operator_symbols and not is_xplat():
-            # TODO(T225169282): make this a fail once internal cases move to xplat.
-            warning("""
+            fail("""
                 Dtype selective build with expose_operator_symbols=False works only in xplat -
                 there are undefined symbols otherwise. Please try to use xplat, or talk to the
                 executorch team. Setting expose_operator_symbols=True is not recommended as the
