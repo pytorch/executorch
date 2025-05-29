@@ -83,10 +83,6 @@ let products = deliverables([
       "threadpool",
     ],
   ],
-  "kernels_portable": [
-    "sha256": "__SHA256_kernels_portable__",
-    "sha256" + debug_suffix: "__SHA256_kernels_portable_debug__",
-  ],
   "kernels_quantized": [
     "sha256": "__SHA256_kernels_quantized__",
     "sha256" + debug_suffix: "__SHA256_kernels_quantized_debug__",
