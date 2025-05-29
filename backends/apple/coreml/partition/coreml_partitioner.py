@@ -110,17 +110,33 @@ class CoreMLPartitioner(Partitioner):
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
         do_not_decompose = []
         op_support = OperatorsSupportedForCoreMLBackend()
+        _logged_warnings = set()
+
+        # CoreML prevents certain ops (like triu) from lowering to CoreML when put in the ExecuTorch op namespace
+        # TODO: upstream fixes, but pending ET consuming a new published version of coremltools with the
+        # desired changes, we need to manually block them here
+        do_not_decompose_blocklist = [
+            # https://github.com/apple/coremltools/blob/release/8.3/coremltools/converters/mil/frontend/torch/ops.py#L6965-L6966
+            torch.ops.aten.triu.default,
+            # https://github.com/apple/coremltools/blob/release/8.3/coremltools/converters/mil/frontend/torch/ops.py#L6997-L6998
+            torch.ops.aten.tril.default,
+        ]
         for node in ep.graph.nodes:
             if node.op == "call_function" and isinstance(
                 node.target, torch._ops.OpOverload
             ):
                 try:
-                    if op_support.is_node_supported(None, node):
+                    if (
+                        op_support.is_node_supported(None, node)
+                        and node.target not in do_not_decompose_blocklist
+                    ):
                         do_not_decompose.append(node.target)
                 except Exception as e:
                     # CoreML's op_support.is_node_supported will sometimes throw
                     # for unsupported ops, rather than returning False
-                    logger.warning(
-                        f"Encountered exception when checking node support: {e}"
-                    )
+                    warn_str = f"Encountered exception when checking node support: {e}"
+                    if warn_str not in _logged_warnings:
+                        logger.warning(warn_str)
+                        _logged_warnings.add(warn_str)
+
         return do_not_decompose, None

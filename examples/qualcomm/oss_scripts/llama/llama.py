@@ -81,7 +81,7 @@ from executorch.extension.llm.export.builder import DType
 from pytorch_tokenizers import get_tokenizer, TiktokenTokenizer
 from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
 
-from torch.ao.quantization.observer import MinMaxObserver
+from torchao.quantization.pt2e import MinMaxObserver
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 sys.setrecursionlimit(4096)
@@ -403,7 +403,7 @@ class SingleLlama:
         logging.info("Quantizing the model...")
         calibrate(
             self.get_example_inputs(self.llama_meta["get_use_kv_cache"]),
-            args.prompt,
+            args.prompt[0],
             fx_graph_module,
             tokenizer=tokenizer,
             ar_len=self.llama_meta["get_ar_len"],
@@ -756,7 +756,7 @@ def compile(args, pte_filename, tokenizer):
     return quant_attrs
 
 
-def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_pte=""):
+def inference(args, pte_filename, runtime_tokenizer_path, pre_gen_pte=""):
     workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/single_llama"
 
     if args.model_mode == "kv":
@@ -782,14 +782,13 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
             outputs.append(f.read())
 
     seq_len = args.max_seq_len
+    multi_prompts = " ".join([f'--prompt "{prompt}"' for prompt in args.prompt])
     runner_args = " ".join(
         [
-            f'--prompt "{args.prompt}"',
+            multi_prompts,
             f"--eval_mode {eval_mode}",
             f"--temperature {args.temperature}",
             f"--system_prompt '{args.system_prompt}'",
-            f"--logits_scale {quant_attrs['scale']}",
-            f"--logits_offset {quant_attrs['zero_point']}",
         ]
     )
 
@@ -932,9 +931,10 @@ def _build_parser():
 
     parser.add_argument(
         "--prompt",
-        help="User prompts for llama.",
+        help="User prompts for Llama. When multiple prompts are entered, a multi-turn conversation will be initiated. Note that this feature is currently for testing purposes only.",
         required=True,
         type=str,
+        nargs="+",
     )
 
     parser.add_argument(
@@ -1018,7 +1018,7 @@ def _build_parser():
 
 def export_llama(args) -> None:
     if args.compile_only and args.pre_gen_pte:
-        exit("Cannot set both compile_only and pre_gen_pte as true")
+        raise RuntimeError("Cannot set both compile_only and pre_gen_pte as true")
 
     if args.model_mode == "kv":
         pte_filename = "kv_llama_qnn"
@@ -1054,29 +1054,15 @@ def export_llama(args) -> None:
     elif args.kv_updater == "shift_pointer":
         args.kv_updater = shift_pointer_updater
     else:
-        exit(f"Using an unkown kv update {args.kv_updater}")
+        raise RuntimeError(f"Using an unknown kv update {args.kv_updater}")
 
     if args.pre_gen_pte:
-        quant_attrs = json.load(
-            open(f"{args.pre_gen_pte}/{pte_filename}_quant_attrs.txt")
-        )
-        inference(
-            args, quant_attrs, pte_filename, runtime_tokenizer_path, args.pre_gen_pte
-        )
-        exit(f"Finish the running pre_gen_pte from {args.pre_gen_pte}")
+        inference(args, pte_filename, runtime_tokenizer_path, args.pre_gen_pte)
+        print(f"Finish the running pre_gen_pte from {args.pre_gen_pte}")
+        return
 
     if args.compile_only:
-        quant_attrs = compile(args, pte_filename, tokenizer)
-        if quant_attrs:
-            json.dump(
-                {
-                    "scale": quant_attrs["scale"],
-                    "zero_point": quant_attrs["zero_point"],
-                },
-                open(f"{args.artifact}/{pte_filename}_quant_attrs.txt", "w"),
-            )
-        else:
-            logging.warning("Quant attributes of the logit is None.")
+        compile(args, pte_filename, tokenizer)
 
         if args.ip and args.port != -1:
             pte_path = f"{args.artifact}/{pte_filename}.pte"
@@ -1089,36 +1075,24 @@ def export_llama(args) -> None:
                         }
                     )
                 )
-        exit(f"Finish compile_only and save to {args.artifact}")
+        print(f"Finish compile_only and save to {args.artifact}")
+        return
 
+    compile(args, pte_filename, tokenizer)
+    inference(args, pte_filename, runtime_tokenizer_path)
+
+
+def main():
+    parser = _build_parser()
+    args = parser.parse_args()
     try:
-        quant_attrs = compile(args, pte_filename, tokenizer)
-        if quant_attrs:
-            logging.info(
-                f"Logit scale: {quant_attrs['scale']}; Logit offset: {quant_attrs['zero_point']}"
-            )
-            json.dump(
-                {
-                    "scale": quant_attrs["scale"],
-                    "zero_point": quant_attrs["zero_point"],
-                },
-                open(f"{args.artifact}/{pte_filename}_quant_attrs.txt", "w"),
-            )
-        else:
-            logging.warning("Quant attributes of the logit is None.")
-        inference(args, quant_attrs, pte_filename, runtime_tokenizer_path)
+        export_llama(args)
     except Exception as e:
         if args.ip and args.port != -1:
             with Client((args.ip, args.port)) as conn:
                 conn.send(json.dumps({"Error": str(e)}))
         else:
             raise Exception(e)
-
-
-def main():
-    parser = _build_parser()
-    args = parser.parse_args()
-    export_llama(args)
 
 
 # flake8: noqa: C901
