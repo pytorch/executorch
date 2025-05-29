@@ -43,13 +43,7 @@ from executorch.extension.llm.export.partitioner_lib import (
     get_xnnpack_partitioner,
 )
 
-from executorch.extension.llm.export.quantizer_lib import (
-    get_coreml_quantizer,
-    get_pt2e_quantization_params,
-    get_pt2e_quantizers,
-    get_qnn_quantizer,
-    get_vulkan_quantizer,
-)
+from executorch.extension.llm.export.quantizer_lib import get_quantizer_and_quant_params
 from executorch.util.activation_memory_profiler import generate_memory_trace
 
 from ..model_factory import EagerModelFactory
@@ -724,32 +718,6 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
     )
 
     return edge_manager
-
-
-def get_quantizer_and_quant_params(args):
-    pt2e_quant_params = get_pt2e_quantization_params(
-        args.pt2e_quantize, args.quantization_mode
-    )
-    quantizers = get_pt2e_quantizers(pt2e_quant_params, args.so_library)
-    quant_dtype = None
-    if args.qnn and args.pt2e_quantize:
-        assert len(quantizers) == 0, "Should not enable both xnnpack and qnn"
-        qnn_quantizer, quant_dtype = get_qnn_quantizer(
-            args.pt2e_quantize, args.quantization_mode
-        )
-        quantizers.append(qnn_quantizer)
-    if args.coreml and args.pt2e_quantize:
-        assert len(quantizers) == 0, "Should not enable both xnnpack / qnn and coreml"
-        coreml_quantizer = get_coreml_quantizer(args.pt2e_quantize)
-        quantizers.append(coreml_quantizer)
-    if args.vulkan and args.pt2e_quantize:
-        assert (
-            len(quantizers) == 0
-        ), "Should not enable both vulkan and other quantizers"
-        vulkan_quantizer = get_vulkan_quantizer(args.pt2e_quantize)
-        quantizers.append(vulkan_quantizer)
-    logging.info(f"Applying quantizers: {quantizers}")
-    return pt2e_quant_params, quantizers, quant_dtype
 
 
 def _qmode_type(value):

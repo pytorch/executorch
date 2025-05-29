@@ -12,11 +12,9 @@ from typing import Optional, Union
 import torch
 
 from datasets import load_dataset
-from executorch.examples.models.llama.export_llama_lib import (
-    get_quantizer_and_quant_params,
-)
 
 from executorch.extension.llm.export.builder import LLMEdgeManager
+from executorch.extension.llm.export.quantizer_lib import get_quantizer_and_quant_params
 from lm_eval.evaluator import simple_evaluate
 from pytorch_tokenizers import get_tokenizer
 from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
