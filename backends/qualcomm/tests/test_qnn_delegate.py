@@ -119,6 +119,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(1, 2, 3, 4),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_adaptive_avg_pool1d(self):
+        module = AdaptiveAvgPool1D()  # noqa: F405
+        sample_input = (torch.randn(1, 512, 7),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_adaptive_avg_pool2d(self):
         module = AdaptiveAvgPool2D()  # noqa: F405
         sample_input = (torch.randn(1, 512, 7, 7),)
@@ -158,9 +163,19 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_avg_pool2d(self):
-        module = AvgPoolModule()  # noqa: F405
-        sample_input = (torch.randn(1, 3, 2, 2),)
-        self.lower_module_and_test_output(module, sample_input)
+        modules = [
+            AvgPoolModule((2, 2), (1, 1), (1, 1), False),  # noqa: F405
+            AvgPoolModule((1280, 1280), (1280, 1280), (0, 0), True),  # noqa: F405
+            AvgPoolModule((1280, 1280), (1280, 1280), (320, 320), True),  # noqa: F405
+        ]  # noqa: F405
+        sample_inputs = [
+            (torch.randn(1, 3, 2, 2),),
+            (torch.randn(1, 1280, 7, 7),),
+            (torch.randn(1, 1280, 7, 7),),
+        ]
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_inputs[i])
 
     def test_qnn_backend_batch_norm(self):
         modules = [BatchNorm(32), BatchNorm(32, False)]  # noqa: F405
@@ -176,9 +191,14 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_cast(self):
-        module = Cast()  # noqa: F405
-        sample_input = (10 * torch.rand((9, 4, 5, 3)),)
-        self.lower_module_and_test_output(module, sample_input)
+        modules = [Cast(), CastMultiUsers()]  # noqa: F405
+        sample_inputs = [
+            (10 * torch.rand((9, 4, 5, 3)),),
+            (torch.randint(0, 3, size=(3, 3)), torch.randn(3, 3)),
+        ]
+        for i, (module, sample_input) in enumerate(zip(modules, sample_inputs)):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_cat(self):
         modules = [Cat2(), Cat3(), Cat4()]  # noqa: F405
@@ -488,6 +508,26 @@ class TestQNNFloatingPointOperator(TestQNN):
         module = FullLike(0.5)  # noqa: F405
         sample_input = (torch.randn(1, 2, 3, 4),)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_gather(self):
+        modules = [
+            Gather(),  # noqa: F405
+            # TODO: resolve accuracy problem
+            # GatherArgmin(),  # noqa: F405
+            GatherWhere(),  # noqa: F405
+        ]
+        shape = (2, 2, 3, 4)
+        sample_inputs = [
+            (
+                torch.arange(128, dtype=torch.float32).view(64, 2),
+                torch.ones(64, 2, dtype=torch.int64),
+            ),
+            # (torch.arange(128, dtype=torch.float32).view(64, 2),),
+            (torch.randn(shape), torch.randn(shape)),
+        ]
+        for i, (module, sample_input) in enumerate(zip(modules, sample_inputs)):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_gelu(self):
         module = Gelu()  # noqa: F405
@@ -799,6 +839,18 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.abs(torch.randn([1, 1, 1, 4])),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_roll(self):
+        modules = [
+            Roll(shifts=(3, 3), dims=(1, 2)),  # noqa: F405
+            Roll(shifts=(70, 59), dims=(1, 2)),  # noqa: F405
+            Roll(shifts=3),  # noqa: F405
+            Roll(shifts=56 * 56 * 96 + 3),  # noqa: F405
+        ]
+        sample_input = (torch.randn([1, 56, 56, 96]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_rsqrt(self):
         module = Rsqrt()  # noqa: F405
         sample_input = (torch.abs(torch.randn([3, 4])),)
@@ -832,12 +884,17 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_slice_copy(self):
-        modules = [SliceCopy(), SliceCopyWithStep()]  # noqa: F405
-        sample_input = (
-            torch.randn([1, 512]),
-            torch.randn([1, 8]),
-        )
-        for module in modules:
+        modules = [
+            SliceCopyDefaultParameter(),  # noqa: F405
+            SliceCopy(),  # noqa: F405
+            SliceCopyWithStep(),  # noqa: F405
+        ]
+        sample_inputs = [
+            (torch.randn([2, 1, 320, 512]),),
+            (torch.randn([1, 512]), torch.randn([1, 8])),
+            (torch.randn([1, 512]), torch.randn([1, 8])),
+        ]
+        for module, sample_input in zip(modules, sample_inputs):
             self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_stack(self):
@@ -906,6 +963,18 @@ class TestQNNFloatingPointOperator(TestQNN):
         ]
         for i, module in enumerate(modules):
             self.lower_module_and_test_output(module, sample_inputs[i])
+
+    def test_qnn_backend_masked_fill(self):
+        module = MaskedFill()  # noqa: F405
+        attn_mask = torch.ones((64, 49, 49), dtype=torch.float32)
+
+        # Add some zero blocks to simulate the masking behavior
+        for i in range(64):
+            if i % 2 == 0:
+                attn_mask[i, 35:, 35:] = 0
+
+        sample_input = (attn_mask,)  # noqa: F405
+        self.lower_module_and_test_output(module, sample_input)
 
 
 class TestQNNFloatingPointModel(TestQNN):
@@ -1161,6 +1230,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_adaptive_avg_pool1d(self):
+        module = AdaptiveAvgPool1D()  # noqa: F405
+        sample_input = (torch.randn(1, 512, 7),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_adaptive_avg_pool2d(self):
         module = AdaptiveAvgPool2D()  # noqa: F405
         sample_input = (torch.randn(1, 512, 7, 7),)
@@ -1206,10 +1281,20 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_avg_pool2d(self):
-        module = AvgPoolModule()  # noqa: F405
-        sample_input = (torch.randn(1, 3, 2, 2),)
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        modules = [
+            AvgPoolModule((2, 2), (1, 1), (1, 1), False),  # noqa: F405
+            AvgPoolModule((1280, 1280), (1280, 1280), (0, 0), True),  # noqa: F405
+            AvgPoolModule((1280, 1280), (1280, 1280), (320, 320), True),  # noqa: F405
+        ]  # noqa: F405
+        sample_inputs = [
+            (torch.randn(1, 3, 2, 2),),
+            (torch.randn(1, 1280, 7, 7),),
+            (torch.randn(1, 1280, 7, 7),),
+        ]
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_inputs[i])
+                self.lower_module_and_test_output(module, sample_inputs[i])
 
     def test_qnn_backend_batch_norm(self):
         modules = [BatchNorm(32), BatchNorm(32, False)]  # noqa: F405
@@ -1223,6 +1308,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = Bmm()  # noqa: F405
         torch.manual_seed(8)
         sample_input = (torch.randn([4, 8, 32]), torch.randn([4, 32, 8]))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_cast(self):
+        module = CastMultiUsers()  # noqa: F405
+        sample_input = (torch.randint(0, 3, size=(3, 3)), torch.randn(3, 3))
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -1550,13 +1641,15 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_embedding(self):
-        module = Embedding()  # noqa: F405
+        modules = [Embedding(), Embedding()]  # noqa: F405
         sample_input = (torch.Tensor([[1, 2, 4, 5], [4, 3, 2, 9]]).to(torch.int32),)
         quant_dtype = [QuantDtype.use_8a8w, QuantDtype.use_16a4w]
         for i, qdtype in enumerate(quant_dtype):
             with self.subTest(i=i):
-                module = self.get_qdq_module(module, sample_input, quant_dtype=qdtype)
-                self.lower_module_and_test_output(module, sample_input)
+                modules[i] = self.get_qdq_module(
+                    modules[i], sample_input, quant_dtype=qdtype
+                )
+                self.lower_module_and_test_output(modules[i], sample_input)
 
     def test_qnn_backend_equal(self):
         test_comb = [
@@ -1612,6 +1705,27 @@ class TestQNNQuantizedOperator(TestQNN):
         sample_input = (torch.randn(1, 2, 3, 4),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_gather(self):
+        modules = [
+            Gather(),  # noqa: F405
+            # TODO: resolve accuracy problem
+            # GatherArgmin(),  # noqa: F405
+            GatherWhere(),  # noqa: F405
+        ]
+        shape = (2, 2, 3, 4)
+        sample_inputs = [
+            (
+                torch.arange(128, dtype=torch.float32).view(64, 2),
+                torch.ones(64, 2, dtype=torch.int64),
+            ),
+            # (torch.arange(128, dtype=torch.float32).view(64, 2),),
+            (torch.randn(shape), torch.randn(shape)),
+        ]
+        for i, (module, sample_input) in enumerate(zip(modules, sample_inputs)):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_gelu(self):
         module = Gelu()  # noqa: F405
@@ -1973,6 +2087,19 @@ class TestQNNQuantizedOperator(TestQNN):
         )
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_roll(self):
+        modules = [
+            Roll(shifts=(3, 3), dims=(1, 2)),  # noqa: F405
+            Roll(shifts=(70, 59), dims=(1, 2)),  # noqa: F405
+            Roll(shifts=3),  # noqa: F405
+            Roll(shifts=56 * 56 * 96 + 3),  # noqa: F405
+        ]
+        sample_input = (torch.randn([1, 56, 56, 96]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_rsqrt(self):
         module = Rsqrt()  # noqa: F405
         sample_input = (torch.abs(torch.randn([3, 4])),)
@@ -2011,12 +2138,17 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_slice_copy(self):
-        modules = [SliceCopy(), SliceCopyWithStep()]  # noqa: F405
-        sample_input = (
-            torch.randn([1, 512]),
-            torch.randn([1, 8]),
-        )
-        for module in modules:
+        modules = [
+            SliceCopyDefaultParameter(),  # noqa: F405
+            SliceCopy(),  # noqa: F405
+            SliceCopyWithStep(),  # noqa: F405
+        ]
+        sample_inputs = [
+            (torch.randn([2, 1, 320, 512]),),
+            (torch.randn([1, 512]), torch.randn([1, 8])),
+            (torch.randn([1, 512]), torch.randn([1, 8])),
+        ]
+        for module, sample_input in zip(modules, sample_inputs):
             module = self.get_qdq_module(module, sample_input)
             self.lower_module_and_test_output(module, sample_input)
 
@@ -2096,6 +2228,19 @@ class TestQNNQuantizedOperator(TestQNN):
         for i, module in enumerate(modules):
             module = self.get_qdq_module(module, sample_inputs[i])
             self.lower_module_and_test_output(module, sample_inputs[i])
+
+    def test_qnn_backend_masked_fill(self):
+        module = MaskedFill()  # noqa: F405
+        attn_mask = torch.ones((64, 49, 49), dtype=torch.float32)
+
+        # Add some zero blocks to simulate the masking behavior
+        for i in range(64):
+            if i % 2 == 0:
+                attn_mask[i, 35:, 35:] = 0
+
+        sample_input = (attn_mask,)  # noqa: F405
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
 
 class TestQNNQuantizedModel(TestQNN):
@@ -3556,7 +3701,7 @@ class TestExampleLLMScript(TestQNN):
         if self.pre_gen_pte:
             cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
 
-        golden_start_with = "<|begin_of_text|><|start_header_id|>user<|end_header_id|>"
+        golden_start_with = "<|start_header_id|>user<|end_header_id|>"
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
             conn = listener.accept()
@@ -3739,6 +3884,41 @@ class TestExampleOssScript(TestQNN):
                 self.assertGreaterEqual(msg["top_1"], 70)
                 self.assertGreaterEqual(msg["top_5"], 85)
 
+    def test_efficientnet(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/efficientnet.py"
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 70)
+                self.assertGreaterEqual(msg["top_5"], 85)
+
     def test_efficientSAM(self):
         if not self.required_envs(
             [self.image_dataset, self.pretrained_weight, self.oss_repo]
@@ -3778,6 +3958,41 @@ class TestExampleOssScript(TestQNN):
                 self.fail(msg["Error"])
             else:
                 self.assertGreaterEqual(msg["MIoU"], 0.55)
+
+    def test_swin_transformer(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/swin_transformer.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 60)
+                self.assertGreaterEqual(msg["top_5"], 80)
 
     def test_esrgan(self):
         if not self.required_envs():
@@ -3928,6 +4143,42 @@ class TestExampleOssScript(TestQNN):
             else:
                 self.assertGreaterEqual(msg["top_1"], 60)
                 self.assertGreaterEqual(msg["top_5"], 90)
+
+    def test_pvt(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/pvt.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 65)
+                self.assertGreaterEqual(msg["top_5"], 85)
 
     def test_regnet(self):
         if not self.required_envs([self.image_dataset]):

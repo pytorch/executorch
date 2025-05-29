@@ -9,7 +9,6 @@
 #include <c10/util/irange.h>
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
-#include <executorch/kernels/test/supported_features.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -71,9 +70,9 @@ class OpRandTest : public OperatorTest {
     // data to the reference distribution, but this should do.
 
     // Expected mean is 0.5
-    EXPECT_LE(std::abs(mean - 0.5), 5.0 / std::sqrt(out.numel())); 
+    EXPECT_NEAR(mean, 0.5, 5.0 / std::sqrt(out.numel()));
     // Expected stdev is 1/sqrt(12) ~= 0.289
-    EXPECT_LE(std::abs(stdev - 1.0/std::sqrt(12)), 0.1);
+    EXPECT_NEAR(stdev, 1.0 / std::sqrt(12), 0.1);
     EXPECT_GT(stdev, 0);
   }
 };

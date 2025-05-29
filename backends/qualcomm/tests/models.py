@@ -40,6 +40,15 @@ class Abs(torch.nn.Module):
         return torch.abs(x)
 
 
+class AdaptiveAvgPool1D(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        adaptive_avg_pool = torch.nn.AdaptiveAvgPool1d(1)
+        return adaptive_avg_pool(x)
+
+
 class AdaptiveAvgPool2D(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -138,12 +147,13 @@ class ArgminViewSqueezeConv2D(torch.nn.Module):
 
 
 class AvgPoolModule(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, kernel_size, stride, padding, ceil_mode):
         super().__init__()
         self.avgPool = torch.nn.AvgPool2d(
-            kernel_size=(2, 2),
-            padding=(1, 1),
-            stride=(1, 1),
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            ceil_mode=ceil_mode,
             count_include_pad=False,
         )
 
@@ -175,6 +185,16 @@ class Cast(torch.nn.Module):
 
     def forward(self, x):
         return x.type(torch.IntTensor)
+
+
+class CastMultiUsers(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        index = x.to(torch.long)
+        res = torch.gather(y, dim=1, index=index)
+        return res + index.to(torch.int32)
 
 
 class Cat2(torch.nn.Module):
@@ -738,6 +758,34 @@ class FullLike(torch.nn.Module):
 
     def forward(self, x):
         return torch.min(x, torch.full_like(x, self.fill))
+
+
+class Gather(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.gather(x, dim=1, index=y)
+
+
+class GatherArgmin(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        indice = torch.argmin(x, dim=1, keepdim=True)
+        return torch.gather(x, dim=1, index=indice)
+
+
+class GatherWhere(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        index = torch.where(y > 0, torch.Tensor([1]).int(), torch.Tensor([1]).int()).to(
+            torch.int64
+        )
+        return torch.gather(x, x.dim() - 1, index)
 
 
 class Gelu(torch.nn.Module):
@@ -1311,6 +1359,16 @@ class RmsNorm(torch.nn.Module):
         return self.rms(x)
 
 
+class Roll(torch.nn.Module):
+    def __init__(self, shifts, dims=None):
+        super().__init__()
+        self.shifts = shifts
+        self.dims = dims
+
+    def forward(self, x):
+        return torch.roll(x, shifts=self.shifts, dims=self.dims)
+
+
 class Rsqrt(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1407,6 +1465,14 @@ class SliceCopy(torch.nn.Module):
     def forward(self, x, y):
         seq_length = y.size()[1]
         return x[:, :seq_length] + self.position_ids[:, :seq_length]
+
+
+class SliceCopyDefaultParameter(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.cat([x[:1], x[1:]], dim=1)
 
 
 class SliceCopyWithStep(torch.nn.Module):
@@ -1615,6 +1681,16 @@ class WhereConstantInf(torch.nn.Module):
     def forward(self, x):
         return torch.nn.functional.softmax(
             torch.where(x >= 0, 0.1, float("-inf")), dim=-1
+        )
+
+
+class MaskedFill(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, attn_mask):
+        return attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(
+            attn_mask == 0, float(0.0)
         )
 
 

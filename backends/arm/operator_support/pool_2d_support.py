@@ -7,6 +7,7 @@ from typing import cast
 
 import torch
 import torch.fx as fx
+from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     register_tosa_support_check,
     SupportedTOSAOperatorCheck,
@@ -50,7 +51,11 @@ class AvgPool2dSupported(SupportedTOSAOperatorCheck):
             return True
 
         # U55 case, Vela 4.2.0 (25.02 release)
-        shape = cast(torch.Tensor, node.all_input_nodes[0].meta["val"]).shape
+        input_arg = node.args[0]
+        if isinstance(input_arg, torch.fx.Node):
+            input_arg = get_first_fake_tensor(input_arg)
+        shape = input_arg.data.shape  # type: ignore[union-attr]
+
         kernel = cast(tuple[int, int], node.args[1])
         stride = cast(tuple[int, int], node.args[2])
         if len(node.args) > 3:

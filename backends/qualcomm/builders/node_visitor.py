@@ -11,7 +11,6 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
-from executorch.backends.qualcomm._passes.utils import dq_ops
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_AXIS,
     QCOM_AXIS_ORDER,
@@ -77,6 +76,18 @@ PER_TENSOR_ENCODING = {
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+}
+
+q_ops = {
+    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+}
+
+dq_ops = {
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
 }
 
 
@@ -254,8 +265,8 @@ class NodeVisitor:
         )
         # TODO: refactor this when target could be correctly detected
         per_block_encoding = {
-            exir_ops.edge.pt2e_quant.quantize_affine.default,
-            exir_ops.edge.pt2e_quant.dequantize_affine.default,
+            exir_ops.edge.torchao.quantize_affine.default,
+            exir_ops.edge.torchao.dequantize_affine.default,
         }
         if quant_attrs[QCOM_ENCODING] in per_block_encoding:
             return self.make_qnn_per_block_config(node, quant_attrs)

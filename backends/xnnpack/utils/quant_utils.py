@@ -222,9 +222,6 @@ def extract_qdq_affine_op_args_for_decomposed_ops(node: torch.fx.Node):
 
     # add target_dtype_node after quant_min/quant_max
     args.append(target_dtype)
-    # zero_point_domain
-    if len(node.args) > 7 and node.args[7] != "INT":
-        return None, None
 
     if is_per_channel_group(node):
         block_sizes = cast(list[int], node.args[1])
