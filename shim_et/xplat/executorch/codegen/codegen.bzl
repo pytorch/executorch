@@ -530,7 +530,7 @@ def build_optimized_lib(name, oplist_header_name, portable_header_lib, feature =
             (
                 "^android-arm64.*$",
                 [
-                    "fbsource//third-party/sleef:sleef_arm",
+                    "fbsource//third-party/sleef:sleef",
                 ],
             ),
         ],
@@ -646,12 +646,12 @@ def executorch_generated_lib(
         if not expose_operator_symbols and not is_xplat():
             # TODO(T225169282): make this a fail once internal cases move to xplat.
             warning("""
-                Dtype selective build with expose_operator_symbols=False works only in xplat - 
+                Dtype selective build with expose_operator_symbols=False works only in xplat -
                 there are undefined symbols otherwise. Please try to use xplat, or talk to the
                 executorch team. Setting expose_operator_symbols=True is not recommended as the
                 exposed symbols may clash (duplicate symbols errors) if multiple
                 executorch_generated_libs are included by a parent library.
-                
+
                 Falling back to operator selective build.""")
 
         if (not "//executorch/kernels/portable:operators" in kernel_deps) and (not "//executorch/kernels/optimized:optimized_operators" in kernel_deps):
