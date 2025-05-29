@@ -23,11 +23,16 @@ namespace tokenizers {
 class Re2Regex : public IRegex {
  public:
   /**
-   * @brief Construct a RE2 regex with the given pattern.
-   *
-   * @param pattern The regex pattern to compile.
+   * @brief Construct a RE2 regex.
    */
-  explicit Re2Regex(const std::string& pattern);
+  explicit Re2Regex() {}
+
+  /**
+   * @brief compile the given regex pattern.
+   * @param pattern The regex pattern to compile.
+   * @return An Error object indicating success or failure of the compilation.
+   */
+  virtual Error compile(const std::string& pattern) override;
 
   /**
    * @brief Return all non-overlapping matches found in the input string.
@@ -36,9 +41,6 @@ class Re2Regex : public IRegex {
 
  private:
   std::unique_ptr<re2::RE2> regex_;
-
-  friend Result<std::unique_ptr<IRegex>> create_regex(
-      const std::string& pattern);
 };
 
 } // namespace tokenizers

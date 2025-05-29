@@ -29,6 +29,13 @@ class IRegex {
   virtual ~IRegex() = default;
 
   /**
+   * @brief Compile the given regex pattern.
+   * @param pattern The regex pattern to compile.
+   * @return An Error object indicating success or failure of the compilation.
+   */
+  virtual Error compile(const std::string& pattern) = 0;
+
+  /**
    * @brief Find all non-overlapping matches in the input string.
    *
    * @param text The input string to search.
@@ -36,6 +43,9 @@ class IRegex {
    */
   virtual std::vector<Match> find_all(const std::string& text) const = 0;
 };
+
+// Function pointer type for create_fallback_regex implementations
+using FallbackRegexFn = Result<std::unique_ptr<IRegex>> (*)(const std::string&);
 
 /**
  * @brief Creates a regex instance. If no strong symbol defined, only
@@ -47,15 +57,8 @@ class IRegex {
  */
 Result<std::unique_ptr<IRegex>> create_regex(const std::string& pattern);
 
-/**
- * @brief Creates a fallback regex instance. If no strong symbol defined,
- * returns Error, otherwise uses PCRE2 and std::regex.
- * This is a weak symbol to allow other regex libraries to be used.
- *
- * @param pattern The regex pattern to compile.
- * @return A unique pointer to an IRegex-compatible object.
- */
-Result<std::unique_ptr<IRegex>> create_fallback_regex(
-    const std::string& pattern) TK_WEAK;
+bool register_override_fallback_regex(FallbackRegexFn fn);
+
+FallbackRegexFn get_fallback_regex();
 
 } // namespace tokenizers

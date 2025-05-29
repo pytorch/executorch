@@ -13,8 +13,7 @@
 
 namespace tokenizers {
 
-Pcre2Regex::Pcre2Regex(const std::string& pattern)
-    : regex_(nullptr), match_data_(nullptr) {
+Error Pcre2Regex::compile(const std::string& pattern) {
   int error_code;
   PCRE2_SIZE error_offset;
 
@@ -30,9 +29,12 @@ Pcre2Regex::Pcre2Regex(const std::string& pattern)
   if (regex_ == nullptr) {
     PCRE2_UCHAR error_buffer[256];
     pcre2_get_error_message(error_code, error_buffer, sizeof(error_buffer));
-    std::cerr << "PCRE2 compilation failed at offset " << error_offset << ": "
-              << error_buffer << std::endl;
-    return;
+    TK_LOG(
+        Error,
+        "PCRE2 compilation failed at offset %" PRId64 ": %s",
+        static_cast<int64_t>(error_offset),
+        error_buffer);
+    return Error::RegexFailure;
   }
 
   // Create match data
@@ -40,9 +42,11 @@ Pcre2Regex::Pcre2Regex(const std::string& pattern)
   if (match_data_ == nullptr) {
     pcre2_code_free(regex_);
     regex_ = nullptr;
-    std::cerr << "Failed to create PCRE2 match data" << std::endl;
-    return;
+    TK_LOG(Error, "Failed to create PCRE2 match data");
+    return Error::RegexFailure;
   }
+
+  return Error::Ok;
 }
 
 Pcre2Regex::~Pcre2Regex() {
@@ -58,6 +62,7 @@ std::vector<Match> Pcre2Regex::find_all(const std::string& text) const {
   std::vector<Match> result;
 
   if (!regex_ || !match_data_) {
+    TK_LOG(Error, "Regex is not compiled or invalid, run compile() first");
     return result;
   }
 

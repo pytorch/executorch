@@ -96,6 +96,17 @@ def define_common_targets():
         ],
     )
 
+    runtime.cxx_test(
+        name = "test_regex",
+        srcs = [
+            "test_regex.cpp",
+        ],
+        deps = [
+            "//pytorch/tokenizers:regex_lookahead",
+            "//pytorch/tokenizers:headers",
+        ],
+    )
+
     runtime.filegroup(
         name = "resources",
         srcs = native.glob([

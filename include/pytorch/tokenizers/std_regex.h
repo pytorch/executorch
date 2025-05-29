@@ -21,12 +21,16 @@ namespace tokenizers {
 class StdRegex : public IRegex {
  public:
   /**
-   * @brief Construct a std::regex wrapper with the given pattern.
-   *
-   * @param pattern The regex pattern to compile.
-   * @throws std::regex_error if the pattern is invalid.
+   * @brief Construct a std::regex wrapper.
    */
-  explicit StdRegex(const std::string& pattern);
+  explicit StdRegex() {}
+
+  /**
+   * @brief Compile the given regex pattern.
+   * @param pattern The regex pattern to compile.
+   * @return An Error object indicating success or failure of the compilation.
+   */
+  virtual Error compile(const std::string& pattern) override;
 
   /**
    * @brief Find all non-overlapping matches in the input string.

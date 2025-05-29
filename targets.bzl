@@ -48,11 +48,19 @@ def define_common_targets():
             "src/std_regex.cpp",
         ],
         exported_deps = [
+            ":regex",
             ":headers",
+        ],
+        compiler_flags = [
+            "-Wno-global-constructors",
+            "-Wno-missing-prototypes",
         ],
         exported_external_deps = [
             "pcre2",
         ],
+        # Making sure this library is not being stripped by linker.
+        # @lint-ignore BUCKLINT: Avoid link_whole=True
+        link_whole = True,
         visibility = [
             "@EXECUTORCH_CLIENTS",
             "//pytorch/tokenizers/...",

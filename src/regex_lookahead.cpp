@@ -18,34 +18,33 @@
 namespace tokenizers {
 
 /**
- * @brief Factory function that creates a regex object using RE2 if possible.
+ * @brief Implementation of the fallback regex function with lookahead support.
  *        Falls back to PCRE2 if RE2 rejects the pattern due to lookahead.
  *        Falls back to std::regex if PCRE2 also fails.
  */
-
-#ifdef _MSC_VER
-#pragma weak create_fallback_regex
-#endif // _MSC_VER
 Result<std::unique_ptr<IRegex>> create_fallback_regex(
     const std::string& pattern) {
-  auto pcre2 = std::make_unique<Pcre2Regex>("(" + pattern + ")");
+  TK_LOG(Info, "Creating PCRE2 regex");
+  auto pcre2 = std::make_unique<Pcre2Regex>();
+  auto err = pcre2->compile(pattern);
 
-  if (pcre2->regex_ != nullptr && pcre2->match_data_ != nullptr) {
-    std::cout
-        << "RE2 is unable to support things such as negative lookaheads in "
-        << pattern << ", using PCRE2 instead." << std::endl;
+  if (err == Error::Ok) {
     return static_cast<std::unique_ptr<IRegex>>(std::move(pcre2));
   }
 
   // If PCRE2 also fails, fall back to std::regex
-  try {
-    std::cout << "PCRE2 failed to compile pattern, falling back to std::regex.";
-    auto std_regex = std::make_unique<StdRegex>("(" + pattern + ")");
+  auto std_regex = std::make_unique<StdRegex>();
+  err = std_regex->compile(pattern);
+  if (err == Error::Ok) {
+    TK_LOG(
+        Info, "PCRE2 failed to compile pattern, falling back to std::regex.");
     return static_cast<std::unique_ptr<IRegex>>(std::move(std_regex));
-  } catch (const std::regex_error& e) {
-    std::cerr << "std::regex failed: " << e.what() << std::endl;
-    return tokenizers::Error::LoadFailure;
   }
+
+  return tokenizers::Error::RegexFailure;
 }
+
+static bool registered =
+    register_override_fallback_regex(create_fallback_regex);
 
 } // namespace tokenizers

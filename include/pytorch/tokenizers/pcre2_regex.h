@@ -25,11 +25,16 @@ namespace tokenizers {
 class Pcre2Regex : public IRegex {
  public:
   /**
-   * @brief Construct a PCRE2 regex with the given pattern.
-   *
-   * @param pattern The regex pattern to compile.
+   * @brief Construct a PCRE2 regex.
    */
-  explicit Pcre2Regex(const std::string& pattern);
+  explicit Pcre2Regex(){};
+
+  /**
+   * @brief Compile the given regex pattern.
+   * @param pattern The regex pattern to compile.
+   * @return An Error object indicating success or failure of the compilation.
+   */
+  virtual Error compile(const std::string& pattern) override;
 
   /**
    * @brief Destructor to clean up PCRE2 resources.
@@ -44,9 +49,6 @@ class Pcre2Regex : public IRegex {
  private:
   pcre2_code* regex_;
   pcre2_match_data* match_data_;
-
-  friend Result<std::unique_ptr<IRegex>> create_fallback_regex(
-      const std::string& pattern);
 };
 
 } // namespace tokenizers
