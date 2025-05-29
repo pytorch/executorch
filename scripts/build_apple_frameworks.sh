@@ -76,9 +76,13 @@ libquantized_ops_lib.a,\
 :"
 
 FRAMEWORK_KERNELS_TORCHAO="kernels_torchao:\
-libtorchao_ops_executorch.a,\
-libtorchao_kernels_aarch64.a,\
-:$HEADERS_PATH/torchao"
+  libtorchao_ops_executorch.a,\
+  libtorchao_kernels_aarch64.a,\
+  libexecutorch.a,\
+  libextension_threadpool.a,\
+  libcpuinfo.a,\
+  libpthreadpool.a,\
+  :"
 
 usage() {
   echo "Usage: $0 [SOURCE_ROOT_DIR] [OPTIONS]"
@@ -197,6 +201,7 @@ cmake_build() {
     -DCMAKE_BUILD_TYPE="$mode" \
     -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
     -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
+    -DEXECUTORCH_BUILD_PTHREADPOOL=ON \
     -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="" \
     -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
     -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD="c++17" \
