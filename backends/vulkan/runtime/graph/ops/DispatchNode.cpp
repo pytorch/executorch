@@ -75,10 +75,6 @@ void DispatchNode::encode(ComputeGraph* graph) {
 }
 
 void DispatchNode::write_push_constant_data() {
-  if (push_constants_.empty()) {
-    return;
-  }
-
   push_constants_offset_ = 0;
   for (const auto& push_constant : push_constants_) {
     push_constants_offset_ += push_constant.write(
