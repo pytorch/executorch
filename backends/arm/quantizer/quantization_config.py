@@ -9,9 +9,9 @@
 from dataclasses import dataclass
 
 import torch
-from torch.ao.quantization import ObserverOrFakeQuantize
+from torchao.quantization.pt2e import ObserverOrFakeQuantize
 
-from torch.ao.quantization.quantizer import (
+from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
     FixedQParamsQuantizationSpec,
     QuantizationSpec,
