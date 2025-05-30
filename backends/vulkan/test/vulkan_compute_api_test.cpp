@@ -3324,6 +3324,7 @@ utils::uvec3 pick_dynamic_dispatch_global_wg_size(
 
 utils::uvec3 pick_dynamic_dispatch_local_wg_size(
     ComputeGraph* graph,
+    const utils::uvec3& global_workgroup_size,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& additional_args) {
   return {64, 1, 1};

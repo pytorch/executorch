@@ -36,6 +36,7 @@ class DynamicDispatchNode final : public DispatchNode {
       const std::vector<ValueRef>&)>;
   using PickLocalFn = const std::function<utils::uvec3(
       ComputeGraph*,
+      const utils::uvec3& global_workgroup_size,
       const std::vector<ArgGroup>&,
       const std::vector<ValueRef>&)>;
 
