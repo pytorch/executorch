@@ -672,7 +672,7 @@ def save_bpte_program(exec_prog, original_model: torch.nn.Module, output_name: s
 
 
 def quantize_model(
-    exported_program, args, model: torch.nn.Module, example_inputs, compile_spec
+    args, model: torch.nn.Module, example_inputs, compile_spec
 ):
     model_int8 = quantize(
         model,
@@ -705,7 +705,7 @@ def to_edge_TOSA_delegate(
     model_int8 = None
     if args.quantize:
         model_int8, exported_program = quantize_model(
-            exported_program, args, model, example_inputs, compile_spec
+            args, model, example_inputs, compile_spec
         )
         model = model_int8
 
@@ -741,7 +741,7 @@ def to_edge_no_delegate(exported_program, args, model: torch.nn.Module, example_
             args.memory_mode,
         )
         model, exported_program = quantize_model(
-            exported_program, args, model, example_inputs, compile_spec
+            args, model, example_inputs, compile_spec
         )
         model_int8 = model
 
