@@ -17,12 +17,18 @@ void resize_rotary_embedding_node(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
   (void)extra_args;
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr in = graph->get_tensor(args[1].refs[0]);
 
-  std::vector<int64_t> in_sizes = in->sizes();
-  // UNCOMMENT BELOW IF NEEDED
-  // out->virtual_resize(in_sizes);
+  // Get output tensors (xq_out and xk_out)
+  vTensorPtr xq_out = graph->get_tensor(args[0].refs[0]);
+  vTensorPtr xk_out = graph->get_tensor(args[0].refs[1]);
+
+  // Get input tensors (xq and xk)
+  vTensorPtr xq = graph->get_tensor(args[1].refs[0]);
+  vTensorPtr xk = graph->get_tensor(args[1].refs[1]);
+
+  // Resize output tensors to match input tensors
+  xq_out->virtual_resize(xq->sizes());
+  xk_out->virtual_resize(xk->sizes());
 }
 
 void add_rotary_embedding_node(
