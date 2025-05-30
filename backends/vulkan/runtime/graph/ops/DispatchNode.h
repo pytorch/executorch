@@ -50,6 +50,12 @@ class DispatchNode : public ExecuteNode {
   const vkapi::SpecVarList spec_vars_;
   const std::vector<PushConstantDataInfo> push_constants_;
 
+  // For push constants
+  std::array<uint8_t, kMaxPushConstantSize> push_constants_data_{};
+  uint32_t push_constants_offset_ = 0;
+
+  void write_push_constant_data();
+
  public:
   operator bool() const {
     return shader_;
