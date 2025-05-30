@@ -74,7 +74,9 @@ void record_nchw_to_image_op(
 
   context->submit_compute_job(
       get_nchw_to_tensor_shader(
-          v_dst, context->adapter_ptr()->has_full_int8_buffers_support(), false),
+          v_dst,
+          context->adapter_ptr()->has_full_int8_buffers_support(),
+          false),
       pipeline_barrier,
       v_dst.logical_limits(),
       adaptive_work_group_size(v_dst.logical_limits()),
