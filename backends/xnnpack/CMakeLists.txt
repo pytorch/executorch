@@ -118,22 +118,6 @@ target_include_directories(
 target_compile_options(xnnpack_backend PUBLIC ${_common_compile_options})
 target_link_options_shared_lib(xnnpack_backend)
 
-# ios can only build library but not binary
-if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
-  #
-  # xnn_executor_runner: Like executor_runner but with XNNPACK, the binary will
-  # be at ${CMAKE_BINARY_DIR}/backends/xnnpack
-  #
-  list(TRANSFORM _xnn_executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
-  add_executable(xnn_executor_runner ${_xnn_executor_runner__srcs})
-
-  target_compile_options(xnn_executor_runner PUBLIC ${_common_compile_options})
-  if(EXECUTORCH_BUILD_PTHREADPOOL)
-    target_link_libraries(xnn_executor_runner extension_threadpool pthreadpool)
-    target_compile_definitions(xnn_executor_runner PRIVATE ET_USE_THREADPOOL)
-  endif()
-endif()
-
 install(
   TARGETS xnnpack_backend
   INCLUDES
