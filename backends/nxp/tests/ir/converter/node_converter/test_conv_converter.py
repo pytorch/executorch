@@ -10,6 +10,12 @@ import torch
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.builder.model_builder import (
+    ModelBuilder,
+)
+from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOperator import (
+    BuiltinOperator,
+)
 from executorch.backends.nxp.tests.executorch_pipeline import (
     to_edge_program,
     to_quantized_edge_program,
@@ -204,3 +210,328 @@ def test_conv2d_quant_conversion(mocker, model: torch.nn.Module, input_shape):
         input_data=input_data,
         atol=1.0,
     )
+
+
+@pytest.mark.parametrize("stride", [1, 2])
+@pytest.mark.parametrize("dilation", [1, 2])
+@pytest.mark.parametrize("kernel_shape", [[1, 2], [3, 3], [4, 1]])
+@pytest.mark.parametrize(
+    "input_shape",
+    [
+        [1, 4, 12, 12],
+        [2, 3, 10, 15],
+        [11, 10, 9, 8],
+    ],
+    ids=lambda x: f"Input shape = {x}, groups = {x[1]}",
+)
+def test_conv2d_conversion__depthwise(
+    input_shape, stride, dilation, kernel_shape, mocker
+):
+    group = input_shape[1]
+    edge_program = to_edge_program(
+        Conv2dModule(
+            group=group,
+            in_channels=group,
+            out_channels=group,
+            stride=stride,
+            dilation=dilation,
+            kernel_size=kernel_shape,
+        ),
+        input_shape,
+    ).exported_program()
+
+    input_data = np.random.random(input_shape).astype(np.float32)
+
+    spy = mocker.spy(ModelBuilder, "finish")
+
+    convert_run_compare(
+        edge_program,
+        input_data,
+        tflite_input_preprocess=ToNHWCPreprocess(),
+        tflite_output_preprocess=ToNCHWPreprocess(),
+        atol=4e-7,
+    )
+    conversion_result = spy.spy_return
+    ops = conversion_result.sub_graphs[0].operators.vector
+
+    assert len(ops) == 1
+    assert ops[0].builtin_options.operator_type == BuiltinOperator.DEPTHWISE_CONV_2D
+
+
+@pytest.mark.parametrize("stride", [1, 2])
+@pytest.mark.parametrize("dilation", [1, 2])
+@pytest.mark.parametrize("kernel_shape", [[1, 2], [3, 3], [4, 1]])
+def test_conv2d_conversion__depthwise__quantized(
+    stride, dilation, kernel_shape, mocker
+):
+    input_shape = [1, 4, 12, 12]
+    group = input_shape[1]
+    spy = mocker.spy(ModelBuilder, "finish")
+
+    edge_program = to_quantized_edge_program(
+        Conv2dModule(
+            group=group,
+            in_channels=group,
+            out_channels=group,
+            stride=stride,
+            dilation=dilation,
+            kernel_size=kernel_shape,
+        ),
+        tuple(input_shape),
+    ).exported_program()
+
+    ops = spy.spy_return.sub_graphs[0].operators.vector
+    assert len(ops) == 1
+    assert ops[0].builtin_options.operator_type == BuiltinOperator.DEPTHWISE_CONV_2D
+
+    nodes = list(edge_program.graph.nodes)
+    assert (
+        len(nodes) == 7
+    )  # input, Quant, lowered_module, delegate_call, getitem, Deq, output
+    assert nodes[2].target == "lowered_module_0"
+
+
+@pytest.mark.parametrize("padding", [1, 2])
+@pytest.mark.parametrize(
+    "input_shape",
+    [
+        [1, 4, 12, 12],
+        [2, 3, 4, 5],
+        [11, 10, 9, 8],
+    ],
+    ids=lambda x: f"Input shape = {x}, groups = {x[1]}",
+)
+def test_conv2d_conversion__depthwise__padded(input_shape, padding, mocker):
+    group = input_shape[1]
+    edge_program = to_edge_program(
+        Conv2dModule(
+            group=group, in_channels=group, out_channels=group, padding=padding
+        ),
+        input_shape,
+    ).exported_program()
+
+    input_data = np.random.random(input_shape).astype(np.float32)
+
+    spy = mocker.spy(ModelBuilder, "finish")
+
+    convert_run_compare(
+        edge_program,
+        input_data,
+        tflite_input_preprocess=ToNHWCPreprocess(),
+        tflite_output_preprocess=ToNCHWPreprocess(),
+        atol=4e-7,
+    )
+    conversion_result = spy.spy_return
+    ops = conversion_result.sub_graphs[0].operators.vector
+
+    assert len(ops) == 2
+    assert ops[0].builtin_options.operator_type == BuiltinOperator.PAD
+    assert ops[1].builtin_options.operator_type == BuiltinOperator.DEPTHWISE_CONV_2D
+
+
+@pytest.mark.parametrize("padding", [1, 2])
+def test_conv2d_conversion__depthwise__padded__quantized(padding, mocker):
+    input_shape = [1, 4, 12, 12]
+    group = input_shape[1]
+    spy = mocker.spy(ModelBuilder, "finish")
+
+    edge_program = to_quantized_edge_program(
+        Conv2dModule(
+            group=group, in_channels=group, out_channels=group, padding=padding
+        ),
+        tuple(input_shape),
+    ).exported_program()
+
+    ops = spy.spy_return.sub_graphs[0].operators.vector
+    assert len(ops) == 2
+    assert ops[0].builtin_options.operator_type == BuiltinOperator.PAD
+    assert ops[1].builtin_options.operator_type == BuiltinOperator.DEPTHWISE_CONV_2D
+
+    nodes = list(edge_program.graph.nodes)
+    assert (
+        len(nodes) == 7
+    )  # input, Quant, lowered_module, delegate_call, getitem, Deq, output
+    assert nodes[2].target == "lowered_module_0"
+
+
+@pytest.mark.parametrize("stride", [1, 2])
+@pytest.mark.parametrize("dilation", [1, 2])
+@pytest.mark.parametrize(
+    "input_shape, group, out_channels",
+    [([1, 4, 12, 12], 2, 2), ([2, 3, 8, 15], 3, 6), ([11, 16, 9, 8], 4, 16)],
+)
+def test_conv2d_conversion__separated(
+    input_shape, group, out_channels, stride, dilation
+):
+    edge_program = to_edge_program(
+        Conv2dModule(
+            group=group,
+            in_channels=input_shape[1],
+            out_channels=out_channels,
+            stride=stride,
+            dilation=dilation,
+        ),
+        input_shape,
+    ).exported_program()
+
+    input_data = np.random.random(input_shape).astype(np.float32)
+
+    # Note: The generic group convolution is not yet supported by Neutron Converter. Once supported, the
+    #  commented out code allows usuall testing flow for this test-case.
+
+    # spy = mocker.spy(ModelBuilder, 'finish')
+
+    # The convert_run_compare skips the partitioner call, hence conversion failure indicated by exception
+    # is expected behavior now.
+    with pytest.raises(AssertionError) as e:
+        convert_run_compare(
+            edge_program,
+            input_data,
+            tflite_input_preprocess=ToNHWCPreprocess(),
+            tflite_output_preprocess=ToNCHWPreprocess(),
+            atol=3.0e-7,
+        )
+    assert (
+        "`aten_convolution_default` is not convertible to the intermediate representation"
+        in str(e)
+    )
+
+    # ops = spy.spy_return.sub_graphs[0].operators.vector
+    # assert len(ops) == 1 + group + 1  # Split -> Conv (group times) -> Concat
+    # assert ops[0].builtin_options.operator_type == BuiltinOperator.SPLIT
+    # for op in ops[1:-1]:
+    #     assert op.builtin_options.operator_type == BuiltinOperator.CONV_2D
+    # assert ops[-1].builtin_options.operator_type == BuiltinOperator.CONCATENATION
+
+
+@pytest.mark.parametrize("stride", [1, 2])
+@pytest.mark.parametrize("dilation", [1, 2])
+@pytest.mark.parametrize(
+    "input_shape, group, out_channels",
+    [([1, 4, 12, 12], 2, 2), ([2, 3, 17, 9], 3, 6), ([11, 16, 9, 8], 4, 16)],
+)
+def test_conv2d_conversion__separated__quantized(
+    input_shape, group, out_channels, stride, dilation
+):
+
+    # Note: The generic group convolution is not yet supported by Neutron Converter. Once supported, the
+    #  commented out code allows usuall testing flow for this test-case.
+
+    # spy = mocker.spy(ModelBuilder, 'finish')
+
+    # The convert_run_compare skips the partitioner call, hence conversion failure indicated by exception
+    # is expected behavior now.
+    edge_program = to_quantized_edge_program(
+        Conv2dModule(
+            group=group,
+            in_channels=input_shape[1],
+            out_channels=out_channels,
+            stride=stride,
+            dilation=dilation,
+        ),
+        tuple(input_shape),
+    ).exported_program()
+
+    # ops = spy.spy_return.sub_graphs[0].operators.vector
+    # assert len(ops) == 1 + group + 1  # Split -> Conv (group times) -> Concat
+    # assert ops[0].builtin_options.operator_type == BuiltinOperator.SPLIT
+    # for op in ops[1:-1]:
+    #     assert op.builtin_options.operator_type == BuiltinOperator.CONV_2D
+    # assert ops[-1].builtin_options.operator_type == BuiltinOperator.CONCATENATION
+
+    nodes = list(edge_program.graph.nodes)
+    assert len(nodes) == 11
+    assert (
+        nodes[7].target.__name__ == "aten.convolution.default"
+    )  # Convolution not delegated.
+
+
+@pytest.mark.parametrize("padding", [1, 2])
+@pytest.mark.parametrize(
+    "input_shape, group, out_channels",
+    [([1, 4, 12, 12], 2, 2), ([2, 3, 4, 5], 3, 6), ([11, 16, 9, 8], 4, 16)],
+)
+def test_conv2d_conversion__separated__padded(
+    input_shape, group, out_channels, padding
+):
+    edge_program = to_edge_program(
+        Conv2dModule(
+            group=group,
+            in_channels=input_shape[1],
+            out_channels=out_channels,
+            padding=padding,
+        ),
+        input_shape,
+    ).exported_program()
+
+    input_data = np.random.random(input_shape).astype(np.float32)
+
+    # Note: The generic group convolution is not yet supported by Neutron Converter. Once supported, the
+    #  commented out code allows usuall testing flow for this test-case.
+
+    # spy = mocker.spy(ModelBuilder, 'finish')
+
+    # The convert_run_compare skips the partitioner call, hence conversion failure indicated by exception
+    # is expected behavior now.
+    with pytest.raises(AssertionError) as e:
+        convert_run_compare(
+            edge_program,
+            input_data,
+            tflite_input_preprocess=ToNHWCPreprocess(),
+            tflite_output_preprocess=ToNCHWPreprocess(),
+            atol=3.0e-7,
+        )
+    assert (
+        "`aten_convolution_default` is not convertible to the intermediate representation"
+        in str(e)
+    )
+
+    # conversion_result = spy.spy_return
+    # ops = conversion_result.sub_graphs[0].operators.vector
+    # assert len(ops) == 1 + 2 * group + 1  # Split -> Pad + Conv (group times) -> Concat
+    # assert ops[0].builtin_options.operator_type == BuiltinOperator.SPLIT
+    # for op in ops[1:-2:2]:
+    #     assert op.builtin_options.operator_type == BuiltinOperator.PAD
+    # for op in ops[2:-1:2]:
+    #     assert op.builtin_options.operator_type == BuiltinOperator.CONV_2D
+    # assert ops[-1].builtin_options.operator_type == BuiltinOperator.CONCATENATION
+
+
+@pytest.mark.parametrize("padding", [1, 2])
+@pytest.mark.parametrize(
+    "input_shape, group, out_channels",
+    [([1, 4, 12, 12], 2, 2), ([2, 3, 4, 5], 3, 6), ([11, 16, 9, 8], 4, 16)],
+)
+def test_conv2d_conversion__separated__padded__quantized(
+    input_shape, group, out_channels, padding
+):
+
+    # Note: The generic group convolution is not yet supported by Neutron Converter. Once supported, the
+    #  commented out code allows usuall testing flow for this test-case.
+
+    # spy = mocker.spy(ModelBuilder, 'finish')
+
+    edge_program = to_quantized_edge_program(
+        Conv2dModule(
+            group=group,
+            in_channels=input_shape[1],
+            out_channels=out_channels,
+            padding=padding,
+        ),
+        tuple(input_shape),
+    ).exported_program()
+
+    # ops = spy.spy_return.sub_graphs[0].operators.vector
+    # assert len(ops) == 1 + 2 * group + 1  # Split -> Pad + Conv (group times) -> Concat
+    # assert ops[0].builtin_options.operator_type == BuiltinOperator.SPLIT
+    # for op in ops[1:-2:2]:
+    #     assert op.builtin_options.operator_type == BuiltinOperator.PAD
+    # for op in ops[2:-1:2]:
+    #     assert op.builtin_options.operator_type == BuiltinOperator.CONV_2D
+    # assert ops[-1].builtin_options.operator_type == BuiltinOperator.CONCATENATION
+
+    nodes = list(edge_program.graph.nodes)
+    assert len(nodes) == 11
+    assert (
+        nodes[7].target.__name__ == "aten.convolution.default"
+    )  # Convolution not delegated.
