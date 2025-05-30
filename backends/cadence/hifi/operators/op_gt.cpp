@@ -62,7 +62,7 @@ Tensor& gt_tensor_out(
   if ((a_dim == 0) || (b_dim == 0))
     optimized = 0;
 
-  if ( broadcast && (max_dim > kNnlibMaxDim))
+  if (broadcast && (max_dim > kNnlibMaxDim))
     optimized = 0;
 
   if (optimized) {

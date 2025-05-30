@@ -11,8 +11,8 @@
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-using exec_aten::ScalarType;
 using exec_aten::Scalar;
+using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using executorch::runtime::is_integral_type;
 using executorch::runtime::tensors_have_same_dim_order;
@@ -20,9 +20,9 @@ using torch::executor::apply_binary_elementwise_fn;
 using torch::executor::check_masked_fill_args;
 using torch::executor::Error;
 using torch::executor::KernelRuntimeContext;
-using torch::executor::native::utils::get_scalar_dtype;
-using torch::executor::native::utils::extract_scalar;
 using torch::executor::resize_to_broadcast_target_size;
+using torch::executor::native::utils::extract_scalar;
+using torch::executor::native::utils::get_scalar_dtype;
 
 namespace cadence {
 namespace impl {

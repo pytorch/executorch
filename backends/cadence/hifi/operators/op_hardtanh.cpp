@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <cmath>
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
@@ -14,15 +13,15 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 using exec_aten::Scalar;
-using executorch::aten::Tensor;
 using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::tensors_have_same_dim_order;
 using torch::executor::apply_unary_map_fn;
 using torch::executor::Error;
 using torch::executor::native::utils::extract_scalar;
 using torch::executor::native::utils::get_scalar_dtype;
-using torch::executor::native::utils::min_override;
 using torch::executor::native::utils::max_override;
+using torch::executor::native::utils::min_override;
 
 namespace cadence {
 namespace impl {
@@ -65,7 +64,8 @@ Tensor& hardtanh_out(
     float min_val, max_val;
     extract_scalar(min, &min_val);
     extract_scalar(max, &max_val);
-    xa_nn_vec_activation_min_max_f32_f32(data_out, data_in, min_val, max_val,in.numel());
+    xa_nn_vec_activation_min_max_f32_f32(
+        data_out, data_in, min_val, max_val, in.numel());
 
     return out;
   }
@@ -87,8 +87,7 @@ Tensor& hardtanh_out(
 
     apply_unary_map_fn(
         [min_casted, max_casted](const CTYPE val_in) {
-          return min_override(
-              max_override(val_in, min_casted), max_casted);
+          return min_override(max_override(val_in, min_casted), max_casted);
         },
         in.const_data_ptr<CTYPE>(),
         out.mutable_data_ptr<CTYPE>(),
@@ -99,6 +98,6 @@ Tensor& hardtanh_out(
 }
 
 } // namespace native
-} // namespace native
-} // namespace executor
-} // namespace torch
+} // namespace HiFi
+} // namespace impl
+} // namespace cadence

@@ -6,12 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
-#include <executorch/backends/cadence/hifi/kernels/kernels.h>
 
 using exec_aten::Scalar;
 using exec_aten::ScalarType;

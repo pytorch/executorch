@@ -8,7 +8,6 @@
 
 #pragma once
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <inttypes.h>
 #include <stddef.h>
 #include <xa_type_def.h>
 /* For NNLIB APIs */

@@ -13,13 +13,12 @@
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <functional>
 
 using exec_aten::Scalar;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
-using executorch::runtime::canCast;
 using executorch::runtime::can_cast;
+using executorch::runtime::canCast;
 using executorch::runtime::CppTypeToScalarType;
 using executorch::runtime::KernelRuntimeContext;
 using executorch::runtime::promoteTypes;
@@ -74,8 +73,10 @@ Tensor& bitwise_or_Tensor_out(
 
   if (optimized) {
     if (broadcast) {
-      WORD8* __restrict__ ptr1 = (WORD8* __restrict__)kernels::allocate_temp_memory(ctx, num_elm);
-      WORD8* __restrict__ ptr2 = (WORD8* __restrict__)kernels::allocate_temp_memory(ctx, num_elm);
+      WORD8* __restrict__ ptr1 =
+          (WORD8* __restrict__)kernels::allocate_temp_memory(ctx, num_elm);
+      WORD8* __restrict__ ptr2 =
+          (WORD8* __restrict__)kernels::allocate_temp_memory(ctx, num_elm);
 
       const WORD8* __restrict__ pin1 =
           (const WORD8* __restrict__)a.const_data_ptr<bool>();
@@ -105,7 +106,8 @@ Tensor& bitwise_or_Tensor_out(
 
       xa_nn_elm_logicalor_boolxbool_bool(p_out, p_inp1, p_inp2, num_elm);
     } else if (a_is_broadcasted && !b_is_broadcasted) {
-      WORD8* __restrict__ ptr1 = (WORD8* __restrict__)kernels::allocate_temp_memory(ctx, num_elm);
+      WORD8* __restrict__ ptr1 =
+          (WORD8* __restrict__)kernels::allocate_temp_memory(ctx, num_elm);
 
       const WORD8* __restrict__ pin1 =
           (const WORD8* __restrict__)a.const_data_ptr<bool>();
@@ -129,7 +131,8 @@ Tensor& bitwise_or_Tensor_out(
 
       xa_nn_elm_logicalor_boolxbool_bool(p_out, p_inp1, p_inp2, num_elm);
     } else if (!a_is_broadcasted && b_is_broadcasted) {
-      WORD8* __restrict__ ptr1 = (WORD8* __restrict__)kernels::allocate_temp_memory(ctx, num_elm);
+      WORD8* __restrict__ ptr1 =
+          (WORD8* __restrict__)kernels::allocate_temp_memory(ctx, num_elm);
 
       const WORD8* __restrict__ p_inp1 =
           (const WORD8* __restrict__)a.const_data_ptr<bool>();
@@ -166,7 +169,8 @@ Tensor& bitwise_or_Tensor_out(
     return out;
   }
 
-  return torch::executor::native::internal::bitwise_tensor_out<op_name>(ctx, a, b, out);
+  return torch::executor::native::internal::bitwise_tensor_out<op_name>(
+      ctx, a, b, out);
 }
 
 Tensor& bitwise_or_Scalar_out(

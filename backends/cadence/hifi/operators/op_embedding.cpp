@@ -20,8 +20,8 @@
 
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
-using executorch::runtime::tensors_have_same_dim_order;
 using executorch::runtime::tensor_is_default_dim_order;
+using executorch::runtime::tensors_have_same_dim_order;
 using torch::executor::check_embedding_args;
 using torch::executor::Error;
 using torch::executor::KernelRuntimeContext;
