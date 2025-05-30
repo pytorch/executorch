@@ -46,7 +46,7 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
  * size is only 1x1, making it easier to re-use loaded texels from t_kernel.
  */
 void main() {
-  const int out_limits_scaled[2] = {out_limits.x + (TILE_SIZE_X - 1) * TILE_SIZE_X, out_limits.y + (TILE_SIZE_Y - 1) * TILE_SIZE_Y};
+  const int out_limits_scaled[2] = {(out_limits.x + (TILE_SIZE_X - 1)) / TILE_SIZE_X, (out_limits.y + (TILE_SIZE_Y - 1)) / TILE_SIZE_Y};
 
   const int div_by_x = int(gl_GlobalInvocationID.x / out_limits_scaled[0]);
   const int out_pos[3] = {int(gl_GlobalInvocationID.x % out_limits_scaled[0]), div_by_x, int(gl_GlobalInvocationID.y)};
