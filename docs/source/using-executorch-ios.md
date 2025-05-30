@@ -112,9 +112,6 @@ python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 
 # CoreML-only requirements:
 ./backends/apple/coreml/scripts/install_requirements.sh
-
-# MPS-only requirements:
-./backends/apple/mps/install_requirements.sh
 ```
 
 5. Install [CMake](https://cmake.org):
