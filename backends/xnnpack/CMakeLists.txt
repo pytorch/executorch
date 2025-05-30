@@ -61,7 +61,10 @@ foreach(fbs_file ${_xnnpack_schema__srcs})
 endforeach()
 
 if(WIN32)
-  set(MV_COMMAND powershell -Command "Move-Item -Path ${_xnnpack_flatbuffer__outputs} -Destination ${_xnnpack_schema__outputs}")
+  set(MV_COMMAND
+      powershell -Command
+      "Move-Item -Path ${_xnnpack_flatbuffer__outputs} -Destination ${_xnnpack_schema__outputs}"
+  )
 else()
   set(MV_COMMAND mv ${_xnnpack_flatbuffer__outputs} ${_xnnpack_schema__outputs})
 endif()
@@ -96,7 +99,8 @@ include(cmake/Dependencies.cmake)
 list(TRANSFORM _xnnpack_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(xnnpack_backend ${_xnnpack_backend__srcs})
 target_link_libraries(
-  xnnpack_backend PUBLIC ${xnnpack_third_party} executorch_core xnnpack_schema extension_threadpool
+  xnnpack_backend PUBLIC ${xnnpack_third_party} executorch_core xnnpack_schema
+                         extension_threadpool
 )
 
 target_include_directories(
