@@ -41,6 +41,12 @@ def define_common_targets():
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
         ],
+        fbcode_exported_deps = [
+            "//caffe2:torch_standalone_headers",
+        ] if not runtime.is_oss else [],
+        xplat_exported_deps = [
+            "//xplat/caffe2:torch_standalone_headers",
+        ],
         deps = select({
             "DEFAULT": [],
             # Half-inl.h depends on vec_half.h from ATen, but only when building for x86.
