@@ -11,19 +11,27 @@
 
 namespace vkcompute {
 
+//
+// sym_size
+//
+
+void sym_size_impl(ComputeGraph* graph, const std::vector<ValueRef>& args) {
+  ValueRef in_tensor = args[0];
+  ValueRef dim = args[1];
+  ValueRef out_symint = args[2];
+
+  int64_t dim_val = graph->extract_scalar<int64_t>(dim);
+  int64_t size_at_dim = graph->size_at<int64_t>(dim_val, in_tensor);
+
+  graph->set_symint(out_symint, static_cast<int32_t>(size_at_dim));
+}
+
 void resize_sym_size_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
   (void)args; // Unused parameter
-
-  ValueRef out_symint_ref = extra_args[0];
-  ValueRef in_tensor_ref = extra_args[1];
-
-  int64_t dim = graph->extract_scalar<int64_t>(extra_args[2]);
-  int64_t size_at_dim = graph->size_at<int64_t>(dim, in_tensor_ref);
-
-  graph->set_symint(out_symint_ref, static_cast<int32_t>(size_at_dim));
+  sym_size_impl(graph, extra_args);
 }
 
 /*
@@ -32,21 +40,50 @@ void resize_sym_size_node(
  * specified dimension.
  */
 void sym_size_int(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  ValueRef in_tensor = args[0];
-  ValueRef dim = args[1];
-  ValueRef out_symint = args[2];
-
-  int64_t dim_val = graph.extract_scalar<int64_t>(dim);
-
-  int64_t size_at_dim = graph.size_at<int64_t>(dim_val, in_tensor);
-  graph.set_symint(out_symint, static_cast<int32_t>(size_at_dim));
+  sym_size_impl(&graph, args);
 
   graph.execute_nodes().emplace_back(
-      new ExecuteNode(resize_sym_size_node, {out_symint, in_tensor, dim}));
+      new ExecuteNode(resize_sym_size_node, args));
+}
+
+//
+// binary operators
+//
+
+void sym_add_impl(ComputeGraph* graph, const std::vector<ValueRef>& args) {
+  ValueRef a = args[0];
+  ValueRef b = args[1];
+  ValueRef out = args[2];
+
+  int32_t a_val = graph->read_symint(a);
+  int32_t b_val = graph->read_symint(b);
+  int32_t result = a_val + b_val;
+
+  graph->set_symint(out, result);
+}
+
+void resize_sym_add_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& extra_args) {
+  (void)args; // Unused parameter
+  sym_add_impl(graph, extra_args);
+}
+
+/*
+ * This operator takes two symints as inputs and produces a symint as output.
+ * The output symint's value is the sum of the two input symints.
+ */
+void sym_add(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  sym_add_impl(&graph, args);
+
+  graph.execute_nodes().emplace_back(
+      new ExecuteNode(resize_sym_add_node, args));
 }
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(sym_size.int, sym_size_int);
+  VK_REGISTER_OP(add, sym_add);
 }
 
 } // namespace vkcompute
