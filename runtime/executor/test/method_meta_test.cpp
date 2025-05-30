@@ -199,7 +199,6 @@ TEST_F(MethodMetaTest, TensorInfoSizeOverflow) {
       std::numeric_limits<int32_t>::max(),
       std::numeric_limits<int32_t>::max(),
   };
-<<<<<<< HEAD
 
   // Create a minimal dim_order
   std::vector<uint8_t> dim_order = {0, 1, 2, 3};
@@ -213,20 +212,4 @@ TEST_F(MethodMetaTest, TensorInfoSizeOverflow) {
           false, // is_memory_planned
           executorch::aten::string_view{nullptr, 0}),
       "");
-=======
-
-  // Create a minimal dim_order
-  std::vector<uint8_t> dim_order = {0, 1, 2, 3};
-
-  // Create a TensorInfo with the overflow sizes and expect it to fail.
-  ET_EXPECT_DEATH(
-      executorch::runtime::testing::TensorInfoTestFriend::get(
-          Span<const int32_t>(overflow_sizes.data(), overflow_sizes.size()),
-          Span<const uint8_t>(dim_order.data(), dim_order.size()),
-          executorch::aten::ScalarType::Float,
-          false, // is_memory_planned
-          executorch::aten::string_view{nullptr, 0}),
-      "");
-
->>>>>>> 274eb94ae5abda2434bb3d295a5798849f8844c4
 }
