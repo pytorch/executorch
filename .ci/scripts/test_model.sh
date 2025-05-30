@@ -219,7 +219,7 @@ test_model_with_coreml() {
   DTYPE=float16
 
   "${PYTHON_EXECUTABLE}" -m examples.apple.coreml.scripts.export --model_name="${MODEL_NAME}" --compute_precision "${DTYPE}" --use_partitioner
-  EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
+  EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*coreml*.pte" -print -quit)
 
   if [ -n "$EXPORTED_MODEL" ]; then
     EXPORTED_MODEL_WITH_DTYPE="${EXPORTED_MODEL%.pte}_${DTYPE}.pte"
@@ -244,8 +244,18 @@ test_model_with_coreml() {
 }
 
 test_model_with_mps() {
-  "${PYTHON_EXECUTABLE}" -m examples.apple.mps.scripts.mps_example --model_name="${MODEL_NAME}" --use_fp16
-  EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
+  "${PYTHON_EXECUTABLE}" -m examples.apple.mps.scripts.mps_example --model_name="${MODEL_NAME}" --bundled --use_fp16
+  EXPORTED_MODEL="$(pwd)/${MODEL_NAME}_mps_float16_bundled.pte"
+
+  if [[ ! -f "${EXPORTED_MODEL}" ]]; then
+    echo "[error] exported model not found: ${EXPORTED_MODEL}"
+    exit 1
+  fi
+
+  echo "Testing exported model with mps_executor_runner..."
+  local out_dir=$(mktemp -d)
+  examples/apple/mps/scripts/build_mps_executor_runner.sh --output="${out_dir}"
+  "${out_dir}/examples/apple/mps/mps_executor_runner" --bundled_program --model_path "${EXPORTED_MODEL}"
 }
 
 if [[ "${BACKEND}" == "portable" ]]; then

@@ -36,7 +36,7 @@
 #include <chrono>
 using namespace std::chrono;
 
-static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4 MB
+static uint8_t method_allocator_pool[16 * 1024U * 1024U]; // 16 MB
 
 DEFINE_string(model_path, "model.ff", "Model serialized in flatbuffer format.");
 DEFINE_string(

@@ -17,7 +17,7 @@ def define_common_targets():
         runtime.cxx_binary(
             name = "mps_executor_runner",
             srcs = [
-                "mps_executor_runner.mm",
+                "mps_executor_runner.cpp",
             ],
             deps = [
                 "//executorch/backends/apple/mps:mps_schema",

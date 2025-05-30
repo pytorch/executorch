@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 #  Copyright (c) 2024 Apple Inc. All rights reserved.
 #  Provided subject to the LICENSE file in the top level directory.
+#
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
-set -e
+
+set -eux
 
 MODE="Release"
 OUTPUT="cmake-out"
@@ -38,25 +45,26 @@ done
 
 rm -rf "$OUTPUT"
 
-cmake -DBUCK2="$BUCK" \
-          -DCMAKE_INSTALL_PREFIX=cmake-out \
-          -DCMAKE_BUILD_TYPE="$MODE" \
-          -DEXECUTORCH_BUILD_DEVTOOLS=ON \
-          -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
-          -DEXECUTORCH_BUILD_MPS=ON \
-          -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
-          -Bcmake-out .
-cmake --build cmake-out -j9 --target install --config "$MODE"
-CMAKE_PREFIX_PATH="${PWD}/cmake-out/lib/cmake/ExecuTorch;${PWD}/cmake-out/third-party/gflags"
-# build mps_executor_runner
-rm -rf cmake-out/examples/apple/mps
-cmake \
-    -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
-    -DCMAKE_BUILD_TYPE="$MODE" \
-    -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
-    -Bcmake-out/examples/apple/mps \
-    examples/apple/mps
+cmake -DCMAKE_INSTALL_PREFIX=${OUTPUT} \
+      -DCMAKE_BUILD_TYPE=${MODE} \
+      -DEXECUTORCH_ENABLE_LOGGING=ON \
+      -B ${OUTPUT} \
+      --preset macos
 
-cmake --build cmake-out/examples/apple/mps -j9 --config "$MODE"
+cmake --build ${OUTPUT} \
+      -j $(sysctl -n hw.ncpu) \
+      --config ${MODE} \
+      --target install
+
+cmake -DCMAKE_PREFIX_PATH="${OUTPUT}/lib/cmake/ExecuTorch;${OUTPUT}/third-party/gflags" \
+      -DCMAKE_BUILD_TYPE="$MODE" \
+      -DCMAKE_OSX_DEPLOYMENT_TARGET="12.0" \
+      -B "${OUTPUT}/examples/apple/mps" \
+      -S examples/apple/mps
+
+cmake --build "${OUTPUT}/examples/apple/mps" \
+      -j $(sysctl -n hw.ncpu) \
+      --config ${MODE} \
+      --target mps_executor_runner
 
 echo "Build succeeded!"

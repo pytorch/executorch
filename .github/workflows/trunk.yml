@@ -486,7 +486,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
-      runner: macos-m1-stable
+      runner: macos-latest-xlarge
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}

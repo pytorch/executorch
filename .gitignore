@@ -25,6 +25,7 @@ pip-out/
 *.bin
 *.model
 *.pte
+*.etdp
 !test_bpe_tokenizer.bin
 !test_tiktoken_tokenizer.model
 
