@@ -147,4 +147,3 @@ Output 0: tensor(sizes=[1, 1000], [
 
 Congratulations! You've successfully set up ExecuTorch on your Windows device and ran a MobileNet V2 model.
 Now, you can explore and enjoy the power of ExecuTorch on your own Windows device!
-
