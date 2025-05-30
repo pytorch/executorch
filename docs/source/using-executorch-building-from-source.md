@@ -91,15 +91,6 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
 
    If C++ files are being modified, you will still have to reinstall ExecuTorch from source.
 
-> **_WARNING:_**
-> Some modules can't be imported directly in editable mode. This is a known [issue](https://github.com/pytorch/executorch/issues/9558) and we are actively working on a fix for this. To workaround this:
-> ```bash
-> # This will fail
-> python -c "from executorch.exir import CaptureConfig"
-> # But this will succeed
-> python -c "from executorch.exir.capture import CaptureConfig"
-> ```
-
 > **_NOTE:_**  Cleaning the build system
 >
 > When fetching a new version of the upstream repo (via `git fetch` or `git
