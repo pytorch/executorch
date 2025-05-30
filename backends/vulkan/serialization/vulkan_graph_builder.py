@@ -353,7 +353,7 @@ class VkGraphBuilder:
                 # previously encountered, then use the existing Value id.
                 operator_call_args.append(self.get_or_create_value_for(function_arg))
         else:
-            for i, arg_node in enumerate(node.args):
+            for _, arg_node in enumerate(node.args):
                 operator_call_args.append(self.get_or_create_value_for(arg_node))
 
         # Add output node

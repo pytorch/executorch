@@ -231,6 +231,13 @@ def update_features(aten_op):
         # Symbolic integer ops
         torch.ops.aten.sym_size.int,
         operator.add,
+        operator.lt,
+        operator.gt,
+        operator.ge,
+        operator.le,
+        # Guard and assert ops
+        torch.ops.aten._assert_scalar.default,
+        torch.ops.aten.sym_constrain_range_for_size.default,
     ]
 )
 def register_ephemeral_op(features: OpFeatures):

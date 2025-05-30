@@ -5,7 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from copy import deepcopy
 from typing import Any, Optional, Set
 
 import executorch.backends.vulkan.utils as utils
