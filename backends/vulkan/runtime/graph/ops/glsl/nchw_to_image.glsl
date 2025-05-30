@@ -21,9 +21,17 @@ layout(std430) buffer;
 
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
 ${layout_declare_buffer(B, "r", "buf_in", DTYPE)}
-${layout_declare_ubo(B, "ivec4", "sizes")}
-$if not FROM_STAGING:
-  ${layout_declare_ubo(B, "ivec4", "buf_strides")}
+
+$if USE_PUSH_CONST:
+  layout(push_constant) uniform restrict Block {
+    ivec4 sizes;
+  $if not FROM_STAGING:
+    ivec4 buf_strides;
+  };
+$else:
+  ${layout_declare_ubo(B, "ivec4", "sizes")}
+  $if not FROM_STAGING:
+    ${layout_declare_ubo(B, "ivec4", "buf_strides")}
 
 #include "indexing_utils.h"
 
