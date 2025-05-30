@@ -52,20 +52,21 @@ build_cmake_executor_runner() {
   local backend_string_select="${1:-}"
   echo "Building executor_runner"
   rm -rf ${CMAKE_OUTPUT_DIR}
-  if [[ "$backend_string_select" == "XNNPACK"]]; then
+  mkdir ${CMAKE_OUTPUT_DIR}
+  if [[ "$backend_string_select" == "XNNPACK" ]]; then
     echo "Backend $backend_string_select selected"
-    cmake -DCMAKE_BUILD_TYPE=Debug \
-        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+    (cd ${CMAKE_OUTPUT_DIR} \
+      && cmake -DCMAKE_BUILD_TYPE=Release \
         -DEXECUTORCH_BUILD_XNNPACK=ON \
-        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
-        -B${CMAKE_OUTPUT_DIR} .
+        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
+    cmake --build ${CMAKE_OUTPUT_DIR} -j4
   else
     cmake -DCMAKE_BUILD_TYPE=Debug \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -B${CMAKE_OUTPUT_DIR} .
+    cmake --build ${CMAKE_OUTPUT_DIR} -j4 --config Debug
   fi
-  cmake --build ${CMAKE_OUTPUT_DIR} -j4 --config Debug
 }
 
 run_portable_executor_runner() {
@@ -148,7 +149,7 @@ test_model_with_xnnpack() {
     buck2 run //examples/xnnpack:xnn_executor_runner -- --model_path "${OUTPUT_MODEL_PATH}"
   elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
     if [[ ! -f ${CMAKE_OUTPUT_DIR}/executor_runner ]]; then
-      build_cmake_executor_runner("XNNPACK")
+      build_cmake_executor_runner "XNNPACK"
     fi
     ./${CMAKE_OUTPUT_DIR}/executor_runner --model_path "${OUTPUT_MODEL_PATH}"
   else
