@@ -22,9 +22,9 @@ struct ExecutionPlan;
 namespace executorch {
 namespace ET_RUNTIME_NAMESPACE {
 namespace testing {
-// Provides test access to private Program methods.
-class TensorInfoTestFriend;
-} // namespace testing
+  // Provides test access to private Program methods.
+  class TensorInfoTestFriend;
+  } // namespace testing
 
 /**
  * Metadata about a specific tensor of an ExecuTorch Program.

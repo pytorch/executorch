@@ -15,6 +15,7 @@ nchw_to_image:
       - VALUE: float
       - VALUE: int
       - VALUE: int8
+      - VALUE: uint8
   shader_variants:
     - NAME: nchw_to_image_texture3d
     - NAME: nchw_to_image_texture2d

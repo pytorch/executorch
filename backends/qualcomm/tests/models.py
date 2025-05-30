@@ -147,12 +147,13 @@ class ArgminViewSqueezeConv2D(torch.nn.Module):
 
 
 class AvgPoolModule(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, kernel_size, stride, padding, ceil_mode):
         super().__init__()
         self.avgPool = torch.nn.AvgPool2d(
-            kernel_size=(2, 2),
-            padding=(1, 1),
-            stride=(1, 1),
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            ceil_mode=ceil_mode,
             count_include_pad=False,
         )
 

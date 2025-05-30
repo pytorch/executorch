@@ -61,9 +61,7 @@ size_t calculate_nbytes(
     prev_n = n;
     n *= sizes[i];
     // Check for overflow
-    ET_CHECK_MSG(
-        sizes[i] == 0 || n / sizes[i] == prev_n,
-        "overflow in calculate_nbytes");
+    ET_CHECK(sizes[i] == 0 || n / sizes[i] == prev_n);
   }
 
   size_t elem_size = executorch::runtime::elementSize(scalar_type);
@@ -71,10 +69,8 @@ size_t calculate_nbytes(
   prev_n = n;
   n = n * elem_size;
 
-  // Check for overflow before multiplying by element size
-  ET_CHECK_MSG(
-      elem_size == 0 || n / elem_size == prev_n,
-      "overflow in calculate_nbytes");
+  // Check for overflow
+  ET_CHECK(elem_size == 0 || n / elem_size == prev_n);
 
   return n;
 }

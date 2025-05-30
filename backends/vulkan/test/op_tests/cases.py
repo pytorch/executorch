@@ -1349,3 +1349,28 @@ def get_flip_inputs():
 
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
     return test_suite
+
+
+@register_test_suite("aten.where.self")
+def get_where_inputs():
+    Test = namedtuple("Where", ["condition", "self", "other"])
+    Test.__new__.__defaults__ = (None, None, None)
+
+    test_cases = [
+        Test(condition=[11], self=[11], other=[11]),
+        Test(condition=[10, 9], self=[10, 9], other=[10, 9]),
+        Test(condition=[10, 5, 3], self=[10, 5, 3], other=[10, 5, 3]),
+        Test(condition=[2, 10, 5, 3], self=[2, 10, 5, 3], other=[2, 10, 5, 3]),
+    ]
+
+    test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
+    test_suite.arg_dtype["condition"] = "at::kBool"
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    test_suite.atol = "1e-4"
+    test_suite.rtol = "1e-4"
+    return test_suite

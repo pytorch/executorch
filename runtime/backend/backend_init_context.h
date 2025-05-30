@@ -25,8 +25,14 @@ class BackendInitContext final {
       const char* method_name = nullptr,
       const NamedDataMap* named_data_map = nullptr)
       : runtime_allocator_(runtime_allocator),
+#ifdef ET_EVENT_TRACER_ENABLED
+        event_tracer_(event_tracer),
+#else
+        event_tracer_(nullptr),
+#endif
         method_name_(method_name),
-        named_data_map_(named_data_map) {}
+        named_data_map_(named_data_map) {
+  }
 
   /** Get the runtime allocator passed from Method. It's the same runtime
    * executor used by the standard executor runtime and the life span is the

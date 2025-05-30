@@ -49,6 +49,7 @@ void add_dtype_suffix(std::string& kernel_name, const vkapi::ScalarType dtype) {
       break;
     case vkapi::kByte:
     case vkapi::kQUInt8:
+    case vkapi::kBool:
       kernel_name += "_uint8";
       break;
     default:
