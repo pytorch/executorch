@@ -32,7 +32,6 @@ namespace runtime {
 namespace testing {
 // Provides access to private TensorInfo methods.
 class TensorInfoTestFriend final {
-<<<<<<< HEAD
  public:
   ET_NODISCARD static TensorInfo get(
       Span<const int32_t> sizes,
@@ -46,21 +45,6 @@ class TensorInfoTestFriend final {
         scalar_type,
         is_memory_planned,
         name);
-=======
- public:
-  ET_NODISCARD static TensorInfo get(
-      Span<const int32_t> sizes,
-      Span<const uint8_t> dim_order,
-      executorch::aten::ScalarType scalar_type,
-      const bool is_memory_planned,
-      executorch::aten::string_view name) {
-    return TensorInfo(
-        Span<const int32_t>(sizes.data(), sizes.size()),
-        Span<const uint8_t>(dim_order.data(), dim_order.size()),
-        scalar_type,
-        is_memory_planned,
-        name);
->>>>>>> 69509e358f696efa3dd650ea98bcb1bcec0311bd
   }
 };
 } // namespace testing
