@@ -76,13 +76,11 @@ libquantized_ops_lib.a,\
 :"
 
 FRAMEWORK_KERNELS_TORCHAO="kernels_torchao:\
-  libtorchao_ops_executorch.a,\
-  libtorchao_kernels_aarch64.a,\
-  libexecutorch.a,\
-  libextension_threadpool.a,\
-  libcpuinfo.a,\
-  libpthreadpool.a,\
-  :"
+libtorchao_ops_executorch.a,\
+libextension_threadpool.a,\
+libcpuinfo.a,\
+libpthreadpool.a,\
+:"
 
 usage() {
   echo "Usage: $0 [SOURCE_ROOT_DIR] [OPTIONS]"
@@ -197,7 +195,6 @@ cmake_build() {
   echo "Building for $platform ($mode) with flag $platform_flag"
   mkdir -p "$platform" && cd "$platform" || exit 1
   cmake "$SOURCE_ROOT_DIR" -G Xcode \
-    -DCMAKE_PREFIX_PATH=$(python -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())') \
     -DCMAKE_BUILD_TYPE="$mode" \
     -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
     -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
@@ -247,13 +244,13 @@ mkdir -p "$HEADERS_PATH"
   //extension/tensor: |
   rsync -av --files-from=- "$SOURCE_ROOT_DIR" "$HEADERS_PATH/executorch"
 
-# Export TorchAO headers
-mkdir -p "$HEADERS_PATH/torchao"
+# # Export TorchAO headers
+# mkdir -p "$HEADERS_PATH/torchao"
 
-rsync -av \
-  "$SOURCE_ROOT_DIR/third-party/ao/torchao/experimental/ops" \
-  "$SOURCE_ROOT_DIR/third-party/ao/torchao/experimental/kernels" \
-  "$HEADERS_PATH/torchao"
+# rsync -av \
+#   "$SOURCE_ROOT_DIR/third-party/ao/torchao/experimental/ops" \
+#   "$SOURCE_ROOT_DIR/third-party/ao/torchao/experimental/kernels" \
+#   "$HEADERS_PATH/torchao"
 
 # HACK: XCFrameworks don't appear to support exporting any build
 # options, but we need the following:
