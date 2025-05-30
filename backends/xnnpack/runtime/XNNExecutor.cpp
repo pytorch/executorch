@@ -106,11 +106,6 @@ ET_NODISCARD Error XNNExecutor::prepare_args(EValue** args) {
           err == Error::Ok,
           Internal,
           "Failed to retrieve dim order from tensor!");
-      ET_CHECK_OR_RETURN_ERROR(
-          is_contiguous_dim_order(dim_order, tensor->dim()),
-          Internal,
-          "Expecting default dim_order but got a non default dim_order tensor for external input %u",
-          i);
       size_t dims[XNN_MAX_TENSOR_DIMS];
       ET_CHECK_OR_RETURN_ERROR(
           num_dims <= XNN_MAX_TENSOR_DIMS,
@@ -118,8 +113,9 @@ ET_NODISCARD Error XNNExecutor::prepare_args(EValue** args) {
           "XNNPACK backend accepts tensors with at most %d dims, but got %zu",
           XNN_MAX_TENSOR_DIMS,
           num_dims);
-      for (int d = 0; d < num_dims; ++d) {
-        dims[d] = tensor->size(d);
+
+      for (int i = 0; i < num_dims; ++i) {
+        dims[i] = tensor->size(static_cast<int>(dim_order[i]));
       }
       status =
           xnn_reshape_external_value(runtime_.get(), ext_id, num_dims, dims);
@@ -220,8 +216,17 @@ ET_NODISCARD Error XNNExecutor::resize_outputs(EValue** args) const {
 
     // Convert new output shape into SizesType
     SizesType expected_output_size[kTensorDimensionLimit];
-    for (size_t d = 0; d < num_dim; ++d) {
-      expected_output_size[d] = static_cast<SizesType>(dims[d]);
+    executorch::aten::DimOrderType dim_order[kTensorDimensionLimit];
+    Error errr =
+        ET_RUNTIME_NAMESPACE::get_dim_order(*out_tensor, dim_order, num_dim);
+    ET_CHECK_OR_RETURN_ERROR(
+        errr == Error::Ok,
+        Internal,
+        "Failed to retrieve dim order from tensor!");
+
+    for (int i = 0; i < num_dim; ++i) {
+      expected_output_size[static_cast<int>(dim_order[i])] =
+          static_cast<SizesType>(dims[i]);
     }
 
     executorch::aten::ArrayRef<SizesType> output_size{

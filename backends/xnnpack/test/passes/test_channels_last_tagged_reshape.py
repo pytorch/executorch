@@ -43,6 +43,78 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
     )
     dynamic_quant_name = "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_tensor"
 
+    def run_tester(self, module, inputs):
+        tester = Tester(
+            module.eval(),
+            inputs,
+        )
+        tester.export().to_edge_transform_and_lower().to_executorch().serialize().run_method_and_compare_outputs()
+
+    class LinearConv(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 3, 3)
+            self.linear1 = torch.nn.Linear(4, 3)
+
+        def forward(self, x):
+            y = self.linear1(x)
+            return self.conv1(y)
+
+    LinearConvModule = LinearConv()
+
+    class ConvLinearConv(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 3, 3)
+            self.linear1 = torch.nn.Linear(4, 4)
+
+        def forward(self, x):
+            y = self.conv1(x)
+            return self.linear1(y)
+
+    ConvLinearConvModule = ConvLinearConv()
+
+    class Bilinear(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+
+        def forward(self, x):
+            return torch.nn.functional.interpolate(
+                x, scale_factor=2, mode="bilinear", align_corners=True
+            )
+
+    BilinearModule = Bilinear()
+
+    def test_conv_linear_dim_order_swaps(self):
+        self.run_tester(self.LinearConvModule, (torch.randn(1, 3, 6, 4),))
+        self.run_tester(
+            self.LinearConvModule,
+            (torch.randn(1, 3, 6, 4).to(memory_format=torch.channels_last),),
+        )
+
+    def test_linear_conv_dim_order_swaps(self):
+        self.run_tester(self.ConvLinearConvModule, (torch.randn(1, 3, 6, 6),))
+        self.run_tester(
+            self.ConvLinearConvModule,
+            (torch.randn(1, 3, 6, 6).to(memory_format=torch.channels_last),),
+        )
+
+    def test_nhwc_nchw_input_on_nhwc_op(self):
+        self.run_tester(
+            self.BilinearModule,
+            (
+                torch.arange(8)
+                .reshape(1, 2, 2, 2)
+                .to(torch.float32)
+                .to(memory_format=torch.channels_last),
+            ),
+        )
+
+        self.run_tester(
+            self.BilinearModule,
+            (torch.arange(8).reshape(1, 2, 2, 2).to(torch.float32),),
+        )
+
     def test_fp32_channels_last_tagged_reshape_pass(self):
         for module, num_reshape in self.modules.items():
             (
@@ -57,6 +129,88 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
                 )
                 .run_method_and_compare_outputs()
             )
+
+    class LinearConv(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 3, 3)
+            self.linear1 = torch.nn.Linear(4, 3)
+
+        def forward(self, x):
+            y = self.linear1(x)
+            return self.conv1(y)
+
+    def test_conv_linear_dim_order_swaps_on_nhwc_input(self):
+        tester = Tester(
+            self.LinearConv().eval(),
+            (torch.randn(1, 3, 6, 4).to(memory_format=torch.channels_last),),
+        )
+
+        tester.export().to_edge_transform_and_lower().to_executorch().serialize().run_method_and_compare_outputs()
+
+    def test_conv_linear_dim_order_swaps_on_nchw_input(self):
+        tester = Tester(
+            self.LinearConv().eval(),
+            (torch.randn(1, 3, 6, 4),),
+        )
+
+        tester.export().to_edge_transform_and_lower().to_executorch().serialize().run_method_and_compare_outputs()
+
+    class ConvLinearConv(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 3, 3)
+            self.linear1 = torch.nn.Linear(4, 4)
+
+        def forward(self, x):
+            y = self.conv1(x)
+            return self.linear1(y)
+
+    def test_linear_conv_dim_order_swaps_on_nhwc_input(self):
+        tester = Tester(
+            self.ConvLinearConv().eval(),
+            (torch.randn(1, 3, 6, 6).to(memory_format=torch.channels_last),),
+        )
+
+        tester.export().to_edge_transform_and_lower().to_executorch().serialize().run_method_and_compare_outputs()
+
+    def test_linear_conv_dim_order_swaps_on_nchw_input(self):
+        tester = Tester(
+            self.ConvLinearConv().eval(),
+            (torch.randn(1, 3, 6, 6),),
+        )
+
+        tester.export().to_edge_transform_and_lower().to_executorch().serialize().run_method_and_compare_outputs()
+
+    class Bilinear(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+
+        def forward(self, x):
+            return torch.nn.functional.interpolate(
+                x, scale_factor=2, mode="bilinear", align_corners=True
+            )
+
+    def test_nhwc_input_on_nhwc_op(self):
+        tester = Tester(
+            self.Bilinear().eval(),
+            (
+                torch.arange(8)
+                .reshape(1, 2, 2, 2)
+                .to(torch.float32)
+                .to(memory_format=torch.channels_last),
+            ),
+        )
+
+        tester.export().to_edge_transform_and_lower().to_executorch().serialize().run_method_and_compare_outputs()
+
+    def test_nchw_input_on_nhwc_op(self):
+        tester = Tester(
+            self.Bilinear().eval(),
+            (torch.arange(8).reshape(1, 2, 2, 2).to(torch.float32),),
+        )
+
+        tester.export().to_edge_transform_and_lower().to_executorch().serialize().run_method_and_compare_outputs()
 
     def test_qs8_channels_last_tagged_reshape_pass(self):
         for module, num_reshape in self.modules.items():
