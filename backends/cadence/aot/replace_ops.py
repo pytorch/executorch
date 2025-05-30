@@ -2065,11 +2065,10 @@ class ReplaceWhereWithFullArgsWithWhereScalar(ExportPass):
         return super().call_operator(op, args, kwargs, meta)
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=2))
-class ReplaceGeluWithApproximateGeluPass(ExportPass):
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class ReplaceAtenApproxGeluWithApproxGeluPass(ExportPass):
     """
-    Replace the gelu op with an approximate gelu op. The approximate gelu op
-    is more efficient on DSP backends.
+    Replace the aten gelu op with an approximate arg with an approximate gelu op.
     """
 
     def call_operator(
@@ -2079,6 +2078,9 @@ class ReplaceGeluWithApproximateGeluPass(ExportPass):
         kwargs: Dict[str, Argument],
         meta: NodeMetadata,
     ) -> ProxyValue:
+        if "approximate" not in kwargs:
+            return super().call_operator(op, args, kwargs, meta)
+
         if op not in {
             exir_ops.edge.aten.gelu.default,
         }:
@@ -2414,7 +2416,7 @@ class CadenceReplaceOpsInGraph:
         ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass,
         ReplaceAtenAvgPoolWithJarvisAvgPoolPass,
         ReplaceWhereWithFullArgsWithWhereScalar,
-        ReplaceGeluWithApproximateGeluPass,
+        ReplaceAtenApproxGeluWithApproxGeluPass,
         ReplaceSplitWithSlicePass,
         ReplacePowWithMulPass,
     ]
