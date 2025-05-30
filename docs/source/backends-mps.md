@@ -42,12 +42,6 @@ In order to be able to successfully build and run a model using the MPS backend 
 
 ***Step 1.*** Please finish tutorial [Getting Started](getting-started.md).
 
-***Step 2.*** Install dependencies needed to lower MPS delegate:
-
-  ```bash
-  ./backends/apple/mps/install_requirements.sh
-  ```
-
 ## Build
 
 ### AOT (Ahead-of-time) Components
