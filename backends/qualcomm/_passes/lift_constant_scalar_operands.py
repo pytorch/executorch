@@ -50,6 +50,7 @@ SCALAR_OPS = {
     aten.leaky_relu_.default: TensorOpInfo(aten.prelu.default, True, False),
     aten.where.ScalarOther: TensorOpInfo(aten.where.self, False, True),
     aten.where.Scalar: TensorOpInfo(aten.where.self, False, True),
+    aten.masked_fill.Scalar: TensorOpInfo(aten.masked_fill.Tensor, False, False),
 }
 
 
@@ -78,7 +79,7 @@ class LiftConstantScalarOperands(ExportPass):
         # For dtype, in some cases, we cannot use node.args[0] as scalar dtype.
         # Ex: Where op args[0] can be bool, however, we probably want args[1] and args[2] to be dtype same as node.meta["val"] instead of bool type
         tensor = torch.tensor(
-            [const_val],
+            const_val,
             dtype=(
                 node.args[0].meta["val"].dtype
                 if not is_float_tensor(node)
