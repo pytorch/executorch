@@ -579,22 +579,12 @@ git<span class="w"> </span>clone<span class="w"> </span>-b<span class="w"> </spa
 ./install_executorch.sh
 </pre></div>
 </div>
-<p>Use the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/install_executorch.sh#L26-L29"><code class="docutils literal notranslate"><span class="pre">--pybind</span></code> flag</a> to install with pybindings and dependencies for other backends.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_executorch.sh<span class="w"> </span>--pybind<span class="w"> </span>&lt;coreml<span class="w"> </span><span class="p">|</span><span class="w"> </span>mps<span class="w"> </span><span class="p">|</span><span class="w"> </span>xnnpack&gt;
-
-<span class="c1"># Example: pybindings with CoreML *only*</span>
-./install_executorch.sh<span class="w"> </span>--pybind<span class="w"> </span>coreml
-
-<span class="c1"># Example: pybinds with CoreML *and* XNNPACK</span>
-./install_executorch.sh<span class="w"> </span>--pybind<span class="w"> </span>coreml<span class="w"> </span>xnnpack
-</pre></div>
-</div>
-<p>By default, <code class="docutils literal notranslate"><span class="pre">./install_executorch.sh</span></code> command installs pybindings for XNNPACK. To disable any pybindings altogether:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_executorch.sh<span class="w"> </span>--pybind<span class="w"> </span>off
+<p>Not all backends are built into the pip wheel by default. You can link these missing/experimental backends by turning on the corresponding cmake flag. For example, to include the MPS backend:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nv">CMAKE_ARGS</span><span class="o">=</span><span class="s2">&quot;-DEXECUTORCH_BUILD_MPS=ON&quot;</span><span class="w"> </span>./install_executorch.sh
 </pre></div>
 </div>
 <p>For development mode, run the command with <code class="docutils literal notranslate"><span class="pre">--editable</span></code>, which allows us to modify Python source code and see changes reflected immediately.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_executorch.sh<span class="w"> </span>--editable<span class="w"> </span><span class="o">[</span>--pybind<span class="w"> </span>xnnpack<span class="o">]</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_executorch.sh<span class="w"> </span>--editable
 
 <span class="c1"># Or you can directly do the following if dependencies are already installed</span>
 <span class="c1"># either via a previous invocation of `./install_executorch.sh` or by explicitly installing requirements via `./install_requirements.sh` first.</span>

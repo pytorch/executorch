@@ -627,7 +627,7 @@ python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scri
 <ol class="arabic simple">
 <li><p>Make sure <code class="docutils literal notranslate"><span class="pre">pybind</span></code> MPS support was installed:</p></li>
 </ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_executorch.sh<span class="w"> </span>--pybind<span class="w"> </span>mps
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nv">CMAKE_ARGS</span><span class="o">=</span><span class="s2">&quot;-DEXECUTORCH_BUILD_MPS=ON&quot;</span><span class="w"> </span>./install_executorch.sh
 </pre></div>
 </div>
 <ol class="arabic simple" start="2">
