@@ -340,17 +340,21 @@ class VkGraphBuilder:
 
         self.seen_ops.add(node.target)
 
-        for i, schema_arg in enumerate(node.target._schema.arguments):
-            if not schema_arg.kwarg_only and i < len(node.args):
-                function_arg = node.args[i]
-            elif schema_arg.name in node.kwargs:
-                function_arg = node.kwargs[schema_arg.name]
-            else:
-                function_arg = schema_arg.default_value
+        if hasattr(node.target, "_schema"):
+            for i, schema_arg in enumerate(node.target._schema.arguments):
+                if not schema_arg.kwarg_only and i < len(node.args):
+                    function_arg = node.args[i]
+                elif schema_arg.name in node.kwargs:
+                    function_arg = node.kwargs[schema_arg.name]
+                else:
+                    function_arg = schema_arg.default_value
 
-            # Create a Value for each function argument. If the argument has been
-            # previously encountered, then use the existing Value id.
-            operator_call_args.append(self.get_or_create_value_for(function_arg))
+                # Create a Value for each function argument. If the argument has been
+                # previously encountered, then use the existing Value id.
+                operator_call_args.append(self.get_or_create_value_for(function_arg))
+        else:
+            for i, arg_node in enumerate(node.args):
+                operator_call_args.append(self.get_or_create_value_for(arg_node))
 
         # Add output node
         operator_call_args.append(self.create_node_value(node))
@@ -397,6 +401,9 @@ class VkGraphBuilder:
             raise AssertionError(f"Unsupported node op: {node.op}")
 
     def build_graph(self) -> vk_graph_schema.VkGraph:
+        print("Building graph...")
+        print(self.program.graph_module.graph)
+
         call_node_debug_hdl = 0
         for node in self.program.graph_module.graph.nodes:
             self.process_node(node, call_node_debug_hdl)
