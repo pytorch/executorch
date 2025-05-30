@@ -159,7 +159,6 @@ cmake_build() {
   echo "Building for $platform ($mode) with flag $platform_flag"
   mkdir -p "$platform" && cd "$platform" || exit 1
   cmake "$SOURCE_ROOT_DIR" -G Xcode \
-    -DCMAKE_PREFIX_PATH=$(python -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())') \
     -DCMAKE_BUILD_TYPE="$mode" \
     -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
     -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
