@@ -32,19 +32,19 @@ namespace runtime {
 namespace testing {
 // Provides access to private TensorInfo methods.
 class TensorInfoTestFriend final {
-  public:
+ public:
   ET_NODISCARD static TensorInfo get(
-    Span<const int32_t> sizes,
-    Span<const uint8_t> dim_order,
-    executorch::aten::ScalarType scalar_type,
-    const bool is_memory_planned,
-    executorch::aten::string_view name) {
+      Span<const int32_t> sizes,
+      Span<const uint8_t> dim_order,
+      executorch::aten::ScalarType scalar_type,
+      const bool is_memory_planned,
+      executorch::aten::string_view name) {
     return TensorInfo(
-      Span<const int32_t>(sizes.data(), sizes.size()),
-      Span<const uint8_t>(dim_order.data(), dim_order.size()),
-      scalar_type,
-      is_memory_planned,
-      name);
+        Span<const int32_t>(sizes.data(), sizes.size()),
+        Span<const uint8_t>(dim_order.data(), dim_order.size()),
+        scalar_type,
+        is_memory_planned,
+        name);
   }
 };
 } // namespace testing
@@ -199,16 +199,17 @@ TEST_F(MethodMetaTest, TensorInfoSizeOverflow) {
       std::numeric_limits<int32_t>::max(),
       std::numeric_limits<int32_t>::max(),
   };
-  
+
   // Create a minimal dim_order
   std::vector<uint8_t> dim_order = {0, 1, 2, 3};
-  
-  // Create a TensorInfo with the overflow sizes and expect it to fail.
-  ET_EXPECT_DEATH(executorch::runtime::testing::TensorInfoTestFriend::get(
-    Span<const int32_t>(overflow_sizes.data(), overflow_sizes.size()),
-    Span<const uint8_t>(dim_order.data(), dim_order.size()),
-    executorch::aten::ScalarType::Float,
-    false, // is_memory_planned
-    executorch::aten::string_view{nullptr, 0}),"");
 
+  // Create a TensorInfo with the overflow sizes and expect it to fail.
+  ET_EXPECT_DEATH(
+      executorch::runtime::testing::TensorInfoTestFriend::get(
+          Span<const int32_t>(overflow_sizes.data(), overflow_sizes.size()),
+          Span<const uint8_t>(dim_order.data(), dim_order.size()),
+          executorch::aten::ScalarType::Float,
+          false, // is_memory_planned
+          executorch::aten::string_view{nullptr, 0}),
+      "");
 }
