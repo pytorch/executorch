@@ -8,12 +8,14 @@
 
 #version 450 core
 
+#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
+
 #define PRECISION ${PRECISION}
 
 #define VEC4_T ${texel_type(DTYPE)}
 
-#define TILE_SIZE_X ${TILE_SIZE_X}
-#define TILE_SIZE_Y ${TILE_SIZE_Y}
+#define TILE_SIZE_X uint16_t(${TILE_SIZE_X})
+#define TILE_SIZE_Y uint16_t(${TILE_SIZE_Y})
 
 #define op(X, A, B) ${OPERATOR}
 
@@ -48,12 +50,13 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 void main() {
   const int out_limits_scaled[2] = {out_limits.x + (TILE_SIZE_X - 1) * TILE_SIZE_X, out_limits.y + (TILE_SIZE_Y - 1) * TILE_SIZE_Y};
 
-  const int div_by_x = int(gl_GlobalInvocationID.x / out_limits_scaled[0]);
-  const int out_pos[3] = {int(gl_GlobalInvocationID.x % out_limits_scaled[0]), div_by_x, int(gl_GlobalInvocationID.y)};
+  const uint16_t div_by_x = uint16_t(gl_GlobalInvocationID.x / out_limits_scaled[0]);
+  const uint16_t out_pos_xy[2] = {uint16_t(gl_GlobalInvocationID.x % out_limits_scaled[0]), div_by_x};
+  const int out_pos_z = int(gl_GlobalInvocationID.y);
 
   // If the top left position is out of bounds, then this invocation will have
   // no work to do.
-  if (out_pos[1] >= out_limits_scaled[1] || out_pos[2] >= out_limits.z) {
+  if (out_pos_xy[1] >= out_limits_scaled[1] || out_pos_z >= out_limits.z) {
     return;
   }
 
@@ -63,36 +66,22 @@ void main() {
   // +--------+--------+
   // | pos[2] | pos[3] |
   // +--------+--------+
-  int pos[TILE_SIZE_X * TILE_SIZE_Y * 2];
-  for (int y = 0, i = 0; y < TILE_SIZE_Y; ++y) {
-    for (int x = 0; x < TILE_SIZE_X; ++x) {
-      pos[i * 2] = out_pos[0] * TILE_SIZE_X + x;
-      pos[i * 2 + 1] = out_pos[1] * TILE_SIZE_Y + y;
+  uint16_t pos[TILE_SIZE_X * TILE_SIZE_Y * 2];
+  for (uint16_t y = uint16_t(0), i = uint16_t(0); y < TILE_SIZE_Y; ++y) {
+    for (uint16_t x = uint16_t(0); x < TILE_SIZE_X; ++x) {
+      pos[i * 2] = out_pos_xy[0] * TILE_SIZE_X + x;
+      pos[i * 2 + 1] = out_pos_xy[1] * TILE_SIZE_Y + y;
       i++;
     }
-  }
-
-  // Compute the index of the input texture that needs to be loaded for each
-  // output position. Note that negative indices can be produced indicating that
-  // the top-left element is in a region added by padding.
-  int ipos[TILE_SIZE_X * TILE_SIZE_Y * 2];
-  for (int i = 0; i < TILE_SIZE_X * TILE_SIZE_Y; ++i) {
-    ipos[i * 2] = pos[i * 2] * stride.x - padding.x;
-    ipos[i * 2 + 1] = pos[i * 2 + 1] * stride.y - padding.y;
   }
 
   // Final output array where each element is a tensor value.
   // Tuple of consecutive 4 elements represents a single output texel.
   float sum[TILE_SIZE_X * TILE_SIZE_Y * 4];
 
-  const vec4 bias = texelFetch(t_bias, ivec2(out_pos[2], 0), 0);
-
   // Initialize the output array with the bias value
-  for (int i = 0; i < TILE_SIZE_X * TILE_SIZE_Y * 4; i += 4) {
-    sum[i] = bias.x;
-    sum[i + 1] = bias.y;
-    sum[i + 2] = bias.z;
-    sum[i + 3] = bias.w;
+  for (int i = 0; i < TILE_SIZE_X * TILE_SIZE_Y * 4; i++) {
+    sum[i] = 0;
   }
 
   int z4 = 0;
@@ -105,7 +94,7 @@ void main() {
 
     // Load kernel values from texels to array
     [[unroll]] for (int i = 0; i < 4; ++i) {
-      const vec4 k_tex = texelFetch(t_kernel, ivec2(z + i, out_pos[2]), 0);
+      const vec4 k_tex = texelFetch(t_kernel, ivec2(z + i, out_pos_z), 0);
       kernel_values[i * 4 + 0] = k_tex.x;
       kernel_values[i * 4 + 1] = k_tex.y;
       kernel_values[i * 4 + 2] = k_tex.z;
@@ -113,7 +102,7 @@ void main() {
     }
 
     for (int i = 0; i < TILE_SIZE_X * TILE_SIZE_Y; ++i) {
-      const vec4 in_tex = texelFetch(t_in, ivec3(ipos[i * 2], ipos[i * 2 + 1], z4), 0);
+      const vec4 in_tex = texelFetch(t_in, ivec3(pos[i * 2], pos[i * 2 + 1], z4), 0);
       // Load the input texel into an array
       float tex_values[4];
       tex_values[0] = in_tex.x;
@@ -163,10 +152,13 @@ void main() {
     }
   }
 
+  const vec4 bias = texelFetch(t_bias, ivec2(out_pos_z, 0), 0);
+
   for (int i = 0; i < TILE_SIZE_X * TILE_SIZE_Y; ++i) {
-    const ivec3 pos_l = ivec3(pos[i * 2], pos[i * 2 + 1], out_pos[2]);
-    if (all(lessThan(pos_l, out_limits.xyz))) {
-      imageStore(t_out, pos_l, op(vec4(sum[i * 4], sum[i * 4 + 1], sum[i * 4 + 2], sum[i * 4 + 3]), out_min, out_max));
+    const ivec3 pos_l = ivec3(pos[i * 2], pos[i * 2 + 1], out_pos_z);
+    if (all(lessThan(pos_l.xy, out_limits.xy))) {
+      const vec4 out_sum = vec4(sum[i * 4], sum[i * 4 + 1], sum[i * 4 + 2], sum[i * 4 + 3]);
+      imageStore(t_out, pos_l, op(out_sum + bias, out_min, out_max));
     }
   }
 }
