@@ -712,6 +712,7 @@ void ComputeGraph::propagate_resize() {
   for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
     node->trigger_resize(this);
   }
+  encode_execute();
 }
 
 } // namespace vkcompute
