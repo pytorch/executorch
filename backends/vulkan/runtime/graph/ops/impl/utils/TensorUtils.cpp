@@ -58,6 +58,13 @@ bool check_same_packed_dim(const api::vTensor& t1, const api::vTensor& t2) {
 }
 
 bool check_same_packed_dim(
+    ComputeGraph& graph,
+    const ValueRef in,
+    const ValueRef out) {
+  return graph.packed_dim_of(in) == graph.packed_dim_of(out);
+}
+
+bool check_same_packed_dim(
     const api::vTensor& t1,
     const api::vTensor& t2,
     const api::vTensor& t3) {

@@ -500,7 +500,12 @@ def register_sdpa_with_kv_cache_op(features: OpFeatures):
     return features
 
 
-@update_features(["llama::update_cache", "llama::custom_sdpa"])
+@update_features(
+    [
+        "llama::update_cache",
+        "llama::custom_sdpa",
+    ]
+)
 def register_sdpa_ops(features: OpFeatures):
     features.resize_fn = False
     features.buffer_impl = False
@@ -520,8 +525,17 @@ def register_rotary_emb_op(features: OpFeatures):
     return features
 
 
-@update_features(exir_ops.edge.aten.view_copy.default)
-def register_view_op(features: OpFeatures):
+@update_features(
+    [
+        exir_ops.edge.aten.clone.default,
+        exir_ops.edge.aten.permute.default,
+        exir_ops.edge.aten.permute_copy.default,
+        exir_ops.edge.aten.select_copy.int,
+        exir_ops.edge.aten.slice_copy.Tensor,
+        exir_ops.edge.aten.view_copy.default,
+    ]
+)
+def register_view_ops(features: OpFeatures):
     features.texture_impl = TextureImplFeatures(
         valid_packed_dims=all_packed_dims,
     )
@@ -538,10 +552,8 @@ def register_view_op(features: OpFeatures):
         # Indexing and lookup
         exir_ops.edge.aten.flip.default,
         exir_ops.edge.aten.index_select.default,
-        exir_ops.edge.aten.select_copy.int,
         # Tensor creation
         exir_ops.edge.aten.arange.start_step,
-        exir_ops.edge.aten.clone.default,
         exir_ops.edge.aten.constant_pad_nd.default,
         exir_ops.edge.aten.full.default,
         exir_ops.edge.aten.full_like.default,
@@ -564,12 +576,9 @@ def register_ported_op(features: OpFeatures):
 # Ops ported from PyTorch Vulkan backend. These ops are in a separate registry becasue they support all packed dimensions
 @update_features(
     [
-        # Indexing and lookup
-        exir_ops.edge.aten.slice_copy.Tensor,
         # Shape Manipulation
         exir_ops.edge.aten.squeeze_copy.dims,
         exir_ops.edge.aten.unsqueeze_copy.default,
-        exir_ops.edge.aten.permute_copy.default,
         # Tensor combination
         exir_ops.edge.aten.cat.default,
         exir_ops.edge.aten.repeat.default,

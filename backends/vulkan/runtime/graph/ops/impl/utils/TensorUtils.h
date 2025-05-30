@@ -9,6 +9,7 @@
 #pragma once
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
+#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
 namespace vkcompute {
 
@@ -37,6 +38,11 @@ bool check_same_sizes_at(
 bool check_packed_dim_is(const api::vTensor& t, const int32_t packed_dim);
 
 bool check_same_packed_dim(const api::vTensor& t1, const api::vTensor& t2);
+
+bool check_same_packed_dim(
+    ComputeGraph& graph,
+    const ValueRef in,
+    const ValueRef out);
 
 bool check_same_packed_dim(
     const api::vTensor& t1,
