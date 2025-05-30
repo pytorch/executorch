@@ -569,6 +569,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
 
     if (should_propagate_resize) {
       compute_graph->propagate_resize();
+      compute_graph->encode_execute();
     }
     compute_graph->execute();
 
