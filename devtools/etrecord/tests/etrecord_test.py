@@ -19,6 +19,7 @@ from executorch.devtools.bundled_program.core import BundledProgram
 from executorch.devtools.etrecord import generate_etrecord, parse_etrecord
 from executorch.devtools.etrecord._etrecord import (
     _get_reference_outputs,
+    _get_representative_inputs,
     ETRecordReservedFileNames,
 )
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
@@ -135,15 +136,25 @@ class TestETRecord(unittest.TestCase):
             )
             etrecord = parse_etrecord(tmpdirname + "/etrecord.bin")
 
-            expected = etrecord._reference_outputs
-            actual = _get_reference_outputs(bundled_program)
+            expected_inputs = etrecord._representative_inputs
+            actual_inputs = _get_representative_inputs(bundled_program)
             # assertEqual() gives "RuntimeError: Boolean value of Tensor with more than one value is ambiguous" when comparing tensors,
             # so we use torch.equal() to compare the tensors one by one.
+            for expected, actual in zip(expected_inputs, actual_inputs):
+                self.assertTrue(torch.equal(expected[0], actual[0]))
+                self.assertTrue(torch.equal(expected[1], actual[1]))
+
+            expected_outputs = etrecord._reference_outputs
+            actual_outputs = _get_reference_outputs(bundled_program)
             self.assertTrue(
-                torch.equal(expected["forward"][0][0], actual["forward"][0][0])
+                torch.equal(
+                    expected_outputs["forward"][0][0], actual_outputs["forward"][0][0]
+                )
             )
             self.assertTrue(
-                torch.equal(expected["forward"][1][0], actual["forward"][1][0])
+                torch.equal(
+                    expected_outputs["forward"][1][0], actual_outputs["forward"][1][0]
+                )
             )
 
     def test_etrecord_generation_with_manager(self):
