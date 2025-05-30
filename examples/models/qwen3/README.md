@@ -88,4 +88,4 @@ cmake-out/examples/models/llama/llama_main
 To run the model on an example iOS or Android app, see the Llama README's [Step 5: Build Mobile apps](../llama/README.md#step-5-build-mobile-apps) section.
 
 ### FAQ
-For more help with exporting or running this model, feel free to ask in our [discord channel](https://lnkd.in/gWCM4ViK).
+For more help with exporting or running this model, feel free to ask in our [discord channel](https://discord.gg/UEjkY9Zs).
