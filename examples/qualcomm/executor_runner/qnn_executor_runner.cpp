@@ -68,6 +68,8 @@ DEFINE_string(
     "debug_output.bin",
     "Path to dump debug outputs to.");
 
+DEFINE_bool(dump_statistics, false, "Dump inference statistics.");
+
 DEFINE_string(
     input_shape_path,
     "",
@@ -242,8 +244,16 @@ int main(int argc, char** argv) {
   // be used by a single thread at at time, but it can be reused.
   //
   ETDumpGen etdump_gen;
+  auto before_load = std::chrono::high_resolution_clock::now();
   Result<Method> method =
       program->load_method(method_name, &memory_manager, &etdump_gen);
+  auto after_load = std::chrono::high_resolution_clock::now();
+  double interval_load =
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          after_load - before_load)
+          .count() /
+      1000.0;
+
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
@@ -497,12 +507,46 @@ int main(int argc, char** argv) {
     ET_LOG(
         Info,
         "Input list not provided. Inputs prepared with default values set.");
+
+    // Inference with designated iterations
+    auto before_exec = std::chrono::high_resolution_clock::now();
     Error status = method->execute();
     ET_CHECK_MSG(
         status == Error::Ok,
         "Execution of method %s failed with status 0x%" PRIx32,
         method_name,
         (int)status);
+    auto after_exec = std::chrono::high_resolution_clock::now();
+    double interval_1st_infs =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            after_exec - before_exec)
+            .count() /
+        1000.0;
+
+    before_exec = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < FLAGS_iteration; ++i) {
+      status = method->execute();
+      ET_CHECK_MSG(
+          status == Error::Ok,
+          "Execution of method %s failed with status 0x%" PRIx32,
+          method_name,
+          (int)status);
+    }
+    after_exec = std::chrono::high_resolution_clock::now();
+    double interval_infs =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            after_exec - before_exec)
+            .count() /
+        1000.0 / FLAGS_iteration;
+
+    if (FLAGS_dump_statistics) {
+      auto output_file_name = "statistics.txt";
+      std::ofstream fout(output_file_name);
+      fout << "load: " + std::to_string(interval_load)
+           << "\n1st: " + std::to_string(interval_1st_infs)
+           << "\navg: " + std::to_string(interval_infs) << std::endl;
+      fout.close();
+    }
     ET_LOG(Info, "Model executed successfully.");
   }
 
