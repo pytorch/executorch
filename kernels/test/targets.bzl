@@ -286,6 +286,7 @@ def define_common_targets():
     _common_op_test("op_pow_test", ["aten", "portable"])
     _common_op_test("op_prod_test", ["aten", "portable"])
     _common_op_test("op_rand_test", ["aten", "portable"])
+    _common_op_test("op_randn_test", ["aten", "portable"])
     _common_op_test("op_reciprocal_test", ["aten", "portable"])
     _common_op_test("op_relu_test", ["aten", "portable"])
     _common_op_test("op_remainder_test", ["aten", "portable"])
