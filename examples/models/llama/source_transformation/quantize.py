@@ -8,15 +8,13 @@ import logging
 import re
 from functools import partial
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from executorch.extension.llm.export.builder import DType
-
-from sentencepiece import SentencePieceProcessor
 
 
 try:
