@@ -15,7 +15,6 @@ KVManager::KVManager(KVManagerMode kv_updater, Metadata metadata)
       metadata_.num_layers, std::vector<KVCache>(metadata_.num_heads));
   v_cache_.resize(
       metadata_.num_layers, std::vector<KVCache>(metadata_.num_heads));
-
   // Calculate cache size
   switch (kv_updater_) {
     case KVManagerMode::SMART_MASK: {

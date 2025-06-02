@@ -9,8 +9,8 @@
 /**
  * @file
  *
- * This tool can run Llama2 110M, Llama3.2 1B / 3B(WIP) with Qualcomm AI Engine
- * Direct.
+ * This tool can run Llama2 110M, Llama3.2 1B / 3B, Qwen2.5 0.5B with Qualcomm
+ * AI Engine Direct.
  *
  */
 
@@ -21,6 +21,7 @@
 #include <fstream>
 #include <vector>
 
+DEFINE_string(decoder_model_version, "llama2", "The decoder model to execute.");
 DEFINE_string(
     model_path,
     "kv_llama_qnn.pte",
@@ -88,13 +89,14 @@ std::vector<std::string> CollectPrompts(int argc, char** argv) {
 std::string get_formatted_prompt(
     const std::string& prompt,
     const std::string& system_prompt,
-    example::LlamaVersion llama_version) {
+    example::DecoderModelVersion decoder_model_version) {
   std::string formatted_prompt;
-  switch (llama_version) {
-    case example::LlamaVersion::kLlama2:
+  switch (decoder_model_version) {
+    case example::DecoderModelVersion::kLlama2:
+    case example::DecoderModelVersion::kQwen2_5:
       formatted_prompt.append(prompt);
       break;
-    case example::LlamaVersion::kLlama3:
+    case example::DecoderModelVersion::kLlama3:
       if (!system_prompt.empty()) {
         formatted_prompt.append(
             "<|start_header_id|>system<|end_header_id|>\n\n");
@@ -118,6 +120,7 @@ int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   // create llama runner
   example::Runner runner(
+      FLAGS_decoder_model_version.c_str(),
       FLAGS_model_path.c_str(),
       FLAGS_tokenizer_path.c_str(),
       FLAGS_performance_output_path.c_str(),
@@ -127,7 +130,7 @@ int main(int argc, char** argv) {
       FLAGS_ngram,
       FLAGS_window,
       FLAGS_gcap);
-  auto llama_version = runner.get_llama_version();
+  auto decoder_model_version = runner.get_decoder_model_version();
   std::vector<char> buf;
   buf.reserve(5 * FLAGS_seq_len); // assume each token is around 5 char
   std::ofstream fout(FLAGS_output_path.c_str());
@@ -141,7 +144,7 @@ int main(int argc, char** argv) {
     for (const auto& prompt : prompts) {
       std::string formatted_prompt;
       formatted_prompt = get_formatted_prompt(
-          prompt, FLAGS_system_prompt, llama_version.get());
+          prompt, FLAGS_system_prompt, decoder_model_version.get());
       runner.generate(formatted_prompt.c_str(), FLAGS_seq_len, callback);
     }
   }

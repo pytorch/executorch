@@ -77,8 +77,8 @@ target_include_directories(
 
 # add tokenizers
 add_subdirectory(
-  ${EXECUTORCH_ROOT}/extension/llm/tokenizers
-  ${CMAKE_CURRENT_BINARY_DIR}/../../extension/llm/tokenizers
+  ${EXECUTORCH_ROOT}/extension/llm/runner
+  ${CMAKE_CURRENT_BINARY_DIR}/../../extension/llm/runner
 )
 
 # build qnn_executor_runner
