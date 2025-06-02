@@ -386,19 +386,14 @@ exclude_patterns = [
     "third-party/**",
     # TODO: remove exceptions as we migrate
     # backends
-    "backends/arm/quantizer/**",
-    "backends/arm/test/ops/**",
     "backends/vulkan/quantizer/**",
     "backends/vulkan/test/**",
-    "backends/qualcomm/quantizer/**",
-    "examples/qualcomm/**",
     "backends/xnnpack/quantizer/**",
     "backends/xnnpack/test/**",
     "exir/tests/test_passes.py",
     "extension/llm/export/builder.py",
     "extension/llm/export/quantizer_lib.py",
     "exir/tests/test_memory_planning.py",
-    "backends/transforms/duplicate_dynamic_quant_chain.py",
     "exir/backend/test/demos/test_xnnpack_qnnpack.py",
 ]
 

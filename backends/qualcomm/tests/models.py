@@ -40,6 +40,15 @@ class Abs(torch.nn.Module):
         return torch.abs(x)
 
 
+class AdaptiveAvgPool1D(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        adaptive_avg_pool = torch.nn.AdaptiveAvgPool1d(1)
+        return adaptive_avg_pool(x)
+
+
 class AdaptiveAvgPool2D(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -138,12 +147,13 @@ class ArgminViewSqueezeConv2D(torch.nn.Module):
 
 
 class AvgPoolModule(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, kernel_size, stride, padding, ceil_mode):
         super().__init__()
         self.avgPool = torch.nn.AvgPool2d(
-            kernel_size=(2, 2),
-            padding=(1, 1),
-            stride=(1, 1),
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            ceil_mode=ceil_mode,
             count_include_pad=False,
         )
 
@@ -1259,6 +1269,14 @@ class Repeat(torch.nn.Module):
         return x.repeat(1, 2, 3, 4)
 
 
+class ReWriteObs(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.nn.functional.relu(x).expand(3, 4)
+
+
 class Reshape(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1347,6 +1365,16 @@ class RmsNorm(torch.nn.Module):
 
     def forward(self, x):
         return self.rms(x)
+
+
+class Roll(torch.nn.Module):
+    def __init__(self, shifts, dims=None):
+        super().__init__()
+        self.shifts = shifts
+        self.dims = dims
+
+    def forward(self, x):
+        return torch.roll(x, shifts=self.shifts, dims=self.dims)
 
 
 class Rsqrt(torch.nn.Module):
@@ -1661,6 +1689,16 @@ class WhereConstantInf(torch.nn.Module):
     def forward(self, x):
         return torch.nn.functional.softmax(
             torch.where(x >= 0, 0.1, float("-inf")), dim=-1
+        )
+
+
+class MaskedFill(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, attn_mask):
+        return attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(
+            attn_mask == 0, float(0.0)
         )
 
 
