@@ -3060,8 +3060,7 @@ class TestQNNQuantizedUtils(TestQNN):
                 )
 
     def test_qnn_backend_rewrite_prepared_observer(self):
-        from torch.ao.quantization import observer
-        from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+        from torchao.quantization.pt2e import FixedQParamsObserver
 
         module = ReWriteObs()  # noqa: F405
         sample_input = (torch.randn([3, 1]),)
@@ -3072,7 +3071,7 @@ class TestQNNQuantizedUtils(TestQNN):
         prepared = prepare_pt2e(module, quantizer)
         prepared(*sample_input)
 
-        new_obs = observer.FixedQParamsObserver(
+        new_obs = FixedQParamsObserver(
             scale=0.004,
             zero_point=0,
             dtype=torch.uint8,
