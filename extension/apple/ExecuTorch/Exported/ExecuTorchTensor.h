@@ -176,7 +176,7 @@ __attribute__((deprecated("This API is experimental.")))
  *   - and the data type.
  */
 - (void)bytesWithHandler:(NS_NOESCAPE void (^)(const void *pointer, NSInteger count, ExecuTorchDataType dataType))handler
-    NS_SWIFT_NAME(bytes(_:));
+    NS_REFINED_FOR_SWIFT;
 
 /**
  * Executes a block with a pointer to the tensor's mutable byte data.
@@ -187,7 +187,7 @@ __attribute__((deprecated("This API is experimental.")))
  *   - and the data type.
  */
 - (void)mutableBytesWithHandler:(NS_NOESCAPE void (^)(void *pointer, NSInteger count, ExecuTorchDataType dataType))handler
-    NS_SWIFT_NAME(mutableBytes(_:));
+    NS_REFINED_FOR_SWIFT;
 
 /**
  * Resizes the tensor to a new shape.
