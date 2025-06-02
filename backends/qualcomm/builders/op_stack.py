@@ -30,7 +30,7 @@ class Stack(NodeVisitor):
         input_node_list = node.args[0]
         stack_input_tensors = []
         for input_node in input_node_list:
-            input_tensor = self.get_tensor(input_node, node)
+            input_tensor = self.get_tensor(self.get_node(input_node), node)
             stack_inp_tensor_wrapper = self.define_tensor(
                 input_node,
                 node,

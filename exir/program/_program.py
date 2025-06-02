@@ -23,7 +23,10 @@ from executorch.exir._serialize._named_data_store import (
 from executorch.exir._serialize._serialize import serialize_for_executorch
 from executorch.exir._serialize.data_serializer import DataSerializer
 from executorch.exir._warnings import experimental
-from executorch.exir.backend.backend_api import to_backend
+from executorch.exir.backend.backend_api import (
+    MethodProgramsPartitionerSpec,
+    to_backend,
+)
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
@@ -1014,6 +1017,13 @@ def _sanity_check_graph_for_non_decomp_ops(
 def _remove_invalid_ops_for_not_decompose(
     ops_to_not_decompose: List[torch._ops.OpOverload],
 ) -> List[torch._ops.OpOverload]:
+    _logged_warnings = set()
+
+    def log_warning(warn_str):
+        if warn_str not in _logged_warnings:
+            logging.warn(warn_str)
+            _logged_warnings.add(warn_str)
+
     # To address https://github.com/pytorch/executorch/issues/8781
     def keep(op):
         # Explicit allow list
@@ -1031,18 +1041,18 @@ def _remove_invalid_ops_for_not_decompose(
         schema = op._schema
         native_schema = _pybind_schema_to_native_schema(schema)
         if native_schema is None:
-            logging.warn(
+            log_warning(
                 f"Torchgen is not able to parse the schema of {op._schema}.  This is not fatal."
             )
         else:
             if native_schema.is_mutable:
-                logging.warn(
+                log_warning(
                     f"Op {op} was requested for preservation by partitioner.  This request is ignored because it is mutable."
                 )
                 return False
 
             if native_schema.aliased_return_names() != [None]:
-                logging.warn(
+                log_warning(
                     f"Op {op} was requested for preservation by partitioner.  This request is ignored because it aliases output."
                 )
                 return False
@@ -1064,7 +1074,7 @@ def _remove_invalid_ops_for_not_decompose(
             torch.ops.aten.unbind.int,
             torch.ops.aten.split_with_sizes.default,
         ]:
-            logging.warn(
+            log_warning(
                 f"Op {op} was requested for preservation by partitioner.  This request is ignored because it is in a blocklist."
             )
             return False
@@ -1239,10 +1249,16 @@ def to_edge_transform_and_lower(
     if transform_passes is not None:
         edge_manager = edge_manager.transform(transform_passes)
 
-    if partitioner is not None:
+    max_num_partitioners = 0
+    for partitioner_list in partitioner.values():
+        max_num_partitioners = max(max_num_partitioners, len(partitioner_list))
+
+    for i in range(max_num_partitioners):
+        method_to_partitioner = {}
         for name, partitioner_list in partitioner.items():
-            for curr_partitioner in partitioner_list:
-                edge_manager = edge_manager.to_backend({name: curr_partitioner})
+            if i < len(partitioner_list):
+                method_to_partitioner[name] = partitioner_list[i]
+        edge_manager = edge_manager.to_backend(method_to_partitioner)
 
     for name, program in edge_manager._edge_programs.items():
         ops_set_to_not_decompose: Set[torch._ops.OpOverload] = set()
@@ -1274,7 +1290,7 @@ def to_edge_transform_and_lower(
 
 @experimental(
     """
-    This is an experimental API which overloads to_edge by preserving specified ops to not be decomposed. 
+    This is an experimental API which overloads to_edge by preserving specified ops to not be decomposed.
     This function will be combined with to_edge in the future.
     """
 )
@@ -1475,7 +1491,8 @@ class EdgeProgramManager:
 
     @et_logger("to_backend")
     def to_backend(
-        self, partitioner: Union[Partitioner, Dict[str, Partitioner]]
+        self,
+        partitioner: Union[Partitioner, Dict[str, Partitioner]],
     ) -> "EdgeProgramManager":
         """
         Returns a semantically-equivalent program to the one given as input,
@@ -1501,17 +1518,18 @@ class EdgeProgramManager:
             specified subgraphs lowered.
         """
         new_edge_programs: Dict[str, ExportedProgram] = {}
-        if isinstance(partitioner, dict):
-            for name, program in self._edge_programs.items():
-                if name in partitioner.keys():
-                    new_edge_programs[name] = to_backend(program, partitioner[name])
-                else:
-                    new_edge_programs[name] = program
+        method_to_partitioner: Dict[str, Partitioner] = {}
+        if not isinstance(partitioner, dict):
+            method_to_partitioner = {name: partitioner for name in self._edge_programs}
+        else:
+            method_to_partitioner = partitioner
 
-        else:  # apply partitioner to every method
-            for name, program in self._edge_programs.items():
-                new_edge_programs[name] = to_backend(program, partitioner)
+        method_to_programs_and_partitioners = MethodProgramsPartitionerSpec(
+            self._edge_programs,
+            method_to_partitioner,
+        )
 
+        new_edge_programs = to_backend(method_to_programs_and_partitioners)
         config = EdgeCompileConfig(_check_ir_validity=False)
         return EdgeProgramManager(
             new_edge_programs,

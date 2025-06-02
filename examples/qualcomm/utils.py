@@ -19,6 +19,7 @@ from typing import Callable, List, Optional, Tuple
 import numpy as np
 
 import torch
+import torchao
 from executorch.backends.qualcomm.quantizer.quantizer import (
     ModuleQConfig,
     QnnQuantizer,
@@ -33,8 +34,8 @@ from executorch.backends.qualcomm.utils.utils import (
 )
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
-from torch.ao.quantization.observer import MovingAverageMinMaxObserver
-from torch.ao.quantization.quantize_pt2e import (
+from torchao.quantization.pt2e import MovingAverageMinMaxObserver
+from torchao.quantization.pt2e.quantize_pt2e import (
     convert_pt2e,
     prepare_pt2e,
     prepare_qat_pt2e,
@@ -58,8 +59,6 @@ class SimpleADB:
         runner (str): Runtime executor binary
         expected_input_shape (Tuple[torch.Size]): input shape of dynamic graph
         expected_output_shape (Tuple[torch.Size]): output shape of dynamic graph
-        expected_input_dtype (Tuple[torch.dtype]): input dtype
-        expected_output_sdtype (Tuple[torch.dtype]): output dtype
     """
 
     def __init__(
@@ -231,7 +230,7 @@ def ptq_calibrate(captured_model, quantizer, dataset):
 
 def qat_train(ori_model, captured_model, quantizer, dataset):
     data, targets = dataset
-    annotated_model = torch.ao.quantization.move_exported_model_to_train(
+    annotated_model = torchao.quantization.pt2e.move_exported_model_to_train(
         prepare_qat_pt2e(captured_model, quantizer)
     )
     optimizer = torch.optim.SGD(annotated_model.parameters(), lr=0.00001)
@@ -240,7 +239,9 @@ def qat_train(ori_model, captured_model, quantizer, dataset):
         print(f"Epoch {i}")
         if i > 3:
             # Freeze quantizer parameters
-            annotated_model.apply(torch.ao.quantization.disable_observer)
+            annotated_model.apply(
+                torchao.quantization.pt2e.fake_quantize.disable_observer
+            )
         if i > 2:
             # Freeze batch norm mean and variance estimates
             annotated_model.apply(torch.nn.intrinsic.qat.freeze_bn_stats)
@@ -251,8 +252,8 @@ def qat_train(ori_model, captured_model, quantizer, dataset):
         loss.backward()
         optimizer.step()
 
-    return torch.ao.quantization.quantize_pt2e.convert_pt2e(
-        torch.ao.quantization.move_exported_model_to_eval(annotated_model)
+    return convert_pt2e(
+        torchao.quantization.pt2e.move_exported_model_to_eval(annotated_model),
     )
 
 

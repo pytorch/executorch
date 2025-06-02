@@ -20,9 +20,9 @@ from executorch.exir._warnings import experimental
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.capture import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.pass_manager import PassType
-from torch.ao.quantization.quantizer import Quantizer
 from torch.export import ExportedProgram
 from torchao.core.config import AOBaseConfig
+from torchao.quantization.pt2e.quantizer import Quantizer
 
 
 class Mode(str, Enum):
@@ -49,17 +49,17 @@ class QuantizationRecipe:
         quantizer: Optional quantizer for model quantization
     """
 
-    quantizer: Optional[Quantizer] = None
+    quantizers: Optional[List[Quantizer]] = None
     ao_base_config: Optional[List[AOBaseConfig]] = None
 
-    def get_quantizer(self) -> Optional[Quantizer]:
+    def get_quantizers(self) -> Optional[Quantizer]:
         """
         Get the quantizer associated with this recipe.
 
         Returns:
             The quantizer if one is set, otherwise None
         """
-        return self.quantizer
+        return self.quantizers
 
 
 @experimental(
@@ -94,10 +94,11 @@ class ExportRecipe:
     )
     pre_edge_transform_passes: Optional[
         Callable[[ExportedProgram], ExportedProgram]
+        | List[Callable[[ExportedProgram], ExportedProgram]]
     ] = None
     edge_transform_passes: Optional[Sequence[PassType]] = None
     transform_check_ir_validity: bool = True
-    partitioners: Optional[list[Partitioner]] = None
+    partitioners: Optional[List[Partitioner]] = None
     executorch_backend_config: Optional[ExecutorchBackendConfig] = (
         None  # pyre-ignore[11]: Type not defined
     )
