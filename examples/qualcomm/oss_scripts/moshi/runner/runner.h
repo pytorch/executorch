@@ -33,7 +33,6 @@ class Runner {
     long decode_end_ms = 0;
   };
 
-  bool is_loaded() const;
   executorch::runtime::Error parse_input_list(std::string& input_list);
   executorch::runtime::Error init_io();
   executorch::runtime::Error prepare_io();

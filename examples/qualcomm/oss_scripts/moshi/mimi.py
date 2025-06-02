@@ -51,10 +51,7 @@ from huggingface_hub import hf_hub_download
 from moshi.models import loaders
 
 from torchao.quantization.pt2e import MinMaxObserver
-from torchao.quantization.pt2e.quantize_pt2e import (
-    convert_pt2e,
-    prepare_pt2e,
-)
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)

@@ -21,6 +21,7 @@ target_link_libraries(
     executorch_core
     extension_module
     extension_data_loader
+    extension_flat_tensor
     gflags
 )
 
