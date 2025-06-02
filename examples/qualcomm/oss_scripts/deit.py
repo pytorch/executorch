@@ -10,7 +10,6 @@ import os
 from multiprocessing.connection import Client
 
 import numpy as np
-import torch
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_capture_program_passes,
 )
@@ -29,7 +28,9 @@ from transformers import AutoConfig, AutoModelForImageClassification
 
 def get_instance():
     module = (
-        AutoModelForImageClassification.from_pretrained("facebook/deit-base-distilled-patch16-224")
+        AutoModelForImageClassification.from_pretrained(
+            "facebook/deit-base-distilled-patch16-224"
+        )
         .eval()
         .to("cpu")
     )
