@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,8 +14,8 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
 
 
-def get_layer_norm_decomposition(op) -> tuple:
-    if op == exir_ops.edge.aten.native_layer_norm.default:
+def get_group_norm_decomposition(op) -> tuple:
+    if op == exir_ops.edge.aten.native_group_norm.default:
         return (
             exir_ops.edge.aten.mean.dim,
             exir_ops.edge.aten.sub.Tensor,
@@ -26,7 +26,7 @@ def get_layer_norm_decomposition(op) -> tuple:
             exir_ops.edge.aten.mul.Tensor,
             exir_ops.edge.aten.view_copy.default,
         )
-    if op == torch.ops.aten.layer_norm.default:
+    if op == torch.ops.aten.group_norm.default:
         return (
             torch.ops.aten.mean.dim,
             torch.ops.aten.sub.Tensor,
@@ -37,13 +37,13 @@ def get_layer_norm_decomposition(op) -> tuple:
             torch.ops.aten.mul.Tensor,
             torch.ops.aten.view_copy.default,
         )
-    raise RuntimeError(f"Can't get layer_norm composition for op {op}")
+    raise RuntimeError(f"Can't get group_norm composition for op {op}")
 
 
-class DecomposeLayerNormPass(ArmPass):
+class DecomposeGroupNormPass(ArmPass):
     """
-    layernorm is defined as: ((x - E[x]) / sqrt(Var[x] + eps)) * weights + bias
-    Decompose layernorm(x, normalized_shape, weights, bias, eps) to a sequence of:
+    groupnorm is defined as: ((x - E[x]) / sqrt(Var[x] + eps)) * weights + bias
+    Decompose groupnorm(x, weight, bias, N, C, HxW, group, eps) to a sequence of:
     mean        = op_mean(x, dims)           # E[x]
     var         = op_var(x, dims)            # Var[x]
     numerator   = op_sub(x, mean)            # (x - E[x])
@@ -52,47 +52,60 @@ class DecomposeLayerNormPass(ArmPass):
     mul         = op_mul(numerator, rsqrt)   # ((x - E[x]) / sqrt(Var[x] + eps))
     weigths     = op_mul(mul, weigths)       # ((x - E[x]) / sqrt(Var[x] + eps)) * weigths
     bias        = op_add(weigths, bias)      # ((x - E[x]) / sqrt(Var[x] + eps)) * weigths + bias
+    where x can viewed with shape [N, group, C//group, HxW] dims=[C//group, HxW]
 
-    Source: https://pytorch.org/docs/stable/generated/torch.nn.LayerNorm.html
+    Source: https://pytorch.org/docs/stable/generated/torch.nn.GroupNorm.html
     """
 
     def call(self, graph_module: torch.fx.GraphModule):
+        modified = False
         for node in graph_module.graph.nodes:
             if node.op != "call_function" or node.target not in (
-                exir_ops.edge.aten.native_layer_norm.default,
-                torch.ops.aten.layer_norm.default,
+                exir_ops.edge.aten.native_group_norm.default,
+                torch.ops.aten.group_norm.default,
             ):
                 continue
 
             # epsilon default value
-            epsilon = torch.finfo().eps
+            eps = torch.finfo().eps
             weights = None
             bias = None
             args = node.args
             meta = node.meta
-            match len(args):
-                case 5:
-                    x, normalized_shape, weights, bias, epsilon = args
-                case 4:
-                    x, normalized_shape, weights, bias = args
-                case 3:
-                    x, normalized_shape, weights = args
-                case _:
-                    x, normalized_shape = args
-
-            n_dims = len(normalized_shape)
             if isinstance(meta["val"], tuple):
                 shape = meta["val"][0].size()
                 dtype = meta["val"][0].dtype
             else:
                 shape = meta["val"].size()
                 dtype = meta["val"].dtype
-            rank = len(shape)
-            dims = list(range(-1, -1 * (n_dims + 1), -1))
-            dims = [dim % rank for dim in dims]
-            weights_reshaped_shape = [shape[i] if i in dims else 1 for i in range(rank)]
-            epsilon_reshaped_shape = [1] * rank
-
+            match len(args):
+                # MI profile always provides all the args: x, weight, bias, N, C, HxW, group, eps
+                case 8:
+                    x, weights, bias, N, C, HxW, group, eps = args
+                # BI profile: affine=[True|False], eps!=1e-5
+                case 5:
+                    x, group, weights, bias, eps = args
+                # BI profile: affine=True, eps=1e-5
+                case 4:
+                    x, group, weights, bias = args
+                # BI profile: affine=False, eps=1e=5
+                case 2:
+                    x, group = args
+                # Unsupported args
+                case _:
+                    raise ValueError(
+                        f"Unsupported group_norm argument pattern with {len(args)} args"
+                    )
+            N = shape[0]
+            C = shape[1]
+            HxW = 1
+            for dim in shape[2:]:
+                HxW *= dim
+            channels_per_group = C // group
+            grouped_shape = torch.Size([N, group, channels_per_group, HxW])
+            dims = [2, 3]
+            epsilon_reshaped_shape = torch.Size([1] * len(grouped_shape))
+            weights_reshaped_shape = torch.Size([1, group, channels_per_group, 1])
             (
                 mean_op,
                 sub_op,
@@ -102,22 +115,30 @@ class DecomposeLayerNormPass(ArmPass):
                 rsqrt_op,
                 mul_op,
                 view_op,
-            ) = get_layer_norm_decomposition(node.target)
+            ) = get_group_norm_decomposition(node.target)
             with graph_module.graph.inserting_before(node):
                 keepdim = True
-                mean = create_node(graph_module.graph, mean_op, args=(x, dims, keepdim))
-                sub = create_node(graph_module.graph, sub_op, args=(x, mean))
+                x_reshaped = create_node(
+                    graph_module.graph,
+                    view_op,
+                    args=(x, grouped_shape),
+                    from_node=node,
+                )
+                mean = create_node(
+                    graph_module.graph, mean_op, args=(x_reshaped, dims, keepdim)
+                )
+                sub = create_node(graph_module.graph, sub_op, args=(x_reshaped, mean))
                 var = create_node(
                     graph_module.graph,
                     var_op,
-                    args=(x, dims),
+                    args=(x_reshaped, dims),
                     kwargs={"correction": 0, "keepdim": keepdim},
                     from_node=node,
                 )
                 full = create_node(
                     graph_module.graph,
                     full_op,
-                    args=(epsilon_reshaped_shape, epsilon),
+                    args=(epsilon_reshaped_shape, eps),
                     kwargs={"dtype": dtype},
                     from_node=node,
                 )
@@ -148,7 +169,6 @@ class DecomposeLayerNormPass(ArmPass):
                     )
                 else:
                     mul1 = mul0
-                output = mul1
                 if bias is not None:
                     bias_reshaped_shape = weights_reshaped_shape
                     bias_reshaped = create_node(
@@ -163,15 +183,26 @@ class DecomposeLayerNormPass(ArmPass):
                         args=(mul1, bias_reshaped),
                         from_node=node,
                     )
+                else:
+                    output = mul1
+
+                output_reshaped = create_node(
+                    graph_module.graph,
+                    view_op,
+                    args=(output, shape),
+                    from_node=node,
+                )
 
                 users = [user for user in node.users if node != user]
-                node.replace_all_uses_with(output)
+                node.replace_all_uses_with(output_reshaped)
                 for user in users:
                     if user.target == operator.getitem:
-                        user.replace_all_uses_with(output)
+                        user.replace_all_uses_with(output_reshaped)
                 graph_module.graph.erase_node(node)
                 graph_module.graph.eliminate_dead_code()
-        graph_module.recompile()
-        graph_module = super().call(graph_module).graph_module
+                modified = True
+        if modified:
+            graph_module.recompile()
+            graph_module = super().call(graph_module).graph_module
 
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)
