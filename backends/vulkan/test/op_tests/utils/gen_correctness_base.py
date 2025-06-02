@@ -282,11 +282,15 @@ at::Tensor make_rand_tensor(
     at::ScalarType dtype = at::kFloat,
     float low = 0.0,
     float high = 1.0) {{
-  if (high == 1.0 && low == 0.0)
-    return at::rand(sizes, at::device(at::kCPU).dtype(dtype));
 
   if (dtype == at::kChar)
     return at::randint(high, sizes, at::device(at::kCPU).dtype(dtype));
+
+  if (dtype == at::kBool)
+    return at::rand(sizes, at::device(at::kCPU)) > 0.5;
+    
+  if (high == 1.0 && low == 0.0)
+    return at::rand(sizes, at::device(at::kCPU).dtype(dtype));
 
   return at::rand(sizes, at::device(at::kCPU).dtype(dtype)) * (high - low) + low;
 }}

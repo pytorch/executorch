@@ -42,12 +42,6 @@ In order to be able to successfully build and run a model using the MPS backend 
 
 ***Step 1.*** Please finish tutorial [Getting Started](getting-started.md).
 
-***Step 2.*** Install dependencies needed to lower MPS delegate:
-
-  ```bash
-  ./backends/apple/mps/install_requirements.sh
-  ```
-
 ## Build
 
 ### AOT (Ahead-of-time) Components
@@ -97,7 +91,7 @@ I 00:00:00.122615 executorch:mps_executor_runner.mm:501] Model verified successf
 ### [Optional] Run the generated model directly using pybind
 1. Make sure `pybind` MPS support was installed:
 ```bash
-./install_executorch.sh --pybind mps
+CMAKE_ARGS="-DEXECUTORCH_BUILD_MPS=ON" ./install_executorch.sh
 ```
 2. Run the `mps_example` script to trace the model and run it directly from python:
 ```bash
