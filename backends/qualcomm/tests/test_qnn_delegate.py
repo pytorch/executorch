@@ -49,6 +49,7 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_qnn_executorch_compiler_spec,
     PyQnnManagerAdaptor,
     QnnPartitioner,
+    rewrite_prepared_observer,
     skip_annotation,
     to_edge_transform_and_lower_to_qnn,
     update_spill_fill_size,
@@ -3057,6 +3058,36 @@ class TestQNNQuantizedUtils(TestQNN):
                     output_encodings=tuple(output_encodings),
                     check_io_shape=True,
                 )
+
+    def test_qnn_backend_rewrite_prepared_observer(self):
+        from torchao.quantization.pt2e import FixedQParamsObserver
+
+        module = ReWriteObs()  # noqa: F405
+        sample_input = (torch.randn([3, 1]),)
+        module = torch.export.export(module, sample_input, strict=True).module()
+
+        quantizer = make_quantizer()
+
+        prepared = prepare_pt2e(module, quantizer)
+        prepared(*sample_input)
+
+        new_obs = FixedQParamsObserver(
+            scale=0.004,
+            zero_point=0,
+            dtype=torch.uint8,
+            quant_min=0,
+            quant_max=255,
+            qscheme=torch.per_tensor_affine,
+        )
+
+        rewrite_prepared_observer(prepared, {"activation_post_process_2": new_obs})
+        self.assertTrue(
+            prepared.activation_post_process_1
+            == prepared.activation_post_process_2
+            == new_obs
+        )
+        quantized_module = convert_pt2e(prepared)
+        self.lower_module_and_test_output(quantized_module, sample_input)
 
     def test_qnn_backend_skip_node_id_partitioner(self):
         module = SimpleModel()  # noqa: F405
