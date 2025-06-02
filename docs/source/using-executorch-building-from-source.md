@@ -64,25 +64,15 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
    ./install_executorch.sh
    ```
 
-   Use the [`--pybind` flag](https://github.com/pytorch/executorch/blob/main/install_executorch.sh#L26-L29) to install with pybindings and dependencies for other backends.
-   ```bash
-   ./install_executorch.sh --pybind <coreml | mps | xnnpack>
+   Not all backends are built into the pip wheel by default. You can link these missing/experimental backends by turning on the corresponding cmake flag. For example, to include the MPS backend:
 
-   # Example: pybindings with CoreML *only*
-   ./install_executorch.sh --pybind coreml
-
-   # Example: pybinds with CoreML *and* XNNPACK
-   ./install_executorch.sh --pybind coreml xnnpack
-   ```
-
-   By default, `./install_executorch.sh` command installs pybindings for XNNPACK. To disable any pybindings altogether:
-   ```bash
-   ./install_executorch.sh --pybind off
-   ```
+  ```bash
+  CMAKE_ARGS="-DEXECUTORCH_BUILD_MPS=ON" ./install_executorch.sh
+  ```
 
    For development mode, run the command with `--editable`, which allows us to modify Python source code and see changes reflected immediately.
    ```bash
-   ./install_executorch.sh --editable [--pybind xnnpack]
+   ./install_executorch.sh --editable
 
    # Or you can directly do the following if dependencies are already installed
    # either via a previous invocation of `./install_executorch.sh` or by explicitly installing requirements via `./install_requirements.sh` first.
@@ -188,14 +178,17 @@ cmake --build cmake-out -j9
 
 ## Use an example binary `executor_runner` to execute a .pte file
 
-First, generate an `add.pte` or other ExecuTorch program file using the
-instructions as described in
-[Preparing a Model](getting-started.md#preparing-the-model).
+First, generate a .pte file, either by exporting an example model or following
+the instructions in [Model Export and Lowering](using-executorch-export.md).
 
+To generate a simple model file, run the following command from the ExecuTorch directory. It
+will create a file named "add.pte" in the current directory.
+```
+python -m examples.portable.scripts.export --model_name="add"
+```
 Then, pass it to the command line tool:
-
 ```bash
-./cmake-out/executor_runner --model_path path/to/model.pte
+./cmake-out/executor_runner --model_path add.pte
 ```
 
 You should see the message "Model executed successfully" followed
