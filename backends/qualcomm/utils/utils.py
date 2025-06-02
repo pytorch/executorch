@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 import operator
 import warnings
-from collections import OrderedDict
+from collections import defaultdict, OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
@@ -1038,3 +1038,53 @@ def tag_quant_io(gm: torch.fx.GraphModule, get_quant_io_dtype_fn: Callable):
     for node in gm.graph.nodes:
         if dtype := get_quant_io_dtype_fn(node):
             node.meta[QCOM_QUANTIZED_IO] = dtype
+
+
+def rewrite_prepared_observer(
+    graph_module: torch.fx.GraphModule, name_obs_dict: Dict[str, torch.nn.Module]
+):
+    """
+    Rewrite the observer of the specified observer module name in the graph_module.
+
+    Example:
+    Consider the following graph_module after prepare_pt2e:
+    gm = prepare_pt2e(gm)
+    print(gm)
+
+    GraphModule(
+      (activation_post_process_0): MinMaxObserver(min_val=inf, max_val=-inf)
+      (activation_post_process_1): MinMaxObserver(min_val=inf, max_val=-inf)
+      (activation_post_process_2): MinMaxObserver(min_val=inf, max_val=-inf)
+      (activation_post_process_3): MinMaxObserver(min_val=inf, max_val=-inf)
+    )
+
+    new_observer = observer.FixedQParamsObserver(
+        scale=0.125,
+        zero_point=42,
+        dtype=torch.uint8,
+        quant_min=0,
+        quant_max=255,
+        qscheme=torch.per_tensor_affine,
+    )
+
+    Calling rewrite_prepared_observer(gm, {"activation_post_process_0": new_observer})
+    is equivalent to:
+    gm.activation_post_process_0 = new_observer
+
+    Note:
+    If the rewritten observer is a SharedQuantizationSpec, all other shared observers will also be rewritten.
+    """
+    module_name_list = defaultdict(list)
+    for name, module in graph_module.named_modules(remove_duplicate=False):
+        module_name_list[module].append(name)
+
+    for name, new_observer in name_obs_dict.items():
+        old_module = getattr(graph_module, name, None)
+
+        if not old_module:
+            print(
+                f"[WARNING], No observer named as {name} found, please check the moudle name"
+            )
+            continue
+        for target_name in module_name_list[old_module]:
+            setattr(graph_module, target_name, new_observer)
