@@ -126,6 +126,7 @@ def main(argv: List[Any]) -> None:
     )
 
     options = parser.parse_args(argv)
+    print("REMOVE_ME: output dir was set to" + str(options.output_dir))
     write_selected_op_variants(options.yaml_file_path, options.output_dir)
 
 
