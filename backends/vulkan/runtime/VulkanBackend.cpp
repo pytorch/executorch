@@ -499,8 +499,6 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     compute_graph->encode_prepack();
     compute_graph->prepack();
 
-    compute_graph->encode_execute();
-
     return Error::Ok;
   }
 
@@ -567,8 +565,18 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       }
     }
 
+    // propagate_resize() will re-encode the command buffer so that push
+    // constants are updated and DynamicDispatchNode can update the compute
+    // shader, global workgroup size, and local workgroup size to perform the
+    // model inference.
     if (should_propagate_resize) {
       compute_graph->propagate_resize();
+    }
+    // If propagate_resize() was not triggered (i.e. command buffer has not been
+    // encoded), then make sure to encode the command buffer before executing
+    // the first inference of the model.
+    else if (compute_graph->execute_count() == 0) {
+      compute_graph->encode_execute();
     }
     compute_graph->execute();
 
