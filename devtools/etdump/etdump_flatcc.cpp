@@ -230,11 +230,12 @@ EventTracerEntry ETDumpGen::start_profiling(
 
 // TODO: Update all occurrences of the ProfileEvent calls once the
 // EventTracerEntry struct is updated.
-EventTracerEntry ETDumpGen::start_profiling_delegate(
+Result<EventTracerEntry> ETDumpGen::start_profiling_delegate(
     const char* name,
     DelegateDebugIntId delegate_debug_index) {
-  ET_CHECK_MSG(
+  ET_CHECK_OR_RETURN_ERROR(
       (name == nullptr) ^ (delegate_debug_index == kUnsetDelegateDebugIntId),
+      InvalidArgument,
       "Only name or delegate_debug_index can be valid. Check DelegateMappingBuilder documentation for more details.");
   check_ready_to_add_events();
   EventTracerEntry prof_entry;
@@ -247,10 +248,10 @@ EventTracerEntry ETDumpGen::start_profiling_delegate(
       ? create_string_entry(name)
       : delegate_debug_index;
   prof_entry.start_time = et_pal_current_ticks();
-  return prof_entry;
+  return Result<EventTracerEntry>(prof_entry);
 }
 
-void ETDumpGen::end_profiling_delegate(
+Result<bool> ETDumpGen::end_profiling_delegate(
     EventTracerEntry event_tracer_entry,
     const void* metadata,
     size_t metadata_len) {
@@ -281,9 +282,10 @@ void ETDumpGen::end_profiling_delegate(
   etdump_RunData_events_push_start(builder_);
   etdump_Event_profile_event_add(builder_, id);
   etdump_RunData_events_push_end(builder_);
+  return Result<bool>(true);
 }
 
-void ETDumpGen::log_profiling_delegate(
+Result<bool> ETDumpGen::log_profiling_delegate(
     const char* name,
     DelegateDebugIntId delegate_debug_index,
     et_timestamp_t start_time,
@@ -313,6 +315,7 @@ void ETDumpGen::log_profiling_delegate(
   etdump_RunData_events_push_start(builder_);
   etdump_Event_profile_event_add(builder_, id);
   etdump_RunData_events_push_end(builder_);
+  return Result<bool>(true);
 }
 
 Result<bool> ETDumpGen::log_intermediate_output_delegate(

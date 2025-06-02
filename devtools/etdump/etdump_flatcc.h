@@ -83,14 +83,15 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
       ::executorch::runtime::DebugHandle debug_handle = 0) override;
   virtual void end_profiling(
       ::executorch::runtime::EventTracerEntry prof_entry) override;
-  virtual ::executorch::runtime::EventTracerEntry start_profiling_delegate(
+  virtual Result<::executorch::runtime::EventTracerEntry>
+  start_profiling_delegate(
       const char* name,
       DelegateDebugIntId delegate_debug_index) override;
-  virtual void end_profiling_delegate(
+  virtual Result<bool> end_profiling_delegate(
       ::executorch::runtime::EventTracerEntry prof_entry,
       const void* metadata,
       size_t metadata_len) override;
-  virtual void log_profiling_delegate(
+  virtual Result<bool> log_profiling_delegate(
       const char* name,
       DelegateDebugIntId delegate_debug_index,
       et_timestamp_t start_time,

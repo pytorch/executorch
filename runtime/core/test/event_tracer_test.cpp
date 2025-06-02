@@ -74,21 +74,22 @@ class DummyEventTracer : public EventTracer {
     return 0;
   }
 
-  EventTracerEntry start_profiling_delegate(
+  Result<EventTracerEntry> start_profiling_delegate(
       const char* name,
       DelegateDebugIntId delegate_debug_id) override {
     (void)name;
     (void)delegate_debug_id;
-    return EventTracerEntry();
+    return Result<EventTracerEntry>(EventTracerEntry());
   }
 
-  void end_profiling_delegate(
+  Result<bool> end_profiling_delegate(
       ET_UNUSED EventTracerEntry event_tracer_entry,
       ET_UNUSED const void* metadata,
       ET_UNUSED size_t metadata_len) override {
     (void)event_tracer_entry;
     (void)metadata;
     (void)metadata_len;
+    return true;
   }
 
   void set_delegation_intermediate_output_filter(
@@ -96,7 +97,7 @@ class DummyEventTracer : public EventTracer {
     (void)event_tracer_filter;
   }
 
-  void log_profiling_delegate(
+  Result<bool> log_profiling_delegate(
       const char* name,
       DelegateDebugIntId delegate_debug_id,
       et_timestamp_t start_time,
@@ -109,6 +110,7 @@ class DummyEventTracer : public EventTracer {
     (void)end_time;
     (void)metadata;
     (void)metadata_len;
+    return true;
   }
 
   virtual Result<bool> log_intermediate_output_delegate(

@@ -89,7 +89,7 @@ To log events in real-time (for example, explicitly denoting the profiling start
 To start an `EventTracerEntry` using `event_tracer_start_profiling_delegate`, the **Delegate Debug Identifier** (provided AOT to the `debug_handle_map`) is passed as either the name or `delegate_debug_id` argument depending on the **Delegate Debug Identifier** type (str and int respectively)
 
 ```c++
-EventTracerEntry event_tracer_start_profiling_delegate(
+Result<EventTracerEntry> event_tracer_start_profiling_delegate(
     EventTracer* event_tracer,
     const char* name,
     DebugHandle delegate_debug_id)
@@ -100,7 +100,7 @@ To conclude an `EventTracerEntry`, `event_tracer_end_profiling_delegate` is simp
 Optionally, additional runtime `metadata` can also be logged at this point.
 
 ```c++
-void event_tracer_end_profiling_delegate(
+Result<bool> event_tracer_end_profiling_delegate(
     EventTracer* event_tracer,
     EventTracerEntry event_tracer_entry,
     const void* metadata = nullptr,
@@ -113,7 +113,7 @@ ExecuTorch also allows you to log in post time. Some runtime settings don't have
 To log events in post (for example, logging start and end time simultaneously) `event_tracer_log_profiling_delegate` is called with a combination of the arguments used in the real-time logging API’s and timestamps.
 
 ```c++
-void event_tracer_log_profiling_delegate(
+Result<bool> event_tracer_log_profiling_delegate(
     EventTracer* event_tracer,
     const char* name,
     DebugHandle delegate_debug_id,
