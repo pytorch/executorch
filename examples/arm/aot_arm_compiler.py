@@ -668,6 +668,8 @@ def save_bpte_program(exec_prog, original_model: torch.nn.Module, output_name: s
         )
 
     # Generate BundledProgram
+    output_dir = os.path.dirname(output_name)
+    os.makedirs(output_dir, exist_ok=True)
     save_bundled_program(exec_prog, method_test_suites, output_name)
 
 
