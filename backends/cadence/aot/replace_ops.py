@@ -939,8 +939,8 @@ class ReplaceConvWithChannelLastConv:
 
 # This pass needs to be reworked to be compatible with PT2. It is an optimization
 # pass anyway, so move it to opt level 2.
-# TODO(matthiascremon): update and improve this pass.
-@register_cadence_pass(CadencePassAttribute(opt_level=2))
+# TODO: T213724613 update and improve this pass.
+# @register_cadence_pass(CadencePassAttribute(opt_level=2))
 class ReplaceConvWithChannelLastConvPass(ExportPass):
     """
     Replace the ATen convolution op with custom conv op with NCHW or NHWC layout

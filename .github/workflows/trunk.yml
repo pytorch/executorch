@@ -305,7 +305,7 @@ jobs:
         # Install requirements
         ${CONDA_RUN} sh install_requirements.sh
         ${CONDA_RUN} sh backends/apple/coreml/scripts/install_requirements.sh
-        ${CONDA_RUN} python install_executorch.py --pybind coreml
+        ${CONDA_RUN} python install_executorch.py
         ${CONDA_RUN} sh examples/models/llama/install_requirements.sh
 
         # Test ANE llama

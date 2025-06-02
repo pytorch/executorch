@@ -4,9 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Calling this script with any argument is equal to launching it in
+# Calling this script with one argument is equal to launching it in
 # non-interactive mode. "$#" gives the number of positional arguments.
-[ "$#" -eq 0 ] && is_script_interactive=1 || is_script_interactive=0
+[ "$#" -eq 1 ] && is_script_interactive=1 || is_script_interactive=0
 
 if [ $is_script_interactive -eq 1 ]; then
     RESET='\e[0m'
