@@ -25,6 +25,8 @@
 #include <pytorch/tokenizers/string_integer_map.h>
 #include <pytorch/tokenizers/tokenizer.h>
 
+#include "re2/re2.h"
+
 namespace tokenizers {
 namespace detail {
 
@@ -102,6 +104,25 @@ static Result<TokenMap> buildTokenMap(
   }
 
   return buildTokenMap(std::move(pairs));
+}
+
+inline Result<std::unique_ptr<IRegex>> build_special_token_regex(
+    const TokenMap& special_token_map) {
+  std::string special_pattern;
+  const std::size_t count = special_token_map.size();
+
+  for (std::size_t i = 0; i < count; ++i) {
+    const auto& [token, _] = special_token_map.getElement(i);
+    if (!special_pattern.empty()) {
+      special_pattern += "|";
+    }
+    special_pattern += re2::RE2::QuoteMeta(std::string(token));
+  }
+
+  if (special_pattern.empty()) {
+    return static_cast<std::unique_ptr<IRegex>>(nullptr);
+  }
+  return create_regex(special_pattern);
 }
 
 class BPETokenizerBase : public Tokenizer {

@@ -69,6 +69,12 @@ Error HFTokenizer::load(const std::string& path) {
         special_tokens,
         [](const auto& it) -> std::string { return it.at("content"); },
         [](const auto& it) -> std::uint64_t { return it.at("id"); }));
+
+    // Create special token regex to help later with encoding.
+    special_token_regex_ =
+        TK_UNWRAP(detail::build_special_token_regex(special_token_map));
+
+    // Store for future use.
     special_token_map_.emplace(std::move(special_token_map));
   } catch (const json::out_of_range& e) {
     fprintf(stderr, "Could not parse special tokens: %s\n", e.what());
@@ -142,8 +148,15 @@ Error HFTokenizer::load(const std::string& path) {
 
     // Pull out the token strings
     try {
-      const std::string bos_token = parsed_config_json.at("bos_token");
-      const std::string eos_token = parsed_config_json.at("eos_token");
+      const std::string bos_token = parsed_config_json.contains("bos_token") &&
+              !parsed_config_json["bos_token"].is_null()
+          ? parsed_config_json["bos_token"].get<std::string>()
+          : "";
+
+      const std::string eos_token = parsed_config_json.contains("eos_token") &&
+              !parsed_config_json["eos_token"].is_null()
+          ? parsed_config_json["eos_token"].get<std::string>()
+          : "";
       const auto bos_res = special_token_map_->tryGetInteger(bos_token);
       const auto eos_res = special_token_map_->tryGetInteger(eos_token);
       if (!bos_res) {

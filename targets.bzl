@@ -77,6 +77,9 @@ def define_common_targets():
         exported_deps = [
             ":headers",
         ],
+        exported_external_deps = [
+            "re2",
+        ],
         visibility = [
             "//pytorch/tokenizers/...",
         ],
