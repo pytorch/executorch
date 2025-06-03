@@ -5291,6 +5291,8 @@ class TestUtilsScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+        if self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
 
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
