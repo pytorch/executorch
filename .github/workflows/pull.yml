@@ -728,3 +728,22 @@ jobs:
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-openvino.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_openvino.sh
+
+  test-windows-install:
+    name: test-windows-install
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: windows.4xlarge
+      # Don't use recursive submodules to avoid long path issues
+      submodules: 'false'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 60
+      job-name: "windows-install-test"
+      script: |
+        # Test installing executorch on windows
+        cmd /c install_executorch.bat --clean
+        cmd /c install_executorch.bat --use-pt-pinned-commit
+        python -c "import executorch; print(f'ExecuTorch version: {executorch.__version__}')"
