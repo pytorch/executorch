@@ -211,6 +211,7 @@ ValueRef prepack_weights(
   vkapi::ShaderInfo shader =
       get_conv2d_shader(graph, *t, /*prepack_weights = */ true, method, vref);
 
+  const auto sizes_pc = utils::make_ivec4(original_sizes, /*reverse = */ true);
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       shader,
@@ -218,11 +219,11 @@ ValueRef prepack_weights(
       graph.create_local_wg_size(v),
       vref,
       v,
-      {t->sizes_ubo(),
-       graph.create_params_buffer(
-           utils::make_ivec4(original_sizes, /*reverse = */ true))},
+      {},
       // Specialization constants
-      {SV(t->packed_dim())}));
+      {SV(t->packed_dim())},
+      {graph.sizes_pc_of(v),
+       PushConstantDataInfo(&sizes_pc, sizeof(sizes_pc))}));
 
   return v;
 }
