@@ -54,10 +54,6 @@ Result<DelegateHandle*> NeuronBackend::init(
 
   new (delegate) NeuronExecuTorchDelegate();
 
-  if (delegate == nullptr) {
-    return nullptr;
-  }
-
   for (auto& compile_spec : compile_specs) {
     if (std::strcmp(compile_spec.key, kHighAddrKey) == 0) {
       setting.mHighAddr = *static_cast<char*>(compile_spec.value.buffer);
@@ -93,7 +89,7 @@ Result<DelegateHandle*> NeuronBackend::init(
         LogError(
             "NeuronBackend",
             "Failed to load shared weights from named_data_map.");
-        return nullptr;
+        return Error::Internal;
       }
     } else {
       LogWarn("NeuronBackend", "unknown compile spec: %s", compile_spec.key);

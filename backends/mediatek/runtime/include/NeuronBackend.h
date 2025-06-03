@@ -79,7 +79,7 @@ class NeuronExecuTorchDelegate {
     void* data_ptr;
     size_t size;
 
-    InputOutputInfo(void* ptr = nullptr, size_t sz = 0)
+    InputOutputInfo(void* ptr, size_t sz)
         : data_ptr(ptr), size(sz) {}
   };
 
