@@ -22,12 +22,13 @@ utils::uvec3 pick_softmax_global_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& extra_args) {
+    const std::vector<ValueRef>& resize_args) {
   (void)shader;
+  (void)resize_args;
 
   const ValueRef out = args.at(0).refs.at(0);
   const int32_t reduce_dim_xyz =
-      graph->extract_scalar<int32_t>(extra_args.at(1));
+      graph->extract_scalar<int32_t>(resize_args.at(1));
 
   utils::uvec3 global_size = graph->logical_limits_of(out);
   global_size[reduce_dim_xyz] = 1;
@@ -39,14 +40,16 @@ utils::uvec3 pick_softmax_local_wg_size(
     const vkapi::ShaderInfo& shader,
     const utils::uvec3& global_workgroup_size,
     const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& extra_args) {
+    const std::vector<ValueRef>& resize_args) {
   (void)shader;
+  (void)global_workgroup_size;
+  (void)args;
 
   const int64_t group_dim_xyz =
-      graph->extract_scalar<int64_t>(extra_args.at(2));
+      graph->extract_scalar<int64_t>(resize_args.at(2));
 
   const int32_t reduce_dim_xyz =
-      graph->extract_scalar<int32_t>(extra_args.at(1));
+      graph->extract_scalar<int32_t>(resize_args.at(1));
 
   // These values are hardcoded in add_softmax_node
   const uint32_t nworkers_per_group = 4;
@@ -62,8 +65,8 @@ utils::uvec3 pick_softmax_local_wg_size(
 void resize_softmax_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& extra_args) {
-  (void)extra_args;
+    const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
   vTensorPtr out = graph->get_tensor(args[0].refs[0]);
   vTensorPtr in = graph->get_tensor(args[1].refs[0]);
 

@@ -29,6 +29,7 @@ utils::uvec3 kv_cache_update_global_wg_size(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)shader;
+  (void)resize_args;
 
   const ValueRef cache = args.at(0).refs.at(0);
   const ValueRef projected = args.at(1).refs.at(0);
@@ -87,6 +88,7 @@ utils::uvec3 attn_weight_scale_and_mask_global_wg_size(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)shader;
+  (void)resize_args;
 
   const ValueRef attn_weight = args.at(0).refs.at(0);
 

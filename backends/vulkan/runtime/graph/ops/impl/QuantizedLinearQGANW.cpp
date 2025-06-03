@@ -84,6 +84,8 @@ vkapi::ShaderInfo pick_linear_qga4w_shader(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
+
   const ValueRef out = args.at(0).refs.at(0);
   const ValueRef mat1 = args.at(1).refs.at(0);
   const ValueRef mat2 = args.at(1).refs.at(1);
@@ -109,6 +111,7 @@ utils::uvec3 linear_qga4w_global_wg_size(
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
 
   const bool use_coop_algorithm =
@@ -130,6 +133,8 @@ utils::uvec3 linear_qga4w_local_wg_size(
     const utils::uvec3& global_workgroup_size,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
+  (void)args;
+  (void)resize_args;
   const bool use_coop_algorithm =
       shader.kernel_name.find("_coop") != std::string::npos;
 

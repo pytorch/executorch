@@ -66,6 +66,7 @@ utils::uvec3 matmul_naive_buffer_global_wg_size(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)shader;
+  (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
   return {
       graph->size_at<uint32_t>(-1, out),
@@ -189,7 +190,7 @@ vkapi::ShaderInfo pick_matmul_optimized_shader(
       : "matmul_optimized";
 
   std::vector<int64_t> mat1_sizes = graph->sizes_of(mat1_W_packed);
-  int mat1_dims = mat1_sizes.size();
+  size_t mat1_dims = mat1_sizes.size();
   if (mat1_dims == 3) {
     kernel_name = "batch_" + kernel_name;
   }
@@ -215,7 +216,7 @@ utils::uvec3 matmul_optimized_global_wg_size(
   const ValueRef mat1_W_packed = resize_args.at(1);
 
   const std::vector<int64_t> mat1_sizes = graph->sizes_of(mat1_W_packed);
-  const int mat1_dims = mat1_sizes.size();
+  const size_t mat1_dims = mat1_sizes.size();
 
   utils::uvec3 global_size = graph->logical_limits_of(out);
   if (mat1_sizes.at(mat1_dims - 2) < 8) {

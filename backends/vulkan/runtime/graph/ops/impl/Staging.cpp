@@ -70,6 +70,7 @@ vkapi::ShaderInfo get_tensor_to_staging_shader(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
   const ValueRef in_tensor = args.at(1).refs.at(0);
   return get_tensor_to_nchw_shader(
       *graph->get_tensor(in_tensor), graph->int8_buffers_enabled());
@@ -80,6 +81,7 @@ utils::uvec3 tensor_to_staging_global_wg_size(
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
   const ValueRef in_tensor = args.at(1).refs.at(0);
   const ValueRef out_staging = args.at(0).refs.at(0);
 
@@ -94,7 +96,8 @@ utils::uvec3 tensor_to_staging_global_wg_size(
   // be the number of elements in the output buffer divided by 4, as opposed to
   // the extents of the input texture.
   if (is_bitw8_shader(shader)) {
-    const uint32_t buffer_len = graph->get_staging(out_staging)->numel() / 4;
+    const uint32_t buffer_len = utils::safe_downcast<uint32_t>(
+        graph->get_staging(out_staging)->numel() / 4);
     global_wg_size = {buffer_len, 1, 1};
   }
 

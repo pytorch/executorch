@@ -54,6 +54,7 @@ utils::uvec3 reduce_local_wg_size(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)shader;
+  (void)args;
   (void)global_workgroup_size;
 
   const int32_t reduce_dim_whcn =
@@ -138,9 +139,10 @@ void add_reduce_node(
 
 #define DEFINE_REDUCE_FN(op_name, out_arg_idx)                           \
   void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
-    const IntListPtr dims_list = graph.get_int_list(args[1]);            \
-    VK_CHECK_COND(dims_list->size() == 1);                               \
-    const int64_t dim_val = dims_list->at(0);                            \
+    const std::vector<int64_t> dims_list =                               \
+        graph.extract_int_or_symint_list(args[1]);                       \
+    VK_CHECK_COND(dims_list.size() == 1);                                \
+    const int64_t dim_val = dims_list.at(0);                             \
     const ValueRef dim_ref = graph.get_or_add_value_for_int(dim_val);    \
     return add_reduce_node(                                              \
         graph, args[0], dim_ref, args[out_arg_idx], #op_name);           \
