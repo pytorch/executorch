@@ -1,4 +1,9 @@
 # ------------------------------------------------------------------------------
+
+# gflags is materialized during build time by cmake. See third-party/CMakeLists.txt.
+def _path(relative_path):
+    return "gflags/gflags-src/{}".format(relative_path)
+
 # Add native rules to configure source files
 # Not tested for building on windows platforms
 def gflags_sources(namespace = ["google", "gflags"]):
@@ -7,7 +12,7 @@ def gflags_sources(namespace = ["google", "gflags"]):
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     native.genrule(
         name = "gflags_declare_h",
-        srcs = ["gflags/src/gflags_declare.h.in"],
+        srcs = [_path("src/gflags_declare.h.in")],
         out = "gflags/gflags_declare.h",
         cmd = (common_preamble + "awk '{ " +
                "gsub(/@GFLAGS_NAMESPACE@/, \"" + namespace[0] + "\"); " +
@@ -22,7 +27,7 @@ def gflags_sources(namespace = ["google", "gflags"]):
         # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
         native.genrule(
             name = gflags_ns_h_file.replace(".", "_"),
-            srcs = ["gflags/src/gflags_ns.h.in"],
+            srcs = [_path("src/gflags_ns.h.in")],
             out = "gflags/" + gflags_ns_h_file,
             cmd = (common_preamble + "awk '{ " +
                    "gsub(/@ns@/, \"" + ns + "\"); " +
@@ -34,7 +39,7 @@ def gflags_sources(namespace = ["google", "gflags"]):
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     native.genrule(
         name = "gflags_h",
-        srcs = ["gflags/src/gflags.h.in"],
+        srcs = [_path("src/gflags.h.in")],
         out = "gflags/gflags.h",
         cmd = (common_preamble + "awk '{ " +
                "gsub(/@GFLAGS_ATTRIBUTE_UNUSED@/, \"\"); " +
@@ -45,15 +50,15 @@ def gflags_sources(namespace = ["google", "gflags"]):
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     native.genrule(
         name = "gflags_completions_h",
-        srcs = ["gflags/src/gflags_completions.h.in"],
+        srcs = [_path("src/gflags_completions.h.in")],
         out = "gflags/gflags_completions.h",
         cmd = common_preamble + "awk '{ gsub(/@GFLAGS_NAMESPACE@/, \"" + namespace[0] + "\"); print; }' $SRCS > $OUT",
     )
     headers = {
-        "config.h": "gflags/src/config.h",
-        "mutex.h": "gflags/src/mutex.h",
-        "util.h": "gflags/src/util.h",
-        "windows_port.h": "gflags/src/windows_port.h",
+        "config.h": _path("src/config.h"),
+        "mutex.h": _path("src/mutex.h"),
+        "util.h": _path("src/util.h"),
+        "windows_port.h": _path("src/windows_port.h"),
     }
     exported_headers = {
         "gflags/gflags.h": ":gflags_h",
@@ -62,9 +67,9 @@ def gflags_sources(namespace = ["google", "gflags"]):
     }
     exported_headers.update({"gflags/" + hdr: ":" + hdr.replace(".", "_") for hdr in gflags_ns_h_files})
     srcs = [
-        "gflags/src/gflags.cc",
-        "gflags/src/gflags_completions.cc",
-        "gflags/src/gflags_reporting.cc",
+        _path("src/gflags.cc"),
+        _path("src/gflags_completions.cc"),
+        _path("src/gflags_reporting.cc"),
     ]
     return [exported_headers, headers, srcs]
 

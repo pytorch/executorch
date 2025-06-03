@@ -21,6 +21,9 @@ ethos-u-scratch/
 executorch.egg-info
 pip-out/
 
+# Dynamically fetched third-party libraries
+third-party/gflags
+
 # Any exported models and profiling outputs
 *.bin
 *.model

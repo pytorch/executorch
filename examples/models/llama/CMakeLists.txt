@@ -70,7 +70,7 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 # For some reason android build is not able to find where gflags is and hence
 # cannot find corresponding .cmake file
-set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags)
+set(gflags_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/gflags/gflags-build)
 find_package(gflags REQUIRED)
 
 #

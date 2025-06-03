@@ -52,8 +52,10 @@ project(executorch)
 
 include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
 include(${PROJECT_SOURCE_DIR}/tools/cmake/Utils.cmake)
+include(${PROJECT_SOURCE_DIR}/tools/cmake/EXECUTORCH_FetchContent_Destination.cmake)
 include(CMakeDependentOption)
 include(ExternalProject)
+include(FetchContent)
 
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -455,14 +457,6 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
 endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/configurations)
-
-#
-# gflags: Commandline flag host library.
-#
-
-if(EXECUTORCH_BUILD_GFLAGS)
-  add_subdirectory(third-party/gflags)
-endif()
 
 # Install `executorch` library as well as `executorch-config.cmake` under
 # ${CMAKE_INSTALL_PREFIX}/

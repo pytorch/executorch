@@ -14,6 +14,15 @@ if(BUILD_TESTING)
   add_subdirectory(googletest)
 endif()
 
+EXECUTORCH_FetchContent_Destination("${CMAKE_CURRENT_SOURCE_DIR}/gflags")
+FetchContent_Declare(
+  gflags
+  GIT_REPOSITORY https://github.com/gflags/gflags.git
+  GIT_TAG v2.2.2
+)
+set(GFLAGS_INTTYPES_FORMAT C99)
+FetchContent_MakeAvailable(gflags)
+
 # MARK: - flatbuffers
 
 if(WIN32)
