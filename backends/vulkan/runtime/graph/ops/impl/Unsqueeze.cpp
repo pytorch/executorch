@@ -16,11 +16,11 @@ namespace vkcompute {
 
 void add_unsqueeze_node(
     ComputeGraph& graph,
-    ValueRef in,
-    ValueRef dim_ref,
-    ValueRef out) {
-  int64_t in_dim = graph.dim_of(in);
-  int64_t out_dim = graph.dim_of(out);
+    const ValueRef in,
+    const ValueRef dim_ref,
+    const ValueRef out) {
+  const int64_t in_dim = graph.dim_of(in);
+  const int64_t out_dim = graph.dim_of(out);
 
   VK_CHECK_COND(
       in_dim < 4, "Cannot unsqueeze a tensor with more than 3 dimensions");
@@ -37,7 +37,7 @@ void add_unsqueeze_node(
     permute_dims[i] = i;
   }
 
-  ValueRef permute_dims_ref =
+  const ValueRef permute_dims_ref =
       graph.add_scalar_list<int64_t>(std::vector<int64_t>(permute_dims));
   add_permute_node(graph, in, permute_dims_ref, out);
 }

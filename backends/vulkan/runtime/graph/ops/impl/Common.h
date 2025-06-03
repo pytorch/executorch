@@ -22,8 +22,9 @@ namespace vkcompute {
  * @param args Vector of ArgGroup containing the output tensor reference
  * @return utils::uvec3 The global workgroup size
  */
-utils::uvec3 default_global_wg_size(
+utils::uvec3 default_pick_global_wg_size(
     ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& additional_args);
 
@@ -36,8 +37,9 @@ utils::uvec3 default_global_wg_size(
  * @param args Vector of ArgGroup containing the output tensor reference
  * @return utils::uvec3 The local workgroup size
  */
-utils::uvec3 default_local_wg_size(
+utils::uvec3 default_pick_local_wg_size(
     ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
     const utils::uvec3& global_workgroup_size,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& additional_args);

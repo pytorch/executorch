@@ -17,14 +17,14 @@ namespace vkcompute {
 
 void add_squeeze_copy_dims_node(
     ComputeGraph& graph,
-    ValueRef in,
-    ValueRef dims_ref,
-    ValueRef out) {
-  int64_t in_dim = graph.dim_of(in);
-  std::vector<int64_t> in_sizes = graph.sizes_of(in);
-  std::vector<int64_t> out_sizes = graph.sizes_of(in);
+    const ValueRef in,
+    const ValueRef dims_ref,
+    const ValueRef out) {
+  const int64_t in_dim = graph.dim_of(in);
+  const std::vector<int64_t> in_sizes = graph.sizes_of(in);
+  const std::vector<int64_t> out_sizes = graph.sizes_of(in);
 
-  std::vector<int64_t> dims = graph.extract_int_or_symint_list(dims_ref);
+  const std::vector<int64_t> dims = graph.extract_int_or_symint_list(dims_ref);
   std::vector<int64_t> squeeze_dims;
   // Filter out edge cases that we don't need squeeze:
   // 1. The size of squeeze dim is larger than 1.
@@ -49,7 +49,7 @@ void add_squeeze_copy_dims_node(
       std::rotate(permute_dims.begin(), it, it + 1);
     }
 
-    ValueRef permute_dims_ref =
+    const ValueRef permute_dims_ref =
         graph.add_scalar_list<int64_t>(std::vector<int64_t>(permute_dims));
     add_permute_node(graph, in, permute_dims_ref, out);
   }
