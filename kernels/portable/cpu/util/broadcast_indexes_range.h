@@ -69,7 +69,8 @@ class BroadcastIndexesIterator {
         sizeof...(args) == kNumInputs && (std::is_same_v<Args, Tensor> && ...),
         "BroadcastIndexesIterator constructor requires kNumInputs input tensor"
         "arguments!");
-    if (support_noncontiguous_tensors || output_dim_or_zero_if_no_broadcasting_ != 0) {
+    if (support_noncontiguous_tensors ||
+        output_dim_or_zero_if_no_broadcasting_ != 0) {
       effective_input_broadcast_strides_ = {
           effective_input_broadcast_stride(output, args)...};
     }
@@ -261,8 +262,8 @@ class BroadcastIndexesIterator {
 template <std::size_t kNumInputs, bool support_noncontiguous_tensors = false>
 class BroadcastIndexesRange {
  public:
-  using iterator =
-      internal::BroadcastIndexesIterator<kNumInputs, support_noncontiguous_tensors>;
+  using iterator = internal::
+      BroadcastIndexesIterator<kNumInputs, support_noncontiguous_tensors>;
 
   template <typename... Args>
   BroadcastIndexesRange(const Tensor& output, const Args&... args)

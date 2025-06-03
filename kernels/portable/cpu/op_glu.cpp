@@ -41,7 +41,10 @@ Tensor& glu_out_tensor(
     Tensor& out) {
   const auto self_size = self.size(dim);
   ET_KERNEL_CHECK(
-      ctx, self.dim() <= kTensorDimensionLimit, InvalidArgument, out);
+      ctx,
+      self.dim() <= static_cast<ssize_t>(kTensorDimensionLimit),
+      InvalidArgument,
+      out);
   std::array<executorch::aten::SizesType, kTensorDimensionLimit> half_sizes;
   std::copy(self.sizes().begin(), self.sizes().end(), half_sizes.begin());
   half_sizes[dim] /= 2;
@@ -74,7 +77,7 @@ Tensor& glu_out_tensor(
     utils::apply_bitensor_elementwise_fn<
         CTYPE_COMPUTE,
         op_name,
-      utils::SupportedTensorDtypes::FLOATHBF16>(
+        utils::SupportedTensorDtypes::FLOATHBF16>(
         [](const auto val_a, const auto val_b) -> CTYPE_COMPUTE {
           // TODO: rewrite this to be vectorization-capable.
           const auto one = static_cast<decltype(val_a)>(1.0);
