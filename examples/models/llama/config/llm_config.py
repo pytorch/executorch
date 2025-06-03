@@ -218,7 +218,7 @@ class CoreMLConfig:
     enable_state: bool = False
     preserve_sdpa: bool = False
     quantize: Optional[CoreMLQuantize] = None
-    ios: Literal[15, 16, 17, 18] = 15
+    ios: int = 15
     compute_units: CoreMLComputeUnit = CoreMLComputeUnit.CPU_ONLY
 
     def __post_init__(self):
