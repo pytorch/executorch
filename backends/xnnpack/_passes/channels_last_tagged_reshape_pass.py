@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from enum import Enum
 from typing import Optional, Tuple
 
 import torch
@@ -12,6 +13,11 @@ from executorch.backends.xnnpack.utils.quant_utils import is_dynamic_qdq
 from executorch.backends.xnnpack.utils.utils import is_param_node
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
+
+
+class InputDimOrder(Enum):
+    NCHW = 1
+    NHWC = 2
 
 
 # TODO(T151254305) use subgraph_rewriter
@@ -84,11 +90,19 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
     def mark_as_nchw_node(self, node: torch.fx.Node) -> None:
         node.meta[ChannelsLastTaggedReshapePass.XNN_NHWC_NODE] = False
 
-    def is_nhwc_node(self, node: torch.fx.Node) -> bool:
+    def tag_node(self, node: torch.fx.Node) -> None:
+        if node.kwargs["memory_format"] == torch.channels_last:
+            self.mark_as_nhwc_node(node)
+        else:
+            self.mark_as_nchw_node(node)
+
+    @staticmethod
+    def is_nhwc_node(node: torch.fx.Node) -> bool:
         return node.meta.get(ChannelsLastTaggedReshapePass.XNN_NHWC_NODE, False)
 
-    def is_nchw_node(self, node: torch.fx.Node) -> bool:
-        return not self.is_nhwc_node(node)
+    @staticmethod
+    def is_nchw_node(node: torch.fx.Node) -> bool:
+        return not ChannelsLastTaggedReshapePass.is_nhwc_node(node)
 
     def requires_nhwc_input(self, node: torch.fx.Node) -> bool:
         return node.target in self.memory_sensitive_ops_nhwc
@@ -106,7 +120,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         is_nchw_constant = (
             is_param_node(self.exported_program, node)
             and (ChannelsLastTaggedReshapePass.XNN_NHWC_NODE in node.meta)
-            and (self.is_nchw_node(node))
+            and (ChannelsLastTaggedReshapePass.is_nchw_node(node))
         )
         return is_4d and not is_nchw_constant
 
@@ -249,6 +263,22 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             # in that case
             self.make_partners(original_input, copy_node)
 
+    def input_dim_order(
+        self, input_node: torch.fx.Node, input_order: InputDimOrder
+    ) -> bool:
+        if input_node.op == "placeholder":
+            return (
+                input_node.meta["val"].is_contiguous()
+                if input_order == InputDimOrder.NCHW
+                else not input_node.meta["val"].is_contiguous()
+            )
+        else:
+            return (
+                ChannelsLastTaggedReshapePass.is_nchw_node(input_node)
+                if input_order == InputDimOrder.NCHW
+                else ChannelsLastTaggedReshapePass.is_nhwc_node(input_node)
+            )
+
     def input_to_nhwc(
         self,
         graph_module: torch.fx.GraphModule,
@@ -258,7 +288,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         if is_param_node(self.exported_program, input_node):
             if (
                 ChannelsLastTaggedReshapePass.XNN_NHWC_NODE in input_node.meta
-                and self.is_nchw_node(input_node)
+                and ChannelsLastTaggedReshapePass.is_nchw_node(input_node)
             ):
                 # This constant data tensor has been used somewhere else
                 # in NCHW format so we can't use it here in NHWC format
@@ -273,6 +303,9 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             if not input_node.meta["val"][0].is_contiguous():
                 return
         elif self.is_nhwc_node(input_node):
+            return
+
+        if self.input_dim_order(input_node, InputDimOrder.NHWC):
             return
 
         if not self.can_be_converted_to_nhwc(input_node):
@@ -302,6 +335,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                     args=(input_node,),
                     memory_format=torch.channels_last,
                 )
+                self.mark_as_nhwc_node(input_node_nhwc)
 
             if is_dynamic_input:
                 # Replace downstream input_nodes with NHWC node
@@ -324,7 +358,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         if is_param_node(self.exported_program, input_node):
             if (
                 ChannelsLastTaggedReshapePass.XNN_NHWC_NODE in input_node.meta
-                and self.is_nhwc_node(input_node)
+                and ChannelsLastTaggedReshapePass.is_nhwc_node(input_node)
             ):
                 # This constant data tensor has been used somewhere else
                 # in NHWC format so we can't use it here in NCHW format
@@ -342,6 +376,9 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         elif self.is_nchw_node(input_node):
             return
 
+        if self.input_dim_order(input_node, InputDimOrder.NCHW):
+            return
+
         if ChannelsLastTaggedReshapePass.PARTNER_NODE in input_node.meta:
             # Already has an associated NCHW node
             input_node_nchw = input_node.meta[
@@ -356,6 +393,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                     args=(input_node,),
                     memory_format=torch.contiguous_format,
                 )
+                self.mark_as_nchw_node(input_node_nchw)
 
         self.insert_copy_and_assign_partner_nodes_quantization_sensitive(
             graph_module=graph_module,
@@ -383,10 +421,12 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             elif self.requires_nhwc_input(node):
                 # Nodes which enter this branch are ones that require their
                 # first input to be nhwc. This makes this node's output nhwc too
-
                 self.input_to_nhwc(graph_module, node.args[0], node)
-                for input_node in node.all_input_nodes:
-                    if input_node.op == "placeholder" and self.is_nhwc_node(input_node):
+                for input_node in node.all_input_nodes[1:]:
+                    if (
+                        input_node.op == "placeholder"
+                        and ChannelsLastTaggedReshapePass.is_nhwc_node(input_node)
+                    ):
                         raise AssertionError(
                             f"Expected {input_node} to be NCHW in channels last reshape pass"
                         )
@@ -396,15 +436,13 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 for input_node in node.all_input_nodes:
                     self.input_to_nchw(graph_module, input_node, node)
             elif node.target == exir_ops.edge.aten._to_copy.default:
-                if node.kwargs["memory_format"] == torch.channels_last:
-                    self.mark_as_nhwc_node(node)
-                else:
-                    self.mark_as_nchw_node(node)
+                self.tag_node(node)
             else:
                 # The node can have inputs in any format (but all must be the
                 # same format)
                 is_or_isnt_nhwc_node = [
-                    self.is_nhwc_node(input_node) for input_node in node.all_input_nodes
+                    ChannelsLastTaggedReshapePass.is_nhwc_node(input_node)
+                    for input_node in node.all_input_nodes
                 ]
                 if all(is_or_isnt_nhwc_node):
                     # All inputs are nhwc so this node's output is nhwc too
