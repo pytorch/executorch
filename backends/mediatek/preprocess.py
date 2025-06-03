@@ -146,7 +146,6 @@ class NeuropilotBackend(BackendDetails):
         infos_dict = collections.defaultdict(list)
         models_dict = collections.defaultdict(list)
         result_dict = collections.defaultdict(list)
-        preprocess_result_list = []
         for method_name, method_results in preprocess_results.items():
             for idx, result in enumerate(method_results):
                 shared_blob_key = None
@@ -168,12 +167,7 @@ class NeuropilotBackend(BackendDetails):
         data_store_output_dict = dict()
         for key, models in models_dict.items():
             ndm = NamedDataStore()
-            print('------------------')
-            print(key)
-            print('Original DLA sizes: {}'.format([len(model) for model in models]))
             blob, new_models = mtk_neuron.extract_shared_data(models, options='-e union')
-            print('Extracted data size: {}'.format(len(blob)))
-            print('New DLA sizes: {}'.format([len(model) for model in new_models]))
             ndm.add_named_data(key, bytes(blob))
             data_store_output_dict[key] = ndm.get_named_data_store_output()
             models.clear()
