@@ -14,8 +14,7 @@ namespace vkcompute {
 
 vkapi::ShaderInfo get_nchw_to_tensor_shader(
     const api::vTensor& v_dst,
-    bool int8_buffer_enabled = true,
-    bool push_constant_variant = true);
+    bool int8_buffer_enabled = true);
 vkapi::ShaderInfo get_tensor_to_nchw_shader(
     const api::vTensor& v_src,
     bool int8_buffer_enabled = true);

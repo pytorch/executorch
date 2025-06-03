@@ -1,5 +1,5 @@
 # flake8: noqa: F403, F401
-from .types import *
+from executorch.codegen.api.types.types import *
 
 # flake8: noqa: F403, F401
-from .signatures import *  # usort: skip
+from executorch.codegen.api.types.signatures import *  # usort: skip

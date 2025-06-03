@@ -2,6 +2,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from executorch.codegen.api.types import (
+    ArrayRefCType,
+    BaseTypeToCppMapping,
+    OptionalCType,
+    scalarT,
+    tensorListT,
+    tensorT,
+)
+
 from torchgen import local
 from torchgen.api.types import (
     ArgName,
@@ -30,15 +39,6 @@ from torchgen.model import (
     Type,
 )
 from typing_extensions import assert_never
-
-from .types import (
-    ArrayRefCType,
-    BaseTypeToCppMapping,
-    OptionalCType,
-    scalarT,
-    tensorListT,
-    tensorT,
-)
 
 
 if TYPE_CHECKING:

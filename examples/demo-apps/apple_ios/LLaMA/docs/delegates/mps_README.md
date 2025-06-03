@@ -36,6 +36,7 @@ Install dependencies
 
 ```
 ./install_executorch.sh
+./backends/apple/mps/install_requirements.sh
 ```
 
 ## Prepare Models

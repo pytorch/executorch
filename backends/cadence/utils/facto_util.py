@@ -20,8 +20,8 @@ from facto.specdb.db import SpecDictDB
 MAX_CASES = 50
 
 
-def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
-    tensor_constraints = [
+def apply_tensor_contraints(op_name: str, tensor_constraints: list[object]) -> None:
+    additional_tensor_constraints = [
         cp.Dtype.In(lambda deps: [torch.int, torch.float]),
         cp.Dtype.NotIn(lambda deps: [torch.int64, torch.float64]),
         cp.Value.Ge(lambda deps, dtype, struct: -(2**4)),
@@ -33,28 +33,17 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
 
     match op_name:
         case "where.self":
-            if index == 0:  # condition
-                tensor_constraints = [
-                    cp.Dtype.In(lambda deps: [torch.bool]),
-                    cp.Dtype.NotIn(lambda deps: [torch.int64, torch.float64]),
-                    cp.Value.Ge(lambda deps, dtype, struct: -(2**4)),
-                    cp.Value.Le(lambda deps, dtype, struct: 2**4),
-                    cp.Rank.Ge(lambda deps: 1),
-                    cp.Size.Ge(lambda deps, r, d: 1),
-                    cp.Size.Le(lambda deps, r, d: 2**9),
-                ]
-            else:
-                tensor_constraints = [
-                    cp.Dtype.In(lambda deps: [torch.float, torch.int]),
-                    cp.Dtype.NotIn(lambda deps: [torch.int64, torch.float64]),
-                    cp.Value.Ge(lambda deps, dtype, struct: -(2**4)),
-                    cp.Value.Le(lambda deps, dtype, struct: 2**4),
-                    cp.Rank.Ge(lambda deps: 1),
-                    cp.Size.Ge(lambda deps, r, d: 1),
-                    cp.Size.Le(lambda deps, r, d: 2**9),
-                ]
+            additional_tensor_constraints = [
+                cp.Dtype.In(lambda deps: [torch.float, torch.int, torch.bool]),
+                cp.Dtype.NotIn(lambda deps: [torch.int64, torch.float64]),
+                cp.Value.Ge(lambda deps, dtype, struct: -(2**4)),
+                cp.Value.Le(lambda deps, dtype, struct: 2**4),
+                cp.Rank.Ge(lambda deps: 1),
+                cp.Size.Ge(lambda deps, r, d: 1),
+                cp.Size.Le(lambda deps, r, d: 2**9),
+            ]
         case "sigmoid.default":
-            tensor_constraints.extend(
+            additional_tensor_constraints.extend(
                 [
                     cp.Dtype.In(lambda deps: [torch.float]),
                     cp.Rank.Le(lambda deps: 2**2),
@@ -63,7 +52,7 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                 ]
             )
         case "rsqrt.default":
-            tensor_constraints.extend(
+            additional_tensor_constraints.extend(
                 [
                     cp.Dtype.In(lambda deps: [torch.float]),
                     cp.Rank.Le(lambda deps: 2**2),
@@ -74,14 +63,14 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                 ]
             )
         case "mean.dim":
-            tensor_constraints.extend(
+            additional_tensor_constraints.extend(
                 [
                     cp.Dtype.In(lambda deps: [torch.float]),
                     cp.Rank.Le(lambda deps: 2**2),
                 ]
             )
         case "exp.default":
-            tensor_constraints.extend(
+            additional_tensor_constraints.extend(
                 [
                     cp.Rank.Le(lambda deps: 2**3),
                     cp.Value.Ge(lambda deps, dtype, struct: -(2**2)),
@@ -89,7 +78,7 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                 ]
             )
         case "slice_copy.Tensor":
-            tensor_constraints.extend(
+            additional_tensor_constraints.extend(
                 [
                     cp.Rank.Le(lambda deps: 2),
                     cp.Value.Ge(lambda deps, dtype, struct: 1),
@@ -97,12 +86,12 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                 ]
             )
         case _:
-            tensor_constraints.extend(
+            additional_tensor_constraints.extend(
                 [
                     cp.Rank.Le(lambda deps: 2**2),
                 ]
             )
-    return tensor_constraints
+    tensor_constraints.extend(additional_tensor_constraints)
 
 
 def apply_scalar_contraints(op_name: str) -> list[ScalarDtype]:
@@ -118,6 +107,9 @@ def apply_scalar_contraints(op_name: str) -> list[ScalarDtype]:
 def facto_testcase_gen(op_name: str) -> List[Tuple[List[str], OrderedDict[str, str]]]:
     # minimal example to test add.Tensor using FACTO
     spec = SpecDictDB[op_name]
+    tensor_constraints = []
+    # common tensor constraints
+    apply_tensor_contraints(op_name, tensor_constraints)
 
     for index, in_spec in enumerate(copy.deepcopy(spec.inspec)):
         if in_spec.type.is_scalar():
@@ -150,9 +142,7 @@ def facto_testcase_gen(op_name: str) -> List[Tuple[List[str], OrderedDict[str, s
                 ]
             )
         elif in_spec.type.is_tensor():
-            spec.inspec[index].constraints.extend(
-                apply_tensor_contraints(op_name, index)
-            )
+            spec.inspec[index].constraints.extend(tensor_constraints)
         elif in_spec.type.is_dim_list():
             spec.inspec[index].constraints.extend(
                 [

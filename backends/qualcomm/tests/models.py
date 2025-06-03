@@ -147,13 +147,12 @@ class ArgminViewSqueezeConv2D(torch.nn.Module):
 
 
 class AvgPoolModule(torch.nn.Module):
-    def __init__(self, kernel_size, stride, padding, ceil_mode):
+    def __init__(self):
         super().__init__()
         self.avgPool = torch.nn.AvgPool2d(
-            kernel_size=kernel_size,
-            stride=stride,
-            padding=padding,
-            ceil_mode=ceil_mode,
+            kernel_size=(2, 2),
+            padding=(1, 1),
+            stride=(1, 1),
             count_include_pad=False,
         )
 
@@ -1267,14 +1266,6 @@ class Repeat(torch.nn.Module):
 
     def forward(self, x):
         return x.repeat(1, 2, 3, 4)
-
-
-class ReWriteObs(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x):
-        return torch.nn.functional.relu(x).expand(3, 4)
 
 
 class Reshape(torch.nn.Module):

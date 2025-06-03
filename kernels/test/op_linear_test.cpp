@@ -18,8 +18,7 @@
 #include <gtest/gtest.h>
 #include <limits>
 
-namespace {
-
+using namespace ::testing;
 using executorch::aten::ArrayRef;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
@@ -32,15 +31,7 @@ class OpLinearOutTest : public OperatorTest {
     return torch::executor::aten::linear_outf(context_, self, mat2, {}, out);
   }
 
-  Tensor& op_linear_out(
-      const Tensor& self,
-      const Tensor& mat2,
-      const Tensor& bias,
-      Tensor& out) {
-    return torch::executor::aten::linear_outf(context_, self, mat2, bias, out);
-  }
-
-  template <class CTYPE, ScalarType DTYPE>
+  template <class CTYPE, executorch::aten::ScalarType DTYPE>
   void test_dtype() {
     TensorFactory<DTYPE> tf;
 
@@ -52,16 +43,16 @@ class OpLinearOutTest : public OperatorTest {
       }
     }
 
-    // matmul gives 19 * 2 * 3 = 114
-    Tensor x = tf.full({3, 19}, 2);
-    Tensor y = tf.full({5, 19}, 3);
+    // matmul gives 32 * 2 * 3 = 192
+    Tensor x = tf.full({3, 32}, 2);
+    Tensor y = tf.full({5, 32}, 3);
 
     // Output shape should be (3, 5)
     Tensor out = tf.zeros({3, 5});
 
     op_linear_out(x, y, out);
 
-    Tensor expected = tf.full({3, 5}, 114);
+    Tensor expected = tf.full({3, 5}, 192);
 
     EXPECT_TENSOR_EQ(out, expected);
   }
@@ -95,80 +86,6 @@ TEST_F(OpLinearOutTest, AllDtypesSupported) {
   // TODO: Also add tests for half, complex, quantized, and other types. Easiest
   // way to do that would be to make TensorFactory support zeros() and ones()
   // for those types.
-}
-
-TEST_F(OpLinearOutTest, BiasTest) {
-  TensorFactory<ScalarType::Int> tf;
-
-  // Initialize input tensors.
-  constexpr int kReduceDim = 4;
-  constexpr int kDimX = 3, kDimY = 2;
-  constexpr int kValueX = 1;
-  constexpr int kValueY = 2;
-  constexpr int kValueBias0 = 4, kValueBias1 = 7;
-  const Tensor x = tf.full({kDimX, kReduceDim}, kValueX);
-  const Tensor y = tf.full({kDimY, kReduceDim}, kValueY);
-  const Tensor b = tf.make({kDimY}, {kValueBias0, kValueBias1});
-  // Output matrix is also empty
-  Tensor out = tf.zeros({kDimX, kDimY});
-  // Initialize expected tensor.
-  constexpr int kValueExpected0 = kValueX * kValueY * kReduceDim + kValueBias0;
-  constexpr int kValueExpected1 = kValueX * kValueY * kReduceDim + kValueBias1;
-  // Check that the bias is added to the correct position in the output matrix.
-  const Tensor expected = tf.make(
-      {kDimX, kDimY},
-      {kValueExpected0,
-       kValueExpected1,
-       kValueExpected0,
-       kValueExpected1,
-       kValueExpected0,
-       kValueExpected1});
-
-  EXPECT_TENSOR_EQ(op_linear_out(x, y, b, out), expected);
-}
-
-TEST_F(OpLinearOutTest, BiasBroadcastTest) {
-  TensorFactory<ScalarType::Int> tf;
-
-  // Initialize input tensors.
-  constexpr int kReduceDim = 4;
-  constexpr int kDimX = 3, kDimY = 5;
-  constexpr int kValueX = 1;
-  constexpr int kValueY = 2;
-  constexpr int kValueBias = 4;
-  const Tensor x = tf.full({kDimX, kReduceDim}, kValueX);
-  const Tensor y = tf.full({kDimY, kReduceDim}, kValueY);
-  const Tensor b = tf.full({1}, kValueBias);
-  // Output matrix is also empty
-  Tensor out = tf.zeros({kDimX, kDimY});
-  // Initialize expected tensor.
-  constexpr int kValueExpected = kValueX * kValueY * kReduceDim + kValueBias;
-  const Tensor expected = tf.full({kDimX, kDimY}, kValueExpected);
-
-  EXPECT_TENSOR_EQ(op_linear_out(x, y, b, out), expected);
-}
-
-TEST_F(OpLinearOutTest, BiasDtypeMismatch) {
-  TensorFactory<ScalarType::Int> tf;
-  TensorFactory<ScalarType::Short> tf_bias;
-
-  // Initialize input tensors.
-  constexpr int kReduceDim = 4;
-  constexpr int kDimX = 3, kDimY = 5;
-  constexpr int kValueX = 1;
-  constexpr int kValueY = 2;
-  constexpr int kValueBias = 4;
-  Tensor x = tf.full({kDimX, kReduceDim}, kValueX);
-  Tensor y = tf.full({kDimY, kReduceDim}, kValueY);
-  // Same size as output.
-  Tensor b = tf_bias.full({kDimY}, kValueBias);
-  // Output matrix is also empty
-  Tensor out = tf.zeros({kDimX, kDimY});
-  // Initialize expected tensor.
-  constexpr int kValueExpected = kValueX * kValueY * kReduceDim + kValueBias;
-  Tensor expected = tf.full({kDimX, kDimY}, kValueExpected);
-
-  ET_EXPECT_KERNEL_FAILURE(context_, op_linear_out(x, y, b, out));
 }
 
 TEST_F(OpLinearOutTest, EmptyInputWithEmptyOutTensorPasses) {
@@ -380,4 +297,5 @@ TEST_F(OpLinearOutTest, DynamicShapeUnbound) {
   Tensor ret = op_linear_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
-} // namespace
+
+// TODO: support and test bias

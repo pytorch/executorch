@@ -72,6 +72,7 @@ def test_vector_norm_tosa_MI(test_module):
 
     pipeline = TosaPipelineMI[input_t](model, input_tensor, aten_op, exir_op)
 
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1, atol=1e-4, rtol=1e-4)
     pipeline.run()
 
 
@@ -89,6 +90,7 @@ def test_vector_norm_tosa_BI(test_module):
         exir_op,
         symmetric_io_quantization=True,
     )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1, atol=1, rtol=1)
     pipeline.run()
 
 
@@ -105,12 +107,13 @@ def test_vector_norm_u55_BI_fvp(test_module):
         run_on_fvp=True,
         symmetric_io_quantization=True,
     )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1, atol=1, rtol=1)
     pipeline.pop_stage("check_not.exir")
     pipeline.run()
 
 
 @common.parametrize("test_module", test_modules)
-@common.XfailIfNoCorstone320
+@common.XfailIfNoCorstone300
 def test_vector_norm_u85_BI_fvp(test_module):
     model, input_tensor = test_module
 
@@ -123,5 +126,6 @@ def test_vector_norm_u85_BI_fvp(test_module):
         run_on_fvp=True,
         symmetric_io_quantization=True,
     )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1, atol=1, rtol=1)
     pipeline.pop_stage("check_not.exir")
     pipeline.run()

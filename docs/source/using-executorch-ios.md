@@ -11,7 +11,8 @@ The ExecuTorch Runtime for iOS and macOS is distributed as a collection of prebu
 * `backend_mps` - MPS backend
 * `backend_xnnpack` - XNNPACK backend
 * `kernels_custom` - Custom kernels for LLMs
-* `kernels_optimized` - Accelerated generic CPU kernels
+* `kernels_optimized` - Optimized kernels
+* `kernels_portable` - Portable kernels (naive implementation used as a reference)
 * `kernels_quantized` - Quantized kernels
 
 Link your binary with the ExecuTorch runtime and any backends or kernels used by the exported ML model. It is recommended to link the core runtime to the components that use ExecuTorch directly, and link kernels and backends against the main app target.
@@ -50,7 +51,7 @@ let package = Package(
   name: "YourPackageName",
   platforms: [
     .iOS(.v17),
-    .macOS(.v12),
+    .macOS(.v10_15),
   ],
   products: [
     .library(name: "YourPackageName", targets: ["YourTargetName"]),
@@ -65,7 +66,7 @@ let package = Package(
       dependencies: [
         .product(name: "executorch", package: "executorch"),
         .product(name: "backend_xnnpack", package: "executorch"),
-        .product(name: "kernels_optimized", package: "executorch"),
+        .product(name: "kernels_portable", package: "executorch"),
         // Add other backends and kernels as needed.
       ]),
   ]
@@ -112,6 +113,9 @@ python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 
 # CoreML-only requirements:
 ./backends/apple/coreml/scripts/install_requirements.sh
+
+# MPS-only requirements:
+./backends/apple/mps/install_requirements.sh
 ```
 
 5. Install [CMake](https://cmake.org):

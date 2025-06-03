@@ -939,8 +939,8 @@ class ReplaceConvWithChannelLastConv:
 
 # This pass needs to be reworked to be compatible with PT2. It is an optimization
 # pass anyway, so move it to opt level 2.
-# TODO: T213724613 update and improve this pass.
-# @register_cadence_pass(CadencePassAttribute(opt_level=2))
+# TODO(matthiascremon): update and improve this pass.
+@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class ReplaceConvWithChannelLastConvPass(ExportPass):
     """
     Replace the ATen convolution op with custom conv op with NCHW or NHWC layout
@@ -2065,10 +2065,11 @@ class ReplaceWhereWithFullArgsWithWhereScalar(ExportPass):
         return super().call_operator(op, args, kwargs, meta)
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
-class ReplaceAtenApproxGeluWithApproxGeluPass(ExportPass):
+@register_cadence_pass(CadencePassAttribute(opt_level=2))
+class ReplaceGeluWithApproximateGeluPass(ExportPass):
     """
-    Replace the aten gelu op with an approximate arg with an approximate gelu op.
+    Replace the gelu op with an approximate gelu op. The approximate gelu op
+    is more efficient on DSP backends.
     """
 
     def call_operator(
@@ -2078,9 +2079,6 @@ class ReplaceAtenApproxGeluWithApproxGeluPass(ExportPass):
         kwargs: Dict[str, Argument],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        if "approximate" not in kwargs:
-            return super().call_operator(op, args, kwargs, meta)
-
         if op not in {
             exir_ops.edge.aten.gelu.default,
         }:
@@ -2416,7 +2414,7 @@ class CadenceReplaceOpsInGraph:
         ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass,
         ReplaceAtenAvgPoolWithJarvisAvgPoolPass,
         ReplaceWhereWithFullArgsWithWhereScalar,
-        ReplaceAtenApproxGeluWithApproxGeluPass,
+        ReplaceGeluWithApproximateGeluPass,
         ReplaceSplitWithSlicePass,
         ReplacePowWithMulPass,
     ]

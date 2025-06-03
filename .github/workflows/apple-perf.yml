@@ -188,6 +188,11 @@ jobs:
             backends/apple/coreml/scripts/install_requirements.sh
         fi
 
+        if [[ ${{ matrix.config }} == *"mps"* ]]; then
+          PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+            backends/apple/mps/install_requirements.sh
+        fi
+
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash examples/models/llama/install_requirements.sh
 
@@ -374,6 +379,10 @@ jobs:
         # Install CoreML Backend Requirements
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
           backends/apple/coreml/scripts/install_requirements.sh
+
+        # Install MPS Backend Requirements
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+          backends/apple/mps/install_requirements.sh
         echo "::endgroup::"
 
         echo "::group::Build ExecuTorch iOS frameworks"

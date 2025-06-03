@@ -106,10 +106,9 @@ ValueRef prepack_biases(
       graph.create_local_wg_size(v),
       vref,
       v,
-      {},
+      {t->sizes_ubo()},
       // Specialization constants
-      {t->hashed_layout()},
-      {graph.sizes_pc_of(v)}));
+      {t->hashed_layout()}));
 
   return v;
 }

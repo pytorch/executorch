@@ -48,8 +48,6 @@ table Buffer {
 table PerChannelQuant {
   scale:[float];
   channel_dim:int;
-  scale_buffer_idx: uint;
-  num_scales: uint;
 }
 
 table PerTokenDynamicQuant {
@@ -65,9 +63,7 @@ table PerChannelGroupQuant {
   scale:[float];
   channel_dim:int;
   group_size:int;
-  scale_bf16:[ushort] (deprecated);
-  scale_buffer_idx: uint;
-  num_scales: uint;
+  scale_bf16:[ushort];
 }
 
 table XNNTensorValue {

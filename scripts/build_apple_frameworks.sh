@@ -65,6 +65,11 @@ liboptimized_native_cpu_ops_lib.a,\
 libportable_kernels.a,\
 :"
 
+FRAMEWORK_KERNELS_PORTABLE="kernels_portable:\
+libportable_kernels.a,\
+libportable_ops_lib.a,\
+:"
+
 FRAMEWORK_KERNELS_QUANTIZED="kernels_quantized:\
 libquantized_kernels.a,\
 libquantized_ops_lib.a,\
@@ -81,6 +86,7 @@ usage() {
   echo "  --custom             Only build the Custom kernels."
   echo "  --mps                Only build the Metal Performance Shaders backend."
   echo "  --optimized          Only build the Optimized kernels."
+  echo "  --portable           Only build the Portable kernels."
   echo "  --quantized          Only build the Quantized kernels."
   echo "  --xnnpack            Only build the XNNPACK backend."
   echo
@@ -98,6 +104,7 @@ set_cmake_options_override() {
       "-DEXECUTORCH_BUILD_KERNELS_CUSTOM=OFF"
       "-DEXECUTORCH_BUILD_MPS=OFF"
       "-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=OFF"
+      "-DEXECUTORCH_BUILD_PORTABLE_OPS=OFF"
       "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=OFF"
       "-DEXECUTORCH_BUILD_XNNPACK=OFF"
     )
@@ -128,6 +135,7 @@ for arg in "$@"; do
       --custom) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_CUSTOM" ;;
       --mps) set_cmake_options_override "EXECUTORCH_BUILD_MPS" ;;
       --optimized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" ;;
+      --portable) set_cmake_options_override "EXECUTORCH_BUILD_PORTABLE_OPS" ;;
       --quantized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_QUANTIZED" ;;
       --xnnpack) set_cmake_options_override "EXECUTORCH_BUILD_XNNPACK" ;;
       *)
@@ -232,6 +240,7 @@ for mode in "${MODES[@]}"; do
   append_framework_flag "EXECUTORCH_BUILD_XNNPACK" "$FRAMEWORK_BACKEND_XNNPACK" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_CUSTOM" "$FRAMEWORK_KERNELS_CUSTOM" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" "$FRAMEWORK_KERNELS_OPTIMIZED" "$mode"
+  append_framework_flag "EXECUTORCH_BUILD_PORTABLE_OPS" "$FRAMEWORK_KERNELS_PORTABLE" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_QUANTIZED" "$FRAMEWORK_KERNELS_QUANTIZED" "$mode"
 
   cd "${OUTPUT_DIR}"

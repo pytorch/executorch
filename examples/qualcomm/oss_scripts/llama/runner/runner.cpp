@@ -152,10 +152,8 @@ Error Runner::load() {
 
   // Use attention mask length to retrieve AR length and context length
   // Cache len equals to context_len - ar_len
-  int32_t prompt_processor_ar_len = 0;
-  int32_t token_generator_ar_len = 0;
-  int32_t max_cache_len = 0;
-  int32_t max_ar_len = 0;
+  int32_t prompt_processor_ar_len, token_generator_ar_len, max_cache_len,
+      max_ar_len;
   // atten mask: [1, AR-N, CL]
   auto atten_mask_meta_token = method_meta->input_tensor_meta(1);
   token_generator_ar_len = atten_mask_meta_token->sizes()[1];

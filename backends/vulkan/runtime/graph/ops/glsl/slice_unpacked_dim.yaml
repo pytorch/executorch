@@ -1,13 +1,10 @@
-transfer_buffer:
+slice_unpacked_dim:
   parameter_names_with_default_values:
     DTYPE: float
-    OP_NAME: select
+    NDIM: 3
   generate_variant_forall:
     DTYPE:
       - VALUE: half
       - VALUE: float
   shader_variants:
-    - NAME: select_buffer
-      OP_NAME: select
-    - NAME: slice_buffer
-      OP_NAME: slice
+    - NAME: slice_unpacked_dim

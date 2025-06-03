@@ -62,7 +62,6 @@ TYPE_MAPPINGS: Dict[str, Any] = {
             "uint": "uimage3D",
             "int8": "iimage3D",
             "uint8": "uimage3D",
-            "bool": "uimage3D",
         },
         2: {
             "float": "image2D",
@@ -71,7 +70,6 @@ TYPE_MAPPINGS: Dict[str, Any] = {
             "uint": "uimage2D",
             "int8": "iimage2D",
             "uint8": "uimage2D",
-            "bool": "uimage2D",
         },
     },
     "SAMPLER_T": {
@@ -82,7 +80,6 @@ TYPE_MAPPINGS: Dict[str, Any] = {
             "uint": "usampler3D",
             "int8": "isampler3D",
             "uint8": "usampler3D",
-            "bool": "usampler3D",
         },
         2: {
             "float": "sampler2D",
@@ -91,7 +88,6 @@ TYPE_MAPPINGS: Dict[str, Any] = {
             "uint": "usampler2D",
             "int8": "isampler2D",
             "uint8": "usampler2D",
-            "bool": "usampler2D",
         },
     },
     "IMAGE_FORMAT": {
@@ -101,7 +97,6 @@ TYPE_MAPPINGS: Dict[str, Any] = {
         "uint": "rgba32ui",
         "int8": "rgba8i",
         "uint8": "rgba8ui",
-        "bool": "rgba8ui",
     },
 }
 
@@ -120,8 +115,7 @@ def buffer_scalar_type(dtype: str) -> str:
         return "float16_t"
     elif dtype[-1] == "8":
         return dtype + "_t"
-    elif dtype == "bool":
-        return "uint8_t"
+
     return dtype
 
 
@@ -141,19 +135,17 @@ def buffer_gvec_type(dtype: str, n: int) -> str:
         return f"i8vec{n}"
     elif dtype == "uint8":
         return f"u8vec{n}"
-    elif dtype == "bool":
-        return f"u8vec{n}"
 
     raise AssertionError(f"Invalid dtype: {dtype}")
 
 
 def texel_type(dtype: str) -> str:
     image_format = TYPE_MAPPINGS["IMAGE_FORMAT"][dtype]
-    if image_format[-1:] == "f":
+    if image_format[-1] == "f":
         return "vec4"
-    elif image_format[-2:] == "ui":
+    elif image_format[-2] == "ui":
         return "uvec4"
-    elif image_format[-1:] == "i":
+    elif image_format[-1] == "i":
         return "ivec4"
     raise AssertionError(f"Invalid image format: {image_format}")
 
@@ -368,7 +360,7 @@ def define_required_extensions(dtypes: Union[str, List[str]]):
         elif dtype == "int16" or dtype == "uint16":
             nbit = "16bit"
             glsl_type = "int16"
-        elif dtype == "int8" or dtype == "uint8" or dtype == "bool":
+        elif dtype == "int8" or dtype == "uint8":
             nbit = "8bit"
             glsl_type = "int8"
 
