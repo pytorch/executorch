@@ -76,14 +76,14 @@ void add_tensor_to_staging_node(
 
   utils::uvec3 global_wg_size = graph.create_global_wg_size(in_tensor);
 
-  vkapi::ParamsBindList ubos;
+  std::vector<PushConstantDataInfo> pcs;
   if (graph.is_buffer_storage(in_tensor)) {
-    ubos.append(
-        {graph.sizes_ubo(in_tensor),
-         graph.strides_ubo(in_tensor),
-         graph.numel_ubo(in_tensor)});
+    pcs = {
+        graph.sizes_pc_of(in_tensor),
+        graph.strides_pc_of(in_tensor),
+        graph.numel_pc_of(in_tensor)};
   } else {
-    ubos.append({graph.sizes_ubo(in_tensor)});
+    pcs = {graph.sizes_pc_of(in_tensor)};
   }
 
   // Normally, the image_to_nchw shader is structured so that each thread reads
@@ -97,7 +97,7 @@ void add_tensor_to_staging_node(
   if (is_bitw8_shader(shader)) {
     uint32_t buffer_len = graph.get_staging(out_staging)->numel() / 4;
     global_wg_size = {buffer_len, 1, 1};
-    ubos.append({graph.numel_ubo(in_tensor)});
+    pcs.push_back(graph.numel_pc_of(in_tensor));
   }
 
   graph.execute_nodes().emplace_back(new DispatchNode(
@@ -108,9 +108,9 @@ void add_tensor_to_staging_node(
       // Input and Outputs
       {{out_staging, vkapi::kWrite}, {in_tensor, vkapi::kRead}},
       // Parameter Buffers
-      ubos,
-      // Push Constants
       {},
+      // Push Constants
+      pcs,
       // Specialization Constants
       {graph.hashed_layout_of(in_tensor)},
       // Resize Args

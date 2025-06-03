@@ -77,9 +77,9 @@ void add_image_to_buffer_node(
       // Input and Outputs
       {{buffer, vkapi::kWrite}, {image, vkapi::kRead}},
       // Parameter Buffers
-      {graph.sizes_ubo(image), graph.strides_ubo(buffer)},
-      // Push Constants
       {},
+      // Push Constants
+      {graph.sizes_pc_of(image), graph.strides_pc_of(buffer)},
       // Specialization Constants
       {graph.hashed_layout_of(image)},
       // Resize Args
