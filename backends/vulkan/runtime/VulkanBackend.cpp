@@ -499,6 +499,8 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     compute_graph->encode_prepack();
     compute_graph->prepack();
 
+    // TODO(ssjia): remove this once we can batch compile compute pipelines
+    // during prepare().
     compute_graph->encode_execute();
 
     return Error::Ok;
@@ -567,9 +569,14 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       }
     }
 
+    // propagate_resize() will re-encode the command buffer so that push
+    // constants are updated and DynamicDispatchNode can update the compute
+    // shader, global workgroup size, and local workgroup size to perform the
+    // model inference.
     if (should_propagate_resize) {
       compute_graph->propagate_resize();
     }
+
     compute_graph->execute();
 
     for (size_t i = 0; i < compute_graph->outputs().size(); i++) {
