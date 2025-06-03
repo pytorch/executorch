@@ -16,7 +16,7 @@ Uses dataclases, which integrate with OmegaConf and Hydra.
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Literal, Optional
+from typing import List, Optional
 
 
 ################################################################################
