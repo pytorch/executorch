@@ -51,11 +51,7 @@ def insert_transition_node(
             exir_ops.edge.aten.clone.default,
             (arg,),
         )
-        print(arg)
-        print(arg.meta["val"])
-        print(arg.meta["spec"])
         clone_node.meta["val"] = arg.meta["val"]
-        # clone_node.meta["spec"] = deepcopy(arg.meta["spec"])
         clone_node.meta["spec"] = TensorSpec.from_tensor(clone_node.meta["val"])
         clone_node.meta["spec"].const = False
         set_memory_metadata(clone_node, storage, layout)

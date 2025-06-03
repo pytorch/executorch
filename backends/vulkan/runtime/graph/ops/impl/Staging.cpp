@@ -28,14 +28,14 @@ void add_staging_to_tensor_node(
   vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(
       *graph.get_tensor(out_tensor), graph.int8_buffers_enabled());
 
-  vkapi::ParamsBindList ubos;
+  std::vector<PushConstantDataInfo> pcs;
   if (graph.is_buffer_storage(out_tensor)) {
-    ubos.append(
-        {graph.sizes_ubo(out_tensor),
-         graph.strides_ubo(out_tensor),
-         graph.numel_ubo(out_tensor)});
+    pcs = {
+        graph.sizes_pc_of(out_tensor),
+        graph.strides_pc_of(out_tensor),
+        graph.numel_pc_of(out_tensor)};
   } else {
-    ubos.append({graph.sizes_ubo(out_tensor)});
+    pcs = {graph.sizes_pc_of(out_tensor)};
   }
 
   graph.execute_nodes().emplace_back(new DispatchNode(
@@ -46,9 +46,9 @@ void add_staging_to_tensor_node(
       // Input and Outputs
       {{out_tensor, vkapi::kWrite}, {in_staging, vkapi::kRead}},
       // Parameter Buffers
-      ubos,
-      // Push Constants
       {},
+      // Push Constants
+      pcs,
       // Specialization Constants
       {graph.hashed_layout_of(out_tensor)},
       // Resize Args
@@ -127,14 +127,14 @@ void add_prepack_standard_node(
   vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(
       *graph.get_tensor(tensor), graph.int8_buffers_enabled());
 
-  vkapi::ParamsBindList ubos;
+  std::vector<PushConstantDataInfo> pcs;
   if (graph.is_buffer_storage(tensor)) {
-    ubos.append(
-        {graph.sizes_ubo(tensor),
-         graph.strides_ubo(tensor),
-         graph.numel_ubo(tensor)});
+    pcs = {
+        graph.sizes_pc_of(tensor),
+        graph.strides_pc_of(tensor),
+        graph.numel_pc_of(tensor)};
   } else {
-    ubos.append({graph.sizes_ubo(tensor)});
+    pcs = {graph.sizes_pc_of(tensor)};
   }
 
   int transpose_hw_spec = transpose_hw ? 1 : 0;
@@ -148,9 +148,10 @@ void add_prepack_standard_node(
       tensor_data,
       tensor,
       // Parameter Buffers
-      ubos,
+      {},
       // Specialization Constants
-      {graph.hashed_layout_of(tensor), transpose_hw_spec}));
+      {graph.hashed_layout_of(tensor), transpose_hw_spec},
+      pcs));
 }
 
 ValueRef prepack_standard(
