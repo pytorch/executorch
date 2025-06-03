@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-conv2d_pw:
+conv2d_pw_s1p0:
   parameter_names_with_default_values:
     OPERATOR: X
     NDIM: 3
@@ -16,6 +16,6 @@ conv2d_pw:
       - VALUE: half
       - VALUE: float
   shader_variants:
-    - NAME: conv2d_pw
-    - NAME: conv2d_pw_clamp
+    - NAME: conv2d_pw_s1p0
+    - NAME: conv2d_pw_s1p0_clamp
       OPERATOR: clamp(X, A, B)

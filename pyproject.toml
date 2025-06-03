@@ -69,7 +69,7 @@ dependencies=[
   # See also third-party/TARGETS for buck's typing-extensions version.
   "typing-extensions>=4.10.0",
   # Keep this version in sync with: ./backends/apple/coreml/scripts/install_requirements.sh
-  "coremltools==8.3; platform_system == 'Darwin'",
+  "coremltools==8.3; platform_system == 'Darwin' or platform_system == 'Linux'",
 ]
 
 [project.urls]

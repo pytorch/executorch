@@ -265,8 +265,8 @@ class NodeVisitor:
         )
         # TODO: refactor this when target could be correctly detected
         per_block_encoding = {
-            exir_ops.edge.pt2e_quant.quantize_affine.default,
-            exir_ops.edge.pt2e_quant.dequantize_affine.default,
+            exir_ops.edge.torchao.quantize_affine.default,
+            exir_ops.edge.torchao.dequantize_affine.default,
         }
         if quant_attrs[QCOM_ENCODING] in per_block_encoding:
             return self.make_qnn_per_block_config(node, quant_attrs)
