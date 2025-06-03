@@ -51,6 +51,7 @@ from torchao.quantization.pt2e.quantize_pt2e import (
     prepare_pt2e,
     prepare_qat_pt2e,
 )
+from unittest.mock import patch
 
 
 def generate_context_binary(
@@ -516,9 +517,20 @@ class TestQNN(unittest.TestCase):
         block_size_map: Dict[str, Tuple] = None,
         submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
     ) -> torch.fx.GraphModule:
+        from executorch.backends.qualcomm.utils.utils import draw_graph
+        with patch.object(
+                    torch._utils_internal,
+                    "export_training_ir_rollout_check",
+                    return_value=False,
+                ):
+            m = torch.export.export(
+                module, inputs, dynamic_shapes=dynamic_shapes, strict=False
+            ).module()
+        draw_graph("export_with_patch", ".", m)
         m = torch.export.export(
-            module, inputs, dynamic_shapes=dynamic_shapes, strict=True
-        ).module()
+                module, inputs, dynamic_shapes=dynamic_shapes, strict=False
+            ).module()
+        draw_graph("export", ".", m)
 
         quantizer = make_quantizer(
             quant_dtype=quant_dtype,
