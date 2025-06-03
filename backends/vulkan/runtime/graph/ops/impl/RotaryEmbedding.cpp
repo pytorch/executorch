@@ -8,6 +8,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
@@ -23,6 +25,21 @@ void resize_rotary_embedding_node(
   std::vector<int64_t> in_sizes = in->sizes();
   // UNCOMMENT BELOW IF NEEDED
   // out->virtual_resize(in_sizes);
+}
+
+utils::uvec3 rotary_embedding_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+
+  const ValueRef xq_out = args.at(0).refs.at(0);
+
+  utils::uvec3 global_wg_size = graph->logical_limits_of(xq_out);
+  global_wg_size[0] /= 2;
+
+  return global_wg_size;
 }
 
 void add_rotary_embedding_node(
@@ -51,17 +68,11 @@ void add_rotary_embedding_node(
   std::string kernel_name = "rotary_embedding";
   add_dtype_suffix(kernel_name, graph.dtype_of(xq_out));
 
-  utils::uvec3 global_wg_size = graph.logical_limits_of(xq_out);
-  global_wg_size[0] /= 2;
-  const utils::uvec3 local_wg_size = graph.create_local_wg_size(global_wg_size);
-
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
-      // Shader
       VK_KERNEL_FROM_STR(kernel_name),
-      // Workgroup sizes
-      global_wg_size,
-      local_wg_size,
+      rotary_embedding_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
       {{{xq_out, xk_out}, vkapi::kWrite},
        {{xq, xk, freqs_cos, freqs_sin}, vkapi::kRead}},
