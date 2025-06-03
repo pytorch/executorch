@@ -49,7 +49,7 @@ classifiers = [
 ]
 
 # Python dependencies required for use.
-requires-python = ">=3.10"
+requires-python = ">=3.10,<=3.12"
 dependencies=[
   "expecttest",
   "flatbuffers",
