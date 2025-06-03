@@ -27,6 +27,7 @@ from executorch.backends.arm._passes import (
     DecomposeCosineSimilarityPass,
     DecomposeDivPass,
     DecomposeGeluPass,
+    DecomposeGroupNormPass,
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
     DecomposeLinearPass,
@@ -141,6 +142,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertMmToBmmPass())
         self.add_pass(DecomposeLinearPass())
         self.add_pass(DecomposeLeakyReLUPass())
+        self.add_pass(DecomposeGroupNormPass())
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(
@@ -208,6 +210,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(ScalarsToAttributePass())
+        self.add_pass(DecomposeGroupNormPass())
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass(graph_module, self.tosa_spec))

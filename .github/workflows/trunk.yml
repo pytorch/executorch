@@ -305,7 +305,7 @@ jobs:
         # Install requirements
         ${CONDA_RUN} sh install_requirements.sh
         ${CONDA_RUN} sh backends/apple/coreml/scripts/install_requirements.sh
-        ${CONDA_RUN} python install_executorch.py --pybind coreml
+        ${CONDA_RUN} python install_executorch.py
         ${CONDA_RUN} sh examples/models/llama/install_requirements.sh
 
         # Test ANE llama
@@ -414,11 +414,7 @@ jobs:
         # Setup executorch
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool cmake
 
-        if [[ "${MODE}" == "mps" ]]; then
-          # Install mps delegate
-          PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/mps/install_requirements.sh
-          echo "Finishing installing mps."
-        elif [[ "${MODE}" == "coreml" ]]; then
+        if [[ "${MODE}" == "coreml" ]]; then
           # Install coreml delegate
           PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/install_requirements.sh
           echo "Finishing installing coreml."
@@ -504,8 +500,6 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/install_requirements.sh
         echo "Finishing installing coreml."
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/mps/install_requirements.sh
-        echo "Finishing installing mps."
 
         # Build and test coreml model
         MODELS=(mv3 ic4 resnet50 edsr mobilebert w2l)
