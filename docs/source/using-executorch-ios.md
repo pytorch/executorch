@@ -50,7 +50,7 @@ let package = Package(
   name: "YourPackageName",
   platforms: [
     .iOS(.v17),
-    .macOS(.v10_15),
+    .macOS(.v12),
   ],
   products: [
     .library(name: "YourPackageName", targets: ["YourTargetName"]),
