@@ -701,8 +701,18 @@
 </div>
 <div class="section" id="common-issues-and-what-to-do">
 <h2>Common issues and what to do<a class="headerlink" href="#common-issues-and-what-to-do" title="Permalink to this heading">¶</a></h2>
-<p>During lowering to the CoreML backend, you might see an error like: “ValueError: In op, of type [X], named [Y], the named input [Z] must have the same data type as the named input x. However, [Z] has dtype fp32 whereas x has dtype fp16.”</p>
+<div class="section" id="during-lowering">
+<h3>During lowering<a class="headerlink" href="#during-lowering" title="Permalink to this heading">¶</a></h3>
+<ol class="arabic simple">
+<li><p>“ValueError: In op, of type [X], named [Y], the named input [Z] must have the same data type as the named input x. However, [Z] has dtype fp32 whereas x has dtype fp16.”</p></li>
+</ol>
 <p>This happens because the model is in FP16, but CoreML interprets some of the arguments as FP32, which leads to a type mismatch.  The solution is to keep the PyTorch model in FP32.  Note that the model will be still be converted to FP16 during lowering to CoreML unless specified otherwise in the compute_precision <a class="reference internal" href="#coreml-compilespec"><span class="std std-doc">CoreML CompileSpec</span></a>.  Also see the <a class="reference external" href="https://github.com/apple/coremltools/issues/2480">related issue in coremltools</a>.</p>
+<ol class="arabic simple" start="2">
+<li><p>coremltools/converters/mil/backend/mil/load.py”, line 499, in export
+raise RuntimeError(“BlobWriter not loaded”)</p></li>
+</ol>
+<p>If you’re using Python 3.13, try reducing your python version to Python 3.12.  coremltools does not support Python 3.13, see this <a class="reference external" href="https://github.com/apple/coremltools/issues/2487">issue</a>.</p>
+</div>
 </div>
 </div>
 
@@ -770,7 +780,10 @@
 <li><a class="reference internal" href="#extracting-the-mlpackage">Extracting the mlpackage</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#common-issues-and-what-to-do">Common issues and what to do</a></li>
+<li><a class="reference internal" href="#common-issues-and-what-to-do">Common issues and what to do</a><ul>
+<li><a class="reference internal" href="#during-lowering">During lowering</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
