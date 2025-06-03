@@ -652,7 +652,7 @@ Before you begin it is recommended you go through the following:</div>
 </div>
 <div class="section" id="running-the-xnnpack-model-with-cmake">
 <h2>Running the XNNPACK Model with CMake<a class="headerlink" href="#running-the-xnnpack-model-with-cmake" title="Permalink to this heading">¶</a></h2>
-<p>After exporting the XNNPACK Delegated model, we can now try running it with example inputs using CMake. We can build and use the xnn_executor_runner, which is a sample wrapper for the ExecuTorch Runtime and XNNPACK Backend. We first begin by configuring the CMake build like such:</p>
+<p>After exporting the XNNPACK Delegated model, we can now try running it with example inputs using CMake. We can build and use the executor_runner, which is a sample wrapper for the ExecuTorch Runtime. The XNNPACK Backend is enabled via the compilation flag <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_BUILD_XNNPACK=ON</span></code>. We first begin by configuring the CMake build like such:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># cd to the root of executorch repo</span>
 <span class="nb">cd</span><span class="w"> </span>executorch
 
@@ -677,10 +677,10 @@ cmake<span class="w"> </span><span class="se">\</span>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j9<span class="w"> </span>--target<span class="w"> </span>install<span class="w"> </span>--config<span class="w"> </span>Release
 </pre></div>
 </div>
-<p>Now you should be able to find the executable built at <code class="docutils literal notranslate"><span class="pre">./cmake-out/backends/xnnpack/xnn_executor_runner</span></code> you can run the executable with the model you generated as such</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./cmake-out/backends/xnnpack/xnn_executor_runner<span class="w"> </span>--model_path<span class="o">=</span>./mv2_xnnpack_fp32.pte
+<p>Now you should be able to find the executable built at <code class="docutils literal notranslate"><span class="pre">./cmake-out/executor_runner</span></code> you can run the executable with the model you generated as such</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./cmake-out/executor_runner<span class="w"> </span>--model_path<span class="o">=</span>./mv2_xnnpack_fp32.pte
 <span class="c1"># or to run the quantized variant</span>
-./cmake-out/backends/xnnpack/xnn_executor_runner<span class="w"> </span>--model_path<span class="o">=</span>./mv2_xnnpack_q8.pte
+./cmake-out/executor_runner<span class="w"> </span>--model_path<span class="o">=</span>./mv2_xnnpack_q8.pte
 </pre></div>
 </div>
 </div>
@@ -690,7 +690,7 @@ cmake<span class="w"> </span><span class="se">\</span>
 </div>
 <div class="section" id="profiling">
 <h2>Profiling<a class="headerlink" href="#profiling" title="Permalink to this heading">¶</a></h2>
-<p>To enable profiling in the <code class="docutils literal notranslate"><span class="pre">xnn_executor_runner</span></code> pass the flags <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_ENABLE_EVENT_TRACER=ON</span></code> and <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_BUILD_DEVTOOLS=ON</span></code> to the build command (add <code class="docutils literal notranslate"><span class="pre">-DENABLE_XNNPACK_PROFILING=ON</span></code> for additional details). This will enable ETDump generation when running the inference and enables command line flags for profiling (see <code class="docutils literal notranslate"><span class="pre">xnn_executor_runner</span> <span class="pre">--help</span></code> for details).</p>
+<p>To enable profiling in the <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> pass the flags <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_ENABLE_EVENT_TRACER=ON</span></code> and <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_BUILD_DEVTOOLS=ON</span></code> to the build command (add <code class="docutils literal notranslate"><span class="pre">-DENABLE_XNNPACK_PROFILING=ON</span></code> for additional details). This will enable ETDump generation when running the inference and enables command line flags for profiling (see <code class="docutils literal notranslate"><span class="pre">executor_runner</span> <span class="pre">--help</span></code> for details).</p>
 </div>
 </div>
 
