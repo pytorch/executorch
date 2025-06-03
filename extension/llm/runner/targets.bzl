@@ -84,12 +84,17 @@ def define_common_targets():
             name = "runner_lib" + aten_suffix,
             exported_headers = [
                 "multimodal_runner.h",
+                "text_llm_runner.h",
+            ],
+            srcs = [
+                "text_llm_runner.cpp",
             ],
             visibility = [
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
                 ":image_prefiller" + aten_suffix,
+                ":irunner",
                 ":text_decoder_runner" + aten_suffix,
                 ":text_prefiller" + aten_suffix,
                 ":text_token_generator" + aten_suffix,
