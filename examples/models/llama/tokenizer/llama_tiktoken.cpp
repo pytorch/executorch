@@ -10,7 +10,7 @@
 
 namespace example {
 
-using ::executorch::extension::llm::Tiktoken;
+using ::tokenizers::Tiktoken;
 
 namespace {
 static constexpr int32_t kSpecialTokensSize = 256;
@@ -42,8 +42,23 @@ _get_default_special_tokens() {
   return special_tokens;
 }
 
-static inline std::unique_ptr<std::vector<std::string>>
-_get_multimodal_special_tokens() {
+std::unique_ptr<std::vector<std::string>> _get_special_tokens(Version version) {
+  switch (version) {
+    case Version::Multimodal:
+      return get_multimodal_special_tokens();
+    default:
+      return _get_default_special_tokens();
+  }
+}
+
+} // namespace
+
+std::unique_ptr<Tiktoken> get_tiktoken_for_llama(Version version) {
+  return std::make_unique<Tiktoken>(
+      _get_special_tokens(version), kBOSTokenIndex, kEOSTokenIndex);
+}
+
+std::unique_ptr<std::vector<std::string>> get_multimodal_special_tokens() {
   auto special_tokens =
       std::make_unique<std::vector<std::string>>(std::vector<std::string>{
           "<|begin_of_text|>",
@@ -70,22 +85,6 @@ _get_multimodal_special_tokens() {
   special_tokens->emplace_back("<|python_tag|>");
 
   return special_tokens;
-}
-
-std::unique_ptr<std::vector<std::string>> _get_special_tokens(Version version) {
-  switch (version) {
-    case Version::Multimodal:
-      return _get_multimodal_special_tokens();
-    default:
-      return _get_default_special_tokens();
-  }
-}
-
-} // namespace
-
-std::unique_ptr<Tiktoken> get_tiktoken_for_llama(Version version) {
-  return std::make_unique<Tiktoken>(
-      _get_special_tokens(version), kBOSTokenIndex, kEOSTokenIndex);
 }
 
 } // namespace example

@@ -8,11 +8,13 @@
 
 #pragma once
 
+#include <c10/util/irange.h>
 #include <algorithm>
 #include <array> // std::array
 #include <cinttypes> // PRId64
 #include <cmath>
 #include <cstddef> // size_t
+
 #include <limits>
 
 #include <c10/util/irange.h>
@@ -395,8 +397,7 @@
       #scalar_tensor " could not be extracted: wrong type or out of range");
 
 namespace executorch {
-namespace runtime {
-
+namespace ET_RUNTIME_NAMESPACE {
 //
 // Utility functions for checking tensor attributes
 //
@@ -445,10 +446,10 @@ inline bool tensor_can_cast_to(
     executorch::aten::Tensor a,
     executorch::aten::ScalarType dtype) {
   ET_CHECK_OR_RETURN_FALSE(
-      torch::executor::canCast(a.scalar_type(), dtype),
+      ::torch::executor::canCast(a.scalar_type(), dtype),
       "Tensor of dtype %s cannot cast to dtype %s",
-      torch::executor::toString(a.scalar_type()),
-      torch::executor::toString(dtype));
+      ::torch::executor::toString(a.scalar_type()),
+      ::torch::executor::toString(dtype));
 
   return true;
 }
@@ -457,7 +458,7 @@ inline bool tensor_is_bool_type(executorch::aten::Tensor t) {
   ET_CHECK_OR_RETURN_FALSE(
       t.scalar_type() == executorch::aten::ScalarType::Bool,
       "Expected to find bool type, but tensor has type %s",
-      torch::executor::toString(t.scalar_type()));
+      ::torch::executor::toString(t.scalar_type()));
 
   return true;
 }
@@ -468,8 +469,39 @@ inline bool tensor_is_type(
   ET_CHECK_OR_RETURN_FALSE(
       t.scalar_type() == dtype,
       "Expected to find %s type, but tensor has type %s",
-      torch::executor::toString(dtype),
-      torch::executor::toString(t.scalar_type()));
+      ::torch::executor::toString(dtype),
+      ::torch::executor::toString(t.scalar_type()));
+
+  return true;
+}
+
+inline bool tensor_is_type(
+    executorch::aten::Tensor t,
+    executorch::aten::ScalarType dtype,
+    executorch::aten::ScalarType dtype2) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      t.scalar_type() == dtype || t.scalar_type() == dtype2,
+      "Expected to find %s or %s type, but tensor has type %s",
+      ::torch::executor::toString(dtype),
+      ::torch::executor::toString(dtype2),
+      ::torch::executor::toString(t.scalar_type()));
+
+  return true;
+}
+
+inline bool tensor_is_type(
+    executorch::aten::Tensor t,
+    executorch::aten::ScalarType dtype,
+    executorch::aten::ScalarType dtype2,
+    executorch::aten::ScalarType dtype3) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      t.scalar_type() == dtype || t.scalar_type() == dtype2 ||
+          t.scalar_type() == dtype3,
+      "Expected to find %s, %s, or %s type, but tensor has type %s",
+      ::torch::executor::toString(dtype),
+      ::torch::executor::toString(dtype2),
+      ::torch::executor::toString(dtype3),
+      ::torch::executor::toString(t.scalar_type()));
 
   return true;
 }
@@ -478,36 +510,36 @@ inline bool tensor_is_integral_type(
     executorch::aten::Tensor t,
     bool includeBool = false) {
   ET_CHECK_OR_RETURN_FALSE(
-      torch::executor::isIntegralType(t.scalar_type(), includeBool),
+      ::torch::executor::isIntegralType(t.scalar_type(), includeBool),
       "Expected to find a integral type, but tensor has type %s",
-      torch::executor::toString(t.scalar_type()));
+      ::torch::executor::toString(t.scalar_type()));
 
   return true;
 }
 
 inline bool tensor_is_floating_type(executorch::aten::Tensor t) {
   ET_CHECK_OR_RETURN_FALSE(
-      torch::executor::isFloatingType(t.scalar_type()),
+      ::torch::executor::isFloatingType(t.scalar_type()),
       "Expected to find a floating type, but tensor has type %s",
-      torch::executor::toString(t.scalar_type()));
+      ::torch::executor::toString(t.scalar_type()));
 
   return true;
 }
 
 inline bool tensor_is_real_type(executorch::aten::Tensor t) {
   ET_CHECK_OR_RETURN_FALSE(
-      torch::executor::isRealType(t.scalar_type()),
+      ::torch::executor::isRealType(t.scalar_type()),
       "Expected to find a real type, but tensor has type %s",
-      torch::executor::toString(t.scalar_type()));
+      ::torch::executor::toString(t.scalar_type()));
 
   return true;
 }
 
 inline bool tensor_is_realh_type(executorch::aten::Tensor t) {
   ET_CHECK_OR_RETURN_FALSE(
-      torch::executor::isRealHType(t.scalar_type()),
+      ::torch::executor::isRealHType(t.scalar_type()),
       "Expected to find a real type, but tensor has type %s",
-      torch::executor::toString(t.scalar_type()));
+      ::torch::executor::toString(t.scalar_type()));
 
   return true;
 }
@@ -516,16 +548,16 @@ inline bool tensor_is_realhbf16_type(executorch::aten::Tensor t) {
   ET_CHECK_OR_RETURN_FALSE(
       executorch::runtime::isRealHBF16Type(t.scalar_type()),
       "Expected to find a real type, but tensor has type %s",
-      torch::executor::toString(t.scalar_type()));
+      ::torch::executor::toString(t.scalar_type()));
 
   return true;
 }
 
 inline bool tensor_is_realhb_type(executorch::aten::Tensor t) {
   ET_CHECK_OR_RETURN_FALSE(
-      torch::executor::isRealHBType(t.scalar_type()),
+      ::torch::executor::isRealHBType(t.scalar_type()),
       "Expected to find a real type, but tensor has type %s",
-      torch::executor::toString(t.scalar_type()));
+      ::torch::executor::toString(t.scalar_type()));
 
   return true;
 }
@@ -534,25 +566,25 @@ inline bool tensor_is_realhbbf16_type(executorch::aten::Tensor t) {
   ET_CHECK_OR_RETURN_FALSE(
       executorch::runtime::isRealHBBF16Type(t.scalar_type()),
       "Expected to find a real type, but tensor has type %s",
-      torch::executor::toString(t.scalar_type()));
+      ::torch::executor::toString(t.scalar_type()));
 
   return true;
 }
 
 inline bool tensor_is_complex_type(executorch::aten::Tensor t) {
   ET_CHECK_OR_RETURN_FALSE(
-      torch::executor::isComplexType(t.scalar_type()),
+      ::torch::executor::isComplexType(t.scalar_type()),
       "Expected to find a complex type, but tensor has type %s",
-      torch::executor::toString(t.scalar_type()));
+      ::torch::executor::toString(t.scalar_type()));
 
   return true;
 }
 
 inline bool tensor_is_bits_type(executorch::aten::Tensor t) {
   ET_CHECK_OR_RETURN_FALSE(
-      torch::executor::isBitsType(t.scalar_type()),
+      ::torch::executor::isBitsType(t.scalar_type()),
       "Expected to find a bits type, but tensor has type %s",
-      torch::executor::toString(t.scalar_type()));
+      ::torch::executor::toString(t.scalar_type()));
 
   return true;
 }
@@ -563,8 +595,8 @@ inline bool tensors_have_same_dtype(
   ET_CHECK_OR_RETURN_FALSE(
       a.scalar_type() == b.scalar_type(),
       ET_TENSOR_CHECK_PREFIX__ ": dtype={%s, %s}",
-      torch::executor::toString(a.scalar_type()),
-      torch::executor::toString(b.scalar_type()));
+      ::torch::executor::toString(a.scalar_type()),
+      ::torch::executor::toString(b.scalar_type()));
   return true;
 }
 
@@ -575,15 +607,15 @@ inline bool tensors_have_same_dtype(
   ET_CHECK_OR_RETURN_FALSE(
       a.scalar_type() == b.scalar_type() && b.scalar_type() == c.scalar_type(),
       ET_TENSOR_CHECK_PREFIX__ ": dtype={%s, %s, %s}",
-      torch::executor::toString(a.scalar_type()),
-      torch::executor::toString(b.scalar_type()),
-      torch::executor::toString(c.scalar_type()));
+      ::torch::executor::toString(a.scalar_type()),
+      ::torch::executor::toString(b.scalar_type()),
+      ::torch::executor::toString(c.scalar_type()));
   return true;
 }
 
 inline bool tensor_is_rank(executorch::aten::Tensor t, size_t rank) {
   ET_CHECK_OR_RETURN_FALSE(
-      t.dim() == rank,
+      static_cast<size_t>(t.dim()) == rank,
       "Expected tensor.dim() to be %zu, but got %zu",
       static_cast<size_t>(rank),
       static_cast<size_t>(t.dim()));
@@ -595,7 +627,7 @@ inline bool tensor_has_rank_greater_or_equal_to(
     executorch::aten::Tensor t,
     size_t rank) {
   ET_CHECK_OR_RETURN_FALSE(
-      t.dim() >= rank,
+      static_cast<size_t>(t.dim()) >= rank,
       "Expected tensor.dim() to be >= %zu, but got %zu",
       static_cast<size_t>(rank),
       static_cast<size_t>(t.dim()));
@@ -607,7 +639,7 @@ inline bool tensor_has_rank_smaller_or_equal_to(
     executorch::aten::Tensor t,
     size_t rank) {
   ET_CHECK_OR_RETURN_FALSE(
-      t.dim() <= rank,
+      static_cast<size_t>(t.dim()) <= rank,
       "Expected tensor.dim() to be <= %zu, but got %zu",
       static_cast<size_t>(rank),
       static_cast<size_t>(t.dim()));
@@ -664,12 +696,12 @@ inline bool tensors_have_same_size_at_dims(
     executorch::aten::Tensor b,
     size_t dim_b) {
   ET_CHECK_OR_RETURN_FALSE(
-      dim_a < a.dim(),
+      dim_a < static_cast<size_t>(a.dim()),
       "Cannot retrieve dim %zu from tensor with dim %zu",
       static_cast<size_t>(dim_a),
       static_cast<size_t>(a.dim()));
   ET_CHECK_OR_RETURN_FALSE(
-      dim_b < b.dim(),
+      dim_b < static_cast<size_t>(b.dim()),
       "Cannot retrieve dim %zu from tensor with dim %zu",
       static_cast<size_t>(dim_b),
       static_cast<size_t>(b.dim()));
@@ -701,7 +733,9 @@ inline bool tensors_have_same_shape(
         static_cast<size_t>(b.numel()),
         static_cast<size_t>(a.dim()),
         static_cast<size_t>(b.dim()));
-    for (size_t d = 0; d < ET_MIN2(a.dim(), b.dim()); ++d) {
+    // Using [[maybe_unused]] as ET_LOG may not trigger based on verbosity
+    for ([[maybe_unused]] const auto d :
+         c10::irange(ET_MIN2(a.dim(), b.dim()))) {
       ET_LOG(
           Error,
           "    size(%zu): (%zu, %zu)",
@@ -738,7 +772,8 @@ inline bool tensors_have_same_shape(
         static_cast<size_t>(a.dim()),
         static_cast<size_t>(b.dim()),
         static_cast<size_t>(c.dim()));
-    for (size_t d = 0; d < ET_MIN3(a.dim(), b.dim(), c.dim()); ++d) {
+    for ([[maybe_unused]] const auto d :
+         c10::irange(ET_MIN3(a.dim(), b.dim(), c.dim()))) {
       ET_LOG(
           Error,
           "    size(%zu): (%zu, %zu, %zu)",
@@ -778,7 +813,8 @@ inline bool tensor_has_expected_size(
         static_cast<size_t>(expected_sizes.size()));
     size_t a_dim = static_cast<size_t>(a.dim());
     size_t expected_dim = static_cast<size_t>(expected_sizes.size());
-    for (size_t d = 0; d < ET_MIN2(a_dim, expected_dim); ++d) {
+    for ([[maybe_unused]] const auto d :
+         c10::irange(ET_MIN2(a_dim, expected_dim))) {
       ET_LOG(
           Error,
           "    size(%zu): (%zu, %zu)",
@@ -801,7 +837,8 @@ inline bool tensors_have_same_strides(
         ET_TENSOR_CHECK_PREFIX__ ": dim=(%zu, %zu)",
         static_cast<size_t>(a.dim()),
         static_cast<size_t>(b.dim()));
-    for (size_t d = 0; d < ET_MIN2(a.dim(), b.dim()); ++d) {
+    for ([[maybe_unused]] const auto d :
+         c10::irange(ET_MIN2(a.dim(), b.dim()))) {
       ET_LOG(
           Error,
           "    stride(%zu): (%zu, %zu)",
@@ -826,7 +863,8 @@ inline bool tensors_have_same_strides(
         static_cast<size_t>(a.dim()),
         static_cast<size_t>(b.dim()),
         static_cast<size_t>(c.dim()));
-    for (size_t d = 0; d < ET_MIN3(a.dim(), b.dim(), c.dim()); ++d) {
+    for ([[maybe_unused]] const auto d :
+         c10::irange(ET_MIN3(a.dim(), b.dim(), c.dim()))) {
       ET_LOG(
           Error,
           "    stride(%zu): (%zu, %zu, %zu)",
@@ -910,7 +948,7 @@ inline size_t getTrailingDims(
       dim,
       ssize_t(tensor.dim()));
   size_t dims = 1;
-  for (size_t i = dim + 1; i < tensor.dim(); ++i) {
+  for (size_t i = dim + 1; i < static_cast<size_t>(tensor.dim()); ++i) {
     dims *= static_cast<size_t>(tensor.size(i));
   }
   return dims;
@@ -983,7 +1021,7 @@ inline void indexToCoordinate(
     const executorch::aten::Tensor& tensor,
     size_t index,
     size_t* coordinate) {
-  ET_CHECK(index < tensor.numel());
+  ET_CHECK(index < static_cast<size_t>(tensor.numel()));
   for (const auto i : c10::irange(tensor.dim())) {
     auto dim = tensor.dim() - 1 - i;
     size_t dim_size = tensor.size(dim);
@@ -1311,60 +1349,61 @@ inline size_t calculate_linear_index(
   return index;
 }
 
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
 
 namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::calculate_linear_index;
-using ::executorch::runtime::coordinateToIndex;
-using ::executorch::runtime::dim_is_valid;
-using ::executorch::runtime::extract_scalar_tensor;
-using ::executorch::runtime::get_dim_order;
-using ::executorch::runtime::getLeadingDims;
-using ::executorch::runtime::getTrailingDims;
-using ::executorch::runtime::indexToCoordinate;
+using ::executorch::ET_RUNTIME_NAMESPACE::calculate_linear_index;
+using ::executorch::ET_RUNTIME_NAMESPACE::coordinateToIndex;
+using ::executorch::ET_RUNTIME_NAMESPACE::dim_is_valid;
+using ::executorch::ET_RUNTIME_NAMESPACE::extract_scalar_tensor;
+using ::executorch::ET_RUNTIME_NAMESPACE::get_dim_order;
+using ::executorch::ET_RUNTIME_NAMESPACE::getLeadingDims;
+using ::executorch::ET_RUNTIME_NAMESPACE::getTrailingDims;
+using ::executorch::ET_RUNTIME_NAMESPACE::indexToCoordinate;
+using ::executorch::ET_RUNTIME_NAMESPACE::nonempty_size;
+using ::executorch::ET_RUNTIME_NAMESPACE::nonzero_dim;
+using ::executorch::ET_RUNTIME_NAMESPACE::resize;
+using ::executorch::ET_RUNTIME_NAMESPACE::resize_tensor;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensor_can_cast_to;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensor_dim_has_index;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensor_has_dim;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensor_has_expected_size;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensor_has_non_empty_dim;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensor_has_rank_greater_or_equal_to;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensor_has_rank_smaller_or_equal_to;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensor_has_valid_dim_order;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensor_is_bits_type;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensor_is_bool_type;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensor_is_complex_type;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensor_is_contiguous;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensor_is_default_dim_order;
+using ::executorch::ET_RUNTIME_NAMESPACE::
+    tensor_is_default_or_channels_last_dim_order;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensor_is_floating_type;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensor_is_integral_type;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensor_is_rank;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensor_is_real_type;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensor_is_realh_type;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensor_is_realhb_type;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensor_is_scalar;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensors_have_same_dim_order;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensors_have_same_dtype;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensors_have_same_rank;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensors_have_same_shape;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensors_have_same_shape_and_dtype;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensors_have_same_size_at_dims;
+using ::executorch::ET_RUNTIME_NAMESPACE::tensors_have_same_strides;
 using ::executorch::runtime::kTensorDimensionLimit;
-using ::executorch::runtime::nonempty_size;
-using ::executorch::runtime::nonzero_dim;
-using ::executorch::runtime::resize;
-using ::executorch::runtime::resize_tensor;
-using ::executorch::runtime::tensor_can_cast_to;
-using ::executorch::runtime::tensor_dim_has_index;
-using ::executorch::runtime::tensor_has_dim;
-using ::executorch::runtime::tensor_has_expected_size;
-using ::executorch::runtime::tensor_has_non_empty_dim;
-using ::executorch::runtime::tensor_has_rank_greater_or_equal_to;
-using ::executorch::runtime::tensor_has_rank_smaller_or_equal_to;
-using ::executorch::runtime::tensor_has_valid_dim_order;
-using ::executorch::runtime::tensor_is_bits_type;
-using ::executorch::runtime::tensor_is_bool_type;
-using ::executorch::runtime::tensor_is_complex_type;
-using ::executorch::runtime::tensor_is_contiguous;
-using ::executorch::runtime::tensor_is_default_dim_order;
-using ::executorch::runtime::tensor_is_default_or_channels_last_dim_order;
-using ::executorch::runtime::tensor_is_floating_type;
-using ::executorch::runtime::tensor_is_integral_type;
-using ::executorch::runtime::tensor_is_rank;
-using ::executorch::runtime::tensor_is_real_type;
-using ::executorch::runtime::tensor_is_realh_type;
-using ::executorch::runtime::tensor_is_realhb_type;
-using ::executorch::runtime::tensor_is_scalar;
-using ::executorch::runtime::tensors_have_same_dim_order;
-using ::executorch::runtime::tensors_have_same_dtype;
-using ::executorch::runtime::tensors_have_same_rank;
-using ::executorch::runtime::tensors_have_same_shape;
-using ::executorch::runtime::tensors_have_same_shape_and_dtype;
-using ::executorch::runtime::tensors_have_same_size_at_dims;
-using ::executorch::runtime::tensors_have_same_strides;
 namespace internal {
-using ::executorch::runtime::internal::copy_tensor_data;
-using ::executorch::runtime::internal::reset_data_ptr;
-using ::executorch::runtime::internal::resize_tensor_impl;
-using ::executorch::runtime::internal::set_tensor_data;
-using ::executorch::runtime::internal::share_tensor_data;
+using ::executorch::ET_RUNTIME_NAMESPACE::internal::copy_tensor_data;
+using ::executorch::ET_RUNTIME_NAMESPACE::internal::reset_data_ptr;
+using ::executorch::ET_RUNTIME_NAMESPACE::internal::resize_tensor_impl;
+using ::executorch::ET_RUNTIME_NAMESPACE::internal::set_tensor_data;
+using ::executorch::ET_RUNTIME_NAMESPACE::internal::share_tensor_data;
 } // namespace internal
 } // namespace executor
 } // namespace torch

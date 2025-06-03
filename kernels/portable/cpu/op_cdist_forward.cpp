@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/distance_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -34,7 +35,7 @@ void cdist(const Tensor& x1, const Tensor& x2, Tensor& out, double p) {
   // If the last dimension of x1 (which is equal to the last dimension of x2)
   // has size 0, then the output is filled with 0s.
   if (x1.numel() == 0) {
-    for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
+    for (const auto out_ix : c10::irange(out.numel())) {
       out_data[out_ix] = 0;
     }
     return;
@@ -64,7 +65,7 @@ void cdist(const Tensor& x1, const Tensor& x2, Tensor& out, double p) {
   size_t x2_inner_size = R * M;
   size_t out_inner_size = P * R;
 
-  for (size_t b = 0; b < out_batch_numel; ++b) {
+  for (const auto b : c10::irange(out_batch_numel)) {
     size_t x1_base_ix = b * x1_inner_size;
     size_t x2_base_ix = b * x2_inner_size;
     size_t out_base_ix = b * out_inner_size;
@@ -81,14 +82,13 @@ void cdist(const Tensor& x1, const Tensor& x2, Tensor& out, double p) {
         x2_base_ix = linearize_access_indexes(out_base_coord, out.dim(), x2);
       }
     }
-
     size_t out_ix = 0;
-    for (size_t i = 0; i < P; ++i) {
+    for (const auto i : c10::irange(P)) {
       const CTYPE* row_i = x1_data + x1_base_ix + i * M;
-      for (size_t j = 0; j < R; ++j) {
+      for (const auto j : c10::irange(R)) {
         const CTYPE* row_j = x2_data + x2_base_ix + j * M;
         CTYPE agg = 0;
-        for (size_t k = 0; k < M; ++k) {
+        for (const auto k : c10::irange(M)) {
           CTYPE diff = std::abs(row_i[k] - row_j[k]);
           agg = Norm::reduce(agg, Norm::map(diff, p));
         }

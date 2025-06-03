@@ -555,8 +555,7 @@ inline TensorPtr rand(
 }
 
 /**
- * Creates a TensorPtr filled with random values between 0 and 1, with specified
- * strides.
+ * Creates a TensorPtr filled with random values from a normal distribution.
  *
  * @param sizes A vector specifying the size of each dimension.
  * @param strides A vector specifying the stride for each dimension.
@@ -597,8 +596,7 @@ inline TensorPtr randn_like(
 }
 
 /**
- * Creates a TensorPtr filled with random values sampled from a normal
- * distribution.
+ * Creates a TensorPtr filled with random values from a normal distribution.
  *
  * @param sizes A vector specifying the size of each dimension.
  * @param type The scalar type of the tensor elements.

@@ -35,8 +35,8 @@ class CadencePassAttribute:
 ALL_CADENCE_PASSES: dict[ExportPass, CadencePassAttribute] = {}
 
 
-def get_cadence_pass_attribute(p: ExportPass) -> CadencePassAttribute:
-    return ALL_CADENCE_PASSES[p]
+def get_cadence_pass_attribute(p: ExportPass) -> Optional[CadencePassAttribute]:
+    return ALL_CADENCE_PASSES.get(p, None)
 
 
 # A decorator that registers a pass.
@@ -61,7 +61,8 @@ def create_cadence_pass_filter(
     def _filter(p: ExportPass) -> bool:
         pass_attribute = get_cadence_pass_attribute(p)
         return (
-            pass_attribute.opt_level is not None
+            pass_attribute is not None
+            and pass_attribute.opt_level is not None
             and pass_attribute.opt_level <= opt_level
             and (not pass_attribute.debug_pass or debug)
         )
@@ -104,6 +105,16 @@ def count_node(graph_module: torch.fx.GraphModule, target: torch.fx.node.Target)
     return total
 
 
+def op_counts_match(
+    graph_module: torch.fx.GraphModule,
+    expected_op_counts: dict[EdgeOpOverload, int],
+) -> bool:
+    for op, count in expected_op_counts.items():
+        if count_node(graph_module, op) != count:
+            return False
+    return True
+
+
 # Testing utils
 # Return the compute/function nodes in the graph
 def get_compute_nodes_in_gm(graph_module: torch.fx.GraphModule) -> List[torch.fx.Node]:
@@ -133,6 +144,19 @@ def nodes_not_connected_in_gm(
     return True
 
 
+# Returns the position of the first entry of a node of a given kind in the graph.
+def get_node_pos(
+    graph_module: torch.fx.GraphModule,
+    target: torch.fx.Node,
+) -> int:
+    pos = 0
+    for node in graph_module.graph.nodes:
+        if node.target == target:
+            return pos
+        pos += 1
+    return -1
+
+
 # Returns true if there is no instance of a node with target succ_target
 # positioned immediately after a node with target pred_target in the graph
 def nodes_not_adjacent_in_gm(
@@ -146,3 +170,34 @@ def nodes_not_adjacent_in_gm(
         if node.next.target == succ_target:
             return False
     return True
+
+
+def get_arg(
+    node: torch.fx.Node,
+    arg_index: int,
+    kwarg_name: str,
+    *,
+    default: torch.fx.node.Argument = None,
+) -> torch.fx.node.Argument:
+    """
+    Get the arg at arg_index or kwarg with arg_name of the node. If neither is found
+    return default.
+    """
+    if arg_index < len(node.args):
+        return node.args[arg_index]
+    elif kwarg_name in node.kwargs:
+        return node.kwargs[kwarg_name]
+    else:
+        return default
+
+
+def set_arg(
+    node: torch.fx.Node, arg_index: int, kwarg_name: str, value: torch.fx.node.Argument
+) -> None:
+    """
+    Set the arg at arg_index if it exists, otherwise set the kwarg.
+    """
+    if arg_index < len(node.args):
+        node.update_arg(arg_index, value)
+    else:
+        node.update_kwarg(kwarg_name, value)

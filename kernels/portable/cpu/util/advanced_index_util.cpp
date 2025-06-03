@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <c10/util/irange.h>
 
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_shape_to_c_string.h>
@@ -20,14 +21,15 @@ using TensorOptList =
 namespace {
 
 bool check_indices_dtypes(TensorOptList indices) {
-  for (auto i = 0; i < indices.size(); i++) {
+  for (const auto i : c10::irange(indices.size())) {
     if (indices[i].has_value()) {
       const Tensor& index = indices[i].value();
       ScalarType ix_type = index.scalar_type();
       ET_CHECK_OR_RETURN_FALSE(
           ix_type == ScalarType::Long || ix_type == ScalarType::Int ||
               ix_type == ScalarType::Byte || ix_type == ScalarType::Bool,
-          "Index tensors should be Long, Int, Byte or Bool");
+          "Index tensors should be Long, Int, Byte or Bool; got %d",
+          static_cast<int>(ix_type));
     }
   }
   return true;
@@ -43,13 +45,13 @@ bool is_mask_index(const Tensor& index) {
 
 bool check_mask_indices(const Tensor& in, TensorOptList indices) {
   size_t in_i = 0;
-  for (auto i = 0; i < indices.size(); i++) {
+  for (const auto i : c10::irange(indices.size())) {
     if (indices[i].has_value()) {
       const Tensor& index = indices[i].value();
       if (is_mask_index(index)) {
         ET_CHECK_OR_RETURN_FALSE(
             index.dim() > 0, "Zero-dimensional mask index not allowed");
-        for (auto j = 0; j < index.dim(); j++) {
+        for (const auto j : c10::irange(index.dim())) {
           if (index.size(j) != in.size(in_i + j)) {
 #if ET_LOG_ENABLED
             auto mask_shape = executorch::runtime::tensor_shape_to_c_string(
@@ -82,7 +84,7 @@ template <typename CTYPE_IX>
 size_t _count_trues_in_mask_index(const Tensor& index) {
   const CTYPE_IX* const index_ptr = index.const_data_ptr<CTYPE_IX>();
   size_t sum = 0;
-  for (size_t i = 0; i < index.numel(); ++i) {
+  for (const auto i : c10::irange(index.numel())) {
     if (index_ptr[i]) {
       sum += 1;
     }
@@ -110,7 +112,7 @@ void _query_mask_index(const Tensor& index, size_t query_idx, size_t* res) {
   // true.
   size_t count = 0;
   size_t flat_ix = 0;
-  for (size_t i = 0; i < index.numel(); ++i) {
+  for (const auto i : c10::irange(index.numel())) {
     if (index_ptr[i]) {
       if (count == query_idx) {
         flat_ix = i;
@@ -157,7 +159,8 @@ bool check_index_args(const Tensor& in, TensorOptList indices, Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_LOG_AND_RETURN_IF_FALSE(check_indices_dtypes(indices));
   ET_CHECK_OR_RETURN_FALSE(
-      indices.size() <= in.dim(), "Indexing too many dimensions");
+      static_cast<ssize_t>(indices.size()) <= in.dim(),
+      "Indexing too many dimensions");
   ET_LOG_AND_RETURN_IF_FALSE(check_mask_indices(in, indices));
   return true;
 }
@@ -165,7 +168,7 @@ bool check_index_args(const Tensor& in, TensorOptList indices, Tensor& out) {
 size_t count_index_blocks(TensorOptList indices) {
   size_t block_count = 0;
   bool in_block = false;
-  for (size_t i = 0; i < indices.size(); i++) {
+  for (const auto i : c10::irange(indices.size())) {
     if (indices[i].has_value()) {
       if (!in_block) {
         in_block = true;
@@ -184,13 +187,14 @@ bool get_indices_broadcast_shape(
     size_t* ix_ndim) {
   // Holds the (reversed) broadcasted shape of the indices.
   Tensor::SizesType rev_ix_sizes[kTensorDimensionLimit];
-  size_t curr_ndim = 0;
+  ssize_t curr_ndim = 0;
 
-  for (size_t i = 0; i < indices.size(); i++) {
+  for (const auto i : c10::irange(indices.size())) {
     if (indices[i].has_value()) {
       const Tensor& index = indices[i].value();
       if (is_mask_index(index)) {
-        size_t len = count_trues_in_mask_index(index);
+        Tensor::SizesType len =
+            static_cast<Tensor::SizesType>(count_trues_in_mask_index(index));
         if (curr_ndim == 0) {
           curr_ndim = 1;
           rev_ix_sizes[0] = len;
@@ -200,8 +204,9 @@ bool get_indices_broadcast_shape(
           ET_CHECK_OR_RETURN_FALSE(false, "Broadcast of mask index failed.");
         }
       } else {
-        for (size_t j = 0; j < index.dim(); j++) {
-          size_t rev_j_size = index.size(index.dim() - j - 1);
+        for (const auto j : c10::irange(index.dim())) {
+          Tensor::SizesType rev_j_size =
+              static_cast<Tensor::SizesType>(index.size(index.dim() - j - 1));
           if (j >= curr_ndim) {
             curr_ndim = j + 1;
             rev_ix_sizes[j] = rev_j_size;
@@ -215,7 +220,7 @@ bool get_indices_broadcast_shape(
     }
   }
 
-  for (size_t i = 0; i < curr_ndim; i++) {
+  for (const auto i : c10::irange(curr_ndim)) {
     ix_sizes[i] = rev_ix_sizes[curr_ndim - i - 1];
   }
   (*ix_ndim) = curr_ndim;
@@ -223,8 +228,8 @@ bool get_indices_broadcast_shape(
 }
 
 size_t get_indices_broadcast_ndim(TensorOptList indices) {
-  size_t ndim = 0;
-  for (size_t i = 0; i < indices.size(); i++) {
+  ssize_t ndim = 0;
+  for (const auto i : c10::irange(indices.size())) {
     if (indices[i].has_value()) {
       const Tensor& index = indices[i].value();
       if (is_mask_index(index)) {
@@ -243,7 +248,7 @@ size_t get_indices_broadcast_ndim(TensorOptList indices) {
 
 size_t get_num_indexed_dims(TensorOptList indices) {
   size_t num_indexed_dims = 0;
-  for (size_t i = 0; i < indices.size(); i++) {
+  for (const auto i : c10::irange(indices.size())) {
     if (indices[i].has_value()) {
       const Tensor& index = indices[i].value();
       if (is_mask_index(index)) {
@@ -258,7 +263,7 @@ size_t get_num_indexed_dims(TensorOptList indices) {
 
 size_t get_num_null_indices(TensorOptList indices) {
   size_t num_null_indices = 0;
-  for (size_t i = 0; i < indices.size(); i++) {
+  for (const auto i : c10::irange(indices.size())) {
     if (!indices[i].has_value()) {
       num_null_indices += 1;
     }
@@ -290,33 +295,41 @@ bool get_index_out_target_size(
   size_t num_indexed_dims = get_num_indexed_dims(indices);
 
   ET_CHECK_OR_RETURN_FALSE(
-      num_null_indices + num_indexed_dims <= in.dim(),
-      "Indexing too many dimensions");
+      static_cast<ssize_t>(num_null_indices + num_indexed_dims) <= in.dim(),
+      "Indexing too many dimensions; num_null_indices = %zu, num_indexed_dims = %zu, in.dim() = %" ET_PRI_TENSOR_DIM,
+      num_null_indices,
+      num_indexed_dims,
+      in.dim());
 
   ET_CHECK_OR_RETURN_FALSE(
       in.dim() + broadcast_ndim - num_indexed_dims <= kTensorDimensionLimit,
-      "Out tensor would exceed number of allowed dimensions");
+      "Out tensor would exceed number of allowed dimensions; in.dim() = %" ET_PRI_TENSOR_DIM
+      ", broadcast_ndim = %zu, num_indexed_dims = %zu, kTensorDimensionLimit = %zu",
+      in.dim(),
+      broadcast_ndim,
+      num_indexed_dims,
+      kTensorDimensionLimit);
 
   (*out_ndim) = in.dim() + broadcast_ndim - num_indexed_dims;
 
   if (adjacent) {
     size_t start = get_num_leading_null_indices(indices);
-    for (size_t i = 0; i < start; i++) {
+    for (const auto i : c10::irange(start)) {
       out_sizes[i] = in.size(i);
     }
-    for (size_t i = 0; i < broadcast_ndim; i++) {
+    for (const auto i : c10::irange(broadcast_ndim)) {
       out_sizes[i + start] = broadcast_sizes[i];
     }
-    for (size_t i = num_indexed_dims + start; i < in.dim(); i++) {
+    for (const auto i : c10::irange(num_indexed_dims + start, in.dim())) {
       out_sizes[i + broadcast_ndim - num_indexed_dims] = in.size(i);
     }
   } else {
-    for (size_t i = 0; i < broadcast_ndim; i++) {
+    for (const auto i : c10::irange(broadcast_ndim)) {
       out_sizes[i] = broadcast_sizes[i];
     }
     size_t in_i = 0;
     size_t out_i = broadcast_ndim;
-    for (size_t i = 0; i < indices.size(); i++) {
+    for (const auto i : c10::irange(indices.size())) {
       if (!indices[i].has_value()) {
         out_sizes[out_i++] = in.size(in_i++);
       } else {
@@ -328,7 +341,8 @@ bool get_index_out_target_size(
         }
       }
     }
-    for (size_t i = num_indexed_dims + num_null_indices; i < in.dim(); i++) {
+    for (const auto i :
+         c10::irange(num_indexed_dims + num_null_indices, in.dim())) {
       out_sizes[i + broadcast_ndim - num_indexed_dims] = in.size(i);
     }
   }
@@ -348,25 +362,25 @@ void compute_dim_map(
   size_t num_null_indices = get_num_null_indices(indices);
 
   if (adjacent) {
-    for (auto i = 0; i < start; i++) {
+    for (const auto i : c10::irange(start)) {
       dim_map[i] = i;
     }
-    for (auto i = start; i < start + num_indexed_dims; i++) {
+    for (const auto i : c10::irange(start, start + num_indexed_dims)) {
       dim_map[i] = -1;
     }
-    for (auto i = start + num_indexed_dims; i < in.dim(); i++) {
+    for (const auto i : c10::irange(start + num_indexed_dims, in.dim())) {
       dim_map[i] = i - num_indexed_dims + broadcast_ndim;
     }
   } else {
     size_t in_i = 0;
     size_t out_i = broadcast_ndim;
-    for (size_t i = 0; i < indices.size(); i++) {
+    for (const auto i : c10::irange(indices.size())) {
       if (!indices[i].has_value()) {
         dim_map[in_i++] = out_i++;
       } else {
         const Tensor& index = indices[i].value();
         if (is_mask_index(index)) {
-          for (auto j = 0; j < index.dim(); j++) {
+          for ([[maybe_unused]] const auto j : c10::irange(index.dim())) {
             dim_map[in_i++] = -1;
           }
         } else {
@@ -374,7 +388,8 @@ void compute_dim_map(
         }
       }
     }
-    for (size_t i = num_indexed_dims + num_null_indices; i < in.dim(); i++) {
+    for (const auto i :
+         c10::irange(num_indexed_dims + num_null_indices, in.dim())) {
       dim_map[i] = i - num_indexed_dims + broadcast_ndim;
     }
   }
@@ -386,15 +401,15 @@ void compute_index_map(
     const Tensor& in,
     TensorOptList indices,
     int32_t* ix_map) {
-  for (size_t i = 0; i < in.dim(); i++) {
+  for (const auto i : c10::irange(in.dim())) {
     ix_map[i] = -1;
   }
   size_t in_i = 0;
-  for (size_t i = 0; i < indices.size(); i++) {
+  for (const auto i : c10::irange(indices.size())) {
     if (indices[i].has_value()) {
       const Tensor& index = indices[i].value();
       if (is_mask_index(index)) {
-        for (auto j = 0; j < index.dim(); j++) {
+        for ([[maybe_unused]] const auto j : c10::irange(index.dim())) {
           ix_map[in_i++] = i;
         }
       } else {
@@ -422,7 +437,7 @@ bool get_in_coord(
       const Tensor& index = indices[ix_map[i]].value();
 
       size_t ix_coord[kTensorDimensionLimit];
-      for (auto j = 0; j < broadcast_ndim; j++) {
+      for (const auto j : c10::irange(broadcast_ndim)) {
         ix_coord[j] = out_coord[j + start];
       }
 
@@ -430,7 +445,7 @@ bool get_in_coord(
         size_t query_ix = ix_coord[broadcast_ndim - 1];
         size_t query_result[kTensorDimensionLimit];
         query_mask_index(index, query_ix, query_result);
-        for (auto j = 0; j < index.dim(); j++) {
+        for (const auto j : c10::irange(index.dim())) {
           in_coord[i + j] = query_result[j];
         }
         i += index.dim() - 1;

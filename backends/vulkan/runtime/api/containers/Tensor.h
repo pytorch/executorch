@@ -245,7 +245,7 @@ class vTensor final {
     TextureLimits logical_limits;
     // Contains the number of elements in the tensor according to the canonical
     // sizes.
-    size_t numel;
+    int32_t numel;
 
     friend class vTensor;
 
@@ -253,11 +253,11 @@ class vTensor final {
         const std::vector<int64_t>& sizes,
         const std::vector<int64_t>& strides,
         const TextureLimits& logical_limits,
-        const size_t numel)
+        const size_t numel_ll)
         : sizes_v(utils::make_whcn_ivec4(sizes)),
           strides_v(utils::make_whcn_ivec4(strides)),
           logical_limits(logical_limits),
-          numel(numel) {}
+          numel(utils::safe_downcast<int32_t>(numel_ll)) {}
 
    public:
     /*

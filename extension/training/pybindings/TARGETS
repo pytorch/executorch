@@ -17,13 +17,11 @@ runtime.cxx_python_extension(
     types = ["_training_lib.pyi"],
     visibility = ["//executorch/extension/training/..."],
     deps = [
+        "fbsource//third-party/pybind11:pybind11",
         "//executorch/extension/aten_util:aten_bridge",
         "//executorch/extension/training/optimizer:sgd",
     ],
-    external_deps = [
-        "pybind11",
-        "libtorch_python",
-    ],
+    external_deps = ["libtorch_python"],
 )
 
 runtime.python_library(

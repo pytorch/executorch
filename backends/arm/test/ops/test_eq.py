@@ -1,145 +1,189 @@
 # Copyright 2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import unittest
+from typing import Tuple
 
 import torch
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.exir.backend.compile_spec_schema import CompileSpec
-from parameterized import parameterized
 
-test_data_suite = [
-    # (test_name, input, other,) See torch.eq() for info
-    (
-        "op_eq_rank1_ones",
-        torch.ones(5),
-        torch.ones(5),
-    ),
-    (
-        "op_eq_rank2_rand",
-        torch.rand(4, 5),
-        torch.rand(1, 5),
-    ),
-    (
-        "op_eq_rank3_randn",
-        torch.randn(10, 5, 2),
-        torch.randn(10, 5, 2),
-    ),
-    (
-        "op_eq_rank4_randn",
-        torch.randn(3, 2, 2, 2),
-        torch.randn(3, 2, 2, 2),
-    ),
-]
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU85PipelineBI,
+    OpNotSupportedPipeline,
+    TosaPipelineBI,
+    TosaPipelineMI,
+)
+
+input_t = Tuple[torch.Tensor]
 
 
-class TestEqual(unittest.TestCase):
-    class Equal(torch.nn.Module):
-        def forward(
-            self,
-            input_: torch.Tensor,
-            other_: torch.Tensor,
-        ):
-            return input_ == other_
+class Equal(torch.nn.Module):
+    aten_op_Tensor = "torch.ops.aten.eq.Tensor"
+    aten_op_Scalar = "torch.ops.aten.eq.Scalar"
+    exir_op = "executorch_exir_dialects_edge__ops_aten_eq_Tensor"
 
-    def _test_eq_tosa_MI_pipeline(
+    def __init__(self, input, other):
+        super().__init__()
+        self.input_ = input
+        self.other_ = other
+
+    def forward(
         self,
-        compile_spec: list[CompileSpec],
-        module: torch.nn.Module,
-        test_data: tuple[torch.Tensor, torch.Tensor],
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=compile_spec,
-            )
-            .export()
-            .check_count({"torch.ops.aten.eq.Tensor": 1})
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
-
-    def _test_eq_tosa_BI_pipeline(
-        self,
-        compile_spec: list[CompileSpec],
-        module: torch.nn.Module,
-        test_data: tuple[torch.Tensor, torch.Tensor],
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=compile_spec,
-            )
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.eq.Tensor": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
-
-    @parameterized.expand(test_data_suite)
-    def test_eq_tosa_MI(
-        self,
-        test_name: str,
         input_: torch.Tensor,
-        other_: torch.Tensor,
+        other_: torch.Tensor | int | float,
     ):
-        test_data = (input_, other_)
-        self._test_eq_tosa_MI_pipeline(
-            common.get_tosa_compile_spec("TOSA-0.80+MI"), self.Equal(), test_data
-        )
+        return input_ == other_
 
-    @parameterized.expand(test_data_suite)
-    def test_eq_tosa_BI(
-        self,
-        test_name: str,
-        input_: torch.Tensor,
-        other_: torch.Tensor,
-    ):
-        test_data = (input_, other_)
-        self._test_eq_tosa_BI_pipeline(
-            common.get_tosa_compile_spec("TOSA-0.80+BI"), self.Equal(), test_data
-        )
+    def get_inputs(self):
+        return (self.input_, self.other_)
 
-    @parameterized.expand(test_data_suite)
-    @unittest.skip
-    def test_eq_u55_BI(
-        self,
-        test_name: str,
-        input_: torch.Tensor,
-        other_: torch.Tensor,
-    ):
-        test_data = (input_, other_)
-        self._test_eq_tosa_BI_pipeline(
-            common.get_u55_compile_spec(permute_memory_to_nhwc=True),
-            self.Equal(),
-            test_data,
-        )
 
-    @parameterized.expand(test_data_suite)
-    @unittest.skip
-    def test_eq_u85_BI(
-        self,
-        test_name: str,
-        input_: torch.Tensor,
-        other_: torch.Tensor,
-    ):
-        test_data = (input_, other_)
-        self._test_eq_tosa_BI_pipeline(
-            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
-            self.Equal(),
-            test_data,
-        )
+op_eq_tensor_rank1_ones = Equal(
+    torch.ones(5),
+    torch.ones(5),
+)
+op_eq_tensor_rank2_rand = Equal(
+    torch.rand(4, 5),
+    torch.rand(1, 5),
+)
+op_eq_tensor_rank3_randn = Equal(
+    torch.randn(10, 5, 2),
+    torch.randn(10, 5, 2),
+)
+op_eq_tensor_rank4_randn = Equal(
+    torch.randn(3, 2, 2, 2),
+    torch.randn(3, 2, 2, 2),
+)
+
+op_eq_scalar_rank1_ones = Equal(torch.ones(5), 1.0)
+op_eq_scalar_rank2_rand = Equal(torch.rand(4, 5), 0.2)
+op_eq_scalar_rank3_randn = Equal(torch.randn(10, 5, 2), -0.1)
+op_eq_scalar_rank4_randn = Equal(torch.randn(3, 2, 2, 2), 0.3)
+
+test_data_tensor = {
+    "eq_tensor_rank1_ones": lambda: op_eq_tensor_rank1_ones,
+    "eq_tensor_rank2_rand": lambda: op_eq_tensor_rank2_rand,
+    "eq_tensor_rank3_randn": lambda: op_eq_tensor_rank3_randn,
+    "eq_tensor_rank4_randn": lambda: op_eq_tensor_rank4_randn,
+}
+
+test_data_scalar = {
+    "eq_scalar_rank1_ones": lambda: op_eq_scalar_rank1_ones,
+    "eq_scalar_rank2_rand": lambda: op_eq_scalar_rank2_rand,
+    "eq_scalar_rank3_randn": lambda: op_eq_scalar_rank3_randn,
+    "eq_scalar_rank4_randn": lambda: op_eq_scalar_rank4_randn,
+}
+
+
+@common.parametrize("test_module", test_data_tensor)
+def test_eq_scalar_tosa_MI_tensor(test_module):
+    pipeline = TosaPipelineMI[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        Equal.aten_op_Tensor,
+        Equal.exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_scalar)
+def test_eq_scalar_tosa_MI(test_module):
+    pipeline = TosaPipelineMI[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        Equal.aten_op_Scalar,
+        Equal.exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_tensor)
+def test_eq_scalar_tosa_BI_tensor(test_module):
+    pipeline = TosaPipelineBI[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        Equal.aten_op_Tensor,
+        Equal.exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_scalar)
+def test_eq_scalar_tosa_BI(test_module):
+    pipeline = TosaPipelineBI[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        Equal.aten_op_Tensor,
+        Equal.exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_tensor)
+@common.XfailIfNoCorstone300
+def test_eq_scalar_u55_BI_tensor(test_module):
+    # EQUAL is not supported on U55.
+    pipeline = OpNotSupportedPipeline[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        {Equal.exir_op: 1},
+        quantize=True,
+        u55_subset=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_scalar)
+@common.XfailIfNoCorstone300
+def test_eq_scalar_u55_BI(test_module):
+    # EQUAL is not supported on U55.
+    pipeline = OpNotSupportedPipeline[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        {Equal.exir_op: 1},
+        n_expected_delegates=1,
+        quantize=True,
+        u55_subset=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_module",
+    test_data_tensor,
+    xfails={
+        "eq_tensor_rank4_randn": "MLETORCH-847: Boolean eq result unstable on U85",
+    },
+    strict=False,
+)
+@common.XfailIfNoCorstone320
+def test_eq_scalar_u85_BI_tensor(test_module):
+    pipeline = EthosU85PipelineBI[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        Equal.aten_op_Tensor,
+        Equal.exir_op,
+        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_module",
+    test_data_scalar,
+    xfails={
+        "eq_scalar_rank4_randn": "MLETORCH-847: Boolean eq result unstable on U85",
+    },
+    strict=False,
+)
+@common.XfailIfNoCorstone320
+def test_eq_scalar_u85_BI(test_module):
+    pipeline = EthosU85PipelineBI[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        Equal.aten_op_Tensor,
+        Equal.exir_op,
+        run_on_fvp=True,
+    )
+    pipeline.run()

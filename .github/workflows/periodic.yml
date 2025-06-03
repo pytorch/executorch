@@ -50,7 +50,7 @@ jobs:
     with:
       runner: ${{ matrix.runner }}
       docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: ${{ matrix.timeout }}
       script: |
@@ -63,6 +63,6 @@ jobs:
         BACKEND=${{ matrix.backend }}
         DEMO_BACKEND_DELEGATION=${{ matrix.demo_backend_delegation }}
 
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
         # Build and test ExecuTorch
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}" "${DEMO_BACKEND_DELEGATION}"

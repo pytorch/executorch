@@ -48,9 +48,9 @@ void resize_view_node(
   if (extra_args[0] == kDummyValueRef || graph->val_is_none(extra_args[0])) {
     out->virtual_resize(in->sizes());
   } else {
-    IntListPtr view_sizes = graph->get_int_list(extra_args[0]);
-    std::vector<int64_t> out_sizes =
-        compute_out_sizes(in->sizes(), *view_sizes);
+    std::vector<int64_t> view_sizes =
+        graph->extract_int_or_symint_list(extra_args[0]);
+    std::vector<int64_t> out_sizes = compute_out_sizes(in->sizes(), view_sizes);
     out->virtual_resize(out_sizes);
   }
 }
@@ -77,13 +77,14 @@ void add_view_node(
        {in, vkapi::MemoryAccessType::READ}},
       // Parameter Buffers
       {},
+      // Push Constants
+      {{graph.sizes_pc_of(out), graph.sizes_pc_of(in)}},
       // Specialization Constants
       {SV(t_in->packed_dim()), SV(t_out->packed_dim())},
-      // Resizing Logic
-      resize_view_node,
+      // Resize Args
       {sizes},
-      // Push Constants
-      {{graph.sizes_pc_of(out), graph.sizes_pc_of(in)}}));
+      // Resizing Logic
+      resize_view_node));
 }
 
 void view(ComputeGraph& graph, const std::vector<ValueRef>& args) {

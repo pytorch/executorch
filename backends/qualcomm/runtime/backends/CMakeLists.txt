@@ -67,10 +67,12 @@ target_sources(
   qnn_context
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnContextCommon.h
          ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpContext.h
+         ${CMAKE_CURRENT_LIST_DIR}/irbackend/IrContext.h
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnContextCommon.cpp
           ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpContext.cpp
           ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpContextCustomConfig.h
           ${HOST_ARCHITECTURE}/HtpContextCustomConfig.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/irbackend/${CMAKE_SYSTEM_PROCESSOR}/IrContext.cpp
 )
 
 # qnn_backend_cache
@@ -99,6 +101,7 @@ target_sources(
   qnn_backend
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnBackendCommon.h
          ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpBackend.h
+         ${CMAKE_CURRENT_LIST_DIR}/irbackend/IrBackend.h
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnBackendCommon.cpp
 )
 
@@ -123,53 +126,9 @@ target_sources(
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnCustomProtocol.cpp
 )
 
-set(qnn_header_basenames
-    QnnBackend.h
-    QnnCommon.h
-    QnnContext.h
-    QnnDevice.h
-    GPU/QnnGpuBackend.h
-    GPU/QnnGpuCommon.h
-    GPU/QnnGpuContext.h
-    GPU/QnnGpuGraph.h
-    QnnGraph.h
-    HTP/QnnHtpCommon.h
-    HTP/QnnHtpDevice.h
-    HTP/QnnHtpGraph.h
-    HTP/QnnHtpMem.h
-    HTP/QnnHtpPerfInfrastructure.h
-    HTP/QnnHtpProfile.h
-    HTP/QnnHtpProperty.h
-    HTP/QnnHtpSystemContext.h
-    QnnInterface.h
-    QnnLog.h
-    QnnMem.h
-    QnnOpDef.h
-    QnnOpPackage.h
-    QnnProfile.h
-    QnnProperty.h
-    Saver/QnnSaver.h
-    Saver/QnnSaverCommon.h
-    QnnSdkBuildId.h
-    QnnSignal.h
-    QnnTensor.h
-    QnnTypes.h
-    System/QnnSystemCommon.h
-    System/QnnSystemContext.h
-    System/QnnSystemInterface.h
+# qnn_dlc_manager
+target_sources(
+  qnn_dlc_manager
+  PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnDlcManager.h
+  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/irbackend/${CMAKE_SYSTEM_PROCESSOR}/QnnDlcManager.cpp
 )
-
-set(QNN_HEADER_DIR_DST ${CMAKE_CURRENT_BINARY_DIR}/QNN/include)
-
-# add the custom commands to copy each headers
-foreach(_qnn_header ${qnn_header_basenames})
-  # copy at generation time to make below target_sources(qnn_header) happy.
-  configure_file(
-    ${QNN_SDK_ROOT}/include/QNN/${_qnn_header}
-    ${QNN_HEADER_DIR_DST}/${_qnn_header} COPYONLY
-  )
-  list(APPEND qnn_header_files ${QNN_HEADER_DIR_DST}/${_qnn_header})
-endforeach()
-
-# qnn_header
-target_sources(qnn_header INTERFACE ${qnn_header_files})

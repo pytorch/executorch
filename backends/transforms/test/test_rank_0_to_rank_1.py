@@ -17,7 +17,7 @@ class TestRank0ToRank1Pass(unittest.TestCase):
         model.eval()
 
         example_inputs = (torch.tensor(1.0), torch.tensor(2.0))
-        aten = torch.export.export(model, example_inputs)
+        aten = torch.export.export(model, example_inputs, strict=True)
 
         # Check that the input rank is 0
         for node in aten.graph.nodes:

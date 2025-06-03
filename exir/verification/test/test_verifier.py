@@ -153,7 +153,7 @@ class TestEdgeDialectVerifier(unittest.TestCase):
         net = TrainingNet(Net())
         inputs = (torch.randn(1, 6, 5, 5), torch.ones(1, dtype=torch.int64))
 
-        export_model = export(net, inputs)
+        export_model = export(net, inputs, strict=True)
         export_model = _export_forward_backward(export_model)
 
         edge = to_edge(export_model)

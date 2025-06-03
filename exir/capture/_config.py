@@ -97,3 +97,11 @@ class ExecutorchBackendConfig:
     # If set to true, all trainable weights will be stored in a separate file,
     # external to the PTE file.
     external_mutable_weights: bool = False
+
+    # If set to true, all mutable buffers will have their fully qualified names
+    # serialized in the PTE file. Its value is ignored if mutable buffers are not
+    # memory planned as the names must be serialized in that case.
+    emit_mutable_buffer_names: bool = False
+
+    # If set to true, we run quant fusion and constant propagation passes
+    do_quant_fusion_and_const_prop: bool = False

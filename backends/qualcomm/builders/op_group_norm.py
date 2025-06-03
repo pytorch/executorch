@@ -10,6 +10,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpGroupNorm, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -28,7 +29,7 @@ class GroupNormVisitor(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        input_node = node.args[0]
+        input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
@@ -38,7 +39,7 @@ class GroupNormVisitor(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        weight_node = node.args[1]
+        weight_node = self.get_node(node.args[1])
         weight_tensor = get_parameter(weight_node, self.edge_program)
         weight_tensor_wrapper = self.define_tensor(
             weight_node,
@@ -48,7 +49,7 @@ class GroupNormVisitor(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        bias_node = node.args[2]
+        bias_node = self.get_node(node.args[2])
         bias_tensor = get_parameter(bias_node, self.edge_program)
         bias_tensor_wrapper = self.define_tensor(
             bias_node,
@@ -81,12 +82,12 @@ class GroupNormVisitor(NodeVisitor):
         group_norm_op.AddScalarParam(
             OpGroupNorm.param_epsilon,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
-            {"data": np.float32(epsilon)},
+            {QCOM_DATA: np.float32(epsilon)},
         )
         group_norm_op.AddScalarParam(
             OpGroupNorm.param_group,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {"data": np.uint32(group)},
+            {QCOM_DATA: np.uint32(group)},
         )
 
         return group_norm_op

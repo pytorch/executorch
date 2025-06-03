@@ -9,6 +9,7 @@
 #include <c10/util/irange.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
+#include <c10/util/irange.h>
 #include <cstring>
 
 #include <executorch/runtime/core/portable_type/tensor.h>
@@ -46,7 +47,7 @@ bool tensor_has_valid_dim_order(torch::executor::Tensor t) {
       ET_LOG(
           Error,
           "    dim_order(%zu): %zu",
-          static_cast<size_t>(d),
+          d,
           static_cast<size_t>(t.dim_order()[d]));
     }
     return false;
@@ -67,7 +68,7 @@ bool tensor_is_default_or_channels_last_dim_order(torch::executor::Tensor t) {
       ET_LOG(
           Error,
           "    dim_order(%zu): %zu",
-          static_cast<size_t>(d),
+          d,
           static_cast<size_t>(t.dim_order()[d]));
     }
   }
@@ -84,7 +85,7 @@ bool tensor_is_default_dim_order(torch::executor::Tensor t) {
       ET_LOG(
           Error,
           "    dim_order(%zu): %zu",
-          static_cast<size_t>(d),
+          d,
           static_cast<size_t>(t.dim_order()[d]));
     }
   }
@@ -101,7 +102,7 @@ bool tensor_is_channels_last_dim_order(torch::executor::Tensor t) {
       ET_LOG(
           Error,
           "    dim_order(%zu): %zu",
-          static_cast<size_t>(d),
+          d,
           static_cast<size_t>(t.dim_order()[d]));
     }
   }

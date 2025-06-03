@@ -102,6 +102,16 @@ class QuantParams:
             assert group_size > 0, "Group size must be greater than 0"
         self.is_per_channel_group = self.per_channel and self.group_size > 0
 
+        if per_channel and not self.is_per_channel_group:
+            tensor = q_input.meta["val"]
+            assert (
+                tensor.shape[self.axis] == cast(torch.Tensor, self.scale).shape[0]
+            ), f"Invalid size of per channel quantization scales, axis: {self.axis}, scale size: {self.scale.shape}, tensor shape: {tensor.shape}"
+
+            assert (
+                tensor.shape[self.axis] == cast(torch.Tensor, self.zp).shape[0]
+            ), f"Invalid size of per channel quantization zero-points, axis: {self.axis}, zp size: {self.zp.shape}, tensor shape: {tensor.shape}"
+
     def quantize_tensor(self, tensor: torch.Tensor) -> torch.Tensor:
         # Do nothing if already quantized by the Quantizer
         if tensor.dtype == self.dtype:
@@ -131,12 +141,29 @@ class QuantParams:
                 tensor, self.scale, self.zp, self.qmin, self.qmax, self.dtype
             )
 
+    # Temporary helper until non-batch dimensions can be inferred
+    # Detects if a node feeds into a conv op by checking all downstream users
+    @staticmethod
+    def _feeds_into_conv(node: torch.fx.Node) -> bool:
+        users_list = [node]
+
+        while users_list:
+            current_user = users_list.pop()
+            if "linear" in str(current_user.target):
+                return False
+            if "convolution" in str(current_user.target):
+                return True
+            users_list.extend(current_user.users)
+
+        return False
+
     @classmethod
     def _from_dynamic_input_node(cls, quant_node: torch.fx.Node) -> QuantParams:
         q_input = quant_node.args[0]  # fp32 input
         assert isinstance(q_input, torch.fx.Node)
         # TODO - materialize this from the quant_node scale count and val shape
-        num_nonbatch_dims = 1
+        # Set non-batch dims to 3 if node feeds into conv (only 2D is supported), otherwise set to 1 for linear
+        num_nonbatch_dims = 3 if cls._feeds_into_conv(quant_node) else 1
 
         return cls(
             per_channel=False,  # True is not valid

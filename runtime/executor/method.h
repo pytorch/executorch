@@ -7,9 +7,12 @@
  */
 
 #pragma once
+
+#ifdef __GNUC__
 // Disable -Wdeprecated-declarations, as some builds use 'Werror'.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/event_tracer.h>
@@ -29,7 +32,7 @@ struct EValue;
 } // namespace executorch_flatbuffer
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 
 // Forward declare NamedData. This is a public header and must not include
 // internal data types.
@@ -188,6 +191,18 @@ class Method final {
    * @returns Error::Ok on success, non-Ok on failure.
    */
   ET_NODISCARD Error get_inputs(EValue* input_evalues, size_t length);
+
+  /**
+   *
+   * Retrieves the attribute tensor associated with the given name.
+   *
+   * @param[in] name The name of the attribute tensor to retrieve.
+   *
+   * @returns Result containing the attribute tensor on success, non-Ok on
+   * failure.
+   */
+  ET_NODISCARD Result<executorch::aten::Tensor> get_attribute(
+      executorch::aten::string_view name);
 
   /**
    * Execute the method.
@@ -391,15 +406,17 @@ class Method final {
   void log_outputs();
 };
 
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
 
 namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::Method;
+using ::executorch::ET_RUNTIME_NAMESPACE::Method;
 } // namespace executor
 } // namespace torch
 
+#ifdef __GNUC__
 #pragma GCC diagnostic pop
+#endif

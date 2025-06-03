@@ -15,7 +15,7 @@ cmake_minimum_required(VERSION 3.19)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
-include(${EXECUTORCH_ROOT}/build/Test.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
 set(_kernels portable optimized quantized)
 foreach(kernel ${_kernels})
@@ -23,11 +23,11 @@ foreach(kernel ${_kernels})
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/test"
   )
   set(_wrapper_path "${_wrapper_dir}/FunctionHeaderWrapper.h")
+  set(_functions_include "#include <executorch/kernels/${kernel}/Functions.h>")
   add_custom_command(
     OUTPUT "${_wrapper_path}"
     COMMAND mkdir -p ${_wrapper_dir}
-    COMMAND echo "#include <executorch/kernels/${kernel}/Functions.h>" >
-            "${_wrapper_path}"
+    COMMAND echo ${_functions_include} > "${_wrapper_path}"
     DEPENDS
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/Functions.h"
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/NativeFunctions.h"
@@ -42,18 +42,28 @@ foreach(kernel ${_kernels})
            "${_wrapper_dir}/supported_features.h"
     COMMAND mkdir -p ${_wrapper_dir}
     COMMAND
-      python kernels/test/gen_supported_features.py
+      ${PYTHON_EXECUTABLE} kernels/test/gen_supported_features.py
       kernels/${kernel}/test/supported_features_def.yaml >
       ${_wrapper_dir}/supported_features.cpp
     COMMAND
-      python kernels/test/gen_supported_features.py
+      ${PYTHON_EXECUTABLE} kernels/test/gen_supported_features.py
       kernels/test/supported_features.yaml >
       ${_wrapper_dir}/supported_features.h
     WORKING_DIRECTORY "${EXECUTORCH_ROOT}"
     COMMENT "Generating ${_wrapper_dir}/supported_features.cpp and header"
     VERBATIM
   )
-
+  if(${kernel} STREQUAL "optimized")
+    set(_kernel_ops_lib "optimized_native_cpu_ops_lib")
+    set(_kernel_ops_lib_path
+        "${CMAKE_CURRENT_BINARY_DIR}/../../configurations/optimized_native_cpu_ops_lib"
+    )
+  else()
+    set(_kernel_ops_lib "${kernel}_ops_lib")
+    set(_kernel_ops_lib_path
+        "${CMAKE_CURRENT_BINARY_DIR}/../../kernels/${kernel}/${kernel}_ops_lib"
+    )
+  endif()
   add_custom_command(
     OUTPUT
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/Functions.h"
@@ -63,10 +73,9 @@ foreach(kernel ${_kernels})
       mkdir -p
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/"
     COMMAND
-      cp
-      "${CMAKE_CURRENT_BINARY_DIR}/../../kernels/${kernel}/${kernel}_ops_lib/*.h"
+      cp "${_kernel_ops_lib_path}/*.h"
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/"
-      DEPENDS "${kernel}_ops_lib"
+    DEPENDS ${_kernel_ops_lib}
   )
 endforeach()
 
@@ -126,6 +135,7 @@ set(all_test_sources
     "op_detach_copy_test.cpp"
     "op_diagonal_copy_test.cpp"
     "op_div_test.cpp"
+    "op_elu_test.cpp"
     "op_embedding_test.cpp"
     "op_empty_test.cpp"
     "op_eq_test.cpp"
@@ -176,6 +186,7 @@ set(all_test_sources
     "op_mul_test.cpp"
     "op_pow_test.cpp"
     "op_native_batch_norm_test.cpp"
+    "op_native_dropout_test.cpp"
     "op_native_group_norm_test.cpp"
     "op_native_layer_norm_test.cpp"
     "op_ne_test.cpp"
@@ -186,6 +197,8 @@ set(all_test_sources
     "op_permute_copy_test.cpp"
     "op_pixel_shuffle_test.cpp"
     "op_prod_test.cpp"
+    "op_rand_test.cpp"
+    "op_randn_test.cpp"
     "op_reciprocal_test.cpp"
     "op_relu_test.cpp"
     "op_remainder_test.cpp"
@@ -232,6 +245,7 @@ set(all_test_sources
     "op_upsample_bilinear2d_test.cpp"
     "op_upsample_nearest2d_test.cpp"
     "op_var_test.cpp"
+    "op_view_as_real_copy_test.cpp"
     "op_view_copy_test.cpp"
     "op_where_test.cpp"
     "op_zeros_test.cpp"
@@ -264,24 +278,28 @@ set(_optimized_kernels_test_sources
     "op_add_test.cpp"
     "op_bmm_test.cpp"
     "op_div_test.cpp"
+    "op_elu_test.cpp"
     "op_exp_test.cpp"
+    "op_fft_c2r_test.cpp"
     "op_fft_r2c_test.cpp"
     "op_gelu_test.cpp"
     "op_le_test.cpp"
     "op_linear_test.cpp"
     "op_log_softmax_test.cpp"
+    "op_mm_test.cpp"
     "op_mul_test.cpp"
     "op_native_layer_norm_test.cpp"
     "op_neg_test.cpp"
     "op_sub_test.cpp"
+    "op_where_test.cpp"
     "UnaryUfuncRealHBBF16ToFloatHBF16Test.cpp"
-    ${CMAKE_CURRENT_BINARY_DIR}/include/portable/executorch/kernels/test/supported_features.cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.cpp
 )
 
-# We don't have sleef on OSS so we don't have gelu and log_softmax
-list(REMOVE_ITEM _optimized_kernels_test_sources "op_gelu_test.cpp"
-     "op_log_softmax_test.cpp"
-)
+if(TARGET optimized_portable_kernels)
+  list(APPEND _optimized_kernels_test_sources ${all_test_sources})
+  list(REMOVE_DUPLICATES _optimized_kernels_test_sources)
+endif()
 
 et_cxx_test(
   optimized_kernels_test
@@ -290,16 +308,16 @@ et_cxx_test(
   EXTRA_LIBS
   cpuinfo
   extension_threadpool
-  optimized_kernels
-  optimized_ops_lib
-  portable_kernels
+  optimized_native_cpu_ops_lib
   pthreadpool
   eigen_blas
 )
 add_dependencies(optimized_kernels_test generate_wrapper)
 target_include_directories(
-  optimized_kernels_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/optimized"
-                                 "${CMAKE_INSTALL_PREFIX}/include"
+  optimized_kernels_test
+  PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/optimized"
+          "${CMAKE_CURRENT_BINARY_DIR}/include/portable"
+          "${CMAKE_INSTALL_PREFIX}/include"
 )
 
 if(TARGET quantized_kernels)

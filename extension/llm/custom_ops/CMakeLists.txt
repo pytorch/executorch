@@ -11,19 +11,18 @@ if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
-if(NOT PYTHON_EXECUTABLE)
-  set(PYTHON_EXECUTABLE python3)
-endif()
-
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 endif()
 
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+  list(APPEND _common_compile_options "-march=armv8.2-a+dotprod")
+endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
@@ -38,12 +37,29 @@ include(${EXECUTORCH_SRCS_FILE})
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+list(APPEND _common_include_directories ${EXECUTORCH_ROOT}/third-party/ao)
 
 # Custom op libraries
 set(custom_ops_libs pthreadpool)
 list(APPEND custom_ops_libs cpuinfo)
 list(APPEND custom_ops_libs cpublas)
 list(APPEND custom_ops_libs eigen_blas)
+
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|armv7)$")
+  list(APPEND _custom_ops__srcs
+       "extension/llm/custom_ops/spinquant/third-party/FFHT/fht_neon.c"
+  )
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)")
+  list(APPEND _custom_ops__srcs
+       "extension/llm/custom_ops/spinquant/third-party/FFHT/fht_avx.c"
+  )
+else()
+  message(
+    FATAL_ERROR
+      "Unsupported CMAKE_SYSTEM_PROCESSOR ${CMAKE_SYSTEM_PROCESSOR}. (If \
+32-bit x86, try using fht_avx.c and send a PR if it works!)"
+  )
+endif()
 
 list(TRANSFORM _custom_ops__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
@@ -62,7 +78,7 @@ target_include_directories(
 target_link_libraries(custom_ops PUBLIC ${custom_ops_libs} executorch_core)
 
 target_compile_options(
-  custom_ops PUBLIC ${_common_compile_options} -DET_USE_THREADPOOL
+  custom_ops PUBLIC ${_common_compile_options}
 )
 
 install(TARGETS custom_ops DESTINATION lib)
@@ -99,7 +115,7 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   else()
     # If no portable_lib, custom_ops_aot_lib still gives the ability to use the
     # ops in PyTorch
-    target_link_libraries(custom_ops_aot_lib PUBLIC executorch_core)
+    target_link_libraries(custom_ops_aot_lib PUBLIC executorch_core kernels_util_all_deps)
   endif()
 
   target_link_libraries(
@@ -114,10 +130,15 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   target_compile_options(
     custom_ops_aot_lib
     PUBLIC -Wno-deprecated-declarations -fPIC -frtti -fexceptions
-           ${_common_compile_options} -DET_USE_THREADPOOL
+           ${_common_compile_options}
   )
 
   install(TARGETS custom_ops_aot_lib
           LIBRARY DESTINATION executorch/extension/llm/custom_ops
   )
+endif()
+
+add_subdirectory(spinquant/third-party/FFHT)
+if(BUILD_TESTING)
+  add_subdirectory(spinquant/test)
 endif()

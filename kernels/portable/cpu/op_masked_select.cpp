@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <c10/util/irange.h>
 
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -53,14 +54,14 @@ Tensor& masked_select_out(
         ctx, false, InvalidArgument, out, "Failed to broadcast input and mask");
   }
   size_t broadcast_numel = 1;
-  for (size_t i = 0; i < broadcast_ndim; i++) {
+  for (const auto i : c10::irange(broadcast_ndim)) {
     broadcast_numel *= broadcast_sizes[i];
   }
 
   // Compute the number of out elements
   size_t mask_true_count = 0;
   const bool* const mask_data = mask.const_data_ptr<bool>();
-  for (size_t i = 0; i < mask.numel(); ++i) {
+  for (const auto i : c10::irange(mask.numel())) {
     if (mask_data[i]) {
       mask_true_count++;
     }
@@ -79,10 +80,10 @@ Tensor& masked_select_out(
 
   // Figure out if `in` is broadcasted
   bool in_is_broadcasted = false;
-  if (in.dim() != broadcast_ndim) {
+  if (in.dim() != static_cast<ssize_t>(broadcast_ndim)) {
     in_is_broadcasted = true;
   } else {
-    for (size_t i = 0; i < in.dim(); ++i) {
+    for (const auto i : c10::irange(in.dim())) {
       if (in.size(i) != broadcast_sizes[i]) {
         in_is_broadcasted = true;
       }
@@ -91,10 +92,10 @@ Tensor& masked_select_out(
 
   // Figure out if `mask` is broadcasted
   bool mask_is_broadcasted = false;
-  if (mask.dim() != broadcast_ndim) {
+  if (mask.dim() != static_cast<ssize_t>(broadcast_ndim)) {
     mask_is_broadcasted = true;
   } else {
-    for (size_t i = 0; i < mask.dim(); ++i) {
+    for (const auto i : c10::irange(mask.dim())) {
       if (mask.size(i) != broadcast_sizes[i]) {
         mask_is_broadcasted = true;
       }
@@ -105,7 +106,7 @@ Tensor& masked_select_out(
   bool any_is_broadcasted = (in_is_broadcasted || mask_is_broadcasted);
 
   size_t out_ix = 0;
-  for (size_t i = 0; i < broadcast_numel; ++i) {
+  for (const auto i : c10::irange(broadcast_numel)) {
     size_t in_linear_index = i;
     size_t mask_linear_index = i;
 

@@ -9,6 +9,7 @@ def define_common_targets():
     """
 
     _THREADPOOL_SRCS = [
+        "thread_parallel.cpp",
         "threadpool.cpp",
         "threadpool_guard.cpp",
     ] + (["fb/threadpool_use_n_threads.cpp"] if not runtime.is_oss else [])
@@ -19,15 +20,18 @@ def define_common_targets():
     ] + (["fb/threadpool_use_n_threads.h"] if not runtime.is_oss else [])
 
     runtime.cxx_library(
-        name = "threadpool",
+        name = "threadpool_lib",
         srcs = _THREADPOOL_SRCS,
         deps = [
             "//executorch/runtime/core:core",
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
         ],
         exported_headers = _THREADPOOL_HEADERS,
         exported_deps = [
             third_party_dep("pthreadpool"),
             third_party_dep("cpuinfo"),
+            # Allow users to use the header without an extra deps entry.
+            "//executorch/runtime/kernel:thread_parallel_interface",
         ],
         exported_preprocessor_flags = [
             "-DET_USE_THREADPOOL",
@@ -37,6 +41,38 @@ def define_common_targets():
             "//executorch/backends/...",
             "//executorch/runtime/backend/...",
             "//executorch/extension/threadpool/test/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "threadpool",
+        # TODO: OSS doesn't have os:iphoneos. Sync buck2 prelude
+        # update to add it and remove duplication.
+        exported_deps = (select({
+            # Major operating systems should be able to use threadpool.
+            "ovr_config//os:linux": [":threadpool_lib"],
+            "ovr_config//os:macos": [":threadpool_lib"],
+            "ovr_config//os:windows": [":threadpool_lib"],
+            "ovr_config//os:android": [":threadpool_lib"],
+            "ovr_config//os:iphoneos": [":threadpool_lib"],
+            # Machines without an operating system shouldn't.
+            "ovr_config//os:none": ["//executorch/runtime/kernel:thread_parallel_interface"],
+            # If we don't know what it is, disable threadpool out of caution.
+            "DEFAULT": ["//executorch/runtime/kernel:thread_parallel_interface"],
+        }) if not runtime.is_oss else select({
+            # Major operating systems should be able to use threadpool.
+            "ovr_config//os:linux": [":threadpool_lib"],
+            "ovr_config//os:macos": [":threadpool_lib"],
+            "ovr_config//os:windows": [":threadpool_lib"],
+            "ovr_config//os:android": [":threadpool_lib"],
+            # Machines without an operating system shouldn't.
+            "ovr_config//os:none": ["//executorch/runtime/kernel:thread_parallel_interface"],
+            # If we don't know what it is, disable threadpool out of caution.
+            "DEFAULT": ["//executorch/runtime/kernel:thread_parallel_interface"],
+        })),
+        visibility = [
+            "//executorch/...",
             "@EXECUTORCH_CLIENTS",
         ],
     )

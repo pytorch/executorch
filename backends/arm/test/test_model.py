@@ -5,7 +5,6 @@
 
 import argparse
 import os
-import platform
 import subprocess
 import sys
 
@@ -56,7 +55,18 @@ def get_args():
         default=False,
         help="Don't save temporary files during compilation",
     )
-
+    parser.add_argument(
+        "--extra_flags",
+        required=False,
+        default=None,
+        help="Extra cmake flags to pass the when building the executor_runner",
+    )
+    parser.add_argument(
+        "--timeout",
+        required=False,
+        default=60 * 10,
+        help="Timeout in seconds used when running the model",
+    )
     args = parser.parse_args()
 
     if args.model and "ethos-u" in args.target and args.system_config is None:
@@ -95,6 +105,8 @@ def build_libs(et_build_root: str, script_path: str):
             os.path.join(script_path, "build_executorch.sh"),
             f"--et_build_root={et_build_root}",
             "--build_type=Release",
+            "--devtools",
+            "--etdump",
         ]
     )
     run_external_cmd(
@@ -104,14 +116,6 @@ def build_libs(et_build_root: str, script_path: str):
             f"--et_build_root={et_build_root}",
             "--build_type=Release",
             "--portable_kernels=aten::_softmax.out",
-        ]
-    )
-    run_external_cmd(
-        [
-            "bash",
-            os.path.join(script_path, "build_quantized_ops_aot_lib.sh"),
-            f"--et_build_root={et_build_root}",
-            "--build_type=Release",
         ]
     )
 
@@ -125,17 +129,6 @@ def build_pte(
     build_output: str,
     no_intermediate: bool,
 ):
-    soext = {"Darwin": "dylib", "Linux": "so", "Windows": "dll"}.get(
-        platform.system(), None
-    )
-    solibs_path = os.path.join(
-        et_build_root,
-        "cmake-out-aot-lib",
-        "kernels",
-        "quantized",
-        f"libquantized_ops_aot_lib.{soext}",
-    )
-    solibs = f"--so_library={solibs_path}"
 
     intermediate = ""
     if not no_intermediate:
@@ -148,17 +141,17 @@ def build_pte(
             "examples.arm.aot_arm_compiler",
             "--delegate",
             "--quantize",
+            "--bundleio",
             intermediate,
             f"--model_name={model_name}",
             f"--target={target}",
             f"--output={build_output}",
             f"--system_config={system_config}",
             f"--memory_mode={memory_mode}",
-            solibs,
         ]
     )
 
-    pte_file = os.path.join(output, f"{model_name}_arm_delegate_{args.target}.pte")
+    pte_file = os.path.join(output, f"{model_name}_arm_delegate_{args.target}.bpte")
     return pte_file
 
 
@@ -168,17 +161,28 @@ def build_ethosu_runtime(
     pte_file: str,
     target: str,
     system_config: str,
+    memory_mode: str,
+    extra_flags: str,
     elf_build_path: str,
 ):
+
+    extra_build_flag = ""
+    if extra_flags:
+        extra_build_flag = f"--extra_build_flags={extra_flags}"
+
     run_external_cmd(
         [
             "bash",
-            os.path.join(script_path, "build_executorch_runner.sh"),
+            os.path.join(script_path, "build_executor_runner.sh"),
             f"--et_build_root={et_build_root}",
             f"--pte={pte_file}",
+            "--bundleio",
+            "--etdump",
             f"--target={target}",
             "--build_type=Release",
             f"--system_config={system_config}",
+            f"--memory_mode={memory_mode}",
+            extra_build_flag,
             f"--output={elf_build_path}",
         ]
     )
@@ -187,13 +191,14 @@ def build_ethosu_runtime(
     return elf_file
 
 
-def run_elf_with_fvp(script_path: str, elf_file: str, target: str):
+def run_elf_with_fvp(script_path: str, elf_file: str, target: str, timeout: int):
     run_external_cmd(
         [
             "bash",
             os.path.join(script_path, "run_fvp.sh"),
             f"--elf={elf_file}",
             f"--target={target}",
+            f"--timeout={timeout}",
         ]
     )
 
@@ -239,9 +244,11 @@ if __name__ == "__main__":
                 pte_file,
                 args.target,
                 args.system_config,
+                args.memory_mode,
+                args.extra_flags,
                 elf_build_path,
             )
             print(f"ELF file created: {elf_file} ")
 
-            run_elf_with_fvp(script_path, elf_file, args.target)
+            run_elf_with_fvp(script_path, elf_file, args.target, args.timeout)
         print(f"Model: {model_name} on {args.target} -> PASS")

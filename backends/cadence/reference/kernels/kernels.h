@@ -36,6 +36,24 @@ void dequantize(
     int32_t zero_point,
     size_t size);
 
+template <typename IT, typename OT>
+OT requantize(
+    const IT in,
+    float in_scale,
+    int32_t in_zero_point,
+    float inv_out_scale,
+    int32_t out_zero_point);
+
+template <typename IT, typename OT>
+void requantize(
+    OT* __restrict__ out,
+    const IT* __restrict__ in,
+    float in_scale,
+    int32_t in_zero_point,
+    float inv_out_scale,
+    int32_t out_zero_point,
+    size_t size);
+
 }; // namespace kernels
 }; // namespace reference
 }; // namespace impl

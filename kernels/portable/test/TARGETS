@@ -2,7 +2,6 @@
 # targets.bzl. This file can contain fbcode-only targets.
 
 load(":targets.bzl", "define_common_targets")
-load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
@@ -26,31 +25,5 @@ runtime.cxx_library(
     ],
     external_deps = [
         "libtorch",
-    ],
-)
-
-python_unittest(
-    name = "op_upsample_bilinear2d_test",
-    srcs = [
-        "op_upsample_bilinear2d_test.py",
-    ],
-    preload_deps = [
-        ":aot_ops_test_lib",
-    ],
-    deps = [
-        "//caffe2:torch",
-    ],
-)
-
-python_unittest(
-    name = "op_upsample_nearest2d_test",
-    srcs = [
-        "op_upsample_nearest2d_test.py",
-    ],
-    preload_deps = [
-        ":aot_ops_test_lib",
-    ],
-    deps = [
-        "//caffe2:torch",
     ],
 )

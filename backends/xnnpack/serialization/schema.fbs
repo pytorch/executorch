@@ -48,12 +48,16 @@ table PerChannelGroupQuant {
   scale:[float];
   channel_dim:int;
   group_size:int;
-  scale_bf16:[ushort];
+  scale_bf16:[ushort] (deprecated);
+  scale_buffer_idx: uint;
+  num_scales: uint;
 }
 
 table PerChannelQuant {
   scale:[float];
   channel_dim:int;
+  scale_buffer_idx: uint;
+  num_scales: uint;
 }
 
 table PerTokenDynamicQuant {
@@ -135,6 +139,8 @@ union XNodeUnion {
   XNNConcatenate5: _XNNCat,
   XNNConvTranspose2d: _XNNNodeConv,
   XNNReciprocalSquareRoot: _XNNNode1x1,
+  XNNLog: _XNNNode1x1,
+  XNNGelu: _XNNNode1x1,
 }
 
 union XValueUnion {
@@ -316,11 +322,20 @@ table XNNLeakyReLU {
 table ConstantDataOffset {
   // Constant data offsets are relative to the constant data base offset provided
   // in the XNNPACKHeader.
+  // named_key and offset are mutually exclusive, meaning only one of these values
+  // are valid. If the named key is a non-empty string, then the offset must be UINT64_MAX.
+  // If the offset is not UINT64_MAX, then the named key must be an empty string
   offset: uint64;
 
   // The size in bytes of valid data starting at the offset. The constant data
   // may be followed by padding before the next piece of constant data
   size: uint64;
+
+  // unique string id used to query the offset from the named data store.
+  // named_key and offset are mutually exclusive, meaning only one of these values
+  // are valid. If the named key is a non-empty string, then the offset must be UINT64_MAX.
+  // If the offset is not UINT64_MAX, then the named key must be an empty string
+  named_key: string;
 }
 
 table XNNGraph {

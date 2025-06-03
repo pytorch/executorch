@@ -9,11 +9,9 @@
 #pragma once
 
 #include <executorch/backends/xnnpack/runtime/XNNExecutor.h>
+#include <executorch/backends/xnnpack/runtime/XNNWeightsCache.h>
 #include <executorch/runtime/platform/compiler.h>
-
 #include <xnnpack.h>
-#include <memory>
-#include <vector>
 
 namespace executorch {
 namespace backends {
@@ -29,8 +27,9 @@ class XNNCompiler {
       const void* buffer_pointer,
       size_t num_bytes,
       XNNExecutor* executor,
-      executorch::runtime::MemoryAllocator* runtime_allocator,
-      xnn_workspace_t workspace);
+      XNNWeightsCache* weights_cache,
+      xnn_workspace_t workspace,
+      const NamedDataMap* named_data_map);
 };
 
 } // namespace delegate

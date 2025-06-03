@@ -5,13 +5,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# WARNING: The CI runner logic should directly be in the corresponding yml files
+# This file will be deleted once the reference in periodic.yml is deleted.
+
 import itertools
 import json
 import os
 from typing import Any
 
 from examples.models import MODEL_NAME_TO_MODEL
-from examples.xnnpack import MODEL_NAME_TO_OPTIONS
+from examples.xnnpack import MODEL_NAME_TO_OPTIONS, QuantType
 
 DEFAULT_RUNNERS = {
     "linux": "linux.2xlarge",
@@ -30,6 +33,7 @@ CUSTOM_RUNNERS = {
         "dl3": "linux.4xlarge.memory",
         "emformer_join": "linux.4xlarge.memory",
         "emformer_predict": "linux.4xlarge.memory",
+        "phi_4_mini": "linux.4xlarge.memory",
     }
 }
 
@@ -104,8 +108,12 @@ def model_should_run_on_target_os(model: str, target_os: str) -> bool:
     For example, a big model can be disabled in macos due to the limited macos resources.
     """
     if target_os == "macos":
+        # Disabled in macos due to limited resources, and should stay that way even if
+        # we otherwise re-enable.
         return model not in ["llava"]
-    return True
+    # Disabled globally because we have test-llava-runner-linux that does a more
+    # comprehensive E2E test of llava.
+    return model not in ["llava"]
 
 
 def export_models_for_ci() -> dict[str, dict]:
@@ -146,7 +154,7 @@ def export_models_for_ci() -> dict[str, dict]:
         if backend == "xnnpack":
             if name not in MODEL_NAME_TO_OPTIONS:
                 continue
-            if MODEL_NAME_TO_OPTIONS[name].quantization:
+            if MODEL_NAME_TO_OPTIONS[name].quantization != QuantType.NONE:
                 backend += "-quantization"
 
             if MODEL_NAME_TO_OPTIONS[name].delegation:

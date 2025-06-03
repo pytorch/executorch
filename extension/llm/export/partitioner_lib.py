@@ -57,7 +57,7 @@ def get_mps_partitioner(use_kv_cache: bool = False):
         )
     except ImportError:
         raise ImportError(
-            "Please install the MPS backend follwing https://pytorch.org/executorch/main/build-run-mps.html"
+            "Please install the MPS backend follwing https://pytorch.org/executorch/main/backends-mps"
         )
 
     compile_specs = [CompileSpec("use_fp16", bytes([True]))]
@@ -81,7 +81,7 @@ def get_coreml_partitioner(
         )
     except ImportError:
         raise ImportError(
-            "Please install the CoreML backend follwing https://pytorch.org/executorch/main/build-run-coreml.html"
+            "Please install the CoreML backend follwing https://pytorch.org/executorch/main/backends-coreml"
             + "; for buck users, please add example dependancies: //executorch/backends/apple/coreml:backend, and etc"
         )
 
@@ -195,7 +195,7 @@ def get_qnn_partitioner(
         )
     except ImportError:
         raise ImportError(
-            "Please install the Qualcomm backend following https://pytorch.org/executorch/main/build-run-qualcomm-ai-engine-direct-backend.html"
+            "Please install the Qualcomm backend following https://pytorch.org/executorch/main/backends-qualcomm"
         )
 
     use_fp16 = True

@@ -16,11 +16,10 @@
 #include <executorch/schema/program_generated.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 namespace deserialization {
 
 using executorch::aten::ScalarType;
-using executorch::runtime::TensorLayout;
 // Provides access to private Program methods.
 class TensorParser final {
  public:
@@ -56,7 +55,7 @@ ET_NODISCARD Result<void*> getMemPlannedPtr(
   const uint32_t memory_offset_high = allocation_info->memory_offset_high();
 
   size_t memory_offset = memory_offset_low;
-  if (memory_offset_high > 0) {
+  if ((sizeof(size_t) > sizeof(uint32_t)) && (memory_offset_high > 0)) {
     // The compiler should remove this always-true check on 64-bit systems.
     ET_CHECK_OR_RETURN_ERROR(
         sizeof(size_t) >= sizeof(uint64_t),
@@ -94,7 +93,7 @@ ET_NODISCARD Result<BoxedEvalueList<executorch::aten::Tensor>> parseTensorList(
   size_t output_idx = 0;
   for (int32_t tensor_index : *tensor_indices) {
     ET_CHECK_OR_RETURN_ERROR(
-        tensor_index >= 0 && tensor_index < values_len,
+        tensor_index >= 0 && static_cast<size_t>(tensor_index) < values_len,
         InvalidProgram,
         "Invalid value index %" PRId32 " for TensorList",
         tensor_index);
@@ -123,7 +122,9 @@ ET_NODISCARD Error validateTensorLayout(
       static_cast<int8_t>(expected_layout.scalar_type()));
   int dim = s_tensor->sizes()->size();
   ET_CHECK_OR_RETURN_ERROR(
-      dim == expected_layout.sizes().size(),
+      dim >= 0, InvalidExternalData, "Dim is negative: %d", dim)
+  ET_CHECK_OR_RETURN_ERROR(
+      static_cast<size_t>(dim) == expected_layout.sizes().size(),
       InvalidExternalData,
       "Dim mismatch. Expected %d, got %zu.",
       dim,
@@ -150,7 +151,7 @@ ET_NODISCARD Error validateTensorLayout(
 // Check if key exists in entries. If it does, return a pointer to the entry
 // otherwise return a nullptr.
 NamedData* get_data_by_key(const char* key, Span<NamedData> entries) {
-  for (int i = 0; i < entries.size(); i++) {
+  for (const auto i : c10::irange(entries.size())) {
     if (strcmp(key, entries[i].key) == 0) {
       return &entries[i];
     }
@@ -169,24 +170,8 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
   const executorch_flatbuffer::AllocationDetails* allocation_info =
       s_tensor->allocation_info();
 
-  // Memory Planned, with initial state
-  if (data_buffer_idx > 0 && allocation_info != nullptr) {
-    auto planned_ptr = getMemPlannedPtr(allocation_info, nbytes, allocator);
-    if (!planned_ptr.ok()) {
-      return planned_ptr.error();
-    }
-    auto err = TensorParser::load_mutable_subsegment_into(
-        program, 0, s_tensor->data_buffer_idx(), nbytes, planned_ptr.get());
-
-    if (err != Error::Ok) {
-      return err;
-    }
-    return planned_ptr;
-  }
-
   // External tensors.
-  else if (
-      s_tensor->extra_tensor_info() != nullptr &&
+  if (s_tensor->extra_tensor_info() != nullptr &&
       s_tensor->extra_tensor_info()->location() ==
           executorch_flatbuffer::TensorDataLocation::EXTERNAL) {
     // Check that fqn is not null.
@@ -224,23 +209,17 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
       if (!planned_ptr.ok()) {
         return planned_ptr.error();
       }
-      auto size =
+      auto load_error =
           named_data_map->load_data_into(fqn, planned_ptr.get(), nbytes);
-      if (size.error() != Error::Ok) {
-        return size.error();
+      if (load_error != Error::Ok) {
+        return load_error;
       }
-      ET_CHECK_OR_RETURN_ERROR(
-          size.get() == nbytes,
-          InvalidExternalData,
-          "Expected to load %zu bytes, actually loaded %u bytes",
-          nbytes,
-          static_cast<unsigned int>(size.get()));
+
       return planned_ptr;
     }
-  }
 
-  // Constant, stored in PTE file.
-  else if (data_buffer_idx > 0 && allocation_info == nullptr) {
+    // Constant, stored in PTE file.
+  } else if (data_buffer_idx > 0 && allocation_info == nullptr) {
     auto const_data =
         program->get_constant_buffer_data(data_buffer_idx, nbytes);
     if (!const_data.ok()) {
@@ -250,6 +229,20 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
     // The const_cast is 'ok' here because the program and runtime should
     // guarantee that this data is never modified.
     return const_cast<void*>(const_data.get());
+
+    // Memory Planned, with initial state
+  } else if (data_buffer_idx > 0 && allocation_info != nullptr) {
+    auto planned_ptr = getMemPlannedPtr(allocation_info, nbytes, allocator);
+    if (!planned_ptr.ok()) {
+      return planned_ptr.error();
+    }
+    auto err = TensorParser::load_mutable_subsegment_into(
+        program, 0, s_tensor->data_buffer_idx(), nbytes, planned_ptr.get());
+
+    if (err != Error::Ok) {
+      return err;
+    }
+    return planned_ptr;
 
     // Memory planned, no initial state
   } else if (data_buffer_idx == 0 && allocation_info != nullptr) {
@@ -262,5 +255,5 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
 }
 
 } // namespace deserialization
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch

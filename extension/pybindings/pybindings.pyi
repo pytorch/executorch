@@ -161,7 +161,7 @@ def _load_for_executorch(
     Args:
         path: File path to the ExecuTorch program as a string.
         enable_etdump: If true, enables an ETDump which can store profiling information.
-            See documentation at https://pytorch.org/executorch/stable/etdump.html
+            See documentation at https://pytorch.org/executorch/main/etdump
             for how to use it.
         debug_buffer_size: If non-zero, enables a debug buffer which can store
             intermediate results of each instruction in the ExecuTorch program.
@@ -192,7 +192,7 @@ def _load_for_executorch_from_bundled_program(
 ) -> ExecuTorchModule:
     """Same as _load_for_executorch, but takes a bundled program instead of a file path.
 
-    See https://pytorch.org/executorch/stable/bundled-io.html for documentation.
+    See https://pytorch.org/executorch/main/bundled-io for documentation.
 
     .. warning::
 
@@ -212,7 +212,25 @@ def _load_bundled_program_from_buffer(
     ...
 
 @experimental("This API is experimental and subject to change without notice.")
+def _is_available(backend_name: str) -> bool:
+    """
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+    ...
+
+@experimental("This API is experimental and subject to change without notice.")
 def _get_operator_names() -> List[str]:
+    """
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+    ...
+
+@experimental("This API is experimental and subject to change without notice.")
+def _get_registered_backend_names() -> List[str]:
     """
     .. warning::
 
@@ -240,6 +258,15 @@ def _dump_profile_results() -> bytes:
 
 @experimental("This API is experimental and subject to change without notice.")
 def _reset_profile_results() -> None:
+    """
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+    ...
+
+@experimental("This API is experimental and subject to change without notice.")
+def _unsafe_reset_threadpool(num_threads: int) -> None:
     """
     .. warning::
 

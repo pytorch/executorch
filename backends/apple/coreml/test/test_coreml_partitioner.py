@@ -82,10 +82,34 @@ class TestCoreMLPartitioner(unittest.TestCase):
 
     def test_ops_to_not_decompose(self):
         class Model(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+
             def forward(self, q, k, v, mask):
-                return torch.ops.aten.scaled_dot_product_attention.default(
+                out = torch.ops.aten.scaled_dot_product_attention.default(
                     q, k, v, attn_mask=mask
                 )
+
+                # triu/tril should be ignored by do_not_decompose
+                # because otherwise they fail during CoreML lowering
+                offset1 = torch.triu(mask, diagonal=1)
+                offset2 = torch.tril(mask)
+                offset = offset1 + offset2
+                offset = torch.sum(offset)
+
+                # Add non-functional and alias ops
+                # These will be removed by ExecuTorch in non-decomposition
+                # table because they cannot be functionalized
+                out = out.transpose(1, 2)
+                out = out.view(1, -1)
+                out = out.permute(0, 1)
+                out = out.add_(1.0)
+                out = out.mul_(2.0)
+                out = out.div_(3.0)
+                out = out.sub_(4.0)
+                out = torch.ops.aten.view_copy.default(out, (-1,))
+                out = out.select(0, 0)
+                return out + offset
 
         model = Model()
         model.eval()
@@ -100,7 +124,14 @@ class TestCoreMLPartitioner(unittest.TestCase):
         v = torch.randn(batch_size, n_heads, max_seq_length, embedding_dim)
         mask = torch.randn(seq_len, max_seq_length)
         example_inputs = (q, k, v, mask)
-        ep = torch.export.export(model, example_inputs)
+        ep = torch.export.export(model, example_inputs, strict=True)
+        self.assertTrue(
+            "torch.ops.aten.triu.default" in ep.graph_module.code,
+        )
+        self.assertTrue(
+            "torch.ops.aten.tril.default" in ep.graph_module.code,
+        )
+
         coreml_partitioner = CoreMLPartitioner()
 
         # Using to_edge_transform_and_lower, we expect SDPA will be preserved and show up in delegated graph

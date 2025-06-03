@@ -136,8 +136,14 @@ class FoldAndAnnotateQParamsPass(ExportPass):
                 continue
 
             # Make sure we haven't already set qparams meta information on the node
-            assert "input_qparams" not in n.meta.keys()
-            assert "output_qparams" not in n.meta.keys()
+            assert "input_qparams" not in n.meta, (
+                f'Unexpected key "input_qparams" found in meta for node {n}. '
+                "input_qparams should not have been set at this point"
+            )
+            assert "output_qparams" not in n.meta, (
+                f'Unexpected key "output_qparams" found in meta for node {n}. '
+                "output_qparams should not have been set at this point"
+            )
 
             # for the inputs and outputs search the graph for quantization info and
             # store the information in a dict with order of the _tensor_ inputs as key,
@@ -174,11 +180,8 @@ class FoldAndAnnotateQParamsPass(ExportPass):
 
 class QuantizeOperatorArguments(ExportPass):
     """
-    This pass makes sure that the arguments to full.default and clamp.default are quantized correctly.
+    This pass makes sure that the arguments to clamp.default are quantized correctly.
     More specifically, this pass:
-        - Makes sure the fill_value for full.default is quantized. This pass needs to be run before
-        the folding pass above to make sure that the retraced output of the full.default op is
-        the right dtype.
         - Makes sure the min and max values to clamp.default are quantized, if it's a quantized operator.
     """
 
@@ -189,7 +192,6 @@ class QuantizeOperatorArguments(ExportPass):
             n = cast(Node, n)
             if n.target not in {
                 exir_ops.edge.aten.clamp.default,
-                exir_ops.edge.aten.full.default,
             }:
                 continue
 
@@ -200,16 +202,7 @@ class QuantizeOperatorArguments(ExportPass):
 
             qargs = QuantArgs.from_operator(user.target, user.args)
 
-            if n.target == exir_ops.edge.aten.full.default:
-                if "dtype" not in n.kwargs.keys() or n.kwargs["dtype"] != qargs.dtype:
-                    # replace the node arg with a quantized dito and also set dtype
-                    # to get the right output according to the Edge IR specification:
-                    # exir/dialects/edge/edge.yaml:3596
-                    quantized_full_value = qargs.quantize_value(n.args[1]).item()
-                    n.update_arg(1, quantized_full_value)
-                    n.update_kwarg("dtype", qargs.dtype)
-                    modified = True
-            elif n.target == exir_ops.edge.aten.clamp.default:
+            if n.target == exir_ops.edge.aten.clamp.default:
                 # Quantize the min and max arguments of clamp, if they are not None
                 min_val = n.args[1]
                 max_val = None if len(n.args) <= 2 else n.args[2]

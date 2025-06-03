@@ -11,14 +11,26 @@ import typing
 from typing import final, Optional, Sequence, Type
 
 import torch
-
 import torch.fx as fx
+
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
 from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
     FuseQuantizedActivationPass,
 )
+from executorch.backends.arm._passes.insert_table_ops import TableOps
+from executorch.backends.arm.operator_support.ethos_u55_support import (
+    EthosU55DtypeSupport,
+    EthosU55NotSupported,
+    EthosU55TransposeCheck,
+)
 from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.exir import ExportedProgram
+from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
+
+from torch._subclasses.fake_tensor import FakeTensor
+from torch.export.graph_signature import InputKind
 from torch.fx.passes.operator_support import any_chain, chain, OperatorSupportBase
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
@@ -28,8 +40,9 @@ class SupportedTOSAOperatorCheck(OperatorSupportBase):
     Supported OP for TOSA lowering
     """
 
-    def __init__(self, tosa_spec: TosaSpecification):
+    def __init__(self, tosa_spec: TosaSpecification, reporter: WhyNoPartitionReporter):
         self.tosa_spec = tosa_spec
+        self.reporter = reporter
 
     # Should be populated by subclass implementation
     tosa_specs: list[TosaSpecification] = []
@@ -56,6 +69,8 @@ class SupportedTOSAOperatorCheck(OperatorSupportBase):
 _tosa_spec_support: dict[TosaSpecification, list[Type[SupportedTOSAOperatorCheck]]] = {
     TosaSpecification.create_from_string("TOSA-0.80+BI"): [],
     TosaSpecification.create_from_string("TOSA-0.80+MI"): [],
+    TosaSpecification.create_from_string("TOSA-1.0+INT"): [],
+    TosaSpecification.create_from_string("TOSA-1.0+FP"): [],
 }
 
 
@@ -73,7 +88,6 @@ def register_tosa_support_check(checker: Type[SupportedTOSAOperatorCheck]):
 def get_registered_tosa_support_checks(
     tosa_spec: TosaSpecification,
 ) -> list[Type[SupportedTOSAOperatorCheck]]:
-
     if tosa_spec not in _tosa_spec_support:
         raise RuntimeError(
             f"TOSA specification not valid: {tosa_spec} not in {list(_tosa_spec_support.keys())}"
@@ -84,22 +98,47 @@ def get_registered_tosa_support_checks(
 
 def tosa_support_factory(
     tosa_spec: TosaSpecification,
+    exported_program: ExportedProgram,
+    reporter: WhyNoPartitionReporter,
     additional_checks: Optional[Sequence[OperatorSupportBase]] = None,
 ) -> OperatorSupportBase:
-    negative_checks: list[OperatorSupportBase] = []
+    """Generates an OperatorSupport class depending on the given `tosa_spec`.
+    Additional checks can be supplied to avoid partitioning additional nodes.
+    """
+    # Postive checks: Add nodes to partitioning
+    positive_checks: list[OperatorSupportBase] = [
+        BaseTOSASupportList(),
+        *[
+            check(tosa_spec, reporter)
+            for check in get_registered_tosa_support_checks(tosa_spec)
+        ],
+    ]
+
+    # Negative checks: Remove nodes from partitioning
+    negative_checks: list[OperatorSupportBase] = [
+        CheckInt64Inputs(exported_program, reporter),
+        CheckFloat64Inputs(exported_program, reporter),
+        RankCheck(reporter, max_rank=5),
+        *[
+            reporter.wrap_check(check, f"Rejected by {check.__class__.__name__}")
+            for check in (additional_checks if additional_checks else [])
+        ],
+    ]
+
     if not tosa_spec.support_float():
-        negative_checks.append(NeedsDecompositionCheck())
-        negative_checks.append(CheckProperQuantization())
+        negative_checks.append(NeedsDecompositionCheck(reporter))
+        negative_checks.append(CheckProperQuantization(reporter))
+    if tosa_spec.is_U55_subset:
+        negative_checks.append(EthosU55NotSupported(reporter))
+        negative_checks.append(EthosU55DtypeSupport(reporter))
+        negative_checks.append(EthosU55TransposeCheck(reporter))
+
     return chain(
-        any_chain(
-            BaseTOSASupportList(),
-            *(
-                check(tosa_spec)
-                for check in get_registered_tosa_support_checks(tosa_spec)
-            ),
+        reporter.wrap_check(
+            any_chain(*positive_checks),
+            "Not included in BaseTOSASupportList or a registered tosa_support_check",
         ),
         *negative_checks,
-        *additional_checks if additional_checks else [],
     )
 
 
@@ -111,8 +150,20 @@ class BaseTOSASupportList(OperatorSupportBase):
         supported = node.op == "call_function" and node.target in [
             exir_ops.edge.aten.abs.default,
             exir_ops.edge.aten.add.Tensor,
+            exir_ops.edge.aten.any.default,
+            exir_ops.edge.aten.any.dim,
+            exir_ops.edge.aten.any.dims,
+            exir_ops.edge.aten.logical_and.default,
+            exir_ops.edge.aten.logical_or.default,
+            exir_ops.edge.aten.logical_xor.default,
+            exir_ops.edge.aten.logical_not.default,
+            exir_ops.edge.aten.arange.start_step,
+            exir_ops.edge.aten.bitwise_and.Tensor,
+            exir_ops.edge.aten.bitwise_or.Tensor,
+            exir_ops.edge.aten.bitwise_xor.Tensor,
             exir_ops.edge.aten.expand_copy.default,
             exir_ops.edge.aten.cat.default,
+            exir_ops.edge.aten.ceil.default,
             exir_ops.edge.aten.clamp.default,
             exir_ops.edge.aten.bmm.default,
             exir_ops.edge.aten.permute_copy.default,
@@ -121,6 +172,8 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.hardswish.default,
             exir_ops.edge.aten.div.Tensor,
             exir_ops.edge.aten.eq.Tensor,
+            exir_ops.edge.aten.eq.Scalar,
+            exir_ops.edge.aten.erf.default,
             exir_ops.edge.aten.exp.default,
             exir_ops.edge.aten.log.default,
             exir_ops.edge.aten.linear.default,
@@ -129,16 +182,23 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.full.default,
             exir_ops.edge.aten.full_like.default,
             exir_ops.edge.aten.ge.Tensor,
+            exir_ops.edge.aten.ge.Scalar,
             exir_ops.edge.aten.gt.Tensor,
+            exir_ops.edge.aten.gt.Scalar,
             exir_ops.edge.aten.le.Tensor,
             exir_ops.edge.aten.lt.Tensor,
+            exir_ops.edge.aten.lt.Scalar,
             exir_ops.edge.aten.mul.Tensor,
+            exir_ops.edge.aten.ne.Tensor,
+            exir_ops.edge.aten.ne.Scalar,
+            exir_ops.edge.aten.neg.default,
             exir_ops.edge.aten.add.Scalar,
             exir_ops.edge.aten.sub.Scalar,
             exir_ops.edge.aten.mul.Scalar,
             exir_ops.edge.aten.div.Scalar,
             exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
             exir_ops.edge.aten.native_layer_norm.default,
+            exir_ops.edge.aten.native_group_norm.default,
             exir_ops.edge.aten.sigmoid.default,
             exir_ops.edge.aten.mean.dim,
             exir_ops.edge.aten.mm.default,
@@ -147,13 +207,15 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.repeat.default,
             exir_ops.edge.aten.reciprocal.default,
             exir_ops.edge.aten.relu.default,
+            exir_ops.edge.aten.leaky_relu.default,
+            exir_ops.edge.aten.sqrt.default,
             exir_ops.edge.aten.rsqrt.default,
             exir_ops.edge.aten._softmax.default,
             exir_ops.edge.aten.select_copy.int,
             exir_ops.edge.aten._log_softmax.default,
-            exir_ops.edge.aten.slice_copy.Tensor,
             exir_ops.edge.aten.sub.Tensor,
             exir_ops.edge.aten.tanh.default,
+            exir_ops.edge.aten.upsample_bilinear2d.vec,
             exir_ops.edge.aten.upsample_nearest2d.vec,
             exir_ops.edge.aten.var.correction,
             exir_ops.edge.aten.var.dim,
@@ -161,10 +223,22 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.clone.default,
             exir_ops.edge.aten.unsqueeze_copy.default,
             exir_ops.edge.aten.squeeze_copy.dims,
+            exir_ops.edge.aten.pow.Tensor_Scalar,
+            exir_ops.edge.aten.pow.Tensor_Tensor,
+            exir_ops.edge.aten.where.self,
             operator.getitem,
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
             exir_ops.edge.aten.constant_pad_nd.default,
+            exir_ops.edge.aten.amax.default,
+            exir_ops.edge.aten.amin.default,
+            exir_ops.edge.aten.eye.default,
+            exir_ops.edge.aten.linspace.default,
+            exir_ops.edge.aten.bitwise_left_shift.Tensor,
+            exir_ops.edge.aten.__lshift__.Scalar,
+            torch.ops.aten.scalar_tensor.default,
+            exir_ops.edge.aten.gelu.default,
+            exir_ops.edge.aten.alias_copy.default,
         ]
 
         return supported
@@ -177,26 +251,44 @@ class NeedsDecompositionCheck(OperatorSupportBase):
     that need to be decomposed.
     """
 
+    def __init__(self, reporter: WhyNoPartitionReporter):
+        self.reporter = reporter
+
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
 
         if node.op != "call_function":
             return True
-        if node.target == exir_ops.edge.aten.mean.dim:
-            dim = node.args[1]
-            return dim == [-1, -2]
-        needs_decomp = node.target in [
-            exir_ops.edge.aten.div.Tensor,
-            exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
-            exir_ops.edge.aten.native_layer_norm.default,
-            exir_ops.edge.aten.mean.dim,
-            exir_ops.edge.aten._softmax.default,
-            exir_ops.edge.aten._log_softmax.default,
-            exir_ops.edge.aten.var.correction,
-            exir_ops.edge.aten.var.dim,
-        ]
-        return not needs_decomp
+
+        needs_decomp_dict = {
+            exir_ops.edge.aten.div.Tensor: None,
+            exir_ops.edge.aten._native_batch_norm_legit_no_training.default: "BatchNorm2D with track_running_stats==True not immediately following a convolution is not supported for quantized TOSA backends.",
+            exir_ops.edge.aten.native_layer_norm.default: None,
+            exir_ops.edge.aten.native_group_norm.default: None,
+            exir_ops.edge.aten._softmax.default: None,
+            exir_ops.edge.aten._log_softmax.default: None,
+            exir_ops.edge.aten.var.correction: None,
+            exir_ops.edge.aten.var.dim: None,
+            exir_ops.edge.aten.add.Scalar: None,
+            exir_ops.edge.aten.sqrt.default: None,
+            exir_ops.edge.aten.sub.Scalar: None,
+            exir_ops.edge.aten.mul.Scalar: None,
+            exir_ops.edge.aten.ne.Tensor: None,
+            exir_ops.edge.aten.ne.Scalar: None,
+            exir_ops.edge.aten.div.Scalar: None,
+            exir_ops.edge.aten.leaky_relu.default: None,
+        }
+
+        if node.target in needs_decomp_dict:
+            reject_message = needs_decomp_dict[node.target]
+            if reject_message is None:
+                reject_message = "Op needs to be decomposed into other ops before quantization to get quantized properly."
+
+            self.reporter.report_reject(node, reject_message)
+            return False
+        else:
+            return True
 
 
 class CheckProperQuantization(OperatorSupportBase):
@@ -208,6 +300,29 @@ class CheckProperQuantization(OperatorSupportBase):
 
     dq_op = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
     q_op = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
+    targeted_ops = (
+        exir_ops.edge.aten.add.Tensor,
+        exir_ops.edge.aten.avg_pool2d.default,
+        exir_ops.edge.aten.bmm.default,
+        exir_ops.edge.aten.convolution.default,
+        exir_ops.edge.aten.full.default,
+        exir_ops.edge.aten.full_like.default,
+        exir_ops.edge.aten.hardtanh.default,
+        exir_ops.edge.aten.linear.default,
+        exir_ops.edge.aten.max_pool2d_with_indices.default,
+        exir_ops.edge.aten.mm.default,
+        exir_ops.edge.aten.mul.Tensor,
+        exir_ops.edge.aten.neg.default,
+        exir_ops.edge.aten.relu.default,
+        exir_ops.edge.aten.sub.Tensor,
+        exir_ops.edge.aten.upsample_bilinear2d.vec,
+        exir_ops.edge.aten.upsample_nearest2d.vec,
+        torch.ops.aten.scalar_tensor.default,
+        *TableOps.included_ops(),
+    )
+
+    def __init__(self, reporter: WhyNoPartitionReporter):
+        self.reporter = reporter
 
     def _is_matmul_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
@@ -221,6 +336,7 @@ class CheckProperQuantization(OperatorSupportBase):
                 graph_module.graph,
                 [
                     torch.matmul,
+                    operator.matmul,
                 ],
                 None,
             )
@@ -237,14 +353,23 @@ class CheckProperQuantization(OperatorSupportBase):
                     for input_node in matched_partition.input_nodes
                 )
                 if not input_quantized:
+                    self.reporter.report_reject(
+                        node, "One or more matmul inputs were not quantized."
+                    )
                     return False
                 output_quantized = all(
                     output_node_user.target == self.q_op
                     for output_node_user in matched_partition.output_nodes[0].users
                 )
                 if not output_quantized:
+                    self.reporter.report_reject(
+                        node, "One or more matmul outputs were not quantized."
+                    )
                     return False
             else:
+                self.reporter.report_reject(
+                    node, "Node did not match any matmul source partition."
+                )
                 return False
 
         return True
@@ -254,26 +379,7 @@ class CheckProperQuantization(OperatorSupportBase):
     ) -> bool:
         output_quantized = False
         input_quantized = False
-        if node.target not in (
-            exir_ops.edge.aten.add.Tensor,
-            exir_ops.edge.aten.avg_pool2d.default,
-            exir_ops.edge.aten.bmm.default,
-            exir_ops.edge.aten.convolution.default,
-            exir_ops.edge.aten.exp.default,
-            exir_ops.edge.aten.hardtanh.default,
-            exir_ops.edge.aten.linear.default,
-            exir_ops.edge.aten.log.default,
-            exir_ops.edge.aten.max_pool2d_with_indices.default,
-            exir_ops.edge.aten.mm.default,
-            exir_ops.edge.aten.mul.Tensor,
-            exir_ops.edge.aten.reciprocal.default,
-            exir_ops.edge.aten.relu.default,
-            exir_ops.edge.aten.rsqrt.default,
-            exir_ops.edge.aten.sigmoid.default,
-            exir_ops.edge.aten.sub.Tensor,
-            exir_ops.edge.aten.tanh.default,
-            exir_ops.edge.aten.upsample_nearest2d.vec,
-        ):
+        if node.target not in self.targeted_ops:
             return True
         elif node.target in (
             exir_ops.edge.aten.bmm.default,
@@ -281,7 +387,7 @@ class CheckProperQuantization(OperatorSupportBase):
         ):
             source_fn_stack: tuple[typing.Any] = node.meta.get("source_fn_stack", [])
             if len(source_fn_stack) > 0:
-                if source_fn_stack[-1][1] in (torch.matmul,):
+                if source_fn_stack[-1][1] in (torch.matmul, operator.matmul):
                     return self._is_matmul_node_supported(submodules, node)
 
         elif node.target in (exir_ops.edge.aten.max_pool2d_with_indices.default,):
@@ -308,14 +414,122 @@ class CheckProperQuantization(OperatorSupportBase):
         )
 
         if not input_quantized:
+            self.reporter.report_reject(node, "One or more inputs were not quantized.")
             return False
 
-        output_quantized = output_quantized or all(
-            (output_node.target == self.q_op)
-            or (not get_first_fake_tensor(output_node).dtype.is_floating_point)
-            for output_node in node.users
+        all_q_users = all(
+            (output_node.target == self.q_op) for output_node in node.users
         )
+        is_floating_point = get_first_fake_tensor(node).dtype.is_floating_point
+        output_quantized = output_quantized or all_q_users or not is_floating_point
 
         if not output_quantized:
+            self.reporter.report_reject(node, "One or more outputs were not quantized.")
             return False
+        return True
+
+
+class CheckInt64Inputs(OperatorSupportBase):
+
+    def __init__(
+        self, exported_program: ExportedProgram, reporter: WhyNoPartitionReporter
+    ):
+        self.input_names = [
+            spec.arg.name
+            for spec in exported_program.graph_signature.input_specs
+            if spec.kind == InputKind.USER_INPUT
+        ]
+        self.reporter = reporter
+        super().__init__()
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+
+        for input_node in node.all_input_nodes:
+            # We can cast constant placeholders and constant ops AOT, such int64 are ok.
+            # Otherwise, don't partition if one or more inputs are int64.
+            if (
+                input_node.name in self.input_names
+                or not input_node.op == "placeholder"
+            ):
+                tensor = get_first_fake_tensor(input_node)
+                if tensor.dtype == torch.int64:
+                    if input_node.target not in ComputeConstantOpsAOT.targeted_ops:
+                        self.reporter.report_reject(
+                            node,
+                            f"Had int64 input {input_node.name} that couldn't be handled.",
+                        )
+                        return False
+        return True
+
+
+class CheckFloat64Inputs(OperatorSupportBase):
+
+    def __init__(
+        self, exported_program: ExportedProgram, reporter: WhyNoPartitionReporter
+    ):
+        self.reporter = reporter
+        super().__init__()
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+
+        for input_node in node.all_input_nodes:
+            tensor = get_first_fake_tensor(input_node)
+            if tensor.dtype == torch.float64:
+                self.reporter.report_reject(
+                    node,
+                    f"Had float64 input {input_node.name} that couldn't be handled.",
+                )
+                return False
+        return True
+
+
+class RankCheck(OperatorSupportBase):
+    """Makes sure that nodes with input or output tensors with rank > max_rank are not partitioned"""
+
+    def __init__(self, reporter: WhyNoPartitionReporter, max_rank: int):
+        self.reporter = reporter
+        self.max_rank = max_rank
+        super().__init__()
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        input_nodes = node.all_input_nodes
+        # check if any input node has an unsupported rank
+        for input_node in input_nodes:
+            input_node_shape = get_first_fake_tensor(input_node).shape
+            if len(input_node_shape) > self.max_rank:
+                self.reporter.report_reject(
+                    node,
+                    f"{node.name} has input_node {input_node.name} with shape {input_node_shape}, "
+                    f"rank {len(input_node_shape)} which is unsupported. "
+                    f"Max supported rank is {self.max_rank}.",
+                )
+                return False
+
+        meta_val = node.meta["val"]
+        if isinstance(
+            meta_val, (Sequence, torch.fx.immutable_collections.immutable_list)
+        ):
+            for val in meta_val:
+                if isinstance(val, FakeTensor):
+                    if len(val.shape) > self.max_rank:
+                        self.reporter.report_reject(
+                            node,
+                            f"{node.name} has a shape {val.shape}, rank {len(val.shape)} which is unsupported."
+                            f"Max supported rank is {self.max_rank}.",
+                        )
+                        return False
+        elif isinstance(meta_val, FakeTensor):
+            if len(meta_val.shape) > self.max_rank:
+                self.reporter.report_reject(
+                    node,
+                    f"{node.name} has shape {meta_val.shape}, rank={len(meta_val.shape)} which is unsupported."
+                    f"Max supported rank is {self.max_rank}.",
+                )
+                return False
         return True

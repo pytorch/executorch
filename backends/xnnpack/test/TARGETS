@@ -13,6 +13,7 @@ runtime.python_test(
         "test_xnnpack_utils_classes.py",
     ],
     deps = [
+        "//executorch/backends/transforms:remove_getitem_op",
         "//executorch/backends/xnnpack/_passes:xnnpack_passes",
         "//executorch/backends/xnnpack/test/tester:tester",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
@@ -53,7 +54,7 @@ runtime.python_test(
     srcs = glob([
         "models/*.py",
     ]),
-    tags = ["long_running"],
+    labels = ["long_running"],
     deps = [
         "fbsource//third-party/pypi/timm:timm",
         "fbsource//third-party/pypi/torchsr:torchsr",  # @manual

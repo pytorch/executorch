@@ -329,6 +329,11 @@
     - arg_meta: null
       kernel_name: torch::executor::eq_tensor_out
 
+- op: elu.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::elu_out
+
 - op: erf.out
   kernels:
     - arg_meta: null
@@ -446,6 +451,11 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::index_put_out
+
+- op: index_put_
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::index_put_
 
 - op: index_select.out
   kernels:
@@ -572,6 +582,11 @@
     - arg_meta: null
       kernel_name: torch::executor::max_pool2d_with_indices_out
 
+- op: max_pool2d_with_indices_backward.grad_input
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::max_pool2d_with_indices_backward_out
+
 - op: mean.out
   kernels:
     - arg_meta: null
@@ -616,6 +631,12 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::narrow_copy_out
+
+- op: native_dropout.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::native_dropout_out
+  tags: nondeterministic_seeded
 
 - op: native_group_norm.out
   kernels:
@@ -691,6 +712,18 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::prod_out
+
+- op: rand.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::rand_out
+  tags: nondeterministic_seeded
+
+- op: randn.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::randn_out
+  tags: nondeterministic_seeded
 
 - op: reciprocal.out
   kernels:
@@ -917,6 +950,11 @@
     - arg_meta: null
       kernel_name: torch::executor::unbind_copy_int_out
 
+- op: unfold_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::unfold_copy_out
+
 - op: unsqueeze_copy.out
   kernels:
     - arg_meta: null
@@ -941,6 +979,11 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::var_out
+
+- op: view_as_real_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::view_as_real_copy_out
 
 - op: view_copy.out
   kernels:

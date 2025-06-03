@@ -29,6 +29,10 @@ case "${IMAGE_NAME}" in
     LINTRUNNER=""
     CLANG_VERSION=12
     ;;
+  executorch-ubuntu-22.04-gcc11-aarch64)
+    LINTRUNNER=""
+    GCC_VERSION=11
+    ;;
   executorch-ubuntu-22.04-linter)
     LINTRUNNER=yes
     CLANG_VERSION=12
@@ -44,6 +48,7 @@ case "${IMAGE_NAME}" in
   executorch-ubuntu-22.04-mediatek-sdk)
     MEDIATEK_SDK=yes
     CLANG_VERSION=12
+    ANDROID_NDK_VERSION=r27b
     ;;
   executorch-ubuntu-22.04-clang12-android)
     LINTRUNNER=""

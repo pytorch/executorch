@@ -27,7 +27,7 @@ checkpointer:
     model.safetensors
   ]
   recipe_checkpoint: null
-  output_dir: /tmp/Qwen2-0.5B-Instruct
+  output_dir: /tmp/qwen_0.5B_ft-output
   model_type: QWEN2
 resume_from_checkpoint: False
 save_adapter_weights_only: False

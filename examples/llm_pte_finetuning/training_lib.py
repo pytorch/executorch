@@ -10,7 +10,7 @@ from functools import partial
 from typing import Any
 
 import torch
-from executorch.extension.pybindings.aten_lib import ExecuTorchModule  # @manual
+from executorch.extension.pybindings.portable_lib import ExecuTorchModule  # @manual
 
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
@@ -36,13 +36,26 @@ class TrainingModule(torch.nn.Module):
         super().__init__()
         self.model = model
         self.loss = loss
+        if loss.__class__.__name__ == "CEWithChunkedOutputLoss":
+            # set num_output_chunks for model
+            # pyre-ignore
+            model.set_num_output_chunks(self.loss.num_output_chunks)
+
+        # (batch_size, 1) tensor of ignore_index
+        # pyre-ignore
+        self.ignore_labels_cache = torch.full(
+            (1, 1), self.loss.ignore_index, device="cpu"  # pyre-ignore
+        )
 
     def forward(self, input: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         # Output is of the shape (seq_len, vocab_size).
         logits = self.model(input)
-        logits = logits[..., :-1, :].contiguous()
-        labels = labels[..., 1:].contiguous()
-        logits = logits.transpose(1, 2)
+        labels = torch.hstack(
+            (labels[..., 1:], self.ignore_labels_cache[: labels.shape[0]])
+        )
+        if not isinstance(logits, list):
+            labels = labels.reshape(-1)
+            logits = logits.reshape(-1, logits.size(-1))
         return self.loss(logits, labels)
 
 

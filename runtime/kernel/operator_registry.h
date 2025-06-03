@@ -26,21 +26,21 @@
 
 #define ET_LOG_KERNEL_KEY(k)      \
   ET_LOG(                         \
-      Error,                      \
+      Info,                       \
       "key: %s, is_fallback: %s", \
       k.data(),                   \
       k.is_fallback() ? "true" : "false");
-#define ET_LOG_TENSOR_META(meta_list)                                 \
-  for (const auto& meta : meta_list) {                                \
-    ET_LOG(Error, "dtype: %d | dim order: [", int(meta.dtype_));      \
-    for (int i = 0; i < meta.dim_order_.size(); i++) {                \
-      ET_LOG(Error, "%d,", static_cast<int32_t>(meta.dim_order_[i])); \
-    }                                                                 \
-    ET_LOG(Error, "]");                                               \
+#define ET_LOG_TENSOR_META(meta_list)                                \
+  for (const auto& meta : meta_list) {                               \
+    ET_LOG(Info, "dtype: %d | dim order: [", int(meta.dtype_));      \
+    for (size_t i = 0; i < meta.dim_order_.size(); i++) {            \
+      ET_LOG(Info, "%d,", static_cast<int32_t>(meta.dim_order_[i])); \
+    }                                                                \
+    ET_LOG(Info, "]");                                               \
   }
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 
 class KernelRuntimeContext; // Forward declaration
 using OpFunction = void (*)(KernelRuntimeContext&, EValue**);
@@ -74,7 +74,7 @@ struct TensorMeta {
     if (dim_order_.size() != other.dim_order_.size()) {
       return false;
     }
-    for (int i = 0; i < dim_order_.size(); i++) {
+    for (size_t i = 0; i < dim_order_.size(); i++) {
       if (dim_order_[i] != other.dim_order_[i]) {
         return false;
       }
@@ -258,38 +258,41 @@ ET_NODISCARD inline Error register_kernel(const Kernel& kernel) {
   return register_kernels({&kernel, 1});
 };
 
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
 
 namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::Kernel;
-using ::executorch::runtime::KernelKey;
-using ::executorch::runtime::KernelRuntimeContext;
-using ::executorch::runtime::OpFunction;
-using ::executorch::runtime::TensorMeta;
-using KernelRuntimeContext = ::executorch::runtime::KernelRuntimeContext;
+using ::executorch::ET_RUNTIME_NAMESPACE::Kernel;
+using ::executorch::ET_RUNTIME_NAMESPACE::KernelKey;
+using ::executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext;
+using ::executorch::ET_RUNTIME_NAMESPACE::OpFunction;
+using ::executorch::ET_RUNTIME_NAMESPACE::TensorMeta;
+using KernelRuntimeContext =
+    ::executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext;
 
 inline ::executorch::runtime::Error register_kernels(ArrayRef<Kernel> kernels) {
-  return ::executorch::runtime::register_kernels(
+  return ::executorch::ET_RUNTIME_NAMESPACE::register_kernels(
       {kernels.data(), kernels.size()});
 }
 inline OpFunction getOpsFn(
     const char* name,
     ArrayRef<TensorMeta> meta_list = {}) {
-  auto result = ::executorch::runtime::get_op_function_from_registry(
-      name, {meta_list.data(), meta_list.size()});
+  auto result =
+      ::executorch::ET_RUNTIME_NAMESPACE::get_op_function_from_registry(
+          name, {meta_list.data(), meta_list.size()});
   ET_CHECK(result.ok()); // get_op_function_from_registry() logs details.
   return *result;
 }
 inline bool hasOpsFn(const char* name, ArrayRef<TensorMeta> meta_list = {}) {
-  return ::executorch::runtime::registry_has_op_function(
+  return ::executorch::ET_RUNTIME_NAMESPACE::registry_has_op_function(
       name, {meta_list.data(), meta_list.size()});
 }
 inline ArrayRef<Kernel> get_kernels() {
-  Span<const Kernel> kernels = ::executorch::runtime::get_registered_kernels();
+  Span<const Kernel> kernels =
+      ::executorch::ET_RUNTIME_NAMESPACE::get_registered_kernels();
   return ArrayRef<Kernel>(kernels.data(), kernels.size());
 }
 } // namespace executor

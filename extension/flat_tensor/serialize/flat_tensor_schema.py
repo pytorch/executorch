@@ -32,8 +32,15 @@ class DataSegment:
 
 
 @dataclass
+class NamedData:
+    key: str
+    segment_index: int
+
+
+@dataclass
 class FlatTensor:
     version: int
     tensor_alignment: int
     tensors: List[TensorMetadata]
     segments: List[DataSegment]
+    named_data: List[NamedData]

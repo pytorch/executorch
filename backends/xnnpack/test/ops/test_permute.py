@@ -11,6 +11,9 @@ from executorch.backends.xnnpack.test.tester import Tester
 
 
 class TestPermute(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     class Permute(torch.nn.Module):
         def __init__(self, dims):
             self.dims = dims

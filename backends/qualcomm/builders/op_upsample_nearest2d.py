@@ -16,7 +16,7 @@ from .qnn_constants import OpResizeNearestNeighbor, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class ResizeBilinear(NodeVisitor):
-    target = ["aten.upsample_nearest2d.default"]
+    target = ["aten.upsample_nearest2d.default", "aten.upsample_nearest2d.vec"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -26,7 +26,7 @@ class ResizeBilinear(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        input_node = node.args[0]
+        input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,

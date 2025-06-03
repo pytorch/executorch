@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cinttypes>
 #include <cstdint>
 #include <cstring>
@@ -37,12 +38,12 @@ void gather_helper(
     return;
   }
 
-  for (size_t ix = 0; ix < index.numel(); ++ix) {
+  for (const auto ix : c10::irange(index.numel())) {
     size_t ix_coord[kTensorDimensionLimit];
     indexToCoordinate(index, ix, ix_coord);
 
     size_t in_coord[kTensorDimensionLimit];
-    for (size_t i = 0; i < out.dim(); ++i) {
+    for (const auto i : c10::irange(out.dim())) {
       if (i == dim) {
         in_coord[i] = index_data[ix];
       } else {

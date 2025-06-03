@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
 
 #include <fstream>
@@ -14,6 +15,10 @@
 #include <vector>
 
 #include <executorch/runtime/platform/assert.h>
+
+#if defined(__APPLE__) && defined(__aarch64__)
+#include <sys/sysctl.h>
+#endif
 
 namespace executorch::extension::cpuinfo {
 
@@ -32,6 +37,11 @@ bool is_non_performant_core(const struct cpuinfo_uarch_info* uarch_info) {
     case cpuinfo_uarch_cortex_a53:
     case cpuinfo_uarch_cortex_a510:
     case cpuinfo_uarch_icestorm:
+    case cpuinfo_uarch_blizzard:
+    case cpuinfo_uarch_sawtooth:
+    case cpuinfo_uarch_coll_sawtooth:
+    case cpuinfo_uarch_tupai_sawtooth:
+    case cpuinfo_uarch_tahiti_sawtooth:
       return true;
     // This can be so many other cores.
     // Need to update this to better account for slow cores
@@ -84,7 +94,7 @@ bool populate_available_cpu_mids() {
   cpu_midrs->resize(num_possible_cores);
   const std::string kMidrFilePathPrefix = "/sys/devices/system/cpu/cpu";
   const std::string kMidrFilePathSuffix = "/regs/identification/midr_el1";
-  for (int32_t i = 0; i < num_possible_cores; ++i) {
+  for (const auto i : c10::irange(num_possible_cores)) {
     std::string midr_file_path =
         kMidrFilePathPrefix + std::to_string(i) + kMidrFilePathSuffix;
     ET_LOG(Info, "Reading file %s", midr_file_path.c_str());
@@ -115,7 +125,7 @@ uint32_t _get_num_performant_cores() {
     ET_LOG(Info, "CPU info and manual query on # of cpus dont match.");
     return 0;
   }
-  for (int32_t i = 0; i < cpu_midrs->size(); ++i) {
+  for (const auto i : c10::irange(cpu_midrs->size())) {
     uint32_t masked_midr = (*cpu_midrs)[i] & RIVISION_MASK;
     switch (masked_midr) {
       case CPUINFO_ARM_MIDR_CORTEX_A520:
@@ -148,7 +158,7 @@ uint32_t get_num_performant_cores() {
   uint32_t num_possible_cores = cpuinfo_get_processors_count();
   uint32_t num_non_performant_core = 0;
   if (uarch_count > 1) {
-    for (int32_t i = 0; i < uarch_count; ++i) {
+    for (const auto i : c10::irange(uarch_count)) {
       const struct cpuinfo_uarch_info* uarch_info = cpuinfo_get_uarch(i);
       if (is_non_performant_core(uarch_info)) {
         num_non_performant_core += uarch_info->processor_count;
@@ -166,6 +176,23 @@ uint32_t get_num_performant_cores() {
     // In one plua 12 while it has 2 little cores, the topology
     // reported in /sys/devices/system/cpu/cpu* /topology/core_siblings_list
     // report wrong topology which results in wront configratuon
+#if defined(__aarch64__) && defined(__APPLE__)
+    // Copied from ATen/ParallelCommon.cpp
+    // On Apple Silicon there are efficient and performance core
+    // Restrict parallel algorithms to performance cores by default
+    int32_t num_cores = -1;
+    size_t num_cores_len = sizeof(num_cores);
+    if (sysctlbyname(
+            "hw.perflevel0.physicalcpu",
+            &num_cores,
+            &num_cores_len,
+            nullptr,
+            0) == 0) {
+      if (num_cores > 1) {
+        return static_cast<uint32_t>(num_cores);
+      }
+    }
+#endif
     return _get_num_performant_cores();
   }
 }

@@ -14,10 +14,10 @@
 #include <cstring>
 #include <limits>
 
+#include <executorch/runtime/platform/compat_unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <unistd.h>
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
@@ -49,20 +49,6 @@ namespace {
 static bool is_power_of_2(size_t value) {
   return value > 0 && (value & ~(value - 1)) == value;
 }
-
-/**
- * Returns the next alignment for a given pointer.
- */
-static uint8_t* align_pointer(void* ptr, size_t alignment) {
-  intptr_t addr = reinterpret_cast<intptr_t>(ptr);
-  if ((addr & (alignment - 1)) == 0) {
-    // Already aligned.
-    return reinterpret_cast<uint8_t*>(ptr);
-  }
-  // Bump forward.
-  addr = (addr | (alignment - 1)) + 1;
-  return reinterpret_cast<uint8_t*>(addr);
-}
 } // namespace
 
 FileDataLoader::~FileDataLoader() {
@@ -71,6 +57,9 @@ FileDataLoader::~FileDataLoader() {
   std::free(const_cast<char*>(file_name_));
   // fd_ can be -1 if this instance was moved from, but closing a negative fd is
   // safe (though it will return an error).
+  if (fd_ == -1) {
+    return;
+  }
   ::close(fd_);
 }
 
@@ -82,6 +71,9 @@ Result<FileDataLoader> FileDataLoader::from(
       InvalidArgument,
       "Alignment %zu is not a power of 2",
       alignment);
+
+  ET_CHECK_OR_RETURN_ERROR(
+      file_name != nullptr, InvalidArgument, "File name cannot be empty.");
 
   // Use open() instead of fopen() to avoid the layer of buffering that
   // fopen() does. We will be reading large portions of the file in one shot,
@@ -123,13 +115,13 @@ namespace {
 /**
  * FreeableBuffer::FreeFn-compatible callback.
  *
- * `context` is actually a ptrdiff_t value (not a pointer) that contains the
- * offset in bytes between `data` and the actual pointer to free.
+ * `context` is the original buffer pointer. It is allocated with
+ * ET_ALIGNED_ALLOC, and must be freed with ET_ALIGNED_FREE.
+ *
+ * `data` and `size` are unused.
  */
 void FreeSegment(void* context, void* data, ET_UNUSED size_t size) {
-  ptrdiff_t offset = reinterpret_cast<ptrdiff_t>(context);
-  ET_DCHECK_MSG(offset >= 0, "Unexpected offset %ld", (long int)offset);
-  std::free(static_cast<uint8_t*>(data) - offset);
+  ET_ALIGNED_FREE(context);
 }
 } // namespace
 
@@ -157,57 +149,26 @@ Result<FreeableBuffer> FileDataLoader::load(
   }
 
   // Allocate memory for the FreeableBuffer.
-  size_t alloc_size = size;
-  if (alignment_ > alignof(std::max_align_t)) {
-    // malloc() will align to smaller values, but we must manually align to
-    // larger values.
-    alloc_size += alignment_;
-  }
-  void* buffer = std::malloc(alloc_size);
-  if (buffer == nullptr) {
+  void* aligned_buffer = ET_ALIGNED_ALLOC(alignment_, size);
+  if (aligned_buffer == nullptr) {
     ET_LOG(
         Error,
-        "Reading from %s at offset %zu: malloc(%zd) failed",
+        "Reading from %s at offset %zu: ET_ALIGNED_ALLOC(%zd, %zd) failed",
         file_name_,
         offset,
+        alignment_,
         size);
     return Error::MemoryAllocationFailed;
   }
 
-  // Align.
-  void* aligned_buffer = align_pointer(buffer, alignment_);
-
-  // Assert that the alignment didn't overflow the buffer.
-  ET_DCHECK_MSG(
-      reinterpret_cast<uintptr_t>(aligned_buffer) + size <=
-          reinterpret_cast<uintptr_t>(buffer) + alloc_size,
-      "aligned_buffer %p + size %zu > buffer %p + alloc_size %zu",
-      aligned_buffer,
-      size,
-      buffer,
-      alloc_size);
-
   auto err = load_into(offset, size, segment_info, aligned_buffer);
   if (err != Error::Ok) {
-    // Free `buffer`, which is what malloc() gave us, not `aligned_buffer`.
-    std::free(buffer);
+    ET_ALIGNED_FREE(aligned_buffer);
     return err;
   }
 
-  // We can't naively free this pointer, since it may not be what malloc() gave
-  // us. Pass the offset to the real buffer as context. This is the number of
-  // bytes that need to be subtracted from the FreeableBuffer::data() pointer to
-  // find the actual pointer to free.
-  return FreeableBuffer(
-      aligned_buffer,
-      size,
-      FreeSegment,
-      /*free_fn_context=*/
-      reinterpret_cast<void*>(
-          // Using signed types here because it will produce a signed ptrdiff_t
-          // value, though for us it will always be non-negative.
-          reinterpret_cast<intptr_t>(aligned_buffer) -
-          reinterpret_cast<intptr_t>(buffer)));
+  // Pass the aligned_buffer pointer as context to FreeSegment.
+  return FreeableBuffer(aligned_buffer, size, FreeSegment, aligned_buffer);
 }
 
 Result<size_t> FileDataLoader::size() const {

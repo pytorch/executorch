@@ -152,35 +152,25 @@ which "${PYTHON_EXECUTABLE}"
 cmake_install_executorch_libraries() {
     echo "Installing libexecutorch.a, libextension_module.so, libportable_ops_lib.a"
     rm -rf cmake-out
-    retry cmake \
+    retry cmake --preset llm \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
-        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-        -DEXECUTORCH_BUILD_KERNELS_CUSTOM="$CUSTOM" \
-        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-        -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
-        -DEXECUTORCH_BUILD_MPS="$MPS" \
-        -DEXECUTORCH_BUILD_COREML="$COREML" \
         -DEXECUTORCH_BUILD_QNN="$QNN" \
         -DQNN_SDK_ROOT="$QNN_SDK_ROOT" \
-        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out .
     cmake --build cmake-out -j9 --target install --config "$CMAKE_BUILD_TYPE"
 }
 
 cmake_build_llama_runner() {
     echo "Building llama runner"
+    pushd extension/llm/tokenizers
+    echo "Updating tokenizers submodule"
+    git submodule update --init
+    popd
     dir="examples/models/llama"
     retry cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
-        -DEXECUTORCH_BUILD_KERNELS_CUSTOM="$CUSTOM" \
-        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-        -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
-        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out/${dir} \
         ${dir}
     cmake --build cmake-out/${dir} -j9 --config "$CMAKE_BUILD_TYPE"
@@ -265,7 +255,7 @@ $PYTHON_EXECUTABLE -m examples.models.llama.export_llama ${EXPORT_ARGS}
 
 # Create tokenizer.bin.
 echo "Creating tokenizer.bin"
-$PYTHON_EXECUTABLE -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+$PYTHON_EXECUTABLE -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokenizer.bin
 
 
 RUNTIME_ARGS="--model_path=${EXPORTED_MODEL_NAME} --tokenizer_path=tokenizer.bin --prompt=Once --temperature=0 --seq_len=10 --warmup=1"

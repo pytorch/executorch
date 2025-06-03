@@ -10,7 +10,7 @@ python_unittest(
     resources = {
         "//executorch/exir/dialects/edge:edge_yaml": "edge.yaml",
     },
-    tags = ["long_running"],
+    labels = ["long_running"],
     deps = [
         "fbsource//third-party/pypi/expecttest:expecttest",  # @manual
         "//caffe2:torch",

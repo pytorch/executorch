@@ -15,6 +15,30 @@
 #include <sys/resource.h>
 #endif
 
+#define ET_UNWRAP_TOKENIZER(result__)                       \
+  ({                                                        \
+    auto tk_result__ = (result__);                          \
+    if (!tk_result__.ok()) {                                \
+      ET_LOG(                                               \
+          Error,                                            \
+          "Tokenizers error code %d",                       \
+          static_cast<uint32_t>(tk_result__.error()));      \
+      return ::executorch::runtime::Error::InvalidArgument; \
+    }                                                       \
+    std::move(*tk_result__);                                \
+  })
+
+#define ET_CHECK_TK_OK_OR_RETURN_ERROR(result__, ...)                        \
+  ({                                                                         \
+    auto tk_result__ = (result__);                                           \
+    if (tk_result__ != ::tokenizers::Error::Ok) {                            \
+      ET_LOG(                                                                \
+          Error, "Tokenizer error: %d", static_cast<uint32_t>(tk_result__)); \
+      ET_CHECK_OK_OR_RETURN_ERROR(                                           \
+          ::executorch::runtime::Error::InvalidArgument, ##__VA_ARGS__);     \
+    }                                                                        \
+  })
+
 namespace executorch {
 namespace extension {
 namespace llm {
@@ -44,7 +68,13 @@ ET_EXPERIMENTAL void inline safe_printf(const char* piece) {
 ET_EXPERIMENTAL long inline time_in_ms() {
   // return time in milliseconds, for benchmarking the model speed
   struct timespec time;
+  // The `timespec_get` function is for windows time access. Some AOSP OS does
+  // not have timespec_get support.
+#if defined(__ANDROID_API__)
   clock_gettime(CLOCK_REALTIME, &time);
+#else
+  timespec_get(&time, TIME_UTC);
+#endif
   return time.tv_sec * 1000 + time.tv_nsec / 1000000;
 }
 

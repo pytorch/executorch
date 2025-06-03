@@ -41,7 +41,7 @@ class DecomposeAny(ExportPass):
                 keepdim = node.args[2] if len(node.args) > 2 else False
                 model = Any(dim, keepdim)
                 edge_mgr = to_edge(
-                    torch.export.export(model, (node.args[0].meta["val"],))
+                    torch.export.export(model, (node.args[0].meta["val"],), strict=True)
                 )
                 decomposed_module = edge_mgr.exported_program()
 

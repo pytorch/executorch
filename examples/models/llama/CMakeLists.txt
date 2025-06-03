@@ -15,7 +15,7 @@
 # ~~~
 # It should also be cmake-lint clean.
 #
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)  # 3.24 is required for WHOLE_ARCHIVE
 project(llama_runner)
 
 # Duplicating options as root CMakeLists.txt
@@ -46,7 +46,7 @@ endif()
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -80,25 +80,15 @@ find_package(gflags REQUIRED)
 # find `executorch` libraries Same as for gflags
 set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../lib/cmake/ExecuTorch)
 find_package(executorch CONFIG REQUIRED)
-if(CMAKE_TOOLCHAIN_IOS OR ANDROID)
-  target_link_options_shared_lib(executorch)
-endif()
-
-# custom ops library
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/custom_ops
-    ${CMAKE_CURRENT_BINARY_DIR}/../../../extension/llm/custom_ops
-  )
-endif()
+target_link_options_shared_lib(executorch)
 
 # llama_runner library
 add_subdirectory(runner)
 
-set(link_libraries gflags)
+set(link_libraries executorch gflags)
 set(_srcs main.cpp)
 
-if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+if(TARGET optimized_native_cpu_ops_lib)
   list(
     APPEND
     link_libraries
@@ -118,29 +108,36 @@ endif()
 target_link_options_shared_lib(quantized_ops_lib)
 list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+if(TARGET custom_ops)
   target_link_options_shared_lib(custom_ops)
   list(APPEND link_libraries custom_ops)
 endif()
 
 if(EXECUTORCH_BUILD_TORCHAO)
-  set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental)
-  target_link_options_shared_lib(torchao_ops_executorch)
-  list(APPEND link_libraries torchao_ops_executorch)
+  # Currently only enable this on Arm-based Macs
   if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+    set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
+    set(TORCHAO_BUILD_CPU_AARCH64 ON)
+    set(TORCHAO_ENABLE_ARM_NEON_DOT ON)
     add_subdirectory(
-      ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental/ops/mps
-      ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental/ops/mps)
-    target_link_options_shared_lib(torchao_ops_mps_executorch)
-    list(APPEND link_libraries torchao_ops_mps_executorch)
+      ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental
+      ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental
+    )
+    target_link_options_shared_lib(torchao_ops_executorch)
+    list(APPEND link_libraries torchao_ops_executorch)
+    if(EXECUTORCH_BUILD_MPS)
+      add_subdirectory(
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental/ops/mps
+        ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental/ops/mps)
+      target_link_options_shared_lib(torchao_ops_mps_executorch)
+      list(APPEND link_libraries torchao_ops_mps_executorch)
+    endif()
   endif()
 endif()
 
 set(XNNPACK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack)
 # Extra compile option and include dir for pthreadpool
 if(EXECUTORCH_BUILD_PTHREADPOOL)
-  list(APPEND _common_compile_options -DET_USE_THREADPOOL)
   list(APPEND link_libraries extension_threadpool pthreadpool)
   list(APPEND _common_include_directories
        ${XNNPACK_ROOT}/third-party/pthreadpool/include
@@ -219,13 +216,10 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
   endif()
 endif()
 
-target_include_directories(llama_main PUBLIC ${_common_include_directories})
+target_include_directories(
+  llama_main
+  PUBLIC ${_common_include_directories}
+         ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
+)
 target_link_libraries(llama_main PUBLIC llama_runner ${link_libraries})
 target_compile_options(llama_main PUBLIC ${_common_compile_options})
-
-if(APPLE)
-  target_link_options_shared_lib(executorch)
-endif()
-
-# Print all summary
-executorch_print_configuration_summary()

@@ -3,7 +3,7 @@ This example demonstrates how to run a [Phi-3-mini](https://huggingface.co/micro
 
 # Instructions
 ## Step 1: Setup
-1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch. For installation run `./install_executorch.sh --pybind xnnpack`
+1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch. For installation run `./install_executorch.sh`
 2. Currently, we support transformers v4.44.2. Install transformers with the following command:
 ```
 pip uninstall -y transformers ; pip install transformers==4.44.2
@@ -13,7 +13,7 @@ pip uninstall -y transformers ; pip install transformers==4.44.2
 ```
 cd executorch
 wget -O tokenizer.model "https://huggingface.co/microsoft/Phi-3-mini-128k-instruct/resolve/main/tokenizer.model?download=true"
-python -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+python -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokenizer.bin
 ```
 2. Export the model. This step will take a few minutes to finish.
 ```

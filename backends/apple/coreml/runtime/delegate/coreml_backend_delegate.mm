@@ -5,18 +5,23 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-#import <ETCoreMLLogging.h>
-#import <ETCoreMLModel.h>
-#import <ETCoreMLStrings.h>
-#import <backend_delegate.h>
-#import <coreml_backend/delegate.h>
+#import "coreml_backend/delegate.h"
+
+#import "backend_delegate.h"
+#import "ETCoreMLLogging.h"
+#import "ETCoreMLModel.h"
+#import "ETCoreMLStrings.h"
+#import "model_event_logger.h"
+#import "model_logging_options.h"
+#import "multiarray.h"
+#import "objc_safe_cast.h"
+
 #import <executorch/runtime/core/evalue.h>
 #import <executorch/runtime/platform/log.h>
+#import <executorch/runtime/kernel/kernel_includes.h>
+
+#include <array>
 #import <memory>
-#import <model_event_logger.h>
-#import <model_logging_options.h>
-#import <multiarray.h>
-#import <objc_safe_cast.h>
 #import <unordered_map>
 #import <vector>
 
@@ -40,6 +45,9 @@ using executorch::runtime::EventTracerDebugLogLevel;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::get_backend_class;
 using executorch::runtime::Result;
+using executorch::aten::SizesType;
+using executorch::aten::Tensor;
+using executorch::runtime::kTensorDimensionLimit;
 
 std::optional<MultiArray::DataType> get_data_type(ScalarType scalar_type) {
     switch (scalar_type) {
@@ -80,9 +88,17 @@ std::optional<MultiArray> get_multi_array(EValue *eValue, ArgType argType) {
         ET_LOG(Error, "%s: DataType=%d is not supported", ETCoreMLStrings.delegateIdentifier.UTF8String, (int)tensor.scalar_type());
         return std::nullopt;
     }
-
+    
     std::vector<ssize_t> strides(tensor.strides().begin(), tensor.strides().end());
     std::vector<size_t> shape(tensor.sizes().begin(), tensor.sizes().end());
+    
+    // If tensor is rank 0, wrap in rank 1
+    // See https://github.com/apple/coremltools/blob/8.2/coremltools/converters/mil/frontend/torch/exir_utils.py#L73
+    if (shape.size() == 0) {
+        shape.push_back(1);
+        strides.push_back(1);
+    }
+    
     MultiArray::MemoryLayout layout(dataType.value(), std::move(shape), std::move(strides));
     switch (argType) {
         case ArgType::Input: {
@@ -220,6 +236,27 @@ Error CoreMLBackendDelegate::execute(BackendExecutionContext& context,
                              "%s: Failed to run the model.",
                              ETCoreMLStrings.delegateIdentifier.UTF8String);
 #endif
+
+    // Resize for dynamic shape
+    std::array<SizesType, kTensorDimensionLimit> new_shape;
+    for (size_t i = nInputs; i < nInputs + nOutputs; i++) {
+        Tensor& t = args[i]->toTensor();
+        // If t has rank 0, do not resize.  delegate_args[i] will have rank 1
+        // because we resized it in get_multi_array
+        if (t.dim() == 0) {
+            continue;
+        }
+
+        int rank = delegate_args[i].layout().rank();
+        assert (rank <= new_shape.size());
+        for (int d = 0; d < rank; d++) {
+            new_shape[d] = delegate_args[i].layout().shape()[d];
+        }
+        ET_CHECK_OR_RETURN_ERROR(
+            resize_tensor(t, ArrayRef(new_shape.data(), rank)) == Error::Ok,
+            DelegateInvalidHandle,
+            "%s: Failed to resize delegate output %zu",  ETCoreMLStrings.delegateIdentifier.UTF8String, i);
+    }
 
     return Error::Ok;
 }

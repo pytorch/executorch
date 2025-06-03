@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import json
+import logging
 import os
 from multiprocessing.connection import Client
 
@@ -36,8 +37,11 @@ def main(args):
         )
 
     data_num = 100
-    if args.compile_only:
+    if args.ci:
         inputs = [(torch.rand(1, 3, 224, 224),)]
+        logging.warning(
+            "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
+        )
     else:
         inputs, targets, input_list = get_imagenet_dataset(
             dataset_path=f"{args.dataset}",

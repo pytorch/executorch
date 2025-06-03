@@ -47,3 +47,11 @@ runtime.python_test(
         "//executorch/kernels/quantized:aot_lib",
     ],
 )
+
+runtime.python_test(
+    name = "test_backend_pybinding",
+    srcs = ["test_backend_pybinding.py"],
+    deps = [
+        "//executorch/runtime:runtime",
+    ],
+)

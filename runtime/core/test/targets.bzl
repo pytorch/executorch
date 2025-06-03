@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -33,6 +33,16 @@ def define_common_targets():
         ],
     )
 
+    runtime.cxx_test(
+        name = "function_ref_test",
+        srcs = [
+            "function_ref_test.cpp",
+        ],
+        deps = [
+            "//executorch/runtime/core:core",
+        ],
+    )
+    
     runtime.cxx_test(
         name = "event_tracer_test",
         srcs = [
@@ -91,18 +101,22 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/core:tag",
         ],
-    )
-
-    runtime.cxx_test(
-        name = "tensor_shape_dynamism_test_aten",
-        srcs = ["tensor_shape_dynamism_test_aten.cpp"],
-        deps = [
-            "//executorch/runtime/core/exec_aten:lib_aten",
-            "//executorch/runtime/core/exec_aten/testing_util:tensor_util_aten",
+        preprocessor_flags = [
+            "-DET_ENABLE_ENUM_STRINGS"
         ],
     )
 
-    for aten_mode in (True, False):
+    if True in get_aten_mode_options():
+        runtime.cxx_test(
+            name = "tensor_shape_dynamism_test_aten",
+            srcs = ["tensor_shape_dynamism_test_aten.cpp"],
+            deps = [
+                "//executorch/runtime/core/exec_aten:lib_aten",
+                "//executorch/runtime/core/exec_aten/testing_util:tensor_util_aten",
+            ],
+        )
+
+    for aten_mode in get_aten_mode_options():
         aten_suffix = "_aten" if aten_mode else ""
 
         runtime.cxx_test(

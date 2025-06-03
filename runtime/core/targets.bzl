@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def event_tracer_enabled():
     return native.read_config("executorch", "event_tracer_enabled", "false") == "true"
@@ -41,6 +41,7 @@ def define_common_targets():
             "defines.h",
             "error.h",
             "freeable_buffer.h",
+            "function_ref.h",
             "result.h",
             "span.h",
         ],
@@ -82,7 +83,7 @@ def define_common_targets():
         ],
     )
 
-    for aten_mode in (True, False):
+    for aten_mode in get_aten_mode_options():
         aten_suffix = ("_aten" if aten_mode else "")
         runtime.cxx_library(
             name = "evalue" + aten_suffix,
@@ -95,9 +96,9 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
-                "//executorch/runtime/core:core",
-                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                ":core",
                 ":tag",
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
             ],
         )
 
@@ -119,6 +120,37 @@ def define_common_targets():
             ],
         )
 
+        runtime.cxx_library(
+            name = "named_data_map" + aten_suffix,
+            exported_headers = [
+                "named_data_map.h",
+            ],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_deps = [
+                ":tensor_layout" + aten_suffix,
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+            ],
+        )
+
+
+        runtime.cxx_library(
+            name = "tensor_layout" + aten_suffix,
+            srcs = ["tensor_layout.cpp"],
+            exported_headers = ["tensor_layout.h"],
+            deps = [
+                "//executorch/runtime/core/portable_type/c10/c10:c10",
+            ],
+            exported_deps = [
+                ":core",
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
+            ],
+            visibility = ["//executorch/..."],
+        )
+
     runtime.cxx_library(
         name = "tag",
         srcs = ["tag.cpp"],
@@ -132,32 +164,4 @@ def define_common_targets():
         visibility = [
             "//executorch/...",
         ],
-    )
-
-    runtime.cxx_library(
-        name = "named_data_map",
-        exported_headers = [
-            "named_data_map.h",
-        ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        exported_deps = [
-            ":tensor_layout",
-        ],
-    )
-
-    runtime.cxx_library(
-        name = "tensor_layout",
-        srcs = ["tensor_layout.cpp"],
-        exported_headers = ["tensor_layout.h"],
-        deps = [
-            "//executorch/runtime/core/portable_type/c10/c10:c10",
-        ],
-        exported_deps = [
-            ":core",
-            "//executorch/runtime/core/exec_aten:lib",
-        ],
-        visibility = ["//executorch/..."],
     )

@@ -371,6 +371,18 @@ TEST_F(ProgramTest, getMethods) {
   EXPECT_EQ(strcmp(res2.get(), "forward2"), 0);
 }
 
+TEST_F(ProgramTest, GetNamedDataMap_Fail) {
+  Result<Program> program =
+      Program::load(add_loader_.get(), kDefaultVerification);
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // Get the named data map. Expect to fail, as add.pte does not have any
+  // named data segments.
+  Result<const executorch::runtime::NamedDataMap*> named_data_map =
+      program->get_named_data_map();
+  EXPECT_EQ(named_data_map.error(), Error::NotFound);
+}
+
 // Test that the deprecated Load method (capital 'L') still works.
 TEST_F(ProgramTest, DEPRECATEDLoad) {
   // Parse the Program from the data.
@@ -403,8 +415,8 @@ TEST_F(ProgramTest, LoadConstantSegmentWithNoConstantSegment) {
 }
 
 TEST_F(ProgramTest, LoadConstantSegment) {
-  // Load the serialized ModuleLinear data, with constants in the segment.
-  const char* linear_path = std::getenv("ET_MODULE_LINEAR_PATH");
+  // Load the serialized ModuleAddMul data, with constants in the segment.
+  const char* linear_path = std::getenv("ET_MODULE_ADD_MUL_PATH");
   Result<FileDataLoader> linear_loader = FileDataLoader::from(linear_path);
   ASSERT_EQ(linear_loader.error(), Error::Ok);
 
@@ -446,7 +458,7 @@ TEST_F(ProgramTest, LoadConstantSegment) {
 }
 
 TEST_F(ProgramTest, LoadConstantSegmentWhenConstantBufferExists) {
-  // Load the serialized ModuleLinear data, with constants in the flatbuffer and
+  // Load the serialized ModuleAddMul data, with constants in the flatbuffer and
   // no constants in the segment.
   const char* linear_path =
       std::getenv("DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH");

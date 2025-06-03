@@ -18,7 +18,9 @@ import torch
 from executorch.exir import ExecutorchProgramManager, memory
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
+from executorch.exir.pass_base import Argument
 from tabulate import tabulate
+from torch.fx.operator_schemas import get_signature_for_torch_op
 
 from torch.utils._pytree import tree_flatten
 
@@ -73,6 +75,33 @@ def get_conv2d_output_size(
     if channel_last:
         return torch.Size((N, hout, wout, out_channels))
     return torch.Size((in_size[0], out_channels, hout, wout))
+
+
+def get_im2row_output_size(
+    input: torch.Tensor,
+    kernel_size: Tuple[int],
+    dilation: Tuple[int],
+    padding: Tuple[int],
+    stride: Tuple[int],
+    channel_last: bool,
+) -> torch.Size:
+    if len(input.shape) == 3:
+        height_dim = 1 if channel_last else 2
+        input = input.unsqueeze(height_dim)
+
+    batch_size = input.shape[0]
+    n_input_plane = input.shape[3] if channel_last else input.shape[1]
+    input_height = input.shape[1] if channel_last else input.shape[2]
+    input_width = input.shape[2] if channel_last else input.shape[3]
+    output_height = (
+        input_height + 2 * padding[0] - (dilation[0] * (kernel_size[0] - 1) + 1)
+    ) // stride[0] + 1
+    output_width = (
+        input_width + 2 * padding[1] - (dilation[1] * (kernel_size[1] - 1) + 1)
+    ) // stride[1] + 1
+    n_output_plane = n_input_plane * kernel_size[0] * kernel_size[1]
+    output_size = torch.Size((batch_size, output_height * output_width, n_output_plane))
+    return torch.Size(output_size)
 
 
 # Return the overload packet for the edge op
@@ -256,12 +285,18 @@ def save_bpte_program(
 @dataclass
 class MemoryConfig:
     memory_sizes: List[int]
+    # Alignment constraint for each memory region in bytes.
+    memory_alignments: Optional[List[int]] = None
 
     # Optional fields for logs
     memory_names: Optional[List[str]] = None
     base_addrs: Optional[List[int]] = None
     memory_xml_path: Optional[str] = None
     MemorySpace: Optional[enum.Enum] = None
+
+    def __post_init__(self) -> None:
+        if self.memory_alignments is None:
+            self.memory_alignments = [1] * len(self.memory_sizes)
 
     # get num memories indexed from 1..N, compatible with EXIR's spec.mem_id
     def get_num_memories(self) -> int:
@@ -275,3 +310,30 @@ class MemoryConfig:
 # Return default memory config for the backend
 def get_default_memory_config() -> MemoryConfig:
     return MemoryConfig(memory_sizes=[0x1000000000])
+
+
+def rebind(
+    op: EdgeOpOverload, args: tuple[Argument, ...], kwargs: dict[str, Argument]
+) -> Optional[tuple[tuple[Argument, ...], dict[str, Argument]]]:
+    """Populates optional args and binds args/kwargs based on schema."""
+    torch_op_schemas = get_signature_for_torch_op(op._op)
+
+    matched_schemas = []
+    # Iterate through all of the schema until we find one that matches
+    # If one matches, populate `new_args_and_kwargs` with the new args/kwargs
+    # values. If none matches, `new_args_and_kwargs` will be None
+    for candidate_signature in torch_op_schemas:
+        try:
+            candidate_signature.bind(*args, **kwargs)
+            matched_schemas.append(candidate_signature)
+        except TypeError:
+            continue
+
+    if len(matched_schemas) != 1:
+        # Did not match any schema. Cannot normalize
+        return None
+
+    bound_args = matched_schemas[0].bind(*args, **kwargs)
+    bound_args.apply_defaults()
+
+    return bound_args.args, bound_args.kwargs

@@ -10,10 +10,13 @@ from math import prod
 from typing import Optional, Tuple
 
 import torch
+from executorch.backends.cadence.aot.utils import (
+    get_conv1d_output_size,
+    get_conv2d_output_size,
+    get_im2row_output_size,
+)
 from executorch.exir.scalar_type import ScalarType
 from torch.library import Library, register_fake
-
-from .utils import get_conv1d_output_size, get_conv2d_output_size
 
 lib = Library("cadence", "DEF")
 
@@ -94,7 +97,6 @@ lib.define(
     "int[] dilation, SymInt[] output_padding, int groups, bool channel_last=False) -> (Tensor Y)"
 )
 lib.define("dequantize(Tensor X, Tensor X_scale, Tensor X_zero_point) -> (Tensor Y)")
-# cadence::quantized_relu is defined in OSS
 lib.define(
     "quantized_add(Tensor X, Tensor X_scale, Tensor X_zero_point, Tensor Y, Tensor Y_scale, "
     "Tensor Y_zero_point, float out_scale, int out_zero_point) -> (Tensor Z)"
@@ -119,8 +121,6 @@ lib.define(
     "quantized_embedding_byte(Tensor weight, Tensor weight_scales, Tensor weight_zero_points, "
     "Tensor indices, bool pruned_weights=False) -> (Tensor X)"
 )
-# cadence::quantized_layer_norm is defined in OSS
-# cadence::quantized_conv is defined is OSS
 lib.define(
     "quantized_transposed_conv(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, "
     "int[] dilation, SymInt[] output_padding, int groups, int input_zero_point, Tensor weight_zero_point, "
@@ -134,6 +134,10 @@ lib.define(
     "im2row(Tensor input, int[2] kernel_size, int[2] dilation, int[2] padding, int[2] stride, "
     "Tensor in_zero_point, bool channel_last=False) -> (Tensor out)"
 )
+lib.define(
+    "im2row.per_tensor(Tensor input, int[2] kernel_size, int[2] dilation, int[2] padding, int[2] stride, "
+    "int in_zero_point, bool channel_last=False) -> (Tensor out)"
+)
 lib.define("linalg_vector_norm(Tensor X) -> (Tensor Y)")
 lib.define(
     "transposed_im2row(Tensor input, int[2] kernel_size, int[2] dilation, int[2] padding, int[2] stride, "
@@ -142,6 +146,10 @@ lib.define(
 lib.define(
     "requantize(Tensor input, Tensor in_scale, Tensor in_zero_point, Tensor out_scale, "
     "Tensor out_zero_point, ScalarType out_dtype) -> (Tensor Y)"
+)
+lib.define(
+    "requantize.per_tensor(Tensor input, float in_scale, int in_zero_point, float out_scale, "
+    "int out_zero_point, ScalarType out_dtype) -> (Tensor Y)"
 )
 lib.define(
     "fully_connected(Tensor input, Tensor weight, Tensor? bias=None) -> (Tensor out)"
@@ -154,9 +162,20 @@ lib.define(
     "quantized_fully_connected.per_tensor(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
     "int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset) -> (Tensor Z)"
 )
+lib.define("where_Scalar(Tensor condition, float self, float other) -> (Tensor Z)")
+lib.define(
+    "where_Scalar.out(Tensor condition, float self, float other, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
+    "rope(Tensor input, Tensor sin_tensor, Tensor cos_tensor, Tensor? pos) -> (Tensor out)"
+)
+lib.define(
+    "rope.out(Tensor input, Tensor sin_tensor, Tensor cos_tensor, Tensor? pos, *, Tensor(a!) out) -> Tensor(a!)"
+)
 
 # ------------------------------------ #
-#   Migrated from custom_ops.ymal      #
+#   Migrated from custom_ops.yaml      #
 # ------------------------------------ #
 # Migrated from the custom_ops.yaml files containing different operator variants (e.g., .out, .tensor_out)
 lib.define(
@@ -167,7 +186,6 @@ lib.define(
     "transposed_convolution.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, "
     "int[] dilation, SymInt[] output_padding, int groups, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)"
 )
-# cadence::quantized_relu.out is defined in OSS
 lib.define(
     "quantized_relu.per_tensor(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, int out_shift) -> Tensor"
 )
@@ -228,6 +246,10 @@ lib.define(
     "Tensor in_zero_point, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
+    "im2row.per_tensor_out(Tensor input, int[2] kernel_size, int[2] dilation, int[2] padding, int[2] stride, "
+    "int in_zero_point, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
     "transposed_im2row.out(Tensor input, int[2] kernel_size, int[2] dilation, int[2] padding, "
     "int[2] stride, int[2] output_padding, Tensor in_zero_point, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)"
 )
@@ -235,7 +257,10 @@ lib.define(
     "requantize.out(Tensor input, Tensor in_scale, Tensor in_zero_point, Tensor out_scale, "
     "Tensor out_zero_point, ScalarType out_dtype, *, Tensor(a!) out) -> Tensor(a!)"
 )
-
+lib.define(
+    "requantize.per_tensor_out(Tensor input, float in_scale, int in_zero_point, float out_scale, "
+    "int out_zero_point, ScalarType out_dtype, *, Tensor(a!) out) -> Tensor(a!)"
+)
 
 # Custom ops with aten namespace. Need to specify the lib var as FRAGMENT type as aten library is already defined
 aten_lib = Library("aten", "FRAGMENT")
@@ -265,13 +290,20 @@ aten_lib.define(
     "_cat_nop.out(Tensor[] tensors, int dim=0, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
-# Custom ops with jarvis_nn_ops namespace
+# Custom ops with cadence_nn_ops namespace
 jarvis_nn_lib = Library("jarvis_nn_ops", "DEF")
 jarvis_nn_lib.define(
     "attention_mask.out(Tensor input, Tensor start, Tensor stop, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
-m = Library("cadence", "IMPL", "Meta")
+# Custom ops in aten namespace. RMSNorm is usually decomposed, so having
+# an out-variant is non-standard
+
+lib_aten = Library("aten", "FRAGMENT")
+
+lib_aten.define(
+    "rms_norm.out(Tensor input, SymInt[] normalized_shape, Tensor? weight=None, float? eps=None, *, Tensor(a!) out) -> Tensor(a!)"
+)
 
 
 @register_fake("cadence::quantize_per_tensor")
@@ -309,10 +341,9 @@ def quantized_add_meta(
     out_scale: float,
     out_zero_point: int,
 ) -> torch.Tensor:
-    out_size = X.size()
-    if list(X.size()) == [1]:
-        out_size = Y.size()
 
+    # Determine output shape by broadcasting X and Y
+    out_size = torch.broadcast_shapes(X.size(), Y.size())
     return X.new_empty(out_size, dtype=X.dtype)
 
 
@@ -327,10 +358,8 @@ def quantized_add_per_tensor_meta(
     out_scale: float,
     out_zero_point: int,
 ) -> torch.Tensor:
-    out_size = X.size()
-    if list(X.size()) == [1]:
-        out_size = Y.size()
 
+    out_size = torch.broadcast_shapes(X.size(), Y.size())
     return X.new_empty(out_size, dtype=X.dtype)
 
 
@@ -568,22 +597,25 @@ def im2row_meta(
     in_zero_point: torch.Tensor,
     channel_last: bool = False,
 ) -> torch.Tensor:
-    if len(input.shape) == 3:
-        height_dim = 1 if channel_last else 2
-        input = input.unsqueeze(height_dim)
+    output_size = get_im2row_output_size(
+        input, kernel_size, dilation, padding, stride, channel_last
+    )
+    return input.new_empty(output_size, dtype=input.dtype)
 
-    batch_size = input.shape[0]
-    n_input_plane = input.shape[3] if channel_last else input.shape[1]
-    input_height = input.shape[1] if channel_last else input.shape[2]
-    input_width = input.shape[2] if channel_last else input.shape[3]
-    output_height = (
-        input_height + 2 * padding[0] - (dilation[0] * (kernel_size[0] - 1) + 1)
-    ) // stride[0] + 1
-    output_width = (
-        input_width + 2 * padding[1] - (dilation[1] * (kernel_size[1] - 1) + 1)
-    ) // stride[1] + 1
-    n_output_plane = n_input_plane * kernel_size[0] * kernel_size[1]
-    output_size = torch.Size((batch_size, output_height * output_width, n_output_plane))
+
+@register_fake("cadence::im2row.per_tensor")
+def im2row_per_tensor_meta(
+    input: torch.Tensor,
+    kernel_size: Tuple[int],
+    dilation: Tuple[int],
+    padding: Tuple[int],
+    stride: Tuple[int],
+    in_zero_point: int,
+    channel_last: bool = False,
+) -> torch.Tensor:
+    output_size = get_im2row_output_size(
+        input, kernel_size, dilation, padding, stride, channel_last
+    )
     return input.new_empty(output_size, dtype=input.dtype)
 
 
@@ -603,6 +635,22 @@ def requantize_meta(
     in_zero_point: torch.Tensor,
     out_scale: torch.Tensor,
     out_zero_point: torch.Tensor,
+    dtype: ScalarType,
+) -> torch.Tensor:
+    return input.new_empty(
+        input.size(),
+        # pyre-ignore[6]: Incompatible type
+        dtype=dtype,
+    )
+
+
+@register_fake("cadence::requantize.per_tensor")
+def requantize_per_tensor_meta(
+    input: torch.Tensor,
+    in_scale: float,
+    in_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
     dtype: ScalarType,
 ) -> torch.Tensor:
     return input.new_empty(
@@ -904,3 +952,38 @@ def transposed_im2row_meta(
     output_size = torch.Size((batch_size, output_length, n_output_plane))
 
     return input.new_empty(output_size, dtype=input.dtype)
+
+
+@register_fake("cadence::where_Scalar")
+def where_Scalar_meta(
+    condition: torch.Tensor,
+    self: float,
+    other: float,
+) -> torch.Tensor:
+    return condition.new_empty(condition.size(), dtype=torch.float32)
+
+
+@register_fake("cadence::rope")
+def rope_meta(
+    input: torch.Tensor,
+    sin_tensor: torch.Tensor,
+    cos_tensor: torch.Tensor,
+    pos: Optional[torch.Tensor],
+) -> torch.Tensor:
+    input_shape = list(input.shape)
+    assert (
+        len(input_shape) in (4, 5) and input_shape[0] == 1
+    ), f"input shape {input_shape} must be (1, seq, h, hd) or (1, seq, h, hd / 2, 2)"
+    seq = input_shape[1]
+    h = input_shape[2]
+    hd = prod(input_shape) / (seq * h)
+    sin_shape = list(sin_tensor.shape)
+    cos_shape = list(cos_tensor.shape)
+    assert sin_shape == cos_shape, f"{sin_shape=} must be same as {cos_shape}"
+    assert (
+        len(sin_shape) == 2 and sin_shape[-1] == hd // 2
+    ), f"{sin_shape=} must be [seq, hd/2]"
+    assert (
+        pos is None or len(pos.shape) == 1 and pos.shape[0] == seq
+    ), f"{pos.shape} must be [{seq}]"
+    return input.new_empty(input.shape, dtype=input.dtype)

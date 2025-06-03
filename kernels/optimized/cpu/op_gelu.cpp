@@ -98,6 +98,12 @@ Tensor& opt_gelu_out(
   ET_KERNEL_CHECK(
       context, check_gelu_args(input, approximate, out), InvalidArgument, out);
 
+  ET_KERNEL_CHECK(
+      context,
+      resize_tensor(out, input.sizes()) == Error::Ok,
+      InvalidArgument,
+      out);
+
   ET_SWITCH_FLOATHBF16_TYPES(
       input.scalar_type(), context, "gelu.out", CTYPE, [&]() {
         gelu<CTYPE>(context, input, approximate, out);

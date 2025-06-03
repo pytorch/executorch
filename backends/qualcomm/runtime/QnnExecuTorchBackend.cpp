@@ -36,7 +36,6 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
   // covert SizedBuffer to qnn ExecuTorch option
   QnnExecuTorchContextBinary qnn_context_blob;
   const qnn_delegate::QnnExecuTorchOptions* qnn_executorch_options = nullptr;
-
   auto [status, signature, ctx_size, ctx_bin] =
       QnnContextCustomProtocol().DeserializeContextCustomBuffer(
           const_cast<void*>(processed->data()));
@@ -66,13 +65,14 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
 
   // Create QnnManager
   MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
-  QnnManager* qnn_manager =
-      ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(runtime_allocator, QnnManager);
+  QnnManager* qnn_manager = runtime_allocator->allocateInstance<QnnManager>();
+  if (qnn_manager == nullptr) {
+    return Error::MemoryAllocationFailed;
+  }
 
   // NOTE: Since we use placement new and since this type is not trivially
   // destructible, we must call the destructor manually in destroy().
   new (qnn_manager) QnnManager(qnn_executorch_options, qnn_context_blob);
-
   // TODO: this is a temporal solution for multi-graph support, will be
   //       removed once framework starts to accept runtime configuration
   // ---
@@ -94,9 +94,9 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
 
   if (qnn_manager->IsOnlinePrepare()) {
     ET_CHECK_OR_RETURN_ERROR(
-        qnn_manager->CompileQcir() == Error::Ok,
+        qnn_manager->CompileDlc() == Error::Ok,
         Internal,
-        "Fail to compile binary in qcir format");
+        "Fail to compile binary in Dlc format");
   } else {
     for (const std::string& graph_name : qnn_manager->GetGraphNames()) {
       ET_CHECK_OR_RETURN_ERROR(

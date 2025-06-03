@@ -6,11 +6,9 @@
 from typing import Dict, Tuple
 
 import torch
-from executorch.backends.arm._passes.unsqueeze_before_repeat_pass import (
-    UnsqueezeBeforeRepeatPass,
-)
+from executorch.backends.arm._passes import UnsqueezeBeforeRepeatPass
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.test_pipeline import TestPassPipeline
+from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
 input_t = Tuple[
     torch.Tensor, Dict[str, int], list[str]
@@ -40,17 +38,17 @@ class Repeat(torch.nn.Module):
 
 
 @common.parametrize("test_data", Repeat.test_data)
-def test_unsqueeze_before_repeat_tosa_MI(test_data):
+def test_unsqueeze_before_repeat_tosa_MI(test_data: input_t):
     """
     When rank(input) != number of repeated dimensions (=4 in Repeat module),
     insert view.
     """
     module = Repeat()
     data, ops_after_pass, ops_not_after_pass = test_data
-    pipeline = TestPassPipeline(
+    pipeline = PassPipeline(
         module,
         data,
-        tosa_version="TOSA-0.80+MI",
+        quantize=False,
         ops_before_pass={"aten_repeat_default": 3},
         ops_not_before_pass=["aten_view_copy_default"],
         ops_after_pass=ops_after_pass,

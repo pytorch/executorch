@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -22,50 +23,70 @@
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
 #include <executorch/extension/llm/runner/text_prefiller.h>
 #include <executorch/extension/llm/runner/text_token_generator.h>
-#include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
+#include <pytorch/tokenizers/tokenizer.h>
 
 namespace example {
 
 class ET_EXPERIMENTAL Runner : public executorch::extension::llm::IRunner {
  public:
-  explicit Runner(
+  // Static factory method to create a Runner instance
+  static std::unique_ptr<Runner> create(
       const std::string& model_path,
       const std::string& tokenizer_path,
-      const float temperature = 0.8f);
+      std::optional<const std::string> data_path = std::nullopt,
+      float temperature = -1.0f);
 
-  bool is_loaded() const;
-  ::executorch::runtime::Error load();
+  // Constructor with dependency injection
+  explicit Runner(
+      std::unordered_map<std::string, int64_t> metadata,
+      std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
+      std::unique_ptr<::executorch::extension::Module> module,
+      std::unique_ptr<::executorch::extension::llm::TextDecoderRunner>
+          text_decoder_runner,
+      std::unique_ptr<::executorch::extension::llm::TextPrefiller>
+          text_prefiller,
+      std::unique_ptr<::executorch::extension::llm::TextTokenGenerator>
+          text_token_generator,
+      std::unique_ptr<::executorch::extension::llm::Stats> stats,
+      float temperature = -1.0f);
+
+  bool is_loaded() const override;
+  ::executorch::runtime::Error load() override;
   ::executorch::runtime::Error generate(
       const std::string& prompt,
-      int32_t seq_len = 128,
+      const ::executorch::extension::llm::GenerationConfig& config,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const ::executorch::extension::llm::Stats&)>
-          stats_callback = {},
-      bool echo = true,
-      bool warming = false);
+          stats_callback = {}) override;
   ::executorch::runtime::Error warmup(
       const std::string& prompt,
-      int32_t seq_len = 128);
-  void stop();
+      int32_t max_new_tokens);
+  void stop() override;
 
  private:
-  float temperature_;
   bool shouldStop_{false};
 
-  // model
-  std::unique_ptr<::executorch::extension::Module> module_;
-  std::string tokenizer_path_;
-  std::unique_ptr<::executorch::extension::llm::Tokenizer> tokenizer_;
+  // Components
+  std::unique_ptr<::tokenizers::Tokenizer> tokenizer_;
   std::unordered_map<std::string, int64_t> metadata_;
+  std::unique_ptr<::executorch::extension::Module>
+      module_; // Manage module's lifecycle, make sure it outlives
+               // text_decoder_runner_.
   std::unique_ptr<::executorch::extension::llm::TextDecoderRunner>
-      text_decoder_runner_;
+      text_decoder_runner_; // Manage text_decoder_runner_'s lifecycle, make
+                            // sure it outlives text_prefiller_ &
+                            // text_token_generator_.
   std::unique_ptr<::executorch::extension::llm::TextPrefiller> text_prefiller_;
   std::unique_ptr<::executorch::extension::llm::TextTokenGenerator>
       text_token_generator_;
 
-  // stats
-  ::executorch::extension::llm::Stats stats_;
+  // Stats
+  std::unique_ptr<::executorch::extension::llm::Stats> stats_;
+
+  // temperature.
+  // Deprecated, we should rely on the temperature in GenerationConfig instead.
+  float temperature_ = -1.0f;
 };
 
 } // namespace example

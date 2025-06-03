@@ -2,10 +2,6 @@ load("@fbsource//tools/build_defs:default_platform_defs.bzl", "DEVSERVER_PLATFOR
 load("@fbsource//tools/build_defs:fb_native_wrapper.bzl", "fb_native")
 load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load(
-    "@fbsource//xplat/executorch/kernels/portable:op_registration_util.bzl",
-    "get_compiler_optimization_flags",
-)
 
 # Because vec exists as a collection of header files, compile and preprocessor
 # flags applied to the vec target do not have any effect, since no compilation
@@ -41,13 +37,13 @@ def get_vec_deps():
         # various ovr_configs are not available in oss
         deps = select({
             "ovr_config//os:iphoneos-arm64": [
-                "fbsource//third-party/sleef:sleef_arm",
+                "fbsource//third-party/sleef:sleef",
             ] if not runtime.is_oss else [],
             "ovr_config//os:macos-arm64": [
-                "fbsource//third-party/sleef:sleef_arm",
+                "fbsource//third-party/sleef:sleef",
             ] if not runtime.is_oss else [],
             "ovr_config//os:android-arm64": [
-                "fbsource//third-party/sleef:sleef_arm",
+                "fbsource//third-party/sleef:sleef",
             ] if not runtime.is_oss else [],
             "DEFAULT": [],
         })
@@ -145,7 +141,7 @@ def define_libs(is_fbcode=False):
                 (
                     DEVSERVER_PLATFORM_REGEX,
                     [
-                        "fbsource//third-party/sleef:sleef_arm",
+                        "fbsource//third-party/sleef:sleef",
                     ],
                 ),
             ],
@@ -154,7 +150,7 @@ def define_libs(is_fbcode=False):
             (
                 "^android-arm64.*$",
                 [
-                    "fbsource//third-party/sleef:sleef_arm",
+                    "fbsource//third-party/sleef:sleef",
                 ],
             ),
         ],
@@ -186,7 +182,10 @@ def define_libs(is_fbcode=False):
         ],
     )
 
-    LIBBLAS_DEPS = [third_party_dep("cpuinfo")]
+    LIBBLAS_DEPS = [
+        third_party_dep("cpuinfo"),
+        "//executorch/extension/threadpool:threadpool",
+    ]
 
     for libblas_name, mkl_dep in [("libblas", "fbsource//third-party/mkl:mkl_lp64_omp"), ("libblas_mkl_noomp", "fbsource//third-party/mkl:mkl")]:
         runtime.cxx_library(
@@ -197,7 +196,12 @@ def define_libs(is_fbcode=False):
             exported_headers = native.glob([
                 "blas/**/*.h",
             ]),
-            compiler_flags = get_compiler_optimization_flags(),
+            compiler_flags = ["-Wno-pass-failed"] + select({
+                "ovr_config//runtime:fbcode": [],
+                # TODO: replace with get_compiler_optimization_flags from op_registration_util.bzl when that
+                # is re-enabled.
+                "DEFAULT": ["-Os"],
+            }),
             header_namespace = "executorch/kernels/optimized",
             visibility = [
                 "//executorch/...",
@@ -229,9 +233,10 @@ def define_libs(is_fbcode=False):
                 "DEFAULT": [],
             }) + LIBBLAS_DEPS,
             exported_deps = [
-                "//executorch/extension/parallel:thread_parallel",
+                "//executorch/extension/threadpool:threadpool",
                 "//executorch/kernels/optimized:libutils",
                 "//executorch/runtime/core/exec_aten:lib",
+                "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
             ],
             **get_apple_framework_deps_kwargs(is_fbcode),
         )

@@ -10,10 +10,9 @@
 
 #include <cstring>
 
-#include <unistd.h>
-
 #include <gtest/gtest.h>
 
+#include <executorch/extension/data_loader/mman.h>
 #include <executorch/extension/testing_util/temp_file.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -34,7 +33,7 @@ class MmapDataLoaderTest : public ::testing::Test {
     executorch::runtime::runtime_init();
 
     // Get the page size and ensure it's a power of 2.
-    long page_size = sysconf(_SC_PAGESIZE);
+    long page_size = get_os_page_size();
     ASSERT_GT(page_size, 0);
     ASSERT_EQ(page_size & ~(page_size - 1), page_size);
     page_size_ = page_size;

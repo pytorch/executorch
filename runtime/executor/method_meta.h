@@ -20,7 +20,7 @@ struct ExecutionPlan;
 } // namespace executorch_flatbuffer
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 
 /**
  * Metadata about a specific tensor of an ExecuTorch Program.
@@ -62,6 +62,12 @@ class TensorInfo final {
    */
   size_t nbytes() const;
 
+  /**
+   * Returns the fully qualified name of the Tensor might be empty if the tensor
+   * is nameless.
+   */
+  executorch::aten::string_view name() const;
+
  private:
   // Let MethodMeta create TensorInfo.
   friend class MethodMeta;
@@ -70,7 +76,8 @@ class TensorInfo final {
       Span<const int32_t> sizes,
       Span<const uint8_t> dim_order,
       executorch::aten::ScalarType scalar_type,
-      const bool is_memory_planned);
+      const bool is_memory_planned,
+      executorch::aten::string_view name);
 
   /**
    * The sizes of the tensor.
@@ -87,6 +94,9 @@ class TensorInfo final {
    * TensorInfo.
    */
   Span<const uint8_t> dim_order_;
+
+  /// The fully qualified name of the Tensor.
+  executorch::aten::string_view name_;
 
   /// The scalar type of the tensor.
   executorch::aten::ScalarType scalar_type_;
@@ -171,6 +181,21 @@ class MethodMeta final {
   Result<TensorInfo> output_tensor_meta(size_t index) const;
 
   /**
+   * Get the number of attribute tensors in this method.
+   *
+   * @returns The number of attribute tensors.
+   */
+  size_t num_attributes() const;
+
+  /**
+   * Get metadata about the specified attribute tensor.
+   *
+   * @param[in] index The index of the attribute tensor to look up.
+   * @returns The metadata on success, or an error on failure.
+   */
+  Result<TensorInfo> attribute_tensor_meta(size_t index) const;
+
+  /**
    * Get the number of memory-planned buffers this method requires.
    *
    * @returns The number of memory-planned buffers.
@@ -192,6 +217,22 @@ class MethodMeta final {
    * @returns true if a backend is used in this method, otherwise false.
    */
   bool uses_backend(const char* backend_name) const;
+
+  /**
+   * Get the number of backends used in this method.
+   *
+   * @returns The total number of backend names.
+   */
+  size_t num_backends() const;
+
+  /**
+   * Get the backend name at the given index.
+   *
+   * @param[in] index The index of the backend name.
+   * @returns A Result wrapping the backend name as a C-style string
+   * on success, or an error if the index is invalid.
+   */
+  Result<const char*> get_backend_name(size_t index) const;
 
   /**
    * Get the number of instructions in this method.
@@ -224,14 +265,14 @@ class MethodMeta final {
   const executorch_flatbuffer::ExecutionPlan* s_plan_;
 };
 
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
 
 namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::MethodMeta;
-using ::executorch::runtime::TensorInfo;
+using ::executorch::ET_RUNTIME_NAMESPACE::MethodMeta;
+using ::executorch::ET_RUNTIME_NAMESPACE::TensorInfo;
 } // namespace executor
 } // namespace torch

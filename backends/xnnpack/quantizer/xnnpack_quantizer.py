@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import copy
 import functools
-from typing import Any, Callable, Optional, TYPE_CHECKING
+from dataclasses import dataclass
+from typing import Any, Callable, Optional, Set, TYPE_CHECKING
 
 import torch
 import torch._dynamo as torchdynamo
@@ -235,36 +236,52 @@ def _get_not_module_type_or_name_filter(
     return not_module_type_or_name_filter
 
 
+@dataclass
+class QuantPattern:
+    name: str
+    is_dynamic: bool
+    is_qat: bool
+    op_overloads: Set[torch._ops.OpOverloadPacket]
+
+
+CONV_TARGETS = {
+    torch.ops.aten.conv2d.default,
+    torch.ops.aten.conv1d.default,
+    torch.ops.aten.convolution.default,
+}
+
+LINEAR_TARGETS = {
+    torch.ops.aten.linear.default,
+}
+
+ADAPTIVE_AVG_POOL2D_TARGETS = {torch.ops.aten.adaptive_avg_pool2d.default}
+
+ADD_TARGETS = {torch.ops.aten.add.Tensor}
+
+MUL_TARGETS = {torch.ops.aten.mul.Tensor}
+
+CAT_TARGETS = {torch.ops.aten.cat.default}
+
+
 class XNNPACKQuantizer(Quantizer):
     supported_config_and_operators = _get_supported_config_and_operators()
-    STATIC_QAT_ONLY_OPS = [
-        "conv_bn_relu",
-        "conv_bn",
-        "conv_transpose_bn_relu",
-        "conv_transpose_bn",
-    ]
-
-    # static quantization ops (both PTQ and QAT)
-    # Preserve the order that fusions come before singular ops
-    STATIC_OPS = [
-        "linear_relu",
-        "linear",
-        "conv",
-        "conv_transpose",
-        "conv_relu",
-        "conv_transpose_relu",
-        "adaptive_avg_pool2d",
-        # TODO: move this to BoltNNQuantizer?
-        "gru_io_only",
-        "add_relu",
-        "add",
-        "mul_relu",
-        "mul",
-        "cat",
-    ]
-
-    DYNAMIC_OPS = [
-        "linear",
+    SUPPORTED_PATTERNS = [
+        QuantPattern("conv_bn_relu", False, True, CONV_TARGETS),
+        QuantPattern("conv_bn", False, True, CONV_TARGETS),
+        QuantPattern("conv_transpose_bn_relu", False, True, CONV_TARGETS),
+        QuantPattern("conv_transpose_bn", False, True, CONV_TARGETS),
+        QuantPattern("linear_relu", False, False, LINEAR_TARGETS),
+        QuantPattern("linear", True, False, LINEAR_TARGETS),
+        QuantPattern("conv", True, False, CONV_TARGETS),
+        QuantPattern("conv_transpose", False, False, CONV_TARGETS),
+        QuantPattern("conv_relu", False, False, CONV_TARGETS),
+        QuantPattern("conv_transpose_relu", False, False, CONV_TARGETS),
+        QuantPattern("adaptive_avg_pool2d", False, False, ADAPTIVE_AVG_POOL2D_TARGETS),
+        QuantPattern("add_relu", False, False, ADD_TARGETS),
+        QuantPattern("add", False, False, ADD_TARGETS),
+        QuantPattern("mul_relu", False, False, MUL_TARGETS),
+        QuantPattern("mul", False, False, MUL_TARGETS),
+        QuantPattern("cat", False, False, CAT_TARGETS),
     ]
 
     def __init__(self) -> None:
@@ -275,6 +292,9 @@ class XNNPACKQuantizer(Quantizer):
         ] = {}
         self.module_type_config: dict[Callable, Optional[QuantizationConfig]] = {}
         self.module_name_config: dict[str, Optional[QuantizationConfig]] = {}
+        # If specified, only quantize nodes that return true for the filter
+        # function.
+        self.filter_fn: Optional[Callable[[Node], bool]] = None
 
     @classmethod
     def get_supported_quantization_configs(cls) -> list[QuantizationConfig]:
@@ -338,6 +358,14 @@ class XNNPACKQuantizer(Quantizer):
         self.module_name_config[module_name] = quantization_config
         return self
 
+    def set_filter_function(self, filter_fn: Callable[[Node], bool]):
+        """
+        Set the filter function. We only quantize nodes that return True for
+        the filter function.
+        """
+        self.filter_fn = filter_fn
+        return self
+
     def transform_for_annotation(
         self, model: torch.fx.GraphModule
     ) -> torch.fx.GraphModule:
@@ -346,83 +374,70 @@ class XNNPACKQuantizer(Quantizer):
 
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
         """just handling global spec for now"""
-        # hacked for handling dynamic linear quant. will fix later.
-        if self.global_config and self.global_config.input_activation.is_dynamic:  # type: ignore[union-attr]
-            model = self._annotate_for_dynamic_quantization_config(model)
-        else:
-            model = self._annotate_for_static_quantization_config(model)
+        model = self._annotate_for_quantization_config(model)
         propagate_annotation(model)
         return model
 
-    def _annotate_all_static_patterns(
+    def _annotate_all_patterns(
         self,
         model: torch.fx.GraphModule,
         quantization_config: Optional[QuantizationConfig],
         filter_fn: Optional[Callable[[Node], bool]] = None,
-    ) -> torch.fx.GraphModule:
+        operator_target: Optional[torch._ops.OpOverloadPacket] = None,
+    ):
         # TODO: implement the support for None to be canceling out previous annotations
         if quantization_config is None:
             return model
 
-        if quantization_config.is_qat:
-            for op in self.STATIC_QAT_ONLY_OPS:
-                OP_TO_ANNOTATOR[op](model, quantization_config, filter_fn)
-        for op in self.STATIC_OPS:
-            OP_TO_ANNOTATOR[op](model, quantization_config, filter_fn)
+        # Create a combined filter function, which returns True only when
+        # both filter_fn and self.filter_fn return True.
+        def combined_filter_fn(n: Node) -> bool:
+            combined_filter = [self.filter_fn, filter_fn]
+            return all(f(n) for f in combined_filter if f is not None)
+
+        for pattern in self.SUPPORTED_PATTERNS:
+            if operator_target and operator_target not in pattern.op_overloads:
+                # if operator_target is specified, skip patterns that aren't
+                # associated with that target
+                continue
+            if quantization_config.input_activation.is_dynamic and pattern.is_dynamic:
+                OP_TO_ANNOTATOR[pattern.name](
+                    model, quantization_config, combined_filter_fn
+                )
+            elif quantization_config.is_qat and pattern.is_qat:
+                OP_TO_ANNOTATOR[pattern.name](
+                    model, quantization_config, combined_filter_fn
+                )
+            elif not quantization_config.input_activation.is_dynamic:
+                OP_TO_ANNOTATOR[pattern.name](
+                    model, quantization_config, combined_filter_fn
+                )
+
         return model
 
-    def _annotate_all_dynamic_patterns(
-        self,
-        model: torch.fx.GraphModule,
-        quantization_config: Optional[QuantizationConfig],
-        filter_fn: Optional[Callable[[Node], bool]] = None,
-    ) -> torch.fx.GraphModule:
-        # TODO: implement the support for None to be canceling out previous annotations
-        if quantization_config is None:
-            return model
-
-        for op in self.DYNAMIC_OPS:
-            OP_TO_ANNOTATOR[op](model, quantization_config, filter_fn)
-        return model
-
-    def _annotate_for_static_quantization_config(
+    def _annotate_for_quantization_config(
         self, model: torch.fx.GraphModule
     ) -> torch.fx.GraphModule:
         module_name_list = list(self.module_name_config.keys())
         for module_name, config in self.module_name_config.items():
-            self._annotate_all_static_patterns(
+            self._annotate_all_patterns(
                 model, config, _get_module_name_filter(module_name)
             )
 
         tp_list = list(self.module_type_config.keys())
         for module_type, config in self.module_type_config.items():
-            self._annotate_all_static_patterns(
+            self._annotate_all_patterns(
                 model, config, _get_module_type_filter(module_type)
             )
 
-        self._annotate_all_static_patterns(
-            model,
-            self.global_config,
-            _get_not_module_type_or_name_filter(tp_list, module_name_list),
-        )
-        return model
-
-    def _annotate_for_dynamic_quantization_config(
-        self, model: torch.fx.GraphModule
-    ) -> torch.fx.GraphModule:
-        module_name_list = list(self.module_name_config.keys())
-        for module_name, config in self.module_name_config.items():
-            self._annotate_all_dynamic_patterns(
-                model, config, _get_module_name_filter(module_name)
+        for op, config in self.operator_type_config.items():
+            self._annotate_all_patterns(
+                model,
+                config,
+                _get_not_module_type_or_name_filter(tp_list, module_name_list),
+                op,
             )
-
-        tp_list = list(self.module_type_config.keys())
-        for module_type, config in self.module_type_config.items():
-            self._annotate_all_dynamic_patterns(
-                model, config, _get_module_type_filter(module_type)
-            )
-
-        self._annotate_all_dynamic_patterns(
+        self._annotate_all_patterns(
             model,
             self.global_config,
             _get_not_module_type_or_name_filter(tp_list, module_name_list),

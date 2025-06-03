@@ -12,7 +12,11 @@ import numpy as np
 
 import torch
 from executorch.backends.qualcomm.builders.utils import get_parameter
-from executorch.backends.qualcomm.utils.constants import QCOM_DATA, QCOM_QUANT_ATTRS
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_DATA,
+    QCOM_QUANT_ATTRS,
+    QCOM_ZERO_POINT,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from .node_visitor import NodeVisitor, register_node_visitor
@@ -32,7 +36,7 @@ class RmsNormVisitor(NodeVisitor):
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
         # args of node : ['input', 'normalized_shape', 'weight', 'eps']
-        input_node = node.args[0]
+        input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
@@ -56,7 +60,7 @@ class RmsNormVisitor(NodeVisitor):
         axes = [node.args[0].meta["val"].dim() - 1]
         axes_shape = [len(axes)]
 
-        weight_node = node.args[2]
+        weight_node = self.get_node(node.args[2])
         weight_tensor = get_parameter(weight_node, self.edge_program)
         weight_tensor_wrapper = self.define_tensor(
             weight_node,
@@ -66,8 +70,8 @@ class RmsNormVisitor(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        # Fake node, nn module seems to be inconsistant with document
-        bias_tensor = torch.zeros(weight_tensor.shape)
+        # Fake node, nn module seems to be inconsistent with document
+        bias_tensor = torch.zeros(weight_tensor.shape, dtype=weight_tensor.dtype)
         bias_node = torch.fx.Node(
             node.graph,
             node.name + "_runtime_bias",
@@ -77,6 +81,8 @@ class RmsNormVisitor(NodeVisitor):
             {},  # kwargs
         )
         if quant_attrs := node.meta.get(QCOM_QUANT_ATTRS):
+            quant_attrs = quant_attrs.copy()
+            quant_attrs[QCOM_ZERO_POINT] = 0
             bias_node.meta[QCOM_QUANT_ATTRS] = quant_attrs
         bias_tensor_wrapper = self.define_tensor(
             bias_node,
@@ -87,14 +93,6 @@ class RmsNormVisitor(NodeVisitor):
         )
 
         epsilon = node.args[3]
-        if isinstance(epsilon, torch.fx.Node):
-            epsilon = get_parameter(epsilon, self.edge_program)
-            epsilon = (
-                epsilon
-                if isinstance(epsilon, float)
-                else torch.finfo(epsilon.dtype).eps
-            )
-
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,

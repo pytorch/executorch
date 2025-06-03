@@ -21,23 +21,29 @@ Phone verified: MediaTek Dimensity 9300 (D9300) chip.
 ## Setup ExecuTorch
 In this section, we will need to set up the ExecuTorch repo first with Conda environment management. Make sure you have Conda available in your system (or follow the instructions to install it [here](https://anaconda.org/anaconda/conda)). The commands below are running on Linux (CentOS).
 
-Create a Conda environment
+Checkout ExecuTorch repo and sync submodules
+
 ```
-conda create -yn et_mtk python=3.10.0
-conda activate et_mtk
+git clone -b viable/strict https://github.com/pytorch/executorch.git && cd executorch
 ```
 
-Checkout ExecuTorch repo and sync submodules
+Create either a Python virtual environment:
+
 ```
-git clone https://github.com/pytorch/executorch.git
-cd executorch
-git submodule sync
-git submodule update --init
+python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 ```
+
+Or a Conda environment:
+
+```
+conda create -n et_xnnpack python=3.10.0 && conda activate et_xnnpack
+```
+
 Install dependencies
 ```
 ./install_executorch.sh
 ```
+
 ## Setup Environment Variables
 ### Download Buck2 and make executable
 * Download Buck2 from the official [Release Page](https://github.com/facebook/buck2/releases/tag/2024-02-01)
@@ -59,7 +65,7 @@ export ANDROID_ABIS=arm64-v8a
 MTK currently supports Llama 3 exporting.
 
 ### Set up Environment
-1. Follow the ExecuTorch set-up environment instructions found on the [Getting Started](https://pytorch.org/executorch/stable/getting-started-setup.html) page
+1. Follow the ExecuTorch set-up environment instructions found on the [Getting Started](https://pytorch.org/executorch/main/getting-started-setup.html) page
 2. Set-up MTK AoT environment
 ```
 // Ensure that you are inside executorch/examples/mediatek directory
@@ -120,13 +126,31 @@ The Mediatek runner (`examples/mediatek/executor_runner/mtk_llama_runner.cpp`) c
 
 
 ## Build AAR Library
-
-Next we need to build and compile the MediaTek backend and MediaTek Llama runner. By setting  `NEURON_BUFFER_ALLOCATOR_LIB`, the script will build the MediaTek backend.
+1. Open a terminal window and navigate to the root directory of the executorch
+2. Set the following environment variables:
+```sh
+export ANDROID_NDK=<path_to_android_ndk>
+export ANDROID_ABIS=arm64-v8a
+export NEURON_BUFFER_ALLOCATOR_LIB=<path_to_neuron_buffer_allocator_lib>
 ```
-sh build/build_android_llm_demo.sh
+*Note: <path_to_android_ndk> is the root for the NDK, which is usually under ~/Library/Android/sdk/ndk/XX.Y.ZZZZZ for macOS, and contains NOTICE and README.md. We use <path_to_android_ndk>/build/cmake/android.toolchain.cmake for CMake to cross-compile.*
+
+3. Create a directory to hold the AAR
+```sh
+mkdir -p aar-out
+export BUILD_AAR_DIR=aar-out
 ```
 
-**Output**: This will generate an .aar file that is already imported into the expected directory for the Android app. It will live in `examples/demo-apps/android/Llamademo/app/libs`.
+4. Run the following command to build the AAR:
+```sh
+sh scripts/build_android_library.sh
+```
+
+5. Copy the AAR to the app:
+```sh
+mkdir -p examples/demo-apps/android/LlamaDemo/app/libs
+cp aar-out/executorch.aar examples/demo-apps/android/LlamaDemo/app/libs/executorch.aar
+```
 
 If you were to unzip the .aar file or open it in Android Studio, verify it contains the following related to MediaTek backend:
 * libneuron_buffer_allocator.so

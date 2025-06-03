@@ -28,17 +28,14 @@ bool check_tensor_dtype(
     case SupportedTensorDtypes::INTB:
       return executorch::runtime::tensor_is_integral_type(t, true);
     case SupportedTensorDtypes::BOOL_OR_BYTE:
-      return (
-          executorch::runtime::tensor_is_type(t, ScalarType::Bool) ||
-          executorch::runtime::tensor_is_type(t, ScalarType::Byte));
+      return (executorch::runtime::tensor_is_type(
+          t, ScalarType::Bool, ScalarType::Byte));
     case SupportedTensorDtypes::SAME_AS_COMPUTE:
       return executorch::runtime::tensor_is_type(t, compute_type);
     case SupportedTensorDtypes::SAME_AS_COMMON: {
       if (compute_type == ScalarType::Float) {
-        return (
-            executorch::runtime::tensor_is_type(t, ScalarType::Float) ||
-            executorch::runtime::tensor_is_type(t, ScalarType::Half) ||
-            executorch::runtime::tensor_is_type(t, ScalarType::BFloat16));
+        return (executorch::runtime::tensor_is_type(
+            t, ScalarType::Float, ScalarType::Half, ScalarType::BFloat16));
       } else {
         return executorch::runtime::tensor_is_type(t, compute_type);
       }

@@ -28,14 +28,14 @@ void add_staging_to_tensor_node(
   vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(
       *graph.get_tensor(out_tensor), graph.int8_buffers_enabled());
 
-  vkapi::ParamsBindList ubos;
+  std::vector<PushConstantDataInfo> pcs;
   if (graph.is_buffer_storage(out_tensor)) {
-    ubos.append(
-        {graph.sizes_ubo(out_tensor),
-         graph.strides_ubo(out_tensor),
-         graph.numel_ubo(out_tensor)});
+    pcs = {
+        graph.sizes_pc_of(out_tensor),
+        graph.strides_pc_of(out_tensor),
+        graph.numel_pc_of(out_tensor)};
   } else {
-    ubos.append({graph.sizes_ubo(out_tensor)});
+    pcs = {graph.sizes_pc_of(out_tensor)};
   }
 
   graph.execute_nodes().emplace_back(new DispatchNode(
@@ -46,12 +46,15 @@ void add_staging_to_tensor_node(
       // Input and Outputs
       {{out_tensor, vkapi::kWrite}, {in_staging, vkapi::kRead}},
       // Parameter Buffers
-      ubos,
+      {},
+      // Push Constants
+      pcs,
       // Specialization Constants
       {graph.hashed_layout_of(out_tensor)},
+      // Resize Args
+      {},
       // Resizing Logic
-      nullptr,
-      {}));
+      nullptr));
 }
 
 const std::string kBitw8PrefixStr = "bitw8_image_to_nchw_nobitw8buffer";
@@ -106,26 +109,35 @@ void add_tensor_to_staging_node(
       {{out_staging, vkapi::kWrite}, {in_tensor, vkapi::kRead}},
       // Parameter Buffers
       ubos,
+      // Push Constants
+      {},
       // Specialization Constants
-      {graph.hashed_layout_of(in_tensor)}));
+      {graph.hashed_layout_of(in_tensor)},
+      // Resize Args
+      {},
+      // Resizing Logic
+      nullptr));
 }
 
 void add_prepack_standard_node(
     ComputeGraph& graph,
     const ValueRef tensor_data,
-    const ValueRef tensor) {
+    const ValueRef tensor,
+    const bool transpose_hw = false) {
   vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(
       *graph.get_tensor(tensor), graph.int8_buffers_enabled());
 
-  vkapi::ParamsBindList ubos;
+  std::vector<PushConstantDataInfo> pcs;
   if (graph.is_buffer_storage(tensor)) {
-    ubos.append(
-        {graph.sizes_ubo(tensor),
-         graph.strides_ubo(tensor),
-         graph.numel_ubo(tensor)});
+    pcs = {
+        graph.sizes_pc_of(tensor),
+        graph.strides_pc_of(tensor),
+        graph.numel_pc_of(tensor)};
   } else {
-    ubos.append({graph.sizes_ubo(tensor)});
+    pcs = {graph.sizes_pc_of(tensor)};
   }
+
+  int transpose_hw_spec = transpose_hw ? 1 : 0;
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
@@ -136,9 +148,10 @@ void add_prepack_standard_node(
       tensor_data,
       tensor,
       // Parameter Buffers
-      ubos,
+      {},
       // Specialization Constants
-      {graph.hashed_layout_of(tensor)}));
+      {graph.hashed_layout_of(tensor), transpose_hw_spec},
+      pcs));
 }
 
 ValueRef prepack_standard(
@@ -155,6 +168,33 @@ ValueRef prepack_standard(
   ValueRef tensor =
       graph.add_tensor_like(tensor_data, storage_type, layout, axis_map_layout);
   add_prepack_standard_node(graph, tensor_data, tensor);
+  return tensor;
+}
+
+ValueRef prepack_standard_hw_transposed(
+    ComputeGraph& graph,
+    const ValueRef tensor_data,
+    const utils::StorageType storage_type,
+    const utils::GPUMemoryLayout layout,
+    const bool passthrough,
+    const utils::AxisMapLayout axis_map_layout) {
+  (void)passthrough;
+
+  VK_CHECK_COND(graph.val_is_tref(tensor_data));
+  std::vector<int64_t> new_out_sizes = graph.sizes_of(tensor_data);
+  const int w_dim = new_out_sizes.size() - 1;
+  const int h_dim = new_out_sizes.size() - 2;
+  const int64_t tmp = new_out_sizes.at(w_dim);
+  new_out_sizes.at(w_dim) = new_out_sizes.at(h_dim);
+  new_out_sizes.at(h_dim) = tmp;
+  ValueRef tensor = graph.add_tensor(
+      new_out_sizes,
+      graph.dtype_of(tensor_data),
+      storage_type,
+      layout,
+      -1,
+      axis_map_layout);
+  add_prepack_standard_node(graph, tensor_data, tensor, true);
   return tensor;
 }
 
@@ -205,6 +245,54 @@ ValueRef prepack_direct_copy_buffer(
       graph.add_tensor_like(tensor_data, utils::kBuffer, utils::kWidthPacked);
   add_prepack_direct_copy_buffer_node(graph, tensor_data, tensor);
   return tensor;
+}
+
+ValueRef prepack_int4_linear_weight_transposed_interleaved(
+    ComputeGraph& graph,
+    const ValueRef qmat2_data) {
+  std::vector<int64_t> qmat2_orig_sizes = graph.sizes_of(qmat2_data);
+  const int64_t ndim = graph.dim_of(qmat2_data);
+
+  const int64_t K = qmat2_orig_sizes.at(ndim - 1) * 2;
+  const int64_t N = qmat2_orig_sizes.at(ndim - 2);
+  const int64_t N_div2 = N / int64_t(2);
+
+  utils::StorageType storage_type = utils::kTexture2D;
+  uint32_t max_extent = graph.context()->adapter_ptr()->max_texture2d_dim();
+  if (N_div2 > max_extent * 4 || K > max_extent) {
+    storage_type = utils::kBuffer;
+  }
+
+  std::vector<int64_t> qmat2_sizes{K, N_div2};
+  ValueRef qmat2 = graph.add_tensor(
+      qmat2_sizes, vkcompute::vkapi::kByte, storage_type, utils::kWidthPacked);
+
+  utils::uvec3 global_wg_size;
+  global_wg_size = graph.logical_limits_of(qmat2);
+  global_wg_size[1] = utils::div_up(global_wg_size[1], uint32_t(2));
+
+  std::string kernel_name =
+      graph.context()->adapter_ptr()->has_full_int8_buffers_support()
+      ? "pack_int4_linear_weight_transposed_interleaved"
+      : "pack_int4_linear_weight_transposed_interleaved_nobitw8buffer";
+  add_storage_type_suffix(kernel_name, storage_type);
+
+  graph.prepack_nodes().emplace_back(new PrepackNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      global_wg_size,
+      graph.create_local_wg_size(global_wg_size),
+      // Inputs and Outputs
+      qmat2_data,
+      qmat2,
+      // UBOs
+      {},
+      // Specialization Constants
+      {},
+      // Push Constants
+      {graph.sizes_pc_of(qmat2)}));
+
+  return qmat2;
 }
 
 void prepack_op(ComputeGraph& graph, const std::vector<ValueRef>& args) {

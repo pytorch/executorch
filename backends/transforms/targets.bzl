@@ -78,21 +78,6 @@ def define_common_targets():
     )
 
     runtime.python_library(
-        name = "fuse_dequant_linear",
-        srcs = ["fuse_dequant_linear.py"],
-        visibility = [
-            "//executorch/backends/...",
-        ],
-        deps = [
-            ":utils",
-            "//caffe2:torch",
-            "//executorch/exir:pass_base",
-            "//executorch/exir:sym_util",
-            "//executorch/exir/dialects:lib",
-        ],
-    )
-
-    runtime.python_library(
         name = "view_copy_to_squeeze_unsqueeze",
         srcs = ["view_copy_to_squeeze_unsqueeze.py"],
         visibility = [
@@ -133,6 +118,19 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "remove_getitem_op",
+        srcs = ["remove_getitem_op.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
         name = "mean_to_sum_div",
         srcs = ["mean_to_sum_div.py"],
         visibility = [
@@ -149,6 +147,9 @@ def define_common_targets():
     runtime.python_library(
         name = "utils",
         srcs = ["utils.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
         deps = [
             "//caffe2:torch",
             "//executorch/exir:lib",
@@ -191,6 +192,20 @@ def define_common_targets():
         name = "rank_0_to_rank_1",
         srcs = [
             "rank_0_to_rank_1.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+        ],
+    )
+
+    runtime.python_library(
+        name = "replace_scalar_with_tensor",
+        srcs = [
+            "replace_scalar_with_tensor.py",
         ],
         visibility = [
             "//executorch/backends/...",

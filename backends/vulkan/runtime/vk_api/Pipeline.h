@@ -82,6 +82,10 @@ class SpecVarList final {
 
   void append(const SpecVarList& other);
 
+  void reserve(const size_t size);
+
+  void append(const SpecVar& other);
+
   std::vector<VkSpecializationMapEntry> generate_map_entries() const;
 
   friend bool operator==(const SpecVarList& lhs, const SpecVarList& rhs);
@@ -170,6 +174,7 @@ class ComputePipeline final {
  private:
   VkDevice device_;
   VkPipeline handle_;
+  std::vector<VkSpecializationMapEntry> map_entries_;
 
  public:
   inline VkPipeline handle() const {

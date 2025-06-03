@@ -1,10 +1,9 @@
 /*
- * Copyright (c) Meta Platforms, Inc. and affiliates.
  * Copyright (c) 2024 MediaTek Inc.
- * All rights reserved.
  *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree.
+ * Licensed under the BSD License (the "License"); you may not use this file
+ * except in compliance with the License. See the license file in the root
+ * directory of this source tree for more details.
  */
 
 /**

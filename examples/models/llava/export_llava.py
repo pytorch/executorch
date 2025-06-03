@@ -20,17 +20,16 @@ from executorch.examples.models.llama.export_llama_lib import (
     build_args_parser,
     get_quantizer_and_quant_params,
 )
+from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
+    replace_kv_cache_with_custom_kv_cache,
+)
 from executorch.examples.models.llama.source_transformation.quantize import (
     EmbeddingQuantHandler,
     get_quant_weight_transform,
 )
-from executorch.examples.models.llama.source_transformation.quantized_kv_cache import (
-    replace_kv_cache_with_custom_kv_cache,
-)
 from executorch.examples.models.llama.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
-from executorch.examples.models.llava.image_util import serialize_image
 from executorch.examples.models.llava.model import LlavaModel
 from executorch.exir import (
     EdgeCompileConfig,
@@ -44,10 +43,9 @@ from executorch.exir.passes.sym_shape_eval_pass import (
     ConstraintBasedSymShapeEvalPass,
     HintBasedSymShapeEvalPass,
 )
-
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
-from executorch.extension.llm.tokenizer.tokenizer import Tokenizer
 from executorch.util.activation_memory_profiler import generate_memory_trace
+from pytorch_tokenizers.llama2c import Llama2cTokenizer as Tokenizer
 from torch.export import Dim
 from torch.nn.attention import SDPBackend
 
@@ -67,7 +65,6 @@ class LlavaEdgeManager(LLMEdgeManager):
                 dynamic_shapes=dynamic_shape,
                 strict=False,
             )
-            # pyre-ignore: Incompatible attribute type [8]: Attribute `pre_autograd_graph_module` declared in class `LLMEdgeManager` has type `Optional[GraphModule]` but is used as type `Module`.
             self.pre_autograd_graph_module = self.export_program.module()
         return self
 
@@ -93,15 +90,33 @@ def export_text_model(llava, embeddings, dynamic_shapes):
         use_kv_cache=True,
         example_inputs=(torch.tensor([0], dtype=torch.int64), embeddings),
         dynamic_shapes=dynamic_shapes,
-        args=llava.text_model_args,
     )
 
     dtype_override = DType.fp32
     parser = build_args_parser()
     args = parser.parse_args(
-        ["-X", "-qmode", "8da4w", "--group_size", "128", "--embedding-quantize", "4,32"]
+        [
+            "-p",
+            "params.json",
+            "-X",
+            "-qmode",
+            "8da4w",
+            "--group_size",
+            "128",
+            "--embedding-quantize",
+            "4,32",
+        ]
     )
-    quant_transform = get_quant_weight_transform(args, dtype_override, False)
+    quant_transform = get_quant_weight_transform(
+        quantization_mode=args.quantization_mode,
+        group_size=args.group_size,
+        computation_dtype=dtype_override,
+        checkpoint_path=args.checkpoint,
+        tokenizer_path=args.tokenizer_path,
+        calibration_tasks=args.calibration_tasks,
+        calibration_limit=args.calibration_limit,
+        calibration_seq_length=args.calibration_seq_length,
+    )
     _, quantizers, _ = get_quantizer_and_quant_params(args)
     source_transforms = []
     if llava.use_sdpa_with_kv_cache_op:
@@ -152,7 +167,6 @@ def export_image_encoder(llava, resized, dynamic_shapes):
             use_kv_cache=True,
             example_inputs=(resized,),
             dynamic_shapes=dynamic_shapes,
-            args=None,
         )
         .export()
         .pt2e_quantize([quantizer])
@@ -258,13 +272,6 @@ def export_all(llava_model: LlavaModel):
     return executorch_program
 
 
-def get_image_tensor_for_llava_runner(llava_model):
-    # llava runner doesn't have image reader so an image tensor is needed.
-    (resized,) = llava_model.get_example_inputs()
-
-    serialize_image(resized, "image.pt")
-
-
 def get_tokenizer_for_llava_runner(llava_model):
     # serialize tokenizer into tokenizer.bin
     llava_model.tokenizer.save_vocabulary("./")
@@ -329,7 +336,6 @@ def main():
 
     # artifacts
     if args.with_artifacts:
-        get_image_tensor_for_llava_runner(llava_model)
         get_tokenizer_for_llava_runner(llava_model)
 
 

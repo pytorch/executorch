@@ -9,7 +9,7 @@
 #include <executorch/runtime/backend/interface.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 
 // Pure-virtual dtors still need an implementation.
 BackendInterface::~BackendInterface() {}
@@ -55,5 +55,16 @@ Error register_backend(const Backend& backend) {
   return Error::Ok;
 }
 
-} // namespace runtime
+size_t get_num_registered_backends() {
+  return num_registered_backends;
+}
+
+Result<const char*> get_backend_name(size_t index) {
+  if (index >= num_registered_backends) {
+    return Error::InvalidArgument;
+  }
+  return registered_backends[index].name;
+}
+
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
