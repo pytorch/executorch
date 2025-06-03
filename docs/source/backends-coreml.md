@@ -203,4 +203,4 @@ This happens because the model is in FP16, but CoreML interprets some of the arg
 2. coremltools/converters/mil/backend/mil/load.py", line 499, in export
     raise RuntimeError("BlobWriter not loaded")
 
-If you're using Python 3.13, try reducing your python version to Python 3.12.  coremltools does not support Python 3.13.  
+If you're using Python 3.13, try reducing your python version to Python 3.12.  coremltools does not support Python 3.13, see this [issue](https://github.com/apple/coremltools/issues/2487).  
