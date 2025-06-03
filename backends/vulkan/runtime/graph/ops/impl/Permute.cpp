@@ -29,6 +29,7 @@ void check_args(
     const ValueRef in,
     const ValueRef permute_dims,
     const ValueRef out) {
+  (void)permute_dims;
   VK_CHECK_COND(check_same_packed_dim(graph, in, out));
 
   // This implementation doesn't not requires the input tensor to have the same
@@ -67,7 +68,7 @@ void resize_permute_node(
       in_sizes.size() > out_sizes.size() &&
       in_sizes.size() == permute_dims.size()) {
     std::vector<int64_t> new_out_sizes(out_sizes.size(), 1);
-    const int offset = in_sizes.size() - out_sizes.size();
+    const size_t offset = in_sizes.size() - out_sizes.size();
     for (int i = 0; i < out_sizes.size(); i++) {
       const int64_t permute_dim = permute_dims.at(i + offset);
       new_out_sizes.at(i) = in_sizes.at(permute_dim);
@@ -79,7 +80,7 @@ void resize_permute_node(
       in_sizes.size() < out_sizes.size() &&
       out_sizes.size() == permute_dims.size()) {
     std::vector<int64_t> new_out_sizes(out_sizes.size(), 1);
-    const int offset = out_sizes.size() - in_sizes.size();
+    const size_t offset = out_sizes.size() - in_sizes.size();
     for (int i = 0; i < out_sizes.size(); i++) {
       int64_t permute_dim = permute_dims.at(i) - offset;
       if (permute_dim >= 0) {
@@ -114,7 +115,8 @@ void add_permute_node(
           !seen[permute_dim], "Argument dim ", permute_dim, "  is repeated");
       seen[permute_dim] = true;
 
-      out_dims[(4u - out_ndim) + i] = permute_dim + (4 - out_ndim);
+      out_dims[(4u - out_ndim) + i] =
+          utils::safe_downcast<int32_t>(permute_dim + (4 - out_ndim));
     }
   }
 
