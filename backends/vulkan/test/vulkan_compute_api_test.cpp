@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include <bitset>
+#include <iomanip>
 #include <utility>
 #include <vector>
 
@@ -3314,17 +3315,23 @@ vkapi::ShaderInfo pick_dynamic_dispatch_shader(
 
 utils::uvec3 pick_dynamic_dispatch_global_wg_size(
     ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& additional_args) {
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
   const ValueRef out = args[0].refs[0];
-
   return graph->logical_limits_of(out);
 }
 
 utils::uvec3 pick_dynamic_dispatch_local_wg_size(
     ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const utils::uvec3& global_workgroup_size,
     const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& additional_args) {
+    const std::vector<ValueRef>& resize_args) {
+  (void)graph;
+  (void)shader;
+  (void)global_workgroup_size;
   return {64, 1, 1};
 }
 
