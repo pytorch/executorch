@@ -15,9 +15,7 @@ namespace vkcompute {
 // sym_size
 //
 
-void sym_size_impl(
-    ComputeGraph* graph,
-    const std::vector<ValueRef>& args) {
+void sym_size_impl(ComputeGraph* graph, const std::vector<ValueRef>& args) {
   const ValueRef in_tensor = args.at(0);
   const ValueRef dim = args.at(1);
   const ValueRef out_symint = args.at(2);
@@ -31,9 +29,9 @@ void sym_size_impl(
 void resize_sym_size_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& extra_args) {
+    const std::vector<ValueRef>& resize_args) {
   (void)args; // Unused parameter
-  sym_size_impl(graph, extra_args);
+  sym_size_impl(graph, resize_args);
 }
 
 /*
@@ -52,9 +50,7 @@ void sym_size_int(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 // binary operators
 //
 
-void sym_add_impl(
-    ComputeGraph* graph,
-    const std::vector<ValueRef>& args) {
+void sym_add_impl(ComputeGraph* graph, const std::vector<ValueRef>& args) {
   const ValueRef a = args.at(0);
   const ValueRef b = args.at(1);
   const ValueRef out = args.at(2);
@@ -69,9 +65,9 @@ void sym_add_impl(
 void resize_sym_add_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& extra_args) {
+    const std::vector<ValueRef>& resize_args) {
   (void)args; // Unused parameter
-  sym_add_impl(graph, extra_args);
+  sym_add_impl(graph, resize_args);
 }
 
 /*
