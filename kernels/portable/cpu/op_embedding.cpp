@@ -35,11 +35,13 @@ void embedding_kernel(
   int64_t nbytes_per_entry = weight.size(1) * weight.element_size();
   const char* w_data = weight.const_data_ptr<char>();
   char* out_data = out.mutable_data_ptr<char>();
-  const CTYPE* indices_ptr = indices.const_data_ptr<CTYPE>();
+  CTYPE* indices_ptr = indices.mutable_data_ptr<CTYPE>();
   ssize_t weight_height = weight.size(0);
   const auto indices_numel = indices.numel();
   for (int i = 0; i < indices_numel; i++) {
     // Ensure index is larger than 0 and smaller than weight.size(0)
+    indices_ptr[i] = indices_ptr[i] < 0 ? 0 : indices_ptr[i];
+    indices_ptr[i] = indices_ptr[i] >= weight_height ? weight_height-1 : indices_ptr[i];
     ET_KERNEL_CHECK_MSG(
         ctx,
         indices_ptr[i] < weight_height,
@@ -118,7 +120,7 @@ Tensor& embedding_out(
 
   ET_SWITCH_TWO_TYPES(
       Long, Int, ix_type, ctx, "op_embedding.out", CTYPE, [&]() {
-        embedding_kernel<CTYPE>(ctx, weight, indices, out);
+        embedding_kernel<long>(ctx, weight, indices, out);
       });
 
   return out;
