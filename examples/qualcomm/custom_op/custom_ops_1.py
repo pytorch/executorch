@@ -26,6 +26,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
 )
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    generate_inputs,
     make_output_dir,
     make_quantizer,
     setup_common_args_and_variables,
@@ -230,29 +231,54 @@ def main(args):
     if args.compile_only:
         sys.exit(0)
 
-    # setup required paths accordingly
-    # qnn_sdk       : QNN SDK path setup in environment variable
-    # artifact_path : path where artifacts were built
-    # pte_path      : path where executorch binary was stored
-    # device_id     : serial number of android device
-    # workspace     : folder for storing artifacts on android device
-    adb = SimpleADB(
-        qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        build_path=f"{args.build_folder}",
-        pte_path=f"{args.artifact}/{pte_filename}.pte",
-        workspace=workspace,
-        device_id=args.device,
-        host_id=args.host,
-        soc_model=args.model,
-    )
-    adb.push(inputs=sample_input, input_list=input_list, files=op_package_paths)
-    adb.execute()
-
     # collect output data
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
-    adb.pull(output_path=args.artifact)
+    if args.enable_x86_64:
+        input_list_filename = "input_list.txt"
+        input_list = f"{args.artifact}/{input_list}"
+        generate_inputs(args.artifact, input_list_filename, sample_input, input_list)
+        qnn_sdk = os.getenv("QNN_SDK_ROOT")
+        assert qnn_sdk, "QNN_SDK_ROOT was not found in environment variable"
+        target = "x86_64-linux-clang"
+
+        runner_cmd = " ".join(
+            [
+                f"export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{args.build_folder}/lib &&",
+                f"./{args.build_folder}/examples/qualcomm/executor_runner/qnn_executor_runner",
+                f"--model_path {args.artifact}/{pte_filename}.pte",
+                f"--input_list_path {args.artifact}/{input_list_filename}",
+                f"--output_folder_path {output_data_folder}",
+            ]
+        )
+        subprocess.run(
+            runner_cmd,
+            # stdout=subprocess.PIPE,
+            # stderr=subprocess.STDOUT,
+            shell=True,
+            executable="/bin/bash",
+            capture_output=True,
+        )
+    else:
+        # setup required paths accordingly
+        # qnn_sdk       : QNN SDK path setup in environment variable
+        # artifact_path : path where artifacts were built
+        # pte_path      : path where executorch binary was stored
+        # device_id     : serial number of android device
+        # workspace     : folder for storing artifacts on android device
+        adb = SimpleADB(
+            qnn_sdk=os.getenv("QNN_SDK_ROOT"),
+            build_path=f"{args.build_folder}",
+            pte_path=f"{args.artifact}/{pte_filename}.pte",
+            workspace=workspace,
+            device_id=args.device,
+            host_id=args.host,
+            soc_model=args.model,
+        )
+        adb.push(inputs=sample_input, input_list=input_list, files=op_package_paths)
+        adb.execute()
+        adb.pull(output_path=args.artifact)
 
     x86_golden = instance(*sample_input)
     device_output = torch.from_numpy(
