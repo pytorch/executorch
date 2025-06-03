@@ -72,7 +72,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        preset: [pybind]
+        preset: [pybind, llm]
     with:
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -80,16 +80,9 @@ jobs:
       timeout: 90
       script: |
         set -eux
-        conda init powershell
-        powershell -Command "& {
-          \$ErrorActionPreference = 'Stop'
-          Set-PSDebug -Trace 1
+        conda create --yes --quiet -n et python=3.12
+        conda activate et
 
-          conda create --yes --quiet -n et python=3.12
-          conda activate et
-
-          python install_requirements.py
-          cmake --preset ${{ matrix.preset }}
-          \$numCores = [System.Environment]::GetEnvironmentVariable('NUMBER_OF_PROCESSORS') - 1
-          cmake --build cmake-out -j \$numCores
-        }"
+        ./install_requirements.sh
+        cmake -G "Visual Studio 17 2022" -T ClangCL --preset ${{ matrix.preset }}
+        cmake --build cmake-out -j$(( $(nproc) - 1 ))

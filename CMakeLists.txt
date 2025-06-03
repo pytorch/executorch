@@ -75,6 +75,12 @@ if(NOT PYTHON_EXECUTABLE)
 endif()
 announce_configured_options(PYTHON_EXECUTABLE)
 
+if(WIN32)
+  if(NOT "${CMAKE_GENERATOR_TOOLSET}" STREQUAL "" AND NOT CMAKE_GENERATOR_TOOLSET MATCHES "Clang")
+    message(FATAL_ERROR "Windows builds require Clang compiler. Current CMAKE_GENERATOR_TOOLSET: ${CMAKE_GENERATOR_TOOLSET}")
+  endif()
+endif()
+
 announce_configured_options(CMAKE_CXX_COMPILER_ID)
 announce_configured_options(CMAKE_TOOLCHAIN_FILE)
 announce_configured_options(BUCK2)
