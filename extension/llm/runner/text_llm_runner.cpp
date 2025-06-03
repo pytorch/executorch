@@ -231,7 +231,7 @@ std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
         special_tokens, bos_token_index, eos_token_index);
   } else if (special_tokens != nullptr && pattern.has_value()) {
     tiktoken_tokenizer = std::make_unique<::tokenizers::Tiktoken>(
-        pattern.value(), special_tokens, bos_token_index, eos_token_index);
+        pattern.value(), std::move(special_tokens), bos_token_index, eos_token_index);
   } else {
     tiktoken_tokenizer = std::make_unique<::tokenizers::Tiktoken>();
   }
