@@ -43,7 +43,7 @@ Error get_dim_order(
 bool tensor_has_valid_dim_order(torch::executor::Tensor t) {
   if (!validate_dim_order(t.dim_order().data(), t.dim_order().size())) {
     ET_LOG(Error, "Tensor dim order is not valid:");
-    for (const auto d : c10::irange(t.dim())) {
+    for ([[maybe_unused]] const auto d : c10::irange(t.dim())) {
       ET_LOG(
           Error,
           "    dim_order(%zu): %zu",
@@ -64,7 +64,7 @@ bool tensor_is_default_or_channels_last_dim_order(torch::executor::Tensor t) {
     ET_LOG(
         Error,
         "Expected tensor to have default or channels last dim order, but got");
-    for (const auto d : c10::irange(t.dim())) {
+    for ([[maybe_unused]] const auto d : c10::irange(t.dim())) {
       ET_LOG(
           Error,
           "    dim_order(%zu): %zu",
@@ -81,7 +81,7 @@ bool tensor_is_default_dim_order(torch::executor::Tensor t) {
 
   if (!ret_val) {
     ET_LOG(Error, "Expected tensor to have default dim order, but got");
-    for (const auto d : c10::irange(t.dim())) {
+    for ([[maybe_unused]] const auto d : c10::irange(t.dim())) {
       ET_LOG(
           Error,
           "    dim_order(%zu): %zu",
@@ -98,7 +98,7 @@ bool tensor_is_channels_last_dim_order(torch::executor::Tensor t) {
 
   if (!ret_val) {
     ET_LOG(Error, "Expected tensor to have channels last dim order, but got");
-    for (const auto d : c10::irange(t.dim())) {
+    for ([[maybe_unused]] const auto d : c10::irange(t.dim())) {
       ET_LOG(
           Error,
           "    dim_order(%zu): %zu",
