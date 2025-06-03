@@ -89,7 +89,7 @@ def install_requirements(use_pytorch_nightly):
     ]
 
     EXAMPLES_REQUIREMENTS = [
-        f"torchaudio==2.6.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torchaudio",
+        f"torchaudio==2.8.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torchaudio",
     ]
 
     # Assemble the list of requirements to actually install.
