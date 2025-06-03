@@ -81,18 +81,6 @@ runtime.python_binary(
     _is_external_target = True,
 )
 
-runtime.python_binary(
-    name = "gen_executorch",
-    main_module = "torchgen.gen_executorch",
-    visibility = [
-        "PUBLIC",
-    ],
-    deps = [
-        ":torchgen",
-    ],
-    _is_external_target = True,
-)
-
 runtime.filegroup(
     name = "aten_src_path",
     srcs = [

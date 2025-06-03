@@ -499,7 +499,9 @@ def get_ones_inputs():
 def get_select_int_inputs():
     test_suite = VkTestSuite(
         [
-            ((6, 2, 7), 0, 3),
+            ((8, 8, 8), 0, -2),
+            ((8, 8, 8), 1, -3),
+            ((8, 8, 8), 2, -4),
             ((6, 2, 7), 1, 0),
             ((6, 2, 7), 2, 3),
             ((6, 10, 7), 0, 3),
@@ -515,6 +517,10 @@ def get_select_int_inputs():
             ((8, 6, 1, 1), 1, 4),
         ]
     )
+    test_suite.layouts = ["utils::kWidthPacked", "utils::kChannelsPacked"]
+    test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.data_gen = "make_seq_tensor"
     return test_suite
 
 

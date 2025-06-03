@@ -8,6 +8,7 @@ nchw_to_bitw8_image_nobitw8buffer:
   parameter_names_with_default_values:
     STORAGE: texture3d
     DTYPE: int8
+    USE_PUSH_CONST: True
   generate_variant_forall:
     STORAGE:
       - VALUE: texture2d
@@ -17,3 +18,5 @@ nchw_to_bitw8_image_nobitw8buffer:
       - VALUE: uint8
   shader_variants:
     - NAME: nchw_to_bitw8_image_nobitw8buffer
+    - NAME: nchw_to_bitw8_image_nobitw8buffer_no_pc
+      USE_PUSH_CONST: False
