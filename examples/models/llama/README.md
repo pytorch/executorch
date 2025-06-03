@@ -148,7 +148,7 @@ Llama 3 8B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 
 ## Step 1: Setup
 > :warning: **double check your python environment**: make sure `conda activate <VENV>` is run before all the bash and python scripts.
 
-1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch. For installation run `./install_executorch.sh --pybind xnnpack`
+1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch. For installation run `./install_executorch.sh`
 2. Run `examples/models/llama/install_requirements.sh` to install a few dependencies.
 
 
@@ -164,7 +164,7 @@ Llama 3 8B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 
 ```
 # No quantization
 # Set these paths to point to the downloaded files
-LLAMA_CHECKPOINT=path/to/checkpoint.pth
+LLAMA_CHECKPOINT=path/to/consolidated.00.pth
 LLAMA_PARAMS=path/to/params.json
 
 python -m examples.models.llama.export_llama \
@@ -186,7 +186,7 @@ For convenience, an [exported ExecuTorch bf16 model](https://huggingface.co/exec
 ```
 # SpinQuant
 # Set these paths to point to the exported files
-LLAMA_QUANTIZED_CHECKPOINT=path/to/spinquant/checkpoint.pth
+LLAMA_QUANTIZED_CHECKPOINT=path/to/spinquant/consolidated.00.pth.pth
 LLAMA_PARAMS=path/to/spinquant/params.json
 
 python -m examples.models.llama.export_llama \
@@ -215,7 +215,7 @@ For convenience, an [exported ExecuTorch SpinQuant model](https://huggingface.co
 ```
 # QAT+LoRA
 # Set these paths to point to the exported files
-LLAMA_QUANTIZED_CHECKPOINT=path/to/qlora/checkpoint.pth
+LLAMA_QUANTIZED_CHECKPOINT=path/to/qlora/consolidated.00.pth.pth
 LLAMA_PARAMS=path/to/qlora/params.json
 
 python -m examples.models.llama.export_llama \
@@ -248,7 +248,7 @@ You can export and run the original Llama 3 8B instruct model.
 2. Export model and generate `.pte` file
     ```
     python -m examples.models.llama.export_llama \
-	    --checkpoint <consolidated.00.pth> \
+	    --checkpoint <consolidated.00.pth.pth> \
 		-p <params.json> \
 		-kv \
 		--use_sdpa_with_kv_cache \
@@ -396,7 +396,7 @@ First export your model for lowbit quantization (step 2 above):
 
 ```
 # Set these paths to point to the downloaded files
-LLAMA_CHECKPOINT=path/to/checkpoint.pth
+LLAMA_CHECKPOINT=path/to/consolidated.00.pth.pth
 LLAMA_PARAMS=path/to/params.json
 
 # Set low-bit quantization parameters
@@ -476,7 +476,7 @@ We use [LM Eval](https://github.com/EleutherAI/lm-evaluation-harness) to evaluat
 For base models, use the following example command to calculate its perplexity based on WikiText.
 ```
 python -m examples.models.llama.eval_llama \
-	-c <checkpoint.pth> \
+	-c <consolidated.00.pth.pth> \
 	-p <params.json> \
 	-t <tokenizer.model/bin> \
 	-kv \
@@ -489,7 +489,7 @@ python -m examples.models.llama.eval_llama \
 For instruct models, use the following example command to calculate its MMLU score.
 ```
 python -m examples.models.llama.eval_llama \
-	-c <checkpoint.pth> \
+	-c <consolidated.00.pth.pth> \
 	-p <params.json> \
 	-t <tokenizer.model/bin> \
 	-kv \
@@ -528,7 +528,7 @@ This example tries to reuse the Python code, with minimal modifications to make 
 git clean -xfd
 pip uninstall executorch
 ./install_executorch.sh --clean
-./install_executorch.sh --pybind xnnpack
+./install_executorch.sh
 ```
 - If you encounter `pthread` related issues during link time, add `pthread` in `target_link_libraries` in `CMakeLists.txt`
 - On Mac, if there is linking error in Step 4 with error message like
