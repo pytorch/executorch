@@ -39,3 +39,14 @@ python_unittest(
         "//executorch/devtools/inspector:inspector_utils",
     ],
 )
+
+python_unittest(
+    name = "intermediate_output_capturer_test",
+    srcs = ["intermediate_output_capturer_test.py"],
+    deps = [
+        "//executorch/devtools/inspector:inspector",
+        "//executorch/devtools/inspector:lib",
+        "//executorch/devtools/inspector:intermediate_output_capturer",
+        "//executorch/exir:lib",
+    ],
+)

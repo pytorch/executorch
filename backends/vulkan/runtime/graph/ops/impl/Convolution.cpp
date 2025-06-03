@@ -106,9 +106,10 @@ ValueRef prepack_biases(
       graph.create_local_wg_size(v),
       vref,
       v,
-      {t->sizes_ubo()},
+      {},
       // Specialization constants
-      {t->hashed_layout()}));
+      {t->hashed_layout()},
+      {graph.sizes_pc_of(v)}));
 
   return v;
 }
@@ -127,7 +128,8 @@ vkapi::ShaderInfo get_conv2d_shader(
     const Conv2dMethod method,
     const ValueRef weight,
     const bool clamp_out = false,
-    const bool stride_equals_dilation = false) {
+    const bool stride_equals_dilation = false,
+    const bool stride_1_padding_0 = false) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
   switch (method) {
@@ -150,7 +152,7 @@ vkapi::ShaderInfo get_conv2d_shader(
       if (prepack_weights) {
         kernel_name = "conv2d";
       } else {
-        kernel_name = "conv2d_pw";
+        kernel_name = stride_1_padding_0 ? "conv2d_pw_s1p0" : "conv2d_pw";
       }
       break;
     case Conv2dMethod::SlidingWindow:
@@ -305,8 +307,8 @@ utils::uvec3 create_conv2d_global_wg_size(
   if (method == Conv2dMethod::Pointwise) {
     const utils::uvec3 image_extents = graph.logical_limits_of(out);
     return {
-        utils::div_up(image_extents[0u], 2u),
-        utils::div_up(image_extents[1u], 2u),
+        utils::div_up(image_extents[0u], 1u),
+        utils::div_up(image_extents[1u], 4u),
         image_extents[2u]};
   } else if (method == Conv2dMethod::Depthwise && stride_equals_dilation) {
     const utils::uvec3 image_extents = graph.create_global_wg_size(out);
@@ -382,6 +384,10 @@ void add_conv2d_node(
       (kernel_params.stride[0] == kernel_params.dilation[0] &&
        kernel_params.stride[1] == kernel_params.dilation[1]);
 
+  const bool stride_1_padding_0 =
+      (kernel_params.stride[0] == 1 && kernel_params.stride[1] == 1 &&
+       kernel_params.padding[0] == 0 && kernel_params.padding[1] == 0);
+
   OutputParams out_params = {out_min_val, out_max_val};
 
   check_conv2d_params(kernel_params, transposed_val);
@@ -393,13 +399,31 @@ void add_conv2d_node(
       method,
       weight_data,
       clamp_out,
-      stride_equals_dilation);
+      stride_equals_dilation,
+      stride_1_padding_0);
 
   utils::uvec3 wg_size = create_conv2d_global_wg_size(
       graph, method, out, weight_data, stride_equals_dilation);
 
-  if (method == Conv2dMethod::Pointwise || method == Conv2dMethod::Depthwise) {
+  if (method == Conv2dMethod::Depthwise) {
     wg_size = {wg_size[0] * wg_size[1] * wg_size[2], 1, 1};
+  } else if (method == Conv2dMethod::Pointwise) {
+    wg_size = {wg_size[0] * wg_size[1], wg_size[2], 1};
+  }
+
+  utils::uvec3 local_wg_size;
+  if (method == Conv2dMethod::Pointwise) {
+    uint32_t local_wg_size_y = 1;
+    if (wg_size[1] % 8 == 0) {
+      local_wg_size_y = 8;
+    } else if (wg_size[1] % 4 == 0) {
+      local_wg_size_y = 4;
+    } else if (wg_size[1] % 2 == 0) {
+      local_wg_size_y = 2;
+    }
+    local_wg_size = {64 / local_wg_size_y, local_wg_size_y, 1};
+  } else {
+    local_wg_size = graph.create_local_wg_size(wg_size);
   }
 
   vkapi::ParamsBindList param_buffers;
@@ -462,7 +486,7 @@ void add_conv2d_node(
       graph,
       shader,
       wg_size,
-      graph.create_local_wg_size(wg_size),
+      local_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{in, arg_weight, arg_bias}, vkapi::kRead}},
       // Shader params buffers

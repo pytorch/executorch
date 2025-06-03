@@ -54,7 +54,7 @@ public extension Tensor {
   func withUnsafeBytes<T: Scalar, R>(_ body: (UnsafeBufferPointer<T>) throws -> R) throws -> R {
     guard dataType == T.dataType else { throw Error(code: .invalidArgument) }
     var result: Result<R, Error>?
-    bytes { pointer, count, _ in
+    __bytes { pointer, count, _ in
       result = Result { try body(
         UnsafeBufferPointer(
           start: pointer.assumingMemoryBound(to: T.self),
@@ -74,7 +74,7 @@ public extension Tensor {
   func withUnsafeMutableBytes<T: Scalar, R>(_ body: (UnsafeMutableBufferPointer<T>) throws -> R) throws -> R {
     guard dataType == T.dataType else { throw Error(code: .invalidArgument) }
     var result: Result<R, Error>?
-    mutableBytes { pointer, count, _ in
+    __mutableBytes { pointer, count, _ in
       result = Result { try body(
         UnsafeMutableBufferPointer(
           start: pointer.assumingMemoryBound(to: T.self),

@@ -91,8 +91,9 @@ function(generate_bindings_for_kernels)
     OUTPUT_STRIP_TRAILING_WHITESPACE
   )
   file(GLOB_RECURSE _torchgen_srcs "${torchgen-out}/*.py")
+  # Not using module executorch.codegen.gen because it's not installed yet.
   set(_gen_command
-      "${PYTHON_EXECUTABLE}" -m torchgen.gen_executorch
+      "${PYTHON_EXECUTABLE}" -m codegen.gen
       --source-path=${EXECUTORCH_ROOT}/codegen --install-dir=${_out_dir}
       --tags-path=${torchgen-out}/packaged/ATen/native/tags.yaml
       --aten-yaml-path=${torchgen-out}/packaged/ATen/native/native_functions.yaml

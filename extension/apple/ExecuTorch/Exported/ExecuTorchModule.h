@@ -11,6 +11,82 @@
 NS_ASSUME_NONNULL_BEGIN
 
 /**
+ * Holds the static metadata for a single tensor: its shape, layout,
+ * element type, whether its memory was pre-planned by the runtime,
+ * and its debug name.
+ */
+NS_SWIFT_NAME(TensorMetadata)
+__attribute__((deprecated("This API is experimental.")))
+@interface ExecuTorchTensorMetadata : NSObject
+
+/** The size of each dimension. */
+@property (nonatomic, readonly) NSArray<NSNumber *> *shape;
+
+/** The order in which dimensions are laid out. */
+@property (nonatomic, readonly) NSArray<NSNumber *> *dimensionOrder;
+
+/** The scalar type of each element in the tensor. */
+@property (nonatomic, readonly) ExecuTorchDataType dataType;
+
+/** YES if the runtime pre-allocated memory for this tensor. */
+@property (nonatomic, readonly) BOOL isMemoryPlanned;
+
+/** The (optional) user-visible name of this tensor (may be empty) */
+@property (nonatomic, readonly) NSString *name;
+
++ (instancetype)new NS_UNAVAILABLE;
+- (instancetype)init NS_UNAVAILABLE;
+
+@end
+
+/**
+ * Encapsulates all of the metadata for a loaded method: its name,
+ * how many inputs/outputs/attributes it has, per-argument tags,
+ * per-tensor metadata, buffer sizes, backends, and instruction count.
+ */
+NS_SWIFT_NAME(MethodMetadata)
+__attribute__((deprecated("This API is experimental.")))
+@interface ExecuTorchMethodMetadata : NSObject
+
+/** The method’s name. */
+@property (nonatomic, readonly) NSString *name;
+
+/** An array of ExecuTorchValueTag raw values, one per declared input. */
+@property (nonatomic, readonly) NSArray<NSNumber *> *inputValueTags;
+
+/** An array of ExecuTorchValueTag raw values, one per declared output. */
+@property (nonatomic, readonly) NSArray<NSNumber *> *outputValueTags;
+
+/**
+ * Mapping from input-index to TensorMetadata.
+ * Only present for those indices whose tag == .tensor
+ */
+@property (nonatomic, readonly) NSDictionary<NSNumber *, ExecuTorchTensorMetadata *> *inputTensorMetadatas;
+
+/**
+ * Mapping from output-index to TensorMetadata.
+ * Only present for those indices whose tag == .tensor
+ */
+@property (nonatomic, readonly) NSDictionary<NSNumber *, ExecuTorchTensorMetadata *> *outputTensorMetadatas;
+
+/** A list of attribute TensorsMetadata. */
+@property (nonatomic, readonly) NSArray<ExecuTorchTensorMetadata *> *attributeTensorMetadatas;
+
+/** A list of memory-planned buffer sizes. */
+@property (nonatomic, readonly) NSArray<NSNumber *> *memoryPlannedBufferSizes;
+
+/** Names of all backends this method can run on. */
+@property (nonatomic, readonly) NSArray<NSString *> *backendNames;
+
+/** Total number of low-level instructions in this method’s body. */
+@property (nonatomic, readonly) NSInteger instructionCount;
+
++ (instancetype)new NS_UNAVAILABLE;
+- (instancetype)init NS_UNAVAILABLE;
+
+@end
+
+/**
  * Enum to define loading behavior.
  * Values can be a subset, but must numerically match exactly those defined in
  * extension/module/module.h
@@ -114,6 +190,19 @@ __attribute__((deprecated("This API is experimental.")))
  * @return An unordered set of method names, or nil in case of an error.
  */
 - (nullable NSSet<NSString *> *)methodNames:(NSError **)error;
+
+/**
+ * Retrieves full metadata for a particular method in the loaded module.
+ *
+ * This includes the method’s name, input/output value tags, tensor shapes
+ * and layouts, buffer sizes, backend support list, and instruction count.
+ *
+ * @param methodName A string representing the method name.
+ * @param error A pointer to an NSError pointer that is set if an error occurs.
+ * @return An ExecuTorchMethodMetadata object on success, or nil if the method isn’t found or a load error occurred.
+ */
+ - (nullable ExecuTorchMethodMetadata *)methodMetadata:(NSString *)methodName
+                                                 error:(NSError **)error;
 
 /**
  * Executes a specific method with the provided input values.
