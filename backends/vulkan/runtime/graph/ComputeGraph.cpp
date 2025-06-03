@@ -688,11 +688,12 @@ void ComputeGraph::encode_execute() {
   }
 }
 
-void ComputeGraph::execute() const {
+void ComputeGraph::execute() {
   vkapi::VulkanFence fence = context_->fences().get_fence();
   context_->submit_cmd_to_gpu(fence.get_submit_handle());
   fence.wait();
   context_->fences().return_fence(fence);
+  execute_count_++;
 }
 
 void ComputeGraph::resize_input(

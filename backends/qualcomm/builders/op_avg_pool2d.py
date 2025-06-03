@@ -53,7 +53,7 @@ class AvgPool2d(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        pt_ceil_mode = node.args[4] if len(node.args) >= 4 else False
+        pt_ceil_mode = node.args[4] if len(node.args) > 4 else False
 
         # kernel info
         input_shape = input_node.meta["val"].shape
