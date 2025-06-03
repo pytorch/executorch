@@ -523,10 +523,10 @@ class TestQNN(unittest.TestCase):
                     "export_training_ir_rollout_check",
                     return_value=False,
                 ):
-            m = torch.export.export(
+            m_with_patch = torch.export.export(
                 module, inputs, dynamic_shapes=dynamic_shapes, strict=False
             ).module()
-        draw_graph("export_with_patch", ".", m)
+        draw_graph("export_with_patch", ".", m_with_patch)
         m = torch.export.export(
                 module, inputs, dynamic_shapes=dynamic_shapes, strict=False
             ).module()
@@ -541,6 +541,9 @@ class TestQNN(unittest.TestCase):
         )
         if block_size_map is not None:
             quantizer.set_block_size_map(block_size_map)
+        prepared_with_patch = prepare_pt2e(m_with_patch, quantizer)
+        prepared_with_patch(*inputs)
+        quantized_module_with_patch = convert_pt2e(prepared_with_patch)
         prepared = prepare_pt2e(m, quantizer)
         prepared(*inputs)
         quantized_module = convert_pt2e(prepared)
@@ -555,6 +558,8 @@ class TestQNN(unittest.TestCase):
         }
         if not bypass_check:
             self.assertTrue(nodes.intersection(q_and_dq))
+        draw_graph("convert_pt2e_with_patch", ".", quantized_module_with_patch)
+        draw_graph("convert_pt2e", ".", quantized_module)
         return quantized_module
 
     def get_prepared_qat_module(
