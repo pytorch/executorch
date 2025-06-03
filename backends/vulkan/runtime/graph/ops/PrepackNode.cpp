@@ -67,6 +67,13 @@ api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
   return staging;
 }
 
+void PrepackNode::prepare_pipelines(ComputeGraph* graph) {
+  graph->update_pipeline_descriptors(
+      shader_, local_workgroup_size_, spec_vars_, push_constants_);
+  graph->update_pipeline_descriptors(
+      noop_shader_, utils::WorkgroupSize(1, 1, 1), {}, push_constants_);
+}
+
 void PrepackNode::encode(ComputeGraph* graph) {
   api::Context* const context = graph->context();
 

@@ -35,6 +35,11 @@ DispatchNode::DispatchNode(
   graph.update_descriptor_counts(shader, /*execute = */ true);
 }
 
+void DispatchNode::prepare_pipelines(ComputeGraph* graph) {
+  graph->update_pipeline_descriptors(
+      shader_, local_workgroup_size_, spec_vars_, push_constants_);
+}
+
 void DispatchNode::encode(ComputeGraph* graph) {
   if (!shader_) {
     return;
