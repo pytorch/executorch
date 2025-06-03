@@ -56,7 +56,6 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_vulkan_quantizer,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
-from omegaconf.dictconfig import DictConfig
 
 from ..model_factory import EagerModelFactory
 from .source_transformation.apply_spin_quant_r1_r2 import (
@@ -576,12 +575,12 @@ def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
 
 
 def export_llama(
-    export_options: Union[argparse.Namespace, DictConfig],
+    export_options: Union[argparse.Namespace, LlmConfig],
 ) -> str:
     if isinstance(export_options, argparse.Namespace):
         # Legacy CLI.
         llm_config = convert_args_to_llm_config(export_options)
-    elif isinstance(export_options, DictConfig):
+    elif isinstance(export_options, LlmConfig):
         # Hydra CLI.
         llm_config = export_options
     else:
