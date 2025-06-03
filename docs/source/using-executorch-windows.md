@@ -3,9 +3,7 @@
 This document outlines the current known working build instructions for building and validating ExecuTorch on a Windows machine.
 
 This demo uses the
-[MobileNet v2](https://pytorch.org/vision/main/models/mobilenetv2.html) model to
-process live camera images leveraging the
-[XNNPACK](https://github.com/google/XNNPACK) backend.
+[MobileNet v2](https://pytorch.org/vision/main/models/mobilenetv2.html) model to classify images using the [XNNPACK](https://github.com/google/XNNPACK) backend.
 
 Note that all commands should be executed on Windows powershell in administrator mode.
 
@@ -25,7 +23,8 @@ Install ClangCL for Windows from the [official website](https://learn.microsoft.
 To check if conda is detected by the powershell prompt, try `conda list` or `conda --version`
 
 If conda is not detected, you could run the powershell script for conda named `conda-hook.ps1`.
-
+To verify that Conda is available in the in the powershell environment, run try `conda list` or `conda --version`. 
+If Conda is not available, run conda-hook.ps1 as follows:
 ```bash
 $miniconda_dir\\shell\\condabin\\conda-hook.ps1
 ```
@@ -116,8 +115,8 @@ python .\\export_mv2.py
 del -Recurse -Force cmake-out; `
 cmake . `
   -DCMAKE_INSTALL_PREFIX=cmake-out `
-  -DPYTHON_EXECUTABLE=C:\Users\nikhi\miniconda3\envs\et\python.exe `
-  -DCMAKE_PREFIX_PATH=C:\Users\nikhi\miniconda3\envs\et\Lib\site-packages `
+  -DPYTHON_EXECUTABLE=$miniconda_dir\\envs\\et\\python.exe `
+  -DCMAKE_PREFIX_PATH=$miniconda_dir\\envs\\et\\Lib\\site-packages `
   -DCMAKE_BUILD_TYPE=Release `
   -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON `
   -DEXECUTORCH_BUILD_FLATC=ON `
@@ -131,14 +130,16 @@ cmake . `
   -Bcmake-out; `
 cmake --build cmake-out -j64 --target install --config Release
 ```
+where `$miniconda_dir` is the directory where you installed miniconda
+This is `“C:\Users\<username>\AppData\Local”` by default.
 
 ## Run Mobilenet V2 model with XNNPACK delegation
 
 ```bash
-.\cmake-out\backends\xnnpack\Release\xnn_executor_runner.exe --model_path=.\mv2_xnnpack.pte
+.\\cmake-out\\backends\\xnnpack\\Release\\xnn_executor_runner.exe --model_path=.\\mv2_xnnpack.pte
 ```
 
-The expected output would print a tensor of size 1x1000.
+The expected output would print a tensor of size 1x1000, containing values of class scores.
 
 ```bash
 Output 0: tensor(sizes=[1, 1000], [
