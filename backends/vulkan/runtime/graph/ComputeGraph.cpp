@@ -492,12 +492,22 @@ vkapi::BufferBindInfo ComputeGraph::get_or_create_int_param_buffer(
     const ValueRef idx) {
   if (values_.at(idx).isInt()) {
     const int32_t val = extract_scalar<int32_t>(idx);
-    create_params_buffer(val);
+    return create_params_buffer(val);
   } else if (values_.at(idx).isSymInt()) {
     SymIntPtr symint = get_symint(idx);
     return vkapi::BufferBindInfo(symint->gpu_buffer.buffer());
   }
   VK_THROW("Cannot create a int param buffer for the given value");
+}
+
+vkapi::BufferBindInfo ComputeGraph::get_or_create_int_param_buffer(
+    const ValueRef idx,
+    const int32_t default_val) {
+  if (values_.at(idx).isNone()) {
+    return create_params_buffer(default_val);
+  } else {
+    return get_or_create_int_param_buffer(idx);
+  }
 }
 
 void ComputeGraph::set_symint(const ValueRef idx, const int32_t val) {
@@ -678,11 +688,12 @@ void ComputeGraph::encode_execute() {
   }
 }
 
-void ComputeGraph::execute() const {
+void ComputeGraph::execute() {
   vkapi::VulkanFence fence = context_->fences().get_fence();
   context_->submit_cmd_to_gpu(fence.get_submit_handle());
   fence.wait();
   context_->fences().return_fence(fence);
+  execute_count_++;
 }
 
 void ComputeGraph::resize_input(
@@ -692,10 +703,17 @@ void ComputeGraph::resize_input(
   get_tensor(io_val.value)->virtual_resize(new_sizes);
 }
 
+void ComputeGraph::virtual_resize(
+    const ValueRef idx,
+    const std::vector<int64_t>& new_sizes) {
+  get_tensor(idx)->virtual_resize(new_sizes);
+}
+
 void ComputeGraph::propagate_resize() {
   for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
     node->trigger_resize(this);
   }
+  encode_execute();
 }
 
 } // namespace vkcompute
