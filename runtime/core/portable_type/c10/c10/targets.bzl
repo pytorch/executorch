@@ -96,6 +96,12 @@ def define_common_targets():
         # //xplat/executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch
         # pass such a select in (at least) arvr mode. Going back to
         # fbcode_exported_deps accordingly.
+        exported_deps = select({
+            "DEFAULT": [],
+            "ovr_config//cpu:arm64": [
+                "fbsource//third-party/sleef:sleef",
+            ] if not runtime.is_oss else [],
+        }),
         xplat_exported_deps = [
             "//xplat/caffe2:aten_header",
             "//xplat/caffe2/c10:c10_headers",
