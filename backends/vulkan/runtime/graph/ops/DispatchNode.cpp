@@ -46,15 +46,7 @@ void DispatchNode::encode(ComputeGraph* graph) {
 
   std::unique_lock<std::mutex> cmd_lock = context->dispatch_lock();
 
-  std::array<uint8_t, kMaxPushConstantSize> push_constants_data;
-  uint32_t push_constants_offset = 0;
-
-  for (const auto& push_constant : push_constants_) {
-    push_constants_offset += push_constant.write(
-        push_constants_data.data(),
-        push_constants_offset,
-        kMaxPushConstantSize);
-  }
+  write_push_constant_data();
 
   context->report_shader_dispatch_start(
       shader_.kernel_name,
@@ -63,7 +55,7 @@ void DispatchNode::encode(ComputeGraph* graph) {
       node_id_);
 
   vkapi::DescriptorSet descriptor_set = context->get_descriptor_set(
-      shader_, local_workgroup_size_, spec_vars_, push_constants_offset);
+      shader_, local_workgroup_size_, spec_vars_, push_constants_offset_);
 
   uint32_t idx = 0;
   idx = bind_values_to_descriptor_set(
@@ -76,10 +68,20 @@ void DispatchNode::encode(ComputeGraph* graph) {
       pipeline_barrier,
       shader_,
       global_workgroup_size_,
-      push_constants_data.data(),
-      push_constants_offset);
+      push_constants_data_.data(),
+      push_constants_offset_);
 
   context->report_shader_dispatch_end();
+}
+
+void DispatchNode::write_push_constant_data() {
+  push_constants_offset_ = 0;
+  for (const auto& push_constant : push_constants_) {
+    push_constants_offset_ += push_constant.write(
+        push_constants_data_.data(),
+        push_constants_offset_,
+        kMaxPushConstantSize);
+  }
 }
 
 } // namespace vkcompute

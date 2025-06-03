@@ -1660,9 +1660,8 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   for (auto& new_sizes : new_sizes_list) {
     graph.get_tensor(a.value)->virtual_resize(new_sizes);
     graph.get_tensor(b.value)->virtual_resize(new_sizes);
-    graph.get_tensor(c)->virtual_resize(new_sizes);
     graph.get_tensor(d.value)->virtual_resize(new_sizes);
-    graph.get_tensor(e)->virtual_resize(new_sizes);
+    graph.propagate_resize();
 
     float val_a = new_sizes[1] + 4.0f;
     float val_b = new_sizes[2] + 1.5f;
