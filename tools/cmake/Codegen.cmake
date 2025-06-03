@@ -103,7 +103,6 @@ function(generate_bindings_for_kernels)
   set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
   # By default selective build output is selected_operators.yaml
   set(_oplist_yaml ${_out_dir}/selected_operators.yaml)
-  set(_opvariants_h ${_out_dir}/selected_op_variants.h)
 
   # Command to codegen C++ wrappers to register custom ops to both PyTorch and
   # Executorch runtime.
@@ -163,6 +162,7 @@ endfunction()
 # Generate an AOT lib for registering custom ops into PyTorch
 function(gen_custom_ops_aot_lib)
   cmake_parse_arguments(GEN "" "LIB_NAME" "KERNEL_SOURCES" ${ARGN})
+  message("REMOVE_ME-ops_aot_lib")
   message(STATUS "Generating custom ops aot lib:")
   message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
   foreach(SOURCE IN LISTS GEN_KERNEL_SOURCES)
@@ -195,6 +195,7 @@ function(gen_operators_lib)
   set(multi_arg_names LIB_NAME KERNEL_LIBS DEPS)
   cmake_parse_arguments(GEN "" "" "${multi_arg_names}" ${ARGN})
 
+  message("REMOVE_ME-gen_op_lib")
   message(STATUS "Generating operator lib:")
   message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
   message(STATUS "  KERNEL_LIBS: ${GEN_KERNEL_LIBS}")

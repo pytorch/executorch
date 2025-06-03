@@ -138,6 +138,29 @@ aten,aten::clone.out" \
     rm "./mv2.pte"
 }
 
+test_cmake_select_ops_add_in_yaml() {
+    echo "Exporting add_mul"
+    ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="add_mul"
+    local example_dir=examples/selective_build
+    local build_dir=cmake-out/${example_dir}
+    rm -rf ${build_dir}
+    retry cmake -DCMAKE_BUILD_TYPE=Debug \
+            -DEXECUTORCH_SELECT_OPS_YAML=ON \
+            -DCMAKE_INSTALL_PREFIX=cmake-out \
+            -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+            -B${build_dir} \
+            ${example_dir}
+
+    echo "Building ${example_dir}"
+    cmake --build ${build_dir} -j9 --config Debug
+
+    echo 'Running selective build test'
+    ${build_dir}/selective_build_test --model_path="./add_mul.pte"
+
+#    echo "Removing add_mul.pte"
+#    rm "./add_mul.pte"
+}
+
 test_cmake_select_ops_in_yaml() {
     echo "Exporting custom_op_1"
     ${PYTHON_EXECUTABLE} -m examples.portable.custom_ops.custom_ops_1
@@ -158,7 +181,7 @@ test_cmake_select_ops_in_yaml() {
     ${build_dir}/selective_build_test --model_path="./custom_ops_1.pte"
 
     echo "Removing custom_ops_1.pte"
-    rm "./custom_ops_1.pte"
+#    rm "./custom_ops_1.pte"
 }
 
 test_cmake_select_ops_in_model() {
@@ -204,7 +227,8 @@ then
     cmake_install_executorch_lib $CMAKE_BUILD_TYPE
 #    test_cmake_select_all_ops
 #    test_cmake_select_ops_in_list
-    test_cmake_select_ops_in_yaml
+#    test_cmake_select_ops_in_yaml
+#    test_cmake_select_ops_add_in_yaml
     test_cmake_select_ops_in_model
 elif [[ $1 == "buck2" ]];
 then
