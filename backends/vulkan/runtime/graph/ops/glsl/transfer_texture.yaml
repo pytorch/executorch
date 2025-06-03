@@ -1,10 +1,13 @@
-select_channel_3d:
+transfer_texture:
   parameter_names_with_default_values:
     DTYPE: float
-    NDIM: 3
+    OP_NAME: select
   generate_variant_forall:
     DTYPE:
       - VALUE: half
       - VALUE: float
   shader_variants:
-    - NAME: select_channel_3d
+    - NAME: select_texture3d
+      OP_NAME: select
+    - NAME: slice_texture3d
+      OP_NAME: slice
