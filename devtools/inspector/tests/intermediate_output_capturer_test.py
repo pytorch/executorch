@@ -111,8 +111,6 @@ class TestIntermediateOutputCapturer(unittest.TestCase):
             (19,): torch.tensor([[3.6000, 4.5067]]),
             (20,): torch.tensor([[0.9734, 0.9891]]),
             (21,): [torch.tensor([[0.9734]]), torch.tensor([[0.9891]])],
-            (22,): torch.tensor([[0.9734]]),
-            (23,): torch.tensor([[0.9891]]),
         }
         self.assertEqual(
             len(self.intermediate_outputs), len(expected_outputs_with_handles)

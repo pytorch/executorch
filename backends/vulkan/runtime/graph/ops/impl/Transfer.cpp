@@ -16,40 +16,6 @@
 namespace vkcompute {
 
 /**
- * Picks the appropriate shader for a slice operation based on the storage type
- * and data type.
- */
-vkapi::ShaderInfo pick_slice_shader(
-    ComputeGraph* graph,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  const ValueRef out = args.at(0).refs.at(0);
-
-  std::string kernel_name = "slice";
-  add_storage_type_suffix(kernel_name, graph->storage_type_of(out));
-  add_dtype_suffix(kernel_name, graph->dtype_of(out));
-
-  return VK_KERNEL_FROM_STR(kernel_name);
-}
-
-/**
- * Picks the appropriate shader for a select operation based on the storage type
- * and data type.
- */
-vkapi::ShaderInfo pick_select_shader(
-    ComputeGraph* graph,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  const ValueRef out = args.at(0).refs.at(0);
-
-  std::string kernel_name = "select";
-  add_storage_type_suffix(kernel_name, graph->storage_type_of(out));
-  add_dtype_suffix(kernel_name, graph->dtype_of(out));
-
-  return VK_KERNEL_FROM_STR(kernel_name);
-}
-
-/**
  * Adds a transfer copy operation node to the compute graph.
  * This function handles both SELECT and SLICE operations based on the
  * transfer_type parameter.
@@ -115,14 +81,22 @@ void add_transfer_copy_node(
     };
   }
 
+  // Determine the shader directly
+  std::string kernel_name;
+  if (transfer_type == TransferType::SELECT) {
+    kernel_name = "select";
+  } else { // TransferType::SLICE
+    kernel_name = "slice";
+  }
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
+
   // Create and add the dispatch node
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
-      // Use the appropriate shader picker function based on transfer type
-      transfer_type == TransferType::SELECT ? pick_select_shader
-                                            : pick_slice_shader,
-      default_global_wg_size,
-      default_local_wg_size,
+      VK_KERNEL_FROM_STR(kernel_name),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Parameter buffers

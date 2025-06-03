@@ -187,6 +187,7 @@ class ComputeGraph final {
 
  protected:
   size_t values_in_use_ = 0;
+  size_t execute_count_ = 0;
 
  public:
   //
@@ -762,7 +763,7 @@ class ComputeGraph final {
   //
 
   void encode_execute();
-  void execute() const;
+  void execute();
 
   //
   // Dynamic Shape support
@@ -780,6 +781,10 @@ class ComputeGraph final {
 
   inline bool int16_shader_types_enabled() const {
     return context_->adapter_ptr()->supports_int16_shader_types();
+  }
+
+  inline size_t execute_count() const {
+    return execute_count_;
   }
 
   /*
