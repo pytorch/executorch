@@ -42,22 +42,22 @@ void check_args(
 void resize_permute_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& extra_args) {
-  ValueRef out = args[0].refs[0];
-  ValueRef in = args[1].refs[0];
+    const std::vector<ValueRef>& resize_args) {
+  const ValueRef out = args[0].refs[0];
+  const ValueRef in = args[1].refs[0];
 
-  std::vector<int64_t> in_sizes = graph->sizes_of(in);
-  std::vector<int64_t> out_sizes = graph->sizes_of(out);
+  const std::vector<int64_t> in_sizes = graph->sizes_of(in);
+  const std::vector<int64_t> out_sizes = graph->sizes_of(out);
 
-  std::vector<int64_t> permute_dims =
-      graph->extract_int_or_symint_list(extra_args[0]);
+  const std::vector<int64_t> permute_dims =
+      graph->extract_int_or_symint_list(resize_args[0]);
 
   if (in_sizes.size() == out_sizes.size() &&
       in_sizes.size() == permute_dims.size()) {
     std::vector<int64_t> new_out_sizes(out_sizes.size(), 1);
-    int64_t out_ndim = std::max(in_sizes.size(), out_sizes.size());
+    const int64_t out_ndim = std::max(in_sizes.size(), out_sizes.size());
     for (int i = 0; i < out_ndim; i++) {
-      int64_t permute_dim = permute_dims.at(i);
+      const int64_t permute_dim = permute_dims.at(i);
       new_out_sizes.at(i) = in_sizes.at(permute_dim);
     }
     graph->virtual_resize(out, new_out_sizes);
@@ -67,9 +67,9 @@ void resize_permute_node(
       in_sizes.size() > out_sizes.size() &&
       in_sizes.size() == permute_dims.size()) {
     std::vector<int64_t> new_out_sizes(out_sizes.size(), 1);
-    int offset = in_sizes.size() - out_sizes.size();
+    const int offset = in_sizes.size() - out_sizes.size();
     for (int i = 0; i < out_sizes.size(); i++) {
-      int64_t permute_dim = permute_dims.at(i + offset);
+      const int64_t permute_dim = permute_dims.at(i + offset);
       new_out_sizes.at(i) = in_sizes.at(permute_dim);
     }
     graph->virtual_resize(out, new_out_sizes);
@@ -79,7 +79,7 @@ void resize_permute_node(
       in_sizes.size() < out_sizes.size() &&
       out_sizes.size() == permute_dims.size()) {
     std::vector<int64_t> new_out_sizes(out_sizes.size(), 1);
-    int offset = out_sizes.size() - in_sizes.size();
+    const int offset = out_sizes.size() - in_sizes.size();
     for (int i = 0; i < out_sizes.size(); i++) {
       int64_t permute_dim = permute_dims.at(i) - offset;
       if (permute_dim >= 0) {
@@ -102,9 +102,9 @@ void add_permute_node(
   ivec4 out_dims{0, 1, 2, 3};
 
   // Special cases of squeeze/unsqueeze. Because the input dim size can be
-  // different with output dim size. So pick t_in->dim() if squeeze, and
-  // t_out->dim() if unsqueeze to create parameter for permute.
-  int64_t out_ndim = std::max(graph.dim_of(in), graph.dim_of(out));
+  // different with output dim size. So pick graph.dim_of(in) if squeeze, and
+  // graph.dim_of(out) if unsqueeze to create parameter for permute.
+  const int64_t out_ndim = std::max(graph.dim_of(in), graph.dim_of(out));
   std::vector<bool> seen(out_ndim);
   {
     IntListPtr permute_dims_ptr = graph.get_int_list(permute_dims);
@@ -122,8 +122,8 @@ void add_permute_node(
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  int32_t out_channels = dim_at<kChannel4D>(graph.sizes_of(out));
-  int32_t in_channels = dim_at<kChannel4D>(graph.sizes_of(in));
+  const int32_t out_channels = dim_at<kChannel4D>(graph.sizes_of(out));
+  const int32_t in_channels = dim_at<kChannel4D>(graph.sizes_of(in));
 
   const int32_t packed_dim = graph.packed_dim_of(in);
   ivec2 channel_info = {out_channels, in_channels};

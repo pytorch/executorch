@@ -1269,6 +1269,14 @@ class Repeat(torch.nn.Module):
         return x.repeat(1, 2, 3, 4)
 
 
+class ReWriteObs(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.nn.functional.relu(x).expand(3, 4)
+
+
 class Reshape(torch.nn.Module):
     def __init__(self):
         super().__init__()
