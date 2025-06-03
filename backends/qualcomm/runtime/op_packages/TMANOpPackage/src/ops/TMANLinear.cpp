@@ -62,9 +62,9 @@ DEF_PACKAGE_OP((tmanlinearImpl<Tensor>), "TMANLinear")
 
 DEF_TENSOR_PROPERTIES(
   Op("TMANLinear", "l", "qweight", "scales", "group_size", "bits", "symmetric"),
-  Flat("*", "qweight", "scales"),
-  MainMemory("qweight", "scales", "group_size", "bits", "symmetric"),
-  Tcm("*", "l"))
+  Flat("*", "l", "qweight", "scales"),
+  MainMemory("group_size", "bits", "symmetric"),
+  Tcm("*", "l", "qweight", "scales"))
 
 #define SIZE_OF(WEIGHT) MUL(ELEMENTSIZE_OF(WEIGHT), DIM_OF(WEIGHT, 0), DIM_OF(WEIGHT, 1), DIM_OF(WEIGHT, 2), DIM_OF(WEIGHT, 3))
 
