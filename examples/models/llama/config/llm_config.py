@@ -41,6 +41,13 @@ class ModelType(str, Enum):
 
 
 class PreqMode(str, Enum):
+    """
+    If you are dealing with pre-quantized checkpoints, this used to
+    be the way to specify them. Now you don't need to specify these
+    options if you use a TorchAo-prequantized checkpoint, but they
+    are still around to preservce backward compatibility.
+    """
+
     PREQ_8DA4W = "8da4w"
     PREQ_8DA4W_OUT_8DA8W = "8da4w_output_8da8w"
 
@@ -48,8 +55,9 @@ class PreqMode(str, Enum):
 @dataclass
 class BaseConfig:
     """
-    These are specific to the specific model, e.g. whether it’s Qwen3 0.6B or Phi-4-mini.
-    For each of these different models, you can expect each of these fields to change.
+    Configurations specific to the model, e.g. whether it’s Qwen3 or Phi-4-mini,
+    and are the minimal set of parameters needed to load the pretrained
+    eager model and its weights.
     """
 
     model_class: ModelType = ModelType.LLAMA3
@@ -73,6 +81,12 @@ class BaseConfig:
 
 
 class DtypeOverride(str, Enum):
+    """
+    DType of the model. Highly recommended to use "fp32", unless you want to
+    export without a backend, in which case you can also use "bf16". "fp16"
+    is not recommended.
+    """
+
     FP32 = "fp32"
     FP16 = "fp16"
     BF16 = "bf16"
@@ -81,10 +95,10 @@ class DtypeOverride(str, Enum):
 @dataclass
 class ModelConfig:
     """
-    These are not necessarily specific to the model, but are needed to finish off
-    the rest of the model configuration in eager. You can think of these like
-    optimizations / actual configurations. The same ModelConfig can be applied
-    to different models.
+    Configurations not necessarily specific to the model, but are needed to
+    finish off the rest of the model configuration in eager. You can think
+    of these like optimizations / actual configurations. The same ModelConfig
+    can be applied to multiple models.
     """
 
     dtype_override: DtypeOverride = DtypeOverride.FP32
@@ -109,6 +123,10 @@ class ModelConfig:
 
 @dataclass
 class ExportConfig:
+    """
+    Configures properties relevant to the export process.
+    """
+
     max_seq_length: int = 128
     max_context_length: int = 128
     output_dir: Optional[str] = None
@@ -124,6 +142,10 @@ class ExportConfig:
 
 @dataclass
 class DebugConfig:
+    """
+    Configures options to debug the export process.
+    """
+
     profile_memory: bool = False
     profile_path: Optional[str] = None
     generate_etrecord: bool = False
@@ -137,6 +159,14 @@ class DebugConfig:
 
 
 class Pt2eQuantize(str, Enum):
+    """
+    Type of backend-specific Pt2e quantization strategy to use.
+
+    Pt2e uses a different quantization library that is graph-based
+    compared to `qmode`, which is also specified in the QuantizationConfig
+    and is source transform-based.
+    """
+
     XNNPACK_DYNAMIC = "xnnpack_dynamic"
     XNNPACK_DYNAMIC_QC4 = "xnnpack_dynamic_qc4"
     QNN_8A8W = "qnn_8a8w"
@@ -157,6 +187,10 @@ class SpinQuant(str, Enum):
 
 @dataclass
 class QuantizationConfig:
+    """
+    Configures how the model should be quantized (PTQ).
+    """
+
     qmode: Optional[str] = None
     embedding_quantize: Optional[str] = None
     pt2e_quantize: Optional[Pt2eQuantize] = None
@@ -248,6 +282,11 @@ class MPSConfig:
 
 @dataclass
 class BackendConfig:
+    """
+    Configures which backends should be used and how the backends
+    should be set up.
+    """
+
     xnnpack: XNNPackConfig = field(default_factory=XNNPackConfig)
     coreml: CoreMLConfig = field(default_factory=CoreMLConfig)
     vulkan: VulkanConfig = field(default_factory=VulkanConfig)
@@ -262,6 +301,10 @@ class BackendConfig:
 
 @dataclass
 class LlmConfig:
+    """
+    The overall configuration for customizing the LLM export process.
+    """
+
     base: BaseConfig = field(default_factory=BaseConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
     export: ExportConfig = field(default_factory=ExportConfig)
