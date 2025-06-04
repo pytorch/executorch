@@ -10,7 +10,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/DispatchNode.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/DynamicDispatchNode.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
@@ -38,11 +39,11 @@ void add_staging_to_tensor_node(
     pcs = {graph.sizes_pc_of(out_tensor)};
   }
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       shader,
-      graph.create_global_wg_size(out_tensor),
-      graph.create_local_wg_size(out_tensor),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Input and Outputs
       {{out_tensor, vkapi::kWrite}, {in_staging, vkapi::kRead}},
       // Parameter Buffers
@@ -65,6 +66,44 @@ bool is_bitw8_shader(const vkapi::ShaderInfo& shader) {
   return shader_prefix_str == kBitw8PrefixStr;
 }
 
+vkapi::ShaderInfo get_tensor_to_staging_shader(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
+  const ValueRef in_tensor = args.at(1).refs.at(0);
+  return get_tensor_to_nchw_shader(
+      *graph->get_tensor(in_tensor), graph->int8_buffers_enabled());
+}
+
+utils::uvec3 tensor_to_staging_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
+  const ValueRef in_tensor = args.at(1).refs.at(0);
+  const ValueRef out_staging = args.at(0).refs.at(0);
+
+  utils::uvec3 global_wg_size = graph->create_global_wg_size(in_tensor);
+
+  // Normally, the image_to_nchw shader is structured so that each thread reads
+  // one texel from the input texture and writes each component of the texel
+  // into the corresponding location in the output buffer. However, this shader
+  // is structured slightly differently in that each thread writes out a
+  // complete 32 bit integer (containing 4 packed 8-bit integers) into the
+  // output buffer. Therefore, the global work group size for this shader will
+  // be the number of elements in the output buffer divided by 4, as opposed to
+  // the extents of the input texture.
+  if (is_bitw8_shader(shader)) {
+    const uint32_t buffer_len = utils::safe_downcast<uint32_t>(
+        graph->get_staging(out_staging)->numel() / 4);
+    global_wg_size = {buffer_len, 1, 1};
+  }
+
+  return global_wg_size;
+}
+
 void add_tensor_to_staging_node(
     ComputeGraph& graph,
     const ValueRef in_tensor,
@@ -73,8 +112,6 @@ void add_tensor_to_staging_node(
 
   vkapi::ShaderInfo shader = get_tensor_to_nchw_shader(
       *graph.get_tensor(in_tensor), graph.int8_buffers_enabled());
-
-  utils::uvec3 global_wg_size = graph.create_global_wg_size(in_tensor);
 
   vkapi::ParamsBindList ubos;
   if (graph.is_buffer_storage(in_tensor)) {
@@ -86,25 +123,15 @@ void add_tensor_to_staging_node(
     ubos.append({graph.sizes_ubo(in_tensor)});
   }
 
-  // Normally, the image_to_nchw shader is structured so that each thread reads
-  // one texel from the input texture and writes each component of the texel
-  // into the corresponding location in the output buffer. However, this shader
-  // is structured slightly differently in that each thread writes out a
-  // complete 32 bit integer (containing 4 packed 8-bit integers) into the
-  // output buffer. Therefore, the global work group size for this shader will
-  // be the number of elements in the output buffer divided by 4, as opposed to
-  // the extents of the input texture.
   if (is_bitw8_shader(shader)) {
-    uint32_t buffer_len = graph.get_staging(out_staging)->numel() / 4;
-    global_wg_size = {buffer_len, 1, 1};
     ubos.append({graph.numel_ubo(in_tensor)});
   }
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       shader,
-      global_wg_size,
-      graph.create_local_wg_size(global_wg_size),
+      tensor_to_staging_global_wg_size,
+      default_pick_local_wg_size,
       // Input and Outputs
       {{out_staging, vkapi::kWrite}, {in_tensor, vkapi::kRead}},
       // Parameter Buffers
