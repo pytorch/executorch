@@ -12,7 +12,7 @@ PRESETS=("ios" "ios-simulator" "macos")
 # To support backwards compatibility, we want to retain the same output directory.
 PRESETS_RELATIVE_OUT_DIR=("ios" "simulator" "macos")
 
-SOURCE_ROOT_DIR=$(git rev-parse --show-toplevel)
+SOURCE_ROOT_DIR=$(realpath -m "$0/../..")
 OUTPUT_DIR="${SOURCE_ROOT_DIR}/cmake-out"
 HEADERS_RELATIVE_PATH="include"
 HEADERS_ABSOLUTE_PATH="${OUTPUT_DIR}/${HEADERS_RELATIVE_PATH}"

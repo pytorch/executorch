@@ -33,8 +33,7 @@ for arg in "$@"; do
   esac
 done
 
-
-EXECUTORCH_ROOT_PATH=$(git rev-parse --show-toplevel)
+EXECUTORCH_ROOT_PATH=$(realpath -m "$0/../../../../..")
 COREML_DIR_PATH="$EXECUTORCH_ROOT_PATH/backends/apple/coreml"
 EXAMPLES_COREML_DIR_PATH="$EXECUTORCH_ROOT_PATH/examples/apple/coreml"
 IOS_TOOLCHAIN_PATH="$EXECUTORCH_ROOT_PATH/third-party/ios-cmake/ios.toolchain.cmake"

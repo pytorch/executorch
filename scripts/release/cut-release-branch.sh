@@ -20,7 +20,7 @@ or to cut from main branch:
 
 set -eou pipefail
 
-GIT_TOP_DIR=$(git rev-parse --show-toplevel)
+GIT_TOP_DIR=$(realpath -m "$0/../../..")
 GIT_REMOTE=${GIT_REMOTE:-origin}
 GIT_BRANCH_TO_CUT_FROM=${GIT_BRANCH_TO_CUT_FROM:-viable/strict}
 

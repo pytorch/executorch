@@ -18,7 +18,7 @@
 
 set -eou pipefail
 
-GIT_TOP_DIR=$(git rev-parse --show-toplevel)
+GIT_TOP_DIR=$(realpath -m "$0/../../..")
 RELEASE_VERSION=${RELEASE_VERSION:-$(cut -d'.' -f1-2 "${GIT_TOP_DIR}/version.txt")}
 RELEASE_BRANCH="release/${RELEASE_VERSION}"
 
