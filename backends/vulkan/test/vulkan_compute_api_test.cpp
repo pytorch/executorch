@@ -2751,15 +2751,19 @@ void test_mm(
     utils::StorageType storage_type,
     utils::GPUMemoryLayout memory_layout,
     bool prepack = true) {
+  std::vector<int64_t> mat2_size = {B, K, N};
+
+  std::vector<float> mat2_data(utils::multiply_integers(mat2_size));
+  std::fill(mat2_data.begin(), mat2_data.end(), 2.0f);
   ComputeGraph graph = build_mm_graph(
-      B, M, K, N, dtype, storage_type, memory_layout, prepack, 2.0f);
+      B, M, K, N, dtype, storage_type, memory_layout, mat2_data, prepack);
 
   graph.prepare();
   graph.encode_prepack();
   graph.prepack();
-  graph.encode_execute();
 
   for (int i = 1; i < 4; i++) {
+    graph.encode_execute();
     if (prepack) {
       float val_mat1 = i;
       float val_out = K * (val_mat1 * 2.0f);
@@ -2828,8 +2832,12 @@ void test_mm_with_resize_reencode(
     utils::GPUMemoryLayout memory_layout) {
   ASSERT_TRUE(M > 1);
 
+  std::vector<int64_t> mat2_size = {B, K, N};
+  std::vector<float> mat2_data(utils::multiply_integers(mat2_size));
+  std::fill(mat2_data.begin(), mat2_data.end(), 2.0f);
+
   ComputeGraph graph = build_mm_graph(
-      B, M, K, N, dtype, storage_type, memory_layout, false, 2.0f);
+      B, M, K, N, dtype, storage_type, memory_layout, mat2_data, false);
 
   graph.prepare();
   graph.encode_prepack();
@@ -2850,8 +2858,6 @@ void test_mm_with_resize_reencode(
   graph.resize_input(0, new_mat1_size);
   graph.resize_input(1, new_mat2_size);
   graph.propagate_resize();
-
-  graph.encode_execute();
 
   for (int i = 1; i < 4; i++) {
     float val_mat1 = i;
