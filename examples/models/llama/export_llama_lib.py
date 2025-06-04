@@ -661,36 +661,16 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
         canonical_path(llm_config.base.params) if llm_config.base.params else None
     )
     output_dir_path = canonical_path(llm_config.export.output_dir, dir=True)
-    weight_type = WeightType.FAIRSEQ2 if llm_config.base.fairseq2 else WeightType.LLAMA
 
-    # Convert dtype override string to actual type
+    llm_config.base.checkpoint = checkpoint_path
+    llm_config.base.checkpoint_dir = checkpoint_dir
+    llm_config.base.params = params_path
+    llm_config.export.output_dir = output_dir_path
+
+    # Convert dtype override string to actual type.
     dtype_override = DType[llm_config.model.dtype_override]
 
-    edge_manager = _load_llama_model(
-        llm_config,
-        checkpoint=checkpoint_path,
-        checkpoint_dir=checkpoint_dir,
-        params_path=params_path,
-        use_kv_cache=llm_config.model.use_kv_cache,
-        use_sdpa_with_kv_cache=llm_config.model.use_sdpa_with_kv_cache,
-        generate_full_logits=llm_config.debug.generate_full_logits,
-        weight_type=weight_type,
-        enable_dynamic_shape=llm_config.model.enable_dynamic_shape,
-        calibration_tasks=llm_config.quantization.calibration_tasks,
-        calibration_limit=llm_config.quantization.calibration_limit,
-        calibration_seq_length=llm_config.quantization.calibration_seq_length,
-        calibration_data=llm_config.quantization.calibration_data,
-        tokenizer_path=llm_config.base.tokenizer_path,
-        verbose=llm_config.debug.verbose,
-        max_seq_len=llm_config.export.max_seq_length,
-        max_context_len=llm_config.export.max_context_length,
-        input_prune_map_path=llm_config.model.input_prune_map,
-        output_prune_map_path=llm_config.model.output_prune_map,
-        metadata_str=llm_config.base.metadata,
-        dtype_override=dtype_override,
-        use_qnn=llm_config.backend.qnn.enabled,
-        export_only=llm_config.export.export_only,
-    )
+    edge_manager = _load_llama_model(llm_config)
 
     # At this point, the model is loaded in the default fp32.
 
@@ -1167,32 +1147,7 @@ def _load_llama_model_metadata(
     return metadata
 
 
-def _load_llama_model(
-    llm_config: LlmConfig,
-    *,
-    checkpoint: Optional[str] = None,
-    checkpoint_dir: Optional[str] = None,
-    params_path: Optional[str] = None,
-    use_kv_cache: bool = False,
-    use_sdpa_with_kv_cache: bool = False,
-    generate_full_logits: bool = False,
-    weight_type: WeightType = WeightType.LLAMA,
-    enable_dynamic_shape: bool = False,
-    calibration_tasks: Optional[List[str]] = None,
-    calibration_limit: Optional[int] = None,
-    calibration_seq_length: Optional[int] = None,
-    calibration_data: Optional[str] = None,
-    tokenizer_path: Optional[str] = None,
-    verbose: bool = False,
-    max_seq_len: int = 128,
-    max_context_len: int = 128,
-    input_prune_map_path: Optional[str] = None,
-    output_prune_map_path: Optional[str] = None,
-    metadata_str: Optional[str] = None,
-    dtype_override: Optional[DType] = None,
-    use_qnn: bool = False,
-    export_only: bool = False,
-) -> "LLMEdgeManager":
+def _load_llama_model(llm_config: LlmConfig) -> "LLMEdgeManager":
     """
     A helper util that builds a Llama2 model. It returns a LLMEdgeManager that
     can help further lower the model to ExecuTorch.
@@ -1220,31 +1175,33 @@ def _load_llama_model(
             llm_config=llm_config,
         )
     )
+    # Convert dtype override string to actual type.
+    dtype_override = DType[llm_config.model.dtype_override]
 
     return LLMEdgeManager(
         model=model,
         modelname=modelname,
         max_seq_len=model.max_seq_len,  # type: ignore
         dtype=dtype_override,
-        use_kv_cache=use_kv_cache,
-        generate_full_logits=generate_full_logits,
+        use_kv_cache=llm_config.model.use_kv_cache,
+        generate_full_logits=llm_config.debug.generate_full_logits,
         example_inputs=example_inputs,
         example_kwarg_inputs=example_kwarg_inputs,
         dynamic_shapes=dynamic_shapes,
-        enable_dynamic_shape=enable_dynamic_shape,
-        calibration_tasks=calibration_tasks,
-        calibration_limit=calibration_limit,
-        calibration_seq_length=calibration_seq_length,
-        calibration_data=calibration_data,
-        tokenizer_path=tokenizer_path,
-        use_legacy_export=use_qnn,
-        save_exported_program=export_only,
-        verbose=verbose,
+        enable_dynamic_shape=llm_config.model.enable_dynamic_shape,
+        calibration_tasks=llm_config.quantization.calibration_tasks,
+        calibration_limit=llm_config.quantization.calibration_limit,
+        calibration_seq_length=llm_config.quantization.calibration_seq_length,
+        calibration_data=llm_config.quantization.calibration_data,
+        tokenizer_path=llm_config.base.tokenizer_path,
+        use_legacy_export=llm_config.backend.qnn.enabled,
+        save_exported_program=llm_config.export.export_only,
+        verbose=llm_config.debug.verbose,
         metadata=_load_llama_model_metadata(
-            weight_type,
-            use_kv_cache,
-            use_sdpa_with_kv_cache,
-            enable_dynamic_shape,
+            WeightType.FAIRSEQ2 if llm_config.base.fairseq2 else WeightType.LLAMA,
+            llm_config.model.use_kv_cache,
+            llm_config.model.use_sdpa_with_kv_cache,
+            llm_config.model.enable_dynamic_shape,
             # pyre-fixme[6]: For 5th argument expected `ModelArgs` but got
             #  `Union[Tensor, Module]`.
             model.max_seq_len,
@@ -1257,7 +1214,7 @@ def _load_llama_model(
             # pyre-fixme[6]: For 8th argument expected `int` but got `Union[Tensor,
             #  Module]`.
             model.vocab_size,
-            metadata_str,
+            llm_config.base.metadata,
         ),
     )
 
