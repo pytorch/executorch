@@ -46,5 +46,3 @@ unary_op:
       OPERATOR: leaky_relu(X, A)
     - NAME: round
       OPERATOR: round(X)
-    - NAME: tan
-      OPERATOR: tan(X)
