@@ -34,6 +34,9 @@ void add_storage_type_suffix(
 
 void add_dtype_suffix(std::string& kernel_name, const vkapi::ScalarType dtype) {
   switch (dtype) {
+    case vkapi::kDouble:
+      kernel_name += "_double";
+      break;
     case vkapi::kFloat:
       kernel_name += "_float";
       break;
@@ -43,6 +46,9 @@ void add_dtype_suffix(std::string& kernel_name, const vkapi::ScalarType dtype) {
     case vkapi::kInt:
       kernel_name += "_int";
       break;
+    case vkapi::kShort:
+      kernel_name += "_short";
+      break;
     case vkapi::kChar:
     case vkapi::kQInt8:
       kernel_name += "_int8";
@@ -51,6 +57,9 @@ void add_dtype_suffix(std::string& kernel_name, const vkapi::ScalarType dtype) {
     case vkapi::kQUInt8:
     case vkapi::kBool:
       kernel_name += "_uint8";
+      break;
+    case vkapi::kUInt16:
+      kernel_name += "_uint16";
       break;
     default:
       break;
