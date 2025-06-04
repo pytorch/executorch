@@ -15,14 +15,20 @@ namespace vkcompute {
 void resize_rotary_embedding_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& extra_args) {
-  (void)extra_args;
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr in = graph->get_tensor(args[1].refs[0]);
+    const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
 
-  std::vector<int64_t> in_sizes = in->sizes();
-  // UNCOMMENT BELOW IF NEEDED
-  // out->virtual_resize(in_sizes);
+  const ValueRef xq_out = args.at(0).refs.at(0);
+  const ValueRef xk_out = args.at(0).refs.at(1);
+
+  const ValueRef xq = args.at(1).refs.at(0);
+  const ValueRef xk = args.at(1).refs.at(1);
+
+  const std::vector<int64_t> xq_sizes = graph->sizes_of(xq);
+  const std::vector<int64_t> xk_sizes = graph->sizes_of(xk);
+
+  graph->virtual_resize(xq_out, xq_sizes);
+  graph->virtual_resize(xk_out, xk_sizes);
 }
 
 void add_rotary_embedding_node(
