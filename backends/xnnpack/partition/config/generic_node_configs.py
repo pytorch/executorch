@@ -336,6 +336,13 @@ class UpsampleBilinear2dConfig(GenericNodePartitionerConfig):
         return torch.ops.aten.upsample_bilinear2d.vec
 
 
+class ExpConfig(GenericNodePartitionerConfig):
+    target_name = "exp.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
 class FloorConfig(GenericNodePartitionerConfig):
     target_name = "floor.default"
 
