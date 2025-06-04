@@ -214,6 +214,11 @@ define_overridable_option(
   "Build the gflags library."
   BOOL ON
 )
+define_overridable_option(
+  EXECUTORCH_COREML_BUILD_EXECUTOR_RUNNER
+  "Build CoreML executor runner."
+  BOOL OFF
+)
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   set(_default_executorch_build_pthreadpool OFF)

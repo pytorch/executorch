@@ -25,7 +25,9 @@ void resize_var_node(
   int dim = extra_args[0];
 
   std::vector<int64_t> new_sizes = in->sizes();
-  new_sizes[normalize(dim, new_sizes.size())] = 1;
+  if (!new_sizes.empty()) {
+    new_sizes.at(normalize(dim, new_sizes.size())) = 1;
+  }
   out->virtual_resize(new_sizes);
 }
 
@@ -38,6 +40,13 @@ void add_var_buffer_node(
   const int64_t ndim = graph.dim_of(in);
   int32_t reduce_dim = normalize(dim, ndim);
   reduce_dim = nchw_dim_to_whcn_dim(reduce_dim, ndim);
+
+  // Check that the concat dim is not the reduction dim, if the tensor has a
+  // batch dim greater than 1.
+  if (graph.dim_of(in) == 4 && graph.size_at<int>(0, in) > 1) {
+    VK_CHECK_COND(graph.concat_dim_of(in) != reduce_dim);
+    VK_CHECK_COND(graph.concat_dim_of(out) != reduce_dim);
+  }
 
   std::string kernel_name = "var";
   kernel_name.reserve(kShaderNameReserve);
@@ -175,7 +184,8 @@ void var(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   if (args.size() > 2) {
     unbiased = graph.get_bool(args[2]);
   }
-  return add_var_node(graph, args[0], dims_list->at(0), unbiased, args[4]);
+  return add_var_node(
+      graph, args[0], static_cast<int>(dims_list->at(0)), unbiased, args[4]);
 }
 
 REGISTER_OPERATORS {

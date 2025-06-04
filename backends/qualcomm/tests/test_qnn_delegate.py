@@ -49,6 +49,7 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_qnn_executorch_compiler_spec,
     PyQnnManagerAdaptor,
     QnnPartitioner,
+    rewrite_prepared_observer,
     skip_annotation,
     to_edge_transform_and_lower_to_qnn,
     update_spill_fill_size,
@@ -163,9 +164,19 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_avg_pool2d(self):
-        module = AvgPoolModule()  # noqa: F405
-        sample_input = (torch.randn(1, 3, 2, 2),)
-        self.lower_module_and_test_output(module, sample_input)
+        modules = [
+            AvgPoolModule((2, 2), (1, 1), (1, 1), False),  # noqa: F405
+            AvgPoolModule((1280, 1280), (1280, 1280), (0, 0), True),  # noqa: F405
+            AvgPoolModule((1280, 1280), (1280, 1280), (320, 320), True),  # noqa: F405
+        ]  # noqa: F405
+        sample_inputs = [
+            (torch.randn(1, 3, 2, 2),),
+            (torch.randn(1, 1280, 7, 7),),
+            (torch.randn(1, 1280, 7, 7),),
+        ]
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_inputs[i])
 
     def test_qnn_backend_batch_norm(self):
         modules = [BatchNorm(32), BatchNorm(32, False)]  # noqa: F405
@@ -1271,10 +1282,20 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_avg_pool2d(self):
-        module = AvgPoolModule()  # noqa: F405
-        sample_input = (torch.randn(1, 3, 2, 2),)
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        modules = [
+            AvgPoolModule((2, 2), (1, 1), (1, 1), False),  # noqa: F405
+            AvgPoolModule((1280, 1280), (1280, 1280), (0, 0), True),  # noqa: F405
+            AvgPoolModule((1280, 1280), (1280, 1280), (320, 320), True),  # noqa: F405
+        ]  # noqa: F405
+        sample_inputs = [
+            (torch.randn(1, 3, 2, 2),),
+            (torch.randn(1, 1280, 7, 7),),
+            (torch.randn(1, 1280, 7, 7),),
+        ]
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_inputs[i])
+                self.lower_module_and_test_output(module, sample_inputs[i])
 
     def test_qnn_backend_batch_norm(self):
         modules = [BatchNorm(32), BatchNorm(32, False)]  # noqa: F405
@@ -3038,6 +3059,36 @@ class TestQNNQuantizedUtils(TestQNN):
                     check_io_shape=True,
                 )
 
+    def test_qnn_backend_rewrite_prepared_observer(self):
+        from torchao.quantization.pt2e import FixedQParamsObserver
+
+        module = ReWriteObs()  # noqa: F405
+        sample_input = (torch.randn([3, 1]),)
+        module = torch.export.export(module, sample_input, strict=True).module()
+
+        quantizer = make_quantizer()
+
+        prepared = prepare_pt2e(module, quantizer)
+        prepared(*sample_input)
+
+        new_obs = FixedQParamsObserver(
+            scale=0.004,
+            zero_point=0,
+            dtype=torch.uint8,
+            quant_min=0,
+            quant_max=255,
+            qscheme=torch.per_tensor_affine,
+        )
+
+        rewrite_prepared_observer(prepared, {"activation_post_process_2": new_obs})
+        self.assertTrue(
+            prepared.activation_post_process_1
+            == prepared.activation_post_process_2
+            == new_obs
+        )
+        quantized_module = convert_pt2e(prepared)
+        self.lower_module_and_test_output(quantized_module, sample_input)
+
     def test_qnn_backend_skip_node_id_partitioner(self):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
@@ -3681,7 +3732,7 @@ class TestExampleLLMScript(TestQNN):
         if self.pre_gen_pte:
             cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
 
-        golden_start_with = "<|begin_of_text|><|start_header_id|>user<|end_header_id|>"
+        golden_start_with = "<|start_header_id|>user<|end_header_id|>"
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
             conn = listener.accept()
@@ -3829,12 +3880,82 @@ class TestExampleOssScript(TestQNN):
                 self.assertGreaterEqual(msg["top_1"], 60)
                 self.assertGreaterEqual(msg["top_5"], 80)
 
+    def test_deit(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/deit.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 75)
+                self.assertGreaterEqual(msg["top_5"], 90)
+
     def test_dino_v2(self):
         if not self.required_envs([self.image_dataset]):
             self.skipTest("missing required envs")
         cmds = [
             "python",
             f"{self.executorch_root}/examples/qualcomm/oss_scripts/dino_v2.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 70)
+                self.assertGreaterEqual(msg["top_5"], 85)
+
+    def test_efficientnet(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/efficientnet.py"
             "--dataset",
             self.image_dataset,
             "--artifact",
@@ -4088,6 +4209,42 @@ class TestExampleOssScript(TestQNN):
             else:
                 self.assertGreaterEqual(msg["top_1"], 60)
                 self.assertGreaterEqual(msg["top_5"], 90)
+
+    def test_pvt(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/pvt.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 65)
+                self.assertGreaterEqual(msg["top_5"], 85)
 
     def test_regnet(self):
         if not self.required_envs([self.image_dataset]):

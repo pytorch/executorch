@@ -27,7 +27,7 @@
   _(uint8_t, VK_FORMAT_R8G8B8A8_UINT, Byte)        \
   _(int8_t, VK_FORMAT_R8G8B8A8_SINT, Char)         \
   _(int32_t, VK_FORMAT_R32G32B32A32_SINT, Int)     \
-  _(bool, VK_FORMAT_R8G8B8A8_SINT, Bool)           \
+  _(uint8_t, VK_FORMAT_R8G8B8A8_UINT, Bool)        \
   _(uint16_t, VK_FORMAT_R16G16B16A16_SFLOAT, Half) \
   _(float, VK_FORMAT_FLOAT4, Float)                \
   _(int8_t, VK_FORMAT_R8G8B8A8_SINT, QInt8)        \

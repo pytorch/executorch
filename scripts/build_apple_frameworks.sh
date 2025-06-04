@@ -9,6 +9,8 @@ set -euxo pipefail
 
 MODES=("Release" "Debug")
 PRESETS=("ios" "ios-simulator" "macos")
+# To support backwards compatibility, we want to retain the same output directory.
+PRESETS_RELATIVE_OUT_DIR=("ios" "simulator" "macos")
 
 SOURCE_ROOT_DIR=$(git rev-parse --show-toplevel)
 OUTPUT_DIR="${SOURCE_ROOT_DIR}/cmake-out"
@@ -30,6 +32,12 @@ libextension_module.a,\
 libextension_tensor.a,\
 :$HEADERS_RELATIVE_PATH:ExecuTorch"
 
+FRAMEWORK_THREADPOOL="threadpool:\
+libcpuinfo.a,\
+libextension_threadpool.a,\
+libpthreadpool.a,\
+:"
+
 FRAMEWORK_BACKEND_COREML="backend_coreml:\
 libcoreml_util.a,\
 libcoreml_inmemoryfs.a,\
@@ -42,9 +50,6 @@ libmpsdelegate.a,\
 
 FRAMEWORK_BACKEND_XNNPACK="backend_xnnpack:\
 libXNNPACK.a,\
-libcpuinfo.a,\
-libextension_threadpool.a,\
-libpthreadpool.a,\
 libxnnpack_backend.a,\
 libmicrokernels-prod.a,\
 :"
@@ -57,11 +62,7 @@ FRAMEWORK_KERNELS_OPTIMIZED="kernels_optimized:\
 libcpublas.a,\
 liboptimized_kernels.a,\
 liboptimized_native_cpu_ops_lib.a,\
-:"
-
-FRAMEWORK_KERNELS_PORTABLE="kernels_portable:\
 libportable_kernels.a,\
-libportable_ops_lib.a,\
 :"
 
 FRAMEWORK_KERNELS_QUANTIZED="kernels_quantized:\
@@ -80,7 +81,6 @@ usage() {
   echo "  --custom             Only build the Custom kernels."
   echo "  --mps                Only build the Metal Performance Shaders backend."
   echo "  --optimized          Only build the Optimized kernels."
-  echo "  --portable           Only build the Portable kernels."
   echo "  --quantized          Only build the Quantized kernels."
   echo "  --xnnpack            Only build the XNNPACK backend."
   echo
@@ -98,7 +98,6 @@ set_cmake_options_override() {
       "-DEXECUTORCH_BUILD_KERNELS_CUSTOM=OFF"
       "-DEXECUTORCH_BUILD_MPS=OFF"
       "-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=OFF"
-      "-DEXECUTORCH_BUILD_PORTABLE_OPS=OFF"
       "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=OFF"
       "-DEXECUTORCH_BUILD_XNNPACK=OFF"
     )
@@ -129,7 +128,6 @@ for arg in "$@"; do
       --custom) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_CUSTOM" ;;
       --mps) set_cmake_options_override "EXECUTORCH_BUILD_MPS" ;;
       --optimized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" ;;
-      --portable) set_cmake_options_override "EXECUTORCH_BUILD_PORTABLE_OPS" ;;
       --quantized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_QUANTIZED" ;;
       --xnnpack) set_cmake_options_override "EXECUTORCH_BUILD_XNNPACK" ;;
       *)
@@ -142,20 +140,22 @@ done
 echo "Building libraries"
 
 rm -rf "${OUTPUT_DIR}"
-for preset in "${PRESETS[@]}"; do
+for preset_index in "${!PRESETS[@]}"; do
+  preset="${PRESETS[$preset_index]}"
+  preset_output_dir="${OUTPUT_DIR}/${PRESETS_RELATIVE_OUT_DIR[$preset_index]}"
+
   for mode in "${MODES[@]}"; do
-    output_dir="${OUTPUT_DIR}/${preset}"
-    echo "Building preset ${preset} (${mode}) in ${output_dir}..."
+    echo "Building preset ${preset} (${mode}) in ${preset_output_dir}..."
 
     # Do NOT add options here. Update the respective presets instead.
     cmake -S "${SOURCE_ROOT_DIR}" \
-          -B "${output_dir}" \
-          -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="${output_dir}" \
+          -B "${preset_output_dir}" \
+          -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="${preset_output_dir}" \
           -DCMAKE_BUILD_TYPE="${mode}" \
           ${CMAKE_OPTIONS_OVERRIDE[@]:-} \
           --preset "${preset}"
 
-    cmake --build "${output_dir}" \
+    cmake --build "${preset_output_dir}" \
           --config "${mode}" \
           -j$(sysctl -n hw.ncpu)
   done
@@ -220,18 +220,18 @@ append_framework_flag() {
 
 for mode in "${MODES[@]}"; do
   FRAMEWORK_FLAGS=()
-  for preset in "${PRESETS[@]}"; do
-    echo "Framework directory: ${preset}/${mode}"
-    FRAMEWORK_FLAGS+=("--directory=${preset}/${mode}")
+  for preset_out_dir in "${PRESETS_RELATIVE_OUT_DIR[@]}"; do
+    echo "Framework directory: ${preset_out_dir}/${mode}"
+    FRAMEWORK_FLAGS+=("--directory=${preset_out_dir}/${mode}")
   done
 
   append_framework_flag "" "$FRAMEWORK_EXECUTORCH" "$mode"
+  append_framework_flag "" "$FRAMEWORK_THREADPOOL" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_COREML" "$FRAMEWORK_BACKEND_COREML" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_MPS" "$FRAMEWORK_BACKEND_MPS" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_XNNPACK" "$FRAMEWORK_BACKEND_XNNPACK" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_CUSTOM" "$FRAMEWORK_KERNELS_CUSTOM" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" "$FRAMEWORK_KERNELS_OPTIMIZED" "$mode"
-  append_framework_flag "EXECUTORCH_BUILD_PORTABLE_OPS" "$FRAMEWORK_KERNELS_PORTABLE" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_QUANTIZED" "$FRAMEWORK_KERNELS_QUANTIZED" "$mode"
 
   cd "${OUTPUT_DIR}"
@@ -240,8 +240,8 @@ done
 
 echo "Cleaning up"
 
-for preset in "${PRESETS[@]}"; do
-  rm -rf "${OUTPUT_DIR}/${preset}/$preset"
+for preset_out_dir in "${PRESETS_RELATIVE_OUT_DIR[@]}"; do
+  rm -rf "${OUTPUT_DIR}/${preset_out_dir}"
 done
 
 rm -rf "$HEADERS_ABSOLUTE_PATH"
