@@ -447,6 +447,13 @@ ComputePipelineCache::~ComputePipelineCache() {
   pipeline_cache_ = VK_NULL_HANDLE;
 }
 
+bool ComputePipelineCache::contains(const ComputePipelineCache::Key& key) {
+  std::lock_guard<std::mutex> lock(cache_mutex_);
+
+  auto it = cache_.find(key);
+  return it != cache_.cend();
+}
+
 void ComputePipelineCache::create_pipelines(
     const std::unordered_set<Key, Hasher>& descriptors) {
   std::lock_guard<std::mutex> lock(cache_mutex_);
@@ -507,6 +514,10 @@ void ComputePipelineCache::create_pipelines(
 
   uint32_t i = 0;
   for (auto& key : descriptors) {
+    auto it = cache_.find(key);
+    if (it != cache_.cend()) {
+      continue;
+    }
     cache_.insert({key, ComputePipelineCache::Value(device_, pipelines[i])});
     ++i;
   }
@@ -515,16 +526,15 @@ void ComputePipelineCache::create_pipelines(
 VkPipeline ComputePipelineCache::retrieve(
     const ComputePipelineCache::Key& key) {
   std::lock_guard<std::mutex> lock(cache_mutex_);
+
   auto it = cache_.find(key);
-  if (cache_.cend() == it) {
-    // Pipelines for dynamic shapes must be created individually
+  if (it == cache_.cend()) {
     it = cache_
              .insert(
                  {key,
                   ComputePipelineCache::Value(device_, key, pipeline_cache_)})
              .first;
   }
-
   return it->second.handle();
 }
 
