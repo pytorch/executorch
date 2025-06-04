@@ -230,6 +230,7 @@ def update_features(aten_op):
         exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
         # Symbolic integer ops
         torch.ops.aten.sym_size.int,
+        operator.add,
     ]
 )
 def register_ephemeral_op(features: OpFeatures):
