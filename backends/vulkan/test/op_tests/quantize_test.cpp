@@ -630,6 +630,47 @@ TEST(VulkanQuantizePerTensorTest, test_reference_quantize_per_tensor_int8) {
       127, // quant_max
       at::kChar);
 }
+
+TEST(VulkanQuantizePerTensorTest, test_vulkan_quantize_per_tensor_uint8) {
+  test_vulkan_quantize_per_tensor(
+      {5, 3, 2, 4}, // input sizes
+      0.01, // scale
+      1, // zero_point
+      0, // quant_min
+      255, // quant_max
+      at::kByte);
+}
+
+TEST(VulkanQuantizePerTensorTest, test_vulkan_quantize_per_tensor_int8) {
+  test_vulkan_quantize_per_tensor(
+      {5, 3, 2, 4}, // input sizes
+      0.01, // scale
+      1, // zero_point
+      -128, // quant_min
+      127, // quant_max
+      at::kChar);
+}
+
+TEST(VulkanQuantizePerTensorTest, test_vulkan_quantize_per_tensor_int16) {
+  test_vulkan_quantize_per_tensor(
+      {5, 3, 2, 4}, // input sizes
+      0.01, // scale
+      1, // zero_point
+      -32768, // quant_min
+      32767, // quant_max
+      at::kShort);
+}
+
+TEST(VulkanQuantizePerTensorTest, test_vulkan_quantize_per_tensor_int32) {
+  test_vulkan_quantize_per_tensor(
+      {5, 3, 2, 4}, // input sizes
+      0.01, // scale
+      1, // zero_point
+      -2147483648, // quant_min
+      2147483647, // quant_max
+      at::kInt);
+}
+
 void test_reference_quantize_per_token(
     const std::vector<int>& input_sizes,
     const std::vector<float>& scales,
@@ -853,4 +894,81 @@ TEST(VulkanQuantizePerTensorTest, test_reference_quantize_per_token_int8) {
       -128, // quant_min
       127, // quant_max
       at::kChar);
+}
+
+TEST(VulkanQuantizePerTensorTest, test_vulkan_quantize_per_token_uint8) {
+  std::vector<float> scales = {-0.5, -0.3, -0.2, 0, 0.1, 0.8, 0.1, 0.2, 0.3,
+  0.4}; std::vector<int> zero_points = {-8, 0, 15, 20, 19, 12, 47, 1, -50,
+  -12};
+
+  test_vulkan_quantize_per_token(
+      {5, 2, 4}, // input sizes (5*2=10 tokens)
+      scales,
+      zero_points,
+      0, // quant_min
+      255, // quant_max
+      at::kByte);
+}
+
+TEST(VulkanQuantizePerTensorTest, test_vulkan_quantize_per_token_int8) {
+  std::vector<float> scales = {-0.5, -0.3, -0.2, 0, 0.1, 0.8, 0.1, 0.2, 0.3,
+  0.4}; std::vector<int> zero_points = {-8, 0, 15, 20, 19, 12, 47, 1, -50,
+  -12};
+
+  test_vulkan_quantize_per_token(
+      {5, 2, 4}, // input sizes (5 tokens)
+      scales,
+      zero_points,
+      -128, // quant_min
+      127, // quant_max
+      at::kChar);
+}
+
+TEST(
+  VulkanQuantizePerTensorTest,
+  test_vulkan_quantize_per_token_int16) {
+std::vector<float> scales = {-0.5, -0.3, -0.2, 0, 0.1, 0.8, 0.1, 0.2, 0.3,
+0.4}; std::vector<int> zero_points = {-8, 0, 15, 20, 19, 12, 47, 1, -50,
+-12};
+
+test_vulkan_quantize_per_token(
+    {5, 2, 4}, // input sizes (5*2=10 tokens)
+    scales,
+    zero_points,
+    -32768, // quant_min
+    32767, // quant_max
+    at::kShort);
+}
+
+TEST(VulkanQuantizePerTensorTest, test_vulkan_quantize_per_token_int32) {
+  std::vector<float> scales = {-0.5, -0.3, -0.2, 0, 0.1, 0.8, 0.1, 0.2, 0.3,
+  0.4}; std::vector<int> zero_points = {-8, 0, 15, 20, 19, 12, 47, 1, -50,
+  -12};
+
+  test_vulkan_quantize_per_token(
+      {5, 2, 4}, // input sizes (5*2=10 tokens)
+      scales,
+      zero_points,
+      -2147483648, // quant_min
+      2147483647, // quant_max
+      at::kInt);
+}
+
+TEST(VulkanQuantizePerTensorTest, test_vulkan_quantize_per_token_many_tokens)
+{
+  std::vector<float> scales(18, 0.1);
+  std::vector<int> zero_points(18, 5);
+
+  // Alternate scale values
+  for (size_t i = 0; i < scales.size(); i++) {
+    scales[i] = (i % 2 == 0) ? 0.3 : -0.5;
+  }
+
+  test_vulkan_quantize_per_token(
+      {3, 3, 2, 3}, // input sizes (3*3*2=18 tokens)
+      scales,
+      zero_points,
+      0, // quant_min
+      125, // quant_max
+      at::kByte);
 }
