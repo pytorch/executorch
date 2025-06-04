@@ -49,7 +49,8 @@ classifiers = [
 ]
 
 # Python dependencies required for use.
-requires-python = ">=3.10"
+# coremltools has issue with python 3.13, see https://github.com/apple/coremltools/issues/2487 
+requires-python = ">=3.10,<3.13"
 dependencies=[
   "expecttest",
   "flatbuffers",
@@ -66,9 +67,10 @@ dependencies=[
   "ruamel.yaml",
   "sympy",
   "tabulate",
-  "typing-extensions",
+  # See also third-party/TARGETS for buck's typing-extensions version.
+  "typing-extensions>=4.10.0",
   # Keep this version in sync with: ./backends/apple/coreml/scripts/install_requirements.sh
-  "coremltools==8.3; platform_system == 'Darwin'",
+  "coremltools==8.3; platform_system == 'Darwin' or platform_system == 'Linux'",
 ]
 
 [project.urls]

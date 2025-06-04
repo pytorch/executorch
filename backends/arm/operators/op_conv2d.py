@@ -6,7 +6,6 @@
 # pyre-unsafe
 from typing import Any, List
 
-import numpy as np
 import torch
 
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
@@ -333,21 +332,22 @@ class Conv2dVisitor(NodeVisitor):
                 weight.dtype,
             )
             shape = tosa_graph.addConst(
-                np.array(weight_post_shape).shape,
+                [len(weight_post_shape)],
                 ts.DType.SHAPE,
-                np.array(weight_post_shape),
+                weight_post_shape,
                 name=weight_reshaped.name + "_shape",
             )
 
-            attr = ts.TosaSerializerAttribute()
-            attr.ReshapeAttribute()
+            reshape_attr = ts.TosaSerializerAttribute()
+            reshape_attr.ReshapeAttribute()
             tosa_graph.addOperator(
                 ts.TosaOp.Op().RESHAPE,
                 [weight.name, shape.name],
                 [weight_reshaped.name],
-                attr,
+                reshape_attr,
             )
 
+            attr = ts.TosaSerializerAttribute()
             tosa_op = ts.TosaOp.Op().DEPTHWISE_CONV2D
             weight_name = weight_reshaped.name
 
