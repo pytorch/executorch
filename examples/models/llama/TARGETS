@@ -148,7 +148,6 @@ runtime.python_library(
         ":source_transformation",
         "//ai_codesign/gen_ai/fast_hadamard_transform:fast_hadamard_transform",
         "//caffe2:torch",
-        "//executorch/backends/vulkan/_passes:vulkan_passes",
         "//executorch/exir/passes:init_mutable_pass",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models:models",
