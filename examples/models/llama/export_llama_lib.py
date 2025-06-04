@@ -24,7 +24,6 @@ from typing import Callable, List, Optional, Union
 import pkg_resources
 import torch
 
-from executorch.backends.vulkan._passes.remove_asserts import remove_asserts
 from executorch.devtools.backend_debug import print_delegation_info
 
 from executorch.devtools.etrecord import generate_etrecord as generate_etrecord_func
@@ -879,9 +878,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
             )
         )
         modelname = f"vulkan_{modelname}"
-
-        # Need to remove asserts from the graph to prevent graph breaks
-        remove_asserts(builder_exported_to_edge.edge_manager.exported_program())
 
     if mps:
         partitioners.append(get_mps_partitioner(use_kv_cache))
