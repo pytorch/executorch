@@ -49,14 +49,24 @@ prepare_artifacts_upload() {
 }
 
 build_cmake_executor_runner() {
+  local backend_string_select="${1:-}"
   echo "Building executor_runner"
   rm -rf ${CMAKE_OUTPUT_DIR}
-  cmake -DCMAKE_BUILD_TYPE=Debug \
-      -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-      -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
-      -B${CMAKE_OUTPUT_DIR} .
-
-  cmake --build ${CMAKE_OUTPUT_DIR} -j4 --config Debug
+  mkdir ${CMAKE_OUTPUT_DIR}
+  if [[ "$backend_string_select" == "XNNPACK" ]]; then
+    echo "Backend $backend_string_select selected"
+    (cd ${CMAKE_OUTPUT_DIR} \
+      && cmake -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_XNNPACK=ON \
+        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
+    cmake --build ${CMAKE_OUTPUT_DIR} -j4
+  else
+    cmake -DCMAKE_BUILD_TYPE=Debug \
+        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+        -B${CMAKE_OUTPUT_DIR} .
+    cmake --build ${CMAKE_OUTPUT_DIR} -j4 --config Debug
+  fi
 }
 
 run_portable_executor_runner() {
@@ -111,19 +121,6 @@ test_model() {
   run_portable_executor_runner
 }
 
-build_cmake_xnn_executor_runner() {
-  echo "Building xnn_executor_runner"
-
-  (rm -rf ${CMAKE_OUTPUT_DIR} \
-    && mkdir ${CMAKE_OUTPUT_DIR} \
-    && cd ${CMAKE_OUTPUT_DIR} \
-    && retry cmake -DCMAKE_BUILD_TYPE=Release \
-      -DEXECUTORCH_BUILD_XNNPACK=ON \
-      -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
-
-  cmake --build ${CMAKE_OUTPUT_DIR} -j4
-}
-
 test_model_with_xnnpack() {
   WITH_QUANTIZATION=$1
   WITH_DELEGATION=$2
@@ -148,12 +145,11 @@ test_model_with_xnnpack() {
 
   # Run test model
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
+    # TODO eventually buck should also use consolidated executor runners
     buck2 run //examples/xnnpack:xnn_executor_runner -- --model_path "${OUTPUT_MODEL_PATH}"
   elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
-    if [[ ! -f ${CMAKE_OUTPUT_DIR}/backends/xnnpack/xnn_executor_runner ]]; then
-      build_cmake_xnn_executor_runner
-    fi
-    ./${CMAKE_OUTPUT_DIR}/backends/xnnpack/xnn_executor_runner --model_path "${OUTPUT_MODEL_PATH}"
+    build_cmake_executor_runner "XNNPACK"
+    ./${CMAKE_OUTPUT_DIR}/executor_runner --model_path "${OUTPUT_MODEL_PATH}"
   else
     echo "Invalid build tool ${BUILD_TOOL}. Only buck2 and cmake are supported atm"
     exit 1
