@@ -377,13 +377,24 @@ uint32_t Runtime::create_adapter(const Selector& selector) {
   return adapter_i;
 }
 
-Runtime* runtime(const std::string& cache_data_path) {
+std::string& set_and_get_pipeline_cache_data_path(
+    const std::string& file_path) {
+  // The global cache data path is declared as a static local variable for the
+  // same reasons as the global runtime below.
+  static std::string global_cache_data_path = "";
+  if (file_path.size() > 0) {
+    global_cache_data_path = file_path;
+  }
+  return global_cache_data_path;
+}
+
+Runtime* runtime() {
   // The global vulkan runtime is declared as a static local variable within a
   // non-static function to ensure it has external linkage. If it were a global
   // static variable there would be one copy per translation unit that includes
   // Runtime.h as it would have internal linkage.
   static const std::unique_ptr<Runtime> p_runtime =
-      init_global_vulkan_runtime(cache_data_path);
+      init_global_vulkan_runtime(set_and_get_pipeline_cache_data_path(""));
 
   VK_CHECK_COND(
       p_runtime,
