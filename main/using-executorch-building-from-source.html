@@ -710,6 +710,160 @@ by the output values.</p>
 </pre></div>
 </div>
 </div>
+<div class="section" id="build-executorch-for-windows">
+<h2>Build ExecuTorch for Windows<a class="headerlink" href="#build-executorch-for-windows" title="Permalink to this heading">¶</a></h2>
+<p>This document outlines the current known working build instructions for building and validating ExecuTorch on a Windows machine.</p>
+<p>This demo uses the
+<a class="reference external" href="https://pytorch.org/vision/main/models/mobilenetv2.html">MobileNet v2</a> model to classify images using the <a class="reference external" href="https://github.com/google/XNNPACK">XNNPACK</a> backend.</p>
+<p>Note that all commands should be executed on Windows powershell in administrator mode.</p>
+<div class="section" id="pre-requisites">
+<h3>Pre-requisites<a class="headerlink" href="#pre-requisites" title="Permalink to this heading">¶</a></h3>
+<div class="section" id="install-miniconda-for-windows">
+<h4>1. Install Miniconda for Windows<a class="headerlink" href="#install-miniconda-for-windows" title="Permalink to this heading">¶</a></h4>
+<p>Install miniconda for Windows from the <a class="reference external" href="https://docs.conda.io/en/latest/miniconda.html">official website</a>.</p>
+</div>
+<div class="section" id="install-git-for-windows">
+<h4>2. Install Git for Windows<a class="headerlink" href="#install-git-for-windows" title="Permalink to this heading">¶</a></h4>
+<p>Install Git for Windows from the <a class="reference external" href="https://git-scm.com/download/win">official website</a>.</p>
+</div>
+<div class="section" id="install-clangcl-for-windows">
+<h4>3. Install ClangCL for Windows<a class="headerlink" href="#install-clangcl-for-windows" title="Permalink to this heading">¶</a></h4>
+<p>Install ClangCL for Windows from the <a class="reference external" href="https://learn.microsoft.com/en-us/cpp/build/clang-support-msbuild?view=msvc-170">official website</a>.</p>
+</div>
+</div>
+<div class="section" id="create-the-conda-environment">
+<h3>Create the Conda Environment<a class="headerlink" href="#create-the-conda-environment" title="Permalink to this heading">¶</a></h3>
+<p>To check if conda is detected by the powershell prompt, try <code class="docutils literal notranslate"><span class="pre">conda</span> <span class="pre">list</span></code> or <code class="docutils literal notranslate"><span class="pre">conda</span> <span class="pre">--version</span></code></p>
+<p>If conda is not detected, you could run the powershell script for conda named <code class="docutils literal notranslate"><span class="pre">conda-hook.ps1</span></code>.
+To verify that Conda is available in the in the powershell environment, run try <code class="docutils literal notranslate"><span class="pre">conda</span> <span class="pre">list</span></code> or <code class="docutils literal notranslate"><span class="pre">conda</span> <span class="pre">--version</span></code>.
+If Conda is not available, run conda-hook.ps1 as follows:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nv">$miniconda_dir</span><span class="se">\\</span>shell<span class="se">\\</span>condabin<span class="se">\\</span>conda-hook.ps1
+</pre></div>
+</div>
+<p>where <code class="docutils literal notranslate"><span class="pre">$miniconda_dir</span></code> is the directory where you installed miniconda
+This is <code class="docutils literal notranslate"><span class="pre">“C:\Users\&lt;username&gt;\AppData\Local”</span></code> by default.</p>
+<div class="section" id="create-and-activate-the-conda-environment">
+<h4>Create and activate the conda environment:<a class="headerlink" href="#create-and-activate-the-conda-environment" title="Permalink to this heading">¶</a></h4>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>conda<span class="w"> </span>create<span class="w"> </span>-yn<span class="w"> </span>et<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.12
+conda<span class="w"> </span>activate<span class="w"> </span>et
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="check-symlinks">
+<h3>Check Symlinks<a class="headerlink" href="#check-symlinks" title="Permalink to this heading">¶</a></h3>
+<p>Set the following environment variable to enable symlinks:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>config<span class="w"> </span>--global<span class="w"> </span>core.symlinks<span class="w"> </span><span class="nb">true</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="set-up-executorch">
+<h3>Set up ExecuTorch<a class="headerlink" href="#set-up-executorch" title="Permalink to this heading">¶</a></h3>
+<p>Clone ExecuTorch from the <a class="reference external" href="https://github.com/pytorch/executorch">official GitHub repository</a>.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>--recurse<span class="w"> </span>-submodules<span class="w"> </span>https://github.com/pytorch/executorch.git
+</pre></div>
+</div>
+</div>
+<div class="section" id="run-the-setup-script">
+<h3>Run the Setup Script<a class="headerlink" href="#run-the-setup-script" title="Permalink to this heading">¶</a></h3>
+<p>Currently, there are a lot of components that are not buildable on Windows. The below instructions install a very minimal ExecuTorch which can be used as a sanity check.</p>
+<div class="section" id="move-into-the-executorch-directory">
+<h4>Move into the <code class="docutils literal notranslate"><span class="pre">executorch</span></code> directory<a class="headerlink" href="#move-into-the-executorch-directory" title="Permalink to this heading">¶</a></h4>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
+</pre></div>
+</div>
+</div>
+<div class="section" id="optional-run-a-clean-script-prior-to-running-the-bat-file">
+<h4>(Optional) Run a –clean script prior to running the .bat file.<a class="headerlink" href="#optional-run-a-clean-script-prior-to-running-the-bat-file" title="Permalink to this heading">¶</a></h4>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_executorch.bat<span class="w"> </span>--clean
+</pre></div>
+</div>
+</div>
+<div class="section" id="id1">
+<h4>Run the setup script.<a class="headerlink" href="#id1" title="Permalink to this heading">¶</a></h4>
+<p>You could run the .bat file or the python script.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_executorch.bat
+<span class="c1"># OR</span>
+<span class="c1"># python install_executorch.py</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="export-mobilenet-v2">
+<h3>Export MobileNet V2<a class="headerlink" href="#export-mobilenet-v2" title="Permalink to this heading">¶</a></h3>
+<p>Create the following script named export_mv2.py</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>from<span class="w"> </span>torchvision.models<span class="w"> </span>import<span class="w"> </span>mobilenet_v2
+from<span class="w"> </span>torchvision.models.mobilenetv2<span class="w"> </span>import<span class="w"> </span>MobileNet_V2_Weights
+
+<span class="nv">mv2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>mobilenet_v2<span class="o">(</span><span class="nv">weights</span><span class="o">=</span>MobileNet_V2_Weights.DEFAULT<span class="o">)</span><span class="w"> </span><span class="c1"># This is torch.nn.Module</span>
+
+import<span class="w"> </span>torch
+from<span class="w"> </span>executorch.exir<span class="w"> </span>import<span class="w"> </span>to_edge
+from<span class="w"> </span>executorch.backends.xnnpack.partition.xnnpack_partitioner<span class="w"> </span>import<span class="w"> </span>XnnpackPartitioner
+
+<span class="nv">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>mv2.eval<span class="o">()</span><span class="w"> </span><span class="c1"># turn into evaluation mode</span>
+
+<span class="nv">example_inputs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">(</span>torch.randn<span class="o">((</span><span class="m">1</span>,<span class="w"> </span><span class="m">3</span>,<span class="w"> </span><span class="m">224</span>,<span class="w"> </span><span class="m">224</span><span class="o">))</span>,<span class="o">)</span><span class="w"> </span><span class="c1"># Necessary for exporting the model</span>
+
+<span class="nv">exported_graph</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>torch.export.export<span class="o">(</span>model,<span class="w"> </span>example_inputs<span class="o">)</span><span class="w"> </span><span class="c1"># Core Aten graph</span>
+
+<span class="nv">edge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>to_edge<span class="o">(</span>exported_graph<span class="o">)</span><span class="w"> </span><span class="c1"># Edge Dialect</span>
+
+<span class="nv">edge_delegated</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>edge.to_backend<span class="o">(</span>XnnpackPartitioner<span class="o">())</span><span class="w"> </span><span class="c1"># Parts of the graph are delegated to XNNPACK</span>
+
+<span class="nv">executorch_program</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>edge_delegated.to_executorch<span class="o">()</span><span class="w"> </span><span class="c1"># ExecuTorch program</span>
+
+<span class="nv">pte_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;mv2_xnnpack.pte&quot;</span>
+
+with<span class="w"> </span>open<span class="o">(</span>pte_path,<span class="w"> </span><span class="s2">&quot;wb&quot;</span><span class="o">)</span><span class="w"> </span>as<span class="w"> </span>file:
+<span class="w">    </span>executorch_program.write_to_file<span class="o">(</span>file<span class="o">)</span><span class="w"> </span><span class="c1"># Serializing into .pte file</span>
+</pre></div>
+</div>
+<div class="section" id="run-the-export-script-to-create-a-mv2-xnnpack-pte-file">
+<h4>Run the export script to create a <code class="docutils literal notranslate"><span class="pre">mv2_xnnpack.pte</span></code> file.<a class="headerlink" href="#run-the-export-script-to-create-a-mv2-xnnpack-pte-file" title="Permalink to this heading">¶</a></h4>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python<span class="w"> </span>.<span class="se">\\</span>export_mv2.py
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="build-and-install-c-libraries-binaries">
+<h3>Build and Install C++ Libraries + Binaries<a class="headerlink" href="#build-and-install-c-libraries-binaries" title="Permalink to this heading">¶</a></h3>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>del<span class="w"> </span>-Recurse<span class="w"> </span>-Force<span class="w"> </span>cmake-out<span class="p">;</span><span class="w"> </span><span class="sb">`</span>
+cmake<span class="w"> </span>.<span class="w"> </span><span class="sb">`</span>
+<span class="w">  </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-out<span class="w"> </span><span class="sb">`</span>
+<span class="w">  </span>-DPYTHON_EXECUTABLE<span class="o">=</span><span class="nv">$miniconda_dir</span><span class="se">\\</span>envs<span class="se">\\</span>et<span class="se">\\</span>python.exe<span class="w"> </span><span class="sb">`</span>
+<span class="w">  </span>-DCMAKE_PREFIX_PATH<span class="o">=</span><span class="nv">$miniconda_dir</span><span class="se">\\</span>envs<span class="se">\\</span>et<span class="se">\\</span>Lib<span class="se">\\</span>site-packages<span class="w"> </span><span class="sb">`</span>
+<span class="w">  </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span><span class="sb">`</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_EXTENSION_TENSOR<span class="o">=</span>ON<span class="w"> </span><span class="sb">`</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_FLATC<span class="o">=</span>ON<span class="w"> </span><span class="sb">`</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_PYBIND<span class="o">=</span>OFF<span class="w"> </span><span class="sb">`</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_XNNPACK<span class="o">=</span>ON<span class="w"> </span><span class="sb">`</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_KERNELS_CUSTOM<span class="o">=</span>ON<span class="w"> </span><span class="sb">`</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED<span class="o">=</span>ON<span class="w"> </span><span class="sb">`</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_KERNELS_QUANTIZED<span class="o">=</span>ON<span class="w"> </span><span class="sb">`</span>
+<span class="w">  </span>-DEXECUTORCH_ENABLE_LOGGING<span class="o">=</span>ON<span class="w"> </span><span class="sb">`</span>
+<span class="w">  </span>-T<span class="w"> </span>ClangCL<span class="w"> </span><span class="sb">`</span>
+<span class="w">  </span>-Bcmake-out<span class="p">;</span><span class="w"> </span><span class="sb">`</span>
+cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j64<span class="w"> </span>--target<span class="w"> </span>install<span class="w"> </span>--config<span class="w"> </span>Release
+</pre></div>
+</div>
+<p>where <code class="docutils literal notranslate"><span class="pre">$miniconda_dir</span></code> is the directory where you installed miniconda
+This is <code class="docutils literal notranslate"><span class="pre">“C:\Users\&lt;username&gt;\AppData\Local”</span></code> by default.</p>
+</div>
+<div class="section" id="run-mobilenet-v2-model-with-xnnpack-delegation">
+<h3>Run Mobilenet V2 model with XNNPACK delegation<a class="headerlink" href="#run-mobilenet-v2-model-with-xnnpack-delegation" title="Permalink to this heading">¶</a></h3>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>.<span class="se">\\</span>cmake-out<span class="se">\\</span>backends<span class="se">\\</span>xnnpack<span class="se">\\</span>Release<span class="se">\\</span>xnn_executor_runner.exe<span class="w"> </span>--model_path<span class="o">=</span>.<span class="se">\\</span>mv2_xnnpack.pte
+</pre></div>
+</div>
+<p>The expected output would print a tensor of size 1x1000, containing values of class scores.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>Output<span class="w"> </span><span class="m">0</span>:<span class="w"> </span>tensor<span class="o">(</span><span class="nv">sizes</span><span class="o">=[</span><span class="m">1</span>,<span class="w"> </span><span class="m">1000</span><span class="o">]</span>,<span class="w"> </span><span class="o">[</span>
+<span class="w">  </span>-0.50986,<span class="w"> </span><span class="m">0</span>.30064,<span class="w"> </span><span class="m">0</span>.0953904,<span class="w"> </span><span class="m">0</span>.147726,<span class="w"> </span><span class="m">0</span>.231205,<span class="w"> </span><span class="m">0</span>.338555,<span class="w"> </span><span class="m">0</span>.206892,<span class="w"> </span>-0.0575775,<span class="w"> </span>…<span class="w"> </span><span class="o">])</span>
+</pre></div>
+</div>
+<p>Congratulations! You’ve successfully set up ExecuTorch on your Windows device and ran a MobileNet V2 model.
+Now, you can explore and enjoy the power of ExecuTorch on your own Windows device!</p>
+</div>
+</div>
 <div class="section" id="cross-compilation">
 <h2>Cross compilation<a class="headerlink" href="#cross-compilation" title="Permalink to this heading">¶</a></h2>
 <p>Following are instruction on how to perform cross compilation for Android and iOS.</p>
@@ -864,6 +1018,33 @@ your targets and don’t forget to add an extra linker flag <code class="docutil
 </ul>
 </li>
 <li><a class="reference internal" href="#use-an-example-binary-executor-runner-to-execute-a-pte-file">Use an example binary <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> to execute a .pte file</a></li>
+<li><a class="reference internal" href="#build-executorch-for-windows">Build ExecuTorch for Windows</a><ul>
+<li><a class="reference internal" href="#pre-requisites">Pre-requisites</a><ul>
+<li><a class="reference internal" href="#install-miniconda-for-windows">1. Install Miniconda for Windows</a></li>
+<li><a class="reference internal" href="#install-git-for-windows">2. Install Git for Windows</a></li>
+<li><a class="reference internal" href="#install-clangcl-for-windows">3. Install ClangCL for Windows</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#create-the-conda-environment">Create the Conda Environment</a><ul>
+<li><a class="reference internal" href="#create-and-activate-the-conda-environment">Create and activate the conda environment:</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#check-symlinks">Check Symlinks</a></li>
+<li><a class="reference internal" href="#set-up-executorch">Set up ExecuTorch</a></li>
+<li><a class="reference internal" href="#run-the-setup-script">Run the Setup Script</a><ul>
+<li><a class="reference internal" href="#move-into-the-executorch-directory">Move into the <code class="docutils literal notranslate"><span class="pre">executorch</span></code> directory</a></li>
+<li><a class="reference internal" href="#optional-run-a-clean-script-prior-to-running-the-bat-file">(Optional) Run a –clean script prior to running the .bat file.</a></li>
+<li><a class="reference internal" href="#id1">Run the setup script.</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#export-mobilenet-v2">Export MobileNet V2</a><ul>
+<li><a class="reference internal" href="#run-the-export-script-to-create-a-mv2-xnnpack-pte-file">Run the export script to create a <code class="docutils literal notranslate"><span class="pre">mv2_xnnpack.pte</span></code> file.</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#build-and-install-c-libraries-binaries">Build and Install C++ Libraries + Binaries</a></li>
+<li><a class="reference internal" href="#run-mobilenet-v2-model-with-xnnpack-delegation">Run Mobilenet V2 model with XNNPACK delegation</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#cross-compilation">Cross compilation</a><ul>
 <li><a class="reference internal" href="#android">Android</a><ul>
 <li><a class="reference internal" href="#building-executor-runner-shell-binary">Building executor_runner shell binary</a></li>
