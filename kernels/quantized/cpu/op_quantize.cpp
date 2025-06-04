@@ -150,7 +150,7 @@ Tensor& quantize_per_tensor_out(
     break;
 
   switch (input.scalar_type()) {
-    ET_FORALL_FLOAT_TYPES(CALCULATE_FLOAT_TYPE);
+    ET_FORALL_FLOATH_TYPES(CALCULATE_FLOAT_TYPE);
     default:
       ET_CHECK_MSG(
           false,
@@ -347,7 +347,7 @@ Tensor& quantize_per_channel_out(
     break;
 
   switch (input.scalar_type()) {
-    ET_FORALL_FLOAT_TYPES(CALCULATE_FLOAT_TYPE);
+    ET_FORALL_FLOATH_TYPES(CALCULATE_FLOAT_TYPE);
     default:
       ET_CHECK_MSG(
           false,
