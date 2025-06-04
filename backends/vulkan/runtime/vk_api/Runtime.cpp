@@ -258,7 +258,7 @@ uint32_t select_first(const std::vector<Runtime::DeviceMapping>& devices) {
 // Global runtime initialization
 //
 
-std::unique_ptr<Runtime> init_global_vulkan_runtime() {
+std::unique_ptr<Runtime> init_global_vulkan_runtime(const std::string& cache_data_path) {
   // Load Vulkan drivers
 #if defined(USE_VULKAN_VOLK)
   if (VK_SUCCESS != volkInitialize()) {
@@ -278,7 +278,6 @@ std::unique_ptr<Runtime> init_global_vulkan_runtime() {
 #endif /* VULKAN_DEBUG */
   const bool init_default_device = true;
   const uint32_t num_requested_queues = 1; // TODO: raise this value
-  const std::string cache_data_path = ""; // TODO: expose to client
 
   const RuntimeConfig default_config{
       enable_validation_messages,
@@ -377,13 +376,13 @@ uint32_t Runtime::create_adapter(const Selector& selector) {
   return adapter_i;
 }
 
-Runtime* runtime() {
+Runtime* runtime(const std::string& cache_data_path) {
   // The global vulkan runtime is declared as a static local variable within a
   // non-static function to ensure it has external linkage. If it were a global
   // static variable there would be one copy per translation unit that includes
   // Runtime.h as it would have internal linkage.
   static const std::unique_ptr<Runtime> p_runtime =
-      init_global_vulkan_runtime();
+      init_global_vulkan_runtime(cache_data_path);
 
   VK_CHECK_COND(
       p_runtime,

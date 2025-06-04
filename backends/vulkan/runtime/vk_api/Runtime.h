@@ -102,7 +102,7 @@ class Runtime final {
 
 // The global runtime is retrieved using this function, where it is declared as
 // a static local variable.
-Runtime* runtime();
+Runtime* runtime(const std::string& cache_data_path = "");
 
 } // namespace vkapi
 } // namespace vkcompute
