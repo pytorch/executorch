@@ -20,6 +20,7 @@ except ImportError:
     # We can use relative import instead.
     from ..parse import strip_et_fields
 
+
 from torchgen.gen import LineLoader, parse_native_yaml_struct
 from torchgen.selective_build.operator import SelectiveBuildOperator
 from torchgen.selective_build.selector import merge_et_kernel_metadata

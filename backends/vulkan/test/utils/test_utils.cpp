@@ -28,7 +28,7 @@ void record_nchw_to_buffer_op(
   vkapi::PipelineBarrier pipeline_barrier{};
 
   context->submit_compute_job(
-      get_nchw_to_tensor_shader(v_dst),
+      get_nchw_to_tensor_shader(v_dst, true, false),
       pipeline_barrier,
       {uint32_t(v_dst.numel()), 1, 1},
       {64, 1, 1},
@@ -74,7 +74,9 @@ void record_nchw_to_image_op(
 
   context->submit_compute_job(
       get_nchw_to_tensor_shader(
-          v_dst, context->adapter_ptr()->has_full_int8_buffers_support()),
+          v_dst,
+          context->adapter_ptr()->has_full_int8_buffers_support(),
+          false),
       pipeline_barrier,
       v_dst.logical_limits(),
       adaptive_work_group_size(v_dst.logical_limits()),
@@ -545,8 +547,8 @@ vkcompute::ComputeGraph build_mm_graph(
     vkcompute::vkapi::ScalarType dtype,
     vkcompute::utils::StorageType in_out_stype,
     vkcompute::utils::GPUMemoryLayout memory_layout,
-    const bool prepack_mat2,
-    const float mat2_val) {
+    const std::vector<float>& mat2_data,
+    const bool prepack_mat2) {
   using namespace vkcompute;
   GraphConfig config;
   ComputeGraph graph(config);
@@ -567,10 +569,7 @@ vkcompute::ComputeGraph build_mm_graph(
       graph.add_input_tensor(mat1_size, dtype, in_out_stype, memory_layout);
   IOValueRef mat2{};
 
-  CREATE_RAND_WEIGHT_TENSOR(mat2_w, mat2_size, dtype);
-  if (mat2_val != 0.0f) {
-    std::fill(data_mat2_w.begin(), data_mat2_w.end(), mat2_val);
-  }
+  ValueRef mat2_w = graph.add_tensorref(mat2_size, dtype, mat2_data.data());
 
   if (prepack_mat2) {
     mat2.value = mat2_w;

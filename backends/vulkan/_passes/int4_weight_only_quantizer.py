@@ -7,7 +7,7 @@ import executorch.backends.vulkan.custom_ops_lib  # noqa
 import torch
 import torch.nn.functional as F
 
-from torchao.quantization.GPTQ import _check_linear_int4_k
+from torchao.quantization.GPTQ.GPTQ import _check_linear_int4_k
 from torchao.quantization.unified import Quantizer
 from torchao.quantization.utils import groupwise_affine_quantize_tensor
 
