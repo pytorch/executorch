@@ -56,6 +56,7 @@ DEFAULT_ENV: Dict[str, Any] = {
 TYPE_MAPPINGS: Dict[str, Any] = {
     "IMAGE_T": {
         3: {
+            "double": "image3D",
             "float": "image3D",
             "half": "image3D",
             "int": "iimage3D",
@@ -63,8 +64,11 @@ TYPE_MAPPINGS: Dict[str, Any] = {
             "int8": "iimage3D",
             "uint8": "uimage3D",
             "bool": "uimage3D",
+            "short": "iimage3D",
+            "uint16": "uimage3D",
         },
         2: {
+            "double": "image2D",
             "float": "image2D",
             "half": "image2D",
             "int": "iimage2D",
@@ -72,10 +76,13 @@ TYPE_MAPPINGS: Dict[str, Any] = {
             "int8": "iimage2D",
             "uint8": "uimage2D",
             "bool": "uimage2D",
+            "short": "iimage2D",
+            "uint16": "uimage2D",
         },
     },
     "SAMPLER_T": {
         3: {
+            "double": "sampler3D",
             "float": "sampler3D",
             "half": "sampler3D",
             "int": "isampler3D",
@@ -83,8 +90,11 @@ TYPE_MAPPINGS: Dict[str, Any] = {
             "int8": "isampler3D",
             "uint8": "usampler3D",
             "bool": "usampler3D",
+            "short": "isampler3D",
+            "uint16": "usampler3D",
         },
         2: {
+            "double": "sampler2D",
             "float": "sampler2D",
             "half": "sampler2D",
             "int": "isampler2D",
@@ -92,9 +102,12 @@ TYPE_MAPPINGS: Dict[str, Any] = {
             "int8": "isampler2D",
             "uint8": "usampler2D",
             "bool": "usampler2D",
+            "short": "isampler2D",
+            "uint16": "usampler2D",
         },
     },
     "IMAGE_FORMAT": {
+        "double": "rgba64f",
         "float": "rgba32f",
         "half": "rgba16f",
         "int": "rgba32i",
@@ -102,6 +115,8 @@ TYPE_MAPPINGS: Dict[str, Any] = {
         "int8": "rgba8i",
         "uint8": "rgba8ui",
         "bool": "rgba8ui",
+        "short": "rgba16i",
+        "uint16": "rgba16ui",
     },
 }
 
@@ -118,10 +133,16 @@ def define_variable(name: str) -> str:
 def buffer_scalar_type(dtype: str) -> str:
     if dtype == "half":
         return "float16_t"
-    elif dtype[-1] == "8":
-        return dtype + "_t"
+    elif dtype == "float":
+        return "float"
+    elif dtype == "double":
+        return "float64_t"
+    elif dtype == "short":
+        return "int16_t"
     elif dtype == "bool":
         return "uint8_t"
+    elif dtype[-1].isdigit():
+        return dtype + "_t"
     return dtype
 
 
@@ -135,8 +156,14 @@ def buffer_gvec_type(dtype: str, n: int) -> str:
         return f"uvec{n}"
     elif dtype == "half":
         return f"f16vec{n}"
+    elif dtype == "double":
+        return f"dvec{n}"
     elif dtype == "int":
         return f"ivec{n}"
+    elif dtype == "short":
+        return f"i16vec{n}"
+    elif dtype == "uint16":
+        return f"u16vec{n}"
     elif dtype == "int8":
         return f"i8vec{n}"
     elif dtype == "uint8":
@@ -365,12 +392,14 @@ def define_required_extensions(dtypes: Union[str, List[str]]):
         if dtype == "half":
             nbit = "16bit"
             glsl_type = "float16"
-        elif dtype == "int16" or dtype == "uint16":
+        elif dtype == "short" or dtype == "int16" or dtype == "uint16":
             nbit = "16bit"
             glsl_type = "int16"
-        elif dtype == "int8" or dtype == "uint8" or dtype == "bool":
+        elif dtype == "bool" or dtype == "int8" or dtype == "uint8":
             nbit = "8bit"
             glsl_type = "int8"
+        elif dtype == "double" or dtype == "float64":
+            out_str += "#extension GL_ARB_gpu_shader_fp64 : require\n"
 
         if nbit is not None and glsl_type is not None:
             out_str += f"#extension GL_EXT_shader_{nbit}_storage : require\n"
