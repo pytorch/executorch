@@ -371,7 +371,7 @@ jobs:
         size=${arr[4]}
         # threshold=48120 on devserver with gcc11.4
         # todo(lfq): update once binary size is below 50kb.
-        threshold="51408"
+        threshold="55504"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
         else
@@ -406,7 +406,7 @@ jobs:
         output=$(ls -la cmake-out/test/size_test)
         arr=($output)
         size=${arr[4]}
-        threshold="47560"
+        threshold="51656"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
         else

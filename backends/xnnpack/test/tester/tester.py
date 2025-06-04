@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -718,23 +718,30 @@ class Tester:
             assert (
                 ref.shape == model.shape
             ), f"Output {i} shape {model.shape} does not match reference output shape {ref.shape}"
-            assert torch.allclose(
-                model,
-                ref,
-                atol=atol,
-                rtol=rtol,
-            ), (
-                f"Output {i} does not match reference output.\n"
-                f"\tGiven atol: {atol}, rtol: {rtol}.\n"
-                f"\tOutput tensor shape: {model.shape}, dtype: {model.dtype}\n"
-                f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}, mean abs error: {torch.mean(torch.abs(model-ref))}.\n"
-                f"\t-- Model vs. Reference --\n"
-                f"\t Numel: {model.numel()}, {ref.numel()}\n"
-                f"\tMedian: {model.median()}, {ref.median()}\n"
-                f"\t  Mean: {model.mean()}, {ref.mean()}\n"
-                f"\t   Max: {model.max()}, {ref.max()}\n"
-                f"\t   Min: {model.min()}, {ref.min()}\n"
-            )
+            if model.dtype == torch.bool:
+                assert torch.equal(model, ref), (
+                    f"Output {i} (bool tensor) does not match reference output.\n"
+                    f"\tShape: {model.shape}\n"
+                    f"\tMismatched count: {(model != ref).sum().item()} / {model.numel()}\n"
+                )
+            else:
+                assert torch.allclose(
+                    model,
+                    ref,
+                    atol=atol,
+                    rtol=rtol,
+                ), (
+                    f"Output {i} does not match reference output.\n"
+                    f"\tGiven atol: {atol}, rtol: {rtol}.\n"
+                    f"\tOutput tensor shape: {model.shape}, dtype: {model.dtype}\n"
+                    f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}, mean abs error: {torch.mean(torch.abs(model-ref))}.\n"
+                    f"\t-- Model vs. Reference --\n"
+                    f"\t Numel: {model.numel()}, {ref.numel()}\n"
+                    f"\tMedian: {model.median()}, {ref.median()}\n"
+                    f"\t  Mean: {model.mean()}, {ref.mean()}\n"
+                    f"\t   Max: {model.max()}, {ref.max()}\n"
+                    f"\t   Min: {model.min()}, {ref.min()}\n"
+                )
 
     @staticmethod
     def _compare_outputs(
