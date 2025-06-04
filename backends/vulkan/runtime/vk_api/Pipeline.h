@@ -300,6 +300,7 @@ class ComputePipelineCache final {
   const std::string cache_data_path_;
 
  public:
+  bool contains(const Key&);
   void create_pipelines(const std::unordered_set<Key, Hasher>&);
   VkPipeline retrieve(const Key&);
   void purge();

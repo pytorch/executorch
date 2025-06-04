@@ -258,7 +258,8 @@ uint32_t select_first(const std::vector<Runtime::DeviceMapping>& devices) {
 // Global runtime initialization
 //
 
-std::unique_ptr<Runtime> init_global_vulkan_runtime(const std::string& cache_data_path) {
+std::unique_ptr<Runtime> init_global_vulkan_runtime(
+    const std::string& cache_data_path) {
   // Load Vulkan drivers
 #if defined(USE_VULKAN_VOLK)
   if (VK_SUCCESS != volkInitialize()) {

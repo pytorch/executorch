@@ -36,7 +36,7 @@ DispatchNode::DispatchNode(
 }
 
 void DispatchNode::prepare_pipelines(ComputeGraph* graph) {
-  graph->update_pipeline_descriptors(
+  graph->register_pipeline_to_create(
       shader_, local_workgroup_size_, spec_vars_, push_constants_);
 }
 
