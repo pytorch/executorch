@@ -21,7 +21,7 @@ cmake_install_executorch_qnn_lib() {
           -DEXECUTORCH_BUILD_QNN=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           -Bcmake-out .
-  cmake --build cmake-out -j9 --target install --config Release
+  cmake --build cmake-out -j$(($(nproc) - 1))  --target install --config Release
 }
 
 test_cmake_qualcomm() {
@@ -45,7 +45,7 @@ test_cmake_qualcomm() {
         ${example_dir}
 
     echo "Building ${example_dir}"
-    cmake --build ${build_dir} -j9 --config Release
+    cmake --build ${build_dir} -j$(($(nproc) - 1))  --config Release
     # Need to run on device
 #   ${build_dir}/qnn_executor_runner --model_path="./mv2_qnn.pte"
 }

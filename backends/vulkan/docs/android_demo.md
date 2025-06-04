@@ -94,7 +94,7 @@ binary using the Android NDK toolchain.
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
     -DPYTHON_EXECUTABLE=python \
     -Bcmake-android-out && \
-  cmake --build cmake-android-out -j16 --target install)
+  cmake --build cmake-android-out -j$(($(nproc) - 1)) --target install)
 
 # Build LLaMA Runner library
 (rm -rf cmake-android-out/examples/models/llama && \
@@ -106,7 +106,7 @@ binary using the Android NDK toolchain.
     -DCMAKE_INSTALL_PREFIX=cmake-android-out \
     -DPYTHON_EXECUTABLE=python \
     -Bcmake-android-out/examples/models/llama && \
-  cmake --build cmake-android-out/examples/models/llama -j16)
+  cmake --build cmake-android-out/examples/models/llama -j$(($(nproc) - 1)))
 ```
 
 Finally, push and run the llama runner binary on your Android device. Note that

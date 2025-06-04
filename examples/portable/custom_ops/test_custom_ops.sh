@@ -30,7 +30,7 @@ test_cmake_custom_op_1() {
         ${example_dir}
 
   echo "Building ${example_dir}"
-  cmake --build ${build_dir} -j9 --config Release
+  cmake --build ${build_dir} -j$(($(nproc) - 1))  --config Release
 
   echo 'Running custom_ops_executor_runner'
   ${build_dir}/custom_ops_executor_runner --model_path="./${model_name}.pte"
@@ -66,7 +66,7 @@ test_cmake_custom_op_2() {
         ${example_dir}
 
   echo "Building ${example_dir}"
-  cmake --build ${build_dir} -j9 --config Release
+  cmake --build ${build_dir} -j$(($(nproc) - 1))  --config Release
 
   EXT=$(get_shared_lib_ext)
   echo "Exporting ${model_name}.pte"

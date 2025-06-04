@@ -59,13 +59,13 @@ build_cmake_executor_runner() {
       && cmake -DCMAKE_BUILD_TYPE=Release \
         -DEXECUTORCH_BUILD_XNNPACK=ON \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
-    cmake --build ${CMAKE_OUTPUT_DIR} -j4
+    cmake --build ${CMAKE_OUTPUT_DIR} -j$(($(nproc) - 1))
   else
     cmake -DCMAKE_BUILD_TYPE=Debug \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -B${CMAKE_OUTPUT_DIR} .
-    cmake --build ${CMAKE_OUTPUT_DIR} -j4 --config Debug
+    cmake --build ${CMAKE_OUTPUT_DIR} -j$(($(nproc) - 1)) --config Debug
   fi
 }
 

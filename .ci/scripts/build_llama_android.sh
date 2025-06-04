@@ -31,7 +31,7 @@ install_executorch_and_backend_lib() {
     -DXNNPACK_ENABLE_ARM_BF16=OFF \
     -Bcmake-android-out .
 
-  cmake --build cmake-android-out -j4 --target install --config Release
+  cmake --build cmake-android-out -j$((nproc) -1) --target install --config Release
 }
 
 build_llama_runner() {
@@ -48,7 +48,7 @@ build_llama_runner() {
     -DCMAKE_BUILD_TYPE=Release \
     -Bcmake-android-out/examples/models/llama examples/models/llama
 
-    cmake --build cmake-android-out/examples/models/llama -j4 --config Release
+    cmake --build cmake-android-out/examples/models/llama -j$((nproc) -1) --config Release
 }
 install_executorch_and_backend_lib
 build_llama_runner

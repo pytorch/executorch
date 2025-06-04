@@ -141,7 +141,7 @@ build_executorch_runner_cmake() {
   else
     CMAKE_JOBS=$(( $(nproc) - 1 ))
   fi
-  cmake --build "${CMAKE_OUTPUT_DIR}" -j "${CMAKE_JOBS}"
+  cmake --build "${CMAKE_OUTPUT_DIR}" -j$((nproc) -1) "${CMAKE_JOBS}"
 }
 
 build_executorch_runner() {
@@ -162,7 +162,7 @@ cmake_install_executorch_lib() {
           -DCMAKE_BUILD_TYPE=Release \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           -Bcmake-out .
-  cmake --build cmake-out -j9 --target install --config Release
+  cmake --build cmake-out -j$(($(nproc) - 1)) --target install --config Release
 }
 
 download_stories_model_artifacts() {

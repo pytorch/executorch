@@ -35,7 +35,7 @@ python -m examples.models.phi-3-mini.export_phi-3-mini -c "4k" -s 128 -o phi-3-m
      -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
      -Bcmake-out .
 
- cmake --build cmake-out -j16 --target install --config Release
+ cmake --build cmake-out -j$(($(nproc) - 1)) --target install --config Release
  ```
 - Build Phi-3-mini runner.
 ```
@@ -49,7 +49,7 @@ cmake -DPYTHON_EXECUTABLE=python \
     -Bcmake-out/examples/models/phi-3-mini \
     examples/models/phi-3-mini
 
-cmake --build cmake-out/examples/models/phi-3-mini -j16 --config Release
+cmake --build cmake-out/examples/models/phi-3-mini -j$(($(nproc) - 1)) --config Release
 ```
 - Run model. Options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/phi-3-mini/main.cpp#L13-L30)
 ```

@@ -30,7 +30,7 @@
 # building, and tends to speed up the build significantly. It's typical to use
 # "core count + 1" as the `-j` value.
 # ~~~
-# cmake --build cmake-out -j9
+# cmake --build cmake-out -j$(($(nproc) - 1))
 # ~~~
 #
 # ### Editing this file ###

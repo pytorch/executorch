@@ -49,7 +49,7 @@ build_executorch() {
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_BUILD_TESTS=ON \
     -Bcmake-out
-  cmake --build cmake-out -j9 --target install
+  cmake --build cmake-out -j$(($(nproc) - 1))  --target install
 }
 
 build_and_run_test() {

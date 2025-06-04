@@ -561,7 +561,7 @@ jobs:
           -DEXECUTORCH_BUILD_DEVTOOLS=ON \
           -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
           -Bcmake-out .
-        cmake --build cmake-out -j16 --target install --config Release
+        cmake --build cmake-out -j$(($(sysctl -n hw.ncpu) - 1))  --target install --config Release
         echo "::endgroup::"
 
         echo "::group::Set up Hugging Face"

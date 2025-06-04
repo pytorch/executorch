@@ -396,7 +396,7 @@ At this point, the working directory should contain the following files:
 If all of these are present, you can now build and run:
 ```bash
 (mkdir cmake-out && cd cmake-out && cmake ..)
-cmake --build cmake-out -j10
+cmake --build cmake-out -j$(($(nproc) - 1))
 ./cmake-out/nanogpt_runner
 ```
 
@@ -563,7 +563,7 @@ It will generate `nanogpt.pte`, under the same working directory.
 Then we can build and run the model by:
 ```bash
 (rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake ..)
-cmake --build cmake-out -j10
+cmake --build cmake-out -j$(($(nproc) - 1))
 ./cmake-out/nanogpt_runner
 ```
 
@@ -827,7 +827,7 @@ target_compile_options(portable_ops_lib PUBLIC -DET_EVENT_TRACER_ENABLED)
 Build and run the runner, you will see a file named “etdump.etdp” is generated. (Note that this time we build in release mode to get around a flatccrt build limitation.)
 ```bash
 (rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DCMAKE_BUILD_TYPE=Release ..)
-cmake --build cmake-out -j10
+cmake --build cmake-out -j$(($(nproc) - 1))
 ./cmake-out/nanogpt_runner
 ```
 

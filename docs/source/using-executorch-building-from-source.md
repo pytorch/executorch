@@ -173,7 +173,7 @@ cd executorch
 # NOTE: The `-j` argument specifies how many jobs/processes to use when
 # building, and tends to speed up the build significantly. It's typical to use
 # "core count + 1" as the `-j` value.
-cmake --build cmake-out -j9
+cmake --build cmake-out -j$(($(nproc) - 1))
 ```
 
 ## Use an example binary `executor_runner` to execute a .pte file
@@ -227,7 +227,7 @@ mkdir cmake-android-out && cd cmake-android-out
 cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake  -DANDROID_ABI=arm64-v8a ..
 
 cd  ..
-cmake --build  cmake-android-out  -j9
+cmake --build  cmake-android-out  -j$(($(nproc) - 1))
 
 adb shell mkdir -p /data/local/tmp/executorch
 # push the binary to an Android device

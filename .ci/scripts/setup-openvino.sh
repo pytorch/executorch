@@ -16,7 +16,7 @@ git submodule update --init --recursive
 sudo ./install_build_dependencies.sh
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_PYTHON=ON
-make -j$(nproc)
+make -j$((nproc) -1)
 
 cd ..
 cmake --install build --prefix dist

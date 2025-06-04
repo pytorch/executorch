@@ -30,14 +30,14 @@ cmake_install_executorch_lib() {
           -DEXECUTORCH_OPTIMIZE_SIZE=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           -Bcmake-out .
-  cmake --build cmake-out -j9 --target install --config MinSizeRel
+  cmake --build cmake-out -j$(($(nproc) - 1))  --target install --config MinSizeRel
 }
 
 test_cmake_size_test() {
     CXXFLAGS="-g" retry cmake -DCMAKE_BUILD_TYPE=MinSizeRel -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out/test test
 
     echo "Build size test"
-    cmake --build cmake-out/test -j9 --config MinSizeRel
+    cmake --build cmake-out/test -j$(($(nproc) - 1))  --config MinSizeRel
 
     echo 'ExecuTorch with no ops binary size, unstripped:'
     ls -al cmake-out/test/size_test
