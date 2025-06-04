@@ -384,7 +384,7 @@ std::string& set_and_get_pipeline_cache_data_path(
 #if defined(ETVK_DEFAULT_CACHE_PATH)
   static std::string global_cache_data_path = ETVK_DEFAULT_CACHE_PATH;
 #else
-  static std::string global_cache_data_path = "";
+  static std::string global_cache_data_path;
 #endif /* ETVK_DEFAULT_CACHE_PATH */
 
   if (file_path.size() > 0) {
