@@ -148,5 +148,13 @@ def define_common_targets(is_fbcode = False):
             "//executorch/extension/tensor:tensor",
         ]
     )
+    define_test_targets(
+        "quantize_test",
+        extra_deps = [
+            "//executorch/kernels/quantized/cpu:op_quantize",
+            "//executorch/extension/tensor:tensor",
+            "//executorch/extension/aten_util:aten_bridge",
+        ]
+    )
     define_test_targets("linear_weight_int4_test")
     define_test_targets("rotary_embedding_test")
