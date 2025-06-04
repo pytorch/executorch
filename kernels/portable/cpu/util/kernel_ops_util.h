@@ -327,7 +327,7 @@ void apply_kernel_2d_reduce_then_map_fn(
     const IntArrayRef padding,
     const IntArrayRef dilation,
     Tensor& out,
-    executorch::aten::optional<Tensor> indices = {}) {
+    std::optional<Tensor> indices = {}) {
   executorch::aten::ArrayRef<executorch::aten::SizesType> in_sizes = in.sizes();
   executorch::aten::ArrayRef<executorch::aten::SizesType> out_sizes =
       out.sizes();
@@ -393,7 +393,7 @@ bool check_avg_pool2d_args(
     const IntArrayRef padding,
     const bool ceil_mode,
     const bool count_include_pad,
-    const executorch::aten::optional<int64_t>& divisor_override,
+    const std::optional<int64_t>& divisor_override,
     const Tensor& out);
 
 void get_avg_pool2d_out_target_size(
@@ -408,7 +408,7 @@ void get_avg_pool2d_out_target_size(
 bool check_convolution_args(
     const Tensor& in,
     const Tensor& weight,
-    const executorch::aten::optional<Tensor>& bias,
+    const std::optional<Tensor>& bias,
     IntArrayRef stride,
     IntArrayRef padding,
     IntArrayRef dilation,

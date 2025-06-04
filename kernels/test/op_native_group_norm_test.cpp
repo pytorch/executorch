@@ -15,9 +15,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using std::optional;
 using torch::executor::testing::TensorFactory;
 
 ::std::tuple<Tensor&, Tensor&, Tensor&> op_native_group_norm_out(

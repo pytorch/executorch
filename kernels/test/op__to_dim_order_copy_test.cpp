@@ -22,9 +22,9 @@
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;
-using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using std::optional;
 using torch::executor::testing::TensorFactory;
 
 // To further emphasize the accuracy of our op_to, we TEST_F the conversion
@@ -57,7 +57,7 @@ class OpToDimOrderCopyTest : public OperatorTest {
   Tensor& op__to_dim_order_copy_out(
       const Tensor& self,
       bool non_blocking,
-      executorch::aten::optional<ArrayRef<int64_t>> dim_order,
+      std::optional<ArrayRef<int64_t>> dim_order,
       Tensor& out) {
     return torch::executor::dim_order_ops::_to_dim_order_copy_outf(
         context_, self, non_blocking, dim_order, out);

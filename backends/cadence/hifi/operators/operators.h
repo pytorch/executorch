@@ -39,7 +39,7 @@ void quantize_per_tensor_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& a,
     const ::executorch::aten::Tensor& b,
-    ::executorch::aten::optional<::executorch::aten::string_view> mode,
+    std::optional<std::string_view> mode,
     ::executorch::aten::Tensor& out);
 
 void quantized_linear_out(

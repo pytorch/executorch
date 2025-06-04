@@ -28,7 +28,7 @@ Tensor& avg_pool2d_out(
     IntArrayRef padding,
     bool ceil_mode,
     bool count_include_pad,
-    executorch::aten::optional<int64_t> divisor_override,
+    std::optional<int64_t> divisor_override,
     Tensor& out) {
   ET_KERNEL_CHECK(
       ctx,

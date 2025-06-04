@@ -79,7 +79,7 @@ TrainingModule::execute_forward_backward(
     size_t name_index = 0;
     for (size_t grad_index = grad_start; grad_index < param_start;
          ++grad_index, ++name_index) {
-      executorch::aten::string_view fqn = fqn_list.at(name_index).toString();
+      std::string_view fqn = fqn_list.at(name_index).toString();
       gradients_map.insert({fqn, outputs.get().at(grad_index).toTensor()});
     }
   }
@@ -87,8 +87,7 @@ TrainingModule::execute_forward_backward(
   return user_outputs;
 }
 
-runtime::Result<
-    const std::map<executorch::aten::string_view, executorch::aten::Tensor>>
+runtime::Result<const std::map<std::string_view, executorch::aten::Tensor>>
 TrainingModule::named_parameters(const std::string& method_name) {
   // If we haven't seen this method before, populate the dict.
   if (method_named_parameters_.find(method_name) ==
@@ -126,7 +125,7 @@ TrainingModule::named_parameters(const std::string& method_name) {
     size_t name_index = 0;
     for (size_t param_index = param_start; param_index < method->outputs_size();
          ++param_index, ++name_index) {
-      executorch::aten::string_view fqn = fqn_list.at(name_index).toString();
+      std::string_view fqn = fqn_list.at(name_index).toString();
       executorch::aten::Tensor param =
           method->get_output(param_index).toTensor();
       method_named_parameters_.at(method_name).insert({fqn, param});
@@ -135,8 +134,7 @@ TrainingModule::named_parameters(const std::string& method_name) {
   return method_named_parameters_.at(method_name);
 }
 
-runtime::Result<
-    const std::map<executorch::aten::string_view, executorch::aten::Tensor>>
+runtime::Result<const std::map<std::string_view, executorch::aten::Tensor>>
 TrainingModule::named_gradients(const std::string& method_name) {
   if (method_named_gradients_.find(method_name) ==
       method_named_gradients_.end()) {
