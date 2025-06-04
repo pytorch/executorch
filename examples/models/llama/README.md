@@ -447,7 +447,6 @@ Next install the llama runner with torchao kernels enabled (similar to step 3.2 
 
 ```
 cmake -DPYTHON_EXECUTABLE=python \
-    -DCMAKE_PREFIX_PATH=$(python -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())') \
     -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
