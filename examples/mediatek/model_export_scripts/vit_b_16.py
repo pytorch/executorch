@@ -9,12 +9,9 @@ import sys
 if os.getcwd() not in sys.path:
     sys.path.append(os.getcwd())
 import argparse
-import json
-
-import numpy as np
 
 import torch
-from aot_utils.oss_utils.utils import build_executorch_binary, make_output_dir
+from aot_utils.oss_utils.utils import build_executorch_binary
 from executorch.backends.mediatek import Precision
 from executorch.examples.models.torchvision_vit import TorchVisionViTModel
 
@@ -52,8 +49,8 @@ if __name__ == "__main__":
     instance = NhwcWrappedModel()
 
     # if dropout.p = 0, change probability to 1e-6 to prevent -inf when quantize
-    for name, module in instance.named_modules():
-        if type(module) == torch.nn.Dropout:
+    for _name, module in instance.named_modules():
+        if isinstance(module, torch.nn.Dropout):
             if module.p == 0:
                 module.p = 1e-6
 

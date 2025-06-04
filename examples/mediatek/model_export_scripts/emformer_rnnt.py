@@ -9,12 +9,8 @@ import sys
 if os.getcwd() not in sys.path:
     sys.path.append(os.getcwd())
 import argparse
-import json
 import os
 
-import numpy as np
-
-import torch
 from aot_utils.oss_utils.utils import build_executorch_binary
 from executorch.backends.mediatek import Precision
 from executorch.examples.models.emformer_rnnt import (

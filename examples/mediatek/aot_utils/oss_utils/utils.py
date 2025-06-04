@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import os
-from typing import Dict, Optional
+from typing import Optional
 
 import torch
 from executorch import exir
