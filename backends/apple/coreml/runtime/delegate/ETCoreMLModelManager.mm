@@ -92,7 +92,7 @@ MLPredictionOptions *get_prediction_options(NSArray<MLMultiArray *> *outputs,
                                             NSOrderedSet<NSString *> *output_names,
                                             NSError * __autoreleasing *error) {
     MLPredictionOptions *options = [MLPredictionOptions new];
-    if (@available(macOS 11.0, iOS 16.0, tvOS 16.0, watchOS 9.0, *)) {
+    if (@available(iOS 16.0, tvOS 16.0, watchOS 9.0, *)) {
         NSMutableDictionary<NSString *, id> *output_backings = [NSMutableDictionary dictionary];
         NSEnumerator<NSString *> *enumerator = [output_names objectEnumerator];
         for (MLMultiArray *output in outputs) {
@@ -687,7 +687,7 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
                                                                  eventLogger:eventLogger
                                                                        error:&localError];
     // Try without output backings.
-    if (@available(macOS 11.0, iOS 16.0, tvOS 16.0, watchOS 9.0, *)) {
+    if (@available(iOS 16.0, tvOS 16.0, watchOS 9.0, *)) {
         if (!modelOutputs && predictionOptions.outputBackings.count > 0) {
             executor.ignoreOutputBackings = YES;
             localError = nil;

@@ -388,6 +388,7 @@ python_unittest(
         "//caffe2:torch",
         "//executorch/backends/cadence/aot:compiler",
         "//executorch/backends/cadence/aot:fuse_ops",
+        "//executorch/backends/cadence/aot:graph_builder",
         "//executorch/backends/cadence/aot:ops_registrations",
         "//executorch/backends/cadence/aot:pass_utils",
         "//executorch/backends/cadence/aot:reorder_ops",
@@ -432,6 +433,7 @@ python_unittest(
     srcs = [
         "tests/test_memory_passes.py",
     ],
+    supports_static_listing = False,
     typing = True,
     deps = [
         ":compiler",
@@ -440,7 +442,9 @@ python_unittest(
         ":pass_utils",
         "//caffe2:torch",
         "//executorch/exir:memory",
+        "fbsource//third-party/pypi/parameterized:parameterized",
         "//executorch/exir/dialects:lib",
+        "//executorch/backends/cadence/aot:graph_builder",
         "//executorch/exir/tests:models",
     ],
 )
