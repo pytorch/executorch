@@ -1,4 +1,5 @@
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
 oncall("executorch")
 
@@ -13,6 +14,7 @@ python_unittest(
         "//executorch/devtools/inspector:inspector",
         "//executorch/devtools/inspector:lib",
         "//executorch/exir:lib",
+        "//executorch/devtools/inspector/tests:inspector_test_utils",
     ],
 )
 
@@ -48,5 +50,16 @@ python_unittest(
         "//executorch/devtools/inspector:lib",
         "//executorch/devtools/inspector:intermediate_output_capturer",
         "//executorch/exir:lib",
+        "//executorch/devtools/inspector/tests:inspector_test_utils",
+    ],
+)
+
+python_library(
+    name = "inspector_test_utils",
+    srcs = [
+        "inspector_test_utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
     ],
 )

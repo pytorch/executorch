@@ -61,6 +61,17 @@ void add_clone_node(
       resize_clone_node));
 }
 
+utils::uvec3 clone_image_to_buffer_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+  const ValueRef image = args.at(1).refs.at(0);
+  return graph->create_global_wg_size(image);
+}
+
 void add_image_to_buffer_node(
     ComputeGraph& graph,
     const ValueRef image,
@@ -72,7 +83,7 @@ void add_image_to_buffer_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       shader,
-      default_pick_global_wg_size,
+      clone_image_to_buffer_global_wg_size,
       default_pick_local_wg_size,
       // Input and Outputs
       {{buffer, vkapi::kWrite}, {image, vkapi::kRead}},
