@@ -624,8 +624,8 @@ inline void validate_strides(
       if ((strides[i] == strides[j])) {
         ET_CHECK_MSG(
             false,
-            "Stride value and size dont comply at index %d."
-            " strides[%d]: %d, strides[%d] = %d, sizes[%d] = %d, sizes[%d] = %d",
+            "Stride value and size dont comply at index %lu."
+            " strides[%lu]: %d, strides[%d] = %d, sizes[%lu] = %d, sizes[%d] = %d",
             i,
             i,
             strides[i],
