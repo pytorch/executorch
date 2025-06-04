@@ -10,6 +10,17 @@ This example demonstrates how to perform inference of [Ultralytics YOLO12 family
 - [OpenVINO](../../../backends/openvino/README.md)
 - [XNNPACK](../../../backends/xnnpack/README.md)
 
+# Performance Evaluation
+
+| CPU                            | Model   | Backend  | Device | Precision | Average Latency, ms |
+|--------------------------------|---------|----------|--------|-----------|-----------------|
+| Intel(R) Core(TM) Ultra 7 155H | yolo12s | openvino | CPU    | FP32      | 88.3549         |
+| Intel(R) Core(TM) Ultra 7 155H | yolo12s | openvino | CPU    | INT8      | 53.066          |
+| Intel(R) Core(TM) Ultra 7 155H | yolo12l | openvino | CPU    | FP32      | 317.953         |
+| Intel(R) Core(TM) Ultra 7 155H | yolo12s | openvino | CPU    | INT8      | 150.846         |
+| Intel(R) Core(TM) Ultra 7 155H | yolo12s | xnnpack  | CPU    | FP32      | 169.36          |
+| Intel(R) Core(TM) Ultra 7 155H | yolo12l | xnnpack  | CPU    | FP32      | 436.876         |
+
 
 # Instructions
 
@@ -42,12 +53,16 @@ OpenVINO:
 python export_and_validate.py --model_name yolo12s --input_dims=[1920,1080]  --backend openvino --device CPU
 ```
 
+OpenVINO quantized model:
+```bash
+python export_and_validate.py --model_name yolo12s --input_dims=[1920,1080]  --backend openvino --quantize --video_input /path/to/calibration/video --device CPU
+```
+
 XNNPACK:
 ```bash
 python export_and_validate.py --model_name yolo12s --input_dims=[1920,1080] --backend xnnpack
 ```
 
-> **_NOTE:_**  Quantization is comming soon!
 
 Exported model could be validated using the `--validate` key:
 

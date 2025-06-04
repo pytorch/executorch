@@ -228,7 +228,6 @@ def main(
     model = YOLO(model_name)
 
     if quantize:
-        raise NotImplementedError("Quantization is comming soon!")
         if video_path is None:
             raise RuntimeError(
                 "Could not quantize model without the video for the calibration."

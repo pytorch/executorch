@@ -32,6 +32,7 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 find_package(executorch CONFIG REQUIRED PATHS ${EXECUTORCH_ROOT}/cmake-out)
 target_link_options_shared_lib(executorch)
 
+add_subdirectory(${EXECUTORCH_ROOT}/third-party/gflags gflags)
 set(link_libraries gflags)
 list(APPEND link_libraries portable_ops_lib portable_kernels)
 target_link_options_shared_lib(portable_ops_lib)
