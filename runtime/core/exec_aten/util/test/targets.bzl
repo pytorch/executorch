@@ -23,6 +23,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
         ],
     )
 
@@ -32,6 +33,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
         ],
     )
 
@@ -44,6 +46,7 @@ def define_common_targets():
                 "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
                 "//executorch/runtime/core/exec_aten/util:scalar_type_util",
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
+                "//executorch/runtime/core/portable_type/c10/c10:c10",
             ],
         )
 

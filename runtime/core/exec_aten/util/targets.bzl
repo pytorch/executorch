@@ -40,6 +40,7 @@ def define_common_targets():
             ],
             exported_deps = [
                 "//executorch/runtime/core:core",
+                "//executorch/runtime/core/portable_type/c10/c10:c10",
             ],
             visibility = [
                 "//executorch/...",
@@ -62,6 +63,7 @@ def define_common_targets():
             exported_deps = [
                 ":tensor_dimension_limit",
                 "//executorch/runtime/core:core",
+                "//executorch/runtime/core/portable_type/c10/c10:c10",
             ] + [
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 ":scalar_type_util" + aten_suffix,

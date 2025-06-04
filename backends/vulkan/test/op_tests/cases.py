@@ -1171,6 +1171,22 @@ def get_unary_ops_inputs():
     return test_suite
 
 
+# separate test suite from unary_ops for learning purposes
+@register_test_suite("aten.tan.default")
+def get_tan_inputs():
+    test_suite = VkTestSuite(
+        [
+            (M1,),
+            (M1, M2),
+            (S1, M1, M2),
+            (S1, S2, S2, M2),
+        ]
+    )
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    test_suite.dtypes = ["at::kFloat", "at::kHalf"]
+    return test_suite
+
+
 @register_test_suite("aten._native_batch_norm_legit_no_training.default")
 def get_native_batch_norm_inputs():
     Test = namedtuple(

@@ -17,31 +17,23 @@ namespace vkcompute {
  * Creates a global workgroup size based on the first output tensor in the args.
  * This is a utility function that extracts the output tensor from
  * args.at(0).refs.at(0) and calls graph->create_global_wg_size(out) on it.
- *
- * @param graph The ComputeGraph instance
- * @param args Vector of ArgGroup containing the output tensor reference
- * @return utils::uvec3 The global workgroup size
  */
 utils::uvec3 default_pick_global_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& additional_args);
+    const std::vector<ValueRef>& resize_args);
 
 /**
  * Creates a local workgroup size based on the first output tensor in the args.
  * This is a utility function that extracts the output tensor from
  * args.at(0).refs.at(0) and calls graph->create_local_wg_size(out) on it.
- *
- * @param graph The ComputeGraph instance
- * @param args Vector of ArgGroup containing the output tensor reference
- * @return utils::uvec3 The local workgroup size
  */
 utils::uvec3 default_pick_local_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const utils::uvec3& global_workgroup_size,
     const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& additional_args);
+    const std::vector<ValueRef>& resize_args);
 
 } // namespace vkcompute

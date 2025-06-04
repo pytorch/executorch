@@ -17,28 +17,29 @@ namespace vkcompute {
 
 void add_squeeze_copy_dims_node(
     ComputeGraph& graph,
-    ValueRef in,
-    ValueRef dims_ref,
-    ValueRef out) {
-  vTensorPtr t_in = graph.get_tensor(in);
-  vTensorPtr t_out = graph.get_tensor(out);
+    const ValueRef in,
+    const ValueRef dims_ref,
+    const ValueRef out) {
+  const int64_t in_dim = graph.dim_of(in);
+  const std::vector<int64_t> in_sizes = graph.sizes_of(in);
+  const std::vector<int64_t> out_sizes = graph.sizes_of(in);
 
-  IntListPtr dims = graph.get_int_list(dims_ref);
+  const std::vector<int64_t> dims = graph.extract_int_or_symint_list(dims_ref);
   std::vector<int64_t> squeeze_dims;
   // Filter out edge cases that we don't need squeeze:
   // 1. The size of squeeze dim is larger than 1.
   // 2. Squeeze outter most dim
   // For these cases, just pass input to output via clone.
-  for (int i = 0; i < dims->size(); ++i) {
-    if (dims->at(i) != 0 && t_in->sizes().at(dims->at(i)) == 1) {
-      squeeze_dims.push_back(dims->at(i));
+  for (int i = 0; i < dims.size(); ++i) {
+    if (dims.at(i) != 0 && in_sizes.at(dims.at(i)) == 1) {
+      squeeze_dims.push_back(dims.at(i));
     }
   }
   if (squeeze_dims.size() == 0) {
     add_clone_node(graph, in, out);
   } else {
-    std::vector<int64_t> permute_dims(t_in->dim());
-    for (int i = 0; i < t_in->dim(); ++i) {
+    std::vector<int64_t> permute_dims(in_dim);
+    for (int i = 0; i < in_dim; ++i) {
       permute_dims.at(i) = i;
     }
     for (auto& elem : squeeze_dims) {
@@ -48,7 +49,9 @@ void add_squeeze_copy_dims_node(
       std::rotate(permute_dims.begin(), it, it + 1);
     }
 
-    add_permute_node(graph, in, permute_dims, out);
+    const ValueRef permute_dims_ref =
+        graph.add_scalar_list<int64_t>(std::vector<int64_t>(permute_dims));
+    add_permute_node(graph, in, permute_dims_ref, out);
   }
 }
 

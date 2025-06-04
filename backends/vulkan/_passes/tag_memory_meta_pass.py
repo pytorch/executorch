@@ -5,7 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from copy import deepcopy
 from typing import Any, Optional, Set
 
 import executorch.backends.vulkan.utils as utils
@@ -22,6 +21,7 @@ from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.tensor import TensorSpec
 
 logger: logging.Logger = logging.getLogger("")
 logger.setLevel(logging.INFO)
@@ -52,7 +52,7 @@ def insert_transition_node(
             (arg,),
         )
         clone_node.meta["val"] = arg.meta["val"]
-        clone_node.meta["spec"] = deepcopy(arg.meta["spec"])
+        clone_node.meta["spec"] = TensorSpec.from_tensor(clone_node.meta["val"])
         clone_node.meta["spec"].const = False
         set_memory_metadata(clone_node, storage, layout)
         arg.replace_all_uses_with(clone_node, lambda x, y=node: x == y)

@@ -25,9 +25,9 @@ DynamicDispatchNode::DynamicDispatchNode(
     const ResizeFunction& resize_fn)
     : DispatchNode(
           graph,
-          vkapi::ShaderInfo(),
+          pick_shader_fn(&graph, args, resize_args),
           {1u, 1u, 1u},
-          {1u, 1u, 1u},
+          {8u, 8u, 1u},
           args,
           params,
           push_constants,
@@ -37,7 +37,6 @@ DynamicDispatchNode::DynamicDispatchNode(
       pick_shader_fn_(pick_shader_fn),
       pick_global_wg_fn_(pick_global_wg_fn),
       pick_local_wg_fn_(pick_local_wg_fn) {
-  shader_ = pick_shader_fn(&graph, args, resize_args);
   global_workgroup_size_ =
       pick_global_wg_fn(&graph, shader_, args, resize_args);
   local_workgroup_size_ = utils::WorkgroupSize(pick_local_wg_fn(

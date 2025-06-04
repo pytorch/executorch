@@ -158,8 +158,7 @@ build_executorch_runner() {
 cmake_install_executorch_lib() {
   echo "Installing libexecutorch.a and libportable_kernels.a"
   clean_executorch_install_folders
-  retry cmake -DBUCK2="$BUCK" \
-          -DCMAKE_INSTALL_PREFIX=cmake-out \
+  retry cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
           -DCMAKE_BUILD_TYPE=Release \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           -Bcmake-out .

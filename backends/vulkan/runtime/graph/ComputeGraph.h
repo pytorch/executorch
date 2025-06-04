@@ -604,6 +604,13 @@ class ComputeGraph final {
 
   ValueRef add_symint(const int32_t val);
 
+  /*
+   * Searches the graph's value list for a Int value with the specified value.
+   * If one is found, returns the index of the value. Otherwise, add a new value
+   * and return the index of the new value.
+   */
+  ValueRef get_or_add_value_for_int(const int64_t val);
+
   ValueRef set_input_tensor(const ValueRef idx, const bool use_staging = true);
   ValueRef set_output_tensor(const ValueRef idx, const bool use_staging = true);
 

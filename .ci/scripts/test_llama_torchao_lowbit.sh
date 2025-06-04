@@ -40,7 +40,6 @@ cmake --build cmake-out -j16 --target install --config Release
 
 # Install llama runner with torchao
 cmake -DPYTHON_EXECUTABLE=python \
-    -DCMAKE_PREFIX_PATH=$(python -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())') \
     -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \

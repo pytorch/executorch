@@ -449,6 +449,15 @@ ValueRef ComputeGraph::add_symint(const int32_t val) {
   return idx;
 }
 
+ValueRef ComputeGraph::get_or_add_value_for_int(const int64_t val) {
+  for (int i = 0; i < values_.size(); ++i) {
+    if (values_.at(i).isInt() && values_.at(i).toInt() == val) {
+      return i;
+    }
+  }
+  return add_scalar(val);
+}
+
 ValueRef ComputeGraph::set_input_tensor(
     const ValueRef idx,
     const bool use_staging) {
