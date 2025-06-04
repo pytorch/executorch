@@ -42,7 +42,7 @@ void add_var_buffer_node(
   reduce_dim = nchw_dim_to_whcn_dim(reduce_dim, ndim);
 
   // Check that the concat dim is not the reduction dim, if the tensor has a
-  // batch dim greater than 1.
+  // batch dim greater than 1
   if (graph.dim_of(in) == 4 && graph.size_at<int>(0, in) > 1) {
     VK_CHECK_COND(graph.concat_dim_of(in) != reduce_dim);
     VK_CHECK_COND(graph.concat_dim_of(out) != reduce_dim);
