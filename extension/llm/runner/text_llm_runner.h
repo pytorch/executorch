@@ -27,15 +27,6 @@
 
 namespace executorch::extension::llm {
 
-static constexpr auto kEnableDynamicShape = "enable_dynamic_shape";
-static constexpr auto kBosId = "get_bos_id";
-static constexpr auto kEosIds = "get_eos_ids";
-static constexpr auto kMaxSeqLen = "get_max_seq_len";
-static constexpr auto kMaxContextLen = "get_max_context_len";
-static constexpr auto kVocabSize = "get_vocab_size";
-static constexpr auto kUseKVCache = "use_kv_cache";
-static constexpr auto kUseSDPAWithKVCache = "use_sdpa_with_kv_cache";
-
 class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
  public:
   // Constructor with dependency injection

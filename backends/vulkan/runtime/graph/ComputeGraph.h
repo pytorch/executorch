@@ -187,6 +187,7 @@ class ComputeGraph final {
 
  protected:
   size_t values_in_use_ = 0;
+  size_t execute_count_ = 0;
 
  public:
   //
@@ -397,6 +398,19 @@ class ComputeGraph final {
   std::optional<T> extract_optional_scalar(const ValueRef idx) {
     if (val_is_none(idx)) {
       return ::std::nullopt;
+    } else if (val_is_symint(idx)) {
+      return utils::safe_downcast<T>(read_symint(idx));
+    } else {
+      return extract_scalar<T>(idx);
+    }
+  }
+
+  template <typename T>
+  T extract_optional_scalar(const ValueRef idx, const T default_val) {
+    if (val_is_none(idx)) {
+      return default_val;
+    } else if (val_is_symint(idx)) {
+      return utils::safe_downcast<T>(read_symint(idx));
     } else {
       return extract_scalar<T>(idx);
     }
@@ -590,6 +604,13 @@ class ComputeGraph final {
 
   ValueRef add_symint(const int32_t val);
 
+  /*
+   * Searches the graph's value list for a Int value with the specified value.
+   * If one is found, returns the index of the value. Otherwise, add a new value
+   * and return the index of the new value.
+   */
+  ValueRef get_or_add_value_for_int(const int64_t val);
+
   ValueRef set_input_tensor(const ValueRef idx, const bool use_staging = true);
   ValueRef set_output_tensor(const ValueRef idx, const bool use_staging = true);
 
@@ -607,6 +628,10 @@ class ComputeGraph final {
    *   and return the BufferBindInfo of the created ParamsBuffer.
    */
   vkapi::BufferBindInfo get_or_create_int_param_buffer(const ValueRef idx);
+
+  vkapi::BufferBindInfo get_or_create_int_param_buffer(
+      const ValueRef idx,
+      const int32_t default_value);
 
   void set_symint(const ValueRef idx, const int32_t val);
 
@@ -745,13 +770,16 @@ class ComputeGraph final {
   //
 
   void encode_execute();
-  void execute() const;
+  void execute();
 
   //
   // Dynamic Shape support
   //
 
   void resize_input(const int64_t idx, const std::vector<int64_t>& new_sizes);
+  void virtual_resize(
+      const ValueRef idx,
+      const std::vector<int64_t>& new_sizes);
   void propagate_resize();
 
   //
@@ -760,6 +788,10 @@ class ComputeGraph final {
 
   inline bool int16_shader_types_enabled() const {
     return context_->adapter_ptr()->supports_int16_shader_types();
+  }
+
+  inline size_t execute_count() const {
+    return execute_count_;
   }
 
   /*

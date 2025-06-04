@@ -499,7 +499,9 @@ def get_ones_inputs():
 def get_select_int_inputs():
     test_suite = VkTestSuite(
         [
-            ((6, 2, 7), 0, 3),
+            ((8, 8, 8), 0, -2),
+            ((8, 8, 8), 1, -3),
+            ((8, 8, 8), 2, -4),
             ((6, 2, 7), 1, 0),
             ((6, 2, 7), 2, 3),
             ((6, 10, 7), 0, 3),
@@ -515,6 +517,10 @@ def get_select_int_inputs():
             ((8, 6, 1, 1), 1, 4),
         ]
     )
+    test_suite.layouts = ["utils::kWidthPacked", "utils::kChannelsPacked"]
+    test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.data_gen = "make_seq_tensor"
     return test_suite
 
 
@@ -1162,6 +1168,22 @@ def get_unary_ops_inputs():
     test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     test_suite.atol = "1e-4"
     test_suite.rtol = "1e-4"
+    return test_suite
+
+
+# separate test suite from unary_ops for learning purposes
+@register_test_suite("aten.tan.default")
+def get_tan_inputs():
+    test_suite = VkTestSuite(
+        [
+            (M1,),
+            (M1, M2),
+            (S1, M1, M2),
+            (S1, S2, S2, M2),
+        ]
+    )
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    test_suite.dtypes = ["at::kFloat", "at::kHalf"]
     return test_suite
 
 

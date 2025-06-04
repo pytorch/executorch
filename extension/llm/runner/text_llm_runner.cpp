@@ -10,17 +10,26 @@
 // A simple llama2 runner that includes preprocessing and post processing logic.
 // The module takes in a string as input and emits a string as output.
 
-#include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 #include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <pytorch/tokenizers/hf_tokenizer.h>
 #include <pytorch/tokenizers/llama2c_tokenizer.h>
+#include <pytorch/tokenizers/tiktoken.h>
 
 namespace executorch::extension::llm {
 
 using ::executorch::extension::Module;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
+
+static constexpr auto kEnableDynamicShape = "enable_dynamic_shape";
+static constexpr auto kBosId = "get_bos_id";
+static constexpr auto kEosIds = "get_eos_ids";
+static constexpr auto kMaxSeqLen = "get_max_seq_len";
+static constexpr auto kMaxContextLen = "get_max_context_len";
+static constexpr auto kVocabSize = "get_vocab_size";
+static constexpr auto kUseKVCache = "use_kv_cache";
+static constexpr auto kUseSDPAWithKVCache = "use_sdpa_with_kv_cache";
 
 TextLLMRunner::TextLLMRunner(
     std::unordered_map<std::string, int64_t> metadata,
@@ -228,10 +237,13 @@ std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
   std::unique_ptr<::tokenizers::Tiktoken> tiktoken_tokenizer;
   if (special_tokens != nullptr && !pattern.has_value()) {
     tiktoken_tokenizer = std::make_unique<::tokenizers::Tiktoken>(
-        special_tokens, bos_token_index, eos_token_index);
+        std::move(special_tokens), bos_token_index, eos_token_index);
   } else if (special_tokens != nullptr && pattern.has_value()) {
     tiktoken_tokenizer = std::make_unique<::tokenizers::Tiktoken>(
-        pattern.value(), std::move(special_tokens), bos_token_index, eos_token_index);
+        pattern.value(),
+        std::move(special_tokens),
+        bos_token_index,
+        eos_token_index);
   } else {
     tiktoken_tokenizer = std::make_unique<::tokenizers::Tiktoken>();
   }
