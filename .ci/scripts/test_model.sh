@@ -201,6 +201,21 @@ test_model_with_qnn() {
     exit 1
   fi
 
+  SCRIPT_FOLDER=""
+  case "${MODEL_NAME}" in
+    "dl3"|"mv3"|"mv2"|"ic4"|"ic3"|"vit"|"mb"|"w2l")
+        SCRIPT_FOLDER=scripts
+        ;;
+    "deit"|"pvt"|"swin")
+        SCRIPT_FOLDER=oss_scripts
+        ;;
+    *)
+        echo "Unsupported model $MODEL_NAME"
+        exit 1
+        ;;
+  esac
+  
+
   # Use SM8450 for S22, SM8550 for S23, and SM8560 for S24
   # TODO(guangyang): Make QNN chipset matches the target device
   QNN_CHIPSET=SM8450
