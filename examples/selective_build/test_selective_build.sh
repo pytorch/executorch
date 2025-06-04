@@ -145,7 +145,7 @@ test_cmake_select_ops_add_in_yaml() {
     local build_dir=cmake-out/${example_dir}
     rm -rf ${build_dir}
     retry cmake -DCMAKE_BUILD_TYPE=Debug \
-            -DEXECUTORCH_SELECT_OPS_YAML=ON \
+	    -DEXECUTORCH_SELECT_OPS_LIST="aten::add.out,aten::mm.out" \
             -DCMAKE_INSTALL_PREFIX=cmake-out \
             -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
             -B${build_dir} \
