@@ -547,8 +547,8 @@ vkcompute::ComputeGraph build_mm_graph(
     vkcompute::vkapi::ScalarType dtype,
     vkcompute::utils::StorageType in_out_stype,
     vkcompute::utils::GPUMemoryLayout memory_layout,
-    const bool prepack_mat2,
-    const float mat2_val) {
+    const std::vector<float>& mat2_data,
+    const bool prepack_mat2) {
   using namespace vkcompute;
   GraphConfig config;
   ComputeGraph graph(config);
@@ -569,10 +569,7 @@ vkcompute::ComputeGraph build_mm_graph(
       graph.add_input_tensor(mat1_size, dtype, in_out_stype, memory_layout);
   IOValueRef mat2{};
 
-  CREATE_RAND_WEIGHT_TENSOR(mat2_w, mat2_size, dtype);
-  if (mat2_val != 0.0f) {
-    std::fill(data_mat2_w.begin(), data_mat2_w.end(), mat2_val);
-  }
+  ValueRef mat2_w = graph.add_tensorref(mat2_size, dtype, mat2_data.data());
 
   if (prepack_mat2) {
     mat2.value = mat2_w;
