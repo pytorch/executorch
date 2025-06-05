@@ -103,6 +103,7 @@ function(generate_bindings_for_kernels)
   set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
   # By default selective build output is selected_operators.yaml
   set(_oplist_yaml ${_out_dir}/selected_operators.yaml)
+  set(_opvariants_h ${_out_dir}/selected_op_variants.h)
 
   # Command to codegen C++ wrappers to register custom ops to both PyTorch and
   # Executorch runtime.

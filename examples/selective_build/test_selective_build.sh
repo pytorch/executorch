@@ -143,13 +143,14 @@ test_cmake_select_ops_add_in_list() {
     ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="add_mul"
     local example_dir=examples/selective_build
     local build_dir=cmake-out/${example_dir}
-    rm -rf ${build_dir}
+#    rm -rf ${build_dir}
     retry cmake -DCMAKE_BUILD_TYPE=Debug \
 	    -DEXECUTORCH_SELECT_OPS_LIST="aten::add.out,aten::mm.out" \
-            -DCMAKE_INSTALL_PREFIX=cmake-out \
-            -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
-            -B${build_dir} \
-            ${example_dir}
+        #-DEXECUTORCH_SELECTIVE_BUILD_DTYPE=True \
+        -DCMAKE_INSTALL_PREFIX=cmake-out \
+        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+        -B${build_dir} \
+        ${example_dir}
 
     echo "Building ${example_dir}"
     cmake --build ${build_dir} -j9 --config Debug
@@ -228,7 +229,7 @@ then
 #    test_cmake_select_all_ops
 #    test_cmake_select_ops_in_list
 #    test_cmake_select_ops_in_yaml
-#    test_cmake_select_ops_add_in_yaml
+#    test_cmake_select_ops_add_in_list
     test_cmake_select_ops_in_model
 elif [[ $1 == "buck2" ]];
 then
