@@ -348,7 +348,7 @@ class NodeVisitor:
                 nominal_dims.append(dim)
                 dynamic_dims.append(0)
 
-        return dynamic_dims, nominal_dims
+        return dynamic_dims if any(dynamic_dims) else [], nominal_dims
 
     def define_custom_tensor_wrapper(
         self,
