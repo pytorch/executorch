@@ -32,8 +32,8 @@ QnnBackend::~QnnBackend() {
 
 void QnnBackend::BackendRegisterOpPackage(
     const flatbuffers::Vector<
-        flatbuffers::Offset<qnn_delegate::QnnExecuTorchOpPackageInfo>,
-        flatbuffers::uoffset_t>* op_packages_infos) {
+        flatbuffers::Offset<qnn_delegate::QnnExecuTorchOpPackageInfo>>*
+        op_packages_infos) {
   const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
   QnnExecuTorchOpPackagePlatform current_platform =
