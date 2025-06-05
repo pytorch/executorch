@@ -998,6 +998,15 @@ class LessThanConstant(torch.nn.Module):
         return self.constant < x
 
 
+class LiftAddTensor(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        N = 2 - 1
+        return x + N
+
+
 class Linear(torch.nn.Module):
     def __init__(self, use_bias: bool = True):
         super().__init__()
