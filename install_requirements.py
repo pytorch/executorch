@@ -71,7 +71,7 @@ TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
 #
 # NOTE: If you're changing, make the corresponding change in .ci/docker/ci_commit_pins/pytorch.txt
 # by picking the hash from the same date in https://hud.pytorch.org/hud/pytorch/pytorch/nightly/
-NIGHTLY_VERSION = "dev20250325"
+NIGHTLY_VERSION = "dev20250601"
 
 
 def install_requirements(use_pytorch_nightly):
@@ -82,14 +82,14 @@ def install_requirements(use_pytorch_nightly):
         # been installed on CI before this step, so pip won't reinstall them
         f"torch==2.8.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torch",
         (
-            f"torchvision==0.22.0.{NIGHTLY_VERSION}"
+            f"torchvision==0.23.0.{NIGHTLY_VERSION}"
             if use_pytorch_nightly
             else "torchvision"
         ),  # For testing.
     ]
 
     EXAMPLES_REQUIREMENTS = [
-        f"torchaudio==2.6.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torchaudio",
+        f"torchaudio==2.8.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torchaudio",
     ]
 
     # Assemble the list of requirements to actually install.

@@ -618,6 +618,7 @@ ATEN_OPS = (
         name = "op_glu",
         deps = [
             "//executorch/kernels/portable/cpu/util:activation_ops_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
@@ -972,6 +973,22 @@ ATEN_OPS = (
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
+    ),
+    op_target(
+        name = "op_rand",
+        deps = [
+            ":scalar_utils",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+        ]
+    ),
+    op_target(
+        name = "op_randn",
+        deps = [
+            ":scalar_utils",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+        ]
     ),
     op_target(
         name = "op_reciprocal",
