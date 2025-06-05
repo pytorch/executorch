@@ -92,8 +92,7 @@ test_cmake_select_all_ops() {
     local example_dir=examples/selective_build
     local build_dir=cmake-out/${example_dir}
     rm -rf ${build_dir}
-    retry cmake -DBUCK2="$BUCK" \
-            -DCMAKE_BUILD_TYPE=Release \
+    retry cmake -DCMAKE_BUILD_TYPE=Release \
             -DEXECUTORCH_SELECT_ALL_OPS=ON \
             -DCMAKE_INSTALL_PREFIX=cmake-out \
             -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
@@ -118,8 +117,7 @@ test_cmake_select_ops_in_list() {
     local build_dir=cmake-out/${example_dir}
     # set MAX_KERNEL_NUM=22: 19 primops, add, mul
     rm -rf ${build_dir}
-    retry cmake -DBUCK2="$BUCK" \
-            -DCMAKE_BUILD_TYPE=Release \
+    retry cmake -DCMAKE_BUILD_TYPE=Release \
             -DMAX_KERNEL_NUM=22 \
             -DEXECUTORCH_SELECT_OPS_LIST="aten::convolution.out,\
 aten::_native_batch_norm_legit_no_training.out,aten::hardtanh.out,aten::add.out,\
@@ -146,8 +144,7 @@ test_cmake_select_ops_in_yaml() {
     local example_dir=examples/selective_build
     local build_dir=cmake-out/${example_dir}
     rm -rf ${build_dir}
-    retry cmake -DBUCK2="$BUCK" \
-            -DCMAKE_BUILD_TYPE=Release \
+    retry cmake -DCMAKE_BUILD_TYPE=Release \
             -DEXECUTORCH_SELECT_OPS_YAML=ON \
             -DCMAKE_INSTALL_PREFIX=cmake-out \
             -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
