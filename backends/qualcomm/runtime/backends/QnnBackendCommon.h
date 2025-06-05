@@ -62,8 +62,8 @@ class QnnBackend {
  private:
   void BackendRegisterOpPackage(
       const flatbuffers::Vector<
-          flatbuffers::Offset<qnn_delegate::QnnExecuTorchOpPackageInfo>,
-          flatbuffers::uoffset_t>* op_packages_info);
+          flatbuffers::Offset<qnn_delegate::QnnExecuTorchOpPackageInfo>>*
+          op_packages_info);
   Qnn_BackendHandle_t handle_;
   const QnnImplementation& implementation_;
   QnnOpPackageManager op_package_manager_;
