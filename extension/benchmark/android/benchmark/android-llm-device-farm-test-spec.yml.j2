@@ -105,9 +105,55 @@ phases:
           echo "*.model tokenizer files found in /data/local/tmp/minibench/"
         fi
 
-      - echo "Collect device state before running"
+      - echo "Mandatory Cool Down for 10 minutes"
       - |
-        adb -s $DEVICEFARM_DEVICE_UDID shell 'cat /sys/devices/system/cpu/cpu*/cpufreq/stats/time_in_state /sys/devices/system/cpu/cpu*/cpufreq/stats/trans_table' > $DEVICEFARM_LOG_DIR/state_before.txt
+        adb -s $DEVICEFARM_DEVICE_UDID shell 'sleep 600'
+
+      - echo "Collect Device Telemetry - CPU Scaling Configuration"
+      - |
+        adb -s $DEVICEFARM_DEVICE_UDID shell '
+          for core_path in /sys/devices/system/cpu/cpu*/cpufreq; do
+            if [ -d "$core_path" ]; then
+              core_name=$(basename $(dirname $core_path))
+              governor=$(cat $core_path/scaling_governor 2>/dev/null || echo "N/A")
+              min_freq=$(cat $core_path/scaling_min_freq 2>/dev/null || echo "N/A")
+              max_freq=$(cat $core_path/scaling_max_freq 2>/dev/null || echo "N/A")
+              echo "$core_name | governor=$governor | min_freq=$min_freq | max_freq=$max_freq"
+            fi
+          done
+        ' > $DEVICEFARM_LOG_DIR/telemetry_cpu_scaling_config.txt
+
+      - echo "Collect Device Telemetry - Thermal Status"
+      - |
+        adb -s $DEVICEFARM_DEVICE_UDID shell dumpsys thermalservice > $DEVICEFARM_LOG_DIR/telemetry_thermal_status.txt
+
+      - echo "Collect Device Telemetry - CPU Frequency Statistics (pre-benchmark)"
+      - |
+        adb -s $DEVICEFARM_DEVICE_UDID shell '
+          for core in /sys/devices/system/cpu/cpu*/cpufreq/stats; do
+            if [ -d "$core" ]; then
+              core_name=$(basename $(dirname $(dirname $core)))
+              echo "=== $core_name ==="
+              echo "--- time_in_state ---"
+              cat $core/time_in_state 2>/dev/null
+              echo "--- trans_table ---"
+              cat $core/trans_table 2>/dev/null
+              echo "--- total_trans ---"
+              cat $core/total_trans 2>/dev/null
+              echo ""
+            fi
+          done
+        ' > $DEVICEFARM_LOG_DIR/telemetry_cpu_freq_stats_pre.txt
+
+      - echo "Collect Device Telemetry - Battery (pre-benchmark)"
+      - |
+        adb -s $DEVICEFARM_DEVICE_UDID shell '
+          dumpsys battery
+        ' > $DEVICEFARM_LOG_DIR/telemetry_battery_pre.txt
+
+        echo "Reset Battery Stats (pre-benchmark)"
+        adb -s $DEVICEFARM_DEVICE_UDID shell 'dumpsys batterystats --reset'
+        adb -s $DEVICEFARM_DEVICE_UDID shell 'dumpsys batterystats --enable full-wake-history'
 
       - echo "Run benchmark"
       - |
@@ -116,7 +162,6 @@ phases:
 
         adb -s $DEVICEFARM_DEVICE_UDID shell dumpsys deviceidle force-idle
         adb -s $DEVICEFARM_DEVICE_UDID shell dumpsys deviceidle unforce
-        adb -s $DEVICEFARM_DEVICE_UDID shell sleep 180
 
         if [ -n "$BIN_FOUND" ]; then
           adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.BenchmarkActivity \
@@ -132,10 +177,37 @@ phases:
           adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.BenchmarkActivity \
             --es "model_dir" "/data/local/tmp/minibench"
         fi
-        
-      - echo "Collect device state after running"
+
+      - echo "Collect Device Telemetry - CPU Frequency Statistics (post-benchmark)"
       - |
-        adb -s $DEVICEFARM_DEVICE_UDID shell 'cat /sys/devices/system/cpu/cpu*/cpufreq/stats/time_in_state /sys/devices/system/cpu/cpu*/cpufreq/stats/trans_table' > $DEVICEFARM_LOG_DIR/state_after.txt
+        adb -s $DEVICEFARM_DEVICE_UDID shell '
+          for core in /sys/devices/system/cpu/cpu*/cpufreq/stats; do
+            if [ -d "$core" ]; then
+              core_name=$(basename $(dirname $(dirname $core)))
+              echo "=== $core_name ==="
+              echo "--- time_in_state ---"
+              cat $core/time_in_state 2>/dev/null
+              echo "--- trans_table ---"
+              cat $core/trans_table 2>/dev/null
+              echo "--- total_trans ---"
+              cat $core/total_trans 2>/dev/null
+              echo ""
+            fi
+          done
+        ' > $DEVICEFARM_LOG_DIR/telemetry_cpu_freq_stats_post.txt
+
+      - echo "Collect Device Telemetry - Battery (post-benchmark)"
+      - |
+        adb -s $DEVICEFARM_DEVICE_UDID shell '
+          echo "=== POST-BENCHMARK BATTERY INFO ==="
+          dumpsys battery
+          echo ""
+          echo "=== APP BATTERY STATS (org.pytorch.minibench) ==="
+          dumpsys batterystats --charged org.pytorch.minibench
+          echo ""
+          echo "=== POWER CONSUMPTION SUMMARY ==="
+          dumpsys batterystats --charged | grep -E "(org.pytorch.minibench|Estimated power use|Time on battery|Total running time)"
+        ' > $DEVICEFARM_LOG_DIR/telemetry_battery_post.txt
 
   post_test:
     commands:
