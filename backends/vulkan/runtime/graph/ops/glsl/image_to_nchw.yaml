@@ -9,6 +9,7 @@ image_to_nchw:
     DTYPE: float
     STORAGE: texture3d
     TO_STAGING: True
+    USE_PUSH_CONST: True
   generate_variant_forall:
     DTYPE:
       - VALUE: half
@@ -22,3 +23,11 @@ image_to_nchw:
       STORAGE: texture2d
     - NAME: clone_image_to_buffer
       TO_STAGING: False
+    - NAME: image_to_nchw_no_pc_texture3d
+      USE_PUSH_CONST: False
+    - NAME: image_to_nchw_no_pc_texture2d
+      STORAGE: texture2d
+      USE_PUSH_CONST: False
+    - NAME: clone_image_to_buffer_no_pc
+      TO_STAGING: False
+      USE_PUSH_CONST: False

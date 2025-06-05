@@ -95,7 +95,10 @@ def _is_ok_for_quantization(
             continue
 
         for n_arg in _as_list(node.args[quant_property.index]):
-            assert isinstance(n_arg, Node)
+            if not isinstance(n_arg, Node):
+                raise TypeError(
+                    f"n_arg must be a Node instance, got {type(n_arg).__name__!r}"
+                )
             if not is_ok_for_quantization(n_arg, gm):  # type: ignore[attr-defined]
                 logger.debug(
                     f'could not quantize node due to input "{node}": '
@@ -108,7 +111,10 @@ def _is_ok_for_quantization(
 
 
 def _annotate_input(node: Node, quant_property: _QuantProperty):
-    assert not is_annotated(node)
+    if is_annotated(node):
+        raise RuntimeError(
+            f"Cannot annotate input: node '{node.name}' is already annotated"
+        )
     if quant_property.optional and (
         quant_property.index >= len(node.args)
         or node.args[quant_property.index] is None
@@ -120,17 +126,28 @@ def _annotate_input(node: Node, quant_property: _QuantProperty):
         _as_list(quant_property.qspec),
         strict=True,
     ):
-        assert isinstance(n_arg, Node)
+        if not isinstance(n_arg, Node):
+            raise TypeError(
+                f"n_arg must be a Node instance, got {type(n_arg).__name__!r}"
+            )
         annotate_input_qspec_map(node, n_arg, qspec)
         if quant_property.mark_annotated:
             mark_node_as_annotated(n_arg)  # type: ignore[attr-defined]
 
 
 def _annotate_output(node: Node, quant_property: _QuantProperty):
-    assert not is_annotated(node)
-    assert not quant_property.mark_annotated
-    assert not quant_property.optional
-    assert quant_property.index == 0, "Only one output annotation supported currently"
+    if is_annotated(node):
+        raise RuntimeError(
+            f"Cannot annotate output: node '{node.name}' is already annotated"
+        )
+    if quant_property.mark_annotated:
+        raise ValueError(
+            "quant_property.mark_annotated must be False for output annotation"
+        )
+    if quant_property.optional:
+        raise ValueError("quant_property.optional must be False for output annotation")
+    if quant_property.index != 0:
+        raise ValueError("Only one output annotation supported currently")
 
     annotate_output_qspec(node, quant_property.qspec)
 
@@ -145,7 +162,9 @@ def _match_pattern(
 
     Each 'pattern' element is composed of a list of disjunctive nodes types.
     """
-    assert len(pattern) > 0, "No pattern provided"
+    if len(pattern) < 1:
+        raise ValueError("No pattern provided")
+
     if filter_fn is not None:
         if not filter_fn(node):
             return False
@@ -417,8 +436,14 @@ def get_quant_properties(  # noqa: C901
         torch.ops.aten.concatenate.default,
         torch.ops.aten.stack.default,
     ):
-        assert isinstance(node.args[0], list)
-        assert len(node.args[0]) != 0
+        # first argument should be a non-empty list of nodes
+        if not isinstance(node.args[0], list):
+            raise TypeError(
+                "Expected node.args[0] to be a list, got "
+                f"{type(node.args[0]).__name__!r}"
+            )
+        if len(node.args[0]) == 0:
+            raise ValueError("Expected non-empty list for node.args[0]")
 
         shared_qspec = SharedQuantizationSpec((node.args[0][0], node))
         quant_properties.quant_inputs = [

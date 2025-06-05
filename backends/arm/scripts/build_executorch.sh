@@ -54,46 +54,8 @@ source ${setup_path_script}
 
 et_build_dir="${et_build_root}/cmake-out"
 
-# Used for flatcc host excutable if Devtools is used
-et_build_host_dir=${et_build_root}/cmake-out-host-tools
-
 set -x
 cd "${et_root_dir}"
-
-if [ "$build_with_etdump" = true ] ; then
-    ( set +x ;
-        echo "--------------------------------------------------------------------------------" ;
-        echo "Build ExecuTorch Libraries host flatcc bin ${build_type} into ${et_build_host_dir}/bin/flatcc" ;
-        echo "--------------------------------------------------------------------------------" )
-
-    # Build host flatcc bin
-    # This is a way to work around that the flatcc executable get build for target (e.g. Arm) later
-    # and get replaced. flatcc is a tool used on the host for etdump and BundleIO handling.
-    # The way to solve this is to generate it once for the host, then copy it to ${et_build_host_dir}/bin
-    # and later point that out with -DFLATCC_EXECUTABLE=${et_build_host_dir}/bin/flatcc later.
-
-    cmake                                                 \
-        -DCMAKE_INSTALL_PREFIX=${et_build_host_dir}       \
-        -DCMAKE_BUILD_TYPE=${build_type}                  \
-        -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF            \
-        -DEXECUTORCH_ENABLE_LOGGING=ON                    \
-        -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
-        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON           \
-        -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON       \
-        -DEXECUTORCH_BUILD_DEVTOOLS=ON                    \
-        -DEXECUTORCH_ENABLE_EVENT_TRACER=ON               \
-        -DFLATCC_ALLOW_WERROR=OFF                         \
-        -B"${et_build_host_dir}"                          \
-        "${et_root_dir}"
-
-    # third-party/flatcc/bin/flatcc gets build already in the in the cmake config step above
-    # so there is no cmake building step done
-
-    # Copy host flatcc excutable so it's saved when we build for target (Arm) later
-    et_build_host_dir=$(realpath ${et_build_host_dir})
-    mkdir -p ${et_build_host_dir}/bin
-    cp third-party/flatcc/bin/flatcc ${et_build_host_dir}/bin
-fi
 
 ( set +x ;
     echo "--------------------------------------------------------------------------------" ;
@@ -111,8 +73,7 @@ if [ "$build_with_etdump" = true ] ; then
     build_with_etdump_flags="-DEXECUTORCH_BUILD_DEVTOOLS=ON                    \
                             -DEXECUTORCH_ENABLE_EVENT_TRACER=ON               \
                             -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=OFF      \
-                            -DFLATCC_ALLOW_WERROR=OFF                         \
-                            -DFLATCC_EXECUTABLE=${et_build_host_dir}/bin/flatcc "
+                            -DFLATCC_ALLOW_WERROR=OFF "
 fi
 
 echo "Building with Devtools: ${build_devtools_flags} ${build_with_etdump_flags}"

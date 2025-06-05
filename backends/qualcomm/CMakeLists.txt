@@ -252,7 +252,7 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
 
   pybind11_extension(PyQnnManagerAdaptor)
   pybind11_extension(PyQnnWrapperAdaptor)
-  if(NOT MSVC AND NOT ${CMAKE_BUILD_TYPE} MATCHES Debug|RelWithDebInfo)
+  if(NOT MSVC AND NOT ${CMAKE_BUILD_TYPE} MATCHES RelWithDebInfo)
     # Strip unnecessary sections of the binary
     pybind11_strip(PyQnnManagerAdaptor)
     pybind11_strip(PyQnnWrapperAdaptor)

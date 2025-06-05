@@ -76,6 +76,7 @@ def define_common_targets():
         srcs = [
             "abort.cpp",
             "log.cpp",
+            "platform.cpp",
             "profiler.cpp",
             "runtime.cpp",
         ],

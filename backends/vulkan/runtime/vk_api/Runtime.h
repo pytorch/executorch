@@ -100,6 +100,8 @@ class Runtime final {
   uint32_t create_adapter(const Selector&);
 };
 
+std::string& set_and_get_pipeline_cache_data_path(const std::string& file_path);
+
 // The global runtime is retrieved using this function, where it is declared as
 // a static local variable.
 Runtime* runtime();

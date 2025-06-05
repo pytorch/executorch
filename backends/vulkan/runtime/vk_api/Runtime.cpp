@@ -258,7 +258,8 @@ uint32_t select_first(const std::vector<Runtime::DeviceMapping>& devices) {
 // Global runtime initialization
 //
 
-std::unique_ptr<Runtime> init_global_vulkan_runtime() {
+std::unique_ptr<Runtime> init_global_vulkan_runtime(
+    const std::string& cache_data_path) {
   // Load Vulkan drivers
 #if defined(USE_VULKAN_VOLK)
   if (VK_SUCCESS != volkInitialize()) {
@@ -278,7 +279,6 @@ std::unique_ptr<Runtime> init_global_vulkan_runtime() {
 #endif /* VULKAN_DEBUG */
   const bool init_default_device = true;
   const uint32_t num_requested_queues = 1; // TODO: raise this value
-  const std::string cache_data_path = ""; // TODO: expose to client
 
   const RuntimeConfig default_config{
       enable_validation_messages,
@@ -377,13 +377,29 @@ uint32_t Runtime::create_adapter(const Selector& selector) {
   return adapter_i;
 }
 
+std::string& set_and_get_pipeline_cache_data_path(
+    const std::string& file_path) {
+  // The global cache data path is declared as a static local variable for the
+  // same reasons as the global runtime below.
+#if defined(ETVK_DEFAULT_CACHE_PATH)
+  static std::string global_cache_data_path = ETVK_DEFAULT_CACHE_PATH;
+#else
+  static std::string global_cache_data_path;
+#endif /* ETVK_DEFAULT_CACHE_PATH */
+
+  if (file_path.size() > 0) {
+    global_cache_data_path = file_path;
+  }
+  return global_cache_data_path;
+}
+
 Runtime* runtime() {
   // The global vulkan runtime is declared as a static local variable within a
   // non-static function to ensure it has external linkage. If it were a global
   // static variable there would be one copy per translation unit that includes
   // Runtime.h as it would have internal linkage.
   static const std::unique_ptr<Runtime> p_runtime =
-      init_global_vulkan_runtime();
+      init_global_vulkan_runtime(set_and_get_pipeline_cache_data_path(""));
 
   VK_CHECK_COND(
       p_runtime,

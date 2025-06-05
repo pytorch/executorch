@@ -55,12 +55,24 @@ Result<Tag> get_tag(
 size_t calculate_nbytes(
     Span<const int32_t> sizes,
     executorch::aten::ScalarType scalar_type) {
-  ssize_t n = 1;
+  size_t n = 1;
+  size_t prev_n = 1;
   for (size_t i = 0; i < sizes.size(); i++) {
+    prev_n = n;
     n *= sizes[i];
+    // Check for overflow
+    ET_CHECK(sizes[i] == 0 || n / sizes[i] == prev_n);
   }
-  // Use the full namespace to disambiguate from c10::elementSize.
-  return n * executorch::runtime::elementSize(scalar_type);
+
+  size_t elem_size = executorch::runtime::elementSize(scalar_type);
+
+  prev_n = n;
+  n = n * elem_size;
+
+  // Check for overflow
+  ET_CHECK(elem_size == 0 || n / elem_size == prev_n);
+
+  return n;
 }
 
 } // namespace

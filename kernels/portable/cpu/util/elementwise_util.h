@@ -51,9 +51,19 @@ inline int64_t scalar_to<int64_t>(const Scalar& s) {
 }
 
 namespace internal {
+/**
+ * Causes these utility functions to make sure to respect Tensor
+ * strides; normally, this is not strictly necessary because ExecuTorch
+ * Tensors are contiguous.
+ */
+struct SupportNoncontiguousTensors {
+  explicit SupportNoncontiguousTensors() = default;
+};
+
 template <
     typename CTYPE_COMPUTE,
     typename CTYPE_OUT,
+    bool support_noncontiguous_tensors,
     typename Op,
     typename... Args>
 inline void dtype_specialized_elementwise_fn_impl(
@@ -75,7 +85,8 @@ inline void dtype_specialized_elementwise_fn_impl(
         CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
 
         const auto range =
-            BroadcastIndexesRange<kNumInputs>(out, (*inputs.first)...);
+            BroadcastIndexesRange<kNumInputs, support_noncontiguous_tensors>(
+                out, (*inputs.first)...);
         auto begin_it = range.begin();
         begin_it += begin;
         for (; (*begin_it)[0] < end; ++begin_it) {
@@ -117,6 +128,7 @@ inline bool validate_elementwise_fn_inputs(
 template <
     typename CTYPE_COMPUTE,
     const char* op_name,
+    bool support_noncontiguous_tensors,
     typename Op,
     typename... Args>
 inline void apply_elementwise_fn_generic_impl(
@@ -151,7 +163,8 @@ inline void apply_elementwise_fn_generic_impl(
       ::executorch::extension::internal::GRAIN_SIZE,
       [&](const auto begin, const auto end) {
         const auto range =
-            BroadcastIndexesRange<kNumInputs>(out, (*inputs.first)...);
+            BroadcastIndexesRange<kNumInputs, support_noncontiguous_tensors>(
+                out, (*inputs.first)...);
         auto begin_it = range.begin();
         begin_it += begin;
         for (; (*begin_it)[0] < end; ++begin_it) {
@@ -187,7 +200,10 @@ inline void apply_elementwise_fn_runtime_out_dtypes(
     return;
   }
 
-  apply_elementwise_fn_generic_impl<CTYPE_COMPUTE, op_name>(
+  apply_elementwise_fn_generic_impl<
+      CTYPE_COMPUTE,
+      op_name,
+      /*support_noncontiguous_tensors*/ false>(
       compute_fun, ctx, out, out_dtypes, inputs...);
 }
 
@@ -195,6 +211,7 @@ template <
     typename CTYPE_COMPUTE,
     const char* op_name,
     SupportedTensorDtypes out_dtypes,
+    bool support_noncontiguous_tensors,
     typename Op,
     typename... Args>
 inline void apply_elementwise_fn(
@@ -218,12 +235,17 @@ inline void apply_elementwise_fn(
       out.scalar_type() == out_specialized_scalar_type) {
     using CTYPE_OUT =
         typename ScalarTypeToCppType<out_specialized_scalar_type>::type;
-    dtype_specialized_elementwise_fn_impl<CTYPE_COMPUTE, CTYPE_OUT>(
-        compute_fun, ctx, out, inputs...);
+    dtype_specialized_elementwise_fn_impl<
+        CTYPE_COMPUTE,
+        CTYPE_OUT,
+        support_noncontiguous_tensors>(compute_fun, ctx, out, inputs...);
     return;
   }
 
-  apply_elementwise_fn_generic_impl<CTYPE_COMPUTE, op_name>(
+  apply_elementwise_fn_generic_impl<
+      CTYPE_COMPUTE,
+      op_name,
+      support_noncontiguous_tensors>(
       compute_fun, ctx, out, out_dtypes, inputs...);
 }
 
@@ -251,7 +273,31 @@ inline void apply_unitensor_elementwise_fn(
     const Tensor& a,
     SupportedTensorDtypes a_dtypes,
     const Tensor& out) {
-  internal::apply_elementwise_fn<CTYPE_COMPUTE, op_name, out_dtypes>(
+  internal::apply_elementwise_fn<
+      CTYPE_COMPUTE,
+      op_name,
+      out_dtypes,
+      /*support_noncontiguous_tensors*/ false>(
+      compute_fun, ctx, out, std::make_pair(&a, a_dtypes));
+}
+
+template <
+    typename CTYPE_COMPUTE,
+    const char* op_name,
+    SupportedTensorDtypes out_dtypes,
+    typename Op>
+inline void apply_unitensor_elementwise_fn(
+    const Op& compute_fun,
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    SupportedTensorDtypes a_dtypes,
+    const Tensor& out,
+    SupportNoncontiguousTensors) {
+  internal::apply_elementwise_fn<
+      CTYPE_COMPUTE,
+      op_name,
+      out_dtypes,
+      /*support_noncontiguous_tensors*/ true>(
       compute_fun, ctx, out, std::make_pair(&a, a_dtypes));
 }
 
@@ -295,7 +341,37 @@ inline void apply_bitensor_elementwise_fn(
     const Tensor& b,
     SupportedTensorDtypes b_dtypes,
     const Tensor& out) {
-  internal::apply_elementwise_fn<CTYPE_COMPUTE, op_name, out_dtypes>(
+  internal::apply_elementwise_fn<
+      CTYPE_COMPUTE,
+      op_name,
+      out_dtypes,
+      /*support_noncontiguous_tensors*/ false>(
+      compute_fun,
+      ctx,
+      out,
+      std::make_pair(&a, a_dtypes),
+      std::make_pair(&b, b_dtypes));
+}
+
+template <
+    typename CTYPE_COMPUTE,
+    const char* op_name,
+    SupportedTensorDtypes out_dtypes,
+    typename Op>
+inline void apply_bitensor_elementwise_fn(
+    const Op& compute_fun,
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    SupportedTensorDtypes a_dtypes,
+    const Tensor& b,
+    SupportedTensorDtypes b_dtypes,
+    const Tensor& out,
+    SupportNoncontiguousTensors) {
+  internal::apply_elementwise_fn<
+      CTYPE_COMPUTE,
+      op_name,
+      out_dtypes,
+      /*support_noncontiguous_tensors*/ true>(
       compute_fun,
       ctx,
       out,
@@ -363,7 +439,40 @@ inline void apply_tritensor_elementwise_fn(
     const Tensor& c,
     SupportedTensorDtypes c_dtypes,
     const Tensor& out) {
-  internal::apply_elementwise_fn<CTYPE_COMPUTE, op_name, out_dtypes>(
+  internal::apply_elementwise_fn<
+      CTYPE_COMPUTE,
+      op_name,
+      out_dtypes,
+      /*support_noncontiguous_tensors*/ false>(
+      compute_fun,
+      ctx,
+      out,
+      std::make_pair(&a, a_dtypes),
+      std::make_pair(&b, b_dtypes),
+      std::make_pair(&c, c_dtypes));
+}
+
+template <
+    typename CTYPE_COMPUTE,
+    const char* op_name,
+    SupportedTensorDtypes out_dtypes,
+    typename Op>
+inline void apply_tritensor_elementwise_fn(
+    const Op& compute_fun,
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    SupportedTensorDtypes a_dtypes,
+    const Tensor& b,
+    SupportedTensorDtypes b_dtypes,
+    const Tensor& c,
+    SupportedTensorDtypes c_dtypes,
+    const Tensor& out,
+    SupportNoncontiguousTensors) {
+  internal::apply_elementwise_fn<
+      CTYPE_COMPUTE,
+      op_name,
+      out_dtypes,
+      /*support_noncontiguous_tensors*/ true>(
       compute_fun,
       ctx,
       out,

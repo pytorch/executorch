@@ -495,6 +495,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     builder.build_graph();
 
     compute_graph->prepare();
+    compute_graph->prepare_pipelines();
 
     compute_graph->encode_prepack();
     compute_graph->prepack();

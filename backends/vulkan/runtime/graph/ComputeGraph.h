@@ -185,6 +185,11 @@ class ComputeGraph final {
   std::vector<IOValueRef> inputs_;
   std::vector<IOValueRef> outputs_;
 
+  std::unordered_set<
+      vkapi::ComputePipelineCache::Key,
+      vkapi::ComputePipelineCache::Hasher>
+      pipeline_descriptors_;
+
  protected:
   size_t values_in_use_ = 0;
   size_t execute_count_ = 0;
@@ -711,7 +716,15 @@ class ComputeGraph final {
       const vkapi::ShaderInfo& shader_info,
       bool execute);
 
+  void register_pipeline_to_create(
+      const vkapi::ShaderInfo& shader_info,
+      const utils::WorkgroupSize& local_workgroup_size,
+      const vkapi::SpecVarList& spec_vars,
+      const std::vector<PushConstantDataInfo>& push_constants);
+
   void prepare();
+
+  void prepare_pipelines();
 
   //
   // Dispatch Utilities

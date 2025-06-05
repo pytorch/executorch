@@ -3,18 +3,19 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
-import argparse
 import os
+import sys
+
+if os.getcwd() not in sys.path:
+    sys.path.append(os.getcwd())
+import argparse
 import random
 
 import numpy as np
 
 import torch
+from aot_utils.oss_utils.utils import build_executorch_binary
 from executorch.backends.mediatek import Precision
-from executorch.examples.mediatek.aot_utils.oss_utils.utils import (
-    build_executorch_binary,
-)
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 
 
@@ -26,7 +27,7 @@ class NhwcWrappedModel(torch.nn.Module):
     def forward(self, input1):
         nchw_input1 = input1.permute(0, 3, 1, 2)
         nchw_output = self.deeplabv3(nchw_input1)
-        return nchw_output.permute(0, 2, 3, 1)
+        return nchw_output
 
 
 def get_dataset(data_size, dataset_dir, download):
@@ -121,4 +122,8 @@ if __name__ == "__main__":
         f"{args.artifact}/{pte_filename}",
         inputs,
         quant_dtype=Precision.A8W8,
+        skip_op_name={
+            "aten_convolution_default_106",
+            "aten_convolution_default_107",
+        },
     )

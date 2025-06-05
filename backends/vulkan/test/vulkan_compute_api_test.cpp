@@ -1640,8 +1640,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   out.staging = graph.set_output_tensor(out.value);
 
   // +1: staging buffer input tensor
-  // +1: staging buffer for the output tensor
-  expected_vma_allocation_count += 2;
+  expected_vma_allocation_count += 1;
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   graph.prepare();

@@ -28,7 +28,7 @@ class AnnotateStack(ExportPass):
         partitions = get_source_partitions(
             graph_module.graph, [torch.stack, torch.ops.aten.stack.default, "stack"]
         )
-        for _, src_partitions in partitions.items():
+        for src_partitions in partitions.values():
             for src_partition in src_partitions:
                 output = src_partition.output_nodes[0]
                 if (list(output.users)[0].target) in q_ops:

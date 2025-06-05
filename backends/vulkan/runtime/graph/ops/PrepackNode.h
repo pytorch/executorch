@@ -40,6 +40,8 @@ class PrepackNode final {
 
   ~PrepackNode() = default;
 
+  void prepare_pipelines(ComputeGraph* graph);
+
   void encode(ComputeGraph* graph);
 
   inline void set_node_id(uint32_t node_id) {

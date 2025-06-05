@@ -154,6 +154,13 @@ def print_error_diffs(
         output_str += f"BATCH {n}\n"
         result_batch = result[n, :, :, :]
         reference_batch = reference[n, :, :, :]
+
+        if reference_batch.dtype == torch.bool or result_batch.dtype == torch.bool:
+            mismatches = (reference_batch != result_batch).sum().item()
+            total = reference_batch.numel()
+            output_str += f"(BOOLEAN tensor) {mismatches} / {total} elements differ ({mismatches / total:.2%})\n"
+            continue
+
         is_close = torch.allclose(result_batch, reference_batch, rtol, atol)
         if is_close:
             output_str += ".\n"
@@ -180,14 +187,15 @@ def print_error_diffs(
                 output_str += _print_elements(
                     result[n, :, :, :], reference[n, :, :, :], C, H, W, rtol, atol
                 )
-
-    reference_range = torch.max(reference) - torch.min(reference)
-    diff = torch.abs(reference - result).flatten()
-    diff = diff[diff.nonzero()]
-    if not len(diff) == 0:
-        diff_percent = diff / reference_range
-        output_str += "\nMEAN      MEDIAN    MAX       MIN    (error as % of reference output range)\n"
-        output_str += f"{torch.mean(diff_percent):<8.2%}  {torch.median(diff_percent):<8.2%}  {torch.max(diff_percent):<8.2%}  {torch.min(diff_percent):<8.2%}\n"
+    # Only compute numeric error metrics if tensor is not boolean
+    if reference.dtype != torch.bool and result.dtype != torch.bool:
+        reference_range = torch.max(reference) - torch.min(reference)
+        diff = torch.abs(reference - result).flatten()
+        diff = diff[diff.nonzero()]
+        if not len(diff) == 0:
+            diff_percent = diff / reference_range
+            output_str += "\nMEAN      MEDIAN    MAX       MIN    (error as % of reference output range)\n"
+            output_str += f"{torch.mean(diff_percent):<8.2%}  {torch.median(diff_percent):<8.2%}  {torch.max(diff_percent):<8.2%}  {torch.min(diff_percent):<8.2%}\n"
 
     # Over-engineer separators to match output width
     lines = output_str.split("\n")

@@ -61,6 +61,10 @@ class ExecuteNode {
 
   virtual ~ExecuteNode() = default;
 
+  virtual void prepare_pipelines(ComputeGraph* graph) {
+    (void)graph;
+  }
+
   virtual void encode(ComputeGraph* graph) {
     (void)graph;
   }
