@@ -168,7 +168,7 @@ def is_consumer_node_depthwise_conv2d(node: Node):
     return False
 
 
-def tosa_shape(shape: tuple[int | torch.SymInt], dim_order):
+def tosa_shape(shape, dim_order):
     reordered = tuple([shape[dim] for dim in dim_order])
     # Dynamic shapes in executorch are represented with torch.SymInt objects in the shapes,
     # in TOSA we do not have this concept and instead use -1.
