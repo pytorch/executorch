@@ -9,6 +9,7 @@ from .partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
     XnnpackPartitioner,
 )
+from .recipes.recipes import get_xnnpack_recipe
 
 # Exposed Configs in XNNPACK Package
 from .utils.configs import (
@@ -23,12 +24,12 @@ from .utils.utils import capture_graph_for_xnnpack
 # XNNPACK Backend
 from .xnnpack_preprocess import XnnpackBackend
 
-
 __all__ = [
     "XnnpackDynamicallyQuantizedPartitioner",
     "XnnpackPartitioner",
     "XnnpackBackend",
     "capture_graph_for_xnnpack",
+    "get_xnnpack_recipe",
     "get_xnnpack_capture_config",
     "get_xnnpack_edge_compile_config",
     "get_xnnpack_executorch_backend_config",
