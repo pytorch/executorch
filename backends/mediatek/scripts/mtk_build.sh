@@ -18,12 +18,6 @@ if [ -z "$ANDROID_NDK" ]; then
     exit 1
 fi
 
-# Check if the NEURON_BUFFER_ALLOCATOR_LIB environment variable is set
-if [ -z "$NEURON_BUFFER_ALLOCATOR_LIB" ]; then
-    echo "Error: NEURON_BUFFER_ALLOCATOR_LIB environment variable is not set." >&2
-    exit 1
-fi
-
 # Create and enter the build directory
 # Set build directory
 build_dir="cmake-android-out"
