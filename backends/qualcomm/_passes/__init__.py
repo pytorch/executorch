@@ -8,7 +8,6 @@ from .annotate_adaptive_avg_pool1d import AnnotateAdaptiveAvgPool1D
 from .annotate_quant_attrs import AnnotateQuantAttrs
 from .annotate_stack import AnnotateStack
 from .annotate_unbind import AnnotateUnbind
-from .convert_bmm_to_matmul import ConvertBmmToMatmul
 from .convert_conv1d_to_conv2d import ConvertConv1dToConv2d
 from .convert_square_to_pow import ConvertSquareToPow
 from .decompose_any import DecomposeAny
@@ -44,7 +43,6 @@ __all__ = [
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
-    ConvertBmmToMatmul,
     ConvertConv1dToConv2d,
     ConvertSquareToPow,
     DecomposeAny,

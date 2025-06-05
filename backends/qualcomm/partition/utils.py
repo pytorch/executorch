@@ -48,6 +48,7 @@ def get_skip_decomp_table() -> List[torch._ops.OperatorBase]:
         torch.ops.aten.instance_norm.default,
         torch.ops.aten.leaky_relu.default,
         torch.ops.aten.linear.default,
+        torch.ops.aten.matmul.default,
         torch.ops.aten.pixel_shuffle.default,
         torch.ops.aten.pixel_unshuffle.default,
         torch.ops.aten.prelu.default,
