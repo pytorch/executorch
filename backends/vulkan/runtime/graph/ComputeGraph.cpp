@@ -449,6 +449,15 @@ ValueRef ComputeGraph::add_symint(const int32_t val) {
   return idx;
 }
 
+ValueRef ComputeGraph::get_or_add_value_for_int(const int64_t val) {
+  for (int i = 0; i < values_.size(); ++i) {
+    if (values_.at(i).isInt() && values_.at(i).toInt() == val) {
+      return i;
+    }
+  }
+  return add_scalar(val);
+}
+
 ValueRef ComputeGraph::set_input_tensor(
     const ValueRef idx,
     const bool use_staging) {
@@ -550,6 +559,42 @@ void ComputeGraph::update_descriptor_counts(
         VK_THROW("Unsupported descriptor type!");
     }
   }
+}
+
+void ComputeGraph::register_pipeline_to_create(
+    const vkapi::ShaderInfo& shader_info,
+    const utils::WorkgroupSize& local_workgroup_size,
+    const vkapi::SpecVarList& spec_vars,
+    const std::vector<PushConstantDataInfo>& push_constants) {
+  VkDescriptorSetLayout shader_layout =
+      context()->shader_layout_cache().retrieve(shader_info.kernel_layout);
+
+  uint32_t pc_offset = 0;
+  std::array<uint8_t, kMaxPushConstantSize> pc_data;
+  for (const auto& pc : push_constants) {
+    pc_offset += pc.write(pc_data.data(), pc_offset, kMaxPushConstantSize);
+  }
+
+  vkapi::SpecVarList spec_constants = {
+      SV(local_workgroup_size[0u]),
+      SV(local_workgroup_size[1u]),
+      SV(local_workgroup_size[2u])};
+
+  spec_constants.append(spec_vars);
+
+  const vkapi::ComputePipelineCache::Key desc = {
+      context()->pipeline_layout_cache().retrieve(shader_layout, pc_offset),
+      context()->shader_cache().retrieve(shader_info),
+      spec_constants};
+
+  if (context_->pipeline_cache().contains(desc)) {
+    return;
+  }
+  auto it = pipeline_descriptors_.find(desc);
+  if (it != pipeline_descriptors_.cend()) {
+    return;
+  }
+  pipeline_descriptors_.insert(desc);
 }
 
 utils::uvec3 ComputeGraph::create_global_wg_size(const ValueRef idx) {
@@ -659,6 +704,20 @@ void ComputeGraph::prepare() {
     shared_object.allocate(this);
     shared_object.bind_users(this);
   }
+}
+
+void ComputeGraph::prepare_pipelines() {
+  for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
+    node->prepare_pipelines(this);
+  }
+  for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
+    node->prepare_pipelines(this);
+  }
+  context_->pipeline_cache().create_pipelines(pipeline_descriptors_);
+
+  pipeline_descriptors_ = std::unordered_set<
+      vkapi::ComputePipelineCache::Key,
+      vkapi::ComputePipelineCache::Hasher>();
 }
 
 void ComputeGraph::encode_prepack() {

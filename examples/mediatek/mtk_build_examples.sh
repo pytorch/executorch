@@ -40,6 +40,7 @@ main() {
           -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK/build/cmake/android.toolchain.cmake" \
           -DANDROID_ABI=arm64-v8a \
           -DANDROID_NATIVE_API_LEVEL=26 \
+          -DANDROID_PLATFORM=android-26 \
           -DEXECUTORCH_BUILD_NEURON=ON \
           -DNEURON_BUFFER_ALLOCATOR_LIB="$NEURON_BUFFER_ALLOCATOR_LIB" \
           -B"${build_dir}"
@@ -59,6 +60,7 @@ main() {
           -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK/build/cmake/android.toolchain.cmake" \
           -DANDROID_ABI=arm64-v8a \
           -DANDROID_NATIVE_API_LEVEL=26 \
+          -DANDROID_PLATFORM=android-26 \
           -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
           -DNEURON_BUFFER_ALLOCATOR_LIB="$NEURON_BUFFER_ALLOCATOR_LIB" \
           -B"${example_build_dir}" \

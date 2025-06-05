@@ -33,10 +33,10 @@ rm -rf "${build_dir}"
 # Configure the project with CMake
 # Note: Add any additional configuration options you need here
 cmake -DCMAKE_INSTALL_PREFIX="${build_dir}" \
-      -DBUCK2="$BUCK_PATH" \
       -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK/build/cmake/android.toolchain.cmake" \
       -DANDROID_ABI=arm64-v8a \
       -DANDROID_NATIVE_API_LEVEL=26 \
+      -DANDROID_PLATFORM=android-26 \
       -DEXECUTORCH_BUILD_NEURON=ON \
       -B"${build_dir}"
 
