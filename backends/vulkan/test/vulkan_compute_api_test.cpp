@@ -1536,7 +1536,6 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   graph.prepare();
-  graph.encode_execute();
 
   // +3: shared memory allocations for tensors
   expected_vma_allocation_count += 3;
@@ -1743,7 +1742,6 @@ TEST(VulkanComputeGraphTest, test_large_graph) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   auto build_end_time = std::chrono::system_clock::now();
 
@@ -1820,7 +1818,6 @@ void test_clone(
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   fill_vtensor(graph, a, 0.0f, /*iota = */ true);
 
@@ -2955,7 +2952,6 @@ void test_grid_priors(
   graph.prepare();
   graph.encode_prepack();
   graph.prepack();
-  graph.encode_execute();
 
   vTensorPtr t_in = graph.get_tensor(in.value);
   vTensorPtr t_out = graph.get_tensor(out.value);
@@ -3058,7 +3054,6 @@ void test_transpose_view_mm(
   graph.prepare();
   graph.encode_prepack();
   graph.prepack();
-  graph.encode_execute();
 
   for (int i = 1; i < 4; i++) {
     float val_mat1 = i;
@@ -3125,7 +3120,6 @@ void test_to_copy() {
   graph.prepare();
   graph.encode_prepack();
   graph.prepack();
-  graph.encode_execute();
   graph.propagate_resize();
   graph.execute();
 
