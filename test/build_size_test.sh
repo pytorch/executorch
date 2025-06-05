@@ -44,11 +44,9 @@ test_cmake_size_test() {
     echo "Build size test"
     cmake --build cmake-out/test -j9 --config Release
 
-    echo 'ExecuTorch with no ops binary size, unstripped:'
-    ls -al cmake-out/test/size_test
-
-    echo 'ExecuTorch with portable ops binary size, unstripped:'
-    ls -al cmake-out/test/size_test_all_ops
+    strip cmake-out/test/size_test
+    strip cmake-out/test/size_test_all_ops
+    ls -lah cmake-out/test/
 }
 
 if [[ -z $PYTHON_EXECUTABLE ]]; then
