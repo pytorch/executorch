@@ -499,7 +499,9 @@ def get_ones_inputs():
 def get_select_int_inputs():
     test_suite = VkTestSuite(
         [
-            ((6, 2, 7), 0, 3),
+            ((8, 8, 8), 0, -2),
+            ((8, 8, 8), 1, -3),
+            ((8, 8, 8), 2, -4),
             ((6, 2, 7), 1, 0),
             ((6, 2, 7), 2, 3),
             ((6, 10, 7), 0, 3),
@@ -515,6 +517,10 @@ def get_select_int_inputs():
             ((8, 6, 1, 1), 1, 4),
         ]
     )
+    test_suite.layouts = ["utils::kWidthPacked", "utils::kChannelsPacked"]
+    test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.data_gen = "make_seq_tensor"
     return test_suite
 
 
@@ -1134,6 +1140,64 @@ def get_reduce_op_inputs():
     return test_suite
 
 
+@register_test_suite(["aten.var.dim"])
+def get_var_inputs():
+    test_cases = []
+    shapes_and_dims = [
+        ((L), 0),
+        ((L), -1),
+        ((M, L), 0),
+        ((M, L), 1),
+        ((L, M), -1),
+        ((M, L), -2),
+        ((S, S1, S2), 0),
+        ((S, S1, S2), 1),
+        ((S, S1, S2), 2),
+        ((S, S1, S2), -1),
+        ((S, S1, S2), -2),
+        ((S, S1, S2), -3),
+        ((1, S, S1, S2), 1),
+        ((1, S, S1, S2), 2),
+        ((1, S, S1, S2), 3),
+        ((1, S, S1, S2), -1),
+        ((1, S, S1, S2), -2),
+        ((1, S, S1, S2), -3),
+        # Test batches > 1 where the reduction dim is not the concat dim
+        ((S, L, S1, L), -1),
+        ((S, S2, S1, S), -2),
+        ((S, S2, M, M), 2),
+        ((S, M, S1, L), 3),
+    ]
+
+    for i, (shape, dim) in enumerate(shapes_and_dims):
+        unbiased = (i % 2) == 0
+        test_cases.append((shape, dim, unbiased, True))
+
+    # Texture-based tests
+    texture_test_suite = VkTestSuite(test_cases)
+    texture_test_suite.layouts = [
+        "utils::kChannelsPacked",
+        "utils::kWidthPacked",
+    ]
+    texture_test_suite.storage_types = ["utils::kTexture3D"]
+    texture_test_suite.atol = "1e-4"
+    texture_test_suite.rtol = "1e-4"
+    texture_test_suite.test_name_suffix = "texture"
+
+    # Buffer-based tests
+    buffer_test_suite = VkTestSuite(test_cases)
+    buffer_test_suite.layouts = [
+        "utils::kChannelsPacked",
+        "utils::kWidthPacked",
+    ]
+    buffer_test_suite.storage_types = ["utils::kBuffer"]
+    buffer_test_suite.atol = "1e-4"
+    buffer_test_suite.rtol = "1e-4"
+    buffer_test_suite.test_name_suffix = "buffer"
+
+    return [texture_test_suite, buffer_test_suite]
+
+
 @register_test_suite(
     [
         "aten.sqrt.default",
@@ -1162,6 +1226,22 @@ def get_unary_ops_inputs():
     test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     test_suite.atol = "1e-4"
     test_suite.rtol = "1e-4"
+    return test_suite
+
+
+# separate test suite from unary_ops for learning purposes
+@register_test_suite("aten.tan.default")
+def get_tan_inputs():
+    test_suite = VkTestSuite(
+        [
+            (M1,),
+            (M1, M2),
+            (S1, M1, M2),
+            (S1, S2, S2, M2),
+        ]
+    )
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    test_suite.dtypes = ["at::kFloat", "at::kHalf"]
     return test_suite
 
 

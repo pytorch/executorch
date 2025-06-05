@@ -146,10 +146,11 @@ class VulkanSupportedOperators(OperatorSupportBase):
     def node_is_compatible(
         self, node: torch.fx.Node, features: Optional[OpFeatures] = None
     ) -> Tuple[bool, str]:
-        if utils.is_symint_node(node):
-            return node.target in vulkan_supported_ops, "Op is compatible"
-        elif utils.is_tensor_node(node):
+        if utils.is_tensor_node(node):
             return self.op_node_is_compatible(node, features=features)
+        # For non-tensor nodes, just check if the op is registered
+        elif hasattr(node, "target"):
+            return node.target in vulkan_supported_ops, "Op is compatible"
 
         return False, f"Unsupported node type: {node.format_node()}"
 
