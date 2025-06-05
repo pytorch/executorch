@@ -34,6 +34,9 @@ def define_common_targets():
             visibility = [
                 "@EXECUTORCH_CLIENTS",
             ],
+            compiler_flags = [
+                "-Wno-missing-prototypes",
+            ],
             exported_deps = [
                 "//executorch/backends/xnnpack:xnnpack_backend",
                 "//executorch/extension/llm/runner:runner_lib" + aten_suffix,
