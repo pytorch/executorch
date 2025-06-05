@@ -377,12 +377,12 @@ class Conv1dSequential(torch.nn.Module):
 
 # small models
 class Conv1dReluLogSoftmax(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, dim):
         super().__init__()
         self.conv = torch.nn.Conv1d(
             in_channels=2, out_channels=2, kernel_size=1, stride=1, padding=1
         )
-        self.logsoftmax = torch.nn.LogSoftmax(dim=1)
+        self.logsoftmax = torch.nn.LogSoftmax(dim=dim)
 
     def forward(self, x):
         x = torch.nn.functional.relu(self.conv(x))
@@ -739,6 +739,23 @@ class ExpM1(torch.nn.Module):
 
     def forward(self, x):
         return torch.special.expm1(x)
+
+
+class Fold(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.output_size = (32, 32)
+        self.patch_height = 2
+        self.patch_width = 2
+
+    def forward(self, x):
+        fold = torch.nn.functional.fold(
+            x,
+            output_size=self.output_size,
+            kernel_size=(self.patch_height, self.patch_width),
+            stride=(self.patch_height, self.patch_width),
+        )
+        return fold
 
 
 class Full(torch.nn.Module):
@@ -1515,11 +1532,12 @@ class SliceCopyWithStep(torch.nn.Module):
 
 
 class Softmax(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, dim):
         super().__init__()
+        self.dim = dim
 
     def forward(self, x):
-        return torch.nn.functional.softmax(x, dim=-1)
+        return torch.nn.functional.softmax(x, dim=self.dim)
 
 
 class Sqrt(torch.nn.Module):
@@ -1631,6 +1649,21 @@ class Unbind(torch.nn.Module):
 
     def forward(self, x):
         return torch.unbind(x)
+
+
+class Unfold(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.patch_height = 2
+        self.patch_width = 2
+
+    def forward(self, x):
+        unfold = torch.nn.functional.unfold(
+            x,
+            kernel_size=(self.patch_height, self.patch_width),
+            stride=(self.patch_height, self.patch_width),
+        )
+        return unfold
 
 
 class Unsqueeze(torch.nn.Module):
