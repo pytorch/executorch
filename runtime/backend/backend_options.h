@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstring>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/array_ref.h>
 
 namespace executorch {
 namespace runtime {
@@ -117,6 +118,10 @@ class BackendOptions {
     return err;
   }
 
+  executorch::runtime::ArrayRef<BackendOption> view() const {
+    return executorch::runtime::ArrayRef<BackendOption>(options, size);
+  }
+    
  private:
   BackendOption options[MaxCapacity]{}; // Storage for options
   size_t size; // Current number of options
