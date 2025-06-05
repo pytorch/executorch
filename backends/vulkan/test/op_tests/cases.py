@@ -536,7 +536,6 @@ def get_conv_inputs():
         "utils::kChannelsPacked",
     ]
     test_suite_pw.test_name_suffix = "pw"
-    
     return [test_suite, test_suite_pw]
 
 
