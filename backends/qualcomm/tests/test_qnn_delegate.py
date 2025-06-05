@@ -21,13 +21,12 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
 from executorch.backends.qualcomm._passes.utils import (
     get_passes_dependency_for_capture_program,
 )
-
+from executorch.backends.qualcomm.debugger.utils import generate_optrace
 from executorch.backends.qualcomm.tests.utils import (
     convert_pt2e,
     generate_context_binary,
     ModuleQConfig,
     prepare_pt2e,
-    QnnTool,
     QuantDtype,
     TestQNN,
     validate_context_binary,
@@ -2758,27 +2757,6 @@ class TestQNNFloatingPointUtils(TestQNN):
     def test_qnn_backend_context_extraction(self):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
-        backend_options = generate_htp_compiler_spec(use_fp16=True)
-
-        # Validate dlc
-        compiler_spec = generate_qnn_executorch_compiler_spec(
-            soc_model=self.chipset_table[TestQNN.model],
-            backend_options=backend_options,
-            online_prepare=True,
-        )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
-                module, sample_input, compiler_spec
-            ).to_executorch()
-            pte_path = f"{tmp_dir}/model.pte"
-            with open(pte_path, "wb") as f:
-                edge_prog_mgr.write_to_file(f)
-            dump_context_from_pte(pte_path)
-
-            qnn_tool = QnnTool(tmp_dir, pte_path, sample_input)
-            qnn_tool.qnn_context_binary_generator()
-            qnn_tool.qnn_net_run()
-
         compiler_specs = [
             self.compiler_specs,
         ]
@@ -2801,27 +2779,6 @@ class TestQNNFloatingPointUtils(TestQNN):
     def test_qnn_backend_dump_context_from_pte(self):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
-        backend_options = generate_htp_compiler_spec(use_fp16=True)
-
-        # Validate dlc
-        compiler_spec = generate_qnn_executorch_compiler_spec(
-            soc_model=self.chipset_table[TestQNN.model],
-            backend_options=backend_options,
-            online_prepare=True,
-        )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
-                module, sample_input, compiler_spec
-            ).to_executorch()
-            pte_path = f"{tmp_dir}/model.pte"
-            with open(pte_path, "wb") as f:
-                edge_prog_mgr.write_to_file(f)
-            dump_context_from_pte(pte_path)
-
-            qnn_tool = QnnTool(tmp_dir, pte_path, sample_input)
-            qnn_tool.qnn_context_binary_generator()
-            qnn_tool.qnn_net_run()
-
         compiler_specs = [
             self.compiler_specs,
         ]
@@ -2983,6 +2940,47 @@ class TestQNNFloatingPointUtils(TestQNN):
         assert sorted(golden_data.split()) == sorted(
             test_data.split()
         ), "Generated .dot file does not match the golden file."
+
+    def test_qnn_backend_generate_optrace(self):
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        backend_options = generate_htp_compiler_spec(use_fp16=True)
+
+        compiler_specs = [
+            generate_qnn_executorch_compiler_spec(
+                soc_model=self.chipset_table[TestQNN.model],
+                backend_options=backend_options,
+                online_prepare=True,
+            ),
+            generate_qnn_executorch_compiler_spec(
+                soc_model=self.chipset_table[TestQNN.model],
+                backend_options=backend_options,
+                optrace=True,
+            ),
+        ]
+
+        for compiler_spec in compiler_specs:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+
+                edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+                    module, sample_input, compiler_spec
+                ).to_executorch()
+                pte_path = f"{tmp_dir}/model.pte"
+                with open(pte_path, "wb") as f:
+                    edge_prog_mgr.write_to_file(f)
+
+                adb = self.get_adb_tool(pte_path)
+                binaries_trace = generate_optrace(
+                    tmp_dir, self.chipset_table[self.model], adb, pte_path, sample_input
+                )
+                for _, (optrace, qhas) in binaries_trace.items():
+                    with open(optrace, "r") as optrace_file:
+                        optrace_data = json.load(optrace_file)
+                        for row in optrace_data:
+                            self.assertIn("pid", row)
+                    with open(qhas, "r") as qhas_file:
+                        qhas_data = json.load(qhas_file)
+                        self.assertIn("data", qhas_data)
 
 
 class TestQNNQuantizedUtils(TestQNN):
@@ -3445,27 +3443,6 @@ class TestQNNQuantizedUtils(TestQNN):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         module = self.get_qdq_module(module, sample_input)
-        backend_options = generate_htp_compiler_spec(use_fp16=False)
-
-        # Validate dlc
-        compiler_spec = generate_qnn_executorch_compiler_spec(
-            soc_model=self.chipset_table[TestQNN.model],
-            backend_options=backend_options,
-            online_prepare=True,
-        )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
-                module, sample_input, compiler_spec
-            ).to_executorch()
-            pte_path = f"{tmp_dir}/model.pte"
-            with open(pte_path, "wb") as f:
-                edge_prog_mgr.write_to_file(f)
-            dump_context_from_pte(pte_path)
-
-            qnn_tool = QnnTool(tmp_dir, pte_path, sample_input)
-            qnn_tool.qnn_context_binary_generator()
-            qnn_tool.qnn_net_run()
-
         compiler_specs = [
             self.compiler_specs,
         ]
@@ -3489,27 +3466,6 @@ class TestQNNQuantizedUtils(TestQNN):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         module = self.get_qdq_module(module, sample_input)
-        backend_options = generate_htp_compiler_spec(use_fp16=True)
-
-        # Validate dlc
-        compiler_spec = generate_qnn_executorch_compiler_spec(
-            soc_model=self.chipset_table[TestQNN.model],
-            backend_options=backend_options,
-            online_prepare=True,
-        )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
-                module, sample_input, compiler_spec
-            ).to_executorch()
-            pte_path = f"{tmp_dir}/model.pte"
-            with open(pte_path, "wb") as f:
-                edge_prog_mgr.write_to_file(f)
-            dump_context_from_pte(pte_path)
-
-            qnn_tool = QnnTool(tmp_dir, pte_path, sample_input)
-            qnn_tool.qnn_context_binary_generator()
-            qnn_tool.qnn_net_run()
-
         compiler_specs = [
             self.compiler_specs,
         ]
@@ -3689,6 +3645,47 @@ class TestQNNQuantizedUtils(TestQNN):
         assert sorted(golden_data.split()) == sorted(
             test_data.split()
         ), "Generated .dot file does not match the golden file."
+
+    def test_qnn_backend_generate_optrace(self):
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(module, sample_input)
+        backend_options = generate_htp_compiler_spec(use_fp16=True)
+
+        compiler_specs = [
+            generate_qnn_executorch_compiler_spec(
+                soc_model=self.chipset_table[TestQNN.model],
+                backend_options=backend_options,
+                online_prepare=True,
+            ),
+            generate_qnn_executorch_compiler_spec(
+                soc_model=self.chipset_table[TestQNN.model],
+                backend_options=backend_options,
+                optrace=True,
+            ),
+        ]
+
+        for compiler_spec in compiler_specs:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+                    module, sample_input, compiler_spec
+                ).to_executorch()
+                pte_path = f"{tmp_dir}/model.pte"
+                with open(pte_path, "wb") as f:
+                    edge_prog_mgr.write_to_file(f)
+
+                adb = self.get_adb_tool(pte_path)
+                binaries_trace = generate_optrace(
+                    tmp_dir, self.chipset_table[self.model], adb, pte_path, sample_input
+                )
+                for _, (optrace, qhas) in binaries_trace.items():
+                    with open(optrace, "r") as optrace_file:
+                        optrace_data = json.load(optrace_file)
+                        for row in optrace_data:
+                            self.assertIn("pid", row)
+                    with open(qhas, "r") as qhas_file:
+                        qhas_data = json.load(qhas_file)
+                        self.assertIn("data", qhas_data)
 
 
 class TestExampleLLMScript(TestQNN):
@@ -5150,6 +5147,55 @@ class TestExampleScript(TestQNN):
             self.assertTrue(
                 Path("{0}/{1}.pte".format(tmp_dir, self.model_name)).exists()
             )
+
+
+class TestUtilsScript(TestQNN):
+    def required_envs(self, conditions=None) -> bool:
+        conditions = [] if conditions is None else conditions
+        return all(
+            [
+                self.executorch_root,
+                self.artifact_dir,
+                *conditions,
+            ]
+        )
+
+    def test_debugger_generate_optrace(self):
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/util_scripts/qairt_visualizer_demo.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                for _, (optrace, qhas) in msg["binaries_trace"].items():
+                    with open(optrace, "r") as optrace_file:
+                        optrace_data = json.load(optrace_file)
+                        for row in optrace_data:
+                            self.assertIn("pid", row)
+                    with open(qhas, "r") as qhas_file:
+                        qhas_data = json.load(qhas_file)
+                        self.assertIn("data", qhas_data)
 
 
 def setup_environment():
