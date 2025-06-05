@@ -15,8 +15,8 @@ import expecttest
 
 import torchgen
 from executorch.codegen.api.custom_ops import ComputeNativeFunctionStub
+from executorch.codegen.gen import gen_headers
 from executorch.codegen.model import ETKernelIndex
-from torchgen.gen_executorch import gen_headers
 from torchgen.model import Location, NativeFunction
 from torchgen.selective_build.selector import SelectiveBuilder
 from torchgen.utils import FileManager

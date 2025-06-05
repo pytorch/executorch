@@ -8,6 +8,7 @@ nchw_to_buffer:
   parameter_names_with_default_values:
     DTYPE: float
     STORAGE: buffer
+    USE_PUSH_CONST: True
   generate_variant_forall:
     DTYPE:
       - VALUE: half
@@ -17,3 +18,5 @@ nchw_to_buffer:
       - VALUE: uint8
   shader_variants:
     - NAME: nchw_to_buffer
+    - NAME: nchw_to_buffer_no_pc
+      USE_PUSH_CONST: False
