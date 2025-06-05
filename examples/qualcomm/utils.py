@@ -37,7 +37,7 @@ from executorch.backends.qualcomm.utils.utils import (
 )
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
-from torchao.quantization.pt2e import MovingAverageMinMaxObserver
+from torchao.quantization.pt2e import MovingAverageMinMaxObserver, HistogramObserver
 from torchao.quantization.pt2e.quantize_pt2e import (
     convert_pt2e,
     prepare_pt2e,
@@ -345,7 +345,7 @@ def build_executorch_binary(
         captured_model = torch.export.export(model, inputs, strict=False).module()
         if qat_training_data:
             quantizer = custom_quantizer or make_quantizer(
-                quant_dtype=quant_dtype, is_qat=True
+                quant_dtype=quant_dtype, is_qat=True,
             )
             # qat training
             annotated_model = qat_train(
@@ -470,6 +470,7 @@ def get_imagenet_dataset(
             ]
         )
         imagenet_data = datasets.ImageFolder(dataset_path, transform=preprocess)
+        torch.manual_seed(3407)
         return torch.utils.data.DataLoader(
             imagenet_data,
             shuffle=shuffle,
@@ -503,15 +504,15 @@ def get_masked_language_model_dataset(dataset_path, tokenizer, data_size, shuffl
                 self.dataset = self._get_val_dataset(dataset_path, data_size, tokenizer)
 
             def _get_val_dataset(self, dataset_path, data_size, tokenizer):
+                torch.manual_seed(3407)
                 data_collator = transformers.DataCollatorForLanguageModeling(
                     tokenizer=tokenizer
                 )
                 with open(dataset_path, "r") as f:
                     texts = f.read().split("\n")
-                    texts = [
-                        text for text in random.choices(texts, k=2000) if len(text) > 1
-                    ]
-                    dataset = data_collator([tokenizer(text) for text in texts])
+                    texts = [text for text in texts[:2000] if len(text) > 1]
+                    torch.manual_seed(3407)
+                    dataset = data_collator([tokenizer(text, max_length=256, padding="max_length", truncation=True) for text in texts])
                 return dataset
 
             def __getitem__(self, idx):
@@ -525,6 +526,7 @@ def get_masked_language_model_dataset(dataset_path, tokenizer, data_size, shuffl
                 return self.data_size
 
         dataset = MaskedSentencesDataset(dataset_path, tokenizer, data_size)
+        torch.manual_seed(3407)
         return torch.utils.data.DataLoader(
             dataset,
             shuffle=shuffle,

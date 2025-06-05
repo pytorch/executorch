@@ -52,7 +52,7 @@ echo "avg_mem: $AVG_MEM" >> statistics.txt
 
     runner = {
         "qnn": f"{get_build_dir(backend)}/examples/qualcomm/executor_runner/qnn_executor_runner",
-        "xnn": f"{get_build_dir(backend)}/backends/xnnpack/xnn_executor_runner",
+        "xnn": f"{get_build_dir(backend)}/executor_runner",
     }
     artifacts = {
         "qnn": [
@@ -110,8 +110,8 @@ def get_cmds(backend, pte_path, iteration):
             " ".join(
                 [
                     f"cd {workspace} &&",
-                    "chmod +x ./xnn_executor_runner &&",
-                    f"./xnn_executor_runner {' '.join(cmd_args[backend])}",
+                    "chmod +x ./executor_runner &&",
+                    f"./executor_runner {' '.join(cmd_args[backend])}",
                 ]
             )
         ),
@@ -134,9 +134,9 @@ def get_cmds(backend, pte_path, iteration):
             " ".join(
                 [
                     f"cd {workspace} &&",
-                    "chmod +x ./xnn_executor_runner &&",
+                    "chmod +x ./executor_runner &&",
                     f"chmod +x {memory_script_file} &&",
-                    f"./{memory_script_file} ./xnn_executor_runner {' '.join(cmd_args[backend])}",
+                    f"./{memory_script_file} ./executor_runner {' '.join(cmd_args[backend])}",
                 ]
             )
         ),

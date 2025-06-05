@@ -30,27 +30,42 @@ from transformers import AutoImageProcessor, AutoModelForImageClassification
 
 def get_rvlcdip_dataset(data_size):
     from datasets import load_dataset
+    from torch.utils.data import Dataset
 
-    dataset = load_dataset("nielsr/rvl_cdip_10_examples_per_class", split="train")
-    processor = AutoImageProcessor.from_pretrained(
-        "microsoft/dit-base-finetuned-rvlcdip"
-    )
+    def get_data_loader():
+        class DitDataset(Dataset):
+            def __init__(self, data_size) -> None:
+                self.data_size = data_size
+                self.dataset = self._get_dataset()
+                self.processor = AutoImageProcessor.from_pretrained("microsoft/dit-base-finetuned-rvlcdip")
+
+            def _get_dataset(self):
+                dataset = list(load_dataset("nielsr/rvl_cdip_10_examples_per_class", split="test"))
+                return dataset
+
+            def __getitem__(self, idx):
+                return (
+                    self.processor(images=self.dataset[idx]["image"].convert("RGB"), return_tensors="pt"),
+                    self.dataset[idx]["label"]
+                )
+
+            def __len__(self):
+                return len(self.dataset)
+
+        dataset = DitDataset(data_size)
+        torch.manual_seed(3407)
+        return torch.utils.data.DataLoader(dataset, batch_size=None, shuffle=True)
 
     # prepare input data
     inputs, targets, input_list = [], [], ""
-    for index, data in enumerate(dataset):
+    for index, (feature, target) in enumerate(get_data_loader()):
         if index >= data_size:
             break
-        feature, target = (
-            processor(images=data["image"].convert("RGB"), return_tensors="pt"),
-            data["label"],
-        )
         inputs.append((feature["pixel_values"],))
         targets.append(torch.tensor(target))
         input_list += f"input_{index}_0.raw\n"
 
     return inputs, targets, input_list
-
 
 def main(args):
     skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)

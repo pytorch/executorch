@@ -36,7 +36,7 @@ def main(args):
     data_size = 100
 
     model_name = "albert/albert-base-v2"
-    tokenizer = AutoTokenizer.from_pretrained(model_name, hidden_act="gelu")
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
 
     if args.ci:
         random_ids = torch.randint(low=0, high=100, size=(1, 100), dtype=torch.int32)
