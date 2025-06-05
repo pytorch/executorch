@@ -666,7 +666,7 @@
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_get_representative_inputs</span><span class="p">(</span>
     <span class="n">bundled_program</span><span class="p">:</span> <span class="n">BundledProgram</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">ProgramInput</span><span class="p">]:</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">ProgramInput</span><span class="p">]]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Extracts out the inputs from the bundled program, keyed by the method names.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -679,7 +679,9 @@
             <span class="c1"># Get first example input from the forward method</span>
             <span class="n">test_case</span> <span class="o">=</span> <span class="n">method_test_suite</span><span class="o">.</span><span class="n">test_cases</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
             <span class="k">return</span> <span class="n">test_case</span><span class="o">.</span><span class="n">inputs</span>
-    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;No &#39;forward&#39; method found in the bundled program.&quot;</span><span class="p">)</span>
+
+    <span class="c1"># If the forward method is not defined, return None to indicate that there are no representative inputs for the model.</span>
+    <span class="k">return</span> <span class="kc">None</span>
 
 
 <div class="viewcode-block" id="generate_etrecord"><a class="viewcode-back" href="../../../../etrecord.html#executorch.devtools.etrecord._etrecord.generate_etrecord">[docs]</a><span class="k">def</span><span class="w"> </span><span class="nf">generate_etrecord</span><span class="p">(</span>
