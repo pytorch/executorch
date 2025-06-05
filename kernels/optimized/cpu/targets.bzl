@@ -42,6 +42,7 @@ def define_common_targets():
 
     runtime.cxx_library(
         name = "binary_ops",
+        srcs = ["binary_ops.cpp"],
         exported_headers = ["binary_ops.h"],
         visibility = ["//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS",],
         exported_deps = ["//executorch/runtime/core:core"],
