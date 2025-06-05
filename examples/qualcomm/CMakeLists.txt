@@ -23,7 +23,7 @@ if(NOT PYTHON_EXECUTABLE)
 endif()
 
 if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Debug)
+  set(CMAKE_BUILD_TYPE RelWithDebInfo)
 endif()
 
 # Find prebuilt libraries. executorch package should contain portable_ops_lib,

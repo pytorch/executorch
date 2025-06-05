@@ -536,6 +536,13 @@ def annotate_upsample_bilinear2d(
     annotate_single_in_single_out(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.upsample_bicubic2d.vec])
+def annotate_upsample_upsample_bicubic2d(
+    node: Node, quantization_config: QuantizationConfig
+) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.upsample_nearest2d.vec])
 def annotate_upsample_nearest2d(
     node: Node, quantization_config: QuantizationConfig
@@ -1193,7 +1200,13 @@ def annotate_unbind(node: Node, quantization_config: QuantizationConfig) -> None
         )
 
 
-@register_annotator([torch.ops.aten.split.Tensor, torch.ops.aten.chunk.default])
+@register_annotator(
+    [
+        torch.ops.aten.split_with_sizes.default,
+        torch.ops.aten.split.Tensor,
+        torch.ops.aten.chunk.default,
+    ]
+)
 def annotate_chunk(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
         return
