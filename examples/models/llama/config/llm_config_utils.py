@@ -121,13 +121,17 @@ def convert_args_to_llm_config(args: argparse.Namespace) -> LlmConfig:
     if hasattr(args, "coreml"):
         llm_config.backend.coreml.enabled = args.coreml
     llm_config.backend.coreml.enable_state = getattr(args, "coreml_enable_state", False)
-    llm_config.backend.coreml.preserve_sdpa = getattr(args, "coreml_preserve_sdpa", False)
+    llm_config.backend.coreml.preserve_sdpa = getattr(
+        args, "coreml_preserve_sdpa", False
+    )
     if hasattr(args, "coreml_quantize") and args.coreml_quantize:
         llm_config.backend.coreml.quantize = CoreMLQuantize(args.coreml_quantize)
     if hasattr(args, "coreml_ios"):
         llm_config.backend.coreml.ios = args.coreml_ios
     if hasattr(args, "coreml_compute_units"):
-        llm_config.backend.coreml.compute_units = CoreMLComputeUnit(args.coreml_compute_units)
+        llm_config.backend.coreml.compute_units = CoreMLComputeUnit(
+            args.coreml_compute_units
+        )
 
     # Vulkan
     if hasattr(args, "vulkan"):
