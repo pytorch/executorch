@@ -3,20 +3,22 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-from typing import Dict
+from typing import cast, Dict
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
-
+import numpy as np
 import torch
+
 from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
-from .qnn_constants import OpResizeNearestNeighbor, QNN_OP_PACKAGE_NAME_QTI_AISW
+from .qnn_constants import OpResize, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
-class ResizeBilinear(NodeVisitor):
-    target = ["aten.upsample_nearest2d.default", "aten.upsample_nearest2d.vec"]
+class Resize(NodeVisitor):
+    # Because QNN support ResizeBilinear and ResizeNearestNeighbor, only bicubic need to be handled in resize op
+    target = ["aten.upsample_bicubic2d.vec"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -35,6 +37,11 @@ class ResizeBilinear(NodeVisitor):
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
+        align_corners = cast(bool, node.args[2])
+        transformation_mode = np.uint32(2) if align_corners else np.uint32(1)
+        # This builder supports only bicubic resize.
+        interpolation_mode = np.uint32(2)
+        cubic_coeff = np.float32(-0.75)
 
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
@@ -44,24 +51,34 @@ class ResizeBilinear(NodeVisitor):
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
-
-        resize_nearest_op = PyQnnWrapper.PyQnnOpWrapper(
+        resize_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
-            OpResizeNearestNeighbor.op_name,
+            OpResize.op_name,
         )
-        resize_nearest_op.AddInputTensors([input_tensor_wrapper])
-        resize_nearest_op.AddOutputTensors([output_tensor_wrapper])
-        # align_corners is guaranteed to be false
-        resize_nearest_op.AddScalarParam(
-            OpResizeNearestNeighbor.param_align_corners,
+        resize_op.AddInputTensors([input_tensor_wrapper])
+        resize_op.AddOutputTensors([output_tensor_wrapper])
+
+        resize_op.AddScalarParam(
+            OpResize.param_exclude_outside,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
             {QCOM_DATA: False},
         )
-        resize_nearest_op.AddScalarParam(
-            OpResizeNearestNeighbor.param_half_pixel_centers,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
-            {QCOM_DATA: True},
+        resize_op.AddScalarParam(
+            OpResize.param_transformation_mode,
+            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            {QCOM_DATA: transformation_mode},
         )
 
-        return resize_nearest_op
+        resize_op.AddScalarParam(
+            OpResize.param_interpolation_mode,
+            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            {QCOM_DATA: interpolation_mode},
+        )
+        resize_op.AddScalarParam(
+            OpResize.param_cubic_coeff,
+            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
+            {QCOM_DATA: cubic_coeff},
+        )
+
+        return resize_op

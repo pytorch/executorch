@@ -5,35 +5,51 @@
 # LICENSE file in the root directory of this source tree.
 
 import json
+import logging
 import os
 from multiprocessing.connection import Client
 
 import numpy as np
 import torch
-from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
-)
+
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
-    get_imagenet_dataset,
     make_output_dir,
+    make_quantizer,
     parse_skip_delegation_node,
     setup_common_args_and_variables,
     SimpleADB,
     topk_accuracy,
 )
 
-from transformers import Dinov2ForImageClassification
+from torchao.quantization.pt2e import HistogramObserver
+from transformers import AutoImageProcessor, AutoModelForImageClassification
 
 
-def get_instance():
-    model = Dinov2ForImageClassification.from_pretrained(
-        "facebook/dinov2-small-imagenet1k-1-layer"
+def get_rvlcdip_dataset(data_size):
+    from datasets import load_dataset
+
+    dataset = load_dataset("nielsr/rvl_cdip_10_examples_per_class", split="train")
+    processor = AutoImageProcessor.from_pretrained(
+        "microsoft/dit-base-finetuned-rvlcdip"
     )
 
-    return model.eval()
+    # prepare input data
+    inputs, targets, input_list = [], [], ""
+    for index, data in enumerate(dataset):
+        if index >= data_size:
+            break
+        feature, target = (
+            processor(images=data["image"].convert("RGB"), return_tensors="pt"),
+            data["label"],
+        )
+        inputs.append((feature["pixel_values"],))
+        targets.append(torch.tensor(target))
+        input_list += f"input_{index}_0.raw\n"
+
+    return inputs, targets, input_list
 
 
 def main(args):
@@ -47,29 +63,39 @@ def main(args):
             "device serial is required if not compile only. "
             "Please specify a device serial by -s/--device argument."
         )
+    data_num = 160
+    if args.ci:
+        inputs = [(torch.rand(1, 3, 224, 224),)]
+        logging.warning(
+            "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
+        )
+    else:
+        inputs, targets, input_list = get_rvlcdip_dataset(data_num)
 
-    img_size, data_num = 224, 100
-    inputs, targets, input_list = get_imagenet_dataset(
-        dataset_path=f"{args.dataset}",
-        data_size=data_num,
-        image_shape=(256, 256),
-        crop_size=img_size,
+    module = (
+        AutoModelForImageClassification.from_pretrained(
+            "microsoft/dit-base-finetuned-rvlcdip"
+        )
+        .eval()
+        .to("cpu")
     )
-    sample_input = (torch.randn((1, 3, img_size, img_size)),)
 
-    pte_filename = "dino_v2"
-    instance = get_instance()
-    passes_job = get_capture_program_passes()
+    pte_filename = "dit_qnn_q8"
+    # Use HistogramObserver to get better performance
+    quantizer = make_quantizer(
+        quant_dtype=QuantDtype.use_8a8w, act_observer=HistogramObserver
+    )
+
     build_executorch_binary(
-        instance,
-        sample_input,
+        module.eval(),
+        inputs[0],
         args.model,
         f"{args.artifact}/{pte_filename}",
         inputs,
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
         quant_dtype=QuantDtype.use_8a8w,
-        passes_job=passes_job,
+        custom_quantizer=quantizer,
         shared_buffer=args.shared_buffer,
     )
 
@@ -84,6 +110,7 @@ def main(args):
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
     )
     adb.push(inputs=inputs, input_list=input_list)
     adb.execute()
@@ -102,7 +129,6 @@ def main(args):
                 os.path.join(output_data_folder, f"output_{i}_0.raw"), dtype=np.float32
             )
         )
-
     k_val = [1, 5]
     topk = [topk_accuracy(predictions, targets, k).item() for k in k_val]
     if args.ip and args.port != -1:
@@ -119,21 +145,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "-a",
         "--artifact",
-        help="Path for storing generated artifacts by this example. Default ./dino_v2",
-        default="./dino_v2",
+        help="path for storing generated artifacts by this example. " "Default ./dit",
+        default="./dit",
         type=str,
-    )
-
-    parser.add_argument(
-        "-d",
-        "--dataset",
-        help=(
-            "path to the validation folder of ImageNet dataset. "
-            "e.g. --dataset imagenet-mini/val "
-            "for https://www.kaggle.com/datasets/ifigotin/imagenetmini-1000)"
-        ),
-        type=str,
-        required=True,
     )
 
     args = parser.parse_args()
