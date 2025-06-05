@@ -29,6 +29,7 @@ from executorch.backends.vulkan._passes import (
     SqueezeUnsqueezeInputs,
     TagMemoryMetaPass,
 )
+from executorch.backends.vulkan._passes.remove_asserts import RemoveAssertsTransform
 
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
@@ -172,6 +173,7 @@ class VulkanBackend(BackendDetails):
         program = apply_passes(
             program,
             [
+                RemoveAssertsTransform(),
                 # Since this pass may replace a scalar argument with a tensor argument,
                 # this pass may result in a non ATen compliant graph structure.
                 RemoveLocalScalarDenseOpsTransform(),

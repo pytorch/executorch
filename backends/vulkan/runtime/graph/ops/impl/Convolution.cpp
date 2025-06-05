@@ -106,9 +106,10 @@ ValueRef prepack_biases(
       graph.create_local_wg_size(v),
       vref,
       v,
-      {t->sizes_ubo()},
+      {},
       // Specialization constants
-      {t->hashed_layout()}));
+      {t->hashed_layout()},
+      {graph.sizes_pc_of(v)}));
 
   return v;
 }
@@ -210,6 +211,8 @@ ValueRef prepack_weights(
   vkapi::ShaderInfo shader =
       get_conv2d_shader(graph, *t, /*prepack_weights = */ true, method, vref);
 
+  const auto original_sizes_pc =
+      utils::make_ivec4(original_sizes, /*reverse = */ true);
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       shader,
@@ -217,11 +220,11 @@ ValueRef prepack_weights(
       graph.create_local_wg_size(v),
       vref,
       v,
-      {t->sizes_ubo(),
-       graph.create_params_buffer(
-           utils::make_ivec4(original_sizes, /*reverse = */ true))},
+      {},
       // Specialization constants
-      {SV(t->packed_dim())}));
+      {SV(t->packed_dim())},
+      {graph.sizes_pc_of(v),
+       PushConstantDataInfo(&original_sizes_pc, sizeof(original_sizes_pc))}));
 
   return v;
 }

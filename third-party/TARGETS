@@ -23,9 +23,9 @@ prebuilt_python_library_defs = {
         "url": "https://files.pythonhosted.org/packages/12/fc/a4d5a7554e0067677823f7265cb3ae22aed8a238560b5133b58cda252dad/PyYAML-6.0-cp39-cp39-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_12_x86_64.manylinux2010_x86_64.whl",
     },
     "typing-extensions": {
-        "out": "typing_extensions-4.2.0-py3-none-any.whl",
-        "sha1": "ff0849420e94f425818bff5d0f25e3cdfaba8601",
-        "url": "https://files.pythonhosted.org/packages/75/e1/932e06004039dd670c9d5e1df0cd606bf46e29a28e65d5bb28e894ea29c9/typing_extensions-4.2.0-py3-none-any.whl",
+        "out": "typing_extensions-4.13.2-py3-none-any.whl",
+        "sha1": "85a14b4d38ca0e528328b6b591769e1d989f12b8",
+        "url": "https://files.pythonhosted.org/packages/8b/54/b1ae86c0973cc6f0210b53d508ca3641fb6d0c56823f288d108bc7ab3cc8/typing_extensions-4.13.2-py3-none-any.whl",
     },
     "wcwidth": {
         "out": "wcwidth-0.1.5-py2.py3-none-any.whl",
@@ -72,18 +72,6 @@ runtime.python_library(
 runtime.python_binary(
     name = "gen",
     main_module = "torchgen.gen",
-    visibility = [
-        "PUBLIC",
-    ],
-    deps = [
-        ":torchgen",
-    ],
-    _is_external_target = True,
-)
-
-runtime.python_binary(
-    name = "gen_executorch",
-    main_module = "torchgen.gen_executorch",
     visibility = [
         "PUBLIC",
     ],
