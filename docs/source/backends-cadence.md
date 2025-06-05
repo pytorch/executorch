@@ -186,7 +186,7 @@ cmake -DCMAKE_BUILD_TYPE=Debug \
     -Bcmake-out/examples/cadence \
     examples/cadence
 
-cmake --build cmake-out/examples/cadence -j8 -t cadence_executorch_example
+cmake --build cmake-out/examples/cadence -j$(($(nproc) - 1)) -t cadence_executorch_example
 ```
 
 After having succesfully run the above step you should see two binary files in their CMake output directory.

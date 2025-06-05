@@ -27,7 +27,7 @@ main() {
     -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
     -DEXECUTORCH_ENABLE_LOGGING=ON \
     -Bcmake-out .
-  cmake --build cmake-out --target install --config Release -j16
+  cmake --build cmake-out --target install --config Release -j$(($(nproc) - 1))
 
   local example_dir=backends/cadence
   local build_dir="cmake-out/${example_dir}"
@@ -39,7 +39,7 @@ main() {
     -DEXECUTORCH_ENABLE_LOGGING=ON \
     -B"${build_dir}" \
     "${example_dir}"
-  cmake --build "${build_dir}" --config Release -j16
+  cmake --build "${build_dir}" --config Release -j$(($(nproc) - 1))
 
   local runner="${PWD}/${build_dir}/cadence_runner"
   if [[ ! -f "${runner}" ]]; then

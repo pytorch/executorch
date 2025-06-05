@@ -282,7 +282,7 @@ You can export and run the original Llama 3 8B instruct model.
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
         -Bcmake-out .
 
-    cmake --build cmake-out -j16 --target install --config Release
+    cmake --build cmake-out -j$(($(nproc) - 1)) --target install --config Release
     ```
 Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the section of Common Issues and Mitigations below for solutions.
 
@@ -299,7 +299,7 @@ Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the 
         -Bcmake-out/examples/models/llama \
         examples/models/llama
 
-    cmake --build cmake-out/examples/models/llama -j16 --config Release
+    cmake --build cmake-out/examples/models/llama -j$(($(sysctl -n hw.ncpu) - 1)) --config Release
     ```
 
 3. Run model. Run options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/llama/main.cpp#L18-L40).
@@ -339,7 +339,7 @@ cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
     -Bcmake-out-android .
 
-cmake --build cmake-out-android -j16 --target install --config Release
+cmake --build cmake-out-android -j$(($(nproc) - 1)) --target install --config Release
 ```
 
 **1.2 Build llama runner for android**
@@ -358,7 +358,7 @@ cmake  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -Bcmake-out-android/examples/models/llama \
     examples/models/llama
 
-cmake --build cmake-out-android/examples/models/llama -j16 --config Release
+cmake --build cmake-out-android/examples/models/llama -j$(($(nproc) - 1)) --config Release
 ```
 
 **2. Run on Android via adb shell**
@@ -440,7 +440,7 @@ cmake -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
     -Bcmake-out .
-cmake --build cmake-out -j16 --target install --config Release
+cmake --build cmake-out -j$(($(nproc) - 1)) --target install --config Release
 ```
 
 Next install the llama runner with torchao kernels enabled (similar to step 3.2 above):
@@ -455,7 +455,7 @@ cmake -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_BUILD_TORCHAO=ON \
     -Bcmake-out/examples/models/llama \
     examples/models/llama
-cmake --build cmake-out/examples/models/llama -j16 --config Release
+cmake --build cmake-out/examples/models/llama -j$(($(nproc) - 1)) --config Release
 ```
 
 Finally run your model (similar to step 3.3 above):

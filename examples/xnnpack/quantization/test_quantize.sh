@@ -56,7 +56,7 @@ test_cmake_quantization() {
       -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 
-  cmake --build cmake-out -j4
+  cmake --build cmake-out -j$(($(nproc) - 1)) 
 
   EXT=$(get_shared_lib_ext)
   SO_LIB="cmake-out/kernels/quantized/libquantized_ops_aot_lib$EXT"

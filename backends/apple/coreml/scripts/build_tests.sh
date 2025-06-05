@@ -36,7 +36,7 @@ cmake "$EXECUTORCH_ROOT_PATH" -B"$CMAKE_EXECUTORCH_BUILD_DIR_PATH" \
 -DEXECUTORCH_BUILD_XNNPACK=OFF \
 -DEXECUTORCH_BUILD_GFLAGS=OFF
 
-cmake --build "$CMAKE_EXECUTORCH_BUILD_DIR_PATH"  -j9 -t executorch
+cmake --build "$CMAKE_EXECUTORCH_BUILD_DIR_PATH"  -j$(($(nproc) - 1)) -t executorch
 
 # Build protobuf
 echo "ExecuTorch: Building libprotobuf-lite"
@@ -52,7 +52,7 @@ cmake "$PROTOBUF_DIR_PATH/cmake" -B"$CMAKE_PROTOBUF_BUILD_DIR_PATH" \
 -DCMAKE_MACOSX_BUNDLE=OFF \
 -DCMAKE_CXX_STANDARD=17
 
-cmake --build "$CMAKE_PROTOBUF_BUILD_DIR_PATH"  -j9 -t libprotobuf-lite
+cmake --build "$CMAKE_PROTOBUF_BUILD_DIR_PATH"  -j$(($(nproc) - 1)) -t libprotobuf-lite
 
 # Copy required libraries
 echo "ExecuTorch: Copying libraries"

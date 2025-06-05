@@ -61,7 +61,7 @@ llama3/Meta-Llama-3-8B-Instruct/tokenizer.model -p <path_to_params.json> -c <pat
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
         -Bcmake-android-out .
 
-    cmake --build cmake-android-out -j16 --target install --config Release
+    cmake --build cmake-android-out -j$(($(nproc) - 1)) --target install --config Release
     ```
 2. Build llama runner for android
 ```bash
@@ -76,7 +76,7 @@ llama3/Meta-Llama-3-8B-Instruct/tokenizer.model -p <path_to_params.json> -c <pat
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
         -Bcmake-android-out/examples/models/llama examples/models/llama
 
-    cmake --build cmake-android-out/examples/models/llama -j16 --config Release
+    cmake --build cmake-android-out/examples/models/llama -j$(($(nproc) - 1)) --config Release
 ```
 3. Run on Android via adb shell
 *Pre-requisite*: Make sure you enable USB debugging via developer options on your phone

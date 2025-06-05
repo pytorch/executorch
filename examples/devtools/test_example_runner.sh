@@ -24,7 +24,7 @@ cmake_install_executorch_devtools_lib() {
           -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           -Bcmake-out .
-  cmake --build cmake-out -j9 --target install --config Release
+  cmake --build cmake-out -j$(($(nproc) - 1))  --target install --config Release
 }
 
 test_cmake_devtools_example_runner() {
@@ -42,7 +42,7 @@ test_cmake_devtools_example_runner() {
         ${example_dir}
 
   echo "Building ${example_dir}"
-  cmake --build ${build_dir} -j9 --config Release
+  cmake --build ${build_dir} -j$(($(nproc) - 1))  --config Release
 
   echo 'Running example_runner'
   ${build_dir}/example_runner --bundled_program_path="./mv2_bundled.bpte"

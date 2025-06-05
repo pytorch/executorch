@@ -40,7 +40,7 @@ cmake -DBUCK2="$BUCK_PATH" \
 
 # Build the project
 cd ..
-cmake --build cmake-android-out -j4
+cmake --build cmake-android-out -j$(($(nproc) - 1))
 
 # Switch back to the original directory
 cd - > /dev/null

@@ -17,7 +17,7 @@ tar xf "${OPENSSL}.tar.gz"
 pushd "${OPENSSL}" || true
 ./config --prefix=/opt/openssl -d "-Wl,--enable-new-dtags,-rpath,$(LIBRPATH)"
 # NOTE: openssl install errors out when built with the -j option
-make -j6; make install_sw
+make -j$((nproc) - 1); make install_sw
 # Link the ssl libraries to the /usr/lib folder.
 ln -s /opt/openssl/lib/lib* /usr/lib
 popd || true

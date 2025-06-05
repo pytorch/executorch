@@ -158,7 +158,7 @@ cmake_install_executorch_libraries() {
         -DEXECUTORCH_BUILD_QNN="$QNN" \
         -DQNN_SDK_ROOT="$QNN_SDK_ROOT" \
         -Bcmake-out .
-    cmake --build cmake-out -j9 --target install --config "$CMAKE_BUILD_TYPE"
+    cmake --build cmake-out -j$(($(nproc) - 1)) --target install --config "$CMAKE_BUILD_TYPE"
 }
 
 cmake_build_llama_runner() {
@@ -173,7 +173,7 @@ cmake_build_llama_runner() {
         -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
         -Bcmake-out/${dir} \
         ${dir}
-    cmake --build cmake-out/${dir} -j9 --config "$CMAKE_BUILD_TYPE"
+    cmake --build cmake-out/${dir} -j$(($(nproc) - 1)) --config "$CMAKE_BUILD_TYPE"
 
 }
 

@@ -24,7 +24,7 @@ python export_model.py
 (mkdir cmake-out && cd cmake-out && cmake ..)
 
 # Build the executor_runner target
-cmake --build cmake-out --target executor_runner -j9
+cmake --build cmake-out --target executor_runner -j$(($(nproc) - 1))
 
 # Run the model for inference.
 ./cmake-out/executor_runner --model_path phi3_mini_lora.pte

@@ -47,7 +47,7 @@ main() {
 
 
     # Build the project
-    cmake --build cmake-android-out --target install --config Release -j5
+    cmake --build cmake-android-out --target install --config Release -j$(($(nproc) - 1)) 
 
     ## Build example
     local example_dir=examples/mediatek
@@ -65,7 +65,7 @@ main() {
           -B"${example_build_dir}" \
           $EXECUTORCH_ROOT/$example_dir
 
-    cmake --build "${example_build_dir}" -j5
+    cmake --build "${example_build_dir}" -j$(($(nproc) - 1)) 
 
     # Switch back to the original directory
     cd - > /dev/null

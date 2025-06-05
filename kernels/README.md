@@ -255,7 +255,7 @@ cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
           -DCMAKE_BUILD_TYPE=Release \
           -DPYTHON_EXECUTABLE=python \
           -Bcmake-out .
-cmake --build cmake-out -j9 --target install --config Release
+cmake --build cmake-out -j$(($(nproc) - 1)) --target install --config Release
 ```
 2. The generated `NativeFunctions.h` file is located in
 ```
@@ -365,7 +365,7 @@ cmake . \
   -DEXECUTORCH_BUILD_TESTS=ON \
   -Bcmake-out
 
-cmake --build cmake-out -j9 --target install
+cmake --build cmake-out -j$(($(nproc) - 1)) --target install
 ```
 2. Run tests. You should see your test here.
 ```

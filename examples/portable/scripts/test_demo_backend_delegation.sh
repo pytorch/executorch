@@ -24,7 +24,7 @@ build_cmake_executor_runner() {
     && cd ${CMAKE_OUTPUT_DIR} \
     && retry cmake -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 
-  cmake --build ${CMAKE_OUTPUT_DIR} -j4
+  cmake --build ${CMAKE_OUTPUT_DIR} -j$(($(nproc) - 1)) 
 }
 
 test_demo_backend_delegation() {

@@ -49,7 +49,7 @@ Use `-h` (or `--help`) to see all the supported models.
 (mkdir cmake-out \
     && cd cmake-out \
     && cmake -DEXECUTORCH_PAL_DEFAULT=posix ..) \
-  && cmake --build cmake-out -j32 --target executor_runner
+  && cmake --build cmake-out -j$(($(nproc) - 1)) --target executor_runner
 
 # Run the tool on the generated model.
 ./cmake-out/executor_runner --model_path mv2.pte

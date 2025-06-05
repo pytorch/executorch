@@ -177,7 +177,7 @@ Delegate:
     -DEXECUTORCH_BUILD_VULKAN=ON \
     -DPYTHON_EXECUTABLE=python \
     -Bcmake-android-out && \
-  cmake --build cmake-android-out -j16 --target install)
+  cmake --build cmake-android-out -j$(($(nproc) - 1)) --target install)
 ```
 
 ### Run the Vulkan model on device
@@ -193,7 +193,7 @@ GPU!
 
 ```shell
 # Build a model runner binary linked with the Vulkan delegate libs
-cmake --build cmake-android-out --target vulkan_executor_runner -j32
+cmake --build cmake-android-out --target vulkan_executor_runner -j$(($(nproc) - 1))
 
 # Push model to device
 adb push vk_add.pte /data/local/tmp/vk_add.pte

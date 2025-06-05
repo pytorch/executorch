@@ -23,7 +23,7 @@ build_cmake_quantized_aot_lib() {
       -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 
-  cmake --build ${CMAKE_OUTPUT_DIR} -j4
+  cmake --build ${CMAKE_OUTPUT_DIR} -j$(($(nproc) - 1))
 }
 
 build_cmake_quantized_aot_lib

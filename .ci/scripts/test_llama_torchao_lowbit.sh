@@ -36,7 +36,7 @@ cmake -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
     -Bcmake-out .
-cmake --build cmake-out -j16 --target install --config Release
+cmake --build cmake-out -j$(( $(nproc) - 1 )) --target install --config Release
 
 # Install llama runner with torchao
 cmake -DPYTHON_EXECUTABLE=python \
@@ -48,7 +48,7 @@ cmake -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_BUILD_TORCHAO=ON \
     -Bcmake-out/examples/models/llama \
     examples/models/llama
-cmake --build cmake-out/examples/models/llama -j16 --config Release
+cmake --build cmake-out/examples/models/llama -j$(($(nproc) - 1)) --config Release
 
 # Download stories llama110m artifacts
 download_stories_model_artifacts
