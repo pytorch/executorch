@@ -21,6 +21,9 @@ ethos-u-scratch/
 executorch.egg-info
 pip-out/
 
+# Third-party libraries, symlink'ed to FetchContent source directories
+third-party/gflags
+
 # Any exported models and profiling outputs
 *.bin
 *.model

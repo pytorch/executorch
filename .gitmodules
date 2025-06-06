@@ -40,9 +40,6 @@
 [submodule "third-party/flatcc"]
 	path = third-party/flatcc
 	url = https://github.com/dvidelabs/flatcc.git
-[submodule "third-party/gflags"]
-	path = third-party/gflags
-	url = https://github.com/gflags/gflags.git
 [submodule "third-party/googletest"]
 	path = third-party/googletest
 	url = https://github.com/google/googletest.git

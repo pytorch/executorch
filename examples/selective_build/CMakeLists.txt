@@ -23,6 +23,7 @@ set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/FetchContent.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -39,9 +40,7 @@ set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 find_package(executorch CONFIG REQUIRED)
-find_package(
-  gflags REQUIRED PATHS ${CMAKE_CURRENT_BINARY_DIR}/../../third-party
-)
+FetchContent_gflags()
 
 target_include_directories(executorch_core INTERFACE ${_common_include_directories})
 

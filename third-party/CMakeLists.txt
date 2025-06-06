@@ -14,6 +14,13 @@ if(BUILD_TESTING)
   add_subdirectory(googletest)
 endif()
 
+FetchContent_gflags()
+# Create a symlink from the gflags source directory to third-party/gflags
+message(STATUS "gflags source dir: ${gflags_SOURCE_DIR}")
+execute_process(
+  COMMAND ${CMAKE_COMMAND} -E create_symlink "${gflags_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/gflags"
+)
+
 # MARK: - flatbuffers
 
 if(WIN32)

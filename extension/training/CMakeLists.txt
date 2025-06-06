@@ -31,6 +31,7 @@ target_link_libraries(extension_training executorch_core kernels_util_all_deps
 
 list(TRANSFORM _train_xor__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_executable(train_xor ${_train_xor__srcs})
+
 target_include_directories(
   train_xor PUBLIC ${_common_include_directories}
 )
