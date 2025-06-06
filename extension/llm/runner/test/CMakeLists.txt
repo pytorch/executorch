@@ -17,12 +17,13 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
-set(_test_srcs generation_config_test.cpp)
+set(_test_srcs test_generation_config.cpp test_text_llm_runner.cpp)
 
 et_cxx_test(
-  generation_config_test
+  test_runner
   SOURCES
   ${_test_srcs}
   EXTRA_LIBS
   executorch
+  extension_llm_runner
 )
