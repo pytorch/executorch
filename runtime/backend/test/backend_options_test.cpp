@@ -14,10 +14,10 @@
 using namespace ::testing;
 using executorch::runtime::BackendOptions;
 using executorch::runtime::BoolKey;
+using executorch::runtime::Error;
 using executorch::runtime::IntKey;
 using executorch::runtime::OptionKey;
 using executorch::runtime::StrKey;
-using executorch::runtime::Error;
 
 class BackendOptionsTest : public ::testing::Test {
  protected:
@@ -59,9 +59,9 @@ TEST_F(BackendOptionsTest, HandlesBoolOptions) {
 // Test integer options
 TEST_F(BackendOptionsTest, HandlesIntOptions) {
   options.set_option(IntKey("num_threads"), 256);
-  int size = 0;
-  EXPECT_EQ(options.get_option(IntKey("num_threads"), size), Error::Ok);
-  EXPECT_EQ(size, 256);
+  int64_t num_threads = 0;
+  EXPECT_EQ(options.get_option(IntKey("num_threads"), num_threads), Error::Ok);
+  EXPECT_EQ(num_threads, 256);
 }
 
 // Test error conditions
@@ -95,7 +95,7 @@ TEST_F(BackendOptionsTest, HandlesCapacity) {
   }
 
   // Verify all exist
-  int value;
+  int64_t value;
   for (int i = 0; i < 5; i++) {
     EXPECT_EQ(options.get_option(IntKey(keys[i].c_str()), value), Error::Ok);
     EXPECT_EQ(value, i);
@@ -119,7 +119,7 @@ TEST_F(BackendOptionsTest, EnforcesKeyTypes) {
   options.set_option(IntKey("flag"), 123); // Overwrites the boolean entry
 
   bool bval;
-  int ival;
+  int64_t ival;
 
   // Boolean get should fail - type was overwritten to INT
   EXPECT_EQ(options.get_option(BoolKey("flag"), bval), Error::InvalidArgument);
