@@ -331,6 +331,9 @@ class QuantizationConfig:
             self._validate_qmode()
 
     def _validate_qmode(self) -> None:
+        if not self.qmode:
+            return
+
         if self.qmode in self.QMODE_OPTIONS:
             return
 
@@ -466,13 +469,20 @@ class LlmConfig:
     backend: BackendConfig = field(default_factory=BackendConfig)
 
     def __post_init__(self):
-        # If we are using Ao's low bit quantization kernels for ARM,
-        # we do not want to also be delegating to a CPU backend (XNNPack).
+        self._validate_low_bit_no_xnnpack()
+
+    def _validate_low_bit(self):
+        if not self.quantization.qmode:
+            return
+
         using_lowbit_ops = False
         for pattern in self.quantization.AO_QUANT_PATTERNS:
             matches = re.findall(pattern, self.quantization.qmode)
             if len(matches) == 1:
                 using_lowbit_ops = True
+
+        # If we are using Ao's low bit quantization kernels for ARM,
+        # we do not want to also be delegating to a CPU backend (XNNPack).
         if using_lowbit_ops and self.backend.xnnpack.enabled:
             raise ValueError(
                 "Cannot use low-bit Ao ops (from qmode=torchao:...) while also delegating to XNNPack."
