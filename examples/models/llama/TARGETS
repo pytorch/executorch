@@ -82,8 +82,6 @@ runtime.python_binary(
     ],
     deps = [
         ":export_library",
-        ":export_llama_args",
-        ":export_llama_hydra",
         "//caffe2:torch",
         "//executorch/extension/pybindings:aten_lib",
     ],
@@ -134,6 +132,8 @@ runtime.python_library(
     name = "export_library",
     srcs = [
         "export_llama.py",
+        "export_llama_args.py",
+        "export_llama_hydra.py",
         "export_llama_lib.py",
         "model.py",
     ],
@@ -231,40 +231,6 @@ runtime.python_library(
     visibility = ["//executorch/..."],
     deps = [
         "//caffe2:torch",
-    ],
-)
-
-runtime.python_library(
-    name = "export_llama_args",
-    srcs = [
-        "export_llama_args.py",
-    ],
-    _is_external_target = True,
-    base_module = "executorch.examples.models.llama",
-    visibility = [
-        "//executorch/examples/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
-    deps = [
-        ":export_library",
-    ],
-)
-
-runtime.python_library(
-    name = "export_llama_hydra",
-    srcs = [
-        "export_llama_hydra.py",
-    ],
-    _is_external_target = True,
-    base_module = "executorch.examples.models.llama",
-    visibility = [
-        "//executorch/examples/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
-    deps = [
-        ":export_library",
-        "//executorch/examples/models/llama/config:llm_config",
-        "fbsource//third-party/pypi/hydra-core:hydra-core",
     ],
 )
 
