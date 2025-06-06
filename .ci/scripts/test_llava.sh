@@ -64,9 +64,10 @@ cmake_install_executorch_libraries_for_android() {
 
 
 LLAVA_COMMON_CMAKE_ARGS="                        \
+        -DBUILD_TESTING=OFF                      \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -DCMAKE_INSTALL_PREFIX=${BUILD_DIR}      \
-        -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}         \
+        -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}   \
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON     \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON  \
         -DEXECUTORCH_BUILD_XNNPACK=ON"
