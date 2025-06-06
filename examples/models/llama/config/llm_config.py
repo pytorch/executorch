@@ -469,7 +469,7 @@ class LlmConfig:
     backend: BackendConfig = field(default_factory=BackendConfig)
 
     def __post_init__(self):
-        self._validate_low_bit_no_xnnpack()
+        self._validate_low_bit()
 
     def _validate_low_bit(self):
         if not self.quantization.qmode:
