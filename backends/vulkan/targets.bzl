@@ -170,6 +170,10 @@ def define_common_targets(is_fbcode = False):
                 "ovr_config//os:macos": mac_flags,
             })
 
+            etvk_default_cache_path = read_config("etvk", "default_cache_path", "")
+            if etvk_default_cache_path != "":
+                VK_API_PREPROCESSOR_FLAGS += ["-DETVK_DEFAULT_CACHE_PATH={}".format(etvk_default_cache_path)]
+
             debug_mode = read_config("etvk", "debug", "0") == "1"
             if debug_mode:
                 VK_API_PREPROCESSOR_FLAGS += ["-DVULKAN_DEBUG"]
