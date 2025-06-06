@@ -124,3 +124,23 @@ function(check_required_options_on)
     endforeach()
   endif()
 endfunction()
+
+
+# Check if flags conflict with each other.
+function(check_conflicting_options_on)
+  cmake_parse_arguments(
+    ARG
+    ""
+    "IF_ON"
+    "CONFLICTS_WITH"
+    ${ARGN}
+  )
+
+  if(${${ARG_IF_ON}})
+    foreach(conflict ${ARG_CONFLICTS_WITH})
+      if(${${conflict}})
+        message(FATAL_ERROR "Both '${ARG_IF_ON}' and '${conflict}' can't be ON")
+      endif()
+    endforeach()
+  endif()
+endfunction()
