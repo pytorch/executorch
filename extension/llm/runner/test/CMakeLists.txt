@@ -25,4 +25,5 @@ et_cxx_test(
   ${_test_srcs}
   EXTRA_LIBS
   executorch
+  extension_llm_runner
 )
