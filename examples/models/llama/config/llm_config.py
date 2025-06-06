@@ -12,10 +12,11 @@ Configurations for exporting Llama.
 Uses dataclases, which integrate with OmegaConf and Hydra.
 """
 
+import ast
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional
+from typing import ClassVar, List, Optional
 
 
 ################################################################################
@@ -57,18 +58,35 @@ class BaseConfig:
     Configurations specific to the model, e.g. whether it’s Qwen3 or Phi-4-mini,
     and are the minimal set of parameters needed to load the pretrained
     eager model and its weights.
+
+    Attributes:
+        model_class: Which model to to export.
+        params: Model parameters, such as n_layers, hidden_size, etc.
+            If left empty will use defaults specified in model_args.py.
+        checkpoint: Path to the checkpoint file.
+            If left empty, the model will be initialized with random weights.
+        checkpoint_dir: Path to directory containt sharded checkpoint files.
+        tokenizer_path: Path to the tokenizer file.
+        metadata: Json string containining metadata information.
+            e.g. '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+        use_lora: Rank of the LoRA, if set to 0 then this means no LoRA. For use with QAT.
+        fairseq2: For legacy internal use cases, this is safe to ignore.
+        preq_mode: Legacy option to specify how prequantized weights are loaded.
+            Going forward, ExecuTorch supports loading weights prequantized through
+            TorchAo as-is, without any special handling.
+        preq_group_size: Legacy option to specify the gropu size of prequantized weights.
+        preq_embedding_quantize: Legacy option to specify how prequanitzed embeddings
+            are loaded.
     """
 
     model_class: ModelType = ModelType.LLAMA3
     params: Optional[str] = None
     checkpoint: Optional[str] = None
-    checkpoint_dir: Optional[str] = None  # For sharded checkpoint.
+    checkpoint_dir: Optional[str] = None
     tokenizer_path: Optional[str] = None
     metadata: Optional[str] = None
-    use_lora: bool = False
-    fairseq2: bool = False  # For legacy internal use cases.
-
-    # Legacy pre-quantization options that happen during model weight loading.
+    use_lora: int = int
+    fairseq2: bool = False
     preq_mode: Optional[PreqMode] = None
     preq_group_size: int = 32
     preq_embedding_quantize: str = "8,0"
@@ -98,6 +116,32 @@ class ModelConfig:
     finish off the rest of the model configuration in eager. You can think
     of these like optimizations / actual configurations. The same ModelConfig
     can be applied to multiple models.
+
+    Attributes:
+        dtype_override: dtype to cast the model to.
+        enable_dynamic_shape: whether to enable dynamic shapes on the sequence
+            length so that the model can handle arbitrary prefill lengths and
+            token generation.
+        use_shared_embeddings: whether the embedding/output weights should be
+            shared. Only available with torchao kernels, e.g. when
+            qmode set to use a "torchao:8da(\d+)w" pattern.
+        use_sdpa_with_kv_cache: Whether to use flash attention by subtituting
+            for our custom SDPA op. Note that the naming is poor and this
+            doesn't actually ahve anything to do with the kv_cache at the moment.
+        expand_rope_table: Temporary workaround to expand sin/cos table in head
+            dim to take vectorized path in optimized kernels.
+        use_attention_sink: Whether to use attention sink to support multi-round
+            conversation. Structured as:
+            '<sink_size>,<window_size>,<batch_eviction_size>',
+            e.g., '4,2044,1024'.
+        output_prune_map: Path to the output pruning token mapping file (token_map.json).
+        input_prune_map: Path to the output pruning token mapping file (token_map.json).
+        use_kv_cache: Whether to use KV cache.
+        quantize_kv_cache: Whether to perform int8 per token quantization on the KV cache.
+        local_global_attention: List of integers specifying local and global attention pattern.
+            e.g., [0, 16, 0, 16] to specify that every other layer is sliding window of 16.
+            [0, 16, 32] pattern specifes 2nd and 3rd layers have sliding windows of 16 and 32.
+            [16] pattern specifies all layers have a sliding window of 16.
     """
 
     dtype_override: DtypeOverride = DtypeOverride.FP32
@@ -108,11 +152,43 @@ class ModelConfig:
     use_attention_sink: Optional[str] = None
     output_prune_map: Optional[str] = None
     input_prune_map: Optional[str] = None
-
-    # Below are config options relating to kv cache.
     use_kv_cache: bool = False
     quantize_kv_cache: bool = False
     local_global_attention: Optional[List[int]] = None
+
+    def __post_init__(self):
+        self._validate_attention_sink()
+        self._validate_local_global_attention()
+
+        if self.quantize_kv_cache and not self.use_kv_cache:
+            raise ValueError(
+                "Cannot quantize the KV cache (quantize_kv_cache) without enabling the KV cache (use_kv_cache)"
+            )
+
+        if self.local_global_attention and not self.use_kv_cache:
+            raise ValueError(
+                "Cannot use local_global_attention without enabling the KV cache (use_kv_cache)"
+            )
+
+    def _validate_attention_sink(self):
+        if self.use_attention_sink:
+            attention_sink_params = self.use_attention_sink.split(",")
+            if len(attention_sink_params) != 3:
+                raise ValueError(
+                    "The value of use_attention_sink must be structured like '<sink_size>,<window_size>,<batch_eviction_size>'"
+                )
+
+    def _validate_local_global_attention(self):
+        if self.local_global_attention:
+            local_global_err = "The value of local_global_attention must be a list of integers, e.g., [0, 16, 0, 16]"
+            try:
+                parsed = ast.literal_eval(self.local_global_attention)
+                if not (
+                    isinstance(parsed, list) and all(isinstance(i, int) for i in parsed)
+                ):
+                    raise ValueError(local_global_err)
+            except Exception:
+                raise ValueError(local_global_err)
 
 
 ################################################################################
@@ -124,6 +200,15 @@ class ModelConfig:
 class ExportConfig:
     """
     Configures properties relevant to the export process.
+
+    Attributes:
+        max_seq_length: Maximum length of sequence to evaluate.
+        max_context_length: Maximum of context for the model to remember.
+        output_dir: Output dir to save the exported .pte file to.
+        output_name: File name to override the exported .pte file.
+        so_library: Shared library to specify custom quantized operators.
+        export_only: Whether to stop right after torch.export() and
+            just save the exported .pt2 graph file.
     """
 
     max_seq_length: int = 128
@@ -132,6 +217,12 @@ class ExportConfig:
     output_name: Optional[str] = None
     so_library: Optional[str] = None
     export_only: bool = False
+
+    def __post_init__(self):
+        if self.max_context_length > self.max_seq_length:
+            raise ValueError(
+                f"max_context_length of {self.max_context_length} cannot be greater than max_seq_length of {self.max_seq_length}"
+            )
 
 
 ################################################################################
@@ -143,6 +234,16 @@ class ExportConfig:
 class DebugConfig:
     """
     Configures options to debug the export process.
+
+    Attributes:
+        profile_memory: Whether to generate a chrome trace of activation memory
+            for intermediate tensors.
+        profile_path: Use cProfile to profile the export. Results are saved to
+            profile_path as an html file.
+        generate_etrecord: Whether to generate an ETRecord debug artifact.
+        generate_full_logits: Whether to keep the full logits, potentially useful
+            for debugging purposes. Kept off by default to save memory.
+        verbose: Whether to log the export process verbosely (log level >= INFO).
     """
 
     profile_memory: bool = False
@@ -188,7 +289,31 @@ class SpinQuant(str, Enum):
 class QuantizationConfig:
     """
     Configures how the model should be quantized (PTQ).
+
+    Attributes:
+        qmode: Quantization mode using TorchAo, expressed as a string.
+            See the __post_init__ validation for available qmode options.
+        embedding_quantize: Type of embedding quantization.
+            Must be of the format '<bitwidth>,<groupsize>', e.g., '8,1024'.
+        pt2e_quantize: Quantization mode using pt2e, which is an alternative
+            to TorchAo that uses backend-aware graph mode quantization rather
+            than source transformation quantization.
+        group_size: Group size for quantization.
+        use_spin_quant: Which spin quant mode to use. If unspecified, don't use
+            spin quant.
+        use_qat: Whether the checkpoint is quantization-awarely trained.
+        calibration_tasks: Tasks for GPTQ calibration from lm_eval.
+        calibration_limit: Number of samples used for calibration from lm_eval.
+        calibration_seq_length: Sequence length for GPTQ calibration from lm_eval.
+        calibration_data: Prompts use for calibration.
     """
+
+    # Constants.
+    QMODE_OPTIONS: ClassVar[List[str]] = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w"]
+    AO_QUANT_PATTERNS: ClassVar[List[str]] = [
+        r"torchao:8da(\d+)w",
+        r"torchao:fpa(\d+)w",
+    ]
 
     qmode: Optional[str] = None
     embedding_quantize: Optional[str] = None
@@ -206,20 +331,25 @@ class QuantizationConfig:
             self._validate_qmode()
 
     def _validate_qmode(self) -> None:
-        choices = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w"]
-        patterns = [r"torchao:8da(\d+)w", r"torchao:fpa(\d+)w"]
-
-        if self.qmode in choices:
+        if self.qmode in self.QMODE_OPTIONS:
             return
 
-        for pattern in patterns:
+        # If qmode is one of these below patterns, this means that we
+        # are using ARM-based torchao ops.
+        for pattern in self.AO_QUANT_PATTERNS:
             matches = re.findall(pattern, self.qmode)
             if len(matches) == 1:
                 return
 
         raise ValueError(
-            f"Got qmode {self.qmode}, but expected one of {choices}, or one of the regex patterns {patterns}."
+            f"Got qmode {self.qmode}, but expected one of {self.QMODE_OPTIONS}, or one of the regex patterns {self.AO_QUANT_PATTERNS}."
         )
+
+    def _validate_embedding_quantize(self):
+        if len(self.embedding_quantize.split(",")) != 2:
+            raise ValueError(
+                f'embedding_quantize of {self.embedding_quantize} must follow the following format: "<bitwidth>,<groupsize>"'
+            )
 
 
 ################################################################################
@@ -229,6 +359,14 @@ class QuantizationConfig:
 
 @dataclass
 class XNNPackConfig:
+    """
+    Configures the XNNPack backend.
+
+    Attributes:
+        enabled: :)
+        extended_ops: Whether to match more types of ops to delegates to XNNPack.
+    """
+
     enabled: bool = False
     extended_ops: bool = False
 
@@ -247,6 +385,10 @@ class CoreMLComputeUnit(str, Enum):
 
 @dataclass
 class CoreMLConfig:
+    """
+    Configures the CoreML backend.
+    """
+
     enabled: bool = False
     enable_state: bool = False
     preserve_sdpa: bool = False
@@ -261,11 +403,19 @@ class CoreMLConfig:
 
 @dataclass
 class VulkanConfig:
+    """
+    Configures the Vulkan backend.
+    """
+
     enabled: bool = False
 
 
 @dataclass
 class QNNConfig:
+    """
+    Configures the QNN backend.
+    """
+
     enabled: bool = False
     use_sha: bool = False
     soc_model: str = "SM8650"
@@ -276,6 +426,10 @@ class QNNConfig:
 
 @dataclass
 class MPSConfig:
+    """
+    Configures the MPS backend.
+    """
+
     enabled: bool = False
 
 
@@ -310,3 +464,22 @@ class LlmConfig:
     debug: DebugConfig = field(default_factory=DebugConfig)
     quantization: QuantizationConfig = field(default_factory=QuantizationConfig)
     backend: BackendConfig = field(default_factory=BackendConfig)
+
+    def __post_init__(self):
+        # If we are using Ao's low bit quantization kernels for ARM,
+        # we do not want to also be delegating to a CPU backend (XNNPack).
+        using_lowbit_ops = False
+        for pattern in self.quantization.AO_QUANT_PATTERNS:
+            matches = re.findall(pattern, self.quantization.qmode)
+            if len(matches) == 1:
+                using_lowbit_ops = True
+        if using_lowbit_ops and self.backend.xnnpack.enabled:
+            raise ValueError(
+                "Cannot use low-bit Ao ops (from qmode=torchao:...) while also delegating to XNNPack."
+            )
+
+        # Also we can only use shared embeddings if we are using low bit kernels.
+        if self.model.use_shared_embedding and not using_lowbit_ops:
+            raise ValueError(
+                "Can only use shared embeddings with low-bit ops (with qmode=torchao:...)."
+            )
