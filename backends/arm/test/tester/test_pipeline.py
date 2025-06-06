@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from typing import Callable, Dict, Generic, List, Optional, Type, TypeVar
+from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, Type, TypeVar
 
 import torch
 
@@ -88,10 +88,14 @@ class BasePipelineMaker(Generic[T]):
         compile_spec: List[CompileSpec],
         exir_ops: Optional[str | List[str]] = None,
         use_to_edge_transform_and_lower: bool = True,
+        dynamic_shapes: Optional[Tuple[Any]] = None,
     ):
 
         self.tester = ArmTester(
-            module, example_inputs=test_data, compile_spec=compile_spec
+            module,
+            example_inputs=test_data,
+            compile_spec=compile_spec,
+            dynamic_shapes=dynamic_shapes,
         )
 
         self.aten_ops = aten_ops if isinstance(aten_ops, list) else [aten_ops]
@@ -283,6 +287,7 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 1,
+        dynamic_shapes: Optional[Tuple[Any]] = None,
     ):
         tosa_profiles = {
             "0.80": TosaSpecification.create_from_string("TOSA-0.80+BI"),
@@ -310,6 +315,7 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
             compile_spec,
             exir_op,
             use_to_edge_transform_and_lower,
+            dynamic_shapes,
         )
         self.add_stage(self.tester.quantize, quant_stage, pos=0)
 
@@ -381,6 +387,7 @@ class TosaPipelineMI(BasePipelineMaker, Generic[T]):
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 0,
+        dynamic_shapes: Optional[Tuple[Any]] = None,
     ):
         tosa_profiles = {
             "0.80": TosaSpecification.create_from_string("TOSA-0.80+MI"),
@@ -398,6 +405,7 @@ class TosaPipelineMI(BasePipelineMaker, Generic[T]):
             compile_spec,
             exir_op,
             use_to_edge_transform_and_lower,
+            dynamic_shapes,
         )
         self.add_stage_after(
             "export",

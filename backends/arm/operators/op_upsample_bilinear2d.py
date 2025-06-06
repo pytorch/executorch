@@ -49,15 +49,18 @@ class UpsampleBilinear2dVisitor_0_80(NodeVisitor):
         input_dtype = inputs[0].dtype
 
         # tosa_shape output is NHWC, take HW
-        input_size_yx = torch.tensor(
-            tosa_shape(inputs[0].shape, inputs[0].dim_order)[1:3]
-        )
-        # Ignore scale and size parameters, directly use the output size as
-        # we only support static shapes currently
-        output_size_yx = torch.tensor(tosa_shape(output.shape, output.dim_order)[1:3])
+        input_size_yx = tuple([inputs[0].shape[dim] for dim in inputs[0].dim_order])[
+            1:3
+        ]
+        output_size_yx = tuple([output.shape[dim] for dim in output.dim_order])[1:3]
 
+        # Get align_corners value from the node arguments.
+        align_corners = bool(node.args[2])
         scale_n_yx, scale_d_yx, offset_yx, border_yx = get_resize_parameters(
-            input_size_yx, output_size_yx, ResizeMode.NEAREST, align_corners=True
+            input_size_yx,
+            output_size_yx,
+            ResizeMode.NEAREST,
+            align_corners=align_corners,
         )
 
         def in_int16_range(x):
@@ -139,15 +142,18 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
         input_dtype = inputs[0].dtype
 
         # tosa_shape output is NHWC, take HW
-        input_size_yx = torch.tensor(
-            tosa_shape(inputs[0].shape, inputs[0].dim_order)[1:3]
-        )
-        # Ignore scale and size parameters, directly use the output size as
-        # we only support static shapes currently
-        output_size_yx = torch.tensor(tosa_shape(output.shape, output.dim_order)[1:3])
+        input_size_yx = tuple([inputs[0].shape[dim] for dim in inputs[0].dim_order])[
+            1:3
+        ]
+        output_size_yx = tuple([output.shape[dim] for dim in output.dim_order])[1:3]
 
+        # Get align_corners value from the node arguments.
+        align_corners = bool(node.args[2])
         scale_n_yx, scale_d_yx, offset_yx, border_yx = get_resize_parameters(
-            input_size_yx, output_size_yx, ResizeMode.NEAREST, align_corners=True
+            input_size_yx,
+            output_size_yx,
+            ResizeMode.NEAREST,
+            align_corners=align_corners,
         )
 
         def in_int16_range(x):

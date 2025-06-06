@@ -7,8 +7,9 @@
 
 import logging
 import os
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 
+import sympy  # type: ignore
 import torch
 import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.tosa_mapping import TosaArg
@@ -168,7 +169,13 @@ def is_consumer_node_depthwise_conv2d(node: Node):
 
 
 def tosa_shape(shape, dim_order):
-    return tuple([shape[dim] for dim in dim_order])
+    reordered = tuple([shape[dim] for dim in dim_order])
+    # Dynamic shapes in executorch are represented with torch.SymInt objects in the shapes,
+    # in TOSA we do not have this concept and instead use -1.
+    removed_symints = tuple(
+        [-1 if isinstance(d, torch.SymInt) else d for d in reordered]
+    )
+    return removed_symints
 
 
 def expand_dims(
@@ -200,46 +207,90 @@ def expand_dims(
     return intermediate
 
 
-def get_resize_parameters(
-    input_size: torch.Tensor,
-    output_size: torch.Tensor,
+def get_resize_parameters_1d(
+    input_size: int | torch.SymInt,
+    output_size: int | torch.SymInt,
     resize_mode: int,
     align_corners: bool,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+):
+    # We don't support align_corners for symbolic shapes, because handling the edge case where size == 1 is tricky.
+    if align_corners:
+        if (not isinstance(input_size, int)) or (not isinstance(output_size, int)):
+            raise RuntimeError(
+                "We do not support align_corners=True for symbolic shapes."
+            )
+
+    # SymInt seems to not actually work for symbolic expressions, so use the underlying sympy objects instead
+    input_size = (
+        input_size.node._expr if isinstance(input_size, torch.SymInt) else input_size
+    )
+    output_size = (
+        output_size.node._expr if isinstance(output_size, torch.SymInt) else output_size
+    )
+    if align_corners and input_size > 1 and output_size > 1:
+        scale_n = output_size - 1
+    else:
+        scale_n = output_size
+    if align_corners and input_size > 1 and output_size > 1:
+        scale_d = input_size - 1
+    else:
+        scale_d = input_size
+    ratio = scale_n / scale_d
+    if not sympy.sympify(ratio).is_constant():
+        raise RuntimeError(
+            "Resize requires a constant ratio: " + str(ratio) + " is not constant!"
+        )
+    gcd = sympy.gcd(scale_n, scale_d)
+    scale_n = 2 * scale_n // gcd
+    scale_d = 2 * scale_d // gcd
+    # These should always be whole integers, based on the above calculations
+    scale_n = int(scale_n.evalf())
+    scale_d = int(scale_d.evalf())
+
+    if align_corners:
+        offset = 0
+    else:
+        # Half pixel centers so input and output sampling positions are offset by 1/2 pixel.
+        offset = scale_d // 2 - scale_n // 2
+
+    # Calculate border to maintain the correct the output size.
+    # Note that this should always result in a constant value, as the ratio is constant.
+    border = scale_d * (output_size - 1) - scale_n * (input_size - 1) + offset
+
+    if not sympy.sympify(border).is_constant():
+        raise RuntimeError(
+            "Resize requires a constant border: " + str(border) + " is not constant!"
+        )
+
+    border = int(sympy.sympify(border).evalf())
+    return scale_n, scale_d, offset, border
+
+
+def get_resize_parameters(
+    input_size_xy: tuple[int | torch.SymInt, int | torch.SymInt],
+    output_size_xy: tuple[int | torch.SymInt, int | torch.SymInt],
+    resize_mode: int,
+    align_corners: bool,
+) -> tuple[torch.IntTensor, ...]:
     """Get the tosa.resize parameters based on the input and output size.
 
     Args:
-        input_size (torch.Tensor): Size of the input
-        output_size (torch.Tensor): Size of the output
+        input_size_xy (tuple[int | torch.SymInt]): Size of the input
+        output_size_xy (tuple[int | torch.SymInt]): Size of the output
         resize_mode (tosa.ResizeMode): The TOSA resize mode
         align_corners (bool): Align the corners pixels of the input and output
 
     Returns:
-        scale_n (torch.Tensor), scale_d (torch.Tensor),
-        offset (torch.Tensor), border (torch.Tensor)
+        scale_n (torch.IntTensor), scale_d (torch.IntTensor),
+        offset (torch.IntTensor), border (torch.IntTensor)
     """
-    assert torch.all(input_size > 0)
-    assert torch.all(output_size > 0)
 
-    scale_n = torch.tensor(
-        [
-            so - 1 if align_corners and si > 1 and so > 1 else so
-            for si, so in zip(input_size, output_size)
-        ]
+    # Get the parameters for each dimension independently
+    y_params = get_resize_parameters_1d(
+        input_size_xy[0], output_size_xy[0], resize_mode, align_corners
     )
-    scale_d = torch.tensor(
-        [
-            si - 1 if align_corners and si > 1 and so > 1 else si
-            for si, so in zip(input_size, output_size)
-        ]
+    x_params = get_resize_parameters_1d(
+        input_size_xy[1], output_size_xy[1], resize_mode, align_corners
     )
-
-    gcd = torch.gcd(scale_n, scale_d)
-    scale_n = scale_n // gcd
-    scale_d = scale_d // gcd
-
-    # No half-pixel centre support in PyTorch, no offset needed
-    offset = torch.zeros_like(input_size)
-    border = scale_d * (output_size - 1) - scale_n * (input_size - 1) + offset
-
-    return scale_n, scale_d, offset, border
+    # Combine them together, so we return four 2-element tensors (scale_n, scale_d, offset, border)
+    return tuple(map(torch.IntTensor, zip(y_params, x_params)))
