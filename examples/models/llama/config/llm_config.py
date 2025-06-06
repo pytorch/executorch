@@ -9,7 +9,7 @@
 """
 Configurations for exporting Llama.
 
-Uses dataclases, which integrate with OmegaConf and Hydra.
+Uses dataclasses, which integrate with OmegaConf and Hydra.
 """
 
 import ast
@@ -45,7 +45,7 @@ class PreqMode(str, Enum):
     If you are dealing with pre-quantized checkpoints, this used to
     be the way to specify them. Now you don't need to specify these
     options if you use a TorchAo-prequantized checkpoint, but they
-    are still around to preservce backward compatibility.
+    are still around to preserve backward compatibility.
     """
 
     PREQ_8DA4W = "8da4w"
@@ -65,17 +65,17 @@ class BaseConfig:
             If left empty will use defaults specified in model_args.py.
         checkpoint: Path to the checkpoint file.
             If left empty, the model will be initialized with random weights.
-        checkpoint_dir: Path to directory containt sharded checkpoint files.
+        checkpoint_dir: Path to directory containing sharded checkpoint files.
         tokenizer_path: Path to the tokenizer file.
-        metadata: Json string containining metadata information.
+        metadata: Json string containing metadata information.
             e.g. '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
         use_lora: Rank of the LoRA, if set to 0 then this means no LoRA. For use with QAT.
         fairseq2: For legacy internal use cases, this is safe to ignore.
         preq_mode: Legacy option to specify how prequantized weights are loaded.
             Going forward, ExecuTorch supports loading weights prequantized through
             TorchAo as-is, without any special handling.
-        preq_group_size: Legacy option to specify the gropu size of prequantized weights.
-        preq_embedding_quantize: Legacy option to specify how prequanitzed embeddings
+        preq_group_size: Legacy option to specify the group size of prequantized weights.
+        preq_embedding_quantize: Legacy option to specify how prequantized embeddings
             are loaded.
     """
 
@@ -124,10 +124,10 @@ class ModelConfig:
             token generation.
         use_shared_embeddings: whether the embedding/output weights should be
             shared. Only available with torchao kernels, e.g. when
-            qmode set to use a "torchao:8da(\d+)w" pattern.
-        use_sdpa_with_kv_cache: Whether to use flash attention by subtituting
+            qmode set to use a "torchao:8da(\\d+)w" pattern.
+        use_sdpa_with_kv_cache: Whether to use flash attention by substituting
             for our custom SDPA op. Note that the naming is poor and this
-            doesn't actually ahve anything to do with the kv_cache at the moment.
+            doesn't actually have anything to do with the kv_cache at the moment.
         expand_rope_table: Temporary workaround to expand sin/cos table in head
             dim to take vectorized path in optimized kernels.
         use_attention_sink: Whether to use attention sink to support multi-round
@@ -140,7 +140,7 @@ class ModelConfig:
         quantize_kv_cache: Whether to perform int8 per token quantization on the KV cache.
         local_global_attention: List of integers specifying local and global attention pattern.
             e.g., [0, 16, 0, 16] to specify that every other layer is sliding window of 16.
-            [0, 16, 32] pattern specifes 2nd and 3rd layers have sliding windows of 16 and 32.
+            [0, 16, 32] pattern specifies 2nd and 3rd layers have sliding windows of 16 and 32.
             [16] pattern specifies all layers have a sliding window of 16.
     """
 
