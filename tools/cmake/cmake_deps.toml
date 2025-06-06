@@ -241,17 +241,6 @@ deps = [
   "executorch_core",
 ]
 
-[targets.extension_tokenizers]
-buck_targets = [
-  "//extension/llm/tokenizers:sentencepiece",
-  "//extension/llm/tokenizers:tiktoken",
-  "//extension/llm/tokenizers:hf_tokenizer",
-  "//extension/llm/tokenizers:llama2c_tokenizer",
-]
-filters = [
-  ".cpp$",
-]
-
 [targets.extension_llm_runner]
 buck_targets = [
   "//extension/llm/runner:runner_lib",
@@ -268,7 +257,6 @@ deps = [
   "extension_flat_tensor",
   "extension_runner_util",
   "extension_tensor",
-  "extension_tokenizers",
 ]
 
 [targets.extension_tensor]
