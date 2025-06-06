@@ -39,7 +39,7 @@ set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 find_package(executorch CONFIG REQUIRED)
-set(gflags_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/gflags/gflags-build)
+set(gflags_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../third-party/gflags/gflags-build)
 find_package(gflags REQUIRED)
 
 target_include_directories(executorch_core INTERFACE ${_common_include_directories})
