@@ -3069,8 +3069,10 @@ void test_to_copy() {
 
   EXPECT_EQ(data_in.size(), output_data.size());
 
+#ifdef VULKAN_DEBUG
   float mse_ex = 0.0f;
   float mse_vk = 0.0f;
+#endif
 
   // check results
   for (size_t i = 0; i < output_data.size(); ++i) {
@@ -3092,6 +3094,9 @@ void test_to_copy() {
         std::bitset<16>(*output_bits).to_string() + ")";
 
     std::cout << msg << std::endl;
+
+    mse_ex += std::pow(expected_output - input, 2);
+    mse_vk += std::pow(output - input, 2);
 #endif
 
     // Note: Torch executor half "rounds up" when converting to fp16 whereas
@@ -3113,13 +3118,12 @@ void test_to_copy() {
     EXPECT_TRUE(
         (*output_bits == *expected_bits) ||
         /*rounding error*/ ((*output_bits + 1u) == *expected_bits));
-    mse_ex += std::pow(expected_output - input, 2);
-    mse_vk += std::pow(output - input, 2);
   }
 
+#ifdef VULKAN_DEBUG
   mse_ex /= output_data.size();
   mse_vk /= output_data.size();
-#ifdef VULKAN_DEBUG
+
   std::cout << "========================================================="
             << std::endl;
   std::cout << "mse_ex = " << mse_ex << ", mse_vk = " << mse_vk << std::endl;
