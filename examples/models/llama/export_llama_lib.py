@@ -486,7 +486,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--use_qat",
         default=False,
         action="store_true",
-        help="Whether the checkpoin is pre-quantized with QAT or not.",
+        help="Whether the checkpoint is pre-quantized with QAT or not.",
     )
 
     parser.add_argument(
