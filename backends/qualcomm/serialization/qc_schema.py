@@ -189,4 +189,6 @@ class QnnExecuTorchOptions:
     is_from_context_binary: bool = False
     saver: bool = False
     saver_output_dir: str = "saver_output"
-    op_package_options: QnnExecuTorchOpPackageOptions = QnnExecuTorchOpPackageOptions()
+    op_package_options: QnnExecuTorchOpPackageOptions = field(
+        default_factory=QnnExecuTorchOpPackageOptions
+    )
