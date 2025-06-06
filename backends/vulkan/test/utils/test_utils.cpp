@@ -512,6 +512,7 @@ vkcompute::ComputeGraph build_mm_graph(
     const bool prepack_mat2) {
   using namespace vkcompute;
   GraphConfig config;
+  config.expect_dynamic_shapes = true;
   ComputeGraph graph(config);
 
   std::vector<int64_t> mat1_size = {M, K};
