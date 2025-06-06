@@ -563,6 +563,9 @@
     <span class="n">TimeScale</span><span class="p">,</span>
     <span class="n">verify_debug_data_equivalence</span><span class="p">,</span>
 <span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.inspector._intermediate_output_capturer</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">IntermediateOutputCapturer</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExportedProgram</span>
 
 
@@ -1578,6 +1581,7 @@
         <span class="c1"># Key str is method name; value is list of ProgramOutputs because of list of test cases</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_reference_outputs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ProgramOutput</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_enable_module_hierarchy</span> <span class="o">=</span> <span class="n">enable_module_hierarchy</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_aot_intermediate_outputs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_consume_etrecord</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_consume_etrecord</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -1638,6 +1642,16 @@
                     <span class="n">event_block</span><span class="o">.</span><span class="n">reference_output</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reference_outputs</span><span class="p">[</span><span class="n">FORWARD</span><span class="p">][</span>
                         <span class="n">index</span>
                     <span class="p">]</span>
+        <span class="c1"># Capture intermediate outputs only if _representative_inputs are provided</span>
+        <span class="c1"># when using bundled program to create the etrecord</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">_representative_inputs</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">export_program</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">edge_dialect_program</span>
+        <span class="n">graph_module</span> <span class="o">=</span> <span class="n">export_program</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
+        <span class="n">capturer</span> <span class="o">=</span> <span class="n">IntermediateOutputCapturer</span><span class="p">(</span><span class="n">graph_module</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_aot_intermediate_outputs</span> <span class="o">=</span> <span class="n">capturer</span><span class="o">.</span><span class="n">run_and_capture</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">_representative_inputs</span>
+        <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">to_dataframe</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
