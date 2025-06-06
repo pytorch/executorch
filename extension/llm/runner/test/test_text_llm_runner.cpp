@@ -7,18 +7,19 @@
  * @lint-ignore-every CLANGTIDY facebook-hte-Deprecated
  */
 
-#include <executorch/examples/models/llama/runner/runner.h>
 #include <executorch/extension/llm/runner/irunner.h>
+#include <executorch/extension/llm/runner/text_llm_runner.h>
+#include <executorch/extension/llm/runner/text_prefiller.h>
 #include <executorch/extension/llm/runner/text_token_generator.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using namespace example;
 using executorch::extension::llm::GenerationConfig;
 using executorch::extension::llm::Stats;
 using executorch::extension::llm::TextDecoderRunner;
+using executorch::extension::llm::TextLLMRunner;
 using executorch::extension::llm::TextPrefiller;
 using executorch::extension::llm::TextTokenGenerator;
 using executorch::runtime::Error;
@@ -212,7 +213,7 @@ TEST_F(RunnerTest, GenerateCallsCallbackExactlyMaxNewTokensTimes) {
       tokenizer.get(), text_decoder_runner.get(), stats.get());
 
   // Create a Runner with our mocked components
-  Runner runner(
+  TextLLMRunner runner(
       createDefaultMetadata(),
       std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
       std::make_unique<MockModule>(),
@@ -271,7 +272,7 @@ TEST_F(RunnerTest, WarmupCallsGenerateWithWarmingFlag) {
       tokenizer.get(), text_decoder_runner.get(), stats.get());
 
   // Create a Runner with our mocked components
-  Runner runner(
+  TextLLMRunner runner(
       createDefaultMetadata(),
       std::move(tokenizer),
       std::make_unique<MockModule>(),
@@ -305,7 +306,7 @@ TEST_F(RunnerTest, IsLoadedReturnsTrueWhenComponentsInitialized) {
       tokenizer.get(), text_decoder_runner.get(), stats.get());
 
   // Create a Runner with our mocked components
-  Runner runner(
+  TextLLMRunner runner(
       createDefaultMetadata(),
       std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
       std::make_unique<MockModule>(),
