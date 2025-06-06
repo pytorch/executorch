@@ -29,8 +29,8 @@ from executorch.devtools.backend_debug import print_delegation_info
 from executorch.devtools.etrecord import generate_etrecord as generate_etrecord_func
 
 from executorch.examples.models.llama.config.llm_config import LlmConfig
-from executorch.examples.models.llama.config.llm_config_utils import (
-    convert_args_to_llm_config,
+from executorch.examples.models.llama.config.llm_config import (
+    LlmConfig,
 )
 from executorch.examples.models.llama.hf_download import (
     download_and_convert_hf_checkpoint,
@@ -155,7 +155,7 @@ def build_model(
     argString = f"--model {model} --checkpoint {checkpoint} --params {params} {extra_opts} --output-dir {output_dir}"
     parser = build_args_parser()
     args = parser.parse_args(shlex.split(argString))
-    llm_config = convert_args_to_llm_config(args)
+    llm_config = LlmConfig.from_args(args)
     return export_llama(llm_config)
 
 
@@ -492,7 +492,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--use_qat",
         default=False,
         action="store_true",
-        help="Whether the checkpoin is pre-quantized with QAT or not.",
+        help="Whether the checkpoint is pre-quantized with QAT or not.",
     )
 
     parser.add_argument(
@@ -578,7 +578,7 @@ def export_llama(
 ) -> str:
     if isinstance(export_options, argparse.Namespace):
         # Legacy CLI.
-        llm_config = convert_args_to_llm_config(export_options)
+        llm_config = LlmConfig.from_args(export_options)
     elif isinstance(export_options, LlmConfig):
         # Hydra CLI.
         llm_config = export_options

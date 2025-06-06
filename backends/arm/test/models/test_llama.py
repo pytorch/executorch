@@ -22,9 +22,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineMI,
 )
 
-from executorch.examples.models.llama.config.llm_config_utils import (
-    convert_args_to_llm_config,
-)
+from executorch.examples.models.llama.config.llm_config import LlmConfig
 from executorch.examples.models.llama.export_llama_lib import (
     build_args_parser,
     get_llama_model,
@@ -92,7 +90,7 @@ class TestLlama:
         ]
         parser = build_args_parser()
         args = parser.parse_args(args)
-        llm_config = convert_args_to_llm_config(args)
+        llm_config = LlmConfig.from_args(args)
 
         llama_model, llama_inputs, llama_meta = get_llama_model(llm_config)
 

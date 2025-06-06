@@ -11,9 +11,6 @@ from typing import Optional, Type
 import torch
 
 from executorch.examples.models.llama.config.llm_config import LlmConfig
-from executorch.examples.models.llama.config.llm_config_utils import (
-    convert_args_to_llm_config,
-)
 from executorch.examples.models.llama.export_llama_lib import (
     _prepare_for_llama_export,
     build_args_parser as _build_args_parser,
@@ -100,7 +97,7 @@ def execute_runner(runner_class: Type[LlamaRunner]) -> None:
     args = parser.parse_args()
 
     # Convert args to LlmConfig for model configuration.
-    llm_config = convert_args_to_llm_config(args)
+    llm_config = LlmConfig.from_args(args)
 
     # Extract runner-specific parameters.
     prompt = args.prompt
