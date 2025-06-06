@@ -132,6 +132,8 @@ runtime.python_library(
     name = "export_library",
     srcs = [
         "export_llama.py",
+        "export_llama_args.py",
+        "export_llama_hydra.py",
         "export_llama_lib.py",
         "model.py",
     ],
@@ -148,6 +150,8 @@ runtime.python_library(
         ":source_transformation",
         "//ai_codesign/gen_ai/fast_hadamard_transform:fast_hadamard_transform",
         "//caffe2:torch",
+        "//executorch/examples/models/llama/config:llm_config",
+        "//executorch/backends/vulkan/_passes:vulkan_passes",
         "//executorch/exir/passes:init_mutable_pass",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models:models",
