@@ -169,7 +169,6 @@ cmake_build_llama_runner() {
     popd
     dir="examples/models/llama"
     retry cmake \
-        -DBUILD_TESTING=OFF \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
         -Bcmake-out/${dir} \
