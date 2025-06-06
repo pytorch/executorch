@@ -16,8 +16,8 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
+from executorch.examples.models.llama.config.llm_config import LlmConfig
 from executorch.examples.models.llama.export_llama_lib import (
-    build_args_parser,
     get_quantizer_and_quant_params,
 )
 from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
@@ -92,32 +92,26 @@ def export_text_model(llava, embeddings, dynamic_shapes):
         dynamic_shapes=dynamic_shapes,
     )
 
+    # Manually set some LlmConfig options.
+    llm_config = LlmConfig()
+    llm_config.base.params = "params.json"
+    llm_config.backend.xnnpack.enabled = True
+    llm_config.quantization.qmode = "8da4w"
+    llm_config.quantization.group_size = 128
+    llm_config.quantization.embedding_quantize = "4,32"
+
     dtype_override = DType.fp32
-    parser = build_args_parser()
-    args = parser.parse_args(
-        [
-            "-p",
-            "params.json",
-            "-X",
-            "-qmode",
-            "8da4w",
-            "--group_size",
-            "128",
-            "--embedding-quantize",
-            "4,32",
-        ]
-    )
     quant_transform = get_quant_weight_transform(
-        quantization_mode=args.quantization_mode,
-        group_size=args.group_size,
+        quantization_mode=llm_config.quantization.qmode,
+        group_size=llm_config.quantization.group_size,
         computation_dtype=dtype_override,
-        checkpoint_path=args.checkpoint,
-        tokenizer_path=args.tokenizer_path,
-        calibration_tasks=args.calibration_tasks,
-        calibration_limit=args.calibration_limit,
-        calibration_seq_length=args.calibration_seq_length,
+        checkpoint_path=llm_config.base.checkpoint,
+        tokenizer_path=llm_config.base.tokenizer_path,
+        calibration_tasks=llm_config.quantization.calibration_tasks,
+        calibration_limit=llm_config.quantization.calibration_limit,
+        calibration_seq_length=llm_config.quantization.calibration_seq_length,
     )
-    _, quantizers, _ = get_quantizer_and_quant_params(args)
+    _, quantizers, _ = get_quantizer_and_quant_params(llm_config)
     source_transforms = []
     if llava.use_sdpa_with_kv_cache_op:
         source_transforms.append(replace_kv_cache_with_custom_kv_cache)
@@ -279,6 +273,20 @@ def get_tokenizer_for_llava_runner(llava_model):
     t.export("tokenizer.bin")
 
 
+def create_llava_config_from_args(args):
+    """
+    Create an LlmConfig from command line arguments for LLaVA export
+    """
+    llm_config = LlmConfig()
+
+    llm_config.model.use_sdpa_with_kv_cache = args.use_sdpa_with_kv_cache
+    llm_config.export.max_seq_length = args.max_seq_len
+    llm_config.export.output_name = args.pte_name
+    llm_config.debug.profile_memory = args.profile_memory
+
+    return llm_config
+
+
 def main():
     parser = ArgumentParser()
     parser.add_argument(
@@ -311,28 +319,33 @@ def main():
         help="Generate chrome trace of activation memory for intermediate tensors.",
     )
     args = parser.parse_args()
+
+    # Create LlmConfig from args
+    llm_config = create_llava_config_from_args(args)
+
     logging.info(
-        f"Exporting Llava model to ExecuTorch with sdpa_with_kv_cache: {args.use_sdpa_with_kv_cache}, max_seq_len: {args.max_seq_len}"
+        f"Exporting Llava model to ExecuTorch with sdpa_with_kv_cache: {llm_config.model.use_sdpa_with_kv_cache}, max_seq_len: {llm_config.export.max_seq_length}"
     )
+
     llava_model = LlavaModel(
-        use_sdpa_with_kv_cache_op=args.use_sdpa_with_kv_cache,
-        max_seq_len=args.max_seq_len,
+        use_sdpa_with_kv_cache_op=llm_config.model.use_sdpa_with_kv_cache,
+        max_seq_len=llm_config.export.max_seq_length,
     )
 
     executorch_program = export_all(llava_model)
 
     # memory profiling
-    if args.profile_memory:
+    if llm_config.debug.profile_memory:
         for method_name in executorch_program.methods:
             generate_memory_trace(
                 executorch_program,
-                f"{args.pte_name}_{method_name}.json",
+                f"{llm_config.export.output_name}_{method_name}.json",
                 method_name=method_name,
             )
 
-    with open(args.pte_name, "wb") as f:
+    with open(llm_config.export.output_name, "wb") as f:
         executorch_program.write_to_file(f)
-    logging.info(f"Exported ExecuTorch program to {args.pte_name}")
+    logging.info(f"Exported ExecuTorch program to {llm_config.export.output_name}")
 
     # artifacts
     if args.with_artifacts:
