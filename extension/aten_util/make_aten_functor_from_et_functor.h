@@ -22,6 +22,12 @@
 #include <executorch/extension/kernel_util/type_list.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/evalue.h>
+
+// X11 headers via volk define Complex, so we need to undef it
+#if defined(__linux__)
+#undef Complex
+#endif
+
 #include <torch/torch.h>
 
 namespace executorch {

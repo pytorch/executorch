@@ -33,6 +33,8 @@ struct GraphConfig final {
   bool enable_local_wg_size_override;
   utils::uvec3 local_wg_size_override;
 
+  vkapi::Adapter* external_adapter;
+
   // Generate a default graph config with pre-configured settings
   explicit GraphConfig();
 
