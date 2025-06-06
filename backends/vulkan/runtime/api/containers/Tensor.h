@@ -97,19 +97,8 @@ class vTensorStorage final {
 
   vTensorStorage(Context* const context, const vkapi::VulkanImage& image);
 
- protected:
-  /*
-   * This allows for creation of tensors that use the same underlying storage
-   * as another tensor. Note that this functionality is currently enabled for
-   * tensors that have buffer storage only. The created tensor will not have
-   * ownership of the underlying VkBuffer. This constructor is marked protected
-   * because this behaviour is unsafe, since the original tensor may be
-   * destroyed before the copy is destroyed.
-   */
-  vTensorStorage(vTensorStorage& other, const int64_t buffer_offset = 0);
-
  public:
-  // To discourage creating copies, the assignment operator is still deleted.
+  vTensorStorage(vTensorStorage& other) = delete;
   vTensorStorage& operator=(const vTensorStorage& other) = delete;
 
   vTensorStorage(vTensorStorage&& other) = default;
@@ -136,8 +125,6 @@ class vTensorStorage final {
 
   // Last Access - used to insert memory barriers
   LastAccess last_access_;
-  // Indicates whether copies of this vTensorStorage have been made
-  bool has_copies_;
 
  private:
   // Registers underlying memory for cleanup
@@ -156,16 +143,6 @@ class vTensorStorage final {
   inline VkFormat texture_format() {
     return image_.format();
   }
-
-  /*
-   * Check if the underlying resource is a copy of another resource
-   */
-  bool is_copy() const;
-
-  /*
-   * Used for checking if this vTensorStorage is a copy of another instance
-   */
-  bool is_copy_of(const vTensorStorage& other) const;
 };
 
 class vTensor final {
@@ -222,8 +199,7 @@ class vTensor final {
   vTensor(
       vTensor& other,
       const std::vector<int64_t>& sizes,
-      const std::vector<int64_t>& dim_order,
-      const int64_t offset_numel = 0);
+      const std::vector<int64_t>& dim_order);
 
   // To discourage making copies, the copy assignment operator is still deleted
   vTensor& operator=(const vTensor& other) = delete;
@@ -358,7 +334,7 @@ class vTensor final {
   // impossible for a ubo to have an offset of 1.
   constexpr static uint32_t kUniformOffsetUnset = 1;
 
-  vTensorStorage storage_;
+  std::shared_ptr<vTensorStorage> storage_;
 
   std::shared_ptr<UniformData> uniform_data_;
 
@@ -368,7 +344,7 @@ class vTensor final {
   */
 
   inline vkapi::VulkanImage& image() const& {
-    return storage_.image_;
+    return storage_->image_;
   }
 
   vkapi::VulkanImage& image(
@@ -381,7 +357,7 @@ class vTensor final {
       const vkapi::MemoryAccessFlags) &;
 
   inline vkapi::VulkanBuffer& buffer() const& {
-    return storage_.buffer_;
+    return storage_->buffer_;
   }
 
   vkapi::VulkanBuffer& buffer(
@@ -398,11 +374,11 @@ class vTensor final {
   */
 
   inline utils::StorageType storage_type() const {
-    return storage_.storage_type_;
+    return storage_->storage_type_;
   }
 
   inline bool has_buffer_storage() const {
-    return storage_.storage_type_ == utils::kBuffer;
+    return storage_->storage_type_ == utils::kBuffer;
   }
 
  private:
@@ -623,7 +599,7 @@ class vTensor final {
    * Check if this vTensor instance is a view of another vTensor instance
    */
   inline bool is_view_of(const vTensor& other) const {
-    return storage_.is_copy_of(other.storage_);
+    return storage_.get() == other.storage_.get();
   }
 
   const std::shared_ptr<UniformData>& get_uniform_data() const {

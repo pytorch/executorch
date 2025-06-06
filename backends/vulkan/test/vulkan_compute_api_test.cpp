@@ -821,58 +821,6 @@ TEST_F(VulkanComputeAPITest, tensor_no_copy_transpose_test) {
   }
 }
 
-TEST_F(VulkanComputeAPITest, tensor_no_copy_slice_test) {
-  constexpr int L = 31;
-
-  // S{N} refers to slice {N}
-  constexpr int L_S1 = 17;
-  constexpr int O_S1 = 5;
-
-  constexpr int L_S2 = 7;
-  constexpr int O_S2 = 3;
-
-  std::vector<int64_t> dim_order = {0};
-
-  std::vector<int64_t> t_sizes = {L};
-  std::vector<int64_t> s1_sizes = {L_S1};
-  std::vector<int64_t> s2_sizes = {L_S2};
-
-  vTensor orig = CREATE_FLOAT_BUFFER(t_sizes, /*allocate_memory=*/true);
-
-  fill_vtensor(orig, 0);
-
-  vTensor s1 = vTensor(orig, s1_sizes, dim_order, O_S1);
-  vTensor s2 = vTensor(s1, s2_sizes, dim_order, O_S2);
-
-  record_scalar_add_buffer(api::context(), s1, 4.5f);
-  record_scalar_add_buffer(api::context(), s2, 7.5f);
-
-  std::vector<float> orig_data(orig.staging_buffer_numel());
-  extract_vtensor(orig, orig_data);
-
-  int id = 0;
-  while (id < O_S1) {
-    EXPECT_TRUE(orig_data[id] == 0);
-    ++id;
-  }
-  while (id < O_S1 + O_S2) {
-    EXPECT_TRUE(orig_data[id] == 4.5);
-    ++id;
-  }
-  while (id < O_S1 + O_S2 + L_S2) {
-    EXPECT_TRUE(orig_data[id] == 12);
-    ++id;
-  }
-  while (id < O_S1 + L_S1) {
-    EXPECT_TRUE(orig_data[id] == 4.5);
-    ++id;
-  }
-  while (id < L) {
-    EXPECT_TRUE(orig_data[id] == 0);
-    ++id;
-  }
-}
-
 TEST_F(VulkanComputeAPITest, texture_deferred_allocation_test) {
   // This test is the same as texture_add_sanity_check, except that the tensor
   // memory is allocated in a deferred fashion
@@ -1298,62 +1246,6 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_buffer) {
 
     // Sanity check that the values are correct
     for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
-      CHECK_VALUE(data_out, i, expected_val);
-    }
-  }
-}
-
-TEST(VulkanComputeGraphTest, test_simple_graph_with_view) {
-  constexpr int W = 7;
-  constexpr int H = 7;
-  // slice height
-  constexpr int S_H = 2;
-  // slice offset
-  constexpr int S_O = 3;
-
-  GraphConfig config;
-  config.set_storage_type_override(utils::kBuffer);
-  ComputeGraph graph(config);
-
-  std::vector<int64_t> dim_order = {0, 1};
-
-  std::vector<int64_t> orig_sizes = {H, W};
-  std::vector<int64_t> slice_sizes = {S_H, W};
-  const int offset = S_O * W;
-
-  // Build graph
-
-  IOValueRef orig = graph.add_input_tensor(orig_sizes, vkapi::kFloat);
-  ValueRef slice =
-      graph.add_tensor_view(orig.value, slice_sizes, dim_order, offset);
-
-  EXPECT_TRUE(graph.val_is_view_of(slice, orig.value));
-
-  IOValueRef out = {};
-
-  out.value = graph.add_tensor(slice_sizes, vkapi::kFloat);
-
-  auto opFn = VK_GET_OP_FN("aten.abs.default");
-  opFn(graph, {slice, out.value, kDummyValueRef, kDummyValueRef});
-
-  out.staging = graph.set_output_tensor(out.value);
-
-  graph.prepare();
-  graph.encode_execute();
-
-  // Run graph
-
-  for (float i = 5.0f; i < 30.0f; i += 10.0f) {
-    float start_val = -130 + i;
-
-    fill_vtensor(graph, orig, start_val, true);
-
-    graph.execute();
-
-    EXTRACT_TENSOR(out);
-
-    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
-      const float expected_val = std::abs(start_val) - float(offset) - i;
       CHECK_VALUE(data_out, i, expected_val);
     }
   }
