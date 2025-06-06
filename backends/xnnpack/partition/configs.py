@@ -59,6 +59,7 @@ SUPPORTED_OPS = [
     exir_ops.edge.aten.sigmoid.default,
     exir_ops.edge.aten._softmax.default,
     exir_ops.edge.aten.cat.default,
+    exir_ops.edge.aten.exp.default,
     exir_ops.edge.aten.elu.default,
     exir_ops.edge.aten.avg_pool2d.default,
     exir_ops.edge.aten.leaky_relu.default,
@@ -66,6 +67,7 @@ SUPPORTED_OPS = [
     exir_ops.edge.aten.rsqrt.default,
     exir_ops.edge.aten.log.default,
     exir_ops.edge.aten.gelu.default,
+    exir_ops.edge.aten.tanh.default,
 ]
 
 SUPPORTED_MODULES = [

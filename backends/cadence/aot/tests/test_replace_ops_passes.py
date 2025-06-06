@@ -1309,43 +1309,6 @@ class TestReplaceOpsPasses(unittest.TestCase):
             1,
         )
 
-    def test_replace_aten_approximate_gelu_with_approximate_gelu(self):
-        inputs = torch.randn(2, 1, 64)
-
-        gm = single_op_builder(
-            placeholders=(inputs,),
-            op=exir_ops.edge.aten.gelu.default,
-            args=(inputs,),
-            kwargs={"approximate": "tanh"},
-        )
-        gm = ExportPass().call(gm).graph_module
-
-        p = ReplaceAtenApproxGeluWithApproxGeluPass()
-        graph_after_passes = p.call(gm).graph_module
-
-        # Assert that aten.gelu op was decomposed
-        self.assertEqual(
-            count_node(
-                graph_after_passes,
-                exir_ops.edge.aten.gelu.default,
-            ),
-            0,
-        )
-
-        # The decomposition should have one tanh, 2 add and 6 mul
-        self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.aten.tanh.default),
-            1,
-        )
-        self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.aten.add.Tensor),
-            2,
-        )
-        self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.aten.mul.Tensor),
-            6,
-        )
-
     def test_replace_split_with_sizes_with_slice(self):
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(1, 16, 8, 4))

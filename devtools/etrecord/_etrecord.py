@@ -162,7 +162,7 @@ def _get_reference_outputs(
 
 def _get_representative_inputs(
     bundled_program: BundledProgram,
-) -> List[ProgramInput]:
+) -> Optional[List[ProgramInput]]:
     """
     Extracts out the inputs from the bundled program, keyed by the method names.
     """
@@ -175,7 +175,9 @@ def _get_representative_inputs(
             # Get first example input from the forward method
             test_case = method_test_suite.test_cases[0]
             return test_case.inputs
-    raise ValueError("No 'forward' method found in the bundled program.")
+
+    # If the forward method is not defined, return None to indicate that there are no representative inputs for the model.
+    return None
 
 
 def generate_etrecord(
