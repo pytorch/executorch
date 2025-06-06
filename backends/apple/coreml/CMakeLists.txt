@@ -212,9 +212,13 @@ if(APPLE)
   target_link_options_shared_lib(coremldelegate)
 
   if(EXECUTORCH_COREML_BUILD_EXECUTOR_RUNNER)
-    target_link_libraries(
-      coremldelegate PRIVATE portable_ops_lib portable_kernels
-    )
+    if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+      target_link_libraries(coremldelegate PRIVATE optimized_native_cpu_ops_lib)
+    else()
+      target_link_libraries(coremldelegate PRIVATE portable_ops_lib)
+    endif()
+
+    target_link_libraries(coremldelegate PRIVATE portable_kernels)
   endif()
 
   target_compile_options(

@@ -65,6 +65,11 @@ if(NOT CMAKE_SYSTEM_PROCESSOR)
 endif()
 announce_configured_options(CMAKE_SYSTEM_PROCESSOR)
 
+if(NOT CMAKE_SYSTEM_NAME)
+  set(CMAKE_SYSTEM_NAME ${CMAKE_HOST_SYSTEM_NAME})
+endif()
+announce_configured_options(CMAKE_SYSTEM_NAME)
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
@@ -83,7 +88,7 @@ announce_configured_options(BUCK2)
 announce_configured_options(CMAKE_CXX_COMPILER_ID)
 announce_configured_options(CMAKE_TOOLCHAIN_FILE)
 
-load_build_preset()
+load_executorch_build_preset_file()
 include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
 
 # Print all the configs that were called with announce_configured_options.
