@@ -6,45 +6,41 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#pragma once
+#include <executorch/runtime/core/error.h>
 #include <cstddef>
 #include <cstring>
-#include <executorch/runtime/core/error.h>
 
 namespace executorch {
 namespace runtime {
 
 // Strongly-typed option key template
-// Wraps a string key with type information for type-safe option access
 template <typename T>
 struct OptionKey {
-  const char* key; // String identifier for the option
+  const char* key;
   constexpr explicit OptionKey(const char* k) : key(k) {}
 };
 
-// Supported option data types
 enum class OptionType { BOOL, INT, STRING };
 
-// Union-like container for option values (only one member is valid per option)
-struct OptionValue {
-  bool bool_value; // Storage for boolean values
-  int int_value; // Storage for integer values
-  const char* string_value; // Storage for string values
+// Union for option values
+union OptionValue {
+  bool bool_value;
+  int64_t int_value;
+  const char* string_value;
 };
 
-// Represents a single backend configuration option
 struct BackendOption {
-  const char* key; // Name of the option
-  OptionType type; // Data type of the option
-  OptionValue value; // Current value of the option
+  const char* key;
+  OptionType type;
+  OptionValue value;
 };
 
-// Fixed-capacity container for backend options with type-safe access
-// MaxCapacity: Maximum number of options this container can hold
 template <size_t MaxCapacity>
 class BackendOptions {
  public:
   // Initialize with zero options
-  BackendOptions() : size(0) {}
+  BackendOptions() : size_(0) {}
 
   // Type-safe setters ---------------------------------------------------
 
@@ -52,21 +48,27 @@ class BackendOptions {
   /// @param key: Typed option key
   /// @param value: Boolean value to set
   void set_option(OptionKey<bool> key, bool value) {
-    set_option_internal(key.key, OptionType::BOOL, {.bool_value = value});
+    OptionValue v;
+    v.bool_value = value; // Direct member assignment
+    set_option_internal(key.key, OptionType::BOOL, v);
   }
 
   /// Sets or updates an integer option
   /// @param key: Typed option key
   /// @param value: Integer value to set
-  void set_option(OptionKey<int> key, int value) {
-    set_option_internal(key.key, OptionType::INT, {.int_value = value});
+  void set_option(OptionKey<int64_t> key, int64_t value) {
+    OptionValue v;
+    v.int_value = value; // Direct member assignment
+    set_option_internal(key.key, OptionType::INT, v);
   }
 
   /// Sets or updates a string option
   /// @param key: Typed option key
   /// @param value: Null-terminated string value to set
   void set_option(OptionKey<const char*> key, const char* value) {
-    set_option_internal(key.key, OptionType::STRING, {.string_value = value});
+    OptionValue v;
+    v.string_value = value; // Direct member assignment
+    set_option_internal(key.key, OptionType::STRING, v);
   }
 
   // Type-safe getters ---------------------------------------------------
@@ -77,7 +79,7 @@ class BackendOptions {
   /// @return: Error code (Ok on success)
   executorch::runtime::Error get_option(OptionKey<bool> key, bool& out_value)
       const {
-    OptionValue val{};
+    OptionValue val;
     executorch::runtime::Error err =
         get_option_internal(key.key, OptionType::BOOL, val);
     if (err == executorch::runtime::Error::Ok) {
@@ -90,9 +92,10 @@ class BackendOptions {
   /// @param key: Typed option key
   /// @param out_value: Reference to store retrieved value
   /// @return: Error code (Ok on success)
-  executorch::runtime::Error get_option(OptionKey<int> key, int& out_value)
-      const {
-    OptionValue val{};
+  executorch::runtime::Error get_option(
+      OptionKey<int64_t> key,
+      int64_t& out_value) const {
+    OptionValue val;
     executorch::runtime::Error err =
         get_option_internal(key.key, OptionType::INT, val);
     if (err == executorch::runtime::Error::Ok) {
@@ -101,14 +104,14 @@ class BackendOptions {
     return err;
   }
 
-  /// Retrieves a string option value
+  /// Retrieves an string option value
   /// @param key: Typed option key
-  /// @param out_value: Reference to store retrieved pointer
+  /// @param out_value: Reference to store retrieved value
   /// @return: Error code (Ok on success)
   executorch::runtime::Error get_option(
       OptionKey<const char*> key,
       const char*& out_value) const {
-    OptionValue val{};
+    OptionValue val;
     executorch::runtime::Error err =
         get_option_internal(key.key, OptionType::STRING, val);
     if (err == executorch::runtime::Error::Ok) {
@@ -118,23 +121,24 @@ class BackendOptions {
   }
 
  private:
-  BackendOption options[MaxCapacity]{}; // Storage for options
-  size_t size; // Current number of options
+  BackendOption options_[MaxCapacity]{};
+  size_t size_;
 
   // Internal helper to set/update an option
   void
   set_option_internal(const char* key, OptionType type, OptionValue value) {
     // Update existing key if found
-    for (size_t i = 0; i < size; ++i) {
-      if (strcmp(options[i].key, key) == 0) {
-        options[i].type = type;
-        options[i].value = value;
+    for (size_t i = 0; i < size_; ++i) {
+      if (strcmp(options_[i].key, key) == 0) {
+        options_[i].type = type;
+        options_[i].value = value;
         return;
       }
     }
     // Add new option if capacity allows
-    if (size < MaxCapacity) {
-      options[size++] = {key, type, value};
+    if (size_ < MaxCapacity) {
+      options_[size_] = BackendOption{key, type, value};
+      size_++;
     }
   }
 
@@ -143,33 +147,28 @@ class BackendOptions {
       const char* key,
       OptionType expected_type,
       OptionValue& out) const {
-    for (size_t i = 0; i < size; ++i) {
-      if (strcmp(options[i].key, key) == 0) {
-        // Verify type matches expectation
-        if (options[i].type != expected_type) {
+    for (size_t i = 0; i < size_; ++i) {
+      if (strcmp(options_[i].key, key) == 0) {
+        if (options_[i].type != expected_type) {
           return executorch::runtime::Error::InvalidArgument;
         }
-        out = options[i].value;
+        out = options_[i].value;
         return executorch::runtime::Error::Ok;
       }
     }
-    return executorch::runtime::Error::NotFound; // Key not found
+    return executorch::runtime::Error::NotFound;
   }
 };
 
 // Helper functions for creating typed option keys --------------------------
-
-/// Creates a boolean option key
 constexpr OptionKey<bool> BoolKey(const char* k) {
   return OptionKey<bool>(k);
 }
 
-/// Creates an integer option key
-constexpr OptionKey<int> IntKey(const char* k) {
-  return OptionKey<int>(k);
+constexpr OptionKey<int64_t> IntKey(const char* k) {
+  return OptionKey<int64_t>(k);
 }
 
-/// Creates a string option key
 constexpr OptionKey<const char*> StrKey(const char* k) {
   return OptionKey<const char*>(k);
 }
