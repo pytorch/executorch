@@ -40,7 +40,6 @@ cmake --build cmake-out -j16 --target install --config Release
 
 # Install llama runner with torchao
 cmake -DPYTHON_EXECUTABLE=python \
-    -DBUILD_TESTING=OFF \
     -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
