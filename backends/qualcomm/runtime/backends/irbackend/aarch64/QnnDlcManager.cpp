@@ -22,9 +22,6 @@ QnnDlcManager::QnnDlcManager(
     : qnn_loaded_backend_(""),
       qnn_context_blob_(qnn_context_blob),
       options_(options) {
-  QNN_EXECUTORCH_LOG_INFO(
-      "QnnDlcManager Get Qnn Context blob bytes %u", qnn_context_blob_.nbytes);
-
   if (options_ == nullptr) {
     QNN_EXECUTORCH_LOG_ERROR(
         "Fail to create QnnDlcManager, options is nullptr");
@@ -69,9 +66,6 @@ Error QnnDlcManager::RegisterGraphsFromDLC(
     return Error::Internal;
   }
 
-  const QnnExecuTorchContextBinary& qnn_context_blob =
-      cache->GetQnnContextBlob();
-
   // memfd_create on android api level 30 and above
   int fd = -1;
 #ifdef __ANDROID__
@@ -84,21 +78,26 @@ Error QnnDlcManager::RegisterGraphsFromDLC(
     return Error::Internal;
   }
 
-  if (ftruncate(fd, qnn_context_blob.nbytes) == -1) {
+  if (ftruncate(fd, qnn_context_blob_.nbytes) == -1) {
     QNN_EXECUTORCH_LOG_ERROR("ftruncate fail");
     close(fd);
     return Error::Internal;
   }
 
   void* addr = mmap(
-      NULL, qnn_context_blob.nbytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+      NULL,
+      qnn_context_blob_.nbytes,
+      PROT_READ | PROT_WRITE,
+      MAP_SHARED,
+      fd,
+      0);
   if (addr == MAP_FAILED) {
     QNN_EXECUTORCH_LOG_ERROR("mmap");
     close(fd);
     return Error::Internal;
   }
 
-  memcpy(addr, qnn_context_blob.buffer, qnn_context_blob.nbytes);
+  memcpy(addr, qnn_context_blob_.buffer, qnn_context_blob_.nbytes);
 
   char dlc_path[256];
   snprintf(dlc_path, sizeof(dlc_path), "/proc/self/fd/%d", fd);
@@ -122,7 +121,7 @@ Error QnnDlcManager::RegisterGraphsFromDLC(
     QNN_EXECUTORCH_LOG_ERROR("Failed to open Dlc");
     return Error::Internal;
   }
-  munmap(addr, qnn_context_blob.nbytes);
+  munmap(addr, qnn_context_blob_.nbytes);
   close(fd);
   dlclose(lib_handle);
 
