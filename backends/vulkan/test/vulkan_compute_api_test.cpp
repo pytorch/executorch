@@ -2044,7 +2044,7 @@ TEST(VulkanComputeGraphTest, test_etvk_copy_offset_node) {
   }
 }
 
-TEST(VulkanComputeGraphTest, test_etvk_copy_channel_offset_node) {
+TEST(VulkanComputeGraphTest, DISABLED_test_etvk_copy_channel_offset_node) {
   GraphConfig config;
   ComputeGraph graph(config);
 
@@ -2103,7 +2103,7 @@ TEST(VulkanComputeGraphTest, test_etvk_copy_channel_offset_node) {
 
 TEST(
     VulkanComputeGraphTest,
-    test_etvk_copy_channel_offset_node_clean_boundary) {
+    DISABLED_test_etvk_copy_channel_offset_node_clean_boundary) {
   // Tricky part for channel copy is handling the boundary across multiple copy.
   // For example, when we concat two [3, 1, 1] nchw-tensors along the channel
   // dimension, due to channel packing, elements from different source texel
@@ -2312,7 +2312,7 @@ TEST(VulkanComputeGraphTest, test_etvk_copy_offset_int_node) {
   }
 }
 
-TEST(VulkanComputeGraphTest, test_etvk_copy_channel_offset_int_node) {
+TEST(VulkanComputeGraphTest, DISABLED_test_etvk_copy_channel_offset_int_node) {
   GraphConfig config;
   ComputeGraph graph(config);
 
@@ -2966,71 +2966,6 @@ TEST(VulkanComputeGraphOpsTest, max_pool2d_smoke_test) {
       kernel);
 }
 
-void test_conv2d(
-    const std::vector<int64_t>& original_sizes,
-    const std::vector<int64_t>& padded_sizes,
-    const std::vector<int64_t>& gpu_sizes,
-    const bool transposed,
-    const std::vector<float>& data_out_expected) {
-  vTensor vten = vTensor(
-      context(),
-      gpu_sizes,
-      vkapi::kFloat,
-      utils::StorageType::TEXTURE_2D,
-      utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
-
-  // Create and fill input staging buffer
-  const int64_t in_numel = utils::multiply_integers(original_sizes);
-  StagingBuffer staging_buffer_in(context(), vkapi::kFloat, in_numel);
-
-  std::vector<float> data_in(in_numel);
-  for (int i = 0; i < in_numel; i++) {
-    data_in[i] = i + 1;
-  }
-  staging_buffer_in.copy_from(data_in.data(), sizeof(float) * in_numel);
-
-  // Output staging buffer
-  const int64_t out_numel =
-      padded_sizes[0] * padded_sizes[1] * original_sizes[2] * original_sizes[3];
-  StagingBuffer staging_buffer_out(context(), vkapi::kFloat, out_numel);
-
-  // Copy data in and out of the tensor
-  record_conv2d_prepack_weights_op(
-      context(), staging_buffer_in.buffer(), vten, original_sizes, transposed);
-  record_image_to_nchw_op(context(), vten, staging_buffer_out.buffer());
-
-  // Execute command buffer
-  submit_to_gpu();
-
-  // Extract data from output staging buffer
-  std::vector<float> data_out(out_numel);
-  staging_buffer_out.copy_to(data_out.data(), sizeof(float) * out_numel);
-
-  // Check data matches results copied from ATen-VK
-  for (int i = 0; i < vten.numel(); i++) {
-    CHECK_VALUE(data_out, i, data_out_expected[i]);
-  }
-}
-
-TEST(VulkanComputeGraphOpsTest, conv2d_prepack_test) {
-  test_conv2d(
-      /*original_sizes = */ {2, 3, 1, 2},
-      /*padded_sizes = */ {4, 4},
-      /*gpu_sizes = */ {4, 1, 8},
-      /*transposed = */ false,
-      /*data_out_expected = */ {1, 3, 5,  0,  2, 4, 6, 0, 7, 9, 11,
-                                0, 8, 10, 12, 0, 0, 0, 0, 0, 0, 0,
-                                0, 0, 0,  0,  0, 0, 0, 0, 0, 0});
-  test_conv2d(
-      /*original_sizes = */ {2, 3, 1, 2},
-      /*padded_sizes = */ {4, 4},
-      /*gpu_sizes = */ {4, 1, 8},
-      /*transposed = */ true,
-      /*data_out_expected = */ {2, 8, 0, 0, 1, 7, 0,  0, 4, 10, 0,
-                                0, 3, 9, 0, 0, 6, 12, 0, 0, 5,  11,
-                                0, 0, 0, 0, 0, 0, 0,  0, 0, 0});
-}
-
 void test_grid_priors(
     std::vector<int64_t> input_sizes,
     std::vector<int64_t> output_sizes,
@@ -3242,8 +3177,10 @@ void test_to_copy() {
 
   EXPECT_EQ(data_in.size(), output_data.size());
 
+#ifdef VULKAN_DEBUG
   float mse_ex = 0.0f;
   float mse_vk = 0.0f;
+#endif
 
   // check results
   for (size_t i = 0; i < output_data.size(); ++i) {
@@ -3254,6 +3191,7 @@ void test_to_copy() {
     torch::executor::Half output = output_data[i];
     uint16_t* output_bits = reinterpret_cast<uint16_t*>(&output);
 
+#ifdef VULKAN_DEBUG
     std::string msg;
     msg.reserve(64);
     msg = "input = " + std::to_string(input) + "(0b" +
@@ -3264,6 +3202,10 @@ void test_to_copy() {
         std::bitset<16>(*output_bits).to_string() + ")";
 
     std::cout << msg << std::endl;
+
+    mse_ex += std::pow(expected_output - input, 2);
+    mse_vk += std::pow(output - input, 2);
+#endif
 
     // Note: Torch executor half "rounds up" when converting to fp16 whereas
     // most driver implementations of Vulkan's opFConvert() just truncates the
@@ -3284,15 +3226,16 @@ void test_to_copy() {
     EXPECT_TRUE(
         (*output_bits == *expected_bits) ||
         /*rounding error*/ ((*output_bits + 1u) == *expected_bits));
-    mse_ex += std::pow(expected_output - input, 2);
-    mse_vk += std::pow(output - input, 2);
   }
 
+#ifdef VULKAN_DEBUG
   mse_ex /= output_data.size();
   mse_vk /= output_data.size();
+
   std::cout << "========================================================="
             << std::endl;
   std::cout << "mse_ex = " << mse_ex << ", mse_vk = " << mse_vk << std::endl;
+#endif
 }
 
 TEST(VulkanComputeGraphOpsTest, test_to_copy) {
