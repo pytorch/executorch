@@ -761,7 +761,10 @@ void ComputeGraph::propagate_resize() {
   for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
     node->trigger_resize(this);
   }
-  encode_execute();
+  // Only re-encode on resize if dynamic shapes are expected
+  if (config_.expect_dynamic_shapes) {
+    encode_execute();
+  }
 }
 
 } // namespace vkcompute

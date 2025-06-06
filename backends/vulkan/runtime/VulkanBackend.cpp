@@ -30,8 +30,6 @@
 #include <type_traits>
 #include <vector>
 
-#include <iostream>
-
 namespace executorch {
 namespace backends {
 namespace vulkan {
