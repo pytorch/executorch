@@ -18,9 +18,6 @@ QnnDlcManager::QnnDlcManager(
     : qnn_loaded_backend_(""),
       qnn_context_blob_(qnn_context_blob),
       options_(options) {
-  QNN_EXECUTORCH_LOG_INFO(
-      "QnnDlcManager Get Qnn Context blob bytes %u", qnn_context_blob_.nbytes);
-
   if (options_ == nullptr) {
     QNN_EXECUTORCH_LOG_ERROR(
         "Fail to create QnnDlcManager, options is nullptr");

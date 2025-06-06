@@ -111,7 +111,9 @@ class BackendInterface {
    */
    ET_NODISCARD virtual Error update(
     BackendUpdateContext& context,
-    const executorch::runtime::ArrayRef<BackendOption>& backend_options) const = 0;
+    const executorch::runtime::ArrayRef<BackendOption>& backend_options) const {
+        return Error::Ok;
+      };
 
   /**
    * Responsible for destroying a handle, if it's required for some backend.
