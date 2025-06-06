@@ -2937,6 +2937,7 @@ void test_transpose_view_mm(
     const int N,
     utils::StorageType storage_type) {
   GraphConfig config;
+  config.expect_dynamic_shapes = true;
   config.set_storage_type_override(storage_type);
   ComputeGraph graph(config);
 
@@ -2993,7 +2994,6 @@ void test_transpose_view_mm(
   graph.prepare();
   graph.encode_prepack();
   graph.prepack();
-  graph.encode_execute();
 
   for (int i = 1; i < 4; i++) {
     float val_mat1 = i;
