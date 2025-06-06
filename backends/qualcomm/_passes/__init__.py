@@ -12,6 +12,7 @@ from .convert_conv1d_to_conv2d import ConvertConv1dToConv2d
 from .convert_square_to_pow import ConvertSquareToPow
 from .decompose_any import DecomposeAny
 from .decompose_cdist import DecomposeCDist
+from .decompose_col_im import DecomposeColIm
 from .decompose_einsum import DecomposeEinsum
 from .decompose_expm1 import DecomposeExpM1
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
@@ -47,6 +48,7 @@ __all__ = [
     ConvertSquareToPow,
     DecomposeAny,
     DecomposeCDist,
+    DecomposeColIm,
     DecomposeEinsum,
     DecomposeExpM1,
     DecomposeLinalgVectorNorm,

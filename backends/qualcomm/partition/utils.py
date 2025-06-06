@@ -42,9 +42,11 @@ def filter_fn(node: torch.fx.Node) -> bool:
 def get_skip_decomp_table() -> List[torch._ops.OperatorBase]:
     do_not_decompose = [
         torch.ops.aten.adaptive_avg_pool2d.default,
+        torch.ops.aten.col2im.default,
         torch.ops.aten.elu.default,
         torch.ops.aten.hardsigmoid.default,
         torch.ops.aten.hardswish.default,
+        torch.ops.aten.im2col.default,
         torch.ops.aten.instance_norm.default,
         torch.ops.aten.leaky_relu.default,
         torch.ops.aten.linear.default,
