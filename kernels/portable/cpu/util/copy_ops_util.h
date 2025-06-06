@@ -28,9 +28,15 @@ void _as_strided_copy(
     int64_t dim) {
   // the last dimension, copy data
   if (dim == static_cast<int64_t>(size.size()) - 1) {
-    for (const auto i : c10::irange(size.at(dim))) {
-      output_data[i] = *input_data;
-      input_data += stride.at(dim);
+    const size_t num_elements = size.at(dim);
+    // use memcpy for contiguous memory
+    if (stride.at(dim) == 1) {
+      memcpy(output_data, input_data, num_elements * sizeof(CTYPE));
+    } else {
+      for (const auto i : c10::irange(num_elements)) {
+        output_data[i] = *input_data;
+        input_data += stride.at(dim);
+      }
     }
     return;
   }
