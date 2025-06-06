@@ -7,13 +7,14 @@
 # pyre-unsafe
 
 import copy
+import torch
 import random
 import statistics
 import tempfile
 import unittest
 from contextlib import redirect_stdout
 
-from typing import Callable, List
+from typing import Callable, List, Union
 
 from unittest.mock import patch
 
@@ -56,7 +57,7 @@ from torch.export import export, ExportedProgram
 
 OP_TYPE = "aten::add"
 EVENT_BLOCK_NAME = "block_0"
-EVENTS_SIZE = 5
+EVENTS_SIZE = 10
 RAW_DATA_SIZE = 10
 ETDUMP_PATH = "unittest_etdump_path"
 ETRECORD_PATH = "unittest_etrecord_path"
@@ -72,7 +73,7 @@ class TestInspector(unittest.TestCase):
         self.assertAlmostEqual(perfData.p50, statistics.median(random_floats))
 
     def test_event_block_to_dataframe(self) -> None:
-        eventBlock = EventBlock(name=EVENT_BLOCK_NAME, events=self._gen_random_events())
+        eventBlock = EventBlock(name=EVENT_BLOCK_NAME, events=self._gen_events())
 
         df = eventBlock.to_dataframe()
         # Check some fields of the returned dataframe
@@ -154,7 +155,7 @@ class TestInspector(unittest.TestCase):
             # The mock inspector instance starts with having an empty event blocks list.
             # Add non-empty event blocks to test print_data_tabular().
             inspector_instance.event_blocks = [
-                EventBlock(name=EVENT_BLOCK_NAME, events=self._gen_random_events())
+                EventBlock(name=EVENT_BLOCK_NAME, events=self._gen_events())
             ]
             # Call print_data_tabular(), make sure it doesn't crash
             with redirect_stdout(None):
@@ -535,17 +536,111 @@ class TestInspector(unittest.TestCase):
                     )
                 )
 
+    def test_get_correct_runtime_outputs(self):
+        # Create a context manager to patch functions called by Inspector.__init__
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
+        ):
+            # Call the constructor of Inspector
+            inspector_instance = Inspector(
+                etdump_path=ETDUMP_PATH,
+                etrecord=ETRECORD_PATH,
+            )
+
+            # The mock inspector instance starts with having an empty event blocks list.
+            # Add pre-defined event blocks to test _get_runtime_outputs().
+            inspector_instance.event_blocks = [
+                EventBlock(name=EVENT_BLOCK_NAME, events=self._gen_events())
+            ]
+
+            runtime_outputs = inspector_instance._get_runtime_outputs()
+            # This output should be a dictionary with 5 keys
+            self.assertEqual(len(runtime_outputs), 5, )
+            # Check that keys (0,) and (1,) are not in the dictionary(skip OPERATOR_CALL and op_types are empty)
+            self.assertNotIn((0,), runtime_outputs)
+            self.assertNotIn((1,), runtime_outputs)
+
+            # Same debug_handle but different instruction_id, should record the last one
+            self.assertIn((4,), runtime_outputs)
+            self.assertTrue(torch.equal(runtime_outputs[(4,)][0], torch.tensor([4.0, 5.0, 6.0])))
+            # Check that keys (5,) to (8,) are in the dictionary and have values of the correct size
+            for key in range(5, 9):
+                self.assertIn((key,), runtime_outputs)
+                self.assertEqual(len(runtime_outputs[(key,)]), RAW_DATA_SIZE)
+
     def _gen_random_float_list(self) -> List[float]:
         return [random.uniform(0, 10) for _ in range(RAW_DATA_SIZE)]
 
-    def _gen_random_events(self) -> List[Event]:
+    def _gen_random_runtime_output(self) -> List[Union[None, List[torch.Tensor], bool, float, int, str, torch.Tensor]]:
+        return list(torch.randn(RAW_DATA_SIZE))
+
+    def _gen_events(self) -> List[Event]:
         events = []
-        for i in range(EVENTS_SIZE):
+        for i in range(2):
             events.append(
+                # OPERATOR_CALL with debug_hanldes/instruction_id 0 and 2
                 Event(
-                    name=f"op_{i}",
+                    name="OPERATOR_CALL",
                     op_types=[OP_TYPE],
                     perf_data=PerfData(self._gen_random_float_list()),
+                    debug_handles = i * 2,
+                    _instruction_id = i * 2,
+                    debug_data = self._gen_random_runtime_output()
+                )
+            )
+            events.append(
+                # op_0/op_1 wiht empty op_types and with debug_hanldes/instruction_id 1 and 3
+                Event(
+                    name=f"op_{i}",
+                    op_types=[],
+                    perf_data=PerfData(self._gen_random_float_list()),
+                    debug_handles = i * 2 + 1,
+                    _instruction_id = i * 2 + 1,
+                    debug_data = self._gen_random_runtime_output()
+                )
+            )
+
+        # op_2 with debug_hanldes/instruction_id 4
+        events.append(
+            Event(
+                name=f"op_2",
+                op_types=[OP_TYPE],
+                perf_data=PerfData(self._gen_random_float_list()),
+                debug_handles = 4,
+                debug_data =  [torch.tensor([1.0, 2.0, 3.0])],
+                _instruction_id = 4
+
+            )
+        )
+        # op_3 also with debug_hanldes 4 but with instruction_id 5
+        events.append(
+            Event(
+                name=f"op_3",
+                op_types=[OP_TYPE],
+                perf_data=PerfData(self._gen_random_float_list()),
+                debug_handles = 4,
+                debug_data = [torch.tensor([4.0, 5.0, 6.0])],
+                _instruction_id = 5
+
+            )
+        )
+
+        # op_4 to op_7 with debug_hanldes 5 to 8 and instruction_id 6 to 9
+        for i in range(EVENTS_SIZE - 6):
+            events.append(
+                Event(
+                    name=f"op_{i + 4}",
+                    op_types=[OP_TYPE],
+                    perf_data=PerfData(self._gen_random_float_list()),
+                    debug_handles = i + 5,
+                    debug_data = self._gen_random_runtime_output(),
+                    _instruction_id = i + 6
                 )
             )
         return events
