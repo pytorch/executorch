@@ -81,8 +81,13 @@ int32_t main(int32_t argc, char** argv) {
   }
 #endif
   // create llama runner
-  std::unique_ptr<example::Runner> runner =
-      example::Runner::create(model_path, tokenizer_path, data_path);
+  std::unique_ptr<::executorch::extension::llm::TextLLMRunner> runner =
+      example::create_llama_runner(model_path, tokenizer_path, data_path);
+
+  if (runner == nullptr) {
+    ET_LOG(Error, "Failed to create llama runner");
+    return 1;
+  }
 
   if (warmup) {
     runner->warmup(prompt, /*max_new_tokens=*/seq_len);

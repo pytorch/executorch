@@ -378,6 +378,13 @@ class LogConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32]
 
 
+class TanhConfig(GenericNodePartitionerConfig):
+    target_name = "tanh.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
 class MeanDimConfig(GenericNodePartitionerConfig):
     target_name = "mean.dim"
 

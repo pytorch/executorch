@@ -847,7 +847,7 @@ def set_8da4w_computation_dtype(
     module: nn.Module, computation_dtype: torch.dtype
 ) -> nn.Module:
 
-    from torchao.quantization.GPTQ import Int8DynActInt4WeightLinear
+    from torchao.quantization.linear_quant_modules import Int8DynActInt4WeightLinear
 
     def _set_8da4w_computation_dtype(module: nn.Module, dtype: torch.dtype) -> None:
         """
