@@ -14,6 +14,7 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif
 
+#include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -239,6 +240,15 @@ class Method final {
 
   /// DEPRECATED: Use `reset_execution()` instead.
   ET_DEPRECATED ET_NODISCARD Error experimental_reset_execution();
+
+    /**
+   * EXPERIMENTAL: Advances/executes a single instruction in the method.
+   *
+   * @retval Error::Ok step succeeded
+   * @retval non-Ok step failed
+   * @retval Error::EndOfMethod method finished executing successfully
+   */
+   ET_EXPERIMENTAL ET_NODISCARD Error update(executorch::runtime::ArrayRef<executorch::runtime::Entry> backend_option);
 
   /**
    * Returns the MethodMeta that corresponds to the calling Method.
