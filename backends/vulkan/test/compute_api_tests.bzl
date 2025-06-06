@@ -32,7 +32,7 @@ def define_compute_api_test_targets():
             ],
             apple_sdks = MACOSX,
             labels = get_labels(no_volk),
-            platforms = get_platforms(no_volk),
+            platforms = get_platforms(),
             visibility = ["PUBLIC"],
             deps = [
                 ":test_shader_lib{}".format(suffix),

@@ -17,6 +17,11 @@
 #include <cstddef>
 #include <cstdint>
 
+// X11 headers via volk define Bool, so we need to undef it
+#if defined(__linux__)
+#undef Bool
+#endif
+
 #ifdef USE_VULKAN_FP16_INFERENCE
 #define VK_FORMAT_FLOAT4 VK_FORMAT_R16G16B16A16_SFLOAT
 #else
