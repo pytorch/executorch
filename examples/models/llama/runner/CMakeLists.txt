@@ -53,10 +53,12 @@ else()
 endif()
 
 # For extension_llm_runner
+if (NOT TARGET extension_llm_runner)
 add_subdirectory(
   ${EXECUTORCH_ROOT}/extension/llm/runner
   ${CMAKE_CURRENT_BINARY_DIR}/../../../../extension/llm/runner
 )
+endif()
 
 set(llama_runner_deps executorch_core extension_data_loader extension_module
                       extension_tensor extension_flat_tensor extension_llm_runner
