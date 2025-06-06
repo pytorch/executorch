@@ -17,6 +17,8 @@
 // clang-format off
 extern "C" void dgemm_(char *transa, char *transb, int *m, int *n, int *k, double *alpha, const double *a, int *lda, const double *b, int *ldb, double *beta, double *c, int *ldc);
 extern "C" void sgemm_(char *transa, char *transb, int *m, int *n, int *k, float *alpha, const float *a, int *lda, const float *b, int *ldb, float *beta, float *c, int *ldc);
+extern "C" void cgemm_(char *transa, char *transb, int *m, int *n, int *k, void *alpha, const void *a, int *lda, const void *b, int *ldb, void *beta, void *c, int *ldc);
+extern "C" void zgemm_(char *transa, char *transb, int *m, int *n, int *k, void *alpha, const void *a, int *lda, const void *b, int *ldb, void *beta, void *c, int *ldc);
 // clang-format on
 #endif // ET_BUILD_FOR_APPLE
 #endif // ET_BUILD_WITH_BLAS
@@ -25,6 +27,7 @@ namespace executorch {
 namespace cpublas {
 
 using executorch::aten::BFloat16;
+using executorch::aten::complex;
 using executorch::aten::Half;
 
 #ifdef ET_BUILD_WITH_BLAS
@@ -186,6 +189,101 @@ void gemm(
   normalize_last_dims(transa, transb, m, n, k, &lda, &ldb, &ldc);
 
   using acc_type = utils::compute_dtype<BFloat16>;
+  gemm_impl(
+      transa, transb,
+      m, n, k,
+      static_cast<const acc_type>(alpha),
+      a, lda,
+      b, ldb,
+      static_cast<const acc_type>(beta),
+      c, ldc);
+}
+// clang-format on
+
+// clang-format off
+void gemm(
+    TransposeType transa, TransposeType transb,
+    int64_t m, int64_t n, int64_t k,
+    const complex<double> alpha,
+    const complex<double> *a, int64_t lda,
+    const complex<double> *b, int64_t ldb,
+    const complex<double> beta,
+    complex<double> *c, int64_t ldc) {
+  normalize_last_dims(transa, transb, m, n, k, &lda, &ldb, &ldc);
+#if defined(ET_BUILD_WITH_BLAS) && !defined(ET_BUILD_FOR_APPLE)
+  complex<double> alpha_ = alpha, beta_ = beta;
+  int m_ = m, n_ = n, k_ = k, lda_ = lda, ldb_ = ldb, ldc_ = ldc;
+  char transa_ = to_blas(transa), transb_ = to_blas(transb);
+  zgemm_(
+      &transa_, &transb_,
+      &m_, &n_, &k_,
+      &alpha_,
+      a, &lda_,
+      b, &ldb_,
+      &beta_,
+      c, &ldc_);
+#else
+  using acc_type = utils::compute_dtype<complex<double>>;
+  gemm_impl(
+      transa, transb,
+      m, n, k,
+      static_cast<const acc_type>(alpha),
+      a, lda,
+      b, ldb,
+      static_cast<const acc_type>(beta),
+      c, ldc);
+#endif
+}
+// clang-format on
+
+// clang-format off
+void gemm(
+    TransposeType transa, TransposeType transb,
+    int64_t m, int64_t n, int64_t k,
+    const complex<float> alpha,
+    const complex<float> *a, int64_t lda,
+    const complex<float> *b, int64_t ldb,
+    const complex<float> beta,
+    complex<float> *c, int64_t ldc) {
+  normalize_last_dims(transa, transb, m, n, k, &lda, &ldb, &ldc);
+  #if defined(ET_BUILD_WITH_BLAS) && !defined(ET_BUILD_FOR_APPLE)
+  complex<float> alpha_ = alpha, beta_ = beta;
+  int m_ = m, n_ = n, k_ = k, lda_ = lda, ldb_ = ldb, ldc_ = ldc;
+  char transa_ = to_blas(transa), transb_ = to_blas(transb);
+  cgemm_(
+      &transa_, &transb_,
+      &m_, &n_, &k_,
+      &alpha_,
+      a, &lda_,
+      b, &ldb_,
+      &beta_,
+      c, &ldc_);
+#else
+  using acc_type = utils::compute_dtype<complex<float>>;
+  gemm_impl(
+      transa, transb,
+      m, n, k,
+      static_cast<const acc_type>(alpha),
+      a, lda,
+      b, ldb,
+      static_cast<const acc_type>(beta),
+      c, ldc);
+#endif
+}
+// clang-format on
+
+// clang-format off
+void gemm(
+    TransposeType transa, TransposeType transb,
+    int64_t m, int64_t n, int64_t k,
+    const complex<Half> alpha,
+    const complex<Half> *a, int64_t lda,
+    const complex<Half> *b, int64_t ldb,
+    const complex<Half> beta,
+    complex<Half> *c, int64_t ldc) {
+  normalize_last_dims(transa, transb, m, n, k, &lda, &ldb, &ldc);
+
+  using acc_type = utils::compute_dtype<complex<Half>>;
   gemm_impl(
       transa, transb,
       m, n, k,
