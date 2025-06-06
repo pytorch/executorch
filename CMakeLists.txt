@@ -52,7 +52,7 @@ project(executorch)
 
 include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
 include(${PROJECT_SOURCE_DIR}/tools/cmake/Utils.cmake)
-include(${PROJECT_SOURCE_DIR}/tools/cmake/EXECUTORCH_FetchContent_Destination.cmake)
+include(${PROJECT_SOURCE_DIR}/tools/cmake/FetchContent.cmake)
 include(CMakeDependentOption)
 include(ExternalProject)
 include(FetchContent)

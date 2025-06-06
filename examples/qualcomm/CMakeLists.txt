@@ -31,9 +31,6 @@ endif()
 find_package(executorch CONFIG REQUIRED)
 target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
 
-set(gflags_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../third-party/gflags/gflags-build)
-find_package(gflags REQUIRED)
-
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 # Let files say "include <executorch/path/to/header.h>".

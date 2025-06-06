@@ -21,7 +21,7 @@ ethos-u-scratch/
 executorch.egg-info
 pip-out/
 
-# Dynamically fetched third-party libraries
+# Third-party libraries, symlink'ed to FetchContent source directories
 third-party/gflags
 
 # Any exported models and profiling outputs

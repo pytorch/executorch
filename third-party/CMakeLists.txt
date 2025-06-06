@@ -14,14 +14,12 @@ if(BUILD_TESTING)
   add_subdirectory(googletest)
 endif()
 
-EXECUTORCH_FetchContent_Destination("${CMAKE_CURRENT_SOURCE_DIR}/gflags")
-FetchContent_Declare(
-  gflags
-  GIT_REPOSITORY https://github.com/gflags/gflags.git
-  GIT_TAG v2.2.2
+FetchContent_gflags()
+# Create a symlink from the gflags source directory to third-party/gflags
+message(STATUS "gflags source dir: ${gflags_SOURCE_DIR}")
+execute_process(
+  COMMAND ${CMAKE_COMMAND} -E create_symlink "${gflags_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/gflags"
 )
-set(GFLAGS_INTTYPES_FORMAT C99)
-FetchContent_MakeAvailable(gflags)
 
 # MARK: - flatbuffers
 

@@ -45,6 +45,7 @@ endif()
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/FetchContent.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -66,10 +67,8 @@ set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
-# For some reason android build is not able to find where gflags is and hence
-# cannot find corresponding .cmake file
-set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags/gflags-build)
-find_package(gflags REQUIRED)
+# Fetch gflags
+FetchContent_gflags()
 
 #
 # llava_main: test binary to run llava, with tokenizer and sampler integrated
