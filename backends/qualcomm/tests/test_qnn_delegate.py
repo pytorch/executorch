@@ -333,8 +333,8 @@ class TestQNNFloatingPointOperator(TestQNN):
             },
             {
                 QCOM_MODULE: [
-                    AddConstantLong(),
-                ],  # noqa: F405
+                    AddConstantLong(),  # noqa: F405
+                ],
                 QCOM_SAMPLE_INPUTS: [(torch.randint(0, 10, size=(2, 3)),)],
             },
         ]
