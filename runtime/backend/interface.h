@@ -12,6 +12,8 @@
 
 #include <executorch/runtime/backend/backend_execution_context.h>
 #include <executorch/runtime/backend/backend_init_context.h>
+#include <executorch/runtime/backend/backend_update_context.h>
+#include <executorch/runtime/backend/backend_options.h>
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
@@ -98,6 +100,20 @@ class BackendInterface {
       BackendExecutionContext& context,
       DelegateHandle* handle,
       EValue** args) const = 0;
+
+  /**
+   * Responsible update the backend status, if any. The backend options are passed in
+   * by users, and the backend can update its internal status based on the options.
+   *
+   * @param[in] context Runtime context if any. Currently it's not used.
+   * @param[in] args A list of BackendOptions passed in by users.
+   * @retval Error::Ok if successful.
+   */
+   ET_NODISCARD virtual Error update(
+    BackendUpdateContext& context,
+    const executorch::runtime::ArrayRef<BackendOption>& backend_options) const {
+        return Error::Ok;
+      };
 
   /**
    * Responsible for destroying a handle, if it's required for some backend.
