@@ -371,7 +371,8 @@ jobs:
             ls -lh "${OUT_ET_MODEL_NAME}.pte"
           fi
 
-          zip -j model.zip ${OUT_ET_MODEL_NAME}.pte ${DOWNLOADED_PATH}/tokenizer.*
+          # zip -j model.zip ${OUT_ET_MODEL_NAME}.pte ${DOWNLOADED_PATH}/tokenizer.*
+          zip -j model.zip ${OUT_ET_MODEL_NAME}.pte
           ls -lh model.zip
           mkdir -p "${ARTIFACTS_DIR_NAME}"
           mv model.zip "${ARTIFACTS_DIR_NAME}"

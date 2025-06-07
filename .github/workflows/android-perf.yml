@@ -349,7 +349,7 @@ jobs:
                 "--use_custom_sdpa"
                 "--qlinear"
                 "--qembedding"
-                "--output_dir" "."
+                "--output_dir" ".."
               )
 
               # Add conditional arguments based on model
@@ -363,12 +363,14 @@ jobs:
               esac
 
               optimum-cli export executorch "${ARGS[@]}"
+              popd
 
               mv model.pte ${OUT_ET_MODEL_NAME}.pte
               ls -lh "${OUT_ET_MODEL_NAME}.pte"
             fi
 
-            zip -j model.zip ${OUT_ET_MODEL_NAME}.pte ${DOWNLOADED_PATH}/tokenizer.*
+            # zip -j model.zip ${OUT_ET_MODEL_NAME}.pte ${DOWNLOADED_PATH}/tokenizer.*
+            zip -j model.zip ${OUT_ET_MODEL_NAME}.pte
             ls -lh model.zip
             mkdir -p ${ARTIFACTS_DIR_NAME}
             mv model.zip ${ARTIFACTS_DIR_NAME}
