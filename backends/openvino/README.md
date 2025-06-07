@@ -45,8 +45,9 @@ Before you begin, ensure you have openvino installed and configured on your syst
 ### Build OpenVINO from Source
 
 ```bash
-git clone https://github.com/openvinotoolkit/openvino.git
-cd openvino && git checkout releases/2025/1
+git clone https://github.com/daniil-lyakhov/openvino.git
+# WIP
+cd openvino && git checkout dl/yolo12_complete_support
 git submodule update --init --recursive
 sudo ./install_build_dependencies.sh
 mkdir build && cd build
