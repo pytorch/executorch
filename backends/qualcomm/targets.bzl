@@ -92,4 +92,5 @@ def define_common_targets():
         exported_deps = [
             ":schema",
         ],
+        platforms = [ANDROID],
     )
