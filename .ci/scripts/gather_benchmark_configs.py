@@ -32,7 +32,8 @@ DEVICE_POOLS = {
 BENCHMARK_CONFIGS = {
     "xplat": [
         "xnnpack_q8",
-        "hf_xnnpack_fp32",
+        "hf_xnnpack_custom_spda_kv_cache_8da4w",
+        "et_xnnpack_custom_spda_kv_cache_8da4w",
         "llama3_fb16",
         "llama3_spinquant",
         "llama3_qlora",
@@ -129,8 +130,9 @@ def generate_compatible_configs(model_name: str, target_os=None) -> List[str]:
     """
     configs = []
     if is_valid_huggingface_model_id(model_name):
+        configs.append("hf_xnnpack_custom_spda_kv_cache_8da4w")
         if model_name.startswith("meta-llama/"):
-            # LLaMA models
+            # etLLM recipes for Llama
             repo_name = model_name.split("meta-llama/")[1]
             if "qlora" in repo_name.lower():
                 configs.append("llama3_qlora")
@@ -138,6 +140,7 @@ def generate_compatible_configs(model_name: str, target_os=None) -> List[str]:
                 configs.append("llama3_spinquant")
             else:
                 configs.append("llama3_fb16")
+                configs.append("et_xnnpack_custom_spda_kv_cache_8da4w")
                 configs.extend(
                     [
                         config
@@ -145,9 +148,8 @@ def generate_compatible_configs(model_name: str, target_os=None) -> List[str]:
                         if config.startswith("llama")
                     ]
                 )
-        else:
-            # Non-LLaMA models
-            configs.append("hf_xnnpack_fp32")
+        if model_name.startswith("Qwen/Qwen3"):
+            configs.append("et_xnnpack_custom_spda_kv_cache_8da4w")
     elif model_name in MODEL_NAME_TO_MODEL:
         # ExecuTorch in-tree non-GenAI models
         configs.append("xnnpack_q8")

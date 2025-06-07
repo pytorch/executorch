@@ -570,34 +570,40 @@ jobs:
         git clone https://github.com/huggingface/optimum-executorch
         pushd optimum-executorch
         # There is no release yet, for CI stability, always test from the same commit on main
-        git checkout da80c9e35b3db5c7eea8731b7d660482fb4870a8
+        git checkout 1c653dc49812fc431a22312c7295d97005d22e12
         pip install .[tests]
+        pip install transformers==4.52.4
         popd
-
-        if [ "${{ matrix.hf_model_id }}" == "google/gemma-3-1b-it" ]; then
-          # Fixes for gemma-3 is not available in the released version
-          git clone https://github.com/huggingface/transformers.git
-          pushd transformers
-          git checkout a57274466f7f72efaa2662d1738cdaf28ae8071f
-          pip install -e .
-          popd
-        fi
         pip list
         echo "::endgroup::"
 
         echo "::group::Export to ExecuTorch"
         # Pass matrix variable as environment variable
         export MODEL_ID="${{ matrix.hf_model_id }}"
-        export OUTPUT_DIR="$(pwd)/${MODEL_ID}_custom_sdpa_8da4w"
+        export OUTPUT_DIR="$(pwd)/${MODEL_ID}_custom_sdpa_kv_cache_8da4w"
         pushd optimum-executorch
 
-        optimum-cli export executorch \
-          --model ${MODEL_ID} \
-          --task text-generation \
-          --recipe xnnpack \
-          --use_custom_sdpa \
-          --output_dir ${OUTPUT_DIR} \
-          --qlinear
+        ARGS=(
+          "--model" "${MODEL_ID}"
+          "--task" "text-generation"
+          "--recipe" "xnnpack"
+          "--use_custom_sdpa"
+          "--qlinear"
+          "--qembedding"
+          "--output_dir" "."
+        )
+
+        # Add conditional arguments based on model
+        case "${MODEL_ID}" in
+          *"google/gemma-3-1b-it"*)
+            echo "--use_custom_kv_cache can not be used for HybridCache"
+            ;;
+          *)
+            ARGS+=("--use_custom_kv_cache")
+            ;;
+        esac
+
+        optimum-cli export executorch "${ARGS[@]}"
 
         ls -FlAGhp ${OUTPUT_DIR}
         popd
