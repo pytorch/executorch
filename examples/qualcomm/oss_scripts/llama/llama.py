@@ -692,36 +692,35 @@ def compile(args, pte_filename, tokenizer):
             )
             for graph_name in graph_names
         ]
-
-        # TODO: retire capture_program once we figure out how to extract
-        #       intermediate graph from official lowering API
-        edge_progs = {
-            graph_name: capture_program(
-                module=llama_instance.llama_graph_module,
-                inputs=sample_input,
-                dep_table=llama_instance.dep_table,
-                passes_job=llama_instance.passes_job,
-            ).exported_program
-            for graph_name, llama_instance, sample_input in zip(
-                graph_names, llama_instance_list, sample_inputs_list
-            )
-        }
-        for n in edge_progs[graph_names[0]].graph.nodes:
+        edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+            {
+                graph_name: instance.llama_graph_module
+                for graph_name, instance in zip(graph_names, llama_instance_list)
+            },
+            {
+                graph_name: inputs
+                for graph_name, inputs in zip(graph_names, sample_inputs_list)
+            },
+            {
+                graph_name: compiler_spec
+                for graph_name, compiler_spec in zip(graph_names, compiler_specs)
+            },
+            llama_instance_list[1].llama_meta,
+            dep_table={
+                graph_name: instance.dep_table
+                for graph_name, instance in zip(graph_names, llama_instance_list)
+            },
+            passes_job={
+                graph_name: instance.passes_job
+                for graph_name, instance in zip(graph_names, llama_instance_list)
+            },
+            skip_node_op_set={"llama.fallback.default"},
+        )
+        for n in list(edge_prog_mgr._edge_programs.values())[0].graph.nodes:
             if n.op == "output":
                 for node, output_encoding in n.meta[QCOM_QUANT_ATTRS_MAP].items():
                     if node.meta["val"].size() in llama_instance_list[0].io_shape:
                         quant_attrs = output_encoding
-
-        partitioners = {
-            graph_name: QnnPartitioner(
-                compiler_spec, skip_node_op_set={"llama.fallback.default"}
-            )
-            for graph_name, compiler_spec in zip(graph_names, compiler_specs)
-        }
-
-        lowered_ep_dict = to_backend(
-            MethodProgramsPartitionerSpec(edge_progs, partitioners)
-        )
 
         if args.num_sharding > 1:
             # TODO: add arg parser of spill_fill_size since weight-sharing based
@@ -729,7 +728,7 @@ def compile(args, pte_filename, tokenizer):
             pass
 
         if args.verbose:
-            for ep in lowered_ep_dict.values():
+            for ep in edge_prog_mgr._edge_programs.values():
                 print_delegation_info(ep.graph_module)
 
         executorch_config = ExecutorchBackendConfig(
@@ -743,10 +742,7 @@ def compile(args, pte_filename, tokenizer):
             ),
             extract_delegate_segments=True,
         )
-        exec_prog_mgr = EdgeProgramManager(
-            edge_programs=lowered_ep_dict,
-            constant_methods=llama_instance_list[1].llama_meta,
-        ).to_executorch(executorch_config)
+        exec_prog_mgr = edge_prog_mgr.to_executorch(executorch_config)
 
         with open(f"{args.artifact}/{pte_filename}.pte", "wb") as file:
             exec_prog_mgr.write_to_file(file)
