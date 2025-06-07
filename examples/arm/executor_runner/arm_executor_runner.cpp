@@ -145,23 +145,15 @@ const size_t temp_allocation_pool_size =
 unsigned char __attribute__((
     section(".bss.tensor_arena"),
     aligned(16))) temp_allocation_pool[temp_allocation_pool_size];
-
-namespace executorch {
-namespace backends {
-namespace arm {
 #if defined(ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
+extern "C" {
 size_t ethosu_fast_scratch_size =
     ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE;
 unsigned char __attribute__((section(".bss.ethosu_scratch"), aligned(16)))
 dedicated_sram[ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE];
 unsigned char* ethosu_fast_scratch = dedicated_sram;
-#else
-size_t ethosu_fast_scratch_size = 0;
-unsigned char* ethosu_fast_scratch = nullptr;
+}
 #endif
-} // namespace arm
-} // namespace backends
-} // namespace executorch
 
 void et_pal_init(void) {
   // Enable ARM PMU Clock

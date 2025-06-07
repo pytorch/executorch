@@ -81,7 +81,7 @@ def get_args():
         if "u55" in args.target:
             args.memory_mode = "Shared_Sram"
         elif "u85" in args.target:
-            args.memory_mode = "Sram_Only"
+            args.memory_mode = "Dedicated_Sram_384KB"
         else:
             raise RuntimeError(f"Invalid target name {args.target}")
 

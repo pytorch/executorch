@@ -103,7 +103,7 @@ then
     memory_mode="Shared_Sram"
     if [[ ${target} =~ "ethos-u85" ]]
     then
-        memory_mode="Sram_Only"
+        memory_mode="Dedicated_Sram_384KB"
     fi
 fi
 
