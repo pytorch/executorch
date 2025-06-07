@@ -469,6 +469,16 @@ class Module {
     return event_tracer_.get();
   }
 
+  bool has_etdump_debug_buffer() const {
+    return static_cast<bool>(debug_buffer_);
+  }  
+
+  ET_NODISCARD
+  runtime::Span<uint8_t> get_etdump_debug_buffer() {
+    return runtime::Span<uint8_t>(debug_buffer_.get(), debug_buffer_size_);
+  }
+
+
  private:
   struct MethodHolder {
     std::vector<std::vector<uint8_t>> planned_buffers;
@@ -489,6 +499,8 @@ class Module {
   std::unique_ptr<runtime::EventTracer> event_tracer_;
   std::unique_ptr<runtime::DataLoader> data_map_loader_;
   std::unique_ptr<NamedDataMap> data_map_;
+  std::unique_ptr<uint8_t[]> debug_buffer_;
+  size_t debug_buffer_size_;
 
  protected:
   std::unordered_map<std::string, MethodHolder> methods_;
