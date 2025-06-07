@@ -47,6 +47,7 @@ from executorch.devtools.inspector._inspector_utils import (
     EDGE_DIALECT_GRAPH_KEY,
     EXCLUDED_COLUMNS_WHEN_PRINTING,
     EXCLUDED_EVENTS_WHEN_PRINTING,
+    EXCLUDED_EVENTS_FOR_OUTPUT,
     find_populated_event,
     FORWARD,
     gen_etdump_object,
@@ -1148,6 +1149,27 @@ class Inspector:
         self._aot_intermediate_outputs = capturer.run_and_capture(
             self._etrecord._representative_inputs
         )
+
+    def _get_runtime_outputs(self) -> Dict[Tuple[int, ...], Any]:
+        debug_handle_to_output = {}
+        for event_block in self.event_blocks:
+            for event in event_block.events:
+                if event.name in EXCLUDED_EVENTS_FOR_OUTPUT or not event.op_types:
+                    continue
+                # Normalize debug_handles to a tuple
+                debug_handles = event.debug_handles
+                if isinstance(debug_handles, int):
+                    debug_handles = (debug_handles,)
+                else:
+                    debug_handles = tuple(debug_handles)
+                current_entry = debug_handle_to_output.get(debug_handles, (-1, None))
+                # When event has same debug handles, only keep the one with the largest instruction id
+                if event._instruction_id > current_entry[0]:
+                    debug_handle_to_output[debug_handles] = (
+                        event._instruction_id,
+                        event.debug_data,
+                    )
+        return {k: v[1] for k, v in debug_handle_to_output.items()}
 
     def to_dataframe(
         self,
