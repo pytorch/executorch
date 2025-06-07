@@ -271,6 +271,8 @@ class NodeVisitor:
                     if force_fp32
                     else XNNDatatype.xnn_datatype_fp16
                 )
+            elif node_dtype is not None and node_dtype == torch.bfloat16:
+                dtype = XNNDatatype.xnn_datatype_bf16
 
         return dtype
 

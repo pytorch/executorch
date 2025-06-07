@@ -536,7 +536,7 @@ class Tester:
             random_inputs.append(
                 torch.randn(input_shapes[arg_idx]).to(
                     dtype=self.example_inputs[arg_idx].dtype
-                )
+                )*100
             )
 
         yield tuple(random_inputs)
@@ -714,6 +714,9 @@ class Tester:
             assert (
                 ref.shape == model.shape
             ), f"Output {i} shape {model.shape} does not match reference output shape {ref.shape}"
+            print(f"actual dtype: {model.dtype}, ref dtype: {ref.dtype}")
+            print(model)
+            print(ref)
             assert torch.allclose(
                 model,
                 ref,
@@ -773,6 +776,8 @@ class Tester:
         return the quantization scale as well.
         """
 
+        cqp = torch.ops.torchao.choose_qparams_affine.default(*inputs, 'ASYMMETRIC', [1, 32], torch.int8, None, None, None, torch.float32, torch.int8)
+        print(f"inv_scale: {1/cqp[0]}, zero_point: {cqp[1]}")
         # Locate the output node.
         output_node = None
         for node in program.graph.nodes:

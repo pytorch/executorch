@@ -219,6 +219,7 @@ class XNNPartitionerConfig(PartitionerConfig):
     def _check_node_has_valid_dtype(self, node):
         valid_dtypes = {
             torch.float32,
+            torch.bfloat16,
             torch.float16,
             torch.int8,
             torch.qint8,

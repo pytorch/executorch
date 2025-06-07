@@ -815,11 +815,11 @@ def _to_edge_and_lower_llama_xnnpack(
 
     modelname = f"xnnpack_dq_{modelname}"
 
-    if xnnpack_extended_ops:
-        partitioners.append(
-            get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
-        )
-        modelname = f"xnnpack_{modelname}"
+    # if xnnpack_extended_ops:
+    #     partitioners.append(
+    #         get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
+    #     )
+    #     modelname = f"xnnpack_{modelname}"
 
     logging.info("Lowering model using following partitioner(s): ")
     for partitioner in partitioners:

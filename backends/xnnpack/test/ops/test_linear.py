@@ -63,7 +63,7 @@ class BaseLinear(torch.nn.Module):
         self.ic = input_channels
         self.oc = output_channels
 
-        assert dtype in [torch.float, torch.half], "Unsupported op dtype"
+        assert dtype in [torch.bfloat16, torch.float, torch.half], "Unsupported op dtype"
         self.op_dtype = dtype
         self.in_size = in_size
 
@@ -432,6 +432,7 @@ class TestLinear(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
+            .dump_artifact("/Users/maxren/Desktop/oss/executorch/linear_qd8_bf16.pte")
             .run_method_and_compare_outputs(atol=atol, rtol=rtol)
         )
 
@@ -676,7 +677,6 @@ class TestLinear(unittest.TestCase):
         M_sizes = [1, 2, 17, 31]
         K_sizes = [32, 32, 64, 128]
         bl_sizes = [32, 32, 32, 64]
-        N_sizes = [2, 17, 92, 128]
 
         for input_rank in range(2, 4):
             for use_bias in [True, False]:
@@ -830,6 +830,9 @@ class TestLinear(unittest.TestCase):
     )
     def test_linear_qd8_f32_per_token_weight_per_channel_group_int4(self):
         self._test_qd8_per_token_weight_per_channel_group_int4(dtype=torch.float)
+
+    def test_linear_qd8_bf16_per_token_weight_per_channel_group_int4(self):
+        self._test_qd8_per_token_weight_per_channel_group_int4(dtype=torch.bfloat16)
 
     @unittest.skipIf(
         not torchao_installed, "Per Channel Group Quantization Required TorchAO"
