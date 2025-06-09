@@ -285,18 +285,22 @@ store_compute_to_tensor_fn<CTYPE_COMPUTE> get_store_compute_to_tensor_fn(
     SupportedTensorDtypes dtypes) {
   switch (dtypes) {
     case SupportedTensorDtypes::REALHBBF16:
-      return get_store_compute_to_tensor_fn_realhbbf16<CTYPE_COMPUTE, op_name>(t);
+      return get_store_compute_to_tensor_fn_realhbbf16<CTYPE_COMPUTE, op_name>(
+          t);
     case SupportedTensorDtypes::REALHBF16:
-      return get_store_compute_to_tensor_fn_realhbf16<CTYPE_COMPUTE, op_name>(t);
+      return get_store_compute_to_tensor_fn_realhbf16<CTYPE_COMPUTE, op_name>(
+          t);
     case SupportedTensorDtypes::FLOATHBF16:
-      return get_store_compute_to_tensor_fn_floathbf16<CTYPE_COMPUTE, op_name>(t);
+      return get_store_compute_to_tensor_fn_floathbf16<CTYPE_COMPUTE, op_name>(
+          t);
     case SupportedTensorDtypes::INTB:
       return get_store_compute_to_tensor_fn_intb<CTYPE_COMPUTE, op_name>(t);
     case SupportedTensorDtypes::BOOL:
       return get_store_compute_to_tensor_fn_bool<CTYPE_COMPUTE, op_name>(t);
     case SupportedTensorDtypes::BOOL_OR_BYTE:
-      return get_store_compute_to_tensor_fn_bool_or_byte<CTYPE_COMPUTE, op_name>(
-          t);
+      return get_store_compute_to_tensor_fn_bool_or_byte<
+          CTYPE_COMPUTE,
+          op_name>(t);
     case SupportedTensorDtypes::SAME_AS_COMPUTE:
       return get_store_compute_to_tensor_fn_same_as_compute<
           CTYPE_COMPUTE,
