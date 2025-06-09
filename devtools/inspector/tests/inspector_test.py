@@ -6,6 +6,7 @@
 
 # pyre-unsafe
 
+import copy
 import random
 import statistics
 import tempfile
@@ -16,9 +17,13 @@ from typing import Callable, List
 
 from unittest.mock import patch
 
+import torch
+import torch.fx
+
 from executorch.devtools import generate_etrecord, parse_etrecord
 from executorch.devtools.debug_format.et_schema import OperatorNode
 from executorch.devtools.etdump.schema_flatcc import ProfileEvent
+from executorch.devtools.etrecord._etrecord import ETRecord
 from executorch.devtools.etrecord.tests.etrecord_test import TestETRecord
 
 from executorch.devtools.inspector import (
@@ -36,8 +41,17 @@ from executorch.devtools.inspector._inspector import (
     ProfileEventSignature,
     TimeScale,
 )
-
-from executorch.exir import ExportedProgram
+from executorch.devtools.inspector.tests.inspector_test_utils import (
+    check_if_final_outputs_match,
+    model_registry,
+)
+from executorch.exir import (
+    EdgeCompileConfig,
+    EdgeProgramManager,
+    ExecutorchProgramManager,
+    to_edge,
+)
+from torch.export import export, ExportedProgram
 
 
 OP_TYPE = "aten::add"
@@ -451,6 +465,75 @@ class TestInspector(unittest.TestCase):
                 debug_event_signature=DebugEventSignature(instruction_id=1),
                 events=events,
             )
+
+    def test_no_capture_when_representative_inputs_are_none(self):
+        # Create a context manager to patch functions called by Inspector.__init__
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
+        ):
+            # Call the constructor of Inspector
+            inspector_instance = Inspector(
+                etdump_path=ETDUMP_PATH,
+                etrecord=ETRECORD_PATH,
+            )
+            self.assertIsNone(inspector_instance._aot_intermediate_outputs)
+
+    def test_consume_etrecord_populates_correct_aot_intermediate_outputs(self):
+        with tempfile.NamedTemporaryFile(suffix=".bin") as tmp_file:
+            etrecord_path = tmp_file.name
+            mod = model_registry["ConvLinearModel"]()
+            input_tensor = torch.tensor(
+                [[[[1.0, 2.0], [3.0, 4.0]]]], requires_grad=True
+            )
+            aten_model: ExportedProgram = export(mod, (input_tensor,), strict=True)
+            edge_program_manager: EdgeProgramManager = to_edge(
+                aten_model, compile_config=EdgeCompileConfig(_check_ir_validity=True)
+            )
+            edge_program_manager_copy = copy.deepcopy(edge_program_manager)
+            et_program_manager: ExecutorchProgramManager = (
+                edge_program_manager.to_executorch()
+            )
+            # Generate ETRecord
+            generate_etrecord(
+                etrecord_path, edge_program_manager_copy, et_program_manager
+            )
+            original_consume_etrecord = Inspector._consume_etrecord
+            with patch.object(
+                Inspector, "_consume_etrecord", return_value=None
+            ), patch.object(
+                _inspector, "gen_etdump_object", return_value=None
+            ), patch.object(
+                EventBlock, "_gen_from_etdump"
+            ), patch.object(
+                _inspector, "gen_graphs_from_etrecord"
+            ):
+                # Call the constructor of Inspector
+                inspector_instance = Inspector(
+                    etdump_path=ETDUMP_PATH,
+                    etrecord=etrecord_path,
+                )
+                etrecord = ETRecord(
+                    edge_dialect_program=inspector_instance._etrecord.edge_dialect_program,
+                    graph_map=inspector_instance._etrecord.graph_map,
+                    _debug_handle_map=inspector_instance._etrecord._debug_handle_map,
+                    _delegate_map=inspector_instance._etrecord._delegate_map,
+                    _reference_outputs=inspector_instance._etrecord._reference_outputs,
+                    _representative_inputs=aten_model.example_inputs[0],
+                )
+                inspector_instance._etrecord = etrecord
+                Inspector._consume_etrecord = original_consume_etrecord
+                inspector_instance._consume_etrecord()
+                self.assertTrue(
+                    check_if_final_outputs_match(
+                        "ConvLinearModel", inspector_instance._aot_intermediate_outputs
+                    )
+                )
 
     def _gen_random_float_list(self) -> List[float]:
         return [random.uniform(0, 10) for _ in range(RAW_DATA_SIZE)]
