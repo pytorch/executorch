@@ -17,7 +17,7 @@ import ast
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import ClassVar, List, Optional, Self
+from typing import ClassVar, List, Optional
 
 
 ################################################################################
@@ -469,8 +469,8 @@ class LlmConfig:
     quantization: QuantizationConfig = field(default_factory=QuantizationConfig)
     backend: BackendConfig = field(default_factory=BackendConfig)
 
-    @staticmethod
-    def from_args(args: argparse.Namespace) -> Self:
+    @classmethod
+    def from_args(args: argparse.Namespace) -> "LlmConfig":
         """
         To support legacy purposes, this function converts CLI args from
         argparse to an LlmConfig, which is used by the LLM export process.
