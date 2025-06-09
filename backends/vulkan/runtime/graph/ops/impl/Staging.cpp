@@ -30,13 +30,16 @@ void add_staging_to_tensor_node(
       *graph.get_tensor(out_tensor), graph.int8_buffers_enabled());
 
   std::vector<PushConstantDataInfo> pcs;
+  vkapi::SpecVarList spec_vars;
   if (graph.is_buffer_storage(out_tensor)) {
     pcs = {
         graph.sizes_pc_of(out_tensor),
         graph.strides_pc_of(out_tensor),
         graph.numel_pc_of(out_tensor)};
+    spec_vars = {graph.packed_dim_of(out_tensor)};
   } else {
     pcs = {graph.sizes_pc_of(out_tensor)};
+    spec_vars = {graph.hashed_layout_of(out_tensor)};
   }
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
@@ -51,7 +54,7 @@ void add_staging_to_tensor_node(
       // Push Constants
       pcs,
       // Specialization Constants
-      {graph.hashed_layout_of(out_tensor)},
+      {spec_vars},
       // Resize Args
       {},
       // Resizing Logic

@@ -1106,8 +1106,11 @@ def get_cat_inputs():
     )
     test_suite.layouts = [
         "utils::kWidthPacked",
-        "utils::kHeightPacked",
         "utils::kChannelsPacked",
+    ]
+    test_suite.storage_types = [
+        "utils::kTexture3D",
+        "utils::kBuffer",
     ]
     test_suite.data_gen = "make_seq_tensor"
     test_suite.dtypes = ["at::kFloat"]

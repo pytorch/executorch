@@ -28,7 +28,7 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 // This constant is unused in this shader but is kept so that the signature is
 // consistent with nchw_to_image.
-${layout_declare_spec_const(C, "int", "UNUSED_layout", "0")}
+${layout_declare_spec_const(C, "int", "packed_dim", "0")}
 ${layout_declare_spec_const(C, "int", "transpose_hw", "0")}
 
 void main() {
@@ -37,7 +37,7 @@ void main() {
     return;
   }
 
-  ivec4 out_tidx = bufi_to_tidx(out_bufi, out_strides);
+  ivec4 out_tidx = bufi_to_tidx(out_bufi, out_strides, packed_dim);
 
   ivec4 sizes = out_sizes;
   if (transpose_hw == 1) {

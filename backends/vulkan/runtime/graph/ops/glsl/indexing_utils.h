@@ -69,21 +69,6 @@
 #define mod4(x) ((x) & 3)
 
 /*
- * Find the packed dimension of a tensor given its strides. The packed dimension
- * is the "fastest moving" dimension which will have a stride of 1.
- */
-int find_packed_dim(const ivec4 strides) {
-  int packed_dim = 0;
-  for (int i = 0; i <= 3; i++) {
-    if (strides[i] == 1) {
-      packed_dim = i;
-      break;
-    }
-  }
-  return packed_dim;
-}
-
-/*
  * Get the staging buffer indices that contain the data of the texel that
  * corresponds to the provided tensor index. Since the texel have 4 elements,
  * 4 buffer indices will be retrieved.
@@ -142,14 +127,6 @@ ivec4 bufi_to_tidx(int bufi, const ivec4 strides, const int packed_dim) {
   }
   idx[packed_dim] = bufi;
   return idx;
-}
-
-// Convenience overload of the above function, which will determine the packed
-// dim from the strides automatically so it doesn't have to be passed in as a
-// function argument.
-ivec4 bufi_to_tidx(const int bufi, const ivec4 strides) {
-  int packed_dim = find_packed_dim(strides);
-  return bufi_to_tidx(bufi, strides, packed_dim);
 }
 
 int tidx_to_bufi(const ivec4 tidx, ivec4 strides) {
