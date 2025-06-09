@@ -15,7 +15,7 @@ buck2 query "//backends/apple/... + //backends/example/... + \
 //kernels/optimized/... + //kernels/portable/... + //kernels/quantized/... + \
 //kernels/test/... + //runtime/... + //schema/... + //test/... + //util/..."
 
-UNBUILDABLE_OPTIMIZED_OPS_REGEX="gelu|fft_r2c|log_softmax"
+UNBUILDABLE_OPTIMIZED_OPS_REGEX="_elu|gelu|fft|log_softmax"
 BUILDABLE_OPTIMIZED_OPS=$(buck2 query //kernels/optimized/cpu/... | grep -E -v $UNBUILDABLE_OPTIMIZED_OPS_REGEX)
 
 # TODO: build prim_ops_test_cpp again once supported_features works in
@@ -24,6 +24,8 @@ BUILDABLE_KERNELS_PRIM_OPS_TARGETS=$(buck2 query //kernels/prim_ops/... | grep -
 # TODO: expand the covered scope of Buck targets.
 # //runtime/kernel/... is failing because //third-party:torchgen_files's shell script can't find python on PATH.
 # //runtime/test/... requires Python torch, which we don't have in our OSS buck setup.
-buck2 test $BUILDABLE_OPTIMIZED_OPS //kernels/portable/... \
-      $BUILDABLE_KERNELS_PRIM_OPS_TARGETS //runtime/backend/... //runtime/core/... \
-      //runtime/executor: //runtime/kernel/... //runtime/platform/...
+for op in "build" "test"; do
+    buck2 $op $BUILDABLE_OPTIMIZED_OPS //kernels/portable/... \
+          $BUILDABLE_KERNELS_PRIM_OPS_TARGETS //runtime/backend/... //runtime/core/... \
+          //runtime/executor: //runtime/kernel/... //runtime/platform/...
+done
