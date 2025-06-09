@@ -188,6 +188,14 @@ test_model_with_qnn() {
     EXPORT_SCRIPT=edsr
     # Additional deps for edsr
     pip install piq
+  elif [[ "${MODEL_NAME}" == "albert" ]]; then
+    EXPORT_SCRIPT=albert
+  elif [[ "${MODEL_NAME}" == "bert" ]]; then
+    EXPORT_SCRIPT=bert
+  elif [[ "${MODEL_NAME}" == "distilbert" ]]; then
+    EXPORT_SCRIPT=distilbert
+  elif [[ "${MODEL_NAME}" == "eurobert" ]]; then
+    EXPORT_SCRIPT=eurobert
   else
     echo "Unsupported model $MODEL_NAME"
     exit 1
@@ -197,7 +205,25 @@ test_model_with_qnn() {
   # TODO(guangyang): Make QNN chipset matches the target device
   QNN_CHIPSET=SM8450
 
-  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.scripts.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --ci --compile_only $EXTRA_FLAGS
+  SCRIPT_FOLDER=""
+  case "${MODEL_NAME}" in
+    "dl3"|"mv3"|"mv2"|"ic4"|"ic3"|"vit"|"mb"|"w2l")
+        SCRIPT_FOLDER=scripts
+        ;;
+    "albert"|"bert"|"distilbert")
+        pip install evaluate
+        SCRIPT_FOLDER=oss_scripts
+        # Bert models running in 16bit will encounter op validation fail on some operations,
+        # which requires CHIPSET >= SM8550.
+        QNN_CHIPSET=SM8550
+        ;;
+    *)
+        echo "Unsupported model $MODEL_NAME"
+        exit 1
+        ;;
+  esac
+
+  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.${SCRIPT_FOLDER}.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --ci --compile_only $EXTRA_FLAGS
   EXPORTED_MODEL=$(find "./${EXPORT_SCRIPT}" -type f -name "${MODEL_NAME}*.pte" -print -quit)
 }
 
