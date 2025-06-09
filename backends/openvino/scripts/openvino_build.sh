@@ -3,9 +3,6 @@
 # Exit immediately if a command exits with a non-zero status.
 set -e
 
-# Enable debug mode to print each command before executing it
-set -x
-
 # Define the directory where CMakeLists.txt is located
 EXECUTORCH_ROOT=$(realpath "$(dirname "$0")/../../..")
 echo EXECUTORCH_ROOT=${EXECUTORCH_ROOT}
