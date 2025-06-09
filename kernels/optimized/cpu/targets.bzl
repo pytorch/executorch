@@ -1,148 +1,5 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load("@fbsource//xplat/executorch/kernels/optimized:op_registration_util.bzl", "define_op_target", "op_target")
-
-_OPTIMIZED_ATEN_OPS = (
-    op_target(
-        name = "op_add",
-        deps = [
-            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
-            ":binary_ops",
-            ":add_sub_impl",
-            "//executorch/kernels/portable/cpu:scalar_utils",
-            "//executorch/kernels/portable/cpu/util:broadcast_util",
-        ],
-    ),
-    op_target(
-        name = "op_bmm",
-        deps = [
-            "//executorch/kernels/optimized:libblas",
-            "//executorch/kernels/portable/cpu/util:matmul_ops_util",
-        ],
-    ),
-    op_target(
-        name = "op_div",
-        deps = [
-            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
-            ":binary_ops",
-            "//executorch/kernels/portable/cpu:scalar_utils",
-            "//executorch/kernels/portable/cpu/util:broadcast_util",
-        ],
-    ),
-    op_target(
-        name = "op_elu",
-        deps = [
-            "//executorch/extension/threadpool:threadpool",
-            "//executorch/kernels/portable/cpu:scalar_utils",
-            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
-        ],
-    ),
-    op_target(
-        name = "op_exp",
-        deps = [
-            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
-        ],
-    ),
-    op_target(
-        name = "op_fft_c2r",
-        compiler_flags = [] if runtime.is_oss else [
-            "-Wno-global-constructors",
-            "-Wno-shadow",
-        ],
-        deps = [":fft_utils"],
-    ),
-    op_target(
-        name = "op_fft_r2c",
-        compiler_flags = [] if runtime.is_oss else [
-            "-Wno-global-constructors",
-            "-Wno-shadow",
-        ],
-        deps = [":fft_utils"],
-    ),
-    op_target(
-        name = "op_sigmoid",
-        deps = [
-            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
-        ],
-    ),
-    op_target(
-        name = "op_gelu",
-        deps = [
-            "//executorch/kernels/portable/cpu/util:activation_ops_util",
-            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
-        ],
-    ),
-    op_target(
-        name = "op_le",
-        deps = [
-            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
-            "//executorch/kernels/portable/cpu:scalar_utils",
-            "//executorch/kernels/portable/cpu/util:broadcast_util",
-        ],
-    ),
-    op_target(
-        name = "op_linear",
-        deps = [
-            "//executorch/kernels/optimized:libblas",
-            "//executorch/kernels/portable/cpu/util:matmul_ops_util",
-        ],
-    ),
-    op_target(
-        name = "op_log_softmax",
-        deps = [
-            "//executorch/kernels/portable/cpu/util:activation_ops_util",
-            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
-        ],
-    ),
-    op_target(
-        name = "op_mm",
-        deps = [
-            "//executorch/kernels/optimized:libblas",
-            "//executorch/kernels/portable/cpu/util:matmul_ops_util",
-        ],
-    ),
-    op_target(
-        name = "op_mul",
-        deps = [
-            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
-            ":binary_ops",
-            "//executorch/kernels/portable/cpu:scalar_utils",
-            "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
-        ],
-    ),
-    op_target(
-        name = "op_native_layer_norm",
-        deps = [
-            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
-            ":moments_utils",
-            "//executorch/kernels/portable/cpu/util:normalization_ops_util",
-        ],
-    ),
-    op_target(
-        name = "op_neg",
-        deps = [
-            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
-        ],
-    ),
-    op_target(
-        name = "op_sub",
-        deps = [
-            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
-            ":binary_ops",
-            ":add_sub_impl",
-            "//executorch/kernels/portable/cpu:scalar_utils",
-            "//executorch/kernels/portable/cpu/util:broadcast_util",
-        ],
-    ),
-    op_target(
-        name = "op_where",
-        deps = [
-            "//executorch/extension/threadpool:threadpool",
-            "//executorch/kernels/portable/cpu/util:elementwise_util",
-        ],
-    ),
-)
-
+load("@fbsource//xplat/executorch/kernels/optimized:op_registration_util.bzl", "OPTIMIZED_ATEN_OPS", "define_op_target", "op_target")
 
 def get_sleef_preprocessor_flags():
     if runtime.is_oss:
@@ -158,17 +15,17 @@ def define_common_targets():
     """
 
     # Define build targets for all operators registered in the tables above.
-    for op in _OPTIMIZED_ATEN_OPS:
+    for op in OPTIMIZED_ATEN_OPS:
         define_op_target(**op)
 
-    aten_op_targets = [":{}".format(op["name"]) for op in _OPTIMIZED_ATEN_OPS]
+    aten_op_targets = [":{}".format(op["name"]) for op in OPTIMIZED_ATEN_OPS]
     all_op_targets = aten_op_targets
 
     runtime.cxx_library(
         name = "add_sub_impl",
         srcs = [],
         exported_headers = ["op_add_sub_impl.h"],
-        visibility = ["//executorch/kernels/optimized/cpu/..."],
+        visibility = ["//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS",],
         exported_deps = [
             "//executorch/runtime/core:core",
             "//executorch/kernels/portable/cpu/util:broadcast_indexes_range",
@@ -179,15 +36,22 @@ def define_common_targets():
         name = "fft_utils",
         srcs = [],
         exported_headers = ["fft_utils.h"],
-        visibility = ["//executorch/kernels/optimized/cpu/..."],
+        visibility = ["//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS",],
         exported_deps = [] if runtime.is_oss else ["fbsource//third-party/pocket_fft:pocketfft"],
     )
 
     runtime.cxx_library(
         name = "binary_ops",
+        srcs = ["binary_ops.cpp"],
         exported_headers = ["binary_ops.h"],
-        visibility = ["//executorch/kernels/optimized/cpu/..."],
-        exported_deps = ["//executorch/runtime/core:core"],
+        visibility = ["//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS",],
+        exported_deps = [
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/kernels/optimized:libvec",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+        ],
     )
 
     runtime.cxx_library(
@@ -201,10 +65,23 @@ def define_common_targets():
         name = "moments_utils",
         srcs = [],
         exported_headers = ["moments_utils.h"],
-        visibility = ["//executorch/kernels/optimized/..."],
+        visibility = ["//executorch/kernels/optimized/...", "@EXECUTORCH_CLIENTS",],
         exported_deps = [
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
             "//executorch/kernels/optimized:libvec",
             "//executorch/kernels/optimized:libutils",
         ],
+    )
+
+    # Used for dtype selective build. Collect source and header files.
+    runtime.filegroup(
+        name = "optimized_source_files",
+        srcs = native.glob(["*.cpp"]),
+        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+    )
+
+    runtime.filegroup(
+        name = "optimized_header_files",
+        srcs = native.glob(["*.h"]),
+        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     )

@@ -1,3 +1,5 @@
+import logging
+
 import torch
 
 from executorch.exir.pass_base import ExportPass
@@ -95,3 +97,106 @@ class RemoveRedundantTransposes(ExportPass):
         graph_module.recompile()
 
         return PassResult(graph_module, graph_changed)
+
+
+class ReplaceSDPAWithCustomSDPAPass(ExportPass):
+    """
+    This pass replaces aten.scaled_dot_product_attention.default with llama.custom_sdpa.default.
+    If assume_causal_mask is set to True, this pass will ignore any explicit masks and simply set
+    is_causal to True in custoom_spda.
+    """
+
+    def __init__(self, assume_causal_mask=False):
+        super().__init__()
+        self.assume_causal_mask = assume_causal_mask
+
+    def call_operator(self, op, args, kwargs, meta):
+        from executorch.extension.llm.custom_ops import custom_ops  # noqa
+
+        if op != torch.ops.aten.scaled_dot_product_attention.default:
+            return super().call_operator(op, args, kwargs, meta)
+
+        q, k, v, mask, dropout, is_causal, scale = self._extract_args(args, kwargs)
+
+        qT = self._transpose(q, meta)
+        kT = self._transpose(k, meta)
+        vT = self._transpose(v, meta)
+
+        if not (
+            q.node.meta["val"].dim()
+            == k.node.meta["val"].dim()
+            == v.node.meta["val"].dim()
+            == 4
+        ):
+            logging.info("ReplaceSDPAWithCustomSDPAPass only supports 4D QKV inputs.")
+            return super().call_operator(op, args, kwargs, meta)
+
+        if self.assume_causal_mask:
+            # Ignore specified mask simply set the is_causal flag.
+            mask = None
+            is_causal = True
+
+        if mask is not None:
+            mask_fake_tensor = mask.node.meta["val"]
+            if mask_fake_tensor.dim() > 2:
+                if all(d == 1 for d in mask_fake_tensor.size()[:-2]):
+                    mask = super().call_operator(
+                        torch.ops.aten.squeeze.dims,
+                        (mask, tuple(i for i in range(mask_fake_tensor.dim() - 2))),
+                        {},
+                        meta,
+                    )
+                else:
+                    logging.info(
+                        "ReplaceSDPAWithCustomSDPAPass only supports 2D attention mask."
+                    )
+                    return super().call_operator(op, args, kwargs, meta)
+
+            # TODO(kimishpatel): Remove once custom SDPA supports boolean mask.
+            if mask_fake_tensor.dtype == torch.bool:
+                mask = super().call_operator(
+                    torch.ops.aten.where.Scalar,
+                    (mask, 0.0, float("-inf")),
+                    {},
+                    meta,
+                )
+
+        custom_sdpa = super().call_operator(
+            torch.ops.llama.custom_sdpa.default,
+            (qT, kT, vT, 0, mask, dropout, is_causal, scale),
+            {},
+            meta,
+        )
+        return self._transpose(custom_sdpa, meta)
+
+    def _extract_args(self, args, kwargs):
+        q, k, v, *rest = args
+        mask = None
+        dropout = 0.0
+        is_causal = False
+        scale = None
+        if len(rest) > 0:
+            mask = rest[0]
+        if len(rest) > 1:
+            dropout = rest[1]
+        if len(rest) > 2:
+            is_causal = rest[2]
+        if "scale" in kwargs:
+            scale = kwargs["scale"]
+
+        return q, k, v, mask, dropout, is_causal, scale
+
+    def _transpose(self, x, meta):
+        transpose = super().call_operator(
+            torch.ops.aten.transpose.int,
+            (x, 1, 2),
+            {},
+            meta,
+        )
+        contiguous = super().call_operator(
+            torch.ops.aten.contiguous.default,
+            (transpose,),
+            {},
+            meta,
+        )
+        return contiguous

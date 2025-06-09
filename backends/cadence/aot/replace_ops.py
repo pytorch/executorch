@@ -284,31 +284,6 @@ class ReplaceSelectWithViewOpPass(ExportPass):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
-class ReplaceTCopyWithTransposePass(ExportPass):
-    """
-    Replace t_copy with transpose_copy.int. If the input is 1D, the t_copy is
-    a nop. t_copy is not supported, so this is an opt_level=0 pass.
-    """
-
-    def call_operator(self, op, args, kwargs, meta):
-        if get_edge_overload_packet(op) != exir_ops.edge.aten.t_copy:
-            return super().call_operator(op, args, kwargs, meta)
-
-        # Get the input tensor shape
-        in_tensor = args[0].to_tensor() if isinstance(args[0], ProxyValue) else args[0]
-
-        # If the input is a 1D tensor, this t_copy is a nop, so return the input
-        if in_tensor.dim() <= 1:
-            return args[0]
-
-        assert in_tensor.dim() == 2, "t_copy expects a tensor with <= 2 dimensions"
-        transpose_args = (args[0], 0, 1)
-        return super().call_operator(
-            exir_ops.edge.aten.transpose_copy.int, transpose_args, kwargs, meta
-        )
-
-
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceMMWithAddMMPass(ExportPass):
     """
     This pass replaces mm with addmm by introducing a zero bias.
@@ -964,8 +939,8 @@ class ReplaceConvWithChannelLastConv:
 
 # This pass needs to be reworked to be compatible with PT2. It is an optimization
 # pass anyway, so move it to opt level 2.
-# TODO(matthiascremon): update and improve this pass.
-@register_cadence_pass(CadencePassAttribute(opt_level=2))
+# TODO: T213724613 update and improve this pass.
+# @register_cadence_pass(CadencePassAttribute(opt_level=2))
 class ReplaceConvWithChannelLastConvPass(ExportPass):
     """
     Replace the ATen convolution op with custom conv op with NCHW or NHWC layout
@@ -2090,11 +2065,10 @@ class ReplaceWhereWithFullArgsWithWhereScalar(ExportPass):
         return super().call_operator(op, args, kwargs, meta)
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=2))
-class ReplaceGeluWithApproximateGeluPass(ExportPass):
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class ReplaceAtenApproxGeluWithApproxGeluPass(ExportPass):
     """
-    Replace the gelu op with an approximate gelu op. The approximate gelu op
-    is more efficient on DSP backends.
+    Replace the aten gelu op with an approximate arg with an approximate gelu op.
     """
 
     def call_operator(
@@ -2108,82 +2082,7 @@ class ReplaceGeluWithApproximateGeluPass(ExportPass):
             exir_ops.edge.aten.gelu.default,
         }:
             return super().call_operator(op, args, kwargs, meta)
-
-        # compute the approximate gelu (0.7978845608028654 is sqrt(2 / pi))
-        # as 0.5 * x * (1 + torch.tanh(0.7978845608028654 * ( x + 0.044715 * x^3)))
-
-        # Get 0.5 * x
-        half = super().call_operator(
-            exir_ops.edge.aten.mul.Tensor,
-            (args[0], 0.5),
-            {},
-            meta,
-        )
-
-        scaled = super().call_operator(
-            exir_ops.edge.aten.mul.Tensor,
-            (args[0], 0.044715),
-            {},
-            meta,
-        )
-
-        # Get x^2 (note that we use mul.Tensor twice instead of pow.Tensor because
-        # it is much more efficient on DSP backends)
-        scaled_square = super().call_operator(
-            exir_ops.edge.aten.mul.Tensor,
-            (scaled, args[0]),
-            {},
-            meta,
-        )
-
-        # Get x^3
-        scaled_cubed = super().call_operator(
-            exir_ops.edge.aten.mul.Tensor,
-            (scaled_square, args[0]),
-            {},
-            meta,
-        )
-
-        # Get x + 0.044715 * x^3
-        inner_sum = super().call_operator(
-            exir_ops.edge.aten.add.Tensor,
-            (scaled_cubed, args[0]),
-            {},
-            meta,
-        )
-
-        # Get 0.7978845608028654 * ( x + 0.044715 * x^3)
-        scaled_sum = super().call_operator(
-            exir_ops.edge.aten.mul.Tensor,
-            (inner_sum, 0.7978845608028654),
-            {},
-            meta,
-        )
-
-        # Get torch.tanh(0.7978845608028654 * ( x + 0.044715 * x^3))
-        tanh = super().call_operator(
-            exir_ops.edge.aten.tanh.default,
-            (scaled_sum,),
-            {},
-            meta,
-        )
-
-        # Get 1 + torch.tanh(0.79788456 * ( x + 0.044715 * x^3))
-        # TODO(): Check why this is not working properly with integer values (e.g. 1 instead of 1.)
-        outer_sum = super().call_operator(
-            exir_ops.edge.aten.add.Tensor,
-            (tanh, 1.0),
-            {},
-            meta,
-        )
-
-        # Retunr the final result
-        return super().call_operator(
-            exir_ops.edge.aten.mul.Tensor,
-            (half, outer_sum),
-            {},
-            meta,
-        )
+        return super().call_operator(op, args, kwargs, meta)
 
 
 # Adapted from fbcode/pyspeech/opt_passes/replace_ops.py
@@ -2263,9 +2162,9 @@ class ReplaceSplitWithSlicePass(ExportPass):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class ReplacePowWithMullPass(ExportPass):
+class ReplacePowWithMulPass(ExportPass):
     """
-    Replace the pow op with degree 2 for a mul op.
+    Replace the pow op for a mul op.
     """
 
     def call_operator(
@@ -2275,19 +2174,32 @@ class ReplacePowWithMullPass(ExportPass):
         kwargs: Dict[str, Argument],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        # TODO(eigen): Add support for other degrees.
-        if (
-            op
-            not in {
-                exir_ops.edge.aten.pow.Scalar,
+        if not (
+            len(args) > 1
+            and isinstance(args[1], int)
+            and cast(int, args[1]) > 1
+            and cast(int, args[1]) < 5
+            and op
+            in {
+                exir_ops.edge.aten.pow.Tensor_Scalar,
             }
-            or args[0] != 2
         ):
             return super().call_operator(op, args, kwargs, meta)
 
+        x = args[0]
+        exponent = cast(int, args[1])
+
+        if exponent > 2:
+            for _ in range(exponent, 2, -1):
+                x = super().call_operator(
+                    exir_ops.edge.aten.mul.Tensor,
+                    (x, args[0]),
+                    {},
+                    meta,
+                )
         return super().call_operator(
             exir_ops.edge.aten.mul.Tensor,
-            (args[1], args[1]),
+            (x, args[0]),
             {},
             meta,
         )
@@ -2394,7 +2306,6 @@ class CadenceReplaceOpsInGraph:
     passes = [
         ReplaceEmptyTensorsWithFullPass,
         ReplaceFunctionallyEquivalentOpTargets,
-        ReplaceTCopyWithTransposePass,
         ReplacePermuteWithTransposePass,
         ReplaceScalarWithTensorArgPass,
         ReplaceConvolutionOptionalArgsWithConcreteArgsPass,
@@ -2427,7 +2338,7 @@ class CadenceReplaceOpsInGraph:
         ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass,
         ReplaceAtenAvgPoolWithJarvisAvgPoolPass,
         ReplaceWhereWithFullArgsWithWhereScalar,
-        ReplaceGeluWithApproximateGeluPass,
+        ReplaceAtenApproxGeluWithApproxGeluPass,
         ReplaceSplitWithSlicePass,
-        ReplacePowWithMullPass,
+        ReplacePowWithMulPass,
     ]

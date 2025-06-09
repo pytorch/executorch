@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/ScalarUtils.h>
@@ -30,8 +31,8 @@ void check_binary_op_args(
 void resize_binary_op_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& extra_args) {
-  (void)extra_args;
+    const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
   vTensorPtr out = graph->get_tensor(args[0].refs[0]);
 
   // TODO(T183442143): Verify tensors are broadcastable.
@@ -78,25 +79,26 @@ void add_binary_op_texture_node(
   add_storage_type_suffix(kernel_name, *t_out);
   add_dtype_suffix(kernel_name, *t_out);
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out),
-      graph.create_local_wg_size(out),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
-      {{out, vkapi::MemoryAccessType::WRITE},
-       {{arg1, arg2}, vkapi::MemoryAccessType::READ}},
+      {{out, vkapi::kWrite}, {{arg1, arg2}, vkapi::kRead}},
       // Shader params buffers
       {},
-      // Specialization Constants
-      {t_out->hashed_layout(), t_in1->hashed_layout(), t_in2->hashed_layout()},
-      // Resizing Logic
-      resize_binary_op_node,
-      {},
+      // Push Constants
       {{graph.sizes_pc_of(out),
         graph.sizes_pc_of(arg1),
         graph.sizes_pc_of(arg2),
-        PushConstantDataInfo(&binary_ops_params, sizeof(binary_ops_params))}}));
+        PushConstantDataInfo(&binary_ops_params, sizeof(binary_ops_params))}},
+      // Specialization Constants
+      {t_out->hashed_layout(), t_in1->hashed_layout(), t_in2->hashed_layout()},
+      // Resize Args
+      {},
+      // Resizing Logic
+      resize_binary_op_node));
 }
 
 void add_binary_op_buffer_node(
@@ -121,23 +123,16 @@ void add_binary_op_buffer_node(
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out),
-      graph.create_local_wg_size(out),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
-      {{out, vkapi::MemoryAccessType::WRITE},
-       {{in1, in2}, vkapi::MemoryAccessType::READ}},
+      {{out, vkapi::kWrite}, {{in1, in2}, vkapi::kRead}},
       // Shader params buffers
       {},
-      // Specialization Constants
-      {graph.packed_dim_of(out),
-       graph.packed_dim_of(in1),
-       graph.packed_dim_of(in2)},
-      // Resizing Logic
-      resize_binary_op_node,
-      {},
+      // Push Constants
       {{
           graph.sizes_pc_of(in1),
           graph.sizes_pc_of(in2),
@@ -146,7 +141,15 @@ void add_binary_op_buffer_node(
           graph.strides_pc_of(in2),
           graph.numel_pc_of(out),
           PushConstantDataInfo(&alpha_val, sizeof(float)),
-      }}));
+      }},
+      // Specialization Constants
+      {graph.packed_dim_of(out),
+       graph.packed_dim_of(in1),
+       graph.packed_dim_of(in2)},
+      // Resize Args
+      {},
+      // Resizing Logic
+      resize_binary_op_node));
 }
 
 void add_binary_op_node(

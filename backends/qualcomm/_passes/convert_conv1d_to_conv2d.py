@@ -5,10 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-import torch.nn as nn
 from executorch.backends.qualcomm.builders.utils import get_parameter, set_parameter
 from executorch.backends.qualcomm.utils.constants import QCOM_REQUANTIZE
-from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 from .utils import copy_meta
@@ -23,16 +21,43 @@ class ConvertConv1dToConv2d(ExportPass):
     def __init__(self, edge_program: torch.export.ExportedProgram):
         super(ConvertConv1dToConv2d, self).__init__()
         self.edge_program = edge_program
+        self.conv_op_map = {
+            torch.ops.aten.conv1d.default: torch.ops.aten.conv2d.default,
+            torch.ops.aten.conv_transpose1d.default: torch.ops.aten.conv_transpose2d.input,
+        }
+
+    def append_qdq(
+        self,
+        graph_module: torch.fx.GraphModule,
+        node: torch.fx.Node,
+        qdq_node: torch.fx.Node,
+    ):
+        q_op = torch.ops.quantized_decomposed.quantize_per_tensor.default
+        dq_op = torch.ops.quantized_decomposed.dequantize_per_tensor.default
+        if qdq_node.target not in {q_op, dq_op}:
+            return node
+
+        with graph_module.graph.inserting_after(node):
+            q_args = (node, *qdq_node.args[1:])
+            q_node = graph_module.graph.create_node("call_function", q_op, q_args)
+            q_node.meta = copy_meta(node.meta)
+            q_node.meta["val"] = q_node.meta["val"].to(q_args[-1])
+            with graph_module.graph.inserting_after(q_node):
+                dq_args = (q_node, *qdq_node.args[1:])
+                dq_node = graph_module.graph.create_node(
+                    "call_function", dq_op, dq_args
+                )
+                dq_node.meta = copy_meta(node.meta)
+
+        return dq_node
 
     def call(self, graph_module: torch.fx.GraphModule):
         graph = graph_module.graph
-        conv_op = exir_ops.edge.aten.convolution.default
         for node in graph.nodes:
-            if node.target == conv_op and node.meta["val"].dim() == 3:
-
+            if node.target in self.conv_op_map:
                 input_node = node.args[0]
                 with graph_module.graph.inserting_after(input_node):
-                    unsqueeze_op = exir_ops.edge.aten.unsqueeze_copy.default
+                    unsqueeze_op = torch.ops.aten.unsqueeze_copy.default
                     unsqueeze_node = graph.create_node(
                         "call_function",
                         unsqueeze_op,
@@ -44,52 +69,89 @@ class ConvertConv1dToConv2d(ExportPass):
                     unsqueeze_node.meta = copy_meta(
                         input_node.meta, lambda m: {**m, "val": m["val"].unsqueeze(2)}
                     )
+                    qdq_node_after_unsqueeze = self.append_qdq(
+                        graph_module=graph_module,
+                        node=unsqueeze_node,
+                        qdq_node=input_node,
+                    )
 
-                    with graph_module.graph.inserting_after(unsqueeze_node):
-
-                        filter_node = node.args[1]
+                    with graph_module.graph.inserting_after(qdq_node_after_unsqueeze):
+                        filter_arg = node.args[1]
+                        filter_node = (
+                            filter_arg
+                            if filter_arg.op == "placeholder"
+                            else node.args[1].args[0]
+                        )
                         filter_node.meta["val"] = (
                             filter_node.meta["val"].unsqueeze(2).contiguous()
                         )
-                        filter_tensor = get_parameter(filter_node, self.edge_program)
-                        # Ensure tensor is nn.Parameter type, so program does not fail during edge_program._validate()
-                        filter_tensor = nn.Parameter(filter_tensor.unsqueeze(2))
-                        set_parameter(filter_tensor, filter_node, self.edge_program)
-
-                        bias_node = node.args[2]
-                        stride = [1] + node.args[3]
-                        padding = [0] + node.args[4]
-                        dilation = [1] + node.args[5]
-                        transpose = node.args[6]
-                        output_padding = [0] + node.args[7]
-                        groups = node.args[8]
-
-                        conv2d_node = graph.create_node(
-                            "call_function",
-                            conv_op,
+                        filter_tensor = get_parameter(
+                            filter_node, self.edge_program
+                        ).unsqueeze(2)
+                        set_parameter(
                             (
-                                unsqueeze_node,
-                                filter_node,
+                                torch.nn.Parameter(filter_tensor)
+                                if filter_tensor.dtype == torch.float
+                                else filter_tensor
+                            ),
+                            filter_node,
+                            self.edge_program,
+                        )
+
+                        num_args = len(node.args)
+
+                        bias_node = node.args[2] if num_args > 2 else None
+                        stride = [1] + node.args[3] if num_args > 3 else [1, 1]
+                        padding = [0] + node.args[4] if num_args > 4 else [0, 0]
+                        if node.target == torch.ops.aten.conv1d.default:
+                            dilation = [1] + node.args[5] if num_args > 5 else [1, 1]
+                            groups = node.args[6] if num_args > 5 else 1
+                            conv_args = (
+                                qdq_node_after_unsqueeze,
+                                node.args[1],
                                 bias_node,
                                 stride,
                                 padding,
                                 dilation,
-                                transpose,
+                                groups,
+                            )
+                        else:
+                            output_padding = (
+                                [0] + node.args[5] if num_args > 5 else [0, 0]
+                            )
+                            groups = node.args[6] if num_args > 6 else 1
+                            dilation = [1] + node.args[7] if num_args > 7 else [1, 1]
+                            conv_args = (
+                                qdq_node_after_unsqueeze,
+                                node.args[1],
+                                bias_node,
+                                stride,
+                                padding,
                                 output_padding,
                                 groups,
-                            ),
+                                dilation,
+                            )
+                        conv2d_node = graph.create_node(
+                            "call_function",
+                            self.conv_op_map[node.target],
+                            conv_args,
                         )
                         conv2d_node.meta = copy_meta(
                             node.meta, lambda m: {**m, "val": m["val"].unsqueeze(2)}
                         )
+                        qdq_node_after_conv2d = self.append_qdq(
+                            graph_module=graph_module,
+                            node=conv2d_node,
+                            qdq_node=list(node.users)[0],
+                        )
 
-                        with graph_module.graph.inserting_after(conv2d_node):
-                            squeeze_op = exir_ops.edge.aten.squeeze_copy.dims
+                        with graph_module.graph.inserting_after(qdq_node_after_conv2d):
+                            squeeze_op = torch.ops.aten.squeeze_copy.dims
                             squeeze_node = graph.create_node(
                                 "call_function",
                                 squeeze_op,
                                 (
-                                    conv2d_node,
+                                    qdq_node_after_conv2d,
                                     [2],
                                 ),
                             )
@@ -102,8 +164,10 @@ class ConvertConv1dToConv2d(ExportPass):
                                     QCOM_REQUANTIZE
                                 ]
                                 conv2d_node.meta.pop(QCOM_REQUANTIZE, None)
+
                 for user in node.users.copy():
                     user.replace_input_with(node, squeeze_node)
+
         graph.eliminate_dead_code()
         graph_module.recompile()
         return PassResult(graph_module, True)

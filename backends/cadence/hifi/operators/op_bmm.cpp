@@ -16,8 +16,8 @@ using exec_aten::ScalarType;
 using executorch::runtime::KernelRuntimeContext;
 using executorch::runtime::kTensorDimensionLimit;
 using executorch::runtime::resize_tensor;
-using executorch::runtime::tensors_have_same_dim_order;
 using executorch::runtime::tensor_is_default_dim_order;
+using executorch::runtime::tensors_have_same_dim_order;
 using torch::executor::check_bmm_args;
 using torch::executor::Error;
 using torch::executor::get_bmm_out_target_size;
@@ -78,16 +78,16 @@ Tensor& bmm_out(
     WORD32 out_stride = p;
 
     WORD32* __restrict__ tmp =
-          (WORD32* __restrict__)kernels::allocate_temp_memory(
-              ctx, (batch_size * m * p) * sizeof(float));
+        (WORD32* __restrict__)kernels::allocate_temp_memory(
+            ctx, (batch_size * m * p) * sizeof(float));
 
     ET_KERNEL_CHECK(ctx, tmp != nullptr, MemoryAllocationFailed, out);
 
     tmp[batch_size * m * p] = {0};
 
     WORD32* __restrict__ p_o =
-          (WORD32* __restrict__)kernels::allocate_temp_memory(
-              ctx, (batch_size * m * p) * sizeof(WORD32));
+        (WORD32* __restrict__)kernels::allocate_temp_memory(
+            ctx, (batch_size * m * p) * sizeof(WORD32));
 
     ET_KERNEL_CHECK(ctx, p_o != nullptr, MemoryAllocationFailed, out);
 

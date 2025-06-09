@@ -240,6 +240,12 @@ runtime::Result<std::vector<runtime::EValue>> Module::execute(
   auto& method = methods_.at(method_name).method;
   auto& inputs = methods_.at(method_name).inputs;
 
+  ET_CHECK_OR_RETURN_ERROR(
+      input_values.size() <= inputs.size(),
+      InvalidArgument,
+      "input size: %zu does not match method input size: %zu",
+      input_values.size(),
+      inputs.size());
   for (size_t i = 0; i < input_values.size(); ++i) {
     if (!input_values[i].isNone()) {
       inputs[i] = input_values[i];
@@ -300,16 +306,6 @@ runtime::Error Module::set_output(
   const auto& output_tensor = output_value.toTensor();
   return method->set_output_data_ptr(
       output_tensor.mutable_data_ptr(), output_tensor.nbytes(), output_index);
-}
-
-ET_NODISCARD inline runtime::Result<Method*> Module::get_method(
-    const std::string& method_name) {
-  ET_CHECK_OR_RETURN_ERROR(
-      methods_.count(method_name) > 0,
-      InvalidArgument,
-      "no such method in program: %s",
-      method_name.c_str());
-  return methods_[method_name].method.get();
 }
 
 } // namespace extension

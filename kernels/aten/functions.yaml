@@ -201,6 +201,8 @@
 
 - op: index_put.out
 
+- op: index_put_
+
 - op: index_select.out
 
 - op: index.Tensor_out
@@ -312,6 +314,10 @@
 - op: prod.int_out
 
 - op: prod.out
+
+- op: rand.out
+
+- op: randn.out
 
 - op: reciprocal.out
 

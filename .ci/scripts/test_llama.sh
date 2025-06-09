@@ -152,21 +152,11 @@ which "${PYTHON_EXECUTABLE}"
 cmake_install_executorch_libraries() {
     echo "Installing libexecutorch.a, libextension_module.so, libportable_ops_lib.a"
     rm -rf cmake-out
-    retry cmake \
+    retry cmake --preset llm \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
-        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-        -DEXECUTORCH_BUILD_KERNELS_CUSTOM="$CUSTOM" \
-        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-        -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
-        -DEXECUTORCH_BUILD_MPS="$MPS" \
-        -DEXECUTORCH_BUILD_COREML="$COREML" \
         -DEXECUTORCH_BUILD_QNN="$QNN" \
         -DQNN_SDK_ROOT="$QNN_SDK_ROOT" \
-        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out .
     cmake --build cmake-out -j9 --target install --config "$CMAKE_BUILD_TYPE"
 }
@@ -179,12 +169,9 @@ cmake_build_llama_runner() {
     popd
     dir="examples/models/llama"
     retry cmake \
+        -DBUILD_TESTING=OFF \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
-        -DEXECUTORCH_BUILD_KERNELS_CUSTOM="$CUSTOM" \
-        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-        -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
-        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out/${dir} \
         ${dir}
     cmake --build cmake-out/${dir} -j9 --config "$CMAKE_BUILD_TYPE"

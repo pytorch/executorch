@@ -7,11 +7,12 @@ from typing import cast
 
 import torch
 import torch.fx as fx
+from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     register_tosa_support_check,
     SupportedTOSAOperatorCheck,
 )
-from executorch.backends.arm.tosa_specification import Tosa_0_80, TosaSpecification
+from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
@@ -46,16 +47,23 @@ class AvgPool2dSupported(SupportedTOSAOperatorCheck):
     ]
 
     def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
-        if not (isinstance(tosa_spec, Tosa_0_80) and tosa_spec.is_U55_subset):
+        if not tosa_spec.is_U55_subset:
             return True
 
         # U55 case, Vela 4.2.0 (25.02 release)
-        shape = cast(torch.Tensor, node.all_input_nodes[0].meta["val"]).shape
+        input_arg = node.args[0]
+        if isinstance(input_arg, torch.fx.Node):
+            input_arg = get_first_fake_tensor(input_arg)
+        shape = input_arg.data.shape  # type: ignore[union-attr]
+
         kernel = cast(tuple[int, int], node.args[1])
         stride = cast(tuple[int, int], node.args[2])
         if len(node.args) > 3:
+            padding = cast(tuple[int, int], node.args[3])
             # Padding case
-            if not all(1 <= k <= 8 for k in kernel):
+            if not all(1 <= k <= 8 for k in kernel) and not all(
+                v == 0 for v in padding
+            ):
                 self.reporter.report_reject(
                     node, f"Avgpool2d with padding needs kernel dims < 8, got {kernel}"
                 )
@@ -101,7 +109,7 @@ class MaxPool2dSupported(SupportedTOSAOperatorCheck):
     ]
 
     def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
-        if not (isinstance(tosa_spec, Tosa_0_80) and tosa_spec.is_U55_subset):
+        if not tosa_spec.is_U55_subset:
             return True
 
         # U55 case, Vela 4.2.0 (25.02 release)

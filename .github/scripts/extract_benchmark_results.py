@@ -349,7 +349,10 @@ def transform(
     # Overwrite the device name here with the job name as it has more information about
     # the device, i.e. Samsung Galaxy S22 5G instead of just Samsung
     for r in benchmark_results:
-        r["deviceInfo"]["device"] = job_name
+        is_private_device = job_report.get("is_private_instance", False)
+        r["deviceInfo"]["device"] = (
+            f"{job_name} (private)" if is_private_device else job_name
+        )
 
     # From https://github.com/pytorch/pytorch/wiki/How-to-integrate-with-PyTorch-OSS-benchmark-database
     return [
@@ -363,6 +366,7 @@ def transform(
                     "benchmark_config": json.dumps(benchmark_config),
                     "job_conclusion": "SUCCESS",
                     "job_arn": job_report.get("arn", ""),
+                    "instance_arn": job_report.get("instance_arn", ""),
                 },
             },
             "model": {

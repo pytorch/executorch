@@ -76,7 +76,7 @@ class ProfilerETDumpTest : public ::testing::Test {
     ET_EXPECT_DEATH(
         gen->log_intermediate_output_delegate(
             "test_event_tensor", kUnsetDelegateDebugIntId, tf.ones({3, 2})),
-        "Must set data sink before writing tensor-like data");
+        "failed to write tensor to debug buffer");
   }
 
   void check_log_with_filter(
@@ -301,7 +301,7 @@ TEST_F(ProfilerETDumpTest, DebugEvent) {
       if (j == 0) {
         ET_EXPECT_DEATH(
             etdump_gen[i]->log_evalue(evalue_tensor),
-            "Must set data sink before writing tensor-like data");
+            "failed to write tensor to debug buffer");
 
         // Set debug buffer with span
         etdump_gen[i]->set_debug_buffer(buffer);
@@ -315,7 +315,7 @@ TEST_F(ProfilerETDumpTest, DebugEvent) {
 
         ET_EXPECT_DEATH(
             etdump_gen[i]->log_evalue(evalue_tensor),
-            "Must set data sink before writing tensor-like data");
+            "failed to write tensor to debug buffer");
 
         if (j == 1) {
           // Set buffer data sink

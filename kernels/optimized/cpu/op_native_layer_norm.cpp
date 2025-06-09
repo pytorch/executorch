@@ -33,8 +33,6 @@ void layer_norm(
     Tensor& out,
     Tensor& mean,
     Tensor& rstd) {
-  using Vec = at::vec::Vectorized<CTYPE>;
-
   const size_t dim = input.dim() - normalized_shape.size();
   const size_t dim_size = input.size(dim);
 
@@ -94,7 +92,8 @@ void layer_norm(
       }
     } else {
       at::vec::map3<CTYPE>(
-          [scale, offset](Vec x, Vec gamma, Vec beta) {
+          [scale, offset](auto x, auto gamma, auto beta) {
+            using Vec = decltype(x);
             return (x * Vec(scale) + Vec(offset)) * gamma + beta;
           },
           dst_ptr,

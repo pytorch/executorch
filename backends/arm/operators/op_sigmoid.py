@@ -10,6 +10,10 @@ from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+    validate_same_dtype,
+)
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from torch.fx import Node
@@ -34,10 +38,9 @@ class SigmoidVisitor_080_MI(NodeVisitor):
     ) -> None:
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
-        if len(node.all_input_nodes) != 1:
-            raise ValueError(
-                f"Expected 1 input for {self.target}, got {len(node.all_input_nodes)}"
-            )
+        validate_num_inputs(self.target, inputs, 1)
+        validate_same_dtype(self.target, [*inputs, output])
+
         if inputs[0].dtype != ts.DType.FP32 or output.dtype != ts.DType.FP32:
             raise ValueError(
                 f"Input and output for {self.target} need to be FP32, got input_dtype: "
@@ -66,10 +69,9 @@ class SigmoidVisitor(NodeVisitor):
     ) -> None:
         import serializer.tosa_serializer as ts
 
-        if len(node.all_input_nodes) != 1:
-            raise ValueError(
-                f"Expected 1 input for {self.target}, got {len(node.all_input_nodes)}"
-            )
+        validate_num_inputs(self.target, inputs, 1)
+        validate_same_dtype(self.target, [*inputs, output])
+
         if inputs[0].dtype != ts.DType.FP32 or output.dtype != ts.DType.FP32:
             raise ValueError(
                 f"Input and output for {self.target} need to be FP32, got input_dtype: "

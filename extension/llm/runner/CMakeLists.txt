@@ -43,9 +43,13 @@ target_include_directories(
 
 add_library(extension_llm_runner STATIC ${_extension_llm_runner__srcs})
 
-set(runner_deps executorch extension_data_loader extension_module
-                extension_tensor
+# add tokenizers
+add_subdirectory(
+  ${EXECUTORCH_ROOT}/extension/llm/tokenizers
+  ${CMAKE_CURRENT_BINARY_DIR}/../../../extension/llm/tokenizers
 )
+
+set(runner_deps executorch_core extension_module extension_tensor tokenizers)
 
 target_link_libraries(extension_llm_runner PUBLIC ${runner_deps})
 

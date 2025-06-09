@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <ATen/cpu/vec/functional_base.h>
+#include <ATen/cpu/vec/vec.h>
 
 namespace executorch::vec {
 // This function implements broadcasting binary operation on two tensors

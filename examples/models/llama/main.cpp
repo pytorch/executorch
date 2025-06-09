@@ -4,6 +4,7 @@
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
+ * @lint-ignore-every CLANGTIDY facebook-hte-Deprecated
  */
 
 #include <gflags/gflags.h>
@@ -80,18 +81,21 @@ int32_t main(int32_t argc, char** argv) {
   }
 #endif
   // create llama runner
-  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
-  example::Runner runner(model_path, tokenizer_path, data_path);
+  std::unique_ptr<::executorch::extension::llm::TextLLMRunner> runner =
+      example::create_llama_runner(model_path, tokenizer_path, data_path);
+
+  if (runner == nullptr) {
+    ET_LOG(Error, "Failed to create llama runner");
+    return 1;
+  }
 
   if (warmup) {
-    // @lint-ignore CLANGTIDY facebook-hte-Deprecated
-    runner.warmup(prompt, /*max_new_tokens=*/seq_len);
+    runner->warmup(prompt, /*max_new_tokens=*/seq_len);
   }
   // generate
   executorch::extension::llm::GenerationConfig config{
       .seq_len = seq_len, .temperature = temperature};
-  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
-  runner.generate(prompt, config);
+  runner->generate(prompt, config);
 
   return 0;
 }

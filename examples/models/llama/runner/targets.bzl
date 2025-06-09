@@ -34,21 +34,18 @@ def define_common_targets():
             visibility = [
                 "@EXECUTORCH_CLIENTS",
             ],
+            compiler_flags = [
+                "-Wno-missing-prototypes",
+            ],
             exported_deps = [
                 "//executorch/backends/xnnpack:xnnpack_backend",
-                "//executorch/extension/llm/runner:irunner",
-                "//executorch/extension/llm/runner:stats",
-                "//executorch/extension/llm/runner:text_decoder_runner" + aten_suffix,
-                "//executorch/extension/llm/runner:text_prefiller" + aten_suffix,
-                "//executorch/extension/llm/runner:text_token_generator" + aten_suffix,
-                "//executorch/extension/evalue_util:print_evalue" + aten_suffix,
-                "//executorch/extension/module:module" + aten_suffix,
-                "//executorch/extension/tensor:tensor" + aten_suffix,
+                "//executorch/extension/llm/runner:runner_lib" + aten_suffix,
                 "//executorch/kernels/quantized:generated_lib" + aten_suffix,
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
                 "//executorch/examples/models/llama/tokenizer:tiktoken",
                 "//pytorch/tokenizers:llama2c_tokenizer",
+                "//pytorch/tokenizers:hf_tokenizer",
             ] + (_get_operator_lib(aten)) + ([
                 # Vulkan API currently cannot build on some platforms (e.g. Apple, FBCODE)
                 # Therefore enable it explicitly for now to avoid failing tests

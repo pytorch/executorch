@@ -27,31 +27,34 @@ from .quantization_annotator import annotate_graph
 from executorch.backends.arm.arm_backend import (
     get_tosa_spec,
     is_ethosu,
+    is_vgf,
 )  # usort: skip
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from torch.ao.quantization.fake_quantize import (
+
+from torch.fx import GraphModule, Node
+from torchao.quantization.pt2e import (
     FakeQuantize,
     FusedMovingAvgObsFakeQuantize,
-)
-from torch.ao.quantization.observer import (
     HistogramObserver,
     MinMaxObserver,
     MovingAverageMinMaxObserver,
     MovingAveragePerChannelMinMaxObserver,
+    ObserverOrFakeQuantizeConstructor,
     PerChannelMinMaxObserver,
     PlaceholderObserver,
 )
-from torch.ao.quantization.qconfig import _ObserverOrFakeQuantizeConstructor
-from torch.ao.quantization.quantizer import QuantizationSpec, Quantizer
-from torch.ao.quantization.quantizer.utils import (
-    _annotate_input_qspec_map,
-    _annotate_output_qspec,
+
+from torchao.quantization.pt2e.quantizer import (
+    annotate_input_qspec_map,
+    annotate_output_qspec,
+    QuantizationSpec,
+    Quantizer,
 )
-from torch.fx import GraphModule, Node
 
 __all__ = [
     "TOSAQuantizer",
     "EthosUQuantizer",
+    "VgfQuantizer",
     "get_symmetric_quantization_config",
 ]
 
@@ -95,7 +98,7 @@ def get_symmetric_quantization_config(
     weight_qscheme = (
         torch.per_channel_symmetric if is_per_channel else torch.per_tensor_symmetric
     )
-    weight_observer_or_fake_quant_ctr: _ObserverOrFakeQuantizeConstructor = (
+    weight_observer_or_fake_quant_ctr: ObserverOrFakeQuantizeConstructor = (
         MinMaxObserver
     )
     if is_qat:
@@ -335,14 +338,14 @@ class TOSAQuantizer(Quantizer):
             if is_annotated(node):
                 continue
             if node.op == "placeholder" and len(node.users) > 0:
-                _annotate_output_qspec(
+                annotate_output_qspec(
                     node,
                     quantization_config.get_output_act_qspec(),
                 )
                 mark_node_as_annotated(node)
             if node.op == "output":
                 parent = node.all_input_nodes[0]
-                _annotate_input_qspec_map(
+                annotate_input_qspec_map(
                     node, parent, quantization_config.get_input_act_qspec()
                 )
                 mark_node_as_annotated(node)
@@ -355,6 +358,15 @@ class EthosUQuantizer(TOSAQuantizer):
     def __init__(self, compile_spec: list[CompileSpec]) -> None:
         if not is_ethosu(compile_spec):
             raise RuntimeError("compile spec is not targeting Ethos-U")
+
+        tosa_spec = get_tosa_spec(compile_spec)
+        super().__init__(tosa_spec)
+
+
+class VgfQuantizer(TOSAQuantizer):
+    def __init__(self, compile_spec: list[CompileSpec]) -> None:
+        if not is_vgf(compile_spec):
+            raise RuntimeError("compile spec is not targeting VGF")
 
         tosa_spec = get_tosa_spec(compile_spec)
         super().__init__(tosa_spec)

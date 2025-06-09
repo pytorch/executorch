@@ -21,6 +21,7 @@
 #include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/DispatchNode.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/DynamicDispatchNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/PrepackNode.h>
 
@@ -184,8 +185,14 @@ class ComputeGraph final {
   std::vector<IOValueRef> inputs_;
   std::vector<IOValueRef> outputs_;
 
+  std::unordered_set<
+      vkapi::ComputePipelineCache::Key,
+      vkapi::ComputePipelineCache::Hasher>
+      pipeline_descriptors_;
+
  protected:
   size_t values_in_use_ = 0;
+  size_t execute_count_ = 0;
 
  public:
   //
@@ -396,6 +403,19 @@ class ComputeGraph final {
   std::optional<T> extract_optional_scalar(const ValueRef idx) {
     if (val_is_none(idx)) {
       return ::std::nullopt;
+    } else if (val_is_symint(idx)) {
+      return utils::safe_downcast<T>(read_symint(idx));
+    } else {
+      return extract_scalar<T>(idx);
+    }
+  }
+
+  template <typename T>
+  T extract_optional_scalar(const ValueRef idx, const T default_val) {
+    if (val_is_none(idx)) {
+      return default_val;
+    } else if (val_is_symint(idx)) {
+      return utils::safe_downcast<T>(read_symint(idx));
     } else {
       return extract_scalar<T>(idx);
     }
@@ -404,6 +424,15 @@ class ComputeGraph final {
   std::string extract_string(const ValueRef idx) {
     return values_.at(idx).toString();
   }
+
+  /*
+   * Utility function to extract a list of integers from a ValueRef.
+   * If the ValueRef is an IntList, returns a copy of the list.
+   * If the ValueRef is a ValueList, extracts each element as an Int or SymInt
+   * and returns the resulting list.
+   * Throws an error if the ValueRef is neither an IntList nor a ValueList.
+   */
+  std::vector<int64_t> extract_int_or_symint_list(const ValueRef idx);
 
   template <
       typename T,
@@ -580,6 +609,13 @@ class ComputeGraph final {
 
   ValueRef add_symint(const int32_t val);
 
+  /*
+   * Searches the graph's value list for a Int value with the specified value.
+   * If one is found, returns the index of the value. Otherwise, add a new value
+   * and return the index of the new value.
+   */
+  ValueRef get_or_add_value_for_int(const int64_t val);
+
   ValueRef set_input_tensor(const ValueRef idx, const bool use_staging = true);
   ValueRef set_output_tensor(const ValueRef idx, const bool use_staging = true);
 
@@ -597,6 +633,10 @@ class ComputeGraph final {
    *   and return the BufferBindInfo of the created ParamsBuffer.
    */
   vkapi::BufferBindInfo get_or_create_int_param_buffer(const ValueRef idx);
+
+  vkapi::BufferBindInfo get_or_create_int_param_buffer(
+      const ValueRef idx,
+      const int32_t default_value);
 
   void set_symint(const ValueRef idx, const int32_t val);
 
@@ -676,7 +716,15 @@ class ComputeGraph final {
       const vkapi::ShaderInfo& shader_info,
       bool execute);
 
+  void register_pipeline_to_create(
+      const vkapi::ShaderInfo& shader_info,
+      const utils::WorkgroupSize& local_workgroup_size,
+      const vkapi::SpecVarList& spec_vars,
+      const std::vector<PushConstantDataInfo>& push_constants);
+
   void prepare();
+
+  void prepare_pipelines();
 
   //
   // Dispatch Utilities
@@ -735,13 +783,16 @@ class ComputeGraph final {
   //
 
   void encode_execute();
-  void execute() const;
+  void execute();
 
   //
   // Dynamic Shape support
   //
 
   void resize_input(const int64_t idx, const std::vector<int64_t>& new_sizes);
+  void virtual_resize(
+      const ValueRef idx,
+      const std::vector<int64_t>& new_sizes);
   void propagate_resize();
 
   //
@@ -750,6 +801,10 @@ class ComputeGraph final {
 
   inline bool int16_shader_types_enabled() const {
     return context_->adapter_ptr()->supports_int16_shader_types();
+  }
+
+  inline size_t execute_count() const {
+    return execute_count_;
   }
 
   /*

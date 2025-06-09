@@ -156,6 +156,38 @@ ComputeGraph::~ComputeGraph() {
   context_->flush();
 }
 
+std::vector<int64_t> ComputeGraph::extract_int_or_symint_list(
+    const ValueRef idx) {
+  const Value& val = values_.at(idx);
+  std::vector<int64_t> result;
+
+  if (val.isIntList()) {
+    // If it's an IntList, return a copy of the list
+    return val.toConstIntList();
+  } else if (val.isValueList()) {
+    // If it's a ValueList, extract each element as an Int or SymInt
+    const std::vector<ValueRef>& value_list = val.toConstValueList();
+    result.reserve(value_list.size());
+
+    for (const ValueRef& ref : value_list) {
+      const Value& element = values_.at(ref);
+      if (element.isInt()) {
+        result.push_back(element.toInt());
+      } else if (element.isSymInt()) {
+        result.push_back(read_symint(ref));
+      } else {
+        VK_THROW(
+            "ValueList element is neither Int nor SymInt, but has type ",
+            element.type());
+      }
+    }
+    return result;
+  }
+
+  VK_THROW(
+      "Cannot extract int or symint list from Value with type ", val.type());
+}
+
 utils::StorageType ComputeGraph::suggested_storage_type() {
   if (config_.enable_storage_type_override) {
     return config_.storage_type_override;
@@ -417,6 +449,15 @@ ValueRef ComputeGraph::add_symint(const int32_t val) {
   return idx;
 }
 
+ValueRef ComputeGraph::get_or_add_value_for_int(const int64_t val) {
+  for (int i = 0; i < values_.size(); ++i) {
+    if (values_.at(i).isInt() && values_.at(i).toInt() == val) {
+      return i;
+    }
+  }
+  return add_scalar(val);
+}
+
 ValueRef ComputeGraph::set_input_tensor(
     const ValueRef idx,
     const bool use_staging) {
@@ -460,12 +501,22 @@ vkapi::BufferBindInfo ComputeGraph::get_or_create_int_param_buffer(
     const ValueRef idx) {
   if (values_.at(idx).isInt()) {
     const int32_t val = extract_scalar<int32_t>(idx);
-    create_params_buffer(val);
+    return create_params_buffer(val);
   } else if (values_.at(idx).isSymInt()) {
     SymIntPtr symint = get_symint(idx);
     return vkapi::BufferBindInfo(symint->gpu_buffer.buffer());
   }
   VK_THROW("Cannot create a int param buffer for the given value");
+}
+
+vkapi::BufferBindInfo ComputeGraph::get_or_create_int_param_buffer(
+    const ValueRef idx,
+    const int32_t default_val) {
+  if (values_.at(idx).isNone()) {
+    return create_params_buffer(default_val);
+  } else {
+    return get_or_create_int_param_buffer(idx);
+  }
 }
 
 void ComputeGraph::set_symint(const ValueRef idx, const int32_t val) {
@@ -508,6 +559,42 @@ void ComputeGraph::update_descriptor_counts(
         VK_THROW("Unsupported descriptor type!");
     }
   }
+}
+
+void ComputeGraph::register_pipeline_to_create(
+    const vkapi::ShaderInfo& shader_info,
+    const utils::WorkgroupSize& local_workgroup_size,
+    const vkapi::SpecVarList& spec_vars,
+    const std::vector<PushConstantDataInfo>& push_constants) {
+  VkDescriptorSetLayout shader_layout =
+      context()->shader_layout_cache().retrieve(shader_info.kernel_layout);
+
+  uint32_t pc_offset = 0;
+  std::array<uint8_t, kMaxPushConstantSize> pc_data;
+  for (const auto& pc : push_constants) {
+    pc_offset += pc.write(pc_data.data(), pc_offset, kMaxPushConstantSize);
+  }
+
+  vkapi::SpecVarList spec_constants = {
+      SV(local_workgroup_size[0u]),
+      SV(local_workgroup_size[1u]),
+      SV(local_workgroup_size[2u])};
+
+  spec_constants.append(spec_vars);
+
+  const vkapi::ComputePipelineCache::Key desc = {
+      context()->pipeline_layout_cache().retrieve(shader_layout, pc_offset),
+      context()->shader_cache().retrieve(shader_info),
+      spec_constants};
+
+  if (context_->pipeline_cache().contains(desc)) {
+    return;
+  }
+  auto it = pipeline_descriptors_.find(desc);
+  if (it != pipeline_descriptors_.cend()) {
+    return;
+  }
+  pipeline_descriptors_.insert(desc);
 }
 
 utils::uvec3 ComputeGraph::create_global_wg_size(const ValueRef idx) {
@@ -612,6 +699,25 @@ void ComputeGraph::prepare() {
   if (config_.enable_querypool) {
     context_->initialize_querypool();
   }
+
+  for (SharedObject& shared_object : shared_objects_) {
+    shared_object.allocate(this);
+    shared_object.bind_users(this);
+  }
+}
+
+void ComputeGraph::prepare_pipelines() {
+  for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
+    node->prepare_pipelines(this);
+  }
+  for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
+    node->prepare_pipelines(this);
+  }
+  context_->pipeline_cache().create_pipelines(pipeline_descriptors_);
+
+  pipeline_descriptors_ = std::unordered_set<
+      vkapi::ComputePipelineCache::Key,
+      vkapi::ComputePipelineCache::Hasher>();
 }
 
 void ComputeGraph::encode_prepack() {
@@ -625,6 +731,7 @@ void ComputeGraph::prepack() const {
   vkapi::VulkanFence fence = context_->fences().get_fence();
   context_->submit_cmd_to_gpu(fence.get_submit_handle(), /*final_use = */ true);
   fence.wait();
+  context_->fences().return_fence(fence);
 
   context_->flush();
 }
@@ -635,20 +742,17 @@ void ComputeGraph::encode_execute() {
 
   context_->cmd_reset_querypool();
 
-  for (SharedObject& shared_object : shared_objects_) {
-    shared_object.allocate(this);
-    shared_object.bind_users(this);
-  }
-
   for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
     node->encode(this);
   }
 }
 
-void ComputeGraph::execute() const {
+void ComputeGraph::execute() {
   vkapi::VulkanFence fence = context_->fences().get_fence();
   context_->submit_cmd_to_gpu(fence.get_submit_handle());
   fence.wait();
+  context_->fences().return_fence(fence);
+  execute_count_++;
 }
 
 void ComputeGraph::resize_input(
@@ -658,10 +762,17 @@ void ComputeGraph::resize_input(
   get_tensor(io_val.value)->virtual_resize(new_sizes);
 }
 
+void ComputeGraph::virtual_resize(
+    const ValueRef idx,
+    const std::vector<int64_t>& new_sizes) {
+  get_tensor(idx)->virtual_resize(new_sizes);
+}
+
 void ComputeGraph::propagate_resize() {
   for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
     node->trigger_resize(this);
   }
+  encode_execute();
 }
 
 } // namespace vkcompute

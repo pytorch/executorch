@@ -18,38 +18,39 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
 add_custom_command(
-  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddHalf.pte"
-         "${CMAKE_CURRENT_BINARY_DIR}/ModuleAdd.pte"
+  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ModuleAdd.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddHalf.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMul.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleDynamicCatUnallocatedIO.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleIndex.pte"
-         "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinear.pte"
-         "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
-         "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleMultipleEntry.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrain.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleStateful.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/delegated/ModuleAddMul.pte"
   COMMAND
-    python3 -m test.models.export_program --modules
-    "ModuleAdd,ModuleAddHalf,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleLinear,ModuleMultipleEntry,ModuleSimpleTrain,ModuleStateful"
-    --outdir "${CMAKE_CURRENT_BINARY_DIR}" 2> /dev/null
+    ${PYTHON_EXECUTABLE} -m test.models.export_program --modules
+    "ModuleAdd,ModuleAddHalf,ModuleAddMul,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleMultipleEntry,ModuleSimpleTrain,ModuleStateful"
+    --outdir "${CMAKE_CURRENT_BINARY_DIR}"
   COMMAND
-    python3 -m test.models.export_program --modules "ModuleLinear"
-    --external-constants --outdir "${CMAKE_CURRENT_BINARY_DIR}" 2> /dev/null
+    ${PYTHON_EXECUTABLE} -m test.models.export_program --modules "ModuleAddMul"
+    --external-constants --outdir "${CMAKE_CURRENT_BINARY_DIR}"
   COMMAND
-    python3 -m test.models.export_delegated_program --modules "ModuleAddMul"
-    --backend_id "StubBackend" --outdir "${CMAKE_CURRENT_BINARY_DIR}" || true
+    ${PYTHON_EXECUTABLE} -m test.models.export_delegated_program --modules "ModuleAddMul"
+    --backend_id "StubBackend" --outdir "${CMAKE_CURRENT_BINARY_DIR}/delegated/" || true
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
 )
 
 add_custom_target(
   generated_pte_files
-  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddHalf.pte"
-          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAdd.pte"
+  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/ModuleAdd.pte"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddHalf.pte"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMul.pte"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.pte"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleDynamicCatUnallocatedIO.pte"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleIndex.pte"
-          "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinear.pte"
-          "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
-          "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleMultipleEntry.pte"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrain.pte"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleStateful.pte"
@@ -57,16 +58,17 @@ add_custom_target(
 
 set(test_env
     "DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH=${EXECUTORCH_ROOT}/test/models/deprecated/ModuleLinear-no-constant-segment.pte"
-    "ET_MODULE_ADD_HALF_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddHalf.pte"
     "ET_MODULE_ADD_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAdd.pte"
+    "ET_MODULE_ADD_HALF_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddHalf.pte"
+    "ET_MODULE_ADD_MUL_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMul.pte"
+    "ET_MODULE_ADD_MUL_PROGRAM_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.pte"
+    "ET_MODULE_ADD_MUL_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
     "ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleDynamicCatUnallocatedIO.pte"
     "ET_MODULE_INDEX_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleIndex.pte"
-    "ET_MODULE_LINEAR_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleLinear.pte"
-    "ET_MODULE_LINEAR_PROGRAM_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
-    "ET_MODULE_LINEAR_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
     "ET_MODULE_MULTI_ENTRY_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleMultipleEntry.pte"
     "ET_MODULE_SIMPLE_TRAIN_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrain.pte"
     "ET_MODULE_STATEFUL_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleStateful.pte"
+    "ET_MODULE_ADD_MUL_DELEGATED_PATH=${CMAKE_CURRENT_BINARY_DIR}/delegated/ModuleAddMul.pte"
 )
 
 et_cxx_test(
@@ -146,6 +148,7 @@ et_cxx_test(
   portable_kernels
   extension_data_loader
   extension_runner_util
+  program_schema
 )
 add_dependencies(tensor_parser_test generated_pte_files)
 set_property(TEST tensor_parser_test PROPERTY ENVIRONMENT ${test_env})

@@ -27,7 +27,6 @@ Tensor& opt_neg_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
       "Failed to resize output tensor.");
 
   ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, "neg.out", CTYPE, [&] {
-    using Vec = at::vec::Vectorized<CTYPE>;
     at::vec::map<CTYPE>(
         [](auto x) { return x.neg(); },
         out.mutable_data_ptr<CTYPE>(),

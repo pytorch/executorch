@@ -452,6 +452,11 @@
     - arg_meta: null
       kernel_name: torch::executor::index_put_out
 
+- op: index_put_
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::index_put_
+
 - op: index_select.out
   kernels:
     - arg_meta: null
@@ -627,6 +632,12 @@
     - arg_meta: null
       kernel_name: torch::executor::narrow_copy_out
 
+- op: native_dropout.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::native_dropout_out
+  tags: nondeterministic_seeded
+
 - op: native_group_norm.out
   kernels:
     - arg_meta: null
@@ -701,6 +712,18 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::prod_out
+
+- op: rand.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::rand_out
+  tags: nondeterministic_seeded
+
+- op: randn.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::randn_out
+  tags: nondeterministic_seeded
 
 - op: reciprocal.out
   kernels:

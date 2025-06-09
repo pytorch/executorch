@@ -42,12 +42,6 @@ In order to be able to successfully build and run a model using the MPS backend 
 
 ***Step 1.*** Please finish tutorial [Setting up ExecuTorch](https://pytorch.org/executorch/main/getting-started-setup).
 
-***Step 2.*** Install dependencies needed to lower MPS delegate:
-
-  ```bash
-  ./backends/apple/mps/install_requirements.sh
-  ```
-
 ## Build
 
 ### AOT (Ahead-of-time) Components
@@ -76,12 +70,12 @@ cd executorch
 ## Run the mv3 generated model using the mps_executor_runner
 
 ```bash
-./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3_mps_bundled_fp16.pte --bundled_program
+./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3_mps_float16_bundled.pte --bundled_program
 ```
 
 - You should see the following results. Note that no output file will be generated in this example:
 ```
-I 00:00:00.003290 executorch:mps_executor_runner.mm:286] Model file mv3_mps_bundled_fp16.pte is loaded.
+I 00:00:00.003290 executorch:mps_executor_runner.mm:286] Model file mv3_mps_float16_bundled.pte is loaded.
 I 00:00:00.003306 executorch:mps_executor_runner.mm:292] Program methods: 1
 I 00:00:00.003308 executorch:mps_executor_runner.mm:294] Running method forward
 I 00:00:00.003311 executorch:mps_executor_runner.mm:349] Setting up non-const buffer 1, size 606112.
@@ -97,7 +91,7 @@ I 00:00:00.122615 executorch:mps_executor_runner.mm:501] Model verified successf
 ### [Optional] Run the generated model directly using pybind
 1. Make sure `pybind` MPS support was installed:
 ```bash
-./install_executorch.sh --pybind mps
+CMAKE_ARGS="-DEXECUTORCH_BUILD_MPS=ON" ./install_executorch.sh
 ```
 2. Run the `mps_example` script to trace the model and run it directly from python:
 ```bash
@@ -118,7 +112,7 @@ python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3" --generate_
 ```
 2. Run your Program on the ExecuTorch runtime and generate an [ETDump](../../../docs/source/etdump.md).
 ```
-./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3_mps_bundled_fp16.pte --bundled_program --dump-outputs
+./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3_mps_float16_bundled.pte --bundled_program --dump-outputs
 ```
 3. Create an instance of the Inspector API by passing in the ETDump you have sourced from the runtime along with the optionally generated ETRecord from step 1.
 ```bash
