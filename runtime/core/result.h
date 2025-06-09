@@ -70,8 +70,9 @@ class Result final {
   /// Value copy constructor.
   /* implicit */ Result(const T& val) : value_(val), hasValue_(true) {}
 
-  /// Value move constructor.
-  /* implicit */ Result(T&& val) : value_(std::move(val)), hasValue_(true) {}
+  /// Value forwarding constructor.
+  /* implicit */ Result(T&& val)
+      : value_(std::forward<T>(val)), hasValue_(true) {}
 
   /// Result move constructor.
   /* implicit */ Result(Result&& rhs) noexcept : hasValue_(rhs.hasValue_) {
