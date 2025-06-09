@@ -533,6 +533,7 @@ ATEN_OPS = (
         name = "op_expm1",
         deps = [
             "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -618,7 +619,6 @@ ATEN_OPS = (
         name = "op_glu",
         deps = [
             "//executorch/kernels/portable/cpu/util:activation_ops_util",
-            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
