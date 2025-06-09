@@ -504,7 +504,7 @@ def get_conv_inputs():
             transposed=False,
             output_padding=[0, 0],
             groups=XS,
-        ),        
+        ),
         Test(
             self=(1, XS, S, S1),
             weight=(XS, 1, 3, 3),

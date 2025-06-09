@@ -406,7 +406,7 @@ void add_conv2d_node(
 
   utils::uvec3 wg_size = create_conv2d_global_wg_size(
       graph, method, out, weight_data, stride_equals_dilation);
-  
+
   utils::uvec3 local_wg_size;
   if (method == Conv2dMethod::Depthwise || method == Conv2dMethod::Pointwise) {
     wg_size = {wg_size[0] * wg_size[1], wg_size[2], 1};
