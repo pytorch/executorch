@@ -209,6 +209,17 @@ __attribute__((deprecated("This API is experimental.")))
     NS_SWIFT_NAME(init(_:));
 
 /**
+ * Creates an instance encapsulating a scalar value.
+ *
+ * The value's tag will be set according to the type encoding of the ExecuTorchScalarValue.
+ *
+ * @param value An ExecuTorchScalarValue.
+ * @return A new ExecuTorchValue instance with the appropriate tag.
+ */
++ (instancetype)valueWithScalar:(ExecuTorchScalarValue)value
+    NS_SWIFT_NAME(init(_:));
+
+/**
  * Returns a copy of the value.
  *
  * @return A new ExecuTorchValue instance that is a duplicate of the current value.

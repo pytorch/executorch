@@ -46,6 +46,44 @@ class ValueTest: XCTestCase {
     XCTAssertEqual(value.double, 3.14)
   }
 
+  func testScalarBoolean() {
+    let value = Value(true as NSNumber)
+    XCTAssertTrue(value.isBoolean)
+    XCTAssertEqual(value.boolean, true)
+
+    let value2 = Value(false as NSNumber)
+    XCTAssertTrue(value2.isBoolean)
+    XCTAssertEqual(value2.boolean, false)
+  }
+
+  func testScalarInteger() {
+    let value = Value(42 as NSNumber)
+    XCTAssertTrue(value.isInteger)
+    XCTAssertEqual(value.integer, 42)
+
+    let value2 = Value(Int16(7) as NSNumber)
+    XCTAssertTrue(value2.isInteger)
+    XCTAssertEqual(value2.integer, 7)
+
+    let value3 = Value(Int32(13) as NSNumber)
+    XCTAssertTrue(value3.isInteger)
+    XCTAssertEqual(value3.integer, 13)
+
+    let value4 = Value(Int64(64) as NSNumber)
+    XCTAssertTrue(value4.isInteger)
+    XCTAssertEqual(value4.integer, 64)
+  }
+
+  func testScalarDouble() {
+    let value = Value(3.14 as NSNumber)
+    XCTAssertTrue(value.isDouble)
+    XCTAssertEqual(value.double, 3.14)
+
+    let value2 = Value(Float(6.28) as NSNumber)
+    XCTAssertTrue(value2.isFloat)
+    XCTAssertEqual(value2.float, 6.28)
+  }
+
   func testIsEqual() {
     let noneValue1 = Value()
     let noneValue2 = Value()
