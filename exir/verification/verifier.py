@@ -142,7 +142,7 @@ There are a few things to try:
 
     ret = _EXIRATenDialectVerifier
     if not class_only:
-        ret = ret()
+        ret = ret()  # type: ignore[assignment]
     return ret
 
 
@@ -234,9 +234,9 @@ def EXIREdgeDialectVerifier(  # noqa: C901
             self.check_valid_aten_op = self.aten_op_verifier.check_valid_op
 
             if self.check_edge_ops:
-                self.check_valid_op = self.check_valid_edge_op
+                self.check_valid_op = self.check_valid_edge_op  # type: ignore[method-assign]
             else:
-                self.check_valid_op = self.check_valid_aten_op
+                self.check_valid_op = self.check_valid_aten_op  # type: ignore[method-assign]
             self._exception_list = exception_list if exception_list else []
 
         def allowed_getattr_types(self) -> Tuple[Type[Any], ...]:
@@ -304,7 +304,7 @@ def EXIREdgeDialectVerifier(  # noqa: C901
 
     ret = _EXIREdgeDialectVerifier
     if not class_only:
-        ret = ret()
+        ret = ret()  # type: ignore[assignment]
     return ret
 
 

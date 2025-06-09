@@ -121,8 +121,8 @@ class NamedDataStore:
             if self.data_hash_to_buffer_idx.get(hashed, -1) != buffer_idx:
                 raise ValueError(
                     f"Duplicate key {key} with different data. "
-                    f"Existing data: {self.buffers[buffer_idx].buffer}. "
-                    f"New data: {data}."
+                    f"Existing data: {self.buffers[buffer_idx].buffer!r}. "
+                    f"New data: {data!r}."  # type: ignore[str-bytes-safe]
                 )
             self.buffers[buffer_idx].alignment = math.lcm(
                 self.buffers[buffer_idx].alignment, alignment

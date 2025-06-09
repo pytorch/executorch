@@ -103,7 +103,7 @@ def _make_submodule(
             f"Expect function '{fn.__name__}' to be decorated with tracing_context.",
         )
     # pyre-ignore
-    args = fn.__tracing_inputs__
+    args = fn.__tracing_inputs__  # type: ignore[attr-defined]
     # TODO(yidi): we don't want to enable here because we are not gonna use this code path in the future anyways
     gm, _ = flattened_dispatch_trace(fn, args, set(), enable_functionalization=False)
     output = next(iter(reversed(gm.graph.nodes)))
@@ -122,7 +122,7 @@ def _make_submodule(
         output.args = tuple(output.args[0])
         gm.recompile()
     # pyre-fixme[16]: `GraphModule` has no attribute `__tracing_inputs__`.
-    gm.__tracing_inputs__ = args
+    gm.__tracing_inputs__ = args  # type: ignore[attr-defined]
     return gm
 
 
@@ -198,7 +198,7 @@ def tracing_context(
 
             return f(*args)
 
-        wrapper.__tracing_inputs__ = inputs  # pyre-ignore
+        wrapper.__tracing_inputs__ = inputs  # type: ignore[attr-defined]
         return wrapper
 
     return decorator

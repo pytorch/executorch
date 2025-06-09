@@ -141,5 +141,5 @@ def _json_to_dataclass(json_dict: Dict[str, Any], cls: Any = None) -> Any:
         if isinstance(T, enum.EnumMeta):
             data[key] = T[value]
         else:
-            data[key] = T(value)
-    return cls(**data)
+            data[key] = T(value)  # type: ignore[operator]
+    return cls(**data)  # type: ignore[operator]

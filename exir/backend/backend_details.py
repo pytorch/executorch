@@ -7,7 +7,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 
@@ -15,8 +15,8 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
 
 
-def enforcedmethod(func):
-    func.__enforcedmethod__ = True
+def enforcedmethod(func: Callable[..., Any]) -> Callable[..., Any]:
+    func.__enforcedmethod__ = True  # type: ignore[attr-defined]
     return func
 
 

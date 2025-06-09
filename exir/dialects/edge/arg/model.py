@@ -181,7 +181,7 @@ class BaseKwarg(BaseArg):
         self._kw = True
 
     @property
-    def kw(self):
+    def kw(self):  # type: ignore[misc]
         return super().kw
 
 

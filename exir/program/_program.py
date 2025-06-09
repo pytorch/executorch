@@ -104,7 +104,7 @@ from typing import Any, Callable
 from torch.library import Library
 
 try:
-    from executorch.exir.program.fb.logger import et_logger
+    from executorch.exir.program.fb.logger import et_logger  # type: ignore[import-not-found]
 except ImportError:
     # Define a stub decorator that does nothing
     def et_logger(api_name: str) -> Callable[[Any], Any]:
@@ -122,9 +122,9 @@ except ImportError:
 edge_no_decomp_namespace = "EDGE_DO_NOT_DECOMP"
 lib = Library(edge_no_decomp_namespace, "DEF")
 # Map from aten ops to the transformed ops registered in the edge_no_decomp_namespace.
-aten_op_to_transform_op = {}
+aten_op_to_transform_op: Dict[Any, Any] = {}
 # Map from the transformed ops registered in the edge_no_decomp_namespace to aten ops.
-transform_op_to_aten_op = {}
+transform_op_to_aten_op: Dict[Any, Any] = {}
 
 
 def _get_updated_range_constraints(gm):
@@ -181,7 +181,7 @@ def _get_updated_graph_signature(
             old_input_spec.arg
             if isinstance(old_input_spec.arg, ConstantArgument)
             # pyre-fixme[20]: Argument `class_fqn` expected.
-            else type(old_input_spec.arg)(node.name)
+            else type(old_input_spec.arg)(node.name)  # type: ignore[call-arg]
         )
         new_input_specs.append(
             InputSpec(
@@ -206,7 +206,7 @@ def _get_updated_graph_signature(
             old_output_spec.arg
             if isinstance(old_output_spec.arg, ConstantArgument)
             # pyre-fixme[20]: Argument `class_fqn` expected.
-            else type(old_output_spec.arg)(node.name)
+            else type(old_output_spec.arg)(node.name)  # type: ignore[call-arg]
         )
         new_output_specs.append(
             OutputSpec(old_output_spec.kind, arg, old_output_spec.target)
@@ -502,7 +502,7 @@ class ExirExportedProgram:
         # Existing user passes dont use run so Im just cheating here because they dont need to work on mutable buffers yet.
         # After exir.capture is gone I will clean up the memory planning infra to be consistent.
         # Frankly all of exir has big code quality issues because of the migrations that need to be addressed.
-        new_gm_res = config.memory_planning_pass(new_gm)  # pyre-ignore[29]
+        new_gm_res = config.memory_planning_pass(new_gm)  # type: ignore[operator]
         assert new_gm_res is not None
         new_gm = new_gm_res.graph_module
         new_prog = ExirExportedProgram(
@@ -750,7 +750,7 @@ def pre_memory_planning_passes(
         if not name:
             sym_shape_eval_pass = default_pass
         # pyre-ignore: Undefined attribute [16]
-        sym_shape_eval_pass = config.sym_shape_eval_pass.get(name, default_pass)
+        sym_shape_eval_pass = config.sym_shape_eval_pass.get(name, default_pass)  # type: ignore[arg-type]
     elif isinstance(config.sym_shape_eval_pass, PassBase):
         sym_shape_eval_pass = config.sym_shape_eval_pass
     else:
@@ -780,7 +780,7 @@ def edge_to_executorch_passes(
     Get the pre memory planning passes based on the method name, if the pass is not in the dict, use the default pass.
     """
     passes: List[PassType] = [
-        *config.passes,
+        *config.passes,  # type: ignore[assignment]
         SpecPropPass(),
         # ExecuTorch backend ops are unable to handle unbacked symints. So after
         # this pass, passes cannot be Interpreter-based, because it will fail if
@@ -827,9 +827,9 @@ def _generate_edge_program(
     )  # TODO move inside aten_to_edge passes after all users are migrated off v1 capture
     passes.extend(pre_op_replace_passes)
     if config._use_edge_ops:
-        passes.append(OpReplacePass())
+        passes.append(OpReplacePass())  # type: ignore[arg-type]
         if not config._skip_dim_order:
-            passes.append(MemoryFormatOpsPass())
+            passes.append(MemoryFormatOpsPass())  # type: ignore[arg-type]
 
     for p in passes:
         gm_res = p(gm)
@@ -1176,7 +1176,7 @@ def collect_named_data_store_from_exported_program(
     collect_named_data_store_outputs(exported_program.graph_module)
 
 
-@et_logger("to_edge_transform_and_lower")
+@et_logger("to_edge_transform_and_lower")  # type: ignore[misc]
 def to_edge_transform_and_lower(
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     transform_passes: Optional[
@@ -1337,7 +1337,7 @@ def to_edge_with_preserved_ops(
     )
 
 
-@et_logger("to_edge")
+@et_logger("to_edge")  # type: ignore[misc]
 def to_edge(
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     constant_methods: Optional[Dict[str, Any]] = None,
@@ -1441,7 +1441,7 @@ class EdgeProgramManager:
 
         return self._edge_programs[method_name]
 
-    @et_logger("transform")
+    @et_logger("transform")  # type: ignore[misc]
     def transform(
         self,
         passes: Union[Sequence[PassType], Dict[str, Sequence[PassType]]],
@@ -1489,7 +1489,7 @@ class EdgeProgramManager:
             new_programs, copy.deepcopy(self._config_methods), compile_config
         )
 
-    @et_logger("to_backend")
+    @et_logger("to_backend")  # type: ignore[misc]
     def to_backend(
         self,
         partitioner: Union[Partitioner, Dict[str, Partitioner]],
@@ -1537,7 +1537,7 @@ class EdgeProgramManager:
             config,
         )
 
-    @et_logger("to_executorch")
+    @et_logger("to_executorch")  # type: ignore[misc]
     def to_executorch(
         self,
         config: Optional[ExecutorchBackendConfig] = None,
@@ -1604,7 +1604,7 @@ class EdgeProgramManager:
                     new_gm, new_signature
                 )
             else:
-                new_gm_res = memory_planning_pass(new_gm)  # pyre-ignore[29]
+                new_gm_res = memory_planning_pass(new_gm)  # type: ignore[operator]
 
             # WARNING: DO NOT ADD ANY MORE PASSES AFTER MEMORY PLANNING PASS.
             # THERE ARE A LOT OF ASSUMPTIONS IN THE STACK THAT MEMORY PLANNING IS THE LAST PASS BEFORE THE EMITTER.

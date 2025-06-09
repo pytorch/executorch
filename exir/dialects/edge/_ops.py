@@ -317,8 +317,8 @@ class EdgeOpOverload:
         """
 
         # return if already found
-        if "_out_variant" in self.__dict__ and self._out_variant:
-            return self._out_variant
+        if "_out_variant" in self.__dict__ and self._out_variant:  # type: ignore[has-type]
+            return self._out_variant  # type: ignore[has-type]
         out_variant = to_variant(self._op, SchemaKind.out)
         self._out_variant = out_variant
         return out_variant
@@ -359,7 +359,7 @@ class EdgeOpOverloadPacket:
         self.__name__ = self._qualified_op_name.replace("::", ".")
         self._op = parent_overload_packet._op
         self._overload_names = parent_overload_packet._overload_names
-        self._dir = []
+        self._dir: List[str] = []
 
     def __repr__(self):
         return "<EdgeOpOverloadPacket(op='{}', parent_op='{}')>".format(

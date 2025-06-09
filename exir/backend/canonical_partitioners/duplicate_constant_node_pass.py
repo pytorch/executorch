@@ -28,9 +28,9 @@ def _get_attribute_or_constants(
     if maybe_param is not None:
         constant_or_attribute = maybe_param
     elif maybe_buffer is not None:
-        constant_or_attribute = maybe_buffer
+        constant_or_attribute = maybe_buffer  # type: ignore[assignment]
     elif maybe_lifted_tensor is not None:
-        constant_or_attribute = maybe_lifted_tensor
+        constant_or_attribute = maybe_lifted_tensor  # type: ignore[assignment]
     return constant_or_attribute
 
 

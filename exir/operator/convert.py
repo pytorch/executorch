@@ -86,12 +86,12 @@ def _get_overload_schema(op_overload: OpOverload) -> Optional[FunctionSchema]:
     native_schema = _op_overload_to_schema_cache.get(op_overload)
     if not native_schema:
         native_schema = _pybind_schema_to_native_schema(op_overload._schema)
-        _op_overload_to_schema_cache[op_overload] = native_schema  # pyre-ignore
+        _op_overload_to_schema_cache[op_overload] = native_schema  # type: ignore[assignment]
     return native_schema
 
 
 def get_out_args_from_opoverload(op_overload: OpOverload) -> Tuple[str]:
-    return get_out_args_from_schema(_get_overload_schema(op_overload))  # pyre-ignore
+    return get_out_args_from_schema(_get_overload_schema(op_overload))  # type: ignore[arg-type]
 
 
 def get_out_args_from_schema(out_var_schema: FunctionSchema) -> Tuple[str]:
@@ -102,7 +102,7 @@ def get_out_args_from_schema(out_var_schema: FunctionSchema) -> Tuple[str]:
     assert (
         out_var_schema.is_out_fn()
     ), f"Expect an out variant, but get: {out_var_schema}"
-    return tuple(arg.name for arg in out_var_schema.arguments.out)
+    return tuple(arg.name for arg in out_var_schema.arguments.out)  # type: ignore[return-value]
 
 
 def parse_qualified_opname(qualified_opname: str) -> Tuple[str, str]:
@@ -113,7 +113,7 @@ def parse_qualified_opname(qualified_opname: str) -> Tuple[str, str]:
     ns_and_opname = qualified_opname.split("::")
     if len(ns_and_opname) != 2:
         raise RuntimeError(f"Invalid qualified_opname {qualified_opname}")
-    return tuple(ns_and_opname)
+    return tuple(ns_and_opname)  # type: ignore[return-value]
 
 
 def get_op_overload(qualified_opname: str, overload: str) -> OpOverload:
@@ -146,19 +146,19 @@ def set_mapping_for_op(op: OpOverload) -> None:
     """
     native_schema = _pybind_schema_to_native_schema(op._schema)
     # pyre-fixme[16]: `Optional` has no attribute `kind`.
-    assert native_schema.kind() in (
+    assert native_schema.kind() in (  # type: ignore[union-attr]
         SchemaKind.functional,
         SchemaKind.out,
         SchemaKind.mutable,
     )
     assert not (
-        native_schema.kind() == SchemaKind.functional and op in _func_to_out_variant_map
+        native_schema.kind() == SchemaKind.functional and op in _func_to_out_variant_map  # type: ignore[union-attr]
     )
     assert not (
-        native_schema.kind() == SchemaKind.out and op in _out_variant_to_scratch_map
+        native_schema.kind() == SchemaKind.out and op in _out_variant_to_scratch_map  # type: ignore[union-attr]
     )
     assert not (
-        native_schema.kind() == SchemaKind.mutable and op in _mutable_to_out_variant_map
+        native_schema.kind() == SchemaKind.mutable and op in _mutable_to_out_variant_map  # type: ignore[union-attr]
     )
     qualified_opname = str(op._schema.name)
 
@@ -186,8 +186,7 @@ def set_mapping_for_op(op: OpOverload) -> None:
         signature = dataclasses.replace(signature, returns=())
 
         kind = schema.kind()
-        # pyre-fixme[6]: For 1st argument expected `str` but got `FunctionSchema`.
-        group_by_kind = group_by_signature.setdefault(signature, {})
+        group_by_kind = group_by_signature.setdefault(signature, {})  # type: ignore[arg-type]
         assert (
             kind not in group_by_kind
         ), f"Schema of kind {kind} already exist for {schema}"
@@ -237,14 +236,14 @@ def to_out_variant(op_overload: OpOverload) -> Tuple[OpOverload, Tuple[str]]:
     arguments.
     """
     schema = _get_overload_schema(op_overload)
-    if schema.is_out_fn():  # pyre-ignore
-        return op_overload, get_out_args_from_schema(schema)  # pyre-ignore[6]
+    if schema.is_out_fn():  # type: ignore[union-attr]
+        return op_overload, get_out_args_from_schema(schema)  # type: ignore[arg-type]
 
     # should be a functionalish op here
     assert (
-        schema.kind() == SchemaKind.functional  # pyre-ignore[16]
-        or schema.kind() == SchemaKind.mutable
-    ), f"Expect a functionalish op, but get {schema.kind()} {schema}"
+        schema.kind() == SchemaKind.functional  # type: ignore[union-attr]
+        or schema.kind() == SchemaKind.mutable  # type: ignore[union-attr]
+    ), f"Expect a functionalish op, but get {schema.kind()} {schema}"  # type: ignore[union-attr]
 
     if (
         op_overload not in _func_to_out_variant_map
@@ -279,8 +278,8 @@ def to_scratch_op(op_overload: OpOverload) -> Optional[OpOverload]:
     # pass. Return immediately rather than throwing an exception since the user must have ignores
     # errors for some reason (e.g. desigin some special unit tests, or unblock new
     # use cases).
-    if schema.kind() != SchemaKind.out:  # pyre-ignore
-        logging.debug(f"Expect an out variant op as input, got: {schema.kind()}")
+    if schema.kind() != SchemaKind.out:  # type: ignore[union-attr]
+        logging.debug(f"Expect an out variant op as input, got: {schema.kind()}")  # type: ignore[union-attr]
         return None
 
     if op_overload not in _out_variant_to_scratch_map:

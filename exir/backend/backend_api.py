@@ -123,7 +123,7 @@ def _(
                 compile_specs=compile_specs,
                 named_data_store_output=preprocess_result.data_store_output,
             )
-            lowered_module.meta = {
+            lowered_module.meta = {  # type: ignore[assignment]
                 "debug_handle_map": preprocess_result.debug_handle_map
             }
             return lowered_module
@@ -311,7 +311,7 @@ def _partition_and_lower_one_graph_module(
             is_submodule,
         )
 
-        lowered_submodule = to_backend(
+        lowered_submodule = to_backend(  # type: ignore[call-arg]
             delegation_spec.backend_id,
             submodule_program,
             delegation_spec.compile_specs,
@@ -449,7 +449,7 @@ def _create_partitions_in_graph_module(
     owning_program: ExportedProgram,
     is_submodule: bool,
 ) -> Dict[str, List[torch.fx.Node]]:
-    backend_id_to_submodule_name = {}
+    backend_id_to_submodule_name: Dict[str, List[str]] = {}
     for tag, delegation_spec in partition_result.partition_tags.items():
         # Create partition with nodes containing this tag. There should only be
         # one contained submodule per tag
@@ -517,10 +517,12 @@ def _create_partitions_in_graph_module(
         # in future edits to the graph. As a result, we just keep track of the node's name
         # and at the end we search for this node in our final graph module
         backend_id_to_submodule_name[delegation_spec.backend_id].append(
-            call_module_node.target
+            call_module_node.target  # type: ignore[arg-type]
         )
 
-    created_submodule_nodes = {key: [] for key in backend_id_to_submodule_name.keys()}
+    created_submodule_nodes: Dict[str, List[torch.fx.Node]] = {
+        key: [] for key in backend_id_to_submodule_name.keys()
+    }
     for backend_id, submodule_name in backend_id_to_submodule_name.items():
         for node in tagged_graph_module.graph.nodes:
             if node.op == "call_module" and node.target in submodule_name:
@@ -615,7 +617,7 @@ def lower_all_submodules_to_backend(
                 compile_specs=compile_spec,
                 named_data_store_output=preprocess_result.data_store_output,
             )
-            lowered_module.meta = {
+            lowered_module.meta = {  # type: ignore[assignment]
                 "debug_handle_map": preprocess_result.debug_handle_map,
             }
             is_submodule = call_submodule_node.meta["is_submodule"]
@@ -698,7 +700,7 @@ def _(
     method_to_partitioner = method_edge_program_partitioners.method_to_partitioner
 
     partitioned_and_lowered_exported_programs = {}
-    backend_id_to_method_submodules_map = {}
+    backend_id_to_method_submodules_map: Dict[str, Dict[str, List[torch.fx.Node]]] = {}
     method_to_tagged_exported_program = {}
 
     for method_name, partitioner_instance in method_to_partitioner.items():
