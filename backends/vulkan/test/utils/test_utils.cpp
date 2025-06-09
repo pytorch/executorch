@@ -51,7 +51,7 @@ void record_buffer_to_nchw_op(
     vkapi::VulkanBuffer& dst_buffer) {
   vkapi::PipelineBarrier pipeline_barrier{};
   context->submit_compute_job(
-      get_tensor_to_nchw_shader(v_src),
+      get_tensor_to_nchw_shader(v_src, true, false),
       pipeline_barrier,
       {uint32_t(v_src.numel()), 1, 1},
       {64, 1, 1},
@@ -99,7 +99,7 @@ void record_image_to_nchw_op(
   vkapi::SpecVarList specialization_constants = {v_src.hashed_layout()};
 
   context->submit_compute_job(
-      get_tensor_to_nchw_shader(v_src),
+      get_tensor_to_nchw_shader(v_src, true, false),
       pipeline_barrier,
       v_src.logical_limits(),
       adaptive_work_group_size(v_src.logical_limits()),
@@ -119,7 +119,7 @@ void record_bitw8_image_to_nchw_nobitw8buffer_op(
   uint32_t buffer_len = utils::safe_downcast<uint32_t>(dst_buffer.numel() / 4);
   utils::uvec3 global_wg_size = {buffer_len, 1, 1};
 
-  std::string kernel_name = "bitw8_image_to_nchw_nobitw8buffer";
+  std::string kernel_name = "bitw8_image_to_nchw_nobitw8buffer_no_pc";
   add_storage_type_suffix(kernel_name, v_src);
   add_dtype_suffix(kernel_name, v_src);
 
