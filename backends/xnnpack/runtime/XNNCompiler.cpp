@@ -121,6 +121,14 @@ xnn_datatype getDataType(const DataType& data_type) {
       return xnn_datatype::xnn_datatype_qdint8;
     case DataType::xnn_datatype_qbint4:
       return xnn_datatype::xnn_datatype_qbint4;
+    case DataType::xnn_datatype_qpint8:
+      return xnn_datatype::xnn_datatype_qpint8;
+    case DataType::xnn_datatype_int32:
+      return xnn_datatype::xnn_datatype_int32;
+    case DataType::xnn_datatype_pfp32:
+      return xnn_datatype::xnn_datatype_pfp32;
+    case DataType::xnn_datatype_bf16:
+      return xnn_datatype::xnn_datatype_bf16;
     default:
       return xnn_datatype::xnn_datatype_invalid;
   }
