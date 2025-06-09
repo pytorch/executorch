@@ -6,14 +6,15 @@
 
 import argparse
 import os
+import sys
 
+if os.getcwd() not in sys.path:
+    sys.path.append(os.getcwd())
 import numpy as np
 
 import torch
+from aot_utils.oss_utils.utils import build_executorch_binary
 from executorch.backends.mediatek import Precision
-from executorch.examples.mediatek.aot_utils.oss_utils.utils import (
-    build_executorch_binary,
-)
 from executorch.examples.models.edsr import EdsrModel
 
 from PIL import Image

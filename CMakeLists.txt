@@ -39,13 +39,16 @@
 # ~~~
 # cmake-format -i CMakeLists.txt
 # ~~~
-# It should also be cmake-lint clean.
+# It should also be checked with a linter via
+# ~~~
+# cmake-lint CMakeLists.txt
+# ~~~
 #
 
 cmake_minimum_required(VERSION 3.24)
 project(executorch)
 
-# MARK: - Start EXECUTORCH_H12025_BUILD_MIGRATION --------------------------------------------------
+# MARK: - Start EXECUTORCH_H12025_BUILD_MIGRATION
 
 include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
 include(${PROJECT_SOURCE_DIR}/tools/cmake/Utils.cmake)
@@ -72,9 +75,13 @@ if(NOT PYTHON_EXECUTABLE)
 endif()
 announce_configured_options(PYTHON_EXECUTABLE)
 
+if(NOT BUCK2)
+  resolve_buck2()
+endif()
+announce_configured_options(BUCK2)
+
 announce_configured_options(CMAKE_CXX_COMPILER_ID)
 announce_configured_options(CMAKE_TOOLCHAIN_FILE)
-announce_configured_options(BUCK2)
 
 load_build_preset()
 include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
@@ -82,24 +89,25 @@ include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
 # Print all the configs that were called with announce_configured_options.
 print_configured_options()
 
-# MARK: - End EXECUTORCH_H12025_BUILD_MIGRATION ----------------------------------------------------
+# MARK: - End EXECUTORCH_H12025_BUILD_MIGRATION
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Setup RPATH.
-# See https://gitlab.kitware.com/cmake/community/-/wikis/doc/cmake/RPATH-handling
+# Setup RPATH. See
+# https://gitlab.kitware.com/cmake/community/-/wikis/doc/cmake/RPATH-handling
 # Use separate rpaths during build and install phases
 set(CMAKE_SKIP_BUILD_RPATH OFF)
 # Don't use the install-rpath during the build phase
 set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 # Automatically add all linked folders that are NOT in the build directory to
 # the rpath (per library?)
-# TODO: Doesn't work for us right now because we are not installing .so's into the
-# correct locations. For example we have libcustom_ops_aot_lib.so depending on
-# _portable_lib.so, which was eventually put under <site-packages>/executorch/extension/pybindings/
-# but this rpath is not automatically added because at build time it seems `portable_lib`
-# is being built under the same directory, so no extra rpath is being added. To
-# properly fix this we need to install `portable_lib` into the correct path.
+# TODO: Doesn't work for us right now because we are
+# not installing .so's into the correct locations. For example we have
+# libcustom_ops_aot_lib.so depending on _portable_lib.so, which was eventually
+# put under <site-packages>/executorch/extension/pybindings/ but this rpath is
+# not automatically added because at build time it seems `portable_lib` is being
+# built under the same directory, so no extra rpath is being added. To properly
+# fix this we need to install `portable_lib` into the correct path.
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
 # ------------------------------ OPTIONS -------------------------------------
 # WARNING: Please don't add example specific options in this CMakeLists.txt.
@@ -144,40 +152,14 @@ else()
 endif()
 
 if(EXECUTORCH_BUILD_TESTS)
-  set(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
   include(CTest)
 endif()
 
 add_subdirectory(third-party)
 
-if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
-  set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
-  set(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
-  set(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
-  set(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
-endif()
-
-if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
-  set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
-endif()
-
-if(EXECUTORCH_BUILD_EXTENSION_MODULE)
-  set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
-  set(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
-endif()
-
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
-  set(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
-  set(EXECUTORCH_BUILD_KERNELS_CUSTOM ON)
-endif()
-
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  set(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
-endif()
-
 if(NOT DEFINED FXDIV_SOURCE_DIR)
   set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
-    ${CMAKE_POSITION_INDEPENDENT_CODE}
+      ${CMAKE_POSITION_INDEPENDENT_CODE}
   )
   set(FXDIV_SOURCE_DIR "backends/xnnpack/third-party/FXdiv")
   add_subdirectory("${FXDIV_SOURCE_DIR}")
@@ -276,16 +258,16 @@ if(NOT "${_repo_dir_name}" STREQUAL "executorch")
       "fix for this restriction."
   )
 endif()
-set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/.. ${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type/c10)
+set(_common_include_directories
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type/c10
+)
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
 #
 
 if(NOT EXECUTORCH_SRCS_FILE)
-  # Find or download buck2 binary.
-  resolve_buck2()
-
   # A file wasn't provided. Run a script to extract the source lists from the
   # buck2 build system and write them to a file we can include.
   #
@@ -310,9 +292,9 @@ endif()
 # Detect if an Android toolchain is set.
 if(CMAKE_TOOLCHAIN_FILE MATCHES ".*android\.toolchain\.cmake$")
   set(CMAKE_TOOLCHAIN_ANDROID ON)
-if(NOT ANDROID_PLATFORM)
-  set(ANDROID_PLATFORM android-30)
-endif()
+  if(NOT ANDROID_PLATFORM)
+    set(ANDROID_PLATFORM android-30)
+  endif()
 else()
   set(CMAKE_TOOLCHAIN_ANDROID OFF)
 endif()
@@ -328,12 +310,11 @@ if(EXECUTORCH_USE_CPP_CODE_COVERAGE)
            " -fprofile-instr-generate -fcoverage-mapping"
     )
   else()
-    message(ERROR
+    message(FATAL_ERROR
             "Code coverage for compiler ${CMAKE_CXX_COMPILER_ID} is unsupported"
     )
   endif()
 endif()
-
 
 #
 # program_schema: Generated .h files from schema/*.fbs inputs
@@ -376,7 +357,9 @@ endif()
 target_include_directories(
   executorch_core PUBLIC ${_common_include_directories}
 )
-target_compile_definitions(executorch_core PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
+target_compile_definitions(
+  executorch_core PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
+)
 target_compile_options(executorch_core PUBLIC ${_common_compile_options})
 if(MAX_KERNEL_NUM)
   target_compile_definitions(
@@ -386,9 +369,7 @@ endif()
 
 if(EXECUTORCH_BUILD_PYBIND AND APPLE)
   # shared version
-  add_library(
-    executorch_core_shared SHARED ${_executorch_core__srcs}
-  )
+  add_library(executorch_core_shared SHARED ${_executorch_core__srcs})
   target_link_libraries(executorch_core_shared PRIVATE program_schema)
   if(DL_LIBRARY_EXISTS)
     # For dladdr()
@@ -397,7 +378,9 @@ if(EXECUTORCH_BUILD_PYBIND AND APPLE)
   target_include_directories(
     executorch_core_shared PUBLIC ${_common_include_directories}
   )
-  target_compile_definitions(executorch_core_shared PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
+  target_compile_definitions(
+    executorch_core_shared PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
+  )
   target_compile_options(
     executorch_core_shared PUBLIC ${_common_compile_options}
   )
@@ -430,9 +413,8 @@ target_link_options_shared_lib(executorch)
 # operators necessary for the models that will run.
 #
 if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
-  # find pytorch lib here to make it available to all
-  # sub-directories. Find it before including portable so that
-  # optimized_portable_kernels can use it.
+  # find pytorch lib here to make it available to all sub-directories. Find it
+  # before including portable so that optimized_portable_kernels can use it.
   find_package_torch_headers()
 endif()
 
@@ -458,19 +440,50 @@ endif()
 
 # Install `executorch` library as well as `executorch-config.cmake` under
 # ${CMAKE_INSTALL_PREFIX}/
-install(DIRECTORY runtime/core/  DESTINATION include/executorch/runtime/core FILES_MATCHING PATTERN "*.h")
-install(DIRECTORY runtime/kernel/  DESTINATION include/executorch/runtime/kernel FILES_MATCHING PATTERN "*.h")
-install(DIRECTORY runtime/platform/  DESTINATION include/executorch/runtime/platform FILES_MATCHING PATTERN "*.h")
-install(DIRECTORY extension/kernel_util/  DESTINATION include/executorch/extension/kernel_util FILES_MATCHING PATTERN "*.h")
-install(DIRECTORY extension/tensor/  DESTINATION include/executorch/extension/tensor FILES_MATCHING PATTERN "*.h")
-install(DIRECTORY extension/threadpool/  DESTINATION include/executorch/extension/threadpool FILES_MATCHING PATTERN "*.h")
+install(
+  DIRECTORY runtime/core/
+  DESTINATION include/executorch/runtime/core
+  FILES_MATCHING
+  PATTERN "*.h"
+)
+install(
+  DIRECTORY runtime/kernel/
+  DESTINATION include/executorch/runtime/kernel
+  FILES_MATCHING
+  PATTERN "*.h"
+)
+install(
+  DIRECTORY runtime/platform/
+  DESTINATION include/executorch/runtime/platform
+  FILES_MATCHING
+  PATTERN "*.h"
+)
+install(
+  DIRECTORY extension/kernel_util/
+  DESTINATION include/executorch/extension/kernel_util
+  FILES_MATCHING
+  PATTERN "*.h"
+)
+install(
+  DIRECTORY extension/tensor/
+  DESTINATION include/executorch/extension/tensor
+  FILES_MATCHING
+  PATTERN "*.h"
+)
+install(
+  DIRECTORY extension/threadpool/
+  DESTINATION include/executorch/extension/threadpool
+  FILES_MATCHING
+  PATTERN "*.h"
+)
 install(
   TARGETS executorch executorch_core
-  DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
-install(FILES tools/cmake/executorch-config.cmake DESTINATION lib/cmake/ExecuTorch)
+install(FILES tools/cmake/executorch-config.cmake
+        DESTINATION lib/cmake/ExecuTorch
+)
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
@@ -608,17 +621,14 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   if(EXECUTORCH_BUILD_XNNPACK)
-    # need to explicitly specify XNNPACK and microkernels-prod
-    # here otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
+    # need to explicitly specify XNNPACK and microkernels-prod here otherwise
+    # uses XNNPACK and microkernel-prod symbols from libtorch_cpu
     list(APPEND _dep_libs xnnpack_backend XNNPACK microkernels-prod)
   endif()
 
   # compile options for pybind
-  set(_pybind_compile_options
-      -Wno-deprecated-declarations
-      -fPIC
-      -frtti
-      -fexceptions
+  set(_pybind_compile_options -Wno-deprecated-declarations -fPIC -frtti
+                              -fexceptions
   )
 
   # util lib

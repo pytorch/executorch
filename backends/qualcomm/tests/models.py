@@ -147,12 +147,13 @@ class ArgminViewSqueezeConv2D(torch.nn.Module):
 
 
 class AvgPoolModule(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, kernel_size, stride, padding, ceil_mode):
         super().__init__()
         self.avgPool = torch.nn.AvgPool2d(
-            kernel_size=(2, 2),
-            padding=(1, 1),
-            stride=(1, 1),
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            ceil_mode=ceil_mode,
             count_include_pad=False,
         )
 
@@ -376,12 +377,12 @@ class Conv1dSequential(torch.nn.Module):
 
 # small models
 class Conv1dReluLogSoftmax(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, dim):
         super().__init__()
         self.conv = torch.nn.Conv1d(
             in_channels=2, out_channels=2, kernel_size=1, stride=1, padding=1
         )
-        self.logsoftmax = torch.nn.LogSoftmax(dim=1)
+        self.logsoftmax = torch.nn.LogSoftmax(dim=dim)
 
     def forward(self, x):
         x = torch.nn.functional.relu(self.conv(x))
@@ -740,6 +741,23 @@ class ExpM1(torch.nn.Module):
         return torch.special.expm1(x)
 
 
+class Fold(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.output_size = (32, 32)
+        self.patch_height = 2
+        self.patch_width = 2
+
+    def forward(self, x):
+        fold = torch.nn.functional.fold(
+            x,
+            output_size=self.output_size,
+            kernel_size=(self.patch_height, self.patch_width),
+            stride=(self.patch_height, self.patch_width),
+        )
+        return fold
+
+
 class Full(torch.nn.Module):
     def __init__(self, fill, shape):
         super().__init__()
@@ -995,6 +1013,15 @@ class LessThanConstant(torch.nn.Module):
 
     def forward(self, x):
         return self.constant < x
+
+
+class LiftAddTensor(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        N = 2 - 1
+        return x + N
 
 
 class Linear(torch.nn.Module):
@@ -1268,6 +1295,14 @@ class Repeat(torch.nn.Module):
         return x.repeat(1, 2, 3, 4)
 
 
+class ReWriteObs(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.nn.functional.relu(x).expand(3, 4)
+
+
 class Reshape(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1308,6 +1343,23 @@ class ResidualBlockModule(torch.nn.Module):
         x5 = self.hardtanh(x4)
         x6 = torch.add(x5, x2)
         return x6
+
+
+class ResizeBicubic(torch.nn.Module):
+    def __init__(self, size, scale_factor, align_corners):
+        super().__init__()
+        self.align_corners = align_corners
+        self.scale_factor = scale_factor
+        self.size = size
+
+    def forward(self, x):
+        return torch.nn.functional.interpolate(
+            x,
+            size=self.size,
+            scale_factor=self.scale_factor,
+            mode="bicubic",
+            align_corners=self.align_corners,
+        )
 
 
 class ResizeBilinear2D(torch.nn.Module):
@@ -1489,11 +1541,12 @@ class SliceCopyWithStep(torch.nn.Module):
 
 
 class Softmax(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, dim):
         super().__init__()
+        self.dim = dim
 
     def forward(self, x):
-        return torch.nn.functional.softmax(x, dim=-1)
+        return torch.nn.functional.softmax(x, dim=self.dim)
 
 
 class Sqrt(torch.nn.Module):
@@ -1605,6 +1658,21 @@ class Unbind(torch.nn.Module):
 
     def forward(self, x):
         return torch.unbind(x)
+
+
+class Unfold(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.patch_height = 2
+        self.patch_width = 2
+
+    def forward(self, x):
+        unfold = torch.nn.functional.unfold(
+            x,
+            kernel_size=(self.patch_height, self.patch_width),
+            stride=(self.patch_height, self.patch_width),
+        )
+        return unfold
 
 
 class Unsqueeze(torch.nn.Module):
