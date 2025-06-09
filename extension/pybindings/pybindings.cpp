@@ -578,7 +578,15 @@ struct PyMethodMeta final {
     }
     py::list output_meta_strs;
     for (size_t i = 0; i < meta_.num_outputs(); ++i) {
-      output_meta_strs.append(py::str(output_tensor_meta(i)->repr()));
+      auto output_tag_res = meta_.output_tag(i);
+      THROW_INDEX_IF_ERROR(
+          output_tag_res.error(), "Cannot get Tag for output at %zu", i);
+      if (output_tag_res.get() == Tag::Tensor) {
+        output_meta_strs.append(py::str(output_tensor_meta(i)->repr()));
+      } else {
+        output_meta_strs.append(
+            py::str(runtime::tag_to_string(output_tag_res.get())));
+      }
     }
     // Add quotes to be more similar to Python's repr for strings.
     py::str format =
