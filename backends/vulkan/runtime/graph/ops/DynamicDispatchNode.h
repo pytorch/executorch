@@ -32,16 +32,31 @@ class DynamicDispatchNode final : public DispatchNode {
       const std::vector<ValueRef>&)>;
   using PickGlobalFn = const std::function<utils::uvec3(
       ComputeGraph*,
+      const vkapi::ShaderInfo& shader,
       const std::vector<ArgGroup>&,
       const std::vector<ValueRef>&)>;
   using PickLocalFn = const std::function<utils::uvec3(
       ComputeGraph*,
+      const vkapi::ShaderInfo& shader,
+      const utils::uvec3& global_workgroup_size,
       const std::vector<ArgGroup>&,
       const std::vector<ValueRef>&)>;
 
   explicit DynamicDispatchNode(
       ComputeGraph& graph,
       const PickShaderFn& pick_shader_fn,
+      const PickGlobalFn& pick_global_wg_fn,
+      const PickLocalFn& pick_local_wg_fn,
+      const std::vector<ArgGroup>& args,
+      const vkapi::ParamsBindList& params,
+      const std::vector<PushConstantDataInfo>& push_constants,
+      const vkapi::SpecVarList& spec_vars,
+      const std::vector<ValueRef>& resize_args,
+      const ResizeFunction& resize_fn = nullptr);
+
+  explicit DynamicDispatchNode(
+      ComputeGraph& graph,
+      const vkapi::ShaderInfo& shader,
       const PickGlobalFn& pick_global_wg_fn,
       const PickLocalFn& pick_local_wg_fn,
       const std::vector<ArgGroup>& args,

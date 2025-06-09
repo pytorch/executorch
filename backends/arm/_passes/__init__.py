@@ -23,6 +23,7 @@ from .convert_to_clamp import ConvertToClampPass  # noqa
 from .decompose_cosine_similarity_pass import DecomposeCosineSimilarityPass  # noqa
 from .decompose_div_pass import DecomposeDivPass  # noqa
 from .decompose_gelu_pass import DecomposeGeluPass  # noqa
+from .decompose_groupnorm_pass import DecomposeGroupNormPass  # noqa
 from .decompose_layernorm_pass import DecomposeLayerNormPass  # noqa
 from .decompose_leaky_relu_pass import DecomposeLeakyReLUPass  # noqa
 from .decompose_linalg_vector_norm_pass import DecomposeLinearVectorNormPass  # noqa
