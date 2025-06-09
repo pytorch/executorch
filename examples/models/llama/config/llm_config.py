@@ -470,7 +470,7 @@ class LlmConfig:
     backend: BackendConfig = field(default_factory=BackendConfig)
 
     @classmethod
-    def from_args(args: argparse.Namespace) -> "LlmConfig":  # noqa: C901
+    def from_args(cls, args: argparse.Namespace) -> "LlmConfig":  # noqa: C901
         """
         To support legacy purposes, this function converts CLI args from
         argparse to an LlmConfig, which is used by the LLM export process.
