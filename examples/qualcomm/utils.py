@@ -297,6 +297,7 @@ def build_executorch_binary(
     passes_job=None,
     qat_training_data=None,
     online_prepare=False,
+    optrace=False,
 ):
     """
     A function to generate an ExecuTorch binary for Qualcomm platforms.
@@ -317,6 +318,7 @@ def build_executorch_binary(
         passes_job (OrderedDict, optional): Custom passes job in capture_program, users can enable/disable specific passes or modify their attributes.
         qat_training_data (List[torch.Tensor], optional): A dataset for quantization aware training(QAT). Typically is a pair of tensors, such as [features, ground truth].
         online_prepare (bool, optional): Compose QNN graph on device if set to True.
+        optrace (bool, optional): Enable optrace mode for performance analysis if set to True.
 
     Returns:
         None: The function writes the output to a specified .pte file.
@@ -328,6 +330,7 @@ def build_executorch_binary(
         soc_model=getattr(QcomChipset, soc_model),
         backend_options=backend_options,
         online_prepare=online_prepare,
+        optrace=optrace,
         shared_buffer=shared_buffer,
         dump_intermediate_outputs=dump_intermediate_outputs,
     )

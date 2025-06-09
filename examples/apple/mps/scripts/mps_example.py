@@ -132,7 +132,7 @@ def parse_args():
     return args
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # noqa: C901
     args = parse_args()
 
     if args.model_name not in MODEL_NAME_TO_MODEL:

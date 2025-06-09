@@ -120,7 +120,9 @@ class FoldAndAnnotateQParamsPass(ExportPass):
         if input_qparams is not None:
             node.meta["input_qparams"][i] = input_qparams
             for n in nodes_to_remove:
-                assert n.target == dq_op
+                if n.target != dq_op:
+                    raise RuntimeError(f"Expected {dq_op} dq_op, got {n.target}")
+
                 n.replace_all_uses_with(n.args[0])  # type: ignore[arg-type]
                 graph_module.graph.erase_node(n)
 
@@ -136,14 +138,16 @@ class FoldAndAnnotateQParamsPass(ExportPass):
                 continue
 
             # Make sure we haven't already set qparams meta information on the node
-            assert "input_qparams" not in n.meta, (
-                f'Unexpected key "input_qparams" found in meta for node {n}. '
-                "input_qparams should not have been set at this point"
-            )
-            assert "output_qparams" not in n.meta, (
-                f'Unexpected key "output_qparams" found in meta for node {n}. '
-                "output_qparams should not have been set at this point"
-            )
+            if "input_qparams" in n.meta:
+                raise RuntimeError(
+                    f'Unexpected key "input_qparams" found in meta for node {n}. '
+                    "input_qparams should not have been set at this point"
+                )
+            if "output_qparams" in n.meta:
+                raise RuntimeError(
+                    f'Unexpected key "output_qparams" found in meta for node {n}. '
+                    "output_qparams should not have been set at this point"
+                )
 
             # for the inputs and outputs search the graph for quantization info and
             # store the information in a dict with order of the _tensor_ inputs as key,

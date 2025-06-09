@@ -29,9 +29,6 @@ from executorch.devtools.backend_debug import print_delegation_info
 from executorch.devtools.etrecord import generate_etrecord as generate_etrecord_func
 
 from executorch.examples.models.llama.config.llm_config import LlmConfig
-from executorch.examples.models.llama.config.llm_config import (
-    LlmConfig,
-)
 from executorch.examples.models.llama.hf_download import (
     download_and_convert_hf_checkpoint,
 )

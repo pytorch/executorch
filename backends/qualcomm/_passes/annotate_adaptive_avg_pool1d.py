@@ -19,8 +19,6 @@ class AnnotateAdaptiveAvgPool1D(ExportPass):
     adaptive_avg_pool1d got decomposed to unsqueeze -> adaptive_avg_pool2d -> squeeze
     """
 
-    decomp_ops = [torch.ops.aten.adaptive_avg_pool2d.default]
-
     def __init__(self, edge_program: torch.export.ExportedProgram):
         super(AnnotateAdaptiveAvgPool1D, self).__init__()
         self.edge_program = edge_program
