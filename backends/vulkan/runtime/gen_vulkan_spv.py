@@ -59,25 +59,37 @@ TYPE_MAPPINGS: Dict[str, Any] = {
             "double": "image3D",
             "float": "image3D",
             "half": "image3D",
-            "int": "iimage3D",
-            "uint": "uimage3D",
+            # integer dtypes
             "int8": "iimage3D",
             "uint8": "uimage3D",
-            "bool": "uimage3D",
-            "short": "iimage3D",
+            "int16": "iimage3D",
             "uint16": "uimage3D",
+            "int32": "iimage3D",
+            "uint32": "uimage3D",
+            "int64": "iimage3D",
+            "uint64": "uimage3D",
+            # common dtype aliases
+            "bool": "uimage3D",
+            "int": "iimage3D",
+            "uint": "uimage3D",
         },
         2: {
             "double": "image2D",
             "float": "image2D",
             "half": "image2D",
-            "int": "iimage2D",
-            "uint": "uimage2D",
+            # integer dtypes
             "int8": "iimage2D",
             "uint8": "uimage2D",
-            "bool": "uimage2D",
-            "short": "iimage2D",
+            "int16": "iimage2D",
             "uint16": "uimage2D",
+            "int32": "iimage2D",
+            "uint32": "uimage2D",
+            "int64": "iimage2D",
+            "uint64": "uimage2D",
+            # common dtype aliases
+            "bool": "uimage2D",
+            "int": "iimage2D",
+            "uint": "uimage2D",
         },
     },
     "SAMPLER_T": {
@@ -85,38 +97,56 @@ TYPE_MAPPINGS: Dict[str, Any] = {
             "double": "sampler3D",
             "float": "sampler3D",
             "half": "sampler3D",
-            "int": "isampler3D",
-            "uint": "usampler3D",
+            # integer dtypes
             "int8": "isampler3D",
             "uint8": "usampler3D",
-            "bool": "usampler3D",
-            "short": "isampler3D",
+            "int16": "isampler3D",
             "uint16": "usampler3D",
+            "int32": "isampler3D",
+            "uint32": "usampler3D",
+            "int64": "isampler3D",
+            "uint64": "usampler3D",
+            # common dtype aliases
+            "bool": "usampler3D",
+            "int": "isampler3D",
+            "uint": "usampler3D",
         },
         2: {
             "double": "sampler2D",
             "float": "sampler2D",
             "half": "sampler2D",
-            "int": "isampler2D",
-            "uint": "usampler2D",
+            # integer dtypes
             "int8": "isampler2D",
             "uint8": "usampler2D",
-            "bool": "usampler2D",
-            "short": "isampler2D",
+            "int16": "isampler2D",
             "uint16": "usampler2D",
+            "int32": "isampler2D",
+            "uint32": "usampler2D",
+            "int64": "isampler2D",
+            "uint64": "usampler2D",
+            # common dtype aliases
+            "bool": "usampler2D",
+            "int": "isampler2D",
+            "uint": "usampler2D",
         },
     },
     "IMAGE_FORMAT": {
-        "double": "rgba64f",
+        "double": "rgba32f",
         "float": "rgba32f",
         "half": "rgba16f",
-        "int": "rgba32i",
-        "uint": "rgba32ui",
+        # integer dtypes
         "int8": "rgba8i",
         "uint8": "rgba8ui",
-        "bool": "rgba8ui",
-        "short": "rgba16i",
+        "int16": "rgba16i",
         "uint16": "rgba16ui",
+        "int32": "rgba32i",
+        "uint32": "rgba32ui",
+        "int64": "rgba32i",
+        "uint64": "rgba32ui",
+        # common dtype aliases
+        "bool": "rgba8ui",
+        "int": "rgba32i",
+        "uint": "rgba32ui",
     },
 }
 
@@ -137,10 +167,12 @@ def buffer_scalar_type(dtype: str) -> str:
         return "float"
     elif dtype == "double":
         return "float64_t"
-    elif dtype == "short":
-        return "int16_t"
+    # integer dtype alias conversion
     elif dtype == "bool":
         return "uint8_t"
+    # we don't want to append _t for int32 or uint32 as int is already 32bit
+    elif dtype == "int32" or dtype == "uint32":
+        return "int" if dtype == "int32" else "uint"
     elif dtype[-1].isdigit():
         return dtype + "_t"
     return dtype
@@ -150,26 +182,29 @@ def buffer_gvec_type(dtype: str, n: int) -> str:
     if n == 1:
         return buffer_scalar_type(dtype)
 
-    if dtype == "float":
-        return f"vec{n}"
-    if dtype == "uint":
-        return f"uvec{n}"
-    elif dtype == "half":
+    if dtype == "half":
         return f"f16vec{n}"
+    elif dtype == "float":
+        return f"vec{n}"
     elif dtype == "double":
-        return f"dvec{n}"
-    elif dtype == "int":
-        return f"ivec{n}"
-    elif dtype == "short":
-        return f"i16vec{n}"
-    elif dtype == "uint16":
-        return f"u16vec{n}"
+        return f"f64vec{n}"
+    # integer dtype
     elif dtype == "int8":
         return f"i8vec{n}"
     elif dtype == "uint8":
         return f"u8vec{n}"
-    elif dtype == "bool":
-        return f"u8vec{n}"
+    elif dtype == "int16":
+        return f"i16vec{n}"
+    elif dtype == "uint16":
+        return f"u16vec{n}"
+    elif dtype == "int32" or dtype == "int":
+        return f"ivec{n}"
+    elif dtype == "uint32" or dtype == "uint":
+        return f"uvec{n}"
+    elif dtype == "int64":
+        return f"i64vec{n}"
+    elif dtype == "uint64":
+        return f"u64vec{n}"
 
     raise AssertionError(f"Invalid dtype: {dtype}")
 
@@ -387,22 +422,19 @@ def define_required_extensions(dtypes: Union[str, List[str]]):
     dtype_list = dtypes if isinstance(dtypes, list) else [dtypes]
 
     for dtype in dtype_list:
-        nbit = None
         glsl_type = None
         if dtype == "half":
-            nbit = "16bit"
             glsl_type = "float16"
-        elif dtype == "short" or dtype == "int16" or dtype == "uint16":
-            nbit = "16bit"
-            glsl_type = "int16"
-        elif dtype == "bool" or dtype == "int8" or dtype == "uint8":
-            nbit = "8bit"
+        elif dtype == "double":
+            glsl_type = "float64"
+        elif dtype in ["int8", "uint8"]:
             glsl_type = "int8"
-        elif dtype == "double" or dtype == "float64":
-            out_str += "#extension GL_ARB_gpu_shader_fp64 : require\n"
+        elif dtype in ["int16", "uint16"]:
+            glsl_type = "int16"
+        elif dtype in ["int64", "uint64"]:
+            glsl_type = "int64"
 
-        if nbit is not None and glsl_type is not None:
-            out_str += f"#extension GL_EXT_shader_{nbit}_storage : require\n"
+        if glsl_type is not None:
             out_str += f"#extension GL_EXT_shader_explicit_arithmetic_types_{glsl_type} : require\n"
 
     return out_str
@@ -658,6 +690,8 @@ class SPVGenerator:
 
                     elif "VALUE" in value:
                         suffix = value.get("SUFFIX", value["VALUE"])
+                        if value["VALUE"] in ["int", "uint"]:
+                            raise ValueError(f"Use int32 or uint32 instead of {value['VALUE']}")
                         param_values.append((param_name, suffix, value["VALUE"]))
 
                     else:
