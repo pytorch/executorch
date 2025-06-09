@@ -8,9 +8,9 @@
 
 #pragma once
 
+#include <ATen/cpu/vec/vec.h>
 #include <executorch/kernels/optimized/blas/CPUBlas.h>
 #include <executorch/kernels/optimized/vec/functional.h>
-#include <executorch/kernels/optimized/vec/vec.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 // @lint-ignore CLANGTIDY facebook-unused-include-check
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -319,7 +319,7 @@ void _qk_at_v_gemm(
 constexpr size_t kKVDim = 4;
 
 template <typename T>
-inline void _store(T* dst, ::executorch::vec::Vectorized<T> src) {
+inline void _store(T* dst, ::at::vec::Vectorized<T> src) {
   src.store(dst);
 }
 
@@ -354,7 +354,7 @@ inline double calculate_scale(const Tensor& query, optional<double> scale) {
   return softmax_scale;
 }
 
-namespace vec = ::executorch::vec;
+namespace vec = ::at::vec;
 using Tensor = ::executorch::aten::Tensor;
 
 // 1) out = exp(a - val)
