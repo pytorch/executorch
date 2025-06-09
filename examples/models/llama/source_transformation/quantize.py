@@ -16,8 +16,6 @@ import torch.nn.functional as F
 
 from executorch.extension.llm.export.builder import DType
 
-from sentencepiece import SentencePieceProcessor
-
 from torchao.dtypes import PackedLinearInt8DynamicActivationIntxWeightLayout
 from torchao.quantization.granularity import PerAxis, PerGroup
 from torchao.quantization.quant_api import (
@@ -516,19 +514,27 @@ class Int8DynActInt8WeightLinear(torch.nn.Module):
 ############################ Source Transform Start #######################
 
 
-def get_quant_embedding_transform(args, dtype_override: Optional[DType] = None):
+def get_quant_embedding_transform(
+    args, use_shared_embedding: bool = False, dtype_override: Optional[DType] = None
+):
     use_torchao = args.embedding_quantize.startswith("torchao:")
     if use_torchao:
         quant_args = args.embedding_quantize.split(":")[1].split(",")
     else:
         quant_args = args.embedding_quantize.split(",")
+    assert len(quant_args) in [
+        2,
+        3,
+    ], f"Expected 2 or 3 embedding quant_args, but got: {quant_args}"
 
     bitwidth = int(quant_args[0])
     group_size = quant_args[0]
     if group_size in ["none", "None", "0"]:
         group_size = 0
     group_size = int(group_size)
-    is_symmetric = bool(quant_args[3]) if len(quant_args) > 2 else True
+    is_symmetric = (
+        bool(quant_args[3].lower() == "true") if len(quant_args) > 2 else True
+    )
 
     weight_dtype = getattr(torch, f"int{bitwidth}")
     granularity = PerAxis(0) if group_size == 0 else PerGroup(group_size)
@@ -572,6 +578,7 @@ def get_quant_embedding_transform(args, dtype_override: Optional[DType] = None):
                 granularity=granularity,
                 mapping_type=mapping_type,
             ),
+            lambda m, fqn: isinstance(m, nn.Embedding),
         )
         return model
 
