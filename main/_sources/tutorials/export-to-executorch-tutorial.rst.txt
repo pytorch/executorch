@@ -457,9 +457,9 @@ model properly for a specific backend.
         return pytree.tree_unflatten((relu,), self._out_spec)
     
     # To see more debug info, please use `graph_module.print_readable()`
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/ao/quantization/utils.py:408: UserWarning: must run observer before calling calculate_qparams. Returning default values.
+    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torchao/quantization/pt2e/utils.py:145: UserWarning: must run observer before calling calculate_qparams. Returning default values.
       warnings.warn(
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/ao/quantization/observer.py:1338: UserWarning: must run observer before calling calculate_qparams.                                    Returning default scale and zero point 
+    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torchao/quantization/pt2e/observer.py:1350: UserWarning: must run observer before calling calculate_qparams.                                    Returning default scale and zero point 
       warnings.warn(
     Quantized Graph
     GraphModule(
@@ -470,8 +470,8 @@ model properly for a specific backend.
 
     def forward(self, x):
         x, = fx_pytree.tree_flatten_spec(([x], {}), self._in_spec)
-        _frozen_param0 = self._frozen_param0
-        dequantize_per_tensor_default = torch.ops.quantized_decomposed.dequantize_per_tensor.default(_frozen_param0, 1.0, 0, -127, 127, torch.int8);  _frozen_param0 = None
+        quantize_per_tensor_default = self._frozen_param0
+        dequantize_per_tensor_default = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor_default, 1.0, 0, -127, 127, torch.int8);  quantize_per_tensor_default = None
         conv_bias = self.conv.bias
         quantize_per_tensor_default_1 = torch.ops.quantized_decomposed.quantize_per_tensor.default(x, 1.0, 0, -128, 127, torch.int8);  x = None
         dequantize_per_tensor_default_1 = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor_default_1, 1.0, 0, -128, 127, torch.int8);  quantize_per_tensor_default_1 = None
@@ -1412,7 +1412,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 4.693 seconds)
+   **Total running time of the script:** (0 minutes 4.101 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:
