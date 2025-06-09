@@ -27,6 +27,7 @@ from executorch.backends.arm._passes import (
     DecomposeDivPass,
     DecomposeEmbeddingPass,
     DecomposeGeluPass,
+    DecomposeGroupedConv,
     DecomposeGroupNormPass,
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
@@ -117,6 +118,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeLinearPass())
         self.add_pass(ComputeConstantOpsAOT(exported_program))
 
+        self.add_pass(DecomposeGroupedConv())
         self.add_pass(RemoveClonePass())
         self.add_pass(SizeAdjustConv2DPass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
@@ -174,6 +176,7 @@ class ArmPassManager(PassManager):
         self.add_pass(MatchArgRanksPass(exported_program))
         self.add_pass(ComputeConstantOpsAOT(exported_program))
 
+        self.add_pass(DecomposeGroupedConv())
         self.add_pass(RemoveClonePass())
         self.add_pass(SizeAdjustConv2DPass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
