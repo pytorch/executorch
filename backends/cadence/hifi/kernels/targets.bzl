@@ -13,6 +13,7 @@ def define_common_targets():
             "kernels.h",
         ],
         deps = common_deps,
+        compatible_with = ["ovr_config//cpu:xtensa"],
         visibility = [
             "//executorch/backends/cadence/...",
         ],
