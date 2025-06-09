@@ -255,7 +255,7 @@ def get_conv_inputs():
         [9, 0],
         1,
     )
-    test_cases = []
+
     test_cases = [
         Test(
             self=(1, 6, 40, 50),
@@ -289,17 +289,6 @@ def get_conv_inputs():
             transposed=False,
             output_padding=[0, 0],
             groups=8,
-        ),
-        Test(
-            self=(1, 8, 72, 96),
-            weight=(8, 8, 1, 1),
-            bias=(8,),
-            stride=[1, 1],
-            padding=[1, 1],
-            dilation=[1, 1],
-            transposed=False,
-            output_padding=[0, 0],
-            groups=1,
         ),
         Test(
             self=(1, 6, 40, 50),
@@ -357,17 +346,6 @@ def get_conv_inputs():
             groups=5,
         ),
         Test(
-            self=(1, 16, 672, 512),
-            weight=(64, 16, 1, 1),
-            bias=(64,),
-            stride=[1, 1],
-            padding=[0, 0],
-            dilation=[1, 1],
-            transposed=False,
-            output_padding=[0, 0],
-            groups=1,
-        ),
-        Test(
             self=(1, 4, 234, 234),
             weight=(4, 1, 3, 3),
             bias=(4,),
@@ -413,8 +391,152 @@ def get_conv_inputs():
         ),
     ]
 
+    test_cases_pw = [
+        Test(
+            self=(1, 16, 3, 5),
+            weight=(4, 16, 1, 1),
+            bias=(4,),
+            stride=[1, 1],
+            padding=[0, 0],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 5, 3, 5),
+            weight=(4, 5, 1, 1),
+            bias=(4,),
+            stride=[1, 1],
+            padding=[0, 0],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 5, 3, 5),
+            weight=(3, 5, 1, 1),
+            bias=(3,),
+            stride=[1, 1],
+            padding=[0, 0],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 5, 3, 5),
+            weight=(3, 5, 1, 1),
+            bias=(3,),
+            stride=[1, 1],
+            padding=[1, 0],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 5, 3, 5),
+            weight=(3, 5, 1, 1),
+            bias=(3,),
+            stride=[1, 1],
+            padding=[0, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 5, 3, 5),
+            weight=(3, 5, 1, 1),
+            bias=(3,),
+            stride=[2, 1],
+            padding=[1, 0],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 8, 72, 96),
+            weight=(8, 8, 1, 1),
+            bias=(8,),
+            stride=[1, 1],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 16, 240, 320),
+            weight=(64, 16, 1, 1),
+            bias=(64,),
+            stride=[1, 1],
+            padding=[0, 0],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 16, 240, 320),
+            weight=(64, 16, 1, 1),
+            bias=(64,),
+            stride=[2, 2],
+            padding=[0, 0],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 16, 240, 320),
+            weight=(64, 16, 1, 1),
+            bias=(64,),
+            stride=[4, 4],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 16, 240, 320),
+            weight=(64, 16, 1, 1),
+            bias=(64,),
+            stride=[1, 1],
+            padding=[4, 4],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 16, 672, 512),
+            weight=(64, 16, 1, 1),
+            bias=(64,),
+            stride=[1, 1],
+            padding=[0, 0],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+    ]
+
     test_suite = VkTestSuite(test_cases)
-    return test_suite
+    test_suite.layouts = [
+        "utils::kChannelsPacked",
+    ]
+
+    test_suite_pw = VkTestSuite(test_cases_pw)
+    test_suite_pw.layouts = [
+        "utils::kChannelsPacked",
+    ]
+    test_suite_pw.test_name_suffix = "pw"
+    return [test_suite, test_suite_pw]
 
 
 @register_test_suite("aten.native_layer_norm.default")
