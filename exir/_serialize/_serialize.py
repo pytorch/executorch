@@ -16,7 +16,6 @@ from executorch.exir._serialize.data_serializer import (
     DataEntry,
     DataPayload,
     DataSerializer,
-    TensorEntry,
     TensorLayout,
 )
 
@@ -29,22 +28,22 @@ def serialize_for_executorch(
     emitter_output: EmitterOutput,
     config: ExecutorchBackendConfig,
     data_serializer: DataSerializer,
-    named_data: Optional[NamedDataStoreOutput] = None,
+    named_data_store: Optional[NamedDataStoreOutput] = None,
 ) -> Tuple[Cord, Dict[str, Cord]]:
     """Serialize the output from Emitter into ExecuTorch artifacts; PTE and PTD files."""
 
     # Serialize PTE file.
     pte_named_data = None
     if (
-        named_data is not None
-        and len(named_data.buffers) > 0
-        and len(named_data.pte_data) > 0
+        named_data_store is not None
+        and len(named_data_store.buffers) > 0
+        and len(named_data_store.pte_data) > 0
     ):
         # Create a separate NamedDataStoreOutput with only pte_data; exclude
         # external_data, which shouldn't be serialized with the PTE file.
         pte_named_data = NamedDataStoreOutput(
-            buffers=named_data.buffers,
-            pte_data=named_data.pte_data,
+            buffers=named_data_store.buffers,
+            pte_data=named_data_store.pte_data,
             external_data={},
         )
     pte: Cord = _serialize_pte_binary(
@@ -72,22 +71,23 @@ def serialize_for_executorch(
                     and tensor.extra_tensor_info.location is TensorDataLocation.EXTERNAL
                 ):
                     fqn_to_tensor_layout[
+                        # pyre-ignore Undefined attribute [16]: `Optional` has no attribute `fully_qualified_name`
                         tensor.extra_tensor_info.fully_qualified_name
                     ] = TensorLayout(tensor.scalar_type, tensor.sizes, tensor.dim_order)
 
     if len(fqn_to_tensor_layout) == 0 and (
-        named_data is None or len(named_data.external_data) == 0
+        named_data_store is None or len(named_data_store.external_data) == 0
     ):
         return pte, ptd_files
 
     # Consolidate tensors and opaque data with the same external tag so they
     # can be saved to the same PTD.
     all_external_tags: Set[str] = set()
-    if named_data is not None and len(named_data.external_data) > 0:
+    if named_data_store is not None and len(named_data_store.external_data) > 0:
         assert (
-            len(named_data.buffers) > 0
+            len(named_data_store.buffers) > 0
         ), "External data exists, but there are no buffers provided."
-        all_external_tags = set(named_data.external_data.keys())
+        all_external_tags = set(named_data_store.external_data.keys())
 
     if len(fqn_to_tensor_layout) > 0:
         # emitter_output.external_constant_map contains the mapping from
@@ -103,35 +103,38 @@ def serialize_for_executorch(
 
     for tag in all_external_tags:
         buffers = []
-        fqn_to_tensor_entry: Dict[str, TensorEntry] = {}
+        key_to_data_entry: Dict[str, DataEntry] = {}
         # pyre-ignore[16]: Undefined attribute: `Optional` has no attribute `get`.
         fqn_to_index = emitter_output.external_constant_map.get(tag, {})
-        # Create a TensorEntry for each external tensor.
+        # Create a DataEntry for each external tensor.
         for fqn, index in fqn_to_index.items():
             assert fqn in fqn_to_tensor_layout
-            fqn_to_tensor_entry[fqn] = TensorEntry(
+            assert fqn not in key_to_data_entry  # fqn must be unique
+            key_to_data_entry[fqn] = DataEntry(
                 buffer_index=len(buffers),
-                layout=fqn_to_tensor_layout[fqn],
+                alignment=config.constant_tensor_alignment,
+                tensor_layout=fqn_to_tensor_layout[fqn],
             )
             buffers.append(emitter_output.external_constant_buffer[index])
 
         # Extract external data.
-        key_to_data: Dict[str, DataEntry] = {}
         # pyre-ignore[16]: Undefined attribute: `Optional` has no attribute `get`.
-        key_to_buffer_index = named_data.external_data.get(tag, {})
+        key_to_buffer_index = named_data_store.external_data.get(tag, {})
         for key, index in key_to_buffer_index.items():
-            # pyre-ignore[16]: Undefined attribute: `Optional` has no attribute `buffers`.
-            key_to_data[key] = DataEntry(
-                len(buffers), named_data.buffers[index].alignment
+            assert key not in key_to_data_entry  # key must be unique
+            key_to_data_entry[key] = DataEntry(
+                buffer_index=len(buffers),
+                # pyre-ignore[16]: Undefined attribute: `Optional` has no attribute `buffers`.
+                alignment=named_data_store.buffers[index].alignment,
+                tensor_layout=None,
             )
-            buffers.append(named_data.buffers[index].buffer)
+            buffers.append(named_data_store.buffers[index].buffer)
 
         # Serialize into PTD file.
         ptd_files[tag] = data_serializer.serialize(
             DataPayload(
                 buffers=buffers,
-                fqn_to_tensor=fqn_to_tensor_entry,
-                key_to_data=key_to_data,
+                named_data=key_to_data_entry,
             )
         )
 

@@ -372,7 +372,7 @@ Error Method::parse_external_constants(const NamedDataMap* named_data_map) {
       continue;
     }
     Result<const TensorLayout> tensor_layout =
-        named_data_map->get_metadata(key);
+        named_data_map->get_tensor_layout(key);
     if (!tensor_layout.ok()) {
       ET_LOG(Info, "Failed to get metadata for key %s", key);
       return tensor_layout.error();

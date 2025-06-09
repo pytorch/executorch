@@ -7,7 +7,7 @@
 # pyre-strict
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 from executorch.exir.scalar_type import ScalarType
 
@@ -15,14 +15,10 @@ from executorch.exir.scalar_type import ScalarType
 
 
 @dataclass
-class TensorMetadata:
-    fully_qualified_name: str
+class TensorLayout:
     scalar_type: ScalarType
     sizes: List[int]
     dim_order: List[int]
-
-    segment_index: int
-    offset: int
 
 
 @dataclass
@@ -35,12 +31,11 @@ class DataSegment:
 class NamedData:
     key: str
     segment_index: int
+    tensor_layout: Optional[TensorLayout] = None
 
 
 @dataclass
 class FlatTensor:
     version: int
-    tensor_alignment: int
-    tensors: List[TensorMetadata]
     segments: List[DataSegment]
     named_data: List[NamedData]
