@@ -35,6 +35,7 @@ from executorch.backends.arm._passes import (
     DecomposeMaxPool2DPass,
     DecomposeMeanDimPass,
     DecomposeNotEqualPass,
+    DecomposeRoundPass,
     DecomposeSelectPass,
     DecomposeSiluPass,
     DecomposeSoftmaxPass,
@@ -139,6 +140,7 @@ class ArmPassManager(PassManager):
         return self._transform(exported_program.graph_module)
 
     def _tosa_080_MI_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
+        self.add_pass(DecomposeRoundPass())
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(ConvertIntPowToMuls())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSAMI())
@@ -219,6 +221,7 @@ class ArmPassManager(PassManager):
         self.add_pass(InsertCastForOpsWithInt64InputPass())
         self.add_pass(DecomposeEmbeddingPass())
         self.add_pass(DecomposeScaledDotProductAttention())
+        self.add_pass(DecomposeRoundPass())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(ScalarsToAttributePass())
         self.add_pass(DecomposeGroupNormPass())
