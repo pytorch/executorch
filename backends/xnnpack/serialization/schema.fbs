@@ -128,6 +128,7 @@ union XNodeUnion {
   XNNNegate: _XNNNode1x1,
   XNNSquare: _XNNNode1x1,
   XNNELU,
+  XNNExp: _XNNNode1x1,
   XNNAbs: _XNNNode1x1,
   XNNPReLU: _XNNNode2x1,
   XNNConcatenate2: _XNNCat,
@@ -141,6 +142,7 @@ union XNodeUnion {
   XNNReciprocalSquareRoot: _XNNNode1x1,
   XNNLog: _XNNNode1x1,
   XNNGelu: _XNNNode1x1,
+  XNNTanh: _XNNNode1x1,
 }
 
 union XValueUnion {
