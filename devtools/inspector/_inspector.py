@@ -59,6 +59,9 @@ from executorch.devtools.inspector._inspector_utils import (
     TimeScale,
     verify_debug_data_equivalence,
 )
+from executorch.devtools.inspector._intermediate_output_capturer import (
+    IntermediateOutputCapturer,
+)
 from executorch.exir import ExportedProgram
 
 
@@ -1074,6 +1077,7 @@ class Inspector:
         # Key str is method name; value is list of ProgramOutputs because of list of test cases
         self._reference_outputs: Dict[str, List[ProgramOutput]] = {}
         self._enable_module_hierarchy = enable_module_hierarchy
+        self._aot_intermediate_outputs: Optional[Dict[Tuple[int, ...], Any]] = None
         self._consume_etrecord()
 
     def _consume_etrecord(self) -> None:
@@ -1134,6 +1138,16 @@ class Inspector:
                     event_block.reference_output = self._reference_outputs[FORWARD][
                         index
                     ]
+        # Capture intermediate outputs only if _representative_inputs are provided
+        # when using bundled program to create the etrecord
+        if self._etrecord._representative_inputs is None:
+            return
+        export_program = self._etrecord.edge_dialect_program
+        graph_module = export_program.module()
+        capturer = IntermediateOutputCapturer(graph_module)
+        self._aot_intermediate_outputs = capturer.run_and_capture(
+            self._etrecord._representative_inputs
+        )
 
     def to_dataframe(
         self,
@@ -1240,7 +1254,7 @@ class Inspector:
         for block in self.event_blocks:
             for event in block.events:
                 # Skip OPERATOR_CALL events to avoid double-counting and exclude framework tax
-                if event.event_name == "OPERATOR_CALL":
+                if event.name == "OPERATOR_CALL":
                     continue
 
                 module_hierarchy = event.module_hierarchy.values()

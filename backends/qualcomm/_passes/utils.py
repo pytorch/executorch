@@ -13,19 +13,6 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses import FakeTensor
 
 
-q_ops = {
-    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-    exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
-}
-
-dq_ops = {
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
-    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-}
-
-
 def copy_meta(meta: Dict, callback=None):
     copied = {}
     for k, v in meta.items():
@@ -73,13 +60,14 @@ def get_passes_dependency_for_capture_program():
         dict: A dictionary mapping each pass to its corresponding list of dependencies.
     """
     from executorch.backends.qualcomm._passes import (
+        AnnotateAdaptiveAvgPool1D,
         AnnotateQuantAttrs,
         AnnotateStack,
         AnnotateUnbind,
         ConvertBmmToMatmul,
         ConvertConv1dToConv2d,
-        ConvertUpsampleBicubicWithBilinear,
         DecomposeAny,
+        DecomposeColIm,
         DecomposeLinalgVectorNorm,
         ExpandBroadcastTensorShape,
         FixedLinearKeepDim,
@@ -94,23 +82,22 @@ def get_passes_dependency_for_capture_program():
     )
 
     return {
+        AnnotateAdaptiveAvgPool1D: [RemoveRedundancy],
         AnnotateQuantAttrs: [
             RecomposePixelUnshuffle,
             ConvertBmmToMatmul,
-            ConvertUpsampleBicubicWithBilinear,
             RemoveRedundancy,
         ],
         AnnotateStack: [RemoveRedundancy],
         AnnotateUnbind: [RemoveRedundancy],
         ConvertBmmToMatmul: [RecomposePixelUnshuffle],
-        ConvertConv1dToConv2d: [FoldQDQ],
-        ConvertUpsampleBicubicWithBilinear: [RemoveRedundancy],
         DecomposeAny: [RemoveRedundancy],
+        DecomposeColIm: [FoldQDQ],
         DecomposeLinalgVectorNorm: [RemoveRedundancy],
         ExpandBroadcastTensorShape: [FoldQDQ],
         FixedLinearKeepDim: [FoldQDQ],
         FoldQDQ: [AnnotateQuantAttrs, AnnotateStack, AnnotateUnbind],
-        I64toI32: [ConvertUpsampleBicubicWithBilinear, RemoveRedundancy],
+        I64toI32: [RemoveRedundancy],
         LayoutTransform: [
             AnnotateQuantAttrs,
             ConvertConv1dToConv2d,

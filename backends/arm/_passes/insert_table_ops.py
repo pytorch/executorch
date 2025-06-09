@@ -240,8 +240,17 @@ class InsertTableOpsPass(ExportPass):
                     args=(node.args[0],),
                 )
                 output_node = table_node
-                assert len(input_qparams) == 1
-                assert len(output_qparams) == 1
+                # Expect exactly one quantization parameter for input and output
+                if len(input_qparams) != 1:
+                    raise ValueError(
+                        f"InsertTableOpsPass expected exactly one input quantization parameter, "
+                        f"got {len(input_qparams)} for node {node.name}"
+                    )
+                if len(output_qparams) != 1:
+                    raise ValueError(
+                        f"InsertTableOpsPass expected exactly one output quantization parameter, "
+                        f"got {len(output_qparams)} for node {node.name}"
+                    )
 
                 # Generate table buffer and how much to lshift the table output.
                 buffer, lshift = self.generate_table_values(

@@ -104,7 +104,7 @@ import torchvision.models as models
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 from executorch.backends.apple.coreml.quantizer import CoreMLQuantizer
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from executorch.exir import to_edge_transform_and_lower
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 
@@ -192,3 +192,15 @@ python examples/apple/coreml/scripts/extract_coreml_models.py -m /path/to/model.
 ```
 
 Note that if the ExecuTorch model has graph breaks, there may be multiple extracted *.mlpackage files.
+
+## Common issues and what to do
+
+### During lowering
+1. "ValueError: In op, of type [X], named [Y], the named input [Z] must have the same data type as the named input x. However, [Z] has dtype fp32 whereas x has dtype fp16."
+
+This happens because the model is in FP16, but CoreML interprets some of the arguments as FP32, which leads to a type mismatch.  The solution is to keep the PyTorch model in FP32.  Note that the model will be still be converted to FP16 during lowering to CoreML unless specified otherwise in the compute_precision [CoreML CompileSpec](#coreml-compilespec).  Also see the [related issue in coremltools](https://github.com/apple/coremltools/issues/2480).
+
+2. coremltools/converters/mil/backend/mil/load.py", line 499, in export
+    raise RuntimeError("BlobWriter not loaded")
+
+If you're using Python 3.13, try reducing your python version to Python 3.12.  coremltools does not support Python 3.13, see this [issue](https://github.com/apple/coremltools/issues/2487).  

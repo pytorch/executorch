@@ -1,5 +1,4 @@
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -36,7 +35,10 @@ lib.define("_transpose(Tensor self, int[] dim_order) -> Tensor")
 def _transpose_impl(*args, **kwargs):
     # Validate length of dim_order array
     dim = args[1]
-    assert len(dim) <= 4
+    if len(dim) != 4 and len(dim) != 5:
+        raise ValueError(
+            f"Dim order length must be either 4 or 5, got {len(dim)}: {dim}"
+        )
     # Pass-through in edge-IR
     return args[0]
 
@@ -45,13 +47,15 @@ class AnnotateChannelsLastDimOrder(ExportPass):
     """
     Annotates each node with a tosa_dim_order. tosa_dim_order can be seen as a channels-last dim-order
     that in most cases will be (0, 2, 3, 1) for nodes with 4D-shapes. The pass also inserts passthrough_to_tosa._transpose
-    when a transition between 3D and 4D tensors happen.
+    when a transition between 3D and 4D/5D tensors happen.
     The annotated tosa_dim_order is used to permute the node's shape such that it gives a TOSA-compliant shape.
     """
 
     NHWC_order = (0, 2, 3, 1)
     NHWC_inverse_order = (0, 3, 1, 2)
     HWCM_order = (2, 3, 0, 1)
+    NNHWC_order = (0, 1, 3, 4, 2)
+    NNHWC_inverse_order = (0, 1, 4, 2, 3)
 
     def is_weight_node_for_depthwise_conv2d(self, node: torch.fx.Node):
         """
@@ -81,8 +85,12 @@ class AnnotateChannelsLastDimOrder(ExportPass):
 
     @staticmethod
     def memory_format_differs(shape):
-        """Returns true if the shape will have a different memory layout in NCHW and NHWC format"""
-        if len(shape) >= 4:
+        """Returns true if the shape will have a different memory layout in (N)NCHW and (N)NHWC format"""
+        if len(shape) >= 5:
+            C = shape[2]
+            H = shape[3]
+            W = shape[4]
+        elif len(shape) == 4:
             C = shape[1]
             H = shape[2]
             W = shape[3]
@@ -98,14 +106,24 @@ class AnnotateChannelsLastDimOrder(ExportPass):
     @staticmethod
     def is_channel_reshape(input_shape, output_shape):
         """Returns true if the reshape changes the channel dimension"""
-        if not len(input_shape) == len(output_shape) == 4:
+        if not (
+            (len(input_shape) == len(output_shape) and (len(output_shape) in (4, 5)))
+            or (len(input_shape) == 4 and len(output_shape) == 5)
+            or (len(input_shape) == 5 and len(output_shape) == 4)
+        ):
             return False
 
-        C_old = input_shape[1]
-        C_new = output_shape[1]
+        C_old = input_shape[-3]
+        C_new = output_shape[-3]
 
-        N_new = output_shape[0]
-        N_old = input_shape[0]
+        N_new = (
+            output_shape[0]
+            if len(output_shape) == 4
+            else output_shape[0] * output_shape[1]
+        )
+        N_old = (
+            input_shape[0] if len(input_shape) == 4 else input_shape[0] * input_shape[1]
+        )
 
         return (N_old != N_new) or (C_old != C_new)
 
@@ -119,7 +137,11 @@ class AnnotateChannelsLastDimOrder(ExportPass):
                 torch.ops.passthrough_to_tosa._transpose.default,
                 args=(
                     input_node,
-                    list(AnnotateChannelsLastDimOrder.NHWC_inverse_order),
+                    list(
+                        AnnotateChannelsLastDimOrder.NNHWC_inverse_order
+                        if len(get_first_fake_tensor(input_node).size()) == 5
+                        else AnnotateChannelsLastDimOrder.NHWC_inverse_order
+                    ),
                 ),
                 quantize=quantize,
                 q_params=q_params,
@@ -137,15 +159,28 @@ class AnnotateChannelsLastDimOrder(ExportPass):
             permute_node = create_node(
                 graph_module.graph,
                 torch.ops.passthrough_to_tosa._transpose.default,
-                args=(node, list(AnnotateChannelsLastDimOrder.NHWC_order)),
+                args=(
+                    node,
+                    list(
+                        AnnotateChannelsLastDimOrder.NNHWC_order
+                        if len(get_first_fake_tensor(node).size()) == 5
+                        else AnnotateChannelsLastDimOrder.NHWC_order
+                    ),
+                ),
             )
             permute_node.meta["tosa_dim_order"] = (
-                AnnotateChannelsLastDimOrder.NHWC_order
+                AnnotateChannelsLastDimOrder.NNHWC_order
+                if len(get_first_fake_tensor(node).size()) == 5
+                else AnnotateChannelsLastDimOrder.NHWC_order
             )
-            permute_node.meta["val"] = node.meta["val"].permute(
-                AnnotateChannelsLastDimOrder.NHWC_order
+            permute_node.meta["val"] = get_first_fake_tensor(node).permute(
+                AnnotateChannelsLastDimOrder.NNHWC_order
+                if len(get_first_fake_tensor(node).size()) == 5
+                else AnnotateChannelsLastDimOrder.NHWC_order
             )
-            node.meta["tosa_dim_order"] = (0, 1, 2, 3)
+            node.meta["tosa_dim_order"] = tuple(
+                range(len(get_first_fake_tensor(node).size()))
+            )
             users = [user for user in node.users if user != permute_node]
             for user in users:
                 user.replace_input_with(node, permute_node)
@@ -159,8 +194,8 @@ class AnnotateChannelsLastDimOrder(ExportPass):
     def _insert_view_transpose(
         input_shape, output_shape, node, input_node, graph_module
     ):
-        nchw_to_nhwc = len(input_shape) < 4 and len(output_shape) == 4
-        nhwc_to_nchw = len(input_shape) == 4 and len(output_shape) < 4
+        nchw_to_nhwc = len(input_shape) < 4 and len(output_shape) >= 4
+        nhwc_to_nchw = len(input_shape) >= 4 and len(output_shape) < 4
         channel_reshape = AnnotateChannelsLastDimOrder.is_channel_reshape(
             output_shape, input_shape
         )
@@ -178,11 +213,11 @@ class AnnotateChannelsLastDimOrder(ExportPass):
 
     def insert_tosa_transposes(self, graph_module: torch.fx.GraphModule):
         """
-        Transposes are needed for operators transforming the input to a different rank, as 4D-tensors are assumed to be in NHWC-format, whereas all other are in NCHW format.
+        Transposes are needed for operators transforming the input to a different rank, as 4D and 5D-tensors are assumed to be in (N)NHWC-format, whereas all other are in (N)NCHW format.
         This is relevant for the following cases:
-        - view:       <4D ->  4D
-        - view:        4D -> <4D
-        Additionally, a 4D->4D view operation acting on the channel dimension currently needs to be performed in NCHW format, leadning to one extra input and output transpose for this case.
+        - view:       <4D ->  >=4D
+        - view:      >=4D ->   <4D
+        Additionally, a 4D/5D->4D/5D view operation acting on the channel dimension currently needs to be performed in (N)NCHW format, leadning to one extra input and output transpose for this case.
 
         Transposes can be avoided for shapes where there is no difference in actual memory, e.g for
         - H == W == 1
@@ -212,12 +247,13 @@ class AnnotateChannelsLastDimOrder(ExportPass):
                     # The weights of TOSA DEPTHWISE_CONV2D have shape (H, W, C, M) which corresponds to
                     # dim_order = (2, 3, 0, 1) (https://www.mlplatform.org/tosa/tosa_spec.html#_depthwise_conv2d).
                     dim_order = self.HWCM_order
+            elif node_data.dim() == 5:
+                dim_order = self.NNHWC_order  # type: ignore[assignment]
             else:
                 dim_order = tuple(range(node_data.dim()))  # type: ignore[assignment]
             node.meta["tosa_dim_order"] = dim_order
-        # Take care of cases when:
-        # 4D (NHWC) -> >4D (NCH)
-        # 3D (NCH)  ->  4D (NHWC)
+        # Insert TOSA transposes to convert between (N)NCHW and (N)NHWC format.
+        # See insert_tosa_transposes for insertion conditions.
         self.insert_tosa_transposes(graph_module)
         graph_module.recompile()
         graph_module = super().call(graph_module).graph_module

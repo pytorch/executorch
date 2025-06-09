@@ -56,17 +56,12 @@ set(EXECUTORCH_FOUND ON)
 
 target_link_libraries(executorch INTERFACE executorch_core)
 
-if(CMAKE_BUILD_TYPE MATCHES "Debug")
-  set(FLATCCRT_LIB flatccrt_d)
-else()
-  set(FLATCCRT_LIB flatccrt)
-endif()
-
 set(lib_list
+    flatccrt
     etdump
     bundled_program
     extension_data_loader
-    ${FLATCCRT_LIB}
+    extension_flat_tensor
     coreml_util
     coreml_inmemoryfs
     coremldelegate
@@ -151,6 +146,10 @@ if(TARGET coremldelegate)
     coremldelegate PROPERTIES INTERFACE_LINK_LIBRARIES
                               "coreml_inmemoryfs;coreml_util"
   )
+endif()
+
+if(TARGET etdump)
+  set_target_properties(etdump PROPERTIES INTERFACE_LINK_LIBRARIES "flatccrt;executorch")
 endif()
 
 if(TARGET optimized_native_cpu_ops_lib)

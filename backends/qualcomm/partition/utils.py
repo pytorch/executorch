@@ -42,9 +42,11 @@ def filter_fn(node: torch.fx.Node) -> bool:
 def get_skip_decomp_table() -> List[torch._ops.OperatorBase]:
     do_not_decompose = [
         torch.ops.aten.adaptive_avg_pool2d.default,
+        torch.ops.aten.col2im.default,
         torch.ops.aten.elu.default,
         torch.ops.aten.hardsigmoid.default,
         torch.ops.aten.hardswish.default,
+        torch.ops.aten.im2col.default,
         torch.ops.aten.instance_norm.default,
         torch.ops.aten.leaky_relu.default,
         torch.ops.aten.linear.default,
@@ -57,7 +59,7 @@ def get_skip_decomp_table() -> List[torch._ops.OperatorBase]:
         torch.ops.aten.upsample_bicubic2d.vec,
         # This request is ignored because it is in a blocklist. Refer to exir/program/_program.py
         torch.ops.aten.unbind.int,
-        torch.ops.pt2e_quant.quantize_affine.default,
-        torch.ops.pt2e_quant.dequantize_affine.default,
+        torch.ops.torchao.quantize_affine.default,
+        torch.ops.torchao.dequantize_affine.default,
     ]
     return do_not_decompose

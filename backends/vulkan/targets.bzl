@@ -170,6 +170,10 @@ def define_common_targets(is_fbcode = False):
                 "ovr_config//os:macos": mac_flags,
             })
 
+            etvk_default_cache_path = read_config("etvk", "default_cache_path", "")
+            if etvk_default_cache_path != "":
+                VK_API_PREPROCESSOR_FLAGS += ["-DETVK_DEFAULT_CACHE_PATH={}".format(etvk_default_cache_path)]
+
             debug_mode = read_config("etvk", "debug", "0") == "1"
             if debug_mode:
                 VK_API_PREPROCESSOR_FLAGS += ["-DVULKAN_DEBUG"]
@@ -280,6 +284,7 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 "//caffe2:torch",
                 "//executorch/exir:tensor",
+                "//executorch/exir/backend/canonical_partitioners:config_partitioner_lib",
                 "//executorch/backends/vulkan/serialization:lib",
             ]
         )
@@ -332,7 +337,6 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/backends/transforms:addmm_mm_to_linear",
                 "//executorch/backends/transforms:fuse_batch_norm_with_conv",
                 "//executorch/backends/transforms:fuse_conv_with_clamp",
-                "//executorch/backends/transforms:fuse_dequant_linear",
                 "//executorch/backends/transforms:fuse_view_copy",
                 "//executorch/backends/transforms:remove_clone_ops",
                 "//executorch/backends/transforms:view_copy_to_squeeze_unsqueeze",

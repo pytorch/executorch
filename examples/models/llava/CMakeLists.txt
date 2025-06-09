@@ -15,14 +15,12 @@
 # ~~~
 # It should also be cmake-lint clean.
 #
-cmake_minimum_required(VERSION 3.24)  # 3.24 is required for WHOLE_ARCHIVE
+cmake_minimum_required(VERSION 3.24) # 3.24 is required for WHOLE_ARCHIVE
 project(llava)
 
 # Duplicating options as root CMakeLists.txt
 option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
 
-# This is a temporary hack to get around Torch dep so we can test this on android
-option(LLAVA_RUNNER_NO_TORCH_DUMMY_IMAGE "Hack option to feed dummy image to remove torch.load dep" OFF)
 
 include(CMakeDependentOption)
 #
@@ -73,15 +71,6 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags)
 find_package(gflags REQUIRED)
 
-# Avoid torch dep from torch.load()-ing the image.
-# This is a temporary hack.
-if(LLAVA_RUNNER_NO_TORCH_DUMMY_IMAGE)
-  add_definitions(-DLLAVA_NO_TORCH_DUMMY_IMAGE=1)
-  message("Buidling the runner without Torch, feeding a dummy image!")
-else()
-  find_package_torch()
-endif()
-
 #
 # llava_main: test binary to run llava, with tokenizer and sampler integrated
 #
@@ -89,17 +78,12 @@ endif()
 # find `executorch` libraries Same as for gflags
 set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../lib/cmake/ExecuTorch)
 find_package(executorch CONFIG REQUIRED)
-if(CMAKE_TOOLCHAIN_IOS OR ANDROID)
-  target_link_options_shared_lib(executorch)
-endif()
+target_link_options_shared_lib(executorch)
 
 # llava_runner library
 add_subdirectory(runner)
 
-set(LINK_LIBS gflags)
-if(NOT LLAVA_RUNNER_NO_TORCH_DUMMY_IMAGE)
-  list(APPEND LINK_LIBS torch)
-endif()
+set(LINK_LIBS executorch gflags)
 set(link_libraries ${LINK_LIBS})
 set(_srcs main.cpp)
 
@@ -199,6 +183,19 @@ if(ANDROID)
   list(APPEND link_libraries log)
 endif()
 
+# stb_image: a lightweight library to load images
+include(FetchContent)
+FetchContent_Declare(
+  stb
+  GIT_REPOSITORY https://github.com/nothings/stb.git
+  GIT_TAG f0569113c93ad095470c54bf34a17b36646bbbb5
+)
+FetchContent_MakeAvailable(stb)
+# Add deprecated/ to use stb_image_resize.h for internal compatibility
+list(APPEND _common_include_directories ${stb_SOURCE_DIR}
+     ${stb_SOURCE_DIR}/deprecated
+)
+
 add_executable(llava_main ${_srcs})
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
   if(APPLE)
@@ -211,10 +208,3 @@ endif()
 target_include_directories(llava_main PUBLIC ${_common_include_directories})
 target_link_libraries(llava_main PUBLIC llava_runner ${link_libraries})
 target_compile_options(llava_main PUBLIC ${_common_compile_options})
-
-if(APPLE)
-  target_link_options_shared_lib(executorch)
-endif()
-
-# Print all summary
-executorch_print_configuration_summary()

@@ -14,11 +14,11 @@ from typing import Any, Dict, List, Tuple, Type
 import torch
 from torch import fx
 from torch._ops import OpOverload
-from torch.ao.quantization import ObserverOrFakeQuantize
 from torch.fx.passes.utils.source_matcher_utils import (
     check_subgraphs_connected,
     SourcePartition,
 )
+from torchao.quantization.pt2e import ObserverOrFakeQuantize
 
 
 def is_annotated(nodes: List[fx.Node]) -> bool:

@@ -10,6 +10,10 @@ from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+    validate_same_dtype,
+)
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
 
@@ -33,11 +37,9 @@ class ERFVisitor_080_MI(NodeVisitor):
     ) -> None:
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
-        if not (inputs[0].dtype == output.dtype):
-            raise ValueError(
-                "All inputs and output need same dtype."
-                f"Got {inputs[0].dtype=}, {output.dtype=}"
-            )
+        validate_num_inputs(self.target, inputs, 1)
+        validate_same_dtype(self.target, [*inputs, output])
+
         if not (inputs[0].dtype == ts.DType.FP32):
             raise ValueError("All inputs need to be FP32." f"Got {inputs[0].dtype=}")
         # MI lowering
@@ -63,11 +65,9 @@ class ERFVisitor(NodeVisitor):
     ) -> None:
         import serializer.tosa_serializer as ts
 
-        if not (inputs[0].dtype == output.dtype):
-            raise ValueError(
-                "All inputs and output need same dtype."
-                f"Got {inputs[0].dtype=}, {output.dtype=}"
-            )
+        validate_num_inputs(self.target, inputs, 1)
+        validate_same_dtype(self.target, [*inputs, output])
+
         if not (inputs[0].dtype == ts.DType.FP32):
             raise ValueError("All inputs need to be FP32." f"Got {inputs[0].dtype=}")
 

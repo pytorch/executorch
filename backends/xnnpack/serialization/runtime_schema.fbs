@@ -48,6 +48,8 @@ table Buffer {
 table PerChannelQuant {
   scale:[float];
   channel_dim:int;
+  scale_buffer_idx: uint;
+  num_scales: uint;
 }
 
 table PerTokenDynamicQuant {
@@ -63,7 +65,9 @@ table PerChannelGroupQuant {
   scale:[float];
   channel_dim:int;
   group_size:int;
-  scale_bf16:[ushort];
+  scale_bf16:[ushort] (deprecated);
+  scale_buffer_idx: uint;
+  num_scales: uint;
 }
 
 table XNNTensorValue {
@@ -128,6 +132,7 @@ union XNodeUnion {
   XNNNegate: _XNNNode1x1,
   XNNSquare: _XNNNode1x1,
   XNNELU,
+  XNNExp: _XNNNode1x1,
   XNNAbs: _XNNNode1x1,
   XNNPReLU: _XNNNode2x1,
   XNNConcatenate2: _XNNCat,
@@ -139,6 +144,9 @@ union XNodeUnion {
   XNNConcatenate5: _XNNCat,
   XNNConvTranspose2d: _XNNNodeConv,
   XNNReciprocalSquareRoot: _XNNNode1x1,
+  XNNLog: _XNNNode1x1,
+  XNNGelu: _XNNNode1x1,
+  XNNTanh: _XNNNode1x1,
 }
 
 union XValueUnion {

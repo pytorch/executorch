@@ -28,7 +28,7 @@ void record_nchw_to_buffer_op(
   vkapi::PipelineBarrier pipeline_barrier{};
 
   context->submit_compute_job(
-      get_nchw_to_tensor_shader(v_dst),
+      get_nchw_to_tensor_shader(v_dst, true, false),
       pipeline_barrier,
       {uint32_t(v_dst.numel()), 1, 1},
       {64, 1, 1},
@@ -51,7 +51,7 @@ void record_buffer_to_nchw_op(
     vkapi::VulkanBuffer& dst_buffer) {
   vkapi::PipelineBarrier pipeline_barrier{};
   context->submit_compute_job(
-      get_tensor_to_nchw_shader(v_src),
+      get_tensor_to_nchw_shader(v_src, true, false),
       pipeline_barrier,
       {uint32_t(v_src.numel()), 1, 1},
       {64, 1, 1},
@@ -74,7 +74,9 @@ void record_nchw_to_image_op(
 
   context->submit_compute_job(
       get_nchw_to_tensor_shader(
-          v_dst, context->adapter_ptr()->has_full_int8_buffers_support()),
+          v_dst,
+          context->adapter_ptr()->has_full_int8_buffers_support(),
+          false),
       pipeline_barrier,
       v_dst.logical_limits(),
       adaptive_work_group_size(v_dst.logical_limits()),
@@ -97,7 +99,7 @@ void record_image_to_nchw_op(
   vkapi::SpecVarList specialization_constants = {v_src.hashed_layout()};
 
   context->submit_compute_job(
-      get_tensor_to_nchw_shader(v_src),
+      get_tensor_to_nchw_shader(v_src, true, false),
       pipeline_barrier,
       v_src.logical_limits(),
       adaptive_work_group_size(v_src.logical_limits()),
@@ -117,7 +119,7 @@ void record_bitw8_image_to_nchw_nobitw8buffer_op(
   uint32_t buffer_len = utils::safe_downcast<uint32_t>(dst_buffer.numel() / 4);
   utils::uvec3 global_wg_size = {buffer_len, 1, 1};
 
-  std::string kernel_name = "bitw8_image_to_nchw_nobitw8buffer";
+  std::string kernel_name = "bitw8_image_to_nchw_nobitw8buffer_no_pc";
   add_storage_type_suffix(kernel_name, v_src);
   add_dtype_suffix(kernel_name, v_src);
 
@@ -535,6 +537,56 @@ void execute_graph_and_check_output(
       CHECK_VALUE(output_data, j, expected_outputs.at(i));
     }
   }
+}
+
+vkcompute::ComputeGraph build_mm_graph(
+    int B,
+    int M,
+    int K,
+    int N,
+    vkcompute::vkapi::ScalarType dtype,
+    vkcompute::utils::StorageType in_out_stype,
+    vkcompute::utils::GPUMemoryLayout memory_layout,
+    const std::vector<float>& mat2_data,
+    const bool prepack_mat2) {
+  using namespace vkcompute;
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  std::vector<int64_t> mat1_size = {M, K};
+  std::vector<int64_t> mat2_size = {K, N};
+  std::vector<int64_t> out_size = {M, N};
+  if (B > 1) {
+    mat1_size.resize(3);
+    mat1_size = {B, M, K};
+    mat2_size.resize(3);
+    mat2_size = {B, K, N};
+    out_size.resize(3);
+    out_size = {B, M, N};
+  }
+
+  IOValueRef mat1 =
+      graph.add_input_tensor(mat1_size, dtype, in_out_stype, memory_layout);
+  IOValueRef mat2{};
+
+  ValueRef mat2_w = graph.add_tensorref(mat2_size, dtype, mat2_data.data());
+
+  if (prepack_mat2) {
+    mat2.value = mat2_w;
+  } else {
+    mat2.value =
+        graph.add_tensor(mat2_size, dtype, in_out_stype, memory_layout);
+    mat2.staging = graph.set_input_tensor(mat2.value);
+  }
+
+  IOValueRef out;
+  out.value = graph.add_tensor(out_size, dtype, in_out_stype, memory_layout);
+
+  VK_GET_OP_FN("aten.mm.default")(graph, {mat1.value, mat2.value, out.value});
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  return graph;
 }
 
 bool check_close(float a, float b, float atol, float rtol) {

@@ -9,6 +9,11 @@ from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+    validate_same_dtype,
+)
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from torch.fx import Node
@@ -34,16 +39,12 @@ class WhereVisitor_0_80_BI(NodeVisitor):
     ) -> None:
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
-        if len(inputs) != 3:
-            raise ValueError(f"aten.where.self expects 3 arguments, got {len(inputs)}")
+        validate_num_inputs(self.target, inputs, 3)
+        # Not first input, which is condition tensor.
+        validate_same_dtype(self.target, inputs[1:])
 
         if inputs[0].dtype is not ts.DType.BOOL:
             raise ValueError("Input 0 needs to have dtype BOOL")
-        if inputs[1].dtype != inputs[2].dtype:
-            raise ValueError(
-                "Non-condition tensors must have same data type, got "
-                f"{inputs[1].dtype} and {inputs[2].dtype}"
-            )
         for input_ in inputs[1:]:
             if input_.dtype not in supported_dtypes:
                 raise ValueError(
@@ -125,16 +126,12 @@ class WhereVisitor_INT(NodeVisitor):
     ) -> None:
         import serializer.tosa_serializer as ts
 
-        if len(inputs) != 3:
-            raise ValueError(f"aten.where.self expects 3 arguments, got {len(inputs)}")
+        validate_num_inputs(self.target, inputs, 3)
+        # Not first input, which is condition tensor.
+        validate_same_dtype(self.target, inputs[1:])
 
         if inputs[0].dtype is not ts.DType.BOOL:
             raise ValueError("Input 0 needs to have dtype BOOL")
-        if inputs[1].dtype != inputs[2].dtype:
-            raise ValueError(
-                "Non-condition tensors must have same data type, got "
-                f"{inputs[1].dtype} and {inputs[2].dtype}"
-            )
         for input_ in inputs[1:]:
             if input_.dtype not in supported_dtypes:
                 raise ValueError(

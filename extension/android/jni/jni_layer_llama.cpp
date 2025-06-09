@@ -112,7 +112,7 @@ class ExecuTorchLlmCallbackJni
 class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
  private:
   friend HybridBase;
-  float temperature_;
+  float temperature_ = 0.0f;
   int model_type_category_;
   std::unique_ptr<llm::IRunner> runner_;
   std::unique_ptr<llm::MultimodalRunner> multi_modal_runner_;
@@ -146,6 +146,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       facebook::jni::alias_ref<jstring> tokenizer_path,
       jfloat temperature,
       facebook::jni::alias_ref<jstring> data_path = nullptr) {
+    temperature_ = temperature;
 #if defined(ET_USE_THREADPOOL)
     // Reserve 1 thread for the main thread.
     int32_t num_performant_cores =
@@ -164,16 +165,15 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           tokenizer_path->toStdString().c_str(),
           temperature);
     } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
-      if (data_path != nullptr) {
-        runner_ = std::make_unique<example::Runner>(
-            model_path->toStdString().c_str(),
-            tokenizer_path->toStdString().c_str(),
-            data_path->toStdString().c_str());
-      } else {
-        runner_ = std::make_unique<example::Runner>(
-            model_path->toStdString().c_str(),
-            tokenizer_path->toStdString().c_str());
-      }
+      std::optional<const std::string> data_path_str = data_path
+          ? std::optional<const std::string>{data_path->toStdString()}
+          : std::nullopt;
+      // TODO(larryliu0820): Use the API in text_llm_runner.h to create the
+      // runner.
+      runner_ = example::create_llama_runner(
+          model_path->toStdString(),
+          tokenizer_path->toStdString(),
+          data_path_str);
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
     } else if (model_type_category == MODEL_TYPE_MEDIATEK_LLAMA) {
       runner_ = std::make_unique<MTKLlamaRunner>(

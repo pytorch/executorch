@@ -28,8 +28,18 @@ list(
   ${CMAKE_CURRENT_LIST_DIR}/qnn_llama_runner.cpp
   ${CMAKE_CURRENT_LIST_DIR}/runner/runner.cpp
   ${CMAKE_CURRENT_LIST_DIR}/runner/runner.h
-  ${CMAKE_CURRENT_LIST_DIR}/runner/io_manager.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/runner/io_manager.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/decoder_runner.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/decoder_runner.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/prompt_processor.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/prompt_processor.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/token_generator.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/token_generator.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/imem_alloc.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/client_mem.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/rpc_mem.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/rpc_mem.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/kv_manager.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/kv_manager.h
 )
 
 list(
@@ -42,7 +52,7 @@ list(
 # build qnn llama runner
 add_executable(qnn_llama_runner ${_llama_runner__srcs})
 target_include_directories(
-  qnn_llama_runner PUBLIC ${_common_include_directories}
+  qnn_llama_runner PUBLIC ${_common_include_directories} ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizers/include
 )
 
 target_link_options_shared_lib(quantized_ops_lib)
@@ -52,6 +62,7 @@ target_link_libraries(
   qnn_executorch_backend
   executorch_core
   extension_data_loader
+  extension_flat_tensor
   extension_module
   extension_tensor
   gflags

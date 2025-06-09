@@ -12,7 +12,14 @@ from enum import IntEnum
 from typing import Any, Dict, List, Optional, Set
 
 import yaml
-from torchgen.executorch.parse import strip_et_fields
+
+try:
+    from executorch.codegen.parse import strip_et_fields
+except ImportError:
+    # If we build from source, executorch.codegen is not available.
+    # We can use relative import instead.
+    from ..parse import strip_et_fields
+
 
 from torchgen.gen import LineLoader, parse_native_yaml_struct
 from torchgen.selective_build.operator import SelectiveBuildOperator

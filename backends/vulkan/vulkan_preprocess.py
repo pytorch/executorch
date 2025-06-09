@@ -17,18 +17,19 @@ from executorch.backends.transforms.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
 from executorch.backends.transforms.fuse_conv_with_clamp import FuseClampPass
-from executorch.backends.transforms.fuse_dequant_linear import FuseDequantLinearPass
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
 from executorch.backends.transforms.view_copy_to_squeeze_unsqueeze import (
     ViewCopyToSqueezeUnsqueezePass,
 )
 from executorch.backends.vulkan._passes import (
+    FuseQuantizedOpsTransform,
     insert_prepack_nodes,
     RemoveLocalScalarDenseOpsTransform,
     RemoveRedundantOpsTransform,
     SqueezeUnsqueezeInputs,
     TagMemoryMetaPass,
 )
+from executorch.backends.vulkan._passes.remove_asserts import RemoveAssertsTransform
 
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
@@ -152,7 +153,7 @@ class VulkanBackend(BackendDetails):
             [
                 RemoveRedundantOpsTransform(),
                 AddmmToLinearTransform(),
-                FuseDequantLinearPass(),
+                FuseQuantizedOpsTransform(program),
                 SqueezeUnsqueezeInputs(),
                 FuseViewCopyTransform(),
                 ViewCopyToSqueezeUnsqueezePass(),
@@ -172,6 +173,7 @@ class VulkanBackend(BackendDetails):
         program = apply_passes(
             program,
             [
+                RemoveAssertsTransform(),
                 # Since this pass may replace a scalar argument with a tensor argument,
                 # this pass may result in a non ATen compliant graph structure.
                 RemoveLocalScalarDenseOpsTransform(),

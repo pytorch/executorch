@@ -253,6 +253,12 @@ class OpGather:
 
 
 @dataclass(init=False, frozen=True)
+class OpGatherElements:
+    op_name: str = "GatherElements"
+    param_axis: str = "axis"
+
+
+@dataclass(init=False, frozen=True)
 class OpGatherND:
     op_name: str = "GatherNd"
     param_batch_dims: str = "batch_dims"
@@ -400,6 +406,16 @@ class OpReluMinMax:
 @dataclass(init=False, frozen=True)
 class OpReshape:
     op_name: str = "Reshape"
+
+
+@dataclass(init=False, frozen=True)
+class OpResize:
+    op_name: str = "Resize"
+    param_exclude_outside: str = "exclude_outside"
+    param_transformation_mode: str = "transformation_mode"
+    param_interpolation_mode: str = "interpolation_mode"
+    param_nearest_mode: str = "nearest_mode"
+    param_cubic_coeff: str = "cubic_coeff"
 
 
 @dataclass(init=False, frozen=True)

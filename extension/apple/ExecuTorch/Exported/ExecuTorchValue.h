@@ -34,12 +34,13 @@ typedef NSNumber *ExecuTorchScalarValue
     NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(ScalarValue);
 typedef NSString *ExecuTorchStringValue
     NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(StringValue);
-typedef BOOL ExecuTorchBooleanValue
-    NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(BoolValue);
+typedef BOOL ExecuTorchBooleanValue NS_SWIFT_NAME(BoolValue);
 typedef NSInteger ExecuTorchIntegerValue
     NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(IntegerValue);
 typedef double ExecuTorchDoubleValue
     NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(DoubleValue);
+typedef float ExecuTorchFloatValue
+    NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(FloatValue);
 
 /**
  * A dynamic value type used by ExecuTorch.
@@ -49,7 +50,7 @@ typedef double ExecuTorchDoubleValue
  */
 NS_SWIFT_NAME(Value)
 __attribute__((deprecated("This API is experimental.")))
-@interface ExecuTorchValue : NSObject
+@interface ExecuTorchValue : NSObject <NSCopying>
 
 /**
  * The tag that indicates the dynamic type of the value.
@@ -101,6 +102,13 @@ __attribute__((deprecated("This API is experimental.")))
 @property(nonatomic, readonly) ExecuTorchDoubleValue doubleValue NS_SWIFT_NAME(double);
 
 /**
+ * The float value if the tag is ExecuTorchValueTagDouble.
+ *
+ * @return An float representing the float value.
+ */
+ @property(nonatomic, readonly) ExecuTorchFloatValue floatValue NS_SWIFT_NAME(float);
+
+/**
  * Returns YES if the value is of type None.
  *
  * @return A BOOL indicating whether the value is None.
@@ -150,6 +158,13 @@ __attribute__((deprecated("This API is experimental.")))
 @property(nonatomic, readonly) BOOL isDouble;
 
 /**
+ * Returns YES if the value is a float.
+ *
+ * @return A BOOL indicating whether the value is a float.
+ */
+ @property(nonatomic, readonly) BOOL isFloat;
+
+/**
  * Creates an instance encapsulating a Tensor.
  *
  * @param value An ExecuTorchTensor instance.
@@ -193,6 +208,23 @@ __attribute__((deprecated("This API is experimental.")))
 + (instancetype)valueWithDouble:(ExecuTorchDoubleValue)value
     NS_SWIFT_NAME(init(_:));
 
+/**
+ * Creates an instance encapsulating a scalar value.
+ *
+ * The value's tag will be set according to the type encoding of the ExecuTorchScalarValue.
+ *
+ * @param value An ExecuTorchScalarValue.
+ * @return A new ExecuTorchValue instance with the appropriate tag.
+ */
++ (instancetype)valueWithScalar:(ExecuTorchScalarValue)value
+    NS_SWIFT_NAME(init(_:));
+
+/**
+ * Returns a copy of the value.
+ *
+ * @return A new ExecuTorchValue instance that is a duplicate of the current value.
+ */
+ - (instancetype)copy;
 
 /**
  * Determines whether the current Value is equal to another Value.

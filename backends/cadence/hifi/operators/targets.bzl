@@ -27,6 +27,7 @@ def define_operator(name: str, deps: list[str] | None = None) -> None:
             "//executorch/backends/cadence/...",
             "@EXECUTORCH_CLIENTS",
         ],
+        compatible_with = ["ovr_config//cpu:xtensa"],
         deps = deps + common_deps,
         exported_headers = ["operators.h"],
     )
@@ -34,6 +35,11 @@ def define_operator(name: str, deps: list[str] | None = None) -> None:
 OPERATORS = [
     "add",
     "atan2",
+    "bmm",
+    "mm",
+    "slice_copy",
+    "split_with_sizes_copy",
+    "view_copy",
     "cat",
     "clamp",
     "dequantize_per_tensor",

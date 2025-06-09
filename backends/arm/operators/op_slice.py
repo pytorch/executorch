@@ -11,6 +11,10 @@ from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+    validate_same_dtype,
+)
 from executorch.backends.arm.tosa_mapping import TosaArg
 from torch.fx import Node
 
@@ -47,6 +51,9 @@ class SliceVisitor_080(NodeVisitor):
     ) -> None:
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
+        validate_num_inputs(self.target, inputs, [4, 5])
+        validate_same_dtype(self.target, [inputs[0], output])
+
         # See slice_copy_support.py
         if not (len(inputs) == 4 or (len(inputs) == 5 and inputs[4].number == 1)):
             raise ValueError("Unsupported combination of inputs")
@@ -63,8 +70,16 @@ class SliceVisitor_080(NodeVisitor):
         end_index = _fixup_end(end, shape, dim)
         size = end_index - start_index
 
-        assert size > 0
-        assert size <= shape[dim]
+        if size <= 0:
+            raise ValueError(
+                f"The calculated slice size must be positive. Got {size=} "
+                f"with {start_index=} and {end_index=}."
+            )
+        if size > shape[dim]:
+            raise ValueError(
+                f"The calculated slice size cannot be greater than the dimension size"
+                f". Got {size=} and {shape[dim]=}."
+            )
 
         # Convert aten args to Tosa's start and size attributes and in TOSA dim order.
         attr = ts.TosaSerializerAttribute()
@@ -99,6 +114,9 @@ class SliceVisitor(NodeVisitor):
     ) -> None:
         import serializer.tosa_serializer as ts  # type: ignore
 
+        validate_num_inputs(self.target, inputs, [4, 5])
+        validate_same_dtype(self.target, [inputs[0], output])
+
         # See slice_copy_support.py
         if not (len(inputs) == 4 or (len(inputs) == 5 and inputs[4].number == 1)):
             raise ValueError("Unsupported combination of inputs")
@@ -115,8 +133,16 @@ class SliceVisitor(NodeVisitor):
         end_index = _fixup_end(end, shape, dim)
         size = end_index - start_index
 
-        assert size > 0
-        assert size <= shape[dim]
+        if size <= 0:
+            raise ValueError(
+                f"The calculated slice size must be positive. Got {size=} "
+                f"with {start_index=} and {end_index=}."
+            )
+        if size > shape[dim]:
+            raise ValueError(
+                f"The calculated slice size cannot be greater than the dimension size"
+                f". Got {size=} and {shape[dim]=}."
+            )
 
         # Convert aten args to Tosa's start and size shape_t tensors and in TOSA dim order.
         starts = [

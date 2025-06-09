@@ -42,11 +42,11 @@ foreach(kernel ${_kernels})
            "${_wrapper_dir}/supported_features.h"
     COMMAND mkdir -p ${_wrapper_dir}
     COMMAND
-      python kernels/test/gen_supported_features.py
+      ${PYTHON_EXECUTABLE} kernels/test/gen_supported_features.py
       kernels/${kernel}/test/supported_features_def.yaml >
       ${_wrapper_dir}/supported_features.cpp
     COMMAND
-      python kernels/test/gen_supported_features.py
+      ${PYTHON_EXECUTABLE} kernels/test/gen_supported_features.py
       kernels/test/supported_features.yaml >
       ${_wrapper_dir}/supported_features.h
     WORKING_DIRECTORY "${EXECUTORCH_ROOT}"
@@ -186,6 +186,7 @@ set(all_test_sources
     "op_mul_test.cpp"
     "op_pow_test.cpp"
     "op_native_batch_norm_test.cpp"
+    "op_native_dropout_test.cpp"
     "op_native_group_norm_test.cpp"
     "op_native_layer_norm_test.cpp"
     "op_ne_test.cpp"
@@ -196,6 +197,8 @@ set(all_test_sources
     "op_permute_copy_test.cpp"
     "op_pixel_shuffle_test.cpp"
     "op_prod_test.cpp"
+    "op_rand_test.cpp"
+    "op_randn_test.cpp"
     "op_reciprocal_test.cpp"
     "op_relu_test.cpp"
     "op_remainder_test.cpp"

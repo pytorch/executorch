@@ -137,6 +137,23 @@ class ET_EXPERIMENTAL TextTokenGenerator {
     should_stop_ = true;
   }
 
+  /**
+   * Load the necessary resources for TextTokenGenerator.
+   * This method should be called before using the generate() method.
+   */
+  ::executorch::runtime::Error load() {
+    return text_decoder_runner_->load();
+  }
+
+  /**
+   * Check if the TextTokenGenerator has been successfully loaded.
+   * @return True if the resources are loaded, false otherwise.
+   */
+  bool inline is_loaded() const {
+    // Implementation to check if resources are loaded
+    return tokenizer_->is_loaded() && text_decoder_runner_->is_method_loaded();
+  }
+
  private:
   /**
    * Note: TextTokenGenerator does not own the tokenizer_ and

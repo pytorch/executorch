@@ -146,11 +146,11 @@ class VulkanSupportedOperators(OperatorSupportBase):
     def node_is_compatible(
         self, node: torch.fx.Node, features: Optional[OpFeatures] = None
     ) -> Tuple[bool, str]:
-        # TODO(ssjia) support symbolic ints
-        if utils.is_symint_node(node):
-            return False, "symint node not supported yet"
-        elif utils.is_tensor_node(node):
+        if utils.is_tensor_node(node):
             return self.op_node_is_compatible(node, features=features)
+        # For non-tensor nodes, just check if the op is registered
+        elif hasattr(node, "target"):
+            return node.target in vulkan_supported_ops, "Op is compatible"
 
         return False, f"Unsupported node type: {node.format_node()}"
 
@@ -258,7 +258,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
         if target not in vulkan_supported_ops:
             # For some ops, i.e. custom ops the name is registered instead of the
             # OpOverload object.
-            if not isinstance(target, str) and target.name() in vulkan_supported_ops:
+            if hasattr(target, "name") and target.name() in vulkan_supported_ops:
                 features = vulkan_supported_ops[target.name()]
             else:
                 self.log_skip(node, "no operator implementation")

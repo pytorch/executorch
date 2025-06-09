@@ -10,6 +10,25 @@
 
 #import <executorch/runtime/platform/assert.h>
 
+static inline ExecuTorchValueTag deduceValueTag(NSNumber *number) {
+  ET_CHECK(number);
+  auto type = [number objCType][0];
+  type = (type >= 'A' && type <= 'Z') ? type + ('a' - 'A') : type;
+  switch (type) {
+    case 'c': return ExecuTorchValueTagBoolean;
+    case 's':
+    case 'i':
+    case 'q':
+    case 'l': return ExecuTorchValueTagInteger;
+    case 'f':
+    case 'd': return ExecuTorchValueTagDouble;
+    default: {
+      ET_CHECK_MSG(false, "Unsupported type: %c", type);
+      return ExecuTorchValueTagNone;
+    }
+  }
+}
+
 @interface ExecuTorchValue ()
 
 - (instancetype)initWithTag:(ExecuTorchValueTag)tag
@@ -24,28 +43,39 @@
 
 + (instancetype)valueWithTensor:(ExecuTorchTensor *)value {
   ET_CHECK(value);
-  return [[ExecuTorchValue alloc] initWithTag:ExecuTorchValueTagTensor value:value];
+  return [[ExecuTorchValue alloc] initWithTag:ExecuTorchValueTagTensor
+                                        value:value];
 }
 
 + (instancetype)valueWithString:(ExecuTorchStringValue)value {
   ET_CHECK(value);
-  return [[ExecuTorchValue alloc] initWithTag:ExecuTorchValueTagString value:value];
+  return [[ExecuTorchValue alloc] initWithTag:ExecuTorchValueTagString
+                                        value:value];
 }
 
 + (instancetype)valueWithBoolean:(ExecuTorchBooleanValue)value {
-  return [[ExecuTorchValue alloc] initWithTag:ExecuTorchValueTagBoolean value:@(value)];
+  return [[ExecuTorchValue alloc] initWithTag:ExecuTorchValueTagBoolean
+                                        value:@(value)];
 }
 
 + (instancetype)valueWithInteger:(ExecuTorchIntegerValue)value {
-  return [[ExecuTorchValue alloc] initWithTag:ExecuTorchValueTagInteger value:@(value)];
+  return [[ExecuTorchValue alloc] initWithTag:ExecuTorchValueTagInteger
+                                        value:@(value)];
 }
 
 + (instancetype)valueWithDouble:(ExecuTorchDoubleValue)value {
-  return [[ExecuTorchValue alloc] initWithTag:ExecuTorchValueTagDouble value:@(value)];
+  return [[ExecuTorchValue alloc] initWithTag:ExecuTorchValueTagDouble
+                                        value:@(value)];
+}
+
++ (instancetype)valueWithScalar:(ExecuTorchScalarValue)value {
+  return [[ExecuTorchValue alloc] initWithTag:deduceValueTag(value)
+                                        value:value];
 }
 
 - (instancetype)init {
-  return [self initWithTag:ExecuTorchValueTagNone value:nil];
+  return [self initWithTag:ExecuTorchValueTagNone
+                     value:nil];
 }
 
 - (instancetype)initWithTag:(ExecuTorchValueTag)tag
@@ -55,6 +85,15 @@
     _value = value;
   }
   return self;
+}
+
+- (instancetype)copy {
+  return [self copyWithZone:nil];
+}
+
+- (instancetype)copyWithZone:(nullable NSZone *)zone {
+  return [[ExecuTorchValue allocWithZone:zone] initWithTag:_tag
+                                                     value:[_value copyWithZone:zone]];
 }
 
 - (ExecuTorchValueTag)tag {
@@ -88,6 +127,11 @@
   return [(ExecuTorchScalarValue)_value doubleValue];
 }
 
+- (ExecuTorchFloatValue)floatValue {
+  ET_CHECK(self.isFloat);
+  return [(ExecuTorchScalarValue)_value floatValue];
+}
+
 - (BOOL)isNone {
   return _tag == ExecuTorchValueTagNone;
 }
@@ -115,6 +159,11 @@
 }
 
 - (BOOL)isDouble {
+  return _tag == ExecuTorchValueTagDouble;
+}
+
+- (BOOL)isFloat {
+  // EValue does not have a separate tag for float.
   return _tag == ExecuTorchValueTagDouble;
 }
 

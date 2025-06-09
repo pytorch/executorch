@@ -49,14 +49,24 @@ prepare_artifacts_upload() {
 }
 
 build_cmake_executor_runner() {
+  local backend_string_select="${1:-}"
   echo "Building executor_runner"
   rm -rf ${CMAKE_OUTPUT_DIR}
-  cmake -DCMAKE_BUILD_TYPE=Debug \
-      -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-      -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
-      -B${CMAKE_OUTPUT_DIR} .
-
-  cmake --build ${CMAKE_OUTPUT_DIR} -j4 --config Debug
+  mkdir ${CMAKE_OUTPUT_DIR}
+  if [[ "$backend_string_select" == "XNNPACK" ]]; then
+    echo "Backend $backend_string_select selected"
+    (cd ${CMAKE_OUTPUT_DIR} \
+      && cmake -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_XNNPACK=ON \
+        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
+    cmake --build ${CMAKE_OUTPUT_DIR} -j4
+  else
+    cmake -DCMAKE_BUILD_TYPE=Debug \
+        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+        -B${CMAKE_OUTPUT_DIR} .
+    cmake --build ${CMAKE_OUTPUT_DIR} -j4 --config Debug
+  fi
 }
 
 run_portable_executor_runner() {
@@ -87,10 +97,6 @@ test_model() {
     bash examples/models/llava/install_requirements.sh
     STRICT="--no-strict"
   fi
-  if [[ "$MODEL_NAME" == "llama3_2_vision_encoder" || "$MODEL_NAME" == "llama3_2_text_decoder" ]]; then
-    # Install requirements for llama vision.
-    bash examples/models/llama3_2_vision/install_requirements.sh
-  fi
   if [[ "${MODEL_NAME}" == "qwen2_5" ]]; then
       # Install requirements for export_llama
       bash examples/models/llama/install_requirements.sh
@@ -113,19 +119,6 @@ test_model() {
   # Export a basic .pte and run the model.
   "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}" "${STRICT}"
   run_portable_executor_runner
-}
-
-build_cmake_xnn_executor_runner() {
-  echo "Building xnn_executor_runner"
-
-  (rm -rf ${CMAKE_OUTPUT_DIR} \
-    && mkdir ${CMAKE_OUTPUT_DIR} \
-    && cd ${CMAKE_OUTPUT_DIR} \
-    && retry cmake -DCMAKE_BUILD_TYPE=Release \
-      -DEXECUTORCH_BUILD_XNNPACK=ON \
-      -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
-
-  cmake --build ${CMAKE_OUTPUT_DIR} -j4
 }
 
 test_model_with_xnnpack() {
@@ -152,12 +145,11 @@ test_model_with_xnnpack() {
 
   # Run test model
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
+    # TODO eventually buck should also use consolidated executor runners
     buck2 run //examples/xnnpack:xnn_executor_runner -- --model_path "${OUTPUT_MODEL_PATH}"
   elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
-    if [[ ! -f ${CMAKE_OUTPUT_DIR}/backends/xnnpack/xnn_executor_runner ]]; then
-      build_cmake_xnn_executor_runner
-    fi
-    ./${CMAKE_OUTPUT_DIR}/backends/xnnpack/xnn_executor_runner --model_path "${OUTPUT_MODEL_PATH}"
+    build_cmake_executor_runner "XNNPACK"
+    ./${CMAKE_OUTPUT_DIR}/executor_runner --model_path "${OUTPUT_MODEL_PATH}"
   else
     echo "Invalid build tool ${BUILD_TOOL}. Only buck2 and cmake are supported atm"
     exit 1
@@ -205,7 +197,7 @@ test_model_with_qnn() {
   # TODO(guangyang): Make QNN chipset matches the target device
   QNN_CHIPSET=SM8450
 
-  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.scripts.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --compile_only $EXTRA_FLAGS
+  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.scripts.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --ci --compile_only $EXTRA_FLAGS
   EXPORTED_MODEL=$(find "./${EXPORT_SCRIPT}" -type f -name "${MODEL_NAME}*.pte" -print -quit)
 }
 
@@ -222,7 +214,7 @@ test_model_with_coreml() {
 
   DTYPE=float16
 
-  "${PYTHON_EXECUTABLE}" -m examples.apple.coreml.scripts.export --model_name="${MODEL_NAME}" --compute_precision "${DTYPE}"
+  "${PYTHON_EXECUTABLE}" -m examples.apple.coreml.scripts.export --model_name="${MODEL_NAME}" --compute_precision "${DTYPE}" --use_partitioner
   EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
 
   if [ -n "$EXPORTED_MODEL" ]; then

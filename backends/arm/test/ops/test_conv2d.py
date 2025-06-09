@@ -330,24 +330,24 @@ two_conv2d = Conv2d(
 # Shenanigan to get a nicer output when test fails. With unittest it looks like:
 # FAIL: test_convolution_2d_tosa_BI_2_3x3_1x3x12x12_st2_pd1
 test_modules = {
-    "2x2_3x2x40x40_nobias": conv2d_2x2_3x2x40x40_nobias,
-    "3x3_1x3x256x256_st1": conv2d_3x3_1x3x256x256_st1,
-    "3x3_1x3x12x12_st2_pd1": conv2d_3x3_1x3x12x12_st2_pd1,
-    "1x1_1x2x128x128_st1": conv2d_1x1_1x2x128x128_st1,
-    "2x2_1x1x14x13_st2_needs_adjust_pass": conv2d_2x2_1x1x14x13_st2,
-    "5x5_1x3x14x15_st3_pd1_needs_adjust_pass": conv2d_5x5_1x3x14x15_st3_pd1,
-    "7x7_1x3x16x16_st2_pd1_dl2_needs_adjust_pass": conv2d_7x7_1x3x16x16_st2_pd1_dl2,
-    "7x7_1x3x15x15_st1_pd0_dl1_needs_adjust_pass": conv2d_7x7_1x3x15x15_st1_pd0_dl1,
-    "5x5_1x3x14x14_st5_pd0_dl1_needs_adjust_pass": conv2d_5x5_1x3x14x14_st5_pd0_dl1,
-    "5x5_1x3x9x9_st5_pd0_dl1_needs_adjust_pass": conv2d_5x5_1x3x9x9_st5_pd0_dl1,
-    "3x3_1x3x9x8_st3_pd0_dl1_needs_adjust_pass": conv2d_3x3_1x3x9x8_st3_pd0_dl1,
-    "3x3_1x3x8x9_st3_pd0_dl1_needs_adjust_pass": conv2d_3x3_1x3x8x9_st3_pd0_dl1,
-    "3x4_1x3x7x7_st3_pd0_dl1_needs_adjust_pass": conv2d_3x4_1x3x7x7_st3_pd0_dl1,
-    "4x3_1x3x7x7_st3_pd0_dl1_needs_adjust_pass": conv2d_4x3_1x3x7x7_st3_pd0_dl1,
-    "5x5_3x2x128x128_st1": conv2d_5x5_3x2x128x128_st1,
-    "3x3_1x3x224x224_st2_pd1": conv2d_3x3_1x3x224x224_st2_pd1,
-    "two_conv2d_nobias": two_conv2d_nobias,
-    "two_conv2d": two_conv2d,
+    "2x2_3x2x40x40_nobias": lambda: conv2d_2x2_3x2x40x40_nobias,
+    "3x3_1x3x256x256_st1": lambda: conv2d_3x3_1x3x256x256_st1,
+    "3x3_1x3x12x12_st2_pd1": lambda: conv2d_3x3_1x3x12x12_st2_pd1,
+    "1x1_1x2x128x128_st1": lambda: conv2d_1x1_1x2x128x128_st1,
+    "2x2_1x1x14x13_st2_needs_adjust_pass": lambda: conv2d_2x2_1x1x14x13_st2,
+    "5x5_1x3x14x15_st3_pd1_needs_adjust_pass": lambda: conv2d_5x5_1x3x14x15_st3_pd1,
+    "7x7_1x3x16x16_st2_pd1_dl2_needs_adjust_pass": lambda: conv2d_7x7_1x3x16x16_st2_pd1_dl2,
+    "7x7_1x3x15x15_st1_pd0_dl1_needs_adjust_pass": lambda: conv2d_7x7_1x3x15x15_st1_pd0_dl1,
+    "5x5_1x3x14x14_st5_pd0_dl1_needs_adjust_pass": lambda: conv2d_5x5_1x3x14x14_st5_pd0_dl1,
+    "5x5_1x3x9x9_st5_pd0_dl1_needs_adjust_pass": lambda: conv2d_5x5_1x3x9x9_st5_pd0_dl1,
+    "3x3_1x3x9x8_st3_pd0_dl1_needs_adjust_pass": lambda: conv2d_3x3_1x3x9x8_st3_pd0_dl1,
+    "3x3_1x3x8x9_st3_pd0_dl1_needs_adjust_pass": lambda: conv2d_3x3_1x3x8x9_st3_pd0_dl1,
+    "3x4_1x3x7x7_st3_pd0_dl1_needs_adjust_pass": lambda: conv2d_3x4_1x3x7x7_st3_pd0_dl1,
+    "4x3_1x3x7x7_st3_pd0_dl1_needs_adjust_pass": lambda: conv2d_4x3_1x3x7x7_st3_pd0_dl1,
+    "5x5_3x2x128x128_st1": lambda: conv2d_5x5_3x2x128x128_st1,
+    "3x3_1x3x224x224_st2_pd1": lambda: conv2d_3x3_1x3x224x224_st2_pd1,
+    "two_conv2d_nobias": lambda: two_conv2d_nobias,
+    "two_conv2d": lambda: two_conv2d,
 }
 
 fvp_xfails = {
@@ -360,7 +360,10 @@ input_t = Tuple[torch.Tensor]
 @common.parametrize("test_module", test_modules)
 def test_convolution_2d_tosa_MI(test_module):
     pipeline = TosaPipelineMI[input_t](
-        test_module, test_module.get_inputs(), aten_op, exir_op
+        test_module(),
+        test_module().get_inputs(),
+        aten_op,
+        exir_op,
     )
     pipeline.run()
 
@@ -368,48 +371,43 @@ def test_convolution_2d_tosa_MI(test_module):
 @common.parametrize("test_module", test_modules)
 def test_convolution_2d_tosa_BI(test_module):
     pipeline = TosaPipelineBI[input_t](
-        test_module, test_module.get_inputs(), aten_op, exir_op
+        test_module(),
+        test_module().get_inputs(),
+        aten_op,
+        exir_op,
     )
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules)
+@common.parametrize("test_module", test_modules, fvp_xfails)
+@common.XfailIfNoCorstone300
 def test_convolution_2d_u55_BI(test_module):
     pipeline = EthosU55PipelineBI[input_t](
-        test_module, test_module.get_inputs(), aten_op, exir_op, run_on_fvp=False
+        test_module(),
+        test_module().get_inputs(),
+        aten_op,
+        exir_op,
+        run_on_fvp=True,
     )
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules)
+@common.parametrize("test_module", test_modules, fvp_xfails)
+@common.XfailIfNoCorstone320
 def test_convolution_2d_u85_BI(test_module):
     pipeline = EthosU85PipelineBI[input_t](
-        test_module, test_module.get_inputs(), aten_op, exir_op, run_on_fvp=False
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_module", test_modules, fvp_xfails)
-@common.SkipIfNoCorstone300
-def test_convolution_2d_u55_BI_on_fvp(test_module):
-    pipeline = EthosU55PipelineBI[input_t](
-        test_module, test_module.get_inputs(), aten_op, exir_op, run_on_fvp=True
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_module", test_modules, fvp_xfails)
-@common.SkipIfNoCorstone320
-def test_convolution_2d_u85_BI_on_fvp(test_module):
-    pipeline = EthosU85PipelineBI[input_t](
-        test_module, test_module.get_inputs(), aten_op, exir_op, run_on_fvp=True
+        test_module(),
+        test_module().get_inputs(),
+        aten_op,
+        exir_op,
+        run_on_fvp=True,
     )
     pipeline.run()
 
 
 reject_suite = {
-    "large_stride": Conv2d(
+    "large_stride": lambda: Conv2d(
         in_channels=1,
         out_channels=1,
         kernel_size=(2, 4),
@@ -419,7 +417,7 @@ reject_suite = {
         height=14,
         batches=1,
     ),
-    "large_kernel_height": Conv2d(
+    "large_kernel_height": lambda: Conv2d(
         in_channels=1,
         out_channels=1,
         kernel_size=(2, 65),
@@ -429,7 +427,7 @@ reject_suite = {
         height=70,
         batches=1,
     ),
-    "large_kernel": Conv2d(
+    "large_kernel": lambda: Conv2d(
         in_channels=1,
         out_channels=1,
         kernel_size=(70, 60),
@@ -443,12 +441,11 @@ reject_suite = {
 
 
 @common.parametrize("module", reject_suite)
-def test_reject_convolution_2d_u55_BI(
-    module: Conv2d,
-):
+def test_convolution_2d_u55_BI_not_delegated(module: Conv2d):
     OpNotSupportedPipeline(
-        module,
-        module.get_inputs(),
-        "TOSA-0.80+BI+u55",
+        module(),
+        module().get_inputs(),
         {"executorch_exir_dialects_edge__ops_aten_convolution_default": 1},
+        quantize=True,
+        u55_subset=True,
     ).run()

@@ -11,7 +11,7 @@ def define_common_targets():
     # build, where the portable ops are built from source and linked with :all_deps
     runtime.cxx_library(
         name = "all_deps",
-        deps = [
+        exported_deps = [
             "//executorch/extension/threadpool:threadpool",
             "//executorch/kernels/portable/cpu/util:functional_util",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
@@ -132,7 +132,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS"],
     )
 
     runtime.cxx_library(
