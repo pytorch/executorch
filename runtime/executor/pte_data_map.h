@@ -78,7 +78,7 @@ class PteDataMap final : public NamedDataMap {
    * tensor-specific metadata.
    */
   ET_NODISCARD
-  Result<const TensorLayout> get_metadata(
+  Result<const TensorLayout> get_tensor_layout(
       ET_UNUSED const char* key) const override {
     return Error::NotImplemented;
   }

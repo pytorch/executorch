@@ -45,7 +45,7 @@ class FlatTensorDataMap final
       executorch::runtime::DataLoader* loader);
 
   /**
-   * Retrieve the metadata for the specified key.
+   * Retrieve the tensor_layout for the specified key.
    *
    * @param[in] key The name of the tensor to get metadata on.
    *
@@ -54,7 +54,7 @@ class FlatTensorDataMap final
   ET_NODISCARD
   executorch::runtime::Result<
       const executorch::ET_RUNTIME_NAMESPACE::TensorLayout>
-  get_metadata(const char* key) const override;
+  get_tensor_layout(const char* key) const override;
 
   /**
    * Retrieve read-only data for the specified key.
