@@ -2,10 +2,13 @@
 load(":gflags_defs.bzl", "gflags_library", "gflags_sources")
 
 def define_gflags():
-    (exported_headers, headers, srcs) = gflags_sources(namespace = [
-        "gflags",
-        "google",
-    ])
+    if native.read_config("et_oss", "enable_gflags", "true") == "true":
+        (exported_headers, headers, srcs) = gflags_sources(namespace = [
+            "gflags",
+            "google",
+        ])
+    else:
+        (exported_headers, headers, srcs) = ([], [], [])
 
     gflags_library(
         name = "gflags",

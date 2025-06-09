@@ -129,7 +129,7 @@ class Target:
         # If we hit here, setup.py:check_submodule() should have already run
         # but it could be that the submodules are not synced or there's local changes.
         try:
-            sources: set[str] = set(runner.run(["cquery", query] + buck_args))
+            sources: set[str] = set(runner.run(["cquery", "--config", "et_oss.enable_gflags=false", query] + buck_args))
         except RuntimeError as e:
             logger.error(
                 f"\033[31;1mFailed to query buck for sources. Failed command:\n\n"

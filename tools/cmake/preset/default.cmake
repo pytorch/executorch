@@ -210,6 +210,11 @@ define_overridable_option(
   BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_FETCH_GFLAGS_FOR_BUCK
+  "Fetch gflags for BUCK build/test"
+  BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_COREML_BUILD_EXECUTOR_RUNNER
   "Build CoreML executor runner."
   BOOL OFF

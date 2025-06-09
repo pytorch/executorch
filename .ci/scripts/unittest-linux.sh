@@ -30,6 +30,7 @@ elif [[ "$BUILD_TOOL" == "buck2" ]]; then
     # Removing this breaks sccache in the Buck build, apparently
     # because TMPDIR gets messed up? Please feel free to fix this and
     # speed up this CI job!
+    CMAKE_ARGS="-DEXECUTORCH_FETCH_GFLAGS_FOR_BUCK=ON" \
     PYTHON_EXECUTABLE=python \
     .ci/scripts/setup-linux.sh "$@"
 

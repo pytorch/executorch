@@ -16,6 +16,7 @@ set_overridable_option(EXECUTORCH_BUILD_KERNELS_CUSTOM ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED ON)
 set_overridable_option(EXECUTORCH_BUILD_XNNPACK ON)
+set_overridable_option(EXECUTORCH_FETCH_GFLAGS_FOR_BUCK ON)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set_overridable_option(EXECUTORCH_BUILD_COREML ON)

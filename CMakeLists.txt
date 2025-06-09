@@ -697,6 +697,7 @@ endif()
 
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
+  FetchContent_gflags()
   set(_executor_runner_libs executorch gflags)
 
   if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)

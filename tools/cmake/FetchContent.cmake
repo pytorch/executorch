@@ -12,7 +12,7 @@ include(FetchContent)
 # buck. Unfortunately, FetchContent bakes in generator information in the
 # fetched content. Thus, if the generator is changed, it causes build failures.
 # So, if the generator has changed, then nuke the content.
-function(_refresh_cache_if_necessary DIR)
+function(_invalidate_cache_if_generator_mismatch DIR)
   set(_generator_stamp_file "${DIR}/.executorch_cmake_generator_stamp")
   set(_current_generator "${CMAKE_GENERATOR}")
 
@@ -24,13 +24,17 @@ function(_refresh_cache_if_necessary DIR)
     endif()
   endif()
 
-  file(WRITE "${_generator_stamp_file}" "${_current_generator}")
 endfunction()
 
+# Fetch gflags, and make a symlink to third-party/gflags in the source tree.
+# Doing this to satisfy BUCK query for gflags. Also try to invalidate the cmake
+# cache if the generator has changed. Notice that symlink won't be created again
+# if it's already there.
 function(FetchContent_gflags)
-  if(NOT ${gflags_SOURCE_DIR} STREQUAL "")
-    _refresh_cache_if_necessary(${gflags_SOURCE_DIR})
-  endif()
+  # set(_symlink_target ${CMAKE_CURRENT_LIST_DIR}/../../third-party/gflags)
+  # if(IS_DIRECTORY ${_symlink_target})
+  #   _invalidate_cache_if_generator_mismatch(${_symlink_target})
+  # endif()
 
   FetchContent_Declare(
     gflags
@@ -39,4 +43,12 @@ function(FetchContent_gflags)
   )
   set(GFLAGS_INTTYPES_FORMAT C99)
   FetchContent_MakeAvailable(gflags)
+
+  # if(NOT IS_DIRECTORY ${_symlink_target})
+  #   message(STATUS "Creating a symlink from ${gflags_SOURCE_DIR} to third-party/gflags")
+  #   execute_process(
+  #     COMMAND ${CMAKE_COMMAND} -E create_symlink "${gflags_SOURCE_DIR}" "${_symlink_target}"
+  #   )
+  #   file(WRITE "${_symlink_target}/.executorch_cmake_generator_stamp" "${CMAKE_GENERATOR}")
+  # endif()
 endfunction()
