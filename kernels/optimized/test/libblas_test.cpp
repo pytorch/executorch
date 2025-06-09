@@ -13,13 +13,17 @@
 
 #include <vector>
 
-#define TEST_FORALL_SUPPORTED_CTYPES(_, N) \
-  _<double, N>();                          \
-  _<float, N>();                           \
-  _<int64_t, N>();                         \
-  _<uint8_t, N>();                         \
-  _<int32_t, N>();                         \
-  _<executorch::aten::BFloat16, N>();
+#define TEST_FORALL_SUPPORTED_CTYPES(_, N)   \
+  _<double, N>();                            \
+  _<float, N>();                             \
+  _<int64_t, N>();                           \
+  _<uint8_t, N>();                           \
+  _<int32_t, N>();                           \
+  _<executorch::aten::Half, N>();            \
+  _<executorch::aten::BFloat16, N>();        \
+  _<executorch::aten::complex<double>, N>(); \
+  _<executorch::aten::complex<float>, N>();  \
+  _<executorch::aten::complex<executorch::aten::Half>, N>();
 
 namespace {
 
