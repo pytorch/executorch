@@ -626,12 +626,12 @@ inline void validate_strides(
             false,
             "Stride value and size dont comply at index %d."
             " strides[%d]: %d, strides[%d] = %d, sizes[%d] = %d, sizes[%d] = %d",
-            i,
-            i,
+            static_cast<uint32_t>(i),
+            static_cast<uint32_t>(i),
             strides[i],
             j,
             strides[j],
-            i,
+            static_cast<uint32_t>(i),
             sizes[i],
             j,
             sizes[j]);
