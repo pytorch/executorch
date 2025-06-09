@@ -172,6 +172,7 @@ void quantize_per_tensor_impl(
 
   // Verify input is a floating point type
   VK_CHECK_COND(
+      graph.dtype_of(input) == vkapi::kDouble ||
       graph.dtype_of(input) == vkapi::kFloat ||
       graph.dtype_of(input) == vkapi::kHalf);
 

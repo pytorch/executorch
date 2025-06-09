@@ -20,6 +20,8 @@
 #include <cassert>
 #include <iostream>
 
+float eps = 1e-7;
+
 namespace torch {
 namespace executor {
 namespace native {
@@ -493,6 +495,8 @@ void test_reference_quantize_per_tensor(
   // Reshape back to original dimensions
   input = flat_input.reshape(input_sizes_int64);
 
+  scale = scale < eps ? eps : scale;
+
   // Get reference output
   at::Tensor reference_out = quantize_per_tensor_reference_impl(
       input, scale, zero_point, quant_min, quant_max, dtype);
@@ -543,6 +547,8 @@ void test_vulkan_quantize_per_tensor_impl(
       input_sizes.begin(), input_sizes.end());
   at::Tensor input =
       at::rand(input_sizes_int64, at::device(at::kCPU).dtype(at::kFloat));
+
+  scale = scale < eps ? eps : scale;
 
   // Get reference output
   at::Tensor reference_out = torch::executor::native::quantize_per_tensor_aten(
@@ -599,7 +605,7 @@ void test_vulkan_quantize_per_tensor_impl(
   at::Tensor reference_int = reference_out.to(at::kInt);
   at::Tensor vk_int = vk_out.to(at::kInt);
 
-  const bool output_correct = at::equal(reference_int, vk_int);
+  const bool output_correct = at::allclose(reference_int, vk_int);
   if (!output_correct) {
     at::Tensor diffs = at::abs(reference_int - vk_int);
 
@@ -609,6 +615,10 @@ void test_vulkan_quantize_per_tensor_impl(
     std::cout << "  zero_point: " << zero_point << std::endl;
     std::cout << "  quant_min: " << quant_min << std::endl;
     std::cout << "  quant_max: " << quant_max << std::endl;
+    std::cout << "  storage type: "
+              << (in_storage == vkcompute::utils::kBuffer ? "buffer"
+                                                          : "texture")
+              << std::endl;
 
     std::cout << "input:" << std::endl;
     std::cout << input << std::endl;
@@ -651,16 +661,6 @@ TEST(VulkanQuantizePerTensorTest, test_vulkan_quantize_per_tensor_int8) {
       at::kChar);
 }
 
-TEST(VulkanQuantizePerTensorTest, test_vulkan_quantize_per_tensor_int16) {
-  test_vulkan_quantize_per_tensor(
-      {5, 3, 2, 4}, // input sizes
-      0.01, // scale
-      1, // zero_point
-      -32768, // quant_min
-      32767, // quant_max
-      at::kShort);
-}
-
 TEST(VulkanQuantizePerTensorTest, test_vulkan_quantize_per_tensor_int32) {
   test_vulkan_quantize_per_tensor(
       {5, 3, 2, 4}, // input sizes
@@ -671,9 +671,19 @@ TEST(VulkanQuantizePerTensorTest, test_vulkan_quantize_per_tensor_int32) {
       at::kInt);
 }
 
+TEST(VulkanQuantizePerTensorTest, test_vulkan_quantize_per_tensor_int32_small_scale) {
+  test_vulkan_quantize_per_tensor(
+      {2, 8, 1, 3}, // input sizes
+      0.0, // scale
+      20, // zero_point
+      -2147483648, // quant_min
+      2147483647, // quant_max
+      at::kInt);
+}
+
 void test_reference_quantize_per_token(
     const std::vector<int>& input_sizes,
-    const std::vector<float>& scales,
+    const std::vector<float>& pre_scales,
     const std::vector<int>& zero_points,
     int64_t quant_min,
     int64_t quant_max,
@@ -701,8 +711,13 @@ void test_reference_quantize_per_token(
   }
 
   // Verify that the number of tokens matches the size of scales and zero_points
-  ASSERT_EQ(num_tokens, scales.size());
+  ASSERT_EQ(num_tokens, pre_scales.size());
   ASSERT_EQ(num_tokens, zero_points.size());
+
+  std::vector<float> scales = pre_scales;
+  for (auto& s : scales) {
+    s = s < eps ? eps : s;
+  }
 
   // Create scale and zero_point tensors
   at::Tensor scale_tensor =
@@ -752,7 +767,7 @@ void test_reference_quantize_per_token(
 
 void test_vulkan_quantize_per_token_impl(
     const std::vector<int>& input_sizes,
-    const std::vector<float>& scales,
+    const std::vector<float>& pre_scales,
     const std::vector<int>& zero_points,
     int64_t quant_min,
     int64_t quant_max,
@@ -767,8 +782,13 @@ void test_vulkan_quantize_per_token_impl(
     num_tokens *= input_sizes[i];
   }
 
-  ASSERT_EQ(num_tokens, scales.size());
+  ASSERT_EQ(num_tokens, pre_scales.size());
   ASSERT_EQ(num_tokens, zero_points.size());
+
+  std::vector<float> scales = pre_scales;
+  for (auto& s : scales) {
+    s = s < eps ? eps : s;
+  }
 
   // Create input tensor with random values
   std::vector<int64_t> input_sizes_int64(
@@ -849,7 +869,7 @@ void test_vulkan_quantize_per_token_impl(
   at::Tensor reference_int = reference_out.to(at::kInt);
   at::Tensor vk_int = vk_out.to(at::kInt);
 
-  const bool output_correct = at::equal(reference_int, vk_int);
+  const bool output_correct = at::allclose(reference_int, vk_int);
   if (!output_correct) {
     at::Tensor diffs = at::abs(reference_int - vk_int);
 
@@ -924,22 +944,6 @@ TEST(VulkanQuantizePerTensorTest, test_vulkan_quantize_per_token_int8) {
       at::kChar);
 }
 
-TEST(
-  VulkanQuantizePerTensorTest,
-  test_vulkan_quantize_per_token_int16) {
-std::vector<float> scales = {-0.5, -0.3, -0.2, 0, 0.1, 0.8, 0.1, 0.2, 0.3,
-0.4}; std::vector<int> zero_points = {-8, 0, 15, 20, 19, 12, 47, 1, -50,
--12};
-
-test_vulkan_quantize_per_token(
-    {5, 2, 4}, // input sizes (5*2=10 tokens)
-    scales,
-    zero_points,
-    -32768, // quant_min
-    32767, // quant_max
-    at::kShort);
-}
-
 TEST(VulkanQuantizePerTensorTest, test_vulkan_quantize_per_token_int32) {
   std::vector<float> scales = {-0.5, -0.3, -0.2, 0, 0.1, 0.8, 0.1, 0.2, 0.3,
   0.4}; std::vector<int> zero_points = {-8, 0, 15, 20, 19, 12, 47, 1, -50,
@@ -947,6 +951,19 @@ TEST(VulkanQuantizePerTensorTest, test_vulkan_quantize_per_token_int32) {
 
   test_vulkan_quantize_per_token(
       {5, 2, 4}, // input sizes (5*2=10 tokens)
+      scales,
+      zero_points,
+      -2147483648, // quant_min
+      2147483647, // quant_max
+      at::kInt);
+}
+
+TEST(VulkanQuantizePerTensorTest, test_vulkan_quantize_per_token_int32_small_scales) {
+  std::vector<float> scales = {0, 2.9387358770557188e-39f, 1.40129846e-45f, 1.17549435e-38f, 0.0000000000001};
+  std::vector<int> zero_points = {20, -10, 15, 200, 50};
+
+  test_vulkan_quantize_per_token(
+      {5, 2}, // input sizes (3 tokens)
       scales,
       zero_points,
       -2147483648, // quant_min

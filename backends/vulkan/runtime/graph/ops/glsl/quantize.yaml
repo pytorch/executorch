@@ -15,8 +15,7 @@ quantize:
     OUT_DTYPE:
       - VALUE: uint8
       - VALUE: int8
-      - VALUE: short
-      - VALUE: int
+      - VALUE: int32
   shader_variants:
     - NAME: quantize_per_tensor
       MODE: per_tensor
