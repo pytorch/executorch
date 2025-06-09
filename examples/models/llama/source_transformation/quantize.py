@@ -515,13 +515,15 @@ class Int8DynActInt8WeightLinear(torch.nn.Module):
 
 
 def get_quant_embedding_transform(
-    args, use_shared_embedding: bool = False, dtype_override: Optional[DType] = None
+    embedding_quantize: str,
+    use_shared_embedding: bool = False,
+    dtype_override: Optional[DType] = None,
 ):
-    use_torchao = args.embedding_quantize.startswith("torchao:")
+    use_torchao = embedding_quantize.startswith("torchao:")
     if use_torchao:
-        quant_args = args.embedding_quantize.split(":")[1].split(",")
+        quant_args = embedding_quantize.split(":")[1].split(",")
     else:
-        quant_args = args.embedding_quantize.split(",")
+        quant_args = embedding_quantize.split(",")
     assert len(quant_args) in [
         2,
         3,
