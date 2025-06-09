@@ -46,7 +46,8 @@ def define_common_targets():
         exported_headers = ["binary_ops.h"],
         visibility = ["//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS",],
         exported_deps = [
-            "//executorch/runtime/core:core",
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/kernel:kernel_includes",
             "//executorch/kernels/optimized:libvec",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
