@@ -39,7 +39,7 @@ class EdgeOpArgValidator(torch.fx.Interpreter):
         super().__init__(graph_module)
         self.violating_ops: Dict[
             EdgeOpOverload, Tuple[Dict[str, Optional[torch.dtype]], torch.fx.Node]
-        ] = defaultdict(dict)
+        ] = defaultdict(dict)  # type: ignore[arg-type]
 
     def run_node(self, n: torch.fx.Node) -> None:
         self.node = n
@@ -63,7 +63,7 @@ class EdgeOpArgValidator(torch.fx.Interpreter):
         return kernel_arg
 
     def call_function(  # noqa: C901  # pyre-fixme[14]
-        self, target: _Target, args: Tuple[_Argument, ...], kwargs: Dict[str, _Argument]
+        self, target: _Target, args: Tuple[_Argument, ...], kwargs: Dict[str, _Argument]  # type: ignore[override]
     ) -> Any:
         """
         Go through all the node.target and validate their Tensor arguments are having the allowed dtypes.
@@ -73,7 +73,7 @@ class EdgeOpArgValidator(torch.fx.Interpreter):
         ):
             if isinstance(target, HigherOrderOperator):
                 raise RunHigherOrderOperatorError("Can't run delegate")
-            return super().call_function(target, args, kwargs)  # pyre-fixme[6]
+            return super().call_function(target, args, kwargs)  # type: ignore[arg-type]
 
         # TODO(gasoonjia): Update Optional[torch.dtype] to a concrete class to support mixed dtypes in tensorlist.
         tensor_arg_types: Dict[str, Optional[torch.dtype]] = {}
@@ -137,4 +137,4 @@ class EdgeOpArgValidator(torch.fx.Interpreter):
         valid = target._schema.dtype_constraint.validate(tensor_arg_types)
         if not valid:
             self.violating_ops[target] = (tensor_arg_types, self.node)
-        return super().call_function(target, args, kwargs)  # pyre-fixme[6]
+        return super().call_function(target, args, kwargs)  # type: ignore[arg-type]

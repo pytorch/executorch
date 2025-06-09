@@ -6,7 +6,7 @@
 
 # pyre-strict
 
-from typing import Dict, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from executorch.exir._serialize import _serialize_pte_binary
 
@@ -102,10 +102,10 @@ def serialize_for_executorch(
         )
 
     for tag in all_external_tags:
-        buffers = []
+        buffers: List[bytes] = []
         fqn_to_tensor_entry: Dict[str, TensorEntry] = {}
         # pyre-ignore[16]: Undefined attribute: `Optional` has no attribute `get`.
-        fqn_to_index = emitter_output.external_constant_map.get(tag, {})
+        fqn_to_index = emitter_output.external_constant_map.get(tag, {})  # type: ignore[union-attr]
         # Create a TensorEntry for each external tensor.
         for fqn, index in fqn_to_index.items():
             assert fqn in fqn_to_tensor_layout
@@ -118,13 +118,13 @@ def serialize_for_executorch(
         # Extract external data.
         key_to_data: Dict[str, DataEntry] = {}
         # pyre-ignore[16]: Undefined attribute: `Optional` has no attribute `get`.
-        key_to_buffer_index = named_data.external_data.get(tag, {})
+        key_to_buffer_index = named_data.external_data.get(tag, {})  # type: ignore[union-attr]
         for key, index in key_to_buffer_index.items():
             # pyre-ignore[16]: Undefined attribute: `Optional` has no attribute `buffers`.
             key_to_data[key] = DataEntry(
-                len(buffers), named_data.buffers[index].alignment
+                len(buffers), named_data.buffers[index].alignment  # type: ignore[union-attr]
             )
-            buffers.append(named_data.buffers[index].buffer)
+            buffers.append(named_data.buffers[index].buffer)  # type: ignore[union-attr]
 
         # Serialize into PTD file.
         ptd_files[tag] = data_serializer.serialize(

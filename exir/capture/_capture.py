@@ -122,10 +122,10 @@ def _capture_legacy_do_not_use(f, args) -> ExirExportedProgram:
                     outputs=[],
                     # pyre-fixme[6]: For 3rd argument expected `TreeSpec` but got
                     #  `Union[Tensor, Module]`.
-                    in_spec=in_spec,
+                    in_spec=in_spec,  # type: ignore[arg-type]
                     # pyre-fixme[6]: For 4th argument expected `TreeSpec` but got
                     #  `Union[Tensor, Module]`.
-                    out_spec=out_spec,
+                    out_spec=out_spec,  # type: ignore[arg-type]
                 ),
             )
         ],
@@ -207,7 +207,7 @@ def capture(  # noqa: C901
             if isinstance(f, MethodType) and isinstance(f.__self__, torch.nn.Module):
                 with patch_forward(f.__self__, f):
                     ep = export(
-                        cast(torch.nn.Module, f.__self__),
+                        f.__self__,  # type: ignore[redundant-cast]
                         args,
                         dynamic_shapes=dynamic_shapes,
                         strict=True,
@@ -272,7 +272,7 @@ def capture(  # noqa: C901
                 graph_with_interpreter,
                 remove="mutations_and_views",
             )
-            assert isinstance(functionalized_callable, Callable)
+            assert callable(functionalized_callable)  # type: ignore[arg-type]
 
             if config.enable_dynamic_shape:
                 fake_tensor_mode = FakeTensorMode(
@@ -357,7 +357,7 @@ def capture(  # noqa: C901
                     in_spec=in_spec,
                     # pyre-fixme[6]: For 4th argument expected `TreeSpec` but got
                     #  `Union[None, TreeSpec, Tensor, Module]`.
-                    out_spec=out_spec,
+                    out_spec=out_spec,  # type: ignore[arg-type]
                 ),
             )
         ],

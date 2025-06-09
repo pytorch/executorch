@@ -110,7 +110,7 @@ def _get_training_metadata(methods: Dict[str, ExportedProgram]) -> Dict[str, int
                 found_param = True
             i += 1
             if len(fqns) > 0:
-                training_metadata[fqn_method_prefix + name] = fqns
+                training_metadata[fqn_method_prefix + name] = fqns  # type: ignore[assignment]
     return training_metadata
 
 
@@ -139,7 +139,7 @@ def emit_program(
         methods = {"forward": methods}
 
     # validation
-    bad_methods = []
+    bad_methods: List[str] = []
     for name, exported_program in methods.items():
         if not isinstance(exported_program, ExportedProgram):
             bad_methods.append(name)
@@ -153,6 +153,7 @@ def emit_program(
     debug_handle_map = {}
     method_to_delegate_debug_id_map = {}
     program_state = _ProgramState()
+    emitter: Optional[_TopLevelEmitter] = None
 
     # emit each entry point in order according to name.
     for name, exported_program in sorted(methods.items()):
@@ -183,14 +184,14 @@ def emit_program(
 
     training_metadata = _get_training_metadata(methods)
     if len(training_metadata) > 0:
-        plans.extend(emitter._emit_prim_getters(training_metadata))
+        plans.extend(emitter._emit_prim_getters(training_metadata))  # type: ignore[union-attr]
 
     # emit any primitive getters
     if prim_getters is not None:
-        plans.extend(emitter._emit_prim_getters(prim_getters))
+        plans.extend(emitter._emit_prim_getters(prim_getters))  # type: ignore[union-attr]
 
     return EmitterOutput(
-        debug_handle_map=debug_handle_map,
+        debug_handle_map=debug_handle_map,  # type: ignore[arg-type]
         method_to_delegate_debug_id_map=method_to_delegate_debug_id_map,
         program=Program(
             version=EXECUTORCH_SCHEMA_VERSION,

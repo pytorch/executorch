@@ -7,10 +7,10 @@
 # pyre-strict
 
 import copy
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 
 # pyre-fixme[21]: Could not find module `executorch.exir.verification.bindings`.
-import executorch.exir.verification.bindings as bindings  # @manual=//executorch/exir/verification:bindings
+import executorch.exir.verification.bindings as bindings  # @manual=//executorch/exir/verification:bindings  # type: ignore[import-not-found]
 import executorch.extension.pytree as ex_pytree
 
 import torch
@@ -227,17 +227,17 @@ class Interpreter:
                 assert isinstance(self.execution_plan.values[item].val, Int)
                 # pyre-fixme [16] Undefined attribute [16]: Item `Bool` has no
                 # attribute `int_val`.
-                unboxed_list.append(self.execution_plan.values[item].val.int_val)
+                unboxed_list.append(self.execution_plan.values[item].val.int_val)  # type: ignore[union-attr]
             self._value_list[idx] = unboxed_list
         elif isinstance(val, (TensorList, OptionalTensorList)):
-            tensor_list = []
+            tensor_list: List[Any] = []
             for i in val.items:
                 if i == -1:
                     tensor_list.append(None)
                     continue
                 self.load_value(i)
                 tensor_list.append(self._value_list[i])
-            self._value_list[idx] = tensor_list
+            self._value_list[idx] = tensor_list  # type: ignore[assignment]
         elif isinstance(val, Tensor):
             if val.data_buffer_idx == 0:
                 # TODO(zhengxu) Verify that argument is actually an out variant
@@ -300,7 +300,7 @@ class Interpreter:
                 val_idx = val.items[i]
                 self._value_list[val_idx] = input_val[i]
                 tensor_list.append(input_val[i])
-            self._value_list[idx] = tensor_list
+            self._value_list[idx] = tensor_list  # type: ignore[assignment]
         else:
             raise TypeError(
                 f"Unexpected type, {type(val)}, with value, {val}, in Execution Plan values."
@@ -401,7 +401,7 @@ class Interpreter:
                 ip = (
                     ip + 1
                     # pyre-ignore
-                    if self._value_list[instruction.instr_args.cond_val_index]
+                    if self._value_list[instruction.instr_args.cond_value_index]  # type: ignore[attr-defined]
                     # pyre-ignore
                     else instruction.instr_args.destination_instruction
                 )

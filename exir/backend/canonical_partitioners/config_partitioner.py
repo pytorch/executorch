@@ -52,10 +52,9 @@ class PartitionerConfig(ABC):
     the specified backend.
     """
 
-    @classmethod
-    @property
+    @property  # type: ignore[misc]
     @abstractmethod
-    def target_name(cls) -> str:
+    def target_name(self) -> str:
         """
         Target name for this partitioner config. When the Config-Based Partitioner
         encounters a node with a matching target name, it uses this config's methods to
@@ -138,7 +137,7 @@ class ConfigerationBasedPartitioner(Partitioner):
             """
             if node.op != "call_function":
                 return False
-            target_name = format_target_name(node.target.__name__)  # pyre-ignore
+            target_name = format_target_name(node.target.__name__)  # type: ignore[union-attr]
 
             if target_name in self.target_partitioner_configs:
                 config = self.target_partitioner_configs[target_name]
