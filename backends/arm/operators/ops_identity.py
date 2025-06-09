@@ -42,7 +42,7 @@ def identity_operator_factory_v0_80(identity_target: str):
             import tosa_tools.v0_80.serializer.tosa_serializer as ts
 
             validate_num_inputs(self.target, inputs, 1)
-            validate_same_dtype(self.target, [*inputs, output])
+            validate_same_dtype(self.target, [*inputs, output], ts)
 
             # Simply add an identityOp
             tosa_graph.addOperator(
@@ -77,7 +77,7 @@ def identity_operator_factory(identity_target: str):
             import serializer.tosa_serializer as ts
 
             validate_num_inputs(self.target, inputs, 1)
-            validate_same_dtype(self.target, [*inputs, output])
+            validate_same_dtype(self.target, [*inputs, output], ts)
 
             # Simply add an identityOp
             tosa_graph.addOperator(

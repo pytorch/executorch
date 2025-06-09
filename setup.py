@@ -656,9 +656,6 @@ class CustomBuild(build):
         # get_python_lib() typically returns the path to site-packages, where
         # all pip packages in the environment are installed.
         cmake_prefix_path = os.environ.get("CMAKE_PREFIX_PATH", get_python_lib())
-        buck2 = os.environ.get(
-            "BUCK2_EXECUTABLE", os.environ.get("BUCK2", os.environ.get("BUCK", ""))
-        )
         # Put the cmake cache under the temp directory, like
         # "pip-out/temp.<plat>/cmake-out".
         pip_build_dir = os.path.join(
@@ -668,7 +665,6 @@ class CustomBuild(build):
         self.mkpath(cmake_cache_dir)
 
         cmake_configuration_args = [
-            f"-DBUCK2={buck2}",
             f"-DPYTHON_EXECUTABLE={sys.executable}",
             # Let cmake calls like `find_package(Torch)` find cmake config files
             # like `TorchConfig.cmake` that are provided by pip packages.

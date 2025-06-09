@@ -17,7 +17,7 @@ import ast
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import ClassVar, List, Optional, Self
+from typing import ClassVar, List, Optional
 
 
 ################################################################################
@@ -469,8 +469,8 @@ class LlmConfig:
     quantization: QuantizationConfig = field(default_factory=QuantizationConfig)
     backend: BackendConfig = field(default_factory=BackendConfig)
 
-    @staticmethod
-    def from_args(args: argparse.Namespace) -> Self:
+    @classmethod
+    def from_args(args: argparse.Namespace) -> "LlmConfig":  # noqa: C901
         """
         To support legacy purposes, this function converts CLI args from
         argparse to an LlmConfig, which is used by the LLM export process.
@@ -572,7 +572,9 @@ class LlmConfig:
         # CoreML
         if hasattr(args, "coreml"):
             llm_config.backend.coreml.enabled = args.coreml
-        llm_config.backend.coreml.enable_state = getattr(args, "coreml_enable_state", False)
+        llm_config.backend.coreml.enable_state = getattr(
+            args, "coreml_enable_state", False
+        )
         llm_config.backend.coreml.preserve_sdpa = getattr(
             args, "coreml_preserve_sdpa", False
         )
@@ -597,7 +599,9 @@ class LlmConfig:
         if hasattr(args, "soc_model"):
             llm_config.backend.qnn.soc_model = args.soc_model
         if hasattr(args, "optimized_rotation_path"):
-            llm_config.backend.qnn.optimized_rotation_path = args.optimized_rotation_path
+            llm_config.backend.qnn.optimized_rotation_path = (
+                args.optimized_rotation_path
+            )
         if hasattr(args, "num_sharding"):
             llm_config.backend.qnn.num_sharding = args.num_sharding
 
