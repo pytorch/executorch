@@ -399,6 +399,11 @@ def annotate_cos(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.col2im.default, torch.ops.aten.im2col.default])
+def annotate_col_im(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.sin.default])
 def annotate_sin(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
@@ -508,7 +513,13 @@ def annotate_prelu(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.view.default, torch.ops.aten._unsafe_view.default])
+@register_annotator(
+    [
+        torch.ops.aten.view_copy.default,
+        torch.ops.aten.view.default,
+        torch.ops.aten._unsafe_view.default,
+    ]
+)
 def annotate_view(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_in_out_obs_sharing_op(node, quantization_config)
     if not _is_annotated([node]):
@@ -531,6 +542,13 @@ def annotate_pixel_unshuffle_default(
 
 @register_annotator([torch.ops.aten.upsample_bilinear2d.vec])
 def annotate_upsample_bilinear2d(
+    node: Node, quantization_config: QuantizationConfig
+) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.upsample_bicubic2d.vec])
+def annotate_upsample_upsample_bicubic2d(
     node: Node, quantization_config: QuantizationConfig
 ) -> None:
     annotate_single_in_single_out(node, quantization_config)
@@ -1193,7 +1211,13 @@ def annotate_unbind(node: Node, quantization_config: QuantizationConfig) -> None
         )
 
 
-@register_annotator([torch.ops.aten.split.Tensor, torch.ops.aten.chunk.default])
+@register_annotator(
+    [
+        torch.ops.aten.split_with_sizes.default,
+        torch.ops.aten.split.Tensor,
+        torch.ops.aten.chunk.default,
+    ]
+)
 def annotate_chunk(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
         return
