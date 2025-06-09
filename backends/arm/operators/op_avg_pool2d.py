@@ -105,7 +105,7 @@ class AvgPool2dVisitor_0_80_BI(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, [3, 4, 6])
-        validate_same_dtype(self.target, [inputs[0], output])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
 
         supported_dtypes = [ts.DType.INT8]
         if inputs[0].dtype not in supported_dtypes:
@@ -145,7 +145,7 @@ class AvgPool2dVisitor_0_80_MI(AvgPool2dVisitor_0_80_BI):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, [3, 4, 6])
-        validate_same_dtype(self.target, [inputs[0], output])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
 
         supported_dtypes = [ts.DType.INT8, ts.DType.FP32]
         if inputs[0].dtype not in supported_dtypes:
@@ -252,7 +252,7 @@ class AvgPool2dVisitor(NodeVisitor):
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, [3, 4, 6])
-        validate_same_dtype(self.target, [inputs[0], output])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
 
         supported_dtypes = [ts.DType.INT8]
         if inputs[0].dtype not in supported_dtypes:
@@ -295,7 +295,7 @@ class AvgPool2dVisitor_FP(AvgPool2dVisitor):
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, [3, 4, 6])
-        validate_same_dtype(self.target, [inputs[0], output])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
 
         supported_dtypes = [ts.DType.INT8, ts.DType.FP32]
         if inputs[0].dtype not in supported_dtypes:
