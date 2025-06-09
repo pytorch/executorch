@@ -26,7 +26,7 @@ A React Native mobile application for running LLaMA language models using ExecuT
 
 3. Pull submodules: `git submodule sync && git submodule update --init`
 
-4. Install dependencies: `./install_executorch.sh --pybind xnnpack && ./examples/models/llama/install_requirements.sh`
+4. Install dependencies: `./install_executorch.sh && ./examples/models/llama/install_requirements.sh`
 
 5. Follow the instructions in the [README](https://github.com/pytorch/executorch/blob/main/examples/models/llama/README.md#option-a-download-and-export-llama32-1b3b-model) to export a model as `.pte`
 

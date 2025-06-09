@@ -8,15 +8,32 @@ from pathlib import Path
 from typing import Any, Callable, TextIO, TYPE_CHECKING
 
 import yaml
-from executorch.codegen.api import et_cpp
-from executorch.codegen.api.custom_ops import (
-    ComputeNativeFunctionStub,
-    gen_custom_ops_registration,
-)
-from executorch.codegen.api.types import contextArg, ExecutorchCppSignature
-from executorch.codegen.api.unboxing import Unboxing
-from executorch.codegen.model import ETKernelIndex, ETKernelKey, ETParsedYaml
-from executorch.codegen.parse import ET_FIELDS, parse_et_yaml, parse_et_yaml_struct
+
+try:
+    from executorch.codegen.api import et_cpp
+    from executorch.codegen.api.custom_ops import (
+        ComputeNativeFunctionStub,
+        gen_custom_ops_registration,
+    )
+    from executorch.codegen.api.types import contextArg, ExecutorchCppSignature
+    from executorch.codegen.api.unboxing import Unboxing
+    from executorch.codegen.model import ETKernelIndex, ETKernelKey, ETParsedYaml
+    from executorch.codegen.parse import ET_FIELDS, parse_et_yaml, parse_et_yaml_struct
+except ImportError:
+    # If we build from source, executorch.codegen is not available.
+    from .api import et_cpp  # type: ignore[no-redef]
+    from .api.custom_ops import (  # type: ignore
+        ComputeNativeFunctionStub,
+        gen_custom_ops_registration,
+    )
+    from .api.types import contextArg, ExecutorchCppSignature  # type: ignore
+    from .api.unboxing import Unboxing  # type: ignore
+    from .model import ETKernelIndex, ETKernelKey, ETParsedYaml  # type: ignore
+    from .parse import (  # type: ignore[no-redef]
+        ET_FIELDS,
+        parse_et_yaml,
+        parse_et_yaml_struct,
+    )
 
 # Parse native_functions.yaml into a sequence of NativeFunctions and Backend Indices.
 from torchgen import dest

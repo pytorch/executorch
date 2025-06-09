@@ -23,8 +23,21 @@ from executorch.exir.sym_util import eval_shape
 class LayoutTransform(ExportPass):
     """
     QNN delegate requires channel last layout format, this pass aims to
-    help generate the correct transformation by inserting fewest ammount of
+    help generate the correct transformation by inserting fewest amount of
     'permute' operators in the graph.
+    Please notice that permute op is inserted during qnn_preprocess.
+
+    Operations are divided into 3 categories: sensitive_layout, agnostic_layout, and pytorch_layout.
+    sensitive_layout: These ops must be lowered to QNN in NHWC format. A permute(NCHW->NHWC) op will be inserted in front of the sensitive_layout op.
+    agnostic_layout: These ops are agnostic to layout format, which means it can be passed to QNN in either NCHW or NHWC format.
+    pytorch_layout: These ops must be lowered to QNN in NCHW format. A permute(NHWC->NCHW) op will be inserted in front of the pytorch_layout op.
+
+    For optimization purposes, permute is only inserted when it is necessary to switch between sensitive_layout and pytorch_layout.
+    For example, a model consists of three kinds of operations: conv(sensitive_layout), relu(agnostic_layout), and unsqueeze(pytorch_layout)
+    If a graph originally looks like : in -> conv -> relu -> conv -> relu -> unsqueeze -> out
+    After layout_transform pass: in -> permute(NCHW->NHWC) -> conv -> relu -> conv -> relu -> permute(NHWC->NCHW) -> unsqueeze -> out
+    The reason for inserting the 1st permute is because conv is layout sensitive. Since relu is agnostic to layout, it doesn't matter what format is used.
+    This format works fine until unsqueeze is encountered, which is a pytorch_format operation, so a 2nd permute is necessary to convert it back to pytorch format.
     """
 
     layout_sensitive_ops = {
@@ -38,6 +51,8 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.native_group_norm.default,
         exir_ops.edge.aten.pixel_shuffle.default,
         exir_ops.edge.aten.pixel_unshuffle.default,
+        exir_ops.edge.aten.upsample_bicubic2d.default,
+        exir_ops.edge.aten.upsample_bicubic2d.vec,
         exir_ops.edge.aten.upsample_bilinear2d.default,
         exir_ops.edge.aten.upsample_bilinear2d.vec,
         exir_ops.edge.aten.upsample_nearest2d.default,
@@ -74,7 +89,6 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.logical_not.default,
         exir_ops.edge.aten.lt.Scalar,
         exir_ops.edge.aten.lt.Tensor,
-        exir_ops.edge.aten._log_softmax.default,
         exir_ops.edge.aten.maximum.default,
         exir_ops.edge.aten.mean.dim,
         exir_ops.edge.aten.minimum.default,
@@ -86,7 +100,6 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.prelu.default,
         exir_ops.edge.aten.repeat.default,
         exir_ops.edge.aten.relu.default,
-        exir_ops.edge.aten._softmax.default,  # TODO: Need to find a new solution to do "axis_order" to transform axis.
         exir_ops.edge.aten.sigmoid.default,
         exir_ops.edge.aten.split_with_sizes.default,
         exir_ops.edge.aten.split_with_sizes_copy.default,
@@ -280,11 +293,29 @@ class LayoutTransform(ExportPass):
                     else:
                         check_arg(args)
 
+    def conditional_sensitive_check(self, node):
+        # For softmax and log_softmax, we must ensure axis == -1 since thats the only axis supported by QNN.
+        # Softmax and log_softmax is treated as pytorch_layout in default, and will be treated as sensitive_layout when axis is not given as last dim.
+        target_nodes = [
+            exir_ops.edge.aten._softmax.default,
+            exir_ops.edge.aten._log_softmax.default,
+        ]
+        if node.target in target_nodes:
+            dim = node.args[1]
+            if dim < 0:
+                dim = dim % node.meta["val"].dim()
+            if dim != node.meta["val"].dim() - 1:
+                return True
+        return False
+
     def call(self, graph_module: torch.fx.GraphModule):
         graph = graph_module.graph
         sensitive_nodes = [
-            node for node in graph.nodes if self.is_layout_sensitive(node)
+            node
+            for node in graph.nodes
+            if self.is_layout_sensitive(node) or self.conditional_sensitive_check(node)
         ]
+
         # perform first run traversal for identifying nodes subjected to layout changes
         if self.insert_permute:
             self.insert_permute, self.transformed_tag = False, QCOM_LAYOUT_CHANGE

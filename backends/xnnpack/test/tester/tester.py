@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -31,6 +31,7 @@ from executorch.exir import (
 )
 from executorch.exir.backend.backend_api import validation_disabled
 from executorch.exir.backend.partitioner import Partitioner
+from executorch.exir.dim_order_utils import get_memory_format
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 
 from executorch.exir.print_program import pretty_print, print_program
@@ -55,7 +56,6 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
 )
 from executorch.exir.program._program import _transform
 from torch._export.pass_base import PassType
-from torch.ao.quantization.quantizer.quantizer import Quantizer
 from torch.export import export, ExportedProgram
 from torch.testing import FileCheck
 from torch.utils._pytree import tree_flatten
@@ -64,6 +64,7 @@ from torchao.quantization.pt2e.quantize_pt2e import (
     prepare_pt2e,
     prepare_qat_pt2e,
 )
+from torchao.quantization.pt2e.quantizer import Quantizer
 
 
 class Stage(ABC):
@@ -533,10 +534,13 @@ class Tester:
         # create random tensor inputs with the shapes given above:
         random_inputs = []
         for arg_idx in range(len(self.example_inputs)):
+            memFormat = get_memory_format(
+                list(self.example_inputs[arg_idx].dim_order())
+            )
             random_inputs.append(
-                torch.randn(input_shapes[arg_idx]).to(
-                    dtype=self.example_inputs[arg_idx].dtype
-                )
+                torch.randn(input_shapes[arg_idx])
+                .to(dtype=self.example_inputs[arg_idx].dtype)
+                .to(memory_format=memFormat)
             )
 
         yield tuple(random_inputs)
@@ -714,23 +718,30 @@ class Tester:
             assert (
                 ref.shape == model.shape
             ), f"Output {i} shape {model.shape} does not match reference output shape {ref.shape}"
-            assert torch.allclose(
-                model,
-                ref,
-                atol=atol,
-                rtol=rtol,
-            ), (
-                f"Output {i} does not match reference output.\n"
-                f"\tGiven atol: {atol}, rtol: {rtol}.\n"
-                f"\tOutput tensor shape: {model.shape}, dtype: {model.dtype}\n"
-                f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}, mean abs error: {torch.mean(torch.abs(model-ref))}.\n"
-                f"\t-- Model vs. Reference --\n"
-                f"\t Numel: {model.numel()}, {ref.numel()}\n"
-                f"\tMedian: {model.median()}, {ref.median()}\n"
-                f"\t  Mean: {model.mean()}, {ref.mean()}\n"
-                f"\t   Max: {model.max()}, {ref.max()}\n"
-                f"\t   Min: {model.min()}, {ref.min()}\n"
-            )
+            if model.dtype == torch.bool:
+                assert torch.equal(model, ref), (
+                    f"Output {i} (bool tensor) does not match reference output.\n"
+                    f"\tShape: {model.shape}\n"
+                    f"\tMismatched count: {(model != ref).sum().item()} / {model.numel()}\n"
+                )
+            else:
+                assert torch.allclose(
+                    model,
+                    ref,
+                    atol=atol,
+                    rtol=rtol,
+                ), (
+                    f"Output {i} does not match reference output.\n"
+                    f"\tGiven atol: {atol}, rtol: {rtol}.\n"
+                    f"\tOutput tensor shape: {model.shape}, dtype: {model.dtype}\n"
+                    f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}, mean abs error: {torch.mean(torch.abs(model-ref))}.\n"
+                    f"\t-- Model vs. Reference --\n"
+                    f"\t Numel: {model.numel()}, {ref.numel()}\n"
+                    f"\tMedian: {model.median()}, {ref.median()}\n"
+                    f"\t  Mean: {model.mean()}, {ref.mean()}\n"
+                    f"\t   Max: {model.max()}, {ref.max()}\n"
+                    f"\t   Min: {model.min()}, {ref.min()}\n"
+                )
 
     @staticmethod
     def _compare_outputs(
