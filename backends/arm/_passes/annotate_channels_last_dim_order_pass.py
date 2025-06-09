@@ -35,7 +35,10 @@ lib.define("_transpose(Tensor self, int[] dim_order) -> Tensor")
 def _transpose_impl(*args, **kwargs):
     # Validate length of dim_order array
     dim = args[1]
-    assert len(dim) in (4, 5)
+    if len(dim) != 4 and len(dim) != 5:
+        raise ValueError(
+            f"Dim order length must be either 4 or 5, got {len(dim)}: {dim}"
+        )
     # Pass-through in edge-IR
     return args[0]
 
