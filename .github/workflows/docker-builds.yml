@@ -39,6 +39,7 @@ jobs:
           executorch-ubuntu-22.04-arm-sdk,
           executorch-ubuntu-22.04-qnn-sdk,
           executorch-ubuntu-22.04-mediatek-sdk,
+          executorch-ubuntu-22.04-nxp-sdk,
           executorch-ubuntu-22.04-clang12-android
           ]
         include:
