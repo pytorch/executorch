@@ -121,7 +121,8 @@ class CMakeTestCase(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             actual_error = result.stderr.decode("utf-8")
             self.assertTrue(
-                error_contains in actual_error, f"Actual error: {actual_error}"
+                error_contains in actual_error,
+                f"\n\nWanted: {error_contains}\n\nActual: {actual_error}",
             )
         else:
             self.assertEqual(result.returncode, 0)

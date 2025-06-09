@@ -360,7 +360,7 @@ class GenerateCatNopConstraints(PassBase):
         if len(cat_node.args) > 1:
             cat_dim = cat_node.args[1]
         else:
-            cat_dim = cat_node.kwargs.get("dim", None)
+            cat_dim = cat_node.kwargs.get("dim", 0)
         if not isinstance(cat_dim, int):
             raise ValueError("cat_dim must be an integer.")
 
