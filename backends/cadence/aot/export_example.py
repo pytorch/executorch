@@ -15,9 +15,10 @@ from executorch.backends.cadence.aot.ops_registrations import *  # noqa
 from typing import Any, Tuple
 
 from executorch.backends.cadence.aot.compiler import (
-    convert_pt2,
     export_to_executorch_gen_etrecord,
     fuse_pt2,
+    prepare_and_convert_pt2,
+    trace,
 )
 
 from executorch.backends.cadence.aot.quantizer.quantizer import CadenceDefaultQuantizer
@@ -48,14 +49,17 @@ def export_model(
     # Instantiate the quantizer
     quantizer = CadenceDefaultQuantizer()
 
+    # Trace the model
+    ep = trace(model, example_inputs)
+
     # Convert the model
-    converted_model = convert_pt2(model, example_inputs, quantizer)
+    converted_model = prepare_and_convert_pt2(ep, example_inputs, quantizer)
 
     # Get reference outputs from converted model
     ref_outputs = converted_model(*example_inputs)
 
     # Quantize the model (note: quantizer needs to be the same as
-    # the one used in convert_pt2)
+    # the one used in prepare_and_convert_pt2)
     quantized_model = fuse_pt2(converted_model, quantizer)
 
     # Get edge program after Cadence specific passes

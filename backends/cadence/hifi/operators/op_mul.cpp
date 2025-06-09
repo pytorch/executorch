@@ -108,13 +108,13 @@ mul_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
       (a_type == ScalarType::Float) && (b_type == ScalarType::Float);
 
   if ((a_dim == 0) && float_types) {
-    for (int i = 0; i < max_dim; i++)
+    for (int i = 0; i < b.numel(); i++)
       out.mutable_data_ptr<float>()[i] =
           a.const_data_ptr<float>()[0] * b.const_data_ptr<float>()[i];
     return out;
   }
   if ((b_dim == 0) && float_types) {
-    for (int i = 0; i < max_dim; i++)
+    for (int i = 0; i < a.numel(); i++)
       out.mutable_data_ptr<float>()[i] =
           a.const_data_ptr<float>()[i] * b.const_data_ptr<float>()[0];
     return out;

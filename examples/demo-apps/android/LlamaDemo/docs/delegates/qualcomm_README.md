@@ -19,19 +19,24 @@ Phone verified: OnePlus 12, Samsung 24+, Samsung 23
 ## Setup ExecuTorch
 In this section, we will need to set up the ExecuTorch repo first with Conda environment management. Make sure you have Conda available in your system (or follow the instructions to install it [here](https://anaconda.org/anaconda/conda)). The commands below are running on Linux (CentOS).
 
-Create a Conda environment
+Checkout ExecuTorch repo and sync submodules
+
 ```
-conda create -n et_qnn python=3.10.0
-conda activate et_qnn
+git clone -b viable/strict https://github.com/pytorch/executorch.git && cd executorch
 ```
 
-Checkout ExecuTorch repo and sync submodules
+Create either a Python virtual environment:
+
 ```
-git clone https://github.com/pytorch/executorch.git
-cd executorch
-git submodule sync
-git submodule update --init
+python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 ```
+
+Or a Conda environment:
+
+```
+conda create -n et_xnnpack python=3.10.0 && conda activate et_xnnpack
+```
+
 Install dependencies
 ```
 ./install_executorch.sh
@@ -74,7 +79,7 @@ cmake --build cmake-out -j16 --target install --config Release
 ### Setup Llama Runner
 Next we need to build and compile the Llama runner. This is similar to the requirements for running Llama with XNNPACK.
 ```
-sh examples/models/llama/install_requirements.sh
+./examples/models/llama/install_requirements.sh
 
 cmake -DPYTHON_EXECUTABLE=python \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
@@ -130,7 +135,7 @@ You may also wonder what the "--metadata" flag is doing. This flag helps export 
 
 Convert tokenizer for Llama 2
 ```
-python -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+python -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokenizer.bin
 ```
 Rename tokenizer for Llama 3 with command: `mv tokenizer.model tokenizer.bin`. We are updating the demo app to support tokenizer in original format directly.
 
@@ -173,30 +178,38 @@ adb push tokenizer.bin /data/local/tmp/llama
 
 
 ## Build AAR Library
-Open a terminal window and navigate to the root directory of the executorch.
+1. Open a terminal window and navigate to the root directory of the executorch
 Set the following environment variables:
-```
+```sh
 export ANDROID_NDK=<path_to_android_ndk>
-export ANDROID_ABI=arm64-v8a
+export ANDROID_ABIS=arm64-v8a
+export QNN_SDK_ROOT=<path_to_qnn_sdk>
 ```
-Note: <path_to_android_ndk> is the root for the NDK, which is usually under ~/Library/Android/sdk/ndk/XX.Y.ZZZZZ for macOS, and contains NOTICE and README.md. We use <path_to_android_ndk>/build/cmake/android.toolchain.cmake for CMake to cross-compile.
-Build the Android Java extension code:
+
+*Note: <path_to_android_ndk> is the root for the NDK, which is usually under ~/Library/Android/sdk/ndk/XX.Y.ZZZZZ for macOS, and contains NOTICE and README.md. We use <path_to_android_ndk>/build/cmake/android.toolchain.cmake for CMake to cross-compile.*
+
+3. Create a directory to hold the AAR
+```sh
+mkdir -p aar-out
+export BUILD_AAR_DIR=aar-out
 ```
-pushd extension/android
-./gradlew build
-popd
+
+4. Run the following command to build the AAR:
+```sh
+sh scripts/build_android_library.sh
 ```
-Run the following command set up the required JNI library:
+
+5. Copy the AAR to the app:
+```sh
+mkdir -p examples/demo-apps/android/LlamaDemo/app/libs
+cp aar-out/executorch.aar examples/demo-apps/android/LlamaDemo/app/libs/executorch.aar
 ```
-pushd examples/demo-apps/android/LlamaDemo
-./gradlew :app:setupQnn
-popd
-```
+
 Alternative you can also just run the shell script directly as in the root directory:
-```
+```sh
 sh examples/demo-apps/android/LlamaDemo/setup-with-qnn.sh
 ```
-This is running the shell script which configures the required core ExecuTorch, Llama2/3, and Android libraries, builds them, and copies them to jniLibs.
+This is running the shell script which configures the required core ExecuTorch, Llama2/3, and Android libraries, builds them into AAR, and copies it to the app.
 Note: If you are building the Android app mentioned in the next section on a separate machine (i.e. MacOS but building and exporting for QNN backend on Linux), make sure you copy the aar file generated from setup-with-qnn script to “examples/demo-apps/android/LlamaDemo/app/libs” before building the Android app.
 
 

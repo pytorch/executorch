@@ -7,31 +7,34 @@
 
 import logging
 import os
-from typing import Any, Tuple
+from typing import Any, Optional, Tuple
 
-import serializer.tosa_serializer as ts  # type: ignore
 import torch
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.tosa_mapping import TosaArg
 
+from executorch.backends.arm.tosa_specification import TosaSpecification
+
 from executorch.exir.dialects._ops import ops as exir_ops
-from serializer.tosa_serializer import TosaOp
+from executorch.exir.print_program import inspect_node
 from torch.fx import Node
+from tosa_tools.v0_80.serializer.tosa_serializer import TosaOp
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
-TOSA_DBG_VERBOSE = os.environ.get("TOSA_DBG_VERBOSE") == "1"
-if TOSA_DBG_VERBOSE:
-    logging.basicConfig(level=logging.INFO)
-    logger.setLevel(logging.INFO)
 
 
-def dbg_node(node: torch.fx.Node):
+def dbg_node(node: torch.fx.Node, graph_module: torch.fx.GraphModule):
     # Debug output of node information
-    logger.info(get_node_debug_info(node))
+    logger.info(get_node_debug_info(node, graph_module))
 
 
-def get_node_debug_info(node: torch.fx.Node) -> str:
+def get_node_debug_info(
+    node: torch.fx.Node, graph_module: torch.fx.GraphModule | None = None
+) -> str:
     output = (
+        f"  {inspect_node(graph=graph_module.graph, node=node)}\n"
+        if graph_module
+        else ""
         "-- NODE DEBUG INFO --\n"
         f"  Op is {node.op}\n"
         f"  Name is {node.name}\n"
@@ -42,10 +45,17 @@ def get_node_debug_info(node: torch.fx.Node) -> str:
         "  Node.meta = \n"
     )
     for k, v in node.meta.items():
-        output += f"    '{k}' = {v}\n"
-        if isinstance(v, list):
-            for i in v:
-                output += f"      {i}\n"
+        if k == "stack_trace":
+            matches = v.split("\n")
+            output += "      'stack_trace =\n"
+            for m in matches:
+                output += f"      {m}\n"
+        else:
+            output += f"    '{k}' = {v}\n"
+
+            if isinstance(v, list):
+                for i in v:
+                    output += f"      {i}\n"
     return output
 
 
@@ -71,21 +81,24 @@ def dbg_tosa_dump(tosa_graph: ts.TosaSerializer, path: str, suffix: str = ""):
     assert os.path.exists(filepath_desc_json), "Failed to write TOSA JSON"
 
 
-def dbg_fail(node, tosa_graph, path):
-    dbg_tosa_dump(tosa_graph, path)
+def dbg_fail(
+    node,
+    graph_module,
+    tosa_graph: Optional[ts.TosaSerializer] = None,
+    path: Optional[str] = None,
+):
     logger.warning("Internal error due to poorly handled node:")
-    dbg_node(node)
-    logger.warning(f"Debug output captured in '{path}'.")
-    raise RuntimeError("TOSA Internal Error on node, enable logging for further info.")
+    if tosa_graph is not None and path is not None:
+        dbg_tosa_dump(tosa_graph, path)
+        logger.warning(f"Debug output captured in '{path}'.")
+    dbg_node(node, graph_module)
 
 
-def getNodeArgs(node: Node) -> list[TosaArg]:
+def getNodeArgs(node: Node, tosa_spec: TosaSpecification) -> list[TosaArg]:
     try:
-        return [TosaArg(arg) for arg in node.args]
+        return [TosaArg(arg, tosa_spec) for arg in node.args]
     except ValueError as e:
-        raise ValueError(
-            f"Failed processing args to op:\n{get_node_debug_info(node)}"
-        ) from e
+        raise ValueError(f"Failed processing args to op:\n{node}") from e
 
 
 def get_output_node(node: Node) -> Node:
@@ -141,14 +154,14 @@ def reshape_for_broadcast(tosa_fb, inputs, dim_order=None):
         return reshaped, input2
 
 
-def is_consumer_node_depthwise_conv2d(node):
+def is_consumer_node_depthwise_conv2d(node: Node):
     consumer_node = list(node.users)[0]
     if consumer_node.target == exir_ops.edge.aten.convolution.default:
-        inputs = getNodeArgs(consumer_node)
-        group = inputs[-1]
-        in_channels = inputs[0].shape[1]
-        out_channels = inputs[1].shape[0]
-        if (in_channels == group.number) and (out_channels % in_channels) == 0:
+        consumer_node_inputs = consumer_node.all_input_nodes
+        groups = consumer_node.args[-1]
+        in_channels = consumer_node_inputs[0].meta["val"].shape[1]
+        out_channels = consumer_node_inputs[1].meta["val"].shape[0]
+        if (in_channels == groups) and (out_channels % in_channels) == 0:
             return True
 
     return False

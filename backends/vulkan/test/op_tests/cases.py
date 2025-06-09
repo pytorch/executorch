@@ -152,17 +152,23 @@ def get_linear_inputs():
 @register_test_suite("aten._weight_int8pack_mm.default")
 def get_weight_int8pack_mm_inputs():
     MKN_list = [
+        [1, 480, 256],
+        [1, 1024, 1024],
+        [1, 1024, 256],
+        [3, 480, 256],
         [6, 480, 256],
         [6, 256, 1024],
         [6, 1024, 256],
         [6, 256, 256],
         [6, 256, 512],
+        [4, 768, 4096],
+        [1024, 1024, 1024],
     ]
 
     inputs_list = [((M, K), (N, K), (N)) for M, K, N in MKN_list]
 
     test_suite = VkTestSuite(inputs_list)
-    test_suite.dtypes = ["at::kFloat", "at::kHalf"]
+    test_suite.dtypes = ["at::kFloat"]
     test_suite.layouts = ["utils::kWidthPacked"]
     test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     test_suite.prepacked_args = ["mat2", "scales"]
@@ -224,153 +230,190 @@ def get_max_pool2d_inputs():
 
 @register_test_suite("aten.convolution.default")
 def get_conv_inputs():
-    test_suite = VkTestSuite(
+    Test = namedtuple(
+        "ConvTest",
         [
-            (
-                (1, 6, 40, 50),
-                (8, 6, 3, 3),
-                (8,),
-                [1, 2],
-                [2, 3],
-                [1, 1],
-                False,
-                [0, 0],
-                1,
-            ),
-            (
-                (1, 6, 40, 50),
-                (6, 8, 3, 3),
-                (8,),
-                [1, 2],
-                [2, 3],
-                [1, 1],
-                True,
-                [0, 1],
-                1,
-            ),
-            (
-                (1, 8, 72, 96),
-                (8, 1, 3, 3),
-                (8,),
-                [1, 1],
-                [1, 1],
-                [1, 1],
-                False,
-                [0, 0],
-                8,
-            ),
-            (
-                (1, 8, 72, 96),
-                (8, 8, 1, 1),
-                (8,),
-                [1, 1],
-                [1, 1],
-                [1, 1],
-                False,
-                [0, 0],
-                1,
-            ),
-            (
-                (1, 6, 40, 50),
-                (8, 6, 3, 3),
-                None,
-                [1, 2],
-                [2, 3],
-                [1, 1],
-                False,
-                [0, 0],
-                1,
-            ),
-            (
-                (1, 6, 7),
-                (6, 1, 3),
-                (6,),
-                [1],
-                [0],
-                [1],
-                False,
-                [0],
-                6,
-            ),
-            (
-                (2, 20, 30),
-                (10, 4, 6),
-                (10,),
-                [5],
-                [5],
-                [3],
-                False,
-                [0],
-                5,
-            ),
-            (
-                (1, 9, 11),
-                (9, 1, 3),
-                None,
-                [1],
-                [0],
-                [1],
-                False,
-                [0],
-                9,
-            ),
-            (
-                (5, 15, 30),
-                (20, 3, 3),
-                None,
-                [3],
-                [5],
-                [7],
-                False,
-                [0],
-                5,
-            ),
-            (
-                (1, 16, 672, 512),
-                (64, 16, 1, 1),
-                (64,),
-                [1, 1],
-                [0, 0],
-                [1, 1],
-                False,
-                [0, 0],
-                1,
-            ),
-            (
-                (1, 4, 234, 234),
-                (4, 1, 3, 3),
-                (4,),
-                [2, 1],
-                [1, 1],
-                [1, 1],
-                False,
-                [0, 0],
-                4,
-            ),
-            (
-                (1, 4, 234, 234),
-                (4, 1, 3, 3),
-                (4,),
-                [1, 2],
-                [1, 1],
-                [1, 1],
-                False,
-                [0, 0],
-                4,
-            ),
-            (
-                (1, 4, 234, 234),
-                (4, 1, 3, 3),
-                (4,),
-                [2, 2],
-                [1, 1],
-                [1, 1],
-                False,
-                [0, 0],
-                4,
-            ),
-        ]
+            "self",
+            "weight",
+            "bias",
+            "stride",
+            "padding",
+            "dilation",
+            "transposed",
+            "output_padding",
+            "groups",
+        ],
     )
+    Test.__new__.__defaults__ = (
+        None,
+        None,
+        None,
+        [1, 1],
+        [0, 0],
+        [1, 1],
+        False,
+        [9, 0],
+        1,
+    )
+    test_cases = []
+    test_cases = [
+        Test(
+            self=(1, 6, 40, 50),
+            weight=(8, 6, 3, 3),
+            bias=(8,),
+            stride=[1, 2],
+            padding=[2, 3],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 6, 40, 50),
+            weight=(6, 8, 3, 3),
+            bias=(8,),
+            stride=[1, 2],
+            padding=[2, 3],
+            dilation=[1, 1],
+            transposed=True,
+            output_padding=[0, 1],
+            groups=1,
+        ),
+        Test(
+            self=(1, 8, 72, 96),
+            weight=(8, 1, 3, 3),
+            bias=(8,),
+            stride=[1, 1],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=8,
+        ),
+        Test(
+            self=(1, 8, 72, 96),
+            weight=(8, 8, 1, 1),
+            bias=(8,),
+            stride=[1, 1],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 6, 40, 50),
+            weight=(8, 6, 3, 3),
+            bias=None,
+            stride=[1, 2],
+            padding=[2, 3],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 6, 7),
+            weight=(6, 1, 3),
+            bias=(6,),
+            stride=[1],
+            padding=[0],
+            dilation=[1],
+            transposed=False,
+            output_padding=[0],
+            groups=6,
+        ),
+        Test(
+            self=(2, 20, 30),
+            weight=(10, 4, 6),
+            bias=(10,),
+            stride=[5],
+            padding=[5],
+            dilation=[3],
+            transposed=False,
+            output_padding=[0],
+            groups=5,
+        ),
+        Test(
+            self=(1, 9, 11),
+            weight=(9, 1, 3),
+            bias=None,
+            stride=[1],
+            padding=[0],
+            dilation=[1],
+            transposed=False,
+            output_padding=[0],
+            groups=9,
+        ),
+        Test(
+            self=(5, 15, 30),
+            weight=(20, 3, 3),
+            bias=None,
+            stride=[3],
+            padding=[5],
+            dilation=[7],
+            transposed=False,
+            output_padding=[0],
+            groups=5,
+        ),
+        Test(
+            self=(1, 16, 672, 512),
+            weight=(64, 16, 1, 1),
+            bias=(64,),
+            stride=[1, 1],
+            padding=[0, 0],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 4, 234, 234),
+            weight=(4, 1, 3, 3),
+            bias=(4,),
+            stride=[2, 1],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=4,
+        ),
+        Test(
+            self=(1, 4, 234, 234),
+            weight=(4, 1, 3, 3),
+            bias=(4,),
+            stride=[1, 2],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=4,
+        ),
+        Test(
+            self=(1, 4, 234, 234),
+            weight=(4, 1, 3, 3),
+            bias=(4,),
+            stride=[2, 2],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=4,
+        ),
+        Test(
+            self=(1, 8, 90, 77),
+            weight=(1, 8, 3, 3),
+            bias=(1,),
+            stride=[1, 1],
+            padding=[2, 2],
+            dilation=[2, 2],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+    ]
+
+    test_suite = VkTestSuite(test_cases)
     return test_suite
 
 
@@ -383,24 +426,42 @@ def get_native_layer_norm_inputs():
             ((S, XL, M1, M2), [M2], (M2), (M2), 0.001),
         ]
     )
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+        "utils::kChannelsPacked",
+    ]
     return test_suite
+
+
+def get_upsample_inputs():
+    inputs_list = [
+        # (input tensor shape, output 2D image size (H, W), output scaling factors)
+        ((2, 2, 2, 2), None, [1, 1]),
+        ((1, 1, 2, 2), None, [2, 2]),
+        ((1, 1, 2, 2), None, [2, 4]),
+        ((1, 1, 2, 2), None, [4, 2]),
+        ((1, 1, 2, 2), [2, 2], None),
+        ((1, 1, 2, 2), [2, 4], None),
+        ((1, 1, 2, 2), [3, 2], None),
+    ]
+    return inputs_list
 
 
 @register_test_suite("aten.upsample_nearest2d.vec")
-def get_upsample_inputs():
-    test_suite = VkTestSuite(
-        [
-            # (input tensor shape, output 2D image size (H, W), output scaling factors)
-            ((2, 2, 2, 2), None, [1, 1]),
-            ((1, 1, 2, 2), None, [2, 2]),
-            ((1, 1, 2, 2), None, [2, 4]),
-            ((1, 1, 2, 2), None, [4, 2]),
-            ((1, 1, 2, 2), [2, 2], None),
-            ((1, 1, 2, 2), [2, 4], None),
-            ((1, 1, 2, 2), [3, 2], None),
-        ]
-    )
-    return test_suite
+def get_upsample_nearest2d_inputs():
+    inputs_list = get_upsample_inputs()
+    return VkTestSuite(inputs_list)
+
+
+@register_test_suite("aten.upsample_bilinear2d.vec")
+def get_upsample_bilinear2d_inputs():
+    base_inputs_list = get_upsample_inputs()
+    inputs_list = []
+    for input_case in base_inputs_list:
+        inputs_list.append((input_case[0], input_case[1], False, input_case[2]))
+        inputs_list.append((input_case[0], input_case[1], True, input_case[2]))
+    return VkTestSuite(inputs_list)
 
 
 @register_test_suite(["aten.full.default", "aten.full_like.default"])
@@ -438,7 +499,9 @@ def get_ones_inputs():
 def get_select_int_inputs():
     test_suite = VkTestSuite(
         [
-            ((6, 2, 7), 0, 3),
+            ((8, 8, 8), 0, -2),
+            ((8, 8, 8), 1, -3),
+            ((8, 8, 8), 2, -4),
             ((6, 2, 7), 1, 0),
             ((6, 2, 7), 2, 3),
             ((6, 10, 7), 0, 3),
@@ -454,6 +517,10 @@ def get_select_int_inputs():
             ((8, 6, 1, 1), 1, 4),
         ]
     )
+    test_suite.layouts = ["utils::kWidthPacked", "utils::kChannelsPacked"]
+    test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.data_gen = "make_seq_tensor"
     return test_suite
 
 
@@ -754,7 +821,11 @@ def get_repeat_inputs():
             ((2, 3), [3, 1, 4]),
         ]
     )
-    test_suite_2d.layouts = ["utils::kChannelsPacked"]
+    test_suite_2d.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+        "utils::kChannelsPacked",
+    ]
     test_suite_2d.storage_types = ["utils::kTexture2D"]
     test_suite_2d.data_gen = "make_seq_tensor"
     test_suite_2d.dtypes = ["at::kFloat"]
@@ -795,7 +866,11 @@ def get_repeat_inputs():
             ((2, 3), [3, 3, 2, 4]),
         ]
     )
-    test_suite_3d.layouts = ["utils::kChannelsPacked"]
+    test_suite_3d.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+        "utils::kChannelsPacked",
+    ]
     test_suite_3d.storage_types = ["utils::kTexture3D"]
     test_suite_3d.data_gen = "make_seq_tensor"
     test_suite_3d.dtypes = ["at::kFloat"]
@@ -1065,6 +1140,64 @@ def get_reduce_op_inputs():
     return test_suite
 
 
+@register_test_suite(["aten.var.dim"])
+def get_var_inputs():
+    test_cases = []
+    shapes_and_dims = [
+        ((L), 0),
+        ((L), -1),
+        ((M, L), 0),
+        ((M, L), 1),
+        ((L, M), -1),
+        ((M, L), -2),
+        ((S, S1, S2), 0),
+        ((S, S1, S2), 1),
+        ((S, S1, S2), 2),
+        ((S, S1, S2), -1),
+        ((S, S1, S2), -2),
+        ((S, S1, S2), -3),
+        ((1, S, S1, S2), 1),
+        ((1, S, S1, S2), 2),
+        ((1, S, S1, S2), 3),
+        ((1, S, S1, S2), -1),
+        ((1, S, S1, S2), -2),
+        ((1, S, S1, S2), -3),
+        # Test batches > 1 where the reduction dim is not the concat dim
+        ((S, L, S1, L), -1),
+        ((S, S2, S1, S), -2),
+        ((S, S2, M, M), 2),
+        ((S, M, S1, L), 3),
+    ]
+
+    for i, (shape, dim) in enumerate(shapes_and_dims):
+        unbiased = (i % 2) == 0
+        test_cases.append((shape, dim, unbiased, True))
+
+    # Texture-based tests
+    texture_test_suite = VkTestSuite(test_cases)
+    texture_test_suite.layouts = [
+        "utils::kChannelsPacked",
+        "utils::kWidthPacked",
+    ]
+    texture_test_suite.storage_types = ["utils::kTexture3D"]
+    texture_test_suite.atol = "1e-4"
+    texture_test_suite.rtol = "1e-4"
+    texture_test_suite.test_name_suffix = "texture"
+
+    # Buffer-based tests
+    buffer_test_suite = VkTestSuite(test_cases)
+    buffer_test_suite.layouts = [
+        "utils::kChannelsPacked",
+        "utils::kWidthPacked",
+    ]
+    buffer_test_suite.storage_types = ["utils::kBuffer"]
+    buffer_test_suite.atol = "1e-4"
+    buffer_test_suite.rtol = "1e-4"
+    buffer_test_suite.test_name_suffix = "buffer"
+
+    return [texture_test_suite, buffer_test_suite]
+
+
 @register_test_suite(
     [
         "aten.sqrt.default",
@@ -1077,6 +1210,8 @@ def get_reduce_op_inputs():
         "aten.hardswish.default",
         "aten.hardsigmoid.default",
         "aten.leaky_relu.default",
+        "aten.round.default",
+        "aten.tan.default",
     ]
 )
 def get_unary_ops_inputs():
@@ -1091,6 +1226,22 @@ def get_unary_ops_inputs():
     test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     test_suite.atol = "1e-4"
     test_suite.rtol = "1e-4"
+    return test_suite
+
+
+# separate test suite from unary_ops for learning purposes
+@register_test_suite("aten.tan.default")
+def get_tan_inputs():
+    test_suite = VkTestSuite(
+        [
+            (M1,),
+            (M1, M2),
+            (S1, M1, M2),
+            (S1, S2, S2, M2),
+        ]
+    )
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    test_suite.dtypes = ["at::kFloat", "at::kHalf"]
     return test_suite
 
 
@@ -1278,4 +1429,29 @@ def get_flip_inputs():
     ]
 
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
+    return test_suite
+
+
+@register_test_suite("aten.where.self")
+def get_where_inputs():
+    Test = namedtuple("Where", ["condition", "self", "other"])
+    Test.__new__.__defaults__ = (None, None, None)
+
+    test_cases = [
+        Test(condition=[11], self=[11], other=[11]),
+        Test(condition=[10, 9], self=[10, 9], other=[10, 9]),
+        Test(condition=[10, 5, 3], self=[10, 5, 3], other=[10, 5, 3]),
+        Test(condition=[2, 10, 5, 3], self=[2, 10, 5, 3], other=[2, 10, 5, 3]),
+    ]
+
+    test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
+    test_suite.arg_dtype["condition"] = "at::kBool"
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    test_suite.atol = "1e-4"
+    test_suite.rtol = "1e-4"
     return test_suite

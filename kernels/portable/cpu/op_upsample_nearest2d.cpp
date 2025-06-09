@@ -19,7 +19,7 @@ using executorch::aten::SizesType;
 
 namespace {
 template <typename CTYPE>
-void upsample_nearest2d_kernel_impl(
+void upsample_nearest2d_kernel_impl_nchw(
     const Tensor& in,
     const float scale_h,
     const float scale_w,
@@ -44,6 +44,54 @@ void upsample_nearest2d_kernel_impl(
 
       in_plane += in.strides()[1];
     }
+  }
+}
+
+template <typename CTYPE>
+void upsample_nearest2d_kernel_impl_nhwc(
+    const Tensor& in,
+    const float scale_h,
+    const float scale_w,
+    Tensor& out) {
+  auto in_data = in.const_data_ptr<CTYPE>();
+  auto out_data = out.mutable_data_ptr<CTYPE>();
+
+  for (auto n = 0; n < out.size(0); n++) {
+    for (auto h = 0; h < out.size(2); h++) {
+      const auto in_h =
+          nearest_neighbor_compute_source_index(scale_h, h, in.sizes()[2]);
+      for (auto w = 0; w < out.size(3); w++) {
+        const auto in_w =
+            nearest_neighbor_compute_source_index(scale_w, w, in.sizes()[3]);
+        for (auto c = 0; c < out.size(1); c++) {
+          *out_data = in_data
+              [in_h * in.strides()[2] + in_w * in.strides()[3] +
+               c * in.strides()[1]];
+          out_data++;
+        }
+      }
+    }
+
+    in_data += in.strides()[0];
+  }
+}
+
+template <typename CTYPE>
+void upsample_nearest2d_kernel_impl(
+    KernelRuntimeContext& ctx,
+    const Tensor& in,
+    const float scale_h,
+    const float scale_w,
+    Tensor& out) {
+  if (is_contiguous_dim_order(in.dim_order().data(), in.dim_order().size())) {
+    upsample_nearest2d_kernel_impl_nchw<CTYPE>(in, scale_h, scale_w, out);
+  } else if (is_channels_last_dim_order(
+                 in.dim_order().data(), in.dim_order().size())) {
+    upsample_nearest2d_kernel_impl_nhwc<CTYPE>(in, scale_h, scale_w, out);
+  } else {
+    // Shouldn't be reachable because of args checks, but just in case.
+    ET_LOG(Error, "Unsupported dim order");
+    ctx.fail(Error::InvalidArgument);
   }
 }
 } // namespace
@@ -82,7 +130,7 @@ Tensor& upsample_nearest2d_vec_out(
   ET_SWITCH_REALHBF16_TYPES(
       in.scalar_type(), ctx, "upsample_nearest2d.out", CTYPE, [&]() {
         upsample_nearest2d_kernel_impl<CTYPE>(
-            in, kernel_scale_h, kernel_scale_w, out);
+            ctx, in, kernel_scale_h, kernel_scale_w, out);
       });
 
   return out;

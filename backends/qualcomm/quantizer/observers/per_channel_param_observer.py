@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from torch.ao.quantization.observer import UniformQuantizationObserverBase
+from torchao.quantization.pt2e import UniformQuantizationObserverBase
 
 
 # TODO move to torch/ao/quantization/observer.py.
@@ -109,6 +109,5 @@ class PerChannelParamObserver(UniformQuantizationObserverBase):
             self.quant_max,
         )
 
-    @torch.jit.export
     def calculate_qparams(self):
         return self._calculate_qparams(self.min_val, self.max_val)

@@ -7,7 +7,7 @@
 
 set -e
 
-APP_PATH="examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo"
+APP_PATH="executorch-examples/mv3/apple/ExecuTorchDemo/ExecuTorchDemo"
 MODEL_NAME="mv3"
 SIMULATOR_NAME="executorch"
 
@@ -34,13 +34,13 @@ say() {
   echo -e "\033[1m\n\t** $1 **\n\033[0m"
 }
 
+say "Cloning the Demo App"
+
+git clone --depth 1 https://github.com/pytorch-labs/executorch-examples.git
+
 say "Installing CoreML Backend Requirements"
 
 ./backends/apple/coreml/scripts/install_requirements.sh
-
-say "Installing MPS Backend Requirements"
-
-./backends/apple/mps/install_requirements.sh
 
 say "Exporting Models"
 

@@ -29,6 +29,7 @@ from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
 from executorch.exir.serde.export_serialize import SerializedArtifact
 from executorch.exir.serde.serialize import deserialize, serialize
 
+ProgramInput = List[Value]
 ProgramOutput = List[Value]
 
 try:
@@ -49,6 +50,7 @@ class ETRecordReservedFileNames(StrEnum):
     DEBUG_HANDLE_MAP_NAME = "debug_handle_map"
     DELEGATE_MAP_NAME = "delegate_map"
     REFERENCE_OUTPUTS = "reference_outputs"
+    REPRESENTATIVE_INPUTS = "representative_inputs"
 
 
 @dataclass
@@ -60,6 +62,7 @@ class ETRecord:
         Dict[str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]]
     ] = None
     _reference_outputs: Optional[Dict[str, List[ProgramOutput]]] = None
+    _representative_inputs: Optional[List[ProgramOutput]] = None
 
 
 def _handle_exported_program(
@@ -157,6 +160,26 @@ def _get_reference_outputs(
     return reference_outputs
 
 
+def _get_representative_inputs(
+    bundled_program: BundledProgram,
+) -> Optional[List[ProgramInput]]:
+    """
+    Extracts out the inputs from the bundled program, keyed by the method names.
+    """
+    for method_test_suite in bundled_program.method_test_suites:
+        if method_test_suite.method_name == "forward":
+            if not method_test_suite.test_cases:
+                raise ValueError(
+                    "The 'forward' method is defined, but no corresponding input test cases are provided."
+                )
+            # Get first example input from the forward method
+            test_case = method_test_suite.test_cases[0]
+            return test_case.inputs
+
+    # If the forward method is not defined, return None to indicate that there are no representative inputs for the model.
+    return None
+
+
 def generate_etrecord(
     et_record: Union[str, os.PathLike, BinaryIO, IO[bytes]],
     edge_dialect_program: Union[EdgeProgramManager, ExirExportedProgram],
@@ -244,6 +267,13 @@ def generate_etrecord(
             # @lint-ignore PYTHONPICKLEISBAD
             pickle.dumps(reference_outputs),
         )
+
+        representative_inputs = _get_representative_inputs(executorch_program)
+        etrecord_zip.writestr(
+            ETRecordReservedFileNames.REPRESENTATIVE_INPUTS,
+            # @lint-ignore PYTHONPICKLEISBAD
+            pickle.dumps(representative_inputs),
+        )
         executorch_program = executorch_program.executorch_program
 
     etrecord_zip.writestr(
@@ -290,6 +320,7 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
     delegate_map = None
     edge_dialect_program = None
     reference_outputs = None
+    representative_inputs = None
 
     serialized_exported_program_files = set()
     serialized_state_dict_files = set()
@@ -320,6 +351,11 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
             # @lint-ignore PYTHONPICKLEISBAD
             reference_outputs = pickle.loads(
                 etrecord_zip.read(ETRecordReservedFileNames.REFERENCE_OUTPUTS)
+            )
+        elif entry == ETRecordReservedFileNames.REPRESENTATIVE_INPUTS:
+            # @lint-ignore PYTHONPICKLEISBAD
+            representative_inputs = pickle.loads(
+                etrecord_zip.read(ETRecordReservedFileNames.REPRESENTATIVE_INPUTS)
             )
         else:
             if entry.endswith("state_dict"):
@@ -352,4 +388,5 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
         _debug_handle_map=debug_handle_map,
         _delegate_map=delegate_map,
         _reference_outputs=reference_outputs,
+        _representative_inputs=representative_inputs,
     )

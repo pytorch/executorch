@@ -11,6 +11,7 @@ __pycache__/
 arm_test/
 buck-out/
 buck2-bin/
+build/
 cmake-android-out/
 cmake-ios-out/
 cmake-out*
@@ -39,3 +40,19 @@ xcuserdata/
 .swiftpm/
 *.xcworkspace/
 *.xcframework/
+
+# misc
+/.vscode/
+*.so
+*.dylib
+/cmake_wrapper.sh
+/data/
+/devtools/bundled_program/serialize/
+/exir/_serialize/program.fbs
+/exir/_serialize/scalar_type.fbs
+/include/
+/share/
+/version.py
+
+# Android
+*.aar

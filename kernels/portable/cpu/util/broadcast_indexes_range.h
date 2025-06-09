@@ -21,7 +21,29 @@
 namespace torch::executor {
 
 namespace internal {
-template <std::size_t kNumInputs>
+// NOTE: we bake ArrayRef iterators being pointers into the return
+// type here because we assume that iterators are portable across
+// ArrayRef copies.
+inline const Tensor::SizesType* arrayref_begin_ignoring_leading_1s(
+    ArrayRef<Tensor::SizesType> arr) {
+  return std::find_if(
+      arr.begin(), arr.end(), [](Tensor::SizesType x) { return x != 1; });
+}
+
+inline bool sizes_match_ignoring_leading_1s(
+    ArrayRef<Tensor::SizesType> lhs,
+    ArrayRef<Tensor::SizesType> rhs) {
+  auto lhs_begin = arrayref_begin_ignoring_leading_1s(lhs);
+  auto lhs_end = lhs.end();
+
+  auto rhs_begin = arrayref_begin_ignoring_leading_1s(rhs);
+  auto rhs_end = rhs.end();
+
+  return ((lhs_end - lhs_begin) == (rhs_end - rhs_begin)) &&
+      std::equal(lhs_begin, lhs_end, rhs_begin);
+}
+
+template <std::size_t kNumInputs, bool support_noncontiguous_tensors = false>
 class BroadcastIndexesIterator {
  public:
   using difference_type = ssize_t;
@@ -35,13 +57,20 @@ class BroadcastIndexesIterator {
   template <typename... Args>
   explicit BroadcastIndexesIterator(const Tensor& output, const Args&... args)
       : output_dim_or_zero_if_no_broadcasting_(
-            ((args.sizes() == output.sizes()) && ...) ? 0 : output.dim()),
+            !support_noncontiguous_tensors &&
+                    (sizes_match_ignoring_leading_1s(
+                         args.sizes(),
+                         output.sizes()) &&
+                     ...)
+                ? 0
+                : output.dim()),
         output_shape_(output.sizes()) {
     static_assert(
         sizeof...(args) == kNumInputs && (std::is_same_v<Args, Tensor> && ...),
         "BroadcastIndexesIterator constructor requires kNumInputs input tensor"
         "arguments!");
-    if (output_dim_or_zero_if_no_broadcasting_ != 0) {
+    if (support_noncontiguous_tensors ||
+        output_dim_or_zero_if_no_broadcasting_ != 0) {
       effective_input_broadcast_strides_ = {
           effective_input_broadcast_stride(output, args)...};
     }
@@ -224,11 +253,17 @@ class BroadcastIndexesIterator {
  * Unlike looping using delinearize_index() and
  * linearize_access_indexes(), BroadcastIndexesRange avoids expensive
  * division and modulo operations on each iteration.
+ *
+ * The support_noncontiguous_tensors argument disables an optimization
+ * that causes the iterators not to respect strides in some
+ * cases. This optimization is normally safe because ExecuTorch
+ * tensors are contiguous.
  */
-template <std::size_t kNumInputs>
+template <std::size_t kNumInputs, bool support_noncontiguous_tensors = false>
 class BroadcastIndexesRange {
  public:
-  using iterator = internal::BroadcastIndexesIterator<kNumInputs>;
+  using iterator = internal::
+      BroadcastIndexesIterator<kNumInputs, support_noncontiguous_tensors>;
 
   template <typename... Args>
   BroadcastIndexesRange(const Tensor& output, const Args&... args)

@@ -6,13 +6,17 @@
 
 # pyre-unsafe
 
+import operator
 import unittest
 from typing import Any, Callable, cast, List, Optional, Sequence, Tuple, Union
 
 import torch
 import torch.nn.functional as F
 from executorch.backends.cadence.aot import compiler
-from executorch.backends.cadence.aot.compiler import export_to_edge, quantize_pt2
+from executorch.backends.cadence.aot.compiler import (
+    export_to_edge,
+    quantize_and_export_to_edge,
+)
 from executorch.backends.cadence.aot.graph_builder import (
     GraphBuilder,
     single_op_builder,
@@ -22,8 +26,8 @@ from executorch.backends.cadence.aot.replace_ops import (
     ForceChannelLastForConvPass,
     MakeSliceAndCatDimOutermostPass,
     ReplaceAddMMWithLinearPass,
+    ReplaceAtenApproxGeluWithApproxGeluPass,
     ReplaceAtenConvolutionWithJarvisConvolutionPass,
-    ReplaceAtenLinalgVectorNormWithCadenceLinalgVectorNormPass,
     ReplaceConstantPadNdWithSlicePass,
     ReplaceConvolutionOptionalArgsWithConcreteArgsPass,
     ReplaceConvWithIm2RowAndLinear,
@@ -31,19 +35,22 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceFunctionallyEquivalentOpTargets,
     ReplaceIm2RowWithViewPass,
     ReplaceLinearWithFullyConnectedOpPass,
+    ReplaceMatmulWithTransposedMatmulPass,
     ReplaceMMWithAddMMPass,
     ReplaceNopTransposeOrPermuteWithViewPass,
     ReplacePadWithCatPass,
     ReplacePermuteWithTransposePass,
+    ReplacePowWithMulPass,
     ReplaceRepeatWithCatPass,
     ReplaceScalarTensorWithFullPass,
     ReplaceScalarWithTensorArgPass,
     ReplaceSelectWithViewOpPass,
     ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass,
+    ReplaceSplitWithSlicePass,
     ReplaceSqueezeAndUnsqueezeWithViewPass,
-    ReplaceTCopyWithTransposePass,
     ReplaceTransposedConvWithLinearPass,
     ReplaceTrivialConvWithLinear,
+    ReplaceWhereWithFullArgsWithWhereScalar,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -77,6 +84,49 @@ class TestReplaceOpsPasses(unittest.TestCase):
         """Helper function to check the number of nodes of all types for a given target."""
         for target, expected_count in targets_and_counts:
             self.assertTargetCountEqual(graph_module, target, expected_count)
+
+    @parameterized.expand(
+        [
+            # Regular MM
+            [(64, 33), (33, 128)],
+            # Batched MM
+            [(2, 48, 48), (2, 48, 48)],
+        ]
+    )
+    @torch.no_grad()
+    def test_replace_matmul_with_transposed_matmul(
+        self,
+        x_shape: Tuple[int],
+        y_shape: Tuple[int],
+    ) -> None:
+        class MatMul(torch.nn.Module):
+            def __init__(self) -> None:
+                super(MatMul, self).__init__()
+
+            def forward(self, x, y):
+                return torch.matmul(x, y)
+
+        model = MatMul()
+        X = torch.randn(x_shape)
+        Y = torch.randn(y_shape)
+        p = ReplaceMatmulWithTransposedMatmulPass()
+        inputs = (X, Y)
+        graph_module = (
+            quantize_and_export_to_edge(model, inputs).exported_program().graph_module
+        )
+        # pyre-fixme[16]: Optional type has no attribute `graph_module`
+        graph_after_passes = p(graph_module).graph_module
+
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.transpose_copy.int),
+            1,
+        )
+        self.assertEqual(
+            count_node(
+                graph_after_passes, exir_ops.edge.cadence.quantized_matmul.default
+            ),
+            1,
+        )
 
     @parameterized.expand(
         [
@@ -314,37 +364,6 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.unsafe_split.Tensor),
-            0,
-        )
-
-    @parameterized.expand(
-        [
-            [(16, 32)],
-            [(1, 240)],
-            [(4, 16)],
-        ]
-    )
-    @torch.no_grad()
-    def test_replace_t_copy_with_transpose(self, shape: Tuple[int]):
-        class TCopy(torch.nn.Module):
-            def forward(self, x: torch.Tensor):
-                return exir_ops.edge.aten.t_copy(x)
-
-        w = torch.randn(shape)
-        inputs = (w,)
-        p1 = ReplaceTCopyWithTransposePass()
-        p2 = ReplacePermuteWithTransposePass()
-        model = TCopy()
-        graph_module = export_to_edge(model, inputs).exported_program().graph_module
-        graph_after_passes = cast(
-            PassResult, p2(cast(PassResult, p1(graph_module)).graph_module)
-        ).graph_module
-        self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.aten.transpose_copy.int),
-            1,
-        )
-        self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.aten.t_copy),
             0,
         )
 
@@ -847,9 +866,8 @@ class TestReplaceOpsPasses(unittest.TestCase):
 
         inputs = (x,)
         model = torch.nn.Linear(in_features=in_features, out_features=out_features)
-        quantized_model = quantize_pt2(model, inputs)
 
-        exported_program = export_to_edge(quantized_model, inputs).exported_program()
+        exported_program = quantize_and_export_to_edge(model, inputs).exported_program()
 
         # By default, the quantized linear op should have constant scalar attributes.
         self.assertTargetCountsEqual(
@@ -894,9 +912,8 @@ class TestReplaceOpsPasses(unittest.TestCase):
 
         inputs = (x,)
         model = torch.nn.Linear(in_features=in_features, out_features=out_features)
-        quantized_model = quantize_pt2(model, inputs)
 
-        exported_program = export_to_edge(quantized_model, inputs).exported_program()
+        exported_program = quantize_and_export_to_edge(model, inputs).exported_program()
 
         # By default, the quantized linear op should have constant scalar attributes.
         self.assertTargetCountsEqual(
@@ -1187,34 +1204,198 @@ class TestReplaceOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.transpose_copy.int), 0
         )
 
-    def test_replace_aten_linalg_vector_norm_with_cadence_linalg_vector_norm(self):
-        class LinalgVectorNorm(torch.nn.Module):
-            def forward(self, x: torch.Tensor):
-                return torch.linalg.vector_norm(x)
+    def test_replace_aten_where_with_cadence_where_Scalar(self):
+        class WhereScalarModel(torch.nn.Module):
+            def forward(self, cond: torch.Tensor):
+                a = torch.ops.aten.full.default(a_shape, val1)
+                b = torch.ops.aten.full.default(b_shape, val2)
+                return torch.where(cond > 0, a, b)
 
-        x = torch.randn(32)
+        cond_shape, a_shape, b_shape, val1, val2 = [(4, 8), (4, 8), (4, 8), 0.0, 1.0]
+        cond = torch.randn(cond_shape)
 
         graph_module = (
-            export_to_edge(LinalgVectorNorm(), (x,)).exported_program().graph_module
+            export_to_edge(WhereScalarModel(), (cond,)).exported_program().graph_module
         )
 
-        p = ReplaceAtenLinalgVectorNormWithCadenceLinalgVectorNormPass()
+        p = ReplaceWhereWithFullArgsWithWhereScalar()
         graph_after_passes = cast(PassResult, p(graph_module)).graph_module
 
-        # Assert that aten.linalg_vector_norm op was replaced by a
-        # cadence.linalg_vector_norm op
+        # Assert that aten.where op was replaced by a
+        # cadence.where_Scalar op
         self.assertEqual(
             count_node(
                 graph_after_passes,
-                exir_ops.edge.aten.linalg_vector_norm.default,
+                exir_ops.edge.aten.where.self,
             ),
             0,
         )
         self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.cadence.where_Scalar.default),
+            1,
+        )
+
+        class WhereBroadcastModel(torch.nn.Module):
+            def forward(self, cond: torch.Tensor):
+                a = torch.ops.aten.full.default(a_shape, val1)
+                b = torch.ops.aten.full.default(b_shape, val2)
+                return torch.where(cond > 0, a, b)
+
+        # a tensor bigger than cond and b
+        cond_shape, a_shape, b_shape, val1, val2 = [(8,), (4, 8), (8,), 0.0, 1.0]
+        cond = torch.randn(cond_shape)
+
+        graph_module = (
+            export_to_edge(WhereBroadcastModel(), (cond,))
+            .exported_program()
+            .graph_module
+        )
+
+        p = ReplaceWhereWithFullArgsWithWhereScalar()
+        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+
+        # Assert that aten.where op is still in the graph since where_Scalar does not
+        # support broadcast
+        self.assertEqual(
             count_node(
-                graph_after_passes, exir_ops.edge.cadence.linalg_vector_norm.default
+                graph_after_passes,
+                exir_ops.edge.aten.where.self,
             ),
             1,
+        )
+
+        # cond tensor bigger than a and b
+        cond_shape, a_shape, b_shape, val1, val2 = [(4, 8), (8,), (8,), 0.0, 1.0]
+        cond = torch.randn(cond_shape)
+
+        graph_module = (
+            export_to_edge(WhereBroadcastModel(), (cond,))
+            .exported_program()
+            .graph_module
+        )
+
+        p = ReplaceWhereWithFullArgsWithWhereScalar()
+        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+
+        # Assert that aten.where op is still in the graph since where_Scalar does not
+        # support broadcast
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.aten.where.self,
+            ),
+            1,
+        )
+
+    def test_no_replace_aten_gelu_with_approximate_gelu(self):
+        inputs = torch.randn(2, 1, 64)
+
+        gm = single_op_builder(
+            placeholders=(inputs,),
+            op=exir_ops.edge.aten.gelu.default,
+            args=(inputs,),
+        )
+        gm = ExportPass().call(gm).graph_module
+
+        p = ReplaceAtenApproxGeluWithApproxGeluPass()
+        graph_after_passes = p.call(gm).graph_module
+
+        # Assert that aten.gelu op was not decomposed, since it didn't have an approximate argument
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.aten.gelu.default,
+            ),
+            1,
+        )
+
+    def test_replace_split_with_sizes_with_slice(self):
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 16, 8, 4))
+        split = builder.call_operator(
+            exir_ops.edge.aten.split_with_sizes_copy.default, (x, [8, 8], 1)
+        )
+        # We need the outputs to be gathered by getitem ops
+        out0 = builder.call_operator(operator.getitem, (split, 0))
+        out1 = builder.call_operator(operator.getitem, (split, 1))
+        builder.output([out0, out1])
+        graph_module = builder.get_graph_module()
+
+        p = ReplaceSplitWithSlicePass()
+        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+
+        self.assertEqual(
+            count_node(
+                graph_after_passes, exir_ops.edge.aten.split_with_sizes_copy.default
+            ),
+            0,
+        )
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.slice_copy.Tensor),
+            2,
+        )
+
+    @parameterized.expand([[2], [3], [4]])
+    def test_replace_pow_with_mul(self, exponent: int):
+        class Pow(torch.nn.Module):
+            def forward(self, input):
+                return torch.ops.aten.pow.Tensor_Scalar(input, exponent)
+
+        input = torch.randn(2, 1, 64)
+
+        graph_module = export_to_edge(Pow(), (input,)).exported_program().graph_module
+
+        p = ReplacePowWithMulPass()
+        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.aten.pow.Tensor_Scalar,
+            ),
+            0,
+        )
+
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.aten.mul.Tensor,
+            ),
+            exponent - 1,
+        )
+
+    @parameterized.expand(
+        [
+            [1],
+            [1.5],
+        ]
+    )
+    def test_replace_pow_with_mul_not_applied(self, exponent):
+        class Pow(torch.nn.Module):
+            def forward(self, input):
+                return torch.ops.aten.pow.Tensor_Scalar(input, exponent)
+
+        input = torch.randn(2, 1, 64)
+
+        graph_module = export_to_edge(Pow(), (input,)).exported_program().graph_module
+
+        p = ReplacePowWithMulPass()
+        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.aten.pow.Tensor_Scalar,
+            ),
+            1,
+        )
+
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.aten.mul.Tensor,
+            ),
+            0,
         )
 
 

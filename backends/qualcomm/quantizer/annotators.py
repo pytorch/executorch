@@ -12,20 +12,17 @@ import torch
 from torch._ops import OpOverload
 
 from torch._subclasses import FakeTensor
-from torch.ao.quantization.fake_quantize import FixedQParamsFakeQuantize
+from torch.fx import Node
 
-from torch.ao.quantization.observer import FixedQParamsObserver
-from torch.ao.quantization.quantizer import (
+from torchao.quantization.pt2e import FixedQParamsFakeQuantize, FixedQParamsObserver
+from torchao.quantization.pt2e.quantizer import (
+    annotate_input_qspec_map,
+    annotate_output_qspec,
     DerivedQuantizationSpec,
     QuantizationAnnotation,
     QuantizationSpec,
     SharedQuantizationSpec,
 )
-from torch.ao.quantization.quantizer.utils import (
-    _annotate_input_qspec_map,
-    _annotate_output_qspec,
-)
-from torch.fx import Node
 
 from .qconfig import (
     get_16a16w_qnn_ptq_config,
@@ -97,6 +94,7 @@ def annotate_in_out_obs_sharing_op(
         QUANT_ANNOTATION_KEY not in input_act.meta
         or not input_act.meta[QUANT_ANNOTATION_KEY]._annotated
         or input_act.meta[QUANT_ANNOTATION_KEY].output_qspec is None
+        or not _is_float_tensor(input_act)
     ):
         return
 
@@ -132,9 +130,10 @@ def annotate_single_in_single_out(
         return
 
     input_qspec_map = {}
-    input_act = node.args[0]
-    assert isinstance(input_act, Node)
-    input_qspec_map[input_act] = quantization_config.input_activation
+    if _is_float_tensor(node.args[0]):
+        input_act = node.args[0]
+        assert isinstance(input_act, Node)
+        input_qspec_map[input_act] = quantization_config.input_activation
 
     if _is_float_tensor(node):
         node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
@@ -177,8 +176,15 @@ def annotate_binary(node: Node, quantization_config: QuantizationConfig) -> None
     )
 
 
-@register_annotator([torch.ops.aten.add, torch.ops.aten.add.Tensor])
+@register_annotator(
+    [torch.ops.aten.add, torch.ops.aten.add.Tensor, torch.ops.aten.add_.Tensor]
+)
 def annotate_add(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.amax.default])
+def annotate_amax(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
@@ -222,6 +228,26 @@ def annotate_le(node: Node, quantization_config: QuantizationConfig) -> None:
 @register_annotator([torch.ops.aten.lt.Tensor])
 def annotate_lt(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.masked_fill.Tensor])
+def annotate_masked_fill(node: Node, quantization_config: QuantizationConfig) -> None:
+    if _is_annotated([node]):
+        return
+
+    input_qspec_map = {}
+    for input_node in node.args:
+        assert isinstance(input_node, Node)
+        if _is_float_tensor(input_node):
+            input_qspec_map[input_node] = quantization_config.input_activation
+
+    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        input_qspec_map=input_qspec_map,
+        output_qspec=(
+            quantization_config.output_activation if _is_float_tensor(node) else None
+        ),
+        _annotated=True,
+    )
 
 
 @register_annotator([torch.ops.aten.mul, torch.ops.aten.mul.Tensor])
@@ -378,6 +404,20 @@ def annotate_sin(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.scalar_tensor.default])
+def annotate_scalar_tensor(node: Node, quantization_config: QuantizationConfig) -> None:
+    if _is_annotated([node]):
+        return
+    if _is_float_tensor(node):
+        # workaround for node with kwargs could not be correctly annotated
+        node.kwargs = {}
+        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map={},
+            output_qspec=quantization_config.output_activation,
+            _annotated=True,
+        )
+
+
 @register_annotator([torch.ops.aten.tanh.default])
 def annotate_tanh(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
@@ -439,8 +479,13 @@ def annotate_neg(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.adaptive_avg_pool2d.default])
-def annotate_adaptive_avgpool2d(
+@register_annotator(
+    [
+        torch.ops.aten.adaptive_avg_pool1d.default,
+        torch.ops.aten.adaptive_avg_pool2d.default,
+    ]
+)
+def annotate_adaptive_avgpool(
     node: Node, quantization_config: QuantizationConfig
 ) -> None:
     annotate_single_in_single_out(node, quantization_config)
@@ -486,6 +531,13 @@ def annotate_pixel_unshuffle_default(
 
 @register_annotator([torch.ops.aten.upsample_bilinear2d.vec])
 def annotate_upsample_bilinear2d(
+    node: Node, quantization_config: QuantizationConfig
+) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.upsample_bicubic2d.vec])
+def annotate_upsample_upsample_bicubic2d(
     node: Node, quantization_config: QuantizationConfig
 ) -> None:
     annotate_single_in_single_out(node, quantization_config)
@@ -595,19 +647,19 @@ def annotate_rms_norm(node: Node, quantization_config: QuantizationConfig) -> No
         return
 
     # TODO current only support 16a16w
-    _annotate_input_qspec_map(
+    annotate_input_qspec_map(
         node,
         act_node,
         quantization_config.input_activation,
     )
 
-    _annotate_input_qspec_map(
+    annotate_input_qspec_map(
         node,
         weight_node,
         quantization_config.input_activation,
     )
     nodes_to_mark_annotated = [node]
-    _annotate_output_qspec(node, quantization_config.output_activation)
+    annotate_output_qspec(node, quantization_config.output_activation)
     _mark_nodes_as_annotated(nodes_to_mark_annotated)
 
 
@@ -680,6 +732,11 @@ def annotate_sigmoid(node: Node, quantization_config: QuantizationConfig) -> Non
         )
 
 
+@register_annotator([torch.ops.aten.__and__.Tensor])
+def annotate_and(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.bitwise_or.Tensor, torch.ops.aten.__or__.Tensor])
 def annotate_bitwise_or(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
@@ -717,7 +774,12 @@ def annotate_transpose(node: Node, quantization_config: QuantizationConfig) -> N
         annotate_single_in_single_out(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.embedding.default])
+@register_annotator([torch.ops.aten.elu.default])
+def annotate_elu(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.embedding.default, torch.ops.aten.gather.default])
 def annotate_embedding(node: Node, quantization_config: QuantizationConfig) -> None:
     weight = node.args[0]
 
@@ -763,6 +825,11 @@ def annotate_index_put(node: Node, quantization_config: QuantizationConfig) -> N
     )
 
 
+@register_annotator([torch.ops.aten.exp.default])
+def annotate_exp(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.expand.default, torch.ops.aten.expand_as.default])
 def annotate_expand(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_in_out_obs_sharing_op(node, quantization_config)
@@ -781,25 +848,25 @@ def annotate_group_norm(node: Node, quantization_config: QuantizationConfig) -> 
     if _is_annotated([node]):
         return
 
-    _annotate_input_qspec_map(
+    annotate_input_qspec_map(
         node,
         act_node,
         quantization_config.input_activation,
     )
-    _annotate_input_qspec_map(
+    annotate_input_qspec_map(
         node,
         weight_node,
         quantization_config.weight,
     )
     nodes_to_mark_annotated = [node, weight_node]
     if bias_node:
-        _annotate_input_qspec_map(
+        annotate_input_qspec_map(
             node,
             bias_node,
             quantization_config.bias,
         )
         nodes_to_mark_annotated.append(bias_node)
-    _annotate_output_qspec(node, quantization_config.output_activation)
+    annotate_output_qspec(node, quantization_config.output_activation)
     _mark_nodes_as_annotated(nodes_to_mark_annotated)
 
 
@@ -812,18 +879,28 @@ def annotate_flatten(node: Node, quantization_config: QuantizationConfig) -> Non
 
 @register_annotator([torch.ops.aten.stack.default])
 def annotate_stack(node: Node, quantization_config: QuantizationConfig) -> None:
-    input_qspec_map = {}
-    for input_act in node.args[0]:
-        assert isinstance(input_act, Node)
-        input_qspec_map[input_act] = quantization_config.input_activation
+    input_nodes = node.args[0]
+    if _is_annotated([node]) or not _is_float_tensor(node):
+        return
 
-        node_tensor = node.meta.get("val")
-        if torch.is_tensor(node_tensor) and node_tensor.dtype == torch.int64:
-            continue
+    assert isinstance(input_nodes, Sequence)
+
+    first_input_node = input_nodes[0]
+    input_qspec_map = {}
+    assert isinstance(first_input_node, Node)
+    input_qspec_map[first_input_node] = quantization_config.input_activation
+    share_qparams_with_input_act0_qspec = SharedQuantizationSpec(
+        (first_input_node, node)
+    )
+
+    for input_node in input_nodes[1:]:
+        if input_node not in input_qspec_map:
+            assert isinstance(input_node, Node)
+            input_qspec_map[input_node] = share_qparams_with_input_act0_qspec
 
     node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
-        output_qspec=quantization_config.output_activation,
+        output_qspec=share_qparams_with_input_act0_qspec,
         _annotated=True,
     )
 
@@ -889,14 +966,21 @@ def annotate_bmm(node: Node, quantization_config: QuantizationConfig) -> None:
     node.meta["source_fn_stack"] = [(node, torch.bmm)]
 
 
+@register_annotator([torch.ops.aten.cdist.default])
+def annotate_cdist(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
+
+
 @register_annotator(
     [
         torch.ops.aten.conv2d.default,
+        torch.ops.aten.conv2d.padding,
         torch.ops.aten.conv1d.default,
         torch.ops.aten.conv_transpose2d.input,
+        torch.ops.aten.conv_transpose1d.default,
     ]
 )
-def annotate_conv2d(node: Node, quantization_config: QuantizationConfig) -> None:
+def annotate_conv(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
         return
 
@@ -931,6 +1015,11 @@ def annotate_conv2d(node: Node, quantization_config: QuantizationConfig) -> None
     )
 
 
+@register_annotator([torch.ops.aten.cumsum.default])
+def annotate_cumsum(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.linear.default])
 def annotate_linear(node: Node, quantization_config: QuantizationConfig) -> None:
     act_node = node.args[0]
@@ -943,12 +1032,12 @@ def annotate_linear(node: Node, quantization_config: QuantizationConfig) -> None
     if _is_annotated([node]):
         return
 
-    _annotate_input_qspec_map(
+    annotate_input_qspec_map(
         node,
         act_node,
         quantization_config.input_activation,
     )
-    _annotate_input_qspec_map(
+    annotate_input_qspec_map(
         node,
         weight_node,
         quantization_config.weight,
@@ -959,9 +1048,9 @@ def annotate_linear(node: Node, quantization_config: QuantizationConfig) -> None
             bias_config = quantization_config.bias(node)
         else:
             bias_config = quantization_config.bias
-        _annotate_input_qspec_map(node, bias_node, bias_config)
+        annotate_input_qspec_map(node, bias_node, bias_config)
         nodes_to_mark_annotated.append(bias_node)
-    _annotate_output_qspec(node, quantization_config.output_activation)
+    annotate_output_qspec(node, quantization_config.output_activation)
     _mark_nodes_as_annotated(nodes_to_mark_annotated)
 
     # We use get_source_partition in pass, but it is the same source for MultiheadAttention, so we need to change its source_fn_stack.
@@ -979,14 +1068,14 @@ def annotate_batch_and_instance_norm(
         return
 
     annotated_args = [act]
-    _annotate_input_qspec_map(
+    annotate_input_qspec_map(
         node,
         act,
         quantization_config.input_activation,
     )
     # QNN requires uint8 instead of int8 in 'weight' config
     if weight is not None:
-        _annotate_input_qspec_map(
+        annotate_input_qspec_map(
             node,
             weight,
             quantization_config.input_activation,
@@ -994,14 +1083,14 @@ def annotate_batch_and_instance_norm(
         annotated_args.append(weight)
 
     if bias is not None:
-        _annotate_input_qspec_map(
+        annotate_input_qspec_map(
             node,
             bias,
             quantization_config.bias,
         )
         annotated_args.append(bias)
 
-    _annotate_output_qspec(node, quantization_config.output_activation)
+    annotate_output_qspec(node, quantization_config.output_activation)
     _mark_nodes_as_annotated([node, *annotated_args])
 
 
@@ -1011,7 +1100,7 @@ def annotate_getitem(node: Node, quantization_config: QuantizationConfig) -> Non
         return
 
     if _is_float_tensor(node):
-        _annotate_output_qspec(node, quantization_config.output_activation)
+        annotate_output_qspec(node, quantization_config.output_activation)
         _mark_nodes_as_annotated([node])
 
 
@@ -1027,39 +1116,39 @@ def annotate_layer_norm(node: Node, quantization_config: QuantizationConfig) -> 
         return
     input_act_qspec = quantization_config.input_activation
 
-    _annotate_input_qspec_map(
+    annotate_input_qspec_map(
         node,
         act_node,
         input_act_qspec,
     )
     if input_act_qspec.dtype == torch.int32:
-        _annotate_input_qspec_map(
+        annotate_input_qspec_map(
             node,
             weight_node,
             get_16a16w_qnn_ptq_config().weight,
         )
     else:
-        _annotate_input_qspec_map(
+        annotate_input_qspec_map(
             node,
             weight_node,
             input_act_qspec,
         )
     nodes_to_mark_annotated = [node, weight_node]
     if bias_node:
-        _annotate_input_qspec_map(
+        annotate_input_qspec_map(
             node,
             bias_node,
             quantization_config.bias,
         )
         nodes_to_mark_annotated.append(bias_node)
-    _annotate_output_qspec(node, quantization_config.output_activation)
+    annotate_output_qspec(node, quantization_config.output_activation)
     _mark_nodes_as_annotated(nodes_to_mark_annotated)
 
 
 @register_annotator([torch.ops.aten.cat.default, torch.ops.aten.concat.default])
 def annotate_cat(node: Node, quantization_config: QuantizationConfig) -> None:
     input_nodes = node.args[0]
-    if _is_annotated([node]):
+    if _is_annotated([node]) or not _is_float_tensor(node):
         return
 
     assert isinstance(input_nodes, Sequence)
@@ -1068,15 +1157,17 @@ def annotate_cat(node: Node, quantization_config: QuantizationConfig) -> None:
     input_qspec_map = {}
     assert isinstance(first_input_node, Node)
     assert isinstance(node, Node)
-    input_qspec_map[first_input_node] = quantization_config.input_activation
-    share_qparams_with_input_act0_qspec = SharedQuantizationSpec(
-        (first_input_node, node)
-    )
+    if _is_float_tensor(first_input_node):
+        input_qspec_map[first_input_node] = quantization_config.input_activation
+        share_qparams_with_input_act0_qspec = SharedQuantizationSpec(
+            (first_input_node, node)
+        )
 
     for input_node in input_nodes[1:]:
         if input_node not in input_qspec_map:
             assert isinstance(input_node, Node)
-            input_qspec_map[input_node] = share_qparams_with_input_act0_qspec
+            if _is_float_tensor(input_node):
+                input_qspec_map[input_node] = share_qparams_with_input_act0_qspec
 
     node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
@@ -1087,25 +1178,35 @@ def annotate_cat(node: Node, quantization_config: QuantizationConfig) -> None:
 
 @register_annotator([torch.ops.aten.unbind.int])
 def annotate_unbind(node: Node, quantization_config: QuantizationConfig) -> None:
-    if _is_annotated([node]):
+    # Seems like unbind.int can be either float or int. Only quant when input is float.
+    if _is_annotated([node]) or not _is_float_tensor(node.args[0]):
         return
-
     input_qspec_map = {}
     input_act = node.args[0]
     assert isinstance(input_act, Node)
+    share_qparams_with_out_node0_qspec = SharedQuantizationSpec((node.args[0], node))
     input_qspec_map[input_act] = quantization_config.input_activation
-
-    node_tensor = node.meta.get("val")
-    if torch.is_tensor(node_tensor) and node_tensor.dtype == torch.int64:
-        return
 
     node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
+        output_qspec=share_qparams_with_out_node0_qspec,
         _annotated=True,
     )
 
+    for user in node.users:
+        user.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+            output_qspec=share_qparams_with_out_node0_qspec,
+            _annotated=True,
+        )
 
-@register_annotator([torch.ops.aten.split.Tensor, torch.ops.aten.chunk.default])
+
+@register_annotator(
+    [
+        torch.ops.aten.split_with_sizes.default,
+        torch.ops.aten.split.Tensor,
+        torch.ops.aten.chunk.default,
+    ]
+)
 def annotate_chunk(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
         return
@@ -1129,22 +1230,33 @@ def annotate_chunk(node: Node, quantization_config: QuantizationConfig) -> None:
 
 @register_annotator([torch.ops.aten.where.self])
 def annotate_where(node: Node, quantization_config: QuantizationConfig) -> None:
-    true_input_act = node.args[1]
-    false_input_act = node.args[2]
     if _is_annotated([node]):
         return
 
-    _annotate_input_qspec_map(
-        node,
-        true_input_act,
-        quantization_config.input_activation,
+    input_qspec_map = {}
+    for input_node in node.args:
+        assert isinstance(input_node, Node)
+        if _is_float_tensor(input_node):
+            input_qspec_map[input_node] = quantization_config.input_activation
+
+    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        input_qspec_map=input_qspec_map,
+        output_qspec=(
+            quantization_config.output_activation if _is_float_tensor(node) else None
+        ),
+        _annotated=True,
     )
 
-    _annotate_input_qspec_map(
-        node,
-        false_input_act,
-        quantization_config.input_activation,
-    )
 
-    _annotate_output_qspec(node, quantization_config.output_activation)
-    _mark_nodes_as_annotated([node])
+@register_annotator([torch.ops.aten.zeros.default])
+def annotate_zeros(node: Node, quantization_config: QuantizationConfig) -> None:
+    if _is_annotated([node]) or not _is_float_tensor(node):
+        return
+
+    # workaround for node with kwargs could not be correctly annotated
+    node.kwargs = {}
+    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        input_qspec_map={},
+        output_qspec=quantization_config.output_activation,
+        _annotated=True,
+    )

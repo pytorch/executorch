@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include <bitset>
+#include <iomanip>
 #include <utility>
 #include <vector>
 
@@ -1471,11 +1472,13 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_symint) {
       // Shader params buffers
       {graph.logical_limits_ubo(a.value),
        graph.get_or_create_int_param_buffer(scalar)},
+      // Push constants
+      {},
       // Specialization Constants
       {},
       // Resizing Logic
-      nullptr,
-      {}));
+      {},
+      nullptr));
 
   out.staging = graph.set_output_tensor(out.value);
 
@@ -1598,8 +1601,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       /*shared_object_idx = */ 4);
 
   // +2: t.sizes_ubo() for each staging shader
-  // +2: staging buffer for each input tensor
-  expected_vma_allocation_count += 4;
+  expected_vma_allocation_count += 2;
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   ValueRef c = graph.add_tensor(
@@ -1619,8 +1621,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       /*shared_object_idx = */ 2);
 
   // +1: t.sizes_ubo() uniform buffer for staging shader
-  // +1: staging buffer for the input tensor
-  expected_vma_allocation_count += 2;
+  expected_vma_allocation_count += 1;
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   ValueRef e = graph.add_tensor(
@@ -1639,8 +1640,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   out.staging = graph.set_output_tensor(out.value);
 
   // +1: staging buffer input tensor
-  // +1: staging buffer for the output tensor
-  expected_vma_allocation_count += 2;
+  expected_vma_allocation_count += 1;
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   graph.prepare();
@@ -1658,9 +1658,8 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   for (auto& new_sizes : new_sizes_list) {
     graph.get_tensor(a.value)->virtual_resize(new_sizes);
     graph.get_tensor(b.value)->virtual_resize(new_sizes);
-    graph.get_tensor(c)->virtual_resize(new_sizes);
     graph.get_tensor(d.value)->virtual_resize(new_sizes);
-    graph.get_tensor(e)->virtual_resize(new_sizes);
+    graph.propagate_resize();
 
     float val_a = new_sizes[1] + 4.0f;
     float val_b = new_sizes[2] + 1.5f;
@@ -2751,50 +2750,19 @@ void test_mm(
     utils::StorageType storage_type,
     utils::GPUMemoryLayout memory_layout,
     bool prepack = true) {
-  GraphConfig config;
-  config.set_storage_type_override(storage_type);
-  ComputeGraph graph(config);
+  std::vector<int64_t> mat2_size = {B, K, N};
 
-  std::vector<int64_t> mat1_size = {M, K};
-  std::vector<int64_t> mat2_size = {K, N};
-  std::vector<int64_t> out_size = {M, N};
-  if (B > 1) {
-    mat1_size.resize(3);
-    mat1_size = {B, M, K};
-    mat2_size.resize(3);
-    mat2_size = {B, K, N};
-    out_size.resize(3);
-    out_size = {B, M, N};
-  }
-
-  IOValueRef mat2{};
-
-  CREATE_WEIGHT_TENSOR(mat2_w, mat2_size, dtype, 2.0f);
-
-  // Build graph
-
-  IOValueRef mat1 = graph.add_input_tensor(mat1_size, dtype, memory_layout);
-
-  if (prepack) {
-    mat2.value = mat2_w;
-  } else {
-    mat2.value = graph.add_tensor(mat2_size, dtype, memory_layout);
-    mat2.staging = graph.set_input_tensor(mat2.value);
-  }
-
-  IOValueRef out;
-  out.value = graph.add_tensor(out_size, dtype, memory_layout);
-
-  VK_GET_OP_FN("aten.mm.default")(graph, {mat1.value, mat2.value, out.value});
-
-  out.staging = graph.set_output_tensor(out.value);
+  std::vector<float> mat2_data(utils::multiply_integers(mat2_size));
+  std::fill(mat2_data.begin(), mat2_data.end(), 2.0f);
+  ComputeGraph graph = build_mm_graph(
+      B, M, K, N, dtype, storage_type, memory_layout, mat2_data, prepack);
 
   graph.prepare();
   graph.encode_prepack();
   graph.prepack();
-  graph.encode_execute();
 
   for (int i = 1; i < 4; i++) {
+    graph.encode_execute();
     if (prepack) {
       float val_mat1 = i;
       float val_out = K * (val_mat1 * 2.0f);
@@ -2851,6 +2819,62 @@ TEST(VulkanComputeGraphOpsTest, mm_smoke_test) {
   CALL_TEST_FN_FOR_C_PACKED(RUN_TESTS);
 
 #undef RUN_TESTS
+}
+
+void test_mm_with_resize_reencode(
+    int B,
+    int M,
+    int K,
+    int N,
+    vkapi::ScalarType dtype,
+    utils::StorageType storage_type,
+    utils::GPUMemoryLayout memory_layout) {
+  ASSERT_TRUE(M > 1);
+
+  std::vector<int64_t> mat2_size = {B, K, N};
+  std::vector<float> mat2_data(utils::multiply_integers(mat2_size));
+  std::fill(mat2_data.begin(), mat2_data.end(), 2.0f);
+
+  ComputeGraph graph = build_mm_graph(
+      B, M, K, N, dtype, storage_type, memory_layout, mat2_data, false);
+
+  graph.prepare();
+  graph.encode_prepack();
+  graph.prepack();
+  graph.encode_execute();
+
+  for (int i = 1; i < 4; i++) {
+    float val_mat1 = i;
+    float val_mat2 = i + 1;
+    float val_out = K * (val_mat1 * val_mat2);
+    execute_graph_and_check_output(graph, {val_mat1, val_mat2}, {val_out});
+  }
+
+  // Switch to GEMV mode
+  int new_K = K / 2;
+  std::vector<int64_t> new_mat1_size = {1, new_K};
+  std::vector<int64_t> new_mat2_size = {new_K, N};
+  graph.resize_input(0, new_mat1_size);
+  graph.resize_input(1, new_mat2_size);
+  graph.propagate_resize();
+
+  for (int i = 1; i < 4; i++) {
+    float val_mat1 = i;
+    float val_mat2 = i + 1;
+    float val_out = new_K * (val_mat1 * val_mat2);
+    execute_graph_and_check_output(graph, {val_mat1, val_mat2}, {val_out});
+  }
+}
+
+TEST(VulkanComputeGraphOpsTest, test_graph_resize_reencode) {
+  test_mm_with_resize_reencode(
+      /*B = */ 1,
+      /*M = */ 31,
+      /*K = */ 127,
+      /*N = */ 23,
+      vkapi::kFloat,
+      utils::kTexture3D,
+      utils::kWidthPacked);
 }
 
 void test_max_pool2d(
@@ -3275,4 +3299,147 @@ TEST(VulkanComputeGraphOpsTest, test_to_copy) {
   if (context()->adapter_ptr()->supports_16bit_storage_buffers()) {
     test_to_copy();
   }
+}
+
+vkapi::ShaderInfo pick_dynamic_dispatch_shader(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& additional_args) {
+  const ValueRef mat1 = args[1].refs[0];
+
+  std::string kernel_name = "dynamic_dispatch_test";
+  if (graph->size_at<int32_t>(-2, mat1) == 1) {
+    kernel_name += "_var1";
+  } else {
+    kernel_name += "_var2";
+  }
+  return VK_KERNEL_FROM_STR(kernel_name);
+}
+
+utils::uvec3 pick_dynamic_dispatch_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  const ValueRef out = args[0].refs[0];
+  return graph->logical_limits_of(out);
+}
+
+utils::uvec3 pick_dynamic_dispatch_local_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const utils::uvec3& global_workgroup_size,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)graph;
+  (void)shader;
+  (void)global_workgroup_size;
+  return {64, 1, 1};
+}
+
+void resize_dynamic_dispatch_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& additional_args) {
+  const ValueRef out = args[0].refs[0];
+  const ValueRef mat1 = args[1].refs[0];
+
+  std::vector<int64_t> out_sizes = graph->sizes_of(mat1);
+  out_sizes.at(out_sizes.size() - 2) = 1;
+
+  graph->get_tensor(out)->virtual_resize(out_sizes);
+}
+
+void add_dynamic_dispatch_test_node(
+    ComputeGraph& graph,
+    const ValueRef mat1,
+    const ValueRef mat2,
+    const ValueRef out) {
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
+      graph,
+      pick_dynamic_dispatch_shader,
+      pick_dynamic_dispatch_global_wg_size,
+      pick_dynamic_dispatch_local_wg_size,
+      // Inputs and Outputs
+      {{out, vkapi::kWrite}, {{mat1, mat2}, vkapi::kRead}},
+      // Shader params buffers
+      {},
+      // Push Constants
+      {graph.sizes_pc_of(out),
+       graph.sizes_pc_of(mat1),
+       graph.sizes_pc_of(mat2)},
+      // Specialization constants
+      {},
+      // Resize Logic
+      {},
+      resize_dynamic_dispatch_node));
+}
+
+vkcompute::ComputeGraph build_dynamic_dispatch_test_graph(int M, int N) {
+  using namespace vkcompute;
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  vkapi::ScalarType dtype = vkapi::kFloat;
+  utils::StorageType in_out_stype = utils::kTexture3D;
+  utils::GPUMemoryLayout memory_layout = utils::kWidthPacked;
+
+  std::vector<int64_t> mat1_size = {M, N};
+  std::vector<int64_t> mat2_size = {M, N};
+  std::vector<int64_t> out_size = {1, N};
+
+  IOValueRef mat1 =
+      graph.add_input_tensor(mat1_size, dtype, in_out_stype, memory_layout);
+  IOValueRef mat2{};
+
+  mat2.value = graph.add_tensor(mat2_size, dtype, in_out_stype, memory_layout);
+  mat2.staging = graph.set_input_tensor(mat2.value);
+
+  IOValueRef out;
+  out.value = graph.add_tensor(out_size, dtype, in_out_stype, memory_layout);
+
+  add_dynamic_dispatch_test_node(graph, mat1, mat2, out);
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  return graph;
+}
+
+void test_dynamic_dispatch(int M, int N) {
+  ComputeGraph graph = build_dynamic_dispatch_test_graph(M, N);
+
+  graph.prepare();
+  graph.encode_prepack();
+  graph.prepack();
+  graph.encode_execute();
+
+  for (int i = 1; i < 4; i++) {
+    float val_mat1 = i;
+    float val_mat2 = i + 1;
+    // 5.3 is a hardcoded offset in the compute shader
+    float val_out = M * (val_mat1 * val_mat2) + 5.5;
+    execute_graph_and_check_output(graph, {val_mat1, val_mat2}, {val_out});
+  }
+
+  // Switch to GEMV mode
+  int new_N = N / 2;
+  std::vector<int64_t> new_mat1_size = {1, new_N};
+  std::vector<int64_t> new_mat2_size = {1, new_N};
+  graph.resize_input(0, new_mat1_size);
+  graph.resize_input(1, new_mat2_size);
+  graph.propagate_resize();
+
+  graph.encode_execute();
+
+  for (int i = 1; i < 4; i++) {
+    float val_mat1 = i;
+    float val_mat2 = i + 1;
+    float val_out = (val_mat1 * val_mat2) + 2.25;
+    execute_graph_and_check_output(graph, {val_mat1, val_mat2}, {val_out});
+  }
+}
+
+TEST(VulkanComputeGraphOpsTest, test_dynamic_dispatch_graph) {
+  test_dynamic_dispatch(128, 128);
 }

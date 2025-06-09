@@ -24,10 +24,6 @@ if(NOT RUNTIME_PATH)
   set(RUNTIME_PATH ${CMAKE_CURRENT_SOURCE_DIR}/runtime)
 endif()
 
-if(NOT PYTHON_EXECUTABLE)
-  set(PYTHON_EXECUTABLE python3)
-endif()
-
 # Include this file to access target_link_options_shared_lib This is required to
 # provide access to target_link_options_shared_lib which allows libraries to be
 # linked with the --whole-archive flag. This is required for libraries that
@@ -85,7 +81,7 @@ set(GENERATED_HEADER
 add_custom_command(
   OUTPUT ${GENERATED_HEADER}
   COMMAND
-    ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
+    flatc --cpp --cpp-std c++11 --scoped-enums -o
     "${SCHEMA_INCLUDE_DIR}/executorch/backends/vulkan/serialization/" ${_vulkan_schema__srcs}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   DEPENDS flatc
@@ -109,11 +105,11 @@ file(GLOB vulkan_backend_cpp ${RUNTIME_PATH}/*.cpp)
 list(APPEND vulkan_backend_cpp ${vulkan_graph_cpp})
 list(APPEND vulkan_backend_cpp ${vulkan_standard_shaders_cpp})
 
-add_library(vulkan_backend STATIC ${vulkan_backend_cpp})
+add_library(vulkan_backend ${vulkan_backend_cpp})
 target_include_directories(
   vulkan_backend PRIVATE ${SCHEMA_INCLUDE_DIR} ${COMMON_INCLUDES}
 )
-target_link_libraries(vulkan_backend PRIVATE vulkan_schema executorch)
+target_link_libraries(vulkan_backend PRIVATE vulkan_schema executorch_core)
 target_compile_options(vulkan_backend PRIVATE ${VULKAN_CXX_FLAGS})
 # Link this library with --whole-archive due to dynamic backend registration
 target_link_options_shared_lib(vulkan_backend)
@@ -132,13 +128,6 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
     vulkan_backend
   )
   target_compile_options(vulkan_executor_runner PUBLIC ${VULKAN_CXX_FLAGS})
-
-  add_library(vulkan_executor_runner_lib STATIC ${VULKAN_RUNNER_SRCS})
-  target_link_libraries(
-    vulkan_executor_runner_lib ${_executor_runner_libs} vulkan_schema
-    vulkan_backend
-  )
-  target_compile_options(vulkan_executor_runner_lib PUBLIC ${VULKAN_CXX_FLAGS})
 endif()
 
 # Test targets
