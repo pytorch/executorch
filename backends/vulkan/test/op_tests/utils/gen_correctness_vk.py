@@ -118,11 +118,15 @@ vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
     case c10::kInt:
       return vkapi::kInt;
     case c10::kLong:
-      return vkapi::kInt;
+      return vkapi::kLong;
+    case c10::kShort:
+      return vkapi::kShort;
     case c10::kChar:
       return vkapi::kChar;
     case c10::kBool:
       return vkapi::kBool;
+    case c10::kByte:
+      return vkapi::kByte;
     default:
       VK_THROW("Unsupported at::ScalarType!");
   }
