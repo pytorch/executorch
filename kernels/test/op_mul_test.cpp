@@ -30,7 +30,7 @@ class OpMulOutTest : public OperatorTest {
     return torch::executor::aten::mul_outf(context_, self, other, out);
   }
 
-  // Common testing for multipling two integer Tensors
+  // Common testing for multiplying two integer Tensors
   template <ScalarType DTYPE_A, ScalarType DTYPE_B, ScalarType DTYPE_OUT>
   void test_mul() {
     TensorFactory<DTYPE_A> tf_a;
@@ -54,6 +54,10 @@ class OpMulOutTest : public OperatorTest {
         tf_b.make(sizes, /*data=*/{1, 2, 4, 8}),
         out);
     EXPECT_TENSOR_EQ(out, tf_out.make(sizes, /*data=*/{1, 4, 16, 64}));
+
+    out = tf_out.zeros({18});
+    op_mul_out(tf_a.full({18}, 4), tf_b.full({18}, 2), out);
+    EXPECT_TENSOR_EQ(out, tf_out.full({18}, 8));
   }
 
   template <ScalarType DTYPE_A, ScalarType DTYPE_B>
