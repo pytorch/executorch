@@ -11,6 +11,8 @@ package org.pytorch.executorch;
 import android.util.Log;
 import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
+import com.facebook.soloader.nativeloader.NativeLoader;
+import com.facebook.soloader.nativeloader.SystemDelegate;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
@@ -25,6 +27,14 @@ import org.pytorch.executorch.annotations.Experimental;
  */
 @Experimental
 public class Module {
+
+  static {
+    if (!NativeLoader.isInitialized()) {
+      NativeLoader.init(new SystemDelegate());
+    }
+    // Loads libexecutorch.so from jniLibs
+    NativeLoader.loadLibrary("executorch");
+  }
 
   /** Load mode for the module. Load the whole file as a buffer. */
   public static final int LOAD_MODE_FILE = 0;
