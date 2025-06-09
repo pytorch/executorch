@@ -104,9 +104,9 @@ def override_logger(
     try:
         oldLevel = logging.root.level
         logging.root.setLevel(newLevel)
+        oldFormatters = []
         if fmtstr:
             newformatter = logging.Formatter(fmtstr, None, "%")
-            oldFormatters = []
             for handler in logging.root.handlers:
                 oldFormatters.append(handler.formatter)
                 handler.formatter = newformatter

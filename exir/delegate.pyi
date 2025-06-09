@@ -17,5 +17,5 @@ def is_lowered_module(obj: Any) -> bool: ...
 def get_lowered_module_name(
     root: torch.nn.Module,
     # pyre-ignore: Undefined or invalid type [11]: Annotation `LoweredBackendModule` is not defined as a type.
-    lowered_module: LOWERED_BACKEND_MODULE_TYPE,  # noqa
+    lowered_module: Any,  # noqa
 ) -> str: ...

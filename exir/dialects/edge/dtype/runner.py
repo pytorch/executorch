@@ -30,7 +30,7 @@ class DtypeRunner:
     @staticmethod
     def _get_args_kwargs(
         inputs: Dict[str, List[BaseArg]],
-        dtypes: Tuple[Optional[torch.dtype]],
+        dtypes: Tuple[Optional[torch.dtype], ...],
         mode: ArgMode,
     ) -> Tuple[List[BaseArg], Dict[str, BaseKwarg]]:
         """Construct args and kwargs for op given dtypes."""
@@ -71,16 +71,20 @@ class DtypeRunner:
         self,
         name: str,
         inputs: Dict[str, List[BaseArg]],
-        dtypes: Tuple[Optional[torch.dtype]],
+        dtypes: Tuple[Optional[torch.dtype], ...],
         argmode: ArgMode = ArgMode.RANDOM,
     ) -> Tuple[
-        bool, str, Tuple[Optional[torch.dtype]], List[BaseArg], Dict[str, BaseKwarg]
+        bool,
+        str,
+        Tuple[Optional[torch.dtype], ...],
+        List[BaseArg],
+        Dict[str, BaseKwarg],
     ]:
         args, kwargs = DtypeRunner._get_args_kwargs(inputs, dtypes, argmode)
         op = get_callable(name)
         try:
             res = op(*args, **kwargs)
-            ret_dtypes = ()
+            ret_dtypes: Tuple[torch.dtype, ...] = ()
             if "returns" in inputs:
                 ret_dtypes = tuple(extract_return_dtype(res, inputs["returns"]))
             return (True, name, dtypes + ret_dtypes, args, kwargs)
@@ -112,7 +116,11 @@ class DtypeRunner:
         argmode: ArgMode = ArgMode.ONES,
     ) -> List[
         Tuple[
-            bool, str, Tuple[Optional[torch.dtype]], List[BaseArg], Dict[str, BaseKwarg]
+            bool,
+            str,
+            Tuple[Optional[torch.dtype], ...],
+            List[BaseArg],
+            Dict[str, BaseKwarg],
         ]
     ]:
         results = []
