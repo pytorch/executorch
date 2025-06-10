@@ -137,45 +137,6 @@ void record_bitw8_image_to_nchw_nobitw8buffer_op(
       v_src.numel_ubo());
 }
 
-void record_conv2d_prepack_weights_op(
-    api::Context* const context,
-    vkapi::VulkanBuffer& src_buffer,
-    api::vTensor& v_dst,
-    const std::vector<int64_t>& original_sizes,
-    const bool transposed) {
-  vkapi::PipelineBarrier pipeline_barrier{};
-
-  std::string kernel_name;
-  if (transposed) {
-    kernel_name = "conv_transpose2d";
-  } else {
-    kernel_name = "conv2d";
-  }
-  kernel_name += "_prepack_weights";
-  add_dtype_suffix(kernel_name, v_dst);
-  vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
-
-  api::ParamsBuffer original_sizes_ubo(
-      context, utils::make_ivec4(original_sizes, /*reverse = */ true));
-
-  vkapi::SpecVarList specialization_constants = {};
-  context->submit_compute_job(
-      shader,
-      pipeline_barrier,
-      v_dst.logical_limits(),
-      adaptive_work_group_size(v_dst.logical_limits()),
-      specialization_constants,
-      VK_NULL_HANDLE,
-      0,
-      v_dst.image(
-          pipeline_barrier,
-          vkapi::PipelineStage::COMPUTE,
-          vkapi::MemoryAccessType::WRITE),
-      src_buffer,
-      v_dst.sizes_ubo(),
-      original_sizes_ubo.buffer());
-}
-
 void record_binary_op(
     api::Context* const context,
     const std::string& op_name,
