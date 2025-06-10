@@ -67,18 +67,6 @@ def define_common_targets():
         ],
     )
 
-    runtime.python_library(
-        name = "exir",
-        srcs = [
-            "_serialize.py",
-            "schema.py",
-        ],
-        base_module = "executorch.exir",
-        visibility = [
-            "//executorch/codegen/...",
-        ],
-    )
-
     runtime.python_binary(
         name = "gen",
         main_module = "executorch.codegen.gen",

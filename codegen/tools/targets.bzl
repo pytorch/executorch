@@ -28,6 +28,7 @@ def define_common_targets(is_fbcode = False):
         main_module = "executorch.codegen.tools.gen_oplist",
         deps = [
             ":gen_oplist_lib",
+	    "//executorch/exir:lib"
         ],
         preload_deps = [] if runtime.is_oss else ["//executorch/codegen/tools:selective_build"],  # TODO(larryliu0820) :selective_build doesn't build in OSS yet
         package_style = "inplace",
