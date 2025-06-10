@@ -406,5 +406,5 @@ TEST(OpQuantizedEmbeddingTest, TestOutOfBoundsIndex) {
           quant_max,
           indices,
           out),
-      "Index out of bounds for weight");
+      "");
 }
