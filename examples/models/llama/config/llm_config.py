@@ -12,6 +12,7 @@ Configurations for exporting Llama.
 Uses dataclasses, which integrate with OmegaConf and Hydra.
 """
 
+import argparse
 import ast
 import re
 from dataclasses import dataclass, field
@@ -467,6 +468,18 @@ class LlmConfig:
     debug: DebugConfig = field(default_factory=DebugConfig)
     quantization: QuantizationConfig = field(default_factory=QuantizationConfig)
     backend: BackendConfig = field(default_factory=BackendConfig)
+
+    @classmethod
+    def from_args(cls, args: argparse.Namespace) -> "LlmConfig":
+        """
+        To support legacy purposes, this function converts CLI args from
+        argparse to an LlmConfig, which is used by the LLM export process.
+        """
+        llm_config = LlmConfig()
+
+        # TODO: conversion code.
+
+        return llm_config
 
     def __post_init__(self):
         self._validate_low_bit()
