@@ -550,6 +550,7 @@
     <span class="n">display_or_print_df</span><span class="p">,</span>
     <span class="n">EDGE_DIALECT_GRAPH_KEY</span><span class="p">,</span>
     <span class="n">EXCLUDED_COLUMNS_WHEN_PRINTING</span><span class="p">,</span>
+    <span class="n">EXCLUDED_EVENTS_FOR_INTERMEDIATE_OUTPUT</span><span class="p">,</span>
     <span class="n">EXCLUDED_EVENTS_WHEN_PRINTING</span><span class="p">,</span>
     <span class="n">find_populated_event</span><span class="p">,</span>
     <span class="n">FORWARD</span><span class="p">,</span>
@@ -1652,6 +1653,36 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_aot_intermediate_outputs</span> <span class="o">=</span> <span class="n">capturer</span><span class="o">.</span><span class="n">run_and_capture</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">_representative_inputs</span>
         <span class="p">)</span>
+
+    <span class="c1"># TODO: Make it more extensible to further merge overlapping debug handles</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_runtime_intermediate_outputs</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Retrieve the raw runtime intermediate outputs(debug handles and value mappings)</span>
+<span class="sd">        from the event blocks. These outputs will be processed later to merge overlapping debug handles.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">debug_handle_to_output</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">event_block</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">event_blocks</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">event_block</span><span class="o">.</span><span class="n">events</span><span class="p">:</span>
+                <span class="c1"># Skip OPERATOR_CALL events to avoid double-counting and exclude framework tax</span>
+                <span class="k">if</span> <span class="p">(</span>
+                    <span class="n">event</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">EXCLUDED_EVENTS_FOR_INTERMEDIATE_OUTPUT</span>
+                    <span class="ow">or</span> <span class="ow">not</span> <span class="n">event</span><span class="o">.</span><span class="n">op_types</span>
+                <span class="p">):</span>
+                    <span class="k">continue</span>
+                <span class="c1"># Normalize debug_handles to a tuple</span>
+                <span class="n">debug_handles</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">debug_handles</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">debug_handles</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+                    <span class="n">debug_handles</span> <span class="o">=</span> <span class="p">(</span><span class="n">debug_handles</span><span class="p">,)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">debug_handles</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">debug_handles</span><span class="p">)</span>
+                <span class="n">current_entry</span> <span class="o">=</span> <span class="n">debug_handle_to_output</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">debug_handles</span><span class="p">,</span> <span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+                <span class="c1"># When event has same debug handles, only keep the one with the largest instruction id</span>
+                <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">_instruction_id</span> <span class="o">&gt;</span> <span class="n">current_entry</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+                    <span class="n">debug_handle_to_output</span><span class="p">[</span><span class="n">debug_handles</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                        <span class="n">event</span><span class="o">.</span><span class="n">_instruction_id</span><span class="p">,</span>
+                        <span class="n">event</span><span class="o">.</span><span class="n">debug_data</span><span class="p">,</span>
+                    <span class="p">)</span>
+        <span class="k">return</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">debug_handle_to_output</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">to_dataframe</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>

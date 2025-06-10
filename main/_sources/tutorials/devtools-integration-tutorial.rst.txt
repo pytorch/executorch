@@ -243,7 +243,7 @@ To visualize all runtime events, call Inspector's ``print_data_tabular``.
 
  .. code-block:: none
 
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/executorch/devtools/inspector/_inspector.py:1059: UserWarning: Output Buffer not found. Tensor Debug Data will not be available.
+    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/executorch/devtools/inspector/_inspector.py:1060: UserWarning: Output Buffer not found. Tensor Debug Data will not be available.
       warnings.warn(
 
 
@@ -454,7 +454,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 2.253 seconds)
+   **Total running time of the script:** (0 minutes 2.313 seconds)
 
 
 .. _sphx_glr_download_tutorials_devtools-integration-tutorial.py:
