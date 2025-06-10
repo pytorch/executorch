@@ -43,6 +43,9 @@ def lower_module(
     model: torch.nn.Module, sample_inputs: Tuple[torch.Tensor], dynamic_shapes=None
 ) -> EdgeProgramManager:
     compile_options = {}
+    if dynamic_shapes is not None:
+        compile_options["require_dynamic_shapes"] = True
+
     edge_compile_config = EdgeCompileConfig(
         _skip_dim_order=False,  # TODO(T182928844): Delegate dim order op to backend.
     )
@@ -70,6 +73,9 @@ def quantize_and_lower_module(
     dynamic_shapes=None,
 ) -> EdgeProgramManager:
     compile_options = {}
+    if dynamic_shapes is not None:
+        compile_options["require_dynamic_shapes"] = True
+
     edge_compile_config = EdgeCompileConfig(
         _skip_dim_order=False,  # TODO(T182928844): Delegate dim order op to backend.
     )
