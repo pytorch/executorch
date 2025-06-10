@@ -2,6 +2,7 @@
 #include <c10/macros/Macros.h>
 
 #include <cstdint>
+#include <cstddef>
 
 // GCC has __builtin_mul_overflow from before it supported __has_builtin
 #ifdef _MSC_VER
@@ -31,6 +32,17 @@ C10_ALWAYS_INLINE bool add_overflows(uint64_t a, uint64_t b, uint64_t* out) {
 #endif
 }
 
+#if SIZE_MAX != UINT64_MAX
+C10_ALWAYS_INLINE bool add_overflows(size_t a, size_t b, size_t* out) {
+#if C10_HAS_BUILTIN_OVERFLOW()
+  return __builtin_add_overflow(a, b, out);
+#else
+  *out = a + b;
+  return *out < a
+#endif
+}
+#endif
+
 C10_ALWAYS_INLINE bool mul_overflows(uint64_t a, uint64_t b, uint64_t* out) {
 #if C10_HAS_BUILTIN_OVERFLOW()
   return __builtin_mul_overflow(a, b, out);
@@ -54,6 +66,21 @@ C10_ALWAYS_INLINE bool mul_overflows(int64_t a, int64_t b, int64_t* out) {
   return !(a == tmp / b);
 #endif
 }
+
+#if SIZE_MAX != UINT64_MAX
+C10_ALWAYS_INLINE bool mul_overflows(size_t a, size_t b, size_t* out) {
+#if C10_HAS_BUILTIN_OVERFLOW()
+  return __builtin_mul_overflow(a, b, out);
+#else
+  volatile size_t tmp = a * b;
+  *out = tmp;
+  if (a == 0 || b == 0) {
+    return false;
+  }
+  return !(a == tmp / b);
+#endif
+}
+#endif
 
 template <typename It>
 bool safe_multiplies_u64(It first, It last, uint64_t* out) {
