@@ -430,6 +430,10 @@ class XNNDatatype(IntEnum):
     xnn_datatype_qcint4 = 8
     xnn_datatype_qdint8 = 9
     xnn_datatype_qbint4 = 10
+    xnn_datatype_qpint8 = 11
+    xnn_datatype_int32 = 12
+    xnn_datatype_pfp32 = 13
+    xnn_datatype_bf16 = 14
 
 
 @dataclass
