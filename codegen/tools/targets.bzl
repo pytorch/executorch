@@ -14,6 +14,7 @@ def define_common_targets(is_fbcode = False):
         base_module = "executorch.codegen.tools",
         visibility = [
             "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
         ],
         deps = [
             "//executorch/codegen:gen_lib",
