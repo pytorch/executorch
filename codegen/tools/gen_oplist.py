@@ -90,6 +90,7 @@ def _get_operators(model_file: str) -> List[str]:
         buf = f.read()
 
     from executorch.exir._serialize import _deserialize_pte_binary
+
     model = _deserialize_pte_binary(buf)
     operators = []
     for execution_plan in model.execution_plan:
@@ -97,8 +98,6 @@ def _get_operators(model_file: str) -> List[str]:
             operators.append(op.name)
     print(f"Model file loaded, operators are: {operators}")
     return operators
-
-
 
 
 def _get_kernel_metadata_for_model(model_file: str) -> Dict[str, List[str]]:
@@ -118,14 +117,16 @@ def _get_kernel_metadata_for_model(model_file: str) -> Dict[str, List[str]]:
         KernelCall,
         OptionalTensorList,
         Tensor,
-        TensorList
+        TensorList,
     )
+
     def _get_dtypes_from_non_list(evalue: EValue):
         kernel_key = ""
         if isinstance(evalue, Tensor):
             dim_order = ",".join(map(str, evalue.dim_order))
             kernel_key += f"{evalue.scalar_type};{dim_order}|"
         return kernel_key
+
     model = _deserialize_pte_binary(buf)
     for execution_plan in model.execution_plan:
         for chain in execution_plan.chains:
