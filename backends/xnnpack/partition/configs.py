@@ -59,7 +59,7 @@ SUPPORTED_OPS = [
     exir_ops.edge.aten.sigmoid.default,
     exir_ops.edge.aten._softmax.default,
     exir_ops.edge.aten.cat.default,
-    # exir_ops.edge.aten.exp.default, # Bug in XNNPACK with exp op
+    exir_ops.edge.aten.exp.default,
     exir_ops.edge.aten.elu.default,
     exir_ops.edge.aten.avg_pool2d.default,
     exir_ops.edge.aten.leaky_relu.default,

@@ -26,7 +26,7 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     DeQuantizedPerTensorConfig,
     DivConfig,
     # EluConfig,
-    # ExpConfig, # Bug in XNNPACK with exp op
+    ExpConfig,
     FloorConfig,
     GeluConfig,
     HardswishConfig,
@@ -81,7 +81,7 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     ClampConfig,
     DivConfig,
     # EluConfig, # Waiting for PyTorch Pin Update
-    # ExpConfig, # Bug in XNNPACK with exp op
+    ExpConfig,
     FloorConfig,
     GeluConfig,
     HardtanhConfig,

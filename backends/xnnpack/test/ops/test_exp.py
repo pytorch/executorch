@@ -34,12 +34,10 @@ class TestExp(unittest.TestCase):
             .run_method_and_compare_outputs()
         )
 
-    @unittest.skip("D76283309, bug to fix")
     def test_fp16_exp(self):
         inputs = (torch.randn(20).to(torch.float16),)
         self.run_exp_test(inputs)
 
-    @unittest.skip("D76283309, bug to fix")
     def test_fp32_exp(self):
         inputs = (torch.randn(20),)
         self.run_exp_test(inputs)
