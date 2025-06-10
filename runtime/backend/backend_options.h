@@ -123,7 +123,7 @@ class BackendOptions {
   }
 
   executorch::runtime::ArrayRef<BackendOption> view() const {
-    return executorch::runtime::ArrayRef<BackendOption>(options, size);
+    return executorch::runtime::ArrayRef<BackendOption>(options_, size_);
   }
     
  private:
