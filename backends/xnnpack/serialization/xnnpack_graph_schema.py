@@ -292,11 +292,6 @@ class XNNCeiling(XNNNode1x1):
 
 
 @dataclass
-class XNNExp(XNNNode1x1):
-    pass
-
-
-@dataclass
 class XNNGelu(XNNNode1x1):
     pass
 
