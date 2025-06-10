@@ -530,7 +530,7 @@ def get_quant_embedding_transform(
     ], f"Expected 2 or 3 embedding quant_args, but got: {quant_args}"
 
     bitwidth = int(quant_args[0])
-    group_size = quant_args[0]
+    group_size = quant_args[1]
     if group_size in ["none", "None", "0"]:
         group_size = 0
     group_size = int(group_size)
@@ -555,7 +555,6 @@ def get_quant_embedding_transform(
                         weight_dtype=weight_dtype,
                         granularity=granularity,
                         mapping_type=mapping_type,
-                        use_fallback=False,
                     ).quantize(model)
                 else:
                     SharedEmbeddingQuantizer(
