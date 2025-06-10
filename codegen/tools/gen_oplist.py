@@ -15,26 +15,10 @@ import yaml
 
 try:
     from executorch.codegen.parse import strip_et_fields
-    from executorch.exir._serialize import _deserialize_pte_binary
-    from executorch.exir.schema import (
-        EValue,
-        KernelCall,
-        OptionalTensorList,
-        Tensor,
-        TensorList
-    )
 except ImportError:
     # If we build from source, executorch.codegen is not available.
     # We can use relative import instead.
     from ..parse import strip_et_fields
-    from ..exir._serialize import _deserialize_pte_binary
-    from ..exir.schema import (
-        EValue,
-        KernelCall,
-        OptionalTensorList,
-        Tensor,
-        TensorList
-    )
 
 from torchgen.gen import LineLoader, parse_native_yaml_struct
 from torchgen.selective_build.operator import SelectiveBuildOperator
@@ -105,6 +89,7 @@ def _get_operators(model_file: str) -> List[str]:
     with open(model_file, "rb") as f:
         buf = f.read()
 
+    from executorch.exir._serialize import _deserialize_pte_binary
     model = _deserialize_pte_binary(buf)
     operators = []
     for execution_plan in model.execution_plan:
@@ -114,12 +99,6 @@ def _get_operators(model_file: str) -> List[str]:
     return operators
 
 
-def _get_dtypes_from_non_list(evalue: EValue):
-    kernel_key = ""
-    if isinstance(evalue, Tensor):
-        dim_order = ",".join(map(str, evalue.dim_order))
-        kernel_key += f"{evalue.scalar_type};{dim_order}|"
-    return kernel_key
 
 
 def _get_kernel_metadata_for_model(model_file: str) -> Dict[str, List[str]]:
@@ -133,6 +112,20 @@ def _get_kernel_metadata_for_model(model_file: str) -> Dict[str, List[str]]:
         buf = f.read()
     op_kernel_key_list: Dict[str, List[str]] = {}
 
+    from executorch.exir._serialize import _deserialize_pte_binary
+    from executorch.exir.schema import (
+        EValue,
+        KernelCall,
+        OptionalTensorList,
+        Tensor,
+        TensorList
+    )
+    def _get_dtypes_from_non_list(evalue: EValue):
+        kernel_key = ""
+        if isinstance(evalue, Tensor):
+            dim_order = ",".join(map(str, evalue.dim_order))
+            kernel_key += f"{evalue.scalar_type};{dim_order}|"
+        return kernel_key
     model = _deserialize_pte_binary(buf)
     for execution_plan in model.execution_plan:
         for chain in execution_plan.chains:
