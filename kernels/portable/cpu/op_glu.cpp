@@ -24,6 +24,46 @@ using ScalarType = executorch::aten::ScalarType;
 
 namespace {
 
+struct SplitGLUInputTensor {
+  explicit SplitGLUInputTensor(const Tensor& self, int64_t dim);
+  using SizesArray = std::array<executorch::aten::SizesType, kTensorDimensionLimit>;
+  SizesArray half_sizes;
+  TensorImpl first_half_impl;
+  TensorImpl second_half_impl;
+  Tensor first_half;
+  Tensor second_half;
+
+ private:
+  static SizesArray get_half_sizes(const Tensor& self, int64_t dim) {
+    SizesArray half_sizes;
+    std::copy(self.sizes().begin(), self.sizes().end(), half_sizes.begin());
+    half_sizes[dim] /= 2;
+    return half_sizes;
+  }
+};
+
+SplitGLUInputTensor::SplitGLUInputTensor(const Tensor& self, int64_t dim)
+    : half_sizes(get_half_sizes(self, dim)),
+      first_half_impl(
+          self.scalar_type(),
+          self.dim(),
+          half_sizes.data(),
+          self.mutable_data_ptr(),
+          const_cast<executorch::aten::DimOrderType*>(self.dim_order().data()),
+          const_cast<executorch::aten::StridesType*>(self.strides().data()),
+          self.shape_dynamism()),
+      second_half_impl(
+          self.scalar_type(),
+          self.dim(),
+          half_sizes.data(),
+          reinterpret_cast<char*>(self.mutable_data_ptr()) +
+          self.strides()[dim] * self.size(dim) / 2 * self.element_size(),
+          const_cast<executorch::aten::DimOrderType*>(self.dim_order().data()),
+          const_cast<executorch::aten::StridesType*>(self.strides().data()),
+          self.shape_dynamism()),
+      first_half(&first_half_impl),
+      second_half(&second_half_impl) {}
+
 /**
  * Applies the gated linear unit function
  *
@@ -39,34 +79,12 @@ Tensor& glu_out_tensor(
     const Tensor& self,
     int64_t dim,
     Tensor& out) {
-  const auto self_size = self.size(dim);
   ET_KERNEL_CHECK(
       ctx,
       self.dim() <= static_cast<ssize_t>(kTensorDimensionLimit),
       InvalidArgument,
       out);
-  std::array<executorch::aten::SizesType, kTensorDimensionLimit> half_sizes;
-  std::copy(self.sizes().begin(), self.sizes().end(), half_sizes.begin());
-  half_sizes[dim] /= 2;
-  TensorImpl first_half_impl(
-      self.scalar_type(),
-      self.dim(),
-      half_sizes.data(),
-      self.mutable_data_ptr(),
-      const_cast<executorch::aten::DimOrderType*>(self.dim_order().data()),
-      const_cast<executorch::aten::StridesType*>(self.strides().data()),
-      self.shape_dynamism());
-  TensorImpl second_half_impl(
-      self.scalar_type(),
-      self.dim(),
-      half_sizes.data(),
-      reinterpret_cast<char*>(self.mutable_data_ptr()) +
-          self.strides()[dim] * self_size / 2 * self.element_size(),
-      const_cast<executorch::aten::DimOrderType*>(self.dim_order().data()),
-      const_cast<executorch::aten::StridesType*>(self.strides().data()),
-      self.shape_dynamism());
-  Tensor first_half(&first_half_impl);
-  Tensor second_half(&second_half_impl);
+  SplitGLUInputTensor split_input(self, dim);
   ScalarType compute_type =
       executorch::runtime::isFloatingType(self.scalar_type())
       ? self.scalar_type()
@@ -79,14 +97,16 @@ Tensor& glu_out_tensor(
         op_name,
         utils::SupportedTensorDtypes::FLOATHBF16>(
         [](const auto val_a, const auto val_b) -> CTYPE_COMPUTE {
-          // TODO: rewrite this to be vectorization-capable.
+          // TODO: rewrite this to be vectorization-capable? the
+          // tensors might not be contiguous; need to have
+          // apply_bitensor_elementwise_fn check that.
           const auto one = static_cast<decltype(val_a)>(1.0);
           return val_a * (one / (one + std::exp(-val_b)));
         },
         ctx,
-        first_half,
+        split_input.first_half,
         utils::SupportedTensorDtypes::FLOATHBF16,
-        second_half,
+        split_input.second_half,
         utils::SupportedTensorDtypes::FLOATHBF16,
         out,
         utils::internal::SupportNoncontiguousTensors());
