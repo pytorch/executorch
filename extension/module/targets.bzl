@@ -17,6 +17,7 @@ def define_common_targets():
             ],
             exported_headers = [
                 "module.h",
+                "dynamic_backend_options_map.h",
             ],
             visibility = [
                 "@EXECUTORCH_CLIENTS",

@@ -15,6 +15,7 @@
 #include <vector>
 
 #include <executorch/runtime/executor/program.h>
+#include <executorch/extension/module/dynamic_backend_options_map.h>
 
 namespace executorch {
 namespace extension {
@@ -481,6 +482,12 @@ class Module {
   ET_EXPERIMENTAL ET_NODISCARD inline runtime::Error update(
       runtime::ArrayRef<runtime::Entry> backend_options) {
     return update("forward", backend_options);
+  }
+
+  ET_EXPERIMENTAL ET_NODISCARD inline runtime::Error update(
+      const std::string& method_name,
+      const runtime::DynamicBackendOptionsMap& backend_options) {
+    return update(method_name, backend_options.entries());
   }
 
   /**
