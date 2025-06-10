@@ -38,5 +38,6 @@ runtime.python_library(
         ":xnnpack_preprocess",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
+        "//executorch/backends/xnnpack/recipes:xnnpack_recipes"
     ],
 )
