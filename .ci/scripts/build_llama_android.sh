@@ -42,6 +42,7 @@ build_llama_runner() {
     popd
     ANDROID_ABI=arm64-v8a
     cmake -DBUCK2="${BUCK2}" \
+    -DBUILD_TESTING=OFF \
     -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK"/build/cmake/android.toolchain.cmake  \
     -DANDROID_ABI="${ANDROID_ABI}" \
     -DCMAKE_INSTALL_PREFIX=cmake-android-out \
