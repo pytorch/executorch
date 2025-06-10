@@ -68,11 +68,6 @@ class CV2VideoDataset(torch.utils.data.IterableDataset):
         return len(self._iter)
 
 
-def visualize_fx_model(model: torch.fx.GraphModule, output_svg_path: str):
-    g = FxGraphDrawer(model, output_svg_path)
-    g.get_dot_graph().write_svg(output_svg_path)
-
-
 def lower_to_openvino(
     aten_dialect: ExportedProgram,
     example_args: Tuple[Any, ...],
@@ -110,7 +105,6 @@ def lower_to_openvino(
                 fold_quantize=False,
             )
 
-            visualize_fx_model(quantized_model, "tmp_quantized_model.svg")
             aten_dialect = torch.export.export(quantized_model, example_args)
             # Convert to edge dialect and lower the module to the backend with a custom partitioner
         compile_spec = [CompileSpec("device", device.encode())]
