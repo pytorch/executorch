@@ -562,7 +562,11 @@ What you will learn in this tutorial:</div>
 <div class="section" id="set-up-the-developer-environment">
 <h2>Set Up the Developer Environment<a class="headerlink" href="#set-up-the-developer-environment" title="Permalink to this heading">¶</a></h2>
 <p>In this section, we will do a one-time setup, like downloading and installing necessary software, for the platform support files needed to run ExecuTorch programs in this tutorial.</p>
-<p>For that we will use the <code class="docutils literal notranslate"><span class="pre">examples/arm/setup.sh</span></code> script to pull each item in an automated fashion. It is recommended to run the script in a conda environment. Upon successful execution, you can directly go to <a class="reference internal" href="#convert-the-pytorch-model-to-the-pte-file"><span class="std std-doc">the next step</span></a>.</p>
+<p>For that we will use the <code class="docutils literal notranslate"><span class="pre">examples/arm/setup.sh</span></code> script to pull each item in an automated fashion. It is recommended to run the script in a conda environment.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>examples/arm/setup.sh<span class="w"> </span>--i-agree-to-the-contained-eula
+</pre></div>
+</div>
+<p>Upon successful execution, you can directly go to <a class="reference internal" href="#convert-the-pytorch-model-to-the-pte-file"><span class="std std-doc">the next step</span></a>.</p>
 <p>As mentioned before, we currently support only Linux based platforms with x86_64 or aarch64 processor architecture. Let’s make sure we are indeed on a supported platform.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>uname<span class="w"> </span>-s
 <span class="c1"># Linux</span>
