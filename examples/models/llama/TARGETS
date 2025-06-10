@@ -67,6 +67,7 @@ runtime.python_library(
         "//caffe2:torch",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models/llama:llama_transformer",
+        "//executorch/examples/models/llama/config:llm_config",
         "//executorch/examples/models:checkpoint",
     ],
 )
