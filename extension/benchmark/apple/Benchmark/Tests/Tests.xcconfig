@@ -21,3 +21,5 @@ HEADER_SEARCH_PATHS = $(inherited) \
 
 LIBRARY_SEARCH_PATHS = $(inherited) \
     $(TEMP_DIR)/cmake/lib
+
+OTHER_CFLAGS = $(inherited) -DSUPPORT_REGEX_LOOKAHEAD=1
