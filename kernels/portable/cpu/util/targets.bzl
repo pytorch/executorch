@@ -307,16 +307,6 @@ def define_common_targets():
         ],
     )
 
-    runtime.cxx_library(
-        name = "vectorized_math",
-        exported_headers = ["vectorized_math.h"],
-        visibility = ["//executorch/..."],
-        exported_deps = [
-            "//executorch/runtime/core/portable_type:portable_type",
-            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
-        ],
-    )
-
     # Utility functions that can be used by operators that perform reduction
     for aten_mode in get_aten_mode_options():
         suffix = "_aten" if aten_mode else ""
