@@ -232,7 +232,7 @@ if [[ "${CUSTOM}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} --use_sdpa_with_kv_cache"
 fi
 if [[ "${QE}" == "ON" ]]; then
-  EXPORT_ARGS="${EXPORT_ARGS} --embedding-quantize 8,1024"
+  EXPORT_ARGS="${EXPORT_ARGS} --embedding-quantize 8,0"
 fi
 if [[ "${MPS}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} -kv -v --mps --disable_dynamic_shape"

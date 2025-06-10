@@ -572,6 +572,7 @@ def get_quant_embedding_transform(
             torch.int4,
             torch.int8,
         ], "Only 2, 4, or 8-bit embeddings are supported unless using torchao"
+        print("GRAN", granularity)
         quantize_(
             model,
             IntxWeightOnlyConfig(
