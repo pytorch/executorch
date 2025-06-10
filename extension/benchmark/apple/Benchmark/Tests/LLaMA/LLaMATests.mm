@@ -74,7 +74,7 @@ using namespace ::executorch::runtime;
   NSString *tokenizerPath = resources[@"tokenizer"];
   return @{
     @"generate" : ^(XCTestCase *testCase){
-      auto __block runner = example::Runner::create(
+      auto __block runner = example::create_llama_runner(
           modelPath.UTF8String, tokenizerPath.UTF8String);
       if (!runner) {
         XCTFail("Failed to create runner");

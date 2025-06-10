@@ -242,11 +242,10 @@ class Method final {
   ET_DEPRECATED ET_NODISCARD Error experimental_reset_execution();
 
     /**
-   * EXPERIMENTAL: Advances/executes a single instruction in the method.
+   * EXPERIMENTAL: Update backend options, which will be dispatched to different backends.
    *
    * @retval Error::Ok step succeeded
-   * @retval non-Ok step failed
-   * @retval Error::EndOfMethod method finished executing successfully
+   * @retval non-Ok Method update fails
    */
    ET_EXPERIMENTAL ET_NODISCARD Error update(executorch::runtime::ArrayRef<executorch::runtime::Entry> backend_option);
 
