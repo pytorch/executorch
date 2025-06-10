@@ -19,7 +19,7 @@ from executorch.examples.apple.coreml.llama.utils import (
     replace_linear_with_split_linear,
 )
 from executorch.examples.models.llama.source_transformation.quantize import (
-    EmbeddingQuantHandler,
+    get_quant_embedding_transform,
 )
 
 from executorch.exir.backend.utils import format_delegated_graph
@@ -116,18 +116,10 @@ def main() -> None:
     ]  # dtype for model/inputs
 
     if export_args.embedding_quantize:
-        bitwidth, group_size = export_args.embedding_quantize.split(",")
-        if group_size == "none" or group_size == "None" or group_size == "0":
-            group_size = None
-        else:
-            group_size = int(group_size)
-        bitwidth = int(bitwidth)
-        model = EmbeddingQuantHandler(
-            model,
-            bitwidth=bitwidth,
-            group_size=group_size,
-            packed=(bitwidth in [2, 4]),
-        ).quantized_model()
+        quantize_embedding = get_quant_embedding_transform(
+            export_args.embedding_quantize
+        )
+        quantize_embedding(model)
 
     if export_args.target_split_size is not None:
         replace_linear_with_split_linear(
