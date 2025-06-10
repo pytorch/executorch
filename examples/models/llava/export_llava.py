@@ -177,7 +177,7 @@ def export_image_encoder(llava, resized, dynamic_shapes):
 
 
 def export_token_embedding(llava, prompt):
-    quantized_token_embed = get_quant_embedding_transform(
+    quantized_token_embed = get_quant_embedding_transform("8,32")(
         llava.model_.language_model.model
     )
     token_dim_1 = Dim("token_dim_1", min=2, max=llava.text_model_args.max_seq_len)
