@@ -26,7 +26,8 @@ namespace {
 
 struct SplitGLUInputTensor {
   explicit SplitGLUInputTensor(const Tensor& self, int64_t dim);
-  using SizesArray = std::array<executorch::aten::SizesType, kTensorDimensionLimit>;
+  using SizesArray =
+      std::array<executorch::aten::SizesType, kTensorDimensionLimit>;
   SizesArray half_sizes;
   TensorImpl first_half_impl;
   TensorImpl second_half_impl;
@@ -57,7 +58,7 @@ SplitGLUInputTensor::SplitGLUInputTensor(const Tensor& self, int64_t dim)
           self.dim(),
           half_sizes.data(),
           reinterpret_cast<char*>(self.mutable_data_ptr()) +
-          self.strides()[dim] * self.size(dim) / 2 * self.element_size(),
+              self.strides()[dim] * self.size(dim) / 2 * self.element_size(),
           const_cast<executorch::aten::DimOrderType*>(self.dim_order().data()),
           const_cast<executorch::aten::StridesType*>(self.strides().data()),
           self.shape_dynamism()),
