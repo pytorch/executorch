@@ -257,7 +257,7 @@ test_model_with_mediatek() {
     EXPORT_SCRIPT=inception_v3
   fi
 
-  "${PYTHON_EXECUTABLE}" -m examples.mediatek.model_export_scripts.${EXPORT_SCRIPT} -d /tmp/neuropilot/train -a ${EXPORT_SCRIPT}
+  PYTHONPATH=examples/mediatek/ "${PYTHON_EXECUTABLE}" -m examples.mediatek.model_export_scripts.${EXPORT_SCRIPT} -d /tmp/neuropilot/train -a ${EXPORT_SCRIPT}
   EXPORTED_MODEL=$(find "./${EXPORT_SCRIPT}" -type f -name "*.pte" -print -quit)
 }
 
