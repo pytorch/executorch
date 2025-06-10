@@ -27,8 +27,8 @@ except ImportError:
     # If we build from source, executorch.codegen is not available.
     # We can use relative import instead.
     from ..parse import strip_et_fields
-    from ...exir._serialize import _deserialize_pte_binary
-    from ...exir.schema import (
+    from ..exir._serialize import _deserialize_pte_binary
+    from ..exir.schema import (
         EValue,
         KernelCall,
         OptionalTensorList,
