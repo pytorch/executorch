@@ -24,7 +24,7 @@ from executorch.examples.models.llama.source_transformation.custom_kv_cache impo
     replace_kv_cache_with_custom_kv_cache,
 )
 from executorch.examples.models.llama.source_transformation.quantize import (
-    EmbeddingQuantHandler,
+    get_quant_embedding_transform,
     get_quant_weight_transform,
 )
 from executorch.examples.models.llama.source_transformation.sdpa import (
@@ -38,7 +38,6 @@ from executorch.exir import (
 )
 
 from executorch.exir.passes import MemoryPlanningPass
-from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import (
     ConstraintBasedSymShapeEvalPass,
     HintBasedSymShapeEvalPass,
@@ -178,15 +177,9 @@ def export_image_encoder(llava, resized, dynamic_shapes):
 
 
 def export_token_embedding(llava, prompt):
-    def quant_embedding(model):
-        return EmbeddingQuantHandler(
-            model,
-            bitwidth=8,
-            group_size=32,
-            packed=False,
-        ).quantized_model()
-
-    quantized_token_embed = quant_embedding(llava.model_.language_model.model)
+    quantized_token_embed = get_quant_embedding_transform(
+        llava.model_.language_model.model
+    )
     token_dim_1 = Dim("token_dim_1", min=2, max=llava.text_model_args.max_seq_len)
     dynamic_shapes = [{1: token_dim_1}]
     with torch.no_grad():
@@ -248,15 +241,13 @@ def export_all(llava_model: LlavaModel):
     executorch_program = lowered_and_edge.to_executorch(
         ExecutorchBackendConfig(
             extract_delegate_segments=True,
-            passes=[
-                QuantFusionPass(),
-            ],
             memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
             sym_shape_eval_pass={
                 "image_encoder": ConstraintBasedSymShapeEvalPass(),
                 "text_model": ConstraintBasedSymShapeEvalPass(),
                 "token_embedding": HintBasedSymShapeEvalPass(),
             },
+            do_quant_fusion_and_const_prop=True,
         )
     )
     for execution_plan in executorch_program._emitter_output.program.execution_plan:
