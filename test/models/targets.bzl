@@ -187,6 +187,7 @@ def define_common_targets():
         visibility = [
             "//executorch/runtime/executor/test/...",
             "//executorch/test/...",
+            "//executorch/extension/module/test/...",
         ],
     )
 
