@@ -209,6 +209,8 @@ jobs:
 
           # Convert HF checkpoint to ET via etLLM path
           if [[ "$HF_MODEL_REPO" == meta-llama/* ]]; then
+            # The benchmark app replies on the _llm suffix to determine whether the model is a LLM or not
+            OUT_ET_MODEL_NAME=${OUT_ET_MODEL_NAME}_llm
             # Llama models on Hugging Face
             if [[ ${{ matrix.config }} == "llama3_spinquant" ]]; then
               # SpinQuant
@@ -311,6 +313,7 @@ jobs:
               ls -lh "${OUT_ET_MODEL_NAME}.pte"
             fi
           elif [[ "$HF_MODEL_REPO" == "Qwen/Qwen3-0.6B" ]]; then
+            OUT_ET_MODEL_NAME=${OUT_ET_MODEL_NAME}_llm
             if [[ ${{ matrix.config }} == "et_xnnpack_custom_spda_kv_cache_8da4w" ]]; then
                 DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "." --files "tokenizer.json")
                 ${CONDA_RUN} python -m examples.models.llama.export_llama \
@@ -321,7 +324,9 @@ jobs:
                   -d fp32 \
                   -X \
                   --xnnpack-extended-ops \
-                  -qmode 8da4w -G 32 -E 8,0 \
+                  -qmode 8da4w \
+                  -G 32 \
+                  -E 8,0 \
                   --metadata '{"get_bos_id": 151644, "get_eos_ids":[151645]}' \
                   --output_name="${OUT_ET_MODEL_NAME}.pte"
                 ls -lh "${OUT_ET_MODEL_NAME}.pte"
@@ -367,12 +372,13 @@ jobs:
             ${CONDA_RUN} optimum-cli export executorch "${ARGS[@]}"
             popd
 
+            # The benchmark app replies on the _llm suffix to determine whether the model is a LLM or not
+            OUT_ET_MODEL_NAME=${OUT_ET_MODEL_NAME}_llm
             mv model.pte ${OUT_ET_MODEL_NAME}.pte
             ls -lh "${OUT_ET_MODEL_NAME}.pte"
           fi
 
-          # zip -j model.zip ${OUT_ET_MODEL_NAME}.pte ${DOWNLOADED_PATH}/tokenizer.*
-          zip -j model.zip ${OUT_ET_MODEL_NAME}.pte
+          zip -j model.zip ${OUT_ET_MODEL_NAME}.pte ${DOWNLOADED_PATH}/tokenizer.*
           ls -lh model.zip
           mkdir -p "${ARTIFACTS_DIR_NAME}"
           mv model.zip "${ARTIFACTS_DIR_NAME}"

@@ -319,7 +319,9 @@ jobs:
                   -d fp32 \
                   -X \
                   --xnnpack-extended-ops \
-                  -qmode 8da4w -G 32 -E 8,0 \
+                  -qmode 8da4w \
+                  -G 32 \
+                  -E 8,0 \
                   --metadata '{"get_bos_id": 151644, "get_eos_ids":[151645]}' \
                   --output_name="${OUT_ET_MODEL_NAME}.pte"
                 ls -lh "${OUT_ET_MODEL_NAME}.pte"
