@@ -18,7 +18,6 @@ nchw_to_image:
       - VALUE: int8
       - VALUE: uint8
       - VALUE: int32
-      - VALUE: int64
   shader_variants:
     - NAME: nchw_to_image_texture3d
     - NAME: nchw_to_image_texture2d
