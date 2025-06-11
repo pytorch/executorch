@@ -158,7 +158,7 @@ class ExecutorBackend final : public ::executorch::runtime::BackendInterface {
     new (client_memory_manager)
         MemoryManager(client_method_allocator, client_planned_memory);
 
-    const NamedDataMap* named_data_map = context.get_named_data_map();
+    NamedDataMap* named_data_map = context.get_named_data_map();
     // Construct the client Method
     Result<Method> method_res = client_program->load_method(
         "forward",

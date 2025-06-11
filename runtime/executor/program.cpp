@@ -258,7 +258,7 @@ Result<Method> Program::load_method(
     const char* method_name,
     MemoryManager* memory_manager,
     EventTracer* event_tracer,
-    const NamedDataMap* named_data_map) const {
+    NamedDataMap* named_data_map) const {
   EXECUTORCH_SCOPE_PROF("Program::load_method");
   internal::event_tracer_create_event_block(event_tracer, "Default");
   internal::EventTracerProfileMethodScope event_tracer_scope =
@@ -372,9 +372,9 @@ Result<const void*> Program::get_constant_buffer_data(
   }
 }
 
-Result<const NamedDataMap*> Program::get_named_data_map() const {
+Result<NamedDataMap*> Program::get_named_data_map() const {
   if (pte_data_map_.has_value()) {
-    return &pte_data_map_.value();
+    return const_cast<internal::PteDataMap*>(&pte_data_map_.value());
   }
   return Error::NotFound;
 }
