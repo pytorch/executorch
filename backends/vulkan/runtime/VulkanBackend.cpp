@@ -13,6 +13,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/vk_api/Runtime.h>
+
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
@@ -528,7 +530,9 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       return Error::MemoryAllocationFailed;
     }
 
-    new (compute_graph) ComputeGraph(get_graph_config(compile_specs));
+    GraphConfig graph_config = get_graph_config(compile_specs);
+    graph_config.external_adapter = vkapi::set_and_get_external_adapter();
+    new (compute_graph) ComputeGraph(graph_config);
 
     Error err = compileModel(processed->data(), compute_graph);
 
