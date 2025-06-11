@@ -152,36 +152,10 @@ else()
 endif()
 
 if(EXECUTORCH_BUILD_TESTS)
-  set(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
   include(CTest)
 endif()
 
 add_subdirectory(third-party)
-
-if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
-  set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
-  set(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
-  set(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
-  set(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
-endif()
-
-if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
-  set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
-endif()
-
-if(EXECUTORCH_BUILD_EXTENSION_MODULE)
-  set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
-  set(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
-endif()
-
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
-  set(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
-  set(EXECUTORCH_BUILD_KERNELS_CUSTOM ON)
-endif()
-
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  set(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
-endif()
 
 if(NOT DEFINED FXDIV_SOURCE_DIR)
   set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
@@ -336,7 +310,7 @@ if(EXECUTORCH_USE_CPP_CODE_COVERAGE)
            " -fprofile-instr-generate -fcoverage-mapping"
     )
   else()
-    message(ERROR
+    message(FATAL_ERROR
             "Code coverage for compiler ${CMAKE_CXX_COMPILER_ID} is unsupported"
     )
   endif()
@@ -455,14 +429,6 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
 endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/configurations)
-
-#
-# gflags: Commandline flag host library.
-#
-
-if(EXECUTORCH_BUILD_GFLAGS)
-  add_subdirectory(third-party/gflags)
-endif()
 
 # Install `executorch` library as well as `executorch-config.cmake` under
 # ${CMAKE_INSTALL_PREFIX}/

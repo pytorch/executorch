@@ -50,7 +50,7 @@ class MaxVisitor_0_80(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs, output])
+        validate_same_dtype(self.target, [*inputs, output], ts)
 
         scale_back = 1.0
         max_output = output
@@ -113,7 +113,7 @@ class MaxVisitor(NodeVisitor):
         from tosa.NanPropagationMode import NanPropagationMode  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs, output])
+        validate_same_dtype(self.target, [*inputs, output], ts)
 
         scale_back = 1.0
         max_output = output

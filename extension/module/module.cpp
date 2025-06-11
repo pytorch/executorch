@@ -229,8 +229,8 @@ runtime::Error Module::load_method(
 
 runtime::Result<MethodMeta> Module::method_meta(
     const std::string& method_name) {
-  ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
-  return methods_.at(method_name).method->method_meta();
+  ET_CHECK_OK_OR_RETURN_ERROR(load());
+  return program_->method_meta(method_name.c_str());
 }
 
 runtime::Result<std::vector<runtime::EValue>> Module::execute(
