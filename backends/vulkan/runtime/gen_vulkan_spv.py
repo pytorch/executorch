@@ -173,6 +173,8 @@ def buffer_scalar_type(dtype: str) -> str:
     # we don't want to append _t for int32 or uint32 as int is already 32bit
     elif dtype == "int32" or dtype == "uint32":
         return "int" if dtype == "int32" else "uint"
+    elif dtype == "int64" or dtype == "uint64":
+        return "int" if dtype == "int64" else "uint"
     elif dtype[-1].isdigit():
         return dtype + "_t"
     return dtype
@@ -187,7 +189,7 @@ def buffer_gvec_type(dtype: str, n: int) -> str:
     elif dtype == "float":
         return f"vec{n}"
     elif dtype == "double":
-        return f"f64vec{n}"
+        return f"vec{n}"
     # integer dtype
     elif dtype == "int8":
         return f"i8vec{n}"
@@ -202,9 +204,11 @@ def buffer_gvec_type(dtype: str, n: int) -> str:
     elif dtype == "uint32" or dtype == "uint":
         return f"uvec{n}"
     elif dtype == "int64":
-        return f"i64vec{n}"
+        return f"ivec{n}"
     elif dtype == "uint64":
-        return f"u64vec{n}"
+        return f"uvec{n}"
+    elif dtype == "bool":
+        return f"u8vec{n}"
 
     raise AssertionError(f"Invalid dtype: {dtype}")
 
@@ -427,7 +431,7 @@ def define_required_extensions(dtypes: Union[str, List[str]]):
             glsl_type = "float16"
         elif dtype == "double":
             glsl_type = "float64"
-        elif dtype in ["int8", "uint8"]:
+        elif dtype in ["int8", "uint8", "bool"]:
             glsl_type = "int8"
         elif dtype in ["int16", "uint16"]:
             glsl_type = "int16"
@@ -691,7 +695,9 @@ class SPVGenerator:
                     elif "VALUE" in value:
                         suffix = value.get("SUFFIX", value["VALUE"])
                         if value["VALUE"] in ["int", "uint"]:
-                            raise ValueError(f"Use int32 or uint32 instead of {value['VALUE']}")
+                            raise ValueError(
+                                f"Use int32 or uint32 instead of {value['VALUE']}"
+                            )
                         param_values.append((param_name, suffix, value["VALUE"]))
 
                     else:

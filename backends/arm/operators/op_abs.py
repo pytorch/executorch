@@ -44,7 +44,7 @@ class AbsVisitor_080_BI(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 1)
-        validate_same_dtype(self.target, [*inputs, output])
+        validate_same_dtype(self.target, [*inputs, output], ts)
 
         # Handle int8 (quantized) and int32
         if not (inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]):
@@ -106,7 +106,7 @@ class AbsVisitor_080_MI(AbsVisitor_080_BI):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 1)
-        validate_same_dtype(self.target, [*inputs, output])
+        validate_same_dtype(self.target, [*inputs, output], ts)
 
         if inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]:
             # Call the inherited define_node for handling integers
@@ -153,7 +153,7 @@ class AbsVisitor_INT(NodeVisitor):
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 1)
-        validate_same_dtype(self.target, [*inputs, output])
+        validate_same_dtype(self.target, [*inputs, output], ts)
 
         # Handle int8 (quantized) and int32
         if not (inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]):
@@ -216,7 +216,7 @@ class AbsVisitor_FP(AbsVisitor_INT):
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 1)
-        validate_same_dtype(self.target, [*inputs, output])
+        validate_same_dtype(self.target, [*inputs, output], ts)
 
         if inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]:
             # Call the inherited define_node for handling integers
