@@ -32,8 +32,8 @@
   _(int16_t, VK_FORMAT_R16G16B16A16_SINT, Short)   \
   _(uint32_t, VK_FORMAT_R32G32B32A32_UINT, UInt)   \
   _(int32_t, VK_FORMAT_R32G32B32A32_SINT, Int)     \
-  _(uint64_t, VK_FORMAT_R64G64B64A64_UINT, UInt64)     \
-  _(int64_t, VK_FORMAT_R64G64B64A64_SINT, Long)     \
+  _(uint64_t, VK_FORMAT_R64G64B64A64_UINT, UInt64) \
+  _(int64_t, VK_FORMAT_R64G64B64A64_SINT, Long)    \
   _(float, VK_FORMAT_FLOAT4, Float)                \
   _(double, VK_FORMAT_R64G64B64A64_SFLOAT, Double) \
   _(int8_t, VK_FORMAT_R8G8B8A8_SINT, QInt8)        \
