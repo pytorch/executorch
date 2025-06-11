@@ -16,12 +16,29 @@
 #include "selected_op_variants.h"
 #else
 // dummy implementation
+// inline constexpr bool should_include_kernel_dtype(
+//     const char* /*operator_name*/,
+//     executorch::aten::ScalarType /*scalar_type*/
+// ) {
+//   return true;
+// }
+
+// Only add kernel.
 inline constexpr bool should_include_kernel_dtype(
-    const char* /*operator_name*/,
-    executorch::aten::ScalarType /*scalar_type*/
-) {
-  return true;
+    const char* operator_name,
+    executorch::aten::ScalarType scalar_type) {
+  return ((std::string_view(operator_name).compare("add.out") == 0));
 }
+
+// Only add-float kernel.
+// inline constexpr bool should_include_kernel_dtype(
+//     const char* operator_name,
+//     executorch::aten::ScalarType scalar_type) {
+//   return (
+//       (std::string_view(operator_name).compare("add.out") == 0) &&
+//       (scalar_type == executorch::aten::ScalarType::Float));
+// }
+
 #endif
 
 namespace torch {
