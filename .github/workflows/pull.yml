@@ -706,10 +706,11 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         ./install_requirements.sh --use-pt-pinned-commit
+        ./install_executorch.sh
 
-        bash .ci/scripts/setup-mediatek-deps.sh
-        bash .ci/scripts/build-mediatek-sdk.sh
-        bash .ci/scripts/test_model.sh "mv3" "buck2" "mediatek"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-mediatek-deps.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/build-mediatek-sdk.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "mv3" "buck2" "mediatek"
         # placeholder for mediatek to add more tests
 
   test-openvino-linux:
