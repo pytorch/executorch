@@ -94,10 +94,10 @@ using ::executorch::ET_RUNTIME_NAMESPACE::get_registered_kernels;
 using ::executorch::ET_RUNTIME_NAMESPACE::Kernel;
 using ::executorch::ET_RUNTIME_NAMESPACE::Method;
 using ::executorch::ET_RUNTIME_NAMESPACE::Program;
-using ::executorch::extension::ET_BUNDLED_MODULE_NAMESPACE::BundledModule;
 using ::executorch::extension::BufferDataLoader;
 using ::executorch::extension::MallocMemoryAllocator;
 using ::executorch::extension::MmapDataLoader;
+using ::executorch::extension::ET_BUNDLED_MODULE_NAMESPACE::BundledModule;
 using ::executorch::runtime::ArrayRef;
 using ::executorch::runtime::DataLoader;
 using ::executorch::runtime::Error;
@@ -443,43 +443,43 @@ inline std::unique_ptr<Module> load_module_from_file(
 }
 
 inline py::list get_outputs_as_py_list(
-  const std::vector<EValue>& outputs,
-  bool clone_outputs = true) {
-const auto outputs_size = outputs.size();
-py::list list(outputs_size);
-for (size_t i = 0; i < outputs_size; ++i) {
-  auto& v = outputs[i];
-  if (Tag::None == v.tag) {
-    list[i] = py::none();
-  } else if (Tag::Int == v.tag) {
-    list[i] = py::cast(v.toInt());
-  } else if (Tag::Double == v.tag) {
-    list[i] = py::cast(v.toDouble());
-  } else if (Tag::Bool == v.tag) {
-    list[i] = py::cast(v.toBool());
-  } else if (Tag::String == v.tag) {
-    list[i] = py::cast(std::string(v.toString().data()));
-  } else if (Tag::Tensor == v.tag) {
+    const std::vector<EValue>& outputs,
+    bool clone_outputs = true) {
+  const auto outputs_size = outputs.size();
+  py::list list(outputs_size);
+  for (size_t i = 0; i < outputs_size; ++i) {
+    auto& v = outputs[i];
+    if (Tag::None == v.tag) {
+      list[i] = py::none();
+    } else if (Tag::Int == v.tag) {
+      list[i] = py::cast(v.toInt());
+    } else if (Tag::Double == v.tag) {
+      list[i] = py::cast(v.toDouble());
+    } else if (Tag::Bool == v.tag) {
+      list[i] = py::cast(v.toBool());
+    } else if (Tag::String == v.tag) {
+      list[i] = py::cast(std::string(v.toString().data()));
+    } else if (Tag::Tensor == v.tag) {
 #ifdef USE_ATEN_LIB
-    // Clone so the outputs in python do not share a lifetime with the
-    // module object
-    if (clone_outputs) {
-      list[i] = py::cast(v.toTensor().clone());
-    } else {
-      list[i] = py::cast(v.toTensor());
-    }
+      // Clone so the outputs in python do not share a lifetime with the
+      // module object
+      if (clone_outputs) {
+        list[i] = py::cast(v.toTensor().clone());
+      } else {
+        list[i] = py::cast(v.toTensor());
+      }
 #else
-    if (clone_outputs) {
-      list[i] = py::cast(alias_attensor_to_etensor(v.toTensor()).clone());
-    } else {
-      list[i] = py::cast(alias_attensor_to_etensor(v.toTensor()));
-    }
+      if (clone_outputs) {
+        list[i] = py::cast(alias_attensor_to_etensor(v.toTensor()).clone());
+      } else {
+        list[i] = py::cast(alias_attensor_to_etensor(v.toTensor()));
+      }
 #endif
-  } else {
-    ET_ASSERT_UNREACHABLE_MSG("Invalid model output type");
+    } else {
+      ET_ASSERT_UNREACHABLE_MSG("Invalid model output type");
+    }
   }
-}
-return list;
+  return list;
 }
 
 static constexpr size_t kDEFAULT_BUNDLED_INPUT_POOL_SIZE = 16 * 1024U;
@@ -536,7 +536,8 @@ struct PyBundledModule : public BundledModule {
     const auto& outputs = result.get();
     py::list py_outputs = get_outputs_as_py_list(outputs);
 
-    Error status = BundledModule::verify_method_outputs(method_name, testset_idx, rtol, atol);
+    Error status = BundledModule::verify_method_outputs(
+        method_name, testset_idx, rtol, atol);
     THROW_IF_ERROR(
         status,
         "Result verification failed with status %" PRIu32,
@@ -860,7 +861,7 @@ struct PyModule final {
   }
 
   py::list forward_single_input(
-const torch::Tensor& inputTensor,
+      const torch::Tensor& inputTensor,
       bool clone_outputs = true) {
     py::list py_list;
     py_list.append(py::cast(inputTensor));
@@ -1126,7 +1127,8 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           py::arg("clone_outputs") = true,
           call_guard);
 
-  py::class_<PyBundledModule>(m, "BundledModule").def(
+  py::class_<PyBundledModule>(m, "BundledModule")
+      .def(
           "verify_result_with_bundled_expected_output",
           &PyBundledModule::verify_result_with_bundled_expected_output,
           py::arg("method_name"),
