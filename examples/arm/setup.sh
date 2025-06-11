@@ -18,7 +18,7 @@ ARCH="$(uname -m)"
 OS="$(uname -s)"
 root_dir="${script_dir}/ethos-u-scratch"
 eula_acceptance=0
-skip_toolchain_setup=0
+skip_toolchain_setup=1
 skip_fvp_setup=0
 skip_vela_setup=0
 
