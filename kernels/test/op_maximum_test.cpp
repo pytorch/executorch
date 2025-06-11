@@ -37,3 +37,17 @@ TEST(OpMaximumOutTest, SmokeTest) {
   op_maximum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
+
+TEST(OpMaximumOutTest, SmokeTestLarger) {
+  TensorFactory<ScalarType::Float> tfFloat;
+
+  std::vector<float> a(18);
+  std::iota(a.begin(), a.end(), -8);
+  Tensor self = tfFloat.make({18}, a);
+  Tensor other = tfFloat.full({18}, 4);
+  Tensor out = tfFloat.zeros({18});
+  Tensor out_expected = tfFloat.make(
+      {18}, {4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 6, 7, 8, 9});
+  op_maximum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
