@@ -10,6 +10,5 @@ flip:
       - VALUE: int8
       - VALUE: uint8
       - VALUE: int32
-      - VALUE: int64
   shader_variants:
     - NAME: flip

@@ -39,7 +39,7 @@ class ViewVisitor_0_80(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts
 
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [inputs[0], output])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
 
         attr = ts.TosaSerializerAttribute()
         new_shape = tosa_shape(inputs[1].special, output.dim_order)
@@ -69,7 +69,7 @@ class ViewVisitor(NodeVisitor):
         import serializer.tosa_serializer as ts
 
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [inputs[0], output])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
 
         tosa_graph = cast(ts.TosaSerializer, tosa_graph)
 

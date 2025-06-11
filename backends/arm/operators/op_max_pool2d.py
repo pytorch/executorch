@@ -47,7 +47,7 @@ class MaxPool2dVisitor_0_80(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, [3, 4])
-        validate_same_dtype(self.target, [inputs[0], output])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
 
         input_tensor = inputs[0]
         kernel_size = inputs[1].special
@@ -132,7 +132,7 @@ class MaxPool2dVisitor(NodeVisitor):
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, [3, 4])
-        validate_same_dtype(self.target, [inputs[0], output])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
 
         input_tensor = inputs[0]
         kernel_size = inputs[1].special

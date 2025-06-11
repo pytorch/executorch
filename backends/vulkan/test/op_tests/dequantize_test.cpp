@@ -108,6 +108,9 @@ at::Tensor dequantize_per_tensor_aten(
   }
 
   switch (out_dtype) {
+    case at::kHalf:
+      et_out_dtype = ScalarType::Half;
+      break;
     case at::kFloat:
       et_out_dtype = ScalarType::Float;
       break;
@@ -121,7 +124,14 @@ at::Tensor dequantize_per_tensor_aten(
   executorch::aten::optional<ScalarType> opt_et_out_dtype(et_out_dtype);
 
   WRAP_TO_ATEN(dequantize_per_tensor_out_no_context, 7)
-  (input, scale, zero_point, quant_min, quant_max, et_dtype, opt_et_out_dtype, out);
+  (input,
+   scale,
+   zero_point,
+   quant_min,
+   quant_max,
+   et_dtype,
+   opt_et_out_dtype,
+   out);
   return out;
 }
 
@@ -160,6 +170,9 @@ at::Tensor dequantize_per_token_aten(
   }
 
   switch (out_dtype) {
+    case at::kHalf:
+      et_out_dtype = ScalarType::Half;
+      break;
     case at::kFloat:
       et_out_dtype = ScalarType::Float;
       break;
@@ -171,14 +184,20 @@ at::Tensor dequantize_per_token_aten(
   }
 
   WRAP_TO_ATEN(dequantize_per_token_out_no_context, 7)
-  (input, scale, zero_points, quant_min, quant_max, et_dtype, et_out_dtype, out);
+  (input,
+   scale,
+   zero_points,
+   quant_min,
+   quant_max,
+   et_dtype,
+   et_out_dtype,
+   out);
   return out;
 }
 
 } // namespace native
 } // namespace executor
 } // namespace torch
-
 
 //
 // Test functions
@@ -282,6 +301,7 @@ void check_dequantize_args(
 
   // Check that output dtype is a floating point type
   switch (out_dtype) {
+    case c10::kHalf:
     case c10::kFloat:
     case c10::kDouble:
       break;
@@ -397,7 +417,8 @@ void test_reference_dequantize_per_tensor(
   } else if (dtype == at::kChar) {
     input = at::zeros(input_sizes_int64, at::device(at::kCPU).dtype(at::kChar));
   } else if (dtype == at::kShort) {
-    input = at::zeros(input_sizes_int64, at::device(at::kCPU).dtype(at::kShort));
+    input =
+        at::zeros(input_sizes_int64, at::device(at::kCPU).dtype(at::kShort));
   } else if (dtype == at::kInt) {
     input = at::zeros(input_sizes_int64, at::device(at::kCPU).dtype(at::kInt));
   } else {
@@ -438,7 +459,7 @@ void test_reference_dequantize_per_tensor(
       input, scale, zero_point, quant_min, quant_max, dtype, out_dtype);
 
   // Compare outputs
-  const bool output_correct = at::allclose(reference_out, impl_out, 1e-5, 1e-5);
+  const bool output_correct = at::allclose(reference_out, impl_out);
   if (!output_correct) {
     std::cout << "\n"
               << "Failed with parameters: " << std::endl;
@@ -479,7 +500,8 @@ void test_vulkan_dequantize_per_tensor_impl(
   } else if (dtype == at::kChar) {
     input = at::zeros(input_sizes_int64, at::device(at::kCPU).dtype(at::kChar));
   } else if (dtype == at::kShort) {
-    input = at::zeros(input_sizes_int64, at::device(at::kCPU).dtype(at::kShort));
+    input =
+        at::zeros(input_sizes_int64, at::device(at::kCPU).dtype(at::kShort));
   } else if (dtype == at::kInt) {
     input = at::zeros(input_sizes_int64, at::device(at::kCPU).dtype(at::kInt));
   } else {
@@ -512,8 +534,9 @@ void test_vulkan_dequantize_per_tensor_impl(
   input = flat_input.reshape(input_sizes_int64);
 
   // Get reference output
-  at::Tensor reference_out = torch::executor::native::dequantize_per_tensor_aten(
-      input, scale, zero_point, quant_min, quant_max, dtype, out_dtype);
+  at::Tensor reference_out =
+      torch::executor::native::dequantize_per_tensor_aten(
+          input, scale, zero_point, quant_min, quant_max, dtype, out_dtype);
 
   // Build Vulkan dequantize_per_tensor graph
   using namespace vkcompute;
@@ -562,7 +585,7 @@ void test_vulkan_dequantize_per_tensor_impl(
       staging_out, vk_out.mutable_data_ptr(), vk_out.numel());
 
   // Compare outputs
-  const bool output_correct = at::allclose(reference_out, vk_out, 1e-5, 1e-5);
+  const bool output_correct = at::allclose(reference_out, vk_out);
   if (!output_correct) {
     std::cout << "\n"
               << "Failed with parameters: " << std::endl;
@@ -587,7 +610,9 @@ void test_vulkan_dequantize_per_tensor_impl(
 }
 
 // Test cases for dequantize_per_tensor
-TEST(VulkanDequantizePerTensorTest, test_reference_dequantize_per_tensor_uint8_to_float) {
+TEST(
+    VulkanDequantizePerTensorTest,
+    test_reference_dequantize_per_tensor_uint8_to_float) {
   test_reference_dequantize_per_tensor(
       {2, 3, 4}, // input sizes
       0.1, // scale
@@ -598,7 +623,9 @@ TEST(VulkanDequantizePerTensorTest, test_reference_dequantize_per_tensor_uint8_t
       at::kFloat); // output dtype
 }
 
-TEST(VulkanDequantizePerTensorTest, test_reference_dequantize_per_tensor_int8_to_float) {
+TEST(
+    VulkanDequantizePerTensorTest,
+    test_reference_dequantize_per_tensor_int8_to_float) {
   test_reference_dequantize_per_tensor(
       {3, 4, 5}, // input sizes
       0.05, // scale
@@ -609,7 +636,9 @@ TEST(VulkanDequantizePerTensorTest, test_reference_dequantize_per_tensor_int8_to
       at::kFloat); // output dtype
 }
 
-TEST(VulkanDequantizePerTensorTest, test_reference_dequantize_per_tensor_int16_to_float) {
+TEST(
+    VulkanDequantizePerTensorTest,
+    test_reference_dequantize_per_tensor_int16_to_float) {
   test_reference_dequantize_per_tensor(
       {2, 2, 3}, // input sizes
       0.001, // scale
