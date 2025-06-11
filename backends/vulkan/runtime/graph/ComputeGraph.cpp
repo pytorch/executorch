@@ -378,27 +378,16 @@ ValueRef ComputeGraph::add_tensor_view(const ValueRef vref) {
   const vTensorPtr t = get_tensor(vref);
   ValueRef idx(static_cast<int>(values_.size()));
   values_.emplace_back(api::vTensor(*t));
-  for (SharedObject& sobj : shared_objects_) {
-    if (sobj.has_user(vref)) {
-      sobj.add_user(this, idx);
-    }
-  }
   return idx;
 }
 
 ValueRef ComputeGraph::add_tensor_view(
     const ValueRef vref,
     const std::vector<int64_t>& sizes,
-    const std::vector<int64_t>& strides,
-    const size_t offset_numel) {
+    const std::vector<int64_t>& strides) {
   const vTensorPtr t = get_tensor(vref);
   ValueRef idx(static_cast<int>(values_.size()));
-  values_.emplace_back(api::vTensor(*t, sizes, strides, offset_numel));
-  for (SharedObject& sobj : shared_objects_) {
-    if (sobj.has_user(vref)) {
-      sobj.add_user(this, idx);
-    }
-  }
+  values_.emplace_back(api::vTensor(*t, sizes, strides));
   return idx;
 }
 
@@ -772,7 +761,10 @@ void ComputeGraph::propagate_resize() {
   for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
     node->trigger_resize(this);
   }
-  encode_execute();
+  // Only re-encode on resize if dynamic shapes are expected
+  if (config_.expect_dynamic_shapes) {
+    encode_execute();
+  }
 }
 
 } // namespace vkcompute
