@@ -221,10 +221,12 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.squeeze_copy.dim,
     torch.ops.aten.squeeze.dim,
     torch.ops.aten.squeeze.dims,
+    torch.ops.aten.unbind.int,
     torch.ops.aten.unsqueeze.default,
     torch.ops.aten.unsqueeze_copy.default,
     torch.ops.aten.reshape.default,
     torch.ops.aten.repeat.default,
+    torch.ops.aten.repeat_interleave.self_int,
     torch.ops.aten.expand_copy.default,
     torch.ops.aten.expand.default,
     # Disabling these as there seems to be an issue with support for complex
@@ -256,6 +258,7 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.amin.default,
     torch.ops.aten.clamp.default,
     torch.ops.aten.clamp.Tensor,
+    torch.ops.aten.unflatten.int,
 ]
 
 _one_to_one_shared_input_or_input_act_qspec = [
@@ -271,6 +274,7 @@ _one_to_one_shared_input_or_input_act_qspec = [
     torch.ops.aten.avg_pool2d.default,
     torch.ops.aten.max_pool2d.default,
     torch.ops.aten.full.default,
+    torch.ops.aten.full,
     torch.ops.aten.flatten.using_ints,
     torch.ops.aten.dropout.default,
     torch.ops.aten.dropout_.default,
@@ -539,6 +543,7 @@ def annotate_graph(  # type: ignore[return]
         if node.target in [
             torch.ops.aten.full_like.default,
             torch.ops.aten.full.default,
+            torch.ops.aten.full,
             torch.ops.aten.scalar_tensor.default,
         ]:
             node.kwargs = {}
