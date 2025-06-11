@@ -14,7 +14,6 @@ choose_qparams:
       - VALUE: buffer
       - VALUE: texture3d
     IN_DTYPE:
-      - VALUE: half
       - VALUE: float
   shader_variants:
     - NAME: choose_qparams_tensor

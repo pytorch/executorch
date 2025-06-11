@@ -17,6 +17,8 @@
 #include <executorch/extension/aten_util/make_aten_functor_from_et_functor.h>
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
 
+#include "test_utils.h"
+
 #include <cassert>
 #include <iostream>
 
@@ -80,33 +82,7 @@ at::Tensor quantize_per_tensor_aten(
     int64_t quant_max,
     at::ScalarType dtype) {
   auto out = at::empty_like(input, dtype);
-  // Convert at::ScalarType to executorch::ScalarType
-  ScalarType et_dtype;
-  switch (dtype) {
-    case at::kByte:
-      et_dtype = ScalarType::Byte;
-      break;
-    case at::kChar:
-      et_dtype = ScalarType::Char;
-      break;
-    case at::kShort:
-      et_dtype = ScalarType::Short;
-      break;
-    case at::kInt:
-      et_dtype = ScalarType::Int;
-      break;
-    case at::kLong:
-      et_dtype = ScalarType::Long;
-      break;
-    case at::kFloat:
-      et_dtype = ScalarType::Float;
-      break;
-    case at::kDouble:
-      et_dtype = ScalarType::Double;
-      break;
-    default:
-      throw std::runtime_error("Unsupported dtype");
-  }
+  ScalarType et_dtype = at_scalartype_to_et_scalartype(dtype);
 
   WRAP_TO_ATEN(quantize_per_tensor_out_no_context, 6)
   (input, scale, zero_point, quant_min, quant_max, et_dtype, out);
@@ -122,33 +98,7 @@ at::Tensor quantize_per_token_aten(
     int64_t quant_max,
     at::ScalarType dtype) {
   auto out = at::empty_like(input, dtype);
-  // Convert at::ScalarType to executorch::ScalarType
-  ScalarType et_dtype;
-  switch (dtype) {
-    case at::kByte:
-      et_dtype = ScalarType::Byte;
-      break;
-    case at::kChar:
-      et_dtype = ScalarType::Char;
-      break;
-    case at::kShort:
-      et_dtype = ScalarType::Short;
-      break;
-    case at::kInt:
-      et_dtype = ScalarType::Int;
-      break;
-    case at::kLong:
-      et_dtype = ScalarType::Long;
-      break;
-    case at::kFloat:
-      et_dtype = ScalarType::Float;
-      break;
-    case at::kDouble:
-      et_dtype = ScalarType::Double;
-      break;
-    default:
-      throw std::runtime_error("Unsupported dtype");
-  }
+  ScalarType et_dtype = at_scalartype_to_et_scalartype(dtype);
 
   WRAP_TO_ATEN(quantize_per_token_out_no_context, 6)
   (input, scale, zero_point, quant_min, quant_max, et_dtype, out);
@@ -158,74 +108,6 @@ at::Tensor quantize_per_token_aten(
 } // namespace native
 } // namespace executor
 } // namespace torch
-
-//
-// Test functions
-//
-
-// Helper function to get the name of a ScalarType for better error messages
-std::string scalar_type_name(c10::ScalarType dtype) {
-  switch (dtype) {
-    case c10::kLong:
-      return "c10::kLong";
-    case c10::kShort:
-      return "c10::kShort";
-    case c10::kComplexHalf:
-      return "c10::kComplexHalf";
-    case c10::kComplexFloat:
-      return "c10::kComplexFloat";
-    case c10::kComplexDouble:
-      return "c10::kComplexDouble";
-    case c10::kBool:
-      return "c10::kBool";
-    case c10::kQInt8:
-      return "c10::kQInt8";
-    case c10::kQUInt8:
-      return "c10::kQUInt8";
-    case c10::kQInt32:
-      return "c10::kQInt32";
-    case c10::kBFloat16:
-      return "c10::kBFloat16";
-    case c10::kQUInt4x2:
-      return "c10::kQUInt4x2";
-    case c10::kQUInt2x4:
-      return "c10::kQUInt2x4";
-    default:
-      return "Unknown(" + std::to_string(static_cast<int>(dtype)) + ")";
-  }
-}
-
-vkcompute::vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
-  using namespace vkcompute;
-  switch (at_scalartype) {
-    case c10::kFloat:
-      return vkapi::kFloat;
-    case c10::kHalf:
-      return vkapi::kHalf;
-    case c10::kInt:
-      return vkapi::kInt;
-    case c10::kLong:
-      // We don't have inherent vkapi::kLong, use kInt instead
-      return vkapi::kInt;
-    case c10::kChar:
-      return vkapi::kChar;
-    case c10::kByte:
-      return vkapi::kByte;
-    case c10::kDouble:
-      return vkapi::kDouble;
-    case c10::kShort:
-      return vkapi::kShort;
-    case c10::kUInt16:
-      return vkapi::kUInt16;
-    default:
-      VK_THROW(
-          "Unsupported at::ScalarType: ",
-          scalar_type_name(at_scalartype),
-          " (",
-          static_cast<int>(at_scalartype),
-          ")");
-  }
-}
 
 void check_quantize_args(
     int64_t quant_min,
@@ -667,6 +549,45 @@ TEST(
 
 TEST(
     VulkanQuantizePerTensorTest,
+    test_reference_quantize_per_tensor_float_to_int32) {
+  test_reference_quantize_per_tensor(
+      {2, 3, 4}, // input sizes
+      0.04, // scale
+      5, // zero_point
+      std::numeric_limits<int32_t>::min(), // quant_min
+      std::numeric_limits<int32_t>::max(), // quant_max
+      at::kFloat,
+      at::kInt);
+}
+
+TEST(
+    VulkanQuantizePerTensorTest,
+    test_reference_quantize_per_tensor_half_to_uint8) {
+  test_reference_quantize_per_tensor(
+      {2, 3, 4}, // input sizes
+      0.2, // scale
+      2, // zero_point
+      0, // quant_min
+      255, // quant_max
+      at::kHalf,
+      at::kByte);
+}
+
+TEST(
+    VulkanQuantizePerTensorTest,
+    test_reference_quantize_per_tensor_half_to_int32) {
+  test_reference_quantize_per_tensor(
+      {2, 3, 4}, // input sizes
+      0.01, // scale
+      1, // zero_point
+      std::numeric_limits<int32_t>::min(), // quant_min
+      std::numeric_limits<int32_t>::max(), // quant_max
+      at::kHalf,
+      at::kInt);
+}
+
+TEST(
+    VulkanQuantizePerTensorTest,
     test_vulkan_quantize_per_tensor_float_to_uint8) {
   test_vulkan_quantize_per_tensor(
       {5, 3, 2, 4}, // input sizes
@@ -981,6 +902,54 @@ TEST(
       127, // quant_max
       at::kFloat,
       at::kChar);
+}
+
+TEST(
+    VulkanQuantizePerTensorTest,
+    test_reference_quantize_per_token_float_to_int32) {
+  std::vector<float> scales = {0.1, 0, 0.3, 0.1, 0.2, 0.3};
+  std::vector<int> zero_points = {1, 2, 3, 0, -1, -2};
+
+  test_reference_quantize_per_token(
+      {2, 3, 4}, // input sizes (2*3=6 tokens)
+      scales,
+      zero_points,
+      std::numeric_limits<int32_t>::min(), // quant_min
+      std::numeric_limits<int32_t>::max(), // quant_max
+      at::kFloat,
+      at::kInt);
+}
+
+TEST(
+    VulkanQuantizePerTensorTest,
+    test_reference_quantize_per_token_half_to_int32) {
+  std::vector<float> scales = {0.1, 0, 0.3, 0.1, 0.2, 0.3};
+  std::vector<int> zero_points = {1, 2, 3, 0, -1, -2};
+
+  test_reference_quantize_per_token(
+      {2, 3, 4}, // input sizes (2*3=6 tokens)
+      scales,
+      zero_points,
+      std::numeric_limits<int32_t>::min(), // quant_min
+      std::numeric_limits<int32_t>::max(), // quant_max
+      at::kHalf,
+      at::kInt);
+}
+
+TEST(
+    VulkanQuantizePerTensorTest,
+    test_reference_quantize_per_token_half_to_uint8) {
+  std::vector<float> scales = {0.1, 0, 0.3, 0.1, 0.2, 0.3};
+  std::vector<int> zero_points = {1, 2, 3, 0, -1, -2};
+
+  test_reference_quantize_per_token(
+      {2, 3, 4}, // input sizes (2*3=6 tokens)
+      scales,
+      zero_points,
+      0, // quant_min
+      255, // quant_max
+      at::kHalf,
+      at::kByte);
 }
 
 TEST(
