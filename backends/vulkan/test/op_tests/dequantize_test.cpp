@@ -17,8 +17,11 @@
 #include <executorch/extension/aten_util/make_aten_functor_from_et_functor.h>
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
 
+#include "test_utils.h"
+
 #include <cassert>
 #include <iostream>
+#include <limits>
 
 namespace torch {
 namespace executor {
@@ -84,42 +87,8 @@ at::Tensor dequantize_per_tensor_aten(
     at::ScalarType out_dtype) {
   auto out = at::empty_like(input, out_dtype);
   // Convert at::ScalarType to executorch::ScalarType
-  ScalarType et_dtype;
-  ScalarType et_out_dtype;
-
-  switch (dtype) {
-    case at::kByte:
-      et_dtype = ScalarType::Byte;
-      break;
-    case at::kChar:
-      et_dtype = ScalarType::Char;
-      break;
-    case at::kShort:
-      et_dtype = ScalarType::Short;
-      break;
-    case at::kInt:
-      et_dtype = ScalarType::Int;
-      break;
-    case at::kLong:
-      et_dtype = ScalarType::Long;
-      break;
-    default:
-      throw std::runtime_error("Unsupported dtype");
-  }
-
-  switch (out_dtype) {
-    case at::kHalf:
-      et_out_dtype = ScalarType::Half;
-      break;
-    case at::kFloat:
-      et_out_dtype = ScalarType::Float;
-      break;
-    case at::kDouble:
-      et_out_dtype = ScalarType::Double;
-      break;
-    default:
-      throw std::runtime_error("Unsupported out_dtype");
-  }
+  ScalarType et_dtype = at_scalartype_to_et_scalartype(dtype);
+  ScalarType et_out_dtype = at_scalartype_to_et_scalartype(out_dtype);
 
   executorch::aten::optional<ScalarType> opt_et_out_dtype(et_out_dtype);
 
@@ -146,42 +115,8 @@ at::Tensor dequantize_per_token_aten(
     at::ScalarType out_dtype) {
   auto out = at::empty_like(input, out_dtype);
   // Convert at::ScalarType to executorch::ScalarType
-  ScalarType et_dtype;
-  ScalarType et_out_dtype;
-
-  switch (dtype) {
-    case at::kByte:
-      et_dtype = ScalarType::Byte;
-      break;
-    case at::kChar:
-      et_dtype = ScalarType::Char;
-      break;
-    case at::kShort:
-      et_dtype = ScalarType::Short;
-      break;
-    case at::kInt:
-      et_dtype = ScalarType::Int;
-      break;
-    case at::kLong:
-      et_dtype = ScalarType::Long;
-      break;
-    default:
-      throw std::runtime_error("Unsupported dtype");
-  }
-
-  switch (out_dtype) {
-    case at::kHalf:
-      et_out_dtype = ScalarType::Half;
-      break;
-    case at::kFloat:
-      et_out_dtype = ScalarType::Float;
-      break;
-    case at::kDouble:
-      et_out_dtype = ScalarType::Double;
-      break;
-    default:
-      throw std::runtime_error("Unsupported out_dtype");
-  }
+  ScalarType et_dtype = at_scalartype_to_et_scalartype(dtype);
+  ScalarType et_out_dtype = at_scalartype_to_et_scalartype(out_dtype);
 
   WRAP_TO_ATEN(dequantize_per_token_out_no_context, 7)
   (input,
@@ -198,74 +133,6 @@ at::Tensor dequantize_per_token_aten(
 } // namespace native
 } // namespace executor
 } // namespace torch
-
-//
-// Test functions
-//
-
-// Helper function to get the name of a ScalarType for better error messages
-std::string scalar_type_name(c10::ScalarType dtype) {
-  switch (dtype) {
-    case c10::kLong:
-      return "c10::kLong";
-    case c10::kShort:
-      return "c10::kShort";
-    case c10::kComplexHalf:
-      return "c10::kComplexHalf";
-    case c10::kComplexFloat:
-      return "c10::kComplexFloat";
-    case c10::kComplexDouble:
-      return "c10::kComplexDouble";
-    case c10::kBool:
-      return "c10::kBool";
-    case c10::kQInt8:
-      return "c10::kQInt8";
-    case c10::kQUInt8:
-      return "c10::kQUInt8";
-    case c10::kQInt32:
-      return "c10::kQInt32";
-    case c10::kBFloat16:
-      return "c10::kBFloat16";
-    case c10::kQUInt4x2:
-      return "c10::kQUInt4x2";
-    case c10::kQUInt2x4:
-      return "c10::kQUInt2x4";
-    default:
-      return "Unknown(" + std::to_string(static_cast<int>(dtype)) + ")";
-  }
-}
-
-vkcompute::vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
-  using namespace vkcompute;
-  switch (at_scalartype) {
-    case c10::kFloat:
-      return vkapi::kFloat;
-    case c10::kHalf:
-      return vkapi::kHalf;
-    case c10::kInt:
-      return vkapi::kInt;
-    case c10::kLong:
-      // We don't have inherent vkapi::kLong, use kInt instead
-      return vkapi::kInt;
-    case c10::kChar:
-      return vkapi::kChar;
-    case c10::kByte:
-      return vkapi::kByte;
-    case c10::kDouble:
-      return vkapi::kDouble;
-    case c10::kShort:
-      return vkapi::kShort;
-    case c10::kUInt16:
-      return vkapi::kUInt16;
-    default:
-      VK_THROW(
-          "Unsupported at::ScalarType: ",
-          scalar_type_name(at_scalartype),
-          " (",
-          static_cast<int>(at_scalartype),
-          ")");
-  }
-}
 
 void check_dequantize_args(
     int64_t quant_min,
@@ -334,18 +201,44 @@ at::Tensor dequantize_per_tensor_reference_impl(
   at::Tensor out = at::empty_like(input, out_dtype);
 
   // Dequantize the input tensor
-  at::Tensor int_input = input.to(at::kInt);
-  at::Tensor flat_input = int_input.flatten();
+  at::Tensor flat_input = input.flatten();
   at::Tensor flat_out = out.flatten();
 
   for (int i = 0; i < flat_input.numel(); i++) {
-    int64_t qvalue = flat_input[i].item<int64_t>();
-    float value = static_cast<float>((qvalue - zero_point) * scale);
+    double dequantized_value = 0.0;
 
+    // Extract quantized value and dequantize based on input dtype
+    // Following the CPU implementation pattern: (input -
+    // static_cast<int32_t>(zero_point)) * static_cast<float>(scale)
+    if (dtype == at::kByte) {
+      uint8_t qvalue = flat_input[i].item<uint8_t>();
+      dequantized_value = (qvalue - static_cast<int32_t>(zero_point)) *
+          static_cast<float>(scale);
+    } else if (dtype == at::kChar) {
+      int8_t qvalue = flat_input[i].item<int8_t>();
+      dequantized_value = (qvalue - static_cast<int32_t>(zero_point)) *
+          static_cast<float>(scale);
+    } else if (dtype == at::kShort) {
+      int16_t qvalue = flat_input[i].item<int16_t>();
+      dequantized_value = (qvalue - static_cast<int32_t>(zero_point)) *
+          static_cast<float>(scale);
+    } else if (dtype == at::kInt) {
+      int32_t qvalue = flat_input[i].item<int32_t>();
+      dequantized_value = (qvalue - static_cast<int32_t>(zero_point)) *
+          static_cast<float>(scale);
+    } else if (dtype == at::kLong) {
+      int64_t qvalue = flat_input[i].item<int64_t>();
+      dequantized_value = (qvalue - static_cast<int32_t>(zero_point)) *
+          static_cast<float>(scale);
+    }
+
+    // Store result based on output dtype
     if (out_dtype == at::kFloat) {
-      flat_out[i] = value;
+      flat_out[i] = static_cast<float>(dequantized_value);
     } else if (out_dtype == at::kDouble) {
-      flat_out[i] = static_cast<double>(value);
+      flat_out[i] = dequantized_value;
+    } else if (out_dtype == at::kHalf) {
+      flat_out[i] = static_cast<c10::Half>(dequantized_value);
     }
   }
 
@@ -383,34 +276,48 @@ at::Tensor dequantize_per_token_reference_impl(
 
   // Dequantize each token separately
   for (int token_idx = 0; token_idx < num_tokens; token_idx++) {
-    // Use float for scale since Vulkan doesn't support double
+    // Get scale and zero_point for this token
     float token_scale = scale[token_idx].item<float>();
-    // Use int for zero_point since Vulkan doesn't support int64_t
-    int token_zero_point = zero_point[token_idx].item<int>();
+    int64_t token_zero_point = zero_point[token_idx].item<int64_t>();
 
     // Dequantize the token
     for (int i = 0; i < input.size(-1); i++) {
-      int qvalue;
+      double dequantized_value = 0.0;
+
+      // Extract quantized value and dequantize based on input dtype
+      // Following the CPU implementation pattern: (input -
+      // static_cast<int32_t>(zero_point)) * static_cast<float>(scale)
       if (dtype == at::kByte) {
-        qvalue = static_cast<int>(reshaped_input[token_idx][i].item<uint8_t>());
+        uint8_t qvalue = reshaped_input[token_idx][i].item<uint8_t>();
+        dequantized_value =
+            (qvalue - static_cast<int32_t>(token_zero_point)) * token_scale;
       } else if (dtype == at::kChar) {
-        qvalue = static_cast<int>(reshaped_input[token_idx][i].item<int8_t>());
+        int8_t qvalue = reshaped_input[token_idx][i].item<int8_t>();
+        dequantized_value =
+            (qvalue - static_cast<int32_t>(token_zero_point)) * token_scale;
       } else if (dtype == at::kShort) {
-        qvalue = static_cast<int>(reshaped_input[token_idx][i].item<int16_t>());
+        int16_t qvalue = reshaped_input[token_idx][i].item<int16_t>();
+        dequantized_value =
+            (qvalue - static_cast<int32_t>(token_zero_point)) * token_scale;
       } else if (dtype == at::kInt) {
-        qvalue = reshaped_input[token_idx][i].item<int32_t>();
+        int32_t qvalue = reshaped_input[token_idx][i].item<int32_t>();
+        dequantized_value =
+            (qvalue - static_cast<int32_t>(token_zero_point)) * token_scale;
       } else if (dtype == at::kLong) {
-        qvalue = static_cast<int>(reshaped_input[token_idx][i].item<int64_t>());
+        int64_t qvalue = reshaped_input[token_idx][i].item<int64_t>();
+        dequantized_value =
+            (qvalue - static_cast<int32_t>(token_zero_point)) * token_scale;
       } else {
         throw std::runtime_error("Unsupported input dtype");
       }
 
-      float value = (qvalue - token_zero_point) * token_scale;
-
+      // Store result based on output dtype
       if (out_dtype == at::kFloat) {
-        reshaped_out[token_idx][i] = value;
+        reshaped_out[token_idx][i] = static_cast<float>(dequantized_value);
       } else if (out_dtype == at::kDouble) {
-        reshaped_out[token_idx][i] = static_cast<double>(value);
+        reshaped_out[token_idx][i] = dequantized_value;
+      } else if (out_dtype == at::kHalf) {
+        reshaped_out[token_idx][i] = static_cast<c10::Half>(dequantized_value);
       }
     }
   }
@@ -749,15 +656,41 @@ TEST(
 
 TEST(
     VulkanDequantizePerTensorTest,
-    test_reference_dequantize_per_tensor_int16_to_float) {
+    test_reference_dequantize_per_tensor_int32_to_float) {
   test_reference_dequantize_per_tensor(
-      {2, 2, 3}, // input sizes
-      0.001, // scale
-      -10, // zero_point
-      -32768, // quant_min
-      32767, // quant_max
-      at::kShort, // input dtype
+      {4, 6, 2}, // input sizes
+      0.2, // scale
+      2, // zero_point
+      std::numeric_limits<int32_t>::min(), // quant_min
+      std::numeric_limits<int32_t>::max(), // quant_max
+      at::kInt, // input dtype
       at::kFloat); // output dtype
+}
+
+TEST(
+    VulkanDequantizePerTensorTest,
+    test_reference_dequantize_per_tensor_uint8_to_half) {
+  test_reference_dequantize_per_tensor(
+      {7, 4}, // input sizes
+      0.1, // scale
+      10, // zero_point
+      0, // quant_min
+      255, // quant_max
+      at::kByte, // input dtype (uint8)
+      at::kHalf); // output dtype
+}
+
+TEST(
+    VulkanDequantizePerTensorTest,
+    test_reference_dequantize_per_tensor_int32_to_half) {
+  test_reference_dequantize_per_tensor(
+      {2, 6, 5}, // input sizes
+      0.3, // scale
+      -10, // zero_point
+      std::numeric_limits<int32_t>::min(), // quant_min
+      std::numeric_limits<int32_t>::max(), // quant_max
+      at::kInt, // input dtype
+      at::kHalf); // output dtype
 }
 
 void test_reference_dequantize_per_token(
@@ -1085,17 +1018,48 @@ TEST(
 
 TEST(
     VulkanDequantizePerTokenTest,
-    test_reference_dequantize_per_token_int16_to_float) {
-  std::vector<float> scales = {
-      0.001, 0.002, 0.003, 0.004, 0.005, 0.006, 0.007, 0.008};
-  std::vector<int> zero_points = {-10, 0, 10, 20, -20, -15, 15, 25};
+    test_reference_dequantize_per_token_int32_to_float) {
+  std::vector<float> scales = {0.05, 0.1, 0.15, 0.2};
+  std::vector<int> zero_points = {0, -5, 5, 10};
 
   test_reference_dequantize_per_token(
-      {2, 4, 6}, // input sizes (2*4=8 tokens)
+      {2, 2, 10}, // input sizes (2*2=4 tokens)
       scales,
       zero_points,
-      -32768, // quant_min
-      32767, // quant_max
-      at::kShort, // input dtype
+      std::numeric_limits<int32_t>::min(), // quant_min
+      std::numeric_limits<int32_t>::max(), // quant_max
+      at::kInt, // input dtype
       at::kFloat); // output dtype
+}
+
+TEST(
+    VulkanDequantizePerTokenTest,
+    test_reference_dequantize_per_token_int8_to_half) {
+  std::vector<float> scales = {0.05, 0.1, 0.15, 0.2};
+  std::vector<int> zero_points = {0, -5, 5, 10};
+
+  test_reference_dequantize_per_token(
+      {4, 1, 5}, // input sizes (4*1=4 tokens)
+      scales,
+      zero_points,
+      -128, // quant_min
+      127, // quant_max
+      at::kChar, // input dtype (int8)
+      at::kHalf); // output dtype
+}
+
+TEST(
+    VulkanDequantizePerTokenTest,
+    test_reference_dequantize_per_token_int32_to_half) {
+  std::vector<float> scales = {0.05, 0.1};
+  std::vector<int> zero_points = {0, -5};
+
+  test_reference_dequantize_per_token(
+      {2, 2}, // input sizes (2 tokens)
+      scales,
+      zero_points,
+      std::numeric_limits<int32_t>::min(), // quant_min
+      std::numeric_limits<int32_t>::max(), // quant_max
+      at::kInt, // input dtype
+      at::kHalf); // output dtype
 }
