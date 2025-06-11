@@ -46,6 +46,7 @@ question is a bit more specific, then add a descriptive sufix. */
 
 #pragma once
 
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -53,29 +54,78 @@ namespace executor {
 namespace native {
 namespace internal {
 
-/**
- * Implements an op pattern for ops that take a single input tensor of any
- * realh dtye, no additional arguments, and outputs a tensor of the same size
- * and dtype. The function fn specifies the math operation which is applied to
- * the input tensor element-wise.
- */
-Tensor& unary_ufunc_realhbf16(
-    double (*fn)(double),
+// Implementation detail for the other helpers in this header. Returns
+// true on success, false on failure.
+bool check_and_resize_inputs(
     KernelRuntimeContext& ctx,
     const Tensor& in,
     Tensor& out);
 
 /**
  * Implements an op pattern for ops that take a single input tensor of any
- * realhb dtye (real, half and boolean), no additional arguments, and outputs a
+ * realhbf16 dtype, no additional arguments, and outputs a tensor of the same
+ * size and dtype. The function fn specifies the math operation which is applied
+ * to the input tensor element-wise.
+ */
+template <const char* op_name, typename Op>
+Tensor& unary_ufunc_realhbf16(
+    const Op& fn,
+    KernelRuntimeContext& ctx,
+    const Tensor& in,
+    Tensor& out) {
+  if (!check_and_resize_inputs(ctx, in, out)) {
+    return out;
+  }
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_shape_and_dtype(in, out), InvalidArgument, out);
+
+  ET_SWITCH_REALHBF16_TYPES(out.scalar_type(), ctx, op_name, CTYPE, [&] {
+    utils::apply_unitensor_elementwise_fn<
+        CTYPE,
+        op_name,
+        utils::SupportedTensorDtypes::SAME_AS_COMMON>(
+        fn, ctx, in, utils::SupportedTensorDtypes::REALHBF16, out);
+  });
+  return out;
+}
+
+/**
+ * Implements an op pattern for ops that take a single input tensor of any
+ * realhb dtype (real, half and boolean), no additional arguments, and outputs a
  * boolean tensor of the same size. The function fn specifies the math
  * operation which is applied to the input tensor element-wise.
  */
+template <const char* op_name, typename Op>
 Tensor& unary_ufunc_realhb_to_bool(
-    bool (*fn)(double),
+    const Op& fn,
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    Tensor& out);
+    Tensor& out) {
+  if (!check_and_resize_inputs(ctx, in, out)) {
+    return out;
+  }
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      out.scalar_type() == executorch::aten::ScalarType::Bool,
+      InvalidArgument,
+      out,
+      "Expected out tensor to have dtype Bool, but got %" PRId8 " instead.",
+      static_cast<int8_t>(out.scalar_type()));
+
+  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE_IN, [&] {
+    utils::apply_unitensor_elementwise_fn<
+        CTYPE_IN,
+        op_name,
+        utils::SupportedTensorDtypes::BOOL>(
+        [fn](const CTYPE_IN val_in) { return fn(val_in); },
+        ctx,
+        in,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        out);
+  });
+
+  return out;
+}
 
 /**
  * Implements an op pattern for ops that take a single input tensor of any
@@ -83,11 +133,35 @@ Tensor& unary_ufunc_realhb_to_bool(
  * outputs a floating point tensor of the same size. The function fn specifies
  * the math operation which is applied to the input tensor element-wise.
  */
+template <const char* op_name, typename Op>
 Tensor& unary_ufunc_realhbbf16_to_floathbf16(
-    double (*fn)(double),
+    const Op& fn,
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    Tensor& out);
+    Tensor& out) {
+  ET_KERNEL_CHECK(ctx, tensor_is_floating_type(out), InvalidArgument, out);
+
+  if (!check_and_resize_inputs(ctx, in, out)) {
+    return out;
+  }
+
+  ScalarType compute_type = in.scalar_type() == ScalarType::Double
+      ? ScalarType::Double
+      : ScalarType::Float;
+  ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&] {
+    utils::apply_unitensor_elementwise_fn<
+        CTYPE_COMPUTE,
+        op_name,
+        utils::SupportedTensorDtypes::FLOATHBF16>(
+        [fn](const auto val_in) { return fn(val_in); },
+        ctx,
+        in,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        out);
+  });
+
+  return out;
+}
 
 } // namespace internal
 } // namespace native
