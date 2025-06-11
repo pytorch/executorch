@@ -122,7 +122,8 @@ ComputeGraph::ComputeGraph(GraphConfig config)
       prepack_descriptor_counts_{},
       execute_descriptor_counts_{},
       context_{new api::Context(
-          vkapi::runtime()->default_adapter_i(),
+          config.external_adapter ? config.external_adapter
+                                  : vkapi::runtime()->get_adapter_p(),
           config_.context_config)},
       shared_objects_{},
       values_{},
