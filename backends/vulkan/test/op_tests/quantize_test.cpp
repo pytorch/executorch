@@ -157,7 +157,6 @@ at::Tensor quantize_per_token_aten(
 } // namespace executor
 } // namespace torch
 
-
 //
 // Test functions
 //
