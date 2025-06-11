@@ -100,9 +100,17 @@ class Runtime final {
   uint32_t create_adapter(const Selector&);
 };
 
+std::string& set_and_get_pipeline_cache_data_path(const std::string& file_path);
+
 // The global runtime is retrieved using this function, where it is declared as
 // a static local variable.
 Runtime* runtime();
+
+// Used to share instance + devices between client code and ETVK
+Adapter* set_and_get_external_adapter(
+    const VkInstance instance = VK_NULL_HANDLE,
+    const VkPhysicalDevice physical_device = VK_NULL_HANDLE,
+    const VkDevice logical_device = VK_NULL_HANDLE);
 
 } // namespace vkapi
 } // namespace vkcompute

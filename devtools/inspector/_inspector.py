@@ -46,6 +46,7 @@ from executorch.devtools.inspector._inspector_utils import (
     display_or_print_df,
     EDGE_DIALECT_GRAPH_KEY,
     EXCLUDED_COLUMNS_WHEN_PRINTING,
+    EXCLUDED_EVENTS_FOR_INTERMEDIATE_OUTPUT,
     EXCLUDED_EVENTS_WHEN_PRINTING,
     find_populated_event,
     FORWARD,
@@ -58,6 +59,9 @@ from executorch.devtools.inspector._inspector_utils import (
     RESERVED_FRAMEWORK_EVENT_NAMES,
     TimeScale,
     verify_debug_data_equivalence,
+)
+from executorch.devtools.inspector._intermediate_output_capturer import (
+    IntermediateOutputCapturer,
 )
 from executorch.exir import ExportedProgram
 
@@ -1074,6 +1078,7 @@ class Inspector:
         # Key str is method name; value is list of ProgramOutputs because of list of test cases
         self._reference_outputs: Dict[str, List[ProgramOutput]] = {}
         self._enable_module_hierarchy = enable_module_hierarchy
+        self._aot_intermediate_outputs: Optional[Dict[Tuple[int, ...], Any]] = None
         self._consume_etrecord()
 
     def _consume_etrecord(self) -> None:
@@ -1134,6 +1139,46 @@ class Inspector:
                     event_block.reference_output = self._reference_outputs[FORWARD][
                         index
                     ]
+        # Capture intermediate outputs only if _representative_inputs are provided
+        # when using bundled program to create the etrecord
+        if self._etrecord._representative_inputs is None:
+            return
+        export_program = self._etrecord.edge_dialect_program
+        graph_module = export_program.module()
+        capturer = IntermediateOutputCapturer(graph_module)
+        self._aot_intermediate_outputs = capturer.run_and_capture(
+            self._etrecord._representative_inputs
+        )
+
+    # TODO: Make it more extensible to further merge overlapping debug handles
+    def _get_runtime_intermediate_outputs(self) -> Dict[Tuple[int, ...], Any]:
+        """
+        Retrieve the raw runtime intermediate outputs(debug handles and value mappings)
+        from the event blocks. These outputs will be processed later to merge overlapping debug handles.
+        """
+        debug_handle_to_output = {}
+        for event_block in self.event_blocks:
+            for event in event_block.events:
+                # Skip OPERATOR_CALL events to avoid double-counting and exclude framework tax
+                if (
+                    event.name in EXCLUDED_EVENTS_FOR_INTERMEDIATE_OUTPUT
+                    or not event.op_types
+                ):
+                    continue
+                # Normalize debug_handles to a tuple
+                debug_handles = event.debug_handles
+                if isinstance(debug_handles, int):
+                    debug_handles = (debug_handles,)
+                else:
+                    debug_handles = tuple(debug_handles)
+                current_entry = debug_handle_to_output.get(debug_handles, (-1, None))
+                # When event has same debug handles, only keep the one with the largest instruction id
+                if event._instruction_id > current_entry[0]:
+                    debug_handle_to_output[debug_handles] = (
+                        event._instruction_id,
+                        event.debug_data,
+                    )
+        return {k: v[1] for k, v in debug_handle_to_output.items()}
 
     def to_dataframe(
         self,

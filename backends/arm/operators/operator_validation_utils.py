@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, List
+from typing import Any, List, Optional
 
 
 def validate_num_inputs(op_name: str, inputs: List[Any], expected: int | List[int]):
@@ -52,7 +52,7 @@ def validate_num_inputs(op_name: str, inputs: List[Any], expected: int | List[in
         )
 
 
-def validate_same_dtype(op_name: str, tensors: List[Any]):
+def validate_same_dtype(op_name: str, tensors: List[Any], ts: Optional[Any] = None):
     """
     Validates that all given tensors have the same dtype attribute.
 
@@ -67,6 +67,9 @@ def validate_same_dtype(op_name: str, tensors: List[Any]):
 
     tensors : List[Any]
         A list of tensors to be validated, each is assumed to have a `dtype` attribute.
+
+    ts: Optional[Any]
+        TOSA serializer. Not required but only to get clearer error messages.
 
     Raises:
     -------
@@ -94,10 +97,16 @@ def validate_same_dtype(op_name: str, tensors: List[Any]):
     reference_dtype = tensors[0].dtype
 
     for tensor in tensors:
+        ref_dtype_name = (
+            ts.DTypeNames[reference_dtype] if ts is not None else str(reference_dtype)
+        )
+        inconsistent_dtype_name = (
+            ts.DTypeNames[tensor.dtype] if ts is not None else str(tensor.dtype)
+        )
         if tensor.dtype != reference_dtype:
             raise ValueError(
-                f"{op_name}: Expected all tensors to have dtype {reference_dtype}, but "
-                f"found inconsistent dtype {tensor.dtype}."
+                f"{op_name}: Expected all tensors to have dtype {ref_dtype_name}, but "
+                f"found inconsistent dtype {inconsistent_dtype_name}."
             )
 
 

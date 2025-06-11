@@ -13,6 +13,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/vk_api/Runtime.h>
+
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
@@ -139,6 +141,14 @@ GraphConfig get_graph_config(ArrayRef<CompileSpec>& compile_specs) {
           static_cast<utils::GPUMemoryLayout>(value_as_int);
 
       config.set_memory_layout_override(memory_layout);
+    }
+    if (strcmp(spec.key, "require_dynamic_shapes") == 0) {
+      ET_CHECK_MSG(value_size == sizeof(uint8_t), "Unexpected value size!");
+      bool value = getBool(value_data);
+
+      if (value) {
+        config.expect_dynamic_shapes = true;
+      }
     }
   }
 #ifdef ET_EVENT_TRACER_ENABLED
@@ -495,13 +505,17 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     builder.build_graph();
 
     compute_graph->prepare();
+    compute_graph->prepare_pipelines();
 
     compute_graph->encode_prepack();
     compute_graph->prepack();
 
-    // TODO(ssjia): remove this once we can batch compile compute pipelines
-    // during prepare().
-    compute_graph->encode_execute();
+    // If dynamic shapes are not expected, then the command buffer only needs to
+    // be encoded once. Otherwise, wait until the first inference to encode the
+    // the command buffer, when actual input shapes are known.
+    if (!compute_graph->graphconfig().expect_dynamic_shapes) {
+      compute_graph->encode_execute();
+    }
 
     return Error::Ok;
   }
@@ -516,7 +530,9 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       return Error::MemoryAllocationFailed;
     }
 
-    new (compute_graph) ComputeGraph(get_graph_config(compile_specs));
+    GraphConfig graph_config = get_graph_config(compile_specs);
+    graph_config.external_adapter = vkapi::set_and_get_external_adapter();
+    new (compute_graph) ComputeGraph(graph_config);
 
     Error err = compileModel(processed->data(), compute_graph);
 
@@ -573,7 +589,9 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     // constants are updated and DynamicDispatchNode can update the compute
     // shader, global workgroup size, and local workgroup size to perform the
     // model inference.
-    if (should_propagate_resize) {
+    if (should_propagate_resize ||
+        (compute_graph->graphconfig().expect_dynamic_shapes &&
+         compute_graph->execute_count() == 0u)) {
       compute_graph->propagate_resize();
     }
 

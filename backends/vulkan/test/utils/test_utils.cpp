@@ -51,7 +51,7 @@ void record_buffer_to_nchw_op(
     vkapi::VulkanBuffer& dst_buffer) {
   vkapi::PipelineBarrier pipeline_barrier{};
   context->submit_compute_job(
-      get_tensor_to_nchw_shader(v_src),
+      get_tensor_to_nchw_shader(v_src, true, false),
       pipeline_barrier,
       {uint32_t(v_src.numel()), 1, 1},
       {64, 1, 1},
@@ -99,7 +99,7 @@ void record_image_to_nchw_op(
   vkapi::SpecVarList specialization_constants = {v_src.hashed_layout()};
 
   context->submit_compute_job(
-      get_tensor_to_nchw_shader(v_src),
+      get_tensor_to_nchw_shader(v_src, true, false),
       pipeline_barrier,
       v_src.logical_limits(),
       adaptive_work_group_size(v_src.logical_limits()),
@@ -119,7 +119,7 @@ void record_bitw8_image_to_nchw_nobitw8buffer_op(
   uint32_t buffer_len = utils::safe_downcast<uint32_t>(dst_buffer.numel() / 4);
   utils::uvec3 global_wg_size = {buffer_len, 1, 1};
 
-  std::string kernel_name = "bitw8_image_to_nchw_nobitw8buffer";
+  std::string kernel_name = "bitw8_image_to_nchw_nobitw8buffer_no_pc";
   add_storage_type_suffix(kernel_name, v_src);
   add_dtype_suffix(kernel_name, v_src);
 
@@ -135,45 +135,6 @@ void record_bitw8_image_to_nchw_nobitw8buffer_op(
       v_src.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
       v_src.sizes_ubo(),
       v_src.numel_ubo());
-}
-
-void record_conv2d_prepack_weights_op(
-    api::Context* const context,
-    vkapi::VulkanBuffer& src_buffer,
-    api::vTensor& v_dst,
-    const std::vector<int64_t>& original_sizes,
-    const bool transposed) {
-  vkapi::PipelineBarrier pipeline_barrier{};
-
-  std::string kernel_name;
-  if (transposed) {
-    kernel_name = "conv_transpose2d";
-  } else {
-    kernel_name = "conv2d";
-  }
-  kernel_name += "_prepack_weights";
-  add_dtype_suffix(kernel_name, v_dst);
-  vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
-
-  api::ParamsBuffer original_sizes_ubo(
-      context, utils::make_ivec4(original_sizes, /*reverse = */ true));
-
-  vkapi::SpecVarList specialization_constants = {};
-  context->submit_compute_job(
-      shader,
-      pipeline_barrier,
-      v_dst.logical_limits(),
-      adaptive_work_group_size(v_dst.logical_limits()),
-      specialization_constants,
-      VK_NULL_HANDLE,
-      0,
-      v_dst.image(
-          pipeline_barrier,
-          vkapi::PipelineStage::COMPUTE,
-          vkapi::MemoryAccessType::WRITE),
-      src_buffer,
-      v_dst.sizes_ubo(),
-      original_sizes_ubo.buffer());
 }
 
 void record_binary_op(
@@ -547,10 +508,11 @@ vkcompute::ComputeGraph build_mm_graph(
     vkcompute::vkapi::ScalarType dtype,
     vkcompute::utils::StorageType in_out_stype,
     vkcompute::utils::GPUMemoryLayout memory_layout,
-    const bool prepack_mat2,
-    const float mat2_val) {
+    const std::vector<float>& mat2_data,
+    const bool prepack_mat2) {
   using namespace vkcompute;
   GraphConfig config;
+  config.expect_dynamic_shapes = true;
   ComputeGraph graph(config);
 
   std::vector<int64_t> mat1_size = {M, K};
@@ -569,10 +531,7 @@ vkcompute::ComputeGraph build_mm_graph(
       graph.add_input_tensor(mat1_size, dtype, in_out_stype, memory_layout);
   IOValueRef mat2{};
 
-  CREATE_RAND_WEIGHT_TENSOR(mat2_w, mat2_size, dtype);
-  if (mat2_val != 0.0f) {
-    std::fill(data_mat2_w.begin(), data_mat2_w.end(), mat2_val);
-  }
+  ValueRef mat2_w = graph.add_tensorref(mat2_size, dtype, mat2_data.data());
 
   if (prepack_mat2) {
     mat2.value = mat2_w;
