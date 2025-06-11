@@ -36,6 +36,8 @@ struct GraphConfig final {
   // Whether or not the ComputeGraph should expect input shapes to be dynamic
   bool expect_dynamic_shapes;
 
+  vkapi::Adapter* external_adapter;
+
   // Generate a default graph config with pre-configured settings
   explicit GraphConfig();
 
