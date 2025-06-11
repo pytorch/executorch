@@ -15,6 +15,7 @@ dequantize:
     OUT_DTYPE:
       - VALUE: half
       - VALUE: float
+      - VALUE: double
   shader_variants:
     - NAME: dequantize_per_tensor
       MODE: per_tensor
