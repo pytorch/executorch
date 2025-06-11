@@ -9,7 +9,7 @@ import json
 import os
 import sys
 from enum import IntEnum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 import yaml
 
@@ -85,17 +85,17 @@ class KernelType(IntEnum):
 
 
 def _get_operators(model_file: str) -> List[str]:
+    from executorch.codegen.tools.selective_build import (  # type: ignore[import-not-found]
+        _get_program_from_buffer,
+        _get_program_operators,
+    )
+
     print("Processing model file: ", model_file)
     with open(model_file, "rb") as f:
         buf = f.read()
 
-    from executorch.exir._serialize import _deserialize_pte_binary
-
-    model = _deserialize_pte_binary(buf)
-    operators = []
-    for execution_plan in model.execution_plan:
-        for op in execution_plan.operators:
-            operators.append(op.name)
+    program = _get_program_from_buffer(buf)
+    operators = _get_program_operators(program)
     print(f"Model file loaded, operators are: {operators}")
     return operators
 
@@ -109,47 +109,31 @@ def _get_kernel_metadata_for_model(model_file: str) -> Dict[str, List[str]]:
 
     with open(model_file, "rb") as f:
         buf = f.read()
+
+    program = _get_program_from_buffer(buf)
+    operators_with_io_metadata = _get_io_metadata_for_program_operators(program)
+
     op_kernel_key_list: Dict[str, List[str]] = {}
 
-    from executorch.exir._serialize import _deserialize_pte_binary
-    from executorch.exir.schema import (
-        EValue,
-        KernelCall,
-        OptionalTensorList,
-        Tensor,
-        TensorList,
-    )
+    specialized_kernels: Set[List[_IOMetaData]]
+    for op_name, specialized_kernels in operators_with_io_metadata.items():
+        print(op_name)
+        if op_name not in op_kernel_key_list:
+            op_kernel_key_list[op_name] = []
 
-    def _get_dtypes_from_non_list(evalue: EValue):
-        kernel_key = ""
-        if isinstance(evalue, Tensor):
-            dim_order = ",".join(map(str, evalue.dim_order))
-            kernel_key += f"{evalue.scalar_type};{dim_order}|"
-        return kernel_key
+        for specialized_kernel in specialized_kernels:
+            version = "v1"
+            kernel_key = version + "/"
+            for io_metadata in specialized_kernel:
+                if io_metadata.kernel_type in [
+                    KernelType.TENSOR,
+                    KernelType.TENSOR_LIST,
+                    KernelType.OPTIONAL_TENSOR_LIST,
+                ]:
+                    dim_order = ",".join(map(str, io_metadata.dim_order))
+                    kernel_key += f"{io_metadata.dtype};{dim_order}|"
+            op_kernel_key_list[op_name].append(kernel_key[:-1])
 
-    model = _deserialize_pte_binary(buf)
-    for execution_plan in model.execution_plan:
-        for chain in execution_plan.chains:
-            for instr in chain.instructions:
-                if not isinstance(instr.instr_args, KernelCall):
-                    continue
-                op_name = execution_plan.operators[instr.instr_args.op_index].name
-                if op_name not in op_kernel_key_list:
-                    op_kernel_key_list[op_name] = []
-                version = "v1"
-                kernel_key = version + "/"
-                for tensor_arg in instr.instr_args.args:
-                    val = execution_plan.values[tensor_arg].val
-
-                    if isinstance(val, TensorList) or isinstance(
-                        val, OptionalTensorList
-                    ):
-                        for tensor in val.items:
-                            tval = execution_plan.values[tensor].val
-                            kernel_key += _get_dtypes_from_non_list(tval)  # type: ignore[arg-type]
-
-                    kernel_key += _get_dtypes_from_non_list(val)  # type: ignore[arg-type]
-                op_kernel_key_list[op_name].append(kernel_key[:-1])
     return op_kernel_key_list
 
 
