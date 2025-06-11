@@ -173,8 +173,6 @@ def buffer_scalar_type(dtype: str) -> str:
     # we don't want to append _t for int32 or uint32 as int is already 32bit
     elif dtype == "int32" or dtype == "uint32":
         return "int" if dtype == "int32" else "uint"
-    elif dtype == "int64" or dtype == "uint64":
-        return "int" if dtype == "int64" else "uint"
     elif dtype[-1].isdigit():
         return dtype + "_t"
     return dtype
@@ -184,33 +182,28 @@ def buffer_gvec_type(dtype: str, n: int) -> str:
     if n == 1:
         return buffer_scalar_type(dtype)
 
-    if dtype == "half":
-        return f"f16vec{n}"
-    elif dtype == "float":
-        return f"vec{n}"
-    elif dtype == "double":
-        return f"vec{n}"
-    # integer dtype
-    elif dtype == "int8":
-        return f"i8vec{n}"
-    elif dtype == "uint8":
-        return f"u8vec{n}"
-    elif dtype == "int16":
-        return f"i16vec{n}"
-    elif dtype == "uint16":
-        return f"u16vec{n}"
-    elif dtype == "int32" or dtype == "int":
-        return f"ivec{n}"
-    elif dtype == "uint32" or dtype == "uint":
-        return f"uvec{n}"
-    elif dtype == "int64":
-        return f"ivec{n}"
-    elif dtype == "uint64":
-        return f"uvec{n}"
-    elif dtype == "bool":
-        return f"u8vec{n}"
+    dtype_map = {
+        "half": f"f16vec{n}",
+        "float": f"vec{n}",
+        "double": f"vec{n}",  # No 64bit support in GLSL
+        "int8": f"i8vec{n}",
+        "uint8": f"u8vec{n}",
+        "int16": f"i16vec{n}",
+        "uint16": f"u16vec{n}",
+        "int32": f"ivec{n}",
+        "int": f"ivec{n}",
+        "uint32": f"uvec{n}",
+        "uint": f"uvec{n}",
+        "int64": f"ivec{n}",  # No 64bit support in GLSL
+        "uint64": f"uvec{n}",  # No 64bit support in GLSL
+        "bool": f"u8vec{n}",
+    }
 
-    raise AssertionError(f"Invalid dtype: {dtype}")
+    vector_type = dtype_map.get(dtype)
+    if vector_type is None:
+        raise AssertionError(f"Invalid dtype: {dtype}")
+
+    return vector_type
 
 
 def texel_type(dtype: str) -> str:
