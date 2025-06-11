@@ -44,7 +44,8 @@ def define_common_targets():
         deps = select({
             "DEFAULT": [],
             # Half-inl.h depends on vec_half.h from ATen, but only when building for x86.
-            "ovr_config//cpu:x86_64": [
+            # Deps get pulled in twice if HTP sim is enabled.
+            "ovr_config//cpu:x86_64": [] if read_config("user", "enable_fllm_on_htp_sim", "false") == "true" else [
                 ":aten_headers_for_executorch",
             ],
         }),
