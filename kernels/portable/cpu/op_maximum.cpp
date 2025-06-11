@@ -49,7 +49,7 @@ Tensor& maximum_out(
         CTYPE_COMPUTE,
         op_name,
         utils::SupportedTensorDtypes::REALHBBF16>(
-        [](const auto val_a, const auto val_b) {
+        [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
           return utils::max_override(val_a, val_b);
         },
         ctx,
