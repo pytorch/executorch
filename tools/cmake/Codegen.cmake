@@ -12,7 +12,7 @@
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 function(gen_selected_ops)
-  set(arg_names LIB_NAME OPS_SCHEMA_YAML ROOT_OPS INCLUDE_ALL_OPS)
+  set(arg_names LIB_NAME OPS_SCHEMA_YAML ROOT_OPS INCLUDE_ALL_OPS DTYPE_SELECT)
   cmake_parse_arguments(GEN "" "" "${arg_names}" ${ARGN})
 
   message(STATUS "Generating operator lib:")
@@ -20,10 +20,12 @@ function(gen_selected_ops)
   message(STATUS "  OPS_SCHEMA_YAML: ${GEN_OPS_SCHEMA_YAML}")
   message(STATUS "  ROOT_OPS: ${GEN_ROOT_OPS}")
   message(STATUS "  INCLUDE_ALL_OPS: ${GEN_INCLUDE_ALL_OPS}")
+  message(STATUS "  DTYPE_SELECT: ${GEN_DTYPE_SELECT}")
 
   set(_oplist_yaml
       ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_operators.yaml
   )
+
   file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
 
   file(GLOB_RECURSE _codegen_tools_srcs "${EXECUTORCH_ROOT}/codegen/tools/*.py")
@@ -53,6 +55,23 @@ function(gen_selected_ops)
     WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   )
 
+  if(GEN_DTYPE_SELECT)
+    set(_opvariant_h
+      ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_op_variants.h
+    )
+    set(_gen_opvariant_command "${PYTHON_EXECUTABLE}" -m codegen.tools.gen_selected_op_variants
+                          --yaml-file=${_oplist_yaml}
+                          --output-dir=${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/
+    )
+    message("Command - ${_gen_opvariant_command}")
+    add_custom_command(
+      COMMENT "Generating selected_op_variants.h for ${GEN_LIB_NAME}"
+      OUTPUT ${_opvariant_h}
+      COMMAND ${_gen_opvariant_command}
+      DEPENDS ${_optlist_yaml} ${_codegen_tools_srcs}
+      WORKING_DIRECTORY ${EXECUTORCH_ROOT}
+    )
+  endif()
 endfunction()
 
 # Codegen for registering kernels. Kernels are defined in functions_yaml and
@@ -62,7 +81,7 @@ endfunction()
 # functions_yaml CUSTOM_OPS_YAML custom_ops_yaml )
 function(generate_bindings_for_kernels)
   set(options ADD_EXCEPTION_BOUNDARY)
-  set(arg_names LIB_NAME FUNCTIONS_YAML CUSTOM_OPS_YAML)
+  set(arg_names LIB_NAME FUNCTIONS_YAML CUSTOM_OPS_YAML DTYPE_SELECT)
   cmake_parse_arguments(GEN "${options}" "${arg_names}" "" ${ARGN})
 
   message(STATUS "Generating kernel bindings:")
@@ -70,6 +89,7 @@ function(generate_bindings_for_kernels)
   message(STATUS "  FUNCTIONS_YAML: ${GEN_FUNCTIONS_YAML}")
   message(STATUS "  CUSTOM_OPS_YAML: ${GEN_CUSTOM_OPS_YAML}")
   message(STATUS "  ADD_EXCEPTION_BOUNDARY: ${GEN_ADD_EXCEPTION_BOUNDARY}")
+  message(STATUS "  DTYPE_SELECT: ${GEN_DTYPE_SELECT}")
 
   # Command to generate selected_operators.yaml from custom_ops.yaml.
   file(GLOB_RECURSE _codegen_templates "${EXECUTORCH_ROOT}/codegen/templates/*")
@@ -77,6 +97,13 @@ function(generate_bindings_for_kernels)
   set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
   # By default selective build output is selected_operators.yaml
   set(_oplist_yaml ${_out_dir}/selected_operators.yaml)
+
+  # If dtype selective build is enable, force header file to be preserved
+  if(GEN_DTYPE_SELECT)
+    set(_opvariant_h ${_out_dir}/selected_op_variants.h)
+  else()
+    set(_opvariant_h "")
+  endif()
 
   # Command to codegen C++ wrappers to register custom ops to both PyTorch and
   # Executorch runtime.
@@ -108,6 +135,10 @@ function(generate_bindings_for_kernels)
       ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
   )
 
+  if(GEN_DTYPE_SELECT)
+    list(APPEND _gen_command_sources ${_out_dir}/selected_op_variants.h)
+  endif()
+
   if(GEN_FUNCTIONS_YAML)
     list(APPEND _gen_command --functions-yaml-path=${GEN_FUNCTIONS_YAML})
   endif()
@@ -122,8 +153,9 @@ function(generate_bindings_for_kernels)
     COMMENT "Generating code for kernel registration"
     OUTPUT ${_gen_command_sources}
     COMMAND ${_gen_command}
-    DEPENDS ${_oplist_yaml} ${GEN_CUSTOM_OPS_YAML} ${GEN_FUNCTIONS_YAML}
-            ${_codegen_templates} ${_torchgen_srcs}
+    DEPENDS ${_oplist_yaml} ${_opvariants_h} ${GEN_CUSTOM_OPS_YAML}
+            ${GEN_FUNCTIONS_YAML} ${_codegen_templates}
+	    ${_torchgen_srcs}
     WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   )
   # Make generated file list available in parent scope
@@ -165,22 +197,33 @@ endfunction()
 
 # Generate a runtime lib for registering operators in Executorch
 function(gen_operators_lib)
-  set(multi_arg_names LIB_NAME KERNEL_LIBS DEPS)
+  set(multi_arg_names LIB_NAME KERNEL_LIBS DEPS DTYPE_SELECT)
   cmake_parse_arguments(GEN "" "" "${multi_arg_names}" ${ARGN})
 
   message(STATUS "Generating operator lib:")
   message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
   message(STATUS "  KERNEL_LIBS: ${GEN_KERNEL_LIBS}")
   message(STATUS "  DEPS: ${GEN_DEPS}")
+  message(STATUS "  DTYPE_SELECT: ${GEN_DTYPE_SELECT}")
 
   set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
 
   add_library(${GEN_LIB_NAME})
-  target_sources(
-    ${GEN_LIB_NAME}
-    PRIVATE ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
-            ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
-  )
+  if(GEN_DTYPE_SELECT)
+    target_sources(
+      ${GEN_LIB_NAME}
+      PRIVATE ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
+              ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
+              ${_out_dir}/selected_op_variants.h
+    )
+  else()
+    target_sources(
+      ${GEN_LIB_NAME}
+      PRIVATE ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
+              ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
+    )
+  endif()
+
   target_link_libraries(${GEN_LIB_NAME} PRIVATE ${GEN_DEPS})
   if(GEN_KERNEL_LIBS)
     target_link_libraries(${GEN_LIB_NAME} PUBLIC ${GEN_KERNEL_LIBS})
@@ -188,6 +231,9 @@ function(gen_operators_lib)
 
   target_link_options_shared_lib(${GEN_LIB_NAME})
   set(_generated_headers ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h)
+  if(GEN_DTYPE_SELECT)
+    list(APPEND _generated_headers ${_out_dir}/selected_op_variants.h)
+  endif()
   set_target_properties(
     ${GEN_LIB_NAME} PROPERTIES PUBLIC_HEADER "${_generated_headers}"
   )
