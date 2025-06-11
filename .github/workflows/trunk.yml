@@ -591,7 +591,7 @@ jobs:
           "--use_custom_sdpa"
           "--qlinear"
           "--qembedding"
-          "--output_dir" "."
+          "--output_dir" "${OUTPUT_DIR}"
         )
 
         # Add conditional arguments based on model
@@ -707,18 +707,18 @@ jobs:
       timeout: 90
       script: |
         set -eux
-        
+
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
-        
+
         # Build and install Executorch
         PYTHON_EXECUTABLE=python \
         CMAKE_ARGS="-DEXECUTORCH_BUILD_NXP_NEUTRON=ON" \
         .ci/scripts/setup-linux.sh --build-tool "cmake"
-        
+
         # Install test requirements
         pip install -r backends/nxp/requirements-tests.txt
-        
+
         # Run pytest
         PYTHON_EXECUTABLE=python bash backends/nxp/run_unittests.sh
