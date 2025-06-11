@@ -52,8 +52,9 @@ add_subdirectory(
   ${EXECUTORCH_ROOT}/extension/llm/tokenizers
   ${CMAKE_CURRENT_BINARY_DIR}/../../../extension/llm/tokenizers
 )
-
-set(runner_deps executorch_core extension_module extension_tensor tokenizers)
+add_dependencies(extension_llm_runner tokenizers_external_project)
+find_package(tokenizers CONFIG HINTS ${CMAKE_INSTALL_PREFIX} ${CMAKE_CURRENT_BINARY_DIR}/../tokenizers)
+set(runner_deps executorch extension_module extension_tensor ${TOKENIZERS_LIBRARIES})
 
 target_link_libraries(extension_llm_runner PUBLIC ${runner_deps})
 
