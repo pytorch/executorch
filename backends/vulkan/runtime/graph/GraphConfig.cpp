@@ -65,6 +65,8 @@ GraphConfig::GraphConfig() {
   local_wg_size_override = {};
 
   expect_dynamic_shapes = false;
+
+  external_adapter = nullptr;
 }
 
 void GraphConfig::set_storage_type_override(utils::StorageType storage_type) {
