@@ -250,7 +250,7 @@ def export_all(llava_model: LlavaModel):
             do_quant_fusion_and_const_prop=True,
         )
     )
-    logging.info("TOKEN EMBEDDING PROG", executorch_program.exported_program("token_embedding"))
+    logging.info("TOKEN EMBEDDING PROG", str(executorch_program.exported_program("token_embedding")))
     for execution_plan in executorch_program._emitter_output.program.execution_plan:
         logging.info(
             f"Required memory for activation in bytes: {execution_plan.non_const_buffer_sizes}"
