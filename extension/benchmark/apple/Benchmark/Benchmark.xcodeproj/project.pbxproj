@@ -33,6 +33,7 @@
 		30AA4B642DC0766800B1BE50 /* std_regex.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 30AA4B5E2DC0766800B1BE50 /* std_regex.cpp */; };
 		30AA4B652DC0766800B1BE50 /* pre_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 30AA4B5B2DC0766800B1BE50 /* pre_tokenizer.cpp */; };
 		30AA4B662DC0766800B1BE50 /* re2_regex.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 30AA4B5C2DC0766800B1BE50 /* re2_regex.cpp */; };
+		3C6ABD332DFA27DE0015DE55 /* regex_lookahead.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 3C6ABD322DFA27DE0015DE55 /* regex_lookahead.cpp */; };
 		F22E9E1A2DF2CBB900EC5425 /* text_llm_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F22E9E192DF2CBB900EC5425 /* text_llm_runner.cpp */; };
 		F292B01D2D88AF3500BE6839 /* bpe_tokenizer_base.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F292B0162D88AF3500BE6839 /* bpe_tokenizer_base.cpp */; };
 		F292B0202D88AF3500BE6839 /* llama2c_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F292B0172D88AF3500BE6839 /* llama2c_tokenizer.cpp */; };
@@ -95,6 +96,7 @@
 		30AA4B5D2DC0766800B1BE50 /* regex.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = regex.cpp; path = src/regex.cpp; sourceTree = "<group>"; };
 		30AA4B5E2DC0766800B1BE50 /* std_regex.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = std_regex.cpp; path = src/std_regex.cpp; sourceTree = "<group>"; };
 		30AA4B5F2DC0766800B1BE50 /* token_decoder.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = token_decoder.cpp; path = src/token_decoder.cpp; sourceTree = "<group>"; };
+		3C6ABD322DFA27DE0015DE55 /* regex_lookahead.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = regex_lookahead.cpp; path = src/regex_lookahead.cpp; sourceTree = "<group>"; };
 		F22E9E182DF2CBB900EC5425 /* text_llm_runner.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = text_llm_runner.h; sourceTree = "<group>"; };
 		F22E9E192DF2CBB900EC5425 /* text_llm_runner.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = text_llm_runner.cpp; sourceTree = "<group>"; };
 		F292B0162D88AF3500BE6839 /* bpe_tokenizer_base.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = bpe_tokenizer_base.cpp; path = src/bpe_tokenizer_base.cpp; sourceTree = "<group>"; };
@@ -181,6 +183,7 @@
 		032A74022CAFBB7800932D36 /* tokenizers */ = {
 			isa = PBXGroup;
 			children = (
+				3C6ABD322DFA27DE0015DE55 /* regex_lookahead.cpp */,
 				30AA4B592DC0766800B1BE50 /* hf_tokenizer.cpp */,
 				30AA4B5A2DC0766800B1BE50 /* pcre2_regex.cpp */,
 				30AA4B5B2DC0766800B1BE50 /* pre_tokenizer.cpp */,
@@ -434,6 +437,7 @@
 				30AA4B652DC0766800B1BE50 /* pre_tokenizer.cpp in Sources */,
 				30AA4B662DC0766800B1BE50 /* re2_regex.cpp in Sources */,
 				032A73CA2CAFBA8600932D36 /* LLaMATests.mm in Sources */,
+				3C6ABD332DFA27DE0015DE55 /* regex_lookahead.cpp in Sources */,
 				032A74262CAFC34800932D36 /* llama_tiktoken.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
