@@ -58,34 +58,15 @@ $else:
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 OUT_T quantize_val(IN_T value, float scale_val, int zero_point_val) {
-  // Use int for all intermediate calculations to match CPU implementation
-  // which uses int64_t/int32_t for all calculations before final casting
-  int qvalue;
+  float inv_scale = 1.0 / scale_val;
 
-  if (scale_val == 0.0) {
-    // When scale is 0, CPU implementation would produce a very large value
-    // that gets clamped to quant_min or quant_max
-    if (value < 0.0) {
-      qvalue = quant_min;
-    } else if (value > 0.0) {
-      qvalue = quant_max;
-    } else {
-      qvalue = zero_point_val; // value is exactly 0
-    }
-  } else {
-    float inv_scale = 1.0 / scale_val;
+  float rounded_float = round(inv_scale * float(value));
 
-    float rounded_float = round(inv_scale * float(value));
+  int qvalue = zero_point_val + int(rounded_float);
 
-    // Convert to int and add zero point (all in signed integer space)
-    qvalue = zero_point_val + int(rounded_float);
-  }
-
-  // Apply clamping in int space before final cast to output type
   qvalue = max(qvalue, quant_min);
   qvalue = min(qvalue, quant_max);
 
-  // Only cast to output type at the very end
   return OUT_T(qvalue);
 }
 

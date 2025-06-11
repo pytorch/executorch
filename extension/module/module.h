@@ -221,7 +221,7 @@ class Module {
 
   /**
    * Get a method metadata struct by method name.
-   * Loads the program and method if needed.
+   * Loads the program if needed.
    *
    * @param[in] method_name The name of the method to get the metadata for.
    *
