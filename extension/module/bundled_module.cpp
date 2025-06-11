@@ -13,6 +13,7 @@
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
 
+
 namespace executorch {
 namespace extension {
 
@@ -26,6 +27,9 @@ std::unique_ptr<BufferDataLoader> program_data_loader(
   return std::make_unique<BufferDataLoader>(program->data(), program->size());
 }
 } // namespace
+
+
+namespace ET_BUNDLED_MODULE_NAMESPACE {
 
 BundledModule::BundledModule(
     const void* bundled_program_ptr,
@@ -107,6 +111,6 @@ runtime::Error BundledModule::verify_method_outputs(
   return executorch::BUNDLED_PROGRAM_NAMESPACE::verify_method_outputs(
       *method, bundled_program_ptr_, testset_idx, rtol, atol);
 }
-
+} // namespace ET_BUNDLED_MODULE_NAMESPACE
 } // namespace extension
 } // namespace executorch
