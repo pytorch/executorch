@@ -16,6 +16,5 @@ buffer_to_buffer:
       - VALUE: int8
       - VALUE: uint8
       - VALUE: int32
-      - VALUE: int64
   shader_variants:
     - NAME: buffer_to_buffer

@@ -20,10 +20,6 @@ ${define_active_storage_type(STORAGE)}
 ${define_required_extensions(IN_DTYPE)}
 ${define_required_extensions(OUT_DTYPE)}
 
-// Need this in order to properly handle overflow for dequantize_val
-// since there is an inconsistency between the cpu logic
-#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
-
 #extension GL_EXT_control_flow_attributes : require
 
 layout(std430) buffer;
@@ -62,17 +58,7 @@ $else:
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 OUT_T dequantize_val(IN_T qvalue, float scale_val, int zero_point_val) {
-  $if MODE == "per_tensor":
-    // out_data_ptr[i] = static_cast<OUT_CTYPE>((input_data_ptr[i] - static_cast<int32_t>(zero_point)) * scale);
-    //                                           -2147483648 - 100 = 2147483548 * 0.0001 > cast to float32
-    OUT_T value = OUT_T(float(int(qvalue) - zero_point_val) * scale_val);
-
-  $if MODE == "per_token":
-    // out_data_ptr[i] = static_cast<OUT_CTYPE>((input_data_ptr[i] - zero_point) * scale);
-    //                                           -2147483648 - 100 = -2147483748 * 0.0001 > cast to float32
-    OUT_T value = OUT_T(float(int(qvalue) - int64_t(zero_point_val)) * scale_val);
-
-  return value;
+  return OUT_T(float(int(qvalue) - zero_point_val) * scale_val);
 }
 
 #ifdef USING_BUFFER

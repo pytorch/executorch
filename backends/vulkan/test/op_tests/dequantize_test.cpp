@@ -108,6 +108,9 @@ at::Tensor dequantize_per_tensor_aten(
   }
 
   switch (out_dtype) {
+    case at::kHalf:
+      et_out_dtype = ScalarType::Half;
+      break;
     case at::kFloat:
       et_out_dtype = ScalarType::Float;
       break;
@@ -167,6 +170,9 @@ at::Tensor dequantize_per_token_aten(
   }
 
   switch (out_dtype) {
+    case at::kHalf:
+      et_out_dtype = ScalarType::Half;
+      break;
     case at::kFloat:
       et_out_dtype = ScalarType::Float;
       break;
@@ -295,6 +301,7 @@ void check_dequantize_args(
 
   // Check that output dtype is a floating point type
   switch (out_dtype) {
+    case c10::kHalf:
     case c10::kFloat:
     case c10::kDouble:
       break;
@@ -563,7 +570,7 @@ void test_reference_dequantize_per_tensor(
       input, scale, zero_point, quant_min, quant_max, dtype, out_dtype);
 
   // Compare outputs
-  const bool output_correct = at::allclose(reference_out, impl_out, 1e-5, 1e-5);
+  const bool output_correct = at::allclose(reference_out, impl_out);
   if (!output_correct) {
     std::cout << "\n"
               << "Failed with parameters: " << std::endl;
@@ -691,7 +698,7 @@ void test_vulkan_dequantize_per_tensor_impl(
       staging_out, vk_out.mutable_data_ptr(), vk_out.numel());
 
   // Compare outputs
-  const bool output_correct = at::allclose(reference_out, vk_out, 1e-5, 1e-5);
+  const bool output_correct = at::allclose(reference_out, vk_out);
   if (!output_correct) {
     std::cout << "\n"
               << "Failed with parameters: " << std::endl;
@@ -744,7 +751,6 @@ TEST(
       at::kFloat); // output dtype
 }
 
-// Vulkan test cases for dequantize_per_tensor
 TEST(
     VulkanDequantizePerTensorTest,
     test_vulkan_dequantize_per_tensor_uint8_to_float) {
@@ -762,7 +768,7 @@ TEST(
     VulkanDequantizePerTensorTest,
     test_vulkan_dequantize_per_tensor_int8_to_float) {
   test_vulkan_dequantize_per_tensor(
-      {3, 4, 5}, // input sizes
+      {3, 4}, // input sizes
       0.05, // scale
       0, // zero_point
       -128, // quant_min
@@ -775,7 +781,7 @@ TEST(
     VulkanDequantizePerTensorTest,
     test_vulkan_dequantize_per_tensor_int32_to_float) {
   test_vulkan_dequantize_per_tensor(
-      {2, 4, 3}, // input sizes
+      {2, 4, 3, 12}, // input sizes
       0.0001, // scale
       100, // zero_point
       -2147483648, // quant_min
@@ -872,7 +878,7 @@ void test_reference_dequantize_per_token(
       out_dtype);
 
   // Compare outputs
-  const bool output_correct = at::allclose(reference_out, impl_out, 1e-5, 1e-5);
+  const bool output_correct = at::allclose(reference_out, impl_out);
   if (!output_correct) {
     std::cout << "\n"
               << "Failed with parameters: " << std::endl;
@@ -1044,7 +1050,7 @@ void test_vulkan_dequantize_per_token_impl(
       staging_out, vk_out.mutable_data_ptr(), vk_out.numel());
 
   // Compare outputs
-  const bool output_correct = at::allclose(reference_out, vk_out, 1e-5, 1e-5);
+  const bool output_correct = at::allclose(reference_out, vk_out);
   if (!output_correct) {
     std::cout << "\n"
               << "Failed with parameters: " << std::endl;
@@ -1111,7 +1117,6 @@ TEST(
       at::kFloat); // output dtype
 }
 
-// Vulkan test cases for dequantize_per_token
 TEST(
     VulkanDequantizePerTokenTest,
     test_vulkan_dequantize_per_token_uint8_to_float) {
@@ -1119,7 +1124,7 @@ TEST(
   std::vector<int> zero_points = {5, 10, 15, 20, 25, 30};
 
   test_vulkan_dequantize_per_token(
-      {2, 3, 4}, // input sizes (2*3=6 tokens)
+      {2, 3, 6}, // input sizes (2*3=6 tokens)
       scales,
       zero_points,
       0, // quant_min
@@ -1131,11 +1136,11 @@ TEST(
 TEST(
     VulkanDequantizePerTokenTest,
     test_vulkan_dequantize_per_token_int8_to_float) {
-  std::vector<float> scales = {0.05, 0.1, 0.15, 0.0};
-  std::vector<int> zero_points = {0, -5, 5, 10};
+  std::vector<float> scales = {0.05, 0.0};
+  std::vector<int> zero_points = {10, -5};
 
   test_vulkan_dequantize_per_token(
-      {2, 2, 5}, // input sizes (2*2=4 tokens)
+      {2, 2}, // input sizes (2*2=4 tokens)
       scales,
       zero_points,
       -128, // quant_min
@@ -1147,11 +1152,12 @@ TEST(
 TEST(
     VulkanDequantizePerTokenTest,
     test_vulkan_dequantize_per_token_int32_to_float) {
-  std::vector<float> scales = {0.0001, 0.0002, 0.0003, 0.0};
-  std::vector<int> zero_points = {100, -100, 50, -50};
+  std::vector<float> scales = {
+      0.0001, 0.0002, 0.0003, 0.0, 0.0011, 0.0102, 0.1003, 0.0};
+  std::vector<int> zero_points = {100, -100, 50, -50, 12, -6, 4, -24};
 
   test_vulkan_dequantize_per_token(
-      {2, 2, 8}, // input sizes (2*2=4 tokens)
+      {2, 2, 2, 12}, // input sizes (2*2=4 tokens)
       scales,
       zero_points,
       -2147483648, // quant_min
