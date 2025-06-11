@@ -126,10 +126,4 @@ def test_llama_tosa_BI():
             exir_op=[],
             use_to_edge_transform_and_lower=True,
         )
-        pipeline.change_args(
-            "run_method_and_compare_outputs",
-            atol=9.9,
-            rtol=1.5,  # TODO: Tolerance needs to be updated after MLETORCH-907
-            inputs=llama_inputs,
-        )
         pipeline.run()

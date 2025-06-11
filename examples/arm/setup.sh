@@ -16,6 +16,12 @@ script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_dir=$(realpath $script_dir/../..)
 ARCH="$(uname -m)"
 OS="$(uname -s)"
+root_dir="${script_dir}/ethos-u-scratch"
+eula_acceptance=0
+skip_toolchain_setup=0
+skip_fvp_setup=0
+skip_vela_setup=0
+
 
 # Figure out if setup.sh was called or sourced and save it into "is_script_sourced"
 (return 0 2>/dev/null) && is_script_sourced=1 || is_script_sourced=0
@@ -65,14 +71,57 @@ vela_rev="8cac2b9a7204b57125a8718049519b091a98846c"
 ########
 ### Functions
 ########
+
+function print_usage() {
+    echo "Usage: $(basename $0) <--i-agree-to-the-contained-eula> [--root-dir path-to-a-scratch-dir] [--skip-fvp-setup] [--skip-toolchain-setup] [--skip-vela-setup]"
+    echo "Supplied args: $*"
+}
+
+function check_options() {
+    while [[ "${#}" -gt 0 ]]; do
+        case "$1" in
+            --i-agree-to-the-contained-eula)
+                eula_acceptance=1
+                shift
+                ;;
+            --root-dir)
+                # Only change default root dir if the script is being executed and not sourced.
+                if [[ $is_script_sourced -eq 0 ]]; then
+                    root_dir=${2:-"${root_dir}"}
+                fi
+
+                if [[ $# -ge 2 ]]; then
+                    shift 2
+                else
+                    print_usage "$@"
+                    exit 1
+                fi
+                ;;
+            --skip-toolchain-setup)
+                skip_toolchain_setup=1
+                shift
+                ;;
+            --skip-fvp-setup)
+                skip_fvp_setup=1
+                shift
+                ;;
+            --skip-vela-setup)
+                skip_vela_setup=1
+                shift
+                ;;
+            --help)
+                print_usage "$@"
+                exit 0
+                ;;
+            *)
+                print_usage "$@"
+                exit 1
+                ;;
+        esac
+    done
+}
+
 function setup_root_dir() {
-    # Handle a different root_dir set by the user as argument to the
-    # script. This can only happen if the script is being executed and
-    # not sourced.
-    root_dir="${script_dir}/ethos-u-scratch"
-    if [[ $is_script_sourced -eq 0 ]]; then
-        root_dir=${2:-"${script_dir}/ethos-u-scratch"}
-    fi
     mkdir -p ${root_dir}
     root_dir=$(realpath ${root_dir})
     setup_path_script="${root_dir}/setup_path.sh"
@@ -80,26 +129,23 @@ function setup_root_dir() {
 
 function check_fvp_eula () {
     # Mandatory user arg --i-agree-to-the-contained-eula
-    eula_acceptance="${1:-'.'}"
     eula_acceptance_by_variable="${ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA:-False}"
 
-    if [[ "${eula_acceptance}" != "--i-agree-to-the-contained-eula" ]]; then
+    if [[ "${eula_acceptance}" -eq 0 ]]; then
         if [[ ${eula_acceptance_by_variable} != "True" ]]; then
-            echo "Must pass first positional argument '--i-agree-to-the-contained-eula' to agree to EULA associated with downloading the FVP."
-	    echo "Alternativly set environment variable ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA=True."
-	    echo "Exiting!"
+            echo "Must pass argument '--i-agree-to-the-contained-eula' to agree to EULA associated with downloading the FVP."
+            echo "Alternativly set environment variable ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA=True."
+            echo "Exiting!"
             exit 1
         else
             echo "Arm EULA for FVP agreed to with ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA=True environment variable"
         fi
-    else
-        shift; # drop this arg
     fi
 }
 
 function setup_fvp() {
     # check EULA, forward argument
-    check_fvp_eula ${1:-'.'}
+    check_fvp_eula
 
     if [[ "${OS}" != "Linux" ]]; then
         # Check if FVP is callable
@@ -169,54 +215,53 @@ function setup_vela() {
     pip install ethos-u-vela@git+${vela_repo_url}@${vela_rev}
 }
 
-function setup_path() {
-    echo $setup_path_script
-}
-
 function create_setup_path(){
+    cd "${root_dir}"
+
     echo "" > "${setup_path_script}"
-    fvps=("corstone300" "corstone320")
-    for fvp in "${fvps[@]}"; do
-        model_dir_variable=${fvp}_model_dir
-        fvp_model_dir=${!model_dir_variable}
-        fvp_bin_path="${root_dir}/FVP-${fvp}/models/${fvp_model_dir}"
-        echo "export PATH=\${PATH}:${fvp_bin_path}" >> ${setup_path_script}
-    done
 
-    # Fixup for Corstone-320 python dependency
-    echo "export LD_LIBRARY_PATH=${root_dir}/FVP-corstone320/python/lib/" >> ${setup_path_script}
+    if [[ "${skip_fvp_setup}" -eq 0 ]]; then
+        fvps=("corstone300" "corstone320")
+        for fvp in "${fvps[@]}"; do
+            model_dir_variable=${fvp}_model_dir
+            fvp_model_dir=${!model_dir_variable}
+            fvp_bin_path="${root_dir}/FVP-${fvp}/models/${fvp_model_dir}"
+            echo "export PATH=\${PATH}:${fvp_bin_path}" >> ${setup_path_script}
+        done
 
-    toolchain_bin_path="$(cd ${toolchain_dir}/bin && pwd)"
-    echo "export PATH=\${PATH}:${toolchain_bin_path}" >> ${setup_path_script}
+        # Fixup for Corstone-320 python dependency
+        echo "export LD_LIBRARY_PATH=${root_dir}/FVP-corstone320/python/lib/" >> ${setup_path_script}
 
-    echo "hash FVP_Corstone_SSE-300_Ethos-U55" >> ${setup_path_script}
-    echo "hash FVP_Corstone_SSE-300_Ethos-U65" >> ${setup_path_script}
-    echo "hash FVP_Corstone_SSE-320" >> ${setup_path_script}
+        echo "hash FVP_Corstone_SSE-300_Ethos-U55" >> ${setup_path_script}
+        echo "hash FVP_Corstone_SSE-300_Ethos-U65" >> ${setup_path_script}
+        echo "hash FVP_Corstone_SSE-320" >> ${setup_path_script}
+    fi
+
+    if [[ "${skip_toolchain_setup}" -eq 0 ]]; then
+        toolchain_bin_path="$(cd ${toolchain_dir}/bin && pwd)"
+        echo "export PATH=\${PATH}:${toolchain_bin_path}" >> ${setup_path_script}
+    fi
 }
 
 function check_platform_support() {
+    # Make sure we are on a supported platform
     if [[ "${ARCH}" != "x86_64" ]] && [[ "${ARCH}" != "aarch64" ]] \
         && [[ "${ARCH}" != "arm64" ]]; then
         echo "[main] Error: only x86-64 & aarch64 architecture is supported for now!"
         exit 1
     fi
-
-    # Make sure we are on a supported platform
-    if [[ "${1:-'.'}" == "-h" || "${#}" -gt 2 ]]; then
-        echo "Usage: $(basename $0) <--i-agree-to-the-contained-eula> [path-to-a-scratch-dir]"
-        echo "Supplied args: $*"
-        exit 1
-    fi
 }
+
 
 ########
 ### main
 ########
 
 # script is not sourced! Lets run "main"
-if [[ $is_script_sourced -eq 0 ]]
-    then
+if [[ $is_script_sourced -eq 0 ]]; then
     set -e
+
+    check_options "$@"
 
     check_platform_support
 
@@ -225,25 +270,36 @@ if [[ $is_script_sourced -eq 0 ]]
     # Setup the root dir
     setup_root_dir
     cd "${root_dir}"
-    echo "[main] Using root dir ${root_dir}"
+    echo "[main] Using root dir ${root_dir} and options:"
+    echo "skip-fvp-setup=${skip_fvp_setup}"
+    echo "skip-toolchain-setup=${skip_toolchain_setup}"
+    echo "skip-vela-setup=${skip_vela_setup}"
 
     # Import utils
     source $et_dir/backends/arm/scripts/utils.sh
 
-    # Setup FVP
-    setup_fvp ${1:-'.'}
-
     # Setup toolchain
-    setup_toolchain
+    if [[ "${skip_toolchain_setup}" -eq 0 ]]; then
+        setup_toolchain
+    fi
 
-    # Create new setup_path script only if fvp and toolchain setup went well.
-    create_setup_path
+    # Setup FVP
+    if [[ "${skip_fvp_setup}" -eq 0 ]]; then
+        setup_fvp
+    fi
+
+    # Create new setup_path script
+    if [[ "${skip_toolchain_setup}" -eq 0 || "${skip_fvp_setup}" -eq 0 ]]; then
+        create_setup_path
+    fi
 
     # Setup the tosa_reference_model
     $et_dir/backends/arm/scripts/install_reference_model.sh ${root_dir}
 
     # Setup vela and patch in codegen fixes
-    setup_vela
+    if [[ "${skip_vela_setup}" -eq 0 ]]; then
+        setup_vela
+    fi
 
     echo "[main] update path by doing 'source ${setup_path_script}'"
 

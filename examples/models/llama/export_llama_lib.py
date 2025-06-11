@@ -27,6 +27,8 @@ import torch
 from executorch.devtools.backend_debug import print_delegation_info
 
 from executorch.devtools.etrecord import generate_etrecord as generate_etrecord_func
+
+from executorch.examples.models.llama.config.llm_config import LlmConfig
 from executorch.examples.models.llama.hf_download import (
     download_and_convert_hf_checkpoint,
 )
@@ -50,6 +52,7 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_vulkan_quantizer,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
+from omegaconf.dictconfig import DictConfig
 
 from ..model_factory import EagerModelFactory
 from .source_transformation.apply_spin_quant_r1_r2 import (
@@ -486,7 +489,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--use_qat",
         default=False,
         action="store_true",
-        help="Whether the checkpoin is pre-quantized with QAT or not.",
+        help="Whether the checkpoint is pre-quantized with QAT or not.",
     )
 
     parser.add_argument(
@@ -567,7 +570,23 @@ def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
         return return_val
 
 
-def export_llama(args) -> str:
+def export_llama(
+    export_options: Union[argparse.Namespace, DictConfig],
+) -> str:
+    if isinstance(export_options, argparse.Namespace):
+        # Legacy CLI.
+        args = export_options
+        llm_config = LlmConfig.from_args(export_options)  # noqa: F841
+    elif isinstance(export_options, DictConfig):
+        # Hydra CLI.
+        llm_config = export_options  # noqa: F841
+    else:
+        raise ValueError(
+            "Input to export_llama must be either of type argparse.Namespace or LlmConfig"
+        )
+
+    # TODO: refactor rest of export_llama to use llm_config instead of args.
+
     # If a checkpoint isn't provided for an HF OSS model, download and convert the
     # weights first.
     if not args.checkpoint and args.model in HUGGING_FACE_REPO_IDS:
