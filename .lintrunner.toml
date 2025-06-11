@@ -10,7 +10,7 @@ exclude_patterns = [
     'exir/serde/**',
 ]
 command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -19,7 +19,7 @@ command = [
     '@{{PATHSFILE}}'
 ]
 init_command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -41,7 +41,7 @@ exclude_patterns = [
     'exir/serde/**',
 ]
 command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -50,7 +50,7 @@ command = [
     '@{{PATHSFILE}}'
 ]
 init_command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -75,6 +75,7 @@ exclude_patterns = [
     'examples/apple/**',
     'examples/demo-apps/apple_ios/**',
     'examples/demo-apps/react-native/rnllama/ios/**',
+    'extension/apple/**',
     # File contains @generated
     'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',
     'extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_special_unstrided_cpu.h',
@@ -82,7 +83,7 @@ exclude_patterns = [
     'runtime/core/portable_type/c10/**',
 ]
 command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -93,7 +94,7 @@ command = [
     '@{{PATHSFILE}}'
 ]
 init_command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -115,7 +116,7 @@ exclude_patterns = [
     '**/third-party/**',
 ]
 command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -125,7 +126,7 @@ command = [
     '@{{PATHSFILE}}',
 ]
 init_command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -149,7 +150,7 @@ exclude_patterns = [
     '**/third-party/**',
 ]
 command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -190,7 +191,7 @@ exclude_patterns = [
     'extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_special_unstrided_cpu.h',
 ]
 command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -219,13 +220,20 @@ exclude_patterns = [
     'extension/**',
     'kernels/optimized/**',
     # Justified <functional> include.
+    'kernels/portable/cpu/op_bitwise*.cpp',
+    'kernels/portable/cpu/op_eq.cpp',
+    'kernels/portable/cpu/op_ge.cpp',
+    'kernels/portable/cpu/op_gt.cpp',
+    'kernels/portable/cpu/op_le.cpp',
+    'kernels/portable/cpu/op_lt.cpp',
+    'kernels/portable/cpu/op_ne.cpp',
     'runtime/kernel/thread_parallel_interface.h',
     'scripts/**',
     'third-party/**',
     'util/**',
 ]
 command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -274,7 +282,7 @@ exclude_patterns = [
     'util/**',
 ]
 command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -298,12 +306,14 @@ include_patterns = [
     # TODO(https://github.com/pytorch/executorch/issues/7441): Gradually start enabling all folders.
     # 'backends/**/*.py',
     'backends/arm/**/*.py',
+    'backends/openvino/**/*.py',
     'build/**/*.py',
     'codegen/**/*.py',
     # 'devtools/**/*.py',
     'devtools/visualization/**/*.py',
     'docs/**/*.py',
     # 'examples/**/*.py',
+    'examples/openvino/**/*.py',
     # 'exir/**/*.py',
     # 'extension/**/*.py',
     'kernels/**/*.py',
@@ -322,7 +332,7 @@ exclude_patterns = [
     'backends/arm/test/**',
 ]
 command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -334,11 +344,70 @@ command = [
     '@{{PATHSFILE}}'
 ]
 init_command = [
-    'python',
+    'python3',
     '-m',
     'lintrunner_adapters',
     'run',
     'pip_init',
     '--dry-run={{DRYRUN}}',
     '--requirement=requirements-lintrunner.txt',
+]
+
+[[linter]]
+code = 'LICENSELINT'
+include_patterns = [
+    '**/*',
+]
+exclude_patterns = [
+    '**/fb/**',
+    '.lintrunner.toml',
+]
+command = [
+    'python3',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'grep_linter',
+    '--pattern=Confidential and proprietary',
+    '--linter-name=LICENSELINT',
+    '--error-name=Wrong license',
+    """--error-description=\
+        Code contributed to ExecuTorch open source repo should have \
+        BSD-license header \
+    """,
+    '--',
+    '@{{PATHSFILE}}',
+]
+
+[[linter]]
+code = "TORCH_AO_IMPORT"
+include_patterns = ["**/*.py"]
+exclude_patterns = [
+    "third-party/**",
+    # TODO: remove exceptions as we migrate
+    # backends
+    "exir/tests/test_memory_planning.py",
+    "exir/backend/test/demos/test_xnnpack_qnnpack.py",
+    "backends/xnnpack/test/test_xnnpack_utils.py",
+]
+
+command = [
+  "python3",
+  "-m",
+  "lintrunner_adapters",
+  "run",
+  "grep_linter",
+  "--pattern=\\bfrom torch\\.ao\\.quantization\\.(?:quantizer|observer|quantize_pt2e|pt2e)(?:\\.[A-Za-z0-9_]+)*\\b",
+  "--linter-name=TorchAOImport",
+  "--error-name=Prohibited torch.ao.quantization import",
+  """--error-description=\
+  Imports from torch.ao.quantization are not allowed. \
+  Please import from torchao.quantization.pt2e instead.\n \
+  * torchao.quantization.pt2e (includes all the utils, including observers, fake quants etc.) \n \
+  * torchao.quantization.pt2e.quantizer (quantizer related objects and utils) \n \
+  * torchao.quantization.pt2e.quantize_pt2e (prepare_pt2e, prepare_qat_pt2e, convert_pt2e) \n\n \
+  If you need something from torch.ao.quantization, you can add your file to an exclude_patterns for TORCH_AO_IMPORT in .lintrunner.toml. \
+  """,
+  "--",
+  "@{{PATHSFILE}}",
 ]

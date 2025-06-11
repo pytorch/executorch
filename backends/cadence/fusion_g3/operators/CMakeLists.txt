@@ -11,12 +11,8 @@ if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/scripts/build/Codegen.cmake)
-
-if(NOT PYTHON_EXECUTABLE)
-  resolve_python_executable()
-endif()
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 # ATen compliant ops that are needed to run this model.
 set(_aten_ops__srcs
@@ -41,7 +37,16 @@ set(_aten_ops__srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/op_mean.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/op_slice_copy.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/op_permute_copy.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_transpose_copy.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/op_exp.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_sigmoid.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_sqrt.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_rsqrt.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_tanh.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_lt.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_where.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_clamp.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_hardtanh.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_bmm.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_clone.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_div.cpp"

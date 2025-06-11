@@ -77,22 +77,26 @@ Tensor& prod_int_out(
   ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
     ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {
       CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
-      for (const auto out_ix : c10::irange(out.numel())) {
-        CTYPE_OUT prod = 1;
-        if (in.numel() > 0) {
-          std::tuple<CTYPE_OUT, long> acc =
-              map_reduce_over_dim<CTYPE_IN, CTYPE_OUT>(
-                  [](CTYPE_IN v) { return static_cast<CTYPE_OUT>(v); },
-                  [](CTYPE_OUT outv, long, CTYPE_OUT acc, long) {
-                    return std::tuple<CTYPE_OUT, long>{acc * outv, 0};
-                  },
-                  in,
-                  dim,
-                  out_ix);
-          prod = std::get<0>(acc);
-        }
-        out_data[out_ix] = prod;
-      }
+      const bool success = parallel_for_each_reduce_over_dim_output_index(
+          in, dim, out, [&](const auto begin, const auto end) {
+            for (const auto out_ix : c10::irange(begin, end)) {
+              CTYPE_OUT prod = 1;
+              if (in.numel() > 0) {
+                std::tuple<CTYPE_OUT, long> acc =
+                    map_reduce_over_dim<CTYPE_IN, CTYPE_OUT>(
+                        [](CTYPE_IN v) { return static_cast<CTYPE_OUT>(v); },
+                        [](CTYPE_OUT outv, long, CTYPE_OUT acc, long) {
+                          return std::tuple<CTYPE_OUT, long>{acc * outv, 0};
+                        },
+                        in,
+                        dim,
+                        out_ix);
+                prod = std::get<0>(acc);
+              }
+              out_data[out_ix] = prod;
+            }
+          });
+      ET_KERNEL_CHECK_MSG(ctx, success, Internal, , "parallel_for failed");
     });
   });
 

@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/View.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
@@ -48,9 +49,9 @@ void resize_view_node(
   if (extra_args[0] == kDummyValueRef || graph->val_is_none(extra_args[0])) {
     out->virtual_resize(in->sizes());
   } else {
-    IntListPtr view_sizes = graph->get_int_list(extra_args[0]);
-    std::vector<int64_t> out_sizes =
-        compute_out_sizes(in->sizes(), *view_sizes);
+    std::vector<int64_t> view_sizes =
+        graph->extract_int_or_symint_list(extra_args[0]);
+    std::vector<int64_t> out_sizes = compute_out_sizes(in->sizes(), view_sizes);
     out->virtual_resize(out_sizes);
   }
 }
@@ -67,23 +68,24 @@ void add_view_node(
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out),
-      graph.create_local_wg_size(out),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
       {{out, vkapi::MemoryAccessType::WRITE},
        {in, vkapi::MemoryAccessType::READ}},
       // Parameter Buffers
       {},
+      // Push Constants
+      {{graph.sizes_pc_of(out), graph.sizes_pc_of(in)}},
       // Specialization Constants
       {SV(t_in->packed_dim()), SV(t_out->packed_dim())},
-      // Resizing Logic
-      resize_view_node,
+      // Resize Args
       {sizes},
-      // Push Constants
-      {{graph.sizes_pc_of(out), graph.sizes_pc_of(in)}}));
+      // Resizing Logic
+      resize_view_node));
 }
 
 void view(ComputeGraph& graph, const std::vector<ValueRef>& args) {

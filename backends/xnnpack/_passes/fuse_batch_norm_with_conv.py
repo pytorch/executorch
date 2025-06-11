@@ -7,13 +7,22 @@
 import operator
 
 import torch
+from executorch.backends.transforms.utils import (
+    create_constant_placeholder,
+    delete_constant_placeholder,
+)
 
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 
-from executorch.backends.xnnpack.utils.utils import get_param_tensor, is_param_node
+from executorch.backends.xnnpack.utils.utils import (
+    get_param_tensor,
+    get_tensor_name,
+    is_param_node,
+)
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
+from torch.export.graph_signature import InputKind
 
 from torch.nn.utils.fusion import fuse_conv_bn_weights
 
@@ -28,7 +37,7 @@ class FuseBatchNormWithConvPass(XNNPACKPass):
 
     def call(self, graph_module: torch.fx.GraphModule):
         graph = graph_module.graph
-        counter = 0
+        constant_placeholders_to_delete = set()
         for conv in graph.nodes:
             # We want to discover a chain of conv -> batch_norm.
             # Only proceed if the current node is a conv node, and has a single
@@ -55,9 +64,11 @@ class FuseBatchNormWithConvPass(XNNPACKPass):
             assert len(conv.args) == 9
 
             conv_weight = get_param_tensor(self.exported_program, conv.args[1])
+            conv_weight_name = get_tensor_name(self.exported_program, conv.args[1])
             assert conv_weight is not None
 
             conv_bias = get_param_tensor(self.exported_program, conv.args[2])
+            conv_bias_name = get_tensor_name(self.exported_program, conv.args[2])
 
             # Get the parameters from the batchnorm op
             assert (
@@ -95,23 +106,43 @@ class FuseBatchNormWithConvPass(XNNPACKPass):
                 bn_bias,
                 is_transpose,
             )
+            fused_weight_name = (conv_weight_name + "_fused_bn").replace(".", "_")
+            if conv_bias_name == "":
+                fused_bias_name = (conv_weight_name + "_bias_fused_bn").replace(
+                    ".", "_"
+                )
+            else:
+                fused_bias_name = (conv_bias_name + "_fused_bn").replace(".", "_")
 
             # Modify the graph by updating the weight and bias of conv op
             # with the fused weight and bias params, and replacing all the users
             # of getitem(batchnorm) with the conv op.
-            with graph.inserting_before(conv):
-                fused_weight_name = f"_fused_with_bn_weight_{counter}"
-                graph_module.register_parameter(fused_weight_name, fused_weight)
-                fused_weight_node = graph.get_attr(fused_weight_name)
-                fused_bias_name = f"_fused_with_bn_bias_{counter}"
-                graph_module.register_parameter(fused_bias_name, fused_bias)
-                fused_bias_node = graph.get_attr(fused_bias_name)
+            with graph.inserting_before(conv.args[1]):
+                fused_conv_weight_node = create_constant_placeholder(
+                    exp_program=self.exported_program,
+                    graph=graph_module.graph,
+                    kind=InputKind.PARAMETER,
+                    name=fused_weight_name,
+                    data=fused_weight,
+                )
+                if fused_bias is not None:
+                    fused_conv_bias_node = create_constant_placeholder(
+                        exp_program=self.exported_program,
+                        graph=graph_module.graph,
+                        kind=InputKind.PARAMETER,
+                        name=fused_bias_name,
+                        data=fused_bias,
+                    )
+                else:
+                    fused_conv_bias_node = None
 
-            # Update the weight and bias of conv op
-            conv_args = list(conv.args) + ([None] if len(conv.args) == 2 else [])
-            conv_args[1] = fused_weight_node
-            conv_args[2] = fused_bias_node
-            conv.args = tuple(conv_args)
+                conv.args = (
+                    conv.args[0],
+                    fused_conv_weight_node,
+                    fused_conv_bias_node,
+                    *conv.args[3:],
+                )
+
             # Remove any use of batchnorm from the graph
             for user in bn.users.copy():
                 assert user.target == operator.getitem
@@ -119,8 +150,13 @@ class FuseBatchNormWithConvPass(XNNPACKPass):
                 graph.erase_node(user)
 
             graph.erase_node(bn)
+            constant_placeholders_to_delete.update(conv.args[1:3] + bn.args[1:5])
 
-            counter += 1
+        if len(constant_placeholders_to_delete) > 0:
+            graph_module.graph.eliminate_dead_code()
+            for node in constant_placeholders_to_delete:
+                if (node is not None) and (len(node.users) == 0):
+                    delete_constant_placeholder(self.exported_program, node)
 
         graph_module.recompile()
         # To Regenerate meta data and shape information, retrace module

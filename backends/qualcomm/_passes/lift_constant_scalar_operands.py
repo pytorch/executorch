@@ -14,8 +14,8 @@ from executorch.backends.qualcomm._passes.utils import is_float_tensor
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
 from torch import fx
-from torch.ao.quantization.fx.utils import get_new_attr_name_with_prefix
 from torch.ops import aten as aten
+from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix
 
 
 @dataclass(frozen=True)
@@ -28,33 +28,49 @@ class TensorConstant:
 class TensorOpInfo:
     target: torch._ops.OpOverload
     use_schema_args: bool
+    use_self_dtype: bool
 
 
 SCALAR_OPS = {
-    aten.eq.Scalar: TensorOpInfo(aten.eq.Tensor, False),
-    aten.ge.Scalar: TensorOpInfo(aten.ge.Tensor, False),
-    aten.gt.Scalar: TensorOpInfo(aten.gt.Tensor, False),
-    aten.le.Scalar: TensorOpInfo(aten.le.Tensor, False),
-    aten.lt.Scalar: TensorOpInfo(aten.lt.Tensor, False),
-    aten.ne.Scalar: TensorOpInfo(aten.ne.Tensor, False),
-    aten.add.Scalar: TensorOpInfo(aten.add.Tensor, False),
-    aten.add_.Scalar: TensorOpInfo(aten.add_.Tensor, False),
-    aten.div.Scalar: TensorOpInfo(aten.div.Tensor, False),
-    aten.mul.Scalar: TensorOpInfo(aten.mul.Tensor, False),
-    aten.rsub.Scalar: TensorOpInfo(aten.rsub.Tensor, False),
-    aten.sub.Scalar: TensorOpInfo(aten.sub.Tensor, False),
-    aten.pow.Tensor_Scalar: TensorOpInfo(aten.pow.Tensor_Tensor, False),
+    aten.eq.Scalar: TensorOpInfo(aten.eq.Tensor, False, False),
+    aten.ge.Scalar: TensorOpInfo(aten.ge.Tensor, False, False),
+    aten.gt.Scalar: TensorOpInfo(aten.gt.Tensor, False, False),
+    aten.le.Scalar: TensorOpInfo(aten.le.Tensor, False, False),
+    aten.lt.Scalar: TensorOpInfo(aten.lt.Tensor, False, False),
+    aten.ne.Scalar: TensorOpInfo(aten.ne.Tensor, False, False),
+    aten.add.Scalar: TensorOpInfo(aten.add.Tensor, False, False),
+    aten.add_.Scalar: TensorOpInfo(aten.add_.Tensor, False, False),
+    # For below cases, refer to LiftAddTensor Model in UT for sample
+    aten.add.Tensor: TensorOpInfo(aten.add.Tensor, False, False),
+    aten.div.Scalar: TensorOpInfo(aten.div.Tensor, False, False),
+    aten.mul.Scalar: TensorOpInfo(aten.mul.Tensor, False, False),
+    aten.rsub.Scalar: TensorOpInfo(aten.rsub.Tensor, False, False),
+    aten.sub.Scalar: TensorOpInfo(aten.sub.Tensor, False, False),
+    aten.sub.Tensor: TensorOpInfo(aten.sub.Tensor, False, False),
+    aten.pow.Tensor_Scalar: TensorOpInfo(aten.pow.Tensor_Tensor, False, False),
     # The scalar number arg[1] is missing when using default. Result in a corner case to deal
-    aten.leaky_relu.default: TensorOpInfo(aten.prelu.default, True),
+    aten.leaky_relu.default: TensorOpInfo(aten.prelu.default, True, False),
+    aten.leaky_relu_.default: TensorOpInfo(aten.prelu.default, True, False),
+    aten.where.ScalarOther: TensorOpInfo(aten.where.self, False, True),
+    aten.where.Scalar: TensorOpInfo(aten.where.self, False, True),
+    aten.masked_fill.Scalar: TensorOpInfo(aten.masked_fill.Tensor, False, False),
 }
 
 
-SKIP_LIFT_OPS = {aten.full_like.default, aten.arange.start_step}
+SKIP_LIFT_OPS = {
+    aten.full_like.default,
+    aten.arange.start_step,
+    aten.arange.default,
+    aten.scalar_tensor.default,
+    aten.elu.default,
+}
 
 
 class LiftConstantScalarOperands(ExportPass):
     """
-    Lift constant scalar so that we can use observer of quantizer
+    Lift constant scalar so that we can use observer of quantizer.
+    For floating point model, lift constant scalar to avoid
+    creating temporary tensors for scalar node in the operation builder
     """
 
     def __init__(self):
@@ -63,11 +79,14 @@ class LiftConstantScalarOperands(ExportPass):
     def _build_tensor_constant(
         self, gm: torch.fx.GraphModule, node: fx.Node, const_val
     ) -> TensorConstant:
+        # For dtype, in some cases, we cannot use node.args[0] as scalar dtype.
+        # Ex: Where op args[0] can be bool, however, we probably want args[1] and args[2] to be dtype same as node.meta["val"] instead of bool type
         tensor = torch.tensor(
-            [const_val],
+            const_val,
             dtype=(
                 node.args[0].meta["val"].dtype
                 if not is_float_tensor(node)
+                and not SCALAR_OPS.get(node.target).use_self_dtype
                 else node.meta["val"].dtype
             ),
             device=node.meta["val"].device,

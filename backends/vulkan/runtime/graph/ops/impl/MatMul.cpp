@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/MatMul.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
@@ -37,12 +38,12 @@ void check_matmul_args(
 void resize_matmul_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& extra_args) {
+    const std::vector<ValueRef>& resize_args) {
   vTensorPtr out = graph->get_tensor(args[0].refs[0]);
   vTensorPtr mat1 = graph->get_tensor(args[1].refs[0]);
   vTensorPtr mat2 = graph->get_tensor(args[1].refs[1]);
 
-  bool mat2_is_transposed = graph->get_bool(extra_args[0]);
+  bool mat2_is_transposed = graph->get_bool(resize_args[0]);
 
   const int out_cols = utils::val_at(-2, mat1->sizes());
   const int out_rows = mat2_is_transposed ? utils::val_at(-2, mat2->sizes())
@@ -54,6 +55,23 @@ void resize_matmul_node(
   new_out_sizes.at(out_dim - 2) = out_cols;
 
   out->virtual_resize(new_out_sizes);
+}
+
+/**
+ * Custom global workgroup size function for naive buffer matmul operations.
+ */
+utils::uvec3 matmul_naive_buffer_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+  const ValueRef out = args.at(0).refs.at(0);
+  return {
+      graph->size_at<uint32_t>(-1, out),
+      graph->size_at<uint32_t>(-2, out),
+      graph->size_at<uint32_t>(-3, out) * graph->size_at<uint32_t>(-4, out)};
 }
 
 void add_matmul_naive_buffer_node(
@@ -72,24 +90,18 @@ void add_matmul_naive_buffer_node(
   std::string kernel_name = "matmul_naive_buffer";
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  utils::uvec3 global_size = {
-      graph.size_at<uint32_t>(-1, out),
-      graph.size_at<uint32_t>(-2, out),
-      graph.size_at<uint32_t>(-3, out) * graph.size_at<uint32_t>(-4, out)};
-
   int mat2_is_transposed_val = (mat2_is_transposed != kDummyValueRef &&
                                 graph.get_bool(mat2_is_transposed))
       ? 1
       : 0;
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      graph.create_local_wg_size(global_size),
+      matmul_naive_buffer_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
-      {{out, vkapi::MemoryAccessType::WRITE},
-       {{mat1, mat2}, vkapi::MemoryAccessType::READ}},
+      {{out, vkapi::kWrite}, {{mat1, mat2}, vkapi::kRead}},
       // Shader params buffers
       {
           graph.sizes_ubo(out),
@@ -100,11 +112,30 @@ void add_matmul_naive_buffer_node(
           graph.strides_ubo(mat2),
           graph.numel_ubo(out),
       },
+      // Push Constants
+      {},
       // Specialization Constants
       {mat2_is_transposed_val},
+      // Resize Args
+      {mat2_is_transposed},
       // Resizing Logic
-      resize_matmul_node,
-      {mat2_is_transposed}));
+      resize_matmul_node));
+}
+
+vkapi::ShaderInfo pick_matmul_naive_texture3d_shader(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  const ValueRef out = args.at(0).refs.at(0);
+  const bool is_transposed = graph->get_bool(resize_args.at(0));
+
+  std::string kernel_name =
+      is_transposed ? "matmul_transposed_naive" : "matmul_naive";
+  kernel_name.reserve(kShaderNameReserve);
+  add_storage_type_suffix(kernel_name, graph->storage_type_of(out));
+  add_dtype_suffix(kernel_name, graph->dtype_of(out));
+
+  return VK_KERNEL_FROM_STR(kernel_name);
 }
 
 void add_matmul_naive_texture3d_node(
@@ -120,22 +151,13 @@ void add_matmul_naive_texture3d_node(
       utils::kHeightPacked,
       /*passthrough = */ true);
 
-  std::string kernel_name = graph.get_bool(mat2_is_transposed)
-      ? "matmul_transposed_naive"
-      : "matmul_naive";
-  kernel_name.reserve(kShaderNameReserve);
-  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
-  add_dtype_suffix(kernel_name, graph.dtype_of(out));
-
-  utils::uvec3 global_wg_size = graph.logical_limits_of(out);
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
-      VK_KERNEL_FROM_STR(kernel_name),
-      global_wg_size,
-      graph.create_local_wg_size(global_wg_size),
+      pick_matmul_naive_texture3d_shader,
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
-      {{out, vkapi::MemoryAccessType::WRITE},
-       {{mat1, mat2}, vkapi::MemoryAccessType::READ}},
+      {{out, vkapi::kWrite}, {{mat1, mat2}, vkapi::kRead}},
       // Shader params buffers
       {
           graph.sizes_ubo(out),
@@ -143,13 +165,69 @@ void add_matmul_naive_texture3d_node(
           graph.sizes_ubo(mat1),
           graph.sizes_ubo(mat2),
       },
+      // Push Constants
+      {},
       // Specialization Constants
       {graph.hashed_layout_of(out),
        graph.hashed_layout_of(mat1),
        graph.hashed_layout_of(mat2)},
+      // Resize Args
+      {mat2_is_transposed},
       // Resizing Logic
-      resize_matmul_node,
-      {mat2_is_transposed}));
+      resize_matmul_node));
+}
+
+vkapi::ShaderInfo pick_matmul_optimized_shader(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef mat1_W_packed = resize_args.at(1);
+  const bool mat2_is_transposed_val = graph->get_bool(resize_args.at(0));
+
+  std::string kernel_name = mat2_is_transposed_val
+      ? "matmul_transposed_optimized"
+      : "matmul_optimized";
+
+  std::vector<int64_t> mat1_sizes = graph->sizes_of(mat1_W_packed);
+  size_t mat1_dims = mat1_sizes.size();
+  if (mat1_dims == 3) {
+    kernel_name = "batch_" + kernel_name;
+  }
+  if (mat1_sizes.at(mat1_dims - 2) < 8) {
+    kernel_name += "_tile_row_2";
+  } else {
+    kernel_name += "_tile_row_4";
+  }
+
+  add_dtype_suffix(kernel_name, graph->dtype_of(out));
+
+  return VK_KERNEL_FROM_STR(kernel_name);
+}
+
+utils::uvec3 matmul_optimized_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef mat1_W_packed = resize_args.at(1);
+
+  const std::vector<int64_t> mat1_sizes = graph->sizes_of(mat1_W_packed);
+  const size_t mat1_dims = mat1_sizes.size();
+
+  utils::uvec3 global_size = graph->logical_limits_of(out);
+  if (mat1_sizes.at(mat1_dims - 2) < 8) {
+    // Use `logical_extents` instead of `image_extents` because the workgroup
+    // axes need to correspond to tensor dimensions.
+    global_size = utils::divup_vec(global_size, {4, 2, 1});
+  } else {
+    global_size = utils::divup_vec(global_size, {4, 4, 1});
+  }
+
+  return global_size;
 }
 
 void add_matmul_optimized_node(
@@ -188,61 +266,29 @@ void add_matmul_optimized_node(
     viewFn(graph, {mat2, graph.add_none(), mat2_packed});
   }
 
-  std::string kernel_name = mat2_is_transposed_val
-      ? "matmul_transposed_optimized"
-      : "matmul_optimized";
-
-  std::vector<int64_t> mat1_sizes = graph.sizes_of(mat1_W_packed);
-  int mat1_dims = mat1_sizes.size();
-  if (mat1_dims == 3) {
-    kernel_name = "batch_" + kernel_name;
-  }
-  if (mat1_sizes.at(mat1_dims - 2) < 8) {
-    kernel_name += "_tile_row_2";
-  } else {
-    kernel_name += "_tile_row_4";
-  }
-
-  add_dtype_suffix(kernel_name, graph.dtype_of(out));
-
-  // Each thread computes a W=(2/4) x H=4 x C=(1/4) output tile. Therefore, the
-  // total number of threads is W/(2 or 4) x H/4 x C/1. Since the out tensor is
-  // channels packed, C does not need to be divided by 4. The "identity" of each
-  // thread is the (x, y, z) coordinate of the output tile it is computing, and
-  // this identity can be used to compute the tensor index of the top left
-  // element in the tile, which will be [W=x*(2 or 4), H=y*4, C=z*(1 or 4), N=0]
-  utils::uvec3 global_size = graph.logical_limits_of(out);
-  if (mat1_sizes.at(mat1_dims - 2) < 8) {
-    // Use `logical_extents` instead of `image_extents` because the workgroup
-    // axes need to correspond to tensor dimensions.
-    global_size = utils::divup_vec(global_size, {4, 2, 1});
-  } else {
-    global_size = utils::divup_vec(global_size, {4, 4, 1});
-  }
-
-  utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
-      VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      pick_matmul_optimized_shader,
+      matmul_optimized_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
-      {{out, vkapi::MemoryAccessType::WRITE},
-       {{mat1_W_packed, mat2_packed}, vkapi::MemoryAccessType::READ}},
+      {{out, vkapi::kWrite}, {{mat1_W_packed, mat2_packed}, vkapi::kRead}},
       // Shader params buffers
       {
           graph.sizes_ubo(out),
           graph.sizes_ubo(mat1_W_packed),
           graph.sizes_ubo(mat2_packed),
       },
+      // Push Constants
+      {},
       // Specialization Constants
       {graph.hashed_layout_of(out),
        graph.hashed_layout_of(mat1_W_packed),
        graph.hashed_layout_of(mat2_packed)},
+      // Resize Args
+      {mat2_is_transposed, mat1_W_packed},
       // Resizing Logic
-      resize_matmul_node,
-      {mat2_is_transposed}));
+      resize_matmul_node));
 }
 
 void add_matmul_node(

@@ -140,6 +140,14 @@ GraphConfig get_graph_config(ArrayRef<CompileSpec>& compile_specs) {
 
       config.set_memory_layout_override(memory_layout);
     }
+    if (strcmp(spec.key, "require_dynamic_shapes") == 0) {
+      ET_CHECK_MSG(value_size == sizeof(uint8_t), "Unexpected value size!");
+      bool value = getBool(value_data);
+
+      if (value) {
+        config.expect_dynamic_shapes = true;
+      }
+    }
   }
 #ifdef ET_EVENT_TRACER_ENABLED
   config.enable_querypool = true;
@@ -152,7 +160,7 @@ class GraphBuilder {
   VkGraphPtr flatbuffer_;
   const uint8_t* constant_data_;
 
-  std::unordered_map<uint32_t, ValueRef> ref_mapping_;
+  std::vector<ValueRef> ref_mapping_;
 
  public:
   explicit GraphBuilder(
@@ -164,22 +172,20 @@ class GraphBuilder {
         constant_data_(constant_data),
         ref_mapping_() {}
 
-  bool fb_id_exists(const uint32_t fb_id) {
-    const std::unordered_map<uint32_t, ValueRef>::iterator found_ref =
-        ref_mapping_.find(fb_id);
+  void resize(uint32_t size) {
+    ref_mapping_.resize(size, INT32_MAX);
+  }
 
-    return found_ref != ref_mapping_.end();
+  bool fb_id_exists(const uint32_t fb_id) {
+    return fb_id < ref_mapping_.size() && ref_mapping_[fb_id] != INT32_MAX;
   }
 
   ValueRef get_fb_id_valueref(const uint32_t fb_id) {
-    const std::unordered_map<uint32_t, ValueRef>::iterator found_ref =
-        ref_mapping_.find(fb_id);
-
     ET_CHECK_MSG(
-        found_ref != ref_mapping_.end(),
+        fb_id_exists(fb_id),
         "Trying to extract a value that hasn't yet been added to the graph.");
 
-    return found_ref->second;
+    return ref_mapping_[fb_id];
   }
 
   void add_tensor_to_graph(const uint32_t fb_id, VkTensorPtr tensor_fb) {
@@ -315,6 +321,9 @@ class GraphBuilder {
   }
 
   void build_graph() {
+    // Resize the mapping to the number of values in the flatbuffer
+    resize(flatbuffer_->values()->size());
+
     // First, add all values to the graph
     for (uint32_t fb_id = 0; fb_id < flatbuffer_->values()->size(); ++fb_id) {
       VkValuePtr value = flatbuffer_->values()->Get(fb_id);
@@ -338,12 +347,10 @@ class GraphBuilder {
       std::string op_name = op_call->name()->str();
       ET_CHECK_MSG(VK_HAS_OP(op_name), "Missing operator: %s", op_name.c_str());
 
-      const std::vector<int> arg_fb_ids(
-          op_call->args()->cbegin(), op_call->args()->cend());
-
       std::vector<ValueRef> args;
-      for (const int arg_fb_id : arg_fb_ids) {
-        args.push_back(get_fb_id_valueref(arg_fb_id));
+      args.reserve(op_call->args()->size());
+      for (const auto arg_fb_id : *op_call->args()) {
+        args.push_back(get_fb_id_valueref(static_cast<int>(arg_fb_id)));
       }
 
       auto vkFn = VK_GET_OP_FN(op_name);
@@ -491,17 +498,22 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
 
     VkGraphPtr flatbuffer_graph = vkgraph::GetVkGraph(flatbuffer_data);
 
-    GraphBuilder builder =
-        GraphBuilder(compute_graph, flatbuffer_graph, constant_data);
+    GraphBuilder builder(compute_graph, flatbuffer_graph, constant_data);
 
     builder.build_graph();
 
     compute_graph->prepare();
+    compute_graph->prepare_pipelines();
 
     compute_graph->encode_prepack();
     compute_graph->prepack();
 
-    compute_graph->encode_execute();
+    // If dynamic shapes are not expected, then the command buffer only needs to
+    // be encoded once. Otherwise, wait until the first inference to encode the
+    // the command buffer, when actual input shapes are known.
+    if (!compute_graph->graphconfig().expect_dynamic_shapes) {
+      compute_graph->encode_execute();
+    }
 
     return Error::Ok;
   }
@@ -569,9 +581,16 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       }
     }
 
-    if (should_propagate_resize) {
+    // propagate_resize() will re-encode the command buffer so that push
+    // constants are updated and DynamicDispatchNode can update the compute
+    // shader, global workgroup size, and local workgroup size to perform the
+    // model inference.
+    if (should_propagate_resize ||
+        (compute_graph->graphconfig().expect_dynamic_shapes &&
+         compute_graph->execute_count() == 0u)) {
       compute_graph->propagate_resize();
     }
+
     compute_graph->execute();
 
     for (size_t i = 0; i < compute_graph->outputs().size(); i++) {

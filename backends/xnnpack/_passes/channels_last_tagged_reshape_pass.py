@@ -8,6 +8,7 @@ from typing import Optional, Tuple
 
 import torch
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
+from executorch.backends.xnnpack.utils.quant_utils import is_dynamic_qdq
 from executorch.backends.xnnpack.utils.utils import is_param_node
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
@@ -55,9 +56,9 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
 
     # Set of ops that require memory format to be NCHW
     memory_sensitive_ops_nchw = {
-        "output",
         exir_ops.edge.aten.squeeze_copy.dim,
         exir_ops.edge.aten.unsqueeze_copy.default,
+        exir_ops.edge.aten.linear.default,
     }
 
     # Tag which is added to a node's meta to indicate that it uses NHWC format.
@@ -90,10 +91,18 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         return not self.is_nhwc_node(node)
 
     def requires_nhwc_input(self, node: torch.fx.Node) -> bool:
-        return node.target in self.memory_sensitive_ops_nhwc
+        return (
+            node.target in self.memory_sensitive_ops_nhwc
+            or node.name == "output"
+            and not node.args[0][0].meta["val"].is_contiguous()
+        )
 
     def requires_nchw_inputs(self, node: torch.fx.Node) -> bool:
-        return node.target in self.memory_sensitive_ops_nchw
+        return (
+            node.target in self.memory_sensitive_ops_nchw
+            or node.name == "output"
+            and node.args[0][0].meta["val"].is_contiguous()
+        )
 
     def can_be_converted_to_nhwc(self, node: torch.fx.Node) -> bool:
         # There are two conditions that must be met for a node to be able to
@@ -268,7 +277,10 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             # serializing graph, but don't do anything else here
             self.mark_as_nhwc_node(input_node)
 
-        if self.is_nhwc_node(input_node):
+        if input_node.op == "placeholder":
+            if not input_node.meta["val"][0].is_contiguous():
+                return
+        elif self.is_nhwc_node(input_node):
             return
 
         if not self.can_be_converted_to_nhwc(input_node):
@@ -283,6 +295,14 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             ]
         else:
             # Need to create NHWC node
+            # Check if input uses dynamic quantization
+            is_dynamic_input = is_dynamic_qdq(input_node)
+
+            if is_dynamic_input:
+                # Trace back to original source node
+                while getattr(input_node, "args", None):
+                    input_node = input_node.args[0]
+
             with graph_module.graph.inserting_after(input_node):
                 input_node_nhwc = self.create_call_function_node(
                     graph_module=graph_module,
@@ -290,7 +310,11 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                     args=(input_node,),
                     memory_format=torch.channels_last,
                 )
-            self.mark_as_nhwc_node(input_node_nhwc)
+
+            if is_dynamic_input:
+                # Replace downstream input_nodes with NHWC node
+                input_node.replace_all_uses_with(input_node_nhwc)
+                input_node_nhwc.args = (input_node,)
 
         self.insert_copy_and_assign_partner_nodes_quantization_sensitive(
             graph_module=graph_module,
@@ -320,7 +344,10 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             # do anything else here
             self.mark_as_nchw_node(input_node)
 
-        if self.is_nchw_node(input_node):
+        if input_node.op == "placeholder":
+            if input_node.meta["val"].is_contiguous():
+                return
+        elif self.is_nchw_node(input_node):
             return
 
         if ChannelsLastTaggedReshapePass.PARTNER_NODE in input_node.meta:
@@ -358,7 +385,11 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 # first input to be nhwc. This makes this node's output nhwc too
                 # Currently, all nodes like this should have all of their other
                 # inputs as nchw, so fail if this is not true
-                self.input_to_nhwc(graph_module, node.args[0], node)
+                if node.name == "output":
+                    self.input_to_nhwc(graph_module, node.args[0][0], node)
+                else:
+                    self.input_to_nhwc(graph_module, node.args[0], node)
+
                 for input_node in node.all_input_nodes[1:]:
                     if self.is_nhwc_node(input_node):
                         raise AssertionError(

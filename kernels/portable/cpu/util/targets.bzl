@@ -12,6 +12,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "all_deps",
         exported_deps = [
+            "//executorch/extension/threadpool:threadpool",
             "//executorch/kernels/portable/cpu/util:functional_util",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:kernel_ops_util",
@@ -32,7 +33,6 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/util:slice_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:upsample_util",
-            "//executorch/runtime/kernel:thread_parallel_interface",
         ],
         visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     )
@@ -111,6 +111,7 @@ def define_common_targets():
             ":broadcast_util",
             ":dtype_util",
             "//executorch/runtime/kernel:kernel_runtime_context",
+            "//executorch/extension/threadpool:threadpool",
         ],
         deps = [
             "//executorch/kernels/portable/cpu:scalar_utils",
@@ -131,7 +132,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS"],
     )
 
     runtime.cxx_library(
@@ -243,6 +244,9 @@ def define_common_targets():
         name = "functional_util",
         srcs = [],
         exported_headers = ["functional_util.h"],
+        exported_deps = [
+            "//executorch/extension/threadpool:threadpool",
+        ],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
@@ -315,7 +319,7 @@ def define_common_targets():
                 "//executorch/runtime/core/exec_aten/util:tensor_util{}".format(suffix),
             ],
             exported_deps = [
-                "//executorch/runtime/kernel:thread_parallel_interface",
+                "//executorch/extension/threadpool:threadpool",
             ],
             exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
             visibility = [

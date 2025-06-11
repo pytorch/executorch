@@ -71,9 +71,6 @@ from executorch.exir.tests.models import MLP, Mul
 from functorch.experimental import control_flow
 
 from torch import nn
-
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torch.ao.quantization.quantizer import QuantizationSpec
 from torch.export import export
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 from torch.fx import GraphModule, subgraph_rewriter
@@ -81,6 +78,9 @@ from torch.fx.experimental.proxy_tensor import make_fx
 from torch.library import impl, Library
 from torch.testing import FileCheck
 from torch.utils import _pytree as pytree
+
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantizer import QuantizationSpec
 
 
 # pyre-ignore
@@ -682,7 +682,6 @@ class TestPasses(unittest.TestCase):
         inputs = eager_model.get_random_inputs()
         gm = export(eager_model, inputs, strict=True).graph_module
 
-        self.assertTrue(torch.ops.aten.sub.Tensor in collect_ops(gm))
         dead_code_elimination_pass(gm)
         gm.print_readable()
         self.assertFalse(torch.ops.aten.sub.Tensor in collect_ops(gm))
@@ -1027,6 +1026,34 @@ class TestPasses(unittest.TestCase):
             "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor"
         ).run(gm.code)
 
+    def test_constant_prop_for_output(self) -> None:
+        class Add(torch.nn.Module):
+            def forward(self) -> torch.Tensor:
+                return torch.add(torch.tensor(3), torch.tensor(5))
+
+        add = Add()
+
+        edge = to_edge(
+            export(add, (), strict=True),
+            compile_config=EdgeCompileConfig(_skip_dim_order=False),
+        )
+        # Check there is a lifted tensor followed by a to_copy node
+        FileCheck().check("c_lifted_tensor_0").check("c_lifted_tensor_1").run(
+            edge.exported_program().graph_module.code
+        )
+
+        edge._edge_programs["forward"] = constant_prop_pass(
+            edge.exported_program("forward")
+        )
+
+        # Check (c_lifted_tensor_*) nodes are all replaced by _prop_tensor_constant.
+        FileCheck().check_not("c_lifted_tensor_").check("_prop_tensor_constant").run(
+            edge.exported_program().graph_module.code
+        )
+        # Validate that the program successfully passes validation to executorch:
+        edge.exported_program()._validate()
+        edge.to_executorch()
+
     def test_constant_prop_pass_for_add(self) -> None:
         class Add(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -1056,6 +1083,36 @@ class TestPasses(unittest.TestCase):
         ).run(
             new_ep.graph_module.code
         )
+
+    def test_pass_no_user_inputs(self) -> None:
+        class NoUserInputs(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("a", torch.ones(1))
+
+            def forward(self) -> torch.Tensor:
+                return 3 + self.a
+
+        mod = NoUserInputs()
+        exported_program = export(mod, (), strict=True)
+        edge = to_edge(
+            exported_program,
+            compile_config=EdgeCompileConfig(_skip_dim_order=False),
+        )
+        ep = edge.exported_program()
+        # because there is no user input, the lifted constant should be the first input.
+        FileCheck().check("_lifted_tensor_constant1").check(
+            "b_a"  # followed by the buffer input.
+        ).run(ep.graph_module.code)
+
+        # the graph signature should also be the same:
+        self.assertEqual(
+            ep.graph_signature.input_specs[0].arg.name, "_lifted_tensor_constant1"
+        )
+        self.assertEqual(ep.graph_signature.input_specs[1].arg.name, "b_a")
+
+        # Validate that the program successfully passes validation to executorch:
+        edge.to_executorch()
 
     def test_constant_prop_pass_for_parameter(self) -> None:
         def count_additions(gm: torch.fx.GraphModule) -> int:
@@ -1134,13 +1191,12 @@ class TestPasses(unittest.TestCase):
         value = torch.randn(32, 32, 32, 32)
 
         # Capture the model
-        m = torch.export.export_for_training(M(32), (query, key, value)).module()
+        m = torch.export.export_for_training(
+            M(32), (query, key, value), strict=True
+        ).module()
 
         # 8w16a quantization
-        from torch.ao.quantization.observer import (
-            MinMaxObserver,
-            PerChannelMinMaxObserver,
-        )
+        from torchao.quantization.pt2e import MinMaxObserver, PerChannelMinMaxObserver
 
         activation_qspec = QuantizationSpec(
             dtype=torch.int16,
@@ -1247,6 +1303,7 @@ class TestPasses(unittest.TestCase):
             def __init__(self):
                 super().__init__()
                 self.linear = torch.nn.Linear(3, 3)
+                self.w = torch.randn(3, 3)
 
             def t(self, val):
                 return val + 1
@@ -1261,8 +1318,11 @@ class TestPasses(unittest.TestCase):
                 return self.linear(val) - self.f(val)
 
             def forward(self, pred, x):
+                out = torch.nn.functional.linear(
+                    x, self.w.to(torch.float16).to(torch.float32)
+                )
                 return torch.ops.higher_order.cond(
-                    pred, self.true_fn, self.false_fn, [x]
+                    pred, self.true_fn, self.false_fn, [out]
                 )
 
         mod = Module()
@@ -1272,14 +1332,48 @@ class TestPasses(unittest.TestCase):
             export(mod, (pred, x), strict=True),
             compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
-        error_msg = r"constant_prop_pass for control flow is not supported yet."
+        expected_out = edge.exported_program().module()(pred, x)
 
-        # TODO(chenlai): enable constant prop pass for control flow
-        with self.assertRaisesRegex(
-            RuntimeError,
-            error_msg,
-        ):
-            _ = constant_prop_pass(edge.exported_program())
+        warn_log = (
+            "constant_prop_pass does not constant propagate in control flow modules"
+        )
+        with self.assertLogs(level="WARNING") as log:
+            program = constant_prop_pass(edge.exported_program())
+            self.assertIn(warn_log, log.output[0])
+
+        out = program.module()(pred, x)
+        self.assertTrue(torch.allclose(expected_out, out))
+
+        # dtype casts in parent module are const propagated
+        FileCheck().check(
+            "executorch_exir_dialects_edge__ops_aten_mm_default(x, _prop_tensor_constant"
+        ).run(program.graph_module.code)
+
+    def test_constant_prop_pass_quant_primitives(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w_int = torch.ones(3, 3, dtype=torch.int8)
+                self.w_scale = 3.0
+                self.w_zero_point = 3
+
+            def forward(self, x):
+                w_dq = torch.ops.quantized_decomposed.dequantize_per_tensor.default(
+                    self.w_int, self.w_scale, self.w_zero_point, -127, 128, torch.int8
+                )
+                return torch.nn.functional.linear(x, w_dq)
+
+        mod = M()
+        x = torch.randn([3])
+        mod(x)
+        edge = to_edge(
+            export(mod, (x,), strict=True),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        constant_prop_pass(edge.exported_program())
+        FileCheck().check(
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default"
+        ).run(edge.exported_program().graph_module.code)
 
     def test_mutable_buffers(self) -> None:
         def count_copies(gm: torch.fx.GraphModule) -> int:
@@ -1375,8 +1469,7 @@ class TestPasses(unittest.TestCase):
         ) -> Tuple[EdgeProgramManager, int, int]:
             # program capture
             m = torch.export.export_for_training(
-                m_eager,
-                example_inputs,
+                m_eager, example_inputs, strict=True
             ).module()
 
             quantizer = XNNPACKQuantizer()
@@ -1755,3 +1848,34 @@ class TestPasses(unittest.TestCase):
         self.assertTrue(
             torch.allclose(output_no_dim_order[0], output_no_dim_order_revert[0])
         )
+
+    def test_constant_prop_pass_none(self) -> None:
+        """
+        This checks that None arguments are treated as constants in constant_prop_pass.
+        """
+
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.cst = torch.ones(3, 3, 3, dtype=torch.int8)
+                self.w = torch.ones(3, 3, 3, dtype=torch.int8)
+
+            def forward(self, x):
+                # Note: using e.g aten.linear would not work as None is not in the graph
+                a = torch.ops.aten.convolution.default(
+                    self.cst, self.w, None, [1], [0], [1], False, [0], 1
+                )
+                return a + x
+
+        mod = M()
+        x = torch.randn([3, 3, 3])
+        mod(x)
+        edge = to_edge(
+            export(mod, (x,), strict=True),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        # 2 constants: self.w and self.cst
+        self.assertEqual(2, len(edge.exported_program().constants))
+        pass_result = constant_prop_pass(edge.exported_program())
+        # 1 constant: a (= self.w @ self.cst)
+        self.assertEqual(1, len(pass_result.constants))

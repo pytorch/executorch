@@ -54,7 +54,7 @@ bool parallel_for(
     const int64_t begin,
     const int64_t end,
     const int64_t grain_size,
-    const std::function<void(int64_t, int64_t)>& f) {
+    runtime::FunctionRef<void(int64_t, int64_t)> f) {
   ET_CHECK_OR_RETURN_FALSE(
       begin >= 0 && end >= 0 && end >= begin,
       "begin = %" PRId64 ", end = %" PRId64,
@@ -65,7 +65,7 @@ bool parallel_for(
   std::tie(num_tasks, chunk_size) =
       calc_num_tasks_and_chunk_size(begin, end, grain_size);
 
-  auto task = [f, begin, end, chunk_size](size_t task_id) {
+  auto task = [&f, begin, end, chunk_size](size_t task_id) {
     set_thread_num(task_id);
     int64_t local_start = begin + static_cast<int64_t>(task_id) * chunk_size;
     if (local_start < end) {

@@ -13,32 +13,49 @@ import tempfile
 
 from pathlib import Path
 
-from typing import cast, Dict, List, Literal, Optional, Tuple
+from typing import Any, cast, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import torch
 
-logger = logging.getLogger(__name__)
-try:
-    import tosa_reference_model
-except ImportError:
-    tosa_reference_model = None
 from executorch.backends.arm.arm_backend import get_tosa_spec, is_tosa
-
 from executorch.backends.arm.test.conftest import is_option_enabled
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa_specification import (
+    Tosa_0_80,
+    Tosa_1_00,
+    TosaSpecification,
+)
 from executorch.exir import ExecutorchProgramManager, ExportedProgram
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.lowered_backend_module import LoweredBackendModule
-from packaging.version import Version
 from torch.fx.node import Node
 
 from torch.overrides import TorchFunctionMode
-from torch.testing._internal.common_utils import torch_to_numpy_dtype_dict
-from tosa import TosaGraph
+from tosa.TosaGraph import TosaGraph
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.CRITICAL)
+
+# Copied from PyTorch.
+# From torch/testing/_internal/common_utils.py:torch_to_numpy_dtype_dict
+# To avoid a dependency on _internal stuff.
+_torch_to_numpy_dtype_dict = {
+    torch.bool: np.bool_,
+    torch.uint8: np.uint8,
+    torch.uint16: np.uint16,
+    torch.uint32: np.uint32,
+    torch.uint64: np.uint64,
+    torch.int8: np.int8,
+    torch.int16: np.int16,
+    torch.int32: np.int32,
+    torch.int64: np.int64,
+    torch.float16: np.float16,
+    torch.float32: np.float32,
+    torch.float64: np.float64,
+    torch.bfloat16: np.float32,
+    torch.complex32: np.complex64,
+    torch.complex64: np.complex64,
+    torch.complex128: np.complex128,
+}
 
 
 class QuantizationParams:
@@ -180,7 +197,8 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         super().__exit__(exc_type, exc_val, exc_tb)
-        if not self.ran_tosa_dispatch:
+        # Only raise this error if we ran the model without errors.
+        if not self.ran_tosa_dispatch and exc_type is None:
             raise RuntimeError(
                 "Ran model with TosaReferenceModelDispatch but never ran TOSABackend delegate."
             )
@@ -335,7 +353,7 @@ def run_corstone(
         output_dtype = node.meta["val"].dtype
         tosa_ref_output = np.fromfile(
             os.path.join(intermediate_path, f"out-{i}.bin"),
-            torch_to_numpy_dtype_dict[output_dtype],
+            _torch_to_numpy_dtype_dict[output_dtype],
         )
 
         output_np.append(torch.from_numpy(tosa_ref_output).reshape(output_shape))
@@ -349,7 +367,7 @@ def prep_data_for_save(
 ):
     if isinstance(data, torch.Tensor):
         data_np = np.array(data.detach(), order="C").astype(
-            torch_to_numpy_dtype_dict[data.dtype]
+            _torch_to_numpy_dtype_dict[data.dtype]
         )
     else:
         data_np = np.array(data)
@@ -444,10 +462,19 @@ def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
     tosa_input_file = os.path.join(tmp, "output.tosa")
     with open(tosa_input_file, "wb") as f:
         f.write(tosa_fb)
+    tosa_graph = TosaGraph.GetRootAsTosaGraph(tosa_fb)
+    version = tosa_graph.Version()
+    major = version._Major()
+    minor = version._Minor()
+    patch = version._Patch()
+    if not ((major == 1 and minor == 0) or (major == 0 and minor == 80)):
+        raise RuntimeError(
+            f"Unsupported version in TOSA flatbuffer: version={major}.{minor}.{patch}"
+        )
 
     arm_backend_path = os.path.realpath(os.path.dirname(__file__) + "/..")
     tosa_schema_file = os.path.join(
-        arm_backend_path, "third-party/serialization_lib/schema/tosa.fbs"
+        arm_backend_path, f"tosa/schemas/tosa_{major}.{minor}.fbs"
     )
     assert os.path.exists(
         tosa_schema_file
@@ -529,7 +556,7 @@ def get_elf_path(target_board):
         "arm_executor_runner",
     )
     if not os.path.exists(elf_path):
-        raise RuntimeError(
+        raise FileNotFoundError(
             f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
         )
     else:
@@ -546,7 +573,7 @@ def arm_executor_runner_exists(target_board):
 
 
 def run_tosa_graph(
-    graph: TosaGraph,
+    graph: Any,
     tosa_version: TosaSpecification,
     inputs: list[torch.Tensor],
 ) -> list[torch.Tensor]:
@@ -554,25 +581,38 @@ def run_tosa_graph(
     inputs_np = [input.numpy() for input in inputs]
     transpose_data_format(inputs_np, to="NHWC")
 
-    tosa_release = tosa_version.version
+    if isinstance(tosa_version, Tosa_0_80):
+        import tosa_tools.v0_80.tosa_reference_model as reference_model
 
-    if tosa_release > Version("0.80"):
-        logger.warning("The reference model is only tested for TOSA v0.80")
+        # tosa_profile: 0 = Base Inference, 1 = Main Inference, 2 = Main Training.
+        tosa_profile = 1 if tosa_version.support_float() else 0
+        debug_mode = "ALL" if logger.level <= logging.DEBUG else None
+        outputs_np, status = reference_model.run(
+            graph,
+            inputs_np,
+            verbosity=_tosa_refmodel_loglevel(logger.level),
+            tosa_profile=tosa_profile,
+            initialize_variable_tensor_from_numpy=True,
+            debug_mode=debug_mode,
+        )
+    elif isinstance(tosa_version, Tosa_1_00):
+        import tosa_reference_model as reference_model
 
-    # tosa_profile: 0 = Base Inference, 1 = Main Inference, 2 = Main Training.
-    tosa_profile = 1 if tosa_version.support_float() else 0
-    debug_mode = "ALL" if logger.level <= logging.DEBUG else None
-    outputs_np, status = tosa_reference_model.run(
-        graph,
-        inputs_np,
-        verbosity=_tosa_refmodel_loglevel(logger.level),
-        tosa_profile=tosa_profile,
-        initialize_variable_tensor_from_numpy=1,  # True
-        debug_mode=debug_mode,
-    )
+        debug_mode = "ALL" if logger.level <= logging.DEBUG else None
+        outputs_np, status = reference_model.run(
+            graph,
+            inputs_np,
+            verbosity=_tosa_refmodel_loglevel(logger.level),
+            initialize_variable_tensor_from_numpy=True,
+            debug_mode=debug_mode,
+        )
+    else:
+        raise ValueError(
+            f"Unknown TOSA specification: {tosa_version}. No refererence model available to run for this specification version"
+        )
 
     assert (
-        status == tosa_reference_model.GraphStatus.TOSA_VALID
+        status == reference_model.GraphStatus.TOSA_VALID
     ), "Non-valid TOSA given to reference model."
 
     transpose_data_format(outputs_np, to="NCHW")
@@ -580,15 +620,15 @@ def run_tosa_graph(
 
 
 def transpose_data_format(data: list[np.ndarray], to: Literal["NHWC", "NCHW"]):
-    match to:
-        case "NCHW":
-            dim_order = (0, 3, 1, 2)
-        case "NHWC":
-            dim_order = (0, 2, 3, 1)
-        case _:
-            raise NotImplementedError(f"Cant transpose to dim order {to}")
     for i in range(len(data)):
-        if hasattr(data[i], "shape") and len(data[i].shape) == 4:
+        if hasattr(data[i], "shape") and data[i].ndim in (4, 5):
+            match to:
+                case "NCHW":
+                    dim_order = (0, 3, 1, 2) if data[i].ndim == 4 else (0, 1, 4, 2, 3)
+                case "NHWC":
+                    dim_order = (0, 2, 3, 1) if data[i].ndim == 4 else (0, 1, 3, 4, 2)
+                case _:
+                    raise NotImplementedError(f"Cant transpose to dim order {to}")
             # Copy is needed to force actual data conversion, not setting stride.
             data[i] = np.transpose(data[i], dim_order).copy()
 

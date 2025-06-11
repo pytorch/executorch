@@ -20,7 +20,7 @@ class IndexPutVisitor(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        input_node = node.args[0]
+        input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
@@ -41,7 +41,7 @@ class IndexPutVisitor(NodeVisitor):
         indices_qnn = torch.cat(indices_unpacked).unsqueeze(0)
         indice_node = [n for n in indicies_node if isinstance(n, torch.fx.Node)]
         # TODO consider to write a pass to combine to one input tensor for indices
-        assert len(indice_node) == 1, "Not support mutilple indices tensor"
+        assert len(indice_node) == 1, "Not support multiple indices tensor"
 
         indices_tensor_wrapper = self.define_tensor(
             indice_node[0],
@@ -50,7 +50,7 @@ class IndexPutVisitor(NodeVisitor):
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
-        value_node = node.args[2]
+        value_node = self.get_node(node.args[2])
 
         value_tensor = self.get_tensor(value_node, node)
 

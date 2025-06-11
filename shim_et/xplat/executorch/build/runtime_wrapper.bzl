@@ -29,6 +29,9 @@ use TARGETS files normally. Same for xplat-only directories and BUCK files.
 load(":env_interface.bzl", "env")
 load(":selects.bzl", "selects")
 
+def is_arvr_mode():
+    return env.is_arvr_mode()
+
 def is_xplat():
     return env.is_xplat()
 
@@ -37,6 +40,9 @@ def struct_to_json(x):
 
 def get_default_executorch_platforms():
     return env.default_platforms
+
+def get_executorch_supported_platforms():
+    return env.supported_platforms
 
 def _patch_executorch_references(targets, use_static_deps = False):
     """Patches up references to "//executorch/..." in lists of build targets.
@@ -104,6 +110,11 @@ def _patch_build_mode_flags(kwargs):
         # @oss-disable: "ovr_config//build_mode:ubsan": ["-D__ET_BUILD_MODE_UBSAN=1"],
         # @oss-disable: "ovr_config//build_mode:lto-fat": ["-D__ET_BUILD_MODE_LTO=1"],
         # @oss-disable: "ovr_config//build_mode:code-coverage": ["-D__ET_BUILD_MODE_COV=1"],
+    })
+
+    kwargs["compiler_flags"] = kwargs["compiler_flags"] + select({
+            "DEFAULT": [],
+            "ovr_config//os:macos": ["-fvisibility=default"],
     })
 
     return kwargs

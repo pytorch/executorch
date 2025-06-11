@@ -10,8 +10,10 @@
 #include <executorch/backends/xnnpack/runtime/XNNHeader.h>
 #include <executorch/backends/xnnpack/serialization/schema_generated.h>
 #include <executorch/extension/threadpool/threadpool.h>
-#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/executor/pte_data_map.h>
+#include <string>
 #include <unordered_map>
+#include <vector>
 
 #pragma clang diagnostic ignored "-Wmissing-prototypes"
 #pragma clang diagnostic ignored "-Wglobal-constructors"
@@ -21,7 +23,9 @@ namespace backends {
 namespace xnnpack {
 namespace delegate {
 
+using executorch::ET_RUNTIME_NAMESPACE::NamedDataMap;
 using executorch::runtime::Error;
+using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
 
@@ -48,6 +52,7 @@ class CompileAllocator {
 using ValuePtr = const fb_xnnpack::XValue*;
 using NodePtr = const fb_xnnpack::XNode*;
 using GraphPtr = const fb_xnnpack::XNNGraph*;
+using ConstantDataOffsetPtr = const fb_xnnpack::ConstantDataOffset*;
 using DataType = fb_xnnpack::XNNDatatype;
 
 // Type for define node function. This is the function signature
@@ -116,6 +121,14 @@ xnn_datatype getDataType(const DataType& data_type) {
       return xnn_datatype::xnn_datatype_qdint8;
     case DataType::xnn_datatype_qbint4:
       return xnn_datatype::xnn_datatype_qbint4;
+    case DataType::xnn_datatype_qpint8:
+      return xnn_datatype::xnn_datatype_qpint8;
+    case DataType::xnn_datatype_int32:
+      return xnn_datatype::xnn_datatype_int32;
+    case DataType::xnn_datatype_pfp32:
+      return xnn_datatype::xnn_datatype_pfp32;
+    case DataType::xnn_datatype_bf16:
+      return xnn_datatype::xnn_datatype_bf16;
     default:
       return xnn_datatype::xnn_datatype_invalid;
   }
@@ -162,7 +175,10 @@ data associated with the tensor value, then returns nullptr.
 const uint8_t* getConstantDataPtr(
     const fb_xnnpack::XNNTensorValue* tensor_value,
     GraphPtr flatbuffer_graph,
-    const uint8_t* constant_data_ptr) {
+    const uint8_t* constant_data_ptr,
+    const NamedDataMap* named_data_map,
+    std::vector<FreeableBuffer>& freeable_buffers,
+    XNNWeightsCache* weights_cache) {
   auto buffer_idx = tensor_value->constant_buffer_idx();
   if (buffer_idx) {
     if (!constant_data_ptr) {
@@ -171,10 +187,42 @@ const uint8_t* getConstantDataPtr(
       const auto& constant_buffer = *flatbuffer_graph->constant_buffer();
       return constant_buffer[buffer_idx]->storage()->data();
     } else {
-      const auto& constant_data_offsets = *flatbuffer_graph->constant_data();
-      uint64_t constant_data_offset =
-          constant_data_offsets[buffer_idx]->offset();
-      return constant_data_ptr + constant_data_offset;
+      ConstantDataOffsetPtr constant_data_offset =
+          flatbuffer_graph->constant_data()->Get(buffer_idx);
+      uint64_t offset = constant_data_offset->offset();
+
+      bool has_named_key = flatbuffers::IsFieldPresent(
+          constant_data_offset, fb_xnnpack::ConstantDataOffset::VT_NAMED_KEY);
+      // If there is no tensor name
+      if (!has_named_key) {
+        return constant_data_ptr + offset;
+      } else {
+        const std::string& data_name = constant_data_offset->named_key()->str();
+#ifdef ENABLE_XNNPACK_WEIGHTS_CACHE
+        Result<const uint8_t*> data_ptr =
+            weights_cache->load_unpacked_data(data_name);
+        if (!data_ptr.ok()) {
+          ET_LOG(Error, "Failed to load weights from cache");
+          return nullptr;
+        }
+        return data_ptr.get();
+#else
+        Result<FreeableBuffer> buffer =
+            named_data_map->get_data(data_name.c_str());
+        if (!buffer.ok()) {
+          ET_LOG(
+              Error,
+              "Failed to get constant data for key %s from named_data_map. Error code: %u",
+              data_name.c_str(),
+              static_cast<uint32_t>(buffer.error()));
+          return nullptr;
+        }
+        const uint8_t* data_ptr =
+            static_cast<const uint8_t*>(buffer.get().data());
+        freeable_buffers.push_back(std::move(buffer.get()));
+        return data_ptr;
+#endif
+      }
     }
   }
 
@@ -194,7 +242,10 @@ Error defineTensor(
     const uint8_t* constant_data_ptr,
     std::vector<uint32_t>& input_ids,
     std::vector<uint32_t>& output_ids,
-    CompileAllocator& allocator) {
+    CompileAllocator& allocator,
+    const NamedDataMap* named_data_map,
+    std::vector<FreeableBuffer>& freeable_buffers,
+    XNNWeightsCache* weights_cache) {
   const fb_xnnpack::XNNTensorValue* tensor_value = nullptr;
   const fb_xnnpack::XNNQuantizedTensorValue* qtensor_value = nullptr;
 
@@ -231,8 +282,13 @@ Error defineTensor(
 
   // Get Pointer to constant data from flatbuffer, if its non-constant
   // it is a nullptr
-  const uint8_t* buffer_ptr =
-      getConstantDataPtr(tensor_value, flatbuffer_graph, constant_data_ptr);
+  const uint8_t* buffer_ptr = getConstantDataPtr(
+      tensor_value,
+      flatbuffer_graph,
+      constant_data_ptr,
+      named_data_map,
+      freeable_buffers,
+      weights_cache);
 
   xnn_status status;
   // The type we might have to convert to
@@ -373,11 +429,32 @@ Error defineTensor(
             qparams->channel_dim(),
             dtype,
             zero_point);
+
+        const float* scale = qparams->scale()->data();
+
+        if (qparams->scale_buffer_idx() != 0) {
+          // if scales are stored in named data, then retrieve it
+          ConstantDataOffsetPtr scale_buffer_offset =
+              flatbuffer_graph->constant_data()->Get(
+                  qparams->scale_buffer_idx());
+          const std::string& data_name =
+              scale_buffer_offset->named_key()->str();
+          Result<FreeableBuffer> scale_buffer =
+              named_data_map->get_data(data_name.c_str());
+          ET_CHECK_OR_RETURN_ERROR(
+              scale_buffer.ok(),
+              Internal,
+              "Failed to get constant data for key %s from named_data_map. Error code: %u",
+              data_name.c_str(),
+              static_cast<uint32_t>(scale_buffer.error()));
+          scale = reinterpret_cast<const float*>(scale_buffer.get().data());
+          freeable_buffers.push_back(std::move(scale_buffer.get()));
+        }
         status = xnn_define_channelwise_quantized_tensor_value_v2(
             /*subgraph=*/subgraph_ptr,
             /*datatype=*/dtype,
             /*zero_point=*/zero_point,
-            /*scale=*/qparams->scale()->data(),
+            /*scale=*/scale,
             /*num_dims=*/tensor_value->num_dims(),
             /*channel_dim*/ qparams->channel_dim(),
             /*dims=*/dims_data.data(),
@@ -404,10 +481,24 @@ Error defineTensor(
 
         // Block scales are preferably serialized as bf16 but can also be
         // serialized as fp32 for backwards compatability.
-        if (qparams->scale_bf16() != nullptr) {
+        if (qparams->scale_buffer_idx() != 0) {
+          ConstantDataOffsetPtr scale_buffer_offset =
+              flatbuffer_graph->constant_data()->Get(
+                  qparams->scale_buffer_idx());
+          const std::string& data_name =
+              scale_buffer_offset->named_key()->str();
+          Result<FreeableBuffer> scale_buffer =
+              named_data_map->get_data(data_name.c_str());
+          ET_CHECK_OR_RETURN_ERROR(
+              scale_buffer.ok(),
+              Internal,
+              "Failed to get constant data for key %s from named_data_map. Error code: %u",
+              data_name.c_str(),
+              static_cast<uint32_t>(scale_buffer.error()));
           scale_data =
-              static_cast<const uint16_t*>(qparams->scale_bf16()->data());
-          scale_numel = qparams->scale_bf16()->size();
+              reinterpret_cast<const uint16_t*>(scale_buffer.get().data());
+          freeable_buffers.push_back(std::move(scale_buffer.get()));
+          scale_numel = qparams->num_scales();
         } else {
           // Read fp32 scales, convert to bf16.
           auto conv_buffer = static_cast<uint16_t*>(allocator.allocateTemporary(
@@ -465,11 +556,6 @@ Error defineTensor(
             buffer_ptr == nullptr,
             Internal,
             "Dynamically quantized tensor should not have constant data but found non-nullptr");
-        // TODO(T179441835): Dynamic Quantization with num_nonbatch_dims > 1
-        ET_CHECK_OR_RETURN_ERROR(
-            qparams->num_nonbatch_dims() == 1,
-            Internal,
-            "Dynamically Quantized Tensors currently only support per token quantization");
         status = xnn_define_dynamically_quantized_tensor_value(
             /*subgraph=*/subgraph_ptr,
             /*datatype=*/getDataType(tensor_value->datatype()),
@@ -1125,7 +1211,7 @@ Error defineStaticTransposeNode(
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
       Internal,
-      "Failed to create sigmoid node %i with code: %s",
+      "Failed to create static transpose node %i with code: %s",
       node->debug_handle(),
       xnn_status_to_string(status));
 
@@ -1369,6 +1455,96 @@ Error defineReciprocalSquareRootNode(
       status == xnn_status_success,
       Internal,
       "Failed to create reciprocal square root node %i with code: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+
+  return Error::Ok;
+}
+
+/*
+Define serialized log node into the subgraph, using the remapped ids
+to map the serialized ids, to the new ids generated when defining the
+tensor value
+*/
+Error defineLogNode(
+    xnn_subgraph_t subgraph_ptr,
+    const std::unordered_map<uint32_t, uint32_t>& remapped_ids,
+    const NodePtr node,
+    const fb_xnnpack::XNNGraph* graph) noexcept {
+  MAYBE_UNUSED(graph);
+
+  auto graph_node = node->xnode_union_as_XNNLog();
+
+  xnn_status status = xnn_define_log(
+      subgraph_ptr,
+      remapped_ids.at(graph_node->input_id()),
+      remapped_ids.at(graph_node->output_id()),
+      graph_node->flags());
+
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to create log node %i with code: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+
+  return Error::Ok;
+}
+
+/*
+Define serialized gelu node into the subgraph, using the remapped ids
+to map the serialized ids, to the new ids generated when defining the
+tensor value
+*/
+Error defineGeluNode(
+    xnn_subgraph_t subgraph_ptr,
+    const std::unordered_map<uint32_t, uint32_t>& remapped_ids,
+    const NodePtr node,
+    const fb_xnnpack::XNNGraph* graph) noexcept {
+  MAYBE_UNUSED(graph);
+
+  auto graph_node = node->xnode_union_as_XNNGelu();
+
+  xnn_status status = xnn_define_gelu(
+      subgraph_ptr,
+      remapped_ids.at(graph_node->input_id()),
+      remapped_ids.at(graph_node->output_id()),
+      graph_node->flags());
+
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to create gelu node %i with code: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+
+  return Error::Ok;
+}
+
+/*
+Define serialized tanh node into the subgraph, using the remapped ids
+to map the serialized ids, to the new ids generated when defining the
+tensor value
+*/
+Error defineTanhNode(
+    xnn_subgraph_t subgraph_ptr,
+    const std::unordered_map<uint32_t, uint32_t>& remapped_ids,
+    const NodePtr node,
+    const fb_xnnpack::XNNGraph* graph) noexcept {
+  MAYBE_UNUSED(graph);
+
+  auto graph_node = node->xnode_union_as_XNNTanh();
+
+  xnn_status status = xnn_define_tanh(
+      subgraph_ptr,
+      remapped_ids.at(graph_node->input_id()),
+      remapped_ids.at(graph_node->output_id()),
+      graph_node->flags());
+
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to create tanh node %i with code: %s",
       node->debug_handle(),
       xnn_status_to_string(status));
 
@@ -1936,8 +2112,11 @@ DefineNodeFunc getDefineNodeFunc(fb_xnnpack::XNodeUnion nodeType) {
     _DEFINE(SquareRoot)
     _DEFINE(ReciprocalSquareRoot)
     _DEFINE(Ceiling)
+    _DEFINE(Gelu)
     _DEFINE(Hardswish)
     _DEFINE(LeakyReLU)
+    _DEFINE(Log)
+    _DEFINE(Tanh)
     _DEFINE(Maximum)
     _DEFINE(Negate)
     _DEFINE(Square)
@@ -1967,8 +2146,9 @@ ET_NODISCARD Error XNNCompiler::compileModel(
     const void* buffer_pointer,
     size_t num_bytes,
     XNNExecutor* executor,
-    MemoryAllocator* runtime_allocator,
-    xnn_workspace_t workspace) {
+    XNNWeightsCache* weights_cache,
+    xnn_workspace_t workspace,
+    const NamedDataMap* named_data_map) {
   Result<XNNHeader> header = XNNHeader::Parse(buffer_pointer, num_bytes);
   const uint8_t* flatbuffer_data = nullptr;
   const uint8_t* constant_data = nullptr;
@@ -2032,6 +2212,10 @@ ET_NODISCARD Error XNNCompiler::compileModel(
   // Invalid ids do not need to be remapped
   remapped_ids.emplace(XNN_INVALID_VALUE_ID, XNN_INVALID_VALUE_ID);
 
+  // If weight cache is not on we hold onto all the unpacked buffers
+  // and we free them at the end
+  std::vector<FreeableBuffer> unpacked_buffers;
+
   // External Ids for inputs and outputs
   std::vector<uint32_t> input_ids;
   std::vector<uint32_t> output_ids;
@@ -2045,7 +2229,10 @@ ET_NODISCARD Error XNNCompiler::compileModel(
         constant_data,
         input_ids,
         output_ids,
-        compile_allocator);
+        compile_allocator,
+        named_data_map,
+        unpacked_buffers,
+        weights_cache);
 
     if (err != Error::Ok) {
       return err;
@@ -2067,12 +2254,26 @@ ET_NODISCARD Error XNNCompiler::compileModel(
 
   xnn_runtime_t runtime_ptr = nullptr;
 
+  // XNNWeightsCache if weights cache is not enabled, then XNNWeightsCache
+  // just manages the unpacked weights until the runtime is created.
+#ifdef ENABLE_XNNPACK_WEIGHTS_CACHE
+  ET_CHECK_OR_RETURN_ERROR(
+      unpacked_buffers.size() == 0,
+      Internal,
+      "Weight Cache is enabled, which means unpacked buffers should be owned by the cache");
+  xnn_weights_cache_t weights_cache_ptr =
+      weights_cache->get_num_unpacked_data() > 0 ? weights_cache->get()
+                                                 : nullptr;
+#else
+  xnn_weights_cache_t weights_cache_ptr = nullptr;
+#endif
+
 #ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
   ET_CHECK_OR_RETURN_ERROR(
       workspace != nullptr, Internal, "Failed to initialize XNNPACK workspace");
   status = xnn_create_runtime_v4(
       subgraph.get(),
-      /*weight_cache=*/nullptr, // TODO - support weight cache
+      weights_cache_ptr,
       workspace,
       ::executorch::extension::threadpool::get_pthreadpool(),
       runtime_flags,
@@ -2080,7 +2281,7 @@ ET_NODISCARD Error XNNCompiler::compileModel(
 #else
   status = xnn_create_runtime_v3(
       subgraph.get(),
-      /*weight_cache=*/nullptr, // TODO - support weight cache
+      weights_cache_ptr,
       ::executorch::extension::threadpool::get_pthreadpool(),
       runtime_flags,
       &runtime_ptr);
@@ -2092,10 +2293,25 @@ ET_NODISCARD Error XNNCompiler::compileModel(
       "XNN Runtime creation failed with code: %s",
       xnn_status_to_string(status));
 
+#ifdef ENABLE_XNNPACK_WEIGHTS_CACHE
+  auto packed_weights_names = weights_cache->finalize_for_runtime();
+  ET_CHECK_OR_RETURN_ERROR(
+      packed_weights_names.ok(),
+      Internal,
+      "Failed to finalize weights cache after creating the xnn runtime")
+#else
+  for (auto& buffer : unpacked_buffers) {
+    buffer.Free();
+  }
+  Result<std::vector<std::string>> packed_weights_names =
+      std::vector<std::string>();
+#endif
+
   err = executor->initialize( // NOLINT: runtime_ptr is non-null
       runtime_ptr,
       std::move(input_ids),
-      std::move(output_ids));
+      std::move(output_ids),
+      std::move(packed_weights_names.get()));
 
   return err;
 };

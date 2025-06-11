@@ -23,12 +23,8 @@ endif()
 
 set(_common_compile_options -Wno-deprecated-declarations)
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/scripts/build/Codegen.cmake)
-
-if(NOT PYTHON_EXECUTABLE)
-  resolve_python_executable()
-endif()
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 # Portable kernel sources TODO(larryliu0820): use buck2 to gather the sources
 file(GLOB_RECURSE _portable_kernels__srcs
@@ -52,7 +48,7 @@ message("Generated files ${gen_command_sources}")
 # Focused on portability and understandability rather than speed.
 #
 add_library(portable_kernels ${_portable_kernels__srcs})
-target_link_libraries(portable_kernels PRIVATE executorch)
+target_link_libraries(portable_kernels PRIVATE executorch_core kernels_util_all_deps)
 target_compile_options(portable_kernels PUBLIC ${_common_compile_options})
 
 # Build a library for _portable_kernels__srcs
@@ -60,19 +56,19 @@ target_compile_options(portable_kernels PUBLIC ${_common_compile_options})
 # portable_ops_lib: Register portable_ops_lib ops kernels into Executorch
 # runtime
 gen_operators_lib(
-  LIB_NAME "portable_ops_lib" KERNEL_LIBS portable_kernels DEPS executorch
+  LIB_NAME "portable_ops_lib" KERNEL_LIBS portable_kernels DEPS executorch_core
 )
 
 # Portable kernels support optional parallelization (and, in the
 # future, perhaps other performance features). If support is present,
 # produce an optimized version.
-set(BUILD_OPTIMIZED_PORTABLE_KERNELS EXECUTORCH_BUILD_PTHREADPOOL)
-
-if(BUILD_OPTIMIZED_PORTABLE_KERNELS)
+if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   add_library(optimized_portable_kernels ${_portable_kernels__srcs})
-  target_link_libraries(optimized_portable_kernels PRIVATE executorch)
+  target_link_libraries(optimized_portable_kernels PRIVATE executorch_core)
   target_link_libraries(optimized_portable_kernels PUBLIC extension_threadpool)
   target_compile_options(optimized_portable_kernels PUBLIC ${_common_compile_options})
+  target_include_directories(optimized_portable_kernels PRIVATE ${TORCH_INCLUDE_DIRS})
+  target_compile_definitions(optimized_portable_kernels PRIVATE ET_USE_PYTORCH_HEADERS)
   install(
     TARGETS optimized_portable_kernels
     DESTINATION lib

@@ -52,18 +52,16 @@ def define_common_targets():
         srcs = [
             "unary_ufunc_realhb_to_bool.cpp",
             "unary_ufunc_realhbbf16_to_floathbf16.cpp",
-            "unary_ufunc_realh.cpp",
-        ],
-        exported_deps = [
-            "//executorch/runtime/kernel:kernel_includes",
+            "unary_ufunc_realhbf16.cpp",
         ],
         exported_headers = [
             "pattern.h",
         ],
         compiler_flags = ["-Wno-missing-prototypes"],
-        deps = [
+        exported_deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/runtime/kernel:kernel_includes",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
     )

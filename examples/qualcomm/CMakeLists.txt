@@ -15,15 +15,15 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/scripts/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
 endif()
 
 if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Debug)
+  set(CMAKE_BUILD_TYPE RelWithDebInfo)
 endif()
 
 # Find prebuilt libraries. executorch package should contain portable_ops_lib,
@@ -35,7 +35,7 @@ find_package(gflags REQUIRED)
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 # Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+set(_common_include_directories ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/json/single_include)
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
@@ -67,6 +67,9 @@ target_include_directories(
   PUBLIC
     ${_common_include_directories}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/json/single_include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/llama.cpp-unicode/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/llama.cpp-unicode/src
 )
 
 # find RE2 for tokenizer
@@ -89,6 +92,9 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/executor_runner)
 
 # build qnn_llama_runner for llama
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/oss_scripts/llama)
+
+# build qnn_mimi_decoder_runner
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/oss_scripts/moshi)
 
 # build qaihub_llama2_7b_runner and qaihub_llama3_8b_runner
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/qaihub_scripts/llama)

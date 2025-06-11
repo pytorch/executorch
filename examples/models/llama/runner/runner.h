@@ -19,55 +19,20 @@
 #include <unordered_map>
 
 #include <executorch/extension/llm/runner/irunner.h>
-#include <executorch/extension/llm/runner/stats.h>
-#include <executorch/extension/llm/runner/text_decoder_runner.h>
-#include <executorch/extension/llm/runner/text_prefiller.h>
-#include <executorch/extension/llm/runner/text_token_generator.h>
-#include <executorch/extension/llm/tokenizer/tokenizer.h>
-#include <executorch/extension/module/module.h>
+#include <executorch/extension/llm/runner/text_llm_runner.h>
+#include <pytorch/tokenizers/tokenizer.h>
 
 namespace example {
 
-class ET_EXPERIMENTAL Runner : public executorch::extension::llm::IRunner {
- public:
-  explicit Runner(
-      const std::string& model_path,
-      const std::string& tokenizer_path,
-      const float temperature = 0.8f,
-      std::optional<const std::string> data_path = std::nullopt);
+namespace llm = ::executorch::extension::llm;
 
-  bool is_loaded() const;
-  ::executorch::runtime::Error load();
-  ::executorch::runtime::Error generate(
-      const std::string& prompt,
-      int32_t seq_len = 128,
-      std::function<void(const std::string&)> token_callback = {},
-      std::function<void(const ::executorch::extension::llm::Stats&)>
-          stats_callback = {},
-      bool echo = true,
-      bool warming = false);
-  ::executorch::runtime::Error warmup(
-      const std::string& prompt,
-      int32_t seq_len = 128);
-  void stop();
+std::unique_ptr<llm::TextLLMRunner> create_llama_runner(
+    const std::string& model_path,
+    const std::string& tokenizer_path,
+    std::optional<const std::string> data_path = std::nullopt,
+    float temperature = -1.0f);
 
- private:
-  float temperature_;
-  bool shouldStop_{false};
-
-  // model
-  std::unique_ptr<::executorch::extension::Module> module_;
-  std::string tokenizer_path_;
-  std::unique_ptr<::executorch::extension::llm::Tokenizer> tokenizer_;
-  std::unordered_map<std::string, int64_t> metadata_;
-  std::unique_ptr<::executorch::extension::llm::TextDecoderRunner>
-      text_decoder_runner_;
-  std::unique_ptr<::executorch::extension::llm::TextPrefiller> text_prefiller_;
-  std::unique_ptr<::executorch::extension::llm::TextTokenGenerator>
-      text_token_generator_;
-
-  // stats
-  ::executorch::extension::llm::Stats stats_;
-};
+std::unique_ptr<tokenizers::Tokenizer> load_llama_tokenizer(
+    const std::string& tokenizer_path);
 
 } // namespace example

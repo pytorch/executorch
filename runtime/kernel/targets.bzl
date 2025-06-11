@@ -7,9 +7,9 @@ def _operator_registry_preprocessor_flags():
     elif not runtime.is_oss:
         return select({
             "DEFAULT": [],
-            "fbsource//xplat/executorch/build/constraints:executorch-max-kernel-num-256": ["-DMAX_KERNEL_NUM=256"],
-            "fbsource//xplat/executorch/build/constraints:executorch-max-kernel-num-128": ["-DMAX_KERNEL_NUM=128"],
-            "fbsource//xplat/executorch/build/constraints:executorch-max-kernel-num-64": ["-DMAX_KERNEL_NUM=64"],
+            "fbsource//xplat/executorch/tools/buck/constraints:executorch-max-kernel-num-256": ["-DMAX_KERNEL_NUM=256"],
+            "fbsource//xplat/executorch/tools/buck/constraints:executorch-max-kernel-num-128": ["-DMAX_KERNEL_NUM=128"],
+            "fbsource//xplat/executorch/tools/buck/constraints:executorch-max-kernel-num-64": ["-DMAX_KERNEL_NUM=64"],
         })
     else:
         return []
@@ -20,21 +20,6 @@ def define_common_targets():
     The directory containing this targets.bzl file should also contain both
     TARGETS and BUCK files that call this function.
     """
-
-    runtime.cxx_library(
-        name = "operator_registry",
-        srcs = ["operator_registry.cpp"],
-        exported_headers = ["operator_registry.h"],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        exported_deps = [
-            "//executorch/runtime/core:core",
-            "//executorch/runtime/core:evalue",
-        ],
-        preprocessor_flags = _operator_registry_preprocessor_flags(),
-    )
 
     runtime.cxx_library(
         name = "operator_registry_MAX_NUM_KERNELS_TEST_ONLY",
@@ -59,14 +44,29 @@ def define_common_targets():
             "//executorch/runtime/core/portable_type/c10/c10:c10",
             "//executorch/runtime/platform:platform",
         ],
+        # Don't depend on this target, depend on //executorch/extension/threadpool:threadpool.
         visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
+            "//executorch/extension/threadpool/...",
         ],
     )
 
     for aten_mode in get_aten_mode_options():
         aten_suffix = "_aten" if aten_mode else ""
+
+        runtime.cxx_library(
+            name = "operator_registry" + aten_suffix,
+            srcs = ["operator_registry.cpp"],
+            exported_headers = ["operator_registry.h"],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_deps = [
+                "//executorch/runtime/core:core",
+                "//executorch/runtime/core:evalue" + aten_suffix,
+            ],
+            preprocessor_flags = _operator_registry_preprocessor_flags(),
+        )
 
         runtime.cxx_library(
             name = "kernel_runtime_context" + aten_suffix,

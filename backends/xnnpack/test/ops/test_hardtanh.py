@@ -11,6 +11,9 @@ from executorch.backends.xnnpack.test.tester import Tester
 
 
 class TestHardTanh(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     class HardTanh(torch.nn.Module):
         def __init__(self, min_val=-1.0, max_val=1.0):
             super().__init__()

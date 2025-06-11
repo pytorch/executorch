@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -15,6 +15,9 @@ from collections import Counter, OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
 
 import torch
+from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
+    DuplicateDynamicQuantChainPass,
+)
 from executorch.backends.xnnpack._passes import XNNPACKPassManager
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
@@ -28,6 +31,7 @@ from executorch.exir import (
 )
 from executorch.exir.backend.backend_api import validation_disabled
 from executorch.exir.backend.partitioner import Partitioner
+from executorch.exir.dim_order_utils import get_memory_format
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 
 from executorch.exir.print_program import pretty_print, print_program
@@ -52,11 +56,15 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
 )
 from executorch.exir.program._program import _transform
 from torch._export.pass_base import PassType
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torch.ao.quantization.quantizer.quantizer import Quantizer
 from torch.export import export, ExportedProgram
 from torch.testing import FileCheck
 from torch.utils._pytree import tree_flatten
+from torchao.quantization.pt2e.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
+)
+from torchao.quantization.pt2e.quantizer import Quantizer
 
 
 class Stage(ABC):
@@ -147,10 +155,11 @@ class Quantize(Stage):
         quantization_config: Optional[QuantizationConfig] = None,
         calibrate: bool = True,
         calibration_samples: Optional[Sequence[Any]] = None,
+        is_qat: Optional[bool] = False,
     ):
         self.quantizer = quantizer or XNNPACKQuantizer()
         self.quantization_config = (
-            quantization_config or get_symmetric_quantization_config()
+            quantization_config or get_symmetric_quantization_config(is_qat=is_qat)
         )
         self.calibrate = calibrate
         self.calibration_samples = calibration_samples
@@ -158,15 +167,22 @@ class Quantize(Stage):
         self.quantizer.set_global(self.quantization_config)
 
         self.converted_graph = None
+        self.is_qat = is_qat
 
     def run(
         self, artifact: torch.nn.Module, inputs: Optional[Tuple[torch.Tensor]]
     ) -> None:
         assert inputs is not None
-        captured_graph = export_for_training(artifact, inputs).module()
+        if self.is_qat:
+            artifact.train()
+        captured_graph = export_for_training(artifact, inputs, strict=True).module()
 
         assert isinstance(captured_graph, torch.fx.GraphModule)
-        prepared = prepare_pt2e(captured_graph, self.quantizer)
+
+        if self.is_qat:
+            prepared = prepare_qat_pt2e(captured_graph, self.quantizer)
+        else:
+            prepared = prepare_pt2e(captured_graph, self.quantizer)
 
         if self.calibrate:
             # Calibrate prepared model to provide data to quantization observers.
@@ -177,6 +193,8 @@ class Quantize(Stage):
                 prepared(*inputs)
 
         converted = convert_pt2e(prepared)
+        DuplicateDynamicQuantChainPass()(converted)
+
         self.converted_graph = converted
 
     @property
@@ -306,9 +324,8 @@ class ToEdgeTransformAndLower(Stage):
         self.edge_dialect_program = None
 
     def run(self, artifact: ExportedProgram, inputs=None) -> None:
-        artifact_to_run = copy.deepcopy(artifact)
         self.edge_dialect_program = to_edge_transform_and_lower(
-            artifact_to_run,
+            artifact,
             compile_config=self.edge_compile_conf,
             partitioner=self.partitioners,
         )
@@ -517,10 +534,13 @@ class Tester:
         # create random tensor inputs with the shapes given above:
         random_inputs = []
         for arg_idx in range(len(self.example_inputs)):
+            memFormat = get_memory_format(
+                list(self.example_inputs[arg_idx].dim_order())
+            )
             random_inputs.append(
-                torch.randn(input_shapes[arg_idx]).to(
-                    dtype=self.example_inputs[arg_idx].dtype
-                )
+                torch.randn(input_shapes[arg_idx])
+                .to(dtype=self.example_inputs[arg_idx].dtype)
+                .to(memory_format=memFormat)
             )
 
         yield tuple(random_inputs)
@@ -698,23 +718,30 @@ class Tester:
             assert (
                 ref.shape == model.shape
             ), f"Output {i} shape {model.shape} does not match reference output shape {ref.shape}"
-            assert torch.allclose(
-                model,
-                ref,
-                atol=atol,
-                rtol=rtol,
-            ), (
-                f"Output {i} does not match reference output.\n"
-                f"\tGiven atol: {atol}, rtol: {rtol}.\n"
-                f"\tOutput tensor shape: {model.shape}, dtype: {model.dtype}\n"
-                f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}, mean abs error: {torch.mean(torch.abs(model-ref))}.\n"
-                f"\t-- Model vs. Reference --\n"
-                f"\t Numel: {model.numel()}, {ref.numel()}\n"
-                f"\tMedian: {model.median()}, {ref.median()}\n"
-                f"\t  Mean: {model.mean()}, {ref.mean()}\n"
-                f"\t   Max: {model.max()}, {ref.max()}\n"
-                f"\t   Min: {model.min()}, {ref.min()}\n"
-            )
+            if model.dtype == torch.bool:
+                assert torch.equal(model, ref), (
+                    f"Output {i} (bool tensor) does not match reference output.\n"
+                    f"\tShape: {model.shape}\n"
+                    f"\tMismatched count: {(model != ref).sum().item()} / {model.numel()}\n"
+                )
+            else:
+                assert torch.allclose(
+                    model,
+                    ref,
+                    atol=atol,
+                    rtol=rtol,
+                ), (
+                    f"Output {i} does not match reference output.\n"
+                    f"\tGiven atol: {atol}, rtol: {rtol}.\n"
+                    f"\tOutput tensor shape: {model.shape}, dtype: {model.dtype}\n"
+                    f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}, mean abs error: {torch.mean(torch.abs(model-ref))}.\n"
+                    f"\t-- Model vs. Reference --\n"
+                    f"\t Numel: {model.numel()}, {ref.numel()}\n"
+                    f"\tMedian: {model.median()}, {ref.median()}\n"
+                    f"\t  Mean: {model.mean()}, {ref.mean()}\n"
+                    f"\t   Max: {model.max()}, {ref.max()}\n"
+                    f"\t   Min: {model.min()}, {ref.min()}\n"
+                )
 
     @staticmethod
     def _compare_outputs(

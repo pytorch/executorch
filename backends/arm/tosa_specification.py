@@ -11,6 +11,7 @@
 # JIT compiler flows.
 #
 
+import contextvars
 import re
 from typing import List
 
@@ -36,6 +37,7 @@ class TosaSpecification:
     """
 
     version: Version
+    is_U55_subset: bool
 
     def support_integer(self) -> bool:
         """
@@ -49,8 +51,12 @@ class TosaSpecification:
         """
         raise NotImplementedError
 
-    def __init__(self, version: Version):
+    def __init__(self, version: Version, extras: List[str]):
         self.version = version
+
+        self.is_U55_subset = "u55" in extras
+        if self.is_U55_subset:
+            extras.remove("u55")
 
     @staticmethod
     def create_from_string(repr: str) -> "TosaSpecification":
@@ -85,11 +91,10 @@ class TosaSpecification:
 class Tosa_0_80(TosaSpecification):
     profile: str
     level_8k: bool
-    is_U55_subset: bool
     available_profiles = ["BI", "MI"]  # MT is not defined
 
     def __init__(self, version: Version, extras: List[str]):
-        super().__init__(version)
+        super().__init__(version, extras)
         assert version >= Version("0.80") and version < Version("0.90")
 
         # Check that we only have one profile in the extensions list
@@ -105,9 +110,6 @@ class Tosa_0_80(TosaSpecification):
         self.level_8k = "8k" in extras
         if self.level_8k:
             extras.remove("8k")
-        self.is_U55_subset = "u55" in extras
-        if self.is_U55_subset:
-            extras.remove("u55")
 
         if len(extras) > 0:
             raise ValueError(f"Unhandled extras found: {extras}")
@@ -142,12 +144,12 @@ class Tosa_1_00(TosaSpecification):
 
     available_profiles = ["INT", "FP"]
     valid_extensions = {
-        "INT": ["int16", "int4", "var", "cf"],
+        "INT": ["int16", "int4", "var", "cf", "u55"],
         "FP": ["bf16", "fp8e4m3", "fp8e5m2", "fft", "var", "cf"],
     }
 
     def __init__(self, version: Version, extras: List[str]):
-        super().__init__(version)
+        super().__init__(version, extras)
 
         # Check that we have at least one profile in the extensions list
         if [e in Tosa_1_00.available_profiles for e in extras].count(True) == 0:
@@ -194,6 +196,8 @@ class Tosa_1_00(TosaSpecification):
         extensions = self._get_extensions_string()
         if self.level_8k:
             extensions += "+8k"
+        if self.is_U55_subset:
+            extensions += "+u55"
         return f"TOSA-{self.version}{self._get_profiles_string()}{extensions}"
 
     def __hash__(self) -> int:
@@ -211,3 +215,34 @@ class Tosa_1_00(TosaSpecification):
 
     def support_float(self):
         return "FP" in self.profiles
+
+
+class TosaLoweringContext:
+    """
+    A context manager to handle the TOSA specific aspects of the lowering process.
+    For now it only handles the TOSA specification context, but it can be extended
+    to include other policies or configurations.
+    """
+
+    # Define a context variable for the spec
+    tosa_spec_var: contextvars.ContextVar = contextvars.ContextVar("tosa_spec")
+
+    def __init__(self, spec: TosaSpecification):
+        self.spec = spec
+
+    def __enter__(self):
+        # Set the spec in the context variable and store the token for later reset
+        self.token = TosaLoweringContext.tosa_spec_var.set(self.spec)
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        # Reset the context variable to its previous state
+        TosaLoweringContext.tosa_spec_var.reset(self.token)
+
+
+# A helper function to retrieve the current spec anywhere in your code
+def get_context_spec() -> TosaSpecification:
+    try:
+        return TosaLoweringContext.tosa_spec_var.get()
+    except LookupError:
+        raise RuntimeError("Function must be executed within a TosaLoweringContext")

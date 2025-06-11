@@ -4,6 +4,7 @@
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
+ * @lint-ignore-every CLANGTIDY facebook-hte-Deprecated
  */
 
 #include <gflags/gflags.h>
@@ -19,6 +20,8 @@ DEFINE_string(
     model_path,
     "llama2.pte",
     "Model serialized in flatbuffer format.");
+
+DEFINE_string(data_path, "", "Data file for the model.");
 
 DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
 
@@ -49,11 +52,16 @@ int32_t main(int32_t argc, char** argv) {
   // and users can create their own DataLoaders to load from arbitrary sources.
   const char* model_path = FLAGS_model_path.c_str();
 
+  std::optional<std::string> data_path = std::nullopt;
+  if (!FLAGS_data_path.empty()) {
+    data_path = FLAGS_data_path.c_str();
+  }
+
   const char* tokenizer_path = FLAGS_tokenizer_path.c_str();
 
   const char* prompt = FLAGS_prompt.c_str();
 
-  double temperature = FLAGS_temperature;
+  float temperature = FLAGS_temperature;
 
   int32_t seq_len = FLAGS_seq_len;
 
@@ -73,13 +81,21 @@ int32_t main(int32_t argc, char** argv) {
   }
 #endif
   // create llama runner
-  example::Runner runner(model_path, tokenizer_path, temperature);
+  std::unique_ptr<::executorch::extension::llm::TextLLMRunner> runner =
+      example::create_llama_runner(model_path, tokenizer_path, data_path);
+
+  if (runner == nullptr) {
+    ET_LOG(Error, "Failed to create llama runner");
+    return 1;
+  }
 
   if (warmup) {
-    runner.warmup(prompt, seq_len);
+    runner->warmup(prompt, /*max_new_tokens=*/seq_len);
   }
   // generate
-  runner.generate(prompt, seq_len);
+  executorch::extension::llm::GenerationConfig config{
+      .seq_len = seq_len, .temperature = temperature};
+  runner->generate(prompt, config);
 
   return 0;
 }

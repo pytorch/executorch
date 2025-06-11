@@ -16,11 +16,10 @@
 #include <executorch/schema/program_generated.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 namespace deserialization {
 
 using executorch::aten::ScalarType;
-using executorch::runtime::TensorLayout;
 // Provides access to private Program methods.
 class TensorParser final {
  public:
@@ -56,7 +55,7 @@ ET_NODISCARD Result<void*> getMemPlannedPtr(
   const uint32_t memory_offset_high = allocation_info->memory_offset_high();
 
   size_t memory_offset = memory_offset_low;
-  if (memory_offset_high > 0) {
+  if ((sizeof(size_t) > sizeof(uint32_t)) && (memory_offset_high > 0)) {
     // The compiler should remove this always-true check on 64-bit systems.
     ET_CHECK_OR_RETURN_ERROR(
         sizeof(size_t) >= sizeof(uint64_t),
@@ -64,8 +63,7 @@ ET_NODISCARD Result<void*> getMemPlannedPtr(
         "size_t cannot hold memory offset 0x%08" PRIx32 ".%08" PRIx32,
         memory_offset_high,
         memory_offset_low);
-    memory_offset |= static_cast<size_t>(memory_offset_high)
-        << (sizeof(size_t) - sizeof(uint32_t));
+    memory_offset |= static_cast<size_t>(memory_offset_high) << 32;
   }
   return allocator->get_offset_address(memory_id, memory_offset, nbytes);
 }
@@ -197,7 +195,7 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
       // Mutable value.
       // Look up tensor in named data map.
       Result<const TensorLayout> tensor_layout_res =
-          named_data_map->get_metadata(fqn);
+          named_data_map->get_tensor_layout(fqn);
       if (!tensor_layout_res.ok()) {
         return tensor_layout_res.error();
       }
@@ -257,5 +255,5 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
 }
 
 } // namespace deserialization
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch

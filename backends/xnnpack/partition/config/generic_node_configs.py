@@ -343,6 +343,13 @@ class FloorConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32]
 
 
+class GeluConfig(GenericNodePartitionerConfig):
+    target_name = "gelu.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
 class HardswishConfig(GenericNodePartitionerConfig):
     target_name = "hardswish.default"
 
@@ -352,6 +359,20 @@ class HardswishConfig(GenericNodePartitionerConfig):
 
 class LeakyReLUConfig(GenericNodePartitionerConfig):
     target_name = "leaky_relu.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
+class LogConfig(GenericNodePartitionerConfig):
+    target_name = "log.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
+class TanhConfig(GenericNodePartitionerConfig):
+    target_name = "tanh.default"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]

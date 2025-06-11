@@ -76,6 +76,12 @@ def parse_args() -> argparse.ArgumentParser:
     parser.add_argument("--use_partitioner", action=argparse.BooleanOptionalAction)
     parser.add_argument("--generate_etrecord", action=argparse.BooleanOptionalAction)
     parser.add_argument("--save_processed_bytes", action=argparse.BooleanOptionalAction)
+    parser.add_argument(
+        "--dynamic_shapes",
+        action=argparse.BooleanOptionalAction,
+        required=False,
+        default=False,
+    )
 
     args = parser.parse_args()
     # pyre-fixme[7]: Expected `ArgumentParser` but got `Namespace`.
@@ -164,16 +170,20 @@ def main():
             f"Valid compute units are {valid_compute_units}."
         )
 
-    model, example_inputs, _, _ = EagerModelFactory.create_model(
+    model, example_inputs, _, dynamic_shapes = EagerModelFactory.create_model(
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
+    if not args.dynamic_shapes:
+        dynamic_shapes = None
 
     compile_specs = generate_compile_specs_from_args(args)
     lowered_module = None
 
     if args.use_partitioner:
         model.eval()
-        exir_program_aten = torch.export.export(model, example_inputs, strict=True)
+        exir_program_aten = torch.export.export(
+            model, example_inputs, dynamic_shapes=dynamic_shapes, strict=True
+        )
 
         edge_program_manager = exir.to_edge(exir_program_aten)
         edge_copy = copy.deepcopy(edge_program_manager)

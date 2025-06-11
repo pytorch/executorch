@@ -19,22 +19,22 @@ export TMP_DIR=$(mktemp -d)
 export PATH="${TMP_DIR}:$PATH"
 trap 'rm -rfv ${TMP_DIR}' EXIT
 
-if [[ "$BUILD_TOOL" == "cmake" ]]; then
-    # Setup MacOS dependencies as there is no Docker support on MacOS atm
-    PYTHON_EXECUTABLE=python \
-    EXECUTORCH_BUILD_PYBIND=ON \
-    CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
-    ${CONDA_RUN} --no-capture-output \
-    .ci/scripts/setup-macos.sh "$@"
+# Setup MacOS dependencies as there is no Docker support on MacOS atm
+# We need the runner to test the built library.
+PYTHON_EXECUTABLE=python \
+CMAKE_ARGS="-DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON -DEXECUTORCH_BUILD_TESTS=ON" \
+${CONDA_RUN} --no-capture-output \
+.ci/scripts/setup-macos.sh "$@"
 
+if [[ "$BUILD_TOOL" == "cmake" ]]; then
     # Install llama3_2_vision dependencies.
     PYTHON_EXECUTABLE=python \
     ${CONDA_RUN} --no-capture-output \
-    ./examples/models/llama3_2_vision/install_requirements.sh
 
     .ci/scripts/unittest-macos-cmake.sh
 elif [[ "$BUILD_TOOL" == "buck2" ]]; then
     .ci/scripts/unittest-buck2.sh
+    # .ci/scripts/unittest-macos-buck2.sh
 else
     echo "Unknown build tool $BUILD_TOOL"
     exit 1

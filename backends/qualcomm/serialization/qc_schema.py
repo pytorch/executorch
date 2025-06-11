@@ -8,8 +8,9 @@
 Please refer to executorch/backends/qualcomm/serialization/schema.fbs for the schema definitions
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum, unique
+from typing import List
 
 
 @dataclass
@@ -53,7 +54,7 @@ class QcomChipset(IntEnum):
 @dataclass
 class SocInfo:
     soc_model: QcomChipset = QcomChipset.UNKNOWN_SM
-    htp_info: HtpInfo = HtpInfo()
+    htp_info: HtpInfo = field(default_factory=HtpInfo)
 
 
 _soc_info_table = {
@@ -148,7 +149,7 @@ class QnnExecuTorchBackendOptions:
 class QnnExecuTorchOptions:
     soc_info: SocInfo
     backend_options: QnnExecuTorchBackendOptions
-    graph_name: str = ""
+    graph_name: List[str] = field(default_factory=lambda: ["forward"])
     library_path: str = ""
     log_level: QnnExecuTorchLogLevel = QnnExecuTorchLogLevel.kLogOff
     online_prepare: bool = False
@@ -156,4 +157,5 @@ class QnnExecuTorchOptions:
     profile_level: QnnExecuTorchProfileLevel = QnnExecuTorchProfileLevel.kProfileOff
     shared_buffer: bool = False
     is_from_context_binary: bool = False
-    multiple_graphs: bool = False
+    saver: bool = False
+    saver_output_dir: str = "saver_output"

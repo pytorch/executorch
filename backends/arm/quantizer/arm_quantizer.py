@@ -17,46 +17,44 @@ import functools
 from typing import Any, Callable, Dict, List, Optional
 
 import torch
-from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
+from executorch.backends.arm._passes import ArmPassManager
 
-from executorch.backends.arm.quantizer import arm_quantizer_utils
-from executorch.backends.arm.quantizer.arm_quantizer_utils import (  # type: ignore[attr-defined]
-    mark_node_as_annotated,
-)
-from executorch.backends.arm.quantizer.quantization_annotator import (  # type: ignore[import-not-found]
-    annotate_graph,
-)
-
-from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
+from executorch.backends.arm.quantizer import QuantizationConfig
 from executorch.backends.arm.tosa_specification import TosaSpecification
+
+from .arm_quantizer_utils import is_annotated, mark_node_as_annotated
+from .quantization_annotator import annotate_graph
 from executorch.backends.arm.arm_backend import (
     get_tosa_spec,
     is_ethosu,
+    is_vgf,
 )  # usort: skip
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from torch.ao.quantization.fake_quantize import (
+
+from torch.fx import GraphModule, Node
+from torchao.quantization.pt2e import (
     FakeQuantize,
     FusedMovingAvgObsFakeQuantize,
-)
-from torch.ao.quantization.observer import (
     HistogramObserver,
     MinMaxObserver,
     MovingAverageMinMaxObserver,
     MovingAveragePerChannelMinMaxObserver,
+    ObserverOrFakeQuantizeConstructor,
     PerChannelMinMaxObserver,
     PlaceholderObserver,
 )
-from torch.ao.quantization.qconfig import _ObserverOrFakeQuantizeConstructor
-from torch.ao.quantization.quantizer import QuantizationSpec, Quantizer
-from torch.ao.quantization.quantizer.utils import (
-    _annotate_input_qspec_map,
-    _annotate_output_qspec,
+
+from torchao.quantization.pt2e.quantizer import (
+    annotate_input_qspec_map,
+    annotate_output_qspec,
+    QuantizationSpec,
+    Quantizer,
 )
-from torch.fx import GraphModule, Node
 
 __all__ = [
     "TOSAQuantizer",
     "EthosUQuantizer",
+    "VgfQuantizer",
     "get_symmetric_quantization_config",
 ]
 
@@ -100,7 +98,7 @@ def get_symmetric_quantization_config(
     weight_qscheme = (
         torch.per_channel_symmetric if is_per_channel else torch.per_tensor_symmetric
     )
-    weight_observer_or_fake_quant_ctr: _ObserverOrFakeQuantizeConstructor = (
+    weight_observer_or_fake_quant_ctr: ObserverOrFakeQuantizeConstructor = (
         MinMaxObserver
     )
     if is_qat:
@@ -191,6 +189,8 @@ def _get_module_type_filter(tp: Callable) -> NodeFilterType:
     True  # the node is from the submodule `Sub` (same for `Block` and `Linear` as well)
     """
 
+    tp_str = tp.__module__ + "." + tp.__qualname__
+
     def module_type_filter(n: Node) -> bool:
         # node_stack example: {
         #     'L__self___sub': ("L['self'].sub", <class '....Sub'>),
@@ -198,7 +198,7 @@ def _get_module_type_filter(tp: Callable) -> NodeFilterType:
         # }
         nn_module_stack = n.meta.get("nn_module_stack", {})
         types = [t for _, t in nn_module_stack.values()]
-        return tp in types
+        return tp_str in types
 
     return module_type_filter
 
@@ -247,9 +247,9 @@ class TOSAQuantizer(Quantizer):
         quantizer.set_module_name("blocks.sub"), it will quantize all supported operator/operator
         patterns in the submodule with this module name with the given `quantization_config`
         """
-        assert (
-            quantization_config is not None
-        ), " quantization_config == None is not supported yet"
+        # Validate that quantization_config is provided
+        if quantization_config is None:
+            raise ValueError("quantization_config == None is not supported yet")
         self.module_name_config[module_name] = quantization_config
         return self
 
@@ -284,10 +284,10 @@ class TOSAQuantizer(Quantizer):
         quantization_config: Optional[QuantizationConfig],
         filter_fn: Optional[Callable[[Node], bool]] = None,
     ) -> GraphModule:
-        """Loops over all STATIC_OPS and runs the corresponding registred annotator.
+        """Loops over all STATIC_OPS and runs the corresponding registered annotator.
         Args:
             model: The model to annotate statically.
-            quantization_config: Specifices the QuantizationSpecs for the model's
+            quantization_config: Specifies the QuantizationSpecs for the model's
                 input activations, output activations, weights and biases.
             filter_fn: An optional filter function that takes a node and returns whether the node should be annotated.
         Returns:
@@ -335,17 +335,17 @@ class TOSAQuantizer(Quantizer):
         quantization_config: QuantizationConfig,
     ):
         for node in model.graph.nodes:
-            if arm_quantizer_utils.is_annotated(node):
+            if is_annotated(node):
                 continue
             if node.op == "placeholder" and len(node.users) > 0:
-                _annotate_output_qspec(
+                annotate_output_qspec(
                     node,
                     quantization_config.get_output_act_qspec(),
                 )
                 mark_node_as_annotated(node)
             if node.op == "output":
                 parent = node.all_input_nodes[0]
-                _annotate_input_qspec_map(
+                annotate_input_qspec_map(
                     node, parent, quantization_config.get_input_act_qspec()
                 )
                 mark_node_as_annotated(node)
@@ -358,6 +358,15 @@ class EthosUQuantizer(TOSAQuantizer):
     def __init__(self, compile_spec: list[CompileSpec]) -> None:
         if not is_ethosu(compile_spec):
             raise RuntimeError("compile spec is not targeting Ethos-U")
+
+        tosa_spec = get_tosa_spec(compile_spec)
+        super().__init__(tosa_spec)
+
+
+class VgfQuantizer(TOSAQuantizer):
+    def __init__(self, compile_spec: list[CompileSpec]) -> None:
+        if not is_vgf(compile_spec):
+            raise RuntimeError("compile spec is not targeting VGF")
 
         tosa_spec = get_tosa_spec(compile_spec)
         super().__init__(tosa_spec)

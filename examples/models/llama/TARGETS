@@ -3,7 +3,7 @@
 
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(":targets.bzl", "define_common_targets")
-load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_verision")
+load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
 
 oncall("executorch")
 
@@ -67,6 +67,7 @@ runtime.python_library(
         "//caffe2:torch",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models/llama:llama_transformer",
+        "//executorch/examples/models/llama/config:llm_config",
         "//executorch/examples/models:checkpoint",
     ],
 )
@@ -90,7 +91,7 @@ runtime.python_binary(
 runtime.command_alias(
     name = "export_llama_qnn",
     env = {
-        "LD_LIBRARY_PATH": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs)".format(get_qnn_library_verision()),
+        "LD_LIBRARY_PATH": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs)".format(get_qnn_library_version()),
     },
     exe = ":export_llama",
 )
@@ -108,7 +109,7 @@ runtime.python_library(
         "source_transformation/pre_quantization.py",
         "source_transformation/prune_vocab.py",
         "source_transformation/quantize.py",
-        "source_transformation/quantized_kv_cache.py",
+        "source_transformation/custom_kv_cache.py",
         "source_transformation/rms_norm.py",
         "source_transformation/rope.py",
         "source_transformation/sdpa.py",
@@ -119,9 +120,21 @@ runtime.python_library(
 )
 
 runtime.python_library(
+    name = "hf_download",
+    srcs = [
+        "hf_download.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/huggingface-hub:huggingface-hub",
+    ]
+)
+
+runtime.python_library(
     name = "export_library",
     srcs = [
         "export_llama.py",
+        "export_llama_args.py",
+        "export_llama_hydra.py",
         "export_llama_lib.py",
         "model.py",
     ],
@@ -134,9 +147,11 @@ runtime.python_library(
         "@EXECUTORCH_CLIENTS",
     ],
     deps = [
+        ":hf_download",
         ":source_transformation",
         "//ai_codesign/gen_ai/fast_hadamard_transform:fast_hadamard_transform",
         "//caffe2:torch",
+        "//executorch/examples/models/llama/config:llm_config",
         "//executorch/backends/vulkan/_passes:vulkan_passes",
         "//executorch/exir/passes:init_mutable_pass",
         "//executorch/examples/models:model_base",
@@ -191,15 +206,15 @@ runtime.python_library(
         ":export_library",
         "//executorch/examples/models/llama/tokenizer:tiktoken_py",
         "//executorch/extension/llm/export:export_lib",
-        "//executorch/extension/llm/tokenizer:tokenizer_py_lib",
+        "//pytorch/tokenizers/pytorch_tokenizers:tokenizers",
         "//executorch/extension/pybindings:portable_lib",
     ],
 )
 
 runtime.python_library(
-    name = "quantized_kv_cache",
+    name = "custom_kv_cache",
     srcs = [
-        "source_transformation/quantized_kv_cache.py",
+        "source_transformation/custom_kv_cache.py",
     ],
     _is_external_target = True,
     visibility = ["//executorch/..."],
@@ -229,7 +244,7 @@ runtime.python_test(
         "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
     ],
     deps = [
-        ":quantized_kv_cache",
+        ":custom_kv_cache",
         "//caffe2:torch",
         "//executorch/examples/models/llama:llama_transformer",
     ],
@@ -244,7 +259,7 @@ runtime.python_test(
         "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
     ],
     deps = [
-        ":quantized_kv_cache",
+        ":custom_kv_cache",
         ":sdpa",
         "//caffe2:torch",
         "//executorch/examples/models/llama:llama_transformer",
@@ -261,5 +276,22 @@ runtime.python_test(
         "fbsource//third-party/pypi/parameterized:parameterized",
         "//caffe2:torch",
         ":export_library",
+    ],
+)
+
+runtime.python_test(
+    name = "quantized_sdpa_source_transform_test",
+    srcs = [
+        "source_transformation/test_quantized_sdpa.py",
+    ],
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+    ],
+    deps = [
+        ":custom_kv_cache",
+        ":sdpa",
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:llama_transformer",
     ],
 )

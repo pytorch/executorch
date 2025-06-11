@@ -87,22 +87,21 @@ Tensor& sub_out(
   }
 
   /*find broadcast*/
-  for (int i = 0; i < out.dim(); i++) {
+  for (int i = 0; i < max_dim; i++) {
     if (((inp1_shape[i]) != (out_shape[i])) ||
         ((inp2_shape[i]) != (out_shape[i]))) {
       broadcast = true;
     }
   }
 
-  if (((broadcast) && (max_dim > kTensorDimensionLimit)) ||
-      (!(((a.scalar_type() == ScalarType::Int) ||
-          (a.scalar_type() == ScalarType::Float)) &&
-         (a.scalar_type() == b.scalar_type()) &&
-         (a.scalar_type() == out.scalar_type())))) {
+  if ((broadcast) && (max_dim > kTensorDimensionLimit)) {
     optimized = false;
   }
 
-  if ((a.scalar_type() == ScalarType::Int) && (optimized)) {
+  if (((a.scalar_type() == ScalarType::Int) &&
+       (b.scalar_type() == ScalarType::Int) &&
+       (out.scalar_type() == ScalarType::Int)) &&
+      (optimized)) {
     const int* const inp1_data = a.const_data_ptr<int>();
     const int* const inp2_data = b.const_data_ptr<int>();
     int* const out_data = out.mutable_data_ptr<int>();
@@ -144,7 +143,11 @@ Tensor& sub_out(
           alpha_val,
           out.numel());
     }
-  } else if ((a.scalar_type() == ScalarType::Float) && (optimized)) {
+  } else if (
+      ((a.scalar_type() == ScalarType::Float) &&
+       (b.scalar_type() == ScalarType::Float) &&
+       (out.scalar_type() == ScalarType::Float)) &&
+      (optimized)) {
     const float* const inp1_data = a.const_data_ptr<float>();
     const float* const inp2_data = b.const_data_ptr<float>();
     float* const out_data = out.mutable_data_ptr<float>();
@@ -185,6 +188,174 @@ Tensor& sub_out(
           inp2_data,
           alpha_val,
           out.numel());
+    }
+  } else if (
+      ((a.scalar_type() == ScalarType::Int) &&
+       (b.scalar_type() == ScalarType::Float) &&
+       (out.scalar_type() == ScalarType::Float)) &&
+      (optimized)) {
+    const int* const inp1_data = a.const_data_ptr<int>();
+    const float* const inp2_data = b.const_data_ptr<float>();
+    float* const out_data = out.mutable_data_ptr<float>();
+    if (alpha.isFloatingPoint()) {
+      float alpha_val;
+      torch::executor::native::utils::extract_scalar(alpha, &alpha_val);
+      if (b.numel() == 1) {
+        XT_KERNEL_CHECK(
+            ctx,
+            out,
+            xa_nn_elm_sub_scalar_32xf32xf32_f32,
+            out_data,
+            inp1_data,
+            inp2_data[0],
+            alpha_val,
+            out.numel());
+      } else if (broadcast) {
+        XT_KERNEL_CHECK(
+            ctx,
+            out,
+            xa_nn_elm_sub_broadcast_5D_32xf32xf32_f32,
+            out_data,
+            out_shape,
+            inp1_data,
+            inp1_shape,
+            inp2_data,
+            inp2_shape,
+            max_dim,
+            alpha_val);
+      } else {
+        XT_KERNEL_CHECK(
+            ctx,
+            out,
+            xa_nn_elm_sub_32xf32xf32_f32,
+            out_data,
+            inp1_data,
+            inp2_data,
+            alpha_val,
+            out.numel());
+      }
+    } else {
+      int alpha_val;
+      torch::executor::native::utils::extract_scalar(alpha, &alpha_val);
+
+      if (b.numel() == 1) {
+        XT_KERNEL_CHECK(
+            ctx,
+            out,
+            xa_nn_elm_sub_scalar_32xf32x32_f32,
+            out_data,
+            inp1_data,
+            inp2_data[0],
+            alpha_val,
+            out.numel());
+      } else if (broadcast) {
+        XT_KERNEL_CHECK(
+            ctx,
+            out,
+            xa_nn_elm_sub_broadcast_5D_32xf32x32_f32,
+            out_data,
+            out_shape,
+            inp1_data,
+            inp1_shape,
+            inp2_data,
+            inp2_shape,
+            max_dim,
+            alpha_val);
+      } else {
+        XT_KERNEL_CHECK(
+            ctx,
+            out,
+            xa_nn_elm_sub_32xf32x32_f32,
+            out_data,
+            inp1_data,
+            inp2_data,
+            alpha_val,
+            out.numel());
+      }
+    }
+  } else if (
+      ((a.scalar_type() == ScalarType::Float) &&
+       (b.scalar_type() == ScalarType::Int) &&
+       (out.scalar_type() == ScalarType::Float)) &&
+      (optimized)) {
+    const float* const inp1_data = a.const_data_ptr<float>();
+    const int* const inp2_data = b.const_data_ptr<int>();
+    float* const out_data = out.mutable_data_ptr<float>();
+    if (alpha.isFloatingPoint()) {
+      float alpha_val;
+      torch::executor::native::utils::extract_scalar(alpha, &alpha_val);
+      if (b.numel() == 1) {
+        XT_KERNEL_CHECK(
+            ctx,
+            out,
+            xa_nn_elm_sub_scalar_f32x32xf32_f32,
+            out_data,
+            inp1_data,
+            inp2_data[0],
+            alpha_val,
+            out.numel());
+      } else if (broadcast) {
+        XT_KERNEL_CHECK(
+            ctx,
+            out,
+            xa_nn_elm_sub_broadcast_5D_f32x32xf32_f32,
+            out_data,
+            out_shape,
+            inp1_data,
+            inp1_shape,
+            inp2_data,
+            inp2_shape,
+            max_dim,
+            alpha_val);
+      } else {
+        XT_KERNEL_CHECK(
+            ctx,
+            out,
+            xa_nn_elm_sub_f32x32xf32_f32,
+            out_data,
+            inp1_data,
+            inp2_data,
+            alpha_val,
+            out.numel());
+      }
+    } else {
+      int alpha_val;
+      torch::executor::native::utils::extract_scalar(alpha, &alpha_val);
+
+      if (b.numel() == 1) {
+        XT_KERNEL_CHECK(
+            ctx,
+            out,
+            xa_nn_elm_sub_scalar_f32x32x32_f32,
+            out_data,
+            inp1_data,
+            inp2_data[0],
+            alpha_val,
+            out.numel());
+      } else if (broadcast) {
+        XT_KERNEL_CHECK(
+            ctx,
+            out,
+            xa_nn_elm_sub_broadcast_5D_f32x32x32_f32,
+            out_data,
+            out_shape,
+            inp1_data,
+            inp1_shape,
+            inp2_data,
+            inp2_shape,
+            max_dim,
+            alpha_val);
+      } else {
+        XT_KERNEL_CHECK(
+            ctx,
+            out,
+            xa_nn_elm_sub_f32x32x32_f32,
+            out_data,
+            inp1_data,
+            inp2_data,
+            alpha_val,
+            out.numel());
+      }
     }
   } else {
     // Common Dtype
@@ -254,19 +425,8 @@ Tensor& sub_scalar_out(
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "sub.Scalar_out";
 
-  bool optimized = true;
-
-  if (!(((a.scalar_type() == ScalarType::Int) ||
-         (a.scalar_type() == ScalarType::Float)) &&
-        (a.scalar_type() == out.scalar_type()))) {
-    optimized = false;
-  }
-
-  if ((b.isFloatingPoint()) && (a.scalar_type() == ScalarType::Int)) {
-    optimized = false;
-  }
-
-  if ((a.scalar_type() == ScalarType::Int) && (optimized)) {
+  if ((a.scalar_type() == ScalarType::Int) && (b.isIntegral(false)) &&
+      (out.scalar_type() == ScalarType::Int)) {
     const int* const inp1_data = a.const_data_ptr<int>();
     int inp2_val;
     torch::executor::native::utils::extract_scalar(b, &inp2_val);
@@ -285,7 +445,9 @@ Tensor& sub_scalar_out(
         inp2_val,
         alpha_val,
         out.numel());
-  } else if ((a.scalar_type() == ScalarType::Float) && (optimized)) {
+  } else if (
+      (a.scalar_type() == ScalarType::Float) && (b.isFloatingPoint()) &&
+      (out.scalar_type() == ScalarType::Float)) {
     const float* const inp1_data = a.const_data_ptr<float>();
     float inp2_val;
     torch::executor::native::utils::extract_scalar(b, &inp2_val);
@@ -304,6 +466,76 @@ Tensor& sub_scalar_out(
         inp2_val,
         alpha_val,
         out.numel());
+  } else if (
+      (a.scalar_type() == ScalarType::Int) && (b.isFloatingPoint()) &&
+      (out.scalar_type() == ScalarType::Float)) {
+    const int* const inp1_data = a.const_data_ptr<int>();
+    float inp2_val;
+    torch::executor::native::utils::extract_scalar(b, &inp2_val);
+    float* const out_data = out.mutable_data_ptr<float>();
+
+    if (alpha.isFloatingPoint()) {
+      float alpha_val;
+      torch::executor::native::utils::extract_scalar(alpha, &alpha_val);
+
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_sub_scalar_32xf32xf32_f32,
+          out_data,
+          inp1_data,
+          inp2_val,
+          alpha_val,
+          out.numel());
+    } else {
+      float alpha_val;
+      torch::executor::native::utils::extract_scalar(alpha, &alpha_val);
+
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_sub_scalar_32xf32x32_f32,
+          out_data,
+          inp1_data,
+          inp2_val,
+          alpha_val,
+          out.numel());
+    }
+  } else if (
+      (a.scalar_type() == ScalarType::Float) && (b.isIntegral(false)) &&
+      (out.scalar_type() == ScalarType::Float)) {
+    const float* const inp1_data = a.const_data_ptr<float>();
+    int inp2_val;
+    torch::executor::native::utils::extract_scalar(b, &inp2_val);
+    float* const out_data = out.mutable_data_ptr<float>();
+
+    if (alpha.isFloatingPoint()) {
+      float alpha_val;
+      torch::executor::native::utils::extract_scalar(alpha, &alpha_val);
+
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_sub_scalar_f32x32xf32_f32,
+          out_data,
+          inp1_data,
+          inp2_val,
+          alpha_val,
+          out.numel());
+    } else {
+      float alpha_val;
+      torch::executor::native::utils::extract_scalar(alpha, &alpha_val);
+
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_sub_scalar_f32x32x32_f32,
+          out_data,
+          inp1_data,
+          inp2_val,
+          alpha_val,
+          out.numel());
+    }
   } else {
     // Common Dtype
     ScalarType common_type =

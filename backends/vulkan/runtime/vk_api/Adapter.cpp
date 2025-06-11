@@ -107,7 +107,33 @@ VkDevice create_logical_device(
       nullptr, // pEnabledFeatures
   };
 
-  device_create_info.pNext = physical_device.extension_features;
+  void* extension_list_top = nullptr;
+
+#ifdef VK_KHR_16bit_storage
+  VkPhysicalDevice16BitStorageFeatures shader_16bit_storage{
+      physical_device.shader_16bit_storage};
+
+  shader_16bit_storage.pNext = extension_list_top;
+  extension_list_top = &shader_16bit_storage;
+#endif /* VK_KHR_16bit_storage */
+
+#ifdef VK_KHR_8bit_storage
+  VkPhysicalDevice8BitStorageFeatures shader_8bit_storage{
+      physical_device.shader_8bit_storage};
+
+  shader_8bit_storage.pNext = extension_list_top;
+  extension_list_top = &shader_8bit_storage;
+#endif /* VK_KHR_8bit_storage */
+
+#ifdef VK_KHR_shader_float16_int8
+  VkPhysicalDeviceShaderFloat16Int8Features shader_float16_int8_types{
+      physical_device.shader_float16_int8_types};
+
+  shader_float16_int8_types.pNext = extension_list_top;
+  extension_list_top = &shader_float16_int8_types;
+#endif /* VK_KHR_shader_float16_int8 */
+
+  device_create_info.pNext = extension_list_top;
 
   VkDevice handle = nullptr;
   VK_CHECK(vkCreateDevice(

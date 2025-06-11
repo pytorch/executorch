@@ -47,23 +47,27 @@ Tensor& argmax_out(
   ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, "argmax.out", CTYPE, [&] {
     long* out_data = out.mutable_data_ptr<long>();
 
-    for (const auto out_ix : c10::irange(out.numel())) {
-      std::tuple<CTYPE, long> acc = reduce_over_dim<CTYPE>(
-          [](CTYPE v, long ix, CTYPE acc_val, long acc_ix) {
-            // the below condition as written is equivalent to
-            // !isnan(accval) && (isnan(v) || v > acc_val). See
-            // argument in op_argmin.cpp.
-            if (!std::isnan(acc_val) && !(v <= acc_val)) {
-              acc_val = v;
-              acc_ix = ix;
-            }
-            return std::tuple<CTYPE, long>{acc_val, acc_ix};
-          },
-          in,
-          dim,
-          out_ix);
-      out_data[out_ix] = std::get<1>(acc);
-    }
+    const bool success = parallel_for_each_reduce_over_dim_output_index(
+        in, dim, out, [&](const auto begin, const auto end) {
+          for (const auto out_ix : c10::irange(begin, end)) {
+            std::tuple<CTYPE, long> acc = reduce_over_dim<CTYPE>(
+                [](CTYPE v, long ix, CTYPE acc_val, long acc_ix) {
+                  // the below condition as written is equivalent to
+                  // !isnan(accval) && (isnan(v) || v > acc_val). See
+                  // argument in op_argmin.cpp.
+                  if (!std::isnan(acc_val) && !(v <= acc_val)) {
+                    acc_val = v;
+                    acc_ix = ix;
+                  }
+                  return std::tuple<CTYPE, long>{acc_val, acc_ix};
+                },
+                in,
+                dim,
+                out_ix);
+            out_data[out_ix] = std::get<1>(acc);
+          }
+        });
+    ET_KERNEL_CHECK_MSG(ctx, success, Internal, , "parallel_for failed");
   });
 
   return out;

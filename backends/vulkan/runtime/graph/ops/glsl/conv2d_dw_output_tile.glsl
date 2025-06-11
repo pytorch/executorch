@@ -47,11 +47,6 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-// For performance improvement, reduce register usage by caching positions in shared memory.
-// Offset index by 1 every 16 points to avoid bank access conflict.
-#define offset_pos_index(index) (index + ((index) >> 4))
-shared ivec3 pos_shared[offset_pos_index(LOCAL_WG_SIZE)];
-
 /*
  * Computes a depthwise convolution. Each shader invocation calculates the
  * output at a single output location.
@@ -65,19 +60,17 @@ void main() {
   const uint div_by_x = gl_GlobalInvocationID.x / out_limits_xy_scaled.x;
   ivec3 pos = ivec3(
     gl_GlobalInvocationID.x % out_limits_xy_scaled.x,
-    div_by_x % out_limits_xy_scaled.y,
-    div_by_x / out_limits_xy_scaled.y);
+    div_by_x,
+    gl_GlobalInvocationID.y);
+
+  // do not process if top pixel does not fit within the output range
+  if (pos.y >= out_limits_xy_scaled.y || pos.z >= out_limits.z) {
+    return;
+  }
 
   // scale pos.xy by batch sizes, because that's the top pixel to be processed
   pos.x *= BATCH_SIZE_X;
   pos.y *= BATCH_SIZE_Y;
-
-  // do not process if top pixel does not fit within the output range
-  if (pos.z >= out_limits.z) {
-    return;
-  }
-
-  pos_shared[offset_pos_index(gl_LocalInvocationIndex)] = pos;
 
   // Compute the index of the top-left element of the overlay region. Negative
   // indices indicate that the top-left element is in a region added by padding.
@@ -86,16 +79,12 @@ void main() {
   // Compute the start and end of the input indices to load. Padding is assumed
   // to be constant 0 padding, so any reads from the padding region is skipped.
   const ivec2 start = ipos;
-  const ivec2 end = ipos + overlay_region.xy;
 
   // sum outputs
-  VEC4_T sum[BATCH_SIZE_Y][BATCH_SIZE_X];
+  VEC4_T sum[BATCH_SIZE_Y * BATCH_SIZE_X];
 
-  sum[0][0] = texelFetch(t_bias, ivec2(pos.z, 0), 0);
-  for (int y = 0; y < BATCH_SIZE_Y; y++) {
-    for (int x = 0; x < BATCH_SIZE_X; x++) {
-      sum[y][x] = sum[0][0];
-    }
+  for (int i = 0; i < BATCH_SIZE_Y * BATCH_SIZE_X; i++) {
+    sum[i] = VEC4_T(0);
   }
 
   // array to store input texels
@@ -115,7 +104,7 @@ void main() {
     if (i > 0) {
       for (int j = 0; j < TILE_SIZE; j++) {
         for (int s = 0; s < BATCH_SIZE_X; s++) {
-          sum[1][s] = fma(in_texels[j + s], prev_kernel_line[j], sum[1][s]);
+          sum[BATCH_SIZE_X + s] = fma(in_texels[j + s], prev_kernel_line[j], sum[BATCH_SIZE_X + s]);
         }
       }
     }
@@ -125,19 +114,19 @@ void main() {
       for (int j = 0; j < TILE_SIZE; j++, kx++) {
         prev_kernel_line[j] = texelFetch(t_kernel, ivec2(kx, pos.z), 0);
         for (int s = 0; s < BATCH_SIZE_X; s++) {
-          sum[0][s] = fma(in_texels[j + s], prev_kernel_line[j], sum[0][s]);
+          sum[s] = fma(in_texels[j + s], prev_kernel_line[j], sum[s]);
         }
       }
     }
   }
 
-  const ivec3 out_pos = pos_shared[offset_pos_index(gl_LocalInvocationIndex)];
+  const VEC4_T bias = texelFetch(t_bias, ivec2(pos.z, 0), 0);
   for (int y = 0; y < BATCH_SIZE_Y; y++) {
     for (int x = 0; x < BATCH_SIZE_X; x++) {
-      if (any(greaterThanEqual(ivec3(out_pos.x + x, out_pos.y + y, out_pos.z), out_limits.xyz))) {
-        continue;
+      const ivec3 out_pos = ivec3(pos.x + x, pos.y + y, pos.z);
+      if (all(lessThan(out_pos.xy, out_limits.xy))) {
+        imageStore(t_out, out_pos, op(sum[y * BATCH_SIZE_X + x] + bias, out_min, out_max));
       }
-      imageStore(t_out, ivec3(out_pos.x + x, out_pos.y + y, out_pos.z), op(sum[y][x], out_min, out_max));
     }
   }
 }

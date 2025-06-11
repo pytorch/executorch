@@ -3,10 +3,10 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import warnings
 from typing import cast, Dict
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
-
 import numpy as np
 import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER, QCOM_DATA
@@ -27,7 +27,7 @@ class LogSoftmax(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        input_node = node.args[0]
+        input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
 
         log_softmax_inp_tensor_wrapper = self.define_tensor(
@@ -58,6 +58,10 @@ class LogSoftmax(NodeVisitor):
 
         # logsoftmax only supports last dimension for now, which is channel in QNN
         if dim != input_tensor.dim() - 1:
+            warnings.warn(
+                "[QNN Delegate Op Builder]: LogSoftmax only supports channel axis.",
+                stacklevel=1,
+            )
             return None
 
         log_softmax_op = PyQnnWrapper.PyQnnOpWrapper(

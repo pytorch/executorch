@@ -17,6 +17,6 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         deps = [
-            "//executorch/runtime/kernel:thread_parallel_interface",
+            "//executorch/extension/threadpool:threadpool",
         ],
     )

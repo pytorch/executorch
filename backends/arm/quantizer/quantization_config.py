@@ -9,9 +9,9 @@
 from dataclasses import dataclass
 
 import torch
-from torch.ao.quantization import ObserverOrFakeQuantize
+from torchao.quantization.pt2e import ObserverOrFakeQuantize
 
-from torch.ao.quantization.quantizer import (
+from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
     FixedQParamsQuantizationSpec,
     QuantizationSpec,
@@ -29,30 +29,40 @@ class QuantizationConfig:
         """Returns QuantizationSpec 'input_activation' after asserting that input_activation.qscheme is valid."""
         if self.input_activation is None:
             return None
-        assert self.input_activation.qscheme in [
+        # Validate that input_activation uses a supported qscheme
+        if self.input_activation.qscheme not in [
             torch.per_tensor_affine,
             torch.per_tensor_symmetric,
-        ], f"Unsupported quantization_spec {self.input_activation} for input_activation."
+        ]:
+            raise ValueError(
+                f"Unsupported quantization_spec {self.input_activation} for input_activation."
+            )
         return self.input_activation
 
     def get_output_act_qspec(self) -> QuantizationSpec | None:
         """Returns QuantizationSpec 'output_activation' after asserting that output_activation.qscheme is valid."""
         if self.output_activation is None:
             return None
-        assert self.output_activation.qscheme in [
+        # Validate that output_activation uses a supported qscheme
+        if self.output_activation.qscheme not in [
             torch.per_tensor_affine,
             torch.per_tensor_symmetric,
-        ], f"Unsupported quantization_spec {self.output_activation} for output_activation."
+        ]:
+            raise ValueError(
+                f"Unsupported quantization_spec {self.output_activation} for output_activation."
+            )
         return self.output_activation
 
     def get_weight_qspec(self) -> QuantizationSpec | None:
         """Returns QuantizationSpec 'weight' after asserting that weight.qscheme is valid."""
         if self.weight is None:
             return None
-        assert self.weight.qscheme in [
+        # Validate that weight uses a supported qscheme
+        if self.weight.qscheme not in [
             torch.per_tensor_symmetric,
             torch.per_channel_symmetric,
-        ], f"Unsupported quantization_spec {self.weight} for weight"
+        ]:
+            raise ValueError(f"Unsupported quantization_spec {self.weight} for weight")
         return self.weight
 
     def get_bias_qspec(self, node: torch.fx.Node) -> QuantizationSpec | None:
@@ -61,11 +71,11 @@ class QuantizationConfig:
         def _derive_qparams_fn(
             obs_or_fqs: list[ObserverOrFakeQuantize],
         ) -> tuple[torch.Tensor, torch.Tensor]:
-            assert (
-                len(obs_or_fqs) == 2
-            ), "Expecting two obs/fqs, one for activation and one for weight, got: {}".format(
-                len(obs_or_fqs)
-            )
+            # Validate expected number of observers/fake-quantizes
+            if len(obs_or_fqs) != 2:
+                raise ValueError(
+                    f"Expecting two obs/fqs, one for activation and one for weight, got: {len(obs_or_fqs)}"
+                )
             act_obs_or_fq = obs_or_fqs[0]
             weight_obs_or_fq = obs_or_fqs[1]
             act_scale, act_zp = act_obs_or_fq.calculate_qparams()
@@ -94,9 +104,11 @@ class QuantizationConfig:
 
         if self.bias is None:
             return None
-        assert (
-            self.bias.dtype == torch.float
-        ), "Only float dtype for bias is supported for bias right now"
+        # Validate that bias dtype is floating-point
+        if self.bias.dtype != torch.float:
+            raise ValueError(
+                "Only float dtype for bias is supported for bias right now"
+            )
         return self.bias
 
     def get_fixed_qspec(

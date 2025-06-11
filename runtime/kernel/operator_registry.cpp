@@ -15,7 +15,7 @@
 #include <executorch/runtime/platform/system.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 
 namespace {
 
@@ -35,9 +35,12 @@ constexpr uint32_t kMaxRegisteredKernels = kMaxOperators * kMaxKernelsPerOp;
 // require constructing them at init time. Since we don't care about the values
 // until we add each entry to the table, allocate static zeroed memory instead
 // and point the table at it.
+struct alignas(Kernel) KernelBuffer {
+  uint8_t data[sizeof(Kernel)];
+};
+
 // @lint-ignore CLANGTIDY facebook-hte-CArray
-alignas(sizeof(Kernel)) uint8_t
-    registered_kernels_data[kMaxRegisteredKernels * sizeof(Kernel)];
+KernelBuffer registered_kernels_data[kMaxRegisteredKernels];
 
 /// Global table of registered kernels.
 Kernel* registered_kernels = reinterpret_cast<Kernel*>(registered_kernels_data);
@@ -258,5 +261,5 @@ Span<const Kernel> get_registered_kernels() {
   return {registered_kernels, num_registered_kernels};
 }
 
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch

@@ -27,13 +27,13 @@ using executorch::aten::ArrayRef;
 using executorch::aten::Half;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using ::executorch::ET_RUNTIME_NAMESPACE::Method;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
-using ::executorch::runtime::Method;
 using ::executorch::runtime::Result;
 
 namespace executorch {
-namespace bundled_program {
+namespace BUNDLED_PROGRAM_NAMESPACE {
 
 namespace {
 
@@ -260,9 +260,16 @@ ET_NODISCARD Error load_bundled_input(
   if (!method_test.ok()) {
     return method_test.error();
   }
-
+  auto test_cases = method_test.get()->test_cases();
+  ET_CHECK_OR_RETURN_ERROR(
+      testset_idx < test_cases->size(),
+      InvalidArgument,
+      "testset_idx %zu is out of range [0, %u]",
+      testset_idx,
+      test_cases->size());
   auto bundled_inputs =
-      method_test.get()->test_cases()->Get(testset_idx)->inputs();
+      test_cases->Get(static_cast<flatbuffers::uoffset_t>(testset_idx))
+          ->inputs();
 
   for (size_t input_idx = 0; input_idx < method.inputs_size(); input_idx++) {
     auto bundled_input = bundled_inputs->GetMutableObject(input_idx);
@@ -332,8 +339,9 @@ ET_NODISCARD Error load_bundled_input(
         static_cast<uint32_t>(status));
   }
 
-  ::executorch::runtime::internal::event_tracer_set_bundled_input_index(
-      method.get_event_tracer(), testset_idx);
+  ::executorch::ET_RUNTIME_NAMESPACE::internal::
+      event_tracer_set_bundled_input_index(
+          method.get_event_tracer(), testset_idx);
 
   return Error::Ok;
 }
@@ -358,8 +366,21 @@ ET_NODISCARD Error verify_method_outputs(
     return method_test.error();
   }
 
+  auto test_cases = method_test.get()->test_cases();
+  ET_CHECK_OR_RETURN_ERROR(
+      testset_idx < test_cases->size(),
+      InvalidArgument,
+      "testset_idx %zu is out of range [0, %u]",
+      testset_idx,
+      test_cases->size());
   auto bundled_expected_outputs =
-      method_test.get()->test_cases()->Get(testset_idx)->expected_outputs();
+      test_cases->Get(static_cast<flatbuffers::uoffset_t>(testset_idx))
+          ->expected_outputs();
+
+  if (bundled_expected_outputs->size() == 0) {
+    // No bundled expected outputs, so we can't verify the method outputs.
+    return Error::NotSupported;
+  }
 
   for (size_t output_idx = 0; output_idx < method.outputs_size();
        output_idx++) {
@@ -427,5 +448,5 @@ bool is_bundled_program(void* file_data, ET_UNUSED size_t file_data_len) {
       file_data);
 }
 
-} // namespace bundled_program
+} // namespace BUNDLED_PROGRAM_NAMESPACE
 } // namespace executorch

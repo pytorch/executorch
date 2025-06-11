@@ -11,6 +11,9 @@ from executorch.backends.xnnpack.test.tester import Tester
 
 
 class TestMaxDim(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     class Max(torch.nn.Module):
         def forward(self, x):
             max_values_1, max_indices_1 = torch.max(x, dim=2, keepdim=True)

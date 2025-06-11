@@ -167,7 +167,7 @@ jobs:
       # NB: Need to use our AWS MacOS runner to upload large models to S3
       runner: macos-m1-stable
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       timeout: 60
       upload-artifact: ios-models
       upload-artifact-to-s3: true
@@ -186,11 +186,6 @@ jobs:
         if [[ ${{ matrix.config }} == *"coreml"* ]]; then
           PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
             backends/apple/coreml/scripts/install_requirements.sh
-        fi
-
-        if [[ ${{ matrix.config }} == *"mps"* ]]; then
-          PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-            backends/apple/mps/install_requirements.sh
         fi
 
         # Install requirements for export_llama
@@ -379,15 +374,10 @@ jobs:
         # Install CoreML Backend Requirements
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
           backends/apple/coreml/scripts/install_requirements.sh
-
-        # Install MPS Backend Requirements
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-          backends/apple/mps/install_requirements.sh
         echo "::endgroup::"
 
         echo "::group::Build ExecuTorch iOS frameworks"
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-          build/build_apple_frameworks.sh --Release --Debug --coreml --custom --mps --optimized --portable --quantized --xnnpack
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output scripts/build_apple_frameworks.sh
         echo "::endgroup::"
 
         # NB: Although exported models can be copied to this directory and bundled together with the
@@ -396,7 +386,7 @@ jobs:
         # create the directory here to pass the build
         mkdir -p extension/benchmark/apple/Benchmark/Models
         ${CONDA_RUN} --no-capture-output \
-          build/build_apple_llm_demo.sh ${ARTIFACTS_DIR_NAME}
+          scripts/build_apple_llm_demo.sh ${ARTIFACTS_DIR_NAME}
 
   upload-benchmark-app:
     needs: build-benchmark-app
@@ -425,6 +415,7 @@ jobs:
           if-no-files-found: ignore
           path: ${{ runner.temp }}/artifacts/
 
+  # CHANGE IF this job name 'benchmark-on-device' changed: extract_model_info() in executorch/.github/scripts/extract_benchmark_results.py
   benchmark-on-device:
     if: always()
     needs:
@@ -453,6 +444,7 @@ jobs:
       ios-ipa-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/Benchmark.ipa
       ios-xctestrun-zip: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/Benchmark.xctestrun.zip
       test-spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.config }}/default-ios-device-farm-appium-test-spec.yml
+      new-output-format-flag: true
 
   upload-benchmark-results:
     needs:
@@ -510,6 +502,8 @@ jobs:
 
       - name: Extract the benchmark results JSON
         shell: bash
+        env:
+          DEVICE_TYPE: ios
         run: |
           set -eux
 
@@ -521,28 +515,14 @@ jobs:
             ${CONDA_RUN} python .github/scripts/extract_benchmark_results.py \
               --artifacts "${ARTIFACTS_BY_JOB}" \
               --output-dir benchmark-results \
-              --repo ${{ github.repository }} \
-              --head-branch ${{ github.head_ref || github.ref_name }} \
-              --workflow-name "${{ github.workflow }}" \
-              --workflow-run-id ${{ github.run_id }} \
-              --workflow-run-attempt ${{ github.run_attempt }} \
+              --app "${DEVICE_TYPE}" \
               --benchmark-configs benchmark-configs
           done
 
-          for SCHEMA in v2 v3; do
-            for BENCHMARK_RESULTS in benchmark-results/"${SCHEMA}"/*.json; do
-              cat "${BENCHMARK_RESULTS}"
-              echo
-            done
+          for BENCHMARK_RESULTS in benchmark-results/v3/*.json; do
+            cat "${BENCHMARK_RESULTS}"
+            echo
           done
-
-      # TODO (huydhn): Remove v2 schema once the benchmark dashboard finishes the migration
-      - name: Upload the benchmark results (v2)
-        uses: pytorch/test-infra/.github/actions/upload-benchmark-results@main
-        with:
-          benchmark-results-dir: benchmark-results/v2
-          dry-run: false
-          schema-version: v2
 
       - name: Upload the benchmark results (v3)
         uses: pytorch/test-infra/.github/actions/upload-benchmark-results@main
