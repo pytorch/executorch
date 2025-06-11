@@ -705,6 +705,8 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
+        ./install_requirements.sh --use-pt-pinned-commit
+
         bash .ci/scripts/setup-mediatek-deps.sh
         bash .ci/scripts/build-mediatek-sdk.sh
         bash .ci/scripts/test_model.sh "mv3" "buck2" "mediatek"
