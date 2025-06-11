@@ -41,7 +41,7 @@ class PowVisitor_080_MI(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs, output])
+        validate_same_dtype(self.target, [*inputs, output], ts)
 
         if inputs[0].dtype not in [ts.DType.FP32, ts.DType.FP16]:
             raise ValueError(
@@ -80,7 +80,7 @@ class PowVisitor(NodeVisitor):
         import serializer.tosa_serializer as ts
 
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs, output])
+        validate_same_dtype(self.target, [*inputs, output], ts)
 
         if inputs[0].dtype not in [ts.DType.FP32, ts.DType.FP16]:
             raise ValueError(

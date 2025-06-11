@@ -64,7 +64,7 @@ class NegVisitor_0_80(NodeVisitor):
         }
 
         validate_num_inputs(self.target, inputs, 1)
-        validate_same_dtype(self.target, [*inputs, output])
+        validate_same_dtype(self.target, [*inputs, output], ts)
 
         if inputs[0].dtype not in supported_dtypes:
             raise ValueError(f"Unsupported dtype for NEGATE: {inputs[0].dtype}")
@@ -111,7 +111,7 @@ class NegVisitor(NodeVisitor):
         }
 
         validate_num_inputs(self.target, inputs, 1)
-        validate_same_dtype(self.target, [*inputs, output])
+        validate_same_dtype(self.target, [*inputs, output], ts)
 
         if inputs[0].dtype not in supported_dtypes:
             raise ValueError(f"Unsupported dtype for NEGATE: {inputs[0].dtype}")
