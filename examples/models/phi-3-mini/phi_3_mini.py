@@ -30,11 +30,13 @@ class Phi3Mini(torch.nn.Module):
     def forward(
         self,
         # pyre-fixme[9]: input_ids has type `LongTensor`; used as `None`.
-        input_ids: torch.LongTensor = None,
+        input_ids: torch.LongTensor,
+        cache_positions: torch.Tensor,
     ) -> torch.FloatTensor:
         # pyre-fixme[16]: `Phi3ForCausalLM` has no attribute `forward`.
         return self.model.forward(
             input_ids=input_ids,
+            cache_positions=cache_positions,
             use_cache=True,
             return_dict=True,
             past_key_values=self.cache,

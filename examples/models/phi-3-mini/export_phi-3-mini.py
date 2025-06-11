@@ -82,7 +82,7 @@ def export(args) -> None:
         )
 
     edge_config = get_xnnpack_edge_compile_config()
-    edge_manager = to_edge(model, compile_config=edge_config)
+    edge_manager = to_edge(model, compile_config=edge_config, constant_methods={"get_eos_ids": [32000]})
     edge_manager = edge_manager.to_backend(XnnpackPartitioner())
     et_program = edge_manager.to_executorch()
 
