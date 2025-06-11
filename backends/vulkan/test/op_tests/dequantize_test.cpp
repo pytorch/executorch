@@ -108,6 +108,9 @@ at::Tensor dequantize_per_tensor_aten(
   }
 
   switch (out_dtype) {
+    case at::kHalf:
+      et_out_dtype = ScalarType::Half;
+      break;
     case at::kFloat:
       et_out_dtype = ScalarType::Float;
       break;
@@ -121,7 +124,14 @@ at::Tensor dequantize_per_tensor_aten(
   executorch::aten::optional<ScalarType> opt_et_out_dtype(et_out_dtype);
 
   WRAP_TO_ATEN(dequantize_per_tensor_out_no_context, 7)
-  (input, scale, zero_point, quant_min, quant_max, et_dtype, opt_et_out_dtype, out);
+  (input,
+   scale,
+   zero_point,
+   quant_min,
+   quant_max,
+   et_dtype,
+   opt_et_out_dtype,
+   out);
   return out;
 }
 
@@ -160,6 +170,9 @@ at::Tensor dequantize_per_token_aten(
   }
 
   switch (out_dtype) {
+    case at::kHalf:
+      et_out_dtype = ScalarType::Half;
+      break;
     case at::kFloat:
       et_out_dtype = ScalarType::Float;
       break;
@@ -171,14 +184,20 @@ at::Tensor dequantize_per_token_aten(
   }
 
   WRAP_TO_ATEN(dequantize_per_token_out_no_context, 7)
-  (input, scale, zero_points, quant_min, quant_max, et_dtype, et_out_dtype, out);
+  (input,
+   scale,
+   zero_points,
+   quant_min,
+   quant_max,
+   et_dtype,
+   et_out_dtype,
+   out);
   return out;
 }
 
 } // namespace native
 } // namespace executor
 } // namespace torch
-
 
 //
 // Test functions
@@ -282,6 +301,7 @@ void check_dequantize_args(
 
   // Check that output dtype is a floating point type
   switch (out_dtype) {
+    case c10::kHalf:
     case c10::kFloat:
     case c10::kDouble:
       break;

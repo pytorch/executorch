@@ -56,7 +56,6 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
 )
 from executorch.exir.program._program import _transform
 from torch._export.pass_base import PassType
-from torch.ao.quantization.quantizer.quantizer import Quantizer
 from torch.export import export, ExportedProgram
 from torch.testing import FileCheck
 from torch.utils._pytree import tree_flatten
@@ -65,6 +64,7 @@ from torchao.quantization.pt2e.quantize_pt2e import (
     prepare_pt2e,
     prepare_qat_pt2e,
 )
+from torchao.quantization.pt2e.quantizer import Quantizer
 
 
 class Stage(ABC):

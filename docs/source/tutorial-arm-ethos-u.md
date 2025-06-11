@@ -50,7 +50,11 @@ In the following sections we will walk through the steps to download each of the
 
 In this section, we will do a one-time setup, like downloading and installing necessary software, for the platform support files needed to run ExecuTorch programs in this tutorial.
 
-For that we will use the `examples/arm/setup.sh` script to pull each item in an automated fashion. It is recommended to run the script in a conda environment. Upon successful execution, you can directly go to [the next step](#convert-the-pytorch-model-to-the-pte-file).
+For that we will use the `examples/arm/setup.sh` script to pull each item in an automated fashion. It is recommended to run the script in a conda environment.
+```bash
+examples/arm/setup.sh --i-agree-to-the-contained-eula
+```
+Upon successful execution, you can directly go to [the next step](#convert-the-pytorch-model-to-the-pte-file).
 
 As mentioned before, we currently support only Linux based platforms with x86_64 or aarch64 processor architecture. Let’s make sure we are indeed on a supported platform.
 

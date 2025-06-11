@@ -45,7 +45,7 @@ class SumVisitor_080_BI(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 3)
-        validate_same_dtype(self.target, [inputs[0], output])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
 
         tensor = inputs[0]
         input_shape = list(tensor.shape)
@@ -101,7 +101,7 @@ class SumVisitor_080_MI(SumVisitor_080_BI):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 3)
-        validate_same_dtype(self.target, [inputs[0], output])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
 
         if inputs[0].dtype == ts.DType.INT8:
             return super().define_node(node, tosa_graph, inputs, output)
@@ -148,7 +148,7 @@ class SumVisitor_INT(NodeVisitor):
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 3)
-        validate_same_dtype(self.target, [inputs[0], output])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
 
         tensor = inputs[0]
         input_shape = list(tensor.shape)
@@ -202,7 +202,7 @@ class SumVisitor_FP(SumVisitor_INT):
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 3)
-        validate_same_dtype(self.target, [inputs[0], output])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
 
         tensor = inputs[0]
         input_shape = list(tensor.shape)
