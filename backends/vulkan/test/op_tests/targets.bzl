@@ -164,5 +164,13 @@ def define_common_targets(is_fbcode = False):
             "//executorch/extension/aten_util:aten_bridge",
         ]
     )
+    define_test_targets(
+        "choose_qparams_test",
+        extra_deps = [
+            "//executorch/kernels/quantized/cpu:op_choose_qparams",
+            "//executorch/extension/tensor:tensor",
+            "//executorch/extension/aten_util:aten_bridge",
+        ]
+    )
     define_test_targets("linear_weight_int4_test")
     define_test_targets("rotary_embedding_test")
