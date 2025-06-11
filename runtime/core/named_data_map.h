@@ -77,6 +77,14 @@ class ET_EXPERIMENTAL NamedDataMap {
    * pointer is only valid for the lifetime of the DataMap.
    */
   ET_NODISCARD virtual Result<const char*> get_key(uint32_t index) const = 0;
+
+  /**
+   * Merge a named_data_map into the current one.
+   *
+   * @param other The named_data_map to merge.
+   * @return Error indicating if the merge was successful or not.
+   */
+  ET_NODISCARD virtual Error merge(const NamedDataMap* other) = 0;
 };
 
 } // namespace ET_RUNTIME_NAMESPACE

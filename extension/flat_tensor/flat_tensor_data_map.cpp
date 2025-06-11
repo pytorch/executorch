@@ -19,14 +19,14 @@
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/platform/compiler.h>
 
+using executorch::aten::ScalarType;
+using executorch::ET_RUNTIME_NAMESPACE::NamedDataMap;
+using executorch::ET_RUNTIME_NAMESPACE::TensorLayout;
+using executorch::runtime::DataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
-
-using executorch::aten::ScalarType;
-using executorch::ET_RUNTIME_NAMESPACE::TensorLayout;
-using executorch::runtime::DataLoader;
 
 namespace executorch {
 namespace extension {
@@ -103,82 +103,109 @@ Result<const TensorLayout> create_tensor_layout(
 
 ET_NODISCARD Result<const TensorLayout> FlatTensorDataMap::get_tensor_layout(
     executorch::aten::string_view key) const {
-  Result<const flat_tensor_flatbuffer::NamedData*> named_data = get_named_data(
-      key,
-      flat_tensor_->named_data(),
-      flat_tensor_->segments(),
-      header_.segment_base_offset + header_.segment_data_size);
-  if (!named_data.ok()) {
-    return named_data.error();
+  if (key_to_map_index_.find(key.data()) == key_to_map_index_.end()) {
+    return Error::NotFound;
   }
-  return create_tensor_layout(named_data.get()->tensor_layout());
+  auto index = key_to_map_index_.at(key.data());
+  if (index == -1) {
+    Result<const flat_tensor_flatbuffer::NamedData*> named_data =
+        get_named_data(
+            key,
+            flat_tensor_->named_data(),
+            flat_tensor_->segments(),
+            header_.segment_base_offset + header_.segment_data_size);
+    if (named_data.ok()) {
+      return create_tensor_layout(named_data.get()->tensor_layout());
+    }
+    return named_data.error();
+  } else {
+    return merged_maps_[index]->get_tensor_layout(key);
+  }
 }
 
 ET_NODISCARD Result<FreeableBuffer> FlatTensorDataMap::get_data(
     executorch::aten::string_view key) const {
-  Result<const flat_tensor_flatbuffer::NamedData*> named_data = get_named_data(
-      key,
-      flat_tensor_->named_data(),
-      flat_tensor_->segments(),
-      header_.segment_base_offset + header_.segment_data_size);
-  if (!named_data.ok()) {
-    return named_data.error();
+  if (key_to_map_index_.find(key.data()) == key_to_map_index_.end()) {
+    return Error::NotFound;
   }
+  auto index = key_to_map_index_.at(key.data());
+  if (index == -1) {
+    Result<const flat_tensor_flatbuffer::NamedData*> named_data =
+        get_named_data(
+            key,
+            flat_tensor_->named_data(),
+            flat_tensor_->segments(),
+            header_.segment_base_offset + header_.segment_data_size);
+    if (named_data.ok()) {
+      uint32_t segment_index = named_data.get()->segment_index();
+      uint64_t segment_offset =
+          flat_tensor_->segments()->Get(segment_index)->offset();
+      uint64_t segment_size =
+          flat_tensor_->segments()->Get(segment_index)->size();
 
-  uint32_t segment_index = named_data.get()->segment_index();
-  uint64_t segment_offset =
-      flat_tensor_->segments()->Get(segment_index)->offset();
-  uint64_t segment_size = flat_tensor_->segments()->Get(segment_index)->size();
-
-  return loader_->load(
-      /*offset=*/header_.segment_base_offset + segment_offset,
-      segment_size,
-      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
+      return loader_->load(
+          /*offset=*/header_.segment_base_offset + segment_offset,
+          segment_size,
+          DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
+    }
+    return named_data.error();
+  } else {
+    return merged_maps_[index]->get_data(key);
+  }
 }
 
 ET_NODISCARD Error FlatTensorDataMap::load_data_into(
     ET_UNUSED executorch::aten::string_view key,
     ET_UNUSED void* buffer,
     ET_UNUSED size_t size) const {
-  Result<const flat_tensor_flatbuffer::NamedData*> named_data = get_named_data(
-      key,
-      flat_tensor_->named_data(),
-      flat_tensor_->segments(),
-      header_.segment_base_offset + header_.segment_data_size);
-  if (!named_data.ok()) {
-    return named_data.error();
+  if (key_to_map_index_.find(key.data()) == key_to_map_index_.end()) {
+    return Error::NotFound;
   }
+  auto index = key_to_map_index_.at(key.data());
+  if (index == -1) {
+    Result<const flat_tensor_flatbuffer::NamedData*> named_data =
+        get_named_data(
+            key,
+            flat_tensor_->named_data(),
+            flat_tensor_->segments(),
+            header_.segment_base_offset + header_.segment_data_size);
+    if (!named_data.ok()) {
+      return named_data.error();
+    }
 
-  uint32_t segment_index = named_data.get()->segment_index();
-  uint64_t segment_offset =
-      flat_tensor_->segments()->Get(segment_index)->offset();
+    uint32_t segment_index = named_data.get()->segment_index();
+    uint64_t segment_offset =
+        flat_tensor_->segments()->Get(segment_index)->offset();
 
-  Result<const TensorLayout> tensor_layout =
-      create_tensor_layout(named_data.get()->tensor_layout());
+    Result<const TensorLayout> tensor_layout =
+        create_tensor_layout(named_data.get()->tensor_layout());
 
-  if (!tensor_layout.ok()) {
-    return tensor_layout.error();
+    if (!tensor_layout.ok()) {
+      return tensor_layout.error();
+    }
+
+    ET_CHECK_OR_RETURN_ERROR(
+        size <= tensor_layout.get().nbytes(),
+        InvalidArgument,
+        "Buffer size %zu is smaller than tensor size %zu",
+        size,
+        tensor_layout.get().nbytes());
+
+    // Load mutable data.
+    DataLoader::SegmentInfo info = DataLoader::SegmentInfo(
+        DataLoader::SegmentInfo::Type::Mutable, 0, nullptr);
+    return loader_->load_into(
+        header_.segment_base_offset + segment_offset,
+        tensor_layout.get().nbytes(),
+        info,
+        buffer);
+  } else {
+    return merged_maps_[index]->load_data_into(key, buffer, size);
   }
-
-  ET_CHECK_OR_RETURN_ERROR(
-      size <= tensor_layout.get().nbytes(),
-      InvalidArgument,
-      "Buffer size %zu is smaller than tensor size %zu",
-      size,
-      tensor_layout.get().nbytes());
-
-  // Load mutable data.
-  DataLoader::SegmentInfo info = DataLoader::SegmentInfo(
-      DataLoader::SegmentInfo::Type::Mutable, 0, nullptr);
-  return loader_->load_into(
-      header_.segment_base_offset + segment_offset,
-      tensor_layout.get().nbytes(),
-      info,
-      buffer);
 }
 
 ET_NODISCARD Result<uint32_t> FlatTensorDataMap::get_num_keys() const {
-  return flat_tensor_->named_data()->size();
+  return key_to_map_index_.size();
 }
 
 ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
@@ -190,7 +217,40 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
       "Index %u out of range of size %u",
       index,
       num_keys);
-  return flat_tensor_->named_data()->Get(index)->key()->c_str();
+
+  uint32_t current_index = 0;
+  for (const auto& pair : key_to_map_index_) {
+    if (current_index == index) {
+      return pair.first.c_str();
+    }
+    current_index++;
+  }
+  return Error::NotFound;
+}
+
+ET_NODISCARD Error FlatTensorDataMap::merge(const NamedDataMap* other) {
+  ET_CHECK_OR_RETURN_ERROR(
+      other != nullptr, InvalidArgument, "Merge error: other is nullptr.");
+
+  // Check if any duplicate keys exist.
+  uint32_t num_keys = other->get_num_keys().get();
+
+  for (uint32_t i = 0; i < num_keys; i++) {
+    const char* key = other->get_key(i).get();
+    ET_CHECK_OR_RETURN_ERROR(
+        key_to_map_index_.find(key) == key_to_map_index_.end(),
+        InvalidArgument,
+        "Merge error: key %s already exists in the named_data_map.",
+        key);
+  }
+  // Place keys into the map.
+  for (uint32_t i = 0; i < num_keys; i++) {
+    const char* key = other->get_key(i).get();
+    key_to_map_index_[key] = merged_maps_.size();
+  }
+
+  merged_maps_.push_back(other);
+  return Error::Ok;
 }
 
 /* static */ Result<FlatTensorDataMap> FlatTensorDataMap::load(
@@ -261,8 +321,18 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
       InvalidExternalData,
       "FlatTensor segments is nullptr, malformed PTD file.");
 
+  // Add keys to the map.
+  std::unordered_map<std::string, int32_t> key_to_map_index;
+  for (int i = 0; i < flat_tensor->named_data()->size(); i++) {
+    const auto* named_data = flat_tensor->named_data()->Get(i);
+    key_to_map_index[named_data->key()->c_str()] = -1;
+  }
   return FlatTensorDataMap(
-      fh.get(), std::move(flat_tensor_data.get()), flat_tensor, loader);
+      fh.get(),
+      std::move(flat_tensor_data.get()),
+      flat_tensor,
+      loader,
+      std::move(key_to_map_index));
 }
 
 } // namespace extension
