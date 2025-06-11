@@ -188,16 +188,37 @@ test_model_with_qnn() {
     EXPORT_SCRIPT=edsr
     # Additional deps for edsr
     pip install piq
+  elif [[ "${MODEL_NAME}" == "deit" ]]; then
+    EXPORT_SCRIPT=deit
+  elif [[ "${MODEL_NAME}" == "pvt" ]]; then
+    EXPORT_SCRIPT=pvt
+  elif [[ "${MODEL_NAME}" == "swin" ]]; then
+    EXPORT_SCRIPT=swin_transformer
   else
     echo "Unsupported model $MODEL_NAME"
     exit 1
   fi
 
+  SCRIPT_FOLDER=""
+  case "${MODEL_NAME}" in
+    "dl3"|"mv3"|"mv2"|"ic4"|"ic3"|"vit"|"mb"|"w2l")
+        SCRIPT_FOLDER=scripts
+        ;;
+    "deit"|"pvt"|"swin")
+        SCRIPT_FOLDER=oss_scripts
+        ;;
+    *)
+        echo "Unsupported model $MODEL_NAME"
+        exit 1
+        ;;
+  esac
+  
+
   # Use SM8450 for S22, SM8550 for S23, and SM8560 for S24
   # TODO(guangyang): Make QNN chipset matches the target device
   QNN_CHIPSET=SM8450
 
-  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.scripts.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --ci --compile_only $EXTRA_FLAGS
+  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.${SCRIPT_FOLDER}.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --ci --compile_only $EXTRA_FLAGS
   EXPORTED_MODEL=$(find "./${EXPORT_SCRIPT}" -type f -name "${MODEL_NAME}*.pte" -print -quit)
 }
 
