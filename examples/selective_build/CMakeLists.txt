@@ -63,7 +63,7 @@ option(EXECUTORCH_SELECT_ALL_OPS
 )
 
 # Option to enable dtype selective build
-option(EXECUTORCH_SELECT_DTYPE "Enable dtype selection during build." OFF
+option(EXECUTORCH_DTYPE_SELECTIVE_BUILD "Enable dtype selection during build." OFF
 )
 # ------------------------------- OPTIONS END --------------------------------
 
@@ -84,8 +84,11 @@ include(${EXECUTORCH_SRCS_FILE})
 #
 set(_kernel_lib)
 if(EXECUTORCH_SELECT_OPS_YAML)
+#  set(_custom_ops_yaml
+#      ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops.yaml
+#  )
   set(_custom_ops_yaml
-      ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops.yaml
+      ${EXECUTORCH_ROOT}/mv2_schema.yaml
   )
   set(kernel_sources
       ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops_1_out.cpp
@@ -113,7 +116,7 @@ gen_selected_ops(
   INCLUDE_ALL_OPS
   "${EXECUTORCH_SELECT_ALL_OPS}"
   DTYPE_SELECT
-  "${EXECUTORCH_SELECT_DTYPE}"
+  "${EXECUTORCH_DTYPE_SELECTIVE_BUILD}"
 )
 
 generate_bindings_for_kernels(
@@ -124,7 +127,7 @@ generate_bindings_for_kernels(
   CUSTOM_OPS_YAML
   "${_custom_ops_yaml}"
   DTYPE_SELECT
-  "${EXECUTORCH_SELECT_DTYPE}"
+  "${EXECUTORCH_DTYPE_SELECTIVE_BUILD}"
 )
 
 gen_operators_lib(
@@ -135,7 +138,7 @@ gen_operators_lib(
   DEPS
   executorch_core
   DTYPE_SELECT
-  "${EXECUTORCH_SELECT_DTYPE}"
+  "${EXECUTORCH_DTYPE_SELECTIVE_BUILD}"
 )
 
 list(TRANSFORM _executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
