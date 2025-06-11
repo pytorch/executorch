@@ -10,6 +10,9 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/ScalarUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/DynamicDispatchNode.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+
 namespace vkcompute {
 
 namespace {
@@ -21,6 +24,36 @@ void resize_quantize_output(
   vTensorPtr out = graph->get_tensor(args[0].refs[0]);
   vTensorPtr input = graph->get_tensor(args[1].refs[0]);
   out->virtual_resize(input->sizes());
+}
+
+utils::uvec3 quantize_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+
+  const ValueRef input = args[1].refs[0];
+
+  if (graph->is_buffer_storage(input)) {
+    return graph->create_global_wg_size(input);
+  } else {
+    return graph->logical_limits_of(input);
+  }
+}
+
+utils::uvec3 quantize_local_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const utils::uvec3& global_workgroup_size,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)args;
+  (void)resize_args;
+
+  return graph->create_local_wg_size(global_workgroup_size);
 }
 
 } // namespace
@@ -43,25 +76,18 @@ void add_quantize_per_tensor_node(
   int quant_min_val = static_cast<int>(graph.get_int(quant_min));
   int quant_max_val = static_cast<int>(graph.get_int(quant_max));
 
-  utils::uvec3 global_size;
   vkapi::ParamsBindList param_ubos;
 
   if (graph.is_buffer_storage(input)) {
-    global_size = graph.create_global_wg_size(input);
-
     param_ubos = {
         graph.sizes_ubo(input),
         graph.strides_ubo(input),
         graph.sizes_ubo(output),
         graph.strides_ubo(output)};
   } else {
-    global_size = graph.logical_limits_of(input);
-
     param_ubos = {
         graph.logical_limits_ubo(input), graph.logical_limits_ubo(output)};
   }
-
-  const utils::uvec3 local_size = graph.create_local_wg_size(global_size);
 
   std::vector<PushConstantDataInfo> push_constants;
   push_constants = {
@@ -71,11 +97,11 @@ void add_quantize_per_tensor_node(
       PushConstantDataInfo(&quant_max_val, sizeof(int)),
   };
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      quantize_global_wg_size,
+      quantize_local_wg_size,
       // Inputs and Outputs
       {{input, vkapi::kRead}, {output, vkapi::kReadWrite}},
       // Shader param buffers
@@ -108,12 +134,9 @@ void add_quantize_per_token_node(
 
   int num_tokens = static_cast<int>(graph.sizes_of(scale)[0]);
 
-  utils::uvec3 global_size;
   vkapi::ParamsBindList param_ubos;
 
   if (graph.is_buffer_storage(input)) {
-    global_size = graph.create_global_wg_size(input);
-
     param_ubos = {
         graph.sizes_ubo(input),
         graph.strides_ubo(input),
@@ -121,15 +144,11 @@ void add_quantize_per_token_node(
         graph.strides_ubo(output),
     };
   } else {
-    global_size = graph.logical_limits_of(input);
-
     param_ubos = {
         graph.logical_limits_ubo(input),
         graph.logical_limits_ubo(output),
     };
   }
-
-  const utils::uvec3 local_size = graph.create_local_wg_size(global_size);
 
   std::vector<PushConstantDataInfo> push_constants;
   push_constants = {
@@ -138,11 +157,11 @@ void add_quantize_per_token_node(
       PushConstantDataInfo(&quant_max_val, sizeof(int)),
   };
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      quantize_global_wg_size,
+      quantize_local_wg_size,
       // Inputs and Outputs
       {{input, vkapi::kRead},
        {output, vkapi::kWrite},
@@ -172,7 +191,6 @@ void quantize_per_tensor_impl(
 
   // Verify input is a floating point type
   VK_CHECK_COND(
-      graph.dtype_of(input) == vkapi::kDouble ||
       graph.dtype_of(input) == vkapi::kFloat ||
       graph.dtype_of(input) == vkapi::kHalf);
 
@@ -196,7 +214,6 @@ void quantize_per_token_impl(
 
   // Verify input is a floating point type
   VK_CHECK_COND(
-      graph.dtype_of(input) == vkapi::kDouble ||
       graph.dtype_of(input) == vkapi::kFloat ||
       graph.dtype_of(input) == vkapi::kHalf);
 

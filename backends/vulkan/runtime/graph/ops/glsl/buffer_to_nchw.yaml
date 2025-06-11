@@ -17,7 +17,6 @@ buffer_to_nchw:
       - VALUE: int8
       - VALUE: uint8
       - VALUE: int32
-      - VALUE: int64
   shader_variants:
     - NAME: buffer_to_nchw
     - NAME: buffer_to_nchw_no_pc
