@@ -50,6 +50,8 @@ class CumulativeSum(NodeVisitor):
         dim = self.get_param(node, input_tensor)
 
         output_tensor = self.get_tensor(node, node)
+        if output_tensor.dtype == torch.int64:
+            output_tensor = output_tensor.to(torch.int32)
         output_tensor_wrapper = self.define_tensor(
             node,
             node,

@@ -183,6 +183,7 @@ class TestQNN(unittest.TestCase):
     executorch_root: str = ""
     artifact_dir: str = ""
     image_dataset: str = ""
+    sentence_dataset: str = ""
     pretrained_weight: str = ""
     enable_profile: bool = False
     online_prepare: bool = False
