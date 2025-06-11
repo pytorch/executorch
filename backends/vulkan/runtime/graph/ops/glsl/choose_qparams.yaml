@@ -1,0 +1,23 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+choose_qparams:
+  parameter_names_with_default_values:
+    IN_DTYPE: float
+    STORAGE: texture3d
+    MODE: per_tensor
+  generate_variant_forall:
+    STORAGE:
+      - VALUE: buffer
+      - VALUE: texture3d
+    IN_DTYPE:
+      - VALUE: half
+      - VALUE: float
+  shader_variants:
+    - NAME: choose_qparams_tensor
+      MODE: per_tensor
+    - NAME: choose_qparams_per_token_asymmetric
+      MODE: per_token
