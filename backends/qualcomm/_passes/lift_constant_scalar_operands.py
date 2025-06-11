@@ -14,8 +14,8 @@ from executorch.backends.qualcomm._passes.utils import is_float_tensor
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
 from torch import fx
-from torch.ao.quantization.fx.utils import get_new_attr_name_with_prefix
 from torch.ops import aten as aten
+from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix
 
 
 @dataclass(frozen=True)
@@ -40,10 +40,13 @@ SCALAR_OPS = {
     aten.ne.Scalar: TensorOpInfo(aten.ne.Tensor, False, False),
     aten.add.Scalar: TensorOpInfo(aten.add.Tensor, False, False),
     aten.add_.Scalar: TensorOpInfo(aten.add_.Tensor, False, False),
+    # For below cases, refer to LiftAddTensor Model in UT for sample
+    aten.add.Tensor: TensorOpInfo(aten.add.Tensor, False, False),
     aten.div.Scalar: TensorOpInfo(aten.div.Tensor, False, False),
     aten.mul.Scalar: TensorOpInfo(aten.mul.Tensor, False, False),
     aten.rsub.Scalar: TensorOpInfo(aten.rsub.Tensor, False, False),
     aten.sub.Scalar: TensorOpInfo(aten.sub.Tensor, False, False),
+    aten.sub.Tensor: TensorOpInfo(aten.sub.Tensor, False, False),
     aten.pow.Tensor_Scalar: TensorOpInfo(aten.pow.Tensor_Tensor, False, False),
     # The scalar number arg[1] is missing when using default. Result in a corner case to deal
     aten.leaky_relu.default: TensorOpInfo(aten.prelu.default, True, False),

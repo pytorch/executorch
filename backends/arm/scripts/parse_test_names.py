@@ -16,6 +16,9 @@ CUSTOM_EDGE_OPS = [
     "adaptive_avg_pool2d.default",
     "bitwise_right_shift.Tensor",
     "bitwise_left_shift.Tensor",
+    "native_group_norm.default",
+    "unbind.int",
+    "unflatten.int",
     "_native_batch_norm_legit_no_training.default",
     "_native_batch_norm_legit.no_stats",
 ]

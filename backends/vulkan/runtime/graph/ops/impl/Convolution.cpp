@@ -106,9 +106,10 @@ ValueRef prepack_biases(
       graph.create_local_wg_size(v),
       vref,
       v,
-      {t->sizes_ubo()},
+      {},
       // Specialization constants
-      {t->hashed_layout()}));
+      {t->hashed_layout()},
+      {graph.sizes_pc_of(v)}));
 
   return v;
 }
@@ -210,6 +211,8 @@ ValueRef prepack_weights(
   vkapi::ShaderInfo shader =
       get_conv2d_shader(graph, *t, /*prepack_weights = */ true, method, vref);
 
+  const auto original_sizes_pc =
+      utils::make_ivec4(original_sizes, /*reverse = */ true);
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       shader,
@@ -217,11 +220,11 @@ ValueRef prepack_weights(
       graph.create_local_wg_size(v),
       vref,
       v,
-      {t->sizes_ubo(),
-       graph.create_params_buffer(
-           utils::make_ivec4(original_sizes, /*reverse = */ true))},
+      {},
       // Specialization constants
-      {SV(t->packed_dim())}));
+      {SV(t->packed_dim())},
+      {graph.sizes_pc_of(v),
+       PushConstantDataInfo(&original_sizes_pc, sizeof(original_sizes_pc))}));
 
   return v;
 }
@@ -404,13 +407,11 @@ void add_conv2d_node(
   utils::uvec3 wg_size = create_conv2d_global_wg_size(
       graph, method, out, weight_data, stride_equals_dilation);
 
-  if (method == Conv2dMethod::Depthwise) {
-    wg_size = {wg_size[0] * wg_size[1] * wg_size[2], 1, 1};
-  } else if (method == Conv2dMethod::Pointwise) {
+  utils::uvec3 local_wg_size;
+  if (method == Conv2dMethod::Depthwise || method == Conv2dMethod::Pointwise) {
     wg_size = {wg_size[0] * wg_size[1], wg_size[2], 1};
   }
 
-  utils::uvec3 local_wg_size;
   if (method == Conv2dMethod::Pointwise) {
     uint32_t local_wg_size_y = 1;
     if (wg_size[1] % 8 == 0) {
@@ -421,6 +422,8 @@ void add_conv2d_node(
       local_wg_size_y = 2;
     }
     local_wg_size = {64 / local_wg_size_y, local_wg_size_y, 1};
+  } else if (method == Conv2dMethod::Depthwise) {
+    local_wg_size = {64, 1, 1};
   } else {
     local_wg_size = graph.create_local_wg_size(wg_size);
   }

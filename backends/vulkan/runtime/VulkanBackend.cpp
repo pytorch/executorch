@@ -140,6 +140,14 @@ GraphConfig get_graph_config(ArrayRef<CompileSpec>& compile_specs) {
 
       config.set_memory_layout_override(memory_layout);
     }
+    if (strcmp(spec.key, "require_dynamic_shapes") == 0) {
+      ET_CHECK_MSG(value_size == sizeof(uint8_t), "Unexpected value size!");
+      bool value = getBool(value_data);
+
+      if (value) {
+        config.expect_dynamic_shapes = true;
+      }
+    }
   }
 #ifdef ET_EVENT_TRACER_ENABLED
   config.enable_querypool = true;
@@ -495,11 +503,17 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     builder.build_graph();
 
     compute_graph->prepare();
+    compute_graph->prepare_pipelines();
 
     compute_graph->encode_prepack();
     compute_graph->prepack();
 
-    compute_graph->encode_execute();
+    // If dynamic shapes are not expected, then the command buffer only needs to
+    // be encoded once. Otherwise, wait until the first inference to encode the
+    // the command buffer, when actual input shapes are known.
+    if (!compute_graph->graphconfig().expect_dynamic_shapes) {
+      compute_graph->encode_execute();
+    }
 
     return Error::Ok;
   }
@@ -567,9 +581,16 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       }
     }
 
-    if (should_propagate_resize) {
+    // propagate_resize() will re-encode the command buffer so that push
+    // constants are updated and DynamicDispatchNode can update the compute
+    // shader, global workgroup size, and local workgroup size to perform the
+    // model inference.
+    if (should_propagate_resize ||
+        (compute_graph->graphconfig().expect_dynamic_shapes &&
+         compute_graph->execute_count() == 0u)) {
       compute_graph->propagate_resize();
     }
+
     compute_graph->execute();
 
     for (size_t i = 0; i < compute_graph->outputs().size(); i++) {

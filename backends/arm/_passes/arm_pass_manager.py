@@ -27,6 +27,7 @@ from executorch.backends.arm._passes import (
     DecomposeCosineSimilarityPass,
     DecomposeDivPass,
     DecomposeGeluPass,
+    DecomposeGroupNormPass,
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
     DecomposeLinearPass,
@@ -61,7 +62,10 @@ from executorch.backends.arm._passes import (
     UnsqueezeScalarPlaceholdersPass,
 )
 
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa_specification import (
+    TosaLoweringContext,
+    TosaSpecification,
+)
 from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
 )
@@ -79,7 +83,8 @@ class ArmPassManager(PassManager):
         super().__init__()
 
     def _transform(self, graph_module: GraphModule):
-        return self(graph_module).graph_module
+        with TosaLoweringContext(self.tosa_spec):
+            return self(graph_module).graph_module
 
     def _tosa_080_BI_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
         self.add_pass(FuseQuantizedActivationPass())
@@ -141,6 +146,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertMmToBmmPass())
         self.add_pass(DecomposeLinearPass())
         self.add_pass(DecomposeLeakyReLUPass())
+        self.add_pass(DecomposeGroupNormPass())
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(
@@ -208,6 +214,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(ScalarsToAttributePass())
+        self.add_pass(DecomposeGroupNormPass())
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass(graph_module, self.tosa_spec))

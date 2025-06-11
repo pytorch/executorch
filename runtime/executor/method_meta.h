@@ -21,6 +21,10 @@ struct ExecutionPlan;
 
 namespace executorch {
 namespace ET_RUNTIME_NAMESPACE {
+namespace testing {
+// Provides test access to private Program methods.
+class TensorInfoTestFriend;
+} // namespace testing
 
 /**
  * Metadata about a specific tensor of an ExecuTorch Program.
@@ -71,6 +75,7 @@ class TensorInfo final {
  private:
   // Let MethodMeta create TensorInfo.
   friend class MethodMeta;
+  friend class testing::TensorInfoTestFriend;
 
   TensorInfo(
       Span<const int32_t> sizes,
