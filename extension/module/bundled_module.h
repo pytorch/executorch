@@ -10,7 +10,6 @@
 
 #include <executorch/extension/module/module.h>
 
-
 #ifdef USE_ATEN_LIB
 #define ET_BUNDLED_MODULE_NAMESPACE bundled_module::aten
 #else // !USE_ATEN_LIB
