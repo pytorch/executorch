@@ -44,6 +44,8 @@ target_include_directories(
 add_library(extension_llm_runner STATIC ${_extension_llm_runner__srcs})
 
 # add tokenizers
+set(SUPPORT_REGEX_LOOKAHEAD ON)
+set(PCRE2_STATIC_PIC ON)
 add_subdirectory(
   ${EXECUTORCH_ROOT}/extension/llm/tokenizers
   ${CMAKE_CURRENT_BINARY_DIR}/../../../extension/llm/tokenizers
