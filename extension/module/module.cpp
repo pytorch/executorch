@@ -36,6 +36,8 @@
 
 namespace executorch {
 namespace extension {
+namespace ET_MODULE_NAMESPACE {
+
 
 using ET_RUNTIME_NAMESPACE::MethodMeta;
 using ET_RUNTIME_NAMESPACE::Program;
@@ -308,5 +310,6 @@ runtime::Error Module::set_output(
       output_tensor.mutable_data_ptr(), output_tensor.nbytes(), output_index);
 }
 
+} // namespace ET_MODULE_NAMESPACE
 } // namespace extension
 } // namespace executorch

@@ -93,6 +93,7 @@ using ::executorch::ET_RUNTIME_NAMESPACE::get_registered_kernels;
 using ::executorch::ET_RUNTIME_NAMESPACE::Kernel;
 using ::executorch::ET_RUNTIME_NAMESPACE::Method;
 using ::executorch::ET_RUNTIME_NAMESPACE::Program;
+using ::executorch::extension::ET_BUNDLED_MODULE_NAMESPACE::BundledModule;
 using ::executorch::extension::BufferDataLoader;
 using ::executorch::extension::MallocMemoryAllocator;
 using ::executorch::extension::MmapDataLoader;
