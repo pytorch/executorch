@@ -54,27 +54,9 @@ utils::uvec3 choose_qparams_global_wg_size(
   (void)shader;
   (void)resize_args;
 
-  // For global reduction, we need to process the entire input tensor
-  const ValueRef input = args.at(0).refs.at(0);
+  const uint32_t local_threads = 64; // From choose_qparams_local_wg_size
 
-  if (graph->is_buffer_storage(input)) {
-    const uint32_t local_threads = 64; // From choose_qparams_local_wg_size
-
-    // For per-tensor quantization, use SINGLE WORKGROUP approach to avoid
-    // complex multi-workgroup synchronization issues that cause race
-    // conditions. A single workgroup with 64 threads can efficiently process
-    // large tensors by having each thread process multiple elements with
-    // stride.
-
-    // Return single workgroup with 64 threads
-    return {local_threads, 1u, 1u};
-  } else {
-    // For texture storage, use single workgroup approach for reliability
-    const uint32_t local_threads = 64; // From choose_qparams_local_wg_size
-
-    // Return single workgroup with 64 threads
-    return {local_threads, 1u, 1u};
-  }
+  return {local_threads, 1u, 1u};
 }
 
 utils::uvec3 choose_qparams_local_wg_size(
@@ -90,14 +72,10 @@ utils::uvec3 choose_qparams_local_wg_size(
   const ValueRef input = args.at(0).refs.at(0);
 
   if (graph->is_buffer_storage(input)) {
-    // For hierarchical reduction, use 64 threads per work group for better
-    // efficiency This provides better GPU utilization while still being
-    // manageable for shared memory
-
     const uint32_t local_threads = 64;
+
     return {local_threads, 1u, 1u};
   } else {
-    // For texture storage, use default local workgroup size
     return graph->create_local_wg_size(global_workgroup_size);
   }
 }
@@ -112,57 +90,27 @@ utils::uvec3 choose_qparams_per_token_global_wg_size(
 
   const ValueRef input = args.at(0).refs.at(0);
 
-  if (graph->is_buffer_storage(input)) {
-    // For per-token reduction, we need one workgroup per token
-    // Calculate number of tokens (product of all dimensions except the last
-    // one)
-    int64_t num_tokens = 1;
-    const auto input_sizes = graph->sizes_of(input);
-    for (size_t i = 0; i < input_sizes.size() - 1; i++) {
-      num_tokens *= input_sizes[i];
-    }
-
-    // GPU hardware limits: Most GPUs support max ~65535 workgroups per
-    // dimension
-    const uint32_t max_workgroups = 65535;
-    const uint32_t local_x = 64u; // From choose_qparams_per_token_local_wg_size
-
-    // Clamp number of workgroups to hardware limits
-    uint32_t clamped_workgroups =
-        std::min(static_cast<uint32_t>(num_tokens), max_workgroups);
-
-    // If we have more tokens than workgroups, each workgroup will process
-    // multiple tokens
-
-    // Calculate total threads needed
-    const uint32_t total_threads_x = clamped_workgroups * local_x;
-    const uint32_t total_threads_y = 1u;
-    const uint32_t total_threads_z = 1u;
-
-    return {total_threads_x, total_threads_y, total_threads_z};
-  } else {
-    // For texture storage, calculate number of tokens
-    int64_t num_tokens = 1;
-    const auto input_sizes = graph->sizes_of(input);
-    for (size_t i = 0; i < input_sizes.size() - 1; i++) {
-      num_tokens *= input_sizes[i];
-    }
-
-    // For texture storage, clamp to reasonable limits for performance
-    // Large token counts (>1024) can cause very slow execution
-    const uint32_t max_reasonable_tokens = 1024;
-    const uint32_t local_x = 64u; // From choose_qparams_per_token_local_wg_size
-
-    uint32_t clamped_workgroups =
-        std::min(static_cast<uint32_t>(num_tokens), max_reasonable_tokens);
-
-    // Calculate total threads needed
-    const uint32_t total_threads_x = clamped_workgroups * local_x;
-    const uint32_t total_threads_y = 1u;
-    const uint32_t total_threads_z = 1u;
-
-    return {total_threads_x, total_threads_y, total_threads_z};
+  // For per-token reduction, we need one workgroup per token
+  // Calculate number of tokens (product of all dimensions except the last
+  // one)
+  int64_t num_tokens = 1;
+  const auto input_sizes = graph->sizes_of(input);
+  for (size_t i = 0; i < input_sizes.size() - 1; i++) {
+    num_tokens *= input_sizes[i];
   }
+
+  const uint32_t max_workgroups = 65535;
+  const uint32_t local_x = 64u; // From choose_qparams_per_token_local_wg_size
+
+  // Clamp number of workgroups to avoid being slow
+  uint32_t clamped_workgroups =
+      std::min(static_cast<uint32_t>(num_tokens), max_workgroups);
+
+  // If we have more tokens than workgroups, each workgroup will process
+  // multiple tokens
+  const uint32_t total_threads_x = clamped_workgroups * local_x;
+
+  return {total_threads_x, 1u, 1u};
 }
 
 utils::uvec3 choose_qparams_per_token_local_wg_size(
@@ -178,13 +126,10 @@ utils::uvec3 choose_qparams_per_token_local_wg_size(
   const ValueRef input = args.at(0).refs.at(0);
 
   if (graph->is_buffer_storage(input)) {
-    // For per-token reduction, each workgroup processes one token
-    // Use 64 threads per work group to match shared memory allocation
     const uint32_t local_threads = 64;
 
     return {local_threads, 1u, 1u};
   } else {
-    // For texture storage, use default local workgroup size
     return graph->create_local_wg_size(global_workgroup_size);
   }
 }

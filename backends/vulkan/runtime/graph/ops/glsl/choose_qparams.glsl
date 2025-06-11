@@ -52,10 +52,9 @@ $else:
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-// Constants for reduction
 #define NWORKERS 64
 
-// Constant for small scale threshold
+// equivalent of the eps defined in the cpu implemnetation
 #define SMALL_SCALE_THRESHOLD 6.1e-5
 
 // Shared memory for reduction - must match local work group size
@@ -70,11 +69,10 @@ void calculate_scale_and_zero_point(
     int qmax,
     out float scale_val,
     out int zero_point_val) {
-  // Ensure the range includes zero
+  // ensure we have zero included in our range
   min_val = min(min_val, 0.0);
   max_val = max(max_val, 0.0);
 
-  // Calculate scale
   scale_val = (max_val - min_val) / float(qmax - qmin);
 
   // Handle zero or very small scale
@@ -122,16 +120,14 @@ void calculate_scale_and_zero_point(
 
 $if MODE == "per_tensor":
   void main() {
-    // Single-Pass Hierarchical Reduction for per-tensor min/max
     uint global_id = gl_GlobalInvocationID.x;
     uint local_id = gl_LocalInvocationID.x;
     uint group_id = gl_WorkGroupID.x;
     uint total_threads = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
 
-    // Calculate total number of elements in the input tensor
     uint total_elements = uint(t_in_sizes.x * t_in_sizes.y * t_in_sizes.z * t_in_sizes.w);
 
-    // Phase 1: Each thread processes multiple elements with stride
+    // Each thread processes multiple elements with stride
     float thread_min = 1.0/0.0;  // +infinity
     float thread_max = -1.0/0.0; // -infinity
     bool found_valid = false;
@@ -150,7 +146,7 @@ $if MODE == "per_tensor":
       }
     }
 
-    // Phase 2: Intra-group reduction using shared memory
+    // Intra-group reduction using shared memory
     shared_min[local_id] = thread_min;
     shared_max[local_id] = thread_max;
     barrier();
@@ -161,7 +157,6 @@ $if MODE == "per_tensor":
         float other_min = shared_min[local_id + stride];
         float other_max = shared_max[local_id + stride];
 
-        // Handle infinity values properly
         if (!isinf(other_min) && (isinf(shared_min[local_id]) || other_min < shared_min[local_id])) {
           shared_min[local_id] = other_min;
         }
@@ -172,30 +167,26 @@ $if MODE == "per_tensor":
       barrier();
     }
 
-    // Phase 3: Final result calculation (single workgroup only)
+    // Final result calculation (single workgroup only)
     if (local_id == 0) {
       float global_min = shared_min[0];
       float global_max = shared_max[0];
 
-      // Calculate final scale and zero_point
       float scale_val;
       int zero_point_val;
       calculate_scale_and_zero_point(global_min, global_max, quant_min, quant_max, scale_val, zero_point_val);
 
-      // Write final results
       t_scale[0] = scale_val;
       t_zero_point[0] = zero_point_val;
     }
   }
 $else:
   void main() {
-    // Per-token hierarchical reduction implementation with multiple tokens per workgroup
     uint global_id = gl_GlobalInvocationID.x;
     uint local_id = gl_LocalInvocationID.x;
     uint group_id = gl_WorkGroupID.x;
     uint total_workgroups = gl_NumWorkGroups.x;
 
-    // Calculate total number of elements in the input tensor
     uint total_elements = uint(t_in_sizes.x * t_in_sizes.y * t_in_sizes.z * t_in_sizes.w);
     uint token_size = total_elements / uint(num_tokens);
 
@@ -218,7 +209,7 @@ $else:
       uint token_start = token_id * token_size;
       uint token_end = token_start + token_size;
 
-      // Phase 1: Each thread processes multiple elements within the token with stride
+      // Each thread processes multiple elements within the token with stride
       float thread_min = 1.0/0.0;  // +infinity
       float thread_max = -1.0/0.0; // -infinity
       bool found_valid = false;
@@ -238,7 +229,7 @@ $else:
         }
       }
 
-      // Phase 2: Intra-group reduction using shared memory
+      // Intra-group reduction using shared memory
       shared_min[local_id] = thread_min;
       shared_max[local_id] = thread_max;
       barrier();
@@ -249,7 +240,6 @@ $else:
           float other_min = shared_min[local_id + stride];
           float other_max = shared_max[local_id + stride];
 
-          // Handle infinity values properly
           if (!isinf(other_min) && (isinf(shared_min[local_id]) || other_min < shared_min[local_id])) {
             shared_min[local_id] = other_min;
           }
@@ -260,17 +250,15 @@ $else:
         barrier();
       }
 
-      // Phase 3: Final calculation for this token
+      // Final calculation for this token
       if (local_id == 0) {
         float token_min = shared_min[0];
         float token_max = shared_max[0];
 
-        // Calculate scale and zero_point for this token
         float scale_val;
         int zero_point_val;
         calculate_scale_and_zero_point(token_min, token_max, quant_min, quant_max, scale_val, zero_point_val);
 
-        // Write results for this token
         t_scale[token_id] = scale_val;
         t_zero_point[token_id] = zero_point_val;
       }
@@ -284,16 +272,14 @@ $else:
 
 $if MODE == "per_tensor":
   void main() {
-    // Multi-workgroup texture-based per-tensor quantization parameter calculation
     uint global_id = gl_GlobalInvocationID.x;
     uint local_id = gl_LocalInvocationID.x;
     uint group_id = gl_WorkGroupID.x;
     uint total_threads = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
 
-    // Calculate total number of texels in the input tensor
     uint total_texels = uint(t_in_limits.x * t_in_limits.y * t_in_limits.z);
 
-    // Phase 1: Each thread processes multiple texels with stride
+    // Each thread processes multiple texels with stride
     float thread_min = 1.0/0.0;  // +infinity
     float thread_max = -1.0/0.0; // -infinity
     bool found_valid = false;
@@ -307,7 +293,6 @@ $if MODE == "per_tensor":
       uint x = remainder % uint(t_in_limits.x);
       ivec3 texel_pos = ivec3(int(x), int(y), int(z));
 
-      // Load texel data (4 float values)
       FVEC4_T texel_data = load_texel(t_in, texel_pos);
 
       // For texture storage, we assume width-packed (packed_dim = 0)
@@ -369,7 +354,7 @@ $if MODE == "per_tensor":
       }
     }
 
-    // Phase 2: Intra-workgroup reduction using shared memory
+    // Intra-workgroup reduction using shared memory
     shared_min[local_id] = thread_min;
     shared_max[local_id] = thread_max;
     barrier();
@@ -380,7 +365,6 @@ $if MODE == "per_tensor":
         float other_min = shared_min[local_id + stride];
         float other_max = shared_max[local_id + stride];
 
-        // Handle infinity values properly
         if (!isinf(other_min) && (isinf(shared_min[local_id]) || other_min < shared_min[local_id])) {
           shared_min[local_id] = other_min;
         }
@@ -391,31 +375,26 @@ $if MODE == "per_tensor":
       barrier();
     }
 
-    // Phase 3: Final result calculation (single workgroup only for reliability)
+    // Final result calculation (single workgroup only for reliability)
     if (local_id == 0 && group_id == 0) {
       float global_min = shared_min[0];
       float global_max = shared_max[0];
 
-      // Calculate final scale and zero_point
       float scale_val;
       int zero_point_val;
       calculate_scale_and_zero_point(global_min, global_max, quant_min, quant_max, scale_val, zero_point_val);
 
-      // Write final results to output textures
       write_texel(t_scale, ivec3(0, 0, 0), vec4(scale_val, 0.0, 0.0, 0.0));
       write_texel(t_zero_point, ivec3(0, 0, 0), ivec4(zero_point_val, 0, 0, 0));
     }
   }
 $else:
   void main() {
-    // Texture-based per-token quantization parameter calculation
     // Each token is processed by multiple workgroups for parallel reduction
-
     uint local_id = gl_LocalInvocationID.x;
     uint group_id = gl_WorkGroupID.x;
     uint total_workgroups = gl_NumWorkGroups.x;
 
-    // Calculate total number of texels in the input tensor
     uint total_texels = uint(t_in_limits.x * t_in_limits.y * t_in_limits.z);
 
     // Calculate texels per token (assuming last dimension contains the token data)
@@ -435,7 +414,7 @@ $else:
       uint token_start_texel = token_id * texels_per_token;
       uint token_end_texel = token_start_texel + texels_per_token;
 
-      // Phase 1: Each thread processes multiple texels within the token
+      // Each thread processes multiple texels within the token
       float thread_min = 1.0/0.0;  // +infinity
       float thread_max = -1.0/0.0; // -infinity
       bool found_valid = false;
@@ -449,7 +428,6 @@ $else:
         uint x = remainder % uint(t_in_limits.x);
         ivec3 texel_pos = ivec3(int(x), int(y), int(z));
 
-        // Load texel data (4 float values)
         FVEC4_T texel_data = load_texel(t_in, texel_pos);
 
         // For texture storage, we assume width-packed (packed_dim = 0)
@@ -511,7 +489,7 @@ $else:
         }
       }
 
-      // Phase 2: Intra-workgroup reduction using shared memory
+      // Intra-workgroup reduction using shared memory
       shared_min[local_id] = thread_min;
       shared_max[local_id] = thread_max;
       barrier();
@@ -533,12 +511,11 @@ $else:
         barrier();
       }
 
-      // Phase 3: Final calculation for this token
+      // Final calculation for this token
       if (local_id == 0) {
         float token_min = shared_min[0];
         float token_max = shared_max[0];
 
-        // Calculate scale and zero_point for this token
         float scale_val;
         int zero_point_val;
         calculate_scale_and_zero_point(token_min, token_max, quant_min, quant_max, scale_val, zero_point_val);
@@ -551,7 +528,6 @@ $else:
         uint out_x = out_remainder % uint(t_scale_limits.x);
         ivec3 out_pos = ivec3(int(out_x), int(out_y), int(out_z));
 
-        // Write results for this token
         write_texel(t_scale, out_pos, vec4(scale_val, 0.0, 0.0, 0.0));
         write_texel(t_zero_point, out_pos, ivec4(zero_point_val, 0, 0, 0));
       }
