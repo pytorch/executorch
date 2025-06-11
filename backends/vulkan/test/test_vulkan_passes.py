@@ -16,9 +16,9 @@ from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
-from torch.ao.quantization.quantizer import Quantizer
 
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantizer import Quantizer
 
 ###################
 ## Common Models ##

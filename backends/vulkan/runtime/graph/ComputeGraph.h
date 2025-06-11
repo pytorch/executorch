@@ -573,8 +573,7 @@ class ComputeGraph final {
   ValueRef add_tensor_view(
       const ValueRef vref,
       const std::vector<int64_t>& sizes,
-      const std::vector<int64_t>& dim_order,
-      const size_t offset_numel = 0);
+      const std::vector<int64_t>& dim_order);
 
   /*
    * Add a `TensorRef` value to the graph with the specific properties. A
