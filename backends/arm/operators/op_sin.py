@@ -38,7 +38,7 @@ class SinVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         validate_num_inputs(self.target, inputs, 1)
-        validate_same_dtype(self.target, [*inputs, output])
+        validate_same_dtype(self.target, [*inputs, output], ts)
 
         if inputs[0].dtype != ts.DType.FP32 or output.dtype != ts.DType.FP32:
             raise ValueError(

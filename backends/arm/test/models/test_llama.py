@@ -22,6 +22,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineMI,
 )
 
+from executorch.examples.models.llama.config.llm_config import LlmConfig
 from executorch.examples.models.llama.export_llama_lib import (
     build_args_parser,
     get_llama_model,
@@ -89,8 +90,9 @@ class TestLlama:
         ]
         parser = build_args_parser()
         args = parser.parse_args(args)
+        llm_config = LlmConfig.from_args(args)
 
-        llama_model, llama_inputs, llama_meta = get_llama_model(args)
+        llama_model, llama_inputs, llama_meta = get_llama_model(llm_config)
 
         return llama_model, llama_inputs, llama_meta
 
@@ -125,11 +127,5 @@ def test_llama_tosa_BI():
             aten_op=[],
             exir_op=[],
             use_to_edge_transform_and_lower=True,
-        )
-        pipeline.change_args(
-            "run_method_and_compare_outputs",
-            atol=9.9,
-            rtol=1.5,  # TODO: Tolerance needs to be updated after MLETORCH-907
-            inputs=llama_inputs,
         )
         pipeline.run()
