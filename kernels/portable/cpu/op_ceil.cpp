@@ -17,9 +17,7 @@ namespace native {
 using executorch::aten::Tensor;
 
 Tensor& ceil_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
-  static constexpr const char op_name[] = "ceil.out";
-  return internal::unary_ufunc_realhbf16<op_name>(
-      [](auto x) { return executorch::math::ceil(x); }, ctx, in, out);
+  return internal::unary_ufunc_realhbf16(std::ceil, ctx, in, out);
 }
 
 } // namespace native
