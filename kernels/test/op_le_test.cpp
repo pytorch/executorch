@@ -204,7 +204,9 @@ TEST_F(OpLeTensorOutTest, Broadcast2DTest) {
   // Row 0: b[0]=2, so [1<=2, 2<=2, 3<=2, ...] = [true, true, false, false, ...]
   // Row 1: b[1]=4, so [1<=4, 2<=4, 3<=4, 4<=4, 5<=4, ...] = [true, true, true,
   // true, false, ...]
-  using ctype = executorch::runtime::testing::internal::ScalarTypeToCppTypeWrapper<ScalarType::Bool>::ctype; 
+  using ctype =
+      executorch::runtime::testing::internal::ScalarTypeToCppTypeWrapper<
+          ScalarType::Bool>::ctype;
   std::vector<ctype> expected_data = {
       // Row 0 (b=2): 1<=2, 2<=2, 3<=2, 4<=2, 5<=2, 6<=2, 7<=2, 8<=2, 9<=2,
       // 10<=2
@@ -279,10 +281,7 @@ TEST_F(OpLeTensorOutTest, Broadcast2DTest) {
       true,
       true};
 
-  EXPECT_TENSOR_EQ(
-      out,
-      tf_bool.make(
-          {6, 10}, expected_data));
+  EXPECT_TENSOR_EQ(out, tf_bool.make({6, 10}, expected_data));
 }
 
 TEST_F(OpLeTensorOutTest, Broadcast1DTo2DTest) {
@@ -298,7 +297,9 @@ TEST_F(OpLeTensorOutTest, Broadcast1DTo2DTest) {
 
   op_le_tensor_out(a, b, out);
 
-  using ctype = executorch::runtime::testing::internal::ScalarTypeToCppTypeWrapper<ScalarType::Bool>::ctype; 
+  using ctype =
+      executorch::runtime::testing::internal::ScalarTypeToCppTypeWrapper<
+          ScalarType::Bool>::ctype;
   std::vector<ctype> expected_data = {
       // Row 0 (a=2): 2<=1, 2<=2, 2<=3, 2<=4, 2<=5, 2<=6, 2<=7, 2<=8, 2<=9,
       // 2<=10
@@ -373,10 +374,7 @@ TEST_F(OpLeTensorOutTest, Broadcast1DTo2DTest) {
       false,
       false};
 
-  EXPECT_TENSOR_EQ(
-      out,
-      tf_bool.make(
-          {6, 10}, expected_data));
+  EXPECT_TENSOR_EQ(out, tf_bool.make({6, 10}, expected_data));
 }
 
 TEST_F(OpLeTensorOutTest, BroadcastReverseTest) {
@@ -393,7 +391,9 @@ TEST_F(OpLeTensorOutTest, BroadcastReverseTest) {
   op_le_tensor_out(a, b, out);
 
   // Expected: each row i should be [a[i]<=1, a[i]<=2, ..., a[i]<=10]
-  using ctype = executorch::runtime::testing::internal::ScalarTypeToCppTypeWrapper<ScalarType::Bool>::ctype; 
+  using ctype =
+      executorch::runtime::testing::internal::ScalarTypeToCppTypeWrapper<
+          ScalarType::Bool>::ctype;
   std::vector<ctype> expected_data = {
       // Row 0 (a=2): 2<=1, 2<=2, 2<=3, 2<=4, 2<=5, 2<=6, 2<=7, 2<=8, 2<=9,
       // 2<=10
@@ -468,10 +468,7 @@ TEST_F(OpLeTensorOutTest, BroadcastReverseTest) {
       false,
       false};
 
-  EXPECT_TENSOR_EQ(
-      out,
-      tf_bool.make(
-          {6, 10}, expected_data));
+  EXPECT_TENSOR_EQ(out, tf_bool.make({6, 10}, expected_data));
 }
 
 TEST_F(OpLeTensorOutTest, BroadcastLastDimTest) {
@@ -553,7 +550,9 @@ TEST_F(OpLeTensorOutTest, BroadcastLastDimTest) {
 
   op_le_tensor_out(a, b, out);
 
-  using ctype = executorch::runtime::testing::internal::ScalarTypeToCppTypeWrapper<ScalarType::Bool>::ctype; 
+  using ctype =
+      executorch::runtime::testing::internal::ScalarTypeToCppTypeWrapper<
+          ScalarType::Bool>::ctype;
   std::vector<ctype> expected_data = {
       // First slice: a values are 1,2,3,4
       true,
@@ -617,12 +616,10 @@ TEST_F(OpLeTensorOutTest, BroadcastLastDimTest) {
       true,
       true,
       true,
-      true// 12 <= [12,13,14,15,16]
+      true // 12 <= [12,13,14,15,16]
   };
 
-  EXPECT_TENSOR_EQ(
-      out,
-      tf_bool.make({3, 4, 5}, expected_data));
+  EXPECT_TENSOR_EQ(out, tf_bool.make({3, 4, 5}, expected_data));
 }
 
 TEST_F(OpLeTensorOutTest, BroadcastLastDimReverseTest) {
@@ -706,7 +703,9 @@ TEST_F(OpLeTensorOutTest, BroadcastLastDimReverseTest) {
 
   op_le_tensor_out(a, b, out);
 
-  using ctype = executorch::runtime::testing::internal::ScalarTypeToCppTypeWrapper<ScalarType::Bool>::ctype; 
+  using ctype =
+      executorch::runtime::testing::internal::ScalarTypeToCppTypeWrapper<
+          ScalarType::Bool>::ctype;
   std::vector<ctype> expected_data = {
       // First slice: b values are all 5
       true,
@@ -773,9 +772,7 @@ TEST_F(OpLeTensorOutTest, BroadcastLastDimReverseTest) {
       false // [12,13,14,15,16] <= 15
   };
 
-  EXPECT_TENSOR_EQ(
-      out,
-      tf_bool.make({3, 4, 5}, expected_data));
+  EXPECT_TENSOR_EQ(out, tf_bool.make({3, 4, 5}, expected_data));
 }
 
 TEST_F(OpLeTensorOutTest, BroadcastNdByNdTest) {
@@ -819,7 +816,9 @@ TEST_F(OpLeTensorOutTest, BroadcastNdByNdTest) {
 
   op_le_tensor_out(a, b, out);
 
-  using ctype = executorch::runtime::testing::internal::ScalarTypeToCppTypeWrapper<ScalarType::Bool>::ctype; 
+  using ctype =
+      executorch::runtime::testing::internal::ScalarTypeToCppTypeWrapper<
+          ScalarType::Bool>::ctype;
   std::vector<ctype> expected_data = {
       // First slice: a[0,0,:] = [1,2,3,4]
       true,
@@ -849,9 +848,7 @@ TEST_F(OpLeTensorOutTest, BroadcastNdByNdTest) {
       true // [5,6,7,8] <= [7,8,9,10]
   };
 
-  EXPECT_TENSOR_EQ(
-      out,
-      tf_bool.make({2, 3, 4}, expected_data));
+  EXPECT_TENSOR_EQ(out, tf_bool.make({2, 3, 4}, expected_data));
 }
 
 TEST_F(OpLeTensorOutTest, BroadcastNdByNdReverseTest) {
@@ -896,7 +893,9 @@ TEST_F(OpLeTensorOutTest, BroadcastNdByNdReverseTest) {
 
   op_le_tensor_out(a, b, out);
 
-  using ctype = executorch::runtime::testing::internal::ScalarTypeToCppTypeWrapper<ScalarType::Bool>::ctype; 
+  using ctype =
+      executorch::runtime::testing::internal::ScalarTypeToCppTypeWrapper<
+          ScalarType::Bool>::ctype;
   std::vector<ctype> expected_data = {
       // First slice: b[0,0,:] = [2,3,4,5]
       true,
@@ -926,9 +925,7 @@ TEST_F(OpLeTensorOutTest, BroadcastNdByNdReverseTest) {
       false // [7,8,9,10] <= [6,7,8,9]
   };
 
-  EXPECT_TENSOR_EQ(
-      out,
-      tf_bool.make({2, 3, 4}, expected_data));
+  EXPECT_TENSOR_EQ(out, tf_bool.make({2, 3, 4}, expected_data));
 }
 
 TEST_F(OpLeTensorOutTest, Broadcast2dBy1dTest) {
@@ -944,7 +941,9 @@ TEST_F(OpLeTensorOutTest, Broadcast2dBy1dTest) {
 
   op_le_tensor_out(a, b, out);
 
-  using ctype = executorch::runtime::testing::internal::ScalarTypeToCppTypeWrapper<ScalarType::Bool>::ctype; 
+  using ctype =
+      executorch::runtime::testing::internal::ScalarTypeToCppTypeWrapper<
+          ScalarType::Bool>::ctype;
   std::vector<ctype> expected_data = {
       true,
       true,
@@ -960,9 +959,7 @@ TEST_F(OpLeTensorOutTest, Broadcast2dBy1dTest) {
       false // [9,10,11,12] <= [2,4,6,8]
   };
 
-  EXPECT_TENSOR_EQ(
-      out,
-      tf_bool.make({3, 4}, expected_data));
+  EXPECT_TENSOR_EQ(out, tf_bool.make({3, 4}, expected_data));
 }
 
 TEST_F(OpLeTensorOutTest, Broadcast2dBy1dReverseTest) {
@@ -978,7 +975,9 @@ TEST_F(OpLeTensorOutTest, Broadcast2dBy1dReverseTest) {
 
   op_le_tensor_out(a, b, out);
 
-  using ctype = executorch::runtime::testing::internal::ScalarTypeToCppTypeWrapper<ScalarType::Bool>::ctype; 
+  using ctype =
+      executorch::runtime::testing::internal::ScalarTypeToCppTypeWrapper<
+          ScalarType::Bool>::ctype;
   std::vector<ctype> expected_data = {
       false,
       false,
@@ -994,7 +993,5 @@ TEST_F(OpLeTensorOutTest, Broadcast2dBy1dReverseTest) {
       true // [2,4,6,8] <= [9,10,11,12]
   };
 
-  EXPECT_TENSOR_EQ(
-      out,
-      tf_bool.make({3, 4}, expected_data));
+  EXPECT_TENSOR_EQ(out, tf_bool.make({3, 4}, expected_data));
 }

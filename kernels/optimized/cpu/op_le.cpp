@@ -9,11 +9,11 @@
 #include <executorch/kernels/optimized/cpu/binary_ops.h>
 #include <executorch/kernels/optimized/vec/functional.h>
 #include <executorch/kernels/optimized/vec/vec.h>
+#include <executorch/kernels/portable/cpu/pattern/comparison_op.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
-#include <executorch/kernels/portable/cpu/pattern/comparison_op.h>
 
 namespace torch {
 namespace executor {
@@ -83,7 +83,9 @@ Tensor& opt_le_tensor_out(
 
   // Check for optimized broadcast paths
   auto selected_optimized_path = select_optimized_path(a, b, out);
-  printf("selected_optimized_path: %d\n", static_cast<int>(selected_optimized_path));
+  printf(
+      "selected_optimized_path: %d\n",
+      static_cast<int>(selected_optimized_path));
   if (selected_optimized_path == ElementwiseOptimizedPath::kTreatAs1d) {
     // Resize for dynamic shape
     auto error = resize_tensor(out, a.sizes());
