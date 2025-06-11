@@ -157,7 +157,6 @@ at::Tensor quantize_per_token_aten(
 } // namespace executor
 } // namespace torch
 
-
 //
 // Test functions
 //
@@ -394,6 +393,7 @@ void test_vulkan_quantize_per_tensor_impl(
     int zero_point,
     int64_t quant_min,
     int64_t quant_max,
+    at::ScalarType in_dtype,
     at::ScalarType dtype,
     const vkcompute::utils::StorageType in_storage,
     const vkcompute::utils::StorageType out_storage);
@@ -404,6 +404,7 @@ void test_vulkan_quantize_per_token_impl(
     const std::vector<int>& zero_points,
     int64_t quant_min,
     int64_t quant_max,
+    at::ScalarType in_dtype,
     at::ScalarType dtype,
     const vkcompute::utils::StorageType in_storage,
     const vkcompute::utils::StorageType out_storage);
@@ -415,7 +416,8 @@ void test_vulkan_quantize_per_tensor(
     int zero_point,
     int64_t quant_min,
     int64_t quant_max,
-    at::ScalarType dtype) {
+    at::ScalarType in_dtype = at::kFloat,
+    at::ScalarType dtype = at::kInt) {
   // Test with buffer storage
   test_vulkan_quantize_per_tensor_impl(
       input_sizes,
@@ -423,6 +425,7 @@ void test_vulkan_quantize_per_tensor(
       zero_point,
       quant_min,
       quant_max,
+      in_dtype,
       dtype,
       vkcompute::utils::kBuffer,
       vkcompute::utils::kBuffer);
@@ -434,6 +437,7 @@ void test_vulkan_quantize_per_tensor(
       zero_point,
       quant_min,
       quant_max,
+      in_dtype,
       dtype,
       vkcompute::utils::kTexture3D,
       vkcompute::utils::kTexture3D);
@@ -446,7 +450,8 @@ void test_vulkan_quantize_per_token(
     const std::vector<int>& zero_points,
     int64_t quant_min,
     int64_t quant_max,
-    at::ScalarType dtype) {
+    at::ScalarType in_dtype = at::kFloat,
+    at::ScalarType dtype = at::kInt) {
   // Test with buffer storage
   test_vulkan_quantize_per_token_impl(
       input_sizes,
@@ -454,6 +459,7 @@ void test_vulkan_quantize_per_token(
       zero_points,
       quant_min,
       quant_max,
+      in_dtype,
       dtype,
       vkcompute::utils::kBuffer,
       vkcompute::utils::kBuffer);
@@ -465,6 +471,7 @@ void test_vulkan_quantize_per_token(
       zero_points,
       quant_min,
       quant_max,
+      in_dtype,
       dtype,
       vkcompute::utils::kTexture3D,
       vkcompute::utils::kTexture3D);
@@ -476,12 +483,13 @@ void test_reference_quantize_per_tensor(
     int zero_point,
     int64_t quant_min,
     int64_t quant_max,
-    at::ScalarType dtype) {
+    at::ScalarType in_dtype = at::kFloat,
+    at::ScalarType dtype = at::kInt) {
   check_quantize_args(quant_min, quant_max, dtype);
   std::vector<int64_t> input_sizes_int64(
       input_sizes.begin(), input_sizes.end());
   at::Tensor input =
-      at::zeros(input_sizes_int64, at::device(at::kCPU).dtype(at::kFloat));
+      at::zeros(input_sizes_int64, at::device(at::kCPU).dtype(in_dtype));
 
   // Fill with a simple pattern: values from 0 to 1 in steps
   float step = 1.0f / (input.numel() - 1);
@@ -533,7 +541,8 @@ void test_vulkan_quantize_per_tensor_impl(
     int zero_point,
     int64_t quant_min,
     int64_t quant_max,
-    at::ScalarType dtype,
+    at::ScalarType in_dtype = at::kFloat,
+    at::ScalarType dtype = at::kInt,
     const vkcompute::utils::StorageType in_storage =
         vkcompute::utils::kTexture3D,
     const vkcompute::utils::StorageType out_storage =
@@ -542,7 +551,7 @@ void test_vulkan_quantize_per_tensor_impl(
   std::vector<int64_t> input_sizes_int64(
       input_sizes.begin(), input_sizes.end());
   at::Tensor input =
-      at::rand(input_sizes_int64, at::device(at::kCPU).dtype(at::kFloat));
+      at::rand(input_sizes_int64, at::device(at::kCPU).dtype(in_dtype));
 
   // Get reference output
   at::Tensor reference_out = torch::executor::native::quantize_per_tensor_aten(
@@ -621,13 +630,16 @@ void test_vulkan_quantize_per_tensor_impl(
   ASSERT_TRUE(output_correct);
 }
 
-TEST(VulkanQuantizePerTensorTest, test_reference_quantize_per_tensor_int8) {
+TEST(
+    VulkanQuantizePerTensorTest,
+    test_reference_quantize_per_tensor_float_to_int8) {
   test_reference_quantize_per_tensor(
       {2, 3, 4}, // input sizes
       0.1, // scale
       0, // zero_point
       -128, // quant_min
       127, // quant_max
+      at::kFloat,
       at::kChar);
 }
 void test_reference_quantize_per_token(
@@ -636,12 +648,13 @@ void test_reference_quantize_per_token(
     const std::vector<int>& zero_points,
     int64_t quant_min,
     int64_t quant_max,
-    at::ScalarType dtype) {
+    at::ScalarType in_dtype = at::kFloat,
+    at::ScalarType dtype = at::kInt) {
   check_quantize_args(quant_min, quant_max, dtype);
   std::vector<int64_t> input_sizes_int64(
       input_sizes.begin(), input_sizes.end());
   at::Tensor input =
-      at::zeros(input_sizes_int64, at::device(at::kCPU).dtype(at::kFloat));
+      at::zeros(input_sizes_int64, at::device(at::kCPU).dtype(in_dtype));
 
   // Fill with a simple pattern: values from 0 to 1 in steps
   float step = 1.0 / (input.numel() - 1);
@@ -715,7 +728,8 @@ void test_vulkan_quantize_per_token_impl(
     const std::vector<int>& zero_points,
     int64_t quant_min,
     int64_t quant_max,
-    at::ScalarType dtype,
+    at::ScalarType in_dtype = at::kFloat,
+    at::ScalarType dtype = at::kInt,
     const vkcompute::utils::StorageType in_storage =
         vkcompute::utils::kTexture3D,
     const vkcompute::utils::StorageType out_storage =
@@ -733,7 +747,7 @@ void test_vulkan_quantize_per_token_impl(
   std::vector<int64_t> input_sizes_int64(
       input_sizes.begin(), input_sizes.end());
   at::Tensor input =
-      at::rand(input_sizes_int64, at::device(at::kCPU).dtype(at::kFloat));
+      at::rand(input_sizes_int64, at::device(at::kCPU).dtype(in_dtype));
   at::Tensor scale_tensor =
       at::tensor(scales, at::device(at::kCPU).dtype(at::kDouble));
   at::Tensor zero_point_tensor =
@@ -842,7 +856,9 @@ void test_vulkan_quantize_per_token_impl(
   ASSERT_TRUE(output_correct);
 }
 
-TEST(VulkanQuantizePerTensorTest, test_reference_quantize_per_token_int8) {
+TEST(
+    VulkanQuantizePerTensorTest,
+    test_reference_quantize_per_token_float_to_int8) {
   std::vector<float> scales = {0.1, 0, 0.3, 0.1, 0.2, 0.3};
   std::vector<int> zero_points = {1, 2, 3, 0, -1, -2};
 
@@ -852,5 +868,6 @@ TEST(VulkanQuantizePerTensorTest, test_reference_quantize_per_token_int8) {
       zero_points,
       -128, // quant_min
       127, // quant_max
+      at::kFloat,
       at::kChar);
 }
