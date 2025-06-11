@@ -84,14 +84,26 @@ def define_common_targets():
             name = "runner_lib" + aten_suffix,
             exported_headers = [
                 "multimodal_runner.h",
+                "text_llm_runner.h",
+            ],
+            srcs = [
+                "text_llm_runner.cpp",
             ],
             visibility = [
                 "@EXECUTORCH_CLIENTS",
             ],
+            compiler_flags = [
+                "-Wno-missing-prototypes",
+            ],
             exported_deps = [
                 ":image_prefiller" + aten_suffix,
+                ":irunner",
                 ":text_decoder_runner" + aten_suffix,
                 ":text_prefiller" + aten_suffix,
                 ":text_token_generator" + aten_suffix,
+                "//pytorch/tokenizers:hf_tokenizer",
+                "//pytorch/tokenizers:llama2c_tokenizer",
+                # "//pytorch/tokenizers:sentencepiece", # TODO(larryliu0820) Make sure this compiles in xplat.
+                "//pytorch/tokenizers:tiktoken",
             ],
         )

@@ -185,6 +185,11 @@ class ComputeGraph final {
   std::vector<IOValueRef> inputs_;
   std::vector<IOValueRef> outputs_;
 
+  std::unordered_set<
+      vkapi::ComputePipelineCache::Key,
+      vkapi::ComputePipelineCache::Hasher>
+      pipeline_descriptors_;
+
  protected:
   size_t values_in_use_ = 0;
   size_t execute_count_ = 0;
@@ -568,8 +573,7 @@ class ComputeGraph final {
   ValueRef add_tensor_view(
       const ValueRef vref,
       const std::vector<int64_t>& sizes,
-      const std::vector<int64_t>& dim_order,
-      const size_t offset_numel = 0);
+      const std::vector<int64_t>& dim_order);
 
   /*
    * Add a `TensorRef` value to the graph with the specific properties. A
@@ -603,6 +607,13 @@ class ComputeGraph final {
   ValueRef add_string(std::string&& str);
 
   ValueRef add_symint(const int32_t val);
+
+  /*
+   * Searches the graph's value list for a Int value with the specified value.
+   * If one is found, returns the index of the value. Otherwise, add a new value
+   * and return the index of the new value.
+   */
+  ValueRef get_or_add_value_for_int(const int64_t val);
 
   ValueRef set_input_tensor(const ValueRef idx, const bool use_staging = true);
   ValueRef set_output_tensor(const ValueRef idx, const bool use_staging = true);
@@ -704,7 +715,15 @@ class ComputeGraph final {
       const vkapi::ShaderInfo& shader_info,
       bool execute);
 
+  void register_pipeline_to_create(
+      const vkapi::ShaderInfo& shader_info,
+      const utils::WorkgroupSize& local_workgroup_size,
+      const vkapi::SpecVarList& spec_vars,
+      const std::vector<PushConstantDataInfo>& push_constants);
+
   void prepare();
+
+  void prepare_pipelines();
 
   //
   // Dispatch Utilities

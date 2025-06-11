@@ -167,7 +167,6 @@ if(${ANDROID})
   target_link_libraries(
     mtk_llama_executor_runner
     ${_executor_runner_libs}
-    ${NEURON_BUFFER_ALLOCATOR_LIB}
     neuron_backend
     gflags
     mtk_llama_executor_lib

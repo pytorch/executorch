@@ -195,7 +195,7 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
       // Mutable value.
       // Look up tensor in named data map.
       Result<const TensorLayout> tensor_layout_res =
-          named_data_map->get_metadata(fqn);
+          named_data_map->get_tensor_layout(fqn);
       if (!tensor_layout_res.ok()) {
         return tensor_layout_res.error();
       }

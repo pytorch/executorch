@@ -348,7 +348,9 @@ inline bool data_index_step(T& x, const T& X, Args&&... args) {
   return false;
 }
 
-inline double calculate_scale(const Tensor& query, optional<double> scale) {
+inline double calculate_scale(
+    const Tensor& query,
+    std::optional<double> scale) {
   const auto softmax_scale =
       scale.has_value() ? scale.value() : 1.0 / std::sqrt(query.size(3));
   return softmax_scale;
