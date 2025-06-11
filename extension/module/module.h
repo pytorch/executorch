@@ -16,7 +16,6 @@
 
 #include <executorch/runtime/executor/program.h>
 
-
 #ifdef USE_ATEN_LIB
 #define ET_MODULE_NAMESPACE module::aten
 #else // !USE_ATEN_LIB
@@ -515,7 +514,7 @@ namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
 using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
-} // namespace executorch
+} // namespace executor
 } // namespace torch
 
 namespace executorch {
