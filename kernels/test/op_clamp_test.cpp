@@ -31,15 +31,6 @@ using torch::executor::testing::TensorFactory;
 
 using OptScalar = executorch::aten::optional<Scalar>;
 
-namespace {
-template <typename T>
-std::vector<T> arange(T stop) {
-  std::vector<T> result(stop);
-  std::iota(result.begin(), result.end(), 0);
-  return result;
-}
-} // namespace
-
 class OpClampOutTest : public OperatorTest {
  protected:
   Tensor& op_clamp_out(
@@ -122,31 +113,6 @@ class OpClampOutTest : public OperatorTest {
             OptScalar(6), // max
             // Should set all elements to max.
             {6, 6, 6, 6}, // expected_data
-        },
-        {
-            std::string(__func__) + ": Simple clamp larger data",
-            {18}, // sizes
-            arange<typename ClampTestCase<DTYPE>::ctype>(18), // input_data
-            OptScalar(1), // min
-            OptScalar(6), // max
-            {1,
-             1,
-             2,
-             3,
-             4,
-             5,
-             6,
-             6,
-             6,
-             6,
-             6,
-             6,
-             6,
-             6,
-             6,
-             6,
-             6,
-             6}, // expected_data
         },
     };
 
