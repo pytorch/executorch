@@ -17,6 +17,8 @@
 #include <executorch/extension/aten_util/make_aten_functor_from_et_functor.h>
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
 
+#include "test_utils.h"
+
 #include <cassert>
 #include <iostream>
 
@@ -75,33 +77,7 @@ std::tuple<at::Tensor, at::Tensor> choose_qparams_tensor_aten(
   auto zero_point_out = at::empty({}, at::device(at::kCPU).dtype(at::kLong));
   double eps = 1e-7;
 
-  // Convert at::ScalarType to executorch::ScalarType
-  ScalarType et_dtype;
-  switch (dtype) {
-    case at::kByte:
-      et_dtype = ScalarType::Byte;
-      break;
-    case at::kChar:
-      et_dtype = ScalarType::Char;
-      break;
-    case at::kShort:
-      et_dtype = ScalarType::Short;
-      break;
-    case at::kInt:
-      et_dtype = ScalarType::Int;
-      break;
-    case at::kLong:
-      et_dtype = ScalarType::Long;
-      break;
-    case at::kFloat:
-      et_dtype = ScalarType::Float;
-      break;
-    case at::kDouble:
-      et_dtype = ScalarType::Double;
-      break;
-    default:
-      throw std::runtime_error("Unsupported dtype");
-  }
+  ScalarType et_dtype = at_scalartype_to_et_scalartype(dtype);
 
   // Use WRAP_TO_ATEN with the wrapper function
   WRAP_TO_ATEN(choose_qparams_tensor_out_no_context, 5)
@@ -126,33 +102,7 @@ std::tuple<at::Tensor, at::Tensor> choose_qparams_per_token_asymmetric_aten(
   auto zero_point_out =
       at::empty(output_sizes, at::device(at::kCPU).dtype(at::kLong));
 
-  // Convert at::ScalarType to executorch::ScalarType
-  ScalarType et_dtype;
-  switch (dtype) {
-    case at::kByte:
-      et_dtype = ScalarType::Byte;
-      break;
-    case at::kChar:
-      et_dtype = ScalarType::Char;
-      break;
-    case at::kShort:
-      et_dtype = ScalarType::Short;
-      break;
-    case at::kInt:
-      et_dtype = ScalarType::Int;
-      break;
-    case at::kLong:
-      et_dtype = ScalarType::Long;
-      break;
-    case at::kFloat:
-      et_dtype = ScalarType::Float;
-      break;
-    case at::kDouble:
-      et_dtype = ScalarType::Double;
-      break;
-    default:
-      throw std::runtime_error("Unsupported dtype");
-  }
+  ScalarType et_dtype = at_scalartype_to_et_scalartype(dtype);
 
   // Use WRAP_TO_ATEN with the wrapper function
   WRAP_TO_ATEN(choose_qparams_per_token_asymmetric_out_no_context, 2)
@@ -164,71 +114,3 @@ std::tuple<at::Tensor, at::Tensor> choose_qparams_per_token_asymmetric_aten(
 } // namespace native
 } // namespace executor
 } // namespace torch
-
-//
-// Test functions
-//
-
-// Helper function to get the name of a ScalarType for better error messages
-std::string scalar_type_name(c10::ScalarType dtype) {
-  switch (dtype) {
-    case c10::kLong:
-      return "c10::kLong";
-    case c10::kShort:
-      return "c10::kShort";
-    case c10::kComplexHalf:
-      return "c10::kComplexHalf";
-    case c10::kComplexFloat:
-      return "c10::kComplexFloat";
-    case c10::kComplexDouble:
-      return "c10::kComplexDouble";
-    case c10::kBool:
-      return "c10::kBool";
-    case c10::kQInt8:
-      return "c10::kQInt8";
-    case c10::kQUInt8:
-      return "c10::kQUInt8";
-    case c10::kQInt32:
-      return "c10::kQInt32";
-    case c10::kBFloat16:
-      return "c10::kBFloat16";
-    case c10::kQUInt4x2:
-      return "c10::kQUInt4x2";
-    case c10::kQUInt2x4:
-      return "c10::kQUInt2x4";
-    default:
-      return "Unknown(" + std::to_string(static_cast<int>(dtype)) + ")";
-  }
-}
-
-vkcompute::vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
-  using namespace vkcompute;
-  switch (at_scalartype) {
-    case c10::kFloat:
-      return vkapi::kFloat;
-    case c10::kHalf:
-      return vkapi::kHalf;
-    case c10::kInt:
-      return vkapi::kInt;
-    case c10::kLong:
-      // We don't have inherent vkapi::kLong, use kInt instead
-      return vkapi::kInt;
-    case c10::kChar:
-      return vkapi::kChar;
-    case c10::kByte:
-      return vkapi::kByte;
-    case c10::kDouble:
-      return vkapi::kDouble;
-    case c10::kShort:
-      return vkapi::kShort;
-    case c10::kUInt16:
-      return vkapi::kUInt16;
-    default:
-      VK_THROW(
-          "Unsupported at::ScalarType: ",
-          scalar_type_name(at_scalartype),
-          " (",
-          static_cast<int>(at_scalartype),
-          ")");
-  }
-}
