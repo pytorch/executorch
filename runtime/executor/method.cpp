@@ -1606,8 +1606,7 @@ EValue& Method::mutable_input(size_t i) {
   return mutable_value(get_input_index(i));
 }
 
-Result<executorch::aten::Tensor> Method::get_attribute(
-    executorch::aten::string_view name) {
+Result<executorch::aten::Tensor> Method::get_attribute(std::string_view name) {
   auto flatbuffer_values = serialization_plan_->values();
   size_t counter = 0;
 
