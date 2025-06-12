@@ -29,6 +29,7 @@ class GeneratedOpsTest_{op_name} : public ::testing::TestWithParam< ::std::tuple
 
   void SetUp() override {{
     GraphConfig config;
+    config.expect_dynamic_shapes = true;
     utils::StorageType default_storage_type;
     utils::GPUMemoryLayout default_memory_layout;
     std::tie(test_dtype, default_storage_type, default_memory_layout) = GetParam();
@@ -119,7 +120,7 @@ vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
       return vkapi::kInt;
     case c10::kChar:
       return vkapi::kChar;
-    case c10::kBool: 
+    case c10::kBool:
       return vkapi::kBool;
     default:
       VK_THROW("Unsupported at::ScalarType!");
