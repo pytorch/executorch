@@ -178,9 +178,11 @@ def export_image_encoder(llava, resized, dynamic_shapes):
 
 
 def export_token_embedding(llava, prompt):
-    # quantized_token_embed = get_quant_embedding_transform("8,32")(
-    #     llava.model_.language_model.model
-    # )
+    import copy
+    model_copy = copy.deepcopy(llava.model_.language_model.model)
+    quantized_token_embed_copy = get_quant_embedding_transform("8,32")(
+        model_copy,
+    )
     def quant_embedding(model):
         return EmbeddingQuantHandler(
             model,
@@ -200,6 +202,15 @@ def export_token_embedding(llava, prompt):
             dynamic_shapes=dynamic_shapes,
             strict=True,
         )
+        token_embedding_ep_copy = torch.export.export(
+            quantized_token_embed_copy.embed_tokens,
+            (prompt,),
+            dynamic_shapes=dynamic_shapes,
+            strict=True,
+        )
+    
+    print("token_embedding_ep_copy", token_embedding_ep_copy)
+    print("token_embedding_ep", token_embedding_ep)
     return token_embedding_ep
 
 
