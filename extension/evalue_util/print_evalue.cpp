@@ -191,8 +191,7 @@ void print_tensor_list(
 
 void print_list_optional_tensor(
     std::ostream& os,
-    executorch::aten::ArrayRef<
-        executorch::aten::optional<executorch::aten::Tensor>> list) {
+    executorch::aten::ArrayRef<std::optional<executorch::aten::Tensor>> list) {
   os << "(len=" << list.size() << ")[";
   for (size_t i = 0; i < list.size(); ++i) {
     if (list.size() > 1) {
