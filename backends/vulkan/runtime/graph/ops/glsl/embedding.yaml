@@ -7,6 +7,6 @@ embedding:
     DTYPE:
       - VALUE: half
       - VALUE: float
-      - VALUE: int32
+      - VALUE: int
   shader_variants:
     - NAME: embedding

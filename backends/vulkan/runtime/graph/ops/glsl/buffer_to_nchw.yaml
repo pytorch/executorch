@@ -13,10 +13,9 @@ buffer_to_nchw:
     DTYPE:
       - VALUE: half
       - VALUE: float
-      - VALUE: double
+      - VALUE: int
       - VALUE: int8
       - VALUE: uint8
-      - VALUE: int32
   shader_variants:
     - NAME: buffer_to_nchw
     - NAME: buffer_to_nchw_no_pc

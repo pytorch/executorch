@@ -18,8 +18,6 @@
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
 #include <executorch/extension/llm/custom_ops/op_sdpa.h>
 
-#include "test_utils.h"
-
 #include <cassert>
 #include <iostream>
 
@@ -260,6 +258,24 @@ void test_reference_sdpa(
         {});
 
     ASSERT_TRUE(at::allclose(reference_impl_out, reference_out));
+  }
+}
+
+vkcompute::vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
+  using namespace vkcompute;
+  switch (at_scalartype) {
+    case c10::kFloat:
+      return vkapi::kFloat;
+    case c10::kHalf:
+      return vkapi::kHalf;
+    case c10::kInt:
+      return vkapi::kInt;
+    case c10::kLong:
+      return vkapi::kInt;
+    case c10::kChar:
+      return vkapi::kChar;
+    default:
+      VK_THROW("Unsupported at::ScalarType!");
   }
 }
 

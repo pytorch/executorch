@@ -14,8 +14,6 @@
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
-#include "test_utils.h"
-
 #include <cassert>
 
 //
@@ -201,6 +199,26 @@ void test_reference_linear_qcs4w(
   at::Tensor out_ref = dequantize_and_linear_qcs4w(x, weights_4x2, scales);
 
   ASSERT_TRUE(at::allclose(out, out_ref));
+}
+
+vkcompute::vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
+  using namespace vkcompute;
+  switch (at_scalartype) {
+    case c10::kFloat:
+      return vkapi::kFloat;
+    case c10::kHalf:
+      return vkapi::kHalf;
+    case c10::kInt:
+      return vkapi::kInt;
+    case c10::kLong:
+      return vkapi::kInt;
+    case c10::kChar:
+      return vkapi::kChar;
+    case c10::kByte:
+      return vkapi::kByte;
+    default:
+      VK_THROW("Unsupported at::ScalarType!");
+  }
 }
 
 void test_vulkan_linear_qga4w_impl(

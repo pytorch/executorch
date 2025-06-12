@@ -87,9 +87,5 @@ void main() {
     return;
   }
 
-  $if DTYPE == "double" and DTYPE == "int64":
-    VEC4_T texel = read_texel(tidx);
-    write_texel(t_out, lpos_to_pos(lpos, axis_map), texel);
-  $else:
-    write_texel(t_out, lpos_to_pos(lpos, axis_map), read_texel(tidx));
+  write_texel(t_out, lpos_to_pos(lpos, axis_map), read_texel(tidx));
 }
