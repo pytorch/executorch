@@ -21,39 +21,10 @@ void resize_quantize_output(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr input = graph->get_tensor(args[1].refs[0]);
-  out->virtual_resize(input->sizes());
-}
-
-utils::uvec3 quantize_global_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)shader;
-  (void)resize_args;
-
-  const ValueRef input = args[1].refs[0];
-
-  if (graph->is_buffer_storage(input)) {
-    return graph->create_global_wg_size(input);
-  } else {
-    return graph->logical_limits_of(input);
-  }
-}
-
-utils::uvec3 quantize_local_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)shader;
-  (void)args;
-  (void)resize_args;
-
-  return graph->create_local_wg_size(global_workgroup_size);
+  (void)extra_args;
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
+  graph->virtual_resize(out, graph->sizes_of(in));
 }
 
 } // namespace
@@ -100,8 +71,8 @@ void add_quantize_per_tensor_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      quantize_global_wg_size,
-      quantize_local_wg_size,
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
       {{input, vkapi::kRead}, {output, vkapi::kReadWrite}},
       // Shader param buffers
@@ -160,8 +131,8 @@ void add_quantize_per_token_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      quantize_global_wg_size,
-      quantize_local_wg_size,
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
       {{input, vkapi::kRead},
        {output, vkapi::kWrite},
@@ -195,7 +166,7 @@ void quantize_per_tensor_impl(
       graph.dtype_of(input) == vkapi::kHalf);
 
   // Resize output tensor to match input tensor shape
-  graph.get_tensor(output)->virtual_resize(graph.sizes_of(input));
+  graph.virtual_resize(output, graph.sizes_of(input));
 
   add_quantize_per_tensor_node(
       graph, input, scale, zero_point, quant_min, quant_max, output);
@@ -233,7 +204,7 @@ void quantize_per_token_impl(
   VK_CHECK_COND(zero_point_sizes[0] == num_tokens);
 
   // Resize output tensor to match input tensor shape
-  graph.get_tensor(output)->virtual_resize(graph.sizes_of(input));
+  graph.virtual_resize(output, graph.sizes_of(input));
 
   add_quantize_per_token_node(
       graph, input, scale, zero_point, quant_min, quant_max, output);
