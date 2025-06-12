@@ -9,7 +9,7 @@
 import math
 import sys
 from enum import Enum
-from typing import Dict, IO, List, Mapping, Optional, Tuple, TypeAlias, Union
+from typing import Any, Dict, IO, List, Mapping, Optional, Tuple, TypeAlias, Union
 
 import executorch.devtools.etdump.schema_flatcc as flatcc
 
@@ -483,3 +483,32 @@ def compare_results(
                 print("\n")
 
     return results
+
+
+def merge_overlapping_debug_handles(intermediate_outputs: Dict[Tuple[int, ...], Any]):
+    """
+    Merge overlapping debug handles int a single key
+    """
+    if not intermediate_outputs:
+        return
+    # Extract and normalize into (start, end, val)
+    intervals = [(min(key), max(key), val) for key, val in intermediate_outputs.items()]
+    intervals.sort(key=lambda x: x[0])
+
+    # Merge overlapping debug_hanldes, picking the last value
+    merged_intermediate_outputs = []
+    cur_start, cur_end, cur_val = intervals[0]
+    for start, end, val in intervals[1:]:
+        if start <= cur_end:  # Overlaps
+            if end > cur_end:  # Extend if this one goes further
+                cur_end, cur_val = end, val
+
+        else:
+            merged_intermediate_outputs.append((cur_start, cur_end, cur_val))
+            cur_start, cur_end, cur_val = start, end, val
+    merged_intermediate_outputs.append((cur_start, cur_end, cur_val))
+
+    # Clear original one and populate with merged keys (value will point to the same object)
+    intermediate_outputs.clear()
+    for start, end, val in merged_intermediate_outputs:
+        intermediate_outputs[tuple(range(start, end + 1))] = val
