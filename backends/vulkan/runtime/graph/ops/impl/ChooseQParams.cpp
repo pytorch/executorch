@@ -10,6 +10,8 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/ScalarUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+
 namespace vkcompute {
 
 namespace {
@@ -18,35 +20,39 @@ void resize_choose_qparams_tensor_output(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
-  vTensorPtr scale_out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr zero_point_out = graph->get_tensor(args[0].refs[1]);
+  (void)extra_args;
+  const ValueRef scale_out = args.at(0).refs.at(0);
+  const ValueRef zero_point_out = args.at(0).refs.at(1);
 
   // Both scale and zero_point are scalar tensors for per-tensor quantization
   // Since we use single workgroup approach, no extra buffer space needed
-  scale_out->virtual_resize({});
-  zero_point_out->virtual_resize({});
+  graph->virtual_resize(scale_out, {});
+  graph->virtual_resize(zero_point_out, {});
 }
 
 void resize_choose_qparams_per_token_output(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
-  vTensorPtr scale_out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr zero_point_out = graph->get_tensor(args[0].refs[1]);
-  vTensorPtr input = graph->get_tensor(args[1].refs[0]);
+  (void)extra_args;
+  const ValueRef scale_out = args.at(0).refs.at(0);
+  const ValueRef zero_point_out = args.at(0).refs.at(1);
+  const ValueRef input = args.at(1).refs.at(0);
 
   // Calculate output sizes for scale and zero_point tensors
+  const auto input_sizes = graph->sizes_of(input);
   std::vector<int64_t> output_sizes;
-  for (size_t i = 0; i < input->sizes().size() - 1; i++) {
-    output_sizes.push_back(input->sizes()[i]);
+  for (size_t i = 0; i < input_sizes.size() - 1; i++) {
+    output_sizes.push_back(input_sizes[i]);
   }
   output_sizes.push_back(1);
 
-  scale_out->virtual_resize(output_sizes);
-  zero_point_out->virtual_resize(output_sizes);
+  graph->virtual_resize(scale_out, output_sizes);
+  graph->virtual_resize(zero_point_out, output_sizes);
 }
 
-utils::uvec3 choose_qparams_global_wg_size(
+// Custom workgroup size pickers for ChooseQParams operations
+utils::uvec3 choose_qparams_pick_global_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -54,12 +60,21 @@ utils::uvec3 choose_qparams_global_wg_size(
   (void)shader;
   (void)resize_args;
 
-  const uint32_t local_threads = 64; // From choose_qparams_local_wg_size
+  // For per-tensor quantization, we want a single workgroup that can handle
+  // all elements with proper reduction. The shader uses NWORKERS=64 threads.
+  const ValueRef input = args.at(1).refs.at(0);
 
-  return {local_threads, 1u, 1u};
+  if (graph->is_buffer_storage(input)) {
+    // For buffer storage, use a single workgroup in X dimension
+    // The shader will handle strided access across all elements
+    return {1u, 1u, 1u};
+  } else {
+    // For texture storage, use the default logic
+    return graph->create_global_wg_size(args.at(0).refs.at(0));
+  }
 }
 
-utils::uvec3 choose_qparams_local_wg_size(
+utils::uvec3 choose_qparams_pick_local_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const utils::uvec3& global_workgroup_size,
@@ -67,20 +82,20 @@ utils::uvec3 choose_qparams_local_wg_size(
     const std::vector<ValueRef>& resize_args) {
   (void)shader;
   (void)resize_args;
-  (void)global_workgroup_size;
 
-  const ValueRef input = args.at(0).refs.at(0);
+  const ValueRef input = args.at(1).refs.at(0);
 
   if (graph->is_buffer_storage(input)) {
-    const uint32_t local_threads = 64;
-
-    return {local_threads, 1u, 1u};
+    // For buffer storage, use 64 threads in X dimension to match NWORKERS
+    // This ensures the shared memory arrays are properly sized
+    return {64u, 1u, 1u};
   } else {
+    // For texture storage, use the default logic
     return graph->create_local_wg_size(global_workgroup_size);
   }
 }
 
-utils::uvec3 choose_qparams_per_token_global_wg_size(
+utils::uvec3 choose_qparams_per_token_pick_global_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -88,32 +103,25 @@ utils::uvec3 choose_qparams_per_token_global_wg_size(
   (void)shader;
   (void)resize_args;
 
-  const ValueRef input = args.at(0).refs.at(0);
+  const ValueRef input = args.at(1).refs.at(0);
 
-  // For per-token reduction, we need one workgroup per token
-  // Calculate number of tokens (product of all dimensions except the last
-  // one)
-  int64_t num_tokens = 1;
-  const auto input_sizes = graph->sizes_of(input);
-  for (size_t i = 0; i < input_sizes.size() - 1; i++) {
-    num_tokens *= input_sizes[i];
+  if (graph->is_buffer_storage(input)) {
+    // For per-token quantization, we need one workgroup per token
+    // Calculate number of tokens (product of all dimensions except the last one)
+    const auto input_sizes = graph->sizes_of(input);
+    int64_t num_tokens = 1;
+    for (size_t i = 0; i < input_sizes.size() - 1; i++) {
+      num_tokens *= input_sizes[i];
+    }
+
+    return {static_cast<uint32_t>(num_tokens), 1u, 1u};
+  } else {
+    // For texture storage, use the default logic
+    return graph->create_global_wg_size(args.at(0).refs.at(0));
   }
-
-  const uint32_t max_workgroups = 65535;
-  const uint32_t local_x = 64u; // From choose_qparams_per_token_local_wg_size
-
-  // Clamp number of workgroups to avoid being slow
-  uint32_t clamped_workgroups =
-      std::min(static_cast<uint32_t>(num_tokens), max_workgroups);
-
-  // If we have more tokens than workgroups, each workgroup will process
-  // multiple tokens
-  const uint32_t total_threads_x = clamped_workgroups * local_x;
-
-  return {total_threads_x, 1u, 1u};
 }
 
-utils::uvec3 choose_qparams_per_token_local_wg_size(
+utils::uvec3 choose_qparams_per_token_pick_local_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const utils::uvec3& global_workgroup_size,
@@ -121,15 +129,14 @@ utils::uvec3 choose_qparams_per_token_local_wg_size(
     const std::vector<ValueRef>& resize_args) {
   (void)shader;
   (void)resize_args;
-  (void)global_workgroup_size;
 
-  const ValueRef input = args.at(0).refs.at(0);
+  const ValueRef input = args.at(1).refs.at(0);
 
   if (graph->is_buffer_storage(input)) {
-    const uint32_t local_threads = 64;
-
-    return {local_threads, 1u, 1u};
+    // For buffer storage, use 64 threads in X dimension to match NWORKERS
+    return {64u, 1u, 1u};
   } else {
+    // For texture storage, use the default logic
     return graph->create_local_wg_size(global_workgroup_size);
   }
 }
@@ -176,8 +183,8 @@ void add_choose_qparams_tensor_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      choose_qparams_global_wg_size,
-      choose_qparams_local_wg_size,
+      choose_qparams_pick_global_wg_size,
+      choose_qparams_pick_local_wg_size,
       // Inputs and Outputs
       {{input, vkapi::kRead},
        {scale_out, vkapi::kWrite},
@@ -241,8 +248,8 @@ void add_choose_qparams_per_token_asymmetric_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      choose_qparams_per_token_global_wg_size,
-      choose_qparams_per_token_local_wg_size,
+      choose_qparams_per_token_pick_global_wg_size,
+      choose_qparams_per_token_pick_local_wg_size,
       // Inputs and Outputs
       {{input, vkapi::kRead},
        {scale_out, vkapi::kWrite},
