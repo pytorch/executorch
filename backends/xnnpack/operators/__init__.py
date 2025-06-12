@@ -19,7 +19,6 @@ from . import (  # noqa
     op_dynamic_dequantize_ops,
     op_dynamic_quantize_ops,
     op_elu,
-    op_exp,
     op_floor,
     op_gelu,
     op_hardswish,
@@ -51,6 +50,5 @@ from . import (  # noqa
     op_static_constant_pad,
     op_static_resize_bilinear_2d,
     op_sub,
-    op_tanh,
     op_to_copy,
 )

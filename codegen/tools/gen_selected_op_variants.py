@@ -17,7 +17,7 @@ import yaml
 from torchgen.code_template import CodeTemplate
 
 
-ops_and_dtypes_template_str = """((executorch::aten::string_view(operator_name).compare("$operator_name") == 0)\n        && ($dtype_checks))"""
+ops_and_dtypes_template_str = """((std::string_view(operator_name).compare("$operator_name") == 0)\n        && ($dtype_checks))"""
 ops_and_dtypes_template = CodeTemplate(ops_and_dtypes_template_str)
 
 selected_kernel_dtypes_h_template_str = """#pragma once

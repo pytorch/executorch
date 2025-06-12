@@ -70,8 +70,8 @@ ET_NODISCARD bool check_bounds(
 Tensor& clamp_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    const executorch::aten::optional<Scalar>& min_opt,
-    const executorch::aten::optional<Scalar>& max_opt,
+    const std::optional<Scalar>& min_opt,
+    const std::optional<Scalar>& max_opt,
     Tensor& out) {
   bool has_min = min_opt.has_value();
   bool has_max = max_opt.has_value();
@@ -138,8 +138,9 @@ Tensor& clamp_out(
         CTYPE_COMPUTE,
         op_name,
         utils::SupportedTensorDtypes::SAME_AS_COMMON>(
-        [has_min, min_opt, has_max, max_opt](const auto val_in) {
-          auto val_out = val_in;
+        [has_min, min_opt, has_max, max_opt](const CTYPE_COMPUTE val_in) {
+          // TODO: rewrite this to be vectorization-capable.
+          CTYPE_COMPUTE val_out = val_in;
           if (has_min) {
             val_out = utils::max_override(
                 val_out, utils::scalar_to<CTYPE_COMPUTE>(min_opt.value()));
@@ -162,8 +163,8 @@ Tensor& clamp_out(
 Tensor& clamp_tensor_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    const executorch::aten::optional<Tensor>& min_opt,
-    const executorch::aten::optional<Tensor>& max_opt,
+    const std::optional<Tensor>& min_opt,
+    const std::optional<Tensor>& max_opt,
     Tensor& out) {
   bool has_min = min_opt.has_value();
   bool has_max = max_opt.has_value();

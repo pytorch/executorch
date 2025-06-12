@@ -21,6 +21,12 @@ Please check `generate_qnn_executorch_compiler_spec()` in
 - Snapdragon 8 Gen 2
 - Snapdragon 8 Gen 3
 - Snapdragon 8 Elite
+- SA8295
+- SSG2115P
+- SSG2125P
+- SXR1230P
+- SXR2230P
+- SXR2330P
 
 ### Adding more supported Chipset
 Currently, users cannot add additional chipset models because the chipset ID is not accessible to community users. If you have specific chipset models you wish to add, please contact one of the authors in the `Code Reviews` section at the bottom of this page.
