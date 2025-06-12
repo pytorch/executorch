@@ -752,7 +752,7 @@ def executorch_generated_lib(
             See: https://www.internalfb.com/wiki/PyTorch/Teams/Edge/PyTorch_Edge_Core_Team/Dtype_Selective_Build/""")
 
     if dtype_selective_build:
-        if not expose_operator_symbols and not is_xplat():
+        if not expose_operator_symbols and not (is_xplat() or runtime.is_oss):
             fail("""
                 Dtype selective build with expose_operator_symbols=False works only in xplat -
                 there are undefined symbols otherwise. Please try to use xplat, or talk to the
