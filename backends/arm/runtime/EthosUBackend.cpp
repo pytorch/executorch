@@ -84,6 +84,8 @@ typedef struct {
 extern "C" {
 void __attribute__((weak)) EthosUBackend_execute_begin() {}
 void __attribute__((weak)) EthosUBackend_execute_end() {}
+__attribute__((weak)) unsigned char* ethosu_fast_scratch = nullptr;
+__attribute__((weak)) size_t ethosu_fast_scratch_size = 0;
 }
 
 class EthosUBackendExecuteCallbacks {
@@ -198,8 +200,8 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
         handles.weight_data_size,
         ethosu_scratch,
         handles.scratch_data_size,
-        nullptr,
-        0);
+        ethosu_fast_scratch,
+        ethosu_fast_scratch_size);
 
     // Write argument values (from EValue tensor) into Ethos-U scratch
     // TODO(MLETORCH-123): Optimise into direct write from Vela into the SRAM
@@ -309,9 +311,12 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
         static_cast<uint64_t>(
             reinterpret_cast<uintptr_t>((handles.weight_data))),
         static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ethosu_scratch)),
-        0};
+        static_cast<uint64_t>(
+            reinterpret_cast<uintptr_t>(ethosu_fast_scratch))};
     size_t bases_size[ETHOSU_NUM_BASE_ADDRS] = {
-        handles.weight_data_size, handles.scratch_data_size, 0};
+        handles.weight_data_size,
+        handles.scratch_data_size,
+        ethosu_fast_scratch_size};
     int result = 0;
     EXECUTORCH_PROF_START(
         event_tracer, event_tracer_local_scope, "+EthosUBackend::execute()NPU");
@@ -321,7 +326,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
         handles.cmd_data_size,
         bases,
         bases_size,
-        3, /* fixed array of pointers to binary interface*/
+        ETHOSU_NUM_BASE_ADDRS, /* fixed array of pointers to binary interface*/
         nullptr);
     EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
 
