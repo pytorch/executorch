@@ -59,7 +59,7 @@ TEST_F(BackendOptionsTest, HandlesBoolOptions) {
 // Test integer options
 TEST_F(BackendOptionsTest, HandlesIntOptions) {
   options.set_option(IntKey("num_threads"), 256);
-  int64_t num_threads = 0;
+  int num_threads = 0;
   EXPECT_EQ(options.get_option(IntKey("num_threads"), num_threads), Error::Ok);
   EXPECT_EQ(num_threads, 256);
 }
@@ -79,7 +79,7 @@ TEST_F(BackendOptionsTest, HandlesErrors) {
       Error::InvalidArgument);
 
   // Null value handling
-  options.set_option(StrKey("nullable"), nullptr);
+  options.set_option(StrKey("nullable"), static_cast<const char*>(nullptr));
   EXPECT_EQ(options.get_option(StrKey("nullable"), dummy_str), Error::Ok);
   EXPECT_EQ(dummy_str, nullptr);
 }
@@ -95,7 +95,7 @@ TEST_F(BackendOptionsTest, HandlesCapacity) {
   }
 
   // Verify all exist
-  int64_t value;
+  int value;
   for (int i = 0; i < 5; i++) {
     EXPECT_EQ(options.get_option(IntKey(keys[i].c_str()), value), Error::Ok);
     EXPECT_EQ(value, i);
@@ -119,7 +119,7 @@ TEST_F(BackendOptionsTest, EnforcesKeyTypes) {
   options.set_option(IntKey("flag"), 123); // Overwrites the boolean entry
 
   bool bval;
-  int64_t ival;
+  int ival;
 
   // Boolean get should fail - type was overwritten to INT
   EXPECT_EQ(options.get_option(BoolKey("flag"), bval), Error::InvalidArgument);

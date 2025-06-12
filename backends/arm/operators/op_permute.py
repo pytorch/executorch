@@ -112,7 +112,7 @@ class PermuteVisitor_0_80(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [inputs[0], output])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
 
         # The permutation vector describes a permutation P in default Pytorch dim_order.
         # For rank 4, the default dim_order NCHW.
@@ -152,7 +152,7 @@ class PermuteVisitor(NodeVisitor):
         import serializer.tosa_serializer as ts
 
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [inputs[0], output])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
 
         # The permutation vector describes a permutation P in default Pytorch dim_order.
         # For rank 4, the default dim_order NCHW.
