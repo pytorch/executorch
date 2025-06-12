@@ -17,6 +17,46 @@
 
 namespace vkcompute {
 
+std::vector<int64_t> get_concat_sizes(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& in_value_refs,
+    const int64_t dim) {
+  // Get the sizes of the first input tensor as a starting point
+  std::vector<int64_t> new_out_sizes = graph.sizes_of(in_value_refs.at(0));
+
+  // Sum up the sizes along the concatenation dimension
+  for (size_t i = 1; i < in_value_refs.size(); ++i) {
+    const std::vector<int64_t> in_sizes = graph.sizes_of(in_value_refs.at(i));
+    new_out_sizes.at(dim) += in_sizes.at(dim);
+  }
+
+  return new_out_sizes;
+}
+
+void resize_concat_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& extra_args) {
+  // Extract relevant ValueRefs
+  const ValueRef out_ref = args.at(0).refs.at(0);
+  const std::vector<ValueRef>& in_value_refs = args.at(1).refs;
+
+  int64_t dim = graph->extract_scalar<int64_t>(extra_args.at(0));
+
+  // Normalize dim if negative
+  const int64_t ndim = graph->dim_of(out_ref);
+  if (dim < 0) {
+    dim += ndim;
+  }
+
+  // Calculate the new sizes
+  std::vector<int64_t> new_out_sizes =
+      get_concat_sizes(*graph, in_value_refs, dim);
+
+  // Resize the output tensor
+  graph->virtual_resize(out_ref, new_out_sizes);
+}
+
 void add_concat_node(
     ComputeGraph& graph,
     const ValueRef tensors_ref,
@@ -106,9 +146,9 @@ void add_concat_node(
       // Specialization Constants
       spec_vars,
       // Resize Args
-      {},
+      {dim_ref},
       // Resizing Logic
-      nullptr));
+      resize_concat_node));
 }
 
 void cat_tensor(ComputeGraph& graph, const std::vector<ValueRef>& args) {

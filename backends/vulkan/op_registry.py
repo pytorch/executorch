@@ -552,11 +552,33 @@ def register_view_ops(features: OpFeatures):
 # Fully featured transfer operators (i.e. operators that copy data from the input
 # tensor(s) to the output tensor(s)), which have memory layout agnostic implementations
 # for both texture and buffer storage types.
+@update_features(exir_ops.edge.aten.cat.default)
+def register_cat_op(features: OpFeatures):
+    features.texture_impl = TextureImplFeatures(
+        valid_packed_dims=all_packed_dims,
+    )
+    features.buffer_impl = True
+    features.resize_fn = True
+
+    def check_cat_node(node: torch.fx.Node) -> bool:
+        inputs = node.args[0]
+        if isinstance(inputs, (list, tuple)) and len(inputs) <= 3:
+            return True
+
+        return False
+
+    features.check_node_fn = check_cat_node
+
+    return features
+
+
+# Fully featured transfer operators (i.e. operators that copy data from the input
+# tensor(s) to the output tensor(s)), which have memory layout agnostic implementations
+# for both texture and buffer storage types.
 @update_features(
     [
         exir_ops.edge.aten.select_copy.int,
         exir_ops.edge.aten.slice_copy.Tensor,
-        exir_ops.edge.aten.cat.default,
     ]
 )
 def register_transfer_ops(features: OpFeatures):
@@ -565,6 +587,7 @@ def register_transfer_ops(features: OpFeatures):
     )
     features.buffer_impl = True
     features.resize_fn = True
+
     return features
 
 
