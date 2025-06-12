@@ -8,17 +8,18 @@
 
 #pragma once
 
-#include <executorch/runtime/core/named_data_map.h>
-
 #include <executorch/extension/flat_tensor/serialize/flat_tensor_header.h>
 
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/core/tensor_layout.h>
 #include <executorch/runtime/platform/compiler.h>
 
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 // Forward declare flatbuffer types. This is a public header and must not
 // include the generated flatbuffer header.
