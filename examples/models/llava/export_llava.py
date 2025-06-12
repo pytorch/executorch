@@ -26,6 +26,7 @@ from executorch.examples.models.llama.source_transformation.custom_kv_cache impo
 from executorch.examples.models.llama.source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
+    EmbeddingQuantHandler,
 )
 from executorch.examples.models.llama.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
@@ -177,9 +178,19 @@ def export_image_encoder(llava, resized, dynamic_shapes):
 
 
 def export_token_embedding(llava, prompt):
-    quantized_token_embed = get_quant_embedding_transform("8,32")(
-        llava.model_.language_model.model
-    )
+    # quantized_token_embed = get_quant_embedding_transform("8,32")(
+    #     llava.model_.language_model.model
+    # )
+    def quant_embedding(model):
+        return EmbeddingQuantHandler(
+            model,
+            bitwidth=8,
+            group_size=32,
+            packed=False,
+        ).quantized_model()
+
+    quantized_token_embed = quant_embedding(llava.model_.language_model.model)
+
     token_dim_1 = Dim("token_dim_1", min=2, max=llava.text_model_args.max_seq_len)
     dynamic_shapes = [{1: token_dim_1}]
     with torch.no_grad():
