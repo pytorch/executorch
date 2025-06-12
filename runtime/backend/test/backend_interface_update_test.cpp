@@ -30,7 +30,6 @@ using executorch::runtime::StrKey;
 using executorch::runtime::IntKey;
 using executorch::runtime::BoolKey;
 using executorch::runtime::get_backend_class;
-using executorch::runtime::OptionType;
 using executorch::runtime::MemoryAllocator;
 
 class MockBackend : public BackendInterface {
@@ -62,21 +61,21 @@ class MockBackend : public BackendInterface {
           int sucess_update = 0;
           for (const auto& backend_option : backend_options) {
             if (strcmp(backend_option.key, "Backend") == 0) {
-                if (backend_option.type == OptionType::STRING) {
+                if (std::holds_alternative<const char*>(backend_option.value)) {
                     // Store the value in our member variable
-                    target_backend = backend_option.value.string_value;
+                    target_backend = std::get<const char*>(backend_option.value);
                     sucess_update++;
                 }
             } else if (strcmp(backend_option.key, "NumberOfThreads") == 0) {
-                if (backend_option.type == OptionType::INT) {
-                  num_threads = backend_option.value.int_value;
+                if (std::holds_alternative<int>(backend_option.value)) {
+                  num_threads = std::get<int>(backend_option.value);
                   sucess_update++;
                 }
             } else if (strcmp(backend_option.key, "Debug") == 0) {
-              if (backend_option.type == OptionType::BOOL) {
-                debug = backend_option.value.bool_value;
-                sucess_update++;
-              }
+                if (std::holds_alternative<bool>(backend_option.value)) {
+                  debug = std::get<bool>(backend_option.value);
+                  sucess_update++;
+                }
             }
           }
           if (sucess_update == backend_options.size()) {
@@ -117,8 +116,7 @@ TEST_F(BackendInterfaceUpdateTest, HandlesInvalidOption) {
   // Test invalid key case
   BackendOption invalid_option{
     "InvalidKey",
-    OptionType::STRING,
-    {.string_value = "None"}
+    "None"
   };
 
   Error err = mock_backend->update(context, invalid_option);
