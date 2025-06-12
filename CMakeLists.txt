@@ -579,6 +579,14 @@ if(EXECUTORCH_BUILD_PYBIND)
       torch
   )
 
+  if(EXECUTORCH_BUILD_EXTENSION_MODULE)
+    if(CMAKE_TOOLCHAIN_IOS OR CMAKE_TOOLCHAIN_ANDROID OR APPLE)
+      list(APPEND _dep_libs extension_module_static)
+    else()
+      list(APPEND _dep_libs extension_module)
+    endif()
+  endif()
+
   if(EXECUTORCH_BUILD_TESTS)
     list(APPEND _dep_libs test_backend_compiler_lib)
   endif()
