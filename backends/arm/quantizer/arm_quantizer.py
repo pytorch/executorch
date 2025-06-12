@@ -247,9 +247,9 @@ class TOSAQuantizer(Quantizer):
         quantizer.set_module_name("blocks.sub"), it will quantize all supported operator/operator
         patterns in the submodule with this module name with the given `quantization_config`
         """
-        assert (
-            quantization_config is not None
-        ), " quantization_config == None is not supported yet"
+        # Validate that quantization_config is provided
+        if quantization_config is None:
+            raise ValueError("quantization_config == None is not supported yet")
         self.module_name_config[module_name] = quantization_config
         return self
 
