@@ -991,7 +991,95 @@ TEST_F(OpLeTensorOutTest, Broadcast1DTo2DShapeTest) {
   EXPECT_TENSOR_EQ(out, tf_bool.make({1, 6}, expected_data));
 }
 
-TEST_F(OpLeTensorOutTest, Broadcast2dBy1dReverseTest) {
+TEST_F(OpLeTensorOutTest, Broadcast2DBy1DShapeTest) {
+  TensorFactory<ScalarType::Int> tf;
+  TensorFactory<ScalarType::Bool> tf_bool;
+
+  // Test case: (10,) and (6, 1) -> (6, 10)
+  Tensor a = tf.make({10}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10});
+  Tensor b = tf.make({6, 1}, {2, 4, 6, 8, 10, 12});
+
+  Tensor out = tf_bool.zeros({6, 10});
+
+  op_le_tensor_out(a, b, out);
+
+  // Expected: a[j] <= b[i,0] for all i,j
+  // Each row i should be [a[0]<=b[i,0], a[1]<=b[i,0], ..., a[9]<=b[i,0]]
+  using ctype =
+      executorch::runtime::testing::internal::ScalarTypeToCppTypeWrapper<
+          ScalarType::Bool>::ctype;
+  std::vector<ctype> expected_data = {
+      // Row 0 (b=2): [1,2,3,4,5,6,7,8,9,10] <= 2
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      // Row 1 (b=4): [1,2,3,4,5,6,7,8,9,10] <= 4
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      // Row 2 (b=6): [1,2,3,4,5,6,7,8,9,10] <= 6
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      // Row 3 (b=8): [1,2,3,4,5,6,7,8,9,10] <= 8
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      // Row 4 (b=10): [1,2,3,4,5,6,7,8,9,10] <= 10
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      // Row 5 (b=12): [1,2,3,4,5,6,7,8,9,10] <= 12
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true};
+
+  EXPECT_TENSOR_EQ(out, tf_bool.make({6, 10}, expected_data));
+}
+
+TEST_F(OpLeTensorOutTest, Broadcast22dBy1dReverseTest) {
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Bool> tf_bool;
 
