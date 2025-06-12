@@ -16,10 +16,10 @@
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;
-using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::runtime::testing::TensorFactory;
+using std::optional;
 using torch::executor::apply_over_dim;
 using torch::executor::apply_over_dim_list;
 using torch::executor::get_out_numel;
