@@ -6,12 +6,14 @@ on:
   pull_request:
     paths:
       - .github/workflows/apple-perf.yml
+      - .ci/scripts/gather_benchmark_configs.py
       - extension/benchmark/apple/Benchmark/default-ios-device-farm-appium-test-spec.yml.j2
   push:
     branches:
       - main
     paths:
       - .github/workflows/apple-perf.yml
+      - .ci/scripts/gather_benchmark_configs.py
       - extension/benchmark/apple/Benchmark/default-ios-device-farm-appium-test-spec.yml.j2
   # Note: GitHub has an upper limit of 10 inputs
   workflow_dispatch:
