@@ -87,15 +87,15 @@ TEST_F(DataSeparationTest, TestExternalData) {
   // Check that accessing keys out of bounds fails.
   EXPECT_EQ(data_map->get_key(2).error(), Error::InvalidArgument);
 
-  // Linear.weight
+  // Linear.bias
   Result<FreeableBuffer> data0 = data_map->get_data(key0.get());
   EXPECT_EQ(data0.error(), Error::Ok);
-  EXPECT_EQ(data0.get().size(), 36); // 3*3*4 (3*3 matrix, 4 bytes per float)
+  EXPECT_EQ(data0.get().size(), 12); // 3*4 (3 vector, 4 bytes per float)
 
-  // Linear.bias
+  // Linear.weight
   Result<FreeableBuffer> data1 = data_map->get_data(key1.get());
   EXPECT_EQ(data1.error(), Error::Ok);
-  EXPECT_EQ(data1.get().size(), 12); // 3*4 (3 vector, 4 bytes per float)
+  EXPECT_EQ(data1.get().size(), 36); // 3*3*4 (3*3 matrix, 4 bytes per float)
 
   // Check that accessing non-existent data fails.
   Result<FreeableBuffer> data2 = data_map->get_data("nonexistent");

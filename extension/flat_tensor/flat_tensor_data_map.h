@@ -8,17 +8,18 @@
 
 #pragma once
 
-#include <executorch/runtime/core/named_data_map.h>
-
 #include <executorch/extension/flat_tensor/serialize/flat_tensor_header.h>
 
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/core/tensor_layout.h>
 #include <executorch/runtime/platform/compiler.h>
 
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 // Forward declare flatbuffer types. This is a public header and must not
 // include the generated flatbuffer header.
@@ -94,6 +95,17 @@ class FlatTensorDataMap final
   ET_NODISCARD executorch::runtime::Result<const char*> get_key(
       uint32_t index) const override;
 
+  /**
+   * Merge a named_data_map into the current one.
+   * @param[in] other The named_data_map to merge.
+   * @return Error indicating if the merge was successful or not.
+   *
+   * Note: The FlatTensorDataMap does not perform a deep copy; it holds a
+   * reference to other, so other must outlive the FlatTensorDataMap instance.
+   */
+  ET_NODISCARD executorch::runtime::Error merge(
+      const NamedDataMap* other) override;
+
   FlatTensorDataMap(FlatTensorDataMap&&) noexcept = default;
 
   ~FlatTensorDataMap() override = default;
@@ -103,11 +115,14 @@ class FlatTensorDataMap final
       const FlatTensorHeader& header,
       executorch::runtime::FreeableBuffer&& flat_tensor_data,
       const flat_tensor_flatbuffer::FlatTensor* flat_tensor,
-      executorch::runtime::DataLoader* loader)
+      executorch::runtime::DataLoader* loader,
+      std::unordered_map<std::string, int64_t> key_to_map_index)
       : header_(header),
         flat_tensor_data_(std::move(flat_tensor_data)),
         flat_tensor_(flat_tensor),
-        loader_(loader) {}
+        loader_(loader),
+        key_to_map_index_(std::move(key_to_map_index)),
+        merged_maps_({}) {}
 
   // Not copyable or assignable.
   FlatTensorDataMap(const FlatTensorDataMap& rhs) = delete;
@@ -125,6 +140,13 @@ class FlatTensorDataMap final
 
   // Data loader, used to load segment data.
   executorch::runtime::DataLoader* loader_;
+
+  // Cache of keys to data map index.
+  // index=-1 is used for the flat_tensor data map.
+  std::unordered_map<std::string, int64_t> key_to_map_index_;
+
+  // Other NamedDataMaps.
+  std::vector<const NamedDataMap*> merged_maps_;
 };
 
 } // namespace extension

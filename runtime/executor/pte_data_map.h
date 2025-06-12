@@ -114,6 +114,13 @@ class PteDataMap final : public NamedDataMap {
    */
   ET_NODISCARD Result<const char*> get_key(uint32_t index) const override;
 
+  /**
+   * The PteDataMap does not implement merge.
+   */
+  ET_NODISCARD Error merge(ET_UNUSED const NamedDataMap* other) override {
+    return Error::NotImplemented;
+  }
+
   // Moveable, to be compatible with Result.
   PteDataMap(PteDataMap&&) noexcept = default;
   ~PteDataMap() override = default;

@@ -35,25 +35,33 @@ class FlatTensorDataMapTest : public ::testing::Test {
 
     // Load data map. The eager linear model is defined at:
     // //executorch/test/models/linear_model.py
-    const char* path = std::getenv("ET_MODULE_ADD_MUL_DATA_PATH");
-    Result<FileDataLoader> loader = FileDataLoader::from(path);
-    ASSERT_EQ(loader.error(), Error::Ok);
+    const char* add_mul_path = std::getenv("ET_MODULE_ADD_MUL_DATA_PATH");
+    Result<FileDataLoader> add_mul_loader = FileDataLoader::from(add_mul_path);
+    ASSERT_EQ(add_mul_loader.error(), Error::Ok);
 
-    data_map_loader_ =
-        std::make_unique<FileDataLoader>(std::move(loader.get()));
+    add_mul_loader_ =
+        std::make_unique<FileDataLoader>(std::move(add_mul_loader.get()));
+
+    const char* linear_path = std::getenv("ET_MODULE_LINEAR_DATA_PATH");
+    Result<FileDataLoader> linear_loader = FileDataLoader::from(linear_path);
+    ASSERT_EQ(linear_loader.error(), Error::Ok);
+
+    linear_loader_ =
+        std::make_unique<FileDataLoader>(std::move(linear_loader.get()));
   }
-  std::unique_ptr<FileDataLoader> data_map_loader_;
+  std::unique_ptr<FileDataLoader> add_mul_loader_;
+  std::unique_ptr<FileDataLoader> linear_loader_;
 };
 
-TEST_F(FlatTensorDataMapTest, LoadFlatTensorDataMap) {
+TEST_F(FlatTensorDataMapTest, LoadDataMap) {
   Result<FlatTensorDataMap> data_map =
-      FlatTensorDataMap::load(data_map_loader_.get());
-  EXPECT_EQ(data_map.error(), Error::Ok);
+      FlatTensorDataMap::load(add_mul_loader_.get());
+  ASSERT_EQ(data_map.error(), Error::Ok);
 }
 
-TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_GetMetadata) {
+TEST_F(FlatTensorDataMapTest, GetTensorLayout) {
   Result<FlatTensorDataMap> data_map =
-      FlatTensorDataMap::load(data_map_loader_.get());
+      FlatTensorDataMap::load(add_mul_loader_.get());
   EXPECT_EQ(data_map.error(), Error::Ok);
 
   // Check tensor layouts are correct.
@@ -93,10 +101,10 @@ TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_GetMetadata) {
   EXPECT_EQ(const_c_res.error(), Error::NotFound);
 }
 
-TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_GetData) {
+TEST_F(FlatTensorDataMapTest, GetData) {
   Result<FlatTensorDataMap> data_map =
-      FlatTensorDataMap::load(data_map_loader_.get());
-  EXPECT_EQ(data_map.error(), Error::Ok);
+      FlatTensorDataMap::load(add_mul_loader_.get());
+  ASSERT_EQ(data_map.error(), Error::Ok);
 
   // Check tensor data sizes are correct.
   Result<FreeableBuffer> data_a_res = data_map->get_data("a");
@@ -114,10 +122,10 @@ TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_GetData) {
   EXPECT_EQ(data_c_res.error(), Error::NotFound);
 }
 
-TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_Keys) {
+TEST_F(FlatTensorDataMapTest, Keys) {
   Result<FlatTensorDataMap> data_map =
-      FlatTensorDataMap::load(data_map_loader_.get());
-  EXPECT_EQ(data_map.error(), Error::Ok);
+      FlatTensorDataMap::load(add_mul_loader_.get());
+  ASSERT_EQ(data_map.error(), Error::Ok);
 
   // Check num tensors is 2.
   Result<uint32_t> num_tensors_res = data_map->get_num_keys();
@@ -127,30 +135,30 @@ TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_Keys) {
   // Check get_key returns the correct keys.
   Result<const char*> key0_res = data_map->get_key(0);
   ASSERT_EQ(Error::Ok, key0_res.error());
-  EXPECT_EQ(strcmp(key0_res.get(), "a"), 0);
+  EXPECT_EQ(strcmp(key0_res.get(), "b"), 0);
 
   Result<const char*> key1_res = data_map->get_key(1);
   ASSERT_EQ(Error::Ok, key1_res.error());
-  EXPECT_EQ(strcmp(key1_res.get(), "b"), 0);
+  EXPECT_EQ(strcmp(key1_res.get(), "a"), 0);
 
   // Check get_key fails when out of bounds.
   Result<const char*> key2_res = data_map->get_key(2);
   EXPECT_EQ(key2_res.error(), Error::InvalidArgument);
 }
 
-TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_LoadInto) {
+TEST_F(FlatTensorDataMapTest, LoadInto) {
   Result<FlatTensorDataMap> data_map =
-      FlatTensorDataMap::load(data_map_loader_.get());
-  EXPECT_EQ(data_map.error(), Error::Ok);
+      FlatTensorDataMap::load(add_mul_loader_.get());
+  ASSERT_EQ(data_map.error(), Error::Ok);
 
-  // get the metadata
-  auto meta_data_res = data_map->get_tensor_layout("a");
-  ASSERT_EQ(meta_data_res.error(), Error::Ok);
+  // Get tensor layout.
+  auto tensor_layout = data_map->get_tensor_layout("a");
+  ASSERT_EQ(tensor_layout.error(), Error::Ok);
 
-  // get data blob
-  void* data = malloc(meta_data_res->nbytes());
+  // Get data blob.
+  void* data = malloc(tensor_layout->nbytes());
   auto load_into_error =
-      data_map->load_data_into("a", data, meta_data_res->nbytes());
+      data_map->load_data_into("a", data, tensor_layout->nbytes());
   ASSERT_EQ(load_into_error, Error::Ok);
 
   // Check tensor data is correct.
@@ -159,4 +167,51 @@ TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_LoadInto) {
     EXPECT_EQ(data_a[i], 3.0);
   }
   free(data);
+}
+
+TEST_F(FlatTensorDataMapTest, MergeDuplicates) {
+  Result<FlatTensorDataMap> data_map =
+      FlatTensorDataMap::load(add_mul_loader_.get());
+  ASSERT_EQ(data_map.error(), Error::Ok);
+
+  Result<FlatTensorDataMap> data_map2 =
+      FlatTensorDataMap::load(add_mul_loader_.get());
+  ASSERT_EQ(data_map2.error(), Error::Ok);
+
+  Error error = data_map->merge(&data_map2.get());
+  EXPECT_EQ(error, Error::InvalidArgument);
+}
+
+TEST_F(FlatTensorDataMapTest, Merge) {
+  Result<FlatTensorDataMap> data_map =
+      FlatTensorDataMap::load(add_mul_loader_.get());
+  ASSERT_EQ(data_map.error(), Error::Ok);
+
+  Result<FlatTensorDataMap> linear_data_map =
+      FlatTensorDataMap::load(linear_loader_.get());
+  ASSERT_EQ(linear_data_map.error(), Error::Ok);
+
+  Error error = data_map->merge(&linear_data_map.get());
+  ASSERT_EQ(error, Error::Ok);
+
+  // Check num tensors is 4.
+  Result<uint32_t> num_keys = data_map->get_num_keys();
+  ASSERT_EQ(Error::Ok, num_keys.error());
+  EXPECT_EQ(num_keys.get(), 4);
+
+  // Check data map has the new linear keys.
+  Result<const TensorLayout> linear_weight =
+      data_map->get_tensor_layout("linear.weight");
+  EXPECT_EQ(Error::Ok, linear_weight.error());
+
+  Result<const TensorLayout> linear_bias =
+      data_map->get_tensor_layout("linear.bias");
+  EXPECT_EQ(Error::Ok, linear_bias.error());
+
+  // Check data map still has the add_mul keys.
+  Result<const TensorLayout> a = data_map->get_tensor_layout("a");
+  EXPECT_EQ(Error::Ok, a.error());
+
+  Result<const TensorLayout> b = data_map->get_tensor_layout("b");
+  EXPECT_EQ(Error::Ok, b.error());
 }
