@@ -166,6 +166,7 @@ test_cmake_select_ops_in_model() {
     ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="mv2"
     local example_dir=examples/selective_build
     local build_dir=cmake-out/${example_dir}
+    rm -rf ${build_dir}
     retry cmake -DCMAKE_BUILD_TYPE=Release \
             -DEXECUTORCH_SELECT_OPS_FROM_MODEL="./mv2.pte" \
             -DCMAKE_INSTALL_PREFIX=cmake-out \
