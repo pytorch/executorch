@@ -61,7 +61,7 @@ Tensor& sub_out(
         op_name,
         utils::SupportedTensorDtypes::REALHBF16>(
         [val_alpha](const auto val_a, const auto val_b) {
-          return val_a - (decltype(val_b))(val_alpha) * val_b;
+          return val_a - (decltype(val_b))(val_alpha)*val_b;
         },
         ctx,
         a,
