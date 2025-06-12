@@ -102,7 +102,7 @@ TEST_F(EValueTest, ToOptionalInt) {
   EXPECT_TRUE(e.isInt());
   EXPECT_FALSE(e.isNone());
 
-  executorch::aten::optional<int64_t> o = e.toOptional<int64_t>();
+  std::optional<int64_t> o = e.toOptional<int64_t>();
   EXPECT_TRUE(o.has_value());
   EXPECT_EQ(o.value(), 5);
 }
@@ -111,7 +111,7 @@ TEST_F(EValueTest, NoneToOptionalInt) {
   EValue e;
   EXPECT_TRUE(e.isNone());
 
-  executorch::aten::optional<int64_t> o = e.toOptional<int64_t>();
+  std::optional<int64_t> o = e.toOptional<int64_t>();
   EXPECT_FALSE(o.has_value());
 }
 
@@ -121,7 +121,7 @@ TEST_F(EValueTest, ToOptionalScalar) {
   EXPECT_TRUE(e.isScalar());
   EXPECT_FALSE(e.isNone());
 
-  executorch::aten::optional<executorch::aten::Scalar> o =
+  std::optional<executorch::aten::Scalar> o =
       e.toOptional<executorch::aten::Scalar>();
   EXPECT_TRUE(o.has_value());
   EXPECT_TRUE(o.value().isFloatingPoint());
@@ -141,7 +141,7 @@ TEST_F(EValueTest, NoneToOptionalScalar) {
   EValue e;
   EXPECT_TRUE(e.isNone());
 
-  executorch::aten::optional<executorch::aten::Scalar> o =
+  std::optional<executorch::aten::Scalar> o =
       e.toOptional<executorch::aten::Scalar>();
   EXPECT_FALSE(o.has_value());
 }
@@ -150,7 +150,7 @@ TEST_F(EValueTest, NoneToOptionalTensor) {
   EValue e;
   EXPECT_TRUE(e.isNone());
 
-  executorch::aten::optional<executorch::aten::Tensor> o =
+  std::optional<executorch::aten::Tensor> o =
       e.toOptional<executorch::aten::Tensor>();
   EXPECT_FALSE(o.has_value());
 }
@@ -170,7 +170,7 @@ TEST_F(EValueTest, toString) {
   EXPECT_TRUE(e.isString());
   EXPECT_FALSE(e.isNone());
 
-  executorch::aten::string_view x = e.toString();
+  std::string_view x = e.toString();
   EXPECT_EQ(x, "foo");
 }
 
@@ -216,9 +216,9 @@ TEST_F(EValueTest, toOptionalTensorList) {
   // create list, empty evalue ctor gets tag::None
   EValue values[2] = {EValue(), EValue()};
   EValue* values_p[2] = {&values[0], &values[1]};
-  executorch::aten::optional<executorch::aten::Tensor> storage[2];
+  std::optional<executorch::aten::Tensor> storage[2];
   // wrap in array ref
-  BoxedEvalueList<executorch::aten::optional<executorch::aten::Tensor>> a(
+  BoxedEvalueList<std::optional<executorch::aten::Tensor>> a(
       values_p, storage, 2);
 
   // create Evalue
@@ -227,9 +227,8 @@ TEST_F(EValueTest, toOptionalTensorList) {
   EXPECT_TRUE(e.isListOptionalTensor());
 
   // Convert back to list
-  executorch::aten::ArrayRef<
-      executorch::aten::optional<executorch::aten::Tensor>>
-      x = e.toListOptionalTensor();
+  executorch::aten::ArrayRef<std::optional<executorch::aten::Tensor>> x =
+      e.toListOptionalTensor();
   EXPECT_EQ(x.size(), 2);
   EXPECT_FALSE(x[0].has_value());
   EXPECT_FALSE(x[1].has_value());
