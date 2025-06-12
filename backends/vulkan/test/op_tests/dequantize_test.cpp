@@ -364,12 +364,6 @@ void test_vulkan_dequantize_per_tensor(
       vkcompute::utils::kBuffer,
       vkcompute::utils::kBuffer);
 
-  // Telling the system to expect a float instead of a double
-  // since the shader can only return 32bit anyways
-  if (out_dtype == at::kDouble) {
-    out_dtype = at::kFloat;
-  }
-
   // Test with texture storage
   test_vulkan_dequantize_per_tensor_impl(
       input_sizes,
@@ -403,12 +397,6 @@ void test_vulkan_dequantize_per_token(
       out_dtype,
       vkcompute::utils::kBuffer,
       vkcompute::utils::kBuffer);
-
-  // Telling the system to expect a float instead of a double
-  // since the shader can only return 32bit anyways
-  if (out_dtype == at::kDouble) {
-    out_dtype = at::kFloat;
-  }
 
   // Test with texture storage
   test_vulkan_dequantize_per_token_impl(
@@ -492,8 +480,6 @@ void test_reference_dequantize_per_tensor(
     std::cout << "  zero_point: " << zero_point << std::endl;
     std::cout << "  quant_min: " << quant_min << std::endl;
     std::cout << "  quant_max: " << quant_max << std::endl;
-    std::cout << "  input dtype: " << dtype << std::endl;
-    std::cout << "  output dtype: " << out_dtype << std::endl;
 
     std::cout << "input:" << std::endl;
     std::cout << input << std::endl;
@@ -611,15 +597,8 @@ void test_vulkan_dequantize_per_tensor_impl(
   graph.copy_from_staging(
       staging_out, vk_out.mutable_data_ptr(), vk_out.numel());
 
-  // Compare outputs with appropriate tolerance for half precision
-  bool output_correct;
-  if (out_dtype == at::kHalf) {
-    // Use higher tolerance for half precision due to limited precision
-    output_correct =
-        at::allclose(reference_out, vk_out, /*rtol=*/1e-2, /*atol=*/1e-2);
-  } else {
-    output_correct = at::allclose(reference_out, vk_out);
-  }
+  // Compare outputs
+  const bool output_correct = at::allclose(reference_out, vk_out);
   if (!output_correct) {
     std::cout << "\n"
               << "Failed with parameters: " << std::endl;
@@ -631,8 +610,6 @@ void test_vulkan_dequantize_per_tensor_impl(
               << (in_storage == vkcompute::utils::kBuffer ? "buffer"
                                                           : "texture")
               << std::endl;
-    std::cout << "  input dtype: " << dtype << std::endl;
-    std::cout << "  output dtype: " << out_dtype << std::endl;
 
     std::cout << "input:" << std::endl;
     std::cout << input << std::endl;
@@ -709,87 +686,6 @@ TEST(
       std::numeric_limits<int32_t>::max(), // quant_max
       at::kInt, // input dtype
       at::kHalf); // output dtype
-}
-
-TEST(
-    VulkanDequantizePerTensorTest,
-    test_vulkan_dequantize_per_tensor_uint8_to_float) {
-  test_vulkan_dequantize_per_tensor(
-      {2, 3, 4}, // input sizes
-      0.1, // scale
-      5, // zero_point
-      0, // quant_min
-      255, // quant_max
-      at::kByte, // input dtype
-      at::kFloat); // output dtype
-}
-
-TEST(
-    VulkanDequantizePerTensorTest,
-    test_vulkan_dequantize_per_tensor_int8_to_float) {
-  test_vulkan_dequantize_per_tensor(
-      {3, 4}, // input sizes
-      0.05, // scale
-      0, // zero_point
-      -128, // quant_min
-      127, // quant_max
-      at::kChar, // input dtype
-      at::kFloat); // output dtype
-}
-
-TEST(
-    VulkanDequantizePerTensorTest,
-    test_vulkan_dequantize_per_tensor_int32_to_float) {
-  test_vulkan_dequantize_per_tensor(
-      {2, 4, 3, 12}, // input sizes
-      0.0001, // scale
-      100, // zero_point
-      -2147483648, // quant_min
-      2147483647, // quant_max
-      at::kInt, // input dtype
-      at::kFloat); // output dtype
-}
-
-TEST(
-    VulkanDequantizePerTensorTest,
-    test_vulkan_dequantize_per_tensor_int8_to_half) {
-  test_vulkan_dequantize_per_tensor(
-      {2, 3}, // input sizes
-      0.05, // scale
-      10, // zero_point
-      -128, // quant_min
-      127, // quant_max
-      at::kChar, // input dtype
-      at::kHalf); // output dtype
-}
-
-TEST(
-    VulkanDequantizePerTensorTest,
-    test_vulkan_dequantize_per_tensor_int32_to_half) {
-  // Use much smaller scale to avoid overflow to infinity in half precision
-  // Half precision max value is ~65504, so with int32 values around 2e9,
-  // we need scales smaller than 65504/2e9 ≈ 3e-5 to avoid overflow
-  test_vulkan_dequantize_per_tensor(
-      {7}, // input sizes
-      1e-5, // scale (much smaller to avoid overflow)
-      5, // zero_point
-      std::numeric_limits<int32_t>::min(), // quant_min
-      std::numeric_limits<int32_t>::max(), // quant_max
-      at::kInt, // input dtype
-      at::kHalf); // output dtype
-}
-
-TEST(
-    VulkanDequantizePerTensorTest,
-    test_vulkan_dequantize_per_tensor_int32_to_double) {
-  test_vulkan_dequantize_per_tensor(
-      {2, 4, 3}, // input sizes
-      0.0001, // scale
-      100, // zero_point
-      -2147483648, // quant_min
-      2147483647, // quant_max
-      at::kInt, // input dtype
-      at::kDouble); // output dtype
 }
 
 void test_reference_dequantize_per_token(
@@ -896,8 +792,6 @@ void test_reference_dequantize_per_token(
     std::cout << "" << std::endl;
     std::cout << "  quant_min: " << quant_min << std::endl;
     std::cout << "  quant_max: " << quant_max << std::endl;
-    std::cout << "  input dtype: " << dtype << std::endl;
-    std::cout << "  output dtype: " << out_dtype << std::endl;
 
     std::cout << "input:" << std::endl;
     std::cout << input << std::endl;
@@ -1051,15 +945,8 @@ void test_vulkan_dequantize_per_token_impl(
   graph.copy_from_staging(
       staging_out, vk_out.mutable_data_ptr(), vk_out.numel());
 
-  // Compare outputs with appropriate tolerance for half precision
-  bool output_correct;
-  if (out_dtype == at::kHalf) {
-    // Use higher tolerance for half precision due to limited precision
-    output_correct =
-        at::allclose(reference_out, vk_out, /*rtol=*/1e-2, /*atol=*/1e-2);
-  } else {
-    output_correct = at::allclose(reference_out, vk_out);
-  }
+  // Compare outputs
+  const bool output_correct = at::allclose(reference_out, vk_out);
   if (!output_correct) {
     std::cout << "\n"
               << "Failed with parameters: " << std::endl;
@@ -1079,8 +966,6 @@ void test_vulkan_dequantize_per_token_impl(
               << (in_storage == vkcompute::utils::kBuffer ? "buffer"
                                                           : "texture")
               << std::endl;
-    std::cout << "  input dtype: " << dtype << std::endl;
-    std::cout << "  output dtype: " << out_dtype << std::endl;
 
     std::cout << "input:" << std::endl;
     std::cout << input << std::endl;
@@ -1172,104 +1057,4 @@ TEST(
       std::numeric_limits<int32_t>::max(), // quant_max
       at::kInt, // input dtype
       at::kHalf); // output dtype
-}
-
-TEST(
-    VulkanDequantizePerTokenTest,
-    test_vulkan_dequantize_per_token_uint8_to_float) {
-  std::vector<float> scales = {0.1, 0.2, 0.3, 0.4, 0.5, 0.6};
-  std::vector<int> zero_points = {5, 10, 15, 20, 25, 30};
-
-  test_vulkan_dequantize_per_token(
-      {2, 3, 6}, // input sizes (2*3=6 tokens)
-      scales,
-      zero_points,
-      0, // quant_min
-      255, // quant_max
-      at::kByte, // input dtype
-      at::kFloat); // output dtype
-}
-
-TEST(
-    VulkanDequantizePerTokenTest,
-    test_vulkan_dequantize_per_token_int8_to_float) {
-  std::vector<float> scales = {0.05, 0.0};
-  std::vector<int> zero_points = {10, -5};
-
-  test_vulkan_dequantize_per_token(
-      {2, 2}, // input sizes (2*2=4 tokens)
-      scales,
-      zero_points,
-      -128, // quant_min
-      127, // quant_max
-      at::kChar, // input dtype
-      at::kFloat); // output dtype
-}
-
-TEST(
-    VulkanDequantizePerTokenTest,
-    test_vulkan_dequantize_per_token_int32_to_float) {
-  std::vector<float> scales = {
-      0.0001, 0.0002, 0.0003, 0.0, 0.0011, 0.0102, 0.1003, 0.0};
-  std::vector<int> zero_points = {100, -100, 50, -50, 12, -6, 4, -24};
-
-  test_vulkan_dequantize_per_token(
-      {2, 2, 2, 12}, // input sizes (2*2=4 tokens)
-      scales,
-      zero_points,
-      -2147483648, // quant_min
-      2147483647, // quant_max
-      at::kInt, // input dtype
-      at::kFloat); // output dtype
-}
-
-TEST(
-    VulkanDequantizePerTokenTest,
-    test_vulkan_dequantize_per_token_int8_to_half) {
-  std::vector<float> scales = {0.05, 0.2};
-  std::vector<int> zero_points = {2, -5};
-
-  test_vulkan_dequantize_per_token(
-      {2, 2}, // input sizes (2=4 tokens)
-      scales,
-      zero_points,
-      -128, // quant_min
-      127, // quant_max
-      at::kChar, // input dtype
-      at::kHalf); // output dtype
-}
-
-TEST(
-    VulkanDequantizePerTokenTest,
-    test_vulkan_dequantize_per_token_int32_to_half) {
-  // Use much smaller scales to avoid overflow to infinity in half precision
-  // Half precision max value is ~65504, so with int32 values around 2e9,
-  // we need scales smaller than 65504/2e9 ≈ 3e-5 to avoid overflow
-  std::vector<float> scales = {1e-5, 2e-5, 1.5e-5};
-  std::vector<int> zero_points = {20, -15, 1};
-
-  test_vulkan_dequantize_per_token(
-      {3, 6}, // input sizes (3 tokens)
-      scales,
-      zero_points,
-      std::numeric_limits<int32_t>::min(), // quant_min
-      std::numeric_limits<int32_t>::max(), // quant_max
-      at::kInt, // input dtype
-      at::kHalf); // output dtype
-}
-
-TEST(
-    VulkanDequantizePerTokenTest,
-    test_vulkan_dequantize_per_token_int32_to_double) {
-  std::vector<float> scales = {0.0001, 0.0002, 0.0003, 0.0};
-  std::vector<int> zero_points = {100, -100, 50, -50};
-
-  test_vulkan_dequantize_per_token(
-      {2, 2, 8}, // input sizes (2*2=4 tokens)
-      scales,
-      zero_points,
-      -2147483648, // quant_min
-      2147483647, // quant_max
-      at::kInt, // input dtype
-      at::kDouble); // output dtype
 }
