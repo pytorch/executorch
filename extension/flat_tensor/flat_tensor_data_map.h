@@ -115,7 +115,7 @@ class FlatTensorDataMap final
       executorch::runtime::FreeableBuffer&& flat_tensor_data,
       const flat_tensor_flatbuffer::FlatTensor* flat_tensor,
       executorch::runtime::DataLoader* loader,
-      std::unordered_map<std::string, int32_t> key_to_map_index)
+      std::unordered_map<std::string, int64_t> key_to_map_index)
       : header_(header),
         flat_tensor_data_(std::move(flat_tensor_data)),
         flat_tensor_(flat_tensor),
@@ -142,7 +142,7 @@ class FlatTensorDataMap final
 
   // Cache of keys to data map index.
   // index=-1 is used for the flat_tensor data map.
-  std::unordered_map<std::string, int32_t> key_to_map_index_;
+  std::unordered_map<std::string, int64_t> key_to_map_index_;
 
   // Other NamedDataMaps.
   std::vector<const NamedDataMap*> merged_maps_;
