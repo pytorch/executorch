@@ -1,0 +1,53 @@
+# Config file for the tokenizers package
+# It defines the following variables:
+#  TOKENIZERS_FOUND        - True if the tokenizers library was found
+#  TOKENIZERS_INCLUDE_DIRS - Include directories for tokenizers
+#  TOKENIZERS_LIBRARIES    - Libraries to link against
+
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Find dependencies
+find_dependency(re2 REQUIRED)
+find_dependency(absl REQUIRED)
+# Directly include sentencepiece library
+set(SENTENCEPIECE_LIBRARY "${CMAKE_INSTALL_PREFIX}/lib64/libsentencepiece.a")
+if(NOT EXISTS "${SENTENCEPIECE_LIBRARY}")
+  message(
+    FATAL_ERROR
+      "Could not find sentencepiece library at ${SENTENCEPIECE_LIBRARY}"
+  )
+endif()
+
+# Include the exported targets file
+include("${CMAKE_CURRENT_LIST_DIR}/tokenizers-targets.cmake")
+
+# Set the include directories
+set_and_check(TOKENIZERS_INCLUDE_DIRS "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
+
+# Add --whole-archive linker flag for tokenizers library
+if(APPLE)
+  set(TOKENIZERS_LINK_OPTIONS
+      "SHELL:-force_load,$<TARGET_FILE:tokenizers::regex_lookahead>"
+  )
+elseif(MSVC)
+  set(TOKENIZERS_LINK_OPTIONS
+      "SHELL:/WHOLEARCHIVE:$<TARGET_FILE:tokenizers::regex_lookahead>"
+  )
+else()
+  set(TOKENIZERS_LINK_OPTIONS
+      "SHELL:LINKER:--whole-archive $<TARGET_FILE:tokenizers::regex_lookahead> LINKER:--no-whole-archive"
+  )
+endif()
+
+# Set the libraries and link options
+set(TOKENIZERS_LIBRARIES tokenizers::tokenizers)
+set_property(
+  TARGET tokenizers::tokenizers
+  APPEND
+  PROPERTY INTERFACE_LINK_OPTIONS "${TOKENIZERS_LINK_OPTIONS}"
+)
+
+# Check if the library was found
+check_required_components(tokenizers)
