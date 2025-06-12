@@ -1,0 +1,23 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+from typing import Any, Dict, List
+
+class _Program: ...
+
+class _IOMetaData:
+    @property
+    def kernel_type(self) -> int: ...
+    @property
+    def dtype(self) -> int: ...
+    @property
+    def dim_order(self) -> List[int]: ...
+
+def _get_program_from_buffer(buffer: bytes) -> _Program: ...
+def _get_program_operators(program: _Program) -> List[str]: ...
+def _get_io_metadata_for_program_operators(
+    program: _Program,
+) -> Dict[str, Any]: ...
