@@ -17,6 +17,7 @@ def define_common_targets():
             exported_headers = [
                 "backend_execution_context.h",
                 "backend_init_context.h",
+                "backend_update_context.h",
                 "backend_options.h",
                 "interface.h",
             ],
