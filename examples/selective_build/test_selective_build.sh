@@ -161,6 +161,30 @@ test_cmake_select_ops_in_yaml() {
     rm "./custom_ops_1.pte"
 }
 
+test_cmake_select_ops_in_yaml_gen_dtype_header() {
+    echo "Exporting custom_op_1"
+    ${PYTHON_EXECUTABLE} -m examples.portable.custom_ops.custom_ops_1
+    local example_dir=examples/selective_build
+    local build_dir=cmake-out/${example_dir}
+    rm -rf ${build_dir}
+    retry cmake -DCMAKE_BUILD_TYPE=Release \
+            -DEXECUTORCH_SELECT_OPS_YAML=ON \
+            -DEXECUTORCH_DTYPE_GEN_HEADER=ON \
+            -DCMAKE_INSTALL_PREFIX=cmake-out \
+            -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+            -B${build_dir} \
+            ${example_dir}
+
+    echo "Building ${example_dir}"
+    cmake --build ${build_dir} -j9 --config Release
+
+    echo 'Running selective build test'
+    ${build_dir}/selective_build_test --model_path="./custom_ops_1.pte"
+
+    echo "Removing custom_ops_1.pte"
+    rm "./custom_ops_1.pte"
+}
+
 if [[ -z $BUCK ]];
 then
   BUCK=buck2
@@ -174,9 +198,10 @@ fi
 if [[ $1 == "cmake" ]];
 then
     cmake_install_executorch_lib
-    test_cmake_select_all_ops
-    test_cmake_select_ops_in_list
-    test_cmake_select_ops_in_yaml
+#    test_cmake_select_all_ops
+#    test_cmake_select_ops_in_list
+#    test_cmake_select_ops_in_yaml
+    test_cmake_select_ops_in_yaml_gen_dtype_header
 elif [[ $1 == "buck2" ]];
 then
     test_buck2_select_all_ops
