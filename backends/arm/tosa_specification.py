@@ -11,6 +11,7 @@
 # JIT compiler flows.
 #
 
+import contextvars
 import re
 from typing import List
 
@@ -214,3 +215,34 @@ class Tosa_1_00(TosaSpecification):
 
     def support_float(self):
         return "FP" in self.profiles
+
+
+class TosaLoweringContext:
+    """
+    A context manager to handle the TOSA specific aspects of the lowering process.
+    For now it only handles the TOSA specification context, but it can be extended
+    to include other policies or configurations.
+    """
+
+    # Define a context variable for the spec
+    tosa_spec_var: contextvars.ContextVar = contextvars.ContextVar("tosa_spec")
+
+    def __init__(self, spec: TosaSpecification):
+        self.spec = spec
+
+    def __enter__(self):
+        # Set the spec in the context variable and store the token for later reset
+        self.token = TosaLoweringContext.tosa_spec_var.set(self.spec)
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        # Reset the context variable to its previous state
+        TosaLoweringContext.tosa_spec_var.reset(self.token)
+
+
+# A helper function to retrieve the current spec anywhere in your code
+def get_context_spec() -> TosaSpecification:
+    try:
+        return TosaLoweringContext.tosa_spec_var.get()
+    except LookupError:
+        raise RuntimeError("Function must be executed within a TosaLoweringContext")

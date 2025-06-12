@@ -269,18 +269,7 @@ You can export and run the original Llama 3 8B instruct model.
 
 1. Build executorch with optimized CPU performance as follows. Build options available [here](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt#L59).
     ```
-    cmake -DPYTHON_EXECUTABLE=python \
-        -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DEXECUTORCH_ENABLE_LOGGING=1 \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-        -DEXECUTORCH_BUILD_XNNPACK=ON \
-        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-        -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
-        -Bcmake-out .
+    cmake --preset llm -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake-out
 
     cmake --build cmake-out -j16 --target install --config Release
     ```
@@ -288,14 +277,9 @@ Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the 
 
 2. Build llama runner.
     ```
-    cmake -DPYTHON_EXECUTABLE=python \
-        -DCMAKE_INSTALL_PREFIX=cmake-out \
+    cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
+        -DBUILD_TESTING=OFF \
         -DCMAKE_BUILD_TYPE=Release \
-        -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
-        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-        -DEXECUTORCH_BUILD_XNNPACK=ON \
-        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-        -DSUPPORT_REGEX_LOOKAHEAD=ON
         -Bcmake-out/examples/models/llama \
         examples/models/llama
 

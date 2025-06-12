@@ -27,7 +27,7 @@ load_state_dict(const runtime::NamedDataMap& data_map) {
     }
 
     // get the metadata
-    auto metadata_res = data_map.get_metadata(key_res.get());
+    auto metadata_res = data_map.get_tensor_layout(key_res.get());
     if (!metadata_res.ok()) {
       return metadata_res.error();
     }

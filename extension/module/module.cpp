@@ -36,6 +36,7 @@
 
 namespace executorch {
 namespace extension {
+namespace ET_MODULE_NAMESPACE {
 
 using ET_RUNTIME_NAMESPACE::MethodMeta;
 using ET_RUNTIME_NAMESPACE::Program;
@@ -229,8 +230,8 @@ runtime::Error Module::load_method(
 
 runtime::Result<MethodMeta> Module::method_meta(
     const std::string& method_name) {
-  ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
-  return methods_.at(method_name).method->method_meta();
+  ET_CHECK_OK_OR_RETURN_ERROR(load());
+  return program_->method_meta(method_name.c_str());
 }
 
 runtime::Result<std::vector<runtime::EValue>> Module::execute(
@@ -316,5 +317,46 @@ runtime::Error Module::update(
   return method->update(backend_options);
 }
 
+runtime::Error Module::update(
+    runtime::ArrayRef<runtime::Entry> backend_options) {
+  return update("forward", backend_options);
+}
+
+runtime::Error Module::update(
+    const std::string& method_name,
+    const std::unordered_map<std::string, std::vector<runtime::BackendOption>>&
+        backend_options) {
+  std::vector<runtime::Entry> entries;
+  entries.reserve(backend_options.size());
+
+  for (const auto& [backend_name, options] : backend_options) {
+    entries.push_back(
+        {backend_name.c_str(),
+         runtime::ArrayRef<runtime::BackendOption>(
+             options.data(), options.size())});
+  }
+
+  return update(
+      method_name,
+      runtime::ArrayRef<runtime::Entry>(entries.data(), entries.size()));
+}
+
+runtime::Error Module::update(
+    const std::unordered_map<std::string, std::vector<runtime::BackendOption>>&
+        backend_options) {
+  std::vector<runtime::Entry> entries;
+  entries.reserve(backend_options.size());
+
+  for (const auto& [backend_name, options] : backend_options) {
+    entries.push_back(
+        {backend_name.c_str(),
+         runtime::ArrayRef<runtime::BackendOption>(
+             options.data(), options.size())});
+  }
+
+  return update(
+      runtime::ArrayRef<runtime::Entry>(entries.data(), entries.size()));
+}
+} // namespace ET_MODULE_NAMESPACE
 } // namespace extension
 } // namespace executorch

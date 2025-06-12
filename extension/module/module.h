@@ -14,8 +14,15 @@
 #include <unordered_set>
 #include <vector>
 
+#include <executorch/runtime/backend/backend_options.h>
+#include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/executor/program.h>
-#include <executorch/extension/module/dynamic_backend_options_map.h>
+
+#ifdef USE_ATEN_LIB
+#define ET_MODULE_NAMESPACE module::aten
+#else // !USE_ATEN_LIB
+#define ET_MODULE_NAMESPACE module
+#endif // USE_ATEN_LIB
 
 namespace executorch {
 namespace extension {
@@ -25,6 +32,9 @@ using ET_RUNTIME_NAMESPACE::MethodMeta;
 using ET_RUNTIME_NAMESPACE::NamedDataMap;
 using ET_RUNTIME_NAMESPACE::Program;
 
+class ExecuTorchJni;
+
+namespace ET_MODULE_NAMESPACE {
 /**
  * A facade class for loading programs and executing methods within them.
  */
@@ -222,7 +232,7 @@ class Module {
 
   /**
    * Get a method metadata struct by method name.
-   * Loads the program and method if needed.
+   * Loads the program if needed.
    *
    * @param[in] method_name The name of the method to get the metadata for.
    *
@@ -479,16 +489,41 @@ class Module {
    *
    * @returns An Error to indicate success or failure.
    */
-  ET_EXPERIMENTAL ET_NODISCARD inline runtime::Error update(
-      runtime::ArrayRef<runtime::Entry> backend_options) {
-    return update("forward", backend_options);
-  }
+  ET_EXPERIMENTAL ET_NODISCARD runtime::Error update(
+      runtime::ArrayRef<runtime::Entry> backend_options);
 
-  ET_EXPERIMENTAL ET_NODISCARD inline runtime::Error update(
+  /**
+   * EXPERIMENTAL: Updates backend options for a specific method.
+   * Loads the program and method before updating if needed. It uses simple
+   * std library like unordered_map to store backend options.
+   *
+   * @param[in] method_name The name of the method to update.
+   * @param[in] backend_options A map of <backend_name,
+   * vector<backend_options>>.
+   *
+   * @returns An Error to indicate success or failure.
+   */
+  ET_EXPERIMENTAL ET_NODISCARD runtime::Error update(
       const std::string& method_name,
-      const runtime::DynamicBackendOptionsMap& backend_options) {
-    return update(method_name, backend_options.entries());
-  }
+      const std::unordered_map<
+          std::string,
+          std::vector<runtime::BackendOption>>& backend_options);
+
+  /**
+   * EXPERIMENTAL: Updates backend options for a specific method.
+   * Loads the program and method before updating if needed. It uses simple
+   * std library like unordered_map to store backend options.
+   *
+   * @param[in] method_name The name of the method to update.
+   * @param[in] backend_options A map of <backend_name,
+   * vector<backend_options>>.
+   *
+   * @returns An Error to indicate success or failure.
+   */
+  ET_EXPERIMENTAL ET_NODISCARD runtime::Error update(
+      const std::unordered_map<
+          std::string,
+          std::vector<runtime::BackendOption>>& backend_options);
 
   /**
    * Retrieves the EventTracer instance being used by the Module.
@@ -526,9 +561,10 @@ class Module {
  protected:
   std::unordered_map<std::string, MethodHolder> methods_;
 
-  friend class ExecuTorchJni;
+  friend class executorch::extension::ExecuTorchJni;
 };
 
+} // namespace ET_MODULE_NAMESPACE
 } // namespace extension
 } // namespace executorch
 
@@ -536,6 +572,13 @@ namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::extension::Module;
+using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
 } // namespace executor
 } // namespace torch
+
+namespace executorch {
+namespace extension {
+// backward compatible namespace alias
+using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
+} // namespace extension
+} // namespace executorch

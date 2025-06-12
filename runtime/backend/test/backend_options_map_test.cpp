@@ -39,7 +39,7 @@ TEST_F(BackendOptionsMapTest, BasicAddAndRetrieve) {
   BackendOptions<5> cpu_options;
 
   cpu_options.set_option(BoolKey("use_fp16"), true);
-  cpu_options.set_option(BoolKey("thead"), 4);
+  cpu_options.set_option(IntKey("thead"), 4);
   map.add("CPU", cpu_options.view());
 
   auto retrieved = map.get("CPU");
@@ -49,7 +49,7 @@ TEST_F(BackendOptionsMapTest, BasicAddAndRetrieve) {
   bool found = false;
   for (auto retrieved_option : retrieved) {
     if (strcmp(retrieved_option.key, "use_fp16") == 0) {
-      EXPECT_EQ(retrieved_option.value.bool_value, true);
+      EXPECT_EQ(std::get<bool>(retrieved_option.value), true);
       found = true;
     }
   }
@@ -135,9 +135,9 @@ TEST_F(BackendOptionsMapTest, OptionIsolation) {
   // Verify CPU has its own option
   EXPECT_EQ(cpu_opts.size(), 2);
   EXPECT_EQ(cpu_opts[0].key, "Debug");
-  EXPECT_EQ(cpu_opts[0].value.bool_value, true);
+  EXPECT_EQ(std::get<bool>(cpu_opts[0].value), true);
   EXPECT_EQ(cpu_opts[1].key, "NumThreads");
-  EXPECT_EQ(cpu_opts[1].value.int_value, 3);
+  EXPECT_EQ(std::get<int>(cpu_opts[1].value), 3);
 
   // Test GPU options
   auto gpu_opts = map.get("GPU");
@@ -146,11 +146,11 @@ TEST_F(BackendOptionsMapTest, OptionIsolation) {
   // Verify GPU has its own option
   EXPECT_EQ(gpu_opts.size(), 3);
   EXPECT_EQ(gpu_opts[0].key, "Profile");
-  EXPECT_EQ(gpu_opts[0].value.bool_value, true);
+  EXPECT_EQ(std::get<bool>(gpu_opts[0].value), true);
   EXPECT_EQ(gpu_opts[1].key, "Mem");
-  EXPECT_EQ(gpu_opts[1].value.int_value, 1024);
+  EXPECT_EQ(std::get<int>(gpu_opts[1].value), 1024);
   EXPECT_EQ(gpu_opts[2].key, "Hardware");
-  EXPECT_EQ(gpu_opts[2].value.string_value, "H100");
+  EXPECT_EQ(std::get<const char*>(gpu_opts[2].value), "H100");
 }
 } // namespace runtime
 } // namespace executorch

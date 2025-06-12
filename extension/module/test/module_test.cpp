@@ -15,9 +15,9 @@
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/tensor/tensor.h>
-#include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 #include <executorch/runtime/backend/backend_options.h>
 #include <executorch/runtime/backend/backend_options_map.h>
+#include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 #include <executorch/runtime/executor/test/stub_backend.h>
 
 using namespace ::executorch::extension;
@@ -33,7 +33,7 @@ class ModuleTest : public ::testing::Test {
     add_mul_path_ = std::getenv("ET_MODULE_ADD_MUL_PROGRAM_PATH");
     add_mul_data_path_ = std::getenv("ET_MODULE_ADD_MUL_DATA_PATH");
     stub_model_path_ = std::getenv("ET_MODULE_ADD_MUL_DELEGATED_PATH");
-    
+
     // Register the StubBackend for testing
     StubBackend::register_singleton();
   }
@@ -492,7 +492,6 @@ TEST_F(ModuleTest, TestUpdate) {
   EXPECT_EQ(update_result, Error::Ok);
 
   ASSERT_EQ(StubBackend::singleton().num_threads(), new_num_threads);
-  
 }
 
 TEST_F(ModuleTest, TestUpdateNonExistentMethod) {
@@ -503,7 +502,7 @@ TEST_F(ModuleTest, TestUpdateNonExistentMethod) {
   int new_num_threads = 4;
   backend_options.set_option(IntKey("NumberOfThreads"), new_num_threads);
   map.add("StubBackend", backend_options.view());
-  
+
   // Test update method with non-existent method name
   const auto update_result = module.update("nonexistent", map.entries());
   EXPECT_NE(update_result, Error::Ok);
@@ -513,13 +512,12 @@ TEST_F(ModuleTest, TestUpdateSugarSyntax) {
   Module module(stub_model_path_);
   int new_num_threads = 4;
 
-  // Clean sugar syntax
-  const auto update_result = module.update("forward", 
-      {
-        {"StubBackend", {{IntKey("NumberOfThreads"), new_num_threads}}
-      },
-  );
-  
+  // Using std::unordered_map and std::vector directly
+  std::unordered_map<std::string, std::vector<BackendOption>> backend_options =
+      {{"StubBackend", {{"NumberOfThreads", new_num_threads}}}};
+
+  const auto update_result = module.update("forward", backend_options);
+
   EXPECT_EQ(update_result, Error::Ok);
   ASSERT_EQ(StubBackend::singleton().num_threads(), new_num_threads);
 }
