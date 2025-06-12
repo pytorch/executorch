@@ -63,6 +63,10 @@ option(EXECUTORCH_SELECT_ALL_OPS
 )
 
 # Option to enable dtype selective build
+option(EXECUTORCH_SELECT_OPS_FROM_MODEL "Enable op selection from pte during build." OFF
+)
+
+# Option to enable dtype selective build
 option(EXECUTORCH_DTYPE_SELECTIVE_BUILD "Enable dtype selection during build." OFF
 )
 # ------------------------------- OPTIONS END --------------------------------
@@ -84,11 +88,8 @@ include(${EXECUTORCH_SRCS_FILE})
 #
 set(_kernel_lib)
 if(EXECUTORCH_SELECT_OPS_YAML)
-#  set(_custom_ops_yaml
-#      ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops.yaml
-#  )
   set(_custom_ops_yaml
-      ${EXECUTORCH_ROOT}/mv2_schema.yaml
+      ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops.yaml
   )
   set(kernel_sources
       ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops_1_out.cpp
@@ -115,6 +116,8 @@ gen_selected_ops(
   "${EXECUTORCH_SELECT_OPS_LIST}"
   INCLUDE_ALL_OPS
   "${EXECUTORCH_SELECT_ALL_OPS}"
+  OPS_FROM_MODEL
+  "${EXECUTORCH_SELECT_OPS_FROM_MODEL}"
   DTYPE_SELECT
   "${EXECUTORCH_DTYPE_SELECTIVE_BUILD}"
 )
