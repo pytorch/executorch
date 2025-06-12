@@ -378,7 +378,7 @@ TEST_F(ProgramTest, GetNamedDataMap_Fail) {
 
   // Get the named data map. Expect to fail, as add.pte does not have any
   // named data segments.
-  Result<const executorch::runtime::NamedDataMap*> named_data_map =
+  Result<executorch::runtime::NamedDataMap*> named_data_map =
       program->get_named_data_map();
   EXPECT_EQ(named_data_map.error(), Error::NotFound);
 }
