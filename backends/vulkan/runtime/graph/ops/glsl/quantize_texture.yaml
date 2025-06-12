@@ -1,13 +1,9 @@
-quantize:
+quantize_texture:
   parameter_names_with_default_values:
     IN_DTYPE: float
-    OUT_DTYPE: int
-    STORAGE: buffer
+    OUT_DTYPE: int32
     MODE: per_tensor
   generate_variant_forall:
-    STORAGE:
-      - VALUE: buffer
-      - VALUE: texture3d
     IN_DTYPE:
       - VALUE: half
       - VALUE: float
@@ -16,7 +12,7 @@ quantize:
       - VALUE: int8
       - VALUE: int32
   shader_variants:
-    - NAME: quantize_per_tensor
+    - NAME: quantize_per_tensor_texture3d
       MODE: per_tensor
-    - NAME: quantize_per_token
+    - NAME: quantize_per_token_texture3d
       MODE: per_token

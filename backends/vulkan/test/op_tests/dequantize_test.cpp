@@ -204,32 +204,30 @@ at::Tensor dequantize_per_tensor_reference_impl(
   at::Tensor flat_input = input.flatten();
   at::Tensor flat_out = out.flatten();
 
+  // Store casted values to avoid repeated casting
+  const int32_t zero_point_int32 = static_cast<int32_t>(zero_point);
+  const float scale_float = static_cast<float>(scale);
+
   for (int i = 0; i < flat_input.numel(); i++) {
     double dequantized_value = 0.0;
 
     // Extract quantized value and dequantize based on input dtype
-    // Following the CPU implementation pattern: (input -
-    // static_cast<int32_t>(zero_point)) * static_cast<float>(scale)
+    // Following the CPU implementation pattern: (input - zero_point) * scale
     if (dtype == at::kByte) {
       uint8_t qvalue = flat_input[i].item<uint8_t>();
-      dequantized_value = (qvalue - static_cast<int32_t>(zero_point)) *
-          static_cast<float>(scale);
+      dequantized_value = (qvalue - zero_point_int32) * scale_float;
     } else if (dtype == at::kChar) {
       int8_t qvalue = flat_input[i].item<int8_t>();
-      dequantized_value = (qvalue - static_cast<int32_t>(zero_point)) *
-          static_cast<float>(scale);
+      dequantized_value = (qvalue - zero_point_int32) * scale_float;
     } else if (dtype == at::kShort) {
       int16_t qvalue = flat_input[i].item<int16_t>();
-      dequantized_value = (qvalue - static_cast<int32_t>(zero_point)) *
-          static_cast<float>(scale);
+      dequantized_value = (qvalue - zero_point_int32) * scale_float;
     } else if (dtype == at::kInt) {
       int32_t qvalue = flat_input[i].item<int32_t>();
-      dequantized_value = (qvalue - static_cast<int32_t>(zero_point)) *
-          static_cast<float>(scale);
+      dequantized_value = (qvalue - zero_point_int32) * scale_float;
     } else if (dtype == at::kLong) {
       int64_t qvalue = flat_input[i].item<int64_t>();
-      dequantized_value = (qvalue - static_cast<int32_t>(zero_point)) *
-          static_cast<float>(scale);
+      dequantized_value = (qvalue - zero_point_int32) * scale_float;
     }
 
     // Store result based on output dtype
