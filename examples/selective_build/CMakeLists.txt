@@ -66,9 +66,8 @@ option(EXECUTORCH_SELECT_ALL_OPS
 option(EXECUTORCH_SELECT_OPS_FROM_MODEL "Enable op selection from pte during build." OFF
 )
 
-# Option to enable dtype header selective build process
+# Option to enable dtype selective build. Note: must be using selective build model API.
 option(EXECUTORCH_DTYPE_SELECTIVE_BUILD "Enable dtype selective build." OFF
->>>>>>> 6ae80f260 (Support for header file generation with dtype)
 )
 # ------------------------------- OPTIONS END --------------------------------
 
