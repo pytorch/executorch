@@ -24,6 +24,7 @@ pip-out/
 # Any exported models and profiling outputs
 *.bin
 *.model
+tokenizer.json
 *.pte
 !test_bpe_tokenizer.bin
 !test_tiktoken_tokenizer.model
