@@ -26,86 +26,84 @@ using executorch::runtime::DelegateHandle;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
-using executorch::runtime::OptionType;
 using executorch::runtime::Result;
 
 /**
  * A backend class whose methods can be overridden individually.
- * This backend can be shared across multiple test files.
  */
-class StubBackend final : public BackendInterface {
- public:
-  // Default name that this backend is registered as.
-  static constexpr char kName[] = "StubBackend";
+ class StubBackend final : public BackendInterface {
+  public:
+ 
+   // Default name that this backend is registered as.
+   static constexpr char kName[] = "StubBackend";
+ 
+   bool is_available() const override {
+     return true;
+   }
+ 
+   Result<DelegateHandle*> init(
+       BackendInitContext& context,
+       FreeableBuffer* processed,
+       ArrayRef<CompileSpec> compile_specs) const override {
+     return nullptr;
+   }
+ 
+   Error execute(
+       BackendExecutionContext& context,
+       DelegateHandle* handle,
+       EValue** args) const override {
+     return Error::Ok;
+    }
 
-  bool is_available() const override {
-    return true;
-  }
-
-  Result<DelegateHandle*> init(
-      BackendInitContext& context,
-      FreeableBuffer* processed,
-      ArrayRef<CompileSpec> compile_specs) const override {
-    return nullptr;
-  }
-
-  Error execute(
-      BackendExecutionContext& context,
-      DelegateHandle* handle,
-      EValue** args) const override {
-    return Error::Ok;
-  }
-
-  int num_threads() const {
+    int num_threads() const {
     return num_threads_;
-  }
+   }
 
-  Error update(
-      BackendUpdateContext& context,
-      const executorch::runtime::ArrayRef<BackendOption>& backend_options)
-      const override {
-    int success_update = 0;
-    for (const auto& backend_option : backend_options) {
-      if (strcmp(backend_option.key, "NumberOfThreads") == 0) {
-        if (backend_option.type == OptionType::INT) {
-          num_threads_ = backend_option.value.int_value;
-          success_update++;
+    Error update(
+        BackendUpdateContext& context,
+        const executorch::runtime::ArrayRef<BackendOption>& backend_options) const override {
+        int success_update = 0;
+        for (const auto& backend_option : backend_options) {
+          if (strcmp(backend_option.key, "NumberOfThreads") == 0) {
+              if (std::holds_alternative<int>(backend_option.value)) {
+                num_threads_ = std::get<int>(backend_option.value);
+                success_update++;
+              }
+          }
         }
-      }
+        if (success_update == backend_options.size()) {
+          return Error::Ok;
+        }
+        return Error::InvalidArgument;
     }
-    if (success_update == backend_options.size()) {
-      return Error::Ok;
-    }
-    return Error::InvalidArgument;
-  }
 
-  /**
-   * Registers the singleton instance if not already registered.
-   *
-   * Note that this can be used to install the stub as the implementation for
-   * any export-time backend by passing in the right name, as long as no other
-   * backend with that name has been registered yet.
-   */
-  static Error register_singleton(const char* name = kName) {
-    if (!registered_) {
-      registered_ = true;
-      return executorch::runtime::register_backend({name, &singleton_});
-    }
-    return Error::Ok;
-  }
-
-  /**
-   * Returns the instance that was added to the backend registry.
-   */
-  static StubBackend& singleton() {
-    return singleton_;
-  }
-
- private:
-  static bool registered_;
-  static StubBackend singleton_;
-  mutable int num_threads_ = 1;
-};
+   /**
+    * Registers the singleton instance if not already registered.
+    *
+    * Note that this can be used to install the stub as the implementation for
+    * any export-time backend by passing in the right name, as long as no other
+    * backend with that name has been registered yet.
+    */
+   static Error register_singleton(const char* name = kName) {
+     if (!registered_) {
+       registered_ = true;
+       return executorch::runtime::register_backend({name, &singleton_});
+     }
+     return Error::Ok;
+   }
+ 
+   /**
+    * Returns the instance that was added to the backend registry.
+    */
+   static StubBackend& singleton() {
+     return singleton_;
+   }
+ 
+  private:
+   static bool registered_;
+   static StubBackend singleton_;
+   mutable int num_threads_ = 1;
+  };
 
 // Static member definitions
 bool StubBackend::registered_ = false;
