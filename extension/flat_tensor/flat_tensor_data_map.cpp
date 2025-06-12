@@ -205,7 +205,9 @@ ET_NODISCARD Error FlatTensorDataMap::load_data_into(
 }
 
 ET_NODISCARD Result<uint32_t> FlatTensorDataMap::get_num_keys() const {
-  return key_to_map_index_.size();
+  // Guaranteed safe, as the segment_index is a uint32_t, which means
+  // that there can't be more than uint32_t keys.
+  return static_cast<uint32_t>(key_to_map_index_.size());
 }
 
 ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
@@ -246,7 +248,7 @@ ET_NODISCARD Error FlatTensorDataMap::merge(const NamedDataMap* other) {
   // Place keys into the map.
   for (uint32_t i = 0; i < num_keys; i++) {
     const char* key = other->get_key(i).get();
-    key_to_map_index_[key] = merged_maps_.size();
+    key_to_map_index_[key] = static_cast<int64_t>(merged_maps_.size());
   }
 
   merged_maps_.push_back(other);
@@ -322,7 +324,7 @@ ET_NODISCARD Error FlatTensorDataMap::merge(const NamedDataMap* other) {
       "FlatTensor segments is nullptr, malformed PTD file.");
 
   // Add keys to the map.
-  std::unordered_map<std::string, int32_t> key_to_map_index;
+  std::unordered_map<std::string, int64_t> key_to_map_index;
   for (int i = 0; i < flat_tensor->named_data()->size(); i++) {
     const auto* named_data = flat_tensor->named_data()->Get(i);
     key_to_map_index[named_data->key()->c_str()] = -1;
