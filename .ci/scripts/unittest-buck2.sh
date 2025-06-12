@@ -15,8 +15,10 @@ buck2 query "//backends/apple/... + //backends/example/... + \
 //kernels/optimized/... + //kernels/portable/... + //kernels/quantized/... + \
 //kernels/test/... + //runtime/... + //schema/... + //test/... + //util/..."
 
+# TODO: optimized ops are unbuildable because they now use ATen; put
+# them back after we can use PyTorch in OSS buck.
 UNBUILDABLE_OPTIMIZED_OPS_REGEX="_elu|gelu|fft|log_softmax"
-BUILDABLE_OPTIMIZED_OPS=$(buck2 query //kernels/optimized/cpu/... | grep -E -v $UNBUILDABLE_OPTIMIZED_OPS_REGEX)
+BUILDABLE_OPTIMIZED_OPS= #$(buck2 query //kernels/optimized/cpu/... | grep -E -v $UNBUILDABLE_OPTIMIZED_OPS_REGEX)
 
 # TODO: build prim_ops_test_cpp again once supported_features works in
 # OSS buck.
