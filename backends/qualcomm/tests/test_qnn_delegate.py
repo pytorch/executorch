@@ -47,7 +47,6 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     PyQnnManagerAdaptor,
-    QnnPartitioner,
     rewrite_prepared_observer,
     skip_annotation,
     to_edge_transform_and_lower_to_qnn,
@@ -89,12 +88,8 @@ from executorch.examples.models.mobilenet_v3 import MV3Model
 from executorch.examples.models.torchvision_vit.model import TorchVisionViTModel
 
 from executorch.examples.models.wav2letter import Wav2LetterModel
-from executorch.exir import EdgeProgramManager, to_edge
-from executorch.exir.backend.backend_api import (
-    disable_validation,
-    MethodProgramsPartitionerSpec,
-    to_backend,
-)
+from executorch.exir import to_edge
+from executorch.exir.backend.backend_api import disable_validation
 
 
 class TestQNNFloatingPointOperator(TestQNN):
@@ -2701,22 +2696,18 @@ class TestQNNFloatingPointUtils(TestQNN):
             )
             for graph_name in graph_names
         ]
-        # TODO: retire capture_program once we figure out how to extract
-        #       intermediate graph from official lowering API
-        edge_progs = {
-            graph_name: capture_program(module, sample_input).exported_program
-            for graph_name, module, sample_input in zip(
-                graph_names, modules, sample_inputs
-            )
-        }
-        partitioners = {
-            graph_name: QnnPartitioner(compiler_spec)
-            for graph_name, compiler_spec in zip(graph_names, compiler_specs)
-        }
-        lowered_ep_dict = to_backend(
-            MethodProgramsPartitionerSpec(edge_progs, partitioners)
+
+        modules_dict = {}
+        sample_inputs_dict = {}
+        compiler_specs_dict = {}
+        for i, graph_name in enumerate(graph_names):
+            modules_dict[graph_name] = modules[i]
+            sample_inputs_dict[graph_name] = sample_inputs[i]
+            compiler_specs_dict[graph_name] = compiler_specs[i]
+        delegated_program = to_edge_transform_and_lower_to_qnn(
+            modules_dict, sample_inputs_dict, compiler_specs_dict
         )
-        executorch_prog = EdgeProgramManager(lowered_ep_dict).to_executorch()
+        executorch_prog = delegated_program.to_executorch()
         for index, module in enumerate(modules):
             self.verify_output(
                 module=module,
@@ -3375,28 +3366,21 @@ class TestQNNQuantizedUtils(TestQNN):
             )
             for graph_name in graph_names
         ]
-        # TODO: retire capture_program once we figure out how to extract
-        #       intermediate graph from official lowering API
-        for i, module in enumerate(modules):
-            module_exported = torch.export.export(module, sample_inputs[i]).module()
+        modules_dict = {}
+        sample_inputs_dict = {}
+        compiler_specs_dict = {}
+        for i, graph_name in enumerate(graph_names):
+            module_exported = torch.export.export(modules[i], sample_inputs[i]).module()
             module_prepared = prepare_pt2e(module_exported, make_quantizer())
             module_prepared(*sample_inputs[i])
-            modules[i] = convert_pt2e(module_prepared)
-
-        edge_progs = {
-            graph_name: capture_program(module, sample_input).exported_program
-            for graph_name, module, sample_input in zip(
-                graph_names, modules, sample_inputs
-            )
-        }
-        partitioners = {
-            graph_name: QnnPartitioner(compiler_spec)
-            for graph_name, compiler_spec in zip(graph_names, compiler_specs)
-        }
-        lowered_ep_dict = to_backend(
-            MethodProgramsPartitionerSpec(edge_progs, partitioners)
+            modules_dict[graph_name] = convert_pt2e(module_prepared)
+            sample_inputs_dict[graph_name] = sample_inputs[i]
+            compiler_specs_dict[graph_name] = compiler_specs[i]
+        delegated_program = to_edge_transform_and_lower_to_qnn(
+            modules_dict, sample_inputs_dict, compiler_specs_dict
         )
-        executorch_prog = EdgeProgramManager(lowered_ep_dict).to_executorch()
+
+        executorch_prog = delegated_program.to_executorch()
         for index, module in enumerate(modules):
             self.verify_output(
                 module=module,
