@@ -320,11 +320,6 @@ class XNNLog(XNNNode1x1):
 
 
 @dataclass
-class XNNTanh(XNNNode1x1):
-    pass
-
-
-@dataclass
 class XNNMaximum(XNNNode2x1):
     pass
 
@@ -396,7 +391,6 @@ XNodeUnion = Union[
     XNNReciprocalSquareRoot,
     XNNLog,
     XNNGelu,
-    XNNTanh,
 ]
 
 
