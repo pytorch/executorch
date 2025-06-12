@@ -48,19 +48,18 @@ $else:
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
+${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
+${layout_declare_spec_const(C, "int", "other_layout", "DEFAULT_LAYOUT")}
+
 $if STORAGE == "buffer":
-  ${layout_declare_spec_const(C, "int", "out_packed_dim", "DEFAULT_LAYOUT")}
-  ${layout_declare_spec_const(C, "int", "in_packed_dim", "DEFAULT_LAYOUT")}
-  ${layout_declare_spec_const(C, "int", "other_packed_dim", "DEFAULT_LAYOUT")}
+  const lowp ivec4 out_dim_order = unhash_dim_order(out_layout);
 $else:
-  ${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
   const lowp ivec4 out_axis_map = unhash_axis_map(out_layout);
   const lowp int packed_dim = unhash_packed_dim(out_layout);
 
-  ${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
   const lowp ivec4 in_axis_map = unhash_axis_map(in_layout);
 
-  ${layout_declare_spec_const(C, "int", "other_layout", "DEFAULT_LAYOUT")}
   const lowp ivec4 other_axis_map = unhash_axis_map(other_layout);
 
 #ifdef USING_BUFFER
@@ -77,7 +76,7 @@ void main() {
     return;
   }
 
-  const ivec4 out_tidx = bufi_to_tidx(out_bufi, out_strides, out_packed_dim);
+  const ivec4 out_tidx = bufi_to_tidx(out_bufi, out_strides, out_dim_order);
   const ivec4 in_tidx = min(out_tidx, in_sizes - 1);
   const ivec4 other_tidx = min(out_tidx, other_sizes - 1);
 
