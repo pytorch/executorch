@@ -10,11 +10,9 @@
 
 # pyre-unsafe
 
-import contextlib
 import logging
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple
-from unittest.mock import patch
 
 import torch
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
@@ -96,7 +94,6 @@ class LLMEdgeManager:
         verbose: bool = False,
         metadata: Optional[dict] = None,
         dynamic_shapes: Optional[Any] = None,
-        use_legacy_export: bool = False,
         save_exported_program: bool = False,
     ):
         # Store necessary constructor arguments.
@@ -117,7 +114,6 @@ class LLMEdgeManager:
         self.verbose = verbose
         self.metadata = metadata
         self.dynamic_shapes = dynamic_shapes
-        self.use_legacy_export = use_legacy_export
         self.save_exported_program = save_exported_program
 
         # Note: treat this as the source of truth for the result of
@@ -229,39 +225,20 @@ class LLMEdgeManager:
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
-            if self.use_legacy_export:
-                # TODO: for use cases such as qnn, which does not work with new, non-functional export IR.
-                # See issue: https://github.com/pytorch/executorch/issues/7373
-
-                with patch.object(
-                    torch._utils_internal,
-                    "export_training_ir_rollout_check",
-                    return_value=False,
-                ):
-                    # TODO: this is temporary and export_for_training doesn't work with qnn either. We need a
-                    # functional graph. See issue https://github.com/pytorch/executorch/pull/4627 for more details
-                    exported_module = torch.export.export(
-                        self.model if not module else module,
-                        self.example_inputs,
-                        self.example_kwarg_inputs,
-                        dynamic_shapes=dynamic_shape,
-                        strict=True,
-                    )
+            if module:
+                logging.info("Re-exporting with:")
             else:
-                if module:
-                    logging.info("Re-exporting with:")
-                else:
-                    logging.info("Exporting with:")
-                logging.info(f"inputs: {self.example_inputs}")
-                logging.info(f"kwargs: {self.example_kwarg_inputs}")
-                logging.info(f"dynamic shapes: {dynamic_shape}")
-                exported_module = export_for_training(
-                    self.model if not module else module,
-                    self.example_inputs,
-                    kwargs=self.example_kwarg_inputs,
-                    dynamic_shapes=dynamic_shape,
-                    strict=True,
-                )
+                logging.info("Exporting with:")
+            logging.info(f"inputs: {self.example_inputs}")
+            logging.info(f"kwargs: {self.example_kwarg_inputs}")
+            logging.info(f"dynamic shapes: {dynamic_shape}")
+            exported_module = export_for_training(
+                self.model if not module else module,
+                self.example_inputs,
+                kwargs=self.example_kwarg_inputs,
+                dynamic_shapes=dynamic_shape,
+                strict=True,
+            )
         return exported_module
 
     def export(self) -> "LLMEdgeManager":
@@ -446,24 +423,15 @@ class LLMEdgeManager:
                 # Run export() if it didn't run
                 self.export()
 
-            override_export_behaviour = contextlib.nullcontext()
-            if self.use_legacy_export:
-                override_export_behaviour = patch.object(
-                    torch._utils_internal,
-                    "export_training_ir_rollout_check",
-                    return_value=False,
-                )
-
-            with override_export_behaviour:
-                self.edge_manager = export_to_edge(
-                    self.pre_autograd_graph_module,  # pyre-fixme[6]
-                    self.example_inputs,
-                    example_kwarg_inputs=self.example_kwarg_inputs,
-                    dynamic_shapes=dynamic_shape,
-                    edge_constant_methods=self.metadata,
-                    edge_compile_config=edge_config,
-                    verbose=self.verbose,
-                )
+            self.edge_manager = export_to_edge(
+                self.pre_autograd_graph_module,  # pyre-fixme[6]
+                self.example_inputs,
+                example_kwarg_inputs=self.example_kwarg_inputs,
+                dynamic_shapes=dynamic_shape,
+                edge_constant_methods=self.metadata,
+                edge_compile_config=edge_config,
+                verbose=self.verbose,
+            )
         return self
 
     def to_backend(self, partitioners: Optional[List[Partitioner]]) -> "LLMEdgeManager":

@@ -35,7 +35,6 @@ from .reduce_dynamic_range import ReduceDynamicRange
 from .remove_0d_tensor import Remove0DTensor
 from .remove_redundancy import RemoveRedundancy
 from .replace_arange_args import ReplaceArangeArgs
-from .replace_index_put_input import ReplaceIndexPutInput
 from .replace_inf_values import ReplaceInfValues
 from .tag_quant_io import TagQuantIO
 
@@ -72,7 +71,6 @@ __all__ = [
     Remove0DTensor,
     RemoveRedundancy,
     ReplaceArangeArgs,
-    ReplaceIndexPutInput,
     ReplaceInfValues,
     TagQuantIO,
 ]

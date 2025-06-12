@@ -76,7 +76,6 @@ def get_passes_dependency_for_capture_program():
         RecomposePixelUnshuffle,
         RecomposeRmsNorm,
         RemoveRedundancy,
-        ReplaceIndexPutInput,
         TagQuantIO,
     )
 
@@ -103,8 +102,7 @@ def get_passes_dependency_for_capture_program():
         ],
         RecomposePixelUnshuffle: [RemoveRedundancy],
         RecomposeRmsNorm: [RemoveRedundancy],
-        ReplaceIndexPutInput: [LayoutTransform],
-        TagQuantIO: [ReplaceIndexPutInput],
+        TagQuantIO: [LayoutTransform],
     }
 
 
