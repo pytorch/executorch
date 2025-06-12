@@ -729,6 +729,7 @@ class CustomBuild(build):
 
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_PYBIND"):
             cmake_build_args += ["--target", "portable_lib"]
+            cmake_build_args += ["--target", "selective_build"]
 
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_TRAINING"):
             cmake_build_args += ["--target", "_training_lib"]
@@ -789,6 +790,11 @@ setup(
             src="extension/training/_training_lib.*",  # @lint-ignore https://github.com/pytorch/executorch/blob/cb3eba0d7f630bc8cec0a9cc1df8ae2f17af3f7a/scripts/lint_xrefs.sh
             modpath="executorch.extension.training.pybindings._training_lib",
             dependent_cmake_flags=["EXECUTORCH_BUILD_EXTENSION_TRAINING"],
+        ),
+        BuiltExtension(
+            src="codegen/tools/selective_build.*",
+            modpath="executorch.codegen.tools.selective_build",
+            dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
         ),
         BuiltExtension(
             src="executorchcoreml.*",
