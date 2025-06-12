@@ -288,16 +288,16 @@ Tensor& dequantize_per_tensor_out(
           static_cast<float>(scale));                                          \
     }                                                                          \
   } break;
-#define CALCULATE_INT_TYPE(IN_CTYPE, in_dtype)               \
-  case ScalarType::in_dtype:                                 \
-    switch (out.scalar_type()) {                             \
-      ET_FORALL_FLOAT_TYPES_WITH(IN_CTYPE, DEQUANTIZE_IMPL); \
-      default:                                               \
-        ET_CHECK_MSG(                                        \
-            false,                                           \
-            "Unhandled output dtype %" PRId8,                \
-            static_cast<int8_t>(out.scalar_type()));         \
-    }                                                        \
+#define CALCULATE_INT_TYPE(IN_CTYPE, in_dtype)                \
+  case ScalarType::in_dtype:                                  \
+    switch (out.scalar_type()) {                              \
+      ET_FORALL_FLOATH_TYPES_WITH(IN_CTYPE, DEQUANTIZE_IMPL); \
+      default:                                                \
+        ET_CHECK_MSG(                                         \
+            false,                                            \
+            "Unhandled output dtype %" PRId8,                 \
+            static_cast<int8_t>(out.scalar_type()));          \
+    }                                                         \
     break;
 
   switch (input.scalar_type()) {
@@ -459,7 +459,8 @@ Tensor& dequantize_per_channel_out(
               }                                                                \
               out_data_ptr[current_ix] =                                       \
                   static_cast<CTYPE_OUT>(                                      \
-                      input_data_ptr[current_ix] - zero_point) *               \
+                      input_data_ptr[current_ix] -                             \
+                      static_cast<int32_t>(zero_point)) *                      \
                   _scale;                                                      \
             }                                                                  \
           },                                                                   \
@@ -478,23 +479,24 @@ Tensor& dequantize_per_channel_out(
       apply_over_dim_list(                                                     \
           [input_data_ptr, out_data_ptr, _scale, _zero_point](size_t in_ix) {  \
             out_data_ptr[in_ix] = static_cast<CTYPE_OUT>(                      \
-                (input_data_ptr[in_ix] - _zero_point) * _scale);               \
+                (input_data_ptr[in_ix] - static_cast<int32_t>(_zero_point)) *  \
+                _scale);                                                       \
           },                                                                   \
           input,                                                               \
           optional_dim_list,                                                   \
           channel_ix);                                                         \
     }                                                                          \
     break;
-#define CALCULATE_FLOAT_TYPE(CTYPE_IN, in_dtype)             \
-  case ScalarType::in_dtype:                                 \
-    switch (out.scalar_type()) {                             \
-      ET_FORALL_FLOAT_TYPES_WITH(CTYPE_IN, DEQUANTIZE_IMPL); \
-      default:                                               \
-        ET_CHECK_MSG(                                        \
-            false,                                           \
-            "Unhandled output dtype %" PRId8,                \
-            static_cast<int8_t>(out.scalar_type()));         \
-    }                                                        \
+#define CALCULATE_FLOAT_TYPE(CTYPE_IN, in_dtype)              \
+  case ScalarType::in_dtype:                                  \
+    switch (out.scalar_type()) {                              \
+      ET_FORALL_FLOATH_TYPES_WITH(CTYPE_IN, DEQUANTIZE_IMPL); \
+      default:                                                \
+        ET_CHECK_MSG(                                         \
+            false,                                            \
+            "Unhandled output dtype %" PRId8,                 \
+            static_cast<int8_t>(out.scalar_type()));          \
+    }                                                         \
     break;
 
   switch (input.scalar_type()) {
