@@ -16,8 +16,6 @@
 
 #include <executorch/backends/vulkan/runtime/utils/StorageUtils.h>
 
-#include <iostream>
-
 namespace vkcompute {
 namespace api {
 

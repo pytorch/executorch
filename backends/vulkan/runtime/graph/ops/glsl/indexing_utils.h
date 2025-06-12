@@ -253,13 +253,13 @@ ivec3 lpos_to_pos(const ivec3 lpos, const ivec4 axis_map) {
  * e.g. 0x11021, 1 -> ivec4(1, 2, 0, 1)
  */
 #define unhash_axis_map(hash) \
-  ivec4(hash & 0xf, (hash >> 4) & 0xf, (hash >> 8 & 0xf), (hash >> 12 & 0xf))
+  (ivec4(hash & 0xf, (hash >> 4) & 0xf, (hash >> 8 & 0xf), (hash >> 12 & 0xf)))
 
 /*
  *
  */
 #define unhash_dim_order(hash) \
-  ivec4(hash & 0xf, (hash >> 4) & 0xf, (hash >> 8 & 0xf), (hash >> 12 & 0xf))
+  (ivec4(hash & 0xf, (hash >> 4) & 0xf, (hash >> 8 & 0xf), (hash >> 12 & 0xf)))
 
 #define unhash_packed_dim(hash) int(hash >> 16 & 0xf)
 
