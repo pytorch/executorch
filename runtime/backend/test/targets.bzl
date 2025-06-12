@@ -14,3 +14,12 @@ def define_common_targets():
             "//executorch/runtime/backend:interface",
         ],
     )
+
+    runtime.cxx_test(
+        name = "backend_interface_update_test",
+        srcs = ["backend_interface_update_test.cpp"],
+        deps = [
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/backend:interface",
+        ],
+    )
