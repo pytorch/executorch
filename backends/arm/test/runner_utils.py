@@ -620,15 +620,15 @@ def run_tosa_graph(
 
 
 def transpose_data_format(data: list[np.ndarray], to: Literal["NHWC", "NCHW"]):
-    match to:
-        case "NCHW":
-            dim_order = (0, 3, 1, 2)
-        case "NHWC":
-            dim_order = (0, 2, 3, 1)
-        case _:
-            raise NotImplementedError(f"Cant transpose to dim order {to}")
     for i in range(len(data)):
-        if hasattr(data[i], "shape") and len(data[i].shape) == 4:
+        if hasattr(data[i], "shape") and data[i].ndim in (4, 5):
+            match to:
+                case "NCHW":
+                    dim_order = (0, 3, 1, 2) if data[i].ndim == 4 else (0, 1, 4, 2, 3)
+                case "NHWC":
+                    dim_order = (0, 2, 3, 1) if data[i].ndim == 4 else (0, 1, 3, 4, 2)
+                case _:
+                    raise NotImplementedError(f"Cant transpose to dim order {to}")
             # Copy is needed to force actual data conversion, not setting stride.
             data[i] = np.transpose(data[i], dim_order).copy()
 

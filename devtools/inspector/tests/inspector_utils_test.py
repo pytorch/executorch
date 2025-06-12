@@ -34,6 +34,7 @@ from executorch.devtools.inspector._inspector_utils import (
     find_populated_event,
     gen_graphs_from_etrecord,
     is_inference_output_equal,
+    merge_overlapping_debug_handles,
     TimeScale,
 )
 
@@ -216,6 +217,26 @@ class TestInspectorUtils(unittest.TestCase):
         self.assertLess(calculate_mse([a], [b])[0], 0.5)
         self.assertGreater(calculate_snr([a], [b])[0], 30.0)
         self.assertAlmostEqual(calculate_cosine_similarity([a], [b])[0], 1.0)
+
+    def test_merge_overlapping_debug_handles(self):
+        big_tensor = torch.rand(100, 100)
+        intermediate_outputs = {
+            (1, 2, 3): "val1",
+            (2, 3, 4, 5): "val2",
+            (6, 7, 8): "val3",
+            (10, 11): "val4",
+            (11, 12): big_tensor,
+        }
+        # basic merge behavior
+        merge_overlapping_debug_handles(intermediate_outputs)
+        expected_intermediate_outputs = {
+            (1, 2, 3, 4, 5): "val2",
+            (6, 7, 8): "val3",
+            (10, 11, 12): big_tensor,
+        }
+
+        self.assertEqual(intermediate_outputs, expected_intermediate_outputs)
+        self.assertIs(expected_intermediate_outputs[(10, 11, 12)], big_tensor)
 
 
 def gen_mock_operator_graph_with_expected_map() -> (

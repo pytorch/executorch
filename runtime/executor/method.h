@@ -203,7 +203,7 @@ class Method final {
    * failure.
    */
   ET_NODISCARD Result<executorch::aten::Tensor> get_attribute(
-      executorch::aten::string_view name);
+      std::string_view name);
 
   /**
    * Execute the method.

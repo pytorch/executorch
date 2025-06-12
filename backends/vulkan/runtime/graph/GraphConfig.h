@@ -33,6 +33,11 @@ struct GraphConfig final {
   bool enable_local_wg_size_override;
   utils::uvec3 local_wg_size_override;
 
+  // Whether or not the ComputeGraph should expect input shapes to be dynamic
+  bool expect_dynamic_shapes;
+
+  vkapi::Adapter* external_adapter;
+
   // Generate a default graph config with pre-configured settings
   explicit GraphConfig();
 
