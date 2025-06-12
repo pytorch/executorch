@@ -62,7 +62,7 @@ option(EXECUTORCH_SELECT_ALL_OPS
        "Whether to register all ops defined in portable kernel library." OFF
 )
 
-# Option to enable dtype selective build
+# Option to enable parsing ops and dtypes directly from model pte file
 option(EXECUTORCH_SELECT_OPS_FROM_MODEL "Enable op selection from pte during build." OFF
 )
 # ------------------------------- OPTIONS END --------------------------------
