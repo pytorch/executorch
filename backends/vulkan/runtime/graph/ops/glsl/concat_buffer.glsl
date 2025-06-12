@@ -36,7 +36,9 @@ $for i in range(NUM_INPUTS):
 
 ${layout_declare_ubo(B, "int", "out_numel")}
 
-${layout_declare_spec_const(C, "int", "out_packed_dim", "DEFAULT_LAYOUT")}
+${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
+
+const lowp ivec4 out_dim_order = unhash_dim_order(out_layout);
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -47,7 +49,7 @@ void main() {
   }
 
   // Convert buffer linear index to 4-D tensor index for output
-  const ivec4 out_tidx = bufi_to_tidx(out_bufi, out_strides, out_packed_dim);
+  const ivec4 out_tidx = bufi_to_tidx(out_bufi, out_strides, out_dim_order);
 
   // Determine which input tensor to read from
   ivec4 in_tidx = out_tidx;

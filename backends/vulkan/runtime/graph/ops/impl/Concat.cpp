@@ -64,7 +64,7 @@ void add_concat_node(
 
     param_buffers.append(graph.numel_ubo(out));
 
-    spec_vars = {graph.packed_dim_of(out)};
+    spec_vars = {graph.hashed_layout_of(out)};
   } else {
     push_constants = {graph.sizes_pc_of(out)};
 

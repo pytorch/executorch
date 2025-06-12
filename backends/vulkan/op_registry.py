@@ -538,8 +538,6 @@ def register_rotary_emb_op(features: OpFeatures):
         exir_ops.edge.aten.clone.default,
         exir_ops.edge.aten.permute.default,
         exir_ops.edge.aten.permute_copy.default,
-        exir_ops.edge.aten.select_copy.int,
-        exir_ops.edge.aten.slice_copy.Tensor,
         exir_ops.edge.aten.view_copy.default,
     ]
 )
@@ -547,6 +545,25 @@ def register_view_ops(features: OpFeatures):
     features.texture_impl = TextureImplFeatures(
         valid_packed_dims=all_packed_dims,
     )
+    features.resize_fn = True
+    return features
+
+
+# Fully featured transfer operators (i.e. operators that copy data from the input
+# tensor(s) to the output tensor(s)), which have memory layout agnostic implementations
+# for both texture and buffer storage types.
+@update_features(
+    [
+        exir_ops.edge.aten.select_copy.int,
+        exir_ops.edge.aten.slice_copy.Tensor,
+        exir_ops.edge.aten.cat.default,
+    ]
+)
+def register_transfer_ops(features: OpFeatures):
+    features.texture_impl = TextureImplFeatures(
+        valid_packed_dims=all_packed_dims,
+    )
+    features.buffer_impl = True
     features.resize_fn = True
     return features
 
@@ -588,7 +605,6 @@ def register_ported_op(features: OpFeatures):
         exir_ops.edge.aten.squeeze_copy.dims,
         exir_ops.edge.aten.unsqueeze_copy.default,
         # Tensor combination
-        exir_ops.edge.aten.cat.default,
         exir_ops.edge.aten.repeat.default,
         exir_ops.edge.aten.split_with_sizes_copy.default,
         exir_ops.edge.aten.split.Tensor,

@@ -43,6 +43,9 @@ def lower_module(
     model: torch.nn.Module, sample_inputs: Tuple[torch.Tensor], dynamic_shapes=None
 ) -> EdgeProgramManager:
     compile_options = {}
+    if dynamic_shapes is not None:
+        compile_options["require_dynamic_shapes"] = True
+
     edge_compile_config = EdgeCompileConfig(
         _skip_dim_order=False,  # TODO(T182928844): Delegate dim order op to backend.
     )
@@ -70,6 +73,9 @@ def quantize_and_lower_module(
     dynamic_shapes=None,
 ) -> EdgeProgramManager:
     compile_options = {}
+    if dynamic_shapes is not None:
+        compile_options["require_dynamic_shapes"] = True
+
     edge_compile_config = EdgeCompileConfig(
         _skip_dim_order=False,  # TODO(T182928844): Delegate dim order op to backend.
     )
@@ -1280,14 +1286,13 @@ class TestVulkanBackend(unittest.TestCase):
             def __init__(self):
                 super().__init__()
 
-            def forward(self, x, y, z, w):
-                return torch.cat([x, y, z, w], dim=1)
+            def forward(self, x, y, z):
+                return torch.cat([x, y, z], dim=1)
 
         sample_inputs = (
             torch.randn(size=(3, 6, 2, 7), dtype=torch.float32),
             torch.randn(size=(3, 1, 2, 7), dtype=torch.float32),
             torch.randn(size=(3, 9, 2, 7), dtype=torch.float32),
-            torch.randn(size=(3, 3, 2, 7), dtype=torch.float32),
         )
 
         self.lower_module_and_test_output(

@@ -10,8 +10,8 @@ ${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
-${layout_declare_tensor(0, "w", "t_out", DTYPE, STORAGE)}
-${layout_declare_tensor(1, "r", "nchw_in", DTYPE, STORAGE)}
+${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
+${layout_declare_tensor(B, "r", "nchw_in", DTYPE, STORAGE)}
 
 $if USE_PUSH_CONST:
   layout(push_constant) uniform restrict Block {
@@ -20,15 +20,14 @@ $if USE_PUSH_CONST:
     int numel;
   };
 $else:
-  ${layout_declare_ubo(2, "ivec4", "out_sizes")}
-  ${layout_declare_ubo(3, "ivec4", "out_strides")}
-  ${layout_declare_ubo(4, "int", "numel")}
+  ${layout_declare_ubo(B, "ivec4", "out_sizes")}
+  ${layout_declare_ubo(B, "ivec4", "out_strides")}
+  ${layout_declare_ubo(B, "int", "numel")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-// This constant is unused in this shader but is kept so that the signature is
-// consistent with nchw_to_image.
-${layout_declare_spec_const(C, "int", "packed_dim", "0")}
+${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_DIM_ORDER")}
+const lowp ivec4 out_dim_order = unhash_dim_order(out_layout);
 ${layout_declare_spec_const(C, "int", "transpose_hw", "0")}
 
 void main() {
@@ -37,7 +36,7 @@ void main() {
     return;
   }
 
-  ivec4 out_tidx = bufi_to_tidx(out_bufi, out_strides, packed_dim);
+  ivec4 out_tidx = bufi_to_tidx(out_bufi, out_strides, out_dim_order);
 
   ivec4 sizes = out_sizes;
   if (transpose_hw == 1) {

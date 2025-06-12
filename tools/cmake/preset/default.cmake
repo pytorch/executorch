@@ -210,11 +210,6 @@ define_overridable_option(
   BOOL OFF
 )
 define_overridable_option(
-  EXECUTORCH_BUILD_GFLAGS
-  "Build the gflags library."
-  BOOL ON
-)
-define_overridable_option(
   EXECUTORCH_COREML_BUILD_EXECUTOR_RUNNER
   "Build CoreML executor runner."
   BOOL OFF
@@ -342,6 +337,15 @@ check_required_options_on(
     EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR
 )
 
+check_conflicting_options_on(
+  IF_ON
+    EXECUTORCH_BUILD_ARM_BAREMETAL
+  CONFLICTS_WITH
+    EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
+    EXECUTORCH_BUILD_PTHREADPOOL
+    EXECUTORCH_BUILD_CPUINFO
+)
+
 
 if(NOT EXISTS ${EXECUTORCH_PAL_DEFAULT_FILE_PATH})
   message(FATAL_ERROR "PAL default implementation (EXECUTORCH_PAL_DEFAULT=${EXECUTORCH_PAL_DEFAULT}) file not found: ${EXECUTORCH_PAL_DEFAULT_FILE_PATH}. Choices: posix, minimal, android")
@@ -359,13 +363,4 @@ elseif(_executorch_log_level_lower STREQUAL "fatal")
   set(ET_MIN_LOG_LEVEL Fatal)
 else()
   message(FATAL_ERROR "Unknown EXECUTORCH_LOG_LEVEL '${EXECUTORCH_LOG_LEVEL}'. Choices: Debug, Info, Error, Fatal")
-endif()
-
-
-if(EXECUTORCH_BUILD_ARM_BAREMETAL)
-  if(EXECUTORCH_BUILD_PTHREADPOOL)
-    message(FATAL_ERROR "Cannot enable both EXECUTORCH_BUILD_PTHREADPOOL and EXECUTORCH_BUILD_ARM_BAREMETAL")
-  elseif(EXECUTORCH_BUILD_CPUINFO)
-    message(FATAL_ERROR "Cannot enable both EXECUTORCH_BUILD_CPUINFO and EXECUTORCH_BUILD_ARM_BAREMETAL")
-  endif()
 endif()

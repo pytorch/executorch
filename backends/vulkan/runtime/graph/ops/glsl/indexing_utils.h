@@ -114,18 +114,25 @@ int tidx_to_nchwi(const ivec4 tidx, const ivec4 sizes) {
       tidx.x;
 }
 
-// TODO(ssjia): make this function use dim order so that it can work with any
-// dim order. Currently it assumes that the dim order is contiguous, except for
-// the packed dim.
-ivec4 bufi_to_tidx(int bufi, const ivec4 strides, const int packed_dim) {
+ivec4 bufi_to_tidx(int bufi, const ivec4 strides, const ivec4 dim_order) {
   ivec4 idx;
   for (int i = 3; i >= 0; i--) {
-    if (i != packed_dim) {
-      idx[i] = bufi / strides[i];
-      bufi %= strides[i];
-    }
+    int dim = dim_order[i];
+    idx[dim] = bufi / strides[dim];
+    bufi %= strides[dim];
   }
-  idx[packed_dim] = bufi;
+  return idx;
+}
+
+/*
+ * bufi_to_tidx but assumes that the tensor is contiguous
+ */
+ivec4 contiguous_bufi_to_tidx(int bufi, const ivec4 strides) {
+  ivec4 idx;
+  for (int i = 3; i >= 0; i--) {
+    idx[i] = bufi / strides[i];
+    bufi %= strides[i];
+  }
   return idx;
 }
 
@@ -248,9 +255,19 @@ ivec3 lpos_to_pos(const ivec3 lpos, const ivec4 axis_map) {
 #define unhash_axis_map(hash) \
   ivec4(hash & 0xf, (hash >> 4) & 0xf, (hash >> 8 & 0xf), (hash >> 12 & 0xf))
 
+/*
+ *
+ */
+#define unhash_dim_order(hash) \
+  ivec4(hash & 0xf, (hash >> 4) & 0xf, (hash >> 8 & 0xf), (hash >> 12 & 0xf))
+
 #define unhash_packed_dim(hash) int(hash >> 16 & 0xf)
 
 #define DEFAULT_LAYOUT 0x02210
+
+#define DEFAULT_DIM_ORDER 0x03210
+
+#define DEFAULT_DIM_ORDER_IVEC4 ivec4(0, 1, 2, 3)
 
 /************************
  * Deprecated Functions *
