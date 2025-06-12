@@ -75,7 +75,7 @@ function(gen_selected_ops)
       COMMENT "Generating selected_op_variants.h for ${GEN_LIB_NAME}"
       OUTPUT ${_opvariant_h}
       COMMAND ${_gen_opvariant_command}
-      DEPENDS ${_optlist_yaml} ${_codegen_tools_srcs}
+      DEPENDS ${_oplist_yaml} ${_codegen_tools_srcs}
       WORKING_DIRECTORY ${EXECUTORCH_ROOT}
     )
   endif()
