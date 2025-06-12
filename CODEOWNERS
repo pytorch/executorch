@@ -81,8 +81,8 @@
 
 # Build System -----------------------------------------------------------------
 
-CMakeLists.txt @jathu @larryliu0820 @kirklandsign
-CMakePresets.json @jathu @larryliu0820 @kirklandsign
+CMakeLists.txt @larryliu0820 @kirklandsign
+CMakePresets.json @larryliu0820 @kirklandsign
 
 /codegen @larryliu0820 @lucylq
-/tools/cmake @jathu @larryliu0820 @kirklandsign
+/tools/cmake @larryliu0820 @kirklandsign
