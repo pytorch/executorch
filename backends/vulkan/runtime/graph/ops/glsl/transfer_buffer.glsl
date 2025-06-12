@@ -37,8 +37,10 @@ layout(push_constant) uniform restrict Block {
   int selected_dim;
 };
 
-${layout_declare_spec_const(C, "int", "out_packed_dim", "DEFAULT_LAYOUT")}
-${layout_declare_spec_const(C, "int", "in_packed_dim", "DEFAULT_LAYOUT")}
+${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
+${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
+
+const lowp ivec4 out_dim_order = unhash_dim_order(out_layout);
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -50,7 +52,7 @@ void main() {
     return;
   }
 
-  const ivec4 out_tidx = bufi_to_tidx(out_bufi, out_strides, out_packed_dim);
+  const ivec4 out_tidx = bufi_to_tidx(out_bufi, out_strides, out_dim_order);
   ivec4 in_tidx = out_tidx_to_in_tidx(out_tidx);
 
   const int in_bufi = tidx_to_bufi(in_tidx, in_strides);
