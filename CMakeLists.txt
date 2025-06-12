@@ -514,17 +514,6 @@ if(EXECUTORCH_BUILD_CORTEX_M)
 endif()
 
 if(EXECUTORCH_BUILD_DEVTOOLS)
-  if(NOT EXECUTORCH_BUILD_ARM_BAREMETAL)
-    set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
-        ON
-        CACHE BOOL "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER" FORCE
-    )
-  else()
-    set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
-        OFF
-        CACHE BOOL "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER" FORCE
-    )
-  endif()
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
 endif()
 
@@ -565,6 +554,10 @@ if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_CPUINFO)
 endif()
 
 if(EXECUTORCH_BUILD_PYBIND)
+
+  # Add codegen tools subdirectory for selective_build pybind module
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/codegen/tools)
+
   if(NOT EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
   endif()

@@ -57,11 +57,8 @@ std::tuple<Tensor&, Tensor&> native_dropout_out(
     }
     ET_SWITCH_FLOATHBF16_TYPES(
         input.scalar_type(), ctx, op_name, CTYPE_COMPUTE, [&]() {
-          utils::apply_bitensor_elementwise_fn<
-              CTYPE_COMPUTE,
-              op_name,
-              utils::SupportedTensorDtypes::SAME_AS_COMMON>(
-              [](const CTYPE_COMPUTE val, const CTYPE_COMPUTE mask_val) {
+          utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+              [](const auto val, const auto mask_val) {
                 if (!mask_val) {
                   return static_cast<decltype(val)>(0);
                 }
@@ -73,7 +70,8 @@ std::tuple<Tensor&, Tensor&> native_dropout_out(
               mask,
               // TODO: should really be just BOOL
               utils::SupportedTensorDtypes::BOOL_OR_BYTE,
-              out);
+              out,
+              utils::SupportedTensorDtypes::SAME_AS_COMMON);
         });
   } else if (input.numel() > 0) {
     std::memcpy(out.mutable_data_ptr(), input.data_ptr(), input.nbytes());

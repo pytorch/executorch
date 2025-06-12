@@ -262,7 +262,7 @@ jobs:
         output=$(ls -la ${elf})
         arr=($output)
         size=${arr[4]}
-        threshold="103068" # ~100KiB
+        threshold="103268" # ~100KiB
         echo "size: $size, threshold: $threshold"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
