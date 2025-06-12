@@ -233,7 +233,7 @@ Tensor& handle_broadcast_elementwise(
     const Tensor& b,
     Tensor& out,
     const ElementwiseOptimizedPath selected_optimized_path,
-    const executorch::aten::optional<Scalar>& alpha = {}) {
+    const std::optional<Scalar>& alpha = {}) {
   if ((selected_optimized_path ==
        ElementwiseOptimizedPath::kBroadcastLastDim) ||
       (selected_optimized_path ==
