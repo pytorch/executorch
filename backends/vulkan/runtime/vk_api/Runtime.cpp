@@ -14,6 +14,12 @@
 #include <iostream>
 #include <sstream>
 
+#ifdef USE_VOLK_HEADER_ONLY
+// For volk.h, define this before including volk.h in exactly one CPP file.
+#define VOLK_IMPLEMENTATION
+#include <volk.h>
+#endif /* USE_VOLK_HEADER_ONLY */
+
 namespace vkcompute {
 namespace vkapi {
 
@@ -407,6 +413,36 @@ Runtime* runtime() {
       "because it failed to initialize.");
 
   return p_runtime.get();
+}
+
+std::unique_ptr<Adapter> init_external_adapter(
+    const VkInstance instance,
+    const VkPhysicalDevice physical_device,
+    const VkDevice logical_device,
+    const uint32_t num_queues,
+    const std::string& cache_data_path) {
+  if (instance == VK_NULL_HANDLE || physical_device == VK_NULL_HANDLE ||
+      logical_device == VK_NULL_HANDLE) {
+    return std::unique_ptr<Adapter>(nullptr);
+  }
+
+  return std::make_unique<Adapter>(
+      instance, physical_device, logical_device, num_queues, cache_data_path);
+}
+
+Adapter* set_and_get_external_adapter(
+    const VkInstance instance,
+    const VkPhysicalDevice physical_device,
+    const VkDevice logical_device) {
+  static const std::unique_ptr<Adapter> p_external_adapter =
+      init_external_adapter(
+          instance,
+          physical_device,
+          logical_device,
+          1,
+          set_and_get_pipeline_cache_data_path(""));
+
+  return p_external_adapter.get();
 }
 
 } // namespace vkapi

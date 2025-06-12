@@ -38,7 +38,7 @@ class CosVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         validate_num_inputs(self.target, inputs, 1)
-        validate_same_dtype(self.target, [*inputs, output])
+        validate_same_dtype(self.target, [*inputs, output], ts)
         if inputs[0].dtype != ts.DType.FP32 or output.dtype != ts.DType.FP32:
             raise ValueError(
                 f"Input and output for {self.target} need to be FP32, got input_dtype: "
