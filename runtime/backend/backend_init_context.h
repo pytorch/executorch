@@ -23,7 +23,7 @@ class BackendInitContext final {
       MemoryAllocator* runtime_allocator,
       EventTracer* event_tracer = nullptr,
       const char* method_name = nullptr,
-      const NamedDataMap* named_data_map = nullptr)
+      NamedDataMap* named_data_map = nullptr)
       : runtime_allocator_(runtime_allocator),
 #ifdef ET_EVENT_TRACER_ENABLED
         event_tracer_(event_tracer),
@@ -65,7 +65,7 @@ class BackendInitContext final {
   /** Get the named data map from ExecuTorch runtime.
    * This provides a way for backends to retrieve data blobs by key.
    */
-  const NamedDataMap* get_named_data_map() const {
+  NamedDataMap* get_named_data_map() const {
     return named_data_map_;
   }
 
@@ -73,7 +73,7 @@ class BackendInitContext final {
   MemoryAllocator* runtime_allocator_ = nullptr;
   EventTracer* event_tracer_ = nullptr;
   const char* method_name_ = nullptr;
-  const NamedDataMap* named_data_map_ = nullptr;
+  NamedDataMap* named_data_map_ = nullptr;
 };
 
 } // namespace ET_RUNTIME_NAMESPACE

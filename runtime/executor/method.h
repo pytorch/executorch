@@ -324,7 +324,7 @@ class Method final {
       const Program* program,
       MemoryManager* memory_manager,
       EventTracer* event_tracer,
-      const NamedDataMap* named_data_map);
+      NamedDataMap* named_data_map);
 
   /**
    * Initialize the method from its serialized representation.
@@ -333,7 +333,7 @@ class Method final {
    */
   ET_NODISCARD Error init(
       executorch_flatbuffer::ExecutionPlan* s_plan,
-      const NamedDataMap* named_data_map);
+      NamedDataMap* named_data_map);
 
   /// Returns true if the Method was successfully initialized.
   inline bool initialized() const {

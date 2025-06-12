@@ -113,7 +113,7 @@ class Program final {
    * Get the named data map from the program.
    * @return The named data map.
    */
-  Result<const NamedDataMap*> get_named_data_map() const;
+  Result<NamedDataMap*> get_named_data_map() const;
 
   /**
    * Returns the number of methods in the program.
@@ -148,7 +148,7 @@ class Program final {
       const char* method_name,
       MemoryManager* memory_manager,
       EventTracer* event_tracer = nullptr,
-      const NamedDataMap* named_data_map = nullptr) const;
+      NamedDataMap* named_data_map = nullptr) const;
 
   /**
    * Gathers metadata for the named method.

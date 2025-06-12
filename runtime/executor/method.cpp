@@ -741,7 +741,7 @@ Result<Method> Method::load(
     const Program* program,
     MemoryManager* memory_manager,
     EventTracer* event_tracer,
-    const NamedDataMap* named_data_map) {
+    NamedDataMap* named_data_map) {
   MemoryAllocator* temp_allocator = memory_manager->temp_allocator();
   if (temp_allocator == nullptr) {
     PlatformMemoryAllocator* platform_allocator =
@@ -766,7 +766,7 @@ Result<Method> Method::load(
 
 Error Method::init(
     executorch_flatbuffer::ExecutionPlan* s_plan,
-    const NamedDataMap* named_data_map) {
+    NamedDataMap* named_data_map) {
   EXECUTORCH_SCOPE_PROF("Method::init");
   internal::EventTracerProfileMethodScope event_tracer_profile_scope =
       internal::EventTracerProfileMethodScope(event_tracer_, "Method::init");
@@ -800,21 +800,23 @@ Error Method::init(
       return Error::MemoryAllocationFailed;
     }
 
-    // Get NamedDataMap, if it exists.
-    const NamedDataMap* pte_data_map = nullptr;
-    Result<const NamedDataMap*> pte_data_map_res =
-        program_->get_named_data_map();
-    if (pte_data_map_res.ok()) {
-      pte_data_map = pte_data_map_res.get();
-    }
-
-    ET_CHECK_OR_RETURN_ERROR(
-        !(pte_data_map && named_data_map),
-        NotSupported,
-        "NamedDataMap merge not supported; both pte_data_map and named_data_map are non-empty. If you see this error please file an issue at https://github.com/pytorch/executorch/issues");
-
-    if (!named_data_map || named_data_map->get_num_keys().get() == 0) {
-      named_data_map = pte_data_map;
+    // Resolve NamedDataMaps.
+    auto pte_data_map = program_->get_named_data_map();
+    if (pte_data_map.ok()) {
+      if (named_data_map != nullptr) {
+        Error error = named_data_map->merge(pte_data_map.get());
+        ET_CHECK_OR_RETURN_ERROR(
+            error == Error::Ok,
+            InvalidExternalData,
+            "Failed to merge named_data_map with pte_data_map.");
+      } else {
+        named_data_map = const_cast<NamedDataMap*>(pte_data_map.get());
+      }
+    } else if (pte_data_map.error() != Error::NotFound) {
+      // Error::NotFound is expected if the program does not have shared data.
+      // In this case, expect pte_data_map to be empty/null, and we can proceed
+      // with the named data map only.
+      return pte_data_map.error();
     }
 
     // n_delegate_ counts the number of successfully-initialized delegates for
