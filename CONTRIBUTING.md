@@ -384,7 +384,7 @@ for basics.
      - `Release notes: quantization`: changes to quantization.
      - `Release notes: ops & kernels`: changes to the opset and any new / changed kernel implementations.
      - `Release notes: api`: changes to public facing apis (any interfaces, pybinded runtime methods, etc.).
-     - `Release notes: backends`: changes to any of the backend delegates.
+     - `Release notes: <backend>`: changes to any of the backend delegates (e.g: `Release notes: apple`, `Release notes: arm`, etc).
      - `Release notes: build`: changes related to the build system, including major dependency upgrades, notable build flags, optimizations, etc.
      - `Release notes: devtools`: changes to any of ExecuTorch's developer tools, for example the debugger & profiler.
      - `Release notes: examples`: changes to any code under `examples/`.
