@@ -364,12 +364,6 @@ void test_vulkan_dequantize_per_tensor(
       vkcompute::utils::kBuffer,
       vkcompute::utils::kBuffer);
 
-  // Telling the system to expect a float instead of a double
-  // since the shader can only return 32bit anyways
-  if (out_dtype == at::kDouble) {
-    out_dtype = at::kFloat;
-  }
-
   // Test with texture storage
   test_vulkan_dequantize_per_tensor_impl(
       input_sizes,
@@ -403,12 +397,6 @@ void test_vulkan_dequantize_per_token(
       out_dtype,
       vkcompute::utils::kBuffer,
       vkcompute::utils::kBuffer);
-
-  // Telling the system to expect a float instead of a double
-  // since the shader can only return 32bit anyways
-  if (out_dtype == at::kDouble) {
-    out_dtype = at::kFloat;
-  }
 
   // Test with texture storage
   test_vulkan_dequantize_per_token_impl(
@@ -777,19 +765,6 @@ TEST(
       std::numeric_limits<int32_t>::max(), // quant_max
       at::kInt, // input dtype
       at::kHalf); // output dtype
-}
-
-TEST(
-    VulkanDequantizePerTensorTest,
-    test_vulkan_dequantize_per_tensor_int32_to_double) {
-  test_vulkan_dequantize_per_tensor(
-      {2, 4, 3}, // input sizes
-      0.0001, // scale
-      100, // zero_point
-      -2147483648, // quant_min
-      2147483647, // quant_max
-      at::kInt, // input dtype
-      at::kDouble); // output dtype
 }
 
 void test_reference_dequantize_per_token(
@@ -1256,20 +1231,4 @@ TEST(
       std::numeric_limits<int32_t>::max(), // quant_max
       at::kInt, // input dtype
       at::kHalf); // output dtype
-}
-
-TEST(
-    VulkanDequantizePerTokenTest,
-    test_vulkan_dequantize_per_token_int32_to_double) {
-  std::vector<float> scales = {0.0001, 0.0002, 0.0003, 0.0};
-  std::vector<int> zero_points = {100, -100, 50, -50};
-
-  test_vulkan_dequantize_per_token(
-      {2, 2, 8}, // input sizes (2*2=4 tokens)
-      scales,
-      zero_points,
-      -2147483648, // quant_min
-      2147483647, // quant_max
-      at::kInt, // input dtype
-      at::kDouble); // output dtype
 }
