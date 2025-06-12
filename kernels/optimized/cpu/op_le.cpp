@@ -105,7 +105,6 @@ Tensor& opt_le_tensor_out(
   } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
     // Handle optimized broadcast cases
     ET_SWITCH_REALB_TYPES(out_type, ctx, "le.Tensor_out", CTYPE, [&]() {
-      using Vec = executorch::vec::Vectorized<CTYPE>;
       auto le_lambda = [](auto x, auto y) { return x.le(y); };
       return torch::executor::handle_broadcast_elementwise<CTYPE>(
           ctx, le_lambda, a, b, out, selected_optimized_path);
