@@ -509,6 +509,137 @@
 <h1>Runtime Python API Reference<a class="headerlink" href="#runtime-python-api-reference" title="Permalink to this heading">¶</a></h1>
 <p>The Python <code class="docutils literal notranslate"><span class="pre">executorch.runtime</span></code> module wraps the C++ ExecuTorch runtime. It can load and execute serialized <code class="docutils literal notranslate"><span class="pre">.pte</span></code> program files: see the <a class="reference external" href="tutorials/export-to-executorch-tutorial.html">Export to ExecuTorch Tutorial</a> for how to convert a PyTorch <code class="docutils literal notranslate"><span class="pre">nn.Module</span></code> to an ExecuTorch <code class="docutils literal notranslate"><span class="pre">.pte</span></code> program file. Execution accepts and returns <code class="docutils literal notranslate"><span class="pre">torch.Tensor</span></code> values, making it a quick way to validate the correctness of the program.</p>
 <p>For detailed information on how APIs evolve and the deprecation process, please refer to the <a class="reference external" href="api-life-cycle.html">ExecuTorch API Life Cycle and Deprecation Policy</a>.</p>
+<span class="target" id="module-executorch.runtime"></span><p>Example usage:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">Verification</span><span class="p">,</span> <span class="n">Runtime</span><span class="p">,</span> <span class="n">Program</span><span class="p">,</span> <span class="n">Method</span>
+
+<span class="n">et_runtime</span><span class="p">:</span> <span class="n">Runtime</span> <span class="o">=</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+<span class="n">program</span><span class="p">:</span> <span class="n">Program</span> <span class="o">=</span> <span class="n">et_runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span>
+    <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;/tmp/program.pte&quot;</span><span class="p">),</span>
+    <span class="n">verification</span><span class="o">=</span><span class="n">Verification</span><span class="o">.</span><span class="n">Minimal</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Program methods:&quot;</span><span class="p">,</span> <span class="n">program</span><span class="o">.</span><span class="n">method_names</span><span class="p">)</span>
+<span class="n">forward</span><span class="p">:</span> <span class="n">Method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">&quot;forward&quot;</span><span class="p">)</span>
+
+<span class="n">inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+<span class="n">outputs</span> <span class="o">=</span> <span class="n">forward</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Ran forward(</span><span class="si">{</span><span class="n">inputs</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  outputs: </span><span class="si">{</span><span class="n">outputs</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Example output:</p>
+<div class="highlight-none notranslate highlight-text"><div class="highlight"><pre><span></span>Program methods: (&#39;forward&#39;, &#39;forward2&#39;)
+Ran forward((tensor([[1., 1.],
+        [1., 1.]]), tensor([[1., 1.],
+        [1., 1.]])))
+  outputs: [tensor([[1., 1.],
+        [1., 1.]])]
+</pre></div>
+</div>
+<dl class="py class">
+<dt class="sig sig-object py" id="executorch.runtime.Runtime">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">executorch.runtime.</span></span><span class="sig-name descname"><span class="pre">Runtime</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">legacy_module</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#Runtime"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.Runtime" title="Permalink to this definition">¶</a></dt>
+<dd><p>An instance of the ExecuTorch runtime environment.</p>
+<p>This can be used to concurrently load and execute any number of ExecuTorch
+programs and methods.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="executorch.runtime.Runtime.get">
+<em class="property"><span class="pre">static</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#Runtime.get"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.Runtime.get" title="Permalink to this definition">¶</a></dt>
+<dd><p>Gets the Runtime singleton.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="executorch.runtime.Runtime.load_program">
+<span class="sig-name descname"><span class="pre">load_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verification=&lt;Verification.InternalConsistency:</span> <span class="pre">1&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#Runtime.load_program"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.Runtime.load_program" title="Permalink to this definition">¶</a></dt>
+<dd><p>Loads an ExecuTorch program from a PTE binary.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> – The binary program data to load; typically PTE data.</p></li>
+<li><p><strong>verification</strong> – level of program verification to perform.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The loaded program.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="executorch.runtime.OperatorRegistry">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">executorch.runtime.</span></span><span class="sig-name descname"><span class="pre">OperatorRegistry</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">legacy_module</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#OperatorRegistry"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.OperatorRegistry" title="Permalink to this definition">¶</a></dt>
+<dd><p>The registry of operators that are available to the runtime.</p>
+<dl class="py property">
+<dt class="sig sig-object py" id="executorch.runtime.OperatorRegistry.operator_names">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">operator_names</span></span><a class="headerlink" href="#executorch.runtime.OperatorRegistry.operator_names" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns the names of all registered operators as a set of strings.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="executorch.runtime.Program">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">executorch.runtime.</span></span><span class="sig-name descname"><span class="pre">Program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">module</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#Program"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.Program" title="Permalink to this definition">¶</a></dt>
+<dd><p>An ExecuTorch program, loaded from binary PTE data.</p>
+<p>This can be used to load the methods/models defined by the program.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="executorch.runtime.Program.load_method">
+<span class="sig-name descname"><span class="pre">load_method</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#Program.load_method"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.Program.load_method" title="Permalink to this definition">¶</a></dt>
+<dd><p>Loads a method from the program.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>name</strong> – The name of the method to load.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The loaded method.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="executorch.runtime.Program.method_names">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">method_names</span></span><a class="headerlink" href="#executorch.runtime.Program.method_names" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns method names of the <cite>Program</cite> as a set of strings.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="executorch.runtime.Method">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">executorch.runtime.</span></span><span class="sig-name descname"><span class="pre">Method</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">method_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">module</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#Method"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.Method" title="Permalink to this definition">¶</a></dt>
+<dd><p>An ExecuTorch method, loaded from a Program.
+This can be used to execute the method with inputs.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="executorch.runtime.Method.execute">
+<span class="sig-name descname"><span class="pre">execute</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">inputs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#Method.execute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.Method.execute" title="Permalink to this definition">¶</a></dt>
+<dd><p>Executes the method with the given inputs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>inputs</strong> – The inputs to the method.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The outputs of the method.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="executorch.runtime.Method.metadata">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">metadata</span></span><a class="headerlink" href="#executorch.runtime.Method.metadata" title="Permalink to this definition">¶</a></dt>
+<dd><p>Gets the metadata for the method.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>The metadata for the method.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
 </div>
 
 
@@ -556,7 +687,28 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Runtime Python API Reference</a></li>
+<li><a class="reference internal" href="#">Runtime Python API Reference</a><ul>
+<li><a class="reference internal" href="#executorch.runtime.Runtime"><code class="docutils literal notranslate"><span class="pre">Runtime</span></code></a><ul>
+<li><a class="reference internal" href="#executorch.runtime.Runtime.get"><code class="docutils literal notranslate"><span class="pre">Runtime.get()</span></code></a></li>
+<li><a class="reference internal" href="#executorch.runtime.Runtime.load_program"><code class="docutils literal notranslate"><span class="pre">Runtime.load_program()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#executorch.runtime.OperatorRegistry"><code class="docutils literal notranslate"><span class="pre">OperatorRegistry</span></code></a><ul>
+<li><a class="reference internal" href="#executorch.runtime.OperatorRegistry.operator_names"><code class="docutils literal notranslate"><span class="pre">OperatorRegistry.operator_names</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#executorch.runtime.Program"><code class="docutils literal notranslate"><span class="pre">Program</span></code></a><ul>
+<li><a class="reference internal" href="#executorch.runtime.Program.load_method"><code class="docutils literal notranslate"><span class="pre">Program.load_method()</span></code></a></li>
+<li><a class="reference internal" href="#executorch.runtime.Program.method_names"><code class="docutils literal notranslate"><span class="pre">Program.method_names</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#executorch.runtime.Method"><code class="docutils literal notranslate"><span class="pre">Method</span></code></a><ul>
+<li><a class="reference internal" href="#executorch.runtime.Method.execute"><code class="docutils literal notranslate"><span class="pre">Method.execute()</span></code></a></li>
+<li><a class="reference internal" href="#executorch.runtime.Method.metadata"><code class="docutils literal notranslate"><span class="pre">Method.metadata</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
 </ul>
 
             </div>

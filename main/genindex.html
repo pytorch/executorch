@@ -516,6 +516,7 @@
  | <a href="#M"><strong>M</strong></a>
  | <a href="#O"><strong>O</strong></a>
  | <a href="#P"><strong>P</strong></a>
+ | <a href="#R"><strong>R</strong></a>
  | <a href="#T"><strong>T</strong></a>
  
 </div>
@@ -574,6 +575,8 @@
 </li>
       <li><a href="model-inspector.html#executorch.devtools.inspector.EventBlock">EventBlock (class in executorch.devtools.inspector)</a>
 </li>
+      <li><a href="runtime-python-api-reference.html#executorch.runtime.Method.execute">execute() (executorch.runtime.Method method)</a>
+</li>
       <li>
     executorch.exir
 
@@ -586,6 +589,13 @@
 
       <ul>
         <li><a href="export-to-executorch-api-reference.html#module-executorch.exir.backend.backend_api">module</a>
+</li>
+      </ul></li>
+      <li>
+    executorch.runtime
+
+      <ul>
+        <li><a href="runtime-python-api-reference.html#module-executorch.runtime">module</a>
 </li>
       </ul></li>
       <li><a href="executorch-runtime-api-reference.html#_CPPv4N10executorch7runtime10DataLoaderE">executorch::runtime::DataLoader (C++ class)</a>
@@ -626,12 +636,12 @@
 </li>
       <li><a href="executorch-runtime-api-reference.html#_CPPv4NK10executorch7runtime7etensor6Tensor6nbytesEv">executorch::runtime::etensor::Tensor::nbytes (C++ function)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="executorch-runtime-api-reference.html#_CPPv4NK10executorch7runtime7etensor6Tensor5numelEv">executorch::runtime::etensor::Tensor::numel (C++ function)</a>
 </li>
       <li><a href="executorch-runtime-api-reference.html#_CPPv4NK10executorch7runtime7etensor6Tensor11scalar_typeEv">executorch::runtime::etensor::Tensor::scalar_type (C++ function)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="executorch-runtime-api-reference.html#_CPPv4NK10executorch7runtime7etensor6Tensor14shape_dynamismEv">executorch::runtime::etensor::Tensor::shape_dynamism (C++ function)</a>
 </li>
       <li><a href="executorch-runtime-api-reference.html#_CPPv4NK10executorch7runtime7etensor6Tensor4sizeE7ssize_t">executorch::runtime::etensor::Tensor::size (C++ function)</a>
@@ -708,6 +718,8 @@
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="runtime-python-api-reference.html#executorch.runtime.Runtime.get">get() (executorch.runtime.Runtime static method)</a>
+</li>
       <li><a href="model-inspector.html#executorch.devtools.Inspector.get_exported_program">get_exported_program() (in module executorch.devtools.Inspector)</a>
 </li>
   </ul></td>
@@ -716,6 +728,12 @@
 <h2 id="L">L</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="runtime-python-api-reference.html#executorch.runtime.Program.load_method">load_method() (executorch.runtime.Program method)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="runtime-python-api-reference.html#executorch.runtime.Runtime.load_program">load_program() (executorch.runtime.Runtime method)</a>
+</li>
       <li><a href="export-to-executorch-api-reference.html#executorch.exir.backend.backend_api.LoweredBackendModule">LoweredBackendModule (class in executorch.exir.backend.backend_api)</a>
 </li>
   </ul></td>
@@ -724,6 +742,12 @@
 <h2 id="M">M</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="runtime-python-api-reference.html#executorch.runtime.Method.metadata">metadata (executorch.runtime.Method property)</a>
+</li>
+      <li><a href="runtime-python-api-reference.html#executorch.runtime.Method">Method (class in executorch.runtime)</a>
+</li>
+      <li><a href="runtime-python-api-reference.html#executorch.runtime.Program.method_names">method_names (executorch.runtime.Program property)</a>
+</li>
       <li><a href="export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager.methods">methods (executorch.exir.EdgeProgramManager property)</a>
 
       <ul>
@@ -740,6 +764,8 @@
 </li>
         <li><a href="export-to-executorch-api-reference.html#module-executorch.exir.backend.backend_api">executorch.exir.backend.backend_api</a>
 </li>
+        <li><a href="runtime-python-api-reference.html#module-executorch.runtime">executorch.runtime</a>
+</li>
       </ul></li>
   </ul></td>
 </tr></table>
@@ -747,6 +773,12 @@
 <h2 id="O">O</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="runtime-python-api-reference.html#executorch.runtime.OperatorRegistry.operator_names">operator_names (executorch.runtime.OperatorRegistry property)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="runtime-python-api-reference.html#executorch.runtime.OperatorRegistry">OperatorRegistry (class in executorch.runtime)</a>
+</li>
       <li><a href="export-to-executorch-api-reference.html#executorch.exir.backend.backend_api.LoweredBackendModule.original_module">original_module (executorch.exir.backend.backend_api.LoweredBackendModule property)</a>
 </li>
   </ul></td>
@@ -760,6 +792,16 @@
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="export-to-executorch-api-reference.html#executorch.exir.backend.backend_api.LoweredBackendModule.processed_bytes">processed_bytes (executorch.exir.backend.backend_api.LoweredBackendModule property)</a>
+</li>
+      <li><a href="runtime-python-api-reference.html#executorch.runtime.Program">Program (class in executorch.runtime)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="R">R</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="runtime-python-api-reference.html#executorch.runtime.Runtime">Runtime (class in executorch.runtime)</a>
 </li>
   </ul></td>
 </tr></table>
