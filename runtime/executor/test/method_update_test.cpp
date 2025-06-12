@@ -44,7 +44,6 @@ using executorch::runtime::BackendOptionsMap;
 using executorch::runtime::BoolKey;
 using executorch::runtime::IntKey;
 using executorch::runtime::Entry;
-using executorch::runtime::OptionType;
 using executorch::runtime::CompileSpec;
 using executorch::runtime::DataLoader;
 using executorch::runtime::DelegateHandle;
@@ -90,8 +89,8 @@ class StubBackend final : public BackendInterface {
         int success_update = 0;
         for (const auto& backend_option : backend_options) {
           if (strcmp(backend_option.key, "NumberOfThreads") == 0) {
-              if (backend_option.type == OptionType::INT) {
-                num_threads_ = backend_option.value.int_value;
+              if (std::holds_alternative<int>(backend_option.value)) {
+                num_threads_ = std::get<int>(backend_option.value);
                 success_update++;
               }
           }

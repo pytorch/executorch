@@ -78,8 +78,10 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         deps = [
-            "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+        ],
+        exported_deps = [
+            "//executorch/runtime/core/exec_aten:lib",
         ],
     )
 
