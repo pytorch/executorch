@@ -111,14 +111,11 @@ Tensor& opt_mul_out(
 
   auto selected_optimized_path = select_optimized_path(a, b, out);
   if (selected_optimized_path == ElementwiseOptimizedPath::kTreatAs1d) {
-    // Resize for dynamic shape
-    auto error = resize_tensor(out, a.sizes());
-    ET_KERNEL_CHECK_MSG(
+    ET_KERNEL_CHECK(
         ctx,
-        error == Error::Ok,
+        resize_to_broadcast_target_size(a, b, out) == Error::Ok,
         InvalidArgument,
-        out,
-        "Failed to resize output tensor.");
+        out);
 
     if (executorch::runtime::isComplexType(out_type)) {
       ET_KERNEL_CHECK(
