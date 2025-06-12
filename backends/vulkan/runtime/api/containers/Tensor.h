@@ -16,6 +16,8 @@
 
 #include <executorch/backends/vulkan/runtime/utils/StorageUtils.h>
 
+#include <iostream>
+
 namespace vkcompute {
 namespace api {
 
@@ -81,6 +83,18 @@ struct LastAccess {
       : stage{stage_flags}, access{access_flags} {}
 };
 
+/*
+ * Calculate the number of elements that a GPU buffer would require to store the
+ * contents of a tensor. This will depend on the storage type and dtype of the
+ * tensor, as well as the features available on the device.
+ */
+int64_t calculate_gpu_buffer_numel(
+    Context* const context,
+    const std::vector<int64_t>& sizes,
+    const utils::uvec3 image_extents,
+    const utils::StorageType storage_type,
+    const vkapi::ScalarType dtype);
+
 class vTensorStorage final {
  public:
   // Do not allow empty vTensorStorage construction
@@ -91,7 +105,7 @@ class vTensorStorage final {
       const utils::StorageType storage_type,
       const std::vector<int64_t>& axis_map,
       const int32_t packed_dim,
-      const std::vector<int64_t>& padded_sizes,
+      const std::vector<int64_t>& sizes,
       const vkapi::ScalarType dtype,
       const bool allocate_memory = true);
 
@@ -140,6 +154,10 @@ class vTensorStorage final {
   void verify() const;
 
  public:
+  inline size_t buffer_len() const {
+    return utils::safe_downcast<size_t>(buffer_length_);
+  }
+
   inline VkFormat texture_format() {
     return image_.format();
   }
@@ -207,8 +225,11 @@ class vTensor final {
   vTensor(vTensor&& other) = default;
   vTensor& operator=(vTensor&& other) = default;
 
+  ~vTensor() = default;
+
   enum class Attribute : uint8_t {
     SIZES,
+    WHCN_DIM_ORDER,
     STRIDES,
     LOGICAL_LIMITS,
     NUMEL,
@@ -216,6 +237,7 @@ class vTensor final {
 
   class UniformData {
     utils::ivec4 sizes_v;
+    utils::ivec4 whcn_dim_order_v;
     utils::ivec4 strides_v;
     // See the comments documenting logical_limits() for more context.
     TextureLimits logical_limits;
@@ -227,10 +249,12 @@ class vTensor final {
 
     UniformData(
         const std::vector<int64_t>& sizes,
+        const std::vector<int64_t>& whcn_dim_order,
         const std::vector<int64_t>& strides,
         const TextureLimits& logical_limits,
         const size_t numel_ll)
         : sizes_v(utils::make_whcn_ivec4(sizes)),
+          whcn_dim_order_v(utils::make_ivec4(whcn_dim_order)),
           strides_v(utils::make_whcn_ivec4(strides)),
           logical_limits(logical_limits),
           numel(utils::safe_downcast<int32_t>(numel_ll)) {}
@@ -293,21 +317,17 @@ class vTensor final {
   // strides of the tensor in NCHW dimension order
   std::vector<int64_t> strides_;
 
-  /*
-   * The below metadata members are derived from the above, and are typically
-   * to i.e. pass tensor metadata to compute shaders.
-   */
+  // number of elements based on the canonical sizes
+  size_t numel_;
 
-  // padded sizes of the tensor in NCHW dimension order. See the
-  // calculate_padded_sizes() function for more context. Note that padded sizes
-  // are only used for texture storage, and not for buffer storage.
-  std::vector<int64_t> padded_sizes_;
-  // Contains the strides of the tensor, with the dimensionality padded to the
-  // nearest multiple of 4. Unsqueezed dims will have a stride of int32_t max.
-  std::vector<int64_t> unsqueezed_strides_;
-  // Contains the number of elements in the tensor according to the padded
-  // sizes.
-  size_t padded_numel_;
+  // For texture backed tensors, this int32 contains the axis map data packed
+  // into a single int32. For buffer backed tensors, this int32 contains the
+  // wchn dim order data packed into a single int32.
+  int32_t hashed_layout_;
+
+  // Pre-compute these quantities to avoid frequent re-computation
+  size_t nbytes_per_ubo_;
+  size_t max_ubo_nbytes_;
 
   /*
    * Utility GPU buffer that can be passed to shaders in order to convey tensor
@@ -320,15 +340,13 @@ class vTensor final {
    * context about the data contained in each buffer.
    */
   ParamsBuffer uniforms_;
-  uint32_t uniforms_size_;
-  uint32_t sizes_uniform_offset_;
-  uint32_t unsqueezed_strides_offset_;
-  uint32_t numel_uniform_offset_;
-  uint32_t logical_limits_uniform_offset_;
 
-  // Maximum number of metadata fields that can be stored in the metadata UBO.
-  // This is used to calculate the size of the UBO that should be allocated.
-  constexpr static size_t kMaxMetadataFieldCount = 4;
+  uint32_t uniforms_size_ = 0u;
+  uint32_t sizes_uniform_offset_ = kUniformOffsetUnset;
+  uint32_t dim_order_uniform_offset_ = kUniformOffsetUnset;
+  uint32_t strides_uniform_offset = kUniformOffsetUnset;
+  uint32_t numel_uniform_offset_ = kUniformOffsetUnset;
+  uint32_t logical_limits_uniform_offset_ = kUniformOffsetUnset;
 
   // Initial value of uniform buffer offsets. 1 is selected as it is essentially
   // impossible for a ubo to have an offset of 1.
@@ -380,9 +398,6 @@ class vTensor final {
   inline bool has_buffer_storage() const {
     return storage_->storage_type_ == utils::kBuffer;
   }
-
- private:
-  void set_logical_limits(const utils::uvec3& image_extents);
 
  public:
   /*
@@ -451,21 +466,37 @@ class vTensor final {
     return dim_order_;
   }
 
+  inline const std::vector<int64_t>& strides() const {
+    return strides_;
+  }
+
+  inline size_t numel() const {
+    return numel_;
+  }
+
+  inline size_t nbytes() const {
+    return element_size(dtype()) * numel();
+  }
+
   inline const std::vector<int64_t>& axis_map() const {
     return axis_map_;
   }
 
   /*
-   * Returns a single int32_t that contains the values of the axis map and the
-   * packed dimension packed into a single int32_t, such that it can be used as
-   * a specialization constant in a compute shader. This allows for the SPIR-V
-   * to bytecode compilation to perform compile-time unfolding on the axis map.
-   * Each element of the axis map and the value of the packed dimension take up
-   * 4 bits in the packed int32_t.
+   * For texture backed tensors, this function return a int32_t that contains
+   * the axis map + packed dimension. Each element of the axis map occupies 4
+   * bits of the int32.
+   *
+   * For buffer backed tensors, the int32_t contains the WHCN dim order, where
+   * each element of the dim order array occupies 4 bits of the int32.
+   *
+   * This int32 is typically consumed as a specialization constant in compute
+   * shaders where it is subsequently unpacked. The layout data of a vTensor
+   * instance is typically static once created, which is why this method is
+   * appropriate.
    */
   inline int32_t hashed_layout() const {
-    return axis_map_.at(0) + (axis_map_.at(1) << 4) + (axis_map_.at(2) << 8) +
-        (axis_map_.at(3) << 12) + (packed_dim_ << 16);
+    return hashed_layout_;
   }
 
   /*
@@ -478,56 +509,47 @@ class vTensor final {
     return axis_map_.at(0) == 0 && axis_map_.at(1) == 1 && axis_map_.at(2) == 2;
   }
 
-  inline const std::vector<int64_t>& strides() const {
-    return strides_;
-  }
-
-  inline const std::vector<int64_t>& unsqueezed_strides() const {
-    return unsqueezed_strides_;
-  }
-
   /*
-   * Returns a GPU buffer containing the sizes of the tensor in WHCN order.
-   * Note that dimensions that are not present in the tensor's sizes are set to
-   * a size of 1.
+   * Return true if a buffer backed tensor's dim order matches that of a
+   * contiguous tensor, i.e. the dim order will be {0, 1, 2, ... }.
+   * Returns false for texture backed tensors.
    */
+  bool is_contiguous() const;
+
+ private:
+  inline size_t nbytes_per_ubo() const {
+    return storage_->context_->adapter_ptr()->min_ubo_alignment();
+  }
+
+  size_t get_max_ubo_nbytes(const size_t nbytes_per_ubo) const;
+
+ public:
+  /*
+   * The functions below return the buffer binding info for a UBO that contains
+   * some metadata of the tensor, which can be used to pass in tensor metadata
+   * to a compute shader. The other method of passing in tensor metadata is via
+   * push constants. The trade-off between each is that push constants may be
+   * slightly more performant and memory efficient; however, to update the
+   * values in a push constant due to i.e. a tensor resize between inferences,
+   * the command buffer must be re-encoded. On the other hand, UBOs can update
+   * their data by writing to their mapped memory without requiring a command
+   * buffer re-encode.
+   */
+
   const vkapi::BufferBindInfo sizes_ubo();
 
-  /*
-   * Returns a GPU buffer containing the strides of the tensor in WHCN order.
-   * Note that the strides are extended to a dimensionality that is a multiple
-   * of 4, thus dimensions that are not present in the tensor's sizes are set to
-   * have a stride equal to the stride of the "slowest moving" dimension.
-   */
+  const vkapi::BufferBindInfo dim_order_ubo();
+
   const vkapi::BufferBindInfo strides_ubo();
 
-  /*
-   * Returns a GPU buffer containing the logical limits of the tensor. See the
-   * comments for logical_limits() for more context.
-   */
   const vkapi::BufferBindInfo logical_limits_ubo();
 
-  /*
-   * Returns the number of elements in the buffer used to store the tensor.
-   */
   const vkapi::BufferBindInfo numel_ubo();
 
-  inline size_t numel() const {
-    return uniform_data_->numel;
+ public:
+  inline size_t staging_buffer_numel() const {
+    return storage_->buffer_len();
   }
-
-  inline size_t nbytes() const {
-    return element_size(dtype()) * numel();
-  }
-
-  /*
-   * Returns numel but based on padded_sizes_ instead of sizes_
-   */
-  inline size_t padded_numel() const {
-    return padded_numel_;
-  }
-
-  size_t staging_buffer_numel() const;
 
   inline size_t staging_buffer_nbytes() const {
     return element_size(dtype()) * staging_buffer_numel();
@@ -608,6 +630,8 @@ class vTensor final {
 };
 
 static constexpr vTensor::Attribute kTensorSizes = vTensor::Attribute::SIZES;
+static constexpr vTensor::Attribute kTensorDimOrder =
+    vTensor::Attribute::WHCN_DIM_ORDER;
 static constexpr vTensor::Attribute kTensorStrides =
     vTensor::Attribute::STRIDES;
 static constexpr vTensor::Attribute kTensorLogicalLimits =
