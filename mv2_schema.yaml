@@ -1,0 +1,71 @@
+build_features: []
+custom_classes: []
+et_kernel_metadata:
+  aten::_native_batch_norm_legit_no_training.out:
+  - v1/6;0,1,2,3|6;0|6;0|6;0|6;0|6;0,1,2,3|6;0|6;0|6;0,1,2,3
+  aten::add.out:
+  - v1/6;0,1,2,3|6;0,1,2,3|6;0,1,2,3|6;0,1,2,3
+  aten::addmm.out:
+  - v1/6;0|6;0,1|6;0,1|6;0,1|6;0,1
+  aten::clone.out:
+  - v1/6;0,1|6;0,1|6;0,1
+  aten::convolution.out:
+  - v1/6;0,1,2,3|6;0,1,2,3|6;0,1,2,3|6;0,1,2,3
+  aten::hardtanh.out:
+  - v1/6;0,1,2,3|6;0,1,2,3|6;0,1,2,3
+  aten::mean.out:
+  - v1/6;0,1,2,3|6;0,1,2,3|6;0,1,2,3
+  aten::permute_copy.out:
+  - v1/6;0,1|6;0,1|6;0,1
+include_all_non_op_selectives: false
+include_all_operators: false
+kernel_metadata: {}
+operators:
+  aten::_native_batch_norm_legit_no_training.out:
+    debug_info:
+    - mv2.pte
+    include_all_overloads: false
+    is_root_operator: true
+    is_used_for_training: true
+  aten::add.out:
+    debug_info:
+    - mv2.pte
+    include_all_overloads: false
+    is_root_operator: true
+    is_used_for_training: true
+  aten::addmm.out:
+    debug_info:
+    - mv2.pte
+    include_all_overloads: false
+    is_root_operator: true
+    is_used_for_training: true
+  aten::clone.out:
+    debug_info:
+    - mv2.pte
+    include_all_overloads: false
+    is_root_operator: true
+    is_used_for_training: true
+  aten::convolution.out:
+    debug_info:
+    - mv2.pte
+    include_all_overloads: false
+    is_root_operator: true
+    is_used_for_training: true
+  aten::hardtanh.out:
+    debug_info:
+    - mv2.pte
+    include_all_overloads: false
+    is_root_operator: true
+    is_used_for_training: true
+  aten::mean.out:
+    debug_info:
+    - mv2.pte
+    include_all_overloads: false
+    is_root_operator: true
+    is_used_for_training: true
+  aten::permute_copy.out:
+    debug_info:
+    - mv2.pte
+    include_all_overloads: false
+    is_root_operator: true
+    is_used_for_training: true

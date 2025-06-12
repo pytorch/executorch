@@ -61,6 +61,14 @@ option(EXECUTORCH_SELECT_OPS_LIST "Register a list of ops, separated by comma"
 option(EXECUTORCH_SELECT_ALL_OPS
        "Whether to register all ops defined in portable kernel library." OFF
 )
+
+# Option to enable dtype selective build
+option(EXECUTORCH_SELECT_OPS_FROM_MODEL "Enable op selection from pte during build." OFF
+)
+
+# Option to enable dtype selective build
+option(EXECUTORCH_DTYPE_SELECTIVE_BUILD "Enable dtype selection during build." OFF
+)
 # ------------------------------- OPTIONS END --------------------------------
 
 #
@@ -108,16 +116,32 @@ gen_selected_ops(
   "${EXECUTORCH_SELECT_OPS_LIST}"
   INCLUDE_ALL_OPS
   "${EXECUTORCH_SELECT_ALL_OPS}"
+  OPS_FROM_MODEL
+  "${EXECUTORCH_SELECT_OPS_FROM_MODEL}"
+  DTYPE_SELECT
+  "${EXECUTORCH_DTYPE_SELECTIVE_BUILD}"
 )
 
 generate_bindings_for_kernels(
-  LIB_NAME "select_build_lib" FUNCTIONS_YAML
-  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml CUSTOM_OPS_YAML
+  LIB_NAME
+  "select_build_lib"
+  FUNCTIONS_YAML
+  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
+  CUSTOM_OPS_YAML
   "${_custom_ops_yaml}"
+  DTYPE_SELECT
+  "${EXECUTORCH_DTYPE_SELECTIVE_BUILD}"
 )
 
 gen_operators_lib(
-  LIB_NAME "select_build_lib" KERNEL_LIBS ${_kernel_lib} DEPS executorch_core
+  LIB_NAME
+  "select_build_lib"
+  KERNEL_LIBS
+  ${_kernel_lib}
+  DEPS
+  executorch_core
+  DTYPE_SELECT
+  "${EXECUTORCH_DTYPE_SELECTIVE_BUILD}"
 )
 
 list(TRANSFORM _executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")

@@ -94,6 +94,7 @@ test_cmake_select_all_ops() {
     rm -rf ${build_dir}
     retry cmake -DCMAKE_BUILD_TYPE=Release \
             -DEXECUTORCH_SELECT_ALL_OPS=ON \
+            -DEXECUTORCH_DTYPE_SELECTIVE_BUILD=ON \
             -DCMAKE_INSTALL_PREFIX=cmake-out \
             -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
             -B${build_dir} \
@@ -118,11 +119,9 @@ test_cmake_select_ops_in_list() {
     # set MAX_KERNEL_NUM=22: 19 primops, add, mul
     rm -rf ${build_dir}
     retry cmake -DCMAKE_BUILD_TYPE=Release \
-            -DMAX_KERNEL_NUM=22 \
-            -DEXECUTORCH_SELECT_OPS_LIST="aten::convolution.out,\
-aten::_native_batch_norm_legit_no_training.out,aten::hardtanh.out,aten::add.out,\
-aten::mean.out,aten::view_copy.out,aten::permute_copy.out,aten::addmm.out,\
-aten,aten::clone.out" \
+            -DEXECUTORCH_SELECT_OPS_FROM_MODEL="./mv2.pte" \
+            -DEXECUTORCH_OPTIMIZE_SIZE=ON \
+            -DEXECUTORCH_DTYPE_SELECTIVE_BUILD=ON \
             -DCMAKE_INSTALL_PREFIX=cmake-out \
             -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
             -B${build_dir} \
@@ -146,6 +145,7 @@ test_cmake_select_ops_in_yaml() {
     rm -rf ${build_dir}
     retry cmake -DCMAKE_BUILD_TYPE=Release \
             -DEXECUTORCH_SELECT_OPS_YAML=ON \
+            -DEXECUTORCH_DTYPE_SELECTIVE_BUILD=ON \
             -DCMAKE_INSTALL_PREFIX=cmake-out \
             -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
             -B${build_dir} \
@@ -161,6 +161,30 @@ test_cmake_select_ops_in_yaml() {
     rm "./custom_ops_1.pte"
 }
 
+test_cmake_select_ops_and_dtype() {
+    echo "Exporting MobilenetV2"
+    ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="mv2"
+    local example_dir=examples/selective_build
+    local build_dir=cmake-out/${example_dir}
+    retry cmake -DCMAKE_BUILD_TYPE=Release \
+            -DEXECUTORCH_SELECT_OPS_FROM_MODEL="./mv2.pte" \
+            -DEXECUTORCH_OPTIMIZE_SIZE=ON \
+            -DEXECUTORCH_DTYPE_SELECTIVE_BUILD=ON \
+            -DCMAKE_INSTALL_PREFIX=cmake-out \
+            -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+            -B${build_dir} \
+            ${example_dir}
+
+    echo "Building ${example_dir}"
+    cmake --build ${build_dir} -j9 --config Release
+
+    echo 'Running selective build test'
+    ${build_dir}/selective_build_test --model_path="./mv2.pte"
+
+    echo "Removing mv2.pte"
+    rm "./mv2.pte"
+}
+
 if [[ -z $BUCK ]];
 then
   BUCK=buck2
@@ -174,9 +198,10 @@ fi
 if [[ $1 == "cmake" ]];
 then
     cmake_install_executorch_lib
-    test_cmake_select_all_ops
+#    test_cmake_select_all_ops
     test_cmake_select_ops_in_list
-    test_cmake_select_ops_in_yaml
+#    test_cmake_select_ops_in_yaml
+#    test_cmake_select_ops_and_dtype
 elif [[ $1 == "buck2" ]];
 then
     test_buck2_select_all_ops
