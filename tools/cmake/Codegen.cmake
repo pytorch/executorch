@@ -15,7 +15,7 @@ function(gen_selected_ops)
   set(arg_names LIB_NAME OPS_SCHEMA_YAML ROOT_OPS INCLUDE_ALL_OPS DTYPE_HEADER)
   cmake_parse_arguments(GEN "" "" "${arg_names}" ${ARGN})
 
-  message(STATUS "Generating operator lib:")
+  message(STATUS "Generating selected operator lib:")
   message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
   message(STATUS "  OPS_SCHEMA_YAML: ${GEN_OPS_SCHEMA_YAML}")
   message(STATUS "  ROOT_OPS: ${GEN_ROOT_OPS}")
@@ -204,12 +204,12 @@ function(gen_operators_lib)
   message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
   message(STATUS "  KERNEL_LIBS: ${GEN_KERNEL_LIBS}")
   message(STATUS "  DEPS: ${GEN_DEPS}")
-  message(STATUS "  DTYPE_HEADER: ${GEN_HEADER}")
+  message(STATUS "  DTYPE_HEADER: ${GEN_DTYPE_HEADER}")
 
   set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
 
   add_library(${GEN_LIB_NAME})
-  if(GEN_DTYPE_SELECT)
+  if(GEN_DTYPE_HEADER)
     target_sources(
       ${GEN_LIB_NAME}
       PRIVATE ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
@@ -231,7 +231,7 @@ function(gen_operators_lib)
 
   target_link_options_shared_lib(${GEN_LIB_NAME})
   set(_generated_headers ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h)
-  if(GEN_DTYPE_SELECT)
+  if(GEN_DTYPE_HEADER)
     list(APPEND _generated_headers ${_out_dir}/selected_op_variants.h)
   endif()
   set_target_properties(
