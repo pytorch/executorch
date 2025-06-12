@@ -82,7 +82,7 @@ TensorInfo::TensorInfo(
     Span<const uint8_t> dim_order,
     executorch::aten::ScalarType scalar_type,
     const bool is_memory_planned,
-    executorch::aten::string_view name)
+    std::string_view name)
     : sizes_(sizes),
       dim_order_(dim_order),
       name_(name),
@@ -110,7 +110,7 @@ size_t TensorInfo::nbytes() const {
   return nbytes_;
 }
 
-executorch::aten::string_view TensorInfo::name() const {
+std::string_view TensorInfo::name() const {
   return name_;
 }
 
@@ -168,8 +168,8 @@ Result<TensorInfo> MethodMeta::input_tensor_meta(size_t index) const {
       static_cast<executorch::aten::ScalarType>(tensor_value->scalar_type()),
       tensor_value->allocation_info() != nullptr ||
           tensor_value->data_buffer_idx() != 0 /* is_memory_planned */,
-      executorch::aten::string_view{nullptr, 0}); // Count constant returns as
-                                                  // memory planned.
+      std::string_view{nullptr, 0}); // Count constant returns as
+                                     // memory planned.
 }
 
 size_t MethodMeta::num_outputs() const {
@@ -220,8 +220,8 @@ Result<TensorInfo> MethodMeta::output_tensor_meta(size_t index) const {
       static_cast<executorch::aten::ScalarType>(tensor_value->scalar_type()),
       tensor_value->allocation_info() != nullptr ||
           tensor_value->data_buffer_idx() != 0 /* is_memory_planned */,
-      executorch::aten::string_view{nullptr, 0}); // Count constant returns as
-                                                  // memory planned.
+      std::string_view{nullptr, 0}); // Count constant returns as
+                                     // memory planned.
 }
 
 size_t MethodMeta::num_attributes() const {
@@ -265,7 +265,7 @@ Result<TensorInfo> MethodMeta::attribute_tensor_meta(size_t index) const {
                   tensor_value->scalar_type()),
               tensor_value->allocation_info() != nullptr ||
                   tensor_value->data_buffer_idx() != 0 /* is_memory_planned */,
-              executorch::aten::string_view{t_name->c_str(), t_name->size()});
+              std::string_view{t_name->c_str(), t_name->size()});
         }
         ++counter;
       }
