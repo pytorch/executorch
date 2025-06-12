@@ -24,13 +24,13 @@ using namespace ::testing;
 using executorch::aten::ArrayRef;
 using executorch::aten::IntArrayRef;
 using executorch::aten::nullopt;
-using executorch::aten::optional;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using std::optional;
 using torch::executor::testing::TensorFactory;
 
-using OptScalar = executorch::aten::optional<Scalar>;
+using OptScalar = std::optional<Scalar>;
 
 class OpNativeLayerNormTest : public OperatorTest {
  protected:
@@ -249,7 +249,7 @@ class OpNativeLayerNormTest : public OperatorTest {
       SCOPED_TRACE(test_case.title); // Printed if the test fails
 
       Tensor in = tf.make(test_case.sizes, test_case.input_data);
-      executorch::aten::optional<Tensor> weight, bias;
+      std::optional<Tensor> weight, bias;
       if (!test_case.weight_data.empty()) {
         weight = tf.make(test_case.normalized_shape, test_case.weight_data);
       }

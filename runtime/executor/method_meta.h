@@ -70,7 +70,7 @@ class TensorInfo final {
    * Returns the fully qualified name of the Tensor might be empty if the tensor
    * is nameless.
    */
-  executorch::aten::string_view name() const;
+  std::string_view name() const;
 
  private:
   // Let MethodMeta create TensorInfo.
@@ -82,7 +82,7 @@ class TensorInfo final {
       Span<const uint8_t> dim_order,
       executorch::aten::ScalarType scalar_type,
       const bool is_memory_planned,
-      executorch::aten::string_view name);
+      std::string_view name);
 
   /**
    * The sizes of the tensor.
@@ -101,7 +101,7 @@ class TensorInfo final {
   Span<const uint8_t> dim_order_;
 
   /// The fully qualified name of the Tensor.
-  executorch::aten::string_view name_;
+  std::string_view name_;
 
   /// The scalar type of the tensor.
   executorch::aten::ScalarType scalar_type_;
