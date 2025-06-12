@@ -962,6 +962,35 @@ TEST_F(OpLeTensorOutTest, Broadcast2dBy1dTest) {
   EXPECT_TENSOR_EQ(out, tf_bool.make({3, 4}, expected_data));
 }
 
+TEST_F(OpLeTensorOutTest, Broadcast1DTo2DShapeTest) {
+  TensorFactory<ScalarType::Int> tf;
+  TensorFactory<ScalarType::Bool> tf_bool;
+
+  // Test case: (6,) and (1, 6) -> (1, 6)
+  Tensor a = tf.make({6}, {1, 3, 5, 7, 9, 11});
+  Tensor b = tf.make({1, 6}, {2, 4, 6, 8, 10, 12});
+
+  Tensor out = tf_bool.zeros({1, 6});
+
+  op_le_tensor_out(a, b, out);
+
+  // Expected: a[i] <= b[0,i] for all i
+  // [1, 3, 5, 7, 9, 11] <= [2, 4, 6, 8, 10, 12]
+  using ctype =
+      executorch::runtime::testing::internal::ScalarTypeToCppTypeWrapper<
+          ScalarType::Bool>::ctype;
+  std::vector<ctype> expected_data = {
+      true, // 1 <= 2
+      true, // 3 <= 4
+      true, // 5 <= 6
+      true, // 7 <= 8
+      true, // 9 <= 10
+      true // 11 <= 12
+  };
+
+  EXPECT_TENSOR_EQ(out, tf_bool.make({1, 6}, expected_data));
+}
+
 TEST_F(OpLeTensorOutTest, Broadcast2dBy1dReverseTest) {
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Bool> tf_bool;

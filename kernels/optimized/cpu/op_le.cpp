@@ -85,7 +85,7 @@ Tensor& opt_le_tensor_out(
   auto selected_optimized_path = select_optimized_path(a, b, out);
   if (selected_optimized_path == ElementwiseOptimizedPath::kTreatAs1d) {
     // Resize for dynamic shape
-    auto error = resize_tensor(out, a.sizes());
+    auto error = resize_to_broadcast_target_size(a, b, out);
     ET_KERNEL_CHECK_MSG(
         ctx,
         error == Error::Ok,
