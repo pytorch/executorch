@@ -9,6 +9,8 @@
 #ifndef SLICE_GLSLH
 #define SLICE_GLSLH
 
+#ifndef USING_BUFFER
+
 /**
  * Enable the fast path if a texel loaded from the input texture can be used as
  * is to store to the output texture. The following conditions must be met:
@@ -25,6 +27,8 @@ bool can_use_fast_path() {
   }
   return true;
 }
+
+#endif // USING_BUFFER
 
 /*
  * Converts output tensor indices to input tensor indices for the slice operation.
