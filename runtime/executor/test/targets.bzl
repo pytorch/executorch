@@ -170,6 +170,23 @@ def define_common_targets(is_fbcode = False):
             env = modules_env,
         )
 
+
+        runtime.cxx_test(
+            name = "method_update_test",
+            srcs = [
+                "method_update_test.cpp",
+            ],
+            deps = [
+                ":managed_memory_manager",
+                "//executorch/runtime/backend:interface",
+                "//executorch/runtime/executor:program",
+                "//executorch/extension/data_loader:buffer_data_loader",
+                "//executorch/extension/data_loader:file_data_loader",
+            ],
+            env = {
+                "ET_MODULE_ADD_MUL_DELEGATED_PATH": "$(location fbcode//executorch/test/models:exported_delegated_add_mul[ModuleAddMul.pte])",
+            },        )
+
         runtime.cxx_test(
             name = "program_test",
             srcs = [

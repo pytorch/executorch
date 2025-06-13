@@ -248,3 +248,21 @@ def define_common_targets():
             "//executorch/test/...",
         ],
     )
+
+    runtime.genrule(
+        name = "exported_executor_backend_program_linear",
+        cmd = "$(exe :export_delegated_program)" +
+            " --modules ModuleLinear" +
+            " --backend_id ExecutorBackend" +
+            " --outdir $OUT",
+
+        outs = {
+            "ExcuTorchBackendLinear.pte": ["ExcuTorchBackendLinear.pte"],
+        },
+        default_outs = ["."],
+        visibility = [
+            "//executorch/runtime/executor/test/...",
+            "//executorch/extension/flat_tensor/test/...",
+            "//executorch/test/...",
+        ],
+    )
