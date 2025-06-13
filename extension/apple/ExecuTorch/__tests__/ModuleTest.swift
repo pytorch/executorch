@@ -92,31 +92,31 @@ class ModuleTest: XCTestCase {
     XCTAssertEqual(methodMetadata.inputValueTags.count, 2)
     XCTAssertEqual(methodMetadata.outputValueTags.count, 1)
 
-    XCTAssertEqual(ValueTag(rawValue: methodMetadata.inputValueTags[0].uint32Value), .tensor)
-    let inputTensorMetadata1 = methodMetadata.inputTensorMetadatas[0]
+    XCTAssertEqual(methodMetadata.inputValueTags[0], .tensor)
+    let inputTensorMetadata1 = methodMetadata.inputTensorMetadata[0]
     XCTAssertEqual(inputTensorMetadata1?.shape, [1])
     XCTAssertEqual(inputTensorMetadata1?.dimensionOrder, [0])
     XCTAssertEqual(inputTensorMetadata1?.dataType, .float)
     XCTAssertEqual(inputTensorMetadata1?.isMemoryPlanned, true)
     XCTAssertEqual(inputTensorMetadata1?.name, "")
 
-    XCTAssertEqual(ValueTag(rawValue: methodMetadata.inputValueTags[1].uint32Value), .tensor)
-    let inputTensorMetadata2 = methodMetadata.inputTensorMetadatas[1]
+    XCTAssertEqual(methodMetadata.inputValueTags[1], .tensor)
+    let inputTensorMetadata2 = methodMetadata.inputTensorMetadata[1]
     XCTAssertEqual(inputTensorMetadata2?.shape, [1])
     XCTAssertEqual(inputTensorMetadata2?.dimensionOrder, [0])
     XCTAssertEqual(inputTensorMetadata2?.dataType, .float)
     XCTAssertEqual(inputTensorMetadata2?.isMemoryPlanned, true)
     XCTAssertEqual(inputTensorMetadata2?.name, "")
 
-    XCTAssertEqual(ValueTag(rawValue: methodMetadata.outputValueTags[0].uint32Value), .tensor)
-    let outputTensorMetadata = methodMetadata.outputTensorMetadatas[0]
+    XCTAssertEqual(methodMetadata.outputValueTags[0], .tensor)
+    let outputTensorMetadata = methodMetadata.outputTensorMetadata[0]
     XCTAssertEqual(outputTensorMetadata?.shape, [1])
     XCTAssertEqual(outputTensorMetadata?.dimensionOrder, [0])
     XCTAssertEqual(outputTensorMetadata?.dataType, .float)
     XCTAssertEqual(outputTensorMetadata?.isMemoryPlanned, true)
     XCTAssertEqual(outputTensorMetadata?.name, "")
 
-    XCTAssertEqual(methodMetadata.attributeTensorMetadatas.count, 0)
+    XCTAssertEqual(methodMetadata.attributeTensorMetadata.count, 0)
     XCTAssertEqual(methodMetadata.memoryPlannedBufferSizes.count, 1)
     XCTAssertEqual(methodMetadata.memoryPlannedBufferSizes[0], 48)
     XCTAssertEqual(methodMetadata.backendNames.count, 0)
