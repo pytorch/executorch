@@ -61,6 +61,10 @@ option(EXECUTORCH_SELECT_OPS_LIST "Register a list of ops, separated by comma"
 option(EXECUTORCH_SELECT_ALL_OPS
        "Whether to register all ops defined in portable kernel library." OFF
 )
+
+# Option to enable dtype header generation during selective build process
+option(EXECUTORCH_DTYPE_GEN_HEADER "Enable dtype header generation during selection during build." OFF
+)
 # ------------------------------- OPTIONS END --------------------------------
 
 #
@@ -108,16 +112,30 @@ gen_selected_ops(
   "${EXECUTORCH_SELECT_OPS_LIST}"
   INCLUDE_ALL_OPS
   "${EXECUTORCH_SELECT_ALL_OPS}"
+  DTYPE_HEADER
+  "${EXECUTORCH_DTYPE_GEN_HEADER}"
 )
 
 generate_bindings_for_kernels(
-  LIB_NAME "select_build_lib" FUNCTIONS_YAML
-  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml CUSTOM_OPS_YAML
+  LIB_NAME
+  "select_build_lib"
+  FUNCTIONS_YAML
+  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
+  CUSTOM_OPS_YAML
   "${_custom_ops_yaml}"
+  DTYPE_HEADER
+  "${EXECUTORCH_DTYPE_GEN_HEADER}"
 )
 
 gen_operators_lib(
-  LIB_NAME "select_build_lib" KERNEL_LIBS ${_kernel_lib} DEPS executorch_core
+  LIB_NAME
+  "select_build_lib"
+  KERNEL_LIBS
+  ${_kernel_lib}
+  DEPS
+  executorch_core
+  DTYPE_HEADER
+  "${EXECUTORCH_DTYPE_GEN_HEADER}"
 )
 
 list(TRANSFORM _executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
