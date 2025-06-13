@@ -615,8 +615,7 @@ vTensor::vTensor(
       sizes_,
       whcn_dim_order,
       unsqueezed_strides,
-      TextureLimits(
-          calculate_logical_limits(storage_->image_extents_, axis_map_)),
+      calculate_logical_limits(storage_->image_extents_, axis_map_),
       numel_});
   VK_CHECK_COND(
       dim_order_is_valid(dim_order_), "computed dim order is invalid");
@@ -648,10 +647,12 @@ vTensor::vTensor(
       uniforms_(),
       // Construct Tensor storage
       storage_(std::make_shared<vTensorStorage>(context, image)) {
-  TextureLimits logical_limits(
-      calculate_logical_limits(storage_->image_extents_, axis_map_));
-  uniform_data_ = std::make_shared<UniformData>(
-      UniformData{sizes_, {0, 0, 0, 0}, {0, 0, 0, 0}, logical_limits, numel_});
+  uniform_data_ = std::make_shared<UniformData>(UniformData{
+      sizes_,
+      {0, 0, 0, 0},
+      {0, 0, 0, 0},
+      calculate_logical_limits(storage_->image_extents_, axis_map_),
+      numel_});
 }
 
 vTensor::vTensor(vTensor& other)
@@ -698,7 +699,7 @@ vTensor::vTensor(
       sizes_,
       create_whcn_dim_order(dim_order_),
       unsqueeze_strides(strides_, numel_),
-      {other.logical_limits()},
+      other.logical_limits(),
       static_cast<size_t>(utils::multiply_integers(sizes_))});
 
   VK_CHECK_COND(

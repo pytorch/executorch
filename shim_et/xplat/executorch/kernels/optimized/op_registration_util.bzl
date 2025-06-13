@@ -218,8 +218,11 @@ OPTIMIZED_ATEN_OPS = (
     op_target(
         name = "op_le",
         deps = [
+            ":binary_ops",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/pattern:comparison_op",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
     ),
