@@ -23,12 +23,16 @@ cmake_install_executorch_lib() {
   update_tokenizers_git_submodule
   local EXTRA_BUILD_ARGS="${@}"
 
-  CXXFLAGS="$COMMON_CXXFLAGS" retry cmake -DBUCK2="$BUCK2" \
+  CXXFLAGS="$COMMON_CXXFLAGS" retry cmake \
           -DCMAKE_CXX_STANDARD_REQUIRED=ON \
+	  -DCMAKE_TOOLCHAIN_FILE="/workspace/executorch/examples/arm/ethos-u-setup/arm-zephyr-eabi-gcc.cmake" \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
+	  -DEXECUTORCH_PAL_DEFAULT=minimal \
           -DCMAKE_BUILD_TYPE=Release \
           -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
           -DEXECUTORCH_OPTIMIZE_SIZE=ON \
+          -DEXECUTORCH_BUILD_PTHREADPOOL=OFF \
+          -DEXECUTORCH_BUILD_CPUINFO=OFF \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           ${EXTRA_BUILD_ARGS} \
           -Bcmake-out .
