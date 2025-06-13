@@ -30,6 +30,7 @@ static constexpr auto kMaxContextLen = "get_max_context_len";
 static constexpr auto kVocabSize = "get_vocab_size";
 static constexpr auto kUseKVCache = "use_kv_cache";
 static constexpr auto kUseSDPAWithKVCache = "use_sdpa_with_kv_cache";
+static constexpr auto kUseCachePositions = "use_cache_positions";
 
 TextLLMRunner::TextLLMRunner(
     std::unordered_map<std::string, int64_t> metadata,
@@ -271,6 +272,7 @@ std::unordered_map<std::string, int64_t> get_llm_metadata(
       {llm::kMaxContextLen, 128},
       {llm::kUseKVCache, true},
       {llm::kUseSDPAWithKVCache, false},
+      {llm::kUseCachePositions, false},
   });
 
   // Read metadata from the model
@@ -300,7 +302,24 @@ std::unordered_map<std::string, int64_t> get_llm_metadata(
   // Set tokenizer-related metadata
   metadata[llm::kBosId] = tokenizer->bos_tok();
   metadata[llm::kVocabSize] = tokenizer->vocab_size();
-  return metadata;
+
+  // Override metadata using the module's method_meta
+  auto method_meta_result = module->method_meta("forward");
+  if (method_meta_result.error() != Error::Ok) {
+    ET_LOG(Error, "Failed reading method meta");
+    return metadata;
+  }
+  auto method_meta = method_meta_result.get();
+  // If only 1 input, we are not using kv cache
+  metadata[llm::kUseKVCache] = method_meta.num_inputs() > 1;
+
+  if (method_meta.num_inputs() == 1) {
+    return metadata;
+  }
+  // Check if we are using cache positions instead of input pos.
+  auto second_input_info = method_meta.input_tensor_meta(1).get();
+  // For input_pos, size is [1], for cache_positions, size is [1, max_seq_len]
+  metadata[llm::kUseCachePositions] = second_input_info.sizes().size() == 2;
 }
 
 std::unordered_set<uint64_t> get_eos_ids(

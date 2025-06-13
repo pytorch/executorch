@@ -186,5 +186,59 @@ TensorPtr randint_strided(
       std::uniform_int_distribution<int64_t>(low, high - 1));
 }
 
+TensorPtr arange(
+    executorch::aten::Scalar start,
+    executorch::aten::Scalar end,
+    executorch::aten::Scalar step,
+    executorch::aten::ScalarType type,
+    executorch::aten::TensorShapeDynamism dynamism) {
+  // Calculate the number of elements in the range
+  double start_val, end_val, step_val;
+
+  if (start.isFloatingPoint()) {
+    start_val = start.to<double>();
+  } else if (start.isIntegral(/*includeBool=*/false)) {
+    start_val = static_cast<double>(start.to<int64_t>());
+  } else {
+    ET_CHECK_MSG(false, "start must be a number");
+  }
+
+  if (end.isFloatingPoint()) {
+    end_val = end.to<double>();
+  } else if (end.isIntegral(/*includeBool=*/false)) {
+    end_val = static_cast<double>(end.to<int64_t>());
+  } else {
+    ET_CHECK_MSG(false, "end must be a number");
+  }
+
+  if (step.isFloatingPoint()) {
+    step_val = step.to<double>();
+  } else if (step.isIntegral(/*includeBool=*/false)) {
+    step_val = static_cast<double>(step.to<int64_t>());
+  } else {
+    ET_CHECK_MSG(false, "step must be a number");
+  }
+
+  ET_CHECK_MSG(step_val != 0, "step cannot be zero");
+
+  // Calculate the number of elements
+  int64_t numel =
+      static_cast<int64_t>(std::ceil((end_val - start_val) / step_val));
+  numel = std::max(int64_t(0), numel); // Ensure non-negative
+
+  // Create a 1D tensor with the calculated size
+  auto tensor = empty_strided({numel}, {1}, type, dynamism);
+
+  // Fill the tensor with values from start to end with step
+  ET_SWITCH_REALHBBF16_TYPES(type, nullptr, "arange", CTYPE, [&] {
+    CTYPE* data = tensor->mutable_data_ptr<CTYPE>();
+    for (int64_t i = 0; i < numel; ++i) {
+      data[i] = static_cast<CTYPE>(start_val + i * step_val);
+    }
+  });
+
+  return tensor;
+}
+
 } // namespace extension
 } // namespace executorch
