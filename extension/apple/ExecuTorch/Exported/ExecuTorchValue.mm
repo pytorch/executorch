@@ -68,6 +68,11 @@ static inline ExecuTorchValueTag deduceValueTag(NSNumber *number) {
                                         value:@(value)];
 }
 
++ (instancetype)valueWithFloat:(ExecuTorchFloatValue)value {
+  return [[ExecuTorchValue alloc] initWithTag:ExecuTorchValueTagDouble
+                                        value:@(value)];
+}
+
 + (instancetype)valueWithScalar:(ExecuTorchScalarValue)value {
   return [[ExecuTorchValue alloc] initWithTag:deduceValueTag(value)
                                         value:value];
