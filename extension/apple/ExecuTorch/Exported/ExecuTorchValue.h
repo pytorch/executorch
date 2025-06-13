@@ -64,7 +64,7 @@ __attribute__((deprecated("This API is experimental.")))
  *
  * @return A Tensor instance or nil.
  */
-@property(nullable, nonatomic, readonly) ExecuTorchTensor *tensorValue NS_SWIFT_NAME(tensor);
+@property(nullable, nonatomic, readonly) ExecuTorchTensor *tensorValue NS_REFINED_FOR_SWIFT;
 
 /**
  * The string value if the tag is ExecuTorchValueTagString.
@@ -173,7 +173,7 @@ __attribute__((deprecated("This API is experimental.")))
  * @param value An ExecuTorchTensor instance.
  * @return A new ExecuTorchValue instance with a tag of ExecuTorchValueTagTensor.
  */
-+ (instancetype)valueWithTensor:(ExecuTorchTensor *)value NS_SWIFT_NAME(init(_:));
++ (instancetype)valueWithTensor:(ExecuTorchTensor *)value NS_REFINED_FOR_SWIFT;
 
 /**
  * Creates an instance encapsulating a string.
