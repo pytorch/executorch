@@ -58,9 +58,9 @@ NSError *ExecuTorchErrorWithCode(ExecuTorchErrorCode code) {
 }
 
 NSError *ExecuTorchErrorWithCodeAndDescription(ExecuTorchErrorCode code, NSString * __nullable description) {
-  return [NSError errorWithDomain:ExecuTorchErrorDomain
-                             code:code
-                         userInfo:@{
+  return [[NSError alloc] initWithDomain:ExecuTorchErrorDomain
+                                    code:code
+                                userInfo:@{
     NSLocalizedDescriptionKey:
       description.length > 0
         ? [ExecuTorchErrorDescription(code) stringByAppendingFormat:@": %@", description]
