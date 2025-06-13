@@ -19,8 +19,8 @@ ${define_required_extensions(OUT_DTYPE)}
 
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "r", "t_in", IN_DTYPE, "buffer")}
 ${layout_declare_tensor(B, "w", "t_out", OUT_DTYPE, "buffer")}
+${layout_declare_tensor(B, "r", "t_in", IN_DTYPE, "buffer")}
 
 $if MODE == "per_tensor":
   layout(push_constant) uniform restrict Block {
