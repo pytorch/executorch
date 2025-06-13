@@ -61,6 +61,10 @@ option(EXECUTORCH_SELECT_OPS_LIST "Register a list of ops, separated by comma"
 option(EXECUTORCH_SELECT_ALL_OPS
        "Whether to register all ops defined in portable kernel library." OFF
 )
+
+# Option to enable parsing ops and dtypes directly from model pte file
+option(EXECUTORCH_SELECT_OPS_FROM_MODEL "Enable op selection from pte during build." OFF
+)
 # ------------------------------- OPTIONS END --------------------------------
 
 #
@@ -108,6 +112,8 @@ gen_selected_ops(
   "${EXECUTORCH_SELECT_OPS_LIST}"
   INCLUDE_ALL_OPS
   "${EXECUTORCH_SELECT_ALL_OPS}"
+  OPS_FROM_MODEL
+  "${EXECUTORCH_SELECT_OPS_FROM_MODEL}"
 )
 
 generate_bindings_for_kernels(
