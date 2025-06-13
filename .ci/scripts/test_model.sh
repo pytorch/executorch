@@ -244,6 +244,24 @@ test_model_with_mps() {
   EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
 }
 
+test_model_with_mediatek() {
+  if [[ "${MODEL_NAME}" == "dl3" ]]; then
+    EXPORT_SCRIPT=deeplab_v3
+  elif [[ "${MODEL_NAME}" == "mv3" ]]; then
+    EXPORT_SCRIPT=mobilenet_v3
+  elif [[ "${MODEL_NAME}" == "mv2" ]]; then
+    EXPORT_SCRIPT=mobilenet_v2
+  elif [[ "${MODEL_NAME}" == "ic4" ]]; then
+    EXPORT_SCRIPT=inception_v4
+  elif [[ "${MODEL_NAME}" == "ic3" ]]; then
+    EXPORT_SCRIPT=inception_v3
+  fi
+
+  PYTHONPATH=examples/mediatek/ "${PYTHON_EXECUTABLE}" -m examples.mediatek.model_export_scripts.${EXPORT_SCRIPT} -d /tmp/neuropilot/train -a ${EXPORT_SCRIPT}
+  EXPORTED_MODEL=$(find "./${EXPORT_SCRIPT}" -type f -name "*.pte" -print -quit)
+}
+
+
 if [[ "${BACKEND}" == "portable" ]]; then
   echo "Testing ${MODEL_NAME} with portable kernels..."
   test_model
@@ -278,6 +296,12 @@ elif [[ "${BACKEND}" == *"xnnpack"* ]]; then
     WITH_QUANTIZATION=false
   fi
   test_model_with_xnnpack "${WITH_QUANTIZATION}" "${WITH_DELEGATION}"
+  if [[ $? -eq 0 ]]; then
+    prepare_artifacts_upload
+  fi
+elif [[ "${BACKEND}" == "mediatek" ]]; then
+  echo "Testing ${MODEL_NAME} with mediatek..."
+  test_model_with_mediatek
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi
