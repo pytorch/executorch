@@ -26,6 +26,7 @@ skip_vela_setup=0
 # Figure out if setup.sh was called or sourced and save it into "is_script_sourced"
 (return 0 2>/dev/null) && is_script_sourced=1 || is_script_sourced=0
 
+custom_toolchain="/home/zephyruser/zephyr-sdk-0.16.0/arm-zephyr-eabi/bin"
 if [[ "${ARCH}" == "x86_64" ]]; then
     # FVPs
     corstone300_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64.tgz?rev=018659bd574f4e7b95fa647e7836ccf4&hash=22A79103C6FA5FFA7AFF3BE0447F3FF9"
@@ -241,6 +242,7 @@ function create_setup_path(){
         toolchain_bin_path="$(cd ${toolchain_dir}/bin && pwd)"
         echo "export PATH=\${PATH}:${toolchain_bin_path}" >> ${setup_path_script}
     fi
+    echo "export PATH=\${PATH}:${custom_toolchain}" >> ${setup_path_script}
 }
 
 function check_platform_support() {
