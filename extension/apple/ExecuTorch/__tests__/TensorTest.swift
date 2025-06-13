@@ -208,6 +208,10 @@ class TensorTest: XCTestCase {
     XCTAssertTrue(tensor1.isEqual(tensor1))
     XCTAssertFalse(tensor1.isEqual(NSString(string: "Not a tensor")))
     XCTAssertFalse(tensor4.isEqual(tensor2.copy()))
+    let tensor5 = data.withUnsafeMutableBytes {
+      Tensor(bytesNoCopy: $0.baseAddress!, shape: [2, 2], dataType: .float, shapeDynamism: .static)
+    }
+    XCTAssertTrue(tensor1.isEqual(tensor5))
   }
 
   func testInitScalarsUInt8() {

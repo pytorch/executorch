@@ -137,7 +137,6 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
          [self.shape isEqual:other.shape] &&
          [self.dimensionOrder isEqual:other.dimensionOrder] &&
          [self.strides isEqual:other.strides] &&
-         self.shapeDynamism == other.shapeDynamism &&
          (data && otherData ? std::memcmp(data, otherData, size) == 0 : data == otherData);
 }
 
