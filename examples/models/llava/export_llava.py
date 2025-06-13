@@ -193,6 +193,32 @@ def export_token_embedding(llava, prompt):
 
     quantized_token_embed = quant_embedding(llava.model_.language_model.model)
 
+    qval = quantized_token_embed.embedding.weight
+    scale = quantized_token_embed.embedding.scales
+
+    qval_copy = quantized_token_embed_copy.embedding.weight.tensor_impl.get_plain()[0]
+    scale_copy = quantized_token_embed_copy.embedding.weight.tensor_impl.get_plain()[1]
+    zero_copy = quantized_token_embed_copy.embedding.weight.tensor_impl.get_plain()[2]
+
+    print("COPY TENSOR", quantized_token_embed_copy.embedding.weight)
+    print("ORIGINAL DTYPE", quantized_token_embed.embedding.dtype)
+
+    print("COMPARING")
+    print("qval_copy", qval_copy)
+    print("qval", qval)
+    print("MATCHING", (qval_copy == qval).to(torch.float32).mean())
+
+    print("scale_copy", scale_copy)
+    print("scale", scale)
+    print("ISCLOSE", torch.isclose(scale_copy, scale).to(torch.float32).mean())
+
+    print("zero_copy", zero_copy)
+    print("ALL ZEROS", (zero_copy == 0).to(torch.float32).mean())
+
+
+
+    
+
     token_dim_1 = Dim("token_dim_1", min=2, max=llava.text_model_args.max_seq_len)
     dynamic_shapes = [{1: token_dim_1}]
     with torch.no_grad():
