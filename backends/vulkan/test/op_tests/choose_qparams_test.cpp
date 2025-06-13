@@ -517,6 +517,11 @@ TEST(VulkanChooseQparamsTest, test_reference_choose_qparams_tensor_int8) {
 }
 
 TEST(VulkanChooseQparamsTest, test_vulkan_choose_qparams_tensor_uint8_4D) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_choose_qparams_tensor(
       {5, 3, 2, 4}, // input sizes
       0, // quant_min
@@ -525,6 +530,11 @@ TEST(VulkanChooseQparamsTest, test_vulkan_choose_qparams_tensor_uint8_4D) {
 }
 
 TEST(VulkanChooseQparamsTest, test_vulkan_choose_qparams_tensor_int8_2D) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_choose_qparams_tensor(
       {5, 5}, // input sizes
       -128, // quant_min
@@ -533,6 +543,11 @@ TEST(VulkanChooseQparamsTest, test_vulkan_choose_qparams_tensor_int8_2D) {
 }
 
 TEST(VulkanChooseQparamsTest, test_vulkan_choose_qparams_tensor_int8_3D) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_choose_qparams_tensor(
       {12, 8, 2}, // input sizes
       -128, // quant_min
@@ -541,6 +556,11 @@ TEST(VulkanChooseQparamsTest, test_vulkan_choose_qparams_tensor_int8_3D) {
 }
 
 TEST(VulkanChooseQparamsTest, test_vulkan_choose_qparams_tensor_int8_4D) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_choose_qparams_tensor(
       {10, 10, 6, 4}, // input sizes
       -128, // quant_min
@@ -709,23 +729,43 @@ TEST(
 TEST(
     VulkanChooseQparamsTest,
     test_vulkan_choose_qparams_per_token_asymmetric_int8_1D) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_choose_qparams_per_token_asymmetric({7}, at::kChar);
 }
 
 TEST(
     VulkanChooseQparamsTest,
     test_vulkan_choose_qparams_per_token_asymmetric_int8_2D) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_choose_qparams_per_token_asymmetric({2, 2}, at::kChar);
 }
 
 TEST(
     VulkanChooseQparamsTest,
     test_vulkan_choose_qparams_per_token_asymmetric_int8_3D) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_choose_qparams_per_token_asymmetric({3, 6, 4}, at::kChar);
 }
 
 TEST(
     VulkanChooseQparamsTest,
     test_vulkan_choose_qparams_per_token_asymmetric_int8_4D) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_choose_qparams_per_token_asymmetric({128, 2, 16, 3}, at::kChar);
 }
