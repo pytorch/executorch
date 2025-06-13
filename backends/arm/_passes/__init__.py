@@ -39,6 +39,7 @@ from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
 from .decompose_round_pass import DecomposeRoundPass  # noqa
 from .decompose_select import DecomposeSelectPass  # noqa
 from .decompose_silu_pass import DecomposeSiluPass  # noqa
+from .decompose_sinh_pass import DecomposeSinhPass  # noqa
 from .decompose_softmax_pass import DecomposeSoftmaxPass  # noqa
 from .decompose_softmax_unstable_pass import DecomposeSoftmaxUnstablePass  # noqa
 from .decompose_sqrt_pass import DecomposeSqrtPass  # noqa
