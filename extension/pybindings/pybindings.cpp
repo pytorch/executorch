@@ -68,21 +68,6 @@
     }                                                             \
   })
 
-// Our logs work by writing to stderr. By default this is done through fprintf
-// (as defined in posix.cpp) which then does not show up in python environments.
-// Here we override the pal to use std::cerr which can be properly redirected by
-// scoped_estream_redirect.
-void et_pal_emit_log_message(
-    et_timestamp_t timestamp,
-    et_pal_log_level_t level,
-    const char* filename,
-    ET_UNUSED const char* function,
-    size_t line,
-    const char* message,
-    ET_UNUSED size_t length) {
-  std::cerr << "[" << filename << ":" << line << "] " << message << std::endl;
-}
-
 namespace py = pybind11;
 using executorch::BUNDLED_PROGRAM_NAMESPACE::verify_method_outputs;
 using ::executorch::ET_RUNTIME_NAMESPACE::BackendInterface;
@@ -1167,6 +1152,32 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           call_guard)
       .def("__repr__", &PyMethodMeta::repr, call_guard);
 }
+
+namespace {
+
+// Our logs work by writing to stderr. By default this is done through fprintf
+// (as defined in posix.cpp) which then does not show up in python environments.
+// Here we override the pal to use std::cerr which can be properly redirected by
+// scoped_estream_redirect.
+void emit_log_message(
+    et_timestamp_t timestamp,
+    et_pal_log_level_t level,
+    const char* filename,
+    ET_UNUSED const char* function,
+    size_t line,
+    const char* message,
+    ET_UNUSED size_t length) {
+  std::cerr << "[" << filename << ":" << line << "] " << message << std::endl;
+}
+
+runtime::PalImpl build_pal() {
+  return runtime::PalImpl::create(emit_log_message, __FILE__);
+}
+
+// Update PAL to redirect logs.
+ET_UNUSED bool registration_result = runtime::register_pal(build_pal());
+
+} // namespace
 
 } // namespace pybindings
 } // namespace extension
