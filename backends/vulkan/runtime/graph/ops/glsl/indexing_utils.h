@@ -69,21 +69,6 @@
 #define mod4(x) ((x) & 3)
 
 /*
- * Find the packed dimension of a tensor given its strides. The packed dimension
- * is the "fastest moving" dimension which will have a stride of 1.
- */
-int find_packed_dim(const ivec4 strides) {
-  int packed_dim = 0;
-  for (int i = 0; i <= 3; i++) {
-    if (strides[i] == 1) {
-      packed_dim = i;
-      break;
-    }
-  }
-  return packed_dim;
-}
-
-/*
  * Get the staging buffer indices that contain the data of the texel that
  * corresponds to the provided tensor index. Since the texel have 4 elements,
  * 4 buffer indices will be retrieved.
@@ -129,27 +114,26 @@ int tidx_to_nchwi(const ivec4 tidx, const ivec4 sizes) {
       tidx.x;
 }
 
-// TODO(ssjia): make this function use dim order so that it can work with any
-// dim order. Currently it assumes that the dim order is contiguous, except for
-// the packed dim.
-ivec4 bufi_to_tidx(int bufi, const ivec4 strides, const int packed_dim) {
+ivec4 bufi_to_tidx(int bufi, const ivec4 strides, const ivec4 dim_order) {
   ivec4 idx;
   for (int i = 3; i >= 0; i--) {
-    if (i != packed_dim) {
-      idx[i] = bufi / strides[i];
-      bufi %= strides[i];
-    }
+    int dim = dim_order[i];
+    idx[dim] = bufi / strides[dim];
+    bufi %= strides[dim];
   }
-  idx[packed_dim] = bufi;
   return idx;
 }
 
-// Convenience overload of the above function, which will determine the packed
-// dim from the strides automatically so it doesn't have to be passed in as a
-// function argument.
-ivec4 bufi_to_tidx(const int bufi, const ivec4 strides) {
-  int packed_dim = find_packed_dim(strides);
-  return bufi_to_tidx(bufi, strides, packed_dim);
+/*
+ * bufi_to_tidx but assumes that the tensor is contiguous
+ */
+ivec4 contiguous_bufi_to_tidx(int bufi, const ivec4 strides) {
+  ivec4 idx;
+  for (int i = 3; i >= 0; i--) {
+    idx[i] = bufi / strides[i];
+    bufi %= strides[i];
+  }
+  return idx;
 }
 
 int tidx_to_bufi(const ivec4 tidx, ivec4 strides) {
@@ -269,11 +253,21 @@ ivec3 lpos_to_pos(const ivec3 lpos, const ivec4 axis_map) {
  * e.g. 0x11021, 1 -> ivec4(1, 2, 0, 1)
  */
 #define unhash_axis_map(hash) \
-  ivec4(hash & 0xf, (hash >> 4) & 0xf, (hash >> 8 & 0xf), (hash >> 12 & 0xf))
+  (ivec4(hash & 0xf, (hash >> 4) & 0xf, (hash >> 8 & 0xf), (hash >> 12 & 0xf)))
+
+/*
+ *
+ */
+#define unhash_dim_order(hash) \
+  (ivec4(hash & 0xf, (hash >> 4) & 0xf, (hash >> 8 & 0xf), (hash >> 12 & 0xf)))
 
 #define unhash_packed_dim(hash) int(hash >> 16 & 0xf)
 
 #define DEFAULT_LAYOUT 0x02210
+
+#define DEFAULT_DIM_ORDER 0x03210
+
+#define DEFAULT_DIM_ORDER_IVEC4 ivec4(0, 1, 2, 3)
 
 /************************
  * Deprecated Functions *
