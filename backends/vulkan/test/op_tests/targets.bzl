@@ -20,6 +20,7 @@ def define_test_targets(test_name, extra_deps = [], src_file = None, is_fbcode =
         compiler_flags = [
             "-Wno-unused-variable",
         ],
+        platforms = [ANDROID],
         define_static_target = False,
         deps = deps_list,
     )
@@ -134,6 +135,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/backends/vulkan:vulkan_graph_runtime",
             runtime.external_dep_location("libtorch"),
         ],
+        platforms = [ANDROID],
     )
 
     define_test_targets(
