@@ -739,8 +739,8 @@ It’s also available as a default model in <a class="reference external" href="
 <div class="section" id="delegated-quantized-workflow">
 <h3>Delegated Quantized Workflow<a class="headerlink" href="#delegated-quantized-workflow" title="Permalink to this heading">¶</a></h3>
 <p>Generating the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file can be done using the aot_arm_compiler:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.arm.aot_arm_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv2&quot;</span><span class="w"> </span>--delegate<span class="w"> </span>--quantize<span class="s2">&quot;</span>
-<span class="s2"># should produce ./mv2_arm_delegate_ethos-u55-128.pte</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.arm.aot_arm_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv2&quot;</span><span class="w"> </span>--delegate<span class="w"> </span>--quantize
+<span class="c1"># should produce ./mv2_arm_delegate_ethos-u55-128.pte</span>
 </pre></div>
 </div>
 <br />
@@ -790,7 +790,7 @@ arm_test/add/cmake-out/arm_executor_runner
 <h3>Building the executor_runner Bare-Metal Application<a class="headerlink" href="#building-the-executor-runner-bare-metal-application" title="Permalink to this heading">¶</a></h3>
 <p>The SDK dir is the same one prepared <a class="reference internal" href="#setup-the-arm-ethos-u-software-development"><span class="std std-doc">earlier</span></a>. And, you will be passing the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file (any one of them) generated above.</p>
 <p>Note, you have to generate a new <code class="docutils literal notranslate"><span class="pre">executor-runner</span></code> binary if you want to change the model or the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. This constraint is from the constrained bare-metal runtime environment you have for Corstone-300/Corstone-320 platforms.</p>
-<p>This is performed by the <code class="docutils literal notranslate"><span class="pre">backends/arm/scripts/build_executor_runner.sh</span></code> script runned from <code class="docutils literal notranslate"><span class="pre">run.sh</span></code>.</p>
+<p>This step is executed by the build_executor_runner.sh script, which is invoked from the run.sh in the backends/arm/scripts folder.</p>
 <div class="admonition tip">
 <p class="admonition-title">Tip</p>
 <p>The <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> script takes in <code class="docutils literal notranslate"><span class="pre">--target</span></code> option, which provides a way to provide a specific target, Corstone-300(ethos-u55-128) or Corstone-320(ethos-u85-128)</p>
@@ -799,13 +799,58 @@ arm_test/add/cmake-out/arm_executor_runner
 </div>
 <div class="section" id="running-on-corstone-fvp-platforms">
 <h2>Running on Corstone FVP Platforms<a class="headerlink" href="#running-on-corstone-fvp-platforms" title="Permalink to this heading">¶</a></h2>
-<p>Once the elf is prepared, regardless of the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file variant is used to generate the bare metal elf. <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> will run the FVP for you via the <code class="docutils literal notranslate"><span class="pre">backends/arm/scripts/run_fvp.sh</span></code> script but you can also run it directly.</p>
-<p>The below command is used to run the <span class="xref myst">MV2Model</span> on Corstone-320 FVP</p>
+<p>Once the elf is prepared, regardless of the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file variant is used to generate the bare metal elf. <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> will run the FVP for you via the <code class="docutils literal notranslate"><span class="pre">backends/arm/scripts/run_fvp.sh</span></code> script.</p>
+<div class="section" id="automatic-fvp-selection">
+<h3>Automatic FVP Selection<a class="headerlink" href="#automatic-fvp-selection" title="Permalink to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>To run a specific test model with the compiler flag and target</p></li>
+</ul>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./run.sh<span class="w"> </span>--model_name<span class="o">=</span>mv2<span class="w"> </span>--delegate<span class="w"> </span>--quantize<span class="w"> </span>--target<span class="o">=</span>ethos-u85-128
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>To run a specific test model and target</p></li>
+</ul>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./run.sh<span class="w"> </span>--model_name<span class="o">=</span>mv2<span class="w"> </span>--delegate<span class="w"> </span>--target<span class="o">=</span>ethos-u85-128
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>To run all the test models iteratively in a loop</p></li>
+</ul>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./run.sh<span class="w"> </span>--pte<span class="o">=</span>mv2_arm_ethos_u55.pte<span class="w"> </span>--target<span class="o">=</span>ethos-u55-128
+</pre></div>
+</div>
+<p>Note that you could use <code class="docutils literal notranslate"><span class="pre">build_executor_runner.sh</span></code> and <code class="docutils literal notranslate"><span class="pre">run_fvp.sh</span></code> scripts in tandem by passing the relevant  –target argument (e.g., –target=ethos-u55-128), the correct FVP binary will be chosen automatically. For more details, see the <a class="reference external" href="https://docs.pytorch.org/executorch/main/backends-arm-ethos-u.html#runtime-integration">section on Runtime Integration</a>.</p>
+</div>
+<div class="section" id="manual-fvp-binary-selection">
+<h3>Manual FVP Binary Selection<a class="headerlink" href="#manual-fvp-binary-selection" title="Permalink to this heading">¶</a></h3>
+<ul>
+<li><p>If you build for the Ethos delegate U55/U65 target (e.g., using –target=ethos-u55-128 or –target=ethos-u65-256 with <code class="docutils literal notranslate"><span class="pre">build_executor_runner.sh</span></code> and <code class="docutils literal notranslate"><span class="pre">run_fvp.sh</span></code>), you should use the corresponding FVP binary:</p>
+<ul>
+<li><p>For U55:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>examples/arm/ethos-u-scratch/FVP-corstone300/models/Linux64_GCC-9.3/FVP_Corstone_SSE-300_Ethos-U55
+</pre></div>
+</div>
+</li>
+<li><p>For U65:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>examples/arm/ethos-u-scratch/FVP-corstone300/models/Linux64_GCC-9.3/FVP_Corstone_SSE-300_Ethos-U65
+</pre></div>
+</div>
+</li>
+</ul>
+</li>
+<li><p>And say if you are not building for an Ethos target, use:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>examples/arm/ethos-u-scratch/FVP-corstone320/models/Linux64_GCC-9.3/FVP_Corstone_SSE-320
+</pre></div>
+</div>
+</li>
+</ul>
+<p>Following is an example usage:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nv">ethos_u_build_dir</span><span class="o">=</span>examples/arm/executor_runner/
 
 <span class="nv">elf</span><span class="o">=</span><span class="k">$(</span>find<span class="w"> </span><span class="si">${</span><span class="nv">ethos_u_build_dir</span><span class="si">}</span><span class="w"> </span>-name<span class="w"> </span><span class="s2">&quot;arm_executor_runner&quot;</span><span class="k">)</span>
 
-FVP_Corstone_SSE-320_Ethos-U85<span class="w">                          </span><span class="se">\</span>
+FVP_Corstone_SSE-320<span class="w">                                    </span><span class="se">\</span>
 <span class="w">    </span>-C<span class="w"> </span>mps4_board.subsystem.ethosu.num_macs<span class="o">=</span><span class="m">128</span><span class="w">         </span><span class="se">\</span>
 <span class="w">    </span>-C<span class="w"> </span>mps4_board.visualisation.disable-visualisation<span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-C<span class="w"> </span>vis_hdlcd.disable_visualisation<span class="o">=</span><span class="m">1</span><span class="w">                </span><span class="se">\</span>
@@ -816,7 +861,10 @@ FVP_Corstone_SSE-320_Ethos-U85<span class="w">                          </span><
 <span class="w">    </span>--timelimit<span class="w"> </span><span class="m">120</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">true</span><span class="w"> </span><span class="c1"># seconds- after which sim will kill itself</span>
 </pre></div>
 </div>
-<p>If successful, the simulator should produce something like the following on the shell,</p>
+</div>
+<div class="section" id="verification-of-successful-fvp-execution">
+<h3>Verification of Successful FVP Execution<a class="headerlink" href="#verification-of-successful-fvp-execution" title="Permalink to this heading">¶</a></h3>
+<p>After running the FVP command, either automatically or manually, you should see output similar to the following on your shell if the execution is successful:</p>
 <div class="highlight-none notranslate highlight-console"><div class="highlight"><pre><span></span><span class="go">I [executorch:arm_executor_runner.cpp:364] Model in 0x70000000 $</span>
 <span class="go">I [executorch:arm_executor_runner.cpp:366] Model PTE file loaded. Size: 4425968 bytes.</span>
 <span class="go">I [executorch:arm_executor_runner.cpp:376] Model buffer loaded, has 1 methods</span>
@@ -870,6 +918,7 @@ FVP_Corstone_SSE-320_Ethos-U85<span class="w">                          </span><
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>The <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> script provides various options to select a particular FVP target, use desired models, select portable kernels and can be explored using the <code class="docutils literal notranslate"><span class="pre">--help</span></code> argument</p>
+</div>
 </div>
 </div>
 <div class="section" id="takeaways">
@@ -972,7 +1021,12 @@ Describe what common errors users may see and how to resolve them.
 <li><a class="reference internal" href="#building-the-executor-runner-bare-metal-application">Building the executor_runner Bare-Metal Application</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#running-on-corstone-fvp-platforms">Running on Corstone FVP Platforms</a></li>
+<li><a class="reference internal" href="#running-on-corstone-fvp-platforms">Running on Corstone FVP Platforms</a><ul>
+<li><a class="reference internal" href="#automatic-fvp-selection">Automatic FVP Selection</a></li>
+<li><a class="reference internal" href="#manual-fvp-binary-selection">Manual FVP Binary Selection</a></li>
+<li><a class="reference internal" href="#verification-of-successful-fvp-execution">Verification of Successful FVP Execution</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#takeaways">Takeaways</a></li>
 <li><a class="reference internal" href="#faqs">FAQs</a></li>
 </ul>
