@@ -9,6 +9,8 @@
 #ifndef SELECT_GLSLH
 #define SELECT_GLSLH
 
+#ifndef USING_BUFFER
+
 /*
  * Enable the fast path if a texel loaded from the input texture can be used as
  * is to store to the output texture. The following conditions must be met:
@@ -28,6 +30,8 @@ bool can_use_fast_path() {
   }
   return true;
 }
+
+#endif // USING_BUFFER
 
 /*
  * Given an output tensor index, return the corresponding input tensor index for
