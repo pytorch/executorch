@@ -1,4 +1,4 @@
-load("@fbsource//tools/build_defs:platform_defs.bzl", "ANDROID", "CXX")
+load("@fbsource//tools/build_defs:platform_defs.bzl", "ANDROID")
 load("@fbsource//xplat/caffe2:pt_defs.bzl", "get_pt_ops_deps")
 load("@fbsource//xplat/caffe2:pt_ops.bzl", "pt_operator_library")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
