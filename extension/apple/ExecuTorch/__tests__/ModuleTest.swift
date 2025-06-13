@@ -55,20 +55,30 @@ class ModuleTest: XCTestCase {
       return
     }
     let module = Module(filePath: modelPath)
-    let inputs = [Tensor([1], dataType: .float), Tensor([1], dataType: .float)]
+    let inputs: [Tensor<Float>] = [Tensor([1]), Tensor([1])]
     var outputs: [Value]?
     XCTAssertNoThrow(outputs = try module.forward(inputs))
-    XCTAssertEqual(outputs?.first?.tensor, Tensor([2], dataType: .float, shapeDynamism: .static))
+    XCTAssertEqual(outputs?.first?.tensor(), Tensor([Float(2)]))
 
-    let inputs2 = [Tensor([2], dataType: .float), Tensor([3], dataType: .float)]
+    let inputs2: [Tensor<Float>] = [Tensor([2]), Tensor([3])]
     var outputs2: [Value]?
     XCTAssertNoThrow(outputs2 = try module.forward(inputs2))
-    XCTAssertEqual(outputs2?.first?.tensor, Tensor([5], dataType: .float, shapeDynamism: .static))
+    XCTAssertEqual(outputs2?.first?.tensor(), Tensor([Float(5)]))
 
-    let inputs3 = [Tensor([13.25], dataType: .float), Tensor([29.25], dataType: .float)]
+    let inputs3: [Tensor<Float>] = [Tensor([13.25]), Tensor([29.25])]
     var outputs3: [Value]?
     XCTAssertNoThrow(outputs3 = try module.forward(inputs3))
-    XCTAssertEqual(outputs3?.first?.tensor, Tensor([42.5], dataType: .float, shapeDynamism: .static))
+    XCTAssertEqual(outputs3?.first?.tensor(), Tensor([Float(42.5)]))
+
+    let lhsScalar: Float = 2
+    let rhsScalar: Float = 3
+    let lhsTensor = Tensor([lhsScalar])
+    let rhsTensor = Tensor([rhsScalar])
+    let lhsValue = Value(lhsTensor)
+    let rhsValue = Value(rhsTensor)
+    var outputs4: [Value]?
+    XCTAssertNoThrow(outputs4 = try module.forward([lhsValue, rhsValue]))
+    XCTAssertEqual(outputs4?.first?.tensor(), Tensor([Float(5)]))
   }
 
   func testmethodMetadata() throws {
