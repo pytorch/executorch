@@ -10,6 +10,25 @@ def define_common_targets():
     for aten_mode in get_aten_mode_options():
         aten_suffix = ("_aten" if aten_mode else "")
         runtime.cxx_library(
+            name = "backend_options" + aten_suffix,
+            exported_headers = [
+                "backend_options.h",
+            ],
+            preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_deps = [
+                "//executorch/runtime/core:core",
+                "//executorch/runtime/core:evalue" + aten_suffix,
+                "//executorch/runtime/core:event_tracer" + aten_suffix,
+                "//executorch/runtime/core:memory_allocator",
+                "//executorch/runtime/core:named_data_map",
+            ],
+        )
+
+        runtime.cxx_library(
             name = "interface" + aten_suffix,
             srcs = [
                 "interface.cpp",
@@ -18,7 +37,6 @@ def define_common_targets():
                 "backend_execution_context.h",
                 "backend_init_context.h",
                 "backend_update_context.h",
-                "backend_options.h",
                 "interface.h",
             ],
             preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
@@ -32,5 +50,22 @@ def define_common_targets():
                 "//executorch/runtime/core:event_tracer" + aten_suffix,
                 "//executorch/runtime/core:memory_allocator",
                 "//executorch/runtime/core:named_data_map",
+                "//executorch/runtime/backend:backend_options" + aten_suffix,
+            ],
+        )
+
+        runtime.cxx_library(
+            name = "backend_options_map" + aten_suffix,
+            exported_headers = [
+                "backend_options_map.h",
+            ],
+            preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_deps = [
+                "//executorch/runtime/core:core",
+                ":backend_options" + aten_suffix,
             ],
         )
