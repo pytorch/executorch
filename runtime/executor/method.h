@@ -241,13 +241,14 @@ class Method final {
   /// DEPRECATED: Use `reset_execution()` instead.
   ET_DEPRECATED ET_NODISCARD Error experimental_reset_execution();
 
-    /**
+  /**
    * EXPERIMENTAL: Update backend options, which will be dispatched to different backends.
    *
    * @retval Error::Ok step succeeded
    * @retval non-Ok Method update fails
    */
-   ET_EXPERIMENTAL ET_NODISCARD Error update(executorch::runtime::ArrayRef<executorch::runtime::Entry> backend_option);
+  ET_EXPERIMENTAL ET_NODISCARD Error update(
+      executorch::runtime::ArrayRef<executorch::runtime::Entry> backend_option);
 
   /**
    * Returns the MethodMeta that corresponds to the calling Method.

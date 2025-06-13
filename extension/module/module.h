@@ -467,6 +467,32 @@ class Module {
   }
 
   /**
+   * EXPERIMENTAL: Updates backend options for a specific method.
+   * Loads the program and method before updating if needed.
+   *
+   * @param[in] method_name The name of the method to update.
+   * @param[in] backend_options The backend options to update the method with.
+   *
+   * @returns An Error to indicate success or failure.
+   */
+  ET_EXPERIMENTAL ET_NODISCARD runtime::Error update(
+      const std::string& method_name,
+      runtime::ArrayRef<runtime::Entry> backend_options);
+
+  /**
+   * EXPERIMENTAL: Updates backend options for the 'forward' method.
+   * Loads the program and method before updating if needed.
+   *
+   * @param[in] backend_options The backend options to update the method with.
+   *
+   * @returns An Error to indicate success or failure.
+   */
+  ET_EXPERIMENTAL ET_NODISCARD inline runtime::Error update(
+      runtime::ArrayRef<runtime::Entry> backend_options) {
+    return update("forward", backend_options);
+  }
+
+  /**
    * Retrieves the EventTracer instance being used by the Module.
    * EventTracer is used for tracking and logging events during the execution
    * of methods.

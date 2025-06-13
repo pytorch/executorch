@@ -19,6 +19,7 @@ def define_common_targets(is_fbcode=False):
             "ET_MODULE_ADD_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.pte])",
             "ET_MODULE_ADD_MUL_PROGRAM_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleAddMul.pte])",
             "ET_MODULE_ADD_MUL_DATA_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleAddMul.ptd])",
+            "ET_MODULE_ADD_MUL_DELEGATED_PATH": "$(location fbcode//executorch/test/models:exported_delegated_add_mul[ModuleAddMul.pte])",
         }
 
         for aten_mode in get_aten_mode_options():
@@ -35,6 +36,7 @@ def define_common_targets(is_fbcode=False):
                     "//executorch/extension/module:module" + aten_suffix,
                     "//executorch/extension/tensor:tensor" + aten_suffix,
                     "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,
+                    "//executorch/runtime/executor/test:stub_backend",
                 ],
                 env = modules_env,
                 platforms = [CXX, ANDROID],  # Cannot bundle resources on Apple platform.
