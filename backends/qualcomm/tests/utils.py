@@ -185,6 +185,7 @@ class TestQNN(unittest.TestCase):
     image_dataset: str = ""
     pretrained_weight: str = ""
     enable_profile: bool = False
+    op_package_dir: str = ""
     online_prepare: bool = False
     use_8a8w: str = "8a8w"
     use_16a16w: str = "16a16w"
@@ -238,6 +239,16 @@ class TestQNN(unittest.TestCase):
 
         return input_list, ref_outputs, pte_fname
 
+    def required_envs(self, conditions=None) -> bool:
+        conditions = [] if conditions is None else conditions
+        return all(
+            [
+                self.executorch_root,
+                self.artifact_dir,
+                *conditions,
+            ]
+        )
+
     def verify_output(  # noqa: C901
         self,
         module: torch.nn.Module,
@@ -250,6 +261,7 @@ class TestQNN(unittest.TestCase):
         input_encodings: Tuple = (),
         output_encodings: Tuple = (),
         check_io_shape: bool = False,
+        op_package_paths: List[str] = None,
     ):
         with tempfile.TemporaryDirectory() as tmp_dir:
             (
@@ -419,7 +431,11 @@ class TestQNN(unittest.TestCase):
                         else None
                     ),
                 )
-                adb.push(inputs=[processed_inputs], input_list=input_list)
+                adb.push(
+                    inputs=[processed_inputs],
+                    input_list=input_list,
+                    files=op_package_paths,
+                )
                 adb.execute(method_index=method_index)
                 adb.pull(output_path=tmp_dir, callback=post_process)
                 self._assert_outputs_equal(outputs, ref_outputs)
