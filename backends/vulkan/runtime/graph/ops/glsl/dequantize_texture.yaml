@@ -11,6 +11,7 @@ dequantize_texture:
     OUT_DTYPE:
       - VALUE: half
       - VALUE: float
+      - VALUE: double
   shader_variants:
     - NAME: dequantize_per_tensor_texture3d
       MODE: per_tensor
