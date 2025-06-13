@@ -1,0 +1,70 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef CHOOSE_QPARAMS_GLSLH
+#define CHOOSE_QPARAMS_GLSLH
+
+// equivalent of the eps defined in the cpu implementation
+#define SMALL_SCALE_THRESHOLD 6.1e-5
+
+// Calculate scale and zero point from min and max values
+void calculate_scale_and_zero_point(
+    float min_val,
+    float max_val,
+    int qmin,
+    int qmax,
+    out float scale_val,
+    out int zero_point_val) {
+  // ensure we have zero included in our range
+  min_val = min(min_val, 0.0);
+  max_val = max(max_val, 0.0);
+
+  scale_val = (max_val - min_val) / float(qmax - qmin);
+
+  // Handle zero or very small scale
+  if (scale_val == 0.0 || isinf(1.0 / scale_val)) {
+    scale_val = 0.1;
+  }
+
+  // Cut off small scale
+  if (scale_val < SMALL_SCALE_THRESHOLD) {
+    float org_scale = scale_val;
+    scale_val = SMALL_SCALE_THRESHOLD;
+
+    // Adjust min and max based on new scale
+    if (min_val == 0.0) {
+      max_val = SMALL_SCALE_THRESHOLD * float(qmax - qmin);
+    } else if (max_val == 0.0) {
+      min_val = -SMALL_SCALE_THRESHOLD * float(qmax - qmin);
+    } else {
+      float amplifier = SMALL_SCALE_THRESHOLD / org_scale;
+      min_val *= amplifier;
+      max_val *= amplifier;
+    }
+  }
+
+  // Calculate zero point
+  float zero_point_from_min = float(qmin) - min_val / scale_val;
+  float zero_point_from_max = float(qmax) - max_val / scale_val;
+  float zero_point_from_min_error = abs(float(qmin)) - abs(min_val / scale_val);
+  float zero_point_from_max_error = abs(float(qmax)) - abs(max_val / scale_val);
+  float initial_zero_point = zero_point_from_min_error < zero_point_from_max_error
+      ? zero_point_from_min
+      : zero_point_from_max;
+
+  // Nudge zero point to integer
+  if (initial_zero_point < float(qmin)) {
+    zero_point_val = qmin;
+  } else if (initial_zero_point > float(qmax)) {
+    zero_point_val = qmax;
+  } else {
+    zero_point_val = int(round(initial_zero_point));
+  }
+}
+
+#endif // CHOOSE_QPARAMS_GLSLH
