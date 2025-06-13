@@ -158,7 +158,10 @@ __attribute__((deprecated("This API is experimental.")))
 @property(nonatomic, readonly) BOOL isDouble;
 
 /**
- * Returns YES if the value is a float.
+ * Returns YES if the value's tag is Double.
+ *
+ * Note: Since float values are stored with a Double tag, this property will
+ * also be YES for values created from floats.
  *
  * @return A BOOL indicating whether the value is a float.
  */
@@ -207,6 +210,18 @@ __attribute__((deprecated("This API is experimental.")))
  */
 + (instancetype)valueWithDouble:(ExecuTorchDoubleValue)value
     NS_SWIFT_NAME(init(_:));
+
+/**
+ * Creates an instance encapsulating a float value.
+ *
+ * Note: The underlying value will be stored with a tag of
+ * ExecuTorchValueTagDouble, as there is no distinct float tag.
+ *
+ * @param value A float value.
+ * @return A new ExecuTorchValue instance with a tag of ExecuTorchValueTagDouble.
+ */
+ + (instancetype)valueWithFloat:(ExecuTorchFloatValue)value
+     NS_SWIFT_NAME(init(_:));
 
 /**
  * Creates an instance encapsulating a scalar value.
