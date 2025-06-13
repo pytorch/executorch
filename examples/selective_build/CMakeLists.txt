@@ -65,6 +65,10 @@ option(EXECUTORCH_SELECT_ALL_OPS
 # Option to enable parsing ops and dtypes directly from model pte file
 option(EXECUTORCH_SELECT_OPS_FROM_MODEL "Enable op selection from pte during build." OFF
 )
+
+# Option to enable dtype selective build. Note: must be using selective build model API.
+option(EXECUTORCH_DTYPE_SELECTIVE_BUILD "Enable dtype selective build." OFF
+)
 # ------------------------------- OPTIONS END --------------------------------
 
 #
@@ -114,6 +118,8 @@ gen_selected_ops(
   "${EXECUTORCH_SELECT_ALL_OPS}"
   OPS_FROM_MODEL
   "${EXECUTORCH_SELECT_OPS_FROM_MODEL}"
+  DTYPE_SELECTIVE_BUILD
+  "${EXECUTORCH_DTYPE_SELECTIVE_BUILD}"
 )
 
 generate_bindings_for_kernels(
