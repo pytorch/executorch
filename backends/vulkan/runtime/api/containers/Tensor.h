@@ -167,6 +167,8 @@ class vTensor final {
     // component vector with components of size N must have base alignment of
     // 4N.
     alignas(16) utils::ivec3 limits;
+
+    TextureLimits(const utils::uvec3& ulimits) : limits{ulimits} {}
   };
 
  public:
@@ -249,7 +251,7 @@ class vTensor final {
         const std::vector<int64_t>& sizes,
         const std::vector<int64_t>& whcn_dim_order,
         const std::vector<int64_t>& strides,
-        const TextureLimits& logical_limits,
+        const utils::uvec3& logical_limits,
         const size_t numel_ll)
         : sizes_v(utils::make_whcn_ivec4(sizes)),
           whcn_dim_order_v(utils::make_ivec4(whcn_dim_order)),
