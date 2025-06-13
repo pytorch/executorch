@@ -20,10 +20,12 @@ __attribute__((deprecated("This API is experimental.")))
 @interface ExecuTorchTensorMetadata : NSObject
 
 /** The size of each dimension. */
-@property (nonatomic, readonly) NSArray<NSNumber *> *shape;
+@property (nonatomic, readonly) NSArray<NSNumber *> *shape
+    NS_REFINED_FOR_SWIFT;
 
 /** The order in which dimensions are laid out. */
-@property (nonatomic, readonly) NSArray<NSNumber *> *dimensionOrder;
+@property (nonatomic, readonly) NSArray<NSNumber *> *dimensionOrder
+    NS_REFINED_FOR_SWIFT;
 
 /** The scalar type of each element in the tensor. */
 @property (nonatomic, readonly) ExecuTorchDataType dataType;
@@ -52,28 +54,33 @@ __attribute__((deprecated("This API is experimental.")))
 @property (nonatomic, readonly) NSString *name;
 
 /** An array of ExecuTorchValueTag raw values, one per declared input. */
-@property (nonatomic, readonly) NSArray<NSNumber *> *inputValueTags;
+@property (nonatomic, readonly) NSArray<NSNumber *> *inputValueTags
+    NS_REFINED_FOR_SWIFT;
 
 /** An array of ExecuTorchValueTag raw values, one per declared output. */
-@property (nonatomic, readonly) NSArray<NSNumber *> *outputValueTags;
+@property (nonatomic, readonly) NSArray<NSNumber *> *outputValueTags
+    NS_REFINED_FOR_SWIFT;
 
 /**
  * Mapping from input-index to TensorMetadata.
  * Only present for those indices whose tag == .tensor
  */
-@property (nonatomic, readonly) NSDictionary<NSNumber *, ExecuTorchTensorMetadata *> *inputTensorMetadatas;
+@property (nonatomic, readonly) NSDictionary<NSNumber *, ExecuTorchTensorMetadata *> *inputTensorMetadata
+    NS_REFINED_FOR_SWIFT;
 
 /**
  * Mapping from output-index to TensorMetadata.
  * Only present for those indices whose tag == .tensor
  */
-@property (nonatomic, readonly) NSDictionary<NSNumber *, ExecuTorchTensorMetadata *> *outputTensorMetadatas;
+@property (nonatomic, readonly) NSDictionary<NSNumber *, ExecuTorchTensorMetadata *> *outputTensorMetadata
+    NS_REFINED_FOR_SWIFT;
 
 /** A list of attribute TensorsMetadata. */
-@property (nonatomic, readonly) NSArray<ExecuTorchTensorMetadata *> *attributeTensorMetadatas;
+@property (nonatomic, readonly) NSArray<ExecuTorchTensorMetadata *> *attributeTensorMetadata;
 
 /** A list of memory-planned buffer sizes. */
-@property (nonatomic, readonly) NSArray<NSNumber *> *memoryPlannedBufferSizes;
+@property (nonatomic, readonly) NSArray<NSNumber *> *memoryPlannedBufferSizes
+    NS_REFINED_FOR_SWIFT;
 
 /** Names of all backends this method can run on. */
 @property (nonatomic, readonly) NSArray<NSString *> *backendNames;
