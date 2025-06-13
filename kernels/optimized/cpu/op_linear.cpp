@@ -10,9 +10,9 @@
 
 #include <c10/util/irange.h>
 
+#include <ATen/cpu/vec/functional.h>
+#include <ATen/cpu/vec/vec.h>
 #include <executorch/kernels/optimized/blas/CPUBlas.h>
-#include <executorch/kernels/optimized/vec/functional_base.h>
-#include <executorch/kernels/optimized/vec/vec_base.h>
 #include <executorch/kernels/portable/cpu/util/matmul_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -21,12 +21,12 @@ namespace executor {
 namespace native {
 
 namespace {
+using ::at::vec::map;
+using ::at::vec::Vectorized;
 using ::executorch::aten::Tensor;
 using ::executorch::cpublas::gemm;
 using ::executorch::cpublas::TransposeType;
 using ::executorch::runtime::toString;
-using ::executorch::vec::map;
-using ::executorch::vec::Vectorized;
 
 // Use vector store to initialize with scalar bias.
 template <typename scalar_t>
