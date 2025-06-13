@@ -56,11 +56,6 @@ TEST_F(BackendOptionsMapTest, BasicAddAndRetrieve) {
   EXPECT_TRUE(found);
 }
 
-// TEST_F(BackendOptionsMapTest, UnknownBackendHandling) {
-//   EXPECT_EQ(map.get("NPU"), nullptr)
-//       << "Should return nullptr for unknown backend";
-// }
-
 TEST_F(BackendOptionsMapTest, CapacityLimits) {
   BackendOptionsMap<2> small_map; // Only 2 backends capacity
 
