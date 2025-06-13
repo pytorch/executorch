@@ -33,7 +33,7 @@ ScalarType deduceType(NSNumber *number);
  * @return The value converted to type T.
  */
 template <typename T>
-T extractValue(NSNumber *number) {
+T toType(NSNumber *number) {
   ET_CHECK_MSG(!(isFloatingType(deduceType(number)) &&
     isIntegralType(CppTypeToScalarType<T>::value, true)),
     "Cannot convert floating point to integral type");
@@ -87,7 +87,7 @@ std::vector<T> toVector(NSArray<NSNumber *> *array) {
   std::vector<T> vector;
   vector.reserve(array.count);
   for (NSNumber *number in array) {
-    vector.push_back(extractValue<T>(number));
+    vector.push_back(toType<T>(number));
   }
   return vector;
 }
@@ -108,10 +108,11 @@ constexpr bool isNSNumberWrapable =
  * @return An NSArray populated with NSNumber objects representing the container's items.
  */
 template <typename Container>
+NS_RETURNS_RETAINED
 NSArray<NSNumber *> *toNSArray(const Container &container) {
   static_assert(isNSNumberWrapable<typename Container::value_type>, "Invalid container value type");
   const NSUInteger count = std::distance(std::begin(container), std::end(container));
-  NSMutableArray<NSNumber *> *array = [NSMutableArray arrayWithCapacity:count];
+  NSMutableArray<NSNumber *> *array = [[NSMutableArray alloc] initWithCapacity:count];
   for (const auto &item : container) {
     [array addObject:@(item)];
   }
