@@ -185,7 +185,7 @@ def buffer_gvec_type(dtype: str, n: int) -> str:
     dtype_map = {
         "half": f"f16vec{n}",
         "float": f"vec{n}",
-        "double": f"vec{n}",  # No 64bit support in GLSL
+        "double": f"vec{n}",  # No 64bit image format support in GLSL
         "int8": f"i8vec{n}",
         "uint8": f"u8vec{n}",
         "int16": f"i16vec{n}",
@@ -194,8 +194,8 @@ def buffer_gvec_type(dtype: str, n: int) -> str:
         "int": f"ivec{n}",
         "uint32": f"uvec{n}",
         "uint": f"uvec{n}",
-        "int64": f"ivec{n}",  # No 64bit support in GLSL
-        "uint64": f"uvec{n}",  # No 64bit support in GLSL
+        "int64": f"ivec{n}",  # No 64bit image format support in GLSL
+        "uint64": f"uvec{n}",  # No 64bit image format support in GLSL
         "bool": f"u8vec{n}",
     }
 
@@ -419,18 +419,26 @@ def define_required_extensions(dtypes: Union[str, List[str]]):
     dtype_list = dtypes if isinstance(dtypes, list) else [dtypes]
 
     for dtype in dtype_list:
+        nbit = None
         glsl_type = None
         if dtype == "half":
+            nbit = "16bit"
             glsl_type = "float16"
         elif dtype == "double":
+            # We only need to allow float64_t type usage
             glsl_type = "float64"
         elif dtype in ["int8", "uint8", "bool"]:
+            nbit = "8bit"
             glsl_type = "int8"
         elif dtype in ["int16", "uint16"]:
+            nbit = "16bit"
             glsl_type = "int16"
         elif dtype in ["int64", "uint64"]:
+            # We only need to allow int64_t and uint64_t type usage
             glsl_type = "int64"
 
+        if nbit is not None:
+            out_str += f"#extension GL_EXT_shader_{nbit}_storage : require\n"
         if glsl_type is not None:
             out_str += f"#extension GL_EXT_shader_explicit_arithmetic_types_{glsl_type} : require\n"
 
