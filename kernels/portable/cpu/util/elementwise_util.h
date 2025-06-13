@@ -61,8 +61,8 @@ namespace internal {
  * strides; normally, this is not strictly necessary because ExecuTorch
  * Tensors are contiguous.
  */
-struct SupportNoncontiguousTensors {
-  explicit SupportNoncontiguousTensors() = default;
+struct SupportNoncontiguousInputTensors {
+  explicit SupportNoncontiguousInputTensors() = default;
 };
 
 template <typename Ignore, typename T>
@@ -424,7 +424,7 @@ inline void apply_unitensor_elementwise_fn(
     const Tensor& a,
     SupportedTensorDtypes a_dtypes,
     const Tensor& out,
-    SupportNoncontiguousTensors) {
+    SupportNoncontiguousInputTensors) {
   internal::apply_elementwise_fn<
       CTYPE_COMPUTE,
       op_name,
@@ -500,7 +500,7 @@ inline void apply_bitensor_elementwise_fn(
     const Tensor& b,
     SupportedTensorDtypes b_dtypes,
     const Tensor& out,
-    SupportNoncontiguousTensors) {
+    SupportNoncontiguousInputTensors) {
   internal::apply_elementwise_fn<
       CTYPE_COMPUTE,
       op_name,
@@ -604,7 +604,7 @@ inline void apply_tritensor_elementwise_fn(
     const Tensor& c,
     SupportedTensorDtypes c_dtypes,
     const Tensor& out,
-    SupportNoncontiguousTensors) {
+    SupportNoncontiguousInputTensors) {
   internal::apply_elementwise_fn<
       CTYPE_COMPUTE,
       op_name,
