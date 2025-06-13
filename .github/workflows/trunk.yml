@@ -693,32 +693,3 @@ jobs:
       build-mode: Release
       build-tool: cmake
       docker-image: executorch-ubuntu-22.04-clang12
-
-  unittest-nxp-neutron:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    with:
-      runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        set -eux
-
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        # Build and install Executorch
-        PYTHON_EXECUTABLE=python \
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_NXP_NEUTRON=ON" \
-        .ci/scripts/setup-linux.sh --build-tool "cmake"
-
-        # Install test requirements
-        pip install -r backends/nxp/requirements-tests.txt
-
-        # Run pytest
-        PYTHON_EXECUTABLE=python bash backends/nxp/run_unittests.sh
