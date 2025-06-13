@@ -23,6 +23,7 @@ from executorch.backends.arm._passes import (
     ConvertSplitToSlicePass,
     ConvertSqueezesToViewPass,
     ConvertToClampPass,
+    DecomposeAvgPool2d,
     DecomposeCosineSimilarityPass,
     DecomposeDivPass,
     DecomposeEmbeddingPass,
@@ -63,7 +64,6 @@ from executorch.backends.arm._passes import (
     UnsqueezeBeforeRepeatPass,
     UnsqueezeScalarPlaceholdersPass,
 )
-
 from executorch.backends.arm.tosa_specification import (
     TosaLoweringContext,
     TosaSpecification,
@@ -115,6 +115,7 @@ class ArmPassManager(PassManager):
         if self.tosa_spec.is_U55_subset:
             self.add_pass(BroadcastArgsPass())
         self.add_pass(DecomposeLinearPass())
+        self.add_pass(DecomposeAvgPool2d())
         self.add_pass(ComputeConstantOpsAOT(exported_program))
 
         self.add_pass(RemoveClonePass())
@@ -172,6 +173,7 @@ class ArmPassManager(PassManager):
         self.add_pass(RetraceFoldedDtypesPass())
         self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
         self.add_pass(MatchArgRanksPass(exported_program))
+        self.add_pass(DecomposeAvgPool2d())
         self.add_pass(ComputeConstantOpsAOT(exported_program))
 
         self.add_pass(RemoveClonePass())
@@ -232,6 +234,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeLinearVectorNormPass())
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(DecomposeSiluPass())
+        self.add_pass(DecomposeAvgPool2d())
 
         if self.tosa_spec.is_U55_subset:
             # Numerically stable softmax uses amax which is not supported on Ethos-U55
