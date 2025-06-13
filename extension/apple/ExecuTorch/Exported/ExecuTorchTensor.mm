@@ -347,7 +347,7 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
   for (NSUInteger index = 0; index < count; ++index) {
     ET_SWITCH_REALHBBF16_AND_UINT_TYPES(
       static_cast<ScalarType>(dataType), nil, "initWithScalars", CTYPE, [&] {
-        reinterpret_cast<CTYPE *>(data.data())[index] = utils::extractValue<CTYPE>(scalars[index]);
+        reinterpret_cast<CTYPE *>(data.data())[index] = utils::toType<CTYPE>(scalars[index]);
       }
     );
   }
@@ -659,7 +659,7 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
   Scalar fillValue;
   ET_SWITCH_REALHBBF16_AND_UINT_TYPES(
     static_cast<ScalarType>(dataType), nil, "fullTensor", CTYPE, [&] {
-      fillValue = utils::extractValue<CTYPE>(scalar);
+      fillValue = utils::toType<CTYPE>(scalar);
     }
   );
   auto tensor = full_strided(
