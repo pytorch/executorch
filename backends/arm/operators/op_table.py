@@ -15,6 +15,7 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
+    validate_valid_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 
@@ -37,19 +38,17 @@ class TableVisitor_0_80(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 1)
+        validate_valid_dtype(
+            self.target, inputs, [ts.DType.INT8, ts.DType.INT16], output.tosa_spec
+        )
+        if inputs[0].dtype == ts.DType.INT8:
+            validate_valid_dtype(self.target, output, ts.DType.INT8, output.tosa_spec)
+        if inputs[0].dtype == ts.DType.INT16:
+            validate_valid_dtype(self.target, output, ts.DType.INT32, output.tosa_spec)
 
         if node.name not in self._exported_program.state_dict.keys():  # type: ignore[union-attr]
             raise RuntimeError(
                 f"Did not find key {node.name} in state_dict {self._exported_program.state_dict.keys()}."
-            )
-        if inputs[0].dtype == ts.DType.INT8 and output.dtype != ts.DType.INT8:
-            raise ValueError(f"Int8 tables need int8 output, got {output.dtype=}.")
-        if inputs[0].dtype == ts.DType.INT16 and output.dtype != ts.DType.INT32:
-            raise ValueError(f"Int16 tables need int32 output, got {output.dtype=}.")
-
-        if inputs[0].dtype not in (ts.DType.INT8, ts.DType.INT16):
-            raise ValueError(
-                f"TOSA.TABLE only supports int8 or int16 inputs, got {ts.DTypeNames[inputs[0].dtype]}"
             )
 
         table = self._exported_program.state_dict[node.name]  # type: ignore[union-attr]
@@ -77,19 +76,17 @@ class TableVisitor(NodeVisitor):
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 1)
+        validate_valid_dtype(
+            self.target, inputs, [ts.DType.INT8, ts.DType.INT16], output.tosa_spec
+        )
+        if inputs[0].dtype == ts.DType.INT8:
+            validate_valid_dtype(self.target, output, ts.DType.INT8, output.tosa_spec)
+        if inputs[0].dtype == ts.DType.INT16:
+            validate_valid_dtype(self.target, output, ts.DType.INT32, output.tosa_spec)
 
         if node.name not in self._exported_program.state_dict.keys():  # type: ignore[union-attr]
             raise RuntimeError(
                 f"Did not find key {node.name} in state_dict {self._exported_program.state_dict.keys()}."
-            )
-        if inputs[0].dtype == ts.DType.INT8 and output.dtype != ts.DType.INT8:
-            raise ValueError(f"Int8 tables need int8 output, got {output.dtype=}.")
-        if inputs[0].dtype == ts.DType.INT16 and output.dtype != ts.DType.INT32:
-            raise ValueError(f"Int16 tables need int32 output, got {output.dtype=}.")
-
-        if inputs[0].dtype not in (ts.DType.INT8, ts.DType.INT16):
-            raise ValueError(
-                f"TOSA.TABLE only supports int8 or int16 inputs, got {ts.DTypeNames[inputs[0].dtype]}"
             )
 
         table = self._exported_program.state_dict[node.name]
