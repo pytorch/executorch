@@ -60,7 +60,7 @@ using namespace ::executorch::runtime;
 + (NSDictionary<NSString *, BOOL (^)(NSString *)> *)predicates {
   return @{
     @"model" : ^BOOL(NSString *filename){
-      return [filename hasSuffix:@".pte"] && [filename.lowercaseString containsString:@"llama"];
+      return [filename hasSuffix:@".pte"] && [filename.lowercaseString containsString:@"llm"];
     },
     @"tokenizer" : ^BOOL(NSString *filename) {
       return [filename isEqual:@"tokenizer.bin"] || [filename isEqual:@"tokenizer.model"] || [filename isEqual:@"tokenizer.json"];
