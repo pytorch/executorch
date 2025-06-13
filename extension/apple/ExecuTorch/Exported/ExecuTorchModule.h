@@ -217,7 +217,7 @@ __attribute__((deprecated("This API is experimental.")))
 - (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
                                             withInputs:(NSArray<ExecuTorchValue *> *)values
                                                  error:(NSError **)error
-    NS_SWIFT_NAME(execute(_:_:));
+    NS_REFINED_FOR_SWIFT;
 
 /**
  * Executes a specific method with the provided single input value.
@@ -232,7 +232,7 @@ __attribute__((deprecated("This API is experimental.")))
 - (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
                                              withInput:(ExecuTorchValue *)value
                                                  error:(NSError **)error
-    NS_SWIFT_NAME(execute(_:_:));
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
  * Executes a specific method with no input values.
@@ -260,7 +260,7 @@ __attribute__((deprecated("This API is experimental.")))
 - (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
                                            withTensors:(NSArray<ExecuTorchTensor *> *)tensors
                                                  error:(NSError **)error
-    NS_SWIFT_NAME(execute(_:_:));
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
  * Executes a specific method with the provided single input tensor.
@@ -275,7 +275,7 @@ __attribute__((deprecated("This API is experimental.")))
 - (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
                                             withTensor:(ExecuTorchTensor *)tensor
                                                  error:(NSError **)error
-    NS_SWIFT_NAME(execute(_:_:));
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
  * Executes the "forward" method with the provided input values.
@@ -288,7 +288,7 @@ __attribute__((deprecated("This API is experimental.")))
  */
 - (nullable NSArray<ExecuTorchValue *> *)forwardWithInputs:(NSArray<ExecuTorchValue *> *)values
                                                      error:(NSError **)error
-    NS_SWIFT_NAME(forward(_:));
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
  * Executes the "forward" method with the provided single input value.
@@ -301,7 +301,7 @@ __attribute__((deprecated("This API is experimental.")))
  */
 - (nullable NSArray<ExecuTorchValue *> *)forwardWithInput:(ExecuTorchValue *)value
                                                     error:(NSError **)error
-    NS_SWIFT_NAME(forward(_:));
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
  * Executes the "forward" method with no inputs.
@@ -324,7 +324,7 @@ __attribute__((deprecated("This API is experimental.")))
  */
 - (nullable NSArray<ExecuTorchValue *> *)forwardWithTensors:(NSArray<ExecuTorchTensor *> *)tensors
                                                       error:(NSError **)error
-    NS_SWIFT_NAME(forward(_:));
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
  * Executes the "forward" method with the provided single input tensor.
@@ -337,7 +337,7 @@ __attribute__((deprecated("This API is experimental.")))
  */
 - (nullable NSArray<ExecuTorchValue *> *)forwardWithTensor:(ExecuTorchTensor *)tensor
                                                      error:(NSError **)error
-    NS_SWIFT_NAME(forward(_:));
+    NS_SWIFT_UNAVAILABLE("");
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;

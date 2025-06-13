@@ -12,18 +12,24 @@
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 function(gen_selected_ops)
-  set(arg_names LIB_NAME OPS_SCHEMA_YAML ROOT_OPS INCLUDE_ALL_OPS)
+  set(arg_names LIB_NAME OPS_SCHEMA_YAML ROOT_OPS INCLUDE_ALL_OPS OPS_FROM_MODEL DTYPE_SELECTIVE_BUILD)
   cmake_parse_arguments(GEN "" "" "${arg_names}" ${ARGN})
 
-  message(STATUS "Generating operator lib:")
+  message(STATUS "Generating selected operator lib:")
   message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
   message(STATUS "  OPS_SCHEMA_YAML: ${GEN_OPS_SCHEMA_YAML}")
   message(STATUS "  ROOT_OPS: ${GEN_ROOT_OPS}")
   message(STATUS "  INCLUDE_ALL_OPS: ${GEN_INCLUDE_ALL_OPS}")
+  message(STATUS "  OPS_FROM_MODEL: ${GEN_OPS_FROM_MODEL}")
+  message(STATUS "  DTYPE_SELECTIVE_BUILD: ${GEN_DTYPE_SELECTIVE_BUILD}")
+  if(GEN_DTYPE_SELECTIVE_BUILD)
+     message(STATUS "  DTYPE_SELECTIVE_BUILD is still WIP and may not be fully functional")
+  endif()
 
   set(_oplist_yaml
       ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_operators.yaml
   )
+
   file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
 
   file(GLOB_RECURSE _codegen_tools_srcs "${EXECUTORCH_ROOT}/codegen/tools/*.py")
@@ -43,6 +49,9 @@ function(gen_selected_ops)
   if(GEN_INCLUDE_ALL_OPS)
     list(APPEND _gen_oplist_command --include_all_operators)
   endif()
+  if(GEN_OPS_FROM_MODEL)
+    list(APPEND _gen_oplist_command --model_file_path="${GEN_OPS_FROM_MODEL}")
+  endif()
 
   message("Command - ${_gen_oplist_command}")
   add_custom_command(
@@ -53,6 +62,23 @@ function(gen_selected_ops)
     WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   )
 
+  if(GEN_DTYPE_SELECTIVE_BUILD)
+    set(_opvariant_h
+      ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_op_variants.h
+    )
+    set(_gen_opvariant_command "${PYTHON_EXECUTABLE}" -m codegen.tools.gen_selected_op_variants
+                          --yaml-file=${_oplist_yaml}
+                          --output-dir=${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/
+    )
+    message("Command - ${_gen_opvariant_command}")
+    add_custom_command(
+      COMMENT "Generating selected_op_variants.h for ${GEN_LIB_NAME}"
+      OUTPUT ${_opvariant_h}
+      COMMAND ${_gen_opvariant_command}
+      DEPENDS ${_oplist_yaml} ${_codegen_tools_srcs}
+      WORKING_DIRECTORY ${EXECUTORCH_ROOT}
+    )
+  endif()
 endfunction()
 
 # Codegen for registering kernels. Kernels are defined in functions_yaml and
