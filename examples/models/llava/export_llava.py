@@ -193,15 +193,18 @@ def export_token_embedding(llava, prompt):
 
     quantized_token_embed = quant_embedding(llava.model_.language_model.model)
 
-    qval = quantized_token_embed.embedding.weight
-    scale = quantized_token_embed.embedding.scales
+    print("GET ATTRS", quantized_token_embed)
+    print("GET ATTRS2", quantized_token_embed.embed_tokens)
 
-    qval_copy = quantized_token_embed_copy.embedding.weight.tensor_impl.get_plain()[0]
-    scale_copy = quantized_token_embed_copy.embedding.weight.tensor_impl.get_plain()[1]
-    zero_copy = quantized_token_embed_copy.embedding.weight.tensor_impl.get_plain()[2]
+    qval = quantized_token_embed.embed_tokens.weight
+    scale = quantized_token_embed.embed_tokens.scales
 
-    print("COPY TENSOR", quantized_token_embed_copy.embedding.weight)
-    print("ORIGINAL DTYPE", quantized_token_embed.embedding.dtype)
+    qval_copy = quantized_token_embed_copy.embed_tokens.weight.tensor_impl.get_plain()[0]
+    scale_copy = quantized_token_embed_copy.embed_tokens.weight.tensor_impl.get_plain()[1]
+    zero_copy = quantized_token_embed_copy.embed_tokens.weight.tensor_impl.get_plain()[2]
+
+    print("COPY TENSOR", quantized_token_embed_copy.embed_tokens.weight)
+    print("ORIGINAL DTYPE", quantized_token_embed.embed_tokens.dtype)
 
     print("COMPARING")
     print("qval_copy", qval_copy)
