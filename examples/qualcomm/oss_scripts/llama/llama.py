@@ -440,6 +440,7 @@ class SingleLlama:
                 alloc_graph_output=False,
             ),
             extract_delegate_segments=True,
+            do_quant_fusion_and_const_prop=True,
         )
         with torch.no_grad():
             # backend option

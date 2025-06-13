@@ -510,6 +510,7 @@ class Int8DynActInt8WeightLinear(torch.nn.Module):
             self.precision,
         )
 
+
 #########################################################################
 #####                   embedding table quantization               ######
 
@@ -734,7 +735,6 @@ class QuantizedGroupEmbedding(torch.nn.Module):
 def get_quant_embedding_transform(
     embedding_quantize: str,
     use_shared_embedding: bool = False,
-    dtype_override: Optional[DType] = None,
 ):
     use_torchao = embedding_quantize.startswith("torchao:")
     if use_torchao:
@@ -783,13 +783,12 @@ def get_quant_embedding_transform(
 
         return _torchao_embedding_quantizer
 
-    def _quantize_embedding(model):
+    def _embedding_quantizer(model):
         assert weight_dtype in [
             torch.int2,
             torch.int4,
             torch.int8,
         ], "Only 2, 4, or 8-bit embeddings are supported unless using torchao"
-        print("GRAN", granularity)
         quantize_(
             model,
             IntxWeightOnlyConfig(
@@ -801,7 +800,7 @@ def get_quant_embedding_transform(
         )
         return model
 
-    return _quantize_embedding
+    return _embedding_quantizer
 
 
 def get_quant_weight_transform(
