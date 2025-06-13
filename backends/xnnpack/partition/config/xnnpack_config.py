@@ -10,12 +10,13 @@ from enum import Enum
 from typing import List, Optional
 
 import torch
+from torch.export import ExportedProgram
+from executorch.backends.xnnpack.utils.quant_utils import is_dynamic_qdq
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
     PartitionerConfig,
 )
 from executorch.exir.backend.utils import WhyNoPartition
-from torch.export import ExportedProgram
 
 logger = logging.getLogger(__name__)
 why = WhyNoPartition(logger=logger)
@@ -220,9 +221,12 @@ class XNNPartitionerConfig(PartitionerConfig):
         valid_dtypes = {
             torch.float32,
             torch.float16,
-            torch.int8,
             torch.qint8,
         }
+        # Only allow int8 for quantization operations
+        if is_dynamic_qdq(node):
+            valid_dtypes.add(torch.int8)
+
         if (
             node.op != "placeholder"
             and node.op != "call_function"
