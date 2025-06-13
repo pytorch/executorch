@@ -8,6 +8,8 @@
 
 #include <ATen/cpu/vec/functional.h>
 #include <ATen/cpu/vec/vec.h>
+#include <executorch/kernels/optimized/cpu/binary_ops.h>
+#include <executorch/kernels/portable/cpu/pattern/comparison_op.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -79,52 +81,39 @@ Tensor& opt_le_tensor_out(
     return out;
   }
 
-  ET_KERNEL_CHECK(ctx, tensors_have_same_shape(a, b), InvalidArgument, out);
+  // Check for optimized broadcast paths
+  auto selected_optimized_path = select_optimized_path(a, b, out);
+  if (selected_optimized_path == ElementwiseOptimizedPath::kTreatAs1d) {
+    // Resize for dynamic shape
+    auto error = resize_to_broadcast_target_size(a, b, out);
+    ET_KERNEL_CHECK_MSG(
+        ctx,
+        error == Error::Ok,
+        InvalidArgument,
+        out,
+        "Failed to resize output tensor.");
 
-  // Resize for dynamic shape
-  auto error = resize_tensor(out, a.sizes());
-  ET_KERNEL_CHECK_MSG(
-      ctx,
-      error == Error::Ok,
-      InvalidArgument,
-      out,
-      "Failed to resize output tensor.");
-
-  if (a_type == b_type && a_type == out_type) {
-    ET_SWITCH_REAL_TYPES_AND(
-        Bool, out_type, ctx, "le.Tensor_out", CTYPE, [&]() {
-          using Vec = at::vec::Vectorized<CTYPE>;
-          at::vec::map2<CTYPE>(
-              [](Vec x, Vec y) { return x.le(y); },
-              out.mutable_data_ptr<CTYPE>(),
-              a.const_data_ptr<CTYPE>(),
-              b.const_data_ptr<CTYPE>(),
-              a.numel());
-        });
+    ET_SWITCH_REALB_TYPES(a_type, ctx, "le.Tensor_out", CTYPE, [&]() {
+      using Vec = at::vec::Vectorized<CTYPE>;
+      at::vec::map2<CTYPE>(
+          [](Vec x, Vec y) { return x.le(y); },
+          out.mutable_data_ptr<CTYPE>(),
+          a.const_data_ptr<CTYPE>(),
+          b.const_data_ptr<CTYPE>(),
+          out.numel());
+    });
+  } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
+    // Handle optimized broadcast cases
+    ET_SWITCH_REALB_TYPES(out_type, ctx, "le.Tensor_out", CTYPE, [&]() {
+      auto le_lambda = [](auto x, auto y) { return x.le(y); };
+      return torch::executor::handle_broadcast_elementwise<CTYPE>(
+          ctx, le_lambda, a, b, out, selected_optimized_path);
+    });
   } else {
-    ET_SWITCH_REAL_TYPES_AND(
-        Bool, a_type, ctx, "le.Tensor_out", CTYPE_A, [&]() {
-          ET_SWITCH_REAL_TYPES_AND(
-              Bool, b_type, ctx, "le.Tensor_out", CTYPE_B, [&]() {
-                using CTYPE_IN = typename torch::executor::
-                    promote_types<CTYPE_A, CTYPE_B>::type;
-                ET_DCHECK(
-                    CppTypeToScalarType<CTYPE_IN>::value ==
-                    promoteTypes(a_type, b_type));
-                ET_SWITCH_REAL_TYPES_AND(
-                    Bool, out_type, ctx, "le.Tensor_out", CTYPE_OUT, [&]() {
-                      const size_t n = a.numel();
-                      const CTYPE_A* a_data = a.const_data_ptr<CTYPE_A>();
-                      const CTYPE_B* b_data = b.const_data_ptr<CTYPE_B>();
-                      CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
-                      for (auto i = 0; i < n; ++i) {
-                        out_data[i] = static_cast<CTYPE_OUT>(
-                            static_cast<CTYPE_IN>(a_data[i]) <=
-                            static_cast<CTYPE_IN>(b_data[i]));
-                      }
-                    });
-              });
-        });
+    // @lint-ignore CLANGTIDY facebook-hte-CArray
+    static constexpr const char op_name[] = "le.Tensor_out";
+    return internal::comparison_tensor_out<std::less_equal, op_name>(
+        ctx, a, b, out);
   }
 
   return out;

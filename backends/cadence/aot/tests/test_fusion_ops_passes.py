@@ -20,6 +20,7 @@ from executorch.backends.cadence.aot.fuse_ops import (
     FuseMMWithAdd,
     FuseMulScalarIntoDequantPass,
     FuseMulTensorIntoDequantPass,
+    FuseMulTensorIntoQuantPass,
     FuseQuantDequantToRequantizePass,
     FuseTransposeOrPermuteOpPairsPass,
 )
@@ -586,6 +587,48 @@ class TestFusionPasses(TestFusionPassesBase):
             ):
                 deq_scale = node.args[1]
         self.assertEqual(deq_scale, dequant_scale * mul_value)
+
+    def test_fuse_mul_into_quant(self):
+        quant_scale = 1.5
+        mul_value = 10
+
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 32, dtype=torch.float32))
+        full = builder.call_operator(
+            op=exir_ops.edge.aten.full.default,
+            args=([1], mul_value),
+        )
+        mul = builder.call_operator(
+            op=exir_ops.edge.aten.mul.Tensor,
+            args=(x, full),
+        )
+        quant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(mul, quant_scale, 0, 0, 255, torch.uint8),
+        )
+        builder.output(quant)
+        graph_module = FuseMulTensorIntoQuantPass()(
+            builder.get_graph_module()
+        ).graph_module
+
+        # verify that the mul and full ops were removed
+        self.check_op_counts(
+            graph_module,
+            expected_op_counts={
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: 1,
+                exir_ops.edge.aten.full.default: 0,
+                exir_ops.edge.aten.mul.Tensor: 0,
+            },
+        )
+
+        # verify that the quant scale value was updated correctly
+        for node in graph_module.graph.nodes:
+            if (
+                node.target
+                == exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
+            ):
+                deq_scale = node.args[1]
+        self.assertEqual(deq_scale, quant_scale * mul_value)
 
     def test_fuse_then_transpose_pass(self):
         # Create a graph with full -> transpose.
