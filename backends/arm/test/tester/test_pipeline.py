@@ -4,7 +4,20 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, Type, TypeVar
+
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import torch
 
@@ -89,6 +102,9 @@ class BasePipelineMaker(Generic[T]):
         exir_ops: Optional[str | List[str]] = None,
         use_to_edge_transform_and_lower: bool = True,
         dynamic_shapes: Optional[Tuple[Any]] = None,
+        transform_passes: Optional[
+            Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
+        ] = None,
     ):
 
         self.tester = ArmTester(
@@ -96,6 +112,7 @@ class BasePipelineMaker(Generic[T]):
             example_inputs=test_data,
             compile_spec=compile_spec,
             dynamic_shapes=dynamic_shapes,
+            transform_passes=transform_passes,
         )
 
         self.aten_ops = aten_ops if isinstance(aten_ops, list) else [aten_ops]
@@ -388,6 +405,9 @@ class TosaPipelineMI(BasePipelineMaker, Generic[T]):
         rtol: float = 1e-03,
         qtol: int = 0,
         dynamic_shapes: Optional[Tuple[Any]] = None,
+        transform_passes: Optional[
+            Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
+        ] = None,
     ):
         tosa_profiles = {
             "0.80": TosaSpecification.create_from_string("TOSA-0.80+MI"),
@@ -405,7 +425,8 @@ class TosaPipelineMI(BasePipelineMaker, Generic[T]):
             compile_spec,
             exir_op,
             use_to_edge_transform_and_lower,
-            dynamic_shapes,
+            dynamic_shapes=dynamic_shapes,
+            transform_passes=transform_passes,
         )
         self.add_stage_after(
             "export",
