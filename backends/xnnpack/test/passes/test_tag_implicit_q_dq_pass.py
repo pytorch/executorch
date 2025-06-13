@@ -7,6 +7,7 @@
 import unittest
 
 import torch
+from executorch.backends.test.harness.stages import StageType
 from executorch.backends.xnnpack._passes.tag_implicit_q_dq_pass import (
     TagImplicitQDqPass,
 )
@@ -61,7 +62,7 @@ class TestTagImplicitQDq(unittest.TestCase):
             .to_edge()
             .run_passes(self.PassStage)
             .run_method_and_compare_outputs()
-            .get_artifact(Tester.stage_name(self.PassStage))
+            .get_artifact(StageType.RUN_PASSES)
         )
 
         for node in artifact.exported_program().module().graph.nodes:
