@@ -53,7 +53,11 @@ def define_common_targets():
     runtime.cxx_library(
         name = "aten_headers_for_executorch",
         srcs = [],
-        visibility = ["//executorch/kernels/optimized/...", "@EXECUTORCH_CLIENTS"],
+        visibility = [
+            "//executorch/kernels/optimized/...",
+            "//executorch/kernels/portable/cpu/util/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
         exported_deps = select({
             "DEFAULT": [],
             "ovr_config//cpu:arm64": [
@@ -77,7 +81,7 @@ def define_common_targets():
             # -Wmacro-redefined, and we only care about getting
             # reasonable vectorization and Sleef support.
             "-DCPU_CAPABILITY_AVX2",
-            "-DET_USE_PYTORCH_HEADERS",
+            "-DET_USE_PYTORCH_HEADERS=ET_HAS_EXCEPTIONS",
             "-DHAVE_AVX2_CPU_DEFINITION",
             "-DSTANDALONE_TORCH_HEADER",
         ] + get_sleef_preprocessor_flags(),
@@ -91,5 +95,5 @@ def define_common_targets():
             # linker failure.
             "ovr_config//cpu:arm64": get_sleef_preprocessor_flags(),
             "DEFAULT": [],
-        }) + ["-DSTANDALONE_TORCH_HEADER"] + ([] if runtime.is_oss else ["-DET_USE_PYTORCH_HEADERS"]),
+        }) + ["-DSTANDALONE_TORCH_HEADER"] + ([] if runtime.is_oss else ["-DET_USE_PYTORCH_HEADERS=ET_HAS_EXCEPTIONS"]),
     )
