@@ -20,34 +20,42 @@ inline constexpr bool should_include_kernel_dtype(
   const char *operator_name,
   executorch::aten::ScalarType scalar_type
 ) {
-  return ((executorch::aten::string_view(operator_name).compare("add.out") == 0)
-        && (scalar_type == executorch::aten::ScalarType::Float || scalar_type == executorch::aten::ScalarType::Int));
-// || ((executorch::aten::string_view(operator_name).compare("mul.out") == 0)
+//  return (((std::string_view(operator_name).compare("add.out") == 0))
 //        && (scalar_type == executorch::aten::ScalarType::Float));
-// || ((executorch::aten::string_view(operator_name).compare("sub.out") == 0)
-//        && (true));
-}
-
-//inline constexpr bool should_include_kernel_dtype(
-//  const char *operator_name,
-//  executorch::aten::ScalarType scalar_type
-//) {
 //  return ((executorch::aten::string_view(operator_name).compare("add.out") == 0)
 //        && (true))
 // || ((executorch::aten::string_view(operator_name).compare("mm.out") == 0)
 //        && (true));
 //}
+
+
+  return ((std::string_view(operator_name).compare("_native_batch_norm_legit_no_training.out") == 0)
+        && (scalar_type == executorch::aten::ScalarType::Float))
+ || ((std::string_view(operator_name).compare("add.out") == 0)
+        && (scalar_type == executorch::aten::ScalarType::Float))
+ || ((std::string_view(operator_name).compare("addmm.out") == 0)
+        && (scalar_type == executorch::aten::ScalarType::Float))
+ || ((std::string_view(operator_name).compare("clone.out") == 0)
+        && (scalar_type == executorch::aten::ScalarType::Float))
+ || ((std::string_view(operator_name).compare("convolution.out") == 0)
+        && (scalar_type == executorch::aten::ScalarType::Float))
+ || ((std::string_view(operator_name).compare("hardtanh.out") == 0)
+        && (scalar_type == executorch::aten::ScalarType::Float))
+ //|| ((std::string_view(operator_name).compare("hardtanh.out") == 0)
+ //       && (scalar_type == executorch::aten::ScalarType::Double))
+ || ((std::string_view(operator_name).compare("mean.out") == 0)
+        && (scalar_type == executorch::aten::ScalarType::Float))
+ || ((std::string_view(operator_name).compare("mean_dim.out") == 0)
+        && (scalar_type == executorch::aten::ScalarType::Float))
+ || ((std::string_view(operator_name).compare("permute_copy.out") == 0)
+        && (scalar_type == executorch::aten::ScalarType::Float));
+}
 /*
 inline constexpr bool should_include_kernel_dtype(
   const char* ,//operator_name,
   executorch::aten::ScalarType //scalar_type*
 ) {
   return true;
-
-//  return ((executorch::aten::string_view(operator_name).compare("my_ops::mul3.out") == 0)
-//        && (true))
-// || ((executorch::aten::string_view(operator_name).compare("my_ops::mul4.out") == 0)
-//        && (true));
 }
 */
 #endif

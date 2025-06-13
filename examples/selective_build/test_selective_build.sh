@@ -191,8 +191,10 @@ test_cmake_select_ops_in_model() {
     local example_dir=examples/selective_build
     local build_dir=cmake-out/${example_dir}
     rm -rf ${build_dir}
-    retry cmake -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
+    retry cmake -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
             -DEXECUTORCH_SELECT_OPS_FROM_MODEL="./mv2.pte" \
+            -DEXECUTORCH_DTYPE_SELECTIVE_BUILD=ON \
+            -DEXECUTORCH_OPTIMIZE_SIZE=ON \
             -DCMAKE_INSTALL_PREFIX=cmake-out \
             -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
             -B${build_dir} \
@@ -204,8 +206,8 @@ test_cmake_select_ops_in_model() {
     echo 'Running selective build test'
     ${build_dir}/selective_build_test --model_path="./mv2.pte"
 
-    echo "Removing mv2.pte"
-    rm "./mv2.pte"
+#    echo "Removing mv2.pte"
+#    rm "./mv2.pte"
 }
 
 if [[ -z $BUCK ]];

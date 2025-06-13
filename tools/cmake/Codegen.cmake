@@ -193,7 +193,7 @@ endfunction()
 
 # Generate a runtime lib for registering operators in Executorch
 function(gen_operators_lib)
-  set(multi_arg_names LIB_NAME KERNEL_LIBS DEPS)
+  set(multi_arg_names LIB_NAME KERNEL_LIBS DEPS DTYPE_SELECTIVE_BUILD)
   cmake_parse_arguments(GEN "" "" "${multi_arg_names}" ${ARGN})
 
   message("REMOVE_ME-gen_op_lib")
@@ -201,14 +201,27 @@ function(gen_operators_lib)
   message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
   message(STATUS "  KERNEL_LIBS: ${GEN_KERNEL_LIBS}")
   message(STATUS "  DEPS: ${GEN_DEPS}")
+  message(STATUS "  DTYPE_SELECTIVE_BUILD: ${GEN_DTYPE_SELECTIVE_BUILD}")
 
   set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
+  if(DTYPE_SELECTIVE_BUILD)
+    set(_opvariant_h
+      ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_op_variants.h
+    )
+  endif()
 
   add_library(${GEN_LIB_NAME})
+ 
+  set(_srcs_list
+    ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
+    ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
+  )
+  if(DTYPE_SELECTIVE_BUILD)
+    list(APPEND _srcs_list ${_opvariant_h})
+  endif()
   target_sources(
     ${GEN_LIB_NAME}
-    PRIVATE ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
-            ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
+    PRIVATE ${_srcs_list}
   )
   target_link_libraries(${GEN_LIB_NAME} PRIVATE ${GEN_DEPS})
   if(GEN_KERNEL_LIBS)
@@ -217,6 +230,9 @@ function(gen_operators_lib)
 
   target_link_options_shared_lib(${GEN_LIB_NAME})
   set(_generated_headers ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h)
+  if(DTYPE_SELECTIVE_BUILD)
+    list(APPEND _generated_headers ${_opvariant_h})
+  endif()
   set_target_properties(
     ${GEN_LIB_NAME} PROPERTIES PUBLIC_HEADER "${_generated_headers}"
   )
