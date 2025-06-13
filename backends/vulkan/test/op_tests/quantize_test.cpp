@@ -21,6 +21,7 @@
 
 #include <cassert>
 #include <iostream>
+#include <limits>
 
 float eps = 1e-7;
 
@@ -577,6 +578,11 @@ TEST(
 TEST(
     VulkanQuantizePerTensorTest,
     test_vulkan_quantize_per_tensor_float_to_uint8) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_quantize_per_tensor(
       {5, 3, 2, 4}, // input sizes
       0.01, // scale
@@ -590,6 +596,11 @@ TEST(
 TEST(
     VulkanQuantizePerTensorTest,
     test_vulkan_quantize_per_tensor_float_to_int8) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_quantize_per_tensor(
       {5, 3, 2, 4}, // input sizes
       0.01, // scale
@@ -629,6 +640,11 @@ TEST(
 TEST(
     VulkanQuantizePerTensorTest,
     test_vulkan_quantize_per_tensor_half_to_int8) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_float16_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_quantize_per_tensor(
       {2, 3}, // input sizes
       0.01, // scale
@@ -930,6 +946,11 @@ TEST(
 TEST(
     VulkanQuantizePerTensorTest,
     test_vulkan_quantize_per_token_float_to_uint8) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   std::vector<float> scales = {
       -0.5, -0.3, -0.2, 0, 0.1, 0.8, 0.1, 0.2, 0.3, 0.4};
   std::vector<int> zero_points = {-8, 0, 15, 20, 19, 12, 47, 1, -50, -12};
@@ -947,6 +968,11 @@ TEST(
 TEST(
     VulkanQuantizePerTensorTest,
     test_vulkan_quantize_per_token_float_to_int8) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   std::vector<float> scales = {
       -0.5, -0.3, -0.2, 0, 0.1, 0.8, 0.1, 0.2, 0.3, 0.4};
   std::vector<int> zero_points = {-8, 0, 15, 20, 19, 12, 47, 1, -50, -12};
@@ -1002,6 +1028,11 @@ TEST(
 TEST(
     VulkanQuantizePerTensorTest,
     test_vulkan_quantize_per_token_float_to_uint8_many_tokens) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   std::vector<float> scales(18, 0.1);
   std::vector<int> zero_points(18, 5);
 
@@ -1021,6 +1052,11 @@ TEST(
 }
 
 TEST(VulkanQuantizePerTensorTest, test_vulkan_quantize_per_token_half_to_int8) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_float16_buffers_support()) {
+    GTEST_SKIP();
+  }
   std::vector<float> scales = {0.1, 0.2};
   std::vector<int> zero_points = {0, 5};
 
