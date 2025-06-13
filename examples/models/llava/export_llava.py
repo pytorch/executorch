@@ -210,6 +210,7 @@ def export_token_embedding(llava, prompt):
     print("qval_copy", qval_copy)
     print("qval", qval)
     print("MATCHING", (qval_copy == qval).to(torch.float32).mean())
+    print("MAX DIFF", (qval_copy.to(torch.int32) - qval.to(torch.int32)).abs().max())
 
     print("scale_copy", scale_copy)
     print("scale", scale)
@@ -240,7 +241,7 @@ def export_token_embedding(llava, prompt):
     
     print("token_embedding_ep_copy", token_embedding_ep_copy)
     print("token_embedding_ep", token_embedding_ep)
-    return token_embedding_ep
+    return token_embedding_ep_copy
 
 
 def export_all(llava_model: LlavaModel):
