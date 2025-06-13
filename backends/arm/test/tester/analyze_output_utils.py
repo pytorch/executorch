@@ -125,7 +125,9 @@ def print_error_diffs(
         result = result[0]
 
     if not result.shape == reference.shape:
-        raise ValueError("Output needs to be of same shape")
+        raise ValueError(
+            f"Output needs to be of same shape: {result.shape} != {reference.shape}"
+        )
     shape = result.shape
 
     match len(shape):
