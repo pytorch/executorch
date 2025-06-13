@@ -63,7 +63,7 @@ class TestLLMEdgeManager(unittest.TestCase):
         self.assertIsInstance(result[0], dict)
         self.assertIn(1, result[0])
         # Check that the value at key 1 is a torch.export.Dim with the correct max value
-        self.assertEqual(result[0][1].max, self.max_seq_len - 1)
+        self.assertEqual(result[0][1].max, self.max_seq_len)
 
     def test_get_dynamic_shape_with_dynamic_shape_enabled_with_kv_cache(self) -> None:
         """Test _get_dynamic_shape when enable_dynamic_shape=True and use_kv_cache=True."""
@@ -88,7 +88,7 @@ class TestLLMEdgeManager(unittest.TestCase):
         # Check first element (tokens dimension)
         self.assertIsInstance(result[0], dict)
         self.assertIn(1, result[0])
-        self.assertEqual(result[0][1].max, self.max_seq_len - 1)
+        self.assertEqual(result[0][1].max, self.max_seq_len)
 
         # Check second element (input_pos dimension)
         self.assertIsInstance(result[1], dict)
