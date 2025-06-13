@@ -703,6 +703,11 @@ TEST(
 TEST(
     VulkanDequantizePerTensorTest,
     test_vulkan_dequantize_per_tensor_uint8_to_float) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_dequantize_per_tensor(
       {2, 3, 4}, // input sizes
       0.1, // scale
@@ -716,6 +721,11 @@ TEST(
 TEST(
     VulkanDequantizePerTensorTest,
     test_vulkan_dequantize_per_tensor_int8_to_float) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_dequantize_per_tensor(
       {3, 4}, // input sizes
       0.05, // scale
@@ -742,6 +752,16 @@ TEST(
 TEST(
     VulkanDequantizePerTensorTest,
     test_vulkan_dequantize_per_tensor_int8_to_half) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_float16_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_dequantize_per_tensor(
       {2, 3}, // input sizes
       0.05, // scale
@@ -755,6 +775,11 @@ TEST(
 TEST(
     VulkanDequantizePerTensorTest,
     test_vulkan_dequantize_per_tensor_int32_to_half) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_float16_buffers_support()) {
+    GTEST_SKIP();
+  }
   // Use much smaller scale to avoid overflow to infinity in half precision
   // Half precision max value is ~65504, so with int32 values around 2e9,
   // we need scales smaller than 65504/2e9 ≈ 3e-5 to avoid overflow
@@ -1153,6 +1178,11 @@ TEST(
 TEST(
     VulkanDequantizePerTokenTest,
     test_vulkan_dequantize_per_token_uint8_to_float) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   std::vector<float> scales = {0.1, 0.2, 0.3, 0.4, 0.5, 0.6};
   std::vector<int> zero_points = {5, 10, 15, 20, 25, 30};
 
@@ -1169,6 +1199,11 @@ TEST(
 TEST(
     VulkanDequantizePerTokenTest,
     test_vulkan_dequantize_per_token_int8_to_float) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   std::vector<float> scales = {0.05, 0.0};
   std::vector<int> zero_points = {10, -5};
 
@@ -1202,6 +1237,16 @@ TEST(
 TEST(
     VulkanDequantizePerTokenTest,
     test_vulkan_dequantize_per_token_int8_to_half) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_float16_buffers_support()) {
+    GTEST_SKIP();
+  }
   std::vector<float> scales = {0.05, 0.2};
   std::vector<int> zero_points = {2, -5};
 
@@ -1218,6 +1263,11 @@ TEST(
 TEST(
     VulkanDequantizePerTokenTest,
     test_vulkan_dequantize_per_token_int32_to_half) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_float16_buffers_support()) {
+    GTEST_SKIP();
+  }
   // Use much smaller scales to avoid overflow to infinity in half precision
   // Half precision max value is ~65504, so with int32 values around 2e9,
   // we need scales smaller than 65504/2e9 ≈ 3e-5 to avoid overflow
