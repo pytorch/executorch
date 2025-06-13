@@ -154,7 +154,7 @@ void MunmapSegment(void* context, void* data, size_t size) {
  * Helper for input validation.
  */
 Error MmapDataLoader::validate_input(size_t offset, size_t size) const {
-    ET_CHECK_OR_RETURN_ERROR(
+  ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
       fd_ >= 0,
       InvalidState,
@@ -180,7 +180,6 @@ Result<FreeableBuffer> MmapDataLoader::load(
     size_t offset,
     size_t size,
     ET_UNUSED const DataLoader::SegmentInfo& segment_info) const {
-
   // Validate input.
   auto err = validate_input(offset, size);
   if (err != Error::Ok) {
@@ -286,8 +285,8 @@ Error MmapDataLoader::load_into(
     size_t size,
     ET_UNUSED const SegmentInfo& segment_info,
     void* buffer) const {
-
-  ET_CHECK_OR_RETURN_ERROR(buffer != nullptr, InvalidArgument, "Buffer is null");
+  ET_CHECK_OR_RETURN_ERROR(
+      buffer != nullptr, InvalidArgument, "Buffer is null");
 
   // Validate input.
   auto err = validate_input(offset, size);

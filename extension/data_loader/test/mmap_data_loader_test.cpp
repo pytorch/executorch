@@ -415,12 +415,13 @@ TEST_F(MmapDataLoaderTest, LoadIntoCopiesOffsetCorrectly) {
 
   // Copying 3 bytes starting at offset 2 = "CDE"
   const size_t offset = 2;
-  const size_t size   = 3;
+  const size_t size = 3;
   uint8_t dst[size];
 
   // Call load_into()
   Error err = mdl->load_into(
-      offset, size,
+      offset,
+      size,
       DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
       dst);
   ASSERT_EQ(err, Error::Ok);
