@@ -19,6 +19,7 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_same_dtype,
+    validate_valid_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -50,6 +51,12 @@ class MinVisitor_0_80(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs, output], ts)
+        validate_valid_dtype(
+            self.target,
+            [*inputs, output],
+            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
         scale_back = 1.0
         min_output = output
@@ -113,6 +120,12 @@ class MinVisitor(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs, output], ts)
+        validate_valid_dtype(
+            self.target,
+            [*inputs, output],
+            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
         scale_back = 1.0
         min_output = output
