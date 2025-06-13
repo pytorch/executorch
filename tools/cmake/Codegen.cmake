@@ -103,7 +103,6 @@ function(generate_bindings_for_kernels)
   set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
   # By default selective build output is selected_operators.yaml
   set(_oplist_yaml ${_out_dir}/selected_operators.yaml)
-  set(_opvariants_h ${_out_dir}/selected_op_variants.h)
 
   # Command to codegen C++ wrappers to register custom ops to both PyTorch and
   # Executorch runtime.
@@ -144,13 +143,14 @@ function(generate_bindings_for_kernels)
          ${_out_dir}/RegisterSchema.cpp ${_out_dir}/CustomOpsNativeFunctions.h
     )
   endif()
-
+  
   add_custom_command(
     COMMENT "Generating code for kernel registration"
     OUTPUT ${_gen_command_sources}
     COMMAND ${_gen_command}
-    DEPENDS ${_oplist_yaml} ${_opvariants_h} ${GEN_CUSTOM_OPS_YAML} ${GEN_FUNCTIONS_YAML}
-            ${_codegen_templates} ${_torchgen_srcs}
+    DEPENDS ${_oplist_yaml} ${GEN_CUSTOM_OPS_YAML}
+            ${GEN_FUNCTIONS_YAML} ${_codegen_templates}
+            ${_torchgen_srcs}
     WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   )
   # Make generated file list available in parent scope
