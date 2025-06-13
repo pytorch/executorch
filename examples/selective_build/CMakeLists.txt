@@ -71,6 +71,11 @@ option(EXECUTORCH_DTYPE_SELECTIVE_BUILD "Enable dtype selective build." OFF
 )
 # ------------------------------- OPTIONS END --------------------------------
 
+# Add this to ensure that gc is stripping.
+set(CMAKE_CXX_FLAGS_RELEASE
+    "-ffunction-sections -fdata-sections -Os"
+)
+
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
 #
@@ -129,7 +134,9 @@ generate_bindings_for_kernels(
 )
 
 gen_operators_lib(
-  LIB_NAME "select_build_lib" KERNEL_LIBS ${_kernel_lib} DEPS executorch_core
+  LIB_NAME "select_build_lib" KERNEL_LIBS ${_kernel_lib} DEPS executorch_core DTYPE_SELECTIVE_BUILD
+   # TODO: use separate flag for dtype selective build.
+  "${EXECUTORCH_SELECT_OPS_FROM_MODEL}"
 )
 
 list(TRANSFORM _executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")

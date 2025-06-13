@@ -191,7 +191,7 @@ endfunction()
 
 # Generate a runtime lib for registering operators in Executorch
 function(gen_operators_lib)
-  set(multi_arg_names LIB_NAME KERNEL_LIBS DEPS)
+  set(multi_arg_names LIB_NAME KERNEL_LIBS DEPS DTYPE_SELECTIVE_BUILD)
   cmake_parse_arguments(GEN "" "" "${multi_arg_names}" ${ARGN})
 
   message(STATUS "Generating operator lib:")
@@ -208,7 +208,51 @@ function(gen_operators_lib)
             ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
   )
   target_link_libraries(${GEN_LIB_NAME} PRIVATE ${GEN_DEPS})
-  if(GEN_KERNEL_LIBS)
+
+  if (GEN_DTYPE_SELECTIVE_BUILD)
+    message(STATUS "DTYPE_SELECTIVE_BUILD enabled")
+    # TODO: Error out if portable kernels are not in the list.
+    if("portable_kernels" IN_LIST GEN_KERNEL_LIBS)
+      message(STATUS "portable_kernels is in the list.")
+      list(REMOVE_ITEM GEN_KERNEL_LIBS portable_kernels)
+
+      # list(TRANSFORM _kernels_util_all_deps__srcs PREPEND "${EXECUTORCH_ROOT}/")
+      set(_kernels_util_deps_srcs_full)
+      foreach(src IN LISTS _kernels_util_all_deps__srcs)
+        list(APPEND _kernels_util_deps_srcs_full "${EXECUTORCH_ROOT}/${src}")
+      endforeach()
+      add_library(selected_kernels_util_all_deps ${_kernels_util_deps_srcs_full})
+
+      set(_common_compile_options -Wno-deprecated-declarations)
+      target_compile_options(selected_kernels_util_all_deps PUBLIC ${_common_compile_options})
+      target_link_libraries(selected_kernels_util_all_deps PRIVATE executorch_core)
+      target_include_directories(selected_kernels_util_all_deps PUBLIC ${_common_include_directories})
+      target_compile_definitions(selected_kernels_util_all_deps PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
+      target_compile_options(selected_kernels_util_all_deps PUBLIC ${_common_compile_options})
+
+      # Rebuild portable kernels.
+      # list(TRANSFORM _portable_kernels__srcs PREPEND "${EXECUTORCH_ROOT}/")
+      set(_portable_kernels_srcs_full)
+      foreach(src IN LISTS _portable_kernels__srcs)
+        list(APPEND _portable_kernels_srcs_full "${EXECUTORCH_ROOT}/${src}")
+      endforeach()
+      add_library(selected_portable_kernels ${_portable_kernels_srcs_full})
+      set(_opvariant_h ${_out_dir}/selected_op_variants.h)
+      target_sources(selected_portable_kernels PRIVATE ${_opvariant_h})
+      target_include_directories(selected_portable_kernels PRIVATE ${_out_dir})
+
+      target_link_libraries(selected_portable_kernels PRIVATE executorch_core selected_kernels_util_all_deps)
+      target_compile_options(selected_portable_kernels PUBLIC ${_common_compile_options})
+
+      target_compile_definitions(selected_portable_kernels
+        PRIVATE
+        EXECUTORCH_SELECTIVE_BUILD_DTYPE
+      )
+      # target_link_libraries(${GEN_LIB_NAME} PUBLIC selected_portable_kernels ${GEN_KERNEL_LIBS})
+      target_link_libraries(${GEN_LIB_NAME} PUBLIC selected_portable_kernels)
+    endif()
+  else()
+    message("Hi! as normal")
     target_link_libraries(${GEN_LIB_NAME} PUBLIC ${GEN_KERNEL_LIBS})
   endif()
 

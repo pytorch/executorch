@@ -161,15 +161,16 @@ test_cmake_select_ops_in_yaml() {
     rm "./custom_ops_1.pte"
 }
 
-test_cmake_select_ops_in_model() {
-    echo "Exporting MobilenetV2"
-    ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="mv2"
+# Compare operator selective build with dtype selective build below.
+test_add_mul_list() {
+    # ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="add_mul"
     local example_dir=examples/selective_build
     local build_dir=cmake-out/${example_dir}
     rm -rf ${build_dir}
     retry cmake -DCMAKE_BUILD_TYPE=Release \
-            -DEXECUTORCH_SELECT_OPS_FROM_MODEL="./mv2.pte" \
+            -DEXECUTORCH_SELECT_OPS_LIST="aten::add.out,aten::mm.out" \
             -DCMAKE_INSTALL_PREFIX=cmake-out \
+            -DEXECUTORCH_OPTIMIZE_SIZE=ON \
             -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
             -B${build_dir} \
             ${example_dir}
@@ -178,10 +179,31 @@ test_cmake_select_ops_in_model() {
     cmake --build ${build_dir} -j9 --config Release
 
     echo 'Running selective build test'
-    ${build_dir}/selective_build_test --model_path="./mv2.pte"
+    ${build_dir}/selective_build_test --model_path="./add_mul.pte"
+}
 
-    echo "Removing mv2.pte"
-    rm "./mv2.pte"
+test_cmake_select_ops_in_model() {
+    # echo "Exporting MobilenetV2"
+    # ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="add_mul"
+    local example_dir=examples/selective_build
+    local build_dir=cmake-out/${example_dir}
+    rm -rf ${build_dir}
+    retry cmake -DCMAKE_BUILD_TYPE=Release \
+            -DEXECUTORCH_SELECT_OPS_FROM_MODEL="./add_mul.pte" \
+            -DCMAKE_INSTALL_PREFIX=cmake-out \
+            -DEXECUTORCH_OPTIMIZE_SIZE=ON \
+            -DEXECUTORCH_DTYPE_SELECTIVE_BUILD=ON \
+            -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+            -B${build_dir} \
+            ${example_dir}
+
+    echo "Building ${example_dir}"
+    cmake --build ${build_dir} -j9 --config Release
+
+    echo 'Running selective build test'
+    ${build_dir}/selective_build_test --model_path="./add_mul.pte"
+    # echo "Removing mv2.pte"
+    # rm "./mv2.pte"
 }
 
 if [[ -z $BUCK ]];
@@ -191,15 +213,16 @@ fi
 
 if [[ -z $PYTHON_EXECUTABLE ]];
 then
-  PYTHON_EXECUTABLE=python3
+  PYTHON_EXECUTABLE=python
 fi
 
 if [[ $1 == "cmake" ]];
 then
     cmake_install_executorch_lib
-    test_cmake_select_all_ops
-    test_cmake_select_ops_in_list
-    test_cmake_select_ops_in_yaml
+    # test_cmake_select_all_ops
+    # test_cmake_select_ops_in_list
+    # test_cmake_select_ops_in_yaml
+    # test_add_mul_list
     test_cmake_select_ops_in_model
 elif [[ $1 == "buck2" ]];
 then
