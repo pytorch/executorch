@@ -2300,6 +2300,52 @@ class ReplaceMatmulWithTransposedMatmulPass(ExportPass):
         return result
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class ReplaceMulTensorWithMulAndFullOpsPass(ExportPass):
+    """
+    Extracts a single value argument of mul op to a separate full op.
+    """
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        for mul_node in graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.mul.Tensor
+        ):
+            x_arg, const_arg = mul_node.args
+
+            # Swap arguments if the order is wrong
+            if isinstance(const_arg, torch.fx.Node):
+                x_arg, const_arg = const_arg, x_arg
+
+            # Skip if the const_arg is not a scalar
+            if not isinstance(const_arg, (float, int)) or not isinstance(
+                x_arg, torch.fx.Node
+            ):
+                continue
+
+            # Cast the const_arg to the dtype of the x_arg
+            full_arg = self.resolve_full_arg(x_arg, const_arg)
+
+            # Extract an argument to a separate full op.
+            with graph_module.graph.inserting_before(mul_node):
+                full_tensor = graph_module.graph.call_function(
+                    exir_ops.edge.aten.full.default, args=([1], full_arg)
+                )
+                new_mul_node = graph_module.graph.call_function(
+                    torch.ops.aten.mul.Tensor, args=(x_arg, full_tensor)
+                )
+            # Replace the old mul with a newly created mul.
+            mul_node.replace_all_uses_with(new_mul_node)
+            graph_module.graph.erase_node(mul_node)
+        return super().call(graph_module)
+
+    def resolve_full_arg(self, x_arg, const_arg):
+        if x_arg.meta["val"].dtype == torch.float32 and isinstance(const_arg, int):
+            const_arg = float(const_arg)
+        if x_arg.meta["val"].dtype == torch.int32 and isinstance(const_arg, float):
+            const_arg = int(const_arg)
+        return const_arg
+
+
 # This class encapsulates all the functions that replace/switch one op in the
 # graph with another.
 class CadenceReplaceOpsInGraph:
