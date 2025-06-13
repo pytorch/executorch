@@ -309,6 +309,13 @@ runtime::Error Module::set_output(
       output_tensor.mutable_data_ptr(), output_tensor.nbytes(), output_index);
 }
 
-} // namespace ET_MODULE_NAMESPACE
+runtime::Error Module::update(
+    const std::string& method_name,
+    runtime::ArrayRef<runtime::Entry> backend_options) {
+  ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
+  auto& method = methods_.at(method_name).method;
+  return method->update(backend_options);
+}
+
 } // namespace extension
 } // namespace executorch

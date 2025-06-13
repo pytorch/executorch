@@ -1513,7 +1513,8 @@ Error Method::experimental_step() {
   return step();
 }
 
-Error Method::update(executorch::runtime::ArrayRef<executorch::runtime::Entry> backend_option) {
+Error Method::update(
+    executorch::runtime::ArrayRef<executorch::runtime::Entry> backend_option) {
   for (const auto& entry : backend_option) {
     const char* backend_name = entry.backend_name;
     auto backend_options = entry.options;

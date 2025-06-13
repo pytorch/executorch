@@ -92,6 +92,23 @@ def define_common_targets(is_fbcode = False):
         ],
     )
 
+    runtime.cxx_library(
+        name = "stub_backend",
+        srcs = [],
+        exported_headers = [
+            "stub_backend.h",
+        ],
+        visibility = [
+            "//executorch/runtime/executor/test/...",
+            "//executorch/extension/module/test/...",
+            "//executorch/test/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        exported_deps = [
+            "//executorch/runtime/backend:interface",
+        ],
+    )
+
     runtime.cxx_test(
         name = "pte_data_map_test",
         srcs = [
@@ -178,6 +195,7 @@ def define_common_targets(is_fbcode = False):
             ],
             deps = [
                 ":managed_memory_manager",
+                ":stub_backend",
                 "//executorch/runtime/backend:interface",
                 "//executorch/runtime/executor:program",
                 "//executorch/extension/data_loader:buffer_data_loader",
@@ -185,7 +203,8 @@ def define_common_targets(is_fbcode = False):
             ],
             env = {
                 "ET_MODULE_ADD_MUL_DELEGATED_PATH": "$(location fbcode//executorch/test/models:exported_delegated_add_mul[ModuleAddMul.pte])",
-            },        )
+            },
+        )
 
         runtime.cxx_test(
             name = "program_test",
