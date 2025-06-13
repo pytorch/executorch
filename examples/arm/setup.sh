@@ -287,6 +287,7 @@ function create_setup_path(){
         toolchain_bin_path="$(cd ${toolchain_dir}/bin && pwd)"
         echo "export PATH=\${PATH}:${toolchain_bin_path}" >> ${setup_path_script}
     fi
+    echo "export PATH=\${PATH}:${custom_toolchain}" >> ${setup_path_script}
 }
 
 function check_platform_support() {
