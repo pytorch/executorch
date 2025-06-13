@@ -14,6 +14,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include <executorch/runtime/backend/backend_options.h>
+#include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/executor/program.h>
 
 #ifdef USE_ATEN_LIB
@@ -487,10 +489,41 @@ class Module {
    *
    * @returns An Error to indicate success or failure.
    */
-  ET_EXPERIMENTAL ET_NODISCARD inline runtime::Error update(
-      runtime::ArrayRef<runtime::Entry> backend_options) {
-    return update("forward", backend_options);
-  }
+  ET_EXPERIMENTAL ET_NODISCARD runtime::Error update(
+      runtime::ArrayRef<runtime::Entry> backend_options);
+
+  /**
+   * EXPERIMENTAL: Updates backend options for a specific method.
+   * Loads the program and method before updating if needed. It uses simple
+   * std library like unordered_map to store backend options.
+   *
+   * @param[in] method_name The name of the method to update.
+   * @param[in] backend_options A map of <backend_name,
+   * vector<backend_options>>.
+   *
+   * @returns An Error to indicate success or failure.
+   */
+  ET_EXPERIMENTAL ET_NODISCARD runtime::Error update(
+      const std::string& method_name,
+      const std::unordered_map<
+          std::string,
+          std::vector<runtime::BackendOption>>& backend_options);
+
+  /**
+   * EXPERIMENTAL: Updates backend options for a specific method.
+   * Loads the program and method before updating if needed. It uses simple
+   * std library like unordered_map to store backend options.
+   *
+   * @param[in] method_name The name of the method to update.
+   * @param[in] backend_options A map of <backend_name,
+   * vector<backend_options>>.
+   *
+   * @returns An Error to indicate success or failure.
+   */
+  ET_EXPERIMENTAL ET_NODISCARD runtime::Error update(
+      const std::unordered_map<
+          std::string,
+          std::vector<runtime::BackendOption>>& backend_options);
 
   /**
    * Retrieves the EventTracer instance being used by the Module.
