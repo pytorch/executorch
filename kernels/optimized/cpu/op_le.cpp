@@ -6,9 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/optimized/cpu/binary_ops.h>
 #include <ATen/cpu/vec/functional.h>
 #include <ATen/cpu/vec/vec.h>
+#include <executorch/kernels/optimized/cpu/binary_ops.h>
 #include <executorch/kernels/portable/cpu/pattern/comparison_op.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
