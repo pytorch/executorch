@@ -109,6 +109,7 @@ class AddmmPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
+        # pyre-ignore: Incompatible return type [7]: Expected `OpOverload` but got `OpOverloadPacket`.
         return torch.ops.cadence.quantized_linear
 
 
