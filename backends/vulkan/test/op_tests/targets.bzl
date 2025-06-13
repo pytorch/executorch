@@ -142,6 +142,28 @@ def define_common_targets(is_fbcode = False):
         platforms = get_platforms(),
     )
 
+    runtime.cxx_library(
+        name = "test_utils",
+        srcs = [
+            "test_utils.cpp",
+        ],
+        headers = [
+            "test_utils.h",
+        ],
+        exported_headers = [
+            "test_utils.h",
+        ],
+        deps = [
+            "//executorch/backends/vulkan:vulkan_graph_runtime",
+            "//executorch/runtime/core/exec_aten:lib",
+            runtime.external_dep_location("libtorch"),
+        ],
+        visibility = [
+            "//executorch/backends/vulkan/test/op_tests/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
     define_test_targets(
         "compute_graph_op_tests",
         src_file=":generated_op_correctness_tests_cpp[op_tests.cpp]"
@@ -150,9 +172,20 @@ def define_common_targets(is_fbcode = False):
     define_test_targets(
         "sdpa_test",
         extra_deps = [
+            ":test_utils",
             "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
             "//executorch/extension/tensor:tensor",
         ]
     )
-    define_test_targets("linear_weight_int4_test")
-    define_test_targets("rotary_embedding_test")
+    define_test_targets(
+        "linear_weight_int4_test",
+        extra_deps = [
+            ":test_utils",
+        ]
+    )
+    define_test_targets(
+        "rotary_embedding_test",
+        extra_deps = [
+            ":test_utils",
+        ]
+    )
