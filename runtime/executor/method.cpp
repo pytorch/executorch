@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <cstdio>
 
+#include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
@@ -1510,6 +1511,26 @@ Error Method::step() {
 
 Error Method::experimental_step() {
   return step();
+}
+
+Error Method::update(executorch::runtime::ArrayRef<executorch::runtime::Entry> backend_option) {
+  for (const auto& entry : backend_option) {
+    const char* backend_name = entry.backend_name;
+    auto backend_options = entry.options;
+
+    auto backend_class = get_backend_class(backend_name);
+    if (!backend_class) {
+      return Error::NotFound;
+    }
+
+    BackendUpdateContext backend_update_context;
+    auto update_result =
+        backend_class->update(backend_update_context, backend_options);
+    if (update_result != Error::Ok) {
+      return update_result;
+    }
+  }
+  return Error::Ok;
 }
 
 Error Method::execute() {
