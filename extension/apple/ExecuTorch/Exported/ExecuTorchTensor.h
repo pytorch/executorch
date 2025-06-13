@@ -89,7 +89,7 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape)
  * This class encapsulates a native TensorPtr instance and provides a variety of
  * initializers and utility methods to work with tensor data.
  */
-NS_SWIFT_NAME(Tensor)
+NS_REFINED_FOR_SWIFT
 __attribute__((deprecated("This API is experimental.")))
 @interface ExecuTorchTensor : NSObject<NSCopying>
 
@@ -152,16 +152,18 @@ __attribute__((deprecated("This API is experimental.")))
     NS_DESIGNATED_INITIALIZER NS_SWIFT_UNAVAILABLE("");
 
 /**
- * Creates a new tensor by copying an existing tensor.
+ * Creates a new tensor that shares the underlying data storage with the
+ * given tensor. This new tensor is a view and does not own the data.
  *
- * @param otherTensor The tensor instance to copy.
- * @return A new ExecuTorchTensor instance that is a copy of otherTensor.
+ * @param otherTensor The tensor instance to create a view of.
+ * @return A new ExecuTorchTensor instance that shares data with otherTensor.
  */
 - (instancetype)initWithTensor:(ExecuTorchTensor *)otherTensor
     NS_SWIFT_NAME(init(_:));
 
 /**
- * Returns a copy of the tensor.
+ * Creates a deep copy of the tensor.
+ * The new tensor will have its own copy of the data.
  *
  * @return A new ExecuTorchTensor instance that is a duplicate of the current tensor.
  */
@@ -176,7 +178,7 @@ __attribute__((deprecated("This API is experimental.")))
  *   - and the data type.
  */
 - (void)bytesWithHandler:(NS_NOESCAPE void (^)(const void *pointer, NSInteger count, ExecuTorchDataType dataType))handler
-    NS_REFINED_FOR_SWIFT;
+    NS_SWIFT_NAME(bytes(_:));
 
 /**
  * Executes a block with a pointer to the tensor's mutable byte data.
@@ -187,7 +189,7 @@ __attribute__((deprecated("This API is experimental.")))
  *   - and the data type.
  */
 - (void)mutableBytesWithHandler:(NS_NOESCAPE void (^)(void *pointer, NSInteger count, ExecuTorchDataType dataType))handler
-    NS_REFINED_FOR_SWIFT;
+    NS_SWIFT_NAME(mutableBytes(_:));
 
 /**
  * Resizes the tensor to a new shape.
@@ -204,7 +206,8 @@ __attribute__((deprecated("This API is experimental.")))
  * Determines whether the current tensor is equal to another tensor.
  *
  * @param other Another ExecuTorchTensor instance to compare against.
- * @return YES if the tensors have the same type, shape, strides, and data; otherwise, NO.
+ * @return YES if the tensors have the same data type, shape, dimension order,
+ * strides, and underlying data; otherwise, NO.
  */
 - (BOOL)isEqualToTensor:(nullable ExecuTorchTensor *)other;
 
@@ -350,7 +353,9 @@ __attribute__((deprecated("This API is experimental.")))
 @interface ExecuTorchTensor (Data)
 
 /**
- * Initializes a tensor using an NSData object as the underlying data buffer.
+ * Initializes a tensor using an NSData object. The tensor will hold a
+ * strong reference to the NSData object to manage the lifetime of the
+ * underlying data buffer, which is not copied.
  *
  * @param data An NSData object containing the tensor data.
  * @param shape An NSArray of NSNumber objects representing the tensor's shape.
