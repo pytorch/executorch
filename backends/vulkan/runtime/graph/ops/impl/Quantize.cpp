@@ -74,7 +74,7 @@ void add_quantize_per_tensor_node(
       default_pick_global_wg_size,
       default_pick_local_wg_size,
       // Inputs and Outputs
-      {{input, vkapi::kRead}, {output, vkapi::kReadWrite}},
+      {{output, vkapi::kWrite}, {input, vkapi::kRead}},
       // Shader param buffers
       param_ubos,
       // Push Constants
@@ -134,8 +134,8 @@ void add_quantize_per_token_node(
       default_pick_global_wg_size,
       default_pick_local_wg_size,
       // Inputs and Outputs
-      {{input, vkapi::kRead},
-       {output, vkapi::kWrite},
+      {{output, vkapi::kWrite},
+       {input, vkapi::kRead},
        {{scale, zero_point}, vkapi::kRead}},
       // Shader param buffers
       param_ubos,
