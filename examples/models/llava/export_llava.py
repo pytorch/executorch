@@ -26,7 +26,6 @@ from executorch.examples.models.llama.source_transformation.custom_kv_cache impo
 from executorch.examples.models.llama.source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
-    EmbeddingQuantHandler,
 )
 from executorch.examples.models.llama.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
@@ -178,51 +177,9 @@ def export_image_encoder(llava, resized, dynamic_shapes):
 
 
 def export_token_embedding(llava, prompt):
-    import copy
-    model_copy = copy.deepcopy(llava.model_.language_model.model)
-    quantized_token_embed_copy = get_quant_embedding_transform("8,32")(
-        model_copy,
+    quantized_token_embed = get_quant_embedding_transform("8,32")(
+        llava.model_.language_model.model,
     )
-    def quant_embedding(model):
-        return EmbeddingQuantHandler(
-            model,
-            bitwidth=8,
-            group_size=32,
-            packed=False,
-        ).quantized_model()
-
-    quantized_token_embed = quant_embedding(llava.model_.language_model.model)
-
-    print("GET ATTRS", quantized_token_embed)
-    print("GET ATTRS2", quantized_token_embed.embed_tokens)
-
-    qval = quantized_token_embed.embed_tokens.weight
-    scale = quantized_token_embed.embed_tokens.scales
-
-    qval_copy = quantized_token_embed_copy.embed_tokens.weight.tensor_impl.get_plain()[0]
-    scale_copy = quantized_token_embed_copy.embed_tokens.weight.tensor_impl.get_plain()[1]
-    zero_copy = quantized_token_embed_copy.embed_tokens.weight.tensor_impl.get_plain()[2]
-
-    print("COPY TENSOR", quantized_token_embed_copy.embed_tokens.weight)
-    print("ORIGINAL DTYPE", quantized_token_embed.embed_tokens.dtype)
-
-    print("COMPARING")
-    print("qval_copy", qval_copy)
-    print("qval", qval)
-    print("MATCHING", (qval_copy == qval).to(torch.float32).mean())
-    print("MAX DIFF", (qval_copy.to(torch.int32) - qval.to(torch.int32)).abs().max())
-
-    print("scale_copy", scale_copy)
-    print("scale", scale)
-    print("ISCLOSE", torch.isclose(scale_copy, scale).to(torch.float32).mean())
-
-    print("zero_copy", zero_copy)
-    print("ALL ZEROS", (zero_copy == 0).to(torch.float32).mean())
-
-
-
-    
-
     token_dim_1 = Dim("token_dim_1", min=2, max=llava.text_model_args.max_seq_len)
     dynamic_shapes = [{1: token_dim_1}]
     with torch.no_grad():
@@ -232,16 +189,7 @@ def export_token_embedding(llava, prompt):
             dynamic_shapes=dynamic_shapes,
             strict=True,
         )
-        token_embedding_ep_copy = torch.export.export(
-            quantized_token_embed_copy.embed_tokens,
-            (prompt,),
-            dynamic_shapes=dynamic_shapes,
-            strict=True,
-        )
-    
-    print("token_embedding_ep_copy", token_embedding_ep_copy)
-    print("token_embedding_ep", token_embedding_ep)
-    return token_embedding_ep_copy
+    return token_embedding_ep
 
 
 def export_all(llava_model: LlavaModel):
@@ -302,7 +250,6 @@ def export_all(llava_model: LlavaModel):
             do_quant_fusion_and_const_prop=True,
         )
     )
-    logging.info("TOKEN EMBEDDING PROG", str(executorch_program.exported_program("token_embedding")))
     for execution_plan in executorch_program._emitter_output.program.execution_plan:
         logging.info(
             f"Required memory for activation in bytes: {execution_plan.non_const_buffer_sizes}"

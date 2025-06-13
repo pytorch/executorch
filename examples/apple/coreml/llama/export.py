@@ -222,6 +222,7 @@ def main() -> None:
             ],
             memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
             sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
+            do_quant_fusion_and_const_prop=True,
         )
     )
 
