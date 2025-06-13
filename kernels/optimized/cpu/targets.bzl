@@ -67,6 +67,7 @@ def define_common_targets():
         exported_headers = ["moments_utils.h"],
         visibility = ["//executorch/kernels/optimized/...", "@EXECUTORCH_CLIENTS",],
         exported_deps = [
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
             "//executorch/kernels/optimized:libvec",
             "//executorch/kernels/optimized:libutils",
         ],
