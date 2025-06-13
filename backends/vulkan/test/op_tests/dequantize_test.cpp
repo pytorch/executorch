@@ -279,7 +279,8 @@ at::Tensor dequantize_per_token_reference_impl(
     int64_t token_zero_point = zero_point[token_idx].item<int64_t>();
 
     // Store casted values to avoid repeated casting
-    const int32_t token_zero_point_int32 = static_cast<int32_t>(token_zero_point);
+    const int32_t token_zero_point_int32 =
+        static_cast<int32_t>(token_zero_point);
 
     // Dequantize the token
     for (int i = 0; i < input.size(-1); i++) {
