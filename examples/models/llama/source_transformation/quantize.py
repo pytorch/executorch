@@ -16,7 +16,6 @@ import torch.nn.functional as F
 
 from executorch.extension.llm.export.builder import DType
 
-from torchao.dtypes import PackedLinearInt8DynamicActivationIntxWeightLayout
 from torchao.quantization.granularity import PerAxis, PerGroup
 from torchao.quantization.quant_api import (
     Int8DynamicActivationIntxWeightConfig,
@@ -24,6 +23,7 @@ from torchao.quantization.quant_api import (
     MappingType,
     quantize_,
 )
+from torchao.utils import unwrap_tensor_subclass
 
 
 try:
@@ -125,6 +125,8 @@ def quantize(  # noqa C901
         assert len(matches) == 1, f"Expected 1 match for pattern but got {len(matches)}"
         bitwidth = int(matches[0][0])
 
+        from torchao.dtypes import PackedLinearInt8DynamicActivationIntxWeightLayout
+
         with torch.no_grad():
             # Computation dtype is fixed to fp32 in the implementation of quantize_, so
             # no way to decouple checkpoint and computation dtype.
@@ -139,6 +141,7 @@ def quantize(  # noqa C901
                     layout=PackedLinearInt8DynamicActivationIntxWeightLayout(),
                 ),
             )
+            model = unwrap_tensor_subclass(model)
         if verbose:
             print("quantized model:", model)
         return model
@@ -157,6 +160,7 @@ def quantize(  # noqa C901
                 weight_mapping_type=MappingType.SYMMETRIC,
             ),
         )
+        model = unwrap_tensor_subclass(model)
         # TODO: deal with checkpoint / computation dtype decoupling.
         if verbose:
             print("quantized model:", model)
@@ -798,6 +802,7 @@ def get_quant_embedding_transform(
             ),
             lambda m, fqn: isinstance(m, nn.Embedding),
         )
+        model = unwrap_tensor_subclass(model)
         return model
 
     return _embedding_quantizer
