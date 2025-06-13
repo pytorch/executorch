@@ -19,7 +19,7 @@ class ValueTest: XCTestCase {
     let tensor = Tensor([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
     let value = Value(tensor)
     XCTAssertTrue(value.isTensor)
-    XCTAssertEqual(value.tensor, tensor)
+    XCTAssertEqual(value.tensor(), tensor)
   }
 
   func testString() {

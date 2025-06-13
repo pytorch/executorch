@@ -161,6 +161,29 @@ test_cmake_select_ops_in_yaml() {
     rm "./custom_ops_1.pte"
 }
 
+test_cmake_select_ops_in_model() {
+    echo "Exporting MobilenetV2"
+    ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="mv2"
+    local example_dir=examples/selective_build
+    local build_dir=cmake-out/${example_dir}
+    rm -rf ${build_dir}
+    retry cmake -DCMAKE_BUILD_TYPE=Release \
+            -DEXECUTORCH_SELECT_OPS_FROM_MODEL="./mv2.pte" \
+            -DCMAKE_INSTALL_PREFIX=cmake-out \
+            -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+            -B${build_dir} \
+            ${example_dir}
+
+    echo "Building ${example_dir}"
+    cmake --build ${build_dir} -j9 --config Release
+
+    echo 'Running selective build test'
+    ${build_dir}/selective_build_test --model_path="./mv2.pte"
+
+    echo "Removing mv2.pte"
+    rm "./mv2.pte"
+}
+
 if [[ -z $BUCK ]];
 then
   BUCK=buck2
@@ -177,6 +200,7 @@ then
     test_cmake_select_all_ops
     test_cmake_select_ops_in_list
     test_cmake_select_ops_in_yaml
+    test_cmake_select_ops_in_model
 elif [[ $1 == "buck2" ]];
 then
     test_buck2_select_all_ops

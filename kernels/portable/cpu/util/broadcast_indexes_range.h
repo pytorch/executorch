@@ -43,7 +43,9 @@ inline bool sizes_match_ignoring_leading_1s(
       std::equal(lhs_begin, lhs_end, rhs_begin);
 }
 
-template <std::size_t kNumInputs, bool support_noncontiguous_tensors = false>
+template <
+    std::size_t kNumInputs,
+    bool support_noncontiguous_input_tensors = false>
 class BroadcastIndexesIterator {
  public:
   using difference_type = ssize_t;
@@ -57,7 +59,7 @@ class BroadcastIndexesIterator {
   template <typename... Args>
   explicit BroadcastIndexesIterator(const Tensor& output, const Args&... args)
       : output_dim_or_zero_if_no_broadcasting_(
-            !support_noncontiguous_tensors &&
+            !support_noncontiguous_input_tensors &&
                     (sizes_match_ignoring_leading_1s(
                          args.sizes(),
                          output.sizes()) &&
@@ -69,7 +71,7 @@ class BroadcastIndexesIterator {
         sizeof...(args) == kNumInputs && (std::is_same_v<Args, Tensor> && ...),
         "BroadcastIndexesIterator constructor requires kNumInputs input tensor"
         "arguments!");
-    if (support_noncontiguous_tensors ||
+    if (support_noncontiguous_input_tensors ||
         output_dim_or_zero_if_no_broadcasting_ != 0) {
       effective_input_broadcast_strides_ = {
           effective_input_broadcast_stride(output, args)...};
@@ -254,16 +256,21 @@ class BroadcastIndexesIterator {
  * linearize_access_indexes(), BroadcastIndexesRange avoids expensive
  * division and modulo operations on each iteration.
  *
- * The support_noncontiguous_tensors argument disables an optimization
- * that causes the iterators not to respect strides in some
- * cases. This optimization is normally safe because ExecuTorch
- * tensors are contiguous.
+ * The support_noncontiguous_input_tensors argument disables an
+ * optimization that causes the iterators not to respect strides in
+ * some cases for input tensors. This optimization is normally safe
+ * because ExecuTorch tensors are contiguous. Non-contiguous output
+ * tensors are currently never supported (but note that this can be
+ * worked around by ignoring the output index and providing the true
+ * output as an extra input).
  */
-template <std::size_t kNumInputs, bool support_noncontiguous_tensors = false>
+template <
+    std::size_t kNumInputs,
+    bool support_noncontiguous_input_tensors = false>
 class BroadcastIndexesRange {
  public:
   using iterator = internal::
-      BroadcastIndexesIterator<kNumInputs, support_noncontiguous_tensors>;
+      BroadcastIndexesIterator<kNumInputs, support_noncontiguous_input_tensors>;
 
   template <typename... Args>
   BroadcastIndexesRange(const Tensor& output, const Args&... args)
