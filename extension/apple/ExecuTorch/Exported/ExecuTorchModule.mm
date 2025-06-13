@@ -106,9 +106,9 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
   NSString *_name;
   NSMutableArray<NSNumber *> *_inputValueTags;
   NSMutableArray<NSNumber *> *_outputValueTags;
-  NSMutableDictionary<NSNumber *, ExecuTorchTensorMetadata *> *_inputTensorMetadatas;
-  NSMutableDictionary<NSNumber *, ExecuTorchTensorMetadata *> *_outputTensorMetadatas;
-  NSMutableArray<ExecuTorchTensorMetadata *> *_attributeTensorMetadatas;
+  NSMutableDictionary<NSNumber *, ExecuTorchTensorMetadata *> *_inputTensorMetadata;
+  NSMutableDictionary<NSNumber *, ExecuTorchTensorMetadata *> *_outputTensorMetadata;
+  NSMutableArray<ExecuTorchTensorMetadata *> *_attributeTensorMetadata;
   NSMutableArray<NSNumber *> *_memoryPlannedBufferSizes;
   NSMutableArray<NSString *> *_backendNames;
   NSInteger _instructionCount;
@@ -127,9 +127,9 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
     _instructionCount = methodMeta.num_instructions();
     _inputValueTags = [[NSMutableArray alloc] initWithCapacity:inputCount];
     _outputValueTags = [[NSMutableArray alloc] initWithCapacity:outputCount];
-    _inputTensorMetadatas = [NSMutableDictionary new];
-    _outputTensorMetadatas = [NSMutableDictionary new];
-    _attributeTensorMetadatas = [[NSMutableArray alloc] initWithCapacity:attributeCount];
+    _inputTensorMetadata = [NSMutableDictionary new];
+    _outputTensorMetadata = [NSMutableDictionary new];
+    _attributeTensorMetadata = [[NSMutableArray alloc] initWithCapacity:attributeCount];
     _memoryPlannedBufferSizes = [[NSMutableArray alloc] initWithCapacity:memoryPlannedBufferCount];
     _backendNames = [[NSMutableArray alloc] initWithCapacity:backendCount];
 
@@ -152,7 +152,7 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
           }
           return nil;
         }
-        _inputTensorMetadatas[@(index)] = [[ExecuTorchTensorMetadata alloc] initWithTensorMetadata:tensorMetadataResult.get()];
+        _inputTensorMetadata[@(index)] = [[ExecuTorchTensorMetadata alloc] initWithTensorMetadata:tensorMetadataResult.get()];
       }
     }
     for (NSInteger index = 0; index < outputCount; ++index) {
@@ -174,7 +174,7 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
           }
           return nil;
         }
-        _outputTensorMetadatas[@(index)] = [[ExecuTorchTensorMetadata alloc] initWithTensorMetadata:tensorMetadataResult.get()];
+        _outputTensorMetadata[@(index)] = [[ExecuTorchTensorMetadata alloc] initWithTensorMetadata:tensorMetadataResult.get()];
       }
     }
     for (NSInteger index = 0; index < attributeCount; ++index) {
@@ -185,7 +185,7 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
         }
         return nil;
       }
-      [_attributeTensorMetadatas addObject:[[ExecuTorchTensorMetadata alloc] initWithTensorMetadata:result.get()]];
+      [_attributeTensorMetadata addObject:[[ExecuTorchTensorMetadata alloc] initWithTensorMetadata:result.get()]];
     }
     for (NSInteger index = 0; index < memoryPlannedBufferCount; ++index) {
       auto result = methodMeta.memory_planned_buffer_size(index);
@@ -221,16 +221,16 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
   return _outputValueTags;
 }
 
-- (NSDictionary<NSNumber *,ExecuTorchTensorMetadata *> *)inputTensorMetadatas {
-  return _inputTensorMetadatas;
+- (NSDictionary<NSNumber *,ExecuTorchTensorMetadata *> *)inputTensorMetadata {
+  return _inputTensorMetadata;
 }
 
-- (NSDictionary<NSNumber *,ExecuTorchTensorMetadata *> *)outputTensorMetadatas {
-  return _outputTensorMetadatas;
+- (NSDictionary<NSNumber *,ExecuTorchTensorMetadata *> *)outputTensorMetadata {
+  return _outputTensorMetadata;
 }
 
-- (NSArray<ExecuTorchTensorMetadata *> *)attributeTensorMetadatas {
-  return _attributeTensorMetadatas;
+- (NSArray<ExecuTorchTensorMetadata *> *)attributeTensorMetadata {
+  return _attributeTensorMetadata;
 }
 
 - (NSArray<NSNumber *> *)memoryPlannedBufferSizes {
