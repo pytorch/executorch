@@ -54,9 +54,16 @@ NSString *ExecuTorchErrorDescription(ExecuTorchErrorCode code) {
 }
 
 NSError *ExecuTorchErrorWithCode(ExecuTorchErrorCode code) {
+  return ExecuTorchErrorWithCodeAndDescription(code, nil);
+}
+
+NSError *ExecuTorchErrorWithCodeAndDescription(ExecuTorchErrorCode code, NSString * __nullable description) {
   return [NSError errorWithDomain:ExecuTorchErrorDomain
                              code:code
                          userInfo:@{
-                           NSLocalizedDescriptionKey : ExecuTorchErrorDescription(code)
-                         }];
+    NSLocalizedDescriptionKey:
+      description.length > 0
+        ? [ExecuTorchErrorDescription(code) stringByAppendingFormat:@": %@", description]
+        : ExecuTorchErrorDescription(code)
+  }];
 }
