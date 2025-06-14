@@ -21,22 +21,17 @@ python -m examples.models.phi-3-mini.export_phi-3-mini -c "4k" -s 128 -o phi-3-m
 ```
 3. Build and run the model.
 - Build executorch with optimized CPU performance as follows. Build options available [here](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt#L59).
- ```
- cmake --preset llm -DCMAKE_INSTALL_PREFIX=cmake-out
+```
+cmake --preset llm -DCMAKE_INSTALL_PREFIX=cmake-out
 
- cmake --build cmake-out -j16 --target install --config Release
- ```
+cmake --build cmake-out -j16 --target install --config Release
+```
 - Build Phi-3-mini runner.
 ```
-cmake -DPYTHON_EXECUTABLE=python \
-    -DCMAKE_INSTALL_PREFIX=cmake-out \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
-    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-    -DEXECUTORCH_BUILD_XNNPACK=ON \
-    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-    -Bcmake-out/examples/models/phi-3-mini \
-    examples/models/phi-3-mini
+cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
+      -DCMAKE_BUILD_TYPE=Release \
+      -Bcmake-out/examples/models/phi-3-mini \
+      examples/models/phi-3-mini
 
 cmake --build cmake-out/examples/models/phi-3-mini -j16 --config Release
 ```

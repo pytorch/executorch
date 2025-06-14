@@ -37,30 +37,33 @@ include(${EXECUTORCH_SRCS_FILE})
 # build llm runner library
 list(TRANSFORM _extension_llm_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
-target_include_directories(
-  extension_module INTERFACE ${_common_include_directories}
-)
+if(NOT _common_include_directories)
+  set(_common_include_directories
+    ${EXECUTORCH_ROOT}/..
+    ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+  )
+endif()
 
 add_library(extension_llm_runner STATIC ${_extension_llm_runner__srcs})
 
 # add tokenizers
-ExternalProject_Add(
-  tokenizers_external_project
-  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/../tokenizers
-  SOURCE_DIR ${EXECUTORCH_ROOT}/extension/llm/tokenizers
-  CMAKE_ARGS -DSUPPORT_REGEX_LOOKAHEAD=ON -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}/../tokenizers
-  INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/../tokenizers
+set(SUPPORT_REGEX_LOOKAHEAD ON)
+# llama/runner/CMakeLists.txt builds a shared library libllama_runner.so that
+# transitively depends on tokenizers. Need to build tokenizers with -fPIC.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+add_subdirectory(
+  ${EXECUTORCH_ROOT}/extension/llm/tokenizers
+  ${CMAKE_CURRENT_BINARY_DIR}/../../../extension/llm/tokenizers
 )
-add_dependencies(extension_llm_runner tokenizers_external_project)
-find_package(tokenizers CONFIG HINTS ${CMAKE_INSTALL_PREFIX} ${CMAKE_CURRENT_BINARY_DIR}/../tokenizers)
-set(runner_deps executorch extension_module extension_tensor ${TOKENIZERS_LIBRARIES})
+
+set(runner_deps executorch_core extension_module extension_tensor tokenizers)
 
 target_link_libraries(extension_llm_runner PUBLIC ${runner_deps})
-
+target_compile_definitions(extension_llm_runner PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
 target_include_directories(
-  extension_llm_runner PUBLIC ${_common_include_directories}
-                                 ${TOKENIZERS_INCLUDE_DIRS}
-                                 ${CMAKE_CURRENT_BINARY_DIR}/../tokenizers/include
+  extension_llm_runner
+  PUBLIC ${_common_include_directories}
+            ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
 )
 
 if(BUILD_TESTING)
