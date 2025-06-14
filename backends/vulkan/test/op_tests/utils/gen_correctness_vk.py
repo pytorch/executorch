@@ -110,6 +110,8 @@ using TensorOptions = at::TensorOptions;
 
 vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
   switch (at_scalartype) {
+    case c10::kDouble:
+      return vkapi::kDouble;
     case c10::kFloat:
       return vkapi::kFloat;
     case c10::kHalf:

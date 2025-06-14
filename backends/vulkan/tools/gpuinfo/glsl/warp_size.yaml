@@ -6,7 +6,7 @@
 
 warp_size:
   parameter_names_with_default_values:
-    DTYPE: int
+    DTYPE: int32
     STORAGE: buffer
   generate_variant_forall:
     METHOD:
