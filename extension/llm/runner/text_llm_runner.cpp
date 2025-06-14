@@ -318,8 +318,14 @@ std::unordered_map<std::string, int64_t> get_llm_metadata(
   }
   // Check if we are using cache positions instead of input pos.
   auto second_input_info = method_meta.input_tensor_meta(1).get();
-  // For input_pos, size is [1], for cache_positions, size is [1, max_seq_len]
-  metadata[llm::kUseCachePositions] = second_input_info.sizes().size() == 2;
+  // For input_pos, numel is 1, for cache_positions, numel is max_seq_len
+  auto sizes = second_input_info.sizes();
+  int64_t total_size = 1;
+  for (const auto& size : sizes) {
+    total_size *= size;
+  }
+  metadata[llm::kUseCachePositions] = total_size > 1;
+  return metadata;
 }
 
 std::unordered_set<uint64_t> get_eos_ids(
@@ -386,6 +392,7 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
   auto text_prefiller = std::make_unique<TextPrefiller>(
       text_decoder_runner.get(),
       metadata.at(kUseKVCache),
+      metadata.at(kUseCachePositions),
       metadata.at(kEnableDynamicShape),
       metadata.at(kMaxSeqLen));
 

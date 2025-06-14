@@ -473,7 +473,7 @@ install(
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
-install(FILES tools/cmake/executorch-config.cmake
+install(FILES tools/cmake/executorch-config.cmake tools/cmake/Utils.cmake
         DESTINATION lib/cmake/ExecuTorch
 )
 
