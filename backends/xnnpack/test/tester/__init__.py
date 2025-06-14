@@ -7,22 +7,24 @@
 # TODO: Be more delibrate on module structure
 from executorch.backends.xnnpack.test.tester.tester import (
     Export,
+    ToEdge,
     Partition,
     Quantize,
     RunPasses,
-    Serialize,
     Tester,
-    ToEdge,
+    ToEdgeTransformAndLower,
+    Serialize,
     ToExecutorch,
 )
 
 __all__ = [
-    Tester,
-    Partition,
-    Quantize,
     Export,
     ToEdge,
+    Partition,
+    Quantize,
     RunPasses,
-    ToExecutorch,
+    ToEdgeTransformAndLower,
+    Tester,
     Serialize,
+    ToExecutorch,
 ]
