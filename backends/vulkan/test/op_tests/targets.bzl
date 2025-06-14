@@ -196,6 +196,15 @@ def define_common_targets(is_fbcode = False):
         ]
     )
     define_test_targets(
+        "choose_qparams_test",
+        extra_deps = [
+            ":test_utils",
+            "//executorch/kernels/quantized/cpu:op_choose_qparams",
+            "//executorch/extension/tensor:tensor",
+            "//executorch/extension/aten_util:aten_bridge",
+        ]
+    )
+    define_test_targets(
         "linear_weight_int4_test",
         extra_deps = [
             ":test_utils",
