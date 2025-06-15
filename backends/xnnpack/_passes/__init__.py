@@ -24,6 +24,9 @@ from executorch.backends.xnnpack._passes.fuse_activation_pass import FuseActivat
 from executorch.backends.xnnpack._passes.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
+from executorch.backends.xnnpack._passes.fuse_batch_norm_with_linear import (
+    FuseBatchNormWithLinearPass,
+)
 from executorch.backends.xnnpack._passes.prelu_reshape_pass import PReLUReshapePass
 from executorch.backends.xnnpack._passes.tag_implicit_q_dq_pass import (
     TagImplicitQDqPass,
@@ -64,6 +67,7 @@ class XNNPACKPassManager:
                 ConvertToSDPAPass,
                 ConstPropPass,
                 FuseBatchNormWithConvPass,
+                FuseBatchNormWithLinearPass,
                 FuseActivationPass,
                 DecomposeConcatenate,
                 RemoveGetItemPass,
