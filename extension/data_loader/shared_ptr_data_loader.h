@@ -13,6 +13,7 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
 #include <memory>
+#include <cstring>
 
 namespace executorch {
 namespace extension {
@@ -43,10 +44,34 @@ class SharedPtrDataLoader final : public executorch::runtime::DataLoader {
     return executorch::runtime::FreeableBuffer(
         static_cast<uint8_t*>(data_.get()) + offset, size, /*free_fn=*/nullptr);
   }
+  
+  ET_NODISCARD executorch::runtime::Error load_into(
+    size_t offset,
+    size_t size,
+    const DataLoader::SegmentInfo& segment_info,
+    void* buffer) const override;
 
   ET_NODISCARD executorch::runtime::Result<size_t> size() const override {
     return size_;
   }
+
+  ET_NODISCARD executorch::runtime::Error SharedPtrDataLoader::load_into(
+    size_t offset,
+    size_t size,
+    const DataLoader::SegmentInfo& segment_info,
+    void* buffer) const {
+    ET_CHECK_OR_RETURN_ERROR(
+      offset + size <= size_,
+      executorch::runtime::Error::OutOfBounds,
+      "offset %zu + size %zu exceeds buffer size %zu",
+      offset,
+      size,
+      size_);
+
+  std::memcpy(buffer, static_cast<uint8_t*>(data_.get()) + offset, size);
+  return executorch::runtime::Error::Ok;
+}
+
 
  private:
   const std::shared_ptr<void> data_;
