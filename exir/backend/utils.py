@@ -433,6 +433,7 @@ def is_shape_dynamic(node: torch.fx.Node) -> bool:
 
     return has_free_symbols(node.meta["val"].shape)
 
+
 def get_delegated_payload(exec_program: ExecutorchProgram) -> Dict[str, Any]:
     """
     Get the payload of the executorch program which contains all the delegated modules.
@@ -448,6 +449,7 @@ def get_delegated_payload(exec_program: ExecutorchProgram) -> Dict[str, Any]:
             exec_program.executorch_program.backend_delegate_data[delegate_index].data,
         )
     return delegated_payload_list
+
 
 # TODO - style: use templated types
 class DelegateMappingBuilder:
