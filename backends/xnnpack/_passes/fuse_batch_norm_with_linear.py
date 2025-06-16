@@ -32,8 +32,8 @@ class FuseBatchNormWithLinearPass(XNNPACKPass):
         graph = graph_module.graph
         constant_placeholders_to_delete = set()
         for linear in graph.nodes:
-            # We want to discover a chain of linear -> batch_norm.
-            # Only proceed if the current node is a linear node, and has a single
+            # We want to discover a chain of linear -> batch_norm or addmm -> batch_norm.
+            # Only proceed if the current node is a linear or addmm node, and has a single
             # user/successor.
             if (
                 linear.target != exir_ops.edge.aten.linear.default
@@ -58,7 +58,8 @@ class FuseBatchNormWithLinearPass(XNNPACKPass):
                 # addmm.args = (bias, input, weight)
                 linear_bias_arg = linear.args[0]
                 linear_input_arg = linear.args[1]
-                linear_weight_arg = FuseBatchNormWithLinearPass.unwrap_to_param_node(
+                # Unwrap permute_copy to access weight parameter node
+                linear_weight_arg = FuseBatchNormWithLinearPass._unwrap_node(
                     linear.args[2]
                 )
             else:
@@ -67,7 +68,7 @@ class FuseBatchNormWithLinearPass(XNNPACKPass):
                 linear_weight_arg = linear.args[1]
                 linear_bias_arg = linear.args[2]
 
-            if not self.can_fuse(linear, linear_weight_arg, bn, self.exported_program):
+            if not self.can_fuse(linear_weight_arg, bn, self.exported_program):
                 continue
 
             linear_weight = get_param_tensor(self.exported_program, linear_weight_arg)
@@ -113,7 +114,8 @@ class FuseBatchNormWithLinearPass(XNNPACKPass):
             )
 
             if linear.target == exir_ops.edge.aten.addmm.default:
-                # permute_copy node was removed, so weight must be transposed to (in × out)
+                # fuse_linear_bn_weights returns weight [out, in];
+                # permute_copy node was removed, so weight must be transposed to [in, out] for addmm
                 fused_weight = fused_weight.t()
 
             fused_weight_name = (linear_weight_name + "_fused_bn").replace(".", "_")
@@ -185,7 +187,6 @@ class FuseBatchNormWithLinearPass(XNNPACKPass):
 
     @staticmethod
     def can_fuse(
-        linear: torch.fx.Node,
         linear_weights: torch.fx.Node,
         bn: torch.fx.Node,
         program: ExportedProgram,
@@ -218,7 +219,7 @@ class FuseBatchNormWithLinearPass(XNNPACKPass):
         return True
 
     @staticmethod
-    def unwrap_to_param_node(node: torch.fx.Node) -> torch.fx.Node:
+    def _unwrap_node(node: torch.fx.Node) -> torch.fx.Node:
         while node.op == "call_function" and node.target in {
             exir_ops.edge.aten.permute.default,
             exir_ops.edge.aten.permute_copy.default,
