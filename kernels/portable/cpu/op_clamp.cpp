@@ -138,9 +138,8 @@ Tensor& clamp_out(
         CTYPE_COMPUTE,
         op_name,
         utils::SupportedTensorDtypes::SAME_AS_COMMON>(
-        [has_min, min_opt, has_max, max_opt](const CTYPE_COMPUTE val_in) {
-          // TODO: rewrite this to be vectorization-capable.
-          CTYPE_COMPUTE val_out = val_in;
+        [has_min, min_opt, has_max, max_opt](const auto val_in) {
+          auto val_out = val_in;
           if (has_min) {
             val_out = utils::max_override(
                 val_out, utils::scalar_to<CTYPE_COMPUTE>(min_opt.value()));
