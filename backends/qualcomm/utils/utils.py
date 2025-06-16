@@ -37,6 +37,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchHtpPerformanceMode,
     QnnExecuTorchHtpPrecision,
     QnnExecuTorchLogLevel,
+    QnnExecuTorchOpPackageOptions,
     QnnExecuTorchOptions,
     QnnExecuTorchProfileLevel,
 )
@@ -317,60 +318,126 @@ def get_decomp_table(passes_job) -> Dict[torch._ops.OperatorBase, Callable]:
 
 
 def to_edge_transform_and_lower_to_qnn(
-    module: Union[torch.nn.Module, torch.fx.GraphModule],
-    inputs: Tuple[torch.Tensor],
-    compiler_specs: List[CompileSpec],
+    module: Union[
+        torch.nn.Module,
+        torch.fx.GraphModule,
+        Dict[str, torch.nn.Module],
+        Dict[str, torch.fx.GraphModule],
+    ],
+    inputs: Union[Tuple[torch.Tensor], Dict[str, Tuple[torch.Tensor]]],
+    compiler_specs: Union[List[Any], Dict[str, List[Any]]],
     constant_methods: Optional[Dict[str, Any]] = None,
     dynamic_shapes: Optional[Dict] = None,
     dep_table: Optional[Dict] = None,
-    passes_job: Optional[OrderedDict] = None,
+    passes_job: Optional[Union[OrderedDict, Dict[str, OrderedDict]]] = None,
     skip_node_id_set: Optional[set] = None,
     skip_node_op_set: Optional[set] = None,
 ) -> EdgeProgramManager:
     """
-    Transforms and lowers a given PyTorch module to QNN backend.
+    Transforms and lowers a given PyTorch module to the QNN backend.
 
     Args:
-        module (Union[torch.nn.Module, torch.fx.GraphModule]): The PyTorch module or fx.GraphModule to be transformed.
-        inputs (Tuple[torch.Tensor]): The input tensors for the module.
-        compiler_specs (List[CompileSpec]): Compiler specs for Qualcomm AI Engine Direct.
-        constant_methods (Optional[Dict[str, Any]]): An optional dictionary of method name to the constant value
-            returned by that method in eager mode. Often used to store config information on
-            Edge models.
-        dynamic_shapes (Optional[Dict]): Information about dynamic shapes.
-        dep_table (Optional[Dict]): Dependency table for the transformation passes.
-        passes_job (Optional[OrderedDict]): Ordered dictionary of transformation passes.
-        skip_node_id_set (Optional[set]): Set of node IDs to skip during partitioning.
-        skip_node_op_set (Optional[set]): Set of node operations to skip during partitioning.
+        module (Union[torch.nn.Module, torch.fx.GraphModule,Dict[str, torch.nn.Module], Dict[str, torch.fx.GraphModule]]):
+            The PyTorch module or fx.GraphModule to be transformed.
+        inputs (Union[Tuple[torch.Tensor], Dict[str, Tuple[torch.Tensor]]]):
+            The input tensors for the module.
+        compiler_specs (Union[List[Any], Dict[str, List[Any]]]):
+            Compiler specifications for Qualcomm AI Engine Direct.
+        constant_methods (Optional[Dict[str, Any]]):
+            An optional dictionary mapping method names to constant values returned by those methods in eager mode.
+            Often used to store configuration information on Edge models.
+        dynamic_shapes (Optional[Dict]):
+            Information about dynamic shapes.
+        dep_table (Optional[Dict]):
+            Dependency table for the transformation passes.
+        passes_job (Optional[Union[OrderedDict, Dict[str, OrderedDict]]]):
+            Ordered dictionary of transformation passes.
+        skip_node_id_set (Optional[set]):
+            Set of node IDs to skip during partitioning.
+        skip_node_op_set (Optional[set]):
+            Set of node operations to skip during partitioning.
 
     Returns:
-        EdgeProgramManager: The manager for the edge program after transformation and lowering.
+        EdgeProgramManager:
+            The manager for the edge program after transformation and lowering.
     """
-    ep = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes, strict=True)
-    # This transformation is primarily intended for the LiftConstantScalarOperands pass
-    # to avoid creating temporary tensors in the operation builder.
-    # However, this pass will create a get_attr node, which should be converted
-    # into a lifted tensor constant by the lift_constant_tensor_pass.
-    # If placed in the to_edge_transform_passes, it will be executed
-    # after the lift_constant_tensor_pass, causing the operation builder
-    # to fail to correctly retrieve the parameter by the get_parameter.
-    ep = QnnPassManager().transform_for_export_pipeline(ep)
-    transform_passes = QnnPassManager().get_to_edge_transform_passes(
-        ep, passes_job=passes_job, dep_table=dep_table
-    )
-    qnn_partitioner = QnnPartitioner(
-        compiler_specs,
-        skip_node_id_set=skip_node_id_set,
-        skip_node_op_set=skip_node_op_set,
-    )
-    edge_program_manager = to_edge_transform_and_lower(
-        ep,
+
+    def ensure_graph_specific_dict(value, graph_names):
+        """
+        Ensures the input value is a dictionary with keys matching the provided graph names.
+        If the input is not a dictionary or its keys do not match the graph names, a new dictionary
+        is created with the graph names as keys and the input value assigned to each key.
+
+        Examples:
+            1. Input is None:
+                >>> ensure_graph_specific_dict(None, ["forward1", "forward2"])
+                {'forward1': None, 'forward2': None}
+
+            2. Input is a single value:
+                >>> ensure_graph_specific_dict(input, ["forward1", "forward2"])
+                {'forward1': input, 'forward2': input}
+
+            3. Input is a non-graph specific dict:
+                >>> ensure_graph_specific_dict({Any: input}, ["forward1", "forward2"])
+                {'forward1': {Any: input}, 'forward2': {Any: input}}
+        """
+        if value is None:
+            return {graph_name: None for graph_name in graph_names}
+        if isinstance(value, dict) and graph_names == value.keys():
+            return value
+        return {graph_name: value for graph_name in graph_names}
+
+    if not isinstance(module, dict):
+        module = {"forward": module}
+
+    # Ensure attributes are graph-specific dictionaries
+    graph_names = module.keys()
+    inputs = ensure_graph_specific_dict(inputs, graph_names)
+    compiler_specs = ensure_graph_specific_dict(compiler_specs, graph_names)
+    dynamic_shapes = ensure_graph_specific_dict(dynamic_shapes, graph_names)
+    dep_table = ensure_graph_specific_dict(dep_table, graph_names)
+    passes_job = ensure_graph_specific_dict(passes_job, graph_names)
+
+    # Prepare programs and partitioners
+    aten_programs = {}
+    transform_passes = {}
+    qnn_partitioners = {
+        graph_name: [
+            QnnPartitioner(
+                compiler_specs[graph_name],
+                skip_node_id_set=skip_node_id_set,
+                skip_node_op_set=skip_node_op_set,
+            )
+        ]
+        for graph_name in graph_names
+    }
+
+    for graph_name, m in module.items():
+        ep = torch.export.export(
+            m,
+            inputs[graph_name],
+            dynamic_shapes=dynamic_shapes[graph_name],
+            strict=True,
+        )
+        # This transformation is primarily intended for the LiftConstantScalarOperands pass
+        # to avoid creating temporary tensors in the operation builder.
+        # However, this pass will create a get_attr node, which should be converted
+        # into a lifted tensor constant by the lift_constant_tensor_pass.
+        # If placed in the to_edge_transform_passes, it will be executed
+        # after the lift_constant_tensor_pass, causing the operation builder
+        # to fail to correctly retrieve the parameter by the get_parameter.
+        aten_programs[graph_name] = QnnPassManager().transform_for_export_pipeline(ep)
+        transform_passes[graph_name] = QnnPassManager().get_to_edge_transform_passes(
+            ep, passes_job=passes_job[graph_name], dep_table=dep_table[graph_name]
+        )
+
+    return to_edge_transform_and_lower(
+        aten_programs,
         transform_passes=transform_passes,
-        partitioner=[qnn_partitioner],
+        partitioner=qnn_partitioners,
         constant_methods=constant_methods,
         compile_config=qnn_edge_config(),
     )
-    return edge_program_manager
 
 
 def capture_program(
@@ -909,6 +976,7 @@ def generate_qnn_executorch_compiler_spec(
     shared_buffer: bool = False,
     is_from_context_binary: bool = False,
     graph_name: str = "forward",
+    op_package_options: QnnExecuTorchOpPackageOptions = None,
 ) -> List[CompileSpec]:
     """
     Helper function generating compiler specs for Qualcomm AI Engine Direct
@@ -937,6 +1005,8 @@ def generate_qnn_executorch_compiler_spec(
             and backend for graph I/O.
         is_from_context_binary: True if current graph comes from pre-built context binary.
         graph_name: Assign unique graph name if lowering multiple methods.
+        op_package_options: Optional structure to specify op packages
+            loaded and used by the backend.
 
     Returns:
         List[CompileSpec]: Compiler specs for Qualcomm AI Engine Direct.
@@ -995,6 +1065,9 @@ def generate_qnn_executorch_compiler_spec(
     qnn_executorch_options.shared_buffer = shared_buffer
     qnn_executorch_options.online_prepare = online_prepare
     qnn_executorch_options.is_from_context_binary = is_from_context_binary
+
+    if op_package_options and len(op_package_options.op_package_infos) > 0:
+        qnn_executorch_options.op_package_options = op_package_options
 
     return [
         CompileSpec(QCOM_QNN_COMPILE_SPEC, option_to_flatbuffer(qnn_executorch_options))
