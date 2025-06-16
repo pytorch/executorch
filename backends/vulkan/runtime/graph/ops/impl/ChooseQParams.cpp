@@ -107,7 +107,8 @@ utils::uvec3 choose_qparams_per_token_pick_global_wg_size(
 
   if (graph->is_buffer_storage(input)) {
     // For per-token quantization, we need one workgroup per token
-    // Calculate number of tokens (product of all dimensions except the last one)
+    // Calculate number of tokens (product of all dimensions except the last
+    // one)
     const auto input_sizes = graph->sizes_of(input);
     int64_t num_tokens = 1;
     for (size_t i = 0; i < input_sizes.size() - 1; i++) {
