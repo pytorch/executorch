@@ -5,9 +5,10 @@
 
 
 from . import arm_pass_utils  # noqa
+from .arm_pass import ArmPass  # noqa  # usort: skip
+from .add_bias_pass import AddBiasPass  # noqa
 from .annotate_channels_last_dim_order_pass import AnnotateChannelsLastDimOrder  # noqa
 from .annotate_decomposed_matmul import AnnotateDecomposedMatmulPass  # noqa
-from .arm_pass import ArmPass  # noqa
 from .broadcast_args_pass import BroadcastArgsPass  # noqa
 from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
