@@ -256,7 +256,7 @@ Result<uint64_t> PromptProcessor::prefill(
       n_update = 1 + ((num_prompt_tokens - 1) % metadata_.ar_len);
     }
     // Update KV Cache with the output results
-    kv_manager_->update_cache(metadata_.ar_len, pos, n_update);
+    kv_manager_->update_cache(metadata_.ar_len, pos, n_update, {});
     // Update attention mask with current position
     kv_manager_->update_attention_mask(
         attention_mask_.data, metadata_.ar_len, pos, n_update);
