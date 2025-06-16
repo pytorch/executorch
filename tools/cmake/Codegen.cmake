@@ -152,7 +152,7 @@ function(generate_bindings_for_kernels)
          ${_out_dir}/RegisterSchema.cpp ${_out_dir}/CustomOpsNativeFunctions.h
     )
   endif()
-  
+
   add_custom_command(
     COMMENT "Generating code for kernel registration"
     OUTPUT ${_gen_command_sources}
@@ -172,7 +172,6 @@ endfunction()
 # Generate an AOT lib for registering custom ops into PyTorch
 function(gen_custom_ops_aot_lib)
   cmake_parse_arguments(GEN "" "LIB_NAME" "KERNEL_SOURCES" ${ARGN})
-  message("REMOVE_ME-ops_aot_lib")
   message(STATUS "Generating custom ops aot lib:")
   message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
   foreach(SOURCE IN LISTS GEN_KERNEL_SOURCES)
@@ -205,7 +204,6 @@ function(gen_operators_lib)
   set(multi_arg_names LIB_NAME KERNEL_LIBS DEPS DTYPE_SELECTIVE_BUILD)
   cmake_parse_arguments(GEN "" "" "${multi_arg_names}" ${ARGN})
 
-  message("REMOVE_ME-gen_op_lib")
   message(STATUS "Generating operator lib:")
   message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
   message(STATUS "  KERNEL_LIBS: ${GEN_KERNEL_LIBS}")
@@ -213,19 +211,19 @@ function(gen_operators_lib)
   message(STATUS "  DTYPE_SELECTIVE_BUILD: ${GEN_DTYPE_SELECTIVE_BUILD}")
 
   set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
-  if(DTYPE_SELECTIVE_BUILD)
+  if(GEN_DTYPE_SELECTIVE_BUILD)
     set(_opvariant_h
       ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_op_variants.h
     )
   endif()
 
   add_library(${GEN_LIB_NAME})
- 
+
   set(_srcs_list
     ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
     ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
   )
-  if(DTYPE_SELECTIVE_BUILD)
+  if(GEN_DTYPE_SELECTIVE_BUILD)
     list(APPEND _srcs_list ${_opvariant_h})
   endif()
   target_sources(
@@ -233,13 +231,59 @@ function(gen_operators_lib)
     PRIVATE ${_srcs_list}
   )
   target_link_libraries(${GEN_LIB_NAME} PRIVATE ${GEN_DEPS})
+  set(portable_kernels_check "portable_kernels")
   if(GEN_KERNEL_LIBS)
-    target_link_libraries(${GEN_LIB_NAME} PUBLIC ${GEN_KERNEL_LIBS})
+
+    set(_common_compile_options -Wno-deprecated-declarations -ffunction-sections -fdata-sections -Os)
+
+    if("${portable_kernels_check}" IN_LIST GEN_KERNEL_LIBS)
+      list(REMOVE_ITEM GEN_KERNEL_LIBS ${portable_kernels_check})
+
+      # Define portable kernels sources (same as in kernels/portable/CMakeLists.txt)
+      file(GLOB_RECURSE _portable_kernels_srcs
+           "${EXECUTORCH_ROOT}/kernels/portable/cpu/*.cpp"
+      )
+      list(FILTER _portable_kernels_srcs EXCLUDE REGEX "test/*.cpp")
+      list(FILTER _portable_kernels_srcs EXCLUDE REGEX "codegen")
+
+      # Build kernels_util_all_deps, since later selected_portable_kernels depends on it
+      list(TRANSFORM _kernels_util_all_deps__srcs PREPEND "${EXECUTORCH_ROOT}/")
+      add_library(selected_kernels_util_all_deps ${_kernels_util_all_deps__srcs})
+      target_link_libraries(selected_kernels_util_all_deps PRIVATE executorch_core)
+      target_include_directories(selected_kernels_util_all_deps PUBLIC ${_common_include_directories})
+      target_compile_definitions(selected_kernels_util_all_deps PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
+      target_compile_options(selected_kernels_util_all_deps PUBLIC ${_common_compile_options})
+
+      # Build selected_portable_kernels
+      add_library(selected_portable_kernels ${_portable_kernels_srcs})
+      target_link_libraries(selected_portable_kernels PRIVATE executorch_core selected_kernels_util_all_deps)
+      target_compile_options(selected_portable_kernels PUBLIC ${_common_compile_options})
+      target_include_directories(selected_portable_kernels PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/)
+
+      # Add dependency on generated header if dtype selective build is enabled
+      if(GEN_DTYPE_SELECTIVE_BUILD)
+        # Make sure the header is generated before compiling the library
+        add_dependencies(selected_portable_kernels ${GEN_LIB_NAME})
+        # Create a custom target for the header to ensure proper dependency tracking
+        add_custom_target(selected_portable_kernels_header DEPENDS ${_opvariant_h})
+        add_dependencies(selected_portable_kernels selected_portable_kernels_header)
+        # Apply the compile definition for dtype selective build
+        target_compile_definitions(selected_portable_kernels PRIVATE EXECUTORCH_SELECTIVE_BUILD_DTYPE=1)
+      endif()
+
+      target_link_libraries(${GEN_LIB_NAME} PUBLIC selected_portable_kernels)
+    endif()
+
+    # portable_kernel is no longer in GEN_KERNEL_LIBS, but there may be others
+    if(GEN_KERNEL_LIBS)
+
+      target_link_libraries(${GEN_LIB_NAME} PUBLIC ${GEN_KERNEL_LIBS})
+    endif()
   endif()
 
   target_link_options_shared_lib(${GEN_LIB_NAME})
   set(_generated_headers ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h)
-  if(DTYPE_SELECTIVE_BUILD)
+  if(GEN_DTYPE_SELECTIVE_BUILD)
     list(APPEND _generated_headers ${_opvariant_h})
   endif()
   set_target_properties(
