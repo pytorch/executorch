@@ -12,6 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/DynamicDispatchNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 namespace vkcompute {
 
@@ -48,24 +49,36 @@ void add_quantize_per_tensor_node(
   int quant_max_val = static_cast<int>(graph.get_int(quant_max));
 
   vkapi::ParamsBindList param_ubos;
+  std::vector<PushConstantDataInfo> push_constants;
 
   if (graph.is_buffer_storage(input)) {
     param_ubos = {
+        graph.numel_ubo(input),
         graph.sizes_ubo(input),
         graph.strides_ubo(input),
         graph.sizes_ubo(output),
         graph.strides_ubo(output)};
+    push_constants = {
+        PushConstantDataInfo(&scale_val, sizeof(float)),
+        PushConstantDataInfo(&zero_point_val, sizeof(int)),
+        PushConstantDataInfo(&quant_min_val, sizeof(int)),
+        PushConstantDataInfo(&quant_max_val, sizeof(int)),
+        graph.numel_pc_of(output),
+    };
   } else {
     param_ubos = {
         graph.logical_limits_ubo(input), graph.logical_limits_ubo(output)};
+    push_constants = {
+        PushConstantDataInfo(&scale_val, sizeof(float)),
+        PushConstantDataInfo(&zero_point_val, sizeof(int)),
+        PushConstantDataInfo(&quant_min_val, sizeof(int)),
+        PushConstantDataInfo(&quant_max_val, sizeof(int)),
+    };
   }
 
-  std::vector<PushConstantDataInfo> push_constants;
-  push_constants = {
-      PushConstantDataInfo(&scale_val, sizeof(float)),
-      PushConstantDataInfo(&zero_point_val, sizeof(int)),
-      PushConstantDataInfo(&quant_min_val, sizeof(int)),
-      PushConstantDataInfo(&quant_max_val, sizeof(int)),
+  vkapi::SpecVarList spec_vars = {
+      graph.hashed_layout_of(output),
+      graph.hashed_layout_of(input),
   };
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
@@ -80,7 +93,7 @@ void add_quantize_per_tensor_node(
       // Push Constants
       push_constants,
       // Specialization Constants
-      {},
+      spec_vars,
       // Resize Args
       {},
       // Resizing Logic
@@ -90,8 +103,8 @@ void add_quantize_per_tensor_node(
 void add_quantize_per_token_node(
     ComputeGraph& graph,
     const ValueRef& input,
-    const ValueRef& scale,
-    const ValueRef& zero_point,
+    const ValueRef& scale_data,
+    const ValueRef& zero_point_data,
     const ValueRef& quant_min,
     const ValueRef& quant_max,
     const ValueRef& output) {
@@ -103,29 +116,46 @@ void add_quantize_per_token_node(
   int quant_min_val = static_cast<int>(graph.get_int(quant_min));
   int quant_max_val = static_cast<int>(graph.get_int(quant_max));
 
+  // Prepack the scale and zero_point tensors as buffers for efficient access
+  ValueRef scale =
+      prepack_standard(graph, scale_data, utils::kBuffer, utils::kWidthPacked);
+  ValueRef zero_point = prepack_standard(
+      graph, zero_point_data, utils::kBuffer, utils::kWidthPacked);
+
   int num_tokens = static_cast<int>(graph.sizes_of(scale)[0]);
 
   vkapi::ParamsBindList param_ubos;
+  std::vector<PushConstantDataInfo> push_constants;
 
   if (graph.is_buffer_storage(input)) {
     param_ubos = {
+        graph.numel_ubo(input),
         graph.sizes_ubo(input),
         graph.strides_ubo(input),
         graph.sizes_ubo(output),
         graph.strides_ubo(output),
+    };
+    push_constants = {
+        PushConstantDataInfo(&num_tokens, sizeof(int)),
+        PushConstantDataInfo(&quant_min_val, sizeof(int)),
+        PushConstantDataInfo(&quant_max_val, sizeof(int)),
+        graph.numel_pc_of(output),
     };
   } else {
     param_ubos = {
         graph.logical_limits_ubo(input),
         graph.logical_limits_ubo(output),
     };
+    push_constants = {
+        PushConstantDataInfo(&num_tokens, sizeof(int)),
+        PushConstantDataInfo(&quant_min_val, sizeof(int)),
+        PushConstantDataInfo(&quant_max_val, sizeof(int)),
+    };
   }
 
-  std::vector<PushConstantDataInfo> push_constants;
-  push_constants = {
-      PushConstantDataInfo(&num_tokens, sizeof(int)),
-      PushConstantDataInfo(&quant_min_val, sizeof(int)),
-      PushConstantDataInfo(&quant_max_val, sizeof(int)),
+  vkapi::SpecVarList spec_vars = {
+      graph.hashed_layout_of(output),
+      graph.hashed_layout_of(input),
   };
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
@@ -142,7 +172,7 @@ void add_quantize_per_token_node(
       // Push Constants
       push_constants,
       // Specialization Constants
-      {},
+      spec_vars,
       // Resize Args
       {},
       // Resizing Logic
@@ -160,13 +190,14 @@ void quantize_per_tensor_impl(
   const ValueRef quant_max = args[arg_idx++];
   const ValueRef output = args[arg_idx++];
 
+  // Check tensor types
+  VK_CHECK_COND(graph.val_is_tensor(input));
+  VK_CHECK_COND(graph.val_is_tensor(output));
+
   // Verify input is a floating point type
   VK_CHECK_COND(
       graph.dtype_of(input) == vkapi::kFloat ||
       graph.dtype_of(input) == vkapi::kHalf);
-
-  // Resize output tensor to match input tensor shape
-  graph.virtual_resize(output, graph.sizes_of(input));
 
   add_quantize_per_tensor_node(
       graph, input, scale, zero_point, quant_min, quant_max, output);
@@ -183,10 +214,24 @@ void quantize_per_token_impl(
   const ValueRef quant_max = args[arg_idx++];
   const ValueRef output = args[arg_idx++];
 
+  // Check tensor types
+  VK_CHECK_COND(graph.val_is_tensor(input));
+  VK_CHECK_COND(graph.val_is_tref(scale));
+  VK_CHECK_COND(graph.val_is_tref(zero_point));
+  VK_CHECK_COND(graph.val_is_tensor(output));
+
   // Verify input is a floating point type
   VK_CHECK_COND(
       graph.dtype_of(input) == vkapi::kFloat ||
       graph.dtype_of(input) == vkapi::kHalf);
+
+  // Check that tensors with texture storage have standard axis map
+  if (!graph.is_buffer_storage(input)) {
+    VK_CHECK_COND(graph.has_standard_axis_map(input));
+  }
+  if (!graph.is_buffer_storage(output)) {
+    VK_CHECK_COND(graph.has_standard_axis_map(output));
+  }
 
   // Calculate number of tokens (product of all dimensions except the last one)
   int64_t num_tokens = 1;
@@ -202,9 +247,6 @@ void quantize_per_token_impl(
   VK_CHECK_COND(zero_point_sizes.size() == 1);
   VK_CHECK_COND(scale_sizes[0] == num_tokens);
   VK_CHECK_COND(zero_point_sizes[0] == num_tokens);
-
-  // Resize output tensor to match input tensor shape
-  graph.virtual_resize(output, graph.sizes_of(input));
 
   add_quantize_per_token_node(
       graph, input, scale, zero_point, quant_min, quant_max, output);

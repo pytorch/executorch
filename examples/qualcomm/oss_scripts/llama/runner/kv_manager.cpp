@@ -51,7 +51,7 @@ void KVManager::init_attention_mask(
     int32_t ar_len,
     int32_t n_past) {
   ET_CHECK_MSG(
-      attention_map.size() == ar_len,
+      attention_map.size() <= ar_len,
       "The size of attention_map (%zu) doesn't match with ar_len (%d)",
       attention_map.size(),
       ar_len);
@@ -197,9 +197,11 @@ void KVManager::init_cache(IMemAlloc* buffer_manager, int32_t ar_len) {
               ? 0
               : metadata_.max_cache_len - (metadata_.context_len - cur_ar_len_);
           v_cache_[layer][head].buffer = single_layer_v_cache +
-              head * single_head_size_in + cache_gap * metadata_.head_dim;
-          v_cache_[layer][head].output_buffer =
-              single_layer_v_cache + (head + 1) * single_head_size_in;
+              head * metadata_.head_dim * metadata_.context_len +
+              cache_gap * metadata_.head_dim;
+          v_cache_[layer][head].output_buffer = single_layer_v_cache +
+              head * metadata_.head_dim * metadata_.context_len +
+              single_head_size_in;
         }
       }
       break;
@@ -311,7 +313,11 @@ bool KVManager::update_cache_tensor(
   return updated;
 }
 
-void KVManager::update_cache(int32_t ar_len, int32_t n_past, int32_t n_update) {
+void KVManager::update_cache(
+    int32_t ar_len,
+    int32_t n_past,
+    int32_t n_update,
+    const std::vector<bool>& selected) {
   ET_CHECK_MSG(
       cur_ar_len_ == ar_len,
       "Current AR length (%d) is not matched with target AR length (%d). Please rearrange cache first.",
@@ -319,13 +325,17 @@ void KVManager::update_cache(int32_t ar_len, int32_t n_past, int32_t n_update) {
       ar_len);
   for (int layer = 0; layer < metadata_.num_layers; ++layer) {
     for (int head = 0; head < metadata_.num_heads; ++head) {
-      update_key(k_cache_[layer][head], n_past, n_update);
-      update_value(v_cache_[layer][head], n_past, n_update);
+      update_key(k_cache_[layer][head], n_past, n_update, selected);
+      update_value(v_cache_[layer][head], n_past, n_update, selected);
     }
   }
 }
 
-void KVManager::update_key(KVCache& k_cache, int32_t n_past, int32_t n_update) {
+void KVManager::update_key(
+    KVCache& k_cache,
+    int32_t n_past,
+    int32_t n_update,
+    const std::vector<bool>& selected) {
   uint8_t* write_ptr = k_cache.buffer;
   uint8_t* read_ptr = k_cache.output_buffer;
   const int32_t copy_size = n_update * sizeof(uint8_t);
@@ -340,22 +350,35 @@ void KVManager::update_key(KVCache& k_cache, int32_t n_past, int32_t n_update) {
     write_ptr += iter_size + past_size;
   if (kv_updater_ == KVManagerMode::SMART_MASK)
     write_ptr += past_size;
-
-  for (int i = 0; i < n_iter; ++i) {
-    std::memcpy(write_ptr, read_ptr, copy_size);
-    write_ptr += iter_size;
-    read_ptr += out_size;
+  if (selected.empty()) {
+    for (int i = 0; i < n_iter; ++i) {
+      std::memcpy(write_ptr, read_ptr, copy_size);
+      write_ptr += iter_size;
+      read_ptr += out_size;
+    }
+  } else {
+    std::vector<int32_t> true_indices(n_update);
+    for (int i = 0, j = 0; i < selected.size() && j < n_update; ++i) {
+      if (selected[i]) {
+        true_indices[j++] = i;
+      }
+    }
+    for (int i = 0; i < n_iter; ++i) {
+      auto wp = write_ptr, rp = read_ptr;
+      for (auto ind : true_indices) {
+        *wp++ = rp[ind];
+      }
+      write_ptr += iter_size;
+      read_ptr += out_size;
+    }
   }
 }
 
 void KVManager::update_value(
     KVCache& v_cache,
     int32_t n_past,
-    int32_t n_update) {
-  // Value cache doesn't need to copy for SHIFT_POINTER mode
-  if (kv_updater_ == KVManagerMode::SHIFT_POINTER)
-    return;
-
+    int32_t n_update,
+    const std::vector<bool>& selected) {
   uint8_t* write_ptr = v_cache.buffer;
   uint8_t* read_ptr = v_cache.output_buffer;
   const int32_t copy_size = n_update * metadata_.head_dim * sizeof(uint8_t);
@@ -364,7 +387,31 @@ void KVManager::update_value(
   if (kv_updater_ == KVManagerMode::SMART_MASK)
     write_ptr += past_size;
 
-  std::memcpy(write_ptr, read_ptr, copy_size);
+  // Update the value cache for lookahead decoding in SHIFT_POINTER mode
+  if (kv_updater_ == KVManagerMode::SHIFT_POINTER) {
+    read_ptr += past_size;
+    write_ptr = read_ptr;
+  }
+
+  if (selected.empty()) {
+    // In general, value cache doesn't need to copy for SHIFT_POINTER mode
+    if (kv_updater_ == KVManagerMode::SHIFT_POINTER)
+      return;
+    std::memcpy(write_ptr, read_ptr, copy_size);
+  } else {
+    int32_t update_times = n_update;
+    auto wp = write_ptr, rp = read_ptr;
+    for (auto sel : selected) {
+      if (sel) {
+        std::memcpy(wp, rp, metadata_.head_dim * sizeof(uint8_t));
+        wp += metadata_.head_dim;
+        update_times--;
+        if (update_times == 0)
+          break;
+      }
+      rp += metadata_.head_dim;
+    }
+  }
 }
 
 } // namespace example
