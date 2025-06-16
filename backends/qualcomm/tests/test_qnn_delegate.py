@@ -47,7 +47,6 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     PyQnnManagerAdaptor,
-    QnnPartitioner,
     rewrite_prepared_observer,
     skip_annotation,
     to_edge_transform_and_lower_to_qnn,
@@ -76,7 +75,7 @@ from executorch.backends.qualcomm._passes import (
     FoldQDQ,
     TagQuantIO,
 )
-from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
+from executorch.backends.qualcomm.builders.node_visitor_manager import get_node_visitors
 from executorch.backends.qualcomm.debugger.utils import DrawGraph
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 from executorch.examples.models.edsr import EdsrModel
@@ -89,12 +88,8 @@ from executorch.examples.models.mobilenet_v3 import MV3Model
 from executorch.examples.models.torchvision_vit.model import TorchVisionViTModel
 
 from executorch.examples.models.wav2letter import Wav2LetterModel
-from executorch.exir import EdgeProgramManager, to_edge
-from executorch.exir.backend.backend_api import (
-    disable_validation,
-    MethodProgramsPartitionerSpec,
-    to_backend,
-)
+from executorch.exir import to_edge
+from executorch.exir.backend.backend_api import disable_validation
 
 
 class TestQNNFloatingPointOperator(TestQNN):
@@ -277,9 +272,24 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_cumsum(self):
-        module = CumSum()  # noqa: F405
-        sample_input = (torch.randn(4),)
-        self.lower_module_and_test_output(module, sample_input)
+        sample_input = ()
+        test_comb = [
+            {
+                QCOM_MODULE: [CumSum()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(4),),
+                    (torch.randint(0, 10, size=(4,)),),
+                ],
+            }
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        self.lower_module_and_test_output(module, sample_input)
+                        index += 1
 
     def test_qnn_backend_einsum_outer_product(self):
         module = EinsumOuterProduct()  # noqa: F405
@@ -315,6 +325,12 @@ class TestQNNFloatingPointOperator(TestQNN):
             {
                 QCOM_MODULE: [AddConstantFloat()],  # noqa: F405
                 QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
+            },
+            {
+                QCOM_MODULE: [
+                    AddConstantLong(),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randint(0, 10, size=(2, 3)),)],
             },
         ]
 
@@ -2701,22 +2717,18 @@ class TestQNNFloatingPointUtils(TestQNN):
             )
             for graph_name in graph_names
         ]
-        # TODO: retire capture_program once we figure out how to extract
-        #       intermediate graph from official lowering API
-        edge_progs = {
-            graph_name: capture_program(module, sample_input).exported_program
-            for graph_name, module, sample_input in zip(
-                graph_names, modules, sample_inputs
-            )
-        }
-        partitioners = {
-            graph_name: QnnPartitioner(compiler_spec)
-            for graph_name, compiler_spec in zip(graph_names, compiler_specs)
-        }
-        lowered_ep_dict = to_backend(
-            MethodProgramsPartitionerSpec(edge_progs, partitioners)
+
+        modules_dict = {}
+        sample_inputs_dict = {}
+        compiler_specs_dict = {}
+        for i, graph_name in enumerate(graph_names):
+            modules_dict[graph_name] = modules[i]
+            sample_inputs_dict[graph_name] = sample_inputs[i]
+            compiler_specs_dict[graph_name] = compiler_specs[i]
+        delegated_program = to_edge_transform_and_lower_to_qnn(
+            modules_dict, sample_inputs_dict, compiler_specs_dict
         )
-        executorch_prog = EdgeProgramManager(lowered_ep_dict).to_executorch()
+        executorch_prog = delegated_program.to_executorch()
         for index, module in enumerate(modules):
             self.verify_output(
                 module=module,
@@ -3375,28 +3387,21 @@ class TestQNNQuantizedUtils(TestQNN):
             )
             for graph_name in graph_names
         ]
-        # TODO: retire capture_program once we figure out how to extract
-        #       intermediate graph from official lowering API
-        for i, module in enumerate(modules):
-            module_exported = torch.export.export(module, sample_inputs[i]).module()
+        modules_dict = {}
+        sample_inputs_dict = {}
+        compiler_specs_dict = {}
+        for i, graph_name in enumerate(graph_names):
+            module_exported = torch.export.export(modules[i], sample_inputs[i]).module()
             module_prepared = prepare_pt2e(module_exported, make_quantizer())
             module_prepared(*sample_inputs[i])
-            modules[i] = convert_pt2e(module_prepared)
-
-        edge_progs = {
-            graph_name: capture_program(module, sample_input).exported_program
-            for graph_name, module, sample_input in zip(
-                graph_names, modules, sample_inputs
-            )
-        }
-        partitioners = {
-            graph_name: QnnPartitioner(compiler_spec)
-            for graph_name, compiler_spec in zip(graph_names, compiler_specs)
-        }
-        lowered_ep_dict = to_backend(
-            MethodProgramsPartitionerSpec(edge_progs, partitioners)
+            modules_dict[graph_name] = convert_pt2e(module_prepared)
+            sample_inputs_dict[graph_name] = sample_inputs[i]
+            compiler_specs_dict[graph_name] = compiler_specs[i]
+        delegated_program = to_edge_transform_and_lower_to_qnn(
+            modules_dict, sample_inputs_dict, compiler_specs_dict
         )
-        executorch_prog = EdgeProgramManager(lowered_ep_dict).to_executorch()
+
+        executorch_prog = delegated_program.to_executorch()
         for index, module in enumerate(modules):
             self.verify_output(
                 module=module,
@@ -3729,16 +3734,6 @@ class TestQNNQuantizedUtils(TestQNN):
 
 
 class TestExampleLLMScript(TestQNN):
-    def required_envs(self, conditions=None) -> bool:
-        conditions = [] if conditions is None else conditions
-        return all(
-            [
-                self.executorch_root,
-                self.artifact_dir,
-                *conditions,
-            ]
-        )
-
     def test_llama3_2_1b(self):
         if not self.required_envs():
             self.skipTest("missing required envs")
@@ -3896,16 +3891,6 @@ class TestExampleLLMScript(TestQNN):
 
 
 class TestExampleOssScript(TestQNN):
-    def required_envs(self, conditions=None) -> bool:
-        conditions = [] if conditions is None else conditions
-        return all(
-            [
-                self.executorch_root,
-                self.artifact_dir,
-                *conditions,
-            ]
-        )
-
     def test_conv_former(self):
         if not self.required_envs([self.image_dataset]):
             self.skipTest("missing required envs")
@@ -4562,6 +4547,40 @@ class TestExampleOssScript(TestQNN):
             else:
                 self.assertGreaterEqual(msg["mAP"], 0.6)
 
+    def test_roberta(self):
+        if not self.required_envs([self.sentence_dataset]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/roberta.py",
+            "--dataset",
+            self.sentence_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["accuracy"], 0.5)
+
     def test_squeezenet(self):
         if not self.required_envs([self.image_dataset]):
             self.skipTest("missing required envs")
@@ -4637,16 +4656,6 @@ class TestExampleOssScript(TestQNN):
 
 
 class TestExampleQaihubScript(TestQNN):
-    def required_envs(self, conditions=None) -> bool:
-        conditions = [] if conditions is None else conditions
-        return all(
-            [
-                self.executorch_root,
-                self.artifact_dir,
-                *conditions,
-            ]
-        )
-
     def test_utils_export(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             module = ContextBinaryExample()  # noqa: F405
@@ -4875,16 +4884,6 @@ class TestExampleQaihubScript(TestQNN):
 
 
 class TestExampleScript(TestQNN):
-    def required_envs(self, conditions=None) -> bool:
-        conditions = [] if conditions is None else conditions
-        return all(
-            [
-                self.executorch_root,
-                self.artifact_dir,
-                *conditions,
-            ]
-        )
-
     def test_mobilenet_v2(self):
         if not self.required_envs([self.image_dataset]):
             self.skipTest("missing required envs")
@@ -5307,6 +5306,40 @@ class TestUtilsScript(TestQNN):
             ]
         )
 
+    def test_custom_op(self):
+        if not self.required_envs([self.op_package_dir]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/custom_op/custom_ops_1.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--op_package_dir",
+            self.op_package_dir,
+            "--build_op_package",
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+        if self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertTrue(msg["is_close"])
+
     def test_debugger_generate_optrace(self):
         cmds = [
             "python",
@@ -5367,6 +5400,11 @@ def setup_environment():
         type=str,
     )
     parser.add_argument(
+        "--sentence_dataset",
+        help="Location for sentence dataset",
+        type=str,
+    )
+    parser.add_argument(
         "-p",
         "--pretrained_weight",
         help="Location for pretrained weighting",
@@ -5396,6 +5434,13 @@ def setup_environment():
         help="Path to open source software model repository",
         type=str,
     )
+    parser.add_argument(
+        "-d",
+        "--op_package_dir",
+        help="Path to operator package which generates from qnn-op-package-generator",
+        default="",
+        type=str,
+    )
 
     parser.add_argument(
         "--pre_gen_pte",
@@ -5417,6 +5462,7 @@ def setup_environment():
     TestQNN.executorch_root = args.executorch_root
     TestQNN.artifact_dir = args.artifact_dir
     TestQNN.image_dataset = args.image_dataset
+    TestQNN.sentence_dataset = args.sentence_dataset
     TestQNN.pretrained_weight = args.pretrained_weight
     TestQNN.model_name = args.model_name
     TestQNN.online_prepare = args.online_prepare
@@ -5429,7 +5475,7 @@ def setup_environment():
     TestQNN.compile_only = args.compile_only
     TestQNN.pre_gen_pte = args.pre_gen_pte
     TestQNN.llama_artifacts = args.llama_artifacts
-
+    TestQNN.op_package_dir = args.op_package_dir
     return sys.argv[:1] + ns_args
 
 

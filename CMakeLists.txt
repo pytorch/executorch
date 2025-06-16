@@ -554,6 +554,10 @@ if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_CPUINFO)
 endif()
 
 if(EXECUTORCH_BUILD_PYBIND)
+
+  # Add codegen tools subdirectory for selective_build pybind module
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/codegen/tools)
+
   if(NOT EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
   endif()
