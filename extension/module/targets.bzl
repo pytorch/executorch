@@ -53,3 +53,14 @@ def define_common_targets():
                 "//executorch/extension/module:module" + aten_suffix,
             ],
         )
+
+        runtime.cxx_library(
+            name = "module_wrapper" + aten_suffix,
+            visibility = [
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_deps = [
+                "//executorch/extension/module:module" + aten_suffix,
+                "//executorch/extension/module:bundled_module" + aten_suffix,
+            ],
+        )
