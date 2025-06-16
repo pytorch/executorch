@@ -20,6 +20,7 @@
 #include "test_utils.h"
 
 #include <cassert>
+#include <cstdint>
 #include <iostream>
 #include <limits>
 
@@ -634,7 +635,6 @@ void test_vulkan_dequantize_per_tensor_impl(
   ASSERT_TRUE(output_correct);
 }
 
-// Test cases for dequantize_per_tensor
 TEST(
     VulkanDequantizePerTensorTest,
     test_reference_dequantize_per_tensor_uint8_to_float) {
@@ -990,6 +990,9 @@ void test_vulkan_dequantize_per_token_impl(
       dtype,
       out_dtype);
 
+  // Convert zero_point tensor to int for Vulkan implementation
+  at::Tensor zero_point_int = zero_point_tensor.to(at::kInt);
+
   // Build Vulkan dequantize_per_token graph
   using namespace vkcompute;
 
@@ -997,12 +1000,17 @@ void test_vulkan_dequantize_per_token_impl(
   config.set_storage_type_override(in_storage);
   ComputeGraph graph(config);
 
+#define MAKE_TENSORREF_FOR(x)              \
+  ValueRef r_##x = graph.add_tensorref(    \
+      x.sizes().vec(),                     \
+      from_at_scalartype(x.scalar_type()), \
+      x.const_data_ptr());
+
+  MAKE_TENSORREF_FOR(scale_tensor);
+  MAKE_TENSORREF_FOR(zero_point_int);
+
   IOValueRef r_input = graph.add_input_tensor(
       input.sizes().vec(), from_at_scalartype(dtype), in_storage);
-  IOValueRef r_scale = graph.add_input_tensor(
-      scale_tensor.sizes().vec(), vkapi::kFloat, in_storage);
-  IOValueRef r_zero_point = graph.add_input_tensor(
-      zero_point_tensor.sizes().vec(), vkapi::kInt, in_storage);
 
   const ValueRef r_quant_min = graph.add_scalar<int64_t>(quant_min);
   const ValueRef r_quant_max = graph.add_scalar<int64_t>(quant_max);
@@ -1014,8 +1022,8 @@ void test_vulkan_dequantize_per_token_impl(
   (graph,
    {
        r_input.value,
-       r_scale.value,
-       r_zero_point.value,
+       r_scale_tensor,
+       r_zero_point_int,
        r_quant_min,
        r_quant_max,
        r_out,
@@ -1028,23 +1036,14 @@ void test_vulkan_dequantize_per_token_impl(
   graph.prepack();
   graph.encode_execute();
 
-  // Copy input data to GPU
+  //
+  // Run model
+  //
+
+  graph.propagate_resize();
   graph.copy_into_staging(
       r_input.staging, input.const_data_ptr(), input.numel());
 
-  // Convert scale tensor to float and copy to GPU
-  at::Tensor scale_float = scale_tensor.to(at::kFloat);
-  graph.copy_into_staging(
-      r_scale.staging, scale_float.const_data_ptr(), scale_float.numel());
-
-  // Convert zero_point tensor to int and copy to GPU
-  at::Tensor zero_point_int = zero_point_tensor.to(at::kInt);
-  graph.copy_into_staging(
-      r_zero_point.staging,
-      zero_point_int.const_data_ptr(),
-      zero_point_int.numel());
-
-  // Execute the graph
   graph.execute();
 
   // Copy output data back to CPU
@@ -1094,7 +1093,6 @@ void test_vulkan_dequantize_per_token_impl(
   ASSERT_TRUE(output_correct);
 }
 
-// Test cases for dequantize_per_token
 TEST(
     VulkanDequantizePerTokenTest,
     test_reference_dequantize_per_token_uint8_to_float) {

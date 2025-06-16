@@ -16,6 +16,8 @@
 #define OUT_T ${buffer_scalar_type(OUT_DTYPE)}
 #define FVEC4_T ${texel_load_type(OUT_DTYPE, "texture3d")}
 
+#define ${MODE}
+
 ${define_active_storage_type("texture3d")}
 ${define_required_extensions(IN_DTYPE)}
 ${define_required_extensions(OUT_DTYPE)}
@@ -24,8 +26,8 @@ ${define_required_extensions(OUT_DTYPE)}
 
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "r", "t_in", IN_DTYPE, "texture3d")}
 ${layout_declare_tensor(B, "w", "t_out", OUT_DTYPE, "texture3d")}
+${layout_declare_tensor(B, "r", "t_in", IN_DTYPE, "texture3d")}
 
 $if MODE == "per_tensor":
   layout(push_constant) uniform restrict Block {
@@ -34,9 +36,9 @@ $if MODE == "per_tensor":
     int quant_min;
     int quant_max;
   };
-$else:
-  ${layout_declare_tensor(B, "r", "t_scale", "float", "texture3d")}
-  ${layout_declare_tensor(B, "r", "t_zero_point", "int", "texture3d")}
+$if MODE == "per_token":
+  ${layout_declare_tensor(B, "r", "t_scale", "float", "buffer")}
+  ${layout_declare_tensor(B, "r", "t_zero_point", "int", "buffer")}
 
   layout(push_constant) uniform restrict Block {
     int num_tokens;
@@ -52,8 +54,9 @@ ${layout_declare_ubo(B, "ivec3", "t_out_limits")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-void main() {
-$if MODE == "per_tensor":
+#ifdef per_tensor
+
+void dequantize_per_tensor() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
 
   // Skip if out of bounds
@@ -70,11 +73,13 @@ $if MODE == "per_tensor":
     outtex[i] = value;
   }
   write_texel(t_out, pos, outtex);
+}
 
-$if MODE == "per_token":
+#else
+
+void dequantize_per_token() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
 
-  // Skip if out of bounds
   if (any(greaterThanEqual(pos, t_in_limits))) {
     return;
   }
@@ -93,18 +98,11 @@ $if MODE == "per_token":
   }
   // For 1D tensor, token_idx remains 0
 
-  // Make sure token_idx is within bounds
   token_idx = min(token_idx, num_tokens - 1);
 
-  // For texture storage, we need to calculate the texel position and component index
-  int texel_idx = token_idx / 4;
-  int comp_idx = token_idx % 4;
-
-  vec4 scale_vals = load_texel(t_scale, ivec3(texel_idx, 0, 0));
-  ivec4 zp_vals = load_texel(t_zero_point, ivec3(texel_idx, 0, 0));
-
-  float scale_val = scale_vals[comp_idx];
-  int zero_point_val = zp_vals[comp_idx];
+  // Scale and zero_point are prepacked as buffers, so direct access
+  float scale_val = t_scale[token_idx];
+  int zero_point_val = t_zero_point[token_idx];
 
   FVEC4_T outtex;
   [[unroll]] for (int i = 0; i < 4; ++i) {
@@ -114,4 +112,10 @@ $if MODE == "per_token":
   }
 
   write_texel(t_out, pos, outtex);
+}
+
+#endif
+
+void main() {
+  dequantize_${MODE}();
 }
