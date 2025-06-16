@@ -186,9 +186,9 @@ void add_choose_qparams_tensor_node(
       choose_qparams_pick_global_wg_size,
       choose_qparams_pick_local_wg_size,
       // Inputs and Outputs
-      {{input, vkapi::kRead},
-       {scale_out, vkapi::kWrite},
-       {zero_point_out, vkapi::kWrite}},
+      {{scale_out, vkapi::kWrite},
+       {zero_point_out, vkapi::kWrite},
+       {input, vkapi::kRead}},
       // Shader param buffers
       param_ubos,
       // Push Constants
@@ -251,9 +251,9 @@ void add_choose_qparams_per_token_asymmetric_node(
       choose_qparams_per_token_pick_global_wg_size,
       choose_qparams_per_token_pick_local_wg_size,
       // Inputs and Outputs
-      {{input, vkapi::kRead},
-       {scale_out, vkapi::kWrite},
-       {zero_point_out, vkapi::kWrite}},
+      {{scale_out, vkapi::kWrite},
+       {zero_point_out, vkapi::kWrite},
+       {input, vkapi::kRead}},
       // Shader param buffers
       param_ubos,
       // Push Constants
@@ -275,6 +275,11 @@ void choose_qparams_tensor_impl(
   const ValueRef quant_max = args[arg_idx++];
   const ValueRef scale_out = args[arg_idx++];
   const ValueRef zero_point_out = args[arg_idx++];
+
+  // Check tensor types
+  VK_CHECK_COND(graph.val_is_tensor(input));
+  VK_CHECK_COND(graph.val_is_tensor(scale_out));
+  VK_CHECK_COND(graph.val_is_tensor(zero_point_out));
 
   // Verify input is a floating point type
   VK_CHECK_COND(
@@ -301,6 +306,11 @@ void choose_qparams_per_token_asymmetric_impl(
   const ValueRef input = args[arg_idx++];
   const ValueRef scale_out = args[arg_idx++];
   const ValueRef zero_point_out = args[arg_idx++];
+
+  // Check tensor types
+  VK_CHECK_COND(graph.val_is_tensor(input));
+  VK_CHECK_COND(graph.val_is_tensor(scale_out));
+  VK_CHECK_COND(graph.val_is_tensor(zero_point_out));
 
   // Verify input is a floating point type
   VK_CHECK_COND(

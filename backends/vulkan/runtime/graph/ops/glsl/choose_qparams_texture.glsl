@@ -13,6 +13,8 @@
 #define IN_T ${buffer_scalar_type(IN_DTYPE)}
 #define FVEC4_T ${texel_load_type(IN_DTYPE, "texture3d")}
 
+#define ${MODE}
+
 ${define_active_storage_type("texture3d")}
 ${define_required_extensions(IN_DTYPE)}
 
@@ -20,9 +22,9 @@ ${define_required_extensions(IN_DTYPE)}
 
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "r", "t_in", IN_DTYPE, "texture3d")}
 ${layout_declare_tensor(B, "w", "t_scale", "float", "texture3d")}
 ${layout_declare_tensor(B, "w", "t_zero_point", "int", "texture3d")}
+${layout_declare_tensor(B, "r", "t_in", IN_DTYPE, "texture3d")}
 
 $if MODE == "per_tensor":
   layout(push_constant) uniform restrict Block {
@@ -51,8 +53,9 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 shared float shared_min[NWORKERS];
 shared float shared_max[NWORKERS];
 
-void main() {
-$if MODE == "per_tensor":
+#ifdef per_tensor
+
+void choose_qparams_per_tensor() {
   uint global_id = gl_GlobalInvocationID.x;
   uint local_id = gl_LocalInvocationID.x;
   uint group_id = gl_WorkGroupID.x;
@@ -85,7 +88,7 @@ $if MODE == "per_tensor":
     // Calculate total tensor elements to determine padding
     int total_elements = t_in_limits.x * t_in_limits.y * t_in_limits.z * 4;
     int linear_tensor_idx = tensor_coord.x + tensor_coord.y * sizes.x +
-                           tensor_coord.z * sizes.x * sizes.y;
+                            tensor_coord.z * sizes.x * sizes.y;
     int remaining_elements = total_elements - (linear_tensor_idx);
     int valid_elements = min(4, remaining_elements);
 
@@ -168,8 +171,11 @@ $if MODE == "per_tensor":
     write_texel(t_scale, ivec3(0, 0, 0), vec4(scale_val, 0.0, 0.0, 0.0));
     write_texel(t_zero_point, ivec3(0, 0, 0), ivec4(zero_point_val, 0, 0, 0));
   }
+}
 
-$if MODE == "per_token":
+#else
+
+void choose_qparams_per_token() {
   // Each token is processed by multiple workgroups for parallel reduction
   uint local_id = gl_LocalInvocationID.x;
   uint group_id = gl_WorkGroupID.x;
@@ -219,7 +225,7 @@ $if MODE == "per_token":
       // Calculate total tensor elements to determine padding
       int total_elements = t_in_limits.x * t_in_limits.y * t_in_limits.z * 4;
       int linear_tensor_idx = tensor_coord.x + tensor_coord.y * sizes.x +
-                             tensor_coord.z * sizes.x * sizes.y;
+                              tensor_coord.z * sizes.x * sizes.y;
       int remaining_elements = total_elements - (linear_tensor_idx);
       int valid_elements = min(4, remaining_elements);
 
@@ -315,4 +321,10 @@ $if MODE == "per_token":
     // Synchronize before processing next token
     barrier();
   }
+}
+
+#endif
+
+void main() {
+  choose_qparams_${MODE}();
 }
