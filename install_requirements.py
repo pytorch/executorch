@@ -176,7 +176,7 @@ def main(args):
         help="Also installs required packages for running example scripts.",
     )
     args = parser.parse_args(args)
-    use_pytorch_nightly=not bool(args.use_pt_pinned_commit)
+    use_pytorch_nightly = not bool(args.use_pt_pinned_commit)
     install_requirements(use_pytorch_nightly)
     if args.example:
         install_optional_example_requirements(use_pytorch_nightly)
