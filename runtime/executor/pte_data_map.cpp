@@ -32,7 +32,7 @@ PteDataMap::get_data(executorch::aten::string_view key) const {
     ET_CHECK_OR_RETURN_ERROR(
         named_data_->Get(i) != nullptr && named_data_->Get(i)->key() != nullptr,
         InvalidArgument,
-        "Searching for key %.*s: NamedData at index %d is null",
+        "Searching for key %.*s: NamedData at index %lu is null",
         static_cast<int>(key.size()),
         key.data(),
         i);
@@ -47,7 +47,7 @@ PteDataMap::get_data(executorch::aten::string_view key) const {
       ET_CHECK_OR_RETURN_ERROR(
           segment_index < segments_->size(),
           InvalidArgument,
-          "Segment index %zu for key %.*s is out of range for segments size %u",
+          "Segment index %zu for key %.*s is out of range for segments size %lu",
           segment_index,
           static_cast<int>(key.size()),
           key.data(),
@@ -74,7 +74,7 @@ ET_NODISCARD executorch::runtime::Result<const char*> PteDataMap::get_key(
   ET_CHECK_OR_RETURN_ERROR(
       index < named_data_->size(),
       InvalidArgument,
-      "Index out of range: named_data size is %u, received index %u",
+      "Index out of range: named_data size is %lu, received index %lu",
       named_data_->size(),
       index);
 
@@ -82,7 +82,7 @@ ET_NODISCARD executorch::runtime::Result<const char*> PteDataMap::get_key(
       named_data_->Get(index) != nullptr &&
           named_data_->Get(index)->key() != nullptr,
       InvalidArgument,
-      "NamedData at index %u is null",
+      "NamedData at index %lu is null",
       index);
   return named_data_->Get(index)->key()->c_str();
 }
