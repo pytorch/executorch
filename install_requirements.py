@@ -76,27 +76,15 @@ NIGHTLY_VERSION = "dev20250601"
 
 def install_requirements(use_pytorch_nightly):
     # pip packages needed by exir.
-    EXIR_REQUIREMENTS = [
+    TORCH_PACKAGE = [
         # Setting use_pytorch_nightly to false to test the pinned PyTorch commit. Note
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
         f"torch==2.8.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torch",
-        (
-            f"torchvision==0.23.0.{NIGHTLY_VERSION}"
-            if use_pytorch_nightly
-            else "torchvision"
-        ),  # For testing.
     ]
 
-    EXAMPLES_REQUIREMENTS = [
-        f"torchaudio==2.8.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torchaudio",
-    ]
-
-    # Assemble the list of requirements to actually install.
-    # TODO: Add options for reducing the number of requirements.
-    REQUIREMENTS_TO_INSTALL = EXIR_REQUIREMENTS + EXAMPLES_REQUIREMENTS
-
-    # Install the requirements. `--extra-index-url` tells pip to look for package
+    # Install the requirements for core ExecuTorch package.
+    # `--extra-index-url` tells pip to look for package
     # versions on the provided URL if they aren't available on the default URL.
     subprocess.run(
         [
@@ -105,10 +93,8 @@ def install_requirements(use_pytorch_nightly):
             "pip",
             "install",
             "-r",
-            "requirements-examples.txt",
-            "-r",
             "requirements-dev.txt",
-            *REQUIREMENTS_TO_INSTALL,
+            *TORCH_PACKAGE,
             "--extra-index-url",
             TORCH_NIGHTLY_URL,
         ],
@@ -139,6 +125,44 @@ def install_requirements(use_pytorch_nightly):
     )
 
 
+def install_optional_example_requirements(use_pytorch_nightly):
+    print("Installing packages in requirements-examples.txt")
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "-r",
+            "requirements-examples.txt",
+        ],
+        check=True,
+    )
+
+    print("Installing torch domain libraries")
+    DOMAIN_LIBRARIES = [
+        (
+            f"torchvision==0.23.0.{NIGHTLY_VERSION}"
+            if use_pytorch_nightly
+            else "torchvision"
+        ),
+        f"torchaudio==2.8.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torchaudio",
+    ]
+    # Then install domain libraries
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            *DOMAIN_LIBRARIES,
+            "--extra-index-url",
+            TORCH_NIGHTLY_URL,
+        ],
+        check=True,
+    )
+
+
 def main(args):
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -146,8 +170,16 @@ def main(args):
         action="store_true",
         help="build from the pinned PyTorch commit instead of nightly",
     )
+    parser.add_argument(
+        "--example",
+        action="store_true",
+        help="Also installs required packages for running example scripts.",
+    )
     args = parser.parse_args(args)
-    install_requirements(use_pytorch_nightly=not bool(args.use_pt_pinned_commit))
+    use_pytorch_nightly=not bool(args.use_pt_pinned_commit)
+    install_requirements(use_pytorch_nightly)
+    if args.example:
+        install_optional_example_requirements(use_pytorch_nightly)
 
 
 if __name__ == "__main__":
