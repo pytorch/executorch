@@ -34,6 +34,7 @@ from executorch.devtools.inspector._inspector_utils import (
     find_populated_event,
     gen_graphs_from_etrecord,
     is_inference_output_equal,
+    map_runtime_aot_intermediate_outputs,
     merge_overlapping_debug_handles,
     TimeScale,
 )
@@ -237,6 +238,84 @@ class TestInspectorUtils(unittest.TestCase):
 
         self.assertEqual(intermediate_outputs, expected_intermediate_outputs)
         self.assertIs(expected_intermediate_outputs[(10, 11, 12)], big_tensor)
+
+    def test_map_runtime_aot_intermediate_outputs_empty_inputs(self):
+        # When the inputs are empty, the output should also be empty
+        aot_intermediate_outputs = {}
+        runtime_intermediate_outputs = {}
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {}
+        self.assertEqual(actual, expected)
+
+    def test_map_runtime_aot_intermediate_outputs_single_element_tuple(self):
+        # Single element tuple
+        aot_intermediate_outputs = {(0,): 100, (1,): 200, (2,): 300}
+        runtime_intermediate_outputs = {(0,): 150, (1,): 250, (2,): 350}
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {
+            ((0,), 100): ((0,), 150),
+            ((1,), 200): ((1,), 250),
+            ((2,), 300): ((2,), 350),
+        }
+        self.assertEqual(actual, expected)
+
+    def test_map_runtime_aot_intermediate_outputs_exact_match(self):
+        # Exact match between aot and runtime debug_handles
+        aot_intermediate_outputs = {(0, 1): 100, (2, 3): 200, (4, 5): 300}
+        runtime_intermediate_outputs = {(0, 1): 150, (2, 3): 200, (4, 5): 300}
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {
+            ((0, 1), 100): ((0, 1), 150),
+            ((2, 3), 200): ((2, 3), 200),
+            ((4, 5), 300): ((4, 5), 300),
+        }
+        self.assertEqual(actual, expected)
+
+    def test_map_runtime_aot_intermediate_outputs_no_overlaps(self):
+        # No overlaps between aot and runtime debug_handles
+        aot_intermediate_outputs = {(0, 1): 100, (4, 5): 300}
+        runtime_intermediate_outputs = {(2, 3): 200, (8, 9): 300}
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {}
+        self.assertEqual(actual, expected)
+
+    def test_map_runtime_aot_intermediate_outputs_multiple_aot_to_one_runtime(self):
+        # Multiple aot debug_handles map to one runtime debug_handle
+        aot_intermediate_outputs = {(0, 1, 2): 100, (3, 4): 300}
+        runtime_intermediate_outputs = {(1, 2, 3): 250, (8, 9): 300}
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {((0, 1, 2, 3, 4), 300): ((1, 2, 3), 250)}
+        self.assertEqual(actual, expected)
+
+    def test_map_runtime_aot_intermediate_outputs_one_aot_to_multiple_runtime(self):
+        # One aot debug_handle map to multiple runtime debug_handles
+        aot_intermediate_outputs = {(0, 1, 2, 3, 4): 100, (8, 9): 300}
+        runtime_intermediate_outputs = {(0, 1): 150, (2, 3): 200, (4, 5): 300}
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {((0, 1, 2, 3, 4), 100): ((0, 1, 2, 3, 4, 5), 300)}
+        self.assertEqual(actual, expected)
+
+    def test_map_runtime_aot_intermediate_outputs_complex_chain(self):
+        # Complex chain (N-to-N mapping)
+        aot_intermediate_outputs = {(1, 2): 100, (3, 4): 200, (5, 6): 300}
+        runtime_intermediate_outputs = {(2, 3): 150, (4, 5): 250, (6, 7): 350}
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {((1, 2, 3, 4, 5, 6), 300): ((2, 3, 4, 5, 6, 7), 350)}
+        self.assertEqual(actual, expected)
 
 
 def gen_mock_operator_graph_with_expected_map() -> (

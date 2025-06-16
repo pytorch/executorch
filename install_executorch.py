@@ -47,6 +47,8 @@ def clean():
     for d in dirs:
         print(f"Cleaning {d}...")
         shutil.rmtree(d, ignore_errors=True)
+    print("Cleaning buck-out/...")
+    shutil.rmtree("buck-out/", ignore_errors=True)
     print("Done cleaning build artifacts.")
 
 
