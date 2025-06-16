@@ -123,9 +123,14 @@ gen_selected_ops(
 )
 
 generate_bindings_for_kernels(
-  LIB_NAME "select_build_lib" FUNCTIONS_YAML
-  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml CUSTOM_OPS_YAML
+  LIB_NAME 
+  "select_build_lib" 
+  FUNCTIONS_YAML
+  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml 
+  CUSTOM_OPS_YAML
   "${_custom_ops_yaml}"
+  DTYPE_SELECTIVE_BUILD
+  "${EXECUTORCH_DTYPE_SELECTIVE_BUILD}"
 )
 
 gen_operators_lib(

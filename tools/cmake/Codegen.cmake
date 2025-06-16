@@ -71,11 +71,12 @@ function(gen_selected_ops)
                           --output-dir=${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/
     )
     message("Command - ${_gen_opvariant_command}")
+    message("OUTPUT - ${_opvariant_h}")
     add_custom_command(
-      COMMENT "Generating selected_op_variants.h for ${GEN_LIB_NAME}"
+      COMMENT "Generating ${_opvariant_h} for ${GEN_LIB_NAME}"
       OUTPUT ${_opvariant_h}
       COMMAND ${_gen_opvariant_command}
-      DEPENDS ${_oplist_yaml} ${_codegen_tools_srcs}
+      DEPENDS ${_oplist_yaml} ${GEN_OPS_SCHEMA_YAML} ${_codegen_tools_srcs}
       WORKING_DIRECTORY ${EXECUTORCH_ROOT}
     )
   endif()
@@ -88,7 +89,7 @@ endfunction()
 # functions_yaml CUSTOM_OPS_YAML custom_ops_yaml )
 function(generate_bindings_for_kernels)
   set(options ADD_EXCEPTION_BOUNDARY)
-  set(arg_names LIB_NAME FUNCTIONS_YAML CUSTOM_OPS_YAML)
+  set(arg_names LIB_NAME FUNCTIONS_YAML CUSTOM_OPS_YAML DTYPE_SELECTIVE_BUILD)
   cmake_parse_arguments(GEN "${options}" "${arg_names}" "" ${ARGN})
 
   message(STATUS "Generating kernel bindings:")
@@ -96,6 +97,7 @@ function(generate_bindings_for_kernels)
   message(STATUS "  FUNCTIONS_YAML: ${GEN_FUNCTIONS_YAML}")
   message(STATUS "  CUSTOM_OPS_YAML: ${GEN_CUSTOM_OPS_YAML}")
   message(STATUS "  ADD_EXCEPTION_BOUNDARY: ${GEN_ADD_EXCEPTION_BOUNDARY}")
+  message(STATUS "  DTYPE_SELECTIVE_BUILD: ${GEN_DTYPE_SELECTIVE_BUILD}")
 
   # Command to generate selected_operators.yaml from custom_ops.yaml.
   file(GLOB_RECURSE _codegen_templates "${EXECUTORCH_ROOT}/codegen/templates/*")
@@ -103,6 +105,13 @@ function(generate_bindings_for_kernels)
   set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
   # By default selective build output is selected_operators.yaml
   set(_oplist_yaml ${_out_dir}/selected_operators.yaml)
+
+  # If dtype selective build is enable, force header file to be preserved
+  if(GEN_DTYPE_SELECTIVE_BUILD)
+    set(_opvariant_h ${_out_dir}/selected_op_variants.h)
+  else()
+    set(_opvariant_h "")
+  endif()
 
   # Command to codegen C++ wrappers to register custom ops to both PyTorch and
   # Executorch runtime.
@@ -148,7 +157,7 @@ function(generate_bindings_for_kernels)
     COMMENT "Generating code for kernel registration"
     OUTPUT ${_gen_command_sources}
     COMMAND ${_gen_command}
-    DEPENDS ${_oplist_yaml} ${GEN_CUSTOM_OPS_YAML}
+    DEPENDS ${_oplist_yaml} ${_opvariant_h} ${GEN_CUSTOM_OPS_YAML}
             ${GEN_FUNCTIONS_YAML} ${_codegen_templates}
             ${_torchgen_srcs}
     WORKING_DIRECTORY ${EXECUTORCH_ROOT}
