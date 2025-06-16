@@ -13,11 +13,15 @@
 #define IN_T ${buffer_scalar_type(IN_DTYPE)}
 #define OUT_T ${buffer_scalar_type(OUT_DTYPE)}
 
+#define ${MODE}
+
 ${define_active_storage_type("buffer")}
 ${define_required_extensions(IN_DTYPE)}
 ${define_required_extensions(OUT_DTYPE)}
 
 layout(std430) buffer;
+
+#include "indexing_utils.h"
 
 ${layout_declare_tensor(B, "w", "t_out", OUT_DTYPE, "buffer")}
 ${layout_declare_tensor(B, "r", "t_in", IN_DTYPE, "buffer")}
@@ -29,7 +33,7 @@ $if MODE == "per_tensor":
     int quant_min;
     int quant_max;
   };
-$else:
+$if MODE == "per_token":
   ${layout_declare_tensor(B, "r", "t_scale", "float", "buffer")}
   ${layout_declare_tensor(B, "r", "t_zero_point", "int", "buffer")}
 
@@ -39,87 +43,77 @@ $else:
     int quant_max;
   };
 
+${layout_declare_ubo(B, "int", "out_numel")}
 ${layout_declare_ubo(B, "ivec4", "t_in_sizes")}
 ${layout_declare_ubo(B, "ivec4", "t_in_strides")}
 ${layout_declare_ubo(B, "ivec4", "t_out_sizes")}
 ${layout_declare_ubo(B, "ivec4", "t_out_strides")}
 
-#include "indexing_utils.h"
+${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
+${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
+
 #include "quantize.glslh"
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-void main() {
-$if MODE == "per_tensor":
-  const ivec4 pos = ivec4(
-      gl_GlobalInvocationID.x,
-      gl_GlobalInvocationID.y,
-      gl_GlobalInvocationID.z,
-      0);
+const lowp ivec4 out_dim_order = unhash_dim_order(out_layout);
+const lowp ivec4 in_dim_order = unhash_dim_order(in_layout);
 
-  const int t_in_idx = tidx_to_bufi(pos, t_in_strides);
-  const int t_out_idx = tidx_to_bufi(pos, t_out_strides);
+#ifdef per_tensor
 
-  IN_T value = t_in[t_in_idx];
-  OUT_T qvalue;
+void quantize_per_tensor() {
+  const int out_bufi = int(gl_GlobalInvocationID.x);
 
-  qvalue = quantize_val(value, scale, zero_point);
-
-  t_out[t_out_idx] = qvalue;
-
-$if MODE == "per_token":
-  const ivec4 pos = ivec4(
-      gl_GlobalInvocationID.x,
-      gl_GlobalInvocationID.y,
-      gl_GlobalInvocationID.z,
-      0);
-
-  const int t_in_idx = tidx_to_bufi(pos, t_in_strides);
-  const int t_out_idx = tidx_to_bufi(pos, t_out_strides);
-
-  // Skip if out of bounds
-  if (t_in_idx >= t_in_sizes.x * t_in_sizes.y * t_in_sizes.z * t_in_sizes.w) {
+  if (out_bufi >= out_numel) {
     return;
   }
 
-  IN_T value = t_in[t_in_idx];
-  OUT_T qvalue;
+  const ivec4 out_tidx = bufi_to_tidx(out_bufi, t_out_strides, out_dim_order);
+  const int in_bufi = tidx_to_bufi(out_tidx, t_in_strides);
 
-  // Calculate logical position from linear index and strides
-  ivec4 logical_pos;
-  int remaining = t_in_idx;
+  IN_T value = t_in[in_bufi];
+  OUT_T qvalue = quantize_val(value, scale, zero_point);
 
-  logical_pos.x = remaining % t_in_sizes.x;
-  remaining /= t_in_sizes.x;
+  t_out[out_bufi] = qvalue;
+}
 
-  logical_pos.y = remaining % t_in_sizes.y;
-  remaining /= t_in_sizes.y;
+#else
 
-  logical_pos.z = remaining % t_in_sizes.z;
-  remaining /= t_in_sizes.z;
+void quantize_per_token() {
+  const int out_bufi = int(gl_GlobalInvocationID.x);
 
-  logical_pos.w = remaining;
+  if (out_bufi >= out_numel) {
+    return;
+  }
 
-  // Calculate token index based on logical position
+  const ivec4 out_tidx = bufi_to_tidx(out_bufi, t_out_strides, out_dim_order);
+  const int in_bufi = tidx_to_bufi(out_tidx, t_in_strides);
+
+  IN_T value = t_in[in_bufi];
+
   int token_idx = 0;
 
-  // Check dimensions to determine how to calculate token_idx
-  if (t_in_sizes.w > 1) {
+  if (t_out_sizes.w > 1) {
     // 4D tensor
-    token_idx = logical_pos.w * (t_in_sizes.z * t_in_sizes.y) + logical_pos.z * t_in_sizes.y + logical_pos.y;
-  } else if (t_in_sizes.z > 1) {
+    token_idx = out_tidx.w * (t_out_sizes.z * t_out_sizes.y) + out_tidx.z * t_out_sizes.y + out_tidx.y;
+  } else if (t_out_sizes.z > 1) {
     // 3D tensor
-    token_idx = logical_pos.z * t_in_sizes.y + logical_pos.y;
-  } else if (t_in_sizes.y > 1) {
+    token_idx = out_tidx.z * t_out_sizes.y + out_tidx.y;
+  } else if (t_out_sizes.y > 1) {
     // 2D tensor
-    token_idx = logical_pos.y;
+    token_idx = out_tidx.y;
   }
   // For 1D tensor, token_idx remains 0
 
-  // Make sure token_idx is within bounds
   token_idx = min(token_idx, num_tokens - 1);
 
-  qvalue = quantize_val(value, t_scale[token_idx], t_zero_point[token_idx]);
+  OUT_T qvalue = quantize_val(value, t_scale[token_idx], t_zero_point[token_idx]);
 
-  t_out[t_out_idx] = qvalue;
+  t_out[out_bufi] = qvalue;
+}
+
+#endif
+
+void main() {
+  quantize_${MODE}();
 }
