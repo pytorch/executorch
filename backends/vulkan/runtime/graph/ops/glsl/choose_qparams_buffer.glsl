@@ -12,6 +12,8 @@
 
 #define IN_T ${buffer_scalar_type(IN_DTYPE)}
 
+#define ${MODE}
+
 ${define_active_storage_type("buffer")}
 ${define_required_extensions(IN_DTYPE)}
 
@@ -19,9 +21,9 @@ ${define_required_extensions(IN_DTYPE)}
 
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "r", "t_in", IN_DTYPE, "buffer")}
 ${layout_declare_tensor(B, "w", "t_scale", "float", "buffer")}
 ${layout_declare_tensor(B, "w", "t_zero_point", "int", "buffer")}
+${layout_declare_tensor(B, "r", "t_in", IN_DTYPE, "buffer")}
 
 $if MODE == "per_tensor":
   layout(push_constant) uniform restrict Block {
@@ -53,11 +55,11 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 shared float shared_min[NWORKERS];
 shared float shared_max[NWORKERS];
 
-void main() {
-$if MODE == "per_tensor":
+#ifdef per_tensor
+
+void choose_qparams_per_tensor() {
   uint global_id = gl_GlobalInvocationID.x;
   uint local_id = gl_LocalInvocationID.x;
-  uint group_id = gl_WorkGroupID.x;
   uint total_threads = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
 
   uint total_elements = uint(t_in_sizes.x * t_in_sizes.y * t_in_sizes.z * t_in_sizes.w);
@@ -114,8 +116,11 @@ $if MODE == "per_tensor":
     t_scale[0] = scale_val;
     t_zero_point[0] = zero_point_val;
   }
+}
 
-$if MODE == "per_token":
+#else
+
+void choose_qparams_per_token() {
   uint global_id = gl_GlobalInvocationID.x;
   uint local_id = gl_LocalInvocationID.x;
   uint group_id = gl_WorkGroupID.x;
@@ -200,4 +205,10 @@ $if MODE == "per_token":
     // Synchronize before processing next token
     barrier();
   }
+}
+
+#endif
+
+void main() {
+  choose_qparams_${MODE}();
 }
