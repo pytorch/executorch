@@ -1,7 +1,3 @@
-# Lintrunner itself
-lintrunner==0.12.7
-lintrunner-adapters==0.12.4
-
 # Flake 8 and its dependencies
 flake8==6.1.0
 flake8-breakpoint==1.1.0

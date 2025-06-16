@@ -1101,6 +1101,16 @@ class MeanWOKeppDim(torch.nn.Module):
         return torch.mean(x, (-1, -2))
 
 
+class MaskedFill(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, attn_mask):
+        return attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(
+            attn_mask == 0, float(0.0)
+        )
+
+
 class Maximum(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1748,16 +1758,6 @@ class WhereConstantInf(torch.nn.Module):
     def forward(self, x):
         return torch.nn.functional.softmax(
             torch.where(x >= 0, 0.1, float("-inf")), dim=-1
-        )
-
-
-class MaskedFill(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, attn_mask):
-        return attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(
-            attn_mask == 0, float(0.0)
         )
 
 
