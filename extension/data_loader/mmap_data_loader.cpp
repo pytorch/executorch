@@ -332,38 +332,6 @@ Error MmapDataLoader::load_into(
       fd_,
       range.start);
 
-  if (mlock_config_ == MlockConfig::UseMlock ||
-      mlock_config_ == MlockConfig::UseMlockIgnoreErrors) {
-    int err = ::mlock(pages, size);
-    if (err < 0) {
-      if (mlock_config_ == MlockConfig::UseMlockIgnoreErrors) {
-        ET_LOG(
-            Debug,
-            "Ignoring mlock error for file %s (off=0x%zd): "
-            "mlock(%p, %zu) failed: %s (%d)",
-            file_name_,
-            offset,
-            pages,
-            size,
-            ::strerror(errno),
-            errno);
-      } else {
-        ET_LOG(
-            Error,
-            "File %s (off=0x%zd): mlock(%p, %zu) failed: %s (%d)",
-            file_name_,
-            offset,
-            pages,
-            size,
-            ::strerror(errno),
-            errno);
-        ::munmap(pages, size);
-        return Error::NotSupported;
-      }
-    }
-    // No need to keep track of this. munmap() will unlock as a side effect.
-  }
-
   // Offset into mapped region.
   const size_t map_delta = offset - range.start;
 
