@@ -63,7 +63,7 @@ ET_NODISCARD Result<void*> getMemPlannedPtr(
         "size_t cannot hold memory offset 0x%08" PRIx32 ".%08" PRIx32,
         memory_offset_high,
         memory_offset_low);
-    memory_offset |= static_cast<size_t>(memory_offset_high) << 32;
+//    memory_offset |= static_cast<size_t>(memory_offset_high) << 32;
   }
   return allocator->get_offset_address(memory_id, memory_offset, nbytes);
 }
@@ -133,7 +133,7 @@ ET_NODISCARD Error validateTensorLayout(
     ET_CHECK_OR_RETURN_ERROR(
         s_tensor->sizes()->Get(i) == expected_layout.sizes()[i],
         InvalidExternalData,
-        "Sizes mismatch. Expected %d, got %d for size at index %d.",
+        "Sizes mismatch. Expected %ld, got %ld for size at index %d.",
         s_tensor->sizes()->Get(i),
         expected_layout.sizes()[i],
         i);

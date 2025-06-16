@@ -25,15 +25,15 @@ cmake_install_executorch_lib() {
 
   CXXFLAGS="$COMMON_CXXFLAGS" retry cmake \
           -DCMAKE_CXX_STANDARD_REQUIRED=ON \
-	  -DCMAKE_TOOLCHAIN_FILE="/workspace/executorch/examples/arm/ethos-u-setup/arm-zephyr-eabi-gcc.cmake" \
+	  -DCMAKE_TOOLCHAIN_FILE="/home/zephyruser/executorch/examples/arm/ethos-u-setup/arm-zephyr-eabi-gcc.cmake" \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
-	  -DEXECUTORCH_PAL_DEFAULT=minimal \
+	  -DEXECUTORCH_PAL_DEFAULT=posix \
           -DCMAKE_BUILD_TYPE=Release \
           -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
           -DEXECUTORCH_OPTIMIZE_SIZE=ON \
           -DEXECUTORCH_BUILD_PTHREADPOOL=OFF \
           -DEXECUTORCH_BUILD_CPUINFO=OFF \
-          -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+	  -DEXECUTORCH_ENABLE_LOGGING=ON \
           ${EXTRA_BUILD_ARGS} \
           -Bcmake-out .
   cmake --build cmake-out -j9 --target install --config Release
@@ -42,6 +42,7 @@ cmake_install_executorch_lib() {
 test_cmake_size_test() {
     CXXFLAGS="$COMMON_CXXFLAGS" retry cmake -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
+	-DCMAKE_TOOLCHAIN_FILE="/home/zephyruser/executorch/examples/arm/ethos-u-setup/arm-zephyr-eabi-gcc.cmake" \
         ${EXTRA_BUILD_ARGS} \
         -Bcmake-out/test test
 
