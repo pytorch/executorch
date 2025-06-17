@@ -104,12 +104,14 @@ class TOSAPartitioner(Partitioner):
                         if not is_partitioned(input):
                             del node.meta["delegation_tag"]
                             break
+                    continue
 
                 if is_dequant_node(node):
                     for user in node.users:
                         if not is_partitioned(user):
                             del node.meta["delegation_tag"]
                             break
+                    continue
 
                 if tosa_spec.support_float():
                     continue
