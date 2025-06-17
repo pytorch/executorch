@@ -135,12 +135,11 @@ def generate_compatible_configs(model_name: str, target_os=None) -> List[str]:
             # etLLM recipes for Llama
             repo_name = model_name.split("meta-llama/")[1]
             if "qlora" in repo_name.lower():
-                configs.append("llama3_qlora")
+                configs = ["llama3_qlora"]
             elif "spinquant" in repo_name.lower():
-                configs.append("llama3_spinquant")
+                configs = ["llama3_spinquant"]
             else:
-                configs.append("llama3_fb16")
-                configs.append("et_xnnpack_custom_spda_kv_cache_8da4w")
+                configs.extend(["llama3_fb16", "et_xnnpack_custom_spda_kv_cache_8da4w"])
                 configs.extend(
                     [
                         config

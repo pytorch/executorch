@@ -335,3 +335,50 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             )
             .run_method_and_compare_outputs()
         )
+
+    class ConvAddConvOutput(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 16, 3)
+            self.conv2 = torch.nn.Conv2d(16, 16, 3)
+
+        def forward(self, x):
+            y = self.conv1(x)
+            z = torch.add(y, 1.0)
+            out1 = self.conv2(z)
+            out2 = z
+            return out1, out2
+
+    ConvAddConvOutputModule = ConvAddConvOutput()
+
+    def test_conv_add_conv_output(self):
+        x = torch.randn(1, 3, 8, 8)
+
+        self.run_tester(self.ConvAddConvOutput().eval(), (x,))
+
+        x_cl = x.to(memory_format=torch.channels_last)
+        self.run_tester(self.ConvAddConvOutput().eval(), (x_cl,))
+
+    class ThreeOutputsModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 3, 3)
+            self.conv2 = torch.nn.Conv2d(3, 3, 3)
+            self.linear = torch.nn.Linear(6, 6)
+
+        def forward(self, x):
+            conv1_out = self.conv1(x)
+            conv2_out = self.conv2(x)
+            linear_out = self.linear(x)
+
+            return linear_out, conv1_out, conv2_out
+
+    ThreeOutputsModelModule = ThreeOutputsModel()
+
+    def test_three_outputs_model(self):
+        x = torch.randn(1, 3, 6, 6)
+
+        self.run_tester(self.ThreeOutputsModelModule.eval(), (x,))
+
+        x_cl = x.to(memory_format=torch.channels_last)
+        self.run_tester(self.ThreeOutputsModelModule.eval(), (x_cl,))

@@ -20,6 +20,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     adjust_pooling_pad_if_needed,
     validate_num_inputs,
     validate_same_dtype,
+    validate_valid_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -48,6 +49,12 @@ class MaxPool2dVisitor_0_80(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, [3, 4])
         validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_valid_dtype(
+            self.target,
+            [inputs[0], output],
+            [ts.DType.INT8, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
         input_tensor = inputs[0]
         kernel_size = inputs[1].special
@@ -133,6 +140,12 @@ class MaxPool2dVisitor(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, [3, 4])
         validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_valid_dtype(
+            self.target,
+            [inputs[0], output],
+            [ts.DType.INT8, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
         input_tensor = inputs[0]
         kernel_size = inputs[1].special

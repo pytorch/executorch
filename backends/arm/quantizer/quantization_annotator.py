@@ -259,6 +259,7 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.clamp.default,
     torch.ops.aten.clamp.Tensor,
     torch.ops.aten.unflatten.int,
+    torch.ops.aten.index_select.default,
 ]
 
 _one_to_one_shared_input_or_input_act_qspec = [

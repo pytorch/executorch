@@ -20,6 +20,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     adjust_pooling_pad_if_needed,
     validate_num_inputs,
     validate_same_dtype,
+    validate_valid_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -106,13 +107,9 @@ class AvgPool2dVisitor_0_80_BI(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, [3, 4, 6])
         validate_same_dtype(self.target, [inputs[0], output], ts)
-
-        supported_dtypes = [ts.DType.INT8]
-        if inputs[0].dtype not in supported_dtypes:
-            raise TypeError(
-                f"IO data type needs to be one of {supported_dtypes}, got "
-                f'"{inputs[0].dtype}"'
-            )
+        validate_valid_dtype(
+            self.target, [inputs[0], output], ts.DType.INT8, output.tosa_spec
+        )
 
         accumulator_type = ts.DType.INT32
 
@@ -146,13 +143,12 @@ class AvgPool2dVisitor_0_80_MI(AvgPool2dVisitor_0_80_BI):
 
         validate_num_inputs(self.target, inputs, [3, 4, 6])
         validate_same_dtype(self.target, [inputs[0], output], ts)
-
-        supported_dtypes = [ts.DType.INT8, ts.DType.FP32]
-        if inputs[0].dtype not in supported_dtypes:
-            raise TypeError(
-                f"IO data type needs to be one of {supported_dtypes}, got "
-                f'"{inputs[0].dtype}"'
-            )
+        validate_valid_dtype(
+            self.target,
+            [inputs[0], output],
+            [ts.DType.INT8, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
         if inputs[0].dtype == ts.DType.INT8:
             super().define_node(node, tosa_graph, inputs, output)
@@ -253,13 +249,9 @@ class AvgPool2dVisitor(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, [3, 4, 6])
         validate_same_dtype(self.target, [inputs[0], output], ts)
-
-        supported_dtypes = [ts.DType.INT8]
-        if inputs[0].dtype not in supported_dtypes:
-            raise TypeError(
-                f"IO data type needs to be one of {supported_dtypes}, got "
-                f'"{inputs[0].dtype}"'
-            )
+        validate_valid_dtype(
+            self.target, [inputs[0], output], ts.DType.INT8, output.tosa_spec
+        )
 
         accumulator_type = ts.DType.INT32
 
@@ -296,13 +288,12 @@ class AvgPool2dVisitor_FP(AvgPool2dVisitor):
 
         validate_num_inputs(self.target, inputs, [3, 4, 6])
         validate_same_dtype(self.target, [inputs[0], output], ts)
-
-        supported_dtypes = [ts.DType.INT8, ts.DType.FP32]
-        if inputs[0].dtype not in supported_dtypes:
-            raise TypeError(
-                f"IO data type needs to be one of {supported_dtypes}, got "
-                f'"{inputs[0].dtype}"'
-            )
+        validate_valid_dtype(
+            self.target,
+            [inputs[0], output],
+            [ts.DType.INT8, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
         if inputs[0].dtype == ts.DType.INT8:
             super().define_node(node, tosa_graph, inputs, output)
