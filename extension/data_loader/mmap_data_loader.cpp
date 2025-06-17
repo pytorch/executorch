@@ -151,7 +151,7 @@ void MunmapSegment(void* context, void* data, size_t size) {
 } // namespace
 
 /**
- * Helper for input validation.
+ * Validates that file read range is within bounds.
  */
 Error MmapDataLoader::validate_input(size_t offset, size_t size) const {
   ET_CHECK_OR_RETURN_ERROR(
