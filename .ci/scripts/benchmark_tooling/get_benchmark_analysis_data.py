@@ -68,7 +68,6 @@ ABBREVIATIONS = {
     "iphone": "ip",
     "xnnpackq8": "xnnq8",
 }
-
 def abbreviate(s):
     for full, abbr in ABBREVIATIONS.items():
         s = s.replace(full, abbr)
@@ -205,7 +204,6 @@ class ExecutorchBenchmarkFetcher:
             end_time: ISO8601 formatted end time (YYYY-MM-DDTHH:MM:SS)
             privateDeviceMatchings: List of keyword lists for matching private devices
             publicDeviceMatchings: List of keyword lists for matching public devices
-
         Returns:
             Tuple containing (private_device_results, public_device_results)
         """
@@ -369,6 +367,10 @@ class ExecutorchBenchmarkFetcher:
         for name in private_ones:
             logging.info(name)
 
+    def _generate_table_name(self, group_info:dict, fields: list[str]) -> str:
+        name = "|".join(group_info[k] for k in fields if k in group_info and group_info[k])
+        return self.normalize_string(name)
+
     def _process(self, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Process raw benchmark data.
@@ -386,16 +388,15 @@ class ExecutorchBenchmarkFetcher:
             Processed benchmark data
         """
         for item in data:
-            group = item.get("groupInfo", {})
+            # normalized string values in groupInfo
             item["groupInfo"] = {
                 k: self.normalize_string(v)
-                for k, v in group.items()
+                for k, v in item.get("groupInfo", {}).items()
                 if v is not None and isinstance(v, str)
             }
-            name = (
-                f"{group['model']}|{group['backend']}|{group['device']}|{group['arch']}"
-            )
-            name = self.normalize_string(name)
+            group = item.get("groupInfo", {})
+            name = self._generate_table_name(group, self.query_group_table_by_fields)
+
             # Add full name joined by the group key fields
             item["table_name"] = name
 
@@ -404,7 +405,7 @@ class ExecutorchBenchmarkFetcher:
                 item["groupInfo"]["aws_type"] = "private"
             else:
                 item["groupInfo"]["aws_type"] = "public"
-        # Sort by table name
+                
         data.sort(key=lambda x: x["table_name"])
         logging.info(f"fetched {len(data)} table views")
         return data
@@ -458,12 +459,13 @@ class ExecutorchBenchmarkFetcher:
                         item.get("groupInfo", {}).get("aws_type", "") == "private"
                     )
                     if is_private is not is_item_private:
-                        continue
+                        continue # skip if not matching private/public device
+
+                    # generate short name for each table data
                     item["short_name"] = self.generate_short_name(
                         norm_keywords, len(match)
                     )
                     match.append(key)
-                    # avoid duplicates
                     results[key] = item
             matchings.append((keyword_list, match))
         if not self.disable_logging:
