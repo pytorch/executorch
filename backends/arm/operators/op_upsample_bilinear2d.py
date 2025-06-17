@@ -110,8 +110,8 @@ class UpsampleBilinear2dVisitor_0_80(NodeVisitor):
                 input_node=intermediate,
                 output_name=output.name,
                 output_type=ts.DType.INT8,
-                input_zp=0,
-                output_zp=0,
+                input_zp=[0],
+                output_zp=[0],
                 is_double_round=False,
             )
         else:
@@ -232,8 +232,8 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
                 input_node=intermediate,
                 output_name=output.name,
                 output_type=ts.DType.INT8,
-                input_zp=0,
-                output_zp=0,
+                input_zp=[0],
+                output_zp=[0],
                 rounding_mode=RoundingMode.SINGLE_ROUND,
             )
         else:
