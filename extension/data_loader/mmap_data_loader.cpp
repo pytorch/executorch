@@ -180,7 +180,7 @@ Result<FreeableBuffer> MmapDataLoader::load(
     size_t offset,
     size_t size,
     ET_UNUSED const DataLoader::SegmentInfo& segment_info) const {
-  // Validate input.
+  // Ensure read range is valid.
   auto err = validate_input(offset, size);
   if (err != Error::Ok) {
     return err;
@@ -288,13 +288,13 @@ Error MmapDataLoader::load_into(
   ET_CHECK_OR_RETURN_ERROR(
       buffer != nullptr, InvalidArgument, "Buffer is null");
 
-  // Validate input.
+  // Ensure read range is valid.
   auto err = validate_input(offset, size);
   if (err != Error::Ok) {
     return err;
   }
 
-  // Nothing to copy
+  // Nothing to copy.
   if (size == 0) {
     return Error::Ok;
   }
