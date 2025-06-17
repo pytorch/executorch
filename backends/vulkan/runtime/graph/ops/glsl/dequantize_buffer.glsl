@@ -59,6 +59,70 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 const lowp ivec4 out_dim_order = unhash_dim_order(out_layout);
 const lowp ivec4 in_dim_order = unhash_dim_order(in_layout);
 
+/*
+ * DEQUANTIZATION SHADER (BUFFER STORAGE)
+ *
+ * This shader converts n-bit integer tensor values back to floating-point representations
+ * using pre-computed quantization parameters (scale and zero_point). The dequantization
+ * reconstructs the original floating-point values from their discrete integer representations
+ * with minimal precision loss.
+ *
+ * ALGORITHM:
+ * 1. Load quantized integer value from buffer
+ * 2. Apply dequantization formula: value = (qvalue - zero_point) * scale
+ * 3. Store reconstructed floating-point value to output buffer
+ *
+ * WORKGROUP CONFIGURATION:
+ * - Per-Tensor Mode:
+ *   - Global WG Size: {num_elements, 1, 1} (one thread per tensor element)
+ *   - Local WG Size: Default (typically {64, 1, 1} or based on global WG size)
+ * - Per-Token Mode:
+ *   - Global WG Size: {num_elements, 1, 1} (one thread per tensor element)
+ *   - Local WG Size: Default (typically {64, 1, 1} or based on global WG size)
+ *
+ * SUPPORTED CONFIGURATIONS:
+ * - Buffer Storage: Uses linear buffer indexing with stride-based tensor access
+ * - Per-Tensor: Supports any tensor layout through stride calculations and dimension ordering
+ * - Per-Token: Supports only width packed tensors (packed_dim = 0) and standard axis mapping
+ * - Scale/zero_point tensors: Must use buffer storage with width packing (packed_dim = 0)
+ *
+ * DEQUANTIZATION FORMULA VISUALIZATION:
+ * For integer range [quant_min, quant_max] mapped back to [min_val, max_val]:
+ *
+ * Integer Domain:           Floating Point Domain:
+ * quant_min ──────────────► min_val
+ *    │                         │
+ *    │    scale = (max_val - min_val) / (quant_max - quant_min)
+ *    │    zero_point = quant_min - round(min_val / scale)
+ *    │                         │
+ * quant_max ──────────────► max_val
+ *
+ * Dequantization Process:
+ * Input: -103 (int8)
+ * Step 1: qvalue - zero_point = -103 - (-128) = 25
+ * Step 2: result * scale = 25 * 0.1 = 2.5
+ * Output: 2.5 (float)
+ *
+ * PER-TENSOR DEQUANTIZATION:
+ * - Single scale and zero_point values for entire tensor
+ * - All elements use same dequantization parameters
+ * - Parameters passed as push constants for efficiency
+ * - Formula: value = (qvalue - zero_point) * scale
+ *
+ * PER-TOKEN DEQUANTIZATION:
+ * - Separate scale and zero_point for each token
+ * - Token = all elements except last dimension (e.g., for [B,S,H]: B*S tokens of H elements)
+ * - Parameters stored in buffer arrays indexed by token_id
+ * - Each thread calculates its token_id from tensor coordinates
+ * - Formula: value = (qvalue - zero_point[token_id]) * scale[token_id]
+ *
+ * Token ID calculation for element at tensor index (w, z, y, x):
+ * - 4D tensor: token_id = w * (sizes.z * sizes.y) + z * sizes.y + y
+ * - 3D tensor: token_id = z * sizes.y + y
+ * - 2D tensor: token_id = y
+ * - 1D tensor: token_id = 0
+ */
+
 #ifdef per_tensor
 
 void dequantize_per_tensor() {

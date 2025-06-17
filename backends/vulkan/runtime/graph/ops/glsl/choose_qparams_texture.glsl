@@ -53,6 +53,74 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 shared float shared_min[NWORKERS];
 shared float shared_max[NWORKERS];
 
+/*
+ * QUANTIZATION PARAMETER COMPUTATION SHADER (TEXTURE STORAGE)
+ *
+ * This shader computes quantization parameters (scale and zero_point) for converting
+ * floating-point tensors to n-bit integer representations while preserving the
+ * original data range as much as possible.
+ *
+ * ALGORITHM:
+ * 1. Find global min/max values across tensor elements using parallel reduction
+ * 2. Use tree reduction with shared memory for efficient min/max computation
+ * 3. Calculate scale = (max - min) / (quant_max - quant_min)
+ * 4. Calculate zero_point to map floating-point zero to integer value
+ *
+ * WORKGROUP CONFIGURATION:
+ * - Per-Tensor Mode:
+ *   - Global WG Size: Default (typically {num_elements, 1, 1})
+ *   - Local WG Size: Default (typically {64, 1, 1})
+ * - Per-Token Mode:
+ *   - Global WG Size: Default (typically based on tensor dimensions)
+ *   - Local WG Size: Default (typically {64, 1, 1}, or based on global WG size)
+ *
+ * SUPPORTED CONFIGURATIONS:
+ * - Texture Storage: Uses 3D texture indexing with linear texel iteration
+ * - Assumes width-packed layout (packed_dim = 0) in current implementation
+ * - Handles texel padding for non-multiple-of-4 tensor dimensions
+ * - Note: Axis mapping support depends on indexing utilities
+ *
+ * TREE REDUCTION VISUALIZATION FOR MIN/MAX FINDING:
+ * For 8 threads processing elements [10, 1, 8, 1, 0, 2, 3, 5]:
+ *
+ * Initial shared_min/shared_max arrays populated by each thread:
+ * shared_min:  | 10 | 1 | 8 | 1 | 0 | 2 | 3 | 5 |
+ * shared_max:  | 10 | 1 | 8 | 1 | 0 | 2 | 3 | 5 |
+ * Thread:      |  0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+ *
+ * Stride 1 (compare pairs, keep min/max):
+ * shared_min:  |  1 |   | 1 |   | 0 |   | 3 |   |  (min(10,1), min(8,1), min(0,2), min(3,5))
+ * shared_max:  | 10 |   | 8 |   | 2 |   | 5 |   |  (max(10,1), max(8,1), max(0,2), max(3,5))
+ * Active:      |  0 |   | 2 |   | 4 |   | 6 |   |
+ *
+ * Stride 2 (compare pairs, keep min/max):
+ * shared_min:  |  0 |   |   |   | 0 |   |   |   |  (min(1,1), min(0,3))
+ * shared_max:  | 10 |   |   |   | 5 |   |   |   |  (max(10,8), max(2,5))
+ * Active:      |  0 |   |   |   | 4 |   |   |   |
+ *
+ * Stride 4 (final comparison):
+ * shared_min:  |  0 |   |   |   |   |   |   |   |  (min(0,0) = 0)
+ * shared_max:  | 10 |   |   |   |   |   |   |   |  (max(10,5) = 10)
+ * Active:      |  0 |   |   |   |   |   |   |   |
+ *
+ * Final result: global_min = 0, global_max = 10 (stored in shared_min[0], shared_max[0])
+ *
+ * PER-TENSOR QUANTIZATION:
+ * - Single workgroup processes entire tensor
+ * - Each thread processes multiple texels with stride
+ * - Thread 0: texels [0, 64, 128, ...] -> elements [0-3, 256-259, 512-515, ...]
+ * - Thread 1: texels [1, 65, 129, ...] -> elements [4-7, 260-263, 516-519, ...]
+ * - Tree reduction combines all thread results into global min/max
+ * - Output: Single scale and zero_point values
+ *
+ * PER-TOKEN QUANTIZATION:
+ * - Multiple workgroups, each processing subset of tokens
+ * - Token = all elements except last dimension (e.g., for [B,S,H]: B*S tokens of H elements)
+ * - Each workgroup processes multiple tokens if num_tokens > num_workgroups
+ * - Within each token, threads process texels containing token elements
+ * - Output: Array of scale and zero_point values (one per token)
+ */
+
 #ifdef per_tensor
 
 void choose_qparams_per_tensor() {

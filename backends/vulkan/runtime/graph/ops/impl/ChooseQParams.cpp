@@ -42,6 +42,7 @@ void resize_choose_qparams_per_token_output(
   // Calculate output sizes for scale and zero_point tensors
   const auto input_sizes = graph->sizes_of(input);
   std::vector<int64_t> output_sizes;
+  output_sizes.reserve(input_sizes.size() - 1);
   for (size_t i = 0; i < input_sizes.size() - 1; i++) {
     output_sizes.push_back(input_sizes[i]);
   }
@@ -295,6 +296,11 @@ void choose_qparams_tensor_impl(
   VK_CHECK_COND(
       graph.dtype_of(zero_point_out) == vkapi::kInt ||
       graph.dtype_of(zero_point_out) == vkapi::kLong);
+
+  // Check that texture storage is width packed
+  if (!graph.is_buffer_storage(input)) {
+    VK_CHECK_COND(graph.packed_dim_of(input) == WHCN::kWidthDim);
+  }
 
   add_choose_qparams_tensor_node(
       graph, input, quant_min, quant_max, scale_out, zero_point_out);

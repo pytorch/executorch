@@ -54,6 +54,70 @@ ${layout_declare_ubo(B, "ivec3", "t_out_limits")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+/*
+ * QUANTIZATION SHADER (TEXTURE STORAGE)
+ *
+ * This shader converts floating-point tensor values to n-bit integer representations
+ * using pre-computed quantization parameters (scale and zero_point). The quantization
+ * maps floating-point values to a discrete integer range while preserving the
+ * original data distribution as much as possible.
+ *
+ * ALGORITHM:
+ * 1. Load floating-point texel (4 values) from 3D texture
+ * 2. Apply quantization formula to each component: qvalue = round(value / scale) + zero_point
+ * 3. Clamp each result to [quant_min, quant_max] range
+ * 4. Store quantized integer texel to output texture
+ *
+ * WORKGROUP CONFIGURATION:
+ * - Per-Tensor Mode:
+ *   - Global WG Size: {W, H, C/4} for input size (W, H, C) with width-packing
+ *   - Local WG Size: Default (typically {8, 8, 1} or based on global WG size)
+ * - Per-Token Mode:
+ *   - Global WG Size: {W, H, C/4} for input size (W, H, C) with width-packing
+ *   - Local WG Size: Default (typically {8, 8, 1} or based on global WG size)
+ *
+ * SUPPORTED CONFIGURATIONS:
+ * - Texture Storage: Uses 3D texture indexing with texel-based processing
+ * - Assumes width-packed layout (packed_dim = 0) in current implementation
+ * - Handles texel padding for non-multiple-of-4 tensor dimensions
+ * - For per-token mode: scale/zero_point tensors must use buffer storage
+ *
+ * QUANTIZATION FORMULA VISUALIZATION:
+ * For input range [min_val, max_val] mapped to integer range [quant_min, quant_max]:
+ *
+ * Floating Point Domain:    Integer Domain:
+ * min_val ────────────────► quant_min
+ *    │                         │
+ *    │    scale = (max_val - min_val) / (quant_max - quant_min)
+ *    │    zero_point = quant_min - round(min_val / scale)
+ *    │                         │
+ * max_val ────────────────► quant_max
+ *
+ * Texel Quantization Process:
+ * Input Texel: [2.5, -1.0, 0.5, 3.2] (float4)
+ * Per-component quantization with scale=0.1, zero_point=-128:
+ * Component 0: round(2.5 / 0.1) + (-128) = 25 + (-128) = -103
+ * Component 1: round(-1.0 / 0.1) + (-128) = -10 + (-128) = -138 → clamp to -128
+ * Component 2: round(0.5 / 0.1) + (-128) = 5 + (-128) = -123
+ * Component 3: round(3.2 / 0.1) + (-128) = 32 + (-128) = -96
+ * Output Texel: [-103, -128, -123, -96] (int4)
+ *
+ * PER-TENSOR QUANTIZATION:
+ * - Single scale and zero_point values for entire tensor
+ * - All texel components use same quantization parameters
+ * - Parameters passed as push constants for efficiency
+ * - Each thread processes one texel (4 elements) independently
+ * - Formula: qvalue[i] = clamp(round(value[i] / scale) + zero_point, quant_min, quant_max)
+ *
+ * PER-TOKEN QUANTIZATION:
+ * - Separate scale and zero_point for each token
+ * - Token = all elements except last dimension (e.g., for [B,S,H]: B*S tokens of H elements)
+ * - Parameters stored in buffer arrays indexed by token_id
+ * - Each thread calculates token_id from its 3D texture position
+ * - Scale/zero_point buffers accessed directly (not as textures)
+ * - Formula: qvalue[i] = clamp(round(value[i] / scale[token_id]) + zero_point[token_id], quant_min, quant_max)
+ */
+
 #ifdef per_tensor
 
 void quantize_per_tensor() {

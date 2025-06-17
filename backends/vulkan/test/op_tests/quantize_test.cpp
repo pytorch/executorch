@@ -772,15 +772,13 @@ void test_vulkan_quantize_per_token_impl(
   at::Tensor input =
       at::rand(input_sizes_int64, at::device(at::kCPU).dtype(in_dtype));
   at::Tensor scale_tensor =
-      at::tensor(scales, at::device(at::kCPU).dtype(at::kFloat));
+      at::tensor(scales, at::device(at::kCPU).dtype(at::kDouble));
   at::Tensor zero_point_tensor =
-      at::tensor(zero_points, at::device(at::kCPU).dtype(at::kInt));
+      at::tensor(zero_points, at::device(at::kCPU).dtype(at::kLong));
 
   // Get reference output to show what we would compare against
-  at::Tensor scale_double = scale_tensor.to(at::kDouble);
-  at::Tensor zero_point_long = zero_point_tensor.to(at::kLong);
   at::Tensor reference_out = torch::executor::native::quantize_per_token_aten(
-      input, scale_double, zero_point_long, quant_min, quant_max, dtype);
+      input, scale_tensor, zero_point_tensor, quant_min, quant_max, dtype);
 
   using namespace vkcompute;
 
@@ -788,17 +786,18 @@ void test_vulkan_quantize_per_token_impl(
   config.set_storage_type_override(in_storage);
   ComputeGraph graph(config);
 
-#define MAKE_TENSORREF_FOR(x)              \
-  ValueRef r_##x = graph.add_tensorref(    \
-      x.sizes().vec(),                     \
-      from_at_scalartype(x.scalar_type()), \
-      x.const_data_ptr());
-
-  MAKE_TENSORREF_FOR(scale_tensor);
-  MAKE_TENSORREF_FOR(zero_point_tensor);
-
   IOValueRef r_input = graph.add_input_tensor(
       input.sizes().vec(), from_at_scalartype(input.scalar_type()), in_storage);
+  IOValueRef r_scale = graph.add_input_tensor(
+      scale_tensor.sizes().vec(),
+      vkapi::kFloat,
+      utils::kBuffer,
+      utils::kWidthPacked);
+  IOValueRef r_zero_point = graph.add_input_tensor(
+      zero_point_tensor.sizes().vec(),
+      vkapi::kInt,
+      utils::kBuffer,
+      utils::kWidthPacked);
 
   const ValueRef r_quant_min = graph.add_scalar<int64_t>(quant_min);
   const ValueRef r_quant_max = graph.add_scalar<int64_t>(quant_max);
@@ -810,8 +809,8 @@ void test_vulkan_quantize_per_token_impl(
   (graph,
    {
        r_input.value,
-       r_scale_tensor,
-       r_zero_point_tensor,
+       r_scale.value,
+       r_zero_point.value,
        r_quant_min,
        r_quant_max,
        r_out,
@@ -824,17 +823,27 @@ void test_vulkan_quantize_per_token_impl(
   graph.prepack();
   graph.encode_execute();
 
-  //
-  // Run model
-  //
-
-  graph.propagate_resize();
+  // Copy input data to GPU
   graph.copy_into_staging(
       r_input.staging, input.const_data_ptr(), input.numel());
 
+  // Convert scale tensor to float and copy to GPU
+  at::Tensor scale_float = scale_tensor.to(at::kFloat);
+  graph.copy_into_staging(
+      r_scale.staging, scale_float.const_data_ptr(), scale_float.numel());
+
+  // Convert zero_point tensor to int and copy to GPU
+  at::Tensor zero_point_int = zero_point_tensor.to(at::kInt);
+  graph.copy_into_staging(
+      r_zero_point.staging,
+      zero_point_int.const_data_ptr(),
+      zero_point_int.numel());
+
+  // Execute the graph
   graph.execute();
 
-  at::Tensor vk_out = at::empty_like(reference_out);
+  // Copy output data back to CPU
+  at::Tensor vk_out = at::empty_like(reference_out).contiguous();
   graph.copy_from_staging(
       staging_out, vk_out.mutable_data_ptr(), vk_out.numel());
 

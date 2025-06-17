@@ -119,8 +119,8 @@ class RescaleVisitor_INT(NodeVisitor):
             input_node=inputs[0],
             output_name=output.name,
             output_type=output.dtype,
-            input_zp=input_zp,
-            output_zp=output_zp,
+            input_zp=[input_zp],
+            output_zp=[output_zp],
             rounding_mode=RoundingMode.SINGLE_ROUND,
             per_channel=False,
         )
