@@ -70,7 +70,7 @@ TEST_F(BackendOptionsMapTest, EntryIteration) {
   BackendOptions<2> cpu_options;
   BackendOptions<3> gpu_options;
 
-  // Add to map using ArrayRef
+  // Add to map using Span
   ASSERT_EQ(map.add("CPU", cpu_options.view()), Error::Ok);
   ASSERT_EQ(map.add("GPU", gpu_options.view()), Error::Ok);
 
@@ -119,7 +119,7 @@ TEST_F(BackendOptionsMapTest, OptionIsolation) {
   gpu_options.set_option(IntKey("Mem"), 1024);
   gpu_options.set_option(StrKey("Hardware"), "H100");
 
-  // Add to map using ArrayRef
+  // Add to map using Span
   map.add("CPU", cpu_options.view());
   map.add("GPU", gpu_options.view());
 
