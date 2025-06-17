@@ -51,10 +51,12 @@ class DecomposeLinearVectorNormPass(ExportPass):
                 f"is not supported for linalg_vector_norm operator"
             )
 
+        # Sum over all dimensions if dim is None
         if norm_dim is None:
-            raise ValueError("The norm_dim for linalg_vector_norm is None.")
-
-        dims = [norm_dim] if isinstance(norm_dim, int) else list(norm_dim)
+            rank = input_tensor.data.dim()
+            dims = list(range(rank))
+        else:
+            dims = [norm_dim] if isinstance(norm_dim, int) else list(norm_dim)
 
         # Decomposition based on norm order.
         if norm_order == 1:

@@ -54,6 +54,75 @@ ${layout_declare_ubo(B, "ivec3", "t_out_limits")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+/*
+ * DEQUANTIZATION SHADER (TEXTURE STORAGE)
+ *
+ * This shader converts n-bit integer tensor values back to floating-point representations
+ * using pre-computed quantization parameters (scale and zero_point). The dequantization
+ * reconstructs the original floating-point values from their discrete integer representations
+ * with minimal precision loss.
+ *
+ * ALGORITHM:
+ * 1. Load quantized integer texel (4 values) from 3D texture
+ * 2. Apply dequantization formula to each component: value = (qvalue - zero_point) * scale
+ * 3. Store reconstructed floating-point texel to output texture
+ *
+ * WORKGROUP CONFIGURATION:
+ * - Per-Tensor Mode:
+ *   - Global WG Size: {W, H, C/4} for input size (W, H, C) with width-packing
+ *   - Local WG Size: Default (typically {8, 8, 1} or based on global WG size)
+ * - Per-Token Mode:
+ *   - Global WG Size: {W, H, C/4} for input size (W, H, C) with width-packing
+ *   - Local WG Size: Default (typically {8, 8, 1} or based on global WG size)
+ *
+ * SUPPORTED CONFIGURATIONS:
+ * - Texture Storage: Uses 3D texture indexing with texel-based processing
+ * - Assumes width-packed layout (packed_dim = 0) for input/output textures
+ * - Handles texel padding for non-multiple-of-4 tensor dimensions
+ * - For per-token mode: scale/zero_point tensors must use buffer storage
+ * - Input/output textures: Must use standard axis mapping for per-token mode
+ *
+ * DEQUANTIZATION FORMULA VISUALIZATION:
+ * For integer range [quant_min, quant_max] mapped back to [min_val, max_val]:
+ *
+ * Integer Domain:           Floating Point Domain:
+ * quant_min ──────────────► min_val
+ *    │                         │
+ *    │    scale = (max_val - min_val) / (quant_max - quant_min)
+ *    │    zero_point = quant_min - round(min_val / scale)
+ *    │                         │
+ * quant_max ──────────────► max_val
+ *
+ * Texel Dequantization Process:
+ * Input Texel: [-103, -128, -123, -96] (int4)
+ * Per-component dequantization with scale=0.1, zero_point=-128:
+ * Component 0: (-103 - (-128)) * 0.1 = 25 * 0.1 = 2.5
+ * Component 1: (-128 - (-128)) * 0.1 = 0 * 0.1 = 0.0
+ * Component 2: (-123 - (-128)) * 0.1 = 5 * 0.1 = 0.5
+ * Component 3: (-96 - (-128)) * 0.1 = 32 * 0.1 = 3.2
+ * Output Texel: [2.5, 0.0, 0.5, 3.2] (float4)
+ *
+ * PER-TENSOR DEQUANTIZATION:
+ * - Single scale and zero_point values for entire tensor
+ * - All texel components use same dequantization parameters
+ * - Parameters passed as push constants for efficiency
+ * - Each thread processes one texel (4 elements) independently
+ * - Formula: value[i] = (qvalue[i] - zero_point) * scale
+ *
+ * PER-TOKEN DEQUANTIZATION:
+ * - Separate scale and zero_point for each token
+ * - Token = all elements except last dimension (e.g., for [B,S,H]: B*S tokens of H elements)
+ * - Parameters stored in buffer arrays indexed by token_id
+ * - Each thread calculates token_id from its 3D texture position
+ * - Scale/zero_point buffers accessed directly (not as textures)
+ * - Formula: value[i] = (qvalue[i] - zero_point[token_id]) * scale[token_id]
+ *
+ * Token ID calculation for texel at position (x, y, z):
+ * - 3D tensor: token_id = z * texture_height + y
+ * - 2D tensor: token_id = y
+ * - 1D tensor: token_id = 0
+ */
+
 #ifdef per_tensor
 
 void dequantize_per_tensor() {
