@@ -56,7 +56,8 @@ class Span final {
   /* implicit */ constexpr Span(T (&Arr)[N]) : data_(Arr), length_(N) {}
 
   /// Construct a Span from a single element reference.
-  /* implicit */ constexpr Span(T& single_element) : data_(&single_element), length_(1) {}
+  /* implicit */ constexpr Span(T& single_element)
+      : data_(&single_element), length_(1) {}
 
   /// @returns a pointer to the start of the underlying element buffer.
   iterator begin() const noexcept {
