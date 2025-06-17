@@ -61,12 +61,11 @@ public_device_matching_list = [
 # The abbreviations used to generate the short name for the benchmark result table
 # this is used to avoid the long table name issue when generating excel file (<=31 characters)
 ABBREVIATIONS = {
-    "samsung": "smg",
-    "galaxy": "gx",
-    "ultra": "ul",
-    "android": "and",
-    "iphone": "ip",
+    "samsung": "",
+    "galaxy": "",
+    "5g": "",
     "xnnpackq8": "xnnq8",
+    "iphone15promax": "iphone15max",
 }
 
 
@@ -539,7 +538,7 @@ class ExecutorchBenchmarkFetcher:
                 f"\n============ MATCHING Found results: {len(results)}=========\n"
             )
             for keywords, match in matchings:
-                logging.info(f"Keywords: {keywords}: matchings: {match}")
+                logging.info(f"Keywords: {keywords} {len(match)} matchings: {match}")
         return list(results.values())
 
     def normalize_string(self, s, replace="_"):
