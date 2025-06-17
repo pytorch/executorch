@@ -267,18 +267,7 @@ def _do_annotate_conv(
         weight = conv_node.args[1]
         assert isinstance(weight, Node)
         weight_qspec = get_weight_qspec(quantization_config)
-        if is_conv_transpose:
-            # transposed convs per output channel quantization
-            weight_qspec = QuantizationSpec(
-                dtype=weight_qspec.dtype,
-                quant_min=weight_qspec.quant_min,
-                quant_max=weight_qspec.quant_max,
-                qscheme=weight_qspec.qscheme,
-                ch_axis=1,
-                is_dynamic=False,
-                observer_or_fake_quant_ctr=weight_qspec.observer_or_fake_quant_ctr,
-            )
-        input_qspec_map[weight] = weight_qspec
+        num_groups = get_groups_from_conv(conv_node)
 
         # skip if transposed conv has more than 1 group
         skip = skip or (is_conv_transpose and num_groups != 1)
@@ -361,17 +350,10 @@ def _do_annotate_conv_relu(
         weight = conv_node.args[1]
         assert isinstance(weight, Node)
         weight_qspec = get_weight_qspec(quantization_config)
+        groups = get_groups_from_conv(conv_node)
         if is_conv_transpose:
             # transposed convs per output channel quantization
-            weight_qspec = QuantizationSpec(
-                dtype=weight_qspec.dtype,
-                quant_min=weight_qspec.quant_min,
-                quant_max=weight_qspec.quant_max,
-                qscheme=weight_qspec.qscheme,
-                ch_axis=1,
-                is_dynamic=False,
-                observer_or_fake_quant_ctr=weight_qspec.observer_or_fake_quant_ctr,
-            )
+            weight_qspec = change_quantization_config(weight_qspec, ch_axis=1)
         input_qspec_map[weight] = weight_qspec
 
         # adding weight node to the partition as well
