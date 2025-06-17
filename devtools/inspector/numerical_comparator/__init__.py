@@ -9,5 +9,9 @@ from executorch.devtools.inspector.numerical_comparator.l1_numerical_comparator 
     L1Comparator,
 )
 
+from executorch.devtools.inspector.numerical_comparator.mse_numerical_comparator import (
+    MSEComparator,
+)
 
-__all__ = ["L1Comparator"]
+
+__all__ = ["L1Comparator", "MSEComparator"]
