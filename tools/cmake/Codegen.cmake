@@ -277,7 +277,11 @@ function(gen_operators_lib)
     endif()
 
     if(GEN_KERNEL_LIBS)
-      message(FATAL_ERROR "Currently dtype selective build is only supported for portable_kernels but {${GEN_KERNEL_LIBS}} were provided!")
+      if(GEN_DTYPE_SELECTIVE_BUILD)
+        message(FATAL_ERROR "Currently dtype selective build is only supported for portable_kernels but {${GEN_KERNEL_LIBS}} were provided!")
+      else()
+        target_link_libraries(${GEN_LIB_NAME} PUBLIC ${GEN_KERNEL_LIBS})
+      endif()
     endif()
   endif()
 
