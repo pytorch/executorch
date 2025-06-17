@@ -183,7 +183,6 @@ def is_intel_mac_os():
     )
 
 
-
 def main(args):
     parser = argparse.ArgumentParser()
     parser.add_argument(

@@ -115,10 +115,10 @@ python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 ```
 
 - **Intel-based macOS** systems require building PyTorch, Torchvision, and Torchaudio from source:  
-  - Use the [`--use-pt-pinned-commit` flag](https://github.com/pytorch/executorch/blob/main/install_requirements.sh) to install Executorch with an existing PyTorch build.  
+  - Use the [`--use-pt-pinned-commit --minimal` flags](https://github.com/pytorch/executorch/blob/main/install_executorch.py) to install Executorch with an existing PyTorch build.  
     See the [PyTorch instructions](https://github.com/pytorch/pytorch#installation) on how to build PyTorch from source.
     ```bash
-    ./install_requirements.sh --use-pt-pinned-commit
+    ./install_executorch.sh --use-pt-pinned-commit --minimal
     ```
 
 5. Install [CMake](https://cmake.org):
