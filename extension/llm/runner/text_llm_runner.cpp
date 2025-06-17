@@ -128,9 +128,13 @@ Error TextLLMRunner::generate_from_pos(
 
   // Reduce max_context_len by start_pos
   int64_t max_context_len = metadata_.at(kMaxContextLen) - start_pos;
-  ET_CHECK_MSG(num_prompt_tokens >= 1, "Expected at least 1 prompt token");
-  ET_CHECK_MSG(
+  ET_CHECK_OR_RETURN_ERROR(
+      num_prompt_tokens >= 1,
+      InvalidArgument,
+      "Expected at least 1 prompt token");
+  ET_CHECK_OR_RETURN_ERROR(
       num_prompt_tokens < max_context_len,
+      InvalidArgument,
       "num_prompt_tokens %d >= max_context_len %" PRId64
       ", Max seq length exceeded - please increase max seq len value in your export script",
       num_prompt_tokens,
