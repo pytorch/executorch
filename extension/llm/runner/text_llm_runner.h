@@ -78,8 +78,9 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
    * @brief Generates text based on the provided prompt
    *
    * This method performs text generation using the loaded model. It processes
-   * the input prompt, runs the model in prefill and decode phases, and returns
-   * generated text through callbacks.
+   * the input prompt, runs the model in prefill and decode phases until max
+   * tokens to generate is reached or eos token is generated, then returns
+   * generated text and perf stats through callbacks.
    *
    * @param prompt The input text to generate from
    * @param config Configuration parameters for text generation (e.g.,
@@ -94,6 +95,31 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
       const GenerationConfig& config,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const Stats&)> stats_callback = {}) override;
+
+  /**
+   * @brief Generates text based on the provided prompt and start position
+   *
+   * This method performs text generation using the loaded model. It processes
+   * the input prompt, runs the model in prefill and decode phases using the
+   * start position until max tokens to generate is reached or eos token is
+   * generated, then returns generated text and perf stats through callbacks.
+   *
+   * @param prompt The input text to generate from
+   * @param start_pos The starting position in KV cache of the input
+   * @param config Configuration parameters for text generation (e.g.,
+   * max_new_tokens, temperature)
+   * @param token_callback Function called for each generated token with the
+   * decoded text
+   * @param stats_callback Function called with performance statistics
+   * @return ::executorch::runtime::Error Success or error status
+   */
+  ::executorch::runtime::Error generate_from_pos(
+      const std::string& prompt,
+      int64_t start_pos,
+      const GenerationConfig& config,
+      std::function<void(const std::string&)> token_callback = {},
+      std::function<void(const Stats&)> stats_callback = {}) override;
+
   /**
    * @brief Warms up the model with a sample prompt
    *

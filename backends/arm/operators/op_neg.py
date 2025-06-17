@@ -31,8 +31,8 @@ def get_negate_zero_points(node: torch.fx.Node, is_int8: bool) -> tuple[int, int
     """
     if is_int8:
         return (
-            get_input_qparams(node)[0].zp,
-            get_output_qparams(node)[0].zp,
+            get_input_qparams(node)[0].get_zp_per_tensor(),
+            get_output_qparams(node)[0].get_zp_per_tensor(),
         )
     return (0, 0)
 

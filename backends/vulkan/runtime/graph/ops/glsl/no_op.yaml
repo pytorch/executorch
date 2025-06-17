@@ -12,7 +12,7 @@ no_op:
     DTYPE:
       - VALUE: half
       - VALUE: float
-      - VALUE: int
+      - VALUE: int32
       - VALUE: int8
       - VALUE: uint8
     STORAGE:

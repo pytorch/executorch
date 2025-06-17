@@ -73,8 +73,9 @@ Error TextLLMRunner::load() {
     ET_LOG(Info, format, __VA_ARGS__);     \
   }
 
-Error TextLLMRunner::generate(
+Error TextLLMRunner::generate_from_pos(
     const std::string& prompt,
+    int64_t start_pos,
     const GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
@@ -125,20 +126,34 @@ Error TextLLMRunner::generate(
   std::vector<uint64_t> prompt_tokens = encode_res.get();
   int num_prompt_tokens = prompt_tokens.size();
 
+  // Reduce max_context_len by start_pos
+  int64_t max_context_len = metadata_.at(kMaxContextLen) - start_pos;
   ET_CHECK_MSG(num_prompt_tokens >= 1, "Expected at least 1 prompt token");
   ET_CHECK_MSG(
-      num_prompt_tokens < metadata_.at(kMaxContextLen),
-      "num_prompt_tokens %d >= max_seq_len_ %" PRId64
+      num_prompt_tokens < max_context_len,
+      "num_prompt_tokens %d >= max_context_len %" PRId64
       ", Max seq length exceeded - please increase max seq len value in your export script",
       num_prompt_tokens,
-      metadata_.at(kMaxContextLen));
+      max_context_len);
 
-  // Determine max_new_tokens using the GenerationConfig's resolve method
-  int max_new_tokens = config.resolve_max_new_tokens(
-      metadata_.at(kMaxContextLen), num_prompt_tokens);
+  // Determine max_new_tokens using the GenerationConfig's resolve method,
+  // then subtract start_pos for max_new_tokens.
+  int max_new_tokens =
+      config.resolve_max_new_tokens(max_context_len, num_prompt_tokens);
 
-  ET_LOG(Info, "Max new tokens resolved: %d", max_new_tokens);
-
+  ET_LOG(
+      Info,
+      "Max new tokens resolved: %d, given start_pos %" PRId64
+      ", num_prompt_tokens %zu, max_context_len %" PRId64,
+      max_new_tokens,
+      start_pos,
+      prompt_tokens.size(),
+      max_context_len);
+  ET_CHECK_OR_RETURN_ERROR(
+      max_new_tokens > 0,
+      InvalidArgument,
+      "Max new tokens %d is less than or equal to 0",
+      max_new_tokens);
   // Prefill first
   // Here feed all tokens to the model and get the next predicted token
   // after the prompt. After that we will enter generate loop.
@@ -147,7 +162,7 @@ Error TextLLMRunner::generate(
   if (config.echo) {
     wrapped_callback(prompt);
   }
-  int64_t pos = 0;
+  int64_t pos = start_pos;
   auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos);
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
   uint64_t cur_token = prefill_res.get();
@@ -200,6 +215,13 @@ Error TextLLMRunner::generate(
   }
 
   return Error::Ok;
+}
+Error TextLLMRunner::generate(
+    const std::string& prompt,
+    const GenerationConfig& config,
+    std::function<void(const std::string&)> token_callback,
+    std::function<void(const Stats&)> stats_callback) {
+  return generate_from_pos(prompt, 0, config, token_callback, stats_callback);
 }
 
 Error TextLLMRunner::warmup(const std::string& prompt, int32_t max_new_tokens) {

@@ -17,7 +17,7 @@ binary_op:
     DTYPE:
       - VALUE: half
       - VALUE: float
-      - VALUE: int
+      - VALUE: int32
   shader_variants:
     - NAME: binary_add
     - NAME: binary_sub
