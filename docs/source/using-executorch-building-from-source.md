@@ -61,22 +61,22 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
    # Install ExecuTorch pip package and its dependencies, as well as
    # development tools like CMake.
    # If developing on a Mac, make sure to install the Xcode Command Line Tools first.
-   # Intel-based macOS systems require building PyTorch, Torchvision, and Torchaudio from source (see below)
+   # Intel-based macOS systems require building PyTorch from source (see below)
    ./install_executorch.sh
    ```
   
-  See the [PyTorch instructions](https://github.com/pytorch/pytorch#installation) on how to build PyTorch from source.  
+   See the [PyTorch instructions](https://github.com/pytorch/pytorch#installation) on how to build PyTorch from source.  
 
-  Use the [`--use-pt-pinned-commit` flag](../../install_executorch.py) to install ExecuTorch with an existing PyTorch build:
+   Use the [`--use-pt-pinned-commit` flag](../../install_executorch.py) to install ExecuTorch with an existing PyTorch build:
 
    ```bash
    ./install_executorch.sh --use-pt-pinned-commit
    ```
 
-  For Intel-based macOS systems, use the [`--use-pt-pinned-commit --minimal` flags](../../install_executorch.py):
-  ```bash
-  ./install_executorch.sh --use-pt-pinned-commit --minimal
-  ```
+   For Intel-based macOS systems, use the [`--use-pt-pinned-commit --minimal` flags](../../install_executorch.py):
+   ```bash
+   ./install_executorch.sh --use-pt-pinned-commit --minimal
+   ```
 
    Not all backends are built into the pip wheel by default. You can link these missing/experimental backends by turning on the corresponding cmake flag. For example, to include the MPS backend:
 
