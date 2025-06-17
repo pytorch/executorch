@@ -507,14 +507,17 @@ class TestConv2d(unittest.TestCase):
             def get_inputs(self):
                 return (torch.randn(batches, in_channels, height, width) * 11,)
 
-        for per_channel_quant in (False, True):
-            model = ModelConvReLU()
-            self._test(
-                model,
-                quant_config=get_symmetric_quantization_config(
-                    is_per_channel=per_channel_quant
-                ),
-            )
+        for transpose in (True, False):
+            for per_channel_quant in (False, True):
+                if transpose and per_channel_quant:
+                    continue
+                model = ModelConvReLU(transpose=transpose)
+                self._test(
+                    model,
+                    quant_config=get_symmetric_quantization_config(
+                        is_per_channel=per_channel_quant
+                    ),
+                )
 
     def test_qs8_conv2d_relu_seq(self):
         class ConvReLUSeq(torch.nn.Module):
