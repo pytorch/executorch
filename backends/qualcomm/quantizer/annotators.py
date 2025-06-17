@@ -462,7 +462,7 @@ def annotate_hardtanh(node: Node, quantization_config: QuantizationConfig) -> No
     annotate_single_in_single_out(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.mean.default])
+@register_annotator([torch.ops.aten.mean.default, torch.ops.aten.mean.dim])
 def annotate_mean(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
@@ -601,11 +601,6 @@ def annotate_reshape(node: Node, quantization_config: QuantizationConfig) -> Non
 
 @register_annotator([torch.ops.aten.select.int])
 def annotate_select(node: Node, quantization_config: QuantizationConfig) -> None:
-    annotate_single_in_single_out(node, quantization_config)
-
-
-@register_annotator([torch.ops.aten.mean.dim])
-def annotate_mean_dim(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
