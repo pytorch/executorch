@@ -4,7 +4,6 @@ import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime
-from sre_compile import REPEAT_ONE
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -138,6 +137,7 @@ def argparser():
     )
 
     return parser.parse_args()
+
 
 class ExecutorchBenchmarkFetcher:
     """
@@ -395,7 +395,6 @@ class ExecutorchBenchmarkFetcher:
     def print_all_names(self) -> None:
         """
         Print all benchmark table names found in the data.
-
         Separates results by device type (public/private) and displays counts.
         This is useful for debugging and understanding what data is available.
         """
@@ -403,15 +402,29 @@ class ExecutorchBenchmarkFetcher:
             return
         logging.info("peeking table result:")
         logging.info(json.dumps(self.data[0], indent=2))
-        names = [item["table_name"] for item in self.data]
+        public_ones = [
+            item["table_name"]
+            for item in self.data
+            if item["groupInfo"]["aws_type"] == "public"
+        ]
+        private_ones = [
+            item["table_name"]
+            for item in self.data
+            if item["groupInfo"]["aws_type"] == "private"
+        ]
         # Print all found benchmark table names
         logging.info(
-            "\n============List all benchmark result table names  =================\n"
+            "\n============List all benchmark result table names (Public and Private) below =================\n"
         )
         logging.info(
-            f"\n============ public device benchmark results({len(names)})=================\n"
+            f"\n============ public device benchmark results({len(public_ones)})=================\n"
         )
-        for name in names:
+        for name in public_ones:
+            logging.info(name)
+        logging.info(
+            f"\n======= private device benchmark results({len(private_ones)})=======\n"
+        )
+        for name in private_ones:
             logging.info(name)
 
     def _generate_table_name(self, group_info: dict, fields: list[str]) -> str:
