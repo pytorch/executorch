@@ -571,9 +571,8 @@ jobs:
         git clone https://github.com/huggingface/optimum-executorch
         pushd optimum-executorch
         # There is no release yet, for CI stability, always test from the same commit on main
-        git checkout 1c653dc49812fc431a22312c7295d97005d22e12
-        pip install .[tests]
-        pip install transformers==4.52.4
+        git checkout 4c3b18f6cca68c5ccff809131d570062723d7188
+        python install_dev.py --skip_override_torch
         popd
         pip list
         echo "::endgroup::"
