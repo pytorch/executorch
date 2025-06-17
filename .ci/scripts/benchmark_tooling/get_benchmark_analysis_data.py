@@ -173,7 +173,7 @@ class ExecutorchBenchmarkFetcher:
         self.query_group_table_by_fields = (
             group_table_fields
             if group_table_fields
-            else ["device", "backend", "arch", "model"]
+            else ["model", "backend", "arch", "device"]
         )
         self.query_group_row_by_fields = (
             group_row_fields
