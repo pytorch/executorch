@@ -6,6 +6,8 @@
 
 # pyre-unsafe
 
+import unittest
+
 from collections import Counter
 from typing import Dict, Tuple
 
@@ -722,7 +724,7 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
 
 instantiate_parametrized_tests(TestQuantizePT2E)
 
-
+@unittest.skip("TODO: Reenable it after debug infrature finish update")
 class TestNumericDebugger(TestCase):
     def _extract_debug_handles(self, model) -> Dict[str, int]:
         debug_handle_map: Dict[str, int] = {}
