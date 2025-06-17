@@ -22,8 +22,9 @@ function(gen_selected_ops)
   message(STATUS "  INCLUDE_ALL_OPS: ${GEN_INCLUDE_ALL_OPS}")
   message(STATUS "  OPS_FROM_MODEL: ${GEN_OPS_FROM_MODEL}")
   message(STATUS "  DTYPE_SELECTIVE_BUILD: ${GEN_DTYPE_SELECTIVE_BUILD}")
-  if(GEN_DTYPE_SELECTIVE_BUILD)
-     message(STATUS "  DTYPE_SELECTIVE_BUILD is still WIP and may not be fully functional")
+
+  if(GEN_DTYPE_SELECTIVE_BUILD AND NOT GEN_OPS_FROM_MODEL)
+     message(FATAL_ERROR "  DTYPE_SELECTIVE_BUILD is only support with model API, please pass in a model")
   endif()
 
   set(_oplist_yaml
@@ -71,7 +72,6 @@ function(gen_selected_ops)
                           --output-dir=${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/
     )
     message("Command - ${_gen_opvariant_command}")
-    message("OUTPUT - ${_opvariant_h}")
     add_custom_command(
       COMMENT "Generating ${_opvariant_h} for ${GEN_LIB_NAME}"
       OUTPUT ${_opvariant_h}
@@ -274,10 +274,8 @@ function(gen_operators_lib)
       target_link_libraries(${GEN_LIB_NAME} PUBLIC selected_portable_kernels)
     endif()
 
-    # portable_kernel is no longer in GEN_KERNEL_LIBS, but there may be others
     if(GEN_KERNEL_LIBS)
-
-      target_link_libraries(${GEN_LIB_NAME} PUBLIC ${GEN_KERNEL_LIBS})
+      message(FATAL_ERROR "Currently dtype selective build is only supported for portable_kernels but {${GEN_KERNEL_LIBS}} were provided!")
     endif()
   endif()
 

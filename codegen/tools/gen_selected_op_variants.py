@@ -70,7 +70,6 @@ dtype_enum_to_type = {
 
 
 def write_selected_op_variants(yaml_file_path: str, output_dir: str) -> None:
-    print("REMOVE_ME: yaml_file_path is: " + str(yaml_file_path))
     with open(yaml_file_path, "r") as selected_operators_file:
         # Collect et_kernel_metadata from selected_operators.yaml and extract dtypes
         # Example format: v1/6;0,1|6;0,1|6;0,1|6;0,1  # Float, 0, 1
@@ -127,7 +126,6 @@ def main(argv: List[Any]) -> None:
     )
 
     options = parser.parse_args(argv)
-    print("REMOVE_ME: output dir was set to" + str(options.output_dir))
     write_selected_op_variants(options.yaml_file_path, options.output_dir)
 
 

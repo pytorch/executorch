@@ -15,7 +15,7 @@ EXTRA_BUILD_ARGS="${@:-}"
 # TODO(#8357): Remove -Wno-int-in-bool-context
 # TODO: Replace -ET_HAVE_PREAD=0 with a CMake option.
 #  FileDataLoader used in the size_test breaks baremetal builds with pread when missing.
-COMMON_CXXFLAGS="-fno-exceptions -fno-rtti -Wall -Wno-int-in-bool-context -DET_HAVE_PREAD=0"
+COMMON_CXXFLAGS="-fno-exceptions -fno-rtti -Wall -Werror -Wno-int-in-bool-context -DET_HAVE_PREAD=0"
 
 cmake_install_executorch_lib() {
   echo "Installing libexecutorch.a"
@@ -23,7 +23,7 @@ cmake_install_executorch_lib() {
   update_tokenizers_git_submodule
   local EXTRA_BUILD_ARGS="${@}"
 
-  CXXFLAGS="$COMMON_CXXFLAGS" retry cmake \
+  CXXFLAGS="$COMMON_CXXFLAGS" retry cmake -DBUCK2="$BUCK2" \
           -DCMAKE_CXX_STANDARD_REQUIRED=ON \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
           -DCMAKE_BUILD_TYPE=Release \
@@ -44,9 +44,11 @@ test_cmake_size_test() {
     echo "Build size test"
     cmake --build cmake-out/test -j9 --config Release
 
-    #cmake-out/test/size_test
-    #cmake-out/test/size_test_all_ops
-    ls -lah cmake-out/test/
+    echo 'ExecuTorch with no ops binary size, unstripped:'
+    ls -al cmake-out/test/size_test
+
+    echo 'ExecuTorch with portable ops binary size, unstripped:'
+    ls -al cmake-out/test/size_test_all_ops
 }
 
 if [[ -z $PYTHON_EXECUTABLE ]]; then
