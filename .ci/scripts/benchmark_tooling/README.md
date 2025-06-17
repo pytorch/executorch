@@ -20,8 +20,9 @@ python3 .ci/scripts/benchmark_tooling/get_benchmark_analysis_data.py --startTime
 Additional options:
 - `--silent`: Hide processing logs, show only results
 - `--outputType df`: Display results in DataFrame format
-- `--outputType excel --excelDir "{YOUR_LOCAL_DIRECTORY}"`: Generate Excel files (`res_private.xlsx` and `res_public.xlsx`)
-- `--outputDir "{YOUR_LOCAL_DIRECTORY}"`: Specify a custom output directory for Excel/CSV files
+- `--outputType excel --outputDir "{YOUR_LOCAL_DIRECTORY}"`: Generate Excel file with multiple sheets (`res_private.xlsx` and `res_public.xlsx`)
+- `--outputType csv --outputDir "{YOUR_LOCAL_DIRECTORY}"`: Generate CSV files in folders (`private` and `public`)
+
 
 ### Python API Usage
 
