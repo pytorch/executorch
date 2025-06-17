@@ -114,13 +114,6 @@ python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 ./backends/apple/coreml/scripts/install_requirements.sh
 ```
 
-- **Intel-based macOS** systems require building PyTorch, Torchvision, and Torchaudio from source:  
-  - Use the [`--use-pt-pinned-commit --minimal` flags](https://github.com/pytorch/executorch/blob/main/install_executorch.py) to install Executorch with an existing PyTorch build.  
-    See the [PyTorch instructions](https://github.com/pytorch/pytorch#installation) on how to build PyTorch from source.
-    ```bash
-    ./install_executorch.sh --use-pt-pinned-commit --minimal
-    ```
-
 5. Install [CMake](https://cmake.org):
 
 Download the macOS binary distribution from the [CMake website](https://cmake.org/download), open the `.dmg` file, move `CMake.app` to the `/Applications` directory, and then run the following command to install the CMake command-line tools:

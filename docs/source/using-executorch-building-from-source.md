@@ -65,12 +65,18 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
    ./install_executorch.sh
    ```
   
-  Use the [`--use-pt-pinned-commit` flag](https://github.com/pytorch/executorch/blob/main/install_executorch.sh) to install Executorch with an existing PyTorch build.  
-  See the [PyTorch instructions](https://github.com/pytorch/pytorch#installation) on how to build PyTorch from source.
+  See the [PyTorch instructions](https://github.com/pytorch/pytorch#installation) on how to build PyTorch from source.  
+
+  Use the [`--use-pt-pinned-commit` flag](../../install_executorch.py) to install ExecuTorch with an existing PyTorch build:
 
    ```bash
    ./install_executorch.sh --use-pt-pinned-commit
    ```
+
+  For Intel-based macOS systems, use the [`--use-pt-pinned-commit --minimal` flags](../../install_executorch.py):
+  ```bash
+  ./install_executorch.sh --use-pt-pinned-commit --minimal
+  ```
 
    Not all backends are built into the pip wheel by default. You can link these missing/experimental backends by turning on the corresponding cmake flag. For example, to include the MPS backend:
 

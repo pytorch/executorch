@@ -175,7 +175,7 @@ def install_optional_example_requirements(use_pytorch_nightly):
 # Prebuilt binaries for Intel-based macOS are no longer available on PyPI; users must compile from source.
 # PyTorch stopped building macOS x86_64 binaries since version 2.3.0 (January 2024).
 def is_intel_mac_os():
-    # Returns True if running on Intel macOS
+    # Returns True if running on Intel macOS.
     return platform.system().lower() == "darwin" and platform.machine().lower() in (
         "x86",
         "x86_64",
