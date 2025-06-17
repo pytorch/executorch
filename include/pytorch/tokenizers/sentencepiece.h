@@ -16,11 +16,6 @@
 #include "sentencepiece_processor.h"
 namespace tokenizers {
 
-struct TokenIndex {
-  const char* str;
-  int32_t id;
-};
-
 class SPTokenizer : public Tokenizer {
  public:
   explicit SPTokenizer();

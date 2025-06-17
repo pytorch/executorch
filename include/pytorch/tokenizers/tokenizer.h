@@ -20,6 +20,11 @@
 
 namespace tokenizers {
 
+struct TokenIndex {
+  const char* str;
+  int32_t id;
+};
+
 class Tokenizer {
  public:
   explicit Tokenizer() {}
