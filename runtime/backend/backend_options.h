@@ -8,6 +8,7 @@
 
 #pragma once
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/span.h>
 #include <cstddef>
 #include <cstring>
 #include <variant>
@@ -69,6 +70,15 @@ class BackendOptions {
       }
     }
     return Error::NotFound;
+  }
+
+  executorch::runtime::Span<BackendOption> view() const {
+    return executorch::runtime::Span<BackendOption>(options_, size_);
+  }
+
+  // Non-const version that allows modification of the underlying data
+  executorch::runtime::Span<BackendOption> view() {
+    return executorch::runtime::Span<BackendOption>(options_, size_);
   }
 
  private:
