@@ -68,6 +68,8 @@ ABBREVIATIONS = {
     "iphone": "ip",
     "xnnpackq8": "xnnq8",
 }
+
+
 def abbreviate(s):
     for full, abbr in ABBREVIATIONS.items():
         s = s.replace(full, abbr)
@@ -125,14 +127,14 @@ def argparser():
     )
     parser.add_argument(
         "--outputType",
-        choices=["json", "excel", "df"],
+        choices=["json", "excel", "df", "csv"],
         default="print",
         help="Choose output type for your run",
     )
     parser.add_argument(
         "--outputDir",
         default=".",
-        help="Only used when output-type is excel, default to current directory",
+        help="Only used when output-type is excel and csv, default to current directory",
     )
 
     return parser.parse_args()
@@ -252,7 +254,7 @@ class ExecutorchBenchmarkFetcher:
         - res_private.xlsx: Results for private devices
         - res_public.xlsx: Results for public devices
 
-        Each file contains multiple sheets, one per benchmark configuration.
+        Each file contains multiple sheets, one per benchmark configuration for private and public.
 
         Args:
             output_dir: Directory to save Excel files
@@ -298,6 +300,66 @@ class ExecutorchBenchmarkFetcher:
                 logging.info(f"Writing {sheet_name} to excel: {output_path}")
                 df = pd.DataFrame(rows)
                 df.to_excel(writer, sheet_name=sheet_name or "Sheet", index=False)
+
+    def to_csv(self, output_dir: str = ".") -> None:
+        """
+        Export benchmark results to CSV files.
+
+        Creates two CSV files:
+        - res_private.csv: Results for private devices
+        - res_public.csv: Results for public devices
+
+        Each file contains multiple CSV files, one per benchmark configuration for private and public.
+
+        Args:
+            output_dir: Directory to save CSV files
+        """
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            logging.info(f"Created output directory: {output_dir}")
+        else:
+            logging.info(f"Using existing output directory: {output_dir}")
+        private_path = os.path.join(output_dir, "private/")
+        public_path = os.path.join(output_dir, "public")
+        self._write_multiple_csv_files(
+            self.results_private, private_path, file_prefix="private_"
+        )
+        self._write_multiple_csv_files(
+            self.results_public, public_path, file_prefix="public_"
+        )
+
+    def _write_multiple_csv_files(
+        self, data_list: List[Dict[str, Any]], output_dir: str, file_prefix=""
+    ) -> None:
+        """
+        Write multiple benchmark results to separate CSV files.
+
+        Each entry in `data_list` becomes its own CSV file.
+
+        Args:
+            data_list: List of benchmark result dictionaries
+            output_dir: Directory to save the CSV files
+        """
+        os.makedirs(output_dir, exist_ok=True)
+        logging.info(
+            f"\n ========= Generating multiple CSV files in {output_dir} ========= \n"
+        )
+        for idx, entry in enumerate(data_list):
+            file_name = entry.get("short_name", f"file{idx+1}")
+
+            if file_prefix:
+                file_name = file_prefix + file_name
+            if len(file_name) > 100:
+                logging.warning(
+                    f"File name '{file_name}' is too long, truncating to 100 characters"
+                )
+                file_name = file_name[:100]
+            file_path = os.path.join(output_dir, f"{file_name}.csv")
+
+            rows = entry.get("rows", [])
+            logging.info(f"Writing CSV: {file_path} with {len(rows)} rows")
+            df = pd.DataFrame(rows)
+            df.to_csv(file_path, index=False)
 
     def _fetch_data(
         self, start_time: str, end_time: str
@@ -367,8 +429,10 @@ class ExecutorchBenchmarkFetcher:
         for name in private_ones:
             logging.info(name)
 
-    def _generate_table_name(self, group_info:dict, fields: list[str]) -> str:
-        name = "|".join(group_info[k] for k in fields if k in group_info and group_info[k])
+    def _generate_table_name(self, group_info: dict, fields: list[str]) -> str:
+        name = "|".join(
+            group_info[k] for k in fields if k in group_info and group_info[k]
+        )
         return self.normalize_string(name)
 
     def _process(self, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -405,7 +469,7 @@ class ExecutorchBenchmarkFetcher:
                 item["groupInfo"]["aws_type"] = "private"
             else:
                 item["groupInfo"]["aws_type"] = "public"
-                
+
         data.sort(key=lambda x: x["table_name"])
         logging.info(f"fetched {len(data)} table views")
         return data
@@ -429,7 +493,7 @@ class ExecutorchBenchmarkFetcher:
             logging.info(response.text)
             return None
 
-    def generate_short_name(self, words, size):
+    def generate_short_name(self, words, size, enable_abbreviation=True):
         shortKeys = [k.replace("_", "") for k in words]
         s = "_".join(shortKeys)
         if size > 0:
@@ -437,8 +501,10 @@ class ExecutorchBenchmarkFetcher:
                 f"we found more than one table matches the keywords, adding size to distinguish: {s}"
             )
             s += s + "_" + str(size)
-        for full, abbr in ABBREVIATIONS.items():
-            s = s.replace(full, abbr)
+
+        if enable_abbreviation:
+            for full, abbr in ABBREVIATIONS.items():
+                s = s.replace(full, abbr)
         return s
 
     def find_target_tables(self, keywords, is_private) -> List[Any]:
@@ -459,7 +525,7 @@ class ExecutorchBenchmarkFetcher:
                         item.get("groupInfo", {}).get("aws_type", "") == "private"
                     )
                     if is_private is not is_item_private:
-                        continue # skip if not matching private/public device
+                        continue  # skip if not matching private/public device
 
                     # generate short name for each table data
                     item["short_name"] = self.generate_short_name(
@@ -508,9 +574,14 @@ if __name__ == "__main__":
             logging.info("\n")
     elif args.outputType == "excel":
         logging.info(
-            f"Writing  benchmark results to excel file: {args.outputDir}/res_private.xlsx"
+            f"Writing  benchmark results to excel file as sheets: res_private.xlsx & res_public.xlsx under {args.outputDir}"
         )
         fetcher.to_excel(args.outputDir)
+    elif args.outputType == "csv":
+        logging.info(
+            f"Writing  benchmark results to csv files under folders private/ & public/ under {args.outputDir}"
+        )
+        fetcher.to_csv(args.outputDir)
     else:
         logging.info(
             f"======================Printing private device benchmark results in json format======================"
