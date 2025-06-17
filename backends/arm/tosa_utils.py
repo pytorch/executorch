@@ -9,7 +9,10 @@ import logging
 import os
 from typing import Any, Optional
 
+import numpy as np
+
 import sympy  # type: ignore
+
 import torch
 import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.tosa_mapping import TosaArg
@@ -114,6 +117,26 @@ def build_reshape(tosa_fb, input_name, new_shape, output_name):
     attr = ts.TosaSerializerAttribute()
     attr.ReshapeAttribute(new_shape)
     tosa_fb.addOperator(TosaOp.Op().RESHAPE, [input_name], [output_name], attr)
+
+
+def build_reshape_tosa_1_0(tosa_graph, input_name, new_shape, output_name):
+    import serializer.tosa_serializer as ts_  # type: ignore
+
+    shape = tosa_graph.addConst(
+        np.array(new_shape).shape,
+        ts_.DType.SHAPE,
+        np.array(new_shape),
+        name=output_name + "_shape",
+    )
+
+    attr = ts_.TosaSerializerAttribute()
+    attr.ReshapeAttribute()
+    tosa_graph.addOperator(
+        ts_.TosaOp.Op().RESHAPE,
+        [input_name, shape.name],
+        [output_name],
+        attr,
+    )
 
 
 def reshape_for_broadcast(tosa_fb, inputs, dim_order=None):
