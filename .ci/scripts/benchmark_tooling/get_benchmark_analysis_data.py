@@ -1,12 +1,13 @@
 import argparse
 import json
-from typing import Tuple, List, Any
-import requests
-from dataclasses import dataclass
-from datetime import datetime
-import pandas as pd
 import logging
 import os
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
+
+import pandas as pd
+import requests
 
 logging.basicConfig(level=logging.INFO)
 
@@ -56,6 +57,9 @@ public_device_matching_list = [
     ["mv3", "mps", "iphone_15", "ios_18.0"],
 ]
 
+
+# The abbreviations used to generate the short name for the benchmark result table
+# this is used to avoid the long table name issue when generating excel file (<=31 characters)
 ABBREVIATIONS = {
     "samsung": "smg",
     "galaxy": "gx",
@@ -64,7 +68,6 @@ ABBREVIATIONS = {
     "iphone": "ip",
     "xnnpackq8": "xnnq8",
 }
-
 
 def abbreviate(s):
     for full, abbr in ABBREVIATIONS.items():
@@ -138,29 +141,74 @@ def argparser():
 
 class ExecutorchBenchmarkFetcher:
     """
-    Fetch benchmark data from HUD
+    Fetch and process benchmark data from HUD API for ExecutorchBenchmark.
+
     Usage:
         fetcher = ExecutorchBenchmarkFetcher()
-        fetcher.get_data(start_time, end_time)
-
-        fetcher.toDataFrame() -> return a list of dataframes, one for private devices, one for public devices
-        fetcher.toExcelSheet(output_dir=".") -> write to excel files, one for private devices, one for public devices
+        fetcher.run(start_time, end_time, private_device_matching_list, public_device_matching_list)
+        # Convert results to DataFrames
+        private_dfs, public_dfs = fetcher.to_df()
+        # Export results to Excel files
+        fetcher.to_excel(output_dir=".")
     """
 
-    def __init__(self, env="prod", disable_logging=False):
+    def __init__(
+        self,
+        env="prod",
+        disable_logging=False,
+        group_table_fields=None,
+        group_row_fields=None,
+    ):
+        """
+        Initialize the ExecutorchBenchmarkFetcher.
+
+        Args:
+            env: Environment to use ("local" or "prod")
+            disable_logging: Whether to suppress log output
+            group_table_fields: Custom fields to group tables by (defaults to device, backend, arch, model)
+            group_row_fields: Custom fields to group rows by (defaults to workflow_id, job_id, granularity_bucket)
+        """
         self.env = env
         self.base_url = self._get_base_url()
-        self.query_group_table_by_fields = ["device", "backend", "arch", "model"]
-        self.query_group_row_by_fields = ["workflow_id", "job_id", "granularity_bucket"]
+        self.query_group_table_by_fields = (
+            group_table_fields
+            if group_table_fields
+            else ["device", "backend", "arch", "model"]
+        )
+        self.query_group_row_by_fields = (
+            group_row_fields
+            if group_row_fields
+            else ["workflow_id", "job_id", "granularity_bucket"]
+        )
         self.data = None
         self.disable_logging = disable_logging
         self.results_private = []
         self.results_public = []
 
     def run(
-        self, start_time, end_time, privateDeviceMatchings, publicDeviceMatchings
-    ) -> Tuple[List[Any], List[Any]]:
+        self,
+        start_time: str,
+        end_time: str,
+        privateDeviceMatchings: List[List[str]],
+        publicDeviceMatchings: List[List[str]],
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """
+        Execute the benchmark data fetching and processing workflow.
 
+        This method orchestrates the entire process:
+        1. Fetches raw data from the HUD API for the specified time range
+        2. Processes and normalizes the data
+        3. Filters results based on device matching criteria for both private and public devices
+
+        Args:
+            start_time: ISO8601 formatted start time (YYYY-MM-DDTHH:MM:SS)
+            end_time: ISO8601 formatted end time (YYYY-MM-DDTHH:MM:SS)
+            privateDeviceMatchings: List of keyword lists for matching private devices
+            publicDeviceMatchings: List of keyword lists for matching public devices
+
+        Returns:
+            Tuple containing (private_device_results, public_device_results)
+        """
         self.data = self._fetch_data(start_time, end_time)
         if not self.disable_logging:
             self.print_all_names()
@@ -177,7 +225,17 @@ class ExecutorchBenchmarkFetcher:
         )
         return (self.results_private, self.results_public)
 
-    def toDataFrame(self):
+    def to_df(self) -> Tuple[Any, Any]:
+        """
+        Convert benchmark results to pandas DataFrames.
+
+        Transforms the raw benchmark results into DataFrames for easier analysis
+        and manipulation.
+
+        Returns:
+            Tuple containing (private_device_dataframes, public_device_dataframes)
+            Each item is a list of dictionaries with 'groupInfo' and 'df' keys
+        """
         private_dfs = [
             {"groupInfo": item["groupInfo"], "df": pd.DataFrame(item["rows"])}
             for item in self.results_private
@@ -188,7 +246,19 @@ class ExecutorchBenchmarkFetcher:
         ]
         return (private_dfs, public_dfs)
 
-    def toExcelSheet(self, output_dir="."):
+    def to_excel(self, output_dir: str = ".") -> None:
+        """
+        Export benchmark results to Excel files.
+
+        Creates two Excel files:
+        - res_private.xlsx: Results for private devices
+        - res_public.xlsx: Results for public devices
+
+        Each file contains multiple sheets, one per benchmark configuration.
+
+        Args:
+            output_dir: Directory to save Excel files
+        """
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
             logging.info(f"Created output directory: {output_dir}")
@@ -199,7 +269,19 @@ class ExecutorchBenchmarkFetcher:
         self._write_multi_sheet_excel(self.results_private, private_path)
         self._write_multi_sheet_excel(self.results_public, public_path)
 
-    def _write_multi_sheet_excel(self, data_list, output_path):
+    def _write_multi_sheet_excel(
+        self, data_list: List[Dict[str, Any]], output_path: str
+    ) -> None:
+        """
+        Write multiple benchmark results to sheets in an Excel file.
+
+        Creates an Excel file with multiple sheets, one for each benchmark configuration.
+        Handles sheet name length limitations and truncates names if necessary.
+
+        Args:
+            data_list: List of benchmark result dictionaries
+            output_path: Path to save the Excel file
+        """
         logging.info(
             f"\n ========= Generate excel file with multiple sheets for {output_path}========= \n"
         )
@@ -219,21 +301,45 @@ class ExecutorchBenchmarkFetcher:
                 df = pd.DataFrame(rows)
                 df.to_excel(writer, sheet_name=sheet_name or "Sheet", index=False)
 
-    def _fetch_data(self, start_time, end_time):
+    def _fetch_data(
+        self, start_time: str, end_time: str
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        Fetch and process benchmark data for the specified time range.
+
+        Args:
+            start_time: ISO8601 formatted start time
+            end_time: ISO8601 formatted end time
+
+        Returns:
+            Processed benchmark data or None if fetch failed
+        """
         data = self._fetch_execu_torch_data(start_time, end_time)
         if data is None:
             return None
         self.data = self._process(data)
         return self.data
 
-    def _get_base_url(self):
+    def _get_base_url(self) -> str:
+        """
+        Get the base URL for API requests based on environment.
+
+        Returns:
+            Base URL string for the configured environment
+        """
         base_urls = {
             "local": "http://localhost:3000",
             "prod": "https://hud.pytorch.org",
         }
         return base_urls[self.env]
 
-    def print_all_names(self):
+    def print_all_names(self) -> None:
+        """
+        Print all benchmark table names found in the data.
+
+        Separates results by device type (public/private) and displays counts.
+        This is useful for debugging and understanding what data is available.
+        """
         if not self.data:
             return
         logging.info("peeking table result:")
@@ -263,7 +369,22 @@ class ExecutorchBenchmarkFetcher:
         for name in private_ones:
             logging.info(name)
 
-    def _process(self, data):
+    def _process(self, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Process raw benchmark data.
+
+        This method:
+        1. Normalizes string values in groupInfo
+        2. Creates table_name from group info components
+        3. Determines aws_type (public/private) based on device name
+        4. Sorts results by table_name
+
+        Args:
+            data: Raw benchmark data from API
+
+        Returns:
+            Processed benchmark data
+        """
         for item in data:
             group = item.get("groupInfo", {})
             item["groupInfo"] = {
@@ -275,11 +396,15 @@ class ExecutorchBenchmarkFetcher:
                 f"{group['model']}|{group['backend']}|{group['device']}|{group['arch']}"
             )
             name = self.normalize_string(name)
+            # Add full name joined by the group key fields
             item["table_name"] = name
+
+            # Mark aws_type: private or public
             if group.get("device", "").find("private") != -1:
                 item["groupInfo"]["aws_type"] = "private"
             else:
                 item["groupInfo"]["aws_type"] = "public"
+        # Sort by table name
         data.sort(key=lambda x: x["table_name"])
         logging.info(f"fetched {len(data)} table views")
         return data
@@ -364,7 +489,7 @@ if __name__ == "__main__":
     )
 
     if args.outputType == "df":
-        private, public = fetcher.toDataFrame()
+        private, public = fetcher.to_df()
         logging.info(
             f"=====================Printing private device benchmark results in dataframe====================="
         )
@@ -383,7 +508,7 @@ if __name__ == "__main__":
         logging.info(
             f"Writing  benchmark results to excel file: {args.outputDir}/res_private.xlsx"
         )
-        fetcher.toExcelSheet(args.outputDir)
+        fetcher.to_excel(args.outputDir)
     else:
         logging.info(
             f"======================Printing private device benchmark results in json format======================"

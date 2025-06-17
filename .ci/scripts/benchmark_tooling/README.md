@@ -1,38 +1,35 @@
-# Benchmark tooling
-a lib providing tools for benchmarking
-# read_benchmark_data.py
-read benchmar data from HUD open api, the api returns grouped benchmark data based on execuTorch group values
-## How to use it
-install requirement packages
-```
-pip install benchamrk_tooling/requirements.txt
-```
+# Benchmark Tooling
 
-### run script manually
-the script has fixed list of group settings.
-Notice startTime and endTime must be UTC datetime string: "yyyy-mm-ddThh:mm:ss"
+A library providing tools for benchmarking ExecutorchBenchmark data.
 
-To run and display json format
+## Read Benchmark Data
+`get_benchmark_analysis_data.py` fetches benchmark data from HUD Open API and processes it, grouping metrics by private and public devices.
+
+### Quick Start
+
+Install dependencies:
 ```bash
-python3 read_benchamark_data.py  --startTime "2025-06-11T00:00:00" --endTime "2025-06-17T18:00:00"
+pip install -r requirements.txt
 ```
 
-To run and display df format
+Run with default output (CLI):
 ```bash
-python3 read_benchamark_data.py  --startTime "2025-06-11T00:00:00" --endTime "2025-06-17T18:00:00" --outputType 'df'
+python3 get_benchmark_analysis_data.py --startTime "2025-06-11T00:00:00" --endTime "2025-06-17T18:00:00"
 ```
 
-To run and generate execel sheets (this generated two excel file, one for private devices, and one for pulic devices):
-```
-python3 read_benchamark_data.py  --startTime "2025-06-11T00:00:00" --endTime "2025-06-17T18:00:00" --outputType 'excel' --excelDir "."
+Additional options:
+- `--silent`: Hide processing logs, show only results
+- `--outputType df`: Display results in DataFrame format
+- `--outputType excel --excelDir "{YOUR_LOCAL_DIRECTORY}"`: Generate Excel files (`res_private.xlsx` and `res_public.xlsx`)
 
-```
+### Python API Usage
 
-To use the class as part your script
-```
+To use the benchmark fetcher in your own scripts:
+
+```python
+import ExecutorchBenchmarkFetcher from benchmark_tooling.get_benchmark_analysis_data
 fetcher = ExecutorchBenchmarkFetcher()
-# must call run first
-fetch.run()
-private,public = fetcher.toDataFrame()
-
+# Must call run first
+fetcher.run()
+private, public = fetcher.to_df()
 ```
