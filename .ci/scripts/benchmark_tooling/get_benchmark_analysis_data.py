@@ -4,6 +4,7 @@ import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime
+from sre_compile import REPEAT_ONE
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -139,6 +140,187 @@ def argparser():
     return parser.parse_args()
 
 
+class BenchmarkFetcher:
+    def __init__(
+        self,
+        env="prod",
+        repo="pytorch/pytorch",
+        benchmark_name="",
+        disable_logging=False,
+        group_table_fields=None,
+        group_row_fields=None,
+        processor_funcs=None,
+    ):
+        """
+        Initialize the ExecutorchBenchmarkFetcher.
+
+        Args:
+            env: Environment to use ("local" or "prod")
+            disable_logging: Whether to suppress log output
+            group_table_fields: Custom fields to group tables by (defaults to device, backend, arch, model)
+            group_row_fields: Custom fields to group rows by (defaults to workflow_id, job_id, granularity_bucket)
+        """
+        self.env = env
+        self.base_url = self._get_base_url()
+        self.query_group_table_by_fields = (
+            group_table_fields
+            if group_table_fields
+            else ["device", "backend", "arch", "model"]
+        )
+        self.query_group_row_by_fields = (
+            group_row_fields
+            if group_row_fields
+            else ["workflow_id", "job_id", "granularity_bucket"]
+        )
+        self.data = None
+        self.disable_logging = disable_logging
+        self.processor_funcs = processor_funcs if processor_funcs else []
+
+        self.repo = repo
+        self.benchmark_name = benchmark_name
+
+    def _get_base_url(self) -> str:
+        """
+        Get the base URL for API requests based on environment.
+
+        Returns:
+            Base URL string for the configured environment
+        """
+        base_urls = {
+            "local": "http://localhost:3000",
+            "prod": "https://hud.pytorch.org",
+        }
+        return base_urls[self.env]
+
+    def _fetch_data(
+        self, start_time: str, end_time: str
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        Fetch and process benchmark data for the specified time range.
+
+        Args:
+            start_time: ISO8601 formatted start time
+            end_time: ISO8601 formatted end time
+
+        Returns:
+            Processed benchmark data or None if fetch failed
+        """
+        data = self._fetch_data(start_time, end_time)
+        if data is None:
+            return None
+        self.data = self._process(data)
+        return self.data
+
+    def to_df(self) -> Any:
+        if not self.data:
+            return
+        dfs = [
+            {"groupInfo": item["groupInfo"], "df": pd.DataFrame(item["rows"])}
+            for item in self.data
+        ]
+        return dfs
+
+    def _process(self, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Process raw benchmark data.
+
+        This method:
+        1. Normalizes string values in groupInfo
+        2. Creates table_name from group info components
+        3. Determines aws_type (public/private) based on device name
+        4. Sorts results by table_name
+
+        Args:
+            data: Raw benchmark data from API
+
+        Returns:
+            Processed benchmark data
+        """
+        for item in data:
+            # normalized string values in groupInfo
+            item["groupInfo"] = {
+                k: self.normalize_string(v)
+                for k, v in item.get("groupInfo", {}).items()
+                if v is not None and isinstance(v, str)
+            }
+            group = item.get("groupInfo", {})
+            name = self._generate_table_name(group, self.query_group_table_by_fields)
+
+            # Add full name joined by the group key fields
+            item["table_name"] = name
+
+            # Mark aws_type: private or public
+            if group.get("device", "").find("private") != -1:
+                item["groupInfo"]["aws_type"] = "private"
+            else:
+                item["groupInfo"]["aws_type"] = "public"
+
+        data.sort(key=lambda x: x["table_name"])
+        logging.info(f"fetched {len(data)} table views")
+        return data
+
+    def normalize_string(self, s, replace="_"):
+        return s.lower().replace(" ", replace)
+
+    def _generate_table_name(self, group_info: dict, fields: list[str]) -> str:
+        name = "|".join(
+            group_info[k] for k in fields if k in group_info and group_info[k]
+        )
+        return self.normalize_string(name)
+
+    def _call_api(self, start_time, end_time):
+        url = f"{self.base_url}/api/benchmark/group_data"
+        params_object = BenchmarkQueryGroupDataParams(
+            repo="pytorch/executorch",
+            benchmark_name="ExecuTorch",
+            start_time=start_time,
+            end_time=end_time,
+            group_table_by_fields=self.query_group_table_by_fields,
+            group_row_by_fields=self.query_group_row_by_fields,
+        )
+        params = {k: v for k, v in params_object.__dict__.items() if v is not None}
+        response = requests.get(url, params=params)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logging.info(f"Failed to fetch benchmark data ({response.status_code})")
+            logging.info(response.text)
+            return None
+
+    def _write_multiple_csv_files(
+        self, data_list: List[Dict[str, Any]], output_dir: str, file_prefix=""
+    ) -> None:
+        """
+        Write multiple benchmark results to separate CSV files.
+
+        Each entry in `data_list` becomes its own CSV file.
+
+        Args:
+            data_list: List of benchmark result dictionaries
+            output_dir: Directory to save the CSV files
+        """
+        os.makedirs(output_dir, exist_ok=True)
+        logging.info(
+            f"\n ========= Generating multiple CSV files in {output_dir} ========= \n"
+        )
+        for idx, entry in enumerate(data_list):
+            file_name = entry.get("short_name", f"file{idx+1}")
+
+            if file_prefix:
+                file_name = file_prefix + file_name
+            if len(file_name) > 100:
+                logging.warning(
+                    f"File name '{file_name}' is too long, truncating to 100 characters"
+                )
+                file_name = file_name[:100]
+            file_path = os.path.join(output_dir, f"{file_name}.csv")
+
+            rows = entry.get("rows", [])
+            logging.info(f"Writing CSV: {file_path} with {len(rows)} rows")
+            df = pd.DataFrame(rows)
+            df.to_csv(file_path, index=False)
+
+
 class ExecutorchBenchmarkFetcher:
     """
     Fetch and process benchmark data from HUD API for ExecutorchBenchmark.
@@ -214,7 +396,7 @@ class ExecutorchBenchmarkFetcher:
 
         if not self.disable_logging:
             logging.info(
-                f"\n ========= Search tables specific for matching keywords ========= \n"
+                "\n ========= Search tables specific for matching keywords ========= \n"
             )
         self.results_private = self.find_target_tables(privateDeviceMatchings, True)
         self.results_public = self.find_target_tables(publicDeviceMatchings, False)
@@ -282,7 +464,7 @@ class ExecutorchBenchmarkFetcher:
             output_path: Path to save the Excel file
         """
         logging.info(
-            f"\n ========= Generate excel file with multiple sheets for {output_path}========= \n"
+            "\n ========= Generate excel file with multiple sheets for {output_path}========= \n"
         )
         with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
             for idx, entry in enumerate(data_list):
@@ -403,29 +585,15 @@ class ExecutorchBenchmarkFetcher:
             return
         logging.info("peeking table result:")
         logging.info(json.dumps(self.data[0], indent=2))
-        public_ones = [
-            item["table_name"]
-            for item in self.data
-            if item["groupInfo"]["aws_type"] == "public"
-        ]
-        private_ones = [
-            item["table_name"]
-            for item in self.data
-            if item["groupInfo"]["aws_type"] == "private"
-        ]
+        names = [item["table_name"] for item in self.data]
         # Print all found benchmark table names
         logging.info(
-            f"\n============List all benchmark result table names (Public and Private) below =================\n"
+            "\n============List all benchmark result table names  =================\n"
         )
         logging.info(
-            f"\n============ public device benchmark results({len(public_ones)})=================\n"
+            f"\n============ public device benchmark results({len(names)})=================\n"
         )
-        for name in public_ones:
-            logging.info(name)
-        logging.info(
-            f"\n======= private device benchmark results({len(private_ones)})=======\n"
-        )
-        for name in private_ones:
+        for name in names:
             logging.info(name)
 
     def _generate_table_name(self, group_info: dict, fields: list[str]) -> str:
