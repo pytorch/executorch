@@ -238,32 +238,31 @@ function(gen_operators_lib)
 
     set(_common_compile_options -Wno-deprecated-declarations -ffunction-sections -fdata-sections -Os)
 
-    if("${portable_kernels_check}" IN_LIST GEN_KERNEL_LIBS)
-      list(REMOVE_ITEM GEN_KERNEL_LIBS ${portable_kernels_check})
+    if(GEN_DTYPE_SELECTIVE_BUILD)
+      if("${portable_kernels_check}" IN_LIST GEN_KERNEL_LIBS)
+        list(REMOVE_ITEM GEN_KERNEL_LIBS ${portable_kernels_check})
 
-      # Define portable kernels sources (same as in kernels/portable/CMakeLists.txt)
-      file(GLOB_RECURSE _portable_kernels_srcs
-           "${EXECUTORCH_ROOT}/kernels/portable/cpu/*.cpp"
-      )
-      list(FILTER _portable_kernels_srcs EXCLUDE REGEX "test/*.cpp")
-      list(FILTER _portable_kernels_srcs EXCLUDE REGEX "codegen")
+        # Define portable kernels sources (same as in kernels/portable/CMakeLists.txt)
+        file(GLOB_RECURSE _portable_kernels_srcs
+             "${EXECUTORCH_ROOT}/kernels/portable/cpu/*.cpp"
+        )
+        list(FILTER _portable_kernels_srcs EXCLUDE REGEX "test/*.cpp")
+        list(FILTER _portable_kernels_srcs EXCLUDE REGEX "codegen")
 
-      # Build kernels_util_all_deps, since later selected_portable_kernels depends on it
-      list(TRANSFORM _kernels_util_all_deps__srcs PREPEND "${EXECUTORCH_ROOT}/")
-      add_library(selected_kernels_util_all_deps ${_kernels_util_all_deps__srcs})
-      target_link_libraries(selected_kernels_util_all_deps PRIVATE executorch_core)
-      target_include_directories(selected_kernels_util_all_deps PUBLIC ${_common_include_directories})
-      target_compile_definitions(selected_kernels_util_all_deps PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
-      target_compile_options(selected_kernels_util_all_deps PUBLIC ${_common_compile_options})
+        # Build kernels_util_all_deps, since later selected_portable_kernels depends on it
+        list(TRANSFORM _kernels_util_all_deps__srcs PREPEND "${EXECUTORCH_ROOT}/")
+        add_library(selected_kernels_util_all_deps ${_kernels_util_all_deps__srcs})
+        target_link_libraries(selected_kernels_util_all_deps PRIVATE executorch_core)
+        target_include_directories(selected_kernels_util_all_deps PUBLIC ${_common_include_directories})
+        target_compile_definitions(selected_kernels_util_all_deps PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
+        target_compile_options(selected_kernels_util_all_deps PUBLIC ${_common_compile_options})
 
-      # Build selected_portable_kernels
-      add_library(selected_portable_kernels ${_portable_kernels_srcs})
-      target_link_libraries(selected_portable_kernels PRIVATE executorch_core selected_kernels_util_all_deps)
-      target_compile_options(selected_portable_kernels PUBLIC ${_common_compile_options})
-      target_include_directories(selected_portable_kernels PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/)
+        # Build selected_portable_kernels
+        add_library(selected_portable_kernels ${_portable_kernels_srcs})
+        target_link_libraries(selected_portable_kernels PRIVATE executorch_core selected_kernels_util_all_deps)
+        target_compile_options(selected_portable_kernels PUBLIC ${_common_compile_options})
+        target_include_directories(selected_portable_kernels PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/)
 
-      # Add dependency on generated header if dtype selective build is enabled
-      if(GEN_DTYPE_SELECTIVE_BUILD)
         # Make sure the header is generated before compiling the library
         add_dependencies(selected_portable_kernels ${GEN_LIB_NAME})
         # Create a custom target for the header to ensure proper dependency tracking
@@ -271,9 +270,9 @@ function(gen_operators_lib)
         add_dependencies(selected_portable_kernels selected_portable_kernels_header)
         # Apply the compile definition for dtype selective build
         target_compile_definitions(selected_portable_kernels PRIVATE EXECUTORCH_SELECTIVE_BUILD_DTYPE=1)
-      endif()
 
-      target_link_libraries(${GEN_LIB_NAME} PUBLIC selected_portable_kernels)
+        target_link_libraries(${GEN_LIB_NAME} PUBLIC selected_portable_kernels)
+      endif()
     endif()
 
     if(GEN_KERNEL_LIBS)
