@@ -84,7 +84,8 @@ class StubBackend : public BackendInterface {
 
   Error set_option(
       BackendUpdateContext& context,
-      const Span<executorch::runtime::BackendOption>& backend_options) override {
+      const Span<executorch::runtime::BackendOption>& backend_options)
+      override {
     // Store the options for verification
     last_options_size = backend_options.size();
     if (backend_options.size() > 0) {
