@@ -70,14 +70,14 @@ class MulVisitor_080_BI(NodeVisitor):
         input_A_rescaled = tqutils.build_rescale_to_int32(
             tosa_graph,
             input_A,
-            input_A_qargs.zp,
-            [1.0],
+            input_A_qargs.get_zp_per_tensor(),
+            1.0,
         )
         input_B_rescaled = tqutils.build_rescale_to_int32(
             tosa_graph,
             input_B,
-            input_B_qargs.zp,
-            [1.0],
+            input_B_qargs.get_zp_per_tensor(),
+            1.0,
         )
 
         output_shape = tutils.tosa_shape(output.shape, output.dim_order)
@@ -101,7 +101,9 @@ class MulVisitor_080_BI(NodeVisitor):
             [mul_output.name],
             attr,
         )
-        output_scale = input_A_qargs.scale * input_B_qargs.scale
+        output_scale = (
+            input_A_qargs.get_scale_per_tensor() * input_B_qargs.get_scale_per_tensor()
+        )
         tqutils.insert_rescale_op_to_int8(tosa_graph, mul_output, output_scale, node)
 
 
@@ -174,15 +176,15 @@ class MulVisitor_INT(NodeVisitor):
         input_A_rescaled = tqutils.build_rescale_to_int32(
             tosa_graph,
             input_A,
-            input_A_qargs.zp,
-            [1.0],
+            input_A_qargs.get_zp_per_tensor(),
+            1.0,
             tosa_spec=self.tosa_spec,
         )
         input_B_rescaled = tqutils.build_rescale_to_int32(
             tosa_graph,
             input_B,
-            input_B_qargs.zp,
-            [1.0],
+            input_B_qargs.get_zp_per_tensor(),
+            1.0,
             tosa_spec=self.tosa_spec,
         )
 
@@ -196,7 +198,9 @@ class MulVisitor_INT(NodeVisitor):
             [input_A_rescaled.name, input_B_rescaled.name, f"{node.name}_shift"],
             [mul_output.name],
         )
-        output_scale = input_A_qargs.scale * input_B_qargs.scale
+        output_scale = (
+            input_A_qargs.get_scale_per_tensor() * input_B_qargs.get_scale_per_tensor()
+        )
         tqutils.insert_rescale_op_to_int8(
             tosa_graph, mul_output, output_scale, node, self.tosa_spec
         )
