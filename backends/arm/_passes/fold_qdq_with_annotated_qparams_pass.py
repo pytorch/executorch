@@ -10,7 +10,13 @@ import copy
 
 from typing import cast, Dict, Set, Tuple
 
-from executorch.backends.arm.tosa_quant_utils import QuantArgs
+from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_param_tensor,
+    is_param_node,
+)
+
+from executorch.backends.arm.tosa_quant_utils import dq_ops, q_ops, QuantArgs
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -23,9 +29,6 @@ from executorch.exir.pass_base import (
     ProxyValue,
 )
 from torch.fx import GraphModule, Node
-
-q_op: EdgeOpOverload = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
-dq_op: EdgeOpOverload = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
 
 
 def get_input_qparams(node: Node) -> dict[int, QuantArgs]:
@@ -66,7 +69,7 @@ def get_output_qparams(node: Node) -> dict[int, QuantArgs]:
     return output_qparams
 
 
-class FoldAndAnnotateQParamsPass(ExportPass):
+class FoldAndAnnotateQParamsPass(ArmPass):
     """
     A pass that walks the graph and removes any DQ and Q nodes before and after the target
      node.
@@ -96,9 +99,6 @@ class FoldAndAnnotateQParamsPass(ExportPass):
 
     """
 
-    def __init__(self) -> None:
-        super().__init__()
-
     def fold_and_annotate_arg(
         self, graph_module: GraphModule, node: Node, arg_list: list[Node], i: int
     ) -> None:
@@ -109,8 +109,25 @@ class FoldAndAnnotateQParamsPass(ExportPass):
                 return
 
             arg_quant_params = None
-            if arg.target == dq_op:
-                arg_quant_params = QuantArgs.from_operator(arg.target, arg.args)
+            if arg.target in dq_ops:
+                args = arg.args
+                scales = args[1]
+                if (
+                    isinstance(args[1], Node)
+                    and self.exported_program is not None
+                    and is_param_node(self.exported_program, args[1])
+                ):
+                    scales = get_param_tensor(self.exported_program, args[1])
+                zps = args[2]
+                if (
+                    isinstance(args[2], Node)
+                    and self.exported_program is not None
+                    and is_param_node(self.exported_program, args[2])
+                ):
+                    zps = get_param_tensor(self.exported_program, args[2])
+                arg_quant_params = QuantArgs.from_operator(
+                    arg.target, (args[0], scales, zps, *args[3:])
+                )
                 # add arg to nodes_to_remove to fold the dq-node
                 nodes_to_remove.add(arg)
             if input_qparams is not None and input_qparams != arg_quant_params:
@@ -120,10 +137,13 @@ class FoldAndAnnotateQParamsPass(ExportPass):
         if input_qparams is not None:
             node.meta["input_qparams"][i] = input_qparams
             for n in nodes_to_remove:
-                if n.target != dq_op:
-                    raise RuntimeError(f"Expected {dq_op} dq_op, got {n.target}")
+                if n.target not in dq_ops:
+                    raise RuntimeError(
+                        f"Expected one of {dq_ops} dq_op, got {n.target}"
+                    )
 
-                n.replace_all_uses_with(n.args[0])  # type: ignore[arg-type]
+                if len(n.args) > 0:
+                    n.replace_all_uses_with(n.args[0])  # type: ignore[arg-type]
                 graph_module.graph.erase_node(n)
 
     def call(self, graph_module: GraphModule) -> PassResult:
@@ -134,7 +154,7 @@ class FoldAndAnnotateQParamsPass(ExportPass):
             if n.op != "call_function":
                 continue
             # Don't fold chains of quant-ops into each other.
-            if n.target in (q_op, dq_op):
+            if n.target in (*q_ops, *dq_ops):
                 continue
 
             # Make sure we haven't already set qparams meta information on the node
@@ -164,7 +184,7 @@ class FoldAndAnnotateQParamsPass(ExportPass):
             # Copy the users, since we are modifying it.
             users_copy = copy.copy(n.users)
             for i, user in enumerate(users_copy):
-                if user.target != q_op:
+                if user.target not in q_ops:
                     continue
 
                 # quantization node found here, store the quantization parameters in meta value
@@ -201,7 +221,7 @@ class QuantizeOperatorArguments(ExportPass):
 
             # Make sure we have a quantized operator
             user = list(n.users)[0]
-            if user.target != q_op:
+            if user.target not in q_ops:
                 continue
 
             qargs = QuantArgs.from_operator(user.target, user.args)

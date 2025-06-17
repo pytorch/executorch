@@ -63,7 +63,6 @@ void add_dequantize_per_tensor_node(
         PushConstantDataInfo(&zero_point_val, sizeof(int)),
         PushConstantDataInfo(&quant_min_val, sizeof(int)),
         PushConstantDataInfo(&quant_max_val, sizeof(int)),
-        graph.numel_pc_of(output),
     };
   } else {
     param_ubos = {
@@ -103,8 +102,8 @@ void add_dequantize_per_tensor_node(
 void add_dequantize_per_token_node(
     ComputeGraph& graph,
     const ValueRef& input,
-    const ValueRef& scale_data,
-    const ValueRef& zero_point_data,
+    const ValueRef& scale,
+    const ValueRef& zero_point,
     const ValueRef& quant_min,
     const ValueRef& quant_max,
     const ValueRef& output) {
@@ -115,12 +114,6 @@ void add_dequantize_per_token_node(
 
   int quant_min_val = static_cast<int>(graph.get_int(quant_min));
   int quant_max_val = static_cast<int>(graph.get_int(quant_max));
-
-  // Prepack the scale and zero_point tensors as buffers for efficient access
-  ValueRef scale =
-      prepack_standard(graph, scale_data, utils::kBuffer, utils::kWidthPacked);
-  ValueRef zero_point = prepack_standard(
-      graph, zero_point_data, utils::kBuffer, utils::kWidthPacked);
 
   int num_tokens = static_cast<int>(graph.sizes_of(scale)[0]);
 
@@ -139,7 +132,6 @@ void add_dequantize_per_token_node(
         PushConstantDataInfo(&num_tokens, sizeof(int)),
         PushConstantDataInfo(&quant_min_val, sizeof(int)),
         PushConstantDataInfo(&quant_max_val, sizeof(int)),
-        graph.numel_pc_of(output),
     };
   } else {
     param_ubos = {
@@ -224,8 +216,8 @@ void dequantize_per_token_impl(
 
   // Check tensor types
   VK_CHECK_COND(graph.val_is_tensor(input));
-  VK_CHECK_COND(graph.val_is_tref(scale));
-  VK_CHECK_COND(graph.val_is_tref(zero_point));
+  VK_CHECK_COND(graph.val_is_tensor(scale));
+  VK_CHECK_COND(graph.val_is_tensor(zero_point));
   VK_CHECK_COND(graph.val_is_tensor(output));
 
   // Verify input is an integer type
@@ -240,6 +232,12 @@ void dequantize_per_token_impl(
       graph.dtype_of(output) == vkapi::kHalf ||
       graph.dtype_of(output) == vkapi::kFloat ||
       graph.dtype_of(output) == vkapi::kDouble);
+
+  // Check that scale and zero_point have buffer storage and width packing
+  VK_CHECK_COND(graph.is_buffer_storage(scale));
+  VK_CHECK_COND(graph.packed_dim_of(scale) == WHCN::kWidthDim);
+  VK_CHECK_COND(graph.is_buffer_storage(zero_point));
+  VK_CHECK_COND(graph.packed_dim_of(zero_point) == WHCN::kWidthDim);
 
   // Check that tensors with texture storage have standard axis map
   if (!graph.is_buffer_storage(input)) {

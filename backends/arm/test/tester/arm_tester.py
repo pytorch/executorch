@@ -314,7 +314,10 @@ class ArmTester(Tester):
         self.stages[self.stage_name(InitialModel)] = None
         self._run_stage(InitialModel(self.original_module))
 
-    def quantize(self, quantize_stage: Optional[tester.Quantize] = None):
+    def quantize(
+        self,
+        quantize_stage: Optional[tester.Quantize] = None,
+    ):
         if quantize_stage is None:
             quantizer = None
             if is_tosa(self.compile_spec):
@@ -324,7 +327,7 @@ class ArmTester(Tester):
                 quantizer = EthosUQuantizer(self.compile_spec)
             quantize_stage = tester.Quantize(
                 quantizer,
-                get_symmetric_quantization_config(is_per_channel=False),
+                get_symmetric_quantization_config(),
             )
         return super().quantize(quantize_stage)
 
