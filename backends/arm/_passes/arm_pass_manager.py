@@ -6,7 +6,6 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
-
 from executorch.backends.arm._passes import (
     AnnotateChannelsLastDimOrder,
     AnnotateDecomposedMatmulPass,
@@ -26,6 +25,7 @@ from executorch.backends.arm._passes import (
     ConvertToClampPass,
     DecomposeCosineSimilarityPass,
     DecomposeDivPass,
+    DecomposeEmbeddingPass,
     DecomposeGeluPass,
     DecomposeGroupNormPass,
     DecomposeLayerNormPass,
@@ -46,6 +46,7 @@ from executorch.backends.arm._passes import (
     FuseConstantArgsPass,
     FuseEqualPlaceholdersPass,
     FuseQuantizedActivationPass,
+    InsertCastForOpsWithInt64InputPass,
     InsertRescalePass,
     InsertTableOpsPass,
     MatchArgRanksPass,
@@ -139,6 +140,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(ConvertIntPowToMuls())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSAMI())
+        self.add_pass(DecomposeEmbeddingPass())
         self.add_pass(FuseQuantizedActivationPass())
         self.add_pass(RemoveGetItemPass())
         self.add_pass(ConvertSplitToSlicePass())
@@ -211,6 +213,8 @@ class ArmPassManager(PassManager):
             )
 
     def transform_for_annotation_pipeline(self, graph_module: GraphModule):
+        self.add_pass(InsertCastForOpsWithInt64InputPass())
+        self.add_pass(DecomposeEmbeddingPass())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(ScalarsToAttributePass())

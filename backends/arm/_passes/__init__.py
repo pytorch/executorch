@@ -22,6 +22,7 @@ from .convert_squeezes_to_view import ConvertSqueezesToViewPass  # noqa
 from .convert_to_clamp import ConvertToClampPass  # noqa
 from .decompose_cosine_similarity_pass import DecomposeCosineSimilarityPass  # noqa
 from .decompose_div_pass import DecomposeDivPass  # noqa
+from .decompose_embedding_pass import DecomposeEmbeddingPass  # noqa  # noqa
 from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_groupnorm_pass import DecomposeGroupNormPass  # noqa
 from .decompose_layernorm_pass import DecomposeLayerNormPass  # noqa
@@ -46,6 +47,9 @@ from .fuse_batchnorm2d_pass import FuseBatchnorm2DPass  # noqa
 from .fuse_constant_ops_pass import ComputeConstantOpsAOT, FuseConstantArgsPass  # noqa
 from .fuse_equal_placeholders_pass import FuseEqualPlaceholdersPass  # noqa
 from .fuse_quantized_activation_pass import FuseQuantizedActivationPass  # noqa
+from .insert_int64_input_cast_pass import (  # noqa  # noqa
+    InsertCastForOpsWithInt64InputPass,
+)
 from .insert_rescales_pass import InsertRescalePass  # noqa
 from .insert_table_ops import InsertTableOpsPass  # noqa
 from .match_arg_ranks_pass import MatchArgRanksPass  # noqa

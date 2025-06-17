@@ -75,7 +75,7 @@ from executorch.backends.qualcomm._passes import (
     FoldQDQ,
     TagQuantIO,
 )
-from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
+from executorch.backends.qualcomm.builders.node_visitor_manager import get_node_visitors
 from executorch.backends.qualcomm.debugger.utils import DrawGraph
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 from executorch.examples.models.edsr import EdsrModel
@@ -272,9 +272,24 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_cumsum(self):
-        module = CumSum()  # noqa: F405
-        sample_input = (torch.randn(4),)
-        self.lower_module_and_test_output(module, sample_input)
+        sample_input = ()
+        test_comb = [
+            {
+                QCOM_MODULE: [CumSum()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(4),),
+                    (torch.randint(0, 10, size=(4,)),),
+                ],
+            }
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        self.lower_module_and_test_output(module, sample_input)
+                        index += 1
 
     def test_qnn_backend_einsum_outer_product(self):
         module = EinsumOuterProduct()  # noqa: F405
@@ -310,6 +325,12 @@ class TestQNNFloatingPointOperator(TestQNN):
             {
                 QCOM_MODULE: [AddConstantFloat()],  # noqa: F405
                 QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
+            },
+            {
+                QCOM_MODULE: [
+                    AddConstantLong(),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randint(0, 10, size=(2, 3)),)],
             },
         ]
 
@@ -3713,16 +3734,6 @@ class TestQNNQuantizedUtils(TestQNN):
 
 
 class TestExampleLLMScript(TestQNN):
-    def required_envs(self, conditions=None) -> bool:
-        conditions = [] if conditions is None else conditions
-        return all(
-            [
-                self.executorch_root,
-                self.artifact_dir,
-                *conditions,
-            ]
-        )
-
     def test_llama3_2_1b(self):
         if not self.required_envs():
             self.skipTest("missing required envs")
@@ -3880,16 +3891,6 @@ class TestExampleLLMScript(TestQNN):
 
 
 class TestExampleOssScript(TestQNN):
-    def required_envs(self, conditions=None) -> bool:
-        conditions = [] if conditions is None else conditions
-        return all(
-            [
-                self.executorch_root,
-                self.artifact_dir,
-                *conditions,
-            ]
-        )
-
     def test_conv_former(self):
         if not self.required_envs([self.image_dataset]):
             self.skipTest("missing required envs")
@@ -4546,6 +4547,40 @@ class TestExampleOssScript(TestQNN):
             else:
                 self.assertGreaterEqual(msg["mAP"], 0.6)
 
+    def test_roberta(self):
+        if not self.required_envs([self.sentence_dataset]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/roberta.py",
+            "--dataset",
+            self.sentence_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["accuracy"], 0.5)
+
     def test_squeezenet(self):
         if not self.required_envs([self.image_dataset]):
             self.skipTest("missing required envs")
@@ -4621,16 +4656,6 @@ class TestExampleOssScript(TestQNN):
 
 
 class TestExampleQaihubScript(TestQNN):
-    def required_envs(self, conditions=None) -> bool:
-        conditions = [] if conditions is None else conditions
-        return all(
-            [
-                self.executorch_root,
-                self.artifact_dir,
-                *conditions,
-            ]
-        )
-
     def test_utils_export(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             module = ContextBinaryExample()  # noqa: F405
@@ -4859,16 +4884,6 @@ class TestExampleQaihubScript(TestQNN):
 
 
 class TestExampleScript(TestQNN):
-    def required_envs(self, conditions=None) -> bool:
-        conditions = [] if conditions is None else conditions
-        return all(
-            [
-                self.executorch_root,
-                self.artifact_dir,
-                *conditions,
-            ]
-        )
-
     def test_mobilenet_v2(self):
         if not self.required_envs([self.image_dataset]):
             self.skipTest("missing required envs")
@@ -5291,6 +5306,40 @@ class TestUtilsScript(TestQNN):
             ]
         )
 
+    def test_custom_op(self):
+        if not self.required_envs([self.op_package_dir]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/custom_op/custom_ops_1.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--op_package_dir",
+            self.op_package_dir,
+            "--build_op_package",
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+        if self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertTrue(msg["is_close"])
+
     def test_debugger_generate_optrace(self):
         cmds = [
             "python",
@@ -5351,6 +5400,11 @@ def setup_environment():
         type=str,
     )
     parser.add_argument(
+        "--sentence_dataset",
+        help="Location for sentence dataset",
+        type=str,
+    )
+    parser.add_argument(
         "-p",
         "--pretrained_weight",
         help="Location for pretrained weighting",
@@ -5380,6 +5434,13 @@ def setup_environment():
         help="Path to open source software model repository",
         type=str,
     )
+    parser.add_argument(
+        "-d",
+        "--op_package_dir",
+        help="Path to operator package which generates from qnn-op-package-generator",
+        default="",
+        type=str,
+    )
 
     parser.add_argument(
         "--pre_gen_pte",
@@ -5401,6 +5462,7 @@ def setup_environment():
     TestQNN.executorch_root = args.executorch_root
     TestQNN.artifact_dir = args.artifact_dir
     TestQNN.image_dataset = args.image_dataset
+    TestQNN.sentence_dataset = args.sentence_dataset
     TestQNN.pretrained_weight = args.pretrained_weight
     TestQNN.model_name = args.model_name
     TestQNN.online_prepare = args.online_prepare
@@ -5413,7 +5475,7 @@ def setup_environment():
     TestQNN.compile_only = args.compile_only
     TestQNN.pre_gen_pte = args.pre_gen_pte
     TestQNN.llama_artifacts = args.llama_artifacts
-
+    TestQNN.op_package_dir = args.op_package_dir
     return sys.argv[:1] + ns_args
 
 

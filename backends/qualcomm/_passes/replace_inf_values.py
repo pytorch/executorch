@@ -30,6 +30,12 @@ class ReplaceInfValues(ExportPass):
                     arg_list[index] = torch.finfo(torch.float32).min
                 elif arg == float("inf"):
                     arg_list[index] = torch.finfo(torch.float32).max
+
+            if node.target == torch.ops.aten.masked_fill.Scalar:
+                if arg_list[2] == torch.finfo(torch.float32).max:
+                    arg_list[2] = 255
+                elif arg_list[2] == torch.finfo(torch.float32).min:
+                    arg_list[2] = -255
             node.args = tuple(arg_list)
 
         graph_module.recompile()

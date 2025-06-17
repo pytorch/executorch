@@ -10,7 +10,18 @@ import logging
 import os
 from collections import Counter
 from pprint import pformat
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Type, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+)
 
 import executorch.backends.xnnpack.test.tester.tester as tester
 
@@ -70,6 +81,7 @@ from executorch.exir.backend.operator_support import (
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.pass_base import ExportPass
+from executorch.exir.pass_manager import PassType
 from executorch.exir.program._program import (
     _copy_module,
     _update_exported_program_graph_module,
@@ -142,9 +154,13 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
         partitioners: Optional[List[Partitioner]] = None,
         edge_compile_config: Optional[EdgeCompileConfig] = None,
         constant_methods: Optional[Dict[str, Any]] = None,
+        transform_passes: Optional[
+            Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
+        ] = None,
     ):
         super().__init__(partitioners, edge_compile_config)
         self.constant_methods = constant_methods
+        self.transform_passes = transform_passes
 
     def dump_artifact(self, path_to_dump: Optional[str]):
         super().dump_artifact(path_to_dump)
@@ -154,6 +170,7 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
         artifact_to_run = copy.deepcopy(artifact)
         self.edge_dialect_program = to_edge_transform_and_lower(
             artifact_to_run,
+            transform_passes=self.transform_passes,
             compile_config=self.edge_compile_conf,
             partitioner=self.partitioners,
             constant_methods=self.constant_methods,
@@ -273,6 +290,9 @@ class ArmTester(Tester):
         tosa_ref_model_path: str | None = None,
         dynamic_shapes: Optional[Tuple[Any]] = None,
         constant_methods: Optional[Dict[str, Any]] = None,
+        transform_passes: Optional[
+            Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
+        ] = None,
     ):
         """
         Args:
@@ -281,6 +301,7 @@ class ArmTester(Tester):
             compile_spec (List[CompileSpec]): The compile spec to use
         """
 
+        self.transform_passes = transform_passes
         self.constant_methods = constant_methods
         self.compile_spec = compile_spec
         super().__init__(model, example_inputs, dynamic_shapes)
@@ -339,6 +360,9 @@ class ArmTester(Tester):
         additional_checks: Optional[
             List[Union[DontPartition | DontPartitionModule | DontPartitionName]]
         ] = None,
+        transform_passes: Optional[
+            Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
+        ] = None,
     ):
         if to_edge_and_lower_stage is None:
             if partitioners is None:
@@ -360,6 +384,7 @@ class ArmTester(Tester):
                 partitioners,
                 edge_compile_config,
                 constant_methods=self.constant_methods,
+                transform_passes=self.transform_passes,
             )
         else:
             if partitioners is not None:
@@ -667,8 +692,8 @@ class ArmTester(Tester):
             for callback in error_callbacks:
                 callback(
                     self,
-                    reference_output,
                     stage_output,
+                    reference_output,
                     quantization_scale=None,
                     atol=1e-03,
                     rtol=1e-03,

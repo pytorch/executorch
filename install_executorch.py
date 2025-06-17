@@ -16,6 +16,7 @@ import sys
 from contextlib import contextmanager
 
 from install_requirements import (
+    install_optional_example_requirements,
     install_requirements,
     python_is_compatible,
     TORCH_NIGHTLY_URL,
@@ -47,6 +48,8 @@ def clean():
     for d in dirs:
         print(f"Cleaning {d}...")
         shutil.rmtree(d, ignore_errors=True)
+    print("Cleaning buck-out/...")
+    shutil.rmtree("buck-out/", ignore_errors=True)
     print("Done cleaning build artifacts.")
 
 
@@ -155,6 +158,13 @@ def _parse_args() -> argparse.Namespace:
         "picked up without rebuilding the wheel. Extension libraries will be "
         "installed inside the source tree.",
     )
+    parser.add_argument(
+        "--minimal",
+        "-m",
+        action="store_true",
+        help="Only installs necessary dependencies for core executorch and skips "
+        " packages necessary for running example scripts.",
+    )
     return parser.parse_args()
 
 
@@ -180,9 +190,13 @@ def main(args):
     # This option is used in CI to make sure that PyTorch build from the pinned commit
     # is used instead of nightly. CI jobs wouldn't be able to catch regression from the
     # latest PT commit otherwise
-    install_requirements(use_pytorch_nightly=not args.use_pt_pinned_commit)
-    os.execvp(
-        sys.executable,
+    use_pytorch_nightly = not args.use_pt_pinned_commit
+
+    # Step 1: Install core dependencies first
+    install_requirements(use_pytorch_nightly)
+
+    # Step 2: Install core package
+    cmd = (
         [
             sys.executable,
             "-m",
@@ -196,8 +210,13 @@ def main(args):
             "-v",
             "--extra-index-url",
             TORCH_NIGHTLY_URL,
-        ],
+        ]
     )
+    subprocess.run(cmd, check=True)
+
+    # Step 3: Extra (optional) packages that is only useful for running examples.
+    if not args.minimal:
+        install_optional_example_requirements(use_pytorch_nightly)
 
 
 if __name__ == "__main__":
