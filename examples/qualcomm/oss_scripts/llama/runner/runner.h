@@ -38,7 +38,10 @@ class Runner {
       const std::string& performance_output_path,
       const float temperature = 0.8f,
       const int eval_mode = EvalMode::kKVCached,
-      const std::string& kv_updater = "SmartMask");
+      const std::string& kv_updater = "SmartMask",
+      const int ngram = 0,
+      const int window = 0,
+      const int gcap = 0);
 
   bool is_loaded() const;
   executorch::runtime::Error load();
@@ -57,12 +60,16 @@ class Runner {
   enum EvalMode {
     kKVCached = 0,
     kHybrid,
+    kLookaheadDecoding,
     kUnsupported,
   };
 
   std::unique_ptr<executorch::extension::Module> module_;
   int32_t context_len_{0};
 
+  int ngram_{0};
+  int window_{0};
+  int gcap_{0};
   int64_t cur_pos_{0};
 
   std::string tokenizer_path_;
