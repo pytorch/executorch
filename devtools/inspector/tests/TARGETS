@@ -62,6 +62,14 @@ python_unittest(
     ],
 )
 
+python_unittest(
+    name = "mse_comparator_test",
+    srcs = ["mse_comparator_test.py"],
+    deps = [
+        "//executorch/devtools/inspector/numerical_comparator:lib",
+    ],
+)
+
 python_library(
     name = "inspector_test_utils",
     srcs = [
