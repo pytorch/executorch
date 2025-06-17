@@ -43,6 +43,8 @@ class RemoveRedundancy(ExportPass):
         dim_order = node.kwargs.get("dim_order")
         # skip if there contains layout hint
         # e.g. (0, 2, 3, 1) != (0, 1, 2, 3)
+        if node.meta["val"].dtype != node.args[0].meta["val"].dtype:
+            return False
         return dim_order != list(range(len(dim_order)))
 
     def _to_copy_op_condition(self, node):
@@ -53,19 +55,15 @@ class RemoveRedundancy(ExportPass):
 
     def _remove(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         for n in graph_module.graph.nodes:
-            if n.target not in self.redundant_ops or not self.redundant_ops[n.target](
-                n
-            ):
-                continue
-
-            to_be_remove = n
-            # assert_tensor_metadata op has no user
-            if len(n.users.keys()) == 0:
-                n.args = ()
-            # normal case
-            for user_n in list(n.users.keys()):
-                user_n.replace_input_with(n, n.args[0])
-            graph_module.graph.erase_node(to_be_remove)
+            if n.target in self.redundant_ops and self.redundant_ops[n.target](n):
+                to_be_remove = n
+                # assert_tensor_metadata op has no user
+                if len(n.users.keys()) == 0:
+                    n.args = ()
+                # normal case
+                for user_n in list(n.users.keys()):
+                    user_n.replace_input_with(n, n.args[0])
+                graph_module.graph.erase_node(to_be_remove)
 
     def call(self, graph_module: torch.fx.GraphModule):
         self._remove(graph_module)
