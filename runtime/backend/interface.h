@@ -12,8 +12,8 @@
 
 #include <executorch/runtime/backend/backend_execution_context.h>
 #include <executorch/runtime/backend/backend_init_context.h>
-#include <executorch/runtime/backend/backend_update_context.h>
 #include <executorch/runtime/backend/backend_options.h>
+#include <executorch/runtime/backend/backend_update_context.h>
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
@@ -102,18 +102,35 @@ class BackendInterface {
       EValue** args) const = 0;
 
   /**
-   * Responsible update the backend status, if any. The backend options are passed in
-   * by users, and the backend can update its internal status based on the options.
+   * Responsible update the backend status, if any. The backend options are
+   * passed in by users, and the backend can update its internal status based on
+   * the options.
    *
    * @param[in] context Runtime context if any. Currently it's not used.
    * @param[in] args A list of BackendOptions passed in by users.
    * @retval Error::Ok if successful.
    */
-   ET_NODISCARD virtual Error update(
-    BackendUpdateContext& context,
-    const executorch::runtime::ArrayRef<BackendOption>& backend_options) const {
-        return Error::Ok;
-      };
+  ET_NODISCARD virtual Error set_option(
+      BackendUpdateContext& context,
+      const executorch::runtime::Span<BackendOption>& backend_options) {
+    return Error::Ok;
+  };
+
+  /**
+   * Responsible update the backend status, if any. The backend options are
+   * passed in by users, and the backend can update its internal status based on
+   * the options.
+   *
+   * @param[in] context Runtime context if any. Currently it's not used.
+   * @param[in] args A list of BackendOptions passed in by users, that will be
+   * filled by the backend
+   * @retval Error::Ok if successful.
+   */
+  ET_NODISCARD virtual Error get_option(
+      BackendUpdateContext& context,
+      executorch::runtime::Span<BackendOption>& backend_options) {
+    return Error::Ok;
+  };
 
   /**
    * Responsible for destroying a handle, if it's required for some backend.

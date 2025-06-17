@@ -54,10 +54,10 @@ class MockBackend : public BackendInterface {
             return Error::Ok;
       }
   
-      Error update(
+      Error set_option(
           BackendUpdateContext& context,
-          const executorch::runtime::ArrayRef<BackendOption>& backend_options) const override {
-          update_count++;
+          const executorch::runtime::Span<BackendOption>& backend_options) override {
+          set_option_count++;
           int sucess_update = 0;
           for (const auto& backend_option : backend_options) {
             if (strcmp(backend_option.key, "Backend") == 0) {
@@ -92,7 +92,7 @@ class MockBackend : public BackendInterface {
       // State tracking
       mutable bool init_called = false;
       mutable int execute_count = 0;
-      mutable int update_count = 0;
+      mutable int set_option_count = 0;
 };
 
  class BackendInterfaceUpdateTest : public ::testing::Test {
@@ -119,7 +119,8 @@ TEST_F(BackendInterfaceUpdateTest, HandlesInvalidOption) {
     "None"
   };
 
-  Error err = mock_backend->update(context, invalid_option);
+  // Create a span from the single option
+  Error err = mock_backend->set_option(context, invalid_option);
   EXPECT_EQ(err, Error::InvalidArgument);
 
 }
@@ -132,7 +133,7 @@ TEST_F(BackendInterfaceUpdateTest, HandlesInvalidOption) {
   EXPECT_EQ(mock_backend->target_backend, std::nullopt);
 
   // Test successful update
-  Error err = mock_backend->update(context, options.view());
+  Error err = mock_backend->set_option(context, options.view());
   EXPECT_EQ(err, Error::Ok);
 
   EXPECT_EQ(mock_backend->target_backend, "GPU");
@@ -150,7 +151,7 @@ TEST_F(BackendInterfaceUpdateTest, HandlesIntOption) {
   options.set_option(IntKey("NumberOfThreads"), expected_num_threads);  
   
   // Test successful update
-  Error err = mock_backend->update(context, options.view());
+  Error err = mock_backend->set_option(context, options.view());
   EXPECT_EQ(err, Error::Ok);
   EXPECT_EQ(mock_backend->num_threads, expected_num_threads);
 }
@@ -164,7 +165,7 @@ TEST_F(BackendInterfaceUpdateTest, HandlesBoolOption) {
   options.set_option(BoolKey("Debug"), true);  
   
   // Test successful update
-  Error err = mock_backend->update(context, options.view());
+  Error err = mock_backend->set_option(context, options.view());
   EXPECT_EQ(err, Error::Ok);
 
   EXPECT_EQ(mock_backend->debug, true);
@@ -181,7 +182,7 @@ TEST_F(BackendInterfaceUpdateTest, HandlesMultipleOptions) {
   options.set_option(StrKey("Backend"), "GPU");  
   
   // Test successful update
-  Error err = mock_backend->update(context, options.view());
+  Error err = mock_backend->set_option(context, options.view());
   EXPECT_EQ(err, Error::Ok);
 
   EXPECT_EQ(mock_backend->debug, true);
@@ -199,7 +200,7 @@ TEST_F(BackendInterfaceUpdateTest, UpdateBeforeInit) {
   options.set_option(StrKey("Backend"), "GPU");
   
   // Update before init
-  Error err = mock_backend->update(update_context, options.view());
+  Error err = mock_backend->set_option(update_context, options.view());
   EXPECT_EQ(err, Error::Ok);
     
   // Now call init
@@ -210,7 +211,7 @@ TEST_F(BackendInterfaceUpdateTest, UpdateBeforeInit) {
   
   // Verify state
   EXPECT_TRUE(mock_backend->init_called);
-  EXPECT_EQ(mock_backend->update_count, 1);
+  EXPECT_EQ(mock_backend->set_option_count, 1);
   EXPECT_EQ(mock_backend->execute_count, 0);
   ASSERT_TRUE(mock_backend->target_backend.has_value());
   EXPECT_STREQ(mock_backend->target_backend.value().c_str(), "GPU");
@@ -234,7 +235,7 @@ TEST_F(BackendInterfaceUpdateTest, UpdateAfterInitBeforeExecute) {
   
   // Now update
   options.set_option(StrKey("Backend"), "CPU");
-  Error err = mock_backend->update(update_context, options.view());
+  Error err = mock_backend->set_option(update_context, options.view());
   EXPECT_EQ(err, Error::Ok);
   
   // Now execute
@@ -244,7 +245,7 @@ TEST_F(BackendInterfaceUpdateTest, UpdateAfterInitBeforeExecute) {
   EXPECT_EQ(err, Error::Ok);
   
   // Verify state
-  EXPECT_EQ(mock_backend->update_count, 1);
+  EXPECT_EQ(mock_backend->set_option_count, 1);
   EXPECT_EQ(mock_backend->execute_count, 1);
   ASSERT_TRUE(mock_backend->target_backend.has_value());
   EXPECT_STREQ(mock_backend->target_backend.value().c_str(), "CPU");
@@ -270,7 +271,7 @@ TEST_F(BackendInterfaceUpdateTest, UpdateBetweenExecutes) {
   
   // Update between executes
   options.set_option(StrKey("Backend"), "NPU");
-  err = mock_backend->update(update_context, options.view());
+  err = mock_backend->set_option(update_context, options.view());
   EXPECT_EQ(err, Error::Ok);
   
   // Second execute
@@ -278,7 +279,7 @@ TEST_F(BackendInterfaceUpdateTest, UpdateBetweenExecutes) {
   EXPECT_EQ(err, Error::Ok);
   
   // Verify state
-  EXPECT_EQ(mock_backend->update_count, 1);
+  EXPECT_EQ(mock_backend->set_option_count, 1);
   EXPECT_EQ(mock_backend->execute_count, 2);
   ASSERT_TRUE(mock_backend->target_backend.has_value());
   EXPECT_STREQ(mock_backend->target_backend.value().c_str(), "NPU");
