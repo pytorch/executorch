@@ -104,6 +104,17 @@
                 "Windows"
             ]
         }
+    },
+    {
+        "name": "zephyr",
+        "displayName": "Build everything buildable on Zephyr RTOS",
+        "inherits": [
+            "common"
+        ],
+        "cacheVariables": {
+            "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/zephyr.cmake",
+            "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
+        }
     }
   ]
 }
