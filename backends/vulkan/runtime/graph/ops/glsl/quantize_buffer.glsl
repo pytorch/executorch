@@ -59,6 +59,66 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 const lowp ivec4 out_dim_order = unhash_dim_order(out_layout);
 const lowp ivec4 in_dim_order = unhash_dim_order(in_layout);
 
+/*
+ * QUANTIZATION SHADER (BUFFER STORAGE)
+ *
+ * This shader converts floating-point tensor values to n-bit integer representations
+ * using pre-computed quantization parameters (scale and zero_point). The quantization
+ * maps floating-point values to a discrete integer range while preserving the
+ * original data distribution as much as possible.
+ *
+ * ALGORITHM:
+ * 1. Load floating-point input value from buffer
+ * 2. Apply quantization formula: qvalue = round(value / scale) + zero_point
+ * 3. Clamp result to [quant_min, quant_max] range
+ * 4. Store quantized integer value to output buffer
+ *
+ * WORKGROUP CONFIGURATION:
+ * - Per-Tensor Mode:
+ *   - Global WG Size: {num_elements, 1, 1} (one thread per tensor element)
+ *   - Local WG Size: Default (typically {64, 1, 1} or based on global WG size)
+ * - Per-Token Mode:
+ *   - Global WG Size: {num_elements, 1, 1} (one thread per tensor element)
+ *   - Local WG Size: Default (typically {64, 1, 1} or based on global WG size)
+ *
+ * SUPPORTED CONFIGURATIONS:
+ * - Per-Tensor Config: Uses linear buffer indexing with stride-based tensor access
+ * - and supports any tensor layout through stride calculations and dimension ordering
+ * - Per-Token Config: Assumes width-packed layout (packed_dim = 0)
+ * - since that is how token index is calculated
+ *
+ * QUANTIZATION FORMULA VISUALIZATION:
+ * For input range [min_val, max_val] mapped to integer range [quant_min, quant_max]:
+ *
+ * Floating Point Domain:    Integer Domain:
+ * min_val ────────────────► quant_min
+ *    │                         │
+ *    │    scale = (max_val - min_val) / (quant_max - quant_min)
+ *    │    zero_point = quant_min - round(min_val / scale)
+ *    │                         │
+ * max_val ────────────────► quant_max
+ *
+ * Quantization Process:
+ * Input: 2.5 (float)
+ * Step 1: value / scale = 2.5 / 0.1 = 25.0
+ * Step 2: round(25.0) + zero_point = 25 + (-128) = -103
+ * Step 3: clamp(-103, -128, 127) = -103
+ * Output: -103 (int8)
+ *
+ * PER-TENSOR QUANTIZATION:
+ * - Single scale and zero_point values for entire tensor
+ * - All elements use same quantization parameters
+ * - Parameters passed as push constants for efficiency
+ * - Formula: qvalue = clamp(round(value / scale) + zero_point, quant_min, quant_max)
+ *
+ * PER-TOKEN QUANTIZATION:
+ * - Separate scale and zero_point for each token
+ * - Token = all elements except last dimension (e.g., for [B,S,H]: B*S tokens of H elements)
+ * - Parameters stored in buffer arrays indexed by token_id
+ * - Each thread calculates its token_id from tensor coordinates
+ * - Formula: qvalue = clamp(round(value / scale[token_id]) + zero_point[token_id], quant_min, quant_max)
+ */
+
 #ifdef per_tensor
 
 void quantize_per_tensor() {

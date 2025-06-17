@@ -15,7 +15,7 @@ from executorch.backends.cadence.aot.graph_builder import (
     GraphBuilder,
     single_op_builder,
 )
-from executorch.backends.cadence.aot.pass_utils import count_node
+from executorch.backends.cadence.aot.pass_utils import count_node, op_counts_match
 from executorch.backends.cadence.aot.replace_ops import (
     ForceChannelLastForConvPass,
     MakeSliceAndCatDimOutermostPass,
@@ -31,6 +31,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceLinearWithFullyConnectedOpPass,
     ReplaceMatmulWithTransposedMatmulPass,
     ReplaceMMWithAddMMPass,
+    ReplaceMulTensorWithMulAndFullOpsPass,
     ReplaceNopTransposeOrPermuteWithViewPass,
     ReplacePadWithCatPass,
     ReplacePermuteWithTransposePass,
@@ -1874,4 +1875,31 @@ class TestReplaceEmptyTensorsWithFullPass(unittest.TestCase):
                 )
             ),
             1,
+        )
+
+    @parameterized.expand(
+        [
+            ("int", int(123)),
+            ("float", float(456.0)),
+        ],
+    )
+    @torch.no_grad()
+    def test_extract_mul_argument_to_full(self, _, value) -> None:
+        x = torch.randn(2, 1, 64)
+        gm = single_op_builder(
+            placeholders=(x,),
+            op=torch.ops.aten.mul.Tensor,
+            args=(x, value),
+            kwargs={},
+        )
+        p = ReplaceMulTensorWithMulAndFullOpsPass()
+        graph_after_passes = p.call(gm).graph_module
+        self.assertTrue(
+            op_counts_match(
+                graph_after_passes,
+                expected_op_counts={
+                    torch.ops.aten.mul.Tensor: 1,
+                    exir_ops.edge.aten.full.default: 1,
+                },
+            )
         )
