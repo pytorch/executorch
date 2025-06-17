@@ -20,6 +20,7 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_same_dtype,
+    validate_valid_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import build_rescale, build_rescale_v0_80
@@ -51,15 +52,12 @@ class BMMVisitor_0_80(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs, output], ts)
-
-        # aten.bmm maps directly to MATMUL
-        # NOTE: For now, only INT8 & FP32 is supported
-        supported_dtypes = [ts.DType.INT8, ts.DType.FP32]
-        for input in inputs:
-            if input.dtype not in supported_dtypes:
-                raise TypeError(
-                    f'IO data type needs to be {supported_dtypes}, got "{input.dtype}"'
-                )
+        validate_valid_dtype(
+            self.target,
+            [*inputs, output],
+            [ts.DType.INT8, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
         # aten.bmm maps directly to MATMUL
 
@@ -130,18 +128,14 @@ class BMMVisitor(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs, output], ts)
+        validate_valid_dtype(
+            self.target,
+            [*inputs, output],
+            [ts.DType.INT8, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
         # aten.bmm maps directly to MATMUL
-        # NOTE: For now, only INT8 & FP32 is supported
-        supported_dtypes = [ts.DType.INT8, ts.DType.FP32]
-        for input in inputs:
-            if input.dtype not in supported_dtypes:
-                raise TypeError(
-                    f'IO data type needs to be {supported_dtypes}, got "{input.dtype}"'
-                )
-
-        # aten.bmm maps directly to MATMUL
-        # NOTE: For now, only INT8 & FP32 is supported
 
         # For INT8, we need to get the zero points and add an intermediate tensor
         # for a later rescale.

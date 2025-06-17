@@ -22,6 +22,7 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_same_dtype,
+    validate_valid_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -48,16 +49,9 @@ class MulVisitor_080_BI(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs, output], ts)
-
-        if (
-            inputs[0].dtype != ts.DType.INT8
-            or inputs[1].dtype != ts.DType.INT8
-            or output.dtype != ts.DType.INT8
-        ):
-            raise ValueError(
-                f"Inputs and output for {self.target} need to be INT8, got "
-                f"{inputs[0].dtype=}, {inputs[1].dtype=} and {output.dtype=}"
-            )
+        validate_valid_dtype(
+            self.target, [*inputs, output], ts.DType.INT8, output.tosa_spec
+        )
 
         dim_order = (
             inputs[0].dim_order
@@ -164,16 +158,9 @@ class MulVisitor_INT(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs, output], ts)
-
-        if (
-            inputs[0].dtype != ts.DType.INT8
-            or inputs[1].dtype != ts.DType.INT8
-            or output.dtype != ts.DType.INT8
-        ):
-            raise ValueError(
-                f"Inputs and output for {self.target} need to be INT8, got "
-                f"{inputs[0].dtype=}, {inputs[1].dtype=} and {output.dtype=}"
-            )
+        validate_valid_dtype(
+            self.target, [*inputs, output], ts.DType.INT8, output.tosa_spec
+        )
 
         input_A = inputs[0]
         input_B = inputs[1]
