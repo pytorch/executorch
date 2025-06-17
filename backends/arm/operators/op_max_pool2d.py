@@ -91,12 +91,12 @@ class MaxPool2dVisitor_0_80(NodeVisitor):
         input_zp = 0
         if inputs[0].dtype == ts.DType.INT8:
             input_qparams = get_input_qparams(node)
-            input_zp = input_qparams[0].zp
+            input_zp = input_qparams[0].get_zp_per_tensor()
 
         output_zp = 0
         if output.dtype == ts.DType.INT8:
             output_qparams = get_output_qparams(node)
-            output_zp = output_qparams[0].zp
+            output_zp = output_qparams[0].get_zp_per_tensor()
 
         attr = ts.TosaSerializerAttribute()
         attr.PoolAttribute(

@@ -114,10 +114,10 @@ class AvgPool2dVisitor_0_80_BI(NodeVisitor):
         accumulator_type = ts.DType.INT32
 
         input_qargs = get_input_qparams(node)
-        input_zp = input_qargs[0].zp
+        input_zp = input_qargs[0].get_zp_per_tensor()
 
         output_qargs = get_output_qparams(node)
-        output_zp = output_qargs[0].zp
+        output_zp = output_qargs[0].get_zp_per_tensor()
 
         self._build_generic_avgpool2d(
             node, tosa_graph, inputs, output, input_zp, output_zp, accumulator_type
@@ -256,10 +256,10 @@ class AvgPool2dVisitor(NodeVisitor):
         accumulator_type = ts.DType.INT32
 
         input_qargs = get_input_qparams(node)
-        input_zp = input_qargs[0].zp
+        input_zp = input_qargs[0].get_zp_per_tensor()
 
         output_qargs = get_output_qparams(node)
-        output_zp = output_qargs[0].zp
+        output_zp = output_qargs[0].get_zp_per_tensor()
 
         self._build_generic_avgpool2d(
             node, tosa_graph, inputs, output, input_zp, output_zp, accumulator_type

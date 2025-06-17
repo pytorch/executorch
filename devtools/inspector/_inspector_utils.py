@@ -690,3 +690,34 @@ def map_runtime_aot_intermediate_outputs(
             )
 
     return aot_runtime_mapping
+
+
+def convert_to_float_tensor(input_data: Any) -> torch.Tensor:
+    """
+    Convert input_data into a torch.Tensor on CPU with dtype torch.float64.
+    This function handles the following types of input:
+    - Scalar (int or float): Converts to a tensor with a single element.
+    - Tensor: Converts to a float64 tensor on CPU.
+    - List of Tensors: Stacks the tensors into a single float64 tensor on CPU.
+    The resulting tensor is detached, moved to CPU, and cast to torch.float64.
+    Parameters:
+    input_data (Any): The input data to be converted to a tensor. It can be a scalar,
+                      a tensor, or a list of tensors.
+    Returns:
+    torch.Tensor: A tensor on CPU with dtype torch.float64.
+    Raises:
+    ValueError: If the input_data cannot be converted to a tensor.
+    """
+    try:
+        # Check if the input is a list of tensors
+        if isinstance(input_data, list):
+            input_tensor = torch.stack([convert_to_float_tensor(a) for a in input_data])
+        # Try to convert the input to a tensor
+        else:
+            input_tensor = torch.as_tensor(input_data, dtype=torch.float64)
+    except Exception as e:
+        raise ValueError(
+            f"Cannot convert value of type {type(input_data)} to a tensor: {e}"
+        )
+    input_tensor = input_tensor.detach().cpu().double()
+    return input_tensor
