@@ -29,25 +29,6 @@ def define_common_targets():
         )
 
         runtime.cxx_library(
-            name = "backend_update" + aten_suffix,
-            exported_headers = [
-                "backend_update.h",
-            ],
-            preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
-            exported_deps = [
-                "//executorch/runtime/core:core",
-                "//executorch/runtime/core:evalue" + aten_suffix,
-                "//executorch/runtime/core:event_tracer" + aten_suffix,
-                ":options_map" + aten_suffix,
-                ":interface" + aten_suffix,
-            ],
-        )
-
-        runtime.cxx_library(
             name = "interface" + aten_suffix,
             srcs = [
                 "interface.cpp",
@@ -55,7 +36,7 @@ def define_common_targets():
             exported_headers = [
                 "backend_execution_context.h",
                 "backend_init_context.h",
-                "backend_update_context.h",
+                "backend_option_context.h",
                 "interface.h",
             ],
             preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],

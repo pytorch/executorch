@@ -25,7 +25,7 @@ using executorch::runtime::StrKey;
 using executorch::runtime::BackendInterface;
 using executorch::runtime::BackendInitContext;
 using executorch::runtime::BackendExecutionContext;
-using executorch::runtime::BackendUpdateContext;
+using executorch::runtime::BackendOptionContext;
 using executorch::runtime::DelegateHandle;
 using executorch::runtime::CompileSpec;
 using executorch::runtime::Backend;
@@ -185,7 +185,7 @@ class StubBackend : public BackendInterface {
    }
  
    Error get_option(
-       BackendUpdateContext& context,
+       BackendOptionContext& context,
        executorch::runtime::Span<executorch::runtime::BackendOption>&
            backend_options) override {
      // For testing purposes, just record that get_option was called
@@ -208,7 +208,7 @@ class StubBackend : public BackendInterface {
    }
  
    Error set_option(
-       BackendUpdateContext& context,
+       BackendOptionContext& context,
        const Span<executorch::runtime::BackendOption>& backend_options)
        override {
      // Store the options for verification

@@ -11,7 +11,7 @@
 #include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/span.h>
-#include <executorch/runtime/backend/backend_update_context.h>
+#include <executorch/runtime/backend/backend_option_context.h>
 #include <executorch/runtime/backend/interface.h>
 #include <cstring>
 namespace executorch {
@@ -102,11 +102,11 @@ auto backend_class = get_backend_class(backend_name);
 if (!backend_class) {
   return Error::NotFound;
 }
-executorch::runtime::BackendUpdateContext backend_update_context;
+executorch::runtime::BackendOptionContext backend_option_context;
 executorch::runtime::Span<BackendOption> backend_options_ref(
     backend_options.data(), backend_options.size());
 auto result =
-    backend_class->get_option(backend_update_context, backend_options_ref);
+    backend_class->get_option(backend_option_context, backend_options_ref);
 if (result != Error::Ok) {
   return result;
 }
@@ -154,9 +154,9 @@ if (!backend_class) {
   return Error::NotFound;
 }
 
-executorch::runtime::BackendUpdateContext backend_update_context;
+executorch::runtime::BackendOptionContext backend_option_context;
 Error result =
-    backend_class->set_option(backend_update_context, backend_options);
+    backend_class->set_option(backend_option_context, backend_options);
 if (result != Error::Ok) {
   return result;
 }
