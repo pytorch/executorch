@@ -1,3 +1,12 @@
+"""
+ExecutorchBenchmark Analysis Data Retrieval
+
+This module provides tools for fetching, processing, and analyzing benchmark data
+from the HUD Open API for ExecutorchBenchmark. It supports filtering data by device
+types (private and public), exporting results in various formats (JSON, DataFrame, Excel, CSV),
+and customizing data retrieval parameters.
+"""
+
 import argparse
 from copy import deepcopy
 import json
@@ -5,77 +14,26 @@ import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime
-from re import A, L
 from typing import Any, Dict, List, Optional, Tuple
 import re
-
+from enum import Enum
 import pandas as pd
 import requests
 
 logging.basicConfig(level=logging.INFO)
 
-# Default private_device_matching_list
-DEFAULT_PRIVATE_MATCHING_LIST = [
-    ["llama3", "qlora", "s22_5g", "android_13"],
-    ["llama3", "spinq", "s22_5g", "android_13"],
-    ["mv3", "qnn", "s22_5g", "android_13"],
-    ["mv3", "xnnpack_q8", "s22_5g", "android_13"],
-    ["llama3", "qlora", "s22_ultra_5g", "android_14"],
-    ["llama3", "spinq", "s22_ultra_5g", "android_14"],
-    ["mv3", "qnn", "s22_ultra_5g", "android_14"],
-    ["mv3", "xnnpack_q8", "s22_ultra_5g", "android_14"],
-    ["mv3", "xnnpack_q8", "pixel3_rooted", "android"],
-    ["llama3", "qlora", "iphone_15_pro_max", "ios_17"],
-    ["llama3", "spinq", "iphone_15_pro_max", "ios_17"],
-    ["mv3", "xnnpack_q8", "iphone_15_pro_max", "ios_17"],
-    ["mv3", "coreml", "iphone_15_pro_max", "ios_17"],
-    ["mv3", "mps", "iphone_15_pro_max", "ios_17"],
-    ["llama3", "qlora", "iphone_15", "ios_18.0"],
-    ["llama3", "spinq", "iphone_15", "ios_18.0"],
-    ["mv3", "xnnpack_q8", "iphone_15", "ios_18.0"],
-    ["mv3", "coreml", "iphone_15", "ios_18.0"],
-    ["mv3", "mps", "iphone_15", "ios_18.0"],
-]
-
-# Default public_device_matching_list
-DEFAULT_PUBLIC_MATCHING_LIST = [
-    ["llama3", "qlora", "s22_5g", "android_13"],
-    ["llama3", "spinq", "s22_5g", "android_13"],
-    ["mv3", "qnn", "s22_5g", "android_13"],
-    ["mv3", "xnnpack_q8", "s22_5g", "android_13"],
-    ["llama3", "spinq", "s22_5g", "android_12"],
-    ["llama3", "qlora", "s22_ultra_5g", "android"],
-    ["llama3", "spinq", "s22_ultra_5g", "android_12"],
-    ["mv3", "xnnpack_q8", "s22_ultra_5g", "android_12"],
-    ["mv3", "qnn", "s22_ultra_5g", "android_12"],
-    ["llama3", "qlora", "iphone_15_pro_max", "ios_17"],
-    ["llama3", "spinq", "iphone_15_pro_max", "ios_17"],
-    ["mv3", "xnnpack_q8", "iphone_15_pro_max", "ios_17"],
-    ["mv3", "coreml", "iphone_15_pro_max", "ios_17"],
-    ["mv3", "mps", "iphone_15_pro_max", "ios_17"],
-    ["llama3", "qlora", "iphone_15", "ios_18.0"],
-    ["llama3", "spinq", "iphone_15", "ios_18.0"],
-    ["mv3", "xnnpack_q8", "iphone_15", "ios_18.0"],
-    ["mv3", "coreml", "iphone_15", "ios_18.0"],
-    ["mv3", "mps", "iphone_15", "ios_18.0"],
-]
-
-
-# The abbreviations used to generate the short name for the benchmark result table
-# this is used to avoid the long table name issue when generating csv file (<=100 characters)
-DEFAULT_ABBREVIATIONS = {
-    "samsung": "",
-    "galaxy": "",
-    "5g": "",
-    "private":"",
-    "xnnpackq8": "xnnq8",
-    "iphone15promax": "iphone15max",
-    "meta-llama/llama-3.2-1b": "llama3.2",
-}
-
-from enum import Enum
-
 class OutputType(Enum):
+    """
+    Enumeration of supported output formats for benchmark data.
+
+    Values:
+        EXCEL: Export data to Excel spreadsheets
+        PRINT: Print data to console (default)
+        CSV: Export data to CSV files
+        JSON: Export data to JSON files
+        DF: Return data as pandas DataFrames
+    """
+    EXCEL = "excel"
     PRINT = "print"
     CSV = "csv"
     JSON = "json"
@@ -83,6 +41,17 @@ class OutputType(Enum):
 
 @dataclass
 class BenchmarkQueryGroupDataParams:
+    """
+    Parameters for querying benchmark data from HUD API.
+
+    Attributes:
+        repo: Repository name (e.g., "pytorch/executorch")
+        benchmark_name: Name of the benchmark (e.g., "ExecuTorch")
+        start_time: ISO8601 formatted start time
+        end_time: ISO8601 formatted end time
+        group_table_by_fields: Fields to group tables by
+        group_row_by_fields: Fields to group rows by
+    """
     repo: str
     benchmark_name: str
     start_time: str
@@ -92,24 +61,27 @@ class BenchmarkQueryGroupDataParams:
 
 @dataclass
 class MatchingGroupResult:
+    """
+    Container for benchmark results grouped by category.
+
+    Attributes:
+        category: Category name (e.g., "private", "public")
+        data: List of benchmark data for this category
+    """
     category: str
-    keywords: list
     data: list
-
-
-@dataclass
-class MatchingGroupInput:
-    category: str
-    keywords: list
-    conditions: list
 
 BASE_URLS = {
     "local": "http://localhost:3000",
     "prod": "https://hud.pytorch.org",
 }
 
-
-def validate_iso8601_no_ms(value):
+def validate_iso8601_no_ms(value: str):
+    """
+    Validate that a string is in ISO8601 format without milliseconds.
+    Args:
+        value: String to validate (format: YYYY-MM-DDTHH:MM:SS)
+    """
     try:
         return datetime.strptime(value, "%Y-%m-%dT%H:%M:%S").strftime(
             "%Y-%m-%dT%H:%M:%S"
@@ -119,25 +91,19 @@ def validate_iso8601_no_ms(value):
             f"Invalid datetime format for '{value}'. Expected: YYYY-MM-DDTHH:MM:SS"
         )
 
-def parse_filter_group(value: str) -> dict:
-    include = []
-    exclude = []
-    parts = value.split(";")
-    for part in parts:
-        if part.startswith("include="):
-            include = part[len("include="):].split(",")
-        elif part.startswith("exclude="):
-            exclude = part[len("exclude="):].split(",")
-
-    return {"include": include, "exclude": exclude}
-
 class ExecutorchBenchmarkFetcher:
     """
     Fetch and process benchmark data from HUD API for ExecutorchBenchmark.
 
+    This class provides methods to:
+    1. Fetch benchmark data for a specified time range
+    2. Process and categorize data into private and public device results
+    3. Export results in various formats (JSON, DataFrame, Excel, CSV)
+
     Usage:
         fetcher = ExecutorchBenchmarkFetcher()
-        fetcher.run(start_time, end_time, private_device_matching_list, public_device_matching_list)
+        fetcher.run(start_time, end_time)
+        fetcher.output_data(OutputType.EXCEL, output_dir="./results")
     """
 
     def __init__(
@@ -161,7 +127,7 @@ class ExecutorchBenchmarkFetcher:
         self.query_group_table_by_fields = (
             group_table_fields
             if group_table_fields
-            else ["model", "backend","device","arch"]
+            else ["model", "backend", "device", "arch"]
         )
         self.query_group_row_by_fields = (
             group_row_fields
@@ -170,92 +136,126 @@ class ExecutorchBenchmarkFetcher:
         )
         self.data = None
         self.disable_logging = disable_logging
-        self.abbreviations = DEFAULT_ABBREVIATIONS
-        self.matching_groups: Dict[str, MatchingGroupResult]= {}
-        self.origin_mappings: Dict[str, Dict[str,Any]] = {}
+        self.matching_groups: Dict[str, MatchingGroupResult] = {}
 
     def add_abbreviations(self, abbreviations: Dict[str, str]):
         self.abbreviations = abbreviations
-
-    def generate_matching_list(
-        self,
-        start_time: str,
-        end_time: str,
-        filter_groups: List[dict],
-        category: str = "unknown",
-        output_type: OutputType = OutputType.PRINT,
-        output_dir: str = "."
-    ):
-        filter_groups = filter_groups or [{"include": [], "exclude": []}]
-        o_type = self._to_output_type(output_type)
-        logging.info(f"filter_groups applied {filter_groups} with output_type {o_type}")
-        data = self._fetch_data(start_time, end_time)
-        if data is None:
-            logging.info("No data found")
-            return []
-        results = []
-        seen = set()
-
-        for item in data:
-            name = item["table_name"]
-            group_info = item["info"]
-            matched = False
-            for group in filter_groups:
-                include = group.get("include", [])
-                exclude = group.get("exclude", [])
-                if include and not all(kw.lower() in name for kw in include):
-                    continue
-                if exclude and any(kw.lower() in name for kw in exclude):
-                    continue
-                matched = True
-                break  # matched one group, no need to evaluate more
-            if matched:
-                key = tuple(group_info.get(k, "") for k in self.query_group_table_by_fields)
-                if key not in seen:
-                    results.append([
-                        group_info[k] for k in self.query_group_table_by_fields
-                        if k in group_info and group_info[k]
-                    ])
-                    seen.add(key)
-        if o_type == OutputType.JSON:
-            self.generate_json_file(results, category, output_dir)
-        else:
-            logging.info("Print result")
-            logging.info(json.dumps(results, indent=2))
-
-        logging.info(f"generated {len(results)} matching list items")
-        return results
-
 
     def run(
         self,
         start_time: str,
         end_time: str,
-        matching_inputs: List[MatchingGroupInput] = [],
     ) -> Any:
-        """
-        Execute the benchmark data fetching and processing workflow.
-        """
-        self.data = self._fetch_data(start_time, end_time)
-        # reset everything for generate the new output
+        data = self._fetch_execu_torch_data(start_time, end_time)
+        if data is None:
+            logging.warning("no data fetched from the HUD API")
+            return None
+        res = self._process(data)
+        self.data = res["data"]
+        private_list = res["private"]
+        public_list = self._filter_public_result(private_list, res["public"])
+
+        # reset group
         self.matching_groups = {}
-        for matching_input in matching_inputs:
-            category = matching_input.category
-            keywords = matching_input.keywords
-            result = self.find_target_tables(keywords, matching_input.conditions)
-            self.matching_groups[category] = MatchingGroupResult(category, keywords, result)
+        self.matching_groups["private"] = MatchingGroupResult(
+            category="private", data=private_list
+        )
+        self.matching_groups["public"] = MatchingGroupResult(
+            category="public", data=public_list
+        )
         return self.data
+
+    def _filter_public_result(self, private_list, public_list):
+        """
+        Filter public device results to match private device configurations.
+
+        Finds the intersection of table names between private and public results
+        to ensure comparable data sets.
+
+        Args:
+            private_list: List of benchmark results for private devices
+            public_list: List of benchmark results for public devices
+
+        Returns:
+            Filtered list of public device results that match private device configurations
+        """
+        # find intersection betwen private and public tables.
+        common = list(
+            set([item["table_name"] for item in private_list])
+            & set([item["table_name"] for item in public_list])
+        )
+        logging.info(f"common table name for both private and public {len(common)}")
+        filtered_public = [item for item in public_list if item["table_name"] in common]
+        return filtered_public
 
     def get_result(self):
         return deepcopy(self.to_dict())
 
+    def to_excel(self, output_dir: str = ".") -> None:
+        """
+        Export benchmark results to Excel files.
+        Creates two Excel files:
+        - res_private.xlsx: Results for private devices
+        - res_public.xlsx: Results for public devices
+        Each file contains multiple sheets, one per benchmark configuration for private and public.
+        Args:
+            output_dir: Directory to save Excel files
+        """
+        for item in self.matching_groups.values():
+            self._write_multi_sheet_excel(item.data, output_dir, item.category)
+
+    def _write_multi_sheet_excel(self, data_list, output_dir, file_name):
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            logging.info(f"Created output directory: {output_dir}")
+        else:
+            logging.info(f"Using existing output directory: {output_dir}")
+        file = os.path.join(output_dir, f"{file_name}.xlsx")
+        with pd.ExcelWriter(file, engine="xlsxwriter") as writer:
+            workbook = writer.book
+            for idx, entry in enumerate(data_list):
+                sheet_name = f"table{idx+1}"
+                df = pd.DataFrame(entry.get("rows", []))
+
+                # Encode metadata as compact JSON string
+                meta = entry.get("groupInfo", {})
+                json_str = json.dumps(meta, separators=(",", ":"))
+
+                worksheet = workbook.add_worksheet(sheet_name)
+                writer.sheets[sheet_name] = worksheet
+
+                # Write JSON into A1
+                worksheet.write_string(0, 0, json_str)
+
+                logging.info(
+                    f"Wrting excel sheet to file {file} with sheet name {sheet_name} for {entry["table_name"]}"
+                )
+                # Write DataFrame starting at row 2 (index 1)
+                df.to_excel(writer, sheet_name=sheet_name, startrow=1, index=False)
+
     def output_data(
-        self,
-        output_type: OutputType = OutputType.PRINT,
-        output_dir: str = ".") -> Any:
+        self, output_type: OutputType = OutputType.PRINT, output_dir: str = "."
+    ) -> Any:
+        """
+        Generate output in the specified format.
 
-        logging.info(f"Generating output with type: {[category for category in self.matching_groups.keys()]}")
+        Supports multiple output formats:
+        - PRINT: Print results to console
+        - JSON: Export to JSON files
+        - DF: Return as pandas DataFrames
+        - EXCEL: Export to Excel files
+        - CSV: Export to CSV files
 
+        Args:
+            output_type: Format to output the data in
+            output_dir: Directory to save output files (for file-based formats)
+
+        Returns:
+            Benchmark results in the specified format
+        """
+        logging.info(
+            f"Generating output with type: {[category for category in self.matching_groups.keys()]}"
+        )
         o_type = self._to_output_type(output_type)
         if o_type == OutputType.PRINT:
             logging.info("\n ========= Generate print output ========= \n")
@@ -269,6 +269,9 @@ class ExecutorchBenchmarkFetcher:
             res = self.to_df()
             logging.info(res)
             return res
+        elif o_type == OutputType.EXCEL:
+            logging.info("\n ========= Generate excel output ========= \n")
+            self.to_excel(output_dir)
         elif o_type == OutputType.CSV:
             logging.info("\n ========= Generate csv output ========= \n")
             self.to_csv(output_dir)
@@ -279,18 +282,40 @@ class ExecutorchBenchmarkFetcher:
             try:
                 return OutputType(output_type.lower())
             except ValueError:
-                logging.warning(f"Invalid output type string: {output_type}. Defaulting to PRINT")
+                logging.warning(
+                    f"Invalid output type string: {output_type}. Defaulting to PRINT"
+                )
                 return OutputType.JSON
         elif isinstance(output_type, OutputType):
             return output_type
         logging.warning(f"Invalid output type: {output_type}. Defaulting to JSON")
         return OutputType.JSON
 
-    def to_json(self,output_dir: str = ".") -> Any:
+    def to_json(self, output_dir: str = ".") -> Any:
+        """
+        Export benchmark results to a JSON file.
+
+        Args:
+            output_dir: Directory to save the JSON file
+
+        Returns:
+            Path to the generated JSON file
+        """
         data = self.get_result()
         return self.generate_json_file(data, "benchmark_results", output_dir)
 
-    def generate_json_file(self,data,file_name, output_dir: str = "."):
+    def generate_json_file(self, data, file_name, output_dir: str = "."):
+        """
+        Generate a JSON file from the provided data.
+
+        Args:
+            data: Data to write to the JSON file
+            file_name: Name for the JSON file (without extension)
+            output_dir: Directory to save the JSON file
+
+        Returns:
+            Path to the generated JSON file
+        """
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
             logging.info(f"Created output directory: {output_dir}")
@@ -301,7 +326,13 @@ class ExecutorchBenchmarkFetcher:
             json.dump(data, f, indent=2)
         return path
 
-    def to_dict(self)-> Any:
+    def to_dict(self) -> Any:
+        """
+        Convert benchmark results to a dictionary.
+
+        Returns:
+            Dictionary with categories as keys and benchmark data as values
+        """
         result = {}
         for item in self.matching_groups.values():
             result[item.category] = item.data
@@ -311,19 +342,18 @@ class ExecutorchBenchmarkFetcher:
         """
         Convert benchmark results to pandas DataFrames.
 
-        Transforms the raw benchmark results into DataFrames for easier analysis
-        and manipulation.
+        Creates a dictionary with categories as keys and lists of DataFrames as values.
+        Each DataFrame represents one benchmark configuration.
 
         Returns:
-            Tuple containing (private_device_dataframes, public_device_dataframes)
-            Each item is a list of dictionaries with 'info' and 'df' keys
+            Dictionary mapping categories to lists of DataFrames with metadata
         """
         result = {}
         for item in self.matching_groups.values():
-            result[item.category] =[
-            {"info": item["info"], "df": pd.DataFrame(item["rows"])}
-            for item in item.data
-        ]
+            result[item.category] = [
+                {"groupInfo": item["groupInfo"], "df": pd.DataFrame(item["rows"])}
+                for item in item.data
+            ]
         return result
 
     def to_csv(self, output_dir: str = ".") -> None:
@@ -350,57 +380,25 @@ class ExecutorchBenchmarkFetcher:
             path = os.path.join(output_dir, item.category)
             self._write_multiple_csv_files(item.data, path)
 
-    def _write_multiple_csv_files(
-        self, data_list: List[Dict[str, Any]], output_dir: str, file_prefix=""
-    ) -> None:
-        """
-        Write multiple benchmark results to separate CSV files.
-        Each entry in `data_list` becomes its own CSV file.
-        Args:
-            data_list: List of benchmark result dictionaries
-            output_dir: Directory to save the CSV files
-        """
+    def _write_multiple_csv_files(self, data_list, output_dir, prefix=""):
         os.makedirs(output_dir, exist_ok=True)
-        logging.info(
-            f"\n ========= Generating multiple CSV files in {output_dir} ========= \n"
-        )
-        for _, entry in enumerate(data_list):
-            table_name = entry.get("table_name","")
-            if not table_name:
-                continue
-            file_name = self.generate_short_name(table_name)
-            if file_prefix:
-                file_name = file_prefix+ '_' + file_name
-            file_path = os.path.join(output_dir, f"{file_name}.csv")
-            rows = entry.get("rows", [])
+        for idx, entry in enumerate(data_list):
+            filename = f"{prefix}_table{idx+1}.csv" if prefix else f"table{idx+1}.csv"
+            file_path = os.path.join(output_dir, filename)
 
-            if len(file_name) > 120:
-                logging.warning(
-                    f"File path '{file_path}' is too long, this may cause csv failure"
-            )
-            logging.info(f"\noriginal table name:{table_name}")
-            logging.info(f"Writing CSV to path(len({len(file_path)})): '{file_path}' with {len(rows)} rows")
-            df = pd.DataFrame(rows)
-            df.to_csv(file_path, index=False)
+            # Prepare DataFrame
+            df = pd.DataFrame(entry.get("rows", []))
 
-    def _fetch_data(
-        self, start_time: str, end_time: str
-    ) -> Optional[List[Dict[str, Any]]]:
-        """
-        Fetch and process benchmark data for the specified time range.
+            # Prepare metadata JSON (e.g. groupInfo)
+            meta = entry.get("groupInfo", {})
+            json_str = json.dumps(meta, separators=(",", ":"))
 
-        Args:
-            start_time: ISO8601 formatted start time
-            end_time: ISO8601 formatted end time
+            logging.info(f"Wrting csv file to {file_path}")
 
-        Returns:
-            Processed benchmark data or None if fetch failed
-        """
-        data = self._fetch_execu_torch_data(start_time, end_time)
-        if data is None:
-            return None
-        self.data = self._process(data)
-        return self.data
+            # Write metadata and data
+            with open(file_path, "w", encoding="utf-8", newline="") as f:
+                f.write(json_str + "\n")  # First row: JSON metadata
+                df.to_csv(f, index=False)  # Remaining rows: DataFrame rows
 
     def _get_base_url(self) -> str:
         """
@@ -433,38 +431,67 @@ class ExecutorchBenchmarkFetcher:
             logging.info(f" all {item.category} benchmark results")
             names = []
             for row in item.data:
-                names.append({
-                    "table_name": row["table_name"],
-                    "info": row["info"],
-                    "counts": len(row["rows"])
-                })
+                names.append(
+                    {
+                        "table_name": row["table_name"],
+                        "info": row["info"],
+                        "counts": len(row["rows"]),
+                    }
+                )
             logging.info(
-            f"\n============ {item.category} benchmark results({len(names)})=================\n"
+                f"\n============ {item.category} benchmark results({len(names)})=================\n"
             )
             for name in names:
                 logging.info(json.dumps(name, indent=2))
 
     def _generate_table_name(self, group_info: dict, fields: list[str]) -> str:
         name = "_".join(
-            self.normalize_string(group_info[k]) for k in fields if k in group_info and group_info[k]
+            self.normalize_string(group_info[k])
+            for k in fields
+            if k in group_info and group_info[k]
         )
+        if "(private)" in name:
+            name = name.replace("(private)", "")
         return name
 
-    def _process(self, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def simplify_ios(self, s: str) -> str:
+        return s.split(".")[0]
+
+    def _generate_matching_name(self, group_info: dict, fields: list[str]) -> str:
+        info = deepcopy(group_info)
+        name = "_".join(
+            self.normalize_string(info[k]) for k in fields if k in info and info[k]
+        )
+        if "(private)" in name:
+            name = name.replace("(private)", "")
+            # name = name +'(private)'
+        return name
+
+    def _process(self, input_data: List[Dict[str, Any]]):
         """
         Process raw benchmark data.
 
         This method:
-        1. Normalizes string values in groupInfo
-        2. Creates table_name from group info components
-        3. Determines aws_type (public/private) based on device name
+        1. Normalizes string values into new field info
+        2. Creates table_name from info
+        3. Determines aws_type (public/private) based on info.device
         4. Sorts results by table_name
         Args:
-            data: Raw benchmark data from API
-
+            input_data: Raw benchmark data from API
         Returns:
             Processed benchmark data
         """
+        # filter data with arch equal exactly "",ios and android, this normally indicates it's job-level falure indicator
+        logging.info(f"fetched {len(input_data)} data from HUD")
+        data = [
+            item
+            for item in input_data
+            if (arch := item.get("groupInfo", {}).get("arch")) is not None
+            and arch.lower() not in ("ios", "android")
+        ]
+
+        private = []
+        public = []
         for item in data:
             # normalized string values groupInfo to info
             item["info"] = {
@@ -473,18 +500,25 @@ class ExecutorchBenchmarkFetcher:
                 if v is not None and isinstance(v, str)
             }
             group = item.get("info", {})
-            name = self._generate_table_name(group, self.query_group_table_by_fields)
             # Add full name joined by the group key fields
-            item["table_name"] = name
+            item["table_name"] = self._generate_table_name(
+                group, self.query_group_table_by_fields
+            )
 
             # Mark aws_type: private or public
             if group.get("device", "").find("private") != -1:
                 item["info"]["aws_type"] = "private"
+                private.append(item)
             else:
                 item["info"]["aws_type"] = "public"
+                public.append(item)
         data.sort(key=lambda x: x["table_name"])
-        logging.info(f"fetched {len(data)} table views from HUD ")
-        return data
+        private.sort(key=lambda x: x["table_name"])
+        public.sort(key=lambda x: x["table_name"])
+        logging.info(
+            f"fetched clean data {len(data)}, private:{len(private)}, public:{len(public)}"
+        )
+        return {"data": data, "private": private, "public": public}
 
     def _fetch_execu_torch_data(self, start_time, end_time):
         url = f"{self.base_url}/api/benchmark/group_data"
@@ -505,160 +539,56 @@ class ExecutorchBenchmarkFetcher:
             logging.info(response.text)
             return None
 
-    def generate_short_name(self, name):
-        s = name
-        for full, abbr in self.abbreviations.items():
-            s = s.replace(full, abbr)
-        s = re.sub(r"-{2,}", "-", s)
-        return s
-
-    def _match_filter(self, item: dict, filter_str: str) -> bool:
-        """Evaluate whether `item` satisfies a dot-notated filter like 'group_info.aws_type=private'."""
-        try:
-            key_path, expected = filter_str.split("=", 1)
-            keys = key_path.strip().split(".")
-            current = item
-            for k in keys:
-                current = current.get(k, {})
-            return current == expected
-        except Exception as e:
-            logging.info(f"Failed to evaluate filter '{filter_str}': {e}")
-        return False
-
-    def find_target_tables(self, keywords, conditions) -> List[Any]:
-        if not self.data:
-            logging.info("No data found, please call get_data() first")
-            return []
-        matchings = []
-        results = {}
-        for keyword_list in keywords:
-            norm_keywords = [self.normalize_string(kw) for kw in keyword_list]
-            match = []
-            for item in self.data:
-                table_name = item.get("table_name", "")
-                if not table_name:
-                    continue
-                if all(kw in table_name for kw in norm_keywords):
-                    condition_meets = True
-                    # for condition checks, any condition check fails with causes the item to be skipped to add to the category result
-                    for condition in conditions:
-                        condition_meets &= self._match_filter(item, condition)
-                    if not condition_meets:
-                        continue
-                    match.append(table_name)
-                    results[table_name] = item
-            matchings.append((norm_keywords, match))
-        if not self.disable_logging:
-            logging.info(
-                f"\n============ MATCHING Found results: {len(results)}=========\n"
-            )
-            for keywords, match in matchings:
-                logging.info(f"Keywords: {keywords} {len(match)} matchings: {match}")
-        return list(results.values())
-
     def normalize_string(self, s: str) -> str:
         s = s.lower().strip()
-        s = s.replace("(", "").replace(")", "")
         s = s.replace("_", "-")
         s = s.replace(" ", "-")
-        s = re.sub(r"[^\w\-.]", "-", s)
+        s = re.sub(r"[^\w\-\.\(\)]", "-", s)
         s = re.sub(r"-{2,}", "-", s)
+        s = s.replace("-(", "(").replace("(-", "(")
+        s = s.replace(")-", ")").replace("-)", ")")
         return s
 
-def argparsers():
-    parser = argparse.ArgumentParser(description="Multi-task runner")
 
-    common_parser = argparse.ArgumentParser(add_help=False)
-    common_parser.add_argument(
+def argparsers():
+    parser = argparse.ArgumentParser(description="Benchmark Analysis Runner")
+
+    # Required common args
+    parser.add_argument(
         "--startTime",
         type=validate_iso8601_no_ms,
         required=True,
-        help="Start time in ISO format (e.g. 2025-06-01T00:00:00)"
+        help="Start time, ISO format (e.g. 2025-06-01T00:00:00)",
     )
-    common_parser.add_argument(
+    parser.add_argument(
         "--endTime",
         type=validate_iso8601_no_ms,
         required=True,
-        help="End time in ISO format (e.g. 2025-06-06T00:00:00)"
+        help="End time, ISO format (e.g. 2025-06-06T00:00:00)",
     )
-    common_parser.add_argument(
-        "--env", choices=["local", "prod"], default="prod", help="Choose environment"
+    parser.add_argument(
+        "--env", choices=["local", "prod"], default="prod", help="Environment"
     )
-    common_parser.add_argument(
-    "--silent",
-    action="store_true",
-    help="Disable all logging"
+    parser.add_argument(
+        "--silent", action="store_true", help="Disable logging"
     )
 
-    subparsers = parser.add_subparsers(dest="command", required=True)
-    # generate_data
-    generate_data = subparsers.add_parser(
-    "generate_data", parents=[common_parser], help="generate data from HUD API"
+    # Options for generate_data
+    parser.add_argument(
+        "--outputType",
+        choices=["json", "df", "csv", "print", "excel"],
+        default="print",
+        help="Output format (only for generate_data)",
     )
-    generate_data.add_argument("--outputType", choices=["json", "df", "csv", "print"], default="print")
-    generate_data.add_argument("--outputDir", default=".")
-    generate_data.add_argument("--includePrivate", default=True)
-    generate_data.add_argument("--includePublic", default=True)
-    generate_data.add_argument("--private-matching-json-path",default=None)
-    generate_data.add_argument("--public-matching-json-path",default=None)
-
-    # fetch_list
-    fetch_list = subparsers.add_parser(
-    "get_matching_list", parents=[common_parser], help="Run fetch_matching_list")
-    fetch_list.add_argument("--filters", nargs="*", default=[])
-    fetch_list.add_argument("--excludeFilters", nargs="*", default=[])
-    fetch_list.add_argument("--category", required=True,help="Run fetch_matching_list to filter designed_list")
-    fetch_list.add_argument("--outputDir", default=".")
-    fetch_list.add_argument("--outputType", choices=["json", "print"], default="print")
-    fetch_list.add_argument("--filter",type=parse_filter_group,action="append", default=[],help="Filter group, e.g. 'include=iphone,metal;exclude=simulator'"
-    )
-
+    parser.add_argument("--outputDir", default=".", help="Output directory")
     return parser.parse_args()
 
-def get_matching_list(args):
-    default_matching_inputs = []
-    if args.includePrivate:
-        private_list = DEFAULT_PRIVATE_MATCHING_LIST
-        if args.private_matching_json_path:
-            with open(args.private_matching_json_path, "r") as f:
-                private_list = json.load(f)
-        default_matching_inputs.append( MatchingGroupInput(
-            category="private",
-            keywords=private_list,
-            conditions=[
-                'info.aws_type=private',
-            ]),)
-    if args.includePublic:
-        public_list = DEFAULT_PUBLIC_MATCHING_LIST
-        if args.public_matching_json_path:
-            with open(args.public_matching_json_path, "r") as f:
-                public_list = json.load(f)
-        default_matching_inputs.append(MatchingGroupInput(
-            category="public",
-            keywords= public_list,
-            conditions=[
-                'info.aws_type=public',
-            ]))
-    return default_matching_inputs
 
 if __name__ == "__main__":
     args = argparsers()
     fetcher = ExecutorchBenchmarkFetcher(args.env, args.silent)
-    if args.command == "generate_data":
-        default_matching_inputs = get_matching_list(args)
-        result = fetcher.run(
-            args.startTime,
-            args.endTime,
-            default_matching_inputs,
-        )
-        fetcher.output_data(args.outputType, args.outputDir)
-
-    elif args.command == "get_matching_list":
-        res = fetcher.generate_matching_list(
-            args.startTime,
-            args.endTime,
-            args.filter,
-            args.category,
-            args.outputType,
-            args.outputDir
-        )
+    result = fetcher.run(
+        args.startTime,
+        args.endTime,
+    )
+    fetcher.output_data(args.outputType, args.outputDir)
