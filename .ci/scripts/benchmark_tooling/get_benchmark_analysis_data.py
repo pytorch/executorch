@@ -8,19 +8,21 @@ and customizing data retrieval parameters.
 """
 
 import argparse
-from copy import deepcopy
 import json
 import logging
 import os
+import re
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
-import re
 from enum import Enum
+from typing import Any, Dict, List
+
 import pandas as pd
 import requests
 
 logging.basicConfig(level=logging.INFO)
+
 
 class OutputType(Enum):
     """
@@ -33,11 +35,13 @@ class OutputType(Enum):
         JSON: Export data to JSON files
         DF: Return data as pandas DataFrames
     """
+
     EXCEL = "excel"
     PRINT = "print"
     CSV = "csv"
     JSON = "json"
     DF = "df"
+
 
 @dataclass
 class BenchmarkQueryGroupDataParams:
@@ -52,12 +56,14 @@ class BenchmarkQueryGroupDataParams:
         group_table_by_fields: Fields to group tables by
         group_row_by_fields: Fields to group rows by
     """
+
     repo: str
     benchmark_name: str
     start_time: str
     end_time: str
     group_table_by_fields: list
     group_row_by_fields: list
+
 
 @dataclass
 class MatchingGroupResult:
@@ -68,13 +74,16 @@ class MatchingGroupResult:
         category: Category name (e.g., "private", "public")
         data: List of benchmark data for this category
     """
+
     category: str
     data: list
+
 
 BASE_URLS = {
     "local": "http://localhost:3000",
     "prod": "https://hud.pytorch.org",
 }
+
 
 def validate_iso8601_no_ms(value: str):
     """
@@ -90,6 +99,7 @@ def validate_iso8601_no_ms(value: str):
         raise argparse.ArgumentTypeError(
             f"Invalid datetime format for '{value}'. Expected: YYYY-MM-DDTHH:MM:SS"
         )
+
 
 class ExecutorchBenchmarkFetcher:
     """
@@ -145,14 +155,15 @@ class ExecutorchBenchmarkFetcher:
         self,
         start_time: str,
         end_time: str,
-    ) -> Any:
+    ) -> None:
         data = self._fetch_execu_torch_data(start_time, end_time)
         if data is None:
             logging.warning("no data fetched from the HUD API")
             return None
+
         res = self._process(data)
-        self.data = res["data"]
-        private_list = res["private"]
+        self.data = res.get("data", [])
+        private_list = res.get("private", [])
         public_list = self._filter_public_result(private_list, res["public"])
 
         # reset group
@@ -163,7 +174,23 @@ class ExecutorchBenchmarkFetcher:
         self.matching_groups["public"] = MatchingGroupResult(
             category="public", data=public_list
         )
-        return self.data
+
+    def _filter_out_failure_only(
+        self, data_list: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        clean FAILURE_REPORT only metrics
+        """
+        ONLY = {"workflow_id", "granularity_bucket", "job_id", "FAILURE_REPORT"}
+        for item in data_list:
+            filtered_rows = [
+                row
+                for row in item.get("rows", [])
+                # Keep row only if it has additional fields beyond ONLY
+                if not set(row.keys()).issubset(ONLY)
+            ]
+            item["rows"] = filtered_rows
+        return [item for item in data_list if item.get("rows")]
 
     def _filter_public_result(self, private_list, public_list):
         """
@@ -184,7 +211,10 @@ class ExecutorchBenchmarkFetcher:
             set([item["table_name"] for item in private_list])
             & set([item["table_name"] for item in public_list])
         )
-        logging.info(f"common table name for both private and public {len(common)}")
+        logging.info(
+            f"Found {len(common)} table names existed in both private and public, use it to filter public tables:"
+        )
+        logging.info(json.dumps(common, indent=1))
         filtered_public = [item for item in public_list if item["table_name"] in common]
         return filtered_public
 
@@ -253,9 +283,7 @@ class ExecutorchBenchmarkFetcher:
         Returns:
             Benchmark results in the specified format
         """
-        logging.info(
-            f"Generating output with type: {[category for category in self.matching_groups.keys()]}"
-        )
+        logging.info(f"Generating output with type: {[self.matching_groups.keys()]}")
         o_type = self._to_output_type(output_type)
         if o_type == OutputType.PRINT:
             logging.info("\n ========= Generate print output ========= \n")
@@ -351,7 +379,10 @@ class ExecutorchBenchmarkFetcher:
         result = {}
         for item in self.matching_groups.values():
             result[item.category] = [
-                {"groupInfo": item["groupInfo"], "df": pd.DataFrame(item["rows"])}
+                {
+                    "groupInfo": item.get("groupInfo", {}),
+                    "df": pd.DataFrame(item.get("rows", [])),
+                }
                 for item in item.data
             ]
         return result
@@ -472,7 +503,7 @@ class ExecutorchBenchmarkFetcher:
         Process raw benchmark data.
 
         This method:
-        1. Normalizes string values into new field info
+        1. clean the data that generated by FAILURE_REPORT,
         2. Creates table_name from info
         3. Determines aws_type (public/private) based on info.device
         4. Sorts results by table_name
@@ -483,12 +514,7 @@ class ExecutorchBenchmarkFetcher:
         """
         # filter data with arch equal exactly "",ios and android, this normally indicates it's job-level falure indicator
         logging.info(f"fetched {len(input_data)} data from HUD")
-        data = [
-            item
-            for item in input_data
-            if (arch := item.get("groupInfo", {}).get("arch")) is not None
-            and arch.lower() not in ("ios", "android")
-        ]
+        data = self._clean_data(input_data)
 
         private = []
         public = []
@@ -519,6 +545,17 @@ class ExecutorchBenchmarkFetcher:
             f"fetched clean data {len(data)}, private:{len(private)}, public:{len(public)}"
         )
         return {"data": data, "private": private, "public": public}
+
+    def _clean_data(self, data_list):
+        removed_gen_arch = [
+            item
+            for item in data_list
+            if (arch := item.get("groupInfo", {}).get("arch")) is not None
+            and arch.lower() not in ("ios", "android")
+        ]
+
+        data = self._filter_out_failure_only(removed_gen_arch)
+        return data
 
     def _fetch_execu_torch_data(self, start_time, end_time):
         url = f"{self.base_url}/api/benchmark/group_data"
@@ -569,9 +606,7 @@ def argparsers():
     parser.add_argument(
         "--env", choices=["local", "prod"], default="prod", help="Environment"
     )
-    parser.add_argument(
-        "--silent", action="store_true", help="Disable logging"
-    )
+    parser.add_argument("--silent", action="store_true", help="Disable logging")
 
     # Options for generate_data
     parser.add_argument(

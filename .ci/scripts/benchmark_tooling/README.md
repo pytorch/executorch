@@ -3,7 +3,8 @@
 A library providing tools for benchmarking ExecutorchBenchmark data.
 
 ## Read Benchmark Data
-`get_benchmark_analysis_data.py` fetches benchmark data from HUD Open API and processes it, grouping metrics by private and public devices.
+`get_benchmark_analysis_data.py` fetches benchmark data from HUD Open API, clean the data that only contains FAILURE_REPORT column,
+and get all private device metrics and associated public device metrics if any based on [model,backend,device,ios]
 
 ### Quick Start
 
@@ -22,7 +23,6 @@ Additional options:
 - `--outputType df`: Display results in DataFrame format
 - `--outputType excel --outputDir "{YOUR_LOCAL_DIRECTORY}"`: Generate Excel file with multiple sheets (`res_private.xlsx` and `res_public.xlsx`)
 - `--outputType csv --outputDir "{YOUR_LOCAL_DIRECTORY}"`: Generate CSV files in folders (`private` and `public`)
-
 
 ### Python API Usage
 
