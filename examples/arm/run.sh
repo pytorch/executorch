@@ -95,6 +95,7 @@ done
 ethos_u_scratch_dir=$(realpath ${ethos_u_scratch_dir})
 setup_path_script=${ethos_u_scratch_dir}/setup_path.sh
 toolchain_cmake=${script_dir}/ethos-u-setup/arm-none-eabi-gcc.cmake
+toolchain_cmake=${script_dir}/ethos-u-setup/arm-zephyr-eabi-gcc.cmake
 _setup_msg="please refer to ${script_dir}/setup.sh to properly install necessary tools."
 
 
@@ -134,9 +135,9 @@ function check_setup () {
     fi
 
     # If setup_path_script was correct all these checks should now pass
-    hash arm-none-eabi-gcc \
-        || { echo "Could not find arm baremetal toolchain on PATH, ${_setup_msg}"; return 1; }
-
+#    hash arm-none-eabi-gcc \
+#        || { echo "Could not find arm baremetal toolchain on PATH, ${_setup_msg}"; return 1; }
+#
     [[ -f ${toolchain_cmake} ]] \
         || { echo "Could not find ${toolchain_cmake} file, ${_setup_msg}"; return 1; }
 

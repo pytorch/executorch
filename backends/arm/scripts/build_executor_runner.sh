@@ -9,13 +9,13 @@ set -eu
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 et_root_dir=$(realpath ${et_root_dir})
-toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
+toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/arm-zephyr-eabi-gcc.cmake
 setup_path_script=${et_root_dir}/examples/arm/ethos-u-scratch/setup_path.sh
 _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
 
 pte_file=""
 target="ethos-u55-128"
-build_type="Release"
+build_type="Debug"
 bundleio=false
 system_config=""
 memory_mode=""
@@ -134,6 +134,8 @@ echo "Building with BundleIO/etdump/extra flags: ${build_bundleio_flags} ${build
 cmake \
     -DCMAKE_BUILD_TYPE=${build_type}            \
     -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake}   \
+    -DCMAKE_C_COMPILER="/home/zephyruser/zephyr-sdk-0.16.0/arm-zephyr-eabi/bin/arm-zephyr-eabi-gcc" \
+    -DCMAKE_CXX_COMPILER="/home/zephyruser/zephyr-sdk-0.16.0/arm-zephyr-eabi/bin/arm-zephyr-eabi-g++" \
     -DTARGET_CPU=${target_cpu}                  \
     -DET_DIR_PATH:PATH=${et_root_dir}           \
     -DET_BUILD_DIR_PATH:PATH=${et_build_dir}    \
@@ -154,6 +156,6 @@ cmake --build ${output_folder}/cmake-out -j$(nproc) -- arm_executor_runner
 
 echo "[${BASH_SOURCE[0]}] Generated baremetal elf file:"
 find ${output_folder}/cmake-out -name "arm_executor_runner"
-echo "executable_text: $(find ${output_folder}/cmake-out -name arm_executor_runner -exec arm-none-eabi-size {} \; | grep -v filename | awk '{print $1}') bytes"
-echo "executable_data: $(find ${output_folder}/cmake-out -name arm_executor_runner -exec arm-none-eabi-size {} \; | grep -v filename | awk '{print $2}') bytes"
-echo "executable_bss:  $(find ${output_folder}/cmake-out -name arm_executor_runner -exec arm-none-eabi-size {} \; | grep -v filename | awk '{print $3}') bytes"
+echo "executable_text: $(find ${output_folder}/cmake-out -name arm_executor_runner -exec arm-zephyr-eabi-size {} \; | grep -v filename | awk '{print $1}') bytes"
+echo "executable_data: $(find ${output_folder}/cmake-out -name arm_executor_runner -exec arm-zephyr-eabi-size {} \; | grep -v filename | awk '{print $2}') bytes"
+echo "executable_bss:  $(find ${output_folder}/cmake-out -name arm_executor_runner -exec arm-zephyr-eabi-size {} \; | grep -v filename | awk '{print $3}') bytes"
