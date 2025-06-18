@@ -31,7 +31,7 @@ def get_preprocessor_flags(is_fbcode):
         "ovr_config//cpu:arm64": arm64_flags,
         "DEFAULT": default_flags,
     })
-    return flags + ["-DET_USE_PYTORCH_HEADERS"] + (fbcode_flags if is_fbcode else non_fbcode_flags)
+    return flags + ["-DET_USE_PYTORCH_HEADERS=ET_HAS_EXCEPTIONS"] + (fbcode_flags if is_fbcode else non_fbcode_flags)
 
 def get_sleef_deps():
     if runtime.is_oss:
@@ -96,7 +96,11 @@ def define_common_targets():
     runtime.cxx_library(
         name = "aten_headers_for_executorch",
         srcs = [],
-        visibility = ["//executorch/kernels/optimized/...", "@EXECUTORCH_CLIENTS"],
+        visibility = [
+            "//executorch/kernels/optimized/...",
+            "//executorch/kernels/portable/cpu/util/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
         # select() on ovr_config//runtime:fbcode does not work
         # properly in all cases. I have seen
         # //xplat/executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch
@@ -120,7 +124,7 @@ def define_common_targets():
             "//caffe2/c10:c10_headers",
         ] + get_sleef_deps()) if not runtime.is_oss else [],
         exported_preprocessor_flags = get_preprocessor_flags(is_fbcode=False)
-        + ([] if runtime.is_oss else ["-DET_USE_PYTORCH_HEADERS"]),
+        + ([] if runtime.is_oss else ["-DET_USE_PYTORCH_HEADERS=ET_HAS_EXCEPTIONS"]),
         fbcode_exported_preprocessor_flags = get_preprocessor_flags(is_fbcode=True)
-        + ([] if runtime.is_oss else ["-DET_USE_PYTORCH_HEADERS"]),
+        + ([] if runtime.is_oss else ["-DET_USE_PYTORCH_HEADERS=ET_HAS_EXCEPTIONS"]),
     )
