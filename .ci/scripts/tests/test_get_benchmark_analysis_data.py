@@ -206,7 +206,7 @@ class TestBenchmarkAnalysis(unittest.TestCase):
             ("test_string", "test-string"),
             ("test string", "test-string"),
             ("test--string", "test-string"),
-            ("test (private)", "test(private)"),
+            ("test  (private)", "test"),
             ("test@#$%^&*", "test-"),
         ]
 
@@ -335,6 +335,97 @@ class TestBenchmarkAnalysis(unittest.TestCase):
         result = self.fetcher._filter_public_result(private_list, public_list)
         self.assertEqual(result, expected)
 
+    def test_filter_results(self):
+        """Test filter_results method with various filter combinations."""
+        # Create test data
+        test_data = [
+            {
+                "info": {
+                    "model": "llama3",
+                    "backend": "qlora",
+                    "device": "iphone-15-pro-max",
+                    "arch": "ios-17",
+                },
+                "rows": [{"metric_1": 1.0}],
+            },
+            {
+                "info": {
+                    "model": "llama3",
+                    "backend": "spinquant",
+                    "device": "iphone-15-pro-max",
+                    "arch": "ios-17",
+                },
+                "rows": [{"metric_1": 2.0}],
+            },
+            {
+                "info": {
+                    "model": "mv3",
+                    "backend": "xnnpack-q8",
+                    "device": "samsung-galaxy-s22-5g",
+                    "arch": "android-13",
+                },
+                "rows": [{"metric_1": 3.0}],
+            },
+            {
+                "info": {
+                    "model": "mv3",
+                    "backend": "qnn-q8",
+                    "device": "samsung-galaxy-s22-5g",
+                    "arch": "android-13",
+                },
+                "rows": [{"metric_1": 4.0}],
+            },
+        ]
+
+        # Test with no filters
+        empty_filters = self.module.BenchmarkFilters(
+            models=None, backends=None, devices=None
+        )
+        result = self.fetcher.filter_results(test_data, empty_filters)
+        self.assertEqual(result, test_data)
+
+        # Test with model filter
+        model_filters = self.module.BenchmarkFilters(
+            models=["llama3"], backends=None, devices=None
+        )
+        result = self.fetcher.filter_results(test_data, model_filters)
+        self.assertEqual(len(result), 2)
+        self.assertTrue(all(item["info"]["model"] == "llama3" for item in result))
+
+        # Test with backend filter
+        backend_filters = self.module.BenchmarkFilters(
+            models=None, backends=["qlora", "qnn-q8"], devices=None
+        )
+        result = self.fetcher.filter_results(test_data, backend_filters)
+        self.assertEqual(len(result), 2)
+        self.assertTrue(
+            all(item["info"]["backend"] in ["qlora", "qnn-q8"] for item in result)
+        )
+
+        # Test with device filter
+        device_filters = self.module.BenchmarkFilters(
+            models=None, backends=None, devices=["samsung-galaxy-s22-5g"]
+        )
+        result = self.fetcher.filter_results(test_data, device_filters)
+        self.assertEqual(len(result), 2)
+        self.assertTrue(
+            all("samsung-galaxy-s22-5g" in item["info"]["device"] for item in result)
+        )
+
+        # Test with combined filters (And logic fails)
+        combined_filters = self.module.BenchmarkFilters(
+            models=["llama3"], backends=["xnnpack-q8"], devices=None
+        )
+        result = self.fetcher.filter_results(test_data, combined_filters)
+        self.assertEqual(len(result), 0)
+
+        # Test with combined filters (And logic success)
+        combined_filters = self.module.BenchmarkFilters(
+            models=["llama3"], backends=None, devices=["iphone-15-pro-max"]
+        )
+        result = self.fetcher.filter_results(test_data, combined_filters)
+        self.assertEqual(len(result), 2)
+
     @patch(
         "get_benchmark_analysis_data.ExecutorchBenchmarkFetcher._fetch_execu_torch_data"
     )
@@ -442,7 +533,7 @@ class TestBenchmarkAnalysis(unittest.TestCase):
                 "arch": "ios-17.4.3",
                 "aws_type": "private",
                 "backend": "qlora",
-                "device": "iphone-15-pro-max(private)",
+                "device": "iphone-15-pro-max",
                 "model": "llama3",
             },
             "rows": [
@@ -474,6 +565,76 @@ class TestBenchmarkAnalysis(unittest.TestCase):
         self.assertIsNone(result)
         self.assertEqual(self.fetcher.matching_groups, {})
         mock_fetch.assert_called_once_with("2025-06-01T00:00:00", "2025-06-02T00:00:00")
+
+    @patch(
+        "get_benchmark_analysis_data.ExecutorchBenchmarkFetcher._fetch_execu_torch_data"
+    )
+    def test_run_with_filters(self, mock_fetch):
+        """Test run method with filters."""
+        # Setup mock data
+        mock_data = [
+            {
+                "groupInfo": {
+                    "model": "llama3",
+                    "backend": "qlora",
+                    "device": "Iphone 15 pro max (private)",
+                    "arch": "ios_17",
+                },
+                "rows": [{"metric_1": 1.0}],
+            },
+            {
+                "groupInfo": {
+                    "model": "mv3",
+                    "backend": "xnnpack_q8",
+                    "device": "s22_5g (private)",
+                    "arch": "android_13",
+                },
+                "rows": [{"metric_1": 2.0}],
+            },
+            {
+                "groupInfo": {
+                    "model": "mv3",
+                    "backend": "xnnpack_q8",
+                    "device": "s22_5g",
+                    "arch": "android_13",
+                },
+                "rows": [{"metric_1": 3.0}],
+            },
+        ]
+        mock_fetch.return_value = mock_data
+
+        # Create filters for llama3 model only
+        filters = self.module.BenchmarkFilters(
+            models=["llama3"], backends=None, devices=None
+        )
+        # Run the method with filters
+        self.fetcher.run("2025-06-01T00:00:00", "2025-06-02T00:00:00", filters)
+        result = self.fetcher.get_result()
+        print("result1", result)
+
+        # Verify results - should only have llama3 in private results
+        self.assertEqual(len(result["private"]), 1)
+        self.assertEqual(result["private"][0]["info"]["model"], "llama3")
+
+        # Public results should be empty since there's no matching table_name
+        self.assertEqual(result["public"], [])
+
+        # Test with backend filter
+        filters = self.module.BenchmarkFilters(
+            models=None, backends=["xnnpack-q8"], devices=None
+        )
+        self.fetcher.run("2025-06-01T00:00:00", "2025-06-02T00:00:00", filters)
+        result = self.fetcher.get_result()
+
+        print("result", result)
+
+        # Verify results - should only have xnnpack-q8 in private results
+        self.assertEqual(len(result["private"]), 1)
+        self.assertEqual(result["private"][0]["info"]["backend"], "xnnpack-q8")
+
+        # Public results should have the matching xnnpack-q8 entry
+        self.assertEqual(len(result["public"]), 1)
+        self.assertEqual(result["public"][0]["info"]["backend"], "xnnpack-q8")
 
     def test_to_dict(self):
         """Test to_dict method."""

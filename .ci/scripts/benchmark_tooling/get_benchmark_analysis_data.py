@@ -525,18 +525,7 @@ class ExecutorchBenchmarkFetcher:
             for k in fields
             if k in group_info and group_info[k]
         )
-        if "(private)" in name:
-            name = name.replace("(private)", "")
-        return name
 
-    def _generate_matching_name(self, group_info: dict, fields: list[str]) -> str:
-        info = deepcopy(group_info)
-        name = "_".join(
-            self.normalize_string(info[k]) for k in fields if k in info and info[k]
-        )
-        if "(private)" in name:
-            name = name.replace("(private)", "")
-            # name = name +'(private)'
         return name
 
     def _process(
@@ -562,23 +551,28 @@ class ExecutorchBenchmarkFetcher:
         public = []
 
         for item in data:
-            # normalized string values groupInfo to info
-            item["info"] = {
-                k: self.normalize_string(v)
-                for k, v in item.get("groupInfo", {}).items()
-                if v is not None and isinstance(v, str)
-            }
+            org_group = item.get("groupInfo", {})
+            if "info" not in item:
+                item["info"] = {}
+            if org_group.get("device", "").find("private") != -1:
+                item["info"]["aws_type"] = "private"
+            else:
+                item["info"]["aws_type"] = "public"
+                public.append(item)
+
+            # Merge normalized groupInfo string values into item["info"]
+            item["info"].update(
+                {
+                    k: self.normalize_string(v)
+                    for k, v in item.get("groupInfo", {}).items()
+                    if v is not None and isinstance(v, str)
+                }
+            )
             group = item.get("info", {})
             # Add full name joined by the group key fields
             item["table_name"] = self._generate_table_name(
                 group, self.query_group_table_by_fields
             )
-            # Mark aws_type: private or public
-            if group.get("device", "").find("private") != -1:
-                item["info"]["aws_type"] = "private"
-            else:
-                item["info"]["aws_type"] = "public"
-                public.append(item)
         raw_data = deepcopy(data)
 
         # applies customized filters if any
@@ -646,6 +640,7 @@ class ExecutorchBenchmarkFetcher:
         s = re.sub(r"-{2,}", "-", s)
         s = s.replace("-(", "(").replace("(-", "(")
         s = s.replace(")-", ")").replace("-)", ")")
+        s = s.replace("(private)", "")
         return s
 
     def filter_results(
@@ -678,7 +673,7 @@ class ExecutorchBenchmarkFetcher:
             info = item.get("info", {})
             if backends and info.get("backend") not in backends:
                 continue
-            if devices and not any(dev in info.get("device", "") for dev in devices):
+            if devices and info.get("device", "") not in devices:
                 continue
             if models and info.get("model", "") not in models:
                 continue
@@ -688,7 +683,7 @@ class ExecutorchBenchmarkFetcher:
         if after_len == 0:
             logging.info(
                 "it seems like there is no result matches the filter values"
-                ", please run script --no-silent again, and search for values in field"
+                ", please run script --list-all-table-info again, and search for values in field"
                 " 'info' for right format"
             )
         return results
@@ -742,15 +737,17 @@ def argparsers():
     parser.add_argument(
         "--backends",
         nargs="+",
-        help="Filter results by one or more backend full name(e.g. --backend qlora mv3) (OR logic)",
+        help="Filter results by one or more backend full name(e.g. --backend qlora mv3) (OR logic within backends scope, AND logic with other filter type)",
     )
     parser.add_argument(
         "--devices",
         nargs="+",
-        help="Filter results by one or more device names (e.g. --devices samsung-galaxy-s22-5g)(OR logic)",
+        help="Filter results by one or more device names (e.g. --devices samsung-galaxy-s22-5g)(OR logic within devices, AND logic with other filter type)",
     )
     parser.add_argument(
-        "--models", nargs="+", help="Filter by one or more models (OR logic)"
+        "--models",
+        nargs="+",
+        help="Filter by one or more models (OR logic withn models scope, AND logic with other filter type)",
     )
     return parser.parse_args()
 
