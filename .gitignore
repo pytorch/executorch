@@ -42,6 +42,9 @@ xcuserdata/
 *.xcworkspace/
 *.xcframework/
 
+# clangd
+.cache/
+
 # misc
 /.vscode/
 *.so
