@@ -17,6 +17,11 @@ import sys
 
 import torch
 
+from executorch.examples.models.llama.export_llama_lib import (
+    build_args_parser,
+    export_llama,
+)
+
 sys.setrecursionlimit(4096)
 
 
@@ -39,15 +44,12 @@ def main() -> None:
         sys.argv = [arg for arg in sys.argv if arg != "--hydra"]
         print(f"running with {sys.argv}")
         runpy.run_module(
-            "executorch.examples.models.llama.export_llama_hydra", run_name="__main__"
+            "executorch.extension.llm.export.export_llm", run_name="__main__"
         )
     else:
-        # Use the legacy version of the export_llama script which uses argsparse.
-        from executorch.examples.models.llama.export_llama_args import (
-            main as export_llama_args_main,
-        )
-
-        export_llama_args_main(remaining_args)
+        parser = build_args_parser()
+        remaining_args = parser.parse_args(remaining_args)
+        export_llama(remaining_args)
 
 
 if __name__ == "__main__":
