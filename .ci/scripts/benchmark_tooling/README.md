@@ -126,5 +126,5 @@ The benchmark tooling includes unit tests to ensure functionality.
 
 ```bash
 # From the executorch root directory
-pytest -c /dev/null .ci/scripts/tests/test_get_benchmark_analysis_data.py
+pytest -c /dev/null .ci/scripts/benchmark_tooling/test_get_benchmark_analysis_data.py --log-cli-level=INFO;
 ```
