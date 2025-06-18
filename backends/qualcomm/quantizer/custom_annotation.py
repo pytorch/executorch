@@ -26,6 +26,35 @@ from torchao.quantization.pt2e.quantizer import (
 )
 
 
+def annotate_eurobert(gm: torch.fx.GraphModule):
+    """
+    QNN does not support int32 -> signed 16bit quant
+    We need to first annotate this to_fp node as 8bit quant, so it will perform requantize
+    Final graph should look like: int32 -> convert -> cast -> matmul.args[1]
+
+    """
+    quantization_config_8a8w = get_8a8w_qnn_ptq_config()
+    for node in gm.graph.nodes:
+        # A little tricky here. This matmul node is wrapped inside a submodule after 1st torch.export.
+        # There are actually 2 'to' op that is redundant.
+        # It will look like: int64 -> to_fp -> to_fp -> matmul.args[1]
+        # Draw out the graph after the 1st export will help visualize the submodule.
+
+        if node.target == torch.ops.aten.matmul.default and node.args[1].args[0].args[
+            0
+        ].meta["val"].dtype in [torch.int64, torch.int32]:
+            to_node = node.args[1]
+            input_qspec_map = {}
+            assert isinstance(to_node, Node)
+            input_spec = quantization_config_8a8w.input_activation
+            input_qspec_map[to_node] = input_spec
+            to_node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=quantization_config_8a8w.output_activation,
+                _annotated=True,
+            )
+
+
 def annotate_mimi_decoder(gm: torch.fx.GraphModule):
     """
     The 1st transpose conv in mimi decoder is really sensitive to scale/offset in 16a8w, which causes execution failure.
