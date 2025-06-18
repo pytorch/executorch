@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 import torch
 
+from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.backends.nxp.tests.executorch_pipeline import _quantize_model
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 
@@ -45,8 +46,9 @@ class TestRemovingDeadCode(unittest.TestCase):
         )
 
         # The `NeutronQuantizer` should remove the dead code in the `transform_for_annotation()` method.
+        quantizer = NeutronQuantizer()
         exir_program_aten_quant = _quantize_model(
-            exir_program_aten.module(), [example_inputs]
+            exir_program_aten.module(), quantizer, [example_inputs]
         )
 
         # Make sure the is no `add` operation in the graph anymore.
