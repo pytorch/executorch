@@ -15,6 +15,7 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_same_dtype,
+    validate_valid_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -41,12 +42,9 @@ class ReciprocalVisitor_080_MI(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 1)
         validate_same_dtype(self.target, [*inputs, output], ts)
-
-        if inputs[0].dtype != ts.DType.FP32 or output.dtype != ts.DType.FP32:
-            raise ValueError(
-                f"Input and output for {self.target} need to be FP32, got "
-                f"{inputs[0].dtype=} and {output.dtype=}"
-            )
+        validate_valid_dtype(
+            self.target, [*inputs, output], ts.DType.FP32, output.tosa_spec
+        )
 
         tosa_graph.addOperator(
             ts.TosaOp.Op().RECIPROCAL, [inputs[0].name], [output.name]
@@ -74,12 +72,9 @@ class ReciprocalVisitor(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 1)
         validate_same_dtype(self.target, [*inputs, output], ts)
-
-        if inputs[0].dtype != ts.DType.FP32 or output.dtype != ts.DType.FP32:
-            raise ValueError(
-                f"Input and output for {self.target} need to be FP32, got "
-                f"{inputs[0].dtype=} and {output.dtype=}"
-            )
+        validate_valid_dtype(
+            self.target, [*inputs, output], ts.DType.FP32, output.tosa_spec
+        )
 
         tosa_graph.addOperator(
             ts.TosaOp.Op().RECIPROCAL, [inputs[0].name], [output.name]

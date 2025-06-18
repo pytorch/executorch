@@ -794,3 +794,112 @@ TEST_F(OpMulScalarOutTest, BFloat16SanityCheck) {
   // Check that it matches the expected output.
   EXPECT_TENSOR_CLOSE(out, tf.make(sizes, {2.6, 4.2, 9.2, 16.4}));
 }
+
+// Tests for broadcast handling fix: when tensor dimensions don't match,
+// the output should be resized to match the tensor with higher dimensionality
+TEST_F(OpMulOutTest, BroadcastDimensionMismatchFix) {
+  TensorFactory<ScalarType::Float> tf;
+
+  // Test case: tensor a of size [6] and b of size [1, 1, 6]
+  // Expected output should be [1, 1, 6], not [6]
+  Tensor a = tf.make({6}, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+  Tensor b = tf.make({1, 1, 6}, {2.0, 2.0, 2.0, 2.0, 2.0, 2.0});
+
+  // Create output tensor with expected broadcast shape [1, 1, 6]
+  Tensor out = tf.zeros({1, 1, 6});
+
+  // Call the mul function
+  Tensor& result = op_mul_out(a, b, out);
+
+  // Verify the output shape is [1, 1, 6]
+  EXPECT_EQ(result.dim(), 3);
+  EXPECT_EQ(result.size(0), 1);
+  EXPECT_EQ(result.size(1), 1);
+  EXPECT_EQ(result.size(2), 6);
+
+  // Verify the values are correct (element-wise multiplication with
+  // broadcasting)
+  Tensor expected = tf.make({1, 1, 6}, {2.0, 4.0, 6.0, 8.0, 10.0, 12.0});
+  EXPECT_TENSOR_CLOSE(result, expected);
+}
+
+TEST_F(OpMulOutTest, BroadcastDimensionMismatchReversed) {
+  TensorFactory<ScalarType::Float> tf;
+
+  // Test case: tensor a of size [1, 1, 6] and b of size [6]
+  // Expected output should be [1, 1, 6]
+  Tensor a = tf.make({1, 1, 6}, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+  Tensor b = tf.make({6}, {2.0, 2.0, 2.0, 2.0, 2.0, 2.0});
+
+  // Create output tensor with expected broadcast shape [1, 1, 6]
+  Tensor out = tf.zeros({1, 1, 6});
+
+  // Call the mul function
+  Tensor& result = op_mul_out(a, b, out);
+
+  // Verify the output shape is [1, 1, 6]
+  EXPECT_EQ(result.dim(), 3);
+  EXPECT_EQ(result.size(0), 1);
+  EXPECT_EQ(result.size(1), 1);
+  EXPECT_EQ(result.size(2), 6);
+
+  // Verify the values are correct (element-wise multiplication with
+  // broadcasting)
+  Tensor expected = tf.make({1, 1, 6}, {2.0, 4.0, 6.0, 8.0, 10.0, 12.0});
+  EXPECT_TENSOR_CLOSE(result, expected);
+}
+
+TEST_F(OpMulOutTest, BroadcastDimensionMismatchWithDifferentTypes) {
+  // Test the same broadcast fix with different data types
+  TensorFactory<ScalarType::Half> tf_half;
+  TensorFactory<ScalarType::BFloat16> tf_bf16;
+  TensorFactory<ScalarType::Int> tf_int;
+
+  // Test with Half precision
+  {
+    Tensor a = tf_half.make({4}, {1.0, 2.0, 3.0, 4.0});
+    Tensor b = tf_half.make({1, 1, 4}, {2.0, 2.0, 2.0, 2.0});
+    Tensor out = tf_half.zeros({1, 1, 4});
+
+    Tensor& result = op_mul_out(a, b, out);
+    EXPECT_EQ(result.dim(), 3);
+    EXPECT_EQ(result.size(0), 1);
+    EXPECT_EQ(result.size(1), 1);
+    EXPECT_EQ(result.size(2), 4);
+
+    Tensor expected = tf_half.make({1, 1, 4}, {2.0, 4.0, 6.0, 8.0});
+    EXPECT_TENSOR_CLOSE(result, expected);
+  }
+
+  // Test with BFloat16
+  {
+    Tensor a = tf_bf16.make({4}, {1.0, 2.0, 3.0, 4.0});
+    Tensor b = tf_bf16.make({1, 1, 4}, {2.0, 2.0, 2.0, 2.0});
+    Tensor out = tf_bf16.zeros({1, 1, 4});
+
+    Tensor& result = op_mul_out(a, b, out);
+    EXPECT_EQ(result.dim(), 3);
+    EXPECT_EQ(result.size(0), 1);
+    EXPECT_EQ(result.size(1), 1);
+    EXPECT_EQ(result.size(2), 4);
+
+    Tensor expected = tf_bf16.make({1, 1, 4}, {2.0, 4.0, 6.0, 8.0});
+    EXPECT_TENSOR_CLOSE(result, expected);
+  }
+
+  // Test with Int
+  {
+    Tensor a = tf_int.make({4}, {1, 2, 3, 4});
+    Tensor b = tf_int.make({1, 1, 4}, {2, 2, 2, 2});
+    Tensor out = tf_int.zeros({1, 1, 4});
+
+    Tensor& result = op_mul_out(a, b, out);
+    EXPECT_EQ(result.dim(), 3);
+    EXPECT_EQ(result.size(0), 1);
+    EXPECT_EQ(result.size(1), 1);
+    EXPECT_EQ(result.size(2), 4);
+
+    Tensor expected = tf_int.make({1, 1, 4}, {2, 4, 6, 8});
+    EXPECT_TENSOR_EQ(result, expected);
+  }
+}

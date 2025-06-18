@@ -13,6 +13,7 @@ from executorch.backends.arm.operators.node_visitor import (  # type: ignore
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_same_dtype,
+    validate_valid_dtype,
 )
 
 from executorch.backends.arm.tosa_mapping import TosaArg  # type: ignore
@@ -36,9 +37,9 @@ class AnyVisitor_0_80(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 3)
         validate_same_dtype(self.target, [inputs[0], output], ts)
-
-        if not (inputs[0].dtype == ts.DType.BOOL):
-            raise ValueError("All inputs need to be BOOL." f"Got {inputs[0].dtype=}")
+        validate_valid_dtype(
+            self.target, [inputs[0], output], ts.DType.BOOL, output.tosa_spec
+        )
 
         input_shape = list(inputs[0].shape)
         dim = cast(int, inputs[1].number) % len(
@@ -73,9 +74,9 @@ class AnyVisitor(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 3)
         validate_same_dtype(self.target, [inputs[0], output], ts)
-
-        if not (inputs[0].dtype == ts.DType.BOOL):
-            raise ValueError("All inputs need to be BOOL." f"Got {inputs[0].dtype=}")
+        validate_valid_dtype(
+            self.target, [inputs[0], output], ts.DType.BOOL, output.tosa_spec
+        )
 
         input_shape = list(inputs[0].shape)
         dim = cast(int, inputs[1].number) % len(
