@@ -50,3 +50,9 @@ python .ci/scripts/benchmark_tooling/analyze_benchmark_stability.py \
     Benchmark\ Dataset\ with\ Private\ AWS\ Devices.xlsx \
     --reference_file Benchmark\ Dataset\ with\ Public\ AWS\ Devices.xlsx
 ```
+
+## Run unittest
+```
+cd execuTorch/
+pytest -c /dev/null .ci/scripts/tests/test_get_benchmark_analysis_data.py
+```
