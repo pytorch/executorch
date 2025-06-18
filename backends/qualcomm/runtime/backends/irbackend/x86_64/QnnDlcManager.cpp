@@ -70,7 +70,8 @@ Error QnnDlcManager::Configure() {
       Internal,
       "Fail to configure Qnn backend cache");
   ET_CHECK_OR_RETURN_ERROR(
-      backend_params_ptr_->qnn_backend_ptr_->Configure() == Error::Ok,
+      backend_params_ptr_->qnn_backend_ptr_->Configure(
+          options_->op_package_options()) == Error::Ok,
       Internal,
       "Fail to configure Qnn backend");
   ET_CHECK_OR_RETURN_ERROR(

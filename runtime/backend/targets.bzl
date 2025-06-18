@@ -10,9 +10,9 @@ def define_common_targets():
     for aten_mode in get_aten_mode_options():
         aten_suffix = ("_aten" if aten_mode else "")
         runtime.cxx_library(
-            name = "backend_options" + aten_suffix,
+            name = "options" + aten_suffix,
             exported_headers = [
-                "backend_options.h",
+                "options.h",
             ],
             preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
             visibility = [
@@ -42,7 +42,7 @@ def define_common_targets():
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/core:evalue" + aten_suffix,
                 "//executorch/runtime/core:event_tracer" + aten_suffix,
-                ":backend_options_map" + aten_suffix,
+                ":options_map" + aten_suffix,
                 ":interface" + aten_suffix,
             ],
         )
@@ -69,14 +69,14 @@ def define_common_targets():
                 "//executorch/runtime/core:event_tracer" + aten_suffix,
                 "//executorch/runtime/core:memory_allocator",
                 "//executorch/runtime/core:named_data_map",
-                "//executorch/runtime/backend:backend_options" + aten_suffix,
+                "//executorch/runtime/backend:options" + aten_suffix,
             ],
         )
 
         runtime.cxx_library(
-            name = "backend_options_map" + aten_suffix,
+            name = "options_map" + aten_suffix,
             exported_headers = [
-                "backend_options_map.h",
+                "options_map.h",
             ],
             preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
             visibility = [
@@ -85,6 +85,7 @@ def define_common_targets():
             ],
             exported_deps = [
                 "//executorch/runtime/core:core",
-                ":backend_options" + aten_suffix,
+                ":options" + aten_suffix,
+                ":interface" + aten_suffix,
             ],
         )

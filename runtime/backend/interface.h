@@ -12,7 +12,7 @@
 
 #include <executorch/runtime/backend/backend_execution_context.h>
 #include <executorch/runtime/backend/backend_init_context.h>
-#include <executorch/runtime/backend/backend_options.h>
+#include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/backend/backend_update_context.h>
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/error.h>
