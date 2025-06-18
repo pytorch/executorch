@@ -37,7 +37,7 @@ python3 .ci/scripts/benchmark_tooling/get_benchmark_analysis_data.py \
 - `--outputType`: Choose output format (default: "print")
   - `print`: Display results in console
   - `json`: Generate JSON file
-  - `df`: Display results in DataFrame format
+  - `df`: Display results in DataFrame format: `{'private': List[{'groupInfo':Dict,'df': DF},...],'public':List[{'groupInfo':Dict,'df': DF}]`
   - `excel`: Generate Excel files with multiple sheets, the field in first row and first column contains the json string of the raw metadata
   - `csv`: Generate CSV files in separate folders, the field in first row and first column contains the json string of the raw metadata
 - `--outputDir`: Directory to save output files (default: current directory)
@@ -49,9 +49,9 @@ Notice, the filter needs full name matchings with correct format, to see all the
 - `--backends`: Filter by specific backend names (e.g.,  "qnn-q8" , ""llama3-spinquan)
 - `--models`: Filter by specific model names (e.g "mv3" "meta-llama-llama-3.2-1b-instruct-qlora-int4-eo8")
 
-#### Working with Output Files
+#### Working with Output Files CSV and Excel
 
-You can use methods in `common.py` to convert the file data back to DataFrame format:
+You can use methods in `common.py` to convert the file data back to DataFrame format, those methods read the first row in csv/excel file, and return result with format list of {"groupInfo":DICT, "df":df.Dataframe{}} format.
 
 ```python
 import logging
