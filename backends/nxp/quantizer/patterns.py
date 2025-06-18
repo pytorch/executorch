@@ -16,6 +16,7 @@ from torch._ops import OpOverload
 from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
     FixedQParamsQuantizationSpec,
+    QuantizationSpec,
     SharedQuantizationSpec,
 )
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
@@ -54,7 +55,9 @@ class PartitionAnchors:
         tuple[fx.Node, NodeArgsIdx]
         | tuple[fx.Node, NodeArgsIdx, SharedQuantizationSpec],
     ] = field(default_factory=list)
-    weights: list[tuple[fx.Node, NodeArgsIdx]] = field(default_factory=list)
+    weights: list[
+        tuple[fx.Node, NodeArgsIdx] | tuple[fx.Node, NodeArgsIdx, QuantizationSpec],
+    ] = field(default_factory=list)
     biases: list[
         tuple[fx.Node, NodeArgsIdx]
         | tuple[fx.Node, NodeArgsIdx, DerivedQuantizationSpec],
