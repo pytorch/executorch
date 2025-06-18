@@ -16,7 +16,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Union
 
 import pandas as pd
 import requests
@@ -126,8 +126,8 @@ class ExecutorchBenchmarkFetcher:
 
     def __init__(
         self,
-        env="prod",
-        disable_logging=False,
+        env: str = "prod",
+        disable_logging: bool = False,
         group_table_fields=None,
         group_row_fields=None,
     ):
@@ -189,7 +189,13 @@ class ExecutorchBenchmarkFetcher:
         self, data_list: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """
-        clean FAILURE_REPORT only metrics
+        Clean data by removing rows that only contain FAILURE_REPORT metrics.
+
+        Args:
+            data_list: List of benchmark data dictionaries
+
+        Returns:
+            Filtered list with rows containing only FAILURE_REPORT removed
         """
         ONLY = {"workflow_id", "granularity_bucket", "job_id", "FAILURE_REPORT"}
         for item in data_list:
@@ -230,7 +236,13 @@ class ExecutorchBenchmarkFetcher:
         filtered_public = [item for item in public_list if item["table_name"] in common]
         return filtered_public
 
-    def get_result(self):
+    def get_result(self) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Get a deep copy of the benchmark results.
+
+        Returns:
+            Dictionary containing benchmark results grouped by category
+        """
         return deepcopy(self.to_dict())
 
     def to_excel(self, output_dir: str = ".") -> None:
@@ -270,7 +282,7 @@ class ExecutorchBenchmarkFetcher:
                 worksheet.write_string(0, 0, json_str)
 
                 logging.info(
-                    f"Wrting excel sheet to file {file} with sheet name {sheet_name} for {entry["table_name"]}"
+                    f"Wrting excel sheet to file {file} with sheet name {sheet_name} for {entry['table_name']}"
                 )
                 # Write DataFrame starting at row 2 (index 1)
                 df.to_excel(writer, sheet_name=sheet_name, startrow=1, index=False)
@@ -366,7 +378,7 @@ class ExecutorchBenchmarkFetcher:
             json.dump(data, f, indent=2)
         return path
 
-    def to_dict(self) -> Any:
+    def to_dict(self) -> Dict[str, List[Dict[str, Any]]]:
         """
         Convert benchmark results to a dictionary.
 
@@ -378,7 +390,7 @@ class ExecutorchBenchmarkFetcher:
             result[item.category] = item.data
         return result
 
-    def to_df(self) -> Any:
+    def to_df(self) -> Dict[str, List[Dict[str, Union[Dict[str, Any], pd.DataFrame]]]]:
         """
         Convert benchmark results to pandas DataFrames.
 
@@ -386,7 +398,8 @@ class ExecutorchBenchmarkFetcher:
         Each DataFrame represents one benchmark configuration.
 
         Returns:
-            Dictionary mapping categories to lists of DataFrames with metadata
+            Dictionary mapping categories ['private','public'] to lists of DataFrames "df" with metadata "groupInfo".
+
         """
         result = {}
         for item in self.matching_groups.values():
@@ -423,7 +436,20 @@ class ExecutorchBenchmarkFetcher:
             path = os.path.join(output_dir, item.category)
             self._write_multiple_csv_files(item.data, path)
 
-    def _write_multiple_csv_files(self, data_list, output_dir, prefix=""):
+    def _write_multiple_csv_files(
+        self, data_list: List[Dict[str, Any]], output_dir: str, prefix: str = ""
+    ) -> None:
+        """
+        Write multiple benchmark results to CSV files.
+
+        Creates a CSV file for each benchmark configuration, with metadata
+        as a JSON string in the first row and data in subsequent rows.
+
+        Args:
+            data_list: List of benchmark result dictionaries
+            output_dir: Directory to save CSV files
+            prefix: Optional prefix for CSV filenames
+        """
         os.makedirs(output_dir, exist_ok=True)
         for idx, entry in enumerate(data_list):
             filename = f"{prefix}_table{idx+1}.csv" if prefix else f"table{idx+1}.csv"
@@ -506,7 +532,9 @@ class ExecutorchBenchmarkFetcher:
             # name = name +'(private)'
         return name
 
-    def _process(self, input_data: List[Dict[str, Any]], filters: BenchmarkFilters):
+    def _process(
+        self, input_data: List[Dict[str, Any]], filters: BenchmarkFilters
+    ) -> Dict[str, Any]:
         """
         Process raw benchmark data.
 
@@ -578,7 +606,9 @@ class ExecutorchBenchmarkFetcher:
         data = self._filter_out_failure_only(removed_gen_arch)
         return data
 
-    def _fetch_execu_torch_data(self, start_time, end_time):
+    def _fetch_execu_torch_data(
+        self, start_time: str, end_time: str
+    ) -> Optional[List[Dict[str, Any]]]:
         url = f"{self.base_url}/api/benchmark/group_data"
         params_object = BenchmarkQueryGroupDataParams(
             repo="pytorch/executorch",
@@ -611,7 +641,19 @@ class ExecutorchBenchmarkFetcher:
         s = s.replace(")-", ")").replace("-)", ")")
         return s
 
-    def filter_results(self, data: List, filters: BenchmarkFilters):
+    def filter_results(self, data: List[Dict[str, Any]], filters: BenchmarkFilters) -> List[Dict[str, Any]]:
+        """
+        Filter benchmark results based on specified criteria.
+
+        Applies OR logic for filtering - results match if they match any of the specified filters.
+
+        Args:
+            data: List of benchmark data dictionaries
+            filters: BenchmarkFilters object containing filter criteria
+
+        Returns:
+            Filtered list of benchmark data dictionaries
+        """
         backends = filters.backends
         devices = filters.devices
         models = filters.models

@@ -119,7 +119,7 @@ python .ci/scripts/benchmark_tooling/analyze_benchmark_stability.py \
 
 ## Running Unit Tests
 
-The benchmark tooling includes comprehensive unit tests to ensure functionality.
+The benchmark tooling includes unit tests to ensure functionality.
 
 ### Using pytest
 

@@ -1,10 +1,11 @@
 import json
 import os
+from typing import Any, Dict, List
 
 import pandas as pd
 
 
-def read_excel_with_json_header(path: str):
+def read_excel_with_json_header(path: str) -> List[Dict[str, Any]]:
     # Read all sheets into a dict of DataFrames, without altering
     all_sheets = pd.read_excel(path, sheet_name=None, header=None, engine="openpyxl")
 
@@ -21,7 +22,7 @@ def read_excel_with_json_header(path: str):
     return results
 
 
-def read_all_csv_with_metadata(folder_path: str):
+def read_all_csv_with_metadata(folder_path: str) -> List[Dict[str, Any]]:
     results = []  # {filename: {"meta": dict, "df": DataFrame}}
     for fname in os.listdir(folder_path):
         if not fname.lower().endswith(".csv"):
