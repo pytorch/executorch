@@ -13,7 +13,7 @@ set -eu
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 et_root_dir=$(realpath ${et_root_dir})
-toolchain_cmake=${script_dir}/../../../examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
+toolchain_cmake=${script_dir}/../../../examples/arm/ethos-u-setup/arm-zephyr-eabi-gcc.cmake
 toolchain_cmake=$(realpath ${toolchain_cmake})
 setup_path_script=${et_root_dir}/examples/arm/ethos-u-scratch/setup_path.sh
 _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."

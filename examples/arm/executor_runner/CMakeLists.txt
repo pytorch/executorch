@@ -23,6 +23,8 @@ if(NOT DEFINED ET_PTE_FILE_PATH AND NOT ${SEMIHOSTING})
   )
 endif()
 
+set(CMAKE_C_COMPILER arm-zephyr-eabi-gcc)
+set(CMAKE_CXX_COMPILER arm-zephyr-eabi-g++)
 # Example ExecuTorch demo for bare metal Cortex-M based systems
 set(ET_DIR_PATH
     "../../.."
