@@ -7,6 +7,7 @@ quantize_buffer:
     IN_DTYPE:
       - VALUE: half
       - VALUE: float
+      - VALUE: double
     OUT_DTYPE:
       - VALUE: uint8
       - VALUE: int8
