@@ -110,7 +110,7 @@ Tensor& glu_out_tensor(
         split_input.second_half,
         utils::SupportedTensorDtypes::FLOATHBF16,
         out,
-        utils::internal::SupportNoncontiguousTensors());
+        utils::internal::SupportNoncontiguousInputTensors());
   });
   return out;
 }

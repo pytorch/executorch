@@ -6,9 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <ATen/cpu/vec/functional.h>
+#include <ATen/cpu/vec/vec.h>
 #include <executorch/kernels/optimized/cpu/binary_ops.h>
-#include <executorch/kernels/optimized/vec/functional.h>
-#include <executorch/kernels/optimized/vec/vec.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -76,16 +76,16 @@ Tensor& opt_div_out(
           CTYPE_SCALAR scalar_val = *scalar->const_data_ptr<CTYPE_SCALAR>();
           CTYPE scalar_casted = static_cast<CTYPE>(scalar_val);
 
-          using Vec = executorch::vec::Vectorized<CTYPE>;
+          using Vec = at::vec::Vectorized<CTYPE>;
           if (a.numel() == 1) {
-            executorch::vec::map<CTYPE>(
+            at::vec::map<CTYPE>(
                 [scalar_casted](Vec x) { return Vec(scalar_casted) / x; },
                 out.mutable_data_ptr<CTYPE>(),
                 tensor->const_data_ptr<CTYPE>(),
                 out.numel());
           } else {
             Vec inv_scalar_casted_vec(CTYPE(1) / scalar_casted);
-            executorch::vec::map<CTYPE>(
+            at::vec::map<CTYPE>(
                 [inv_scalar_casted_vec](Vec x) {
                   return x * inv_scalar_casted_vec;
                 },
@@ -111,8 +111,8 @@ Tensor& opt_div_out(
         "Failed to resize output tensor.");
 
     ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "div.out", CTYPE, [&]() {
-      using Vec = executorch::vec::Vectorized<CTYPE>;
-      executorch::vec::map2<CTYPE>(
+      using Vec = at::vec::Vectorized<CTYPE>;
+      at::vec::map2<CTYPE>(
           [](Vec x, Vec y) { return x / y; },
           out.mutable_data_ptr<CTYPE>(),
           a.const_data_ptr<CTYPE>(),
@@ -198,9 +198,9 @@ Tensor& opt_div_scalar_out(
             ET_EXTRACT_SCALAR(b, b_val);
             CTYPE b_casted = static_cast<CTYPE>(b_val);
 
-            using Vec = executorch::vec::Vectorized<CTYPE>;
+            using Vec = at::vec::Vectorized<CTYPE>;
             Vec inv_b_casted_vec(CTYPE(1) / b_casted);
-            executorch::vec::map<CTYPE>(
+            at::vec::map<CTYPE>(
                 [inv_b_casted_vec](Vec x) { return x * inv_b_casted_vec; },
                 out.mutable_data_ptr<CTYPE>(),
                 a.const_data_ptr<CTYPE>(),

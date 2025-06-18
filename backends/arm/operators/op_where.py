@@ -13,6 +13,7 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_same_dtype,
+    validate_valid_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -42,14 +43,13 @@ class WhereVisitor_0_80_BI(NodeVisitor):
         validate_num_inputs(self.target, inputs, 3)
         # Not first input, which is condition tensor.
         validate_same_dtype(self.target, inputs[1:], ts)
-
-        if inputs[0].dtype is not ts.DType.BOOL:
-            raise ValueError("Input 0 needs to have dtype BOOL")
-        for input_ in inputs[1:]:
-            if input_.dtype not in supported_dtypes:
-                raise ValueError(
-                    f"Input needs to be of torch dtype {supported_dtypes}, got {input_.dtype}"
-                )
+        validate_valid_dtype(self.target, inputs[0], ts.DType.BOOL, output.tosa_spec)
+        validate_valid_dtype(
+            self.target,
+            [*inputs[1:], output],
+            supported_dtypes,
+            output.tosa_spec,
+        )
 
         tosa_graph.addOperator(
             ts.TosaOp.Op().SELECT,
@@ -129,14 +129,13 @@ class WhereVisitor_INT(NodeVisitor):
         validate_num_inputs(self.target, inputs, 3)
         # Not first input, which is condition tensor.
         validate_same_dtype(self.target, inputs[1:], ts)
-
-        if inputs[0].dtype is not ts.DType.BOOL:
-            raise ValueError("Input 0 needs to have dtype BOOL")
-        for input_ in inputs[1:]:
-            if input_.dtype not in supported_dtypes:
-                raise ValueError(
-                    f"Input needs to be of torch dtype {supported_dtypes}, got {input_.dtype}"
-                )
+        validate_valid_dtype(self.target, inputs[0], ts.DType.BOOL, output.tosa_spec)
+        validate_valid_dtype(
+            self.target,
+            [*inputs[1:], output],
+            supported_dtypes,
+            output.tosa_spec,
+        )
 
         tosa_graph.addOperator(
             ts.TosaOp.Op().SELECT,

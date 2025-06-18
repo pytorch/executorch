@@ -250,7 +250,7 @@ python3 -m examples.arm.aot_arm_compiler --model_name="add" --delegate
 ### Delegated Quantized Workflow
 Generating the `.pte` file can be done using the aot_arm_compiler:
 ```bash
-python3 -m examples.arm.aot_arm_compiler --model_name="mv2" --delegate --quantize"
+python3 -m examples.arm.aot_arm_compiler --model_name="mv2" --delegate --quantize
 # should produce ./mv2_arm_delegate_ethos-u55-128.pte
 ```
 
@@ -312,7 +312,7 @@ The SDK dir is the same one prepared [earlier](#setup-the-arm-ethos-u-software-d
 
 Note, you have to generate a new `executor-runner` binary if you want to change the model or the `.pte` file. This constraint is from the constrained bare-metal runtime environment you have for Corstone-300/Corstone-320 platforms.
 
-This is performed by the `backends/arm/scripts/build_executor_runner.sh` script runned from `run.sh`.
+This step is executed by the build_executor_runner.sh script, which is invoked from the run.sh in the backends/arm/scripts folder.
 
 ```{tip}
 The `run.sh` script takes in `--target` option, which provides a way to provide a specific target, Corstone-300(ethos-u55-128) or Corstone-320(ethos-u85-128)
@@ -320,17 +320,52 @@ The `run.sh` script takes in `--target` option, which provides a way to provide 
 
 ## Running on Corstone FVP Platforms
 
-Once the elf is prepared, regardless of the `.pte` file variant is used to generate the bare metal elf. `run.sh` will run the FVP for you via the `backends/arm/scripts/run_fvp.sh` script but you can also run it directly.
+Once the elf is prepared, regardless of the `.pte` file variant is used to generate the bare metal elf. `run.sh` will run the FVP for you via the `backends/arm/scripts/run_fvp.sh` script.
+
+#### Automatic FVP Selection 
+
+- To run a specific test model with the compiler flag and target 
+```bash
+./run.sh --model_name=mv2 --delegate --quantize --target=ethos-u85-128
+```
+
+- To run a specific test model and target 
+```bash
+./run.sh --model_name=mv2 --delegate --target=ethos-u85-128
+```
+
+- To run all the test models iteratively in a loop 
+```bash
+./run.sh --pte=mv2_arm_ethos_u55.pte --target=ethos-u55-128
+```
+
+Note that you could use `build_executor_runner.sh` and `run_fvp.sh` scripts in tandem by passing the relevant  --target argument (e.g., --target=ethos-u55-128), the correct FVP binary will be chosen automatically. For more details, see the [section on Runtime Integration](https://docs.pytorch.org/executorch/main/backends-arm-ethos-u.html#runtime-integration).
 
 
-The below command is used to run the [MV2Model](#mv2module) on Corstone-320 FVP
+#### Manual FVP Binary Selection
+
+- If you build for the Ethos delegate U55/U65 target (e.g., using --target=ethos-u55-128 or --target=ethos-u65-256 with `build_executor_runner.sh` and `run_fvp.sh`), you should use the corresponding FVP binary:
+  - For U55:
+    ```bash
+    examples/arm/ethos-u-scratch/FVP-corstone300/models/Linux64_GCC-9.3/FVP_Corstone_SSE-300_Ethos-U55
+    ```
+  - For U65:
+    ```bash
+    examples/arm/ethos-u-scratch/FVP-corstone300/models/Linux64_GCC-9.3/FVP_Corstone_SSE-300_Ethos-U65
+    ```
+- And say if you are not building for an Ethos target, use:
+  ```bash
+  examples/arm/ethos-u-scratch/FVP-corstone320/models/Linux64_GCC-9.3/FVP_Corstone_SSE-320
+  ```
+
+Following is an example usage:
 
 ```bash
 ethos_u_build_dir=examples/arm/executor_runner/
 
 elf=$(find ${ethos_u_build_dir} -name "arm_executor_runner")
 
-FVP_Corstone_SSE-320_Ethos-U85                          \
+FVP_Corstone_SSE-320                                    \
     -C mps4_board.subsystem.ethosu.num_macs=128         \
     -C mps4_board.visualisation.disable-visualisation=1 \
     -C vis_hdlcd.disable_visualisation=1                \
@@ -341,7 +376,8 @@ FVP_Corstone_SSE-320_Ethos-U85                          \
     --timelimit 120 || true # seconds- after which sim will kill itself
 ```
 
-If successful, the simulator should produce something like the following on the shell,
+#### Verification of Successful FVP Execution
+After running the FVP command, either automatically or manually, you should see output similar to the following on your shell if the execution is successful:
 
 ```console
 I [executorch:arm_executor_runner.cpp:364] Model in 0x70000000 $
