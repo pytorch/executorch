@@ -4,12 +4,15 @@ def get_preprocessor_flags(is_fbcode):
     flags = ["-DSTANDALONE_TORCH_HEADER"]
     if runtime.is_oss:
         return flags
-    arm64_flags = [
-        "-DCPU_CAPABILITY_DEFAULT",
-    ]
-    if is_fbcode:
-        # TODO: enable Sleef in xplat?
-        arm64_flags = arm64_flags + ["-DAT_BUILD_ARM_VEC256_WITH_SLEEF"]
+    # AT_BUILD_ARM_VEC256_WITH_SLEEF is off on Windows because Sleef
+    # is off on Windows per get_sleef_deps below.
+    arm64_flags = select({
+        "DEFAULT": [
+            "-DCPU_CAPABILITY_DEFAULT",
+            "-DAT_BUILD_ARM_VEC256_WITH_SLEEF",
+        ],
+        "ovr_config//os:windows": ["-DCPU_CAPABILITY_DEFAULT"],
+    })
 
     x86_avx2_flags = [
         "-DCPU_CAPABILITY_AVX2",
@@ -34,13 +37,16 @@ def get_sleef_deps():
     if runtime.is_oss:
         return []
     return select({
-        "DEFAULT": [],
-        "ovr_config//cpu:x86_64": [
-            "fbsource//third-party/sleef:sleef",
-        ],
-        "ovr_config//cpu:arm64": [
-            "fbsource//third-party/sleef:sleef",
-        ],
+        "DEFAULT": select({
+            "DEFAULT": [],
+            "ovr_config//cpu:x86_64": [
+                "fbsource//third-party/sleef:sleef",
+            ],
+            "ovr_config//cpu:arm64": [
+                "fbsource//third-party/sleef:sleef",
+            ],
+        }),
+        "ovr_config//os:windows": [],
     })
 
 def define_common_targets():
@@ -107,7 +113,7 @@ def define_common_targets():
             "//xplat/caffe2/c10:c10_headers",
             ("//xplat/caffe2:ovrsource_aten_Config.h"
             if is_arvr_mode() else "//xplat/caffe2:generated_aten_config_header"),
-        ], # + get_sleef_deps(), # TODO: enable Sleef in xplat?
+        ] + get_sleef_deps(),
         fbcode_exported_deps = ([
             "//caffe2:aten-headers-cpu",
             "//caffe2:generated-config-header",
