@@ -70,10 +70,11 @@ else()
 endif()
 
 add_library(custom_ops ${_custom_ops__srcs})
-
+find_package_torch_headers()
 target_include_directories(custom_ops PUBLIC "${_common_include_directories}")
 target_include_directories(
   custom_ops PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../include"
+                     ${TORCH_INCLUDE_DIRS}
 )
 target_link_libraries(custom_ops PUBLIC ${custom_ops_libs} executorch_core)
 
@@ -99,6 +100,7 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   )
   target_include_directories(
     custom_ops_aot_lib PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../include"
+                               ${TORCH_INCLUDE_DIRS}
   )
   # TODO: This only works if we install portable_lib.so to
   # <site-packages>/executorch/extension/pybindings/.

@@ -4,7 +4,20 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, Type, TypeVar
+
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import torch
 
@@ -89,6 +102,9 @@ class BasePipelineMaker(Generic[T]):
         exir_ops: Optional[str | List[str]] = None,
         use_to_edge_transform_and_lower: bool = True,
         dynamic_shapes: Optional[Tuple[Any]] = None,
+        transform_passes: Optional[
+            Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
+        ] = None,
     ):
 
         self.tester = ArmTester(
@@ -96,6 +112,7 @@ class BasePipelineMaker(Generic[T]):
             example_inputs=test_data,
             compile_spec=compile_spec,
             dynamic_shapes=dynamic_shapes,
+            transform_passes=transform_passes,
         )
 
         self.aten_ops = aten_ops if isinstance(aten_ops, list) else [aten_ops]
@@ -282,6 +299,7 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
         run_on_tosa_ref_model: bool = True,
         tosa_version: str = "TOSA-0.80+BI",
         symmetric_io_quantization: bool = False,
+        per_channel_quantization: bool = False,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
         atol: float = 1e-03,
@@ -298,16 +316,17 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
         compile_spec = common.get_tosa_compile_spec(
             tosa_profiles[tosa_version], custom_path=custom_path
         )
-        quant_stage = (
-            Quantize(
-                TOSAQuantizer(tosa_profiles[tosa_version]).set_io(
-                    get_symmetric_quantization_config()
-                ),
-                get_symmetric_quantization_config(),
+        if symmetric_io_quantization or per_channel_quantization:
+            quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
+            quantization_config = get_symmetric_quantization_config(
+                is_per_channel=per_channel_quantization
             )
-            if symmetric_io_quantization
-            else None
-        )
+            if symmetric_io_quantization:
+                quantizer.set_io(quantization_config)
+            quant_stage = Quantize(quantizer, quantization_config)
+        else:
+            quant_stage = None
+
         super().__init__(
             module,
             test_data,
@@ -388,6 +407,9 @@ class TosaPipelineMI(BasePipelineMaker, Generic[T]):
         rtol: float = 1e-03,
         qtol: int = 0,
         dynamic_shapes: Optional[Tuple[Any]] = None,
+        transform_passes: Optional[
+            Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
+        ] = None,
     ):
         tosa_profiles = {
             "0.80": TosaSpecification.create_from_string("TOSA-0.80+MI"),
@@ -405,7 +427,8 @@ class TosaPipelineMI(BasePipelineMaker, Generic[T]):
             compile_spec,
             exir_op,
             use_to_edge_transform_and_lower,
-            dynamic_shapes,
+            dynamic_shapes=dynamic_shapes,
+            transform_passes=transform_passes,
         )
         self.add_stage_after(
             "export",
@@ -451,6 +474,7 @@ class EthosU55PipelineBI(BasePipelineMaker, Generic[T]):
         exir_ops: Optional[str | List[str]] = None,
         run_on_fvp: bool = True,
         symmetric_io_quantization: bool = False,
+        per_channel_quantization: bool = False,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
         atol: float = 1e-03,
@@ -458,16 +482,17 @@ class EthosU55PipelineBI(BasePipelineMaker, Generic[T]):
         qtol: int = 1,
     ):
         compile_spec = common.get_u55_compile_spec(custom_path=custom_path)
-        quant_stage = (
-            Quantize(
-                EthosUQuantizer(compile_spec).set_io(
-                    get_symmetric_quantization_config()
-                ),
-                get_symmetric_quantization_config(),
+        if symmetric_io_quantization or per_channel_quantization:
+            quantizer = EthosUQuantizer(compile_spec)
+            quantization_config = get_symmetric_quantization_config(
+                is_per_channel=per_channel_quantization
             )
-            if symmetric_io_quantization
-            else None
-        )
+            if symmetric_io_quantization:
+                quantizer.set_io(quantization_config)
+            quant_stage = Quantize(quantizer, quantization_config)
+        else:
+            quant_stage = None
+
         super().__init__(
             module,
             test_data,
@@ -539,6 +564,7 @@ class EthosU85PipelineBI(BasePipelineMaker, Generic[T]):
         exir_ops: str | List[str] = None,
         run_on_fvp: bool = True,
         symmetric_io_quantization: bool = False,
+        per_channel_quantization: bool = False,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
         atol: float = 1e-03,
@@ -546,16 +572,17 @@ class EthosU85PipelineBI(BasePipelineMaker, Generic[T]):
         qtol: int = 1,
     ):
         compile_spec = common.get_u85_compile_spec(custom_path=custom_path)
-        quant_stage = (
-            Quantize(
-                EthosUQuantizer(compile_spec).set_io(
-                    get_symmetric_quantization_config()
-                ),
-                get_symmetric_quantization_config(),
+        if symmetric_io_quantization or per_channel_quantization:
+            quantizer = EthosUQuantizer(compile_spec)
+            quantization_config = get_symmetric_quantization_config(
+                is_per_channel=per_channel_quantization
             )
-            if symmetric_io_quantization
-            else None
-        )
+            if symmetric_io_quantization:
+                quantizer.set_io(quantization_config)
+            quant_stage = Quantize(quantizer, quantization_config)
+        else:
+            quant_stage = None
+
         super().__init__(
             module,
             test_data,
