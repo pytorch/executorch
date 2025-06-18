@@ -7,7 +7,6 @@ types (private and public), exporting results in various formats (JSON, DataFram
 and customizing data retrieval parameters.
 """
 
-from yaspin import yaspin
 import argparse
 import json
 import logging
@@ -21,6 +20,7 @@ from typing import Any, Dict, List
 
 import pandas as pd
 import requests
+from yaspin import yaspin
 
 logging.basicConfig(level=logging.INFO)
 
@@ -78,6 +78,13 @@ class MatchingGroupResult:
 
     category: str
     data: list
+
+
+@dataclass
+class BenchmarkFilters:
+    models: list
+    backends: list
+    devices: list
 
 
 BASE_URLS = {
@@ -156,19 +163,21 @@ class ExecutorchBenchmarkFetcher:
         self,
         start_time: str,
         end_time: str,
+        filters: BenchmarkFilters,
     ) -> None:
+        # reset group & raw data for new run
+        self.matching_groups = {}
+        self.data = None
+
         data = self._fetch_execu_torch_data(start_time, end_time)
         if data is None:
             logging.warning("no data fetched from the HUD API")
             return None
-
-        res = self._process(data)
+        res = self._process(data, filters)
         self.data = res.get("data", [])
         private_list = res.get("private", [])
         public_list = self._filter_public_result(private_list, res["public"])
 
-        # reset group
-        self.matching_groups = {}
         self.matching_groups["private"] = MatchingGroupResult(
             category="private", data=private_list
         )
@@ -456,13 +465,18 @@ class ExecutorchBenchmarkFetcher:
         if not self.data or not self.matching_groups:
             logging.info("No data found, please call get_data() first")
             return
-        logging.info(f" all clean benchmark table info from HUD")
+        logging.info(
+            "=========== Full list of table info from HUD API =============\n"
+            " please use values in field `info` for filtering, "
+            "while `groupInfo` holds the original benchmark metadata"
+        )
         names = []
         for item in self.data:
             names.append(
                 {
                     "table_name": item.get("table_name", ""),
-                    "groupInfo": item.get("groupInfo", ""),
+                    "groupInfo": item.get("groupInfo", {}),
+                    "info": item.get("info", {}),
                     "counts": len(item.get("rows", [])),
                 }
             )
@@ -492,7 +506,7 @@ class ExecutorchBenchmarkFetcher:
             # name = name +'(private)'
         return name
 
-    def _process(self, input_data: List[Dict[str, Any]]):
+    def _process(self, input_data: List[Dict[str, Any]], filters: BenchmarkFilters):
         """
         Process raw benchmark data.
 
@@ -509,9 +523,9 @@ class ExecutorchBenchmarkFetcher:
         # filter data with arch equal exactly "",ios and android, this normally indicates it's job-level falure indicator
         logging.info(f"fetched {len(input_data)} data from HUD")
         data = self._clean_data(input_data)
-
         private = []
         public = []
+
         for item in data:
             # normalized string values groupInfo to info
             item["info"] = {
@@ -528,17 +542,30 @@ class ExecutorchBenchmarkFetcher:
             # Mark aws_type: private or public
             if group.get("device", "").find("private") != -1:
                 item["info"]["aws_type"] = "private"
-                private.append(item)
             else:
                 item["info"]["aws_type"] = "public"
                 public.append(item)
-        data.sort(key=lambda x: x["table_name"])
-        private.sort(key=lambda x: x["table_name"])
-        public.sort(key=lambda x: x["table_name"])
+        raw_data = deepcopy(data)
+
+        # applies customized filters if any
+        data = self.filter_results(data, filters)
+        # generate private and public results
+        private = sorted(
+            (
+                item
+                for item in data
+                if item.get("info", {}).get("aws_type") == "private"
+            ),
+            key=lambda x: x["table_name"],
+        )
+        public = sorted(
+            (item for item in data if item.get("info", {}).get("aws_type") == "public"),
+            key=lambda x: x["table_name"],
+        )
         logging.info(
             f"fetched clean data {len(data)}, private:{len(private)}, public:{len(public)}"
         )
-        return {"data": data, "private": private, "public": public}
+        return {"data": raw_data, "private": private, "public": public}
 
     def _clean_data(self, data_list):
         removed_gen_arch = [
@@ -575,6 +602,7 @@ class ExecutorchBenchmarkFetcher:
 
     def normalize_string(self, s: str) -> str:
         s = s.lower().strip()
+        s = s.replace("+","plus")
         s = s.replace("_", "-")
         s = s.replace(" ", "-")
         s = re.sub(r"[^\w\-\.\(\)]", "-", s)
@@ -582,6 +610,37 @@ class ExecutorchBenchmarkFetcher:
         s = s.replace("-(", "(").replace("(-", "(")
         s = s.replace(")-", ")").replace("-)", ")")
         return s
+
+    def filter_results(self, data: List, filters: BenchmarkFilters):
+        backends = filters.backends
+        devices = filters.devices
+        models = filters.models
+
+        if not backends and not devices and not models:
+            return data
+        logging.info(
+            f"applies OR filter: backends {backends},  devices:{devices},models:{models} "
+        )
+        pre_len = len(data)
+        results = []
+        for item in data:
+            info = item.get("info", {})
+            if backends and info.get("backend") not in backends:
+                continue
+            if devices and not any(dev in info.get("device", "") for dev in devices):
+                continue
+            if models and info.get("model", "") not in models:
+                continue
+            results.append(item)
+        after_len = len(results)
+        logging.info(f"applied customized filter before: {pre_len}, after: {after_len}")
+        if after_len == 0:
+            logging.info(
+                "it seems like there is no result matches the filter values"
+                ", please run script --no-silent again, and search for values in field"
+                " 'info' for right format"
+            )
+        return results
 
 
 def argparsers():
@@ -622,7 +681,17 @@ def argparsers():
     parser.add_argument(
         "--outputDir", default=".", help="Output directory, default is ."
     )
-
+    parser.add_argument(
+        "--backends",
+        nargs="+",
+        help="Filter results by one or more backend full name(e.g. --backend qlora mv3) (OR logic)",
+    )
+    parser.add_argument(
+        "--devices",
+        nargs="+",
+        help="Filter results by device names (e.g. --devices samsung-galaxy-s22-5g)(OR logic)",
+    )
+    parser.add_argument("--models", nargs="+", help="Filter by models (OR logic)")
     return parser.parse_args()
 
 
@@ -632,6 +701,9 @@ if __name__ == "__main__":
     result = fetcher.run(
         args.startTime,
         args.endTime,
+        filters=BenchmarkFilters(
+            models=args.models, backends=args.backends, devices=args.devices
+        ),
     )
     if not args.silent:
         fetcher.print_all_groups_info()
