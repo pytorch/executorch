@@ -8,7 +8,6 @@ from .annotate_adaptive_avg_pool1d import AnnotateAdaptiveAvgPool1D
 from .annotate_quant_attrs import AnnotateQuantAttrs
 from .annotate_stack import AnnotateStack
 from .annotate_unbind import AnnotateUnbind
-from .convert_bmm_to_matmul import ConvertBmmToMatmul
 from .convert_conv1d_to_conv2d import ConvertConv1dToConv2d
 from .convert_square_to_pow import ConvertSquareToPow
 from .decompose_any import DecomposeAny
@@ -19,6 +18,7 @@ from .decompose_expm1 import DecomposeExpM1
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
 from .decompose_roll import DecomposeRoll
 from .decompose_silu import DecomposeSilu
+from .decompose_wrap_with_autocast import DecomposeWrapWithAutocast
 from .expand_broadcast_tensor_shape import ExpandBroadcastTensorShape
 from .fixed_linear_keep_dim import FixedLinearKeepDim
 from .fold_qdq import FoldQDQ
@@ -45,7 +45,6 @@ __all__ = [
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
-    ConvertBmmToMatmul,
     ConvertConv1dToConv2d,
     ConvertSquareToPow,
     DecomposeAny,
@@ -56,6 +55,7 @@ __all__ = [
     DecomposeLinalgVectorNorm,
     DecomposeRoll,
     DecomposeSilu,
+    DecomposeWrapWithAutocast,
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
     FoldQDQ,
