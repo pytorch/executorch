@@ -807,14 +807,19 @@ TEST(
 
 TEST(
     VulkanDequantizePerTensorTest,
-    test_vulkan_dequantize_per_tensor_int32_to_double) {
+    test_vulkan_dequantize_per_tensor_int8_to_double) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_dequantize_per_tensor(
-      {2, 4, 3}, // input sizes
-      0.0001, // scale
-      100, // zero_point
-      -2147483648, // quant_min
-      2147483647, // quant_max
-      at::kInt, // input dtype
+      {2, 3}, // input sizes
+      0.05, // scale
+      10, // zero_point
+      -128, // quant_min
+      127, // quant_max
+      at::kChar, // input dtype
       at::kDouble); // output dtype
 }
 
@@ -1316,16 +1321,21 @@ TEST(
 
 TEST(
     VulkanDequantizePerTokenTest,
-    test_vulkan_dequantize_per_token_int32_to_double) {
-  std::vector<float> scales = {0.0001, 0.0002, 0.0003, 0.0};
-  std::vector<int> zero_points = {100, -100, 50, -50};
+    test_vulkan_dequantize_per_token_int8_to_double) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  std::vector<float> scales = {0.05, 0.001};
+  std::vector<int> zero_points = {10, -5};
 
   test_vulkan_dequantize_per_token(
-      {2, 2, 8}, // input sizes (2*2=4 tokens)
+      {2, 2}, // input sizes (2 tokens)
       scales,
       zero_points,
-      -2147483648, // quant_min
-      2147483647, // quant_max
-      at::kInt, // input dtype
+      -128, // quant_min
+      127, // quant_max
+      at::kChar, // input dtype
       at::kDouble); // output dtype
 }
