@@ -174,14 +174,11 @@ class Conv2dPermute(torch.nn.Module):
 
 
 class Conv2dDQSeq(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, transpose=False):
         super().__init__()
-        self.first = torch.nn.Conv2d(
-            in_channels=3, out_channels=8, kernel_size=3, padding=1
-        )
-        self.second = torch.nn.Conv2d(
-            in_channels=8, out_channels=10, kernel_size=3, padding=1
-        )
+        op = torch.nn.ConvTranspose2d if transpose else torch.nn.Conv2d
+        self.first = op(in_channels=3, out_channels=8, kernel_size=3, padding=1)
+        self.second = op(in_channels=8, out_channels=10, kernel_size=3, padding=1)
 
     def forward(self, x):
         y = self.first(x)
@@ -192,14 +189,11 @@ class Conv2dDQSeq(torch.nn.Module):
 
 
 class Conv2dDQParallel(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, transpose=False):
         super().__init__()
-        self.first = torch.nn.Conv2d(
-            in_channels=3, out_channels=8, kernel_size=3, padding=1
-        )
-        self.second = torch.nn.Conv2d(
-            in_channels=3, out_channels=8, kernel_size=3, padding=1
-        )
+        op = torch.nn.ConvTranspose2d if transpose else torch.nn.Conv2d
+        self.first = op(in_channels=3, out_channels=8, kernel_size=3, padding=1)
+        self.second = op(in_channels=3, out_channels=10, kernel_size=3, padding=1)
 
     def forward(self, x):
         first = self.first(x)
@@ -266,8 +260,7 @@ class TestConv2d(unittest.TestCase):
         )
 
         DynamicallyQuantizedPartitioner = XnnpackPartitioner(
-            config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
-            per_op_mode=True,
+            config_precisions=ConfigPrecisionType.DYNAMIC_QUANT, per_op_mode=True
         )
 
         tester = Tester(m, m.get_inputs(), dynamic_shapes=dynamic_shapes)
@@ -349,11 +342,10 @@ class TestConv2d(unittest.TestCase):
             )
 
     def test_qs8_conv2d_depthwise(self):
-        for transpose in (True, False):
-            self._test(
-                Conv2d(groups=2, in_channels=2, out_channels=6, transpose=transpose),
-                quant_config=get_symmetric_quantization_config(),
-            )
+        self._test(
+            Conv2d(groups=2, in_channels=2, out_channels=6),
+            quant_config=get_symmetric_quantization_config(),
+        )
 
     def test_fp32_conv2d_bn(self):
         class Conv2dBatchNorm(torch.nn.Module):
@@ -515,17 +507,14 @@ class TestConv2d(unittest.TestCase):
             def get_inputs(self):
                 return (torch.randn(batches, in_channels, height, width) * 11,)
 
-        for transpose in (True, False):
-            for per_channel_quant in (False, True):
-                if transpose and per_channel_quant:
-                    continue
-                model = ModelConvReLU(transpose=transpose)
-                self._test(
-                    model,
-                    quant_config=get_symmetric_quantization_config(
-                        is_per_channel=per_channel_quant
-                    ),
-                )
+        for per_channel_quant in (False, True):
+            model = ModelConvReLU()
+            self._test(
+                model,
+                quant_config=get_symmetric_quantization_config(
+                    is_per_channel=per_channel_quant
+                ),
+            )
 
     def test_qs8_conv2d_relu_seq(self):
         class ConvReLUSeq(torch.nn.Module):
@@ -727,4 +716,32 @@ class TestConv2d(unittest.TestCase):
     def test_dq_conv2d_parallel(self) -> None:
         model = Conv2dDQParallel()
         conv_count = sum(1 for m in model.modules() if type(m) is torch.nn.Conv2d)
+        self._test_dq(model, conv_count)
+
+    def test_dq_conv2d_transpose(self) -> None:
+        model = Conv2d(
+            in_channels=3,
+            out_channels=10,
+            kernel_size=(3, 3),
+            stride=(1, 1),
+            padding=(0, 0),
+            batches=1,
+            width=8,
+            height=8,
+            transpose=True,
+        )
+        self._test_dq(model)
+
+    def test_dq_conv2d_transpose_seq(self) -> None:
+        model = Conv2dDQSeq(transpose=True)
+        conv_count = sum(
+            1 for m in model.modules() if type(m) is torch.nn.ConvTranspose2d
+        )
+        self._test_dq(model, conv_count)
+
+    def test_dq_conv2d_transpose_parallel(self) -> None:
+        model = Conv2dDQParallel(transpose=True)
+        conv_count = sum(
+            1 for m in model.modules() if type(m) is torch.nn.ConvTranspose2d
+        )
         self._test_dq(model, conv_count)
