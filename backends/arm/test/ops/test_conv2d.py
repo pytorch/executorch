@@ -384,6 +384,10 @@ fvp_xfails = {
     "2x2_3x2x40x40_nobias": "MLETORCH-520: Numerical issues on FVP.",
     "5x5_3x2x128x128_st1": "MLETORCH-520: Numerical issues on FVP.",
 }
+per_channel_quant_xfails = {
+    "groups": "MLETORCH-1144: Invalid TOSA Graph",
+    "groups_bias": "MLETORCH-1144: Invalid TOSA Graph",
+}
 input_t = Tuple[torch.Tensor]
 
 
@@ -398,7 +402,7 @@ def test_convolution_2d_tosa_MI(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules)
+@common.parametrize("test_module", test_modules, per_channel_quant_xfails)
 def test_convolution_2d_tosa_BI(test_module):
     pipeline = TosaPipelineBI[input_t](
         test_module(),
@@ -410,7 +414,7 @@ def test_convolution_2d_tosa_BI(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules, fvp_xfails)
+@common.parametrize("test_module", test_modules, fvp_xfails | per_channel_quant_xfails)
 @common.XfailIfNoCorstone300
 def test_convolution_2d_u55_BI(test_module):
     pipeline = EthosU55PipelineBI[input_t](
@@ -423,7 +427,7 @@ def test_convolution_2d_u55_BI(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules, fvp_xfails)
+@common.parametrize("test_module", test_modules, fvp_xfails | per_channel_quant_xfails)
 @common.XfailIfNoCorstone320
 def test_convolution_2d_u85_BI(test_module):
     pipeline = EthosU85PipelineBI[input_t](
