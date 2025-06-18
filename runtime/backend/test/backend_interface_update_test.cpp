@@ -22,7 +22,7 @@ using executorch::runtime::ArrayRef;
 using executorch::runtime::Error;
 using executorch::runtime::BackendExecutionContext;
 using executorch::runtime::EValue;
-using executorch::runtime::BackendUpdateContext;
+using executorch::runtime::BackendOptionContext;
 using executorch::runtime::BackendOption;
 using executorch::runtime::BackendOptions;
 using executorch::runtime::Backend;
@@ -55,7 +55,7 @@ class MockBackend : public BackendInterface {
       }
   
       Error set_option(
-          BackendUpdateContext& context,
+          BackendOptionContext& context,
           const executorch::runtime::Span<BackendOption>& backend_options) override {
           set_option_count++;
           int sucess_update = 0;
@@ -111,7 +111,7 @@ class MockBackend : public BackendInterface {
 };
 
 TEST_F(BackendInterfaceUpdateTest, HandlesInvalidOption) {
-  BackendUpdateContext context;
+  BackendOptionContext context;
   
   // Test invalid key case
   BackendOption invalid_option{
@@ -126,7 +126,7 @@ TEST_F(BackendInterfaceUpdateTest, HandlesInvalidOption) {
 }
 
  TEST_F(BackendInterfaceUpdateTest, HandlesStringOption) {
-  BackendUpdateContext context;
+  BackendOptionContext context;
   options.set_option(StrKey("Backend"), "GPU");  
   // // Create a backend option to pass to update
 
@@ -143,7 +143,7 @@ TEST_F(BackendInterfaceUpdateTest, HandlesIntOption) {
   // Check the default num_threads value is 0
   EXPECT_EQ(mock_backend->debug, false);
   // Create a mock context (needs to be defined or mocked)
-  BackendUpdateContext context;
+  BackendOptionContext context;
 
   int expected_num_threads = 4;
   
@@ -160,7 +160,7 @@ TEST_F(BackendInterfaceUpdateTest, HandlesBoolOption) {
   // Check the default num_threads value is 0
   EXPECT_EQ(mock_backend->debug, false);
   // Create a mock context (needs to be defined or mocked)
-  BackendUpdateContext context;
+  BackendOptionContext context;
   
   options.set_option(BoolKey("Debug"), true);  
   
@@ -175,7 +175,7 @@ TEST_F(BackendInterfaceUpdateTest, HandlesMultipleOptions) {
   // Check the default num_threads value is 0
   EXPECT_EQ(mock_backend->debug, false);
   // Create a mock context (needs to be defined or mocked)
-  BackendUpdateContext context;
+  BackendOptionContext context;
   
   options.set_option(BoolKey("Debug"), true);
   options.set_option(IntKey("NumberOfThreads"), 4);  
@@ -191,7 +191,7 @@ TEST_F(BackendInterfaceUpdateTest, HandlesMultipleOptions) {
 }
 
 TEST_F(BackendInterfaceUpdateTest, UpdateBeforeInit) {
-  BackendUpdateContext update_context;
+  BackendOptionContext option_context;
   MemoryAllocator memory_allocator{MemoryAllocator(0, nullptr)};
 
   BackendInitContext init_context(&memory_allocator);
@@ -200,7 +200,7 @@ TEST_F(BackendInterfaceUpdateTest, UpdateBeforeInit) {
   options.set_option(StrKey("Backend"), "GPU");
   
   // Update before init
-  Error err = mock_backend->set_option(update_context, options.view());
+  Error err = mock_backend->set_option(option_context, options.view());
   EXPECT_EQ(err, Error::Ok);
     
   // Now call init
@@ -218,7 +218,7 @@ TEST_F(BackendInterfaceUpdateTest, UpdateBeforeInit) {
 }
 
 TEST_F(BackendInterfaceUpdateTest, UpdateAfterInitBeforeExecute) {
-  BackendUpdateContext update_context;
+  BackendOptionContext option_context;
   MemoryAllocator init_memory_allocator{MemoryAllocator(0, nullptr)};
   BackendInitContext init_context(&init_memory_allocator);
   BackendExecutionContext execute_context;
@@ -235,7 +235,7 @@ TEST_F(BackendInterfaceUpdateTest, UpdateAfterInitBeforeExecute) {
   
   // Now update
   options.set_option(StrKey("Backend"), "CPU");
-  Error err = mock_backend->set_option(update_context, options.view());
+  Error err = mock_backend->set_option(option_context, options.view());
   EXPECT_EQ(err, Error::Ok);
   
   // Now execute
@@ -252,7 +252,7 @@ TEST_F(BackendInterfaceUpdateTest, UpdateAfterInitBeforeExecute) {
 }
 
 TEST_F(BackendInterfaceUpdateTest, UpdateBetweenExecutes) {
-  BackendUpdateContext update_context;
+  BackendOptionContext option_context;
   MemoryAllocator init_memory_allocator{MemoryAllocator(0, nullptr)};
   BackendInitContext init_context(&init_memory_allocator);
   BackendExecutionContext execute_context;
@@ -271,7 +271,7 @@ TEST_F(BackendInterfaceUpdateTest, UpdateBetweenExecutes) {
   
   // Update between executes
   options.set_option(StrKey("Backend"), "NPU");
-  err = mock_backend->set_option(update_context, options.view());
+  err = mock_backend->set_option(option_context, options.view());
   EXPECT_EQ(err, Error::Ok);
   
   // Second execute
