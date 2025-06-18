@@ -167,7 +167,7 @@ test_cmake_select_ops_in_model() {
     local example_dir=examples/selective_build
     local build_dir=cmake-out/${example_dir}
     rm -rf ${build_dir}
-    retry cmake -DCMAKE_BUILD_TYPE=Release \
+    retry cmake -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
             -DEXECUTORCH_SELECT_OPS_FROM_MODEL="./mv2.pte" \
             -DCMAKE_INSTALL_PREFIX=cmake-out \
             -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
@@ -175,7 +175,7 @@ test_cmake_select_ops_in_model() {
             ${example_dir}
 
     echo "Building ${example_dir}"
-    cmake --build ${build_dir} -j9 --config Release
+    cmake --build ${build_dir} -j9 --config $CMAKE_BUILD_TYPE
 
     echo 'Running selective build test'
     ${build_dir}/selective_build_test --model_path="./mv2.pte"
@@ -194,9 +194,14 @@ then
   PYTHON_EXECUTABLE=python3
 fi
 
+if [[ -z $CMAKE_BUILD_TYPE ]];
+then
+  CMAKE_BUILD_TYPE=Release
+fi
+
 if [[ $1 == "cmake" ]];
 then
-    cmake_install_executorch_lib
+    cmake_install_executorch_lib $CMAKE_BUILD_TYPE
     test_cmake_select_all_ops
     test_cmake_select_ops_in_list
     test_cmake_select_ops_in_yaml

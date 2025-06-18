@@ -14,9 +14,10 @@ nchw_to_image:
     DTYPE:
       - VALUE: half
       - VALUE: float
-      - VALUE: int
+      - VALUE: double
       - VALUE: int8
       - VALUE: uint8
+      - VALUE: int32
   shader_variants:
     - NAME: nchw_to_image_texture3d
     - NAME: nchw_to_image_texture2d

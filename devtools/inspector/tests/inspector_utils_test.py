@@ -29,6 +29,7 @@ from executorch.devtools.inspector._inspector_utils import (
     calculate_mse,
     calculate_snr,
     calculate_time_scale_factor,
+    convert_to_float_tensor,
     create_debug_handle_to_op_node_mapping,
     EDGE_DIALECT_GRAPH_KEY,
     find_populated_event,
@@ -316,6 +317,52 @@ class TestInspectorUtils(unittest.TestCase):
         )
         expected = {((1, 2, 3, 4, 5, 6), 300): ((2, 3, 4, 5, 6, 7), 350)}
         self.assertEqual(actual, expected)
+
+    def test_convert_input_to_tensor_convertible_inputs(self):
+        # Scalar -> tensor
+        actual_output1 = convert_to_float_tensor(5)
+        self.assertIsInstance(actual_output1, torch.Tensor)
+        self.assertEqual(actual_output1.dtype, torch.float64)
+        self.assertEqual(tuple(actual_output1.shape), ())
+        self.assertTrue(
+            torch.allclose(actual_output1, torch.tensor([5.0], dtype=torch.float64))
+        )
+        self.assertEqual(actual_output1.device.type, "cpu")
+
+        # Tensor of ints -> float32 CPU
+        t_int = torch.tensor([4, 5, 6], dtype=torch.int32)
+        actual_output2 = convert_to_float_tensor(t_int)
+        self.assertIsInstance(actual_output2, torch.Tensor)
+        self.assertEqual(actual_output2.dtype, torch.float64)
+        self.assertTrue(
+            torch.allclose(
+                actual_output2, torch.tensor([4.0, 5.0, 6.0], dtype=torch.float64)
+            )
+        )
+        self.assertEqual(actual_output2.device.type, "cpu")
+
+        # List of tensors -> stacked tensor float32 CPU
+        t_list = [torch.tensor([1, 2]), torch.tensor([2, 3]), torch.tensor([3, 4])]
+        actual_output3 = convert_to_float_tensor(t_list)
+        self.assertIsInstance(actual_output3, torch.Tensor)
+        self.assertEqual(actual_output3.dtype, torch.float64)
+        self.assertEqual(tuple(actual_output3.shape), (3, 2))
+        self.assertTrue(
+            torch.allclose(
+                actual_output3,
+                torch.tensor([[1.0, 2.0], [2.0, 3.0], [3.0, 4.0]], dtype=torch.float64),
+            )
+        )
+        self.assertEqual(actual_output3.device.type, "cpu")
+
+    def test_convert_input_to_tensor_non_convertible_raises(self):
+        class X:
+            pass
+
+        with self.assertRaises(ValueError) as cm:
+            convert_to_float_tensor(X())
+        msg = str(cm.exception)
+        self.assertIn("Cannot convert value of type", msg)
 
 
 def gen_mock_operator_graph_with_expected_map() -> (
