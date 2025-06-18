@@ -346,12 +346,20 @@ class ComputeGraph final {
     return values_.at(idx).toTensor().strides_ubo();
   }
 
+  inline vkapi::BufferBindInfo dim_order_ubo(const ValueRef idx) {
+    return values_.at(idx).toTensor().dim_order_ubo();
+  }
+
   inline vkapi::BufferBindInfo numel_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().numel_ubo();
   }
 
   inline bool has_standard_axis_map(const ValueRef idx) {
     return values_.at(idx).toTensor().has_standard_axis_map();
+  }
+
+  inline bool is_contiguous(const ValueRef idx) const {
+    return values_.at(idx).toTensor().is_contiguous();
   }
 
   inline vkapi::BufferBindInfo logical_limits_ubo(const ValueRef idx) {
@@ -361,6 +369,12 @@ class ComputeGraph final {
   inline PushConstantDataInfo sizes_pc_of(const ValueRef idx) const {
     return PushConstantDataInfo(
         values_.at(idx).toConstTensor().get_uniform_data(), api::kTensorSizes);
+  }
+
+  inline PushConstantDataInfo dim_order_pc_of(const ValueRef idx) const {
+    return PushConstantDataInfo(
+        values_.at(idx).toConstTensor().get_uniform_data(),
+        api::kTensorDimOrder);
   }
 
   inline PushConstantDataInfo strides_pc_of(const ValueRef idx) const {

@@ -9,9 +9,12 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import torch
-from executorch.backends.qualcomm.builders import node_visitor
+from executorch.backends.qualcomm.builders import node_visitor_manager
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
+from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
+    flatbuffer_to_option,
+)
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_AXIS_ORDER,
     QCOM_BYPASS_NODE,
@@ -48,7 +51,12 @@ class QnnOperatorSupport(OperatorSupportBase):
         skip_node_id_set: set = None,
         skip_node_op_set: set = None,
     ):
-        self.node_visitors = node_visitor.get_node_visitors(edge_program)
+        python_options = flatbuffer_to_option(compiler_specs[0].value)
+        self.node_visitors = node_visitor_manager.get_node_visitors(
+            edge_program,
+            op_package_infos=python_options.op_package_options.op_package_infos,
+        )
+
         self.skip_node_op_set = skip_node_op_set
         self.skip_node_id_set = skip_node_id_set
         self.nodes_to_wrappers = defaultdict(dict)

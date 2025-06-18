@@ -217,6 +217,7 @@ def _lower_ep_to_edge(
     expo_program: ExportedProgram,
     dump_graphs: bool = False,
     constant_methods: Optional[dict[str, object]] = None,
+    core_aten_exceptions: Optional[list[torch._ops.OpOverload]] = None,
 ) -> EdgeProgramManager:
     """
     Lower an ExportedProgram to an EdgeProgramManager (in edge IR).
@@ -237,7 +238,8 @@ def _lower_ep_to_edge(
                 torch.ops.aten.unfold.default,
                 torch.ops.aten.angle.default,
                 torch.ops.aten.rms_norm.default,
-            ],
+            ]
+            + (core_aten_exceptions or []),
         ),
         constant_methods=constant_methods,
         preserve_ops=(torch.ops.aten.rms_norm.default,),

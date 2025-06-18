@@ -259,14 +259,10 @@ TEST_F(VulkanComputeAPITest, calculate_tensor_strides_test) {
             /*allocate_memory = */ false);
 
         ASSERT_TRUE(new_v_tensor.strides() == ref_strides);
-        ASSERT_TRUE(
-            new_v_tensor.unsqueezed_strides() == ref_unsqueezed_strides);
 
         // Resize vtensor and check that updated metadata is correct
         v_tensor_to_resize.virtual_reconfigure(sizes, dim_order);
         ASSERT_TRUE(v_tensor_to_resize.strides() == ref_strides);
-        ASSERT_TRUE(
-            v_tensor_to_resize.unsqueezed_strides() == ref_unsqueezed_strides);
       }
     }
   }
@@ -1003,18 +999,14 @@ TEST_F(VulkanComputeAPITest, texture_virtual_resize) {
     b.virtual_resize(new_sizes);
     c.virtual_resize(new_sizes);
 
-    fill_staging(
-        staging_buffer_a, float(new_sizes[1] + 1.5f), a.staging_buffer_numel());
-    fill_staging(
-        staging_buffer_b,
-        float(new_sizes[2] + 55.0f),
-        b.staging_buffer_numel());
+    fill_staging(staging_buffer_a, float(new_sizes[1] + 1.5f), a.numel());
+    fill_staging(staging_buffer_b, float(new_sizes[2] + 55.0f), b.numel());
 
     submit_to_gpu();
     check_staging_buffer(
         staging_buffer_c,
         float(new_sizes[1] + new_sizes[2] + 56.5f),
-        c.staging_buffer_numel());
+        c.numel());
   }
 }
 
@@ -1096,7 +1088,6 @@ TEST_F(VulkanComputeAPITest, test_tensor_creation_from_vulkan_image) {
 
   const auto exp_numel = w * h * d * 4;
   EXPECT_TRUE(tensor.numel() == exp_numel);
-  EXPECT_TRUE(tensor.padded_numel() == exp_numel);
 }
 
 TEST(VulkanComputeGraphTest, test_values_scalars) {

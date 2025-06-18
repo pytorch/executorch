@@ -5,6 +5,8 @@
 
 from typing import Any, List, Optional
 
+from executorch.backends.arm.operators.node_visitor import NodeVisitor
+
 
 def validate_num_inputs(op_name: str, inputs: List[Any], expected: int | List[int]):
     """
@@ -107,6 +109,76 @@ def validate_same_dtype(op_name: str, tensors: List[Any], ts: Optional[Any] = No
             raise ValueError(
                 f"{op_name}: Expected all tensors to have dtype {ref_dtype_name}, but "
                 f"found inconsistent dtype {inconsistent_dtype_name}."
+            )
+
+
+def validate_valid_dtype(
+    op_name: str, tensors: Any | List[Any], valid_dtypes: Any | List[Any], tosa_spec
+):
+    """
+    Validates that one or more tensors have dtypes within a set of allowed dtypes.
+
+    This function checks whether the `dtype` attribute of the provided tensor(s) is one
+    of the valid dtype values. It supports checking a single tensor or a list of
+    tensors.
+
+    Parameters:
+    -----------
+    op_name : str
+        The name of the operation performing the validation.
+    tensors : Any or List[Any]
+        A tensor or list of tensors (each assumed to have `dtype` and `name` attributes)
+        whose dtype will be validated.
+    valid_dtypes : Any or List[Any]
+        A dtype enum or list of dtype enums representing allowed dtype values.
+    tosa_spec : Any
+        A TosaSpecification instance indicating which TOSA version is targeted. This
+        determines which serializer to use for dtype name resolution.
+
+    Raises:
+    -------
+    ValueError
+        If no tensors are provided, or if any tensor has a dtype not in `valid_dtypes`.
+
+    Example:
+    --------
+    # Example usage:
+    from executorch.backends.arm.operators.operator_validation_utils import (
+        validate_valid_dtype,
+    )
+
+    import serializer.tosa_serializer as ts
+
+    validate_valid_dtype(
+        self.target,
+        [*inputs, output],
+        [ts.DType.INT8, ts.DType.INT32],
+        output.tosa_spec,
+    )
+
+    """
+    if tosa_spec in NodeVisitor.tosa_specs_0_80:
+        import tosa_tools.v0_80.serializer.tosa_serializer as ts
+    else:
+        import serializer.tosa_serializer as ts
+
+    if not tensors:
+        raise ValueError(
+            f"{op_name}: Input tensor list is empty, cannot validate dtypes"
+        )
+
+    if not isinstance(valid_dtypes, List):
+        valid_dtypes = [valid_dtypes]
+
+    if not isinstance(tensors, List):
+        tensors = [tensors]
+
+    for tensor in tensors:
+        if tensor.dtype not in valid_dtypes:
+            raise ValueError(
+                f"Expected tensor {tensor.name} in {op_name} to have one of the "
+                f"following dtypes: {[ts.DTypeNames[i] for i in valid_dtypes]}, "
+                f"got: {ts.DTypeNames[tensor.dtype]}"
             )
 
 
