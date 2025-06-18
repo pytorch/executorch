@@ -19,7 +19,7 @@ python3 .ci/scripts/benchmark_tooling/get_benchmark_analysis_data.py --startTime
 ```
 
 Additional options:
-- `--silent`: Hide processing logs, show only results
+- `--not-silent`: show processing logs, otherwise only show results & minimum loggings
 - `--outputType df`: Display results in DataFrame format
 - `--outputType excel --outputDir "{YOUR_LOCAL_DIRECTORY}"`: Generate Excel file with multiple sheets (`res_private.xlsx` and `res_public.xlsx`)
 - `--outputType csv --outputDir "{YOUR_LOCAL_DIRECTORY}"`: Generate CSV files in folders (`private` and `public`)

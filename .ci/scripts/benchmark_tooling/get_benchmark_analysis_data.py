@@ -7,6 +7,7 @@ types (private and public), exporting results in various formats (JSON, DataFram
 and customizing data retrieval parameters.
 """
 
+from yaspin import yaspin
 import argparse
 import json
 import logging
@@ -211,10 +212,12 @@ class ExecutorchBenchmarkFetcher:
             set([item["table_name"] for item in private_list])
             & set([item["table_name"] for item in public_list])
         )
-        logging.info(
-            f"Found {len(common)} table names existed in both private and public, use it to filter public tables:"
-        )
-        logging.info(json.dumps(common, indent=1))
+
+        if not self.disable_logging:
+            logging.info(
+                f"Found {len(common)} table names existed in both private and public, use it to filter public tables:"
+            )
+            logging.info(json.dumps(common, indent=1))
         filtered_public = [item for item in public_list if item["table_name"] in common]
         return filtered_public
 
@@ -450,30 +453,21 @@ class ExecutorchBenchmarkFetcher:
         Separates results by category and displays counts.
         This is useful for debugging and understanding what data is available.
         """
-
         if not self.data or not self.matching_groups:
             logging.info("No data found, please call get_data() first")
             return
-
-        logging.info("peeking table result:")
-        logging.info(json.dumps(self.data[0], indent=2))
-
-        for item in self.matching_groups.values():
-            logging.info(f" all {item.category} benchmark results")
-            names = []
-            for row in item.data:
-                names.append(
-                    {
-                        "table_name": row["table_name"],
-                        "info": row["info"],
-                        "counts": len(row["rows"]),
-                    }
-                )
-            logging.info(
-                f"\n============ {item.category} benchmark results({len(names)})=================\n"
+        logging.info(f" all clean benchmark table info from HUD")
+        names = []
+        for item in self.data:
+            names.append(
+                {
+                    "table_name": item.get("table_name", ""),
+                    "groupInfo": item.get("groupInfo", ""),
+                    "counts": len(item.get("rows", [])),
+                }
             )
-            for name in names:
-                logging.info(json.dumps(name, indent=2))
+        for name in names:
+            logging.info(json.dumps(name, indent=2))
 
     def _generate_table_name(self, group_info: dict, fields: list[str]) -> str:
         name = "_".join(
@@ -568,13 +562,16 @@ class ExecutorchBenchmarkFetcher:
             group_row_by_fields=self.query_group_row_by_fields,
         )
         params = {k: v for k, v in params_object.__dict__.items() if v is not None}
-        response = requests.get(url, params=params)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            logging.info(f"Failed to fetch benchmark data ({response.status_code})")
-            logging.info(response.text)
-            return None
+        with yaspin(text="Waiting for response", color="cyan") as spinner:
+            response = requests.get(url, params=params)
+            if response.status_code == 200:
+                spinner.ok("V")
+                return response.json()
+            else:
+                logging.info(f"Failed to fetch benchmark data ({response.status_code})")
+                logging.info(response.text)
+                spinner.fail("x")
+                return None
 
     def normalize_string(self, s: str) -> str:
         s = s.lower().strip()
@@ -606,8 +603,14 @@ def argparsers():
     parser.add_argument(
         "--env", choices=["local", "prod"], default="prod", help="Environment"
     )
-    parser.add_argument("--silent", action="store_true", help="Disable logging")
 
+    parser.add_argument(
+        "--no-silent",
+        action="store_false",
+        dest="silent",
+        default=True,
+        help="Allow output (disable silent mode)",
+    )
     # Options for generate_data
     parser.add_argument(
         "--outputType",
@@ -615,7 +618,11 @@ def argparsers():
         default="print",
         help="Output format (only for generate_data)",
     )
-    parser.add_argument("--outputDir", default=".", help="Output directory")
+
+    parser.add_argument(
+        "--outputDir", default=".", help="Output directory, default is ."
+    )
+
     return parser.parse_args()
 
 
@@ -626,4 +633,6 @@ if __name__ == "__main__":
         args.startTime,
         args.endTime,
     )
+    if not args.silent:
+        fetcher.print_all_groups_info()
     fetcher.output_data(args.outputType, args.outputDir)
