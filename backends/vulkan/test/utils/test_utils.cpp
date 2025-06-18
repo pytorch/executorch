@@ -26,13 +26,14 @@ void record_nchw_to_buffer_op(
     vkapi::VulkanBuffer& src_buffer,
     api::vTensor& v_dst) {
   vkapi::PipelineBarrier pipeline_barrier{};
+  vkapi::SpecVarList specialization_constants = {v_dst.hashed_layout()};
 
   context->submit_compute_job(
       get_nchw_to_tensor_shader(v_dst, true, false),
       pipeline_barrier,
       {uint32_t(v_dst.numel()), 1, 1},
       {64, 1, 1},
-      {},
+      specialization_constants,
       VK_NULL_HANDLE,
       0,
       v_dst.buffer(

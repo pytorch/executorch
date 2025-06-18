@@ -16,6 +16,7 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_same_dtype,
+    validate_valid_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -45,12 +46,13 @@ class AbsVisitor_080_BI(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 1)
         validate_same_dtype(self.target, [*inputs, output], ts)
-
         # Handle int8 (quantized) and int32
-        if not (inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]):
-            raise ValueError(
-                "All inputs need to be INT8 or INT32." f"Got {inputs[0].dtype=}"
-            )
+        validate_valid_dtype(
+            self.target,
+            [*inputs, output],
+            [ts.DType.INT8, ts.DType.INT32],
+            output.tosa_spec,
+        )
 
         if inputs[0].dtype == ts.DType.INT8:
             rescaled_inputs, scale_back = tqutils.insert_rescale_ops_to_int32(
@@ -113,14 +115,9 @@ class AbsVisitor_080_MI(AbsVisitor_080_BI):
             super().define_node(node, tosa_graph, inputs, output)
         else:
             # FP32 Abs lowering
-
-            if not (inputs[0].dtype == ts.DType.FP32):
-                raise ValueError(
-                    "All inputs need to be FP32." f"Got {inputs[0].dtype=}"
-                )
-
-            if not (output.dtype == ts.DType.FP32):
-                raise ValueError("All outputs need to be FP32." f"Got {output.dtype=}")
+            validate_valid_dtype(
+                self.target, [*inputs, output], ts.DType.FP32, output.tosa_spec
+            )
 
             # MI lowering
             tosa_graph.addOperator(
@@ -156,10 +153,12 @@ class AbsVisitor_INT(NodeVisitor):
         validate_same_dtype(self.target, [*inputs, output], ts)
 
         # Handle int8 (quantized) and int32
-        if not (inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]):
-            raise ValueError(
-                "All inputs need to be INT8 or INT32." f"Got {inputs[0].dtype=}"
-            )
+        validate_valid_dtype(
+            self.target,
+            [*inputs, output],
+            [ts.DType.INT8, ts.DType.INT32],
+            output.tosa_spec,
+        )
 
         scale_back = 1.0
         if inputs[0].dtype == ts.DType.INT8:
@@ -224,13 +223,9 @@ class AbsVisitor_FP(AbsVisitor_INT):
         else:
             # FP32 Abs lowering
 
-            if not (inputs[0].dtype == ts.DType.FP32):
-                raise ValueError(
-                    "All inputs need to be FP32." f"Got {inputs[0].dtype=}"
-                )
-
-            if not (output.dtype == ts.DType.FP32):
-                raise ValueError("All outputs need to be FP32." f"Got {output.dtype=}")
+            validate_valid_dtype(
+                self.target, [*inputs, output], ts.DType.FP32, output.tosa_spec
+            )
 
             # MI lowering
             tosa_graph.addOperator(

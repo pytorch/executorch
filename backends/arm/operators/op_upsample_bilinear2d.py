@@ -15,6 +15,7 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_same_dtype,
+    validate_valid_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import build_rescale, build_rescale_v0_80
@@ -42,6 +43,12 @@ class UpsampleBilinear2dVisitor_0_80(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 4)
         validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_valid_dtype(
+            self.target,
+            [inputs[0], output],
+            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
         if inputs[0].shape is None or output.shape is None:
             raise ValueError("Only static shapes are supported")
@@ -103,8 +110,8 @@ class UpsampleBilinear2dVisitor_0_80(NodeVisitor):
                 input_node=intermediate,
                 output_name=output.name,
                 output_type=ts.DType.INT8,
-                input_zp=0,
-                output_zp=0,
+                input_zp=[0],
+                output_zp=[0],
                 is_double_round=False,
             )
         else:
@@ -135,6 +142,12 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 4)
         validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_valid_dtype(
+            self.target,
+            [inputs[0], output],
+            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
         if inputs[0].shape is None or output.shape is None:
             raise ValueError("Only static shapes are supported")
@@ -219,8 +232,8 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
                 input_node=intermediate,
                 output_name=output.name,
                 output_type=ts.DType.INT8,
-                input_zp=0,
-                output_zp=0,
+                input_zp=[0],
+                output_zp=[0],
                 rounding_mode=RoundingMode.SINGLE_ROUND,
             )
         else:
