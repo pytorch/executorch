@@ -456,7 +456,7 @@ class ExecutorchBenchmarkFetcher:
         }
         return base_urls[self.env]
 
-    def print_all_groups_info(self) -> None:
+    def print_all_table_info(self) -> None:
         """
         Print all benchmark table group info found in the data.
         Separates results by category and displays counts.
@@ -670,6 +670,13 @@ def argparsers():
         default=True,
         help="Allow output (disable silent mode)",
     )
+
+    parser.add_argument(
+        "--print-all-table-info",
+        action="store_true",
+        help="Print all table info for debugging",
+    )
+
     # Options for generate_data
     parser.add_argument(
         "--outputType",
@@ -689,9 +696,11 @@ def argparsers():
     parser.add_argument(
         "--devices",
         nargs="+",
-        help="Filter results by device names (e.g. --devices samsung-galaxy-s22-5g)(OR logic)",
+        help="Filter results by one or more device names (e.g. --devices samsung-galaxy-s22-5g)(OR logic)",
     )
-    parser.add_argument("--models", nargs="+", help="Filter by models (OR logic)")
+    parser.add_argument(
+        "--models", nargs="+", help="Filter by one or more models (OR logic)"
+    )
     return parser.parse_args()
 
 
@@ -705,6 +714,6 @@ if __name__ == "__main__":
             models=args.models, backends=args.backends, devices=args.devices
         ),
     )
-    if not args.silent:
-        fetcher.print_all_groups_info()
+    if args.print_all_table_info:
+        fetcher.print_all_table_info()
     fetcher.output_data(args.outputType, args.outputDir)

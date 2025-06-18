@@ -30,21 +30,24 @@ python3 .ci/scripts/benchmark_tooling/get_benchmark_analysis_data.py \
 - `--startTime`: Start time in ISO format (e.g., "2025-06-11T00:00:00") (required)
 - `--endTime`: End time in ISO format (e.g., "2025-06-17T18:00:00") (required)
 - `--env`: Choose environment ("local" or "prod", default: "prod")
-- `--not-silent`: Show processing logs (default: only show results & minimum logging)
+- `--no-silent`: Show processing logs (default: only show results & minimum logging)
+- `print-all-table-info`: show all cleaned table infos, this helps user to pick the correct format of filters
 
 ##### Output Options:
 - `--outputType`: Choose output format (default: "print")
   - `print`: Display results in console
   - `json`: Generate JSON file
   - `df`: Display results in DataFrame format
-  - `excel`: Generate Excel files with multiple sheets
-  - `csv`: Generate CSV files in separate folders
+  - `excel`: Generate Excel files with multiple sheets, the field in first row and first column contains the json string of the raw metadata
+  - `csv`: Generate CSV files in separate folders, the field in first row and first column contains the json string of the raw metadata
 - `--outputDir`: Directory to save output files (default: current directory)
 
 ##### Filtering Options:
+Notice, the filter needs full name matchings with correct format, to see all the options of the filter choices, please run the script with `--print-all-table-info`, and pay attention to section `Full list of table info from HUD API` with the field 'info', which contains normalized data we use to filter records from the original metadata 'groupInfo'.
+
 - `--devices`: Filter by specific device names (e.g., "samsung-galaxy-s22-5g", "samsung-galaxy-s22plus-5g")
-- `--backends`: Filter by specific backend names
-- `--models`: Filter by specific model names
+- `--backends`: Filter by specific backend names (e.g.,  "qnn-q8" , ""llama3-spinquan)
+- `--models`: Filter by specific model names (e.g "mv3" "meta-llama-llama-3.2-1b-instruct-qlora-int4-eo8")
 
 #### Working with Output Files
 
