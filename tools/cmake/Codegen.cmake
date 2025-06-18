@@ -24,7 +24,7 @@ function(gen_selected_ops)
   message(STATUS "  DTYPE_SELECTIVE_BUILD: ${GEN_DTYPE_SELECTIVE_BUILD}")
 
   if(GEN_DTYPE_SELECTIVE_BUILD)
-    if (NOT GEN_OPS_FROM_MODEL)
+    if(NOT GEN_OPS_FROM_MODEL)
       message(FATAL_ERROR "  DTYPE_SELECTIVE_BUILD is only support with model API, please pass in a model")
     endif()
   endif()
