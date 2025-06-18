@@ -26,6 +26,7 @@ def define_common_targets():
         visibility = [
             "//executorch/backends/...",
             "//executorch/extension/fb/dynamic_shim/...",
+            "//executorch/kernels/portable/cpu/...",
             "//executorch/runtime/core/exec_aten/...",
             "//executorch/runtime/core/portable_type/test/...",
         ],
