@@ -139,7 +139,10 @@ void dequantize_per_tensor() {
   [[unroll]] for (int i = 0; i < 4; ++i) {
     IN_T qvalue = IN_T(intex[i]);
     OUT_T value = dequantize_val(qvalue, scale, zero_point);
-    outtex[i] = value;
+    $if OUT_DTYPE == "double":
+      outtex[i] = float(value);
+    $else:
+      outtex[i] = value;
   }
   write_texel(t_out, pos, outtex);
 }
@@ -177,7 +180,10 @@ void dequantize_per_token() {
   [[unroll]] for (int i = 0; i < 4; ++i) {
     IN_T qvalue = IN_T(intex[i]);
     OUT_T value = dequantize_val(qvalue, scale_val, zero_point_val);
-    outtex[i] = value;
+    $if OUT_DTYPE == "double":
+      outtex[i] = float(value);
+    $else:
+      outtex[i] = value;
   }
 
   write_texel(t_out, pos, outtex);
