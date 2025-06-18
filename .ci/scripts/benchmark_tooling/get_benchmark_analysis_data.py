@@ -72,7 +72,7 @@ class MatchingGroupResult:
     Container for benchmark results grouped by category.
 
     Attributes:
-        category: Category name (e.g., "private", "public")
+        category: Category name (e.g., 'private', 'public')
         data: List of benchmark data for this category
     """
 
@@ -135,7 +135,7 @@ class ExecutorchBenchmarkFetcher:
         Initialize the ExecutorchBenchmarkFetcher.
 
         Args:
-            env: Environment to use ("local" or "prod")
+            env: Environment to use ('local' or 'prod')
             disable_logging: Whether to suppress log output
             group_table_fields: Custom fields to group tables by (defaults to device, backend, arch, model)
             group_row_fields: Custom fields to group rows by (defaults to workflow_id, job_id, granularity_bucket)
@@ -163,7 +163,7 @@ class ExecutorchBenchmarkFetcher:
         self,
         start_time: str,
         end_time: str,
-        filters: BenchmarkFilters,
+        filters: Optional[BenchmarkFilters] = None,
     ) -> None:
         # reset group & raw data for new run
         self.matching_groups = {}
@@ -398,7 +398,7 @@ class ExecutorchBenchmarkFetcher:
         Each DataFrame represents one benchmark configuration.
 
         Returns:
-            Dictionary mapping categories ['private','public'] to lists of DataFrames "df" with metadata "groupInfo".
+            Dictionary mapping categories ['private','public'] to lists of DataFrames "df" with metadata 'groupInfo'.
 
         """
         result = {}
@@ -476,11 +476,7 @@ class ExecutorchBenchmarkFetcher:
         Returns:
             Base URL string for the configured environment
         """
-        base_urls = {
-            "local": "http://localhost:3000",
-            "prod": "https://hud.pytorch.org",
-        }
-        return base_urls[self.env]
+        return BASE_URLS[self.env]
 
     def print_all_table_info(self) -> None:
         """
@@ -509,7 +505,9 @@ class ExecutorchBenchmarkFetcher:
         for name in names:
             logging.info(json.dumps(name, indent=2))
 
-    def _generate_table_name(self, group_info: Dict[str, Any], fields: List[str]) -> str:
+    def _generate_table_name(
+        self, group_info: Dict[str, Any], fields: List[str]
+    ) -> str:
         """
         Generate a table name from group info fields.
 
@@ -531,7 +529,6 @@ class ExecutorchBenchmarkFetcher:
             name = name.replace("(private)", "")
         return name
 
-
     def _generate_matching_name(self, group_info: dict, fields: list[str]) -> str:
         info = deepcopy(group_info)
         name = "_".join(
@@ -543,7 +540,7 @@ class ExecutorchBenchmarkFetcher:
         return name
 
     def _process(
-        self, input_data: List[Dict[str, Any]], filters: BenchmarkFilters
+        self, input_data: List[Dict[str, Any]], filters: Optional[BenchmarkFilters]
     ) -> Dict[str, Any]:
         """
         Process raw benchmark data.
@@ -576,7 +573,6 @@ class ExecutorchBenchmarkFetcher:
             item["table_name"] = self._generate_table_name(
                 group, self.query_group_table_by_fields
             )
-
             # Mark aws_type: private or public
             if group.get("device", "").find("private") != -1:
                 item["info"]["aws_type"] = "private"
@@ -586,7 +582,8 @@ class ExecutorchBenchmarkFetcher:
         raw_data = deepcopy(data)
 
         # applies customized filters if any
-        data = self.filter_results(data, filters)
+        if filters:
+            data = self.filter_results(data, filters)
         # generate private and public results
         private = sorted(
             (
@@ -651,7 +648,9 @@ class ExecutorchBenchmarkFetcher:
         s = s.replace(")-", ")").replace("-)", ")")
         return s
 
-    def filter_results(self, data: List[Dict[str, Any]], filters: BenchmarkFilters) -> List[Dict[str, Any]]:
+    def filter_results(
+        self, data: List[Dict[str, Any]], filters: BenchmarkFilters
+    ) -> List[Dict[str, Any]]:
         """
         Filter benchmark results based on specified criteria.
 
