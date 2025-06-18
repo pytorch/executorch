@@ -38,13 +38,15 @@ class TokenGenerator {
       std::unique_ptr<std::unordered_set<uint64_t>>&& eos_ids,
       Metadata metadata,
       executorch::llm::Stats* stats);
+
+  virtual ~TokenGenerator() = default;
   /**
    * @brief Initialize I/O tensor and allocate I/O data buffer.
    * @param buffer_manager Pointer to IMemAlloc instance which depends on
    * kv_updater.
    * @param method_meta Method metadata.
    */
-  void init_io(
+  virtual void init_io(
       IMemAlloc* buffer_manager,
       executorch::runtime::Result<executorch::runtime::MethodMeta> method_meta);
 
@@ -56,7 +58,7 @@ class TokenGenerator {
      * @param token_callback Callback function for generated tokens.
      * @return The number of tokens generated.
      */
-  executorch::runtime::Result<int64_t> generate(
+  virtual executorch::runtime::Result<int64_t> generate(
       std::vector<uint64_t> tokens,
       int64_t start_pos,
       int32_t seq_len,
@@ -66,22 +68,12 @@ class TokenGenerator {
         logits_.size;
   }
 
- private:
-  /**
-   * @brief Fill in I/O buffers with prompt token and position.
-   * @param cur_token Current token.
-   * @param start_pos Starting position.
-   */
-  void prepare_io(uint64_t cur_token, int64_t start_pos);
-
+ protected:
   tokenizers::Tokenizer* tokenizer_;
   DecoderRunner* decoder_runner_;
   KVManager* kv_manager_;
   std::string method_name_;
   std::unique_ptr<std::unordered_set<uint64_t>> eos_ids_;
-
-  // metadata
-  Metadata metadata_;
 
   // inputs and outputs
   TensorStruct<int64_t> input_toks_;
@@ -105,5 +97,16 @@ class TokenGenerator {
 
   // stats
   executorch::llm::Stats* stats_;
+
+ private:
+  /**
+   * @brief Fill in I/O buffers with prompt token and position.
+   * @param cur_token Current token.
+   * @param start_pos Starting position.
+   */
+  void prepare_io(uint64_t cur_token, int64_t start_pos);
+
+  // metadata
+  Metadata metadata_;
 };
 } // namespace example

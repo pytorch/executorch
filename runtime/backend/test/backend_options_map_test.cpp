@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/runtime/backend/backend_options.h>
-#include <executorch/runtime/backend/backend_options_map.h>
+#include <executorch/runtime/backend/options.h>
+#include <executorch/runtime/backend/options_map.h>
 #include <executorch/runtime/platform/runtime.h>
 
 #include <gtest/gtest.h>

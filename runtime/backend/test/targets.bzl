@@ -20,7 +20,7 @@ def define_common_targets():
         srcs = ["backend_options_map_test.cpp"],
         deps = [
             "//executorch/runtime/core:core",
-            "//executorch/runtime/backend:backend_options_map",
+            "//executorch/runtime/backend:options_map",
         ],
     )
 

@@ -6,7 +6,6 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
-
 from executorch.backends.arm._passes import (
     AnnotateChannelsLastDimOrder,
     AnnotateDecomposedMatmulPass,
@@ -26,12 +25,14 @@ from executorch.backends.arm._passes import (
     ConvertToClampPass,
     DecomposeCosineSimilarityPass,
     DecomposeDivPass,
+    DecomposeEmbeddingPass,
     DecomposeGeluPass,
     DecomposeGroupNormPass,
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
     DecomposeLinearPass,
     DecomposeLinearVectorNormPass,
+    DecomposeMaxPool2DPass,
     DecomposeMeanDimPass,
     DecomposeNotEqualPass,
     DecomposeSelectPass,
@@ -46,6 +47,7 @@ from executorch.backends.arm._passes import (
     FuseConstantArgsPass,
     FuseEqualPlaceholdersPass,
     FuseQuantizedActivationPass,
+    InsertCastForOpsWithInt64InputPass,
     InsertRescalePass,
     InsertTableOpsPass,
     MatchArgRanksPass,
@@ -91,7 +93,6 @@ class ArmPassManager(PassManager):
         self.add_pass(RemoveGetItemPass())
         self.add_pass(ConvertSplitToSlicePass())
         self.add_pass(ConvertMmToBmmPass())
-        self.add_pass(DecomposeLinearPass())
         self.add_pass(DecomposeLinearVectorNormPass())
         self.add_pass(
             DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec)
@@ -107,12 +108,13 @@ class ArmPassManager(PassManager):
         self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
-        self.add_pass(FoldAndAnnotateQParamsPass())  # type: ignore[call-arg]
+        self.add_pass(FoldAndAnnotateQParamsPass(exported_program))  # type: ignore[call-arg]
         self.add_pass(RetraceFoldedDtypesPass())
         self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
         self.add_pass(MatchArgRanksPass(exported_program))
         if self.tosa_spec.is_U55_subset:
             self.add_pass(BroadcastArgsPass())
+        self.add_pass(DecomposeLinearPass())
         self.add_pass(ComputeConstantOpsAOT(exported_program))
 
         self.add_pass(RemoveClonePass())
@@ -122,6 +124,7 @@ class ArmPassManager(PassManager):
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(DecomposeSumPass())
         self.add_pass(Conv1dUnsqueezePass())
+        self.add_pass(DecomposeMaxPool2DPass())
         self.add_pass(DecomposeSelectPass())
         self.add_pass(ConvertSqueezesToViewPass())
 
@@ -139,6 +142,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(ConvertIntPowToMuls())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSAMI())
+        self.add_pass(DecomposeEmbeddingPass())
         self.add_pass(FuseQuantizedActivationPass())
         self.add_pass(RemoveGetItemPass())
         self.add_pass(ConvertSplitToSlicePass())
@@ -164,7 +168,7 @@ class ArmPassManager(PassManager):
 
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
-        self.add_pass(FoldAndAnnotateQParamsPass())  # type: ignore[call-arg]
+        self.add_pass(FoldAndAnnotateQParamsPass(exported_program))  # type: ignore[call-arg]
         self.add_pass(RetraceFoldedDtypesPass())
         self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
         self.add_pass(MatchArgRanksPass(exported_program))
@@ -177,6 +181,7 @@ class ArmPassManager(PassManager):
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(DecomposeSumPass())
         self.add_pass(Conv1dUnsqueezePass())
+        self.add_pass(DecomposeMaxPool2DPass())
         self.add_pass(DecomposeSelectPass())
         self.add_pass(ConvertSqueezesToViewPass())
 
@@ -211,6 +216,8 @@ class ArmPassManager(PassManager):
             )
 
     def transform_for_annotation_pipeline(self, graph_module: GraphModule):
+        self.add_pass(InsertCastForOpsWithInt64InputPass())
+        self.add_pass(DecomposeEmbeddingPass())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(ScalarsToAttributePass())
