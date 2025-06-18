@@ -47,7 +47,7 @@ def main(args):
 
     # Get the Roberta model.
     model = get_instance(args)
-    pte_filename = "roberta_qnn"
+    pte_filename = "roberta_qnn_q16"
 
     # lower to QNN
     passes_job = get_capture_program_passes()
@@ -137,7 +137,7 @@ if __name__ == "__main__":
         "-a",
         "--artifact",
         help="path for storing generated artifacts and output by this example. Default ./Roberta_qnn",
-        default="./Roberta_qnn",
+        default="./roberta",
         type=str,
     )
     parser.add_argument(
