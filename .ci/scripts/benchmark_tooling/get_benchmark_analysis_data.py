@@ -509,7 +509,19 @@ class ExecutorchBenchmarkFetcher:
         for name in names:
             logging.info(json.dumps(name, indent=2))
 
-    def _generate_table_name(self, group_info: dict, fields: list[str]) -> str:
+    def _generate_table_name(self, group_info: Dict[str, Any], fields: List[str]) -> str:
+        """
+        Generate a table name from group info fields.
+
+        Creates a normalized string by joining specified fields from group info.
+
+        Args:
+            group_info: Dictionary containing group information
+            fields: List of field names to include in the table name
+
+        Returns:
+            Normalized table name string
+        """
         name = "_".join(
             self.normalize_string(group_info[k])
             for k in fields
@@ -519,8 +531,6 @@ class ExecutorchBenchmarkFetcher:
             name = name.replace("(private)", "")
         return name
 
-    def simplify_ios(self, s: str) -> str:
-        return s.split(".")[0]
 
     def _generate_matching_name(self, group_info: dict, fields: list[str]) -> str:
         info = deepcopy(group_info)
