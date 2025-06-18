@@ -231,7 +231,7 @@ Result<int64_t> TokenGenerator::generate(
     stats_->on_sampling_end();
 
     // Update KV Cache with the output results
-    kv_manager_->update_cache(metadata_.ar_len, pos, metadata_.ar_len);
+    kv_manager_->update_cache(metadata_.ar_len, pos, metadata_.ar_len, {});
     // Update attention mask with current position
     kv_manager_->update_attention_mask(
         attention_mask_.data, metadata_.ar_len, pos, metadata_.ar_len);

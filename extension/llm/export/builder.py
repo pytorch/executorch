@@ -133,6 +133,19 @@ class LLMEdgeManager:
         self.output_dir = "."
         self._saved_pte_filename = None
 
+    def __post_init__(self):
+        """
+        Post init function to update metadata based on dynamic shape
+        """
+        dynamic_shape = self._get_dynamic_shape()
+        if dynamic_shape is not None:
+            token_dim = dynamic_shape[0][1]
+            if self.verbose:
+                logging.info(
+                    f"Metadata 'get_max_seq_len' is being updated to match torch.export's dynamic shape max: {token_dim.max}"
+                )
+            self.metadata["get_max_seq_len"] = token_dim.max
+
     def set_output_dir(self, output_dir: str) -> "LLMEdgeManager":
         """
         Set the directory where the .pte file will be saved.
@@ -180,14 +193,19 @@ class LLMEdgeManager:
         if self.dynamic_shapes:
             return self.dynamic_shapes
 
-        dim = torch.export.Dim("token_dim", max=self.max_seq_len - 1)
         if self.enable_dynamic_shape:
             if not self.use_kv_cache:
                 # Only one input argument: tokens
-                self.dynamic_shapes = ({1: dim},)
+                # Here we -1 due to export limitation: https://gist.github.com/larryliu0820/419022a57e24d5e64150e325a685eaad
+                self.dynamic_shapes = (
+                    {1: torch.export.Dim("token_dim", max=self.max_seq_len - 1)},
+                )
             else:
                 # Two input arguments: tokens and input_pos but input_pos is static shape
-                self.dynamic_shapes = ({1: dim}, {"input_pos": {0: 1}})
+                self.dynamic_shapes = (
+                    {1: torch.export.Dim("token_dim", max=self.max_seq_len)},
+                    {"input_pos": {0: 1}},
+                )
         else:
             # Two input arguments: tokens and input_pos but both are of static shape
             self.dynamic_shapes = None

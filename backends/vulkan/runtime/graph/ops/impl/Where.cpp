@@ -54,7 +54,7 @@ void add_where_texture_node(
       // Push Constants
       {},
       // Specialization Constants
-      {graph.packed_dim_of(out)},
+      {graph.hashed_layout_of(out)},
       // Resize Arguments
       {},
       // Resizing Logic
@@ -96,10 +96,7 @@ void add_where_buffer_node(
       // Push Constants
       {},
       // Specialization Constants
-      {graph.packed_dim_of(out),
-       graph.packed_dim_of(cond),
-       graph.packed_dim_of(self),
-       graph.packed_dim_of(other)},
+      {graph.hashed_layout_of(out)},
       // Resize Arguments
       {},
       // Resizing Logic

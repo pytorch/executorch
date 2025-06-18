@@ -55,7 +55,6 @@ void add_transfer_copy_node(
   } transfer_params{static_cast<int32_t>(dim_whcn)};
 
   std::vector<PushConstantDataInfo> push_constants;
-  vkapi::SpecVarList spec_vars;
 
   if (graph.is_buffer_storage(out)) {
     push_constants = {
@@ -64,22 +63,17 @@ void add_transfer_copy_node(
         graph.strides_pc_of(in),
         graph.numel_pc_of(out),
         PushConstantDataInfo(&transfer_params, sizeof(transfer_params))};
-
-    spec_vars = {
-        graph.packed_dim_of(out),
-        graph.packed_dim_of(in),
-    };
   } else {
     push_constants = {
         graph.sizes_pc_of(out),
         graph.sizes_pc_of(in),
         PushConstantDataInfo(&transfer_params, sizeof(transfer_params))};
-
-    spec_vars = {
-        graph.hashed_layout_of(out),
-        graph.hashed_layout_of(in),
-    };
   }
+
+  vkapi::SpecVarList spec_vars = {
+      graph.hashed_layout_of(out),
+      graph.hashed_layout_of(in),
+  };
 
   // Determine the shader directly
   std::string kernel_name;

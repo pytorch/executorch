@@ -53,12 +53,24 @@ DEFINE_int32(
 DEFINE_int32(
     eval_mode,
     0,
-    "0: TokenGenerator(kv) / 1: HybridMode (prefill+kv)");
+    "0: TokenGenerator(kv) / 1: HybridMode (prefill+kv) / 2: Lookahead Decoding");
 DEFINE_string(
     kv_updater,
-    "How to update kv cache. Choose between SmartMask and ShiftPointer",
-    "SmartMask");
+    "SmartMask",
+    "How to update kv cache. Choose between SmartMask and ShiftPointer");
 DEFINE_int32(num_iters, 1, "total num of iterations to run.");
+DEFINE_int32(
+    ngram,
+    0,
+    "[Lookahead Decoding] Represents the size of the n-grams used in the lookahead process.");
+DEFINE_int32(
+    window,
+    0,
+    "[Lookahead Decoding] Determines how many future tokens the algorithm attempts to predict in each step.");
+DEFINE_int32(
+    gcap,
+    0,
+    "[Lookahead Decoding] Represents the maximum number of speculations or candidate n-grams that the algorithm considers in each step for verification. It balances the trade-off between computation efficiency and exploring more possibilities.");
 
 std::vector<std::string> CollectPrompts(int argc, char** argv) {
   // Collect all prompts from command line, example usage:
@@ -111,7 +123,10 @@ int main(int argc, char** argv) {
       FLAGS_performance_output_path.c_str(),
       FLAGS_temperature,
       FLAGS_eval_mode,
-      FLAGS_kv_updater);
+      FLAGS_kv_updater,
+      FLAGS_ngram,
+      FLAGS_window,
+      FLAGS_gcap);
   auto llama_version = runner.get_llama_version();
   std::vector<char> buf;
   buf.reserve(5 * FLAGS_seq_len); // assume each token is around 5 char
