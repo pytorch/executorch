@@ -50,7 +50,8 @@ foreach(lib ${required_lib_list})
 endforeach()
 set(EXECUTORCH_FOUND ON)
 
-include("${CMAKE_CURRENT_LIST_DIR}/ExecuTorchTargets.cmake")
+target_link_libraries(executorch INTERFACE executorch_core)
+target_link_options_shared_lib(prim_ops_lib)
 
 set(optional_lib_list
     flatccrt
