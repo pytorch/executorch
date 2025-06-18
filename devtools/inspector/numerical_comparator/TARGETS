@@ -9,7 +9,6 @@ python_library(
     deps = [],
 )
 
-
 python_library(
     name = "l1_numerical_comparator",
     srcs = ["l1_numerical_comparator.py"],
@@ -19,12 +18,20 @@ python_library(
     ],
 )
 
-
+python_library(
+    name = "mse_numerical_comparator",
+    srcs = ["mse_numerical_comparator.py"],
+    deps = [
+        "//executorch/devtools/inspector/numerical_comparator:numerical_comparator_base",
+        "//executorch/devtools/inspector:lib",
+    ],
+)
 
 python_library(
     name = "lib",
     srcs = ["__init__.py"],
     deps = [
         ":l1_numerical_comparator",
+        ":mse_numerical_comparator",
     ],
 )
