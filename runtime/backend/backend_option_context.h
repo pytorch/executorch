@@ -14,12 +14,12 @@
 namespace executorch {
 namespace ET_RUNTIME_NAMESPACE {
 /**
- * BackendUpdateContext will be used to inject runtime info for to initialize
+ * BackendOptionContext will be used to inject runtime info for to initialize
  * delegate.
  */
-class BackendUpdateContext final {
+class BackendOptionContext final {
  public:
-  explicit BackendUpdateContext(){}
+  explicit BackendOptionContext(){}
 };
 
 } // namespace ET_RUNTIME_NAMESPACE
@@ -29,6 +29,6 @@ namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::ET_RUNTIME_NAMESPACE::BackendUpdateContext;
+using ::executorch::ET_RUNTIME_NAMESPACE::BackendOptionContext;
 } // namespace executor
 } // namespace torch
