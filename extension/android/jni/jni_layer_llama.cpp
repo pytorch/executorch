@@ -168,7 +168,9 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       std::optional<const std::string> data_path_str = data_path
           ? std::optional<const std::string>{data_path->toStdString()}
           : std::nullopt;
-      runner_ = example::Runner::create(
+      // TODO(larryliu0820): Use the API in text_llm_runner.h to create the
+      // runner.
+      runner_ = example::create_llama_runner(
           model_path->toStdString(),
           tokenizer_path->toStdString(),
           data_path_str);

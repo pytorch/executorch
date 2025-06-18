@@ -68,14 +68,13 @@ class OpWrapper final {
     std::unique_ptr<QuantizeParamsWrapper> quantize_param_wrapper =
         std::make_unique<UndefinedQuantizeParamsWrapper>();
     constexpr std::uint32_t kBytes = 0;
-    std::vector<uint8_t> dynamic_dims(rank, 0);
     std::shared_ptr<TensorWrapper> tensor_wrapper = CreateTensorWrapper(
         QNN_TENSOR_TYPE_STATIC,
         data_type,
         std::move(quantize_param_wrapper),
         rank,
         dims,
-        dynamic_dims.data(),
+        nullptr,
         kBytes,
         data,
         copy_data);

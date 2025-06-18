@@ -18,12 +18,14 @@ set_overridable_option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_CUSTOM ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
+set_overridable_option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
+set_overridable_option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
 
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set_overridable_option(EXECUTORCH_BUILD_COREML ON)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  # Linux-specific code here
+  set_overridable_option(EXECUTORCH_BUILD_COREML ON)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL "WIN32")
   # Windows or other OS-specific code here
 else()

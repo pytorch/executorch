@@ -29,11 +29,14 @@ from executorch.devtools.inspector._inspector_utils import (
     calculate_mse,
     calculate_snr,
     calculate_time_scale_factor,
+    convert_to_float_tensor,
     create_debug_handle_to_op_node_mapping,
     EDGE_DIALECT_GRAPH_KEY,
     find_populated_event,
     gen_graphs_from_etrecord,
     is_inference_output_equal,
+    map_runtime_aot_intermediate_outputs,
+    merge_overlapping_debug_handles,
     TimeScale,
 )
 
@@ -216,6 +219,150 @@ class TestInspectorUtils(unittest.TestCase):
         self.assertLess(calculate_mse([a], [b])[0], 0.5)
         self.assertGreater(calculate_snr([a], [b])[0], 30.0)
         self.assertAlmostEqual(calculate_cosine_similarity([a], [b])[0], 1.0)
+
+    def test_merge_overlapping_debug_handles(self):
+        big_tensor = torch.rand(100, 100)
+        intermediate_outputs = {
+            (1, 2, 3): "val1",
+            (2, 3, 4, 5): "val2",
+            (6, 7, 8): "val3",
+            (10, 11): "val4",
+            (11, 12): big_tensor,
+        }
+        # basic merge behavior
+        merge_overlapping_debug_handles(intermediate_outputs)
+        expected_intermediate_outputs = {
+            (1, 2, 3, 4, 5): "val2",
+            (6, 7, 8): "val3",
+            (10, 11, 12): big_tensor,
+        }
+
+        self.assertEqual(intermediate_outputs, expected_intermediate_outputs)
+        self.assertIs(expected_intermediate_outputs[(10, 11, 12)], big_tensor)
+
+    def test_map_runtime_aot_intermediate_outputs_empty_inputs(self):
+        # When the inputs are empty, the output should also be empty
+        aot_intermediate_outputs = {}
+        runtime_intermediate_outputs = {}
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {}
+        self.assertEqual(actual, expected)
+
+    def test_map_runtime_aot_intermediate_outputs_single_element_tuple(self):
+        # Single element tuple
+        aot_intermediate_outputs = {(0,): 100, (1,): 200, (2,): 300}
+        runtime_intermediate_outputs = {(0,): 150, (1,): 250, (2,): 350}
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {
+            ((0,), 100): ((0,), 150),
+            ((1,), 200): ((1,), 250),
+            ((2,), 300): ((2,), 350),
+        }
+        self.assertEqual(actual, expected)
+
+    def test_map_runtime_aot_intermediate_outputs_exact_match(self):
+        # Exact match between aot and runtime debug_handles
+        aot_intermediate_outputs = {(0, 1): 100, (2, 3): 200, (4, 5): 300}
+        runtime_intermediate_outputs = {(0, 1): 150, (2, 3): 200, (4, 5): 300}
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {
+            ((0, 1), 100): ((0, 1), 150),
+            ((2, 3), 200): ((2, 3), 200),
+            ((4, 5), 300): ((4, 5), 300),
+        }
+        self.assertEqual(actual, expected)
+
+    def test_map_runtime_aot_intermediate_outputs_no_overlaps(self):
+        # No overlaps between aot and runtime debug_handles
+        aot_intermediate_outputs = {(0, 1): 100, (4, 5): 300}
+        runtime_intermediate_outputs = {(2, 3): 200, (8, 9): 300}
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {}
+        self.assertEqual(actual, expected)
+
+    def test_map_runtime_aot_intermediate_outputs_multiple_aot_to_one_runtime(self):
+        # Multiple aot debug_handles map to one runtime debug_handle
+        aot_intermediate_outputs = {(0, 1, 2): 100, (3, 4): 300}
+        runtime_intermediate_outputs = {(1, 2, 3): 250, (8, 9): 300}
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {((0, 1, 2, 3, 4), 300): ((1, 2, 3), 250)}
+        self.assertEqual(actual, expected)
+
+    def test_map_runtime_aot_intermediate_outputs_one_aot_to_multiple_runtime(self):
+        # One aot debug_handle map to multiple runtime debug_handles
+        aot_intermediate_outputs = {(0, 1, 2, 3, 4): 100, (8, 9): 300}
+        runtime_intermediate_outputs = {(0, 1): 150, (2, 3): 200, (4, 5): 300}
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {((0, 1, 2, 3, 4), 100): ((0, 1, 2, 3, 4, 5), 300)}
+        self.assertEqual(actual, expected)
+
+    def test_map_runtime_aot_intermediate_outputs_complex_chain(self):
+        # Complex chain (N-to-N mapping)
+        aot_intermediate_outputs = {(1, 2): 100, (3, 4): 200, (5, 6): 300}
+        runtime_intermediate_outputs = {(2, 3): 150, (4, 5): 250, (6, 7): 350}
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {((1, 2, 3, 4, 5, 6), 300): ((2, 3, 4, 5, 6, 7), 350)}
+        self.assertEqual(actual, expected)
+
+    def test_convert_input_to_tensor_convertible_inputs(self):
+        # Scalar -> tensor
+        actual_output1 = convert_to_float_tensor(5)
+        self.assertIsInstance(actual_output1, torch.Tensor)
+        self.assertEqual(actual_output1.dtype, torch.float64)
+        self.assertEqual(tuple(actual_output1.shape), ())
+        self.assertTrue(
+            torch.allclose(actual_output1, torch.tensor([5.0], dtype=torch.float64))
+        )
+        self.assertEqual(actual_output1.device.type, "cpu")
+
+        # Tensor of ints -> float32 CPU
+        t_int = torch.tensor([4, 5, 6], dtype=torch.int32)
+        actual_output2 = convert_to_float_tensor(t_int)
+        self.assertIsInstance(actual_output2, torch.Tensor)
+        self.assertEqual(actual_output2.dtype, torch.float64)
+        self.assertTrue(
+            torch.allclose(
+                actual_output2, torch.tensor([4.0, 5.0, 6.0], dtype=torch.float64)
+            )
+        )
+        self.assertEqual(actual_output2.device.type, "cpu")
+
+        # List of tensors -> stacked tensor float32 CPU
+        t_list = [torch.tensor([1, 2]), torch.tensor([2, 3]), torch.tensor([3, 4])]
+        actual_output3 = convert_to_float_tensor(t_list)
+        self.assertIsInstance(actual_output3, torch.Tensor)
+        self.assertEqual(actual_output3.dtype, torch.float64)
+        self.assertEqual(tuple(actual_output3.shape), (3, 2))
+        self.assertTrue(
+            torch.allclose(
+                actual_output3,
+                torch.tensor([[1.0, 2.0], [2.0, 3.0], [3.0, 4.0]], dtype=torch.float64),
+            )
+        )
+        self.assertEqual(actual_output3.device.type, "cpu")
+
+    def test_convert_input_to_tensor_non_convertible_raises(self):
+        class X:
+            pass
+
+        with self.assertRaises(ValueError) as cm:
+            convert_to_float_tensor(X())
+        msg = str(cm.exception)
+        self.assertIn("Cannot convert value of type", msg)
 
 
 def gen_mock_operator_graph_with_expected_map() -> (

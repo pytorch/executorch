@@ -49,14 +49,24 @@ prepare_artifacts_upload() {
 }
 
 build_cmake_executor_runner() {
+  local backend_string_select="${1:-}"
   echo "Building executor_runner"
   rm -rf ${CMAKE_OUTPUT_DIR}
-  cmake -DCMAKE_BUILD_TYPE=Debug \
-      -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-      -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
-      -B${CMAKE_OUTPUT_DIR} .
-
-  cmake --build ${CMAKE_OUTPUT_DIR} -j4 --config Debug
+  mkdir ${CMAKE_OUTPUT_DIR}
+  if [[ "$backend_string_select" == "XNNPACK" ]]; then
+    echo "Backend $backend_string_select selected"
+    (cd ${CMAKE_OUTPUT_DIR} \
+      && cmake -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_XNNPACK=ON \
+        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
+    cmake --build ${CMAKE_OUTPUT_DIR} -j4
+  else
+    cmake -DCMAKE_BUILD_TYPE=Debug \
+        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+        -B${CMAKE_OUTPUT_DIR} .
+    cmake --build ${CMAKE_OUTPUT_DIR} -j4 --config Debug
+  fi
 }
 
 run_portable_executor_runner() {
@@ -111,19 +121,6 @@ test_model() {
   run_portable_executor_runner
 }
 
-build_cmake_xnn_executor_runner() {
-  echo "Building xnn_executor_runner"
-
-  (rm -rf ${CMAKE_OUTPUT_DIR} \
-    && mkdir ${CMAKE_OUTPUT_DIR} \
-    && cd ${CMAKE_OUTPUT_DIR} \
-    && retry cmake -DCMAKE_BUILD_TYPE=Release \
-      -DEXECUTORCH_BUILD_XNNPACK=ON \
-      -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
-
-  cmake --build ${CMAKE_OUTPUT_DIR} -j4
-}
-
 test_model_with_xnnpack() {
   WITH_QUANTIZATION=$1
   WITH_DELEGATION=$2
@@ -148,12 +145,11 @@ test_model_with_xnnpack() {
 
   # Run test model
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
+    # TODO eventually buck should also use consolidated executor runners
     buck2 run //examples/xnnpack:xnn_executor_runner -- --model_path "${OUTPUT_MODEL_PATH}"
   elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
-    if [[ ! -f ${CMAKE_OUTPUT_DIR}/backends/xnnpack/xnn_executor_runner ]]; then
-      build_cmake_xnn_executor_runner
-    fi
-    ./${CMAKE_OUTPUT_DIR}/backends/xnnpack/xnn_executor_runner --model_path "${OUTPUT_MODEL_PATH}"
+    build_cmake_executor_runner "XNNPACK"
+    ./${CMAKE_OUTPUT_DIR}/executor_runner --model_path "${OUTPUT_MODEL_PATH}"
   else
     echo "Invalid build tool ${BUILD_TOOL}. Only buck2 and cmake are supported atm"
     exit 1
@@ -192,6 +188,14 @@ test_model_with_qnn() {
     EXPORT_SCRIPT=edsr
     # Additional deps for edsr
     pip install piq
+  elif [[ "${MODEL_NAME}" == "albert" ]]; then
+    EXPORT_SCRIPT=albert
+  elif [[ "${MODEL_NAME}" == "bert" ]]; then
+    EXPORT_SCRIPT=bert
+  elif [[ "${MODEL_NAME}" == "distilbert" ]]; then
+    EXPORT_SCRIPT=distilbert
+  elif [[ "${MODEL_NAME}" == "eurobert" ]]; then
+    EXPORT_SCRIPT=eurobert
   else
     echo "Unsupported model $MODEL_NAME"
     exit 1
@@ -201,7 +205,25 @@ test_model_with_qnn() {
   # TODO(guangyang): Make QNN chipset matches the target device
   QNN_CHIPSET=SM8450
 
-  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.scripts.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --ci --compile_only $EXTRA_FLAGS
+  SCRIPT_FOLDER=""
+  case "${MODEL_NAME}" in
+    "dl3"|"mv3"|"mv2"|"ic4"|"ic3"|"vit"|"mb"|"w2l")
+        SCRIPT_FOLDER=scripts
+        ;;
+    "albert"|"bert"|"distilbert")
+        pip install evaluate
+        SCRIPT_FOLDER=oss_scripts
+        # Bert models running in 16bit will encounter op validation fail on some operations,
+        # which requires CHIPSET >= SM8550.
+        QNN_CHIPSET=SM8550
+        ;;
+    *)
+        echo "Unsupported model $MODEL_NAME"
+        exit 1
+        ;;
+  esac
+
+  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.${SCRIPT_FOLDER}.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --ci --compile_only $EXTRA_FLAGS
   EXPORTED_MODEL=$(find "./${EXPORT_SCRIPT}" -type f -name "${MODEL_NAME}*.pte" -print -quit)
 }
 
@@ -248,6 +270,24 @@ test_model_with_mps() {
   EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
 }
 
+test_model_with_mediatek() {
+  if [[ "${MODEL_NAME}" == "dl3" ]]; then
+    EXPORT_SCRIPT=deeplab_v3
+  elif [[ "${MODEL_NAME}" == "mv3" ]]; then
+    EXPORT_SCRIPT=mobilenet_v3
+  elif [[ "${MODEL_NAME}" == "mv2" ]]; then
+    EXPORT_SCRIPT=mobilenet_v2
+  elif [[ "${MODEL_NAME}" == "ic4" ]]; then
+    EXPORT_SCRIPT=inception_v4
+  elif [[ "${MODEL_NAME}" == "ic3" ]]; then
+    EXPORT_SCRIPT=inception_v3
+  fi
+
+  PYTHONPATH=examples/mediatek/ "${PYTHON_EXECUTABLE}" -m examples.mediatek.model_export_scripts.${EXPORT_SCRIPT} -d /tmp/neuropilot/train -a ${EXPORT_SCRIPT}
+  EXPORTED_MODEL=$(find "./${EXPORT_SCRIPT}" -type f -name "*.pte" -print -quit)
+}
+
+
 if [[ "${BACKEND}" == "portable" ]]; then
   echo "Testing ${MODEL_NAME} with portable kernels..."
   test_model
@@ -282,6 +322,12 @@ elif [[ "${BACKEND}" == *"xnnpack"* ]]; then
     WITH_QUANTIZATION=false
   fi
   test_model_with_xnnpack "${WITH_QUANTIZATION}" "${WITH_DELEGATION}"
+  if [[ $? -eq 0 ]]; then
+    prepare_artifacts_upload
+  fi
+elif [[ "${BACKEND}" == "mediatek" ]]; then
+  echo "Testing ${MODEL_NAME} with mediatek..."
+  test_model_with_mediatek
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi

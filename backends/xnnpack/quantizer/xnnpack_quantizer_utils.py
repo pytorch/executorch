@@ -1,39 +1,43 @@
 # mypy: allow-untyped-defs
 import itertools
-import typing
-from dataclasses import dataclass
-from typing import Callable, NamedTuple, Optional
+from typing import Callable, Optional
 
 import torch
 import torch.nn.functional as F
 from executorch.backends.xnnpack.utils.utils import is_depthwise_conv
 from torch._subclasses import FakeTensor
-from torch.ao.quantization.fx.utils import get_new_attr_name_with_prefix
-from torch.ao.quantization.pt2e.export_utils import _WrapperModule
-from torch.ao.quantization.pt2e.utils import (
-    _get_aten_graph_module_for_pattern,
-    _is_conv_node,
-    _is_conv_transpose_node,
-)
-from torch.ao.quantization.quantizer import (
-    QuantizationAnnotation,
-    QuantizationSpec,
-    SharedQuantizationSpec,
-)
-from torch.ao.quantization.quantizer.utils import (
-    _annotate_input_qspec_map,
-    _annotate_output_qspec,
-)
 from torch.fx import Node
 from torch.fx.passes.utils.matcher_with_name_node_map_utils import (
     SubgraphMatcherWithNameNodeMap,
 )
-from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
+from torchao.quantization.pt2e import WrapperModule
+from torchao.quantization.pt2e.graph_utils import get_source_partitions
+from torchao.quantization.pt2e.quantizer import (
+    annotate_input_qspec_map,
+    annotate_output_qspec,
+    get_bias_qspec,
+    get_input_act_qspec,
+    get_output_act_qspec,
+    get_weight_qspec,
+    OperatorConfig,
+    OperatorPatternType,
+    QuantizationAnnotation,
+    QuantizationConfig,
+    QuantizationSpec,
+    SharedQuantizationSpec,
+)
+from torchao.quantization.pt2e.utils import (
+    _get_aten_graph_module_for_pattern,
+    _is_conv_node,
+    _is_conv_transpose_node,
+    get_new_attr_name_with_prefix,
+)
 
 __all__ = [
     "OperatorConfig",
     "OperatorPatternType",
     "QuantizationConfig",
+    "QuantizationSpec",
     "get_input_act_qspec",
     "get_output_act_qspec",
     "get_weight_qspec",
@@ -42,23 +46,6 @@ __all__ = [
     "propagate_annotation",
 ]
 
-
-# In the absence of better name, just winging it with QuantizationConfig
-@dataclass(eq=True, frozen=True)
-class QuantizationConfig:
-    input_activation: Optional[QuantizationSpec]
-    output_activation: Optional[QuantizationSpec]
-    weight: Optional[QuantizationSpec]
-    bias: Optional[QuantizationSpec]
-    # TODO: remove, since we can use observer_or_fake_quant_ctr to express this
-    is_qat: bool = False
-
-
-# Use Annotated because list[Callable].__module__ is read-only.
-OperatorPatternType = typing.Annotated[list[Callable], None]
-OperatorPatternType.__module__ = (
-    "executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils"
-)
 
 AnnotatorType = Callable[
     [
@@ -76,19 +63,6 @@ def register_annotator(op: str) -> Callable[[AnnotatorType], None]:
         OP_TO_ANNOTATOR[op] = annotator
 
     return decorator
-
-
-class OperatorConfig(NamedTuple):
-    # fix List[str] with List[List[Union[nn.Module, FunctionType, BuiltinFunctionType]]]
-    # Basically we are mapping a quantization config to some list of patterns.
-    # a pattern is defined as a list of nn module, function or builtin function names
-    # e.g. [nn.Conv2d, torch.relu, torch.add]
-    # We have not resolved whether fusion can be considered internal details of the
-    # quantizer hence it does not need communication to user.
-    # Note this pattern is not really informative since it does not really
-    # tell us the graph structure resulting from the list of ops.
-    config: QuantizationConfig
-    operators: list[OperatorPatternType]
 
 
 def is_relu_node(node: Node) -> bool:
@@ -124,63 +98,6 @@ def _mark_nodes_as_annotated(nodes: list[Node]):
             node.meta["quantization_annotation"]._annotated = True
 
 
-def get_input_act_qspec(quantization_config: Optional[QuantizationConfig]):
-    if quantization_config is None:
-        return None
-    if quantization_config.input_activation is None:
-        return None
-    quantization_spec: QuantizationSpec = quantization_config.input_activation
-    assert quantization_spec.qscheme in [
-        torch.per_tensor_affine,
-        torch.per_tensor_symmetric,
-    ]
-    return quantization_spec
-
-
-def get_output_act_qspec(quantization_config: Optional[QuantizationConfig]):
-    if quantization_config is None:
-        return None
-    if quantization_config.output_activation is None:
-        return None
-    quantization_spec: QuantizationSpec = quantization_config.output_activation
-    assert quantization_spec.qscheme in [
-        torch.per_tensor_affine,
-        torch.per_tensor_symmetric,
-    ]
-    return quantization_spec
-
-
-def get_weight_qspec(quantization_config: Optional[QuantizationConfig]):
-    if quantization_config is None:
-        return None
-    assert quantization_config is not None
-    if quantization_config.weight is None:
-        return None
-    quantization_spec: QuantizationSpec = quantization_config.weight
-    if quantization_spec.qscheme not in [
-        torch.per_tensor_symmetric,
-        torch.per_channel_symmetric,
-        None,
-    ]:
-        raise ValueError(
-            f"Unsupported quantization_spec {quantization_spec} for weight"
-        )
-    return quantization_spec
-
-
-def get_bias_qspec(quantization_config: Optional[QuantizationConfig]):
-    if quantization_config is None:
-        return None
-    assert quantization_config is not None
-    if quantization_config.bias is None:
-        return None
-    quantization_spec: QuantizationSpec = quantization_config.bias
-    assert (
-        quantization_spec.dtype == torch.float
-    ), "Only float dtype for bias is supported for bias right now"
-    return quantization_spec
-
-
 @register_annotator("linear")
 def _annotate_linear(
     gm: torch.fx.GraphModule,
@@ -204,25 +121,25 @@ def _annotate_linear(
             bias_node = node.args[2]
 
         if _is_annotated([node]) is False:  # type: ignore[list-item]
-            _annotate_input_qspec_map(
+            annotate_input_qspec_map(
                 node,
                 act_node,
                 input_act_qspec,
             )
-            _annotate_input_qspec_map(
+            annotate_input_qspec_map(
                 node,
                 weight_node,
                 weight_qspec,
             )
             nodes_to_mark_annotated = [node, weight_node]
             if bias_node:
-                _annotate_input_qspec_map(
+                annotate_input_qspec_map(
                     node,
                     bias_node,
                     bias_qspec,
                 )
                 nodes_to_mark_annotated.append(bias_node)
-            _annotate_output_qspec(node, output_act_qspec)
+            annotate_output_qspec(node, output_act_qspec)
             _mark_nodes_as_annotated(nodes_to_mark_annotated)
             annotated_partitions.append(nodes_to_mark_annotated)
 
@@ -572,7 +489,7 @@ def _do_annotate_conv_bn(  # noqa: C901
                 "output": output,
             }
 
-        return _WrapperModule(_conv_bn)
+        return WrapperModule(_conv_bn)
 
     # Needed for matching, otherwise the matches gets filtered out due to unused
     # nodes returned by batch norm

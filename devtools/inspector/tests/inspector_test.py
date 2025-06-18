@@ -6,19 +6,24 @@
 
 # pyre-unsafe
 
+import copy
 import random
 import statistics
 import tempfile
 import unittest
 from contextlib import redirect_stdout
 
-from typing import Callable, List
+from typing import Callable, List, Union
 
 from unittest.mock import patch
+
+import torch
+import torch.fx
 
 from executorch.devtools import generate_etrecord, parse_etrecord
 from executorch.devtools.debug_format.et_schema import OperatorNode
 from executorch.devtools.etdump.schema_flatcc import ProfileEvent
+from executorch.devtools.etrecord._etrecord import ETRecord
 from executorch.devtools.etrecord.tests.etrecord_test import TestETRecord
 
 from executorch.devtools.inspector import (
@@ -36,13 +41,22 @@ from executorch.devtools.inspector._inspector import (
     ProfileEventSignature,
     TimeScale,
 )
-
-from executorch.exir import ExportedProgram
+from executorch.devtools.inspector.tests.inspector_test_utils import (
+    check_if_final_outputs_match,
+    model_registry,
+)
+from executorch.exir import (
+    EdgeCompileConfig,
+    EdgeProgramManager,
+    ExecutorchProgramManager,
+    to_edge,
+)
+from torch.export import export, ExportedProgram
 
 
 OP_TYPE = "aten::add"
 EVENT_BLOCK_NAME = "block_0"
-EVENTS_SIZE = 5
+EVENTS_SIZE = 10
 RAW_DATA_SIZE = 10
 ETDUMP_PATH = "unittest_etdump_path"
 ETRECORD_PATH = "unittest_etrecord_path"
@@ -452,17 +466,185 @@ class TestInspector(unittest.TestCase):
                 events=events,
             )
 
+    def test_no_capture_when_representative_inputs_are_none(self):
+        # Create a context manager to patch functions called by Inspector.__init__
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
+        ):
+            # Call the constructor of Inspector
+            inspector_instance = Inspector(
+                etdump_path=ETDUMP_PATH,
+                etrecord=ETRECORD_PATH,
+            )
+            self.assertIsNone(inspector_instance._aot_intermediate_outputs)
+
+    def test_consume_etrecord_populates_correct_aot_intermediate_outputs(self):
+        with tempfile.NamedTemporaryFile(suffix=".bin") as tmp_file:
+            etrecord_path = tmp_file.name
+            mod = model_registry["ConvLinearModel"]()
+            input_tensor = torch.tensor(
+                [[[[1.0, 2.0], [3.0, 4.0]]]], requires_grad=True
+            )
+            aten_model: ExportedProgram = export(mod, (input_tensor,), strict=True)
+            edge_program_manager: EdgeProgramManager = to_edge(
+                aten_model, compile_config=EdgeCompileConfig(_check_ir_validity=True)
+            )
+            edge_program_manager_copy = copy.deepcopy(edge_program_manager)
+            et_program_manager: ExecutorchProgramManager = (
+                edge_program_manager.to_executorch()
+            )
+            # Generate ETRecord
+            generate_etrecord(
+                etrecord_path, edge_program_manager_copy, et_program_manager
+            )
+            original_consume_etrecord = Inspector._consume_etrecord
+            with patch.object(
+                Inspector, "_consume_etrecord", return_value=None
+            ), patch.object(
+                _inspector, "gen_etdump_object", return_value=None
+            ), patch.object(
+                EventBlock, "_gen_from_etdump"
+            ), patch.object(
+                _inspector, "gen_graphs_from_etrecord"
+            ):
+                # Call the constructor of Inspector
+                inspector_instance = Inspector(
+                    etdump_path=ETDUMP_PATH,
+                    etrecord=etrecord_path,
+                )
+                etrecord = ETRecord(
+                    edge_dialect_program=inspector_instance._etrecord.edge_dialect_program,
+                    graph_map=inspector_instance._etrecord.graph_map,
+                    _debug_handle_map=inspector_instance._etrecord._debug_handle_map,
+                    _delegate_map=inspector_instance._etrecord._delegate_map,
+                    _reference_outputs=inspector_instance._etrecord._reference_outputs,
+                    _representative_inputs=aten_model.example_inputs[0],
+                )
+                inspector_instance._etrecord = etrecord
+                Inspector._consume_etrecord = original_consume_etrecord
+                inspector_instance._consume_etrecord()
+                self.assertTrue(
+                    check_if_final_outputs_match(
+                        "ConvLinearModel", inspector_instance._aot_intermediate_outputs
+                    )
+                )
+
+    def test_get_runtime_intermediate_outputs(self):
+        # Create a context manager to patch functions called by Inspector.__init__
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
+        ):
+            # Call the constructor of Inspector
+            inspector_instance = Inspector(
+                etdump_path=ETDUMP_PATH,
+                etrecord=ETRECORD_PATH,
+            )
+
+            # The mock inspector instance starts with having an empty event blocks list.
+            # Add pre-defined event blocks to test _get_runtime_outputs().
+            inspector_instance.event_blocks = [
+                EventBlock(name=EVENT_BLOCK_NAME, events=self._gen_random_events())
+            ]
+
+            runtime_outputs = inspector_instance._get_runtime_intermediate_outputs()
+            # This output should be a dictionary with 5 keys
+            self.assertEqual(
+                len(runtime_outputs),
+                5,
+            )
+            # Check that keys (0,) and (1,) are not in the dictionary(skip OPERATOR_CALL and op_types are empty)
+            self.assertNotIn((0,), runtime_outputs)
+            self.assertNotIn((1,), runtime_outputs)
+
+            # Same debug_handle but different instruction_id, should record the last one
+            self.assertIn((4,), runtime_outputs)
+            self.assertTrue(
+                torch.equal(runtime_outputs[(4,)][0], torch.tensor([4.0, 5.0, 6.0]))
+            )
+            # Check that keys (5,) to (8,) are in the dictionary and have values of the correct size
+            for key in range(5, 9):
+                self.assertIn((key,), runtime_outputs)
+                self.assertEqual(len(runtime_outputs[(key,)]), RAW_DATA_SIZE)
+
     def _gen_random_float_list(self) -> List[float]:
         return [random.uniform(0, 10) for _ in range(RAW_DATA_SIZE)]
 
+    def _gen_random_runtime_output(
+        self,
+    ) -> List[Union[None, List[torch.Tensor], bool, float, int, str, torch.Tensor]]:
+        return list(torch.randn(RAW_DATA_SIZE))
+
     def _gen_random_events(self) -> List[Event]:
         events = []
-        for i in range(EVENTS_SIZE):
+        for i in range(2):
+            events.append(
+                # OPERATOR_CALL with debug_hanldes/instruction_id 0 and 2
+                Event(
+                    name="OPERATOR_CALL",
+                    op_types=[OP_TYPE],
+                    perf_data=PerfData(self._gen_random_float_list()),
+                    debug_handles=i * 2,
+                    _instruction_id=i * 2,
+                    debug_data=self._gen_random_runtime_output(),
+                )
+            )
+            events.append(
+                # op_0/op_1 wiht empty op_types and with debug_hanldes/instruction_id 1 and 3
+                Event(
+                    name=f"op_{i}",
+                    op_types=[],
+                    perf_data=PerfData(self._gen_random_float_list()),
+                    debug_handles=i * 2 + 1,
+                    _instruction_id=i * 2 + 1,
+                    debug_data=self._gen_random_runtime_output(),
+                )
+            )
+
+        # op_2 with debug_hanldes/instruction_id 4
+        events.append(
+            Event(
+                name="op_2",
+                op_types=[OP_TYPE],
+                perf_data=PerfData(self._gen_random_float_list()),
+                debug_handles=4,
+                debug_data=[torch.tensor([1.0, 2.0, 3.0])],
+                _instruction_id=4,
+            )
+        )
+        # op_3 also with debug_hanldes 4 but with instruction_id 5
+        events.append(
+            Event(
+                name="op_3",
+                op_types=[OP_TYPE],
+                perf_data=PerfData(self._gen_random_float_list()),
+                debug_handles=4,
+                debug_data=[torch.tensor([4.0, 5.0, 6.0])],
+                _instruction_id=5,
+            )
+        )
+
+        # op_4 to op_7 with debug_hanldes 5 to 8 and instruction_id 6 to 9
+        for i in range(4, EVENTS_SIZE - 2):
             events.append(
                 Event(
                     name=f"op_{i}",
                     op_types=[OP_TYPE],
                     perf_data=PerfData(self._gen_random_float_list()),
+                    debug_handles=i + 1,
+                    debug_data=self._gen_random_runtime_output(),
+                    _instruction_id=i + 2,
                 )
             )
         return events

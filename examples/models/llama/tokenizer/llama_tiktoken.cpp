@@ -42,7 +42,9 @@ _get_default_special_tokens() {
   return special_tokens;
 }
 
-std::unique_ptr<std::vector<std::string>> _get_special_tokens(Version version) {
+} // namespace
+
+std::unique_ptr<std::vector<std::string>> get_special_tokens(Version version) {
   switch (version) {
     case Version::Multimodal:
       return get_multimodal_special_tokens();
@@ -51,11 +53,9 @@ std::unique_ptr<std::vector<std::string>> _get_special_tokens(Version version) {
   }
 }
 
-} // namespace
-
 std::unique_ptr<Tiktoken> get_tiktoken_for_llama(Version version) {
   return std::make_unique<Tiktoken>(
-      _get_special_tokens(version), kBOSTokenIndex, kEOSTokenIndex);
+      get_special_tokens(version), kBOSTokenIndex, kEOSTokenIndex);
 }
 
 std::unique_ptr<std::vector<std::string>> get_multimodal_special_tokens() {

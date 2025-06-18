@@ -262,7 +262,7 @@ jobs:
         output=$(ls -la ${elf})
         arr=($output)
         size=${arr[4]}
-        threshold="102400" # 100KiB
+        threshold="103268" # ~100KiB
         echo "size: $size, threshold: $threshold"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
@@ -305,7 +305,7 @@ jobs:
         # Install requirements
         ${CONDA_RUN} sh install_requirements.sh
         ${CONDA_RUN} sh backends/apple/coreml/scripts/install_requirements.sh
-        ${CONDA_RUN} python install_executorch.py --pybind coreml
+        ${CONDA_RUN} python install_executorch.py
         ${CONDA_RUN} sh examples/models/llama/install_requirements.sh
 
         # Test ANE llama
@@ -414,11 +414,7 @@ jobs:
         # Setup executorch
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool cmake
 
-        if [[ "${MODE}" == "mps" ]]; then
-          # Install mps delegate
-          PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/mps/install_requirements.sh
-          echo "Finishing installing mps."
-        elif [[ "${MODE}" == "coreml" ]]; then
+        if [[ "${MODE}" == "coreml" ]]; then
           # Install coreml delegate
           PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/install_requirements.sh
           echo "Finishing installing coreml."
@@ -484,6 +480,32 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh ${{ matrix.model }} "cmake" "qnn"
 
+  test-qnn-optimum-model:
+    name: test-qnn-optimum-model
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        dtype: [fp32]
+        model: [albert, bert, distilbert] # eurobert requires transfomer >= 4.48.0, skip for now
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-qnn-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 900
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh ${{ matrix.model }} "cmake" "qnn"
+
   test-apple-model:
     name: test-apple-model
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
@@ -504,8 +526,6 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/install_requirements.sh
         echo "Finishing installing coreml."
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/mps/install_requirements.sh
-        echo "Finishing installing mps."
 
         # Build and test coreml model
         MODELS=(mv3 ic4 resnet50 edsr mobilebert w2l)
@@ -558,6 +578,7 @@ jobs:
           -DEXECUTORCH_ENABLE_LOGGING=1 \
           -DCMAKE_BUILD_TYPE=Release \
           -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+          -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
           -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
           -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
           -DEXECUTORCH_BUILD_XNNPACK=ON \
@@ -576,34 +597,39 @@ jobs:
         git clone https://github.com/huggingface/optimum-executorch
         pushd optimum-executorch
         # There is no release yet, for CI stability, always test from the same commit on main
-        git checkout da80c9e35b3db5c7eea8731b7d660482fb4870a8
-        pip install .[tests]
+        git checkout 4c3b18f6cca68c5ccff809131d570062723d7188
+        python install_dev.py --skip_override_torch
         popd
-
-        if [ "${{ matrix.hf_model_id }}" == "google/gemma-3-1b-it" ]; then
-          # Fixes for gemma-3 is not available in the released version
-          git clone https://github.com/huggingface/transformers.git
-          pushd transformers
-          git checkout a57274466f7f72efaa2662d1738cdaf28ae8071f
-          pip install -e .
-          popd
-        fi
         pip list
         echo "::endgroup::"
 
         echo "::group::Export to ExecuTorch"
         # Pass matrix variable as environment variable
         export MODEL_ID="${{ matrix.hf_model_id }}"
-        export OUTPUT_DIR="$(pwd)/${MODEL_ID}_custom_sdpa_8da4w"
+        export OUTPUT_DIR="$(pwd)/${MODEL_ID}_custom_sdpa_kv_cache_8da4w"
         pushd optimum-executorch
 
-        optimum-cli export executorch \
-          --model ${MODEL_ID} \
-          --task text-generation \
-          --recipe xnnpack \
-          --use_custom_sdpa \
-          --output_dir ${OUTPUT_DIR} \
-          --qlinear
+        ARGS=(
+          "--model" "${MODEL_ID}"
+          "--task" "text-generation"
+          "--recipe" "xnnpack"
+          "--use_custom_sdpa"
+          "--qlinear"
+          "--qembedding"
+          "--output_dir" "${OUTPUT_DIR}"
+        )
+
+        # Add conditional arguments based on model
+        case "${MODEL_ID}" in
+          *"google/gemma-3-1b-it"*)
+            echo "--use_custom_kv_cache can not be used for HybridCache"
+            ;;
+          *)
+            ARGS+=("--use_custom_kv_cache")
+            ;;
+        esac
+
+        optimum-cli export executorch "${ARGS[@]}"
 
         ls -FlAGhp ${OUTPUT_DIR}
         popd

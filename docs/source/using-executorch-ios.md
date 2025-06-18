@@ -11,8 +11,7 @@ The ExecuTorch Runtime for iOS and macOS is distributed as a collection of prebu
 * `backend_mps` - MPS backend
 * `backend_xnnpack` - XNNPACK backend
 * `kernels_custom` - Custom kernels for LLMs
-* `kernels_optimized` - Optimized kernels
-* `kernels_portable` - Portable kernels (naive implementation used as a reference)
+* `kernels_optimized` - Accelerated generic CPU kernels
 * `kernels_quantized` - Quantized kernels
 
 Link your binary with the ExecuTorch runtime and any backends or kernels used by the exported ML model. It is recommended to link the core runtime to the components that use ExecuTorch directly, and link kernels and backends against the main app target.
@@ -51,7 +50,7 @@ let package = Package(
   name: "YourPackageName",
   platforms: [
     .iOS(.v17),
-    .macOS(.v10_15),
+    .macOS(.v12),
   ],
   products: [
     .library(name: "YourPackageName", targets: ["YourTargetName"]),
@@ -66,7 +65,7 @@ let package = Package(
       dependencies: [
         .product(name: "executorch", package: "executorch"),
         .product(name: "backend_xnnpack", package: "executorch"),
-        .product(name: "kernels_portable", package: "executorch"),
+        .product(name: "kernels_optimized", package: "executorch"),
         // Add other backends and kernels as needed.
       ]),
   ]
@@ -113,9 +112,6 @@ python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 
 # CoreML-only requirements:
 ./backends/apple/coreml/scripts/install_requirements.sh
-
-# MPS-only requirements:
-./backends/apple/mps/install_requirements.sh
 ```
 
 5. Install [CMake](https://cmake.org):
@@ -135,7 +131,7 @@ sudo /Applications/CMake.app/Contents/bin/cmake-gui --install
 For example, the following command will build the ExecuTorch Runtime along with all available kernels and backends for the Apple platform in both Release and Debug modes:
 
 ```bash
-./scripts/build_apple_frameworks.sh --Release --Debug --coreml --mps --xnnpack --custom --optimized --portable --quantized
+./scripts/build_apple_frameworks.sh
 ```
 
 After the build finishes successfully, the resulting frameworks can be found in the `cmake-out` directory.

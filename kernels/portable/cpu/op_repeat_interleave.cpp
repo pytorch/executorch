@@ -66,7 +66,7 @@ using Tensor = executorch::aten::Tensor;
 Tensor& repeat_interleave_Tensor_out(
     KernelRuntimeContext& ctx,
     const Tensor& repeats,
-    executorch::aten::optional<int64_t> output_size,
+    std::optional<int64_t> output_size,
     Tensor& out) {
   (void)ctx;
 

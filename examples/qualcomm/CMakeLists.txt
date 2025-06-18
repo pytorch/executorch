@@ -23,7 +23,7 @@ if(NOT PYTHON_EXECUTABLE)
 endif()
 
 if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Debug)
+  set(CMAKE_BUILD_TYPE RelWithDebInfo)
 endif()
 
 # Find prebuilt libraries. executorch package should contain portable_ops_lib,
@@ -92,6 +92,9 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/executor_runner)
 
 # build qnn_llama_runner for llama
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/oss_scripts/llama)
+
+# build qnn_mimi_decoder_runner
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/oss_scripts/moshi)
 
 # build qaihub_llama2_7b_runner and qaihub_llama3_8b_runner
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/qaihub_scripts/llama)

@@ -11,7 +11,6 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
-from executorch.backends.qualcomm._passes.utils import dq_ops
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_AXIS,
     QCOM_AXIS_ORDER,
@@ -64,7 +63,9 @@ QNN_TENSOR_TYPE_MAP = {
     torch.int64: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_64,
     torch.uint8: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_8,
     torch.uint16: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_16,
+    torch.uint32: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
     float: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
+    int: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
 }
 
 PER_CHANNEL_ENCODING = {
@@ -77,6 +78,18 @@ PER_TENSOR_ENCODING = {
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+}
+
+q_ops = {
+    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+}
+
+dq_ops = {
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
 }
 
 
@@ -254,8 +267,8 @@ class NodeVisitor:
         )
         # TODO: refactor this when target could be correctly detected
         per_block_encoding = {
-            exir_ops.edge.pt2e_quant.quantize_affine.default,
-            exir_ops.edge.pt2e_quant.dequantize_affine.default,
+            exir_ops.edge.torchao.quantize_affine.default,
+            exir_ops.edge.torchao.dequantize_affine.default,
         }
         if quant_attrs[QCOM_ENCODING] in per_block_encoding:
             return self.make_qnn_per_block_config(node, quant_attrs)
@@ -337,7 +350,7 @@ class NodeVisitor:
                 nominal_dims.append(dim)
                 dynamic_dims.append(0)
 
-        return dynamic_dims, nominal_dims
+        return dynamic_dims if any(dynamic_dims) else [], nominal_dims
 
     def define_custom_tensor_wrapper(
         self,
@@ -459,51 +472,3 @@ class NodeVisitor:
     ) -> PyQnnWrapper.PyQnnOpWrapper:
         """Convert torch.fx.Node to OpWrapper"""
         raise NotImplementedError("NodeVisitor must be extended!")
-
-
-# This will hold mapping of all node names to the visitor class
-_node_visitor_dict = {}
-
-
-def register_node_visitor(visitor):
-    """Register node visitor into _node_visitor_dict"""
-    assert (
-        isinstance(visitor, type)
-        and issubclass(visitor, NodeVisitor)
-        and hasattr(visitor, "target")
-    ), f"Illformed NodeVisitor subclass, can't register!, got: {visitor}"
-    for target in visitor.target:
-        _node_visitor_dict[target] = visitor
-
-
-def generate_node_to_external_map(
-    edge_program: torch.export.ExportedProgram,
-) -> Dict[torch.fx.Node, int]:
-    node_to_external_map = {}
-    for node in edge_program.graph_module.graph.nodes:
-        # The order in which we visit the placeholder node is same as the *args
-        # order for the forward(*args) signature for this gm. Using the order of
-        # the nodes as external_id to extract the right arg from *args at runtime
-        if is_graph_input(node, edge_program):
-            node_to_external_map[node] = len(node_to_external_map)
-    for node in edge_program.graph_module.graph.nodes:
-        if is_graph_output(node):
-            node_to_external_map[node] = len(node_to_external_map)
-    return node_to_external_map
-
-
-def get_node_visitors(
-    edge_program: torch.export.ExportedProgram,
-    enable_tensor_dump=False,
-) -> Dict[str, NodeVisitor]:
-    """Create a new class instance at runtime, and put them in a dict"""
-    node_to_external_map = generate_node_to_external_map(edge_program)
-    node_visitors = {}
-    for target, visitor in _node_visitor_dict.items():
-        assert callable(
-            visitor
-        ), f"Expeting a callable class, but got {visitor} of type {type(visitor)}"
-        node_visitors[target] = visitor(
-            node_to_external_map, edge_program, enable_tensor_dump
-        )
-    return node_visitors

@@ -1017,7 +1017,6 @@ def _get_embedding_ops_patterns_and_replacements_torchao() -> (  # noqa C901
             torch.int8,
             -128,
             127,
-            "INT",
             output_dtype,
         )
         return torch.ops.aten.embedding.default(dq, indices)
@@ -1062,7 +1061,6 @@ def _get_embedding_ops_patterns_and_replacements_torchao() -> (  # noqa C901
             torch.int8,
             -2,
             1,
-            "INT",
             output_dtype,
         )
         return torch.ops.aten.embedding.default(dq, indices)
@@ -1110,7 +1108,6 @@ def _get_embedding_ops_patterns_and_replacements_torchao() -> (  # noqa C901
             torch.int8,
             -8,
             7,
-            "INT",
             output_dtype,
         )
         return torch.ops.aten.embedding.default(dq, indices)

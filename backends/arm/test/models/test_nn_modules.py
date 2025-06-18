@@ -56,7 +56,6 @@ test_parameters = {str(test[0].__class__.__name__): test for test in module_test
 @parametrize(
     "test_data",
     test_parameters,
-    xfails={"Transformer": "Output 0 does not match reference output."},
 )
 def test_nn_Modules_MI(test_data):
     module, inputs = test_data
@@ -81,7 +80,7 @@ def test_nn_Modules_MI(test_data):
     xfails={
         "GRU": "RuntimeError: Node aten_linear_default with op <EdgeOpOverload: aten.linear[...]> was not decomposed or delegated.",
         "PReLU": "RuntimeError: mul(): functions with out=... arguments don't support automatic differentiation, but one of the arguments requires grad.",
-        "Transformer": "RuntimeError: Expected out tensor to have dtype signed char, but got float",
+        "Transformer": "AssertionError: Output 0 does not match reference output.",
     },
 )
 def test_nn_Modules_BI(test_data):

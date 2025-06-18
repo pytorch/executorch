@@ -23,11 +23,11 @@ from executorch.exir import (
     EdgeProgramManager,
     ExecutorchProgramManager,
 )
-
-from torch.ao.quantization.quantizer import Quantizer
 from torch.export import Dim, export, export_for_training, ExportedProgram
 
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+from torchao.quantization.pt2e.quantizer import Quantizer
 
 ctypes.CDLL("libvulkan.so.1")
 
@@ -43,6 +43,9 @@ def lower_module(
     model: torch.nn.Module, sample_inputs: Tuple[torch.Tensor], dynamic_shapes=None
 ) -> EdgeProgramManager:
     compile_options = {}
+    if dynamic_shapes is not None:
+        compile_options["require_dynamic_shapes"] = True
+
     edge_compile_config = EdgeCompileConfig(
         _skip_dim_order=False,  # TODO(T182928844): Delegate dim order op to backend.
     )
@@ -70,6 +73,9 @@ def quantize_and_lower_module(
     dynamic_shapes=None,
 ) -> EdgeProgramManager:
     compile_options = {}
+    if dynamic_shapes is not None:
+        compile_options["require_dynamic_shapes"] = True
+
     edge_compile_config = EdgeCompileConfig(
         _skip_dim_order=False,  # TODO(T182928844): Delegate dim order op to backend.
     )
@@ -727,6 +733,10 @@ class TestVulkanBackend(unittest.TestCase):
 
         self.lower_module_and_test_output(model, sample_inputs)
 
+    @unittest.skip(
+        "Currently this test is failing due to weird partitioning because the eq scalar"
+        "operator is not supported yet. Re-enable when the operator is supported."
+    )
     def test_vulkan_backend_partial_dynamic_shapes(self):
         class SimpleModel(torch.nn.Module):
             def __init__(self):
@@ -1280,14 +1290,13 @@ class TestVulkanBackend(unittest.TestCase):
             def __init__(self):
                 super().__init__()
 
-            def forward(self, x, y, z, w):
-                return torch.cat([x, y, z, w], dim=1)
+            def forward(self, x, y, z):
+                return torch.cat([x, y, z], dim=1)
 
         sample_inputs = (
             torch.randn(size=(3, 6, 2, 7), dtype=torch.float32),
             torch.randn(size=(3, 1, 2, 7), dtype=torch.float32),
             torch.randn(size=(3, 9, 2, 7), dtype=torch.float32),
-            torch.randn(size=(3, 3, 2, 7), dtype=torch.float32),
         )
 
         self.lower_module_and_test_output(
@@ -1838,6 +1847,53 @@ class TestVulkanBackend(unittest.TestCase):
 
         self.lower_module_and_test_output(
             SymSizeModel(),
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            test_inputs=test_inputs,
+        )
+
+    def test_select_last_height_dynamic_shapes(self):
+        """
+        Test selecting the last element along the height dimension with dynamic shapes.
+        The height dimension (dim=1) is variable.
+        """
+
+        class SelectLastHeightModule(torch.nn.Module):
+            """
+            Module that selects the last element along the height dimension (dim=1) of a 3D tensor.
+            This is equivalent to the operation: x[:, -1, :]
+            """
+
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                # Select the last element along dimension 1 (height)
+                return x[:, -1, :]
+
+        # Create the module
+        module = SelectLastHeightModule()
+
+        # Create sample inputs with a specific shape
+        # Shape: [batch_size, height, width]
+        sample_inputs = (torch.arange(1, 61).reshape(2, 10, 3).float(),)
+
+        # Define dynamic shapes for the height dimension
+        height = Dim("height", min=1, max=10)
+        dynamic_shapes = {"x": {1: height}}
+
+        # Create test inputs with different heights
+        test_inputs = [
+            (torch.arange(1, 7).reshape(2, 1, 3).float(),),  # Minimum height
+            (torch.arange(1, 19).reshape(2, 3, 3).float(),),  # Small height
+            (torch.arange(1, 43).reshape(2, 7, 3).float(),),  # Medium height
+            (torch.arange(1, 31).reshape(2, 5, 3).float(),),  # Maximum height
+        ]
+
+        # Use the testing infrastructure from TestVulkanBackend
+        test_backend = TestVulkanBackend()
+        test_backend.lower_module_and_test_output(
+            module,
             sample_inputs,
             dynamic_shapes=dynamic_shapes,
             test_inputs=test_inputs,

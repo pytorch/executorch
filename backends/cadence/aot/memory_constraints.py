@@ -350,14 +350,28 @@ class GenerateCatNopConstraints(PassBase):
     def is_cat_along_outermost_dim(
         self, graph_module: torch.fx.GraphModule, cat_node: torch.fx.Node
     ) -> bool:
+        assert len(cat_node.args) > 0
+        cat_tensors = cat_node.args[0]
+        if not isinstance(cat_tensors, Sequence) or not all(
+            isinstance(t, torch.fx.Node) for t in cat_tensors
+        ):
+            raise ValueError("cat_tensors must be a sequence of torch.fx.Node objects.")
+
+        if len(cat_node.args) > 1:
+            cat_dim = cat_node.args[1]
+        else:
+            cat_dim = cat_node.kwargs.get("dim", 0)
+        if not isinstance(cat_dim, int):
+            raise ValueError("cat_dim must be an integer.")
+
         # If the cat op has default dim, then the concat dim is 0
-        if len(cat_node.args) == 1 or cat_node.args[1] == 0:
+        if len(cat_tensors) == 1 or cat_dim == 0:
             return True
-        # Get the concatenation dimension and concatenated tensors
-        (cat_tensors, cat_dim) = cast(
-            tuple[Sequence[torch.fx.Node], int], cat_node.args
-        )
+
+        # Make sure all dimes before cat_dim are 1.
         for tensor in cat_tensors:
+            if not isinstance(tensor, torch.fx.Node):
+                continue
             shape = get_shape(graph_module, tensor)
             if shape is None or not all(dim == 1 for dim in shape[0:cat_dim]):
                 return False

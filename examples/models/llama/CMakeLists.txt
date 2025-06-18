@@ -88,7 +88,7 @@ add_subdirectory(runner)
 set(link_libraries executorch gflags)
 set(_srcs main.cpp)
 
-if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+if(TARGET optimized_native_cpu_ops_lib)
   list(
     APPEND
     link_libraries
@@ -108,7 +108,7 @@ endif()
 target_link_options_shared_lib(quantized_ops_lib)
 list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+if(TARGET custom_ops)
   target_link_options_shared_lib(custom_ops)
   list(APPEND link_libraries custom_ops)
 endif()
@@ -116,6 +116,7 @@ endif()
 if(EXECUTORCH_BUILD_TORCHAO)
   # Currently only enable this on Arm-based Macs
   if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+    set(TORCHAO_BUILD_ATEN_OPS OFF)
     set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
     set(TORCHAO_BUILD_CPU_AARCH64 ON)
     set(TORCHAO_ENABLE_ARM_NEON_DOT ON)
@@ -219,7 +220,6 @@ endif()
 target_include_directories(
   llama_main
   PUBLIC ${_common_include_directories}
-         ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
 )
 target_link_libraries(llama_main PUBLIC llama_runner ${link_libraries})
 target_compile_options(llama_main PUBLIC ${_common_compile_options})

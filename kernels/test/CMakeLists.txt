@@ -197,6 +197,8 @@ set(all_test_sources
     "op_permute_copy_test.cpp"
     "op_pixel_shuffle_test.cpp"
     "op_prod_test.cpp"
+    "op_rand_test.cpp"
+    "op_randn_test.cpp"
     "op_reciprocal_test.cpp"
     "op_relu_test.cpp"
     "op_remainder_test.cpp"

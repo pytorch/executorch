@@ -939,8 +939,8 @@ class ReplaceConvWithChannelLastConv:
 
 # This pass needs to be reworked to be compatible with PT2. It is an optimization
 # pass anyway, so move it to opt level 2.
-# TODO(matthiascremon): update and improve this pass.
-@register_cadence_pass(CadencePassAttribute(opt_level=2))
+# TODO: T213724613 update and improve this pass.
+# @register_cadence_pass(CadencePassAttribute(opt_level=2))
 class ReplaceConvWithChannelLastConvPass(ExportPass):
     """
     Replace the ATen convolution op with custom conv op with NCHW or NHWC layout
@@ -2065,11 +2065,10 @@ class ReplaceWhereWithFullArgsWithWhereScalar(ExportPass):
         return super().call_operator(op, args, kwargs, meta)
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=2))
-class ReplaceGeluWithApproximateGeluPass(ExportPass):
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class ReplaceAtenApproxGeluWithApproxGeluPass(ExportPass):
     """
-    Replace the gelu op with an approximate gelu op. The approximate gelu op
-    is more efficient on DSP backends.
+    Replace the aten gelu op with an approximate arg with an approximate gelu op.
     """
 
     def call_operator(
@@ -2083,82 +2082,7 @@ class ReplaceGeluWithApproximateGeluPass(ExportPass):
             exir_ops.edge.aten.gelu.default,
         }:
             return super().call_operator(op, args, kwargs, meta)
-
-        # compute the approximate gelu (0.7978845608028654 is sqrt(2 / pi))
-        # as 0.5 * x * (1 + torch.tanh(0.7978845608028654 * ( x + 0.044715 * x^3)))
-
-        # Get 0.5 * x
-        half = super().call_operator(
-            exir_ops.edge.aten.mul.Tensor,
-            (args[0], 0.5),
-            {},
-            meta,
-        )
-
-        scaled = super().call_operator(
-            exir_ops.edge.aten.mul.Tensor,
-            (args[0], 0.044715),
-            {},
-            meta,
-        )
-
-        # Get x^2 (note that we use mul.Tensor twice instead of pow.Tensor because
-        # it is much more efficient on DSP backends)
-        scaled_square = super().call_operator(
-            exir_ops.edge.aten.mul.Tensor,
-            (scaled, args[0]),
-            {},
-            meta,
-        )
-
-        # Get x^3
-        scaled_cubed = super().call_operator(
-            exir_ops.edge.aten.mul.Tensor,
-            (scaled_square, args[0]),
-            {},
-            meta,
-        )
-
-        # Get x + 0.044715 * x^3
-        inner_sum = super().call_operator(
-            exir_ops.edge.aten.add.Tensor,
-            (scaled_cubed, args[0]),
-            {},
-            meta,
-        )
-
-        # Get 0.7978845608028654 * ( x + 0.044715 * x^3)
-        scaled_sum = super().call_operator(
-            exir_ops.edge.aten.mul.Tensor,
-            (inner_sum, 0.7978845608028654),
-            {},
-            meta,
-        )
-
-        # Get torch.tanh(0.7978845608028654 * ( x + 0.044715 * x^3))
-        tanh = super().call_operator(
-            exir_ops.edge.aten.tanh.default,
-            (scaled_sum,),
-            {},
-            meta,
-        )
-
-        # Get 1 + torch.tanh(0.79788456 * ( x + 0.044715 * x^3))
-        # TODO(): Check why this is not working properly with integer values (e.g. 1 instead of 1.)
-        outer_sum = super().call_operator(
-            exir_ops.edge.aten.add.Tensor,
-            (tanh, 1.0),
-            {},
-            meta,
-        )
-
-        # Retunr the final result
-        return super().call_operator(
-            exir_ops.edge.aten.mul.Tensor,
-            (half, outer_sum),
-            {},
-            meta,
-        )
+        return super().call_operator(op, args, kwargs, meta)
 
 
 # Adapted from fbcode/pyspeech/opt_passes/replace_ops.py
@@ -2376,6 +2300,52 @@ class ReplaceMatmulWithTransposedMatmulPass(ExportPass):
         return result
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class ReplaceMulTensorWithMulAndFullOpsPass(ExportPass):
+    """
+    Extracts a single value argument of mul op to a separate full op.
+    """
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        for mul_node in graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.mul.Tensor
+        ):
+            x_arg, const_arg = mul_node.args
+
+            # Swap arguments if the order is wrong
+            if isinstance(const_arg, torch.fx.Node):
+                x_arg, const_arg = const_arg, x_arg
+
+            # Skip if the const_arg is not a scalar
+            if not isinstance(const_arg, (float, int)) or not isinstance(
+                x_arg, torch.fx.Node
+            ):
+                continue
+
+            # Cast the const_arg to the dtype of the x_arg
+            full_arg = self.resolve_full_arg(x_arg, const_arg)
+
+            # Extract an argument to a separate full op.
+            with graph_module.graph.inserting_before(mul_node):
+                full_tensor = graph_module.graph.call_function(
+                    exir_ops.edge.aten.full.default, args=([1], full_arg)
+                )
+                new_mul_node = graph_module.graph.call_function(
+                    torch.ops.aten.mul.Tensor, args=(x_arg, full_tensor)
+                )
+            # Replace the old mul with a newly created mul.
+            mul_node.replace_all_uses_with(new_mul_node)
+            graph_module.graph.erase_node(mul_node)
+        return super().call(graph_module)
+
+    def resolve_full_arg(self, x_arg, const_arg):
+        if x_arg.meta["val"].dtype == torch.float32 and isinstance(const_arg, int):
+            const_arg = float(const_arg)
+        if x_arg.meta["val"].dtype == torch.int32 and isinstance(const_arg, float):
+            const_arg = int(const_arg)
+        return const_arg
+
+
 # This class encapsulates all the functions that replace/switch one op in the
 # graph with another.
 class CadenceReplaceOpsInGraph:
@@ -2414,7 +2384,7 @@ class CadenceReplaceOpsInGraph:
         ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass,
         ReplaceAtenAvgPoolWithJarvisAvgPoolPass,
         ReplaceWhereWithFullArgsWithWhereScalar,
-        ReplaceGeluWithApproximateGeluPass,
+        ReplaceAtenApproxGeluWithApproxGeluPass,
         ReplaceSplitWithSlicePass,
         ReplacePowWithMulPass,
     ]

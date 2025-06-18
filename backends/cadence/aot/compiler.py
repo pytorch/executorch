@@ -123,7 +123,7 @@ def prepare_and_convert_pt2(
     assert isinstance(model_gm, torch.fx.GraphModule)
 
     # Prepare
-    prepared_model = prepare_pt2e(model_gm, quantizer)  # pyre-ignore[6]
+    prepared_model = prepare_pt2e(model_gm, quantizer)
 
     # Calibrate
     # If no calibration data is provided, use the inputs
@@ -217,6 +217,7 @@ def _lower_ep_to_edge(
     expo_program: ExportedProgram,
     dump_graphs: bool = False,
     constant_methods: Optional[dict[str, object]] = None,
+    core_aten_exceptions: Optional[list[torch._ops.OpOverload]] = None,
 ) -> EdgeProgramManager:
     """
     Lower an ExportedProgram to an EdgeProgramManager (in edge IR).
@@ -237,7 +238,8 @@ def _lower_ep_to_edge(
                 torch.ops.aten.unfold.default,
                 torch.ops.aten.angle.default,
                 torch.ops.aten.rms_norm.default,
-            ],
+            ]
+            + (core_aten_exceptions or []),
         ),
         constant_methods=constant_methods,
         preserve_ops=(torch.ops.aten.rms_norm.default,),
@@ -275,6 +277,7 @@ def quantize_and_export_to_edge(
     quantizer: Optional[CadenceQuantizer] = None,
     dump_graphs: bool = False,
     constant_methods: Optional[dict[str, object]] = None,
+    calibration_data: Optional[list[tuple[object, ...]]] = None,
 ) -> EdgeProgramManager:
     """
     Trace, quantize and lower a model/inputs pair to edge IR.
@@ -283,6 +286,7 @@ def quantize_and_export_to_edge(
         model,
         inputs,
         quantizer=quantizer,
+        calibration_data=calibration_data,
         dump_graphs=dump_graphs,
     )
 

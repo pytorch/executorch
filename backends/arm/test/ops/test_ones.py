@@ -72,6 +72,7 @@ def test_ones_tosa_BI(test_data: test_data_t):
 
 
 @common.parametrize("test_data", OnesAdd.test_data)
+@common.XfailIfNoCorstone300
 def test_ones_u55_BI(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = EthosU55PipelineBI[input_t](
@@ -85,6 +86,7 @@ def test_ones_u55_BI(test_data: test_data_t):
 
 
 @common.parametrize("test_data", OnesAdd.test_data)
+@common.XfailIfNoCorstone320
 def test_ones_u85_BI(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = EthosU85PipelineBI[input_t](

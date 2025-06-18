@@ -5,11 +5,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
+from executorch.backends.qualcomm.builders.node_visitor import dq_ops
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
-
-from .utils import dq_ops
 
 
 class ExpandBroadcastTensorShape(ExportPass):

@@ -58,7 +58,7 @@ class FileDataLoader final : public executorch::runtime::DataLoader {
         fd_(rhs.fd_) {
     const_cast<const char*&>(rhs.file_name_) = nullptr;
     const_cast<size_t&>(rhs.file_size_) = 0;
-    const_cast<size_t&>(rhs.alignment_) = 0;
+    const_cast<std::align_val_t&>(rhs.alignment_) = {};
     const_cast<int&>(rhs.fd_) = -1;
   }
 
@@ -86,7 +86,7 @@ class FileDataLoader final : public executorch::runtime::DataLoader {
       const char* file_name)
       : file_name_(file_name),
         file_size_(file_size),
-        alignment_(alignment),
+        alignment_{alignment},
         fd_(fd) {}
 
   // Not safely copyable.
@@ -96,7 +96,7 @@ class FileDataLoader final : public executorch::runtime::DataLoader {
 
   const char* const file_name_; // Owned by the instance.
   const size_t file_size_;
-  const size_t alignment_;
+  const std::align_val_t alignment_;
   const int fd_; // Owned by the instance.
 };
 
