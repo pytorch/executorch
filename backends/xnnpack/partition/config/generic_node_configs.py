@@ -106,6 +106,13 @@ class AddConfig(GenericNodePartitionerConfig):
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        # No support for add nodes with alpha != 1
+        if "alpha" in node.kwargs and node.kwargs["alpha"] != 1:
+            why(node, reason="Add node doesn't support alpha != 1")
+            return False
+        return True
+
 
 class ReLUConfig(GenericNodePartitionerConfig):
     target_name = "relu.default"
