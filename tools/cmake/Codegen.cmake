@@ -23,6 +23,8 @@ function(gen_selected_ops)
   message(STATUS "  OPS_FROM_MODEL: ${GEN_OPS_FROM_MODEL}")
   message(STATUS "  DTYPE_SELECTIVE_BUILD: ${GEN_DTYPE_SELECTIVE_BUILD}")
 
+  set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
+
   if(GEN_DTYPE_SELECTIVE_BUILD)
     if(NOT GEN_OPS_FROM_MODEL)
       message(FATAL_ERROR "  DTYPE_SELECTIVE_BUILD is only support with model API, please pass in a model")
@@ -30,10 +32,10 @@ function(gen_selected_ops)
   endif()
 
   set(_oplist_yaml
-      ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_operators.yaml
+    ${_out_dir}/selected_operators.yaml
   )
 
-  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
+  file(MAKE_DIRECTORY ${_out_dir})
 
   file(GLOB_RECURSE _codegen_tools_srcs "${EXECUTORCH_ROOT}/codegen/tools/*.py")
 
@@ -67,11 +69,11 @@ function(gen_selected_ops)
 
   if(GEN_DTYPE_SELECTIVE_BUILD)
     set(_opvariant_h
-      ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_op_variants.h
+      ${_out_dir}/selected_op_variants.h
     )
     set(_gen_opvariant_command "${PYTHON_EXECUTABLE}" -m codegen.tools.gen_selected_op_variants
                           --yaml-file=${_oplist_yaml}
-                          --output-dir=${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/
+                          --output-dir=${_out_dir}/
     )
     message("Command - ${_gen_opvariant_command}")
     add_custom_command(
@@ -215,7 +217,7 @@ function(gen_operators_lib)
   set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
   if(GEN_DTYPE_SELECTIVE_BUILD)
     set(_opvariant_h
-      ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_op_variants.h
+      ${_out_dir}/selected_op_variants.h
     )
   endif()
 
@@ -242,13 +244,6 @@ function(gen_operators_lib)
       if("${portable_kernels_check}" IN_LIST GEN_KERNEL_LIBS)
         list(REMOVE_ITEM GEN_KERNEL_LIBS ${portable_kernels_check})
 
-        # Define portable kernels sources (same as in kernels/portable/CMakeLists.txt)
-        file(GLOB_RECURSE _portable_kernels_srcs
-             "${EXECUTORCH_ROOT}/kernels/portable/cpu/*.cpp"
-        )
-        list(FILTER _portable_kernels_srcs EXCLUDE REGEX "test/*.cpp")
-        list(FILTER _portable_kernels_srcs EXCLUDE REGEX "codegen")
-
         # Build kernels_util_all_deps, since later selected_portable_kernels depends on it
         list(TRANSFORM _kernels_util_all_deps__srcs PREPEND "${EXECUTORCH_ROOT}/")
         add_library(selected_kernels_util_all_deps ${_kernels_util_all_deps__srcs})
@@ -258,7 +253,8 @@ function(gen_operators_lib)
         target_compile_options(selected_kernels_util_all_deps PUBLIC ${_common_compile_options})
 
         # Build selected_portable_kernels
-        add_library(selected_portable_kernels ${_portable_kernels_srcs})
+        list(TRANSFORM _portable_kernels__srcs PREPEND "${EXECUTORCH_ROOT}/")
+        add_library(selected_portable_kernels ${_portable_kernels__srcs})
         target_link_libraries(selected_portable_kernels PRIVATE executorch_core selected_kernels_util_all_deps)
         target_compile_options(selected_portable_kernels PUBLIC ${_common_compile_options})
         target_include_directories(selected_portable_kernels PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/)
@@ -272,15 +268,14 @@ function(gen_operators_lib)
         target_compile_definitions(selected_portable_kernels PRIVATE EXECUTORCH_SELECTIVE_BUILD_DTYPE=1)
 
         target_link_libraries(${GEN_LIB_NAME} PUBLIC selected_portable_kernels)
+      else()
+        message(FATAL_ERROR "Currently dtype selective build is only supported for portable_kernels but {${GEN_KERNEL_LIBS}} were provided!")
       endif()
     endif()
 
+    # After removing portable_kernels, test if there are other kernel libs provided
     if(GEN_KERNEL_LIBS)
-      if(GEN_DTYPE_SELECTIVE_BUILD)
-        message(FATAL_ERROR "Currently dtype selective build is only supported for portable_kernels but {${GEN_KERNEL_LIBS}} were provided!")
-      else()
-        target_link_libraries(${GEN_LIB_NAME} PUBLIC ${GEN_KERNEL_LIBS})
-      endif()
+      target_link_libraries(${GEN_LIB_NAME} PUBLIC ${GEN_KERNEL_LIBS})
     endif()
   endif()
 
