@@ -602,7 +602,7 @@ class ExecutorchBenchmarkFetcher:
 
     def normalize_string(self, s: str) -> str:
         s = s.lower().strip()
-        s = s.replace("+","plus")
+        s = s.replace("+", "plus")
         s = s.replace("_", "-")
         s = s.replace(" ", "-")
         s = re.sub(r"[^\w\-\.\(\)]", "-", s)
