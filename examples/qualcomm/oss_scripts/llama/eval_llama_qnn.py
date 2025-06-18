@@ -5,11 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
-import logging
 import copy
 import json
-import torch
-from lm_eval.evaluator import simple_evaluate
 
 from typing import List, Optional, Tuple
 
@@ -18,36 +15,43 @@ import torch.nn as nn
 
 from executorch.examples.models.llama.eval_llama_lib import (
     build_args_parser,
-    GraphModuleEvalWrapper
+    GraphModuleEvalWrapper,
 )
+
+from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
+    LlamaModel,
+    ModelArgs,
+)
+from lm_eval.evaluator import simple_evaluate
 
 from pytorch_tokenizers import get_tokenizer
 
-from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
-     LlamaModel,
-     ModelArgs,
-)
-
 
 class WrappedLlamaModel(nn.Module):
-    def __init__(self, model, use_kv_cache=False, max_seq_len=512, device='cuda'):
+    def __init__(self, model, use_kv_cache=False, max_seq_len=512, device="cuda"):
         super(WrappedLlamaModel, self).__init__()
         self.model = model
         self.max_seq_len = max_seq_len
         self.use_kv_cache = use_kv_cache
         self.device = device
 
-    def forward(self,
+    def forward(
+        self,
         tokens: torch.Tensor,
         input_pos: Optional[torch.Tensor] = None,
         *args,
     ) -> Tuple[torch.Tensor, List[torch.Tensor], List[torch.Tensor]]:
         # Pad input if necessary, since LlamaModel requires static shape
         if tokens.shape[1] != self.max_seq_len:
-            tokens = torch.nn.functional.pad(tokens, (self.max_seq_len - tokens.shape[1],0))
-        atten_mask = self.model.get_example_inputs(self.use_kv_cache)[1].to(device=self.device).to(dtype=torch.bfloat16)
+            tokens = torch.nn.functional.pad(
+                tokens, (self.max_seq_len - tokens.shape[1], 0)
+            )
+        atten_mask = (
+            self.model.get_example_inputs(self.use_kv_cache)[1]
+            .to(device=self.device)
+            .to(dtype=torch.bfloat16)
+        )
         return self.model.forward(tokens, atten_mask, input_pos, *args)
-
 
 
 def gen_eval_wrapper(model_name, args):
@@ -66,7 +70,13 @@ def gen_eval_wrapper(model_name, args):
         )
     config = prefill_config
     use_i64_token = args.embedding_quantize is not None
-    model = LlamaModel(config, ar_len=args.prefill_ar_len, output_new_cache_only=True, output_cache=False, use_i64_token=use_i64_token)
+    model = LlamaModel(
+        config,
+        ar_len=args.prefill_ar_len,
+        output_new_cache_only=True,
+        output_cache=False,
+        use_i64_token=use_i64_token,
+    )
     state_dict = torch.load(
         args.checkpoint, weights_only=True, map_location=args.device, mmap=True
     )
@@ -111,7 +121,9 @@ def gen_eval_wrapper(model_name, args):
     model.to(dtype=torch.bfloat16)
     model.to(args.device)
 
-    wrapped_model = WrappedLlamaModel(model, args.use_kv_cache, args.max_seq_length, args.device)
+    wrapped_model = WrappedLlamaModel(
+        model, args.use_kv_cache, args.max_seq_length, args.device
+    )
 
     return GraphModuleEvalWrapper(
         model=wrapped_model,
@@ -121,7 +133,6 @@ def gen_eval_wrapper(model_name, args):
         generate_full_logits=args.generate_full_logits,
         enable_dynamic_shape=args.enable_dynamic_shape,
     )
-
 
 
 def eval_llama(
@@ -166,7 +177,7 @@ def main() -> None:
     args.use_kv_cache = False
     args.prefill_ar_len = args.max_seq_length
 
-    args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    args.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     eval_llama(modelname, args)
 
