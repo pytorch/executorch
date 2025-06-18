@@ -1095,3 +1095,10 @@ public extension Tensor {
     ))
   }
 }
+
+@available(*, deprecated, message: "This API is experimental.")
+extension Tensor: CustomStringConvertible {
+  public var description: String {
+    self.anyTensor.description
+  }
+}
