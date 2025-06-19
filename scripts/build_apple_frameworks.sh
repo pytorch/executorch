@@ -151,49 +151,6 @@ for preset_index in "${!PRESETS[@]}"; do
   preset="${PRESETS[$preset_index]}"
   preset_output_dir="${OUTPUT_DIR}/${PRESETS_RELATIVE_OUT_DIR[$preset_index]}"
 
-cmake_build() {
-  local platform=$1
-  local platform_flag=$2
-  local platform_target=$3
-  local mode=$4
-  echo "Building for $platform ($mode) with flag $platform_flag"
-  mkdir -p "$platform" && cd "$platform" || exit 1
-  cmake "$SOURCE_ROOT_DIR" -G Xcode \
-    -DCMAKE_BUILD_TYPE="$mode" \
-    -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
-    -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
-    -DEXECUTORCH_BUILD_PTHREADPOOL=ON \
-    -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="" \
-    -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
-    -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD="c++17" \
-    -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY="libc++" \
-    -DCMAKE_C_FLAGS="-ffile-prefix-map=$SOURCE_ROOT_DIR=/executorch -fdebug-prefix-map=$SOURCE_ROOT_DIR=/executorch" \
-    -DCMAKE_CXX_FLAGS="-ffile-prefix-map=$SOURCE_ROOT_DIR=/executorch -fdebug-prefix-map=$SOURCE_ROOT_DIR=/executorch" \
-    -DPYTHON_EXECUTABLE="$PYTHON" \
-    -DEXECUTORCH_BUILD_COREML=$COREML \
-    -DEXECUTORCH_BUILD_MPS=$MPS \
-    -DEXECUTORCH_BUILD_XNNPACK=$XNNPACK \
-    -DEXECUTORCH_XNNPACK_SHARED_WORKSPACE=ON \
-    -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
-    -DEXECUTORCH_BUILD_EXTENSION_APPLE=ON \
-    -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-    -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=$CUSTOM \
-    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=$OPTIMIZED \
-    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=$QUANTIZED \
-    -DEXECUTORCH_BUILD_KERNELS_TORCHAO=$TORCHAO \
-    -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="$(pwd)" \
-    ${platform_flag:+-DPLATFORM=$platform_flag} \
-    ${platform_target:+-DDEPLOYMENT_TARGET=$platform_target} \
-    --log-level=VERBOSE
-  cmake --build . \
-    --config "$mode" \
-    --verbose
-  cd -
-}
-
-for index in ${!PLATFORMS[*]}; do
   for mode in "${MODES[@]}"; do
     echo "Building preset ${preset} (${mode}) in ${preset_output_dir}..."
 
@@ -286,6 +243,7 @@ for mode in "${MODES[@]}"; do
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" "$FRAMEWORK_KERNELS_OPTIMIZED" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_QUANTIZED" "$FRAMEWORK_KERNELS_QUANTIZED" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_TORCHAO" "$FRAMEWORK_KERNELS_TORCHAO" "$mode"
+
   cd "${OUTPUT_DIR}"
   "$SOURCE_ROOT_DIR"/scripts/create_frameworks.sh "${FRAMEWORK_FLAGS[@]}"
 done
