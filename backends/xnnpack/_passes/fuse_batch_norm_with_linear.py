@@ -41,7 +41,7 @@ class FuseBatchNormWithLinearPass(XNNPACKPass):
             ):
                 continue
 
-            # Single user of the linear op must be batch_norm
+            # Single user of the linear op must be batch_norm. If not, bail.
             bn = list(linear.users.keys())[0]
             if (
                 bn.target != exir_ops.edge.aten.native_batch_norm.default
@@ -53,7 +53,7 @@ class FuseBatchNormWithLinearPass(XNNPACKPass):
             if not self.can_fuse(linear, bn, self.exported_program):
                 continue
 
-            # Get the parameters
+            # Get the parameters from linear op
             assert len(linear.args) == 3
 
             linear_weight = get_param_tensor(self.exported_program, linear.args[1])
@@ -171,14 +171,17 @@ class FuseBatchNormWithLinearPass(XNNPACKPass):
         ].count(False):
             return False
 
+        linear_weights = linear.args[1]
         bn_weights = bn.args[1]
 
         # Check that the weights for linear and batchnorm are both params
-        if not isinstance(linear, torch.fx.Node) or not isinstance(
+        if not isinstance(linear_weights, torch.fx.Node) or not isinstance(
             bn_weights, torch.fx.Node
         ):
             return False
 
-        if [is_param_node(program, node) for node in {linear, bn_weights}].count(False):
+        if [
+            is_param_node(program, node) for node in {linear_weights, bn_weights}
+        ].count(False):
             return False
         return True
