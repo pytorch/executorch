@@ -385,6 +385,7 @@ def get_compile_spec(
     intermediates: Optional[str] = None,
     system_config: Optional[str] = None,
     memory_mode: Optional[str] = None,
+    quantize: bool = False,
 ) -> list[CompileSpec]:
     spec_builder = None
     if target.startswith("TOSA"):
@@ -401,7 +402,11 @@ def get_compile_spec(
             extra_flags="--verbose-operators --verbose-cycle-estimate",
         )
     elif "vgf" in target:
-        spec_builder = ArmCompileSpecBuilder().vgf_compile_spec()
+        if quantize:
+            tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
+        else:
+            tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+FP")
+        spec_builder = ArmCompileSpecBuilder().vgf_compile_spec(tosa_spec)
 
     if intermediates is not None:
         spec_builder.dump_intermediate_artifacts_to(intermediates)
@@ -700,6 +705,7 @@ def to_edge_TOSA_delegate(
         args.intermediates,
         args.system_config,
         args.memory_mode,
+        args.quantize,
     )
 
     model_int8 = None
@@ -739,6 +745,7 @@ def to_edge_no_delegate(exported_program, args, model: torch.nn.Module, example_
             args.intermediates,
             args.system_config,
             args.memory_mode,
+            args.quantize,
         )
         model, exported_program = quantize_model(
             args, model, example_inputs, compile_spec
