@@ -13,6 +13,7 @@ CUSTOM_EDGE_OPS = [
     "hardswish.default",
     "linear.default",
     "maximum.default",
+    "multihead_attention.default",
     "adaptive_avg_pool2d.default",
     "bitwise_right_shift.Tensor",
     "bitwise_left_shift.Tensor",

@@ -116,21 +116,29 @@ class FuseConstantArgsPass(ExportPass):
                 or torch._export.utils.is_buffer(self.exported_program, input_node)
                 for input_node in input_nodes
             )
-            input_nodes_single_users = (
-                len(input_node.users) == 1 for input_node in input_nodes
-            )
+            if not all(input_nodes_constant):
+                continue
 
-            if all(input_nodes_constant) and all(input_nodes_single_users):
-                try:
-                    did_fuse = self._fuse_nodes(node)
-                    modified |= did_fuse
-                    if did_fuse:
-                        graph_module.recompile()  # Recompile needed to catch chains of constant ops
-                        input_nodes_to_delete.extend(input_nodes)
-                except Exception as e:
-                    logger.warning(
-                        f"\nFailed to fuse constant op {node.name} due to exception:\n{str(e)}"
+            try:
+                did_fuse = self._fuse_nodes(node)
+                if did_fuse:
+                    logger.debug(
+                        f"Fused constant op: {node.name} with placeholder inputs:"
+                        f"{[input_node.name for input_node in input_nodes]}"
                     )
+                    modified |= did_fuse
+                    graph_module.recompile()  # Recompile needed to catch chains of constant ops
+                    input_nodes_to_delete.extend(
+                        [
+                            input_node
+                            for input_node in input_nodes
+                            if len(input_node.users) == 1
+                        ]
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"\nFailed to fuse constant op {node.name} due to exception:\n{str(e)}"
+                )
 
         if modified:
             graph_module.graph.eliminate_dead_code()
