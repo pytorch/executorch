@@ -129,8 +129,10 @@ class ExecutorchBenchmarkFetcher:
     Fetch and process benchmark data from HUD API for ExecutorchBenchmark.
 
     This class provides methods to:
-    1. Fetch benchmark data for a specified time range
-    2. Process and categorize data into private and public device results
+    1. Fetch all benchmark data for a specified time range
+    2. Get all private device info within the time range
+    3. Filter the private device data if filter is provided
+    4. Then use the filtered private device data to find matched the public device data using [model, backend, device, arch]
     3. Export results in various formats (JSON, DataFrame, Excel, CSV)
 
     Usage:
