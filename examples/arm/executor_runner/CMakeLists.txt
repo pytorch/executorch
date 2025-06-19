@@ -119,7 +119,7 @@ configure_timing_adapters(${SYSTEM_CONFIG} ${MEMORY_MODE})
 add_library(executorch STATIC IMPORTED)
 set_property(
   TARGET executorch PROPERTY IMPORTED_LOCATION
-                           "${ET_BUILD_DIR_PATH}/libprim_ops_lib.a"
+                           "${ET_BUILD_DIR_PATH}/libexecutorch.a"
 )
 
 add_library(executorch_core STATIC IMPORTED)
