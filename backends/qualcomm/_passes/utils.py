@@ -64,6 +64,7 @@ def get_passes_dependency_for_capture_program():
         AnnotateQuantAttrs,
         AnnotateStack,
         AnnotateUnbind,
+        ConvertBmmToMatmul,
         ConvertConv1dToConv2d,
         DecomposeAny,
         DecomposeColIm,
@@ -82,11 +83,13 @@ def get_passes_dependency_for_capture_program():
     return {
         AnnotateAdaptiveAvgPool1D: [RemoveRedundancy],
         AnnotateQuantAttrs: [
+            ConvertBmmToMatmul,
             RecomposePixelUnshuffle,
             RemoveRedundancy,
         ],
         AnnotateStack: [RemoveRedundancy],
         AnnotateUnbind: [RemoveRedundancy],
+        ConvertBmmToMatmul: [RecomposePixelUnshuffle],
         DecomposeAny: [RemoveRedundancy],
         DecomposeColIm: [FoldQDQ],
         DecomposeLinalgVectorNorm: [RemoveRedundancy],
