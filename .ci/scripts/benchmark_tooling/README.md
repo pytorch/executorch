@@ -31,7 +31,6 @@ python3 .ci/scripts/benchmark_tooling/get_benchmark_analysis_data.py \
 - `--endTime`: End time in ISO format (e.g., "2025-06-17T18:00:00") (required)
 - `--env`: Choose environment ("local" or "prod", default: "prod")
 - `--no-silent`: Show processing logs (default: only show results & minimum logging)
-- `print-all-table-info`: show all cleaned table infos, this helps user to pick the correct format of filters
 
 ##### Output Options:
 - `--outputType`: Choose output format (default: "print")
@@ -49,15 +48,24 @@ python3 .ci/scripts/benchmark_tooling/get_benchmark_analysis_data.py \
 - `--models`: Filter by specific model names (e.g "mv3" "meta-llama-llama-3.2-1b-instruct-qlora-int4-eo8")
 
 #### Example Usage
-call multiple private device pools and models
+call multiple private device pools and models:
+this fetches all the private table data that has model `llama-3.2-1B` and `mv3`
 ```bash
 python3 get_benchmark_analysis_data.py \
 --startTime "2025-06-01T00:00:00" \
 --endTime "2025-06-11T00:00:00" \
---private-device-pools 'apple_iphone_15_private' 'samsung_s22_private'
---models 'mv3' 'allenai/OLMo-1B-hf'
+--private-device-pools 'apple_iphone_15_private' 'samsung_s22_private' \
+--models 'meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8' 'mv3'
 ```
 
+this fetches all the private iphone table data that has model `llama-3.2-1B` and `mv3`, and associated public iphone data
+```bash
+python3 get_benchmark_analysis_data.py \
+--startTime "2025-06-01T00:00:00" \
+--endTime "2025-06-11T00:00:00" \
+--private-device-pools 'apple_iphone_15_private' \
+--models 'meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8' 'mv3'
+```
 #### Working with Output Files CSV and Excel
 
 You can use methods in `common.py` to convert the file data back to DataFrame format, those methods read the first row in csv/excel file, and return result with format list of {"groupInfo":DICT, "df":df.Dataframe{}} format.

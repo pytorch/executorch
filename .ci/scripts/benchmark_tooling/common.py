@@ -38,3 +38,12 @@ def read_all_csv_with_metadata(folder_path: str) -> List[Dict[str, Any]]:
         results.append({"groupInfo": meta, "df": df})
     print(f"successfully fetched {len(results)} sheets from {folder_path}")
     return results
+
+
+import logging
+logging.basicConfig(level=logging.INFO)
+
+# For Excel files (assuming the Excel file is in the current directory)
+file_path = "./private.xlsx"
+res = read_excel_with_json_header(file_path)
+logging.info(res)

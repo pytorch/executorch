@@ -539,6 +539,8 @@ class ExecutorchBenchmarkFetcher:
             )
         self.data = deepcopy(data)
 
+
+        #
         private_list = sorted(
             (
                 item
@@ -547,8 +549,9 @@ class ExecutorchBenchmarkFetcher:
             ),
             key=lambda x: x["table_name"],
         )
-        print(f"Found {len(private_list)} private tables before filtering")
+
         if filters:
+            logging.info(f"Found {len(private_list)} private tables before filtering")
             private_list = self.filter_private_results(private_list, filters)
         else:
             logging.info("filters is None, using all private results")
@@ -625,7 +628,6 @@ class ExecutorchBenchmarkFetcher:
     def filter_private_results(
         self, all_privates: List[Dict[str, Any]], filters: BenchmarkFilters
     ):
-
         # fetch all private devices within the time range for samsung and ios
         private_devices = self.get_all_private_devices()
 
@@ -638,6 +640,7 @@ class ExecutorchBenchmarkFetcher:
             return all_privates
 
         device_ios_match = set()
+        # hardcoded since we only have 2 device pools, each for iphone and samsung
         if "apple_iphone_15_private" in device_pool:
             device_ios_match.update(
                 private_devices[0]
@@ -714,7 +717,6 @@ def argparsers():
         nargs="+",
         help="Filter results by one or more backend full name(e.g. --backend qlora mv3) (OR logic within backends scope, AND logic with other filter type)",
     )
-
     parser.add_argument(
         "--private-device-pools",
         nargs="+",  # allow one or more values
