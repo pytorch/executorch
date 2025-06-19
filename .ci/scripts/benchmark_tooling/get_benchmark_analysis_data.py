@@ -629,7 +629,11 @@ class ExecutorchBenchmarkFetcher:
     def filter_private_results(
         self, all_privates: List[Dict[str, Any]], filters: BenchmarkFilters
     ):
-        # fetch all private devices within the time range for samsung and ios
+        """
+        dynamically filter private device data based on filters, if any.
+        fetch all private devices within the time range, and then filter based on filter parameters
+        such as device_pool, backends, and models.
+        """
         private_devices = self.get_all_private_devices()
 
         device_pool = filters.devicePoolNames or set()
@@ -659,6 +663,7 @@ class ExecutorchBenchmarkFetcher:
                 continue
 
             if device_ios_match:
+                # must match both device and arch in a record, otherwise skip
                 pair = (info.get("device", ""), info.get("arch", ""))
                 if pair not in device_ios_match:
                     continue
@@ -716,18 +721,18 @@ def argparsers():
     parser.add_argument(
         "--backends",
         nargs="+",
-        help="Filter results by one or more backend full name(e.g. --backend qlora mv3) (OR logic within backends scope, AND logic with other filter type)",
+        help="Filter results by one or more backend full name(e.g. --backends qlora mv3) (OR logic within backends scope, AND logic with other filter type)",
     )
     parser.add_argument(
         "--private-device-pools",
         nargs="+",  # allow one or more values
         choices=VALID_PRIVATE_DEVICE_POOLS_NAMES,
-        help="List of devices to include",
+        help="List of devices to include [apple_iphone_15_private, samsung_s22_private, you can include both] (OR logic within private-device-pools scope, AND logic with other filter type)",
     )
     parser.add_argument(
         "--models",
         nargs="+",
-        help="Filter by one or more models (OR logic withn models scope, AND logic with other filter type)",
+        help="Filter by one or more models (e.g. --backend 'meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8' 'mv3') (OR logic withn models scope, AND logic with other filter type)",
     )
     return parser.parse_args()
 

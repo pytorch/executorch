@@ -12,9 +12,9 @@ pip install -r requirements.txt
 ## Tools
 
 ### get_benchmark_analysis_data.py
+This script mainlu used to generate analysis data between private device and public device with same settings.
 
-This script fetches benchmark data from HUD Open API, cleans data that only contains FAILURE_REPORT columns, and retrieves all private device metrics and associated public device metrics based on [model, backend, device, arch].
-
+It fetches benchmark data from HUD Open API for a time range, then cleans the data with FAILURE inidcator, and retrieves all private device metrics and equivalent public device  metrics based on [model, backend, device_pool_names, arch]. User can filter the data by specifying private device_pool_names, backends, and models for private devices.
 #### Quick Start
 
 ```bash
