@@ -98,7 +98,7 @@ class FuseConstantArgsPass(ExportPass):
 
     def call(self, graph_module):
         modified = False
-        input_nodes_to_delete = []
+        input_nodes_to_maybe_delete = set()
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
                 continue
@@ -128,13 +128,7 @@ class FuseConstantArgsPass(ExportPass):
                     )
                     modified |= did_fuse
                     graph_module.recompile()  # Recompile needed to catch chains of constant ops
-                    input_nodes_to_delete.extend(
-                        [
-                            input_node
-                            for input_node in input_nodes
-                            if len(input_node.users) == 1
-                        ]
-                    )
+                    input_nodes_to_maybe_delete.update(input_nodes)
             except Exception as e:
                 logger.warning(
                     f"\nFailed to fuse constant op {node.name} due to exception:\n{str(e)}"
@@ -142,8 +136,9 @@ class FuseConstantArgsPass(ExportPass):
 
         if modified:
             graph_module.graph.eliminate_dead_code()
-            for input_node in input_nodes_to_delete:
-                delete_constant_placeholder(self.exported_program, input_node)
+            for input_node in input_nodes_to_maybe_delete:
+                if len(input_node.users) == 0:
+                    delete_constant_placeholder(self.exported_program, input_node)
 
             graph_module = super().call(graph_module).graph_module
 
