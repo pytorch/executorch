@@ -38,6 +38,7 @@
 		F292B01D2D88AF3500BE6839 /* bpe_tokenizer_base.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F292B0162D88AF3500BE6839 /* bpe_tokenizer_base.cpp */; };
 		F292B0202D88AF3500BE6839 /* llama2c_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F292B0172D88AF3500BE6839 /* llama2c_tokenizer.cpp */; };
 		F292B0212D88AF3500BE6839 /* tiktoken.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F292B01A2D88AF3500BE6839 /* tiktoken.cpp */; };
+		F2E1B5172E03AC19002C9718 /* sentencepiece.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F2E1B5162E03AC19002C9718 /* sentencepiece.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -110,6 +111,7 @@
 		F292B0292D88AF4800BE6839 /* result.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = result.h; sourceTree = "<group>"; };
 		F292B02B2D88AF4800BE6839 /* tiktoken.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = tiktoken.h; sourceTree = "<group>"; };
 		F292B02D2D88AF4800BE6839 /* tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = tokenizer.h; sourceTree = "<group>"; };
+		F2E1B5162E03AC19002C9718 /* sentencepiece.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = sentencepiece.cpp; path = src/sentencepiece.cpp; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -183,6 +185,7 @@
 		032A74022CAFBB7800932D36 /* tokenizers */ = {
 			isa = PBXGroup;
 			children = (
+				F2E1B5162E03AC19002C9718 /* sentencepiece.cpp */,
 				3C6ABD322DFA27DE0015DE55 /* regex_lookahead.cpp */,
 				30AA4B592DC0766800B1BE50 /* hf_tokenizer.cpp */,
 				30AA4B5A2DC0766800B1BE50 /* pcre2_regex.cpp */,
@@ -426,6 +429,7 @@
 				F292B01D2D88AF3500BE6839 /* bpe_tokenizer_base.cpp in Sources */,
 				F292B0202D88AF3500BE6839 /* llama2c_tokenizer.cpp in Sources */,
 				F292B0212D88AF3500BE6839 /* tiktoken.cpp in Sources */,
+				F2E1B5172E03AC19002C9718 /* sentencepiece.cpp in Sources */,
 				03E7E6792CBDCAE900205E71 /* CoreMLTests.mm in Sources */,
 				032A74232CAFC1B300932D36 /* runner.cpp in Sources */,
 				03B2D37A2C8A515C0046936E /* GenericTests.mm in Sources */,
