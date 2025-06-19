@@ -58,7 +58,7 @@ python3 get_benchmark_analysis_data.py \
 --models 'meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8' 'mv3'
 ```
 
-this fetches all the private iphone table data that has model `llama-3.2-1B` and `mv3`, and associated public iphone data
+this fetches all the private iphone table data that has model `llama-3.2-1B` and `mv3`, and associated public iphone
 ```bash
 python3 get_benchmark_analysis_data.py \
 --startTime "2025-06-01T00:00:00" \
@@ -120,18 +120,6 @@ dict_results = fetcher.to_dict()
 
 # Use the output_data method for flexible output
 results = fetcher.output_data(output_type="excel", output_dir="./results")
-```
-
-### analyze_benchmark_stability.py
-
-This script analyzes the stability of benchmark data, comparing the results of private and public devices.
-
-#### Quick Start
-
-```bash
-python .ci/scripts/benchmark_tooling/analyze_benchmark_stability.py \
-    "Benchmark Dataset with Private AWS Devices.xlsx" \
-    --reference_file "Benchmark Dataset with Public AWS Devices.xlsx"
 ```
 
 ## Running Unit Tests
