@@ -47,9 +47,20 @@ class TestExportLlm(unittest.TestCase):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write("""
 base:
+  model_class: llama3
   tokenizer_path: /path/to/tokenizer.json
+  preq_mode: 8da4w
+model:
+  dtype_override: fp32
 export:
   max_seq_length: 256
+quantization:
+  pt2e_quantize: xnnpack_dynamic
+  use_spin_quant: cuda
+backend:
+  coreml:
+    quantize: c4w
+    compute_units: cpu_and_gpu
 """)
             config_file = f.name
 
@@ -61,8 +72,15 @@ export:
             # Verify export_llama was called with config
             mock_export_llama.assert_called_once()
             called_config = mock_export_llama.call_args[0][0]
+            self.assertEqual(called_config["base"]["model_class"], "llama3")
             self.assertEqual(called_config["base"]["tokenizer_path"], "/path/to/tokenizer.json")
+            self.assertEqual(called_config["base"]["preq_mode"], "8da4w")
+            self.assertEqual(called_config["model"]["dtype_override"], "fp32")
             self.assertEqual(called_config["export"]["max_seq_length"], 256)
+            self.assertEqual(called_config["quantization"]["pt2e_quantize"], "xnnpack_dynamic")
+            self.assertEqual(called_config["quantization"]["use_spin_quant"], "cuda")
+            self.assertEqual(called_config["backend"]["coreml"]["quantize"], "c4w")
+            self.assertEqual(called_config["backend"]["coreml"]["compute_units"], "cpu_and_gpu")
         finally:
             os.unlink(config_file)
 
@@ -78,7 +96,13 @@ export:
         """Test that --config rejects additional CLI arguments to prevent mixing approaches."""
         # Create a temporary config file
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            f.write("base:\n  checkpoint: /path/to/checkpoint.pth")
+            f.write("""
+base:
+  model_class: llama2
+  checkpoint: /path/to/checkpoint.pth
+model:
+  dtype_override: bf16
+""")
             config_file = f.name
 
         try:
@@ -95,7 +119,14 @@ export:
     def test_config_rejects_multiple_cli_args(self) -> None:
         """Test that --config rejects multiple CLI arguments (not just single ones)."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            f.write("export:\n  max_seq_length: 128")
+            f.write("""
+base:
+  model_class: qwen2_5
+export:
+  max_seq_length: 128
+quantization:
+  pt2e_quantize: qnn_8a8w
+""")
             config_file = f.name
 
         try:
