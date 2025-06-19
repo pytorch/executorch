@@ -447,7 +447,7 @@ class RemoveNopRequantizeOpPass(ExportPass):
         kwargs: dict[str, Argument],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        if op != exir_ops.edge.cadence.requantize.default:
+        if op != exir_ops.edge.cadence.requantize.per_tensor:
             return super().call_operator(op, args, kwargs, meta)
 
         # Parse the args
