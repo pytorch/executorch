@@ -2,8 +2,8 @@
 ExecutorchBenchmark Analysis Data Retrieval
 
 This module provides tools for fetching, processing, and analyzing benchmark data
-from the HUD Open API for ExecutorchBenchmark. It supports filtering data by device
-types (private and public), exporting results in various formats (JSON, DataFrame, Excel, CSV),
+from the HUD Open API for ExecutorchBenchmark. It supports filtering data by (private) device pool names,
+backends, and models, exporting results in various formats (JSON, DataFrame, Excel, CSV),
 and customizing data retrieval parameters.
 """
 
@@ -16,13 +16,28 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 import requests
 from yaspin import yaspin
 
 logging.basicConfig(level=logging.INFO)
+
+# add here just for the records
+VALID_PRIVATE_DEVICE_POOLS_MAPPINGS = {
+    "apple_iphone_15_private": [
+        ("Apple iPhone 15 Pro (private)", "iOS 18.4.1"),
+        ("Apple iPhone 15 (private)", "iOS 18.0"),
+        ("Apple iPhone 15 Plus (private)", "iOS 17.4.1"),
+    ],
+    "samsung_s22_private": [
+        ("Samsung Galaxy S22 Ultra 5G (private)", "Android 14"),
+        ("Samsung Galaxy S22 5G (private)", "Android 13"),
+    ],
+}
+
+VALID_PRIVATE_DEVICE_POOLS_NAMES = list(VALID_PRIVATE_DEVICE_POOLS_MAPPINGS.keys())
 
 
 class OutputType(Enum):
@@ -84,7 +99,7 @@ class MatchingGroupResult:
 class BenchmarkFilters:
     models: list
     backends: list
-    devices: list
+    devicePoolNames: list
 
 
 BASE_URLS = {
@@ -156,9 +171,6 @@ class ExecutorchBenchmarkFetcher:
         self.disable_logging = disable_logging
         self.matching_groups: Dict[str, MatchingGroupResult] = {}
 
-    def add_abbreviations(self, abbreviations: Dict[str, str]):
-        self.abbreviations = abbreviations
-
     def run(
         self,
         start_time: str,
@@ -173,17 +185,8 @@ class ExecutorchBenchmarkFetcher:
         if data is None:
             logging.warning("no data fetched from the HUD API")
             return None
-        res = self._process(data, filters)
-        self.data = res.get("data", [])
-        private_list = res.get("private", [])
-        public_list = self._filter_public_result(private_list, res["public"])
 
-        self.matching_groups["private"] = MatchingGroupResult(
-            category="private", data=private_list
-        )
-        self.matching_groups["public"] = MatchingGroupResult(
-            category="public", data=public_list
-        )
+        self._process(data, filters)
 
     def _filter_out_failure_only(
         self, data_list: List[Dict[str, Any]]
@@ -208,24 +211,11 @@ class ExecutorchBenchmarkFetcher:
             item["rows"] = filtered_rows
         return [item for item in data_list if item.get("rows")]
 
-    def _filter_public_result(self, private_list, public_list):
-        """
-        Filter public device results to match private device configurations.
-
-        Finds the intersection of table names between private and public results
-        to ensure comparable data sets.
-
-        Args:
-            private_list: List of benchmark results for private devices
-            public_list: List of benchmark results for public devices
-
-        Returns:
-            Filtered list of public device results that match private device configurations
-        """
+    def _filter_public_result(self, private_list, all_public):
         # find intersection betwen private and public tables.
         common = list(
             set([item["table_name"] for item in private_list])
-            & set([item["table_name"] for item in public_list])
+            & set([item["table_name"] for item in all_public])
         )
 
         if not self.disable_logging:
@@ -233,7 +223,7 @@ class ExecutorchBenchmarkFetcher:
                 f"Found {len(common)} table names existed in both private and public, use it to filter public tables:"
             )
             logging.info(json.dumps(common, indent=1))
-        filtered_public = [item for item in public_list if item["table_name"] in common]
+        filtered_public = [item for item in all_public if item["table_name"] in common]
         return filtered_public
 
     def get_result(self) -> Dict[str, List[Dict[str, Any]]]:
@@ -478,32 +468,32 @@ class ExecutorchBenchmarkFetcher:
         """
         return BASE_URLS[self.env]
 
-    def print_all_table_info(self) -> None:
+    def get_all_private_devices(self) -> Tuple[List[Any], List[Any]]:
         """
-        Print all benchmark table group info found in the data.
+        Print all devices found in the data.
         Separates results by category and displays counts.
         This is useful for debugging and understanding what data is available.
         """
-        if not self.data or not self.matching_groups:
+        if not self.data:
             logging.info("No data found, please call get_data() first")
-            return
+            return ([], [])
+
+        all_private = {
+            (group.get("device", ""), group.get("arch", ""))
+            for item in self.data
+            if (group := item.get("groupInfo", {})).get("aws_type") == "private"
+        }
+        iphone_set = {pair for pair in all_private if "iphone" in pair[0].lower()}
+        samsung_set = {pair for pair in all_private if "samsung" in pair[0].lower()}
+
+        # logging
         logging.info(
-            "=========== Full list of table info from HUD API =============\n"
-            " please use values in field `info` for filtering, "
-            "while `groupInfo` holds the original benchmark metadata"
+            f"Found private {len(iphone_set)} iphone devices: {list(iphone_set)}"
         )
-        names = []
-        for item in self.data:
-            names.append(
-                {
-                    "table_name": item.get("table_name", ""),
-                    "groupInfo": item.get("groupInfo", {}),
-                    "info": item.get("info", {}),
-                    "counts": len(item.get("rows", [])),
-                }
-            )
-        for name in names:
-            logging.info(json.dumps(name, indent=2))
+        logging.info(
+            f"Found private {len(samsung_set)} samsung devices: {list(samsung_set)}"
+        )
+        return (list(iphone_set), list(samsung_set))
 
     def _generate_table_name(
         self, group_info: Dict[str, Any], fields: List[str]
@@ -520,7 +510,7 @@ class ExecutorchBenchmarkFetcher:
         Returns:
             Normalized table name string
         """
-        name = "_".join(
+        name = "-".join(
             self.normalize_string(group_info[k])
             for k in fields
             if k in group_info and group_info[k]
@@ -530,80 +520,69 @@ class ExecutorchBenchmarkFetcher:
 
     def _process(
         self, input_data: List[Dict[str, Any]], filters: Optional[BenchmarkFilters]
-    ) -> Dict[str, Any]:
+    ):
         """
         Process raw benchmark data.
-
-        This method:
-        1. clean the data that generated by FAILURE_REPORT,
-        2. Creates table_name from info
-        3. Determines aws_type (public/private) based on info.device
-        4. Sorts results by table_name
-        Args:
-            input_data: Raw benchmark data from API
-        Returns:
-            Processed benchmark data
         """
-        # filter data with arch equal exactly "",ios and android, this normally indicates it's job-level falure indicator
         logging.info(f"fetched {len(input_data)} data from HUD")
         data = self._clean_data(input_data)
-        private = []
-        public = []
 
         for item in data:
             org_group = item.get("groupInfo", {})
-            if "info" not in item:
-                item["info"] = {}
             if org_group.get("device", "").find("private") != -1:
-                item["info"]["aws_type"] = "private"
+                item["groupInfo"]["aws_type"] = "private"
             else:
-                item["info"]["aws_type"] = "public"
-                public.append(item)
-
-            # Merge normalized groupInfo string values into item["info"]
-            item["info"].update(
-                {
-                    k: self.normalize_string(v)
-                    for k, v in item.get("groupInfo", {}).items()
-                    if v is not None and isinstance(v, str)
-                }
-            )
-            group = item.get("info", {})
+                item["groupInfo"]["aws_type"] = "public"
             # Add full name joined by the group key fields
             item["table_name"] = self._generate_table_name(
-                group, self.query_group_table_by_fields
+                org_group, self.query_group_table_by_fields
             )
-        raw_data = deepcopy(data)
+        self.data = deepcopy(data)
 
-        # applies customized filters if any
-        if filters:
-            data = self.filter_results(data, filters)
-        # generate private and public results
-        private = sorted(
+        private_list = sorted(
             (
                 item
                 for item in data
-                if item.get("info", {}).get("aws_type") == "private"
+                if item.get("groupInfo", {}).get("aws_type") == "private"
             ),
             key=lambda x: x["table_name"],
         )
-        public = sorted(
-            (item for item in data if item.get("info", {}).get("aws_type") == "public"),
+        print(f"Found {len(private_list)} private tables before filtering")
+        if filters:
+            private_list = self.filter_private_results(private_list, filters)
+        else:
+            logging.info("filters is None, using all private results")
+
+        all_public = sorted(
+            (
+                item
+                for item in self.data
+                if item.get("groupInfo", {}).get("aws_type") == "public"
+            ),
             key=lambda x: x["table_name"],
         )
+        public_list = self._filter_public_result(private_list, all_public)
+
         logging.info(
-            f"fetched clean data {len(data)}, private:{len(private)}, public:{len(public)}"
+            f"Found {len(private_list)} private tables, Found assoicated {len(public_list)} public tables"
         )
-        return {"data": raw_data, "private": private, "public": public}
+
+        self.matching_groups["private"] = MatchingGroupResult(
+            category="private", data=private_list
+        )
+        self.matching_groups["public"] = MatchingGroupResult(
+            category="public", data=public_list
+        )
 
     def _clean_data(self, data_list):
+        # filter data with arch equal exactly "",ios and android, this normally
+        # indicates it's job-level falure indicator
         removed_gen_arch = [
             item
             for item in data_list
             if (arch := item.get("groupInfo", {}).get("arch")) is not None
             and arch.lower() not in ("ios", "android")
         ]
-
         data = self._filter_out_failure_only(removed_gen_arch)
         return data
 
@@ -634,58 +613,60 @@ class ExecutorchBenchmarkFetcher:
     def normalize_string(self, s: str) -> str:
         s = s.lower().strip()
         s = s.replace("+", "plus")
-        s = s.replace("_", "-")
-        s = s.replace(" ", "-")
-        s = re.sub(r"[^\w\-\.\(\)]", "-", s)
-        s = re.sub(r"-{2,}", "-", s)
-        s = s.replace("-(", "(").replace("(-", "(")
-        s = s.replace(")-", ")").replace("-)", ")")
+        s = s.replace("-", "_")
+        s = s.replace(" ", "_")
+        s = re.sub(r"[^\w\-\.\(\)]", "_", s)
+        s = re.sub(r"_{2,}", "_", s)
+        s = s.replace("_(", "(").replace("(_", "(")
+        s = s.replace(")_", ")").replace("_)", ")")
         s = s.replace("(private)", "")
         return s
 
-    def filter_results(
-        self, data: List[Dict[str, Any]], filters: BenchmarkFilters
-    ) -> List[Dict[str, Any]]:
-        """
-        Filter benchmark results based on specified criteria.
+    def filter_private_results(
+        self, all_privates: List[Dict[str, Any]], filters: BenchmarkFilters
+    ):
 
-        Applies OR logic for filtering - results match if they match any of the specified filters.
+        # fetch all private devices within the time range for samsung and ios
+        private_devices = self.get_all_private_devices()
 
-        Args:
-            data: List of benchmark data dictionaries
-            filters: BenchmarkFilters object containing filter criteria
+        device_pool = filters.devicePoolNames or set()
+        backends = filters.backends or set()
+        models = filters.models or set()
 
-        Returns:
-            Filtered list of benchmark data dictionaries
-        """
-        backends = filters.backends
-        devices = filters.devices
-        models = filters.models
+        if not backends and not device_pool and not models:
+            logging.info("No filters provided, using all private results")
+            return all_privates
 
-        if not backends and not devices and not models:
-            return data
+        device_ios_match = set()
+        if "apple_iphone_15_private" in device_pool:
+            device_ios_match.update(
+                private_devices[0]
+            )  # assumed to be list of (device, arch)
+        if "samsung_s22_private" in device_pool:
+            device_ios_match.update(private_devices[1])
         logging.info(
-            f"applies OR filter: backends {backends},  devices:{devices},models:{models} "
+            f"Applying filter: backends={backends}, devices={device_pool}, models={models}, pair_filter={bool(device_ios_match)}"
         )
-        pre_len = len(data)
+
         results = []
-        for item in data:
-            info = item.get("info", {})
+        for item in all_privates:
+            info = item.get("groupInfo", {})
             if backends and info.get("backend") not in backends:
                 continue
-            if devices and info.get("device", "") not in devices:
-                continue
+
+            if device_ios_match:
+                pair = (info.get("device", ""), info.get("arch", ""))
+                if pair not in device_ios_match:
+                    continue
             if models and info.get("model", "") not in models:
                 continue
             results.append(item)
-        after_len = len(results)
-        logging.info(f"applied customized filter before: {pre_len}, after: {after_len}")
-        if after_len == 0:
-            logging.info(
-                "it seems like there is no result matches the filter values"
-                ", please run script --list-all-table-info again, and search for values in field"
-                " 'info' for right format"
-            )
+
+        logging.info(
+            f"Filtered from private data {len(all_privates)} → {len(results)} results"
+        )
+        if not results:
+            logging.info("No results matched the filters. Something is wrong.")
         return results
 
 
@@ -717,12 +698,6 @@ def argparsers():
         help="Allow output (disable silent mode)",
     )
 
-    parser.add_argument(
-        "--print-all-table-info",
-        action="store_true",
-        help="Print all table info for debugging",
-    )
-
     # Options for generate_data
     parser.add_argument(
         "--outputType",
@@ -739,10 +714,12 @@ def argparsers():
         nargs="+",
         help="Filter results by one or more backend full name(e.g. --backend qlora mv3) (OR logic within backends scope, AND logic with other filter type)",
     )
+
     parser.add_argument(
-        "--devices",
-        nargs="+",
-        help="Filter results by one or more device names (e.g. --devices samsung-galaxy-s22-5g)(OR logic within devices, AND logic with other filter type)",
+        "--private-device-pools",
+        nargs="+",  # allow one or more values
+        choices=VALID_PRIVATE_DEVICE_POOLS_NAMES,
+        help="List of devices to include",
     )
     parser.add_argument(
         "--models",
@@ -759,9 +736,9 @@ if __name__ == "__main__":
         args.startTime,
         args.endTime,
         filters=BenchmarkFilters(
-            models=args.models, backends=args.backends, devices=args.devices
+            models=args.models,
+            backends=args.backends,
+            devicePoolNames=args.private_device_pools,
         ),
     )
-    if args.print_all_table_info:
-        fetcher.print_all_table_info()
     fetcher.output_data(args.outputType, args.outputDir)

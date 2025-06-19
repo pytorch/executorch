@@ -43,12 +43,20 @@ python3 .ci/scripts/benchmark_tooling/get_benchmark_analysis_data.py \
 - `--outputDir`: Directory to save output files (default: current directory)
 
 ##### Filtering Options:
-Notice, the filter needs full name matchings with correct format, to see all the options of the filter choices, please run the script with `--print-all-table-info`, and pay attention to section `Full list of table info from HUD API` with the field 'info', which contains normalized data we use to filter records from the original metadata 'groupInfo'.
-The filter block any record if it does not in any of the filter keywords.
 
-- `--devices`: Filter by specific device names (e.g., "samsung-galaxy-s22-5g", "samsung-galaxy-s22plus-5g")
+- `--private-device-pools`: Filter by private device pool names (e.g., "samsung-galaxy-s22-5g", "samsung-galaxy-s22plus-5g")
 - `--backends`: Filter by specific backend names (e.g.,  "qnn-q8" , ""llama3-spinquan)
 - `--models`: Filter by specific model names (e.g "mv3" "meta-llama-llama-3.2-1b-instruct-qlora-int4-eo8")
+
+#### Example Usage
+call multiple private device pools and models
+```bash
+python3 get_benchmark_analysis_data.py \
+--startTime "2025-06-01T00:00:00" \
+--endTime "2025-06-11T00:00:00" \
+--private-device-pools 'apple_iphone_15_private' 'samsung_s22_private'
+--models 'mv3' 'allenai/OLMo-1B-hf'
+```
 
 #### Working with Output Files CSV and Excel
 
