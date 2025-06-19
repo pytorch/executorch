@@ -41,6 +41,7 @@ def read_all_csv_with_metadata(folder_path: str) -> List[Dict[str, Any]]:
 
 
 import logging
+
 logging.basicConfig(level=logging.INFO)
 
 # For Excel files (assuming the Excel file is in the current directory)

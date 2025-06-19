@@ -539,7 +539,6 @@ class ExecutorchBenchmarkFetcher:
             )
         self.data = deepcopy(data)
 
-
         #
         private_list = sorted(
             (
