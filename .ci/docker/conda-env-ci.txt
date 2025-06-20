@@ -1,4 +1,4 @@
-cmake=3.26.4
+cmake=3.31.2
 ninja=1.10.2
 libuv
 llvm-openmp
