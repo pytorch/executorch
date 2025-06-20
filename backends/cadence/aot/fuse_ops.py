@@ -712,32 +712,14 @@ class FuseQuantDequantToRequantizePass(FuseOpPairsAcrossBranchesPass):
         out_dtype: torch.dtype,
         graph: torch.fx.Graph,
     ) -> torch.fx.Node:
-        in_scale_tensor = graph.call_function(
-            exir_ops.edge.aten.full.default, args=((1,), in_scale)
-        )
-        in_zero_point_tensor = graph.call_function(
-            exir_ops.edge.aten.full.default,
-            args=((1,), in_zero_point),
-            kwargs={"dtype": torch.int32},
-        )
-        out_scale_tensor = graph.call_function(
-            exir_ops.edge.aten.full.default, args=((1,), out_scale)
-        )
-        out_zero_point_tensor = graph.call_function(
-            exir_ops.edge.aten.full.default,
-            args=((1,), out_zero_point),
-            kwargs={"dtype": torch.int32},
-        )
-        # cadence::requantize(Tensor input, Tensor in_scale, Tensor in_zero_point, Tensor out_scale, Tensor out_zero_point, ScalarType out_dtype) -> Tensor Y
-        # TODO(hardiksharma): Add support for per-tensor requantize.
         return graph.call_function(
-            exir_ops.edge.cadence.requantize.default,
+            exir_ops.edge.cadence.requantize.per_tensor,
             args=(
                 in_tensor,
-                in_scale_tensor,
-                in_zero_point_tensor,
-                out_scale_tensor,
-                out_zero_point_tensor,
+                in_scale,
+                in_zero_point,
+                out_scale,
+                out_zero_point,
                 out_dtype,
             ),
         )

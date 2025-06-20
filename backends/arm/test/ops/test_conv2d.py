@@ -327,6 +327,34 @@ two_conv2d = Conv2d(
     batches=1,
 )
 
+conv2d_groups = Conv2d(
+    in_channels=12,
+    out_channels=9,
+    kernel_size=(3, 3),
+    stride=1,
+    padding=0,
+    dilation=1,
+    width=7,
+    height=7,
+    batches=1,
+    groups=3,
+    bias=False,
+)
+
+conv2d_groups_bias = Conv2d(
+    in_channels=15,
+    out_channels=5,
+    kernel_size=(3, 3),
+    stride=1,
+    padding=0,
+    dilation=1,
+    width=7,
+    height=7,
+    batches=1,
+    groups=5,
+    bias=True,
+)
+
 # Shenanigan to get a nicer output when test fails. With unittest it looks like:
 # FAIL: test_convolution_2d_tosa_BI_2_3x3_1x3x12x12_st2_pd1
 test_modules = {
@@ -348,6 +376,8 @@ test_modules = {
     "3x3_1x3x224x224_st2_pd1": lambda: conv2d_3x3_1x3x224x224_st2_pd1,
     "two_conv2d_nobias": lambda: two_conv2d_nobias,
     "two_conv2d": lambda: two_conv2d,
+    "groups": lambda: conv2d_groups,
+    "groups_bias": lambda: conv2d_groups_bias,
 }
 
 fvp_xfails = {

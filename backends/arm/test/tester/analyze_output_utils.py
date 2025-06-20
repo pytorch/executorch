@@ -14,7 +14,7 @@ from executorch.backends.arm.test.runner_utils import (
     get_output_quantization_params,
 )
 
-from executorch.backends.xnnpack.test.tester.tester import Export, Quantize
+from executorch.backends.test.harness.stages import StageType
 
 logger = logging.getLogger(__name__)
 
@@ -238,8 +238,8 @@ def dump_error_output(
     if path_to_tosa_files is None:
         path_to_tosa_files = tempfile.mkdtemp(prefix="executorch_result_dump_")
 
-    export_stage = tester.stages.get(tester.stage_name(Export), None)
-    quantize_stage = tester.stages.get(tester.stage_name(Quantize), None)
+    export_stage = tester.stages.get(StageType.EXPORT, None)
+    quantize_stage = tester.stages.get(StageType.QUANTIZE, None)
     if export_stage is not None and quantize_stage is not None:
         output_nodes = get_output_nodes(export_stage.artifact)
         qp_input = get_input_quantization_params(export_stage.artifact)

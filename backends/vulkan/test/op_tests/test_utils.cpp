@@ -94,7 +94,8 @@ vkcompute::vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
     case c10::kInt:
       return vkapi::kInt;
     case c10::kLong:
-      return vkapi::kLong;
+      // No support for 64-bit integers
+      return vkapi::kInt;
     case c10::kChar:
       return vkapi::kChar;
     case c10::kByte:

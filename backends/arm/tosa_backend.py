@@ -113,6 +113,8 @@ class TOSABackend(BackendDetails):
                 if node.op == "call_function":
                     process_call_function(node, tosa_graph, node_visitors, tosa_spec)
                 elif node.op == "placeholder":
+                    if len(node.users) == 0:
+                        continue
                     process_placeholder(node, tosa_graph, edge_program, tosa_spec)
                     if node.name in edge_program.graph_signature.user_inputs:
                         input_count += 1

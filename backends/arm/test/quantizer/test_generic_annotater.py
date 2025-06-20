@@ -9,6 +9,7 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.quantizer import is_annotated
 from executorch.backends.arm.test.tester.test_pipeline import TosaPipelineBI
+from executorch.backends.test.harness.stages import StageType
 
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
@@ -36,7 +37,7 @@ def check_annotation(model):
     pipeline.pop_stage("run_method_and_compare_outputs")
     pipeline.run()
 
-    artifact = pipeline.tester.get_artifact("Quantize")
+    artifact = pipeline.tester.get_artifact(StageType.QUANTIZE)
 
     partitions = get_source_partitions(artifact.graph, [model.op])
     partitions = list(itertools.chain.from_iterable(partitions.values()))

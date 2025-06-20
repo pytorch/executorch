@@ -85,6 +85,7 @@ runtime.python_binary(
         ":export_library",
         "//caffe2:torch",
         "//executorch/extension/pybindings:aten_lib",
+        "//executorch/extension/llm/export:export_llm_lib",
     ],
 )
 
@@ -133,8 +134,6 @@ runtime.python_library(
     name = "export_library",
     srcs = [
         "export_llama.py",
-        "export_llama_args.py",
-        "export_llama_hydra.py",
         "export_llama_lib.py",
         "model.py",
     ],

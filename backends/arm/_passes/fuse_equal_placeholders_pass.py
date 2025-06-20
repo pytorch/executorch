@@ -49,7 +49,11 @@ class FuseEqualPlaceholdersPass(ExportPass):
                 if tensor2 is None:
                     continue
 
-                if torch.equal(tensor1, tensor2):
+                if (
+                    tensor1.dtype == tensor2.dtype
+                    and tensor1.shape == tensor2.shape
+                    and torch.allclose(tensor1, tensor2, atol=1e-08)
+                ):
                     eq_nodes.append(node2)
 
             if len(eq_nodes) > 1:
