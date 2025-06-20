@@ -13,6 +13,7 @@ import torch
 from executorch.backends.nxp.quantizer.utils import get_bias_qparams
 from torch import fx
 from torch._ops import OpOverload
+from torchao.quantization.pt2e import PerChannelMinMaxObserver
 from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
     FixedQParamsQuantizationSpec,
@@ -318,30 +319,39 @@ class Conv2dPattern(QuantizationPattern):
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
     ) -> PartitionAnchors:
-        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
         conv2d_node = fused_partition[0].nodes[-1]
 
-        bias_qspec = DerivedQuantizationSpec(
+        bias_quantization_qspec = DerivedQuantizationSpec(
             derived_from=[
                 (conv2d_node.args[0], conv2d_node),
                 (conv2d_node.args[1], conv2d_node),
             ],
             derive_qparams_fn=get_bias_qparams,
             dtype=torch.int32,
-            quant_min=-(2**31),
+            quant_min=-(2**31) + 1,
             quant_max=2**31 - 1,
-            qscheme=torch.per_tensor_affine,
+            qscheme=torch.per_channel_symmetric,
+            ch_axis=0,
+        )
+
+        weight_observer_or_fake_quant_ctr = PerChannelMinMaxObserver
+        weight_quantization_spec = QuantizationSpec(
+            dtype=torch.int8,
+            observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr,
+            quant_min=-127,
+            quant_max=127,
+            qscheme=torch.per_channel_symmetric,
+            ch_axis=0,
         )
 
         # Keep bias empty if not supplied
         bias = []
         if len(conv2d_node.args) > 2 and conv2d_node.args[2] is not None:
-            bias = [(conv2d_node, NodeArgsIdx(2), bias_qspec)]
+            bias = [(conv2d_node, NodeArgsIdx(2), bias_quantization_qspec)]
 
         return PartitionAnchors(
             inputs=[(conv2d_node, NodeArgsIdx(0))],
-            weights=[(conv2d_node, NodeArgsIdx(1))],
-            # pyre-fixme[6]: Incompatible parameter type
+            weights=[(conv2d_node, NodeArgsIdx(1), weight_quantization_spec)],
             biases=bias,
             output=[(conv2d_node,)],
         )
