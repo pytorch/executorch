@@ -72,13 +72,13 @@ class TestBenchmarkAnalysis(unittest.TestCase):
                     {
                         "workflow_id": 1,
                         "job_id": 1,
-                        "granularity_bucket": "2025-06-15T15:00:00Z",
+                        "metadata_info.timestamp": "2025-06-15T15:00:00Z",
                         "metric_1": 2.0,
                     },
                     {
                         "workflow_id": 2,
                         "job_id": 2,
-                        "granularity_bucket": "2025-06-15T14:00:00Z",
+                        "metadata_info.timestamp": "2025-06-15T14:00:00Z",
                         "metric_1": 3.0,
                     },
                 ],
@@ -94,13 +94,13 @@ class TestBenchmarkAnalysis(unittest.TestCase):
                     {
                         "workflow_id": 3,
                         "job_id": 3,
-                        "granularity_bucket": "2025-06-15T17:00:00Z",
+                        "metadata_info.timestamp": "2025-06-15T17:00:00Z",
                         "metric_1": 2.0,
                     },
                     {
                         "workflow_id": 4,
                         "job_id": 5,
-                        "granularity_bucket": "2025-06-15T14:00:00Z",
+                        "metadata_info.timestamp": "2025-06-15T14:00:00Z",
                         "metric_1": 3.0,
                     },
                 ],
@@ -119,13 +119,13 @@ class TestBenchmarkAnalysis(unittest.TestCase):
                     {
                         "workflow_id": 1,
                         "job_id": 1,
-                        "granularity_bucket": "2025-06-15T15:00:00Z",
+                        "metadata_info.timestamp": "2025-06-15T15:00:00Z",
                         "metric_1": 2.0,
                     },
                     {
                         "workflow_id": 2,
                         "job_id": 2,
-                        "granularity_bucket": "2025-06-15T14:00:00Z",
+                        "metadata_info.timestamp": "2025-06-15T14:00:00Z",
                         "metric_1": 3.0,
                     },
                 ],
@@ -141,13 +141,13 @@ class TestBenchmarkAnalysis(unittest.TestCase):
                     {
                         "workflow_id": 6,
                         "job_id": 6,
-                        "granularity_bucket": "2025-06-15T17:00:00Z",
+                        "metadata_info.timestamp": "2025-06-15T17:00:00Z",
                         "metric_1": 1.0,
                     },
                     {
                         "workflow_id": 8,
                         "job_id": 8,
-                        "granularity_bucket": "2025-06-15T14:00:00Z",
+                        "metadata_info.timestamp": "2025-06-15T14:00:00Z",
                         "metric_1": 1.0,
                     },
                 ],
@@ -163,13 +163,13 @@ class TestBenchmarkAnalysis(unittest.TestCase):
                     {
                         "workflow_id": 3,
                         "job_id": 3,
-                        "granularity_bucket": "2025-06-15T17:00:00Z",
+                        "metadata_info.timestamp": "2025-06-15T17:00:00Z",
                         "metric_1": 2.0,
                     },
                     {
                         "workflow_id": 4,
                         "job_id": 5,
-                        "granularity_bucket": "2025-06-15T14:00:00Z",
+                        "metadata_info.timestamp": "2025-06-15T14:00:00Z",
                         "metric_1": 3.0,
                     },
                 ],
@@ -186,7 +186,7 @@ class TestBenchmarkAnalysis(unittest.TestCase):
         )
         self.assertEqual(
             self.fetcher.query_group_row_by_fields,
-            ["workflow_id", "job_id", "granularity_bucket"],
+            ["workflow_id", "job_id", "metadata_info.timestamp"],
         )
         self.assertTrue(self.fetcher.disable_logging)
         self.assertEqual(self.fetcher.matching_groups, {})
@@ -253,13 +253,13 @@ class TestBenchmarkAnalysis(unittest.TestCase):
                     {
                         "workflow_id": 1,
                         "job_id": 2,
-                        "granularity_bucket": 3,
+                        "metadata_info.timestamp": 3,
                         "FAILURE_REPORT": "0",
                     },
                     {
                         "workflow_id": 4,
                         "job_id": 5,
-                        "granularity_bucket": 6,
+                        "metadata_info.timestamp": 6,
                         "metric": 7.0,
                     },
                 ]
@@ -269,7 +269,7 @@ class TestBenchmarkAnalysis(unittest.TestCase):
                     {
                         "workflow_id": 8,
                         "job_id": 9,
-                        "granularity_bucket": 10,
+                        "metadata_info.timestamp": 10,
                         "metric": 11.0,
                     },
                 ]
@@ -279,13 +279,13 @@ class TestBenchmarkAnalysis(unittest.TestCase):
                     {
                         "workflow_id": 10,
                         "job_id": 12,
-                        "granularity_bucket": 3,
+                        "metadata_info.timestamp": 3,
                         "FAILURE_REPORT": "0",
                     },
                     {
                         "workflow_id": 21,
                         "job_id": 15,
-                        "granularity_bucket": 6,
+                        "metadata_info.timestamp": 6,
                         "FAILURE_REPORT": "0",
                     },
                 ]
@@ -298,7 +298,7 @@ class TestBenchmarkAnalysis(unittest.TestCase):
                     {
                         "workflow_id": 4,
                         "job_id": 5,
-                        "granularity_bucket": 6,
+                        "metadata_info.timestamp": 6,
                         "metric": 7.0,
                     },
                 ]
@@ -308,7 +308,7 @@ class TestBenchmarkAnalysis(unittest.TestCase):
                     {
                         "workflow_id": 8,
                         "job_id": 9,
-                        "granularity_bucket": 10,
+                        "metadata_info.timestamp": 10,
                         "metric": 11.0,
                     },
                 ]
@@ -553,13 +553,13 @@ class TestBenchmarkAnalysis(unittest.TestCase):
                     {
                         "workflow_id": 1,
                         "job_id": 2,
-                        "granularity_bucket": 3,
+                        "metadata_info.timestamp": 3,
                         "FAILURE_REPORT": "0",
                     },
                     {
                         "workflow_id": 4,
                         "job_id": 5,
-                        "granularity_bucket": 6,
+                        "metadata_info.timestamp": 6,
                         "metric": 7.0,
                     },
                 ],
@@ -575,13 +575,13 @@ class TestBenchmarkAnalysis(unittest.TestCase):
                     {
                         "workflow_id": 1,
                         "job_id": 2,
-                        "granularity_bucket": 3,
+                        "metadata_info.timestamp": 3,
                         "FAILURE_REPORT": "0",
                     },
                     {
                         "workflow_id": 1,
                         "job_id": 2,
-                        "granularity_bucket": 3,
+                        "metadata_info.timestamp": 3,
                         "FAILURE_REPORT": "0",
                     },
                 ],
@@ -597,7 +597,12 @@ class TestBenchmarkAnalysis(unittest.TestCase):
                 "aws_type": "private",
             },
             "rows": [
-                {"workflow_id": 4, "job_id": 5, "granularity_bucket": 6, "metric": 7.0},
+                {
+                    "workflow_id": 4,
+                    "job_id": 5,
+                    "metadata_info.timestamp": 6,
+                    "metric": 7.0,
+                },
             ],
             "table_name": "llama3-qlora-iphone_15_pro_max-ios_17.4.3",
         }

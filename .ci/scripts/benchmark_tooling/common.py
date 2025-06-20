@@ -17,7 +17,7 @@ def read_excel_with_json_header(path: str) -> List[Dict[str, Any]]:
 
         # The actual data starts from the next row; treat row 1 as header
         df_data = pd.read_excel(path, sheet_name=sheet, skiprows=1, engine="openpyxl")
-        results.append({"groupInfo": meta, "df": df_data})
+        results.append({"groupInfo": meta, "df": df_data, "sheetName": sheet})
     print(f"successfully fetched {len(results)} sheets from {path}")
     return results
 
@@ -35,7 +35,7 @@ def read_all_csv_with_metadata(folder_path: str) -> List[Dict[str, Any]]:
         except json.JSONDecodeError:
             meta = {}
         df = pd.read_csv(path, skiprows=1)
-        results.append({"groupInfo": meta, "df": df})
+        results.append({"groupInfo": meta, "df": df, "sheetName": fname})
     print(f"successfully fetched {len(results)} sheets from {folder_path}")
     return results
 

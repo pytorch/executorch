@@ -167,7 +167,7 @@ class ExecutorchBenchmarkFetcher:
         self.query_group_row_by_fields = (
             group_row_fields
             if group_row_fields
-            else ["workflow_id", "job_id", "granularity_bucket"]
+            else ["workflow_id", "job_id", "metadata_info.timestamp"]
         )
         self.data = None
         self.disable_logging = disable_logging
@@ -187,8 +187,8 @@ class ExecutorchBenchmarkFetcher:
         if data is None:
             logging.warning("no data fetched from the HUD API")
             return None
-
-        self._process(data, filters)
+        self._proces_raw_data(data)
+        self._process_private_public_data(filters)
 
     def _filter_out_failure_only(
         self, data_list: List[Dict[str, Any]]
@@ -202,7 +202,7 @@ class ExecutorchBenchmarkFetcher:
         Returns:
             Filtered list with rows containing only FAILURE_REPORT removed
         """
-        ONLY = {"workflow_id", "granularity_bucket", "job_id", "FAILURE_REPORT"}
+        ONLY = {"workflow_id", "metadata_info.timestamp", "job_id", "FAILURE_REPORT"}
         for item in data_list:
             filtered_rows = [
                 row
@@ -299,7 +299,9 @@ class ExecutorchBenchmarkFetcher:
         Returns:
             Benchmark results in the specified format
         """
-        logging.info(f"Generating output with type: {[self.matching_groups.keys()]}")
+        logging.info(
+            f"Generating output with type {output_type}: {[self.matching_groups.keys()]}"
+        )
         o_type = self._to_output_type(output_type)
         if o_type == OutputType.PRINT:
             logging.info("\n ========= Generate print output ========= \n")
@@ -520,9 +522,7 @@ class ExecutorchBenchmarkFetcher:
 
         return name
 
-    def _process(
-        self, input_data: List[Dict[str, Any]], filters: Optional[BenchmarkFilters]
-    ):
+    def _proces_raw_data(self, input_data: List[Dict[str, Any]]):
         """
         Process raw benchmark data.
         """
@@ -541,11 +541,19 @@ class ExecutorchBenchmarkFetcher:
             )
         self.data = deepcopy(data)
 
+    def _process_private_public_data(self, filters: Optional[BenchmarkFilters]):
+        """
+        Process raw benchmark data.
+        """
+        if not self.data:
+            logging.info("No data found, please call get_data() first")
+            return
+
         #
         private_list = sorted(
             (
                 item
-                for item in data
+                for item in self.data
                 if item.get("groupInfo", {}).get("aws_type") == "private"
             ),
             key=lambda x: x["table_name"],
@@ -655,7 +663,6 @@ class ExecutorchBenchmarkFetcher:
         logging.info(
             f"Applying filter: backends={backends}, devices={device_pool}, models={models}, pair_filter={bool(device_ios_match)}"
         )
-
         results = []
         for item in all_privates:
             info = item.get("groupInfo", {})
