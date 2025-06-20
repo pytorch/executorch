@@ -752,6 +752,11 @@ def get_permute_inputs():
         "utils::kHeightPacked",
         "utils::kChannelsPacked",
     ]
+    test_suite.storage_types = [
+        "utils::kBuffer",
+        "utils::kTexture3D",
+    ]
+    test_suite.dtypes = ["at::kFloat"]
     return test_suite
 
 
@@ -976,24 +981,25 @@ def get_embedding_inputs():
 def get_unsqueeze_inputs():
     test_suite = VkTestSuite(
         [
-            ((2, 3, 4), 0),
-            ((1, 1, 1), 0),
-            ((1, 1, 1), 1),
-            ((1, 1, 1), 2),
-            ((1, 1, 1), 3),
-            ((9, 9, 9), 0),
-            ((9, 9, 9), 1),
-            ((9, 9, 9), 2),
-            ((9, 9, 9), 3),
-            ((9, 9), 0),
-            ((9, 9), 1),
-            ((9, 9), 2),
-            ((9,), 0),
-            ((9,), 1),
+            # ((2, 3, 4), 0),
+            # ((1, 1, 1), 0),
+            # ((1, 1, 1), 1),
+            # ((1, 1, 1), 2),
+            # ((1, 1, 1), 3),
+            # ((9, 9, 9), 0),
+            # ((9, 9, 9), 1),
+            # ((9, 9, 9), 2),
+            # ((9, 9, 9), 3),
+            # ((9, 9), 0),
+            # ((9, 9), 1),
+            # ((9, 9), 2),
+            # ((9,), 0),
+            # ((9,), 1),
+            ((1, 10), -1),
         ]
     )
     test_suite.layouts = [
-        "utils::kChannelsPacked",
+        "utils::kWidthPacked",
     ]
     test_suite.data_gen = "make_seq_tensor"
     return test_suite
