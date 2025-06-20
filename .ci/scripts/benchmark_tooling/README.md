@@ -46,10 +46,15 @@ It fetches benchmark data from HUD Open API for a specified time range, cleans t
 #### Quick Start
 
 ```bash
+# generate excel sheets for all private devices with public devices using the same settings
 python3 .ci/scripts/benchmark_tooling/get_benchmark_analysis_data.py \
   --startTime "2025-06-11T00:00:00" \
   --endTime "2025-06-17T18:00:00" \
-  --outputType "csv"
+  --outputType "excel"
+
+python3 analyze_benchmark_stability.py \
+--primary-file private.xlsx \
+--reference-file public.xlsx
 ```
 
 #### Command Line Options
