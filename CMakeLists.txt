@@ -92,7 +92,7 @@ if(SUPPORT_REGEX_LOOKAHEAD)
     pcre2-8-static
     PROPERTIES
       INTERFACE_INCLUDE_DIRECTORIES
-      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third-party/pcre2/src>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/third-party/pcre2>
   )
   add_library(
     regex_lookahead STATIC
@@ -100,11 +100,10 @@ if(SUPPORT_REGEX_LOOKAHEAD)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/regex_lookahead.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/std_regex.cpp
   )
-  target_link_libraries(regex_lookahead PUBLIC pcre2-8)
+  target_link_libraries(regex_lookahead PUBLIC pcre2-8-static)
   target_include_directories(
     regex_lookahead
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-           $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third-party/pcre2/src>
   )
   target_link_options_shared_lib(regex_lookahead)
   target_link_libraries(tokenizers PUBLIC regex_lookahead)

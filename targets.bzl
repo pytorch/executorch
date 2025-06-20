@@ -101,7 +101,7 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
             "//pytorch/tokenizers/...",
         ],
-        external_deps = [
+        exported_external_deps = [
             "sentencepiece",
             "abseil-cpp",
         ],
