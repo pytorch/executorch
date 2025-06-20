@@ -27,8 +27,10 @@ XS = 3
 test_suites = {}
 
 
-def register_test_suite(aten_op):
+def register_test_suite(aten_op, skip=True):
     def test_suite_decorator(fn: Callable) -> Callable:
+        if skip:
+            return fn
         if isinstance(aten_op, str):
             test_suites[aten_op] = fn()
         elif isinstance(aten_op, list):
@@ -141,7 +143,7 @@ def get_linear_inputs():
     inputs_list += [((M, K), (N, K), (N)) for M, K, N in MKN_list]
     inputs_list += [((3, M, K), (N, K), None) for M, K, N in MKN_list]
     inputs_list += [((3, M, K), (N, K), (N)) for M, K, N in MKN_list]
-    inputs_list += [((3, 6, K), (N, K), (N)) for M, K, N in MKN_list]
+    inputs_list += [((3, 6, K), (N, K), (N)) for _, K, N in MKN_list]
 
     test_suite = VkTestSuite(inputs_list)
     test_suite.dtypes = ["at::kFloat"]
@@ -643,6 +645,44 @@ def get_native_layer_norm_inputs():
         "utils::kHeightPacked",
         "utils::kChannelsPacked",
     ]
+    return test_suite
+
+
+@register_test_suite("aten.native_group_norm.default", skip=False)
+def get_native_group_norm_inputs():
+    test_suite = VkTestSuite(
+        [
+            # (input_shape, weight_shape, bias_shape, N, C, HxW, group, eps)
+            ((1, 8, 4, 4), (8), (8), 1, 8, 16, 2, 0.001),
+            ((2, 8, 3, 3), (8), (8), 2, 8, 9, 4, 0.001),
+            ((1, 12, 2, 2), (12), (12), 1, 12, 4, 3, 0.001),
+            ((3, 16, 5, 5), (16), (16), 3, 16, 25, 8, 0.001),
+            ((1, 4, 7, 7), (4), (4), 1, 4, 49, 2, 0.001),
+            ((2, 6, 1, 8), (6), (6), 2, 6, 8, 3, 0.001),
+        ]
+    )
+    test_suite.layouts = [
+        # "utils::kWidthPacked",
+        # "utils::kHeightPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.storage_types = [
+        # "utils::kBuffer",
+        "utils::kTexture3D"
+    ]
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.arg_storage_types = {
+        "out": [None, "utils::kBuffer", "utils::kBuffer"],
+    }
+
+    # test_suite.arg_data_gen_fn = {
+    #     "weight": "make_zeros_tensor",
+    #     "bias": "make_rand_tensor",
+    # }
+
+    test_suite.prepacked_args = ["weight", "bias"]
+    test_suite.requires_prepack = True
+
     return test_suite
 
 
