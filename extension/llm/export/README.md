@@ -21,14 +21,6 @@ The LLM export process transforms a model from its original format to an optimiz
 - **Stories**: Stories110M (educational model)
 - **SmolLM**: SmolLM2
 
-## Installation
-
-First, install the required dependencies:
-
-```bash
-./extension/llm/install_requirements.sh
-```
-
 ## Usage
 
 The export API supports two configuration approaches:
