@@ -1,0 +1,29 @@
+# Configuration for Llama3 with SpinQuant
+# Used in apple-perf.yml and android-perf.yml
+
+base:
+  model_class: "llama3_2"
+  preq_mode: "8da4w_output_8da8w"
+  preq_group_size: 32
+  preq_embedding_quantize: "8,0"
+
+model:
+  dtype_override: "fp32"
+  use_kv_cache: true
+  use_sdpa_with_kv_cache: true
+  enable_dynamic_shape: false
+
+export:
+  max_seq_length: 2048
+  max_context_length: 2048
+
+quantization:
+  use_spin_quant: "native"
+
+backend:
+  xnnpack:
+    enabled: true
+    extended_ops: true
+
+debug:
+  verbose: false

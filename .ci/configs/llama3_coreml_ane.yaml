@@ -1,0 +1,27 @@
+# Configuration for Llama3 with CoreML ANE
+# Used in apple-perf.yml
+
+base:
+  model_class: "llama3_2"
+
+model:
+  dtype_override: "fp32"
+  use_kv_cache: true
+  enable_dynamic_shape: false
+
+export:
+  max_seq_length: 128
+  max_context_length: 128
+
+quantization:
+  embedding_quantize: "4,32"
+
+backend:
+  coreml:
+    enabled: true
+    ios: 18
+    quantize: "c4w"
+    compute_units: "cpu_and_ne"
+
+debug:
+  verbose: false
