@@ -366,6 +366,12 @@ void test_vulkan_dequantize_per_tensor(
       vkcompute::utils::kBuffer,
       vkcompute::utils::kBuffer);
 
+  // Telling the system to expect a float instead of a double
+  // since the shader can only return 32bit anyways
+  if (out_dtype == at::kDouble) {
+    out_dtype = at::kFloat;
+  }
+
   // Test with texture storage
   test_vulkan_dequantize_per_tensor_impl(
       input_sizes,
@@ -399,6 +405,12 @@ void test_vulkan_dequantize_per_token(
       out_dtype,
       vkcompute::utils::kBuffer,
       vkcompute::utils::kBuffer);
+
+  // Telling the system to expect a float instead of a double
+  // since the shader can only return 32bit anyways
+  if (out_dtype == at::kDouble) {
+    out_dtype = at::kFloat;
+  }
 
   // Test with texture storage
   test_vulkan_dequantize_per_token_impl(
@@ -791,6 +803,24 @@ TEST(
       std::numeric_limits<int32_t>::max(), // quant_max
       at::kInt, // input dtype
       at::kHalf); // output dtype
+}
+
+TEST(
+    VulkanDequantizePerTensorTest,
+    test_vulkan_dequantize_per_tensor_int8_to_double) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  test_vulkan_dequantize_per_tensor(
+      {2, 3}, // input sizes
+      0.05, // scale
+      10, // zero_point
+      -128, // quant_min
+      127, // quant_max
+      at::kChar, // input dtype
+      at::kDouble); // output dtype
 }
 
 void test_reference_dequantize_per_token(
@@ -1287,4 +1317,25 @@ TEST(
       std::numeric_limits<int32_t>::max(), // quant_max
       at::kInt, // input dtype
       at::kHalf); // output dtype
+}
+
+TEST(
+    VulkanDequantizePerTokenTest,
+    test_vulkan_dequantize_per_token_int8_to_double) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  std::vector<float> scales = {0.05, 0.001};
+  std::vector<int> zero_points = {10, -5};
+
+  test_vulkan_dequantize_per_token(
+      {2, 2}, // input sizes (2 tokens)
+      scales,
+      zero_points,
+      -128, // quant_min
+      127, // quant_max
+      at::kChar, // input dtype
+      at::kDouble); // output dtype
 }
