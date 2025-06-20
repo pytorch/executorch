@@ -11,6 +11,7 @@ import unittest
 from executorch.examples.models.llama.config.llm_config import (
     BackendConfig,
     BaseConfig,
+    CoreMLComputeUnit,
     CoreMLConfig,
     DebugConfig,
     ExportConfig,
@@ -65,34 +66,6 @@ class TestValidation(unittest.TestCase):
         with self.assertRaises(ValueError):
             LlmConfig(model=model_cfg, quantization=qcfg)
 
-    def test_invalid_model_type(self):
-        with self.assertRaises(ValueError):
-            BaseConfig(model_class="invalid_model")
-
-    def test_invalid_dtype_override(self):
-        with self.assertRaises(ValueError):
-            ModelConfig(dtype_override="invalid_dtype")
-
-    def test_invalid_preq_mode(self):
-        with self.assertRaises(ValueError):
-            BaseConfig(preq_mode="invalid_preq")
-
-    def test_invalid_pt2e_quantize(self):
-        with self.assertRaises(ValueError):
-            QuantizationConfig(pt2e_quantize="invalid_pt2e")
-
-    def test_invalid_spin_quant(self):
-        with self.assertRaises(ValueError):
-            QuantizationConfig(use_spin_quant="invalid_spin")
-
-    def test_invalid_coreml_quantize(self):
-        with self.assertRaises(ValueError):
-            CoreMLConfig(quantize="invalid_quantize")
-
-    def test_invalid_coreml_compute_units(self):
-        with self.assertRaises(ValueError):
-            CoreMLConfig(compute_units="invalid_compute_units")
-
 
 class TestValidConstruction(unittest.TestCase):
 
@@ -121,7 +94,7 @@ class TestValidConstruction(unittest.TestCase):
             backend=BackendConfig(
                 xnnpack=XNNPackConfig(enabled=False),
                 coreml=CoreMLConfig(
-                    enabled=True, ios=17, compute_units="all"
+                    enabled=True, ios=17, compute_units=CoreMLComputeUnit.ALL
                 ),
             ),
         )
