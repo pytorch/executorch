@@ -29,7 +29,6 @@ class GeneratedOpsTest_{op_name} : public ::testing::TestWithParam< ::std::tuple
 
   void SetUp() override {{
     GraphConfig config;
-    config.expect_dynamic_shapes = true;
     utils::StorageType default_storage_type;
     utils::GPUMemoryLayout default_memory_layout;
     std::tie(test_dtype, default_storage_type, default_memory_layout) = GetParam();

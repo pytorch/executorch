@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 ###################################
 ## Generic Test Suite definition ##
@@ -23,6 +23,7 @@ class TestSuite:
         self.data_range = (0, 1)
 
         self.arg_dtype = {}
+        self.arg_data_gen_fn: Dict[str, str] = {}
         self.arg_data_range = {}
 
         self.atol: str = "1e-5"
@@ -48,3 +49,5 @@ class VkTestSuite(TestSuite):
         self.layouts: List[str] = ["utils::kChannelsPacked"]
         self.data_gen: str = "make_rand_tensor"
         self.force_io: bool = True
+        self.arg_storage_types: Dict[str, str] = {}
+        self.arg_memory_layouts: Dict[str, str] = {}
