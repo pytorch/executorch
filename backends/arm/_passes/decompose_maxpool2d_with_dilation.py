@@ -36,6 +36,7 @@ class DecomposeMaxPool2DPass(ArmPass):
         stride = args[2]
         padding = args[3] if len(args) >= 4 else 0
         dilation = args[4] if len(args) >= 5 else 1
+        ceil_mode = args[5] if len(args) == 6 else False
 
         # Normalize attributes
         pad_h, pad_w = (padding, padding) if isinstance(padding, int) else padding
@@ -45,12 +46,9 @@ class DecomposeMaxPool2DPass(ArmPass):
         )
         s_h, s_w = (stride, stride) if isinstance(stride, int) else stride
 
-        # If no dilation: call EXIR edge op with only supported args (x, kernel, stride[, padding])
+        # If no dilation: call EXIR edge op
         if d_h == 1 and d_w == 1:
-            minimal_args = [x, kernel_size, stride]
-            # only include padding if non-zero
-            if (pad_h, pad_w) != (0, 0):
-                minimal_args.append((pad_h, pad_w))
+            minimal_args = [x, kernel_size, stride, padding, dilation, ceil_mode]
             return super().call_operator(op, tuple(minimal_args), {}, meta)
 
         # Compute padded and packed dimensions for dilation > 1
@@ -102,7 +100,7 @@ class DecomposeMaxPool2DPass(ArmPass):
             if is_with_indices
             else exir_ops.edge.aten.max_pool2d.default
         )
-        pool_args = (x2, (k_h, k_w), (s_h, s_w), (0, 0))
+        pool_args = (x2, (k_h, k_w), (s_h, s_w), (0, 0), 1, ceil_mode)
         pool_out = super().call_operator(
             pool_edge_op,
             pool_args,
