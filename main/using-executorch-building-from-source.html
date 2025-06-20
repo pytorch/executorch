@@ -522,7 +522,7 @@ also work in similar environments.</p>
 <li><p>Ubuntu 20.04.6 LTS+</p></li>
 <li><p>RHEL 8+</p></li>
 </ul>
-<p>macOS (x86_64/M1/M2)</p>
+<p>macOS (x86_64/ARM64)</p>
 <ul class="simple">
 <li><p>Big Sur (11.0)+</p></li>
 </ul>
@@ -572,11 +572,21 @@ git<span class="w"> </span>clone<span class="w"> </span>-b<span class="w"> </spa
 </div>
 </div>
 <div class="section" id="install-executorch-pip-package-from-source">
-<h2>Install ExecuTorch pip package from Source<a class="headerlink" href="#install-executorch-pip-package-from-source" title="Permalink to this heading">¶</a></h2>
+<h2>Install ExecuTorch pip package from source<a class="headerlink" href="#install-executorch-pip-package-from-source" title="Permalink to this heading">¶</a></h2>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Install ExecuTorch pip package and its dependencies, as well as</span>
 <span class="c1"># development tools like CMake.</span>
 <span class="c1"># If developing on a Mac, make sure to install the Xcode Command Line Tools first.</span>
+<span class="c1"># Intel-based macOS systems require building PyTorch from source (see below)</span>
 ./install_executorch.sh
+</pre></div>
+</div>
+<p>See the <a class="reference external" href="https://github.com/pytorch/pytorch#installation">PyTorch instructions</a> on how to build PyTorch from source.</p>
+<p>Use the <a class="reference download internal" download="" href="_downloads/a6837d87b7a196830b28a99878f60aea/install_executorch.py"><span class="xref download myst"><code class="docutils literal notranslate"><span class="pre">--use-pt-pinned-commit</span></code> flag</span></a> to install ExecuTorch with an existing PyTorch build:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_executorch.sh<span class="w"> </span>--use-pt-pinned-commit
+</pre></div>
+</div>
+<p>For Intel-based macOS systems, use the <a class="reference download internal" download="" href="_downloads/a6837d87b7a196830b28a99878f60aea/install_executorch.py"><span class="xref download myst"><code class="docutils literal notranslate"><span class="pre">--use-pt-pinned-commit</span> <span class="pre">--minimal</span></code> flags</span></a>:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_executorch.sh<span class="w"> </span>--use-pt-pinned-commit<span class="w"> </span>--minimal
 </pre></div>
 </div>
 <p>Not all backends are built into the pip wheel by default. You can link these missing/experimental backends by turning on the corresponding cmake flag. For example, to include the MPS backend:</p>
@@ -1010,7 +1020,7 @@ your targets and don’t forget to add an extra linker flag <code class="docutil
 <li><a class="reference internal" href="#create-a-virtual-environment">Create a Virtual Environment</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#install-executorch-pip-package-from-source">Install ExecuTorch pip package from Source</a></li>
+<li><a class="reference internal" href="#install-executorch-pip-package-from-source">Install ExecuTorch pip package from source</a></li>
 <li><a class="reference internal" href="#build-executorch-c-runtime-from-source">Build ExecuTorch C++ runtime from source</a><ul>
 <li><a class="reference internal" href="#configure-the-cmake-build">Configure the CMake build</a></li>
 <li><a class="reference internal" href="#cmake-build-options">CMake build options</a></li>
