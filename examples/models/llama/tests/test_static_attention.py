@@ -30,6 +30,14 @@ class StaticAttentionTest(unittest.TestCase):
             rope = Rope(config)
             attn_mha = AttentionMHA(config, layer_id, rope).eval()
             static_attn = StaticAttention(config, layer_id, rope).eval()
+            if use_qk_norm:
+                with torch.no_grad():
+                    attn_mha.q_norm_fn.weight.copy_(
+                        torch.rand(config.head_dim) * 0.2 + 0.9
+                    )
+                    attn_mha.k_norm_fn.weight.copy_(
+                        torch.rand(config.head_dim) * 0.2 + 0.9
+                    )
             static_attn.load_weights_from_attention_mha(attn_mha)
             if use_conv2d:
                 static_attn.linear_to_conv2d()
@@ -60,11 +68,15 @@ class StaticAttentionTest(unittest.TestCase):
             n_heads=4,
             n_kv_heads=2,
             max_seq_len=8,
+            use_qk_norm=True,
             use_hf_rope=True,
         )
         layer_id = 0
         rope = Rope(config)
         attn_mha = AttentionMHA(config, layer_id, rope).eval()
+        with torch.no_grad():
+            attn_mha.q_norm_fn.weight.copy_(torch.rand(config.head_dim) * 0.2 + 0.9)
+            attn_mha.k_norm_fn.weight.copy_(torch.rand(config.head_dim) * 0.2 + 0.9)
         static_attn = StaticAttention(config, layer_id, rope).eval()
         static_attn.load_weights_from_attention_mha(attn_mha)
 
