@@ -23,10 +23,12 @@ from executorch.backends.arm._passes import (
     ConvertSplitToSlicePass,
     ConvertSqueezesToViewPass,
     ConvertToClampPass,
+    DecomposeAvgPool2d,
     DecomposeCosineSimilarityPass,
     DecomposeDivPass,
     DecomposeEmbeddingPass,
     DecomposeGeluPass,
+    DecomposeGroupedConv,
     DecomposeGroupNormPass,
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
@@ -35,6 +37,7 @@ from executorch.backends.arm._passes import (
     DecomposeMaxPool2DPass,
     DecomposeMeanDimPass,
     DecomposeNotEqualPass,
+    DecomposeRoundPass,
     DecomposeSelectPass,
     DecomposeSiluPass,
     DecomposeSoftmaxPass,
@@ -63,7 +66,6 @@ from executorch.backends.arm._passes import (
     UnsqueezeBeforeRepeatPass,
     UnsqueezeScalarPlaceholdersPass,
 )
-
 from executorch.backends.arm.tosa_specification import (
     TosaLoweringContext,
     TosaSpecification,
@@ -115,8 +117,10 @@ class ArmPassManager(PassManager):
         if self.tosa_spec.is_U55_subset:
             self.add_pass(BroadcastArgsPass())
         self.add_pass(DecomposeLinearPass())
+        self.add_pass(DecomposeAvgPool2d())
         self.add_pass(ComputeConstantOpsAOT(exported_program))
 
+        self.add_pass(DecomposeGroupedConv())
         self.add_pass(RemoveClonePass())
         self.add_pass(SizeAdjustConv2DPass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
@@ -139,6 +143,7 @@ class ArmPassManager(PassManager):
         return self._transform(exported_program.graph_module)
 
     def _tosa_080_MI_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
+        self.add_pass(DecomposeRoundPass())
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(ConvertIntPowToMuls())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSAMI())
@@ -172,8 +177,10 @@ class ArmPassManager(PassManager):
         self.add_pass(RetraceFoldedDtypesPass())
         self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
         self.add_pass(MatchArgRanksPass(exported_program))
+        self.add_pass(DecomposeAvgPool2d())
         self.add_pass(ComputeConstantOpsAOT(exported_program))
 
+        self.add_pass(DecomposeGroupedConv())
         self.add_pass(RemoveClonePass())
         self.add_pass(SizeAdjustConv2DPass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
@@ -219,6 +226,7 @@ class ArmPassManager(PassManager):
         self.add_pass(InsertCastForOpsWithInt64InputPass())
         self.add_pass(DecomposeEmbeddingPass())
         self.add_pass(DecomposeScaledDotProductAttention())
+        self.add_pass(DecomposeRoundPass())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(ScalarsToAttributePass())
         self.add_pass(DecomposeGroupNormPass())
@@ -232,6 +240,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeLinearVectorNormPass())
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(DecomposeSiluPass())
+        self.add_pass(DecomposeAvgPool2d())
 
         if self.tosa_spec.is_U55_subset:
             # Numerically stable softmax uses amax which is not supported on Ethos-U55
