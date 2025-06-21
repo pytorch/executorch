@@ -188,6 +188,12 @@ test_model_with_qnn() {
     EXPORT_SCRIPT=edsr
     # Additional deps for edsr
     pip install piq
+  elif [[ "${MODEL_NAME}" == "deit" ]]; then
+    EXPORT_SCRIPT=deit
+  elif [[ "${MODEL_NAME}" == "pvt" ]]; then
+    EXPORT_SCRIPT=pvt
+  elif [[ "${MODEL_NAME}" == "swin" ]]; then
+    EXPORT_SCRIPT=swin_transformer
   elif [[ "${MODEL_NAME}" == "albert" ]]; then
     EXPORT_SCRIPT=albert
   elif [[ "${MODEL_NAME}" == "bert" ]]; then
@@ -196,6 +202,8 @@ test_model_with_qnn() {
     EXPORT_SCRIPT=distilbert
   elif [[ "${MODEL_NAME}" == "eurobert" ]]; then
     EXPORT_SCRIPT=eurobert
+  elif [[ "${MODEL_NAME}" == "roberta" ]]; then
+    EXPORT_SCRIPT=roberta
   else
     echo "Unsupported model $MODEL_NAME"
     exit 1
@@ -210,7 +218,10 @@ test_model_with_qnn() {
     "dl3"|"mv3"|"mv2"|"ic4"|"ic3"|"vit"|"mb"|"w2l")
         SCRIPT_FOLDER=scripts
         ;;
-    "albert"|"bert"|"distilbert")
+    "deit"|"pvt"|"swin")
+        SCRIPT_FOLDER=oss_scripts
+        ;;
+    "albert"|"bert"|"distilbert"|"roberta")
         pip install evaluate
         SCRIPT_FOLDER=oss_scripts
         # Bert models running in 16bit will encounter op validation fail on some operations,
