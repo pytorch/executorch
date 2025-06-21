@@ -98,7 +98,10 @@ std::pair<float, float> getOutputMinMax(const NodePtr node) noexcept {
 }
 
 /*
-Converts flatbuffer xnn data type to xnnpack data type
+Converts flatbuffer xnn data type to xnnpack data type. 
+
+NOTE:
+Flatbuffer Enum Values are not the same as XNNPACK's datatype enum values.
 */
 xnn_datatype getDataType(const DataType& data_type) {
   switch (data_type) {
