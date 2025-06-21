@@ -438,6 +438,16 @@ class MPSConfig:
 
 
 @dataclass
+class OpenvinoConfig:
+    """
+    Configures the QNN backend.
+    """
+
+    enabled: bool = False
+    device: str = "CPU"
+
+
+@dataclass
 class BackendConfig:
     """
     Configures which backends should be used and how the backends
@@ -449,6 +459,7 @@ class BackendConfig:
     vulkan: VulkanConfig = field(default_factory=VulkanConfig)
     qnn: QNNConfig = field(default_factory=QNNConfig)
     mps: MPSConfig = field(default_factory=MPSConfig)
+    openvino: OpenvinoConfig = field(default_factory=OpenvinoConfig)
 
 
 ################################################################################
@@ -608,6 +619,12 @@ class LlmConfig:
         # MPS
         if hasattr(args, "mps"):
             llm_config.backend.mps.enabled = args.mps
+
+        # Openvino
+        if hasattr(args, "openvino"):
+            llm_config.backend.openvino.enabled = args.openvino
+        if hasattr(args, "openvino_device"):
+            llm_config.backend.openvino.device = args.openvino_device
 
         # DebugConfig
         if hasattr(args, "profile_memory"):
