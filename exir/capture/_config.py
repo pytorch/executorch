@@ -104,4 +104,4 @@ class ExecutorchBackendConfig:
     emit_mutable_buffer_names: bool = False
 
     # If set to true, we run quant fusion and constant propagation passes
-    do_quant_fusion_and_const_prop: bool = False
+    do_quant_fusion_and_const_prop: bool = True
