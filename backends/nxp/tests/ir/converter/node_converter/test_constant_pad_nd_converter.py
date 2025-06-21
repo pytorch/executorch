@@ -7,13 +7,7 @@ import numpy as np
 import pytest
 import torch
 
-from executorch.backends.nxp.backend.edge_program_converter import (
-    EdgeProgramToIRConverter,
-)
-from executorch.backends.nxp.tests.executorch_pipeline import (
-    to_edge_program,
-    to_quantized_edge_program,
-)
+from executorch.backends.nxp.tests.executorch_pipeline import to_edge_program
 from executorch.backends.nxp.tests.executors import (
     convert_run_compare,
     ToNCHWPreprocess,
@@ -22,9 +16,7 @@ from executorch.backends.nxp.tests.executors import (
 from executorch.backends.nxp.tests.models import (
     ConstantPadNDConvModule,
     ConstantPadNDModule,
-    Conv2dConstantPadNDModule,
 )
-from torch.export import ExportedProgram
 
 
 @pytest.fixture(autouse=True)
@@ -45,37 +37,6 @@ def test_constant_pad_nd_conversion__specific_constant(constant):
     input_data = np.random.random(input_shape).astype(np.float32)
 
     convert_run_compare(edge_program, input_data)
-
-
-@pytest.mark.parametrize("constant", [0.0, 67.28, 42.0, -13.37])
-@pytest.mark.skip(reason="Neutron Converter does not fully convert for NPU")
-def test_constant_pad_nd_quant_conversion__specific_constant(mocker, constant):
-    input_shape = (2, 4, 12, 12)
-    paddings = (2, 2, 2, 2)
-
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-
-    # Run conversion
-    _ = to_quantized_edge_program(
-        Conv2dConstantPadNDModule(paddings, constant), input_shape
-    )
-
-    # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
-
-    # Capture converted program
-    edge_program: ExportedProgram = converter_spy.call_args.args[1]
-
-    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
-
-    convert_run_compare(
-        edge_program,
-        input_data,
-        tfl_model=tflite_flatbuffers_model,
-        atol=1.0,
-        tflite_input_preprocess=ToNHWCPreprocess(),
-        tflite_output_preprocess=ToNCHWPreprocess(),
-    )
 
 
 def test_constant_pad_nd_conversion__default_constant():
