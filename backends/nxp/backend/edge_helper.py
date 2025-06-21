@@ -5,6 +5,7 @@
 
 import torch
 from torch.fx import Node
+from torch.nn import Parameter
 
 
 def input_tensor(node: Node, input_index: int) -> torch.Tensor:
@@ -38,3 +39,35 @@ def input_tensor_safe(node: Node, input_index: int) -> torch.Tensor | None:
         return None
 
     return input_tensor(node, input_index)
+
+
+def node_is_static_tensor(node: Node, parameters_mapping: dict[str, Parameter]) -> bool:
+    """Return `True` if the given `node` has static data in the `parameters_mapping` dict.
+    :param node: Tensor node to check for data.
+    :param parameters_mapping: Dict mapping tensor names to their static data. Should be inferred from the
+                                `state_dict` attribute of an edge program.
+    """
+    return node.name in parameters_mapping.keys()
+
+
+def node_is_effectively_static_tensor(
+    node: Node, parameters_mapping: dict[str, Parameter]
+) -> bool:
+    """Return `True` if the given `node` has static data, or follows after a `Dequantize` node with a static input.
+     In the IR, the `node` will be turned into a static quantized tensor.
+    :param node: Tensor node to check for data.
+    :param parameters_mapping: Dict mapping tensor names to their static data. Should be inferred from the
+                                `state_dict` attribute of an edge program.
+    """
+    if node_is_static_tensor(node, parameters_mapping):
+        return True
+
+    def _is_dequantize(node_: Node) -> bool:
+        return node_.target.__name__ in {
+            "quantized_decomposed.dequantize_per_tensor.default",
+            "quantized_decomposed.dequantize_per_channel.default",
+        }
+
+    return _is_dequantize(node) and node_is_static_tensor(
+        node.args[0], parameters_mapping
+    )
