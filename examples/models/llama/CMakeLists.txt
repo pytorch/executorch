@@ -120,6 +120,8 @@ if(EXECUTORCH_BUILD_TORCHAO)
     set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
     set(TORCHAO_BUILD_CPU_AARCH64 ON)
     set(TORCHAO_ENABLE_ARM_NEON_DOT ON)
+    set(TORCHAO_BUILD_KLEIDIAI ON)
+    set(TORCHAO_ENABLE_ARM_I8MM ON)
     add_subdirectory(
       ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental
       ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental
