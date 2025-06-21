@@ -60,7 +60,7 @@ if(NOT TARGET extension_llm_runner)
   )
 endif()
 
-set(llama_runner_deps executorch_core extension_data_loader extension_module
+set(llama_runner_deps executorch_core extension_data_loader extension_module_static
                       extension_tensor extension_flat_tensor extension_llm_runner
 )
 

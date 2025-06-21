@@ -19,10 +19,12 @@ namespace llm {
 TextPrefiller::TextPrefiller(
     TextDecoderRunner* text_decoder_runner,
     bool use_kv_cache,
+    bool use_cache_positions,
     bool enable_parallel_prefill,
     int64_t max_seq_len)
     : text_decoder_runner_(text_decoder_runner),
       use_kv_cache_(use_kv_cache),
+      use_cache_positions_(use_cache_positions),
       enable_parallel_prefill_(enable_parallel_prefill),
       max_seq_len_(max_seq_len > 0 ? max_seq_len : 128) {}
 
@@ -86,10 +88,18 @@ TextPrefiller::TextPrefiller(
         {1, num_prompt_tokens},
         executorch::aten::ScalarType::Long);
 
-    auto start_pos_tensor =
-        from_blob(&start_pos, {1}, executorch::aten::ScalarType::Long);
-
-    auto outputs_res = text_decoder_runner_->step(tokens, start_pos_tensor);
+    ::executorch::extension::TensorPtr pos_tensor;
+    if (use_cache_positions_) {
+      pos_tensor = arange(
+          /*start=*/start_pos,
+          /*end=*/start_pos + num_prompt_tokens,
+          /*step=*/1,
+          executorch::aten::ScalarType::Long);
+    } else {
+      pos_tensor =
+          from_blob(&start_pos, {1}, executorch::aten::ScalarType::Long);
+    }
+    auto outputs_res = text_decoder_runner_->step(tokens, pos_tensor);
 
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
     ET_LOG(

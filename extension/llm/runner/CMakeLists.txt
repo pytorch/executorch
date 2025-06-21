@@ -37,9 +37,12 @@ include(${EXECUTORCH_SRCS_FILE})
 # build llm runner library
 list(TRANSFORM _extension_llm_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
-target_include_directories(
-  extension_module INTERFACE ${_common_include_directories}
-)
+if(NOT _common_include_directories)
+  set(_common_include_directories
+    ${EXECUTORCH_ROOT}/..
+    ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+  )
+endif()
 
 add_library(extension_llm_runner STATIC ${_extension_llm_runner__srcs})
 
@@ -56,10 +59,10 @@ add_subdirectory(
 set(runner_deps executorch_core extension_module extension_tensor tokenizers)
 
 target_link_libraries(extension_llm_runner PUBLIC ${runner_deps})
-
+target_compile_definitions(extension_llm_runner PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
 target_include_directories(
   extension_llm_runner
-  INTERFACE ${_common_include_directories}
+  PUBLIC ${_common_include_directories}
             ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
 )
 
