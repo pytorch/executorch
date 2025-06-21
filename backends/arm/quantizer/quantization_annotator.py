@@ -212,6 +212,7 @@ _one_to_one = [
     torch.ops.aten.hardswish_.default,
     torch.ops.aten.full_like.default,
     torch.ops.aten.pow.Tensor_Scalar,
+    torch.ops.aten.pow.Tensor_Tensor,
     torch.ops.aten.gelu.default,
 ]
 

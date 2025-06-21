@@ -57,6 +57,7 @@ class TableOps:
 
     # Targets that must be treated explicitly
     special_table_ops: Set[EdgeOpOverload] = {
+        exir_ops.edge.aten.pow.Tensor_Tensor,
         exir_ops.edge.aten.pow.Tensor_Scalar,
         exir_ops.edge.aten.gelu.default,
     }
@@ -75,6 +76,13 @@ class TableOps:
             return self.unary_table_ops[target]
         elif target in self.special_table_ops:
             match target:
+                case exir_ops.edge.aten.pow.Tensor_Tensor:
+                    # Exponent is a constant. Embed it into a lambda.
+                    exp_node = node.args[1]
+                    exp = float(
+                        self.exported_program.state_dict[exp_node.name].item()  # type: ignore[union-attr]
+                    )
+                    return lambda x: torch.pow(x, exp).flatten()
                 case exir_ops.edge.aten.pow.Tensor_Scalar:
                     # Exponent is a constant. Embed it into a lambda.
                     exp = cast(int, node.args[1])
@@ -283,8 +291,16 @@ class InsertTableOpsPass(ExportPass):
             modified = True
 
         if modified:
+            graph_module.graph.eliminate_dead_code()
+
+            # Remove any placeholder with zero users
+            for ph in list(graph_module.graph.nodes):
+                if ph.op == "placeholder" and len(ph.users) == 0:
+                    graph_module.graph.erase_node(ph)
+                    self.exported_program.state_dict.pop(ph.name, None)
+
             # retrace the graph to update the fake tensor types
             graph_module = super().call(graph_module).graph_module
-
             graph_module.recompile()
+
         return PassResult(graph_module, modified)
