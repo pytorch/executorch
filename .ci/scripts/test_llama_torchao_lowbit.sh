@@ -78,7 +78,7 @@ ${PYTHON_EXECUTABLE} -m extension.llm.export.export_llm \
     export.output_name="${MODEL_OUT}" \
     quantization.qmode="torchao:8da${QLINEAR_BITWIDTH}w" \
     quantization.group_size=${QLINEAR_GROUP_SIZE} \
-    quantization.embedding_quantize="torchao:${QEMBEDDING_BITWIDTH},${QEMBEDDING_GROUP_SIZE}" \
+    quantization.embedding_quantize=\"torchao:${QEMBEDDING_BITWIDTH},${QEMBEDDING_GROUP_SIZE}\" \
     model.dtype_override=fp32
 
 # Test run

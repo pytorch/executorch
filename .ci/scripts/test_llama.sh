@@ -241,7 +241,7 @@ if [[ "${QNN}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} backend.qnn.enabled=true model.enable_dynamic_shape=false debug.verbose=true"
   echo "PT2E_QUANTIZE is ${PT2E_QUANTIZE}"
   if [[ "${PT2E_QUANTIZE}" == "qnn_16a16w" ]]; then
-    EXPORT_ARGS+=" base.tokenizer_path=tokenizer.model quantization.pt2e_quantize=qnn_16a16w quantization.calibration_tasks=\"[wikitext]\" quantization.calibration_limit=1 quantization.calibration_seq_length=128 quantization.calibration_data=\"Once\""
+    EXPORT_ARGS+=" base.tokenizer_path=tokenizer.model quantization.pt2e_quantize=qnn_16a16w quantization.calibration_tasks=[\"wikitext\"] quantization.calibration_limit=1 quantization.calibration_seq_length=128 quantization.calibration_data=\"Once\""
   fi
 fi
 if [[ "${QUANTIZE_KV_CACHE}" == "ON" ]]; then
