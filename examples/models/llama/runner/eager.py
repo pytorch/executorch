@@ -10,7 +10,7 @@ from typing import Optional, Type
 
 import torch
 
-from executorch.examples.models.llama.config.llm_config import LlmConfig
+from executorch.extension.llm.export.config.llm_config import LlmConfig
 from executorch.examples.models.llama.export_llama_lib import (
     _prepare_for_llama_export,
     build_args_parser as _build_args_parser,

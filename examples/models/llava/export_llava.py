@@ -16,7 +16,7 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
-from executorch.examples.models.llama.config.llm_config import LlmConfig
+from executorch.extension.llm.export.config.llm_config import LlmConfig
 from executorch.examples.models.llama.export_llama_lib import (
     get_quantizer_and_quant_params,
 )

@@ -16,7 +16,7 @@ from executorch.examples.models.checkpoint import (
     get_default_model_resource_dir,
 )
 
-from executorch.examples.models.llama.config.llm_config import LlmConfig
+from executorch.extension.llm.export.config.llm_config import LlmConfig
 from executorch.examples.models.llama.llama_transformer import construct_transformer
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.rope import Rope
