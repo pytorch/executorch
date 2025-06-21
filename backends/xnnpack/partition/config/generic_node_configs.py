@@ -371,6 +371,13 @@ class LogConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32]
 
 
+class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
+    target_name = "_to_dim_order_copy.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
 class MeanDimConfig(GenericNodePartitionerConfig):
     target_name = "mean.dim"
 
