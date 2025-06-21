@@ -50,6 +50,11 @@ case "${IMAGE_NAME}" in
     CLANG_VERSION=12
     ANDROID_NDK_VERSION=r27b
     ;;
+  executorch-ubuntu-22.04-nxp-sdk)
+      LINTRUNNER=""
+      NXP_SDK=yes
+      CLANG_VERSION=12
+      ;;
   executorch-ubuntu-22.04-clang12-android)
     LINTRUNNER=""
     CLANG_VERSION=12
