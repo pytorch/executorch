@@ -154,6 +154,7 @@ DEFINE_ACTIVATION_FN(hardswish);
 DEFINE_ACTIVATION_FN(hardsigmoid);
 DEFINE_LEAKY_RELU_FN(leaky_relu);
 DEFINE_ACTIVATION_FN(round);
+DEFINE_ACTIVATION_FN(tan);
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.abs.default, abs);
@@ -174,6 +175,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.hardsigmoid.default, hardsigmoid);
   VK_REGISTER_OP(aten.leaky_relu.default, leaky_relu);
   VK_REGISTER_OP(aten.round.default, round);
+  VK_REGISTER_OP(aten.tan.default, tan);
 }
 
 } // namespace vkcompute
