@@ -49,43 +49,6 @@ def define_common_targets():
     The directory containing this targets.bzl file should also contain both
     TARGETS and BUCK files that call this function.
     """
-    runtime.cxx_library(
-        name = "c10",
-        header_namespace = "c10",
-        exported_headers = [
-            "macros/Export.h",
-            "macros/Macros.h",
-            "util/BFloat16.h",
-            "util/BFloat16-inl.h",
-            "util/BFloat16-math.h",
-            "util/Half.h",
-            "util/Half-inl.h",
-            "util/TypeSafeSignMath.h",
-            "util/bit_cast.h",
-            "util/complex.h",
-            "util/complex_math.h",
-            "util/complex_utils.h",
-            "util/floating_point_utils.h",
-            "util/irange.h",
-        ],
-        exported_preprocessor_flags = [
-            "-DC10_USING_CUSTOM_GENERATED_MACROS",
-        ] + ([] if runtime.is_oss else [
-            "-DC10_USE_GLOG",
-            "-DC10_USE_MINIMAL_GLOG",
-        ]),
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        deps = select({
-            "DEFAULT": [],
-            # Half-inl.h depends on vec_half.h from ATen, but only when building for x86.
-            "ovr_config//cpu:x86_64": [
-                ":aten_headers_for_executorch",
-            ],
-        }),
-    )
 
     runtime.cxx_library(
         name = "aten_headers_for_executorch",
@@ -118,3 +81,51 @@ def define_common_targets():
         fbcode_exported_preprocessor_flags = get_preprocessor_flags(is_fbcode=True)
         + ([] if runtime.is_oss else ["-DET_USE_PYTORCH_HEADERS"]),
     )
+
+    if runtime.is_oss:
+        runtime.cxx_library(
+            name = "c10",
+            header_namespace = "c10",
+            exported_headers = [
+                "macros/Export.h",
+                "macros/Macros.h",
+                "util/BFloat16.h",
+                "util/BFloat16-inl.h",
+                "util/BFloat16-math.h",
+                "util/Half.h",
+                "util/Half-inl.h",
+                "util/TypeSafeSignMath.h",
+                "util/bit_cast.h",
+                "util/complex.h",
+                "util/complex_math.h",
+                "util/complex_utils.h",
+                "util/floating_point_utils.h",
+                "util/irange.h",
+            ],
+            exported_preprocessor_flags = [
+                "-DC10_USING_CUSTOM_GENERATED_MACROS",
+            ] + ([] if runtime.is_oss else [
+                "-DC10_USE_GLOG",
+                "-DC10_USE_MINIMAL_GLOG",
+            ]),
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            deps = select({
+                "DEFAULT": [],
+                # Half-inl.h depends on vec_half.h from ATen, but only when building for x86.
+                "ovr_config//cpu:x86_64": [
+                    ":aten_headers_for_executorch",
+                ],
+            }),
+        )
+    else:
+        runtime.cxx_library(
+            name = "c10",
+            exported_deps = [":aten_headers_for_executorch"],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+        )
