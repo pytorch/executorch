@@ -28,3 +28,6 @@ matplotlib>=3.9.4
 myst-parser==0.18.1
 sphinx_design==0.4.1
 sphinx-copybutton==0.5.0
+
+# script unit test requirements
+yaspin==3.1.0
