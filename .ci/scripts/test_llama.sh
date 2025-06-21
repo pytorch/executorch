@@ -54,10 +54,7 @@ PT2E_QUANTIZE="${PT2E_QUANTIZE:-}"
 # Default CMake Build Type to release mode
 CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-Release}
 
-if [[ $# -lt 4 ]]; then # Assuming 4 mandatory args
-    echo "Expecting atleast 4 positional arguments"
-    echo "Usage: [...]"
-fi
+# Argument validation is done individually below for each required parameter
 if [[ -z "${MODEL_NAME:-}" ]]; then
   echo "Missing model name, exiting..."
   exit 1
@@ -224,34 +221,34 @@ fi
 # Export model.
 EXPORTED_MODEL_NAME="${EXPORTED_MODEL_NAME}.pte"
 echo "Exporting ${EXPORTED_MODEL_NAME}"
-EXPORT_ARGS="-c ${CHECKPOINT_FILE_NAME} -p ${PARAMS} -d ${DTYPE} -n ${EXPORTED_MODEL_NAME} -kv"
+EXPORT_ARGS="base.checkpoint=${CHECKPOINT_FILE_NAME} base.params=${PARAMS} model.dtype_override=${DTYPE} export.output_name=${EXPORTED_MODEL_NAME} model.use_kv_cache=true"
 if [[ "${XNNPACK}" == "ON" ]]; then
-  EXPORT_ARGS="${EXPORT_ARGS} -X --xnnpack-extended-ops -qmode 8da4w -G 128"
+  EXPORT_ARGS="${EXPORT_ARGS} backend.xnnpack.enabled=true backend.xnnpack.extended_ops=true quantization.qmode=8da4w quantization.group_size=128"
 fi
 if [[ "${CUSTOM}" == "ON" ]]; then
-  EXPORT_ARGS="${EXPORT_ARGS} --use_sdpa_with_kv_cache"
+  EXPORT_ARGS="${EXPORT_ARGS} model.use_sdpa_with_kv_cache=true"
 fi
 if [[ "${QE}" == "ON" ]]; then
-  EXPORT_ARGS="${EXPORT_ARGS} --embedding-quantize 8,1024"
+  EXPORT_ARGS="${EXPORT_ARGS} quantization.embedding_quantize=\"8,1024\""
 fi
 if [[ "${MPS}" == "ON" ]]; then
-  EXPORT_ARGS="${EXPORT_ARGS} -kv -v --mps --disable_dynamic_shape"
+  EXPORT_ARGS="${EXPORT_ARGS} backend.mps.enabled=true model.enable_dynamic_shape=false debug.verbose=true"
 fi
 if [[ "${COREML}" == "ON" ]]; then
-  EXPORT_ARGS="${EXPORT_ARGS} -kv -v --coreml --disable_dynamic_shape"
+  EXPORT_ARGS="${EXPORT_ARGS} backend.coreml.enabled=true model.enable_dynamic_shape=false debug.verbose=true"
 fi
 if [[ "${QNN}" == "ON" ]]; then
-  EXPORT_ARGS="${EXPORT_ARGS} -kv -v --qnn --disable_dynamic_shape"
+  EXPORT_ARGS="${EXPORT_ARGS} backend.qnn.enabled=true model.enable_dynamic_shape=false debug.verbose=true"
   echo "PT2E_QUANTIZE is ${PT2E_QUANTIZE}"
   if [[ "${PT2E_QUANTIZE}" == "qnn_16a16w" ]]; then
-    EXPORT_ARGS+=" --tokenizer_path tokenizer.model --pt2e_quantize qnn_16a16w --calibration_tasks wikitext --calibration_limit 1 --calibration_seq_length 128 --calibration_data Once "
+    EXPORT_ARGS+=" base.tokenizer_path=tokenizer.model quantization.pt2e_quantize=qnn_16a16w quantization.calibration_tasks=[\"wikitext\"] quantization.calibration_limit=1 quantization.calibration_seq_length=128 quantization.calibration_data=\"Once\""
   fi
 fi
 if [[ "${QUANTIZE_KV_CACHE}" == "ON" ]]; then
-  EXPORT_ARGS="${EXPORT_ARGS} --quantize_kv_cache"
+  EXPORT_ARGS="${EXPORT_ARGS} model.quantize_kv_cache=true"
 fi
 # Add dynamically linked library location
-$PYTHON_EXECUTABLE -m examples.models.llama.export_llama ${EXPORT_ARGS}
+$PYTHON_EXECUTABLE -m extension.llm.export.export_llm ${EXPORT_ARGS}
 
 # Create tokenizer.bin.
 echo "Creating tokenizer.bin"
