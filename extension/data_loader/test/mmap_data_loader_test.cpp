@@ -376,3 +376,56 @@ TEST_F(MmapDataLoaderTest, DEPRECATEDFrom) {
   ASSERT_EQ(total_size.error(), Error::Ok);
   EXPECT_EQ(*total_size, contents_size);
 }
+
+// Tests that load_into copies bytes correctly.
+TEST_F(MmapDataLoaderTest, LoadIntoCopiesCorrectly) {
+  // Create a test string.
+  const char* test_text = "FILE_CONTENTS";
+  const size_t text_size = std::strlen(test_text);
+  TempFile tf(test_text);
+
+  // Wrap it in a loader.
+  Result<MmapDataLoader> mdl = MmapDataLoader::from(tf.path().c_str());
+  ASSERT_EQ(mdl.error(), Error::Ok);
+
+  // Destination buffer.
+  std::vector<uint8_t> dst(text_size);
+
+  // Call load_into()
+  Error err = mdl->load_into(
+      /*offset=*/0,
+      /*size=*/text_size,
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
+      dst.data());
+  ASSERT_EQ(err, Error::Ok);
+
+  // Verify memory copied correctly.
+  EXPECT_EQ(0, std::memcmp(dst.data(), test_text, text_size));
+}
+
+// Tests that load_into copies offset slice correctly.
+TEST_F(MmapDataLoaderTest, LoadIntoCopiesOffsetCorrectly) {
+  // Create a test string.
+  const char* contents = "ABCDEFGH";
+  TempFile tf(contents);
+
+  // Wrap it in a loader.
+  Result<MmapDataLoader> mdl = MmapDataLoader::from(tf.path().c_str());
+  ASSERT_EQ(mdl.error(), Error::Ok);
+
+  // Copying 3 bytes starting at offset 2 = "CDE"
+  const size_t offset = 2;
+  const size_t size = 3;
+  uint8_t dst[size];
+
+  // Call load_into()
+  Error err = mdl->load_into(
+      offset,
+      size,
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
+      dst);
+  ASSERT_EQ(err, Error::Ok);
+
+  // Verify memory copied correctly.
+  EXPECT_EQ(0, std::memcmp(dst, contents + offset, size));
+}
