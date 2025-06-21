@@ -52,7 +52,7 @@ python3 .ci/scripts/benchmark_tooling/get_benchmark_analysis_data.py \
   --endTime "2025-06-17T18:00:00" \
   --outputType "excel"
 
-python3 analyze_benchmark_stability.py \
+python3 .ci/scripts/benchmark_tooling/analyze_benchmark_stability.py \
 --primary-file private.xlsx \
 --reference-file public.xlsx
 ```

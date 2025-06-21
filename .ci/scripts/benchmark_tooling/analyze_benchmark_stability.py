@@ -1,6 +1,5 @@
 import argparse
 import os
-import re
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,21 +15,23 @@ def print_section_header(title):
     print("=" * 100 + "\n")
 
 
-def normalize_tab_name(name):
+def normalize_name(name):
     """Normalize tab name for better matching"""
     # Convert to lowercase and remove spaces
-    return name.lower().replace(" ", "")
+    return name.lower().replace(" ", "").replace("(private)", "")
 
 
 def parse_model_device_config(config):
     """Extract model and device from config"""
     model = config.get("model", "")
+    backend = config.get("backend", "")
+    full_model = f"{model}({backend})" if backend else model
     base_device = config.get("device", "")
     os_version = config.get("arch", "")
     full_device = f"{base_device}({os_version})" if os_version else base_device
     if not base_device:
-        return model, "unkown", "unknown", ""
-    return model, full_device, base_device, os_version
+        return full_model, "unkown", "unknown", ""
+    return full_model, full_device, base_device, os_version
 
 
 def is_matching_dataset(primary_sheet, reference_sheet):
@@ -38,13 +39,13 @@ def is_matching_dataset(primary_sheet, reference_sheet):
     Check if two datasets match for comparison based on model and device
     Allows different OS versions for the same device
     """
-    primary_model = primary_sheet.get("model", "")
-    primary_device = primary_sheet.get("base_device", "")
-    primary_os = primary_sheet.get("os_version", "")
+    primary_model = normalize_name(primary_sheet.get("model", ""))
+    primary_device = normalize_name(primary_sheet.get("base_device", ""))
+    # primary_os = normalize_name(primary_sheet.get("os_version", ""))
 
-    reference_model = reference_sheet.get("model", "")
-    reference_device = reference_sheet.get("base_device", "")
-    reference_os = reference_sheet.get("os_version", "")
+    reference_model = normalize_name(reference_sheet.get("model", ""))
+    reference_device = normalize_name(reference_sheet.get("base_device", ""))
+    # reference_os = normalize_name(reference_sheet.get("os_version", ""))
 
     if not primary_model:
         print("Warning: Primary sheet {} has no model info, for {primary_model} ")
@@ -82,9 +83,9 @@ def analyze_latency_stability(  # noqa: C901
 
     for document in documents:
         sheetName = document.get("sheetName", None)
-        print(f"Loading dataset: {sheetName}")
         df = document.get("df", None)
         config = document.get("groupInfo", None)
+        print(f"Loading dataset: {sheetName} with config: {config} ")
 
         if df is None or df.empty:
             print(f"Skipping sheet {sheetName} because it has no df data")
@@ -139,14 +140,13 @@ def analyze_latency_stability(  # noqa: C901
     reference_datasets = {}
     if reference_file:
         print_section_header("LOADING REFERENCE DATASETS (Public)")
-        documents = read_excel_with_json_header(primary_file)
+        documents = read_excel_with_json_header(reference_file)
 
         for document in documents:
             sheetName = document.get("sheetName", None)
-            print(f"Loading dataset: {sheetName}")
             df = document.get("df", None)
             config = document.get("groupInfo", None)
-
+            print(f"Loading dataset: {sheetName} with config:{config}")
             if df is None or df.empty:
                 print(f"Skipping sheet {sheetName} because it has no df data")
                 continue
@@ -263,7 +263,9 @@ def analyze_latency_stability(  # noqa: C901
                     break
 
             if not found_match:
-                print(f"Warning: No matching reference dataset for {primary_sheet}")
+                print(
+                    f"Warning: No matching reference dataset for {primary_sheet} with config:  {primary_info['model']}{primary_info['full_device']} "
+                )
 
         if not matches_found:
             print("No matching datasets found between primary and reference files.")

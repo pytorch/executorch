@@ -302,6 +302,7 @@ class ExecutorchBenchmarkFetcher:
         logging.info(
             f"Generating output with type {output_type}: {[self.matching_groups.keys()]}"
         )
+
         o_type = self._to_output_type(output_type)
         if o_type == OutputType.PRINT:
             logging.info("\n ========= Generate print output ========= \n")
@@ -576,7 +577,10 @@ class ExecutorchBenchmarkFetcher:
         public_list = self._filter_public_result(private_list, all_public)
 
         logging.info(
-            f"Found {len(private_list)} private tables, Found assoicated {len(public_list)} public tables"
+            f"Found {len(private_list)} private tables, {[item['table_name'] for item in private_list]}"
+        )
+        logging.info(
+            f"Found assoicated {len(public_list)} public tables, {json.dumps([item['table_name'] for item in public_list],indent=2)}"
         )
 
         self.matching_groups["private"] = MatchingGroupResult(
