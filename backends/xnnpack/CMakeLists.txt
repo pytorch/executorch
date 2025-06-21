@@ -25,14 +25,17 @@ endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
+# Store XNNPACK-specific compile definitions
+set(_xnnpack_compile_definitions)
+
 if(EXECUTORCH_XNNPACK_ENABLE_WEIGHT_CACHE)
-  add_definitions(-DENABLE_XNNPACK_WEIGHTS_CACHE)
+  list(APPEND _xnnpack_compile_definitions ENABLE_XNNPACK_WEIGHTS_CACHE)
 endif()
 if(EXECUTORCH_XNNPACK_SHARED_WORKSPACE)
-  add_definitions(-DENABLE_XNNPACK_SHARED_WORKSPACE)
+  list(APPEND _xnnpack_compile_definitions ENABLE_XNNPACK_SHARED_WORKSPACE)
 endif()
 if(EXECUTORCH_XNNPACK_ENABLE_KLEIDI)
-  add_definitions(-DENABLE_XNNPACK_KLEIDI)
+  list(APPEND _xnnpack_compile_definitions ENABLE_XNNPACK_KLEIDI)
 endif()
 
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
@@ -116,6 +119,7 @@ target_include_directories(
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third-party/cpuinfo/include
 )
 target_compile_options(xnnpack_backend PUBLIC ${_common_compile_options})
+target_compile_definitions(xnnpack_backend PRIVATE ${_xnnpack_compile_definitions})
 target_link_options_shared_lib(xnnpack_backend)
 
 install(

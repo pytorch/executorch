@@ -16,10 +16,7 @@ if(EXECUTORCH_BUILD_NEURON_BUFFER_ALLOCATOR)
   add_subdirectory(runtime/proprietary)
 endif()
 
-include_directories(BEFORE ${_common_include_directories})
-
-# shortcut include directory for neuron headers
-include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include)
+# Include directories will be set on neuron_backend target below
 
 # targets
 add_library(neuron_backend SHARED)
@@ -41,6 +38,13 @@ target_sources(
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/runtime/NeuronBackend.cpp
           ${CMAKE_CURRENT_LIST_DIR}/runtime/NeuronExecutor.cpp
           ${CMAKE_CURRENT_LIST_DIR}/runtime/NeuronBufferAllocator.cpp
+)
+
+# Set include directories for neuron_backend target
+target_include_directories(neuron_backend 
+    PRIVATE 
+        ${_common_include_directories}
+        ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include
 )
 target_link_options_shared_lib(neuron_backend)
 

@@ -6,12 +6,9 @@
 
 # Let include directory as "executorch/..."
 set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
-include_directories(BEFORE ${_common_include_directories})
+set(_mediatek_include_directories ${_common_include_directories}/backends/mediatek/runtime/include)
 
-# shortcut include directory for neuron headers
-include_directories(
-  BEFORE ${_common_include_directories}/backends/mediatek/runtime/include
-)
+# Include directories will be set on individual targets below
 
 add_library(llm_helper STATIC)
 target_sources(
@@ -22,7 +19,11 @@ target_sources(
 
 target_link_libraries(llm_helper PRIVATE executorch_core)
 target_include_directories(
-  llm_helper PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} llm_helper/include
+  llm_helper PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR} 
+    llm_helper/include
+    ${_common_include_directories}
+    ${_mediatek_include_directories}
 )
 target_compile_options(llm_helper PRIVATE ${_common_compile_options})
 
@@ -39,3 +40,8 @@ target_sources(
           LlamaRuntime.cpp
 )
 target_compile_options(mtk_llama_executor_lib PUBLIC ${_common_compile_options})
+target_include_directories(
+  mtk_llama_executor_lib PUBLIC
+    ${_common_include_directories}
+    ${_mediatek_include_directories}
+)

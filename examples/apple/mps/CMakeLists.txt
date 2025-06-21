@@ -8,7 +8,7 @@
 # MPSBackend.
 #
 
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)
 
 project(mps_runner_example)
 
@@ -29,7 +29,7 @@ if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
 endif()
 
-add_compile_options("-Wall" "-Werror")
+# Compile options will be set on mps_executor_runner target
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
@@ -112,5 +112,5 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
     mps_portable_ops_lib
     ${mps_executor_runner_libs}
   )
-  target_compile_options(mps_executor_runner PUBLIC ${_common_compile_options})
+  target_compile_options(mps_executor_runner PUBLIC ${_common_compile_options} -Wall -Werror)
 endif()

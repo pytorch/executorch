@@ -7,7 +7,7 @@
 set(CMAKE_CXX_STANDARD 17)
 # qnn_executor_runner: Like executor_runner but with QNN
 
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)
 project(qualcomm_runner_example)
 
 # Source root directory for executorch.

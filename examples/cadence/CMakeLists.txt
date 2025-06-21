@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # Set the minimum required version of CMake for this project.
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.24)
 
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)

@@ -7,7 +7,7 @@
 # Example CMakeLists.txt for building executor_runner with Developer Tools
 # support. In this example we link devtools and bundled_program libraries into
 # executor_runner binary
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)
 project(devtools_example)
 
 option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)

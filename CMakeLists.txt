@@ -114,24 +114,24 @@ set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
 # Instead please use `find_package(executorch REQUIRED)` in the example
 # directory and add a new executable in the example `CMakeLists.txt`.
 
+# Store compile definitions to apply to core targets
+set(_executorch_core_compile_definitions)
+
 if(NOT EXECUTORCH_ENABLE_LOGGING)
-  # Avoid pulling in the logging strings, which can be large. Note that this
-  # will set the compiler flag for all targets in this directory, and for all
-  # subdirectories included after this point.
-  add_definitions(-DET_LOG_ENABLED=0)
+  # Avoid pulling in the logging strings, which can be large.
+  list(APPEND _executorch_core_compile_definitions ET_LOG_ENABLED=0)
 endif()
 
-add_definitions(-DET_MIN_LOG_LEVEL=${ET_MIN_LOG_LEVEL})
+list(APPEND _executorch_core_compile_definitions ET_MIN_LOG_LEVEL=${ET_MIN_LOG_LEVEL})
 
 if(NOT EXECUTORCH_ENABLE_PROGRAM_VERIFICATION)
   # Avoid pulling in the flatbuffer data verification logic, which can add about
-  # 20kB. Note that this will set the compiler flag for all targets in this
-  # directory, and for all subdirectories included after this point.
-  add_definitions(-DET_ENABLE_PROGRAM_VERIFICATION=0)
+  # 20kB.
+  list(APPEND _executorch_core_compile_definitions ET_ENABLE_PROGRAM_VERIFICATION=0)
 endif()
 
 if(EXECUTORCH_ENABLE_EVENT_TRACER)
-  add_definitions(-DET_EVENT_TRACER_ENABLED)
+  list(APPEND _executorch_core_compile_definitions ET_EVENT_TRACER_ENABLED)
 endif()
 
 # -ffunction-sections -fdata-sections: breaks function and data into sections so
@@ -358,7 +358,10 @@ target_include_directories(
   executorch_core PUBLIC ${_common_include_directories}
 )
 target_compile_definitions(
-  executorch_core PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
+  executorch_core 
+  PUBLIC 
+    C10_USING_CUSTOM_GENERATED_MACROS
+    ${_executorch_core_compile_definitions}
 )
 target_compile_options(executorch_core PUBLIC ${_common_compile_options})
 if(MAX_KERNEL_NUM)
@@ -401,7 +404,12 @@ endif()
 add_library(executorch ${_executorch__srcs})
 target_link_libraries(executorch PRIVATE executorch_core)
 target_include_directories(executorch PUBLIC ${_common_include_directories})
-target_compile_definitions(executorch PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
+target_compile_definitions(
+  executorch 
+  PUBLIC 
+    C10_USING_CUSTOM_GENERATED_MACROS
+    ${_executorch_core_compile_definitions}
+)
 target_compile_options(executorch PUBLIC ${_common_compile_options})
 target_link_options_shared_lib(executorch)
 

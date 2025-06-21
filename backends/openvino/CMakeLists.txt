@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # Set minimum required CMake version
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)
 
 # Set project name
 project(openvino_backend_project)

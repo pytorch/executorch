@@ -59,7 +59,7 @@ set(XNNPACK_BUILD_ALL_MICROKERNELS
     CACHE BOOL ""
 )
 add_subdirectory("${XNNPACK_SOURCE_DIR}")
-include_directories(SYSTEM ${XNNPACK_INCLUDE_DIR})
+# XNNPACK_INCLUDE_DIR is added to xnnpack_backend target via target_include_directories
 list(APPEND xnnpack_third_party XNNPACK)
 install(TARGETS microkernels-prod
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

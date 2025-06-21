@@ -4,7 +4,7 @@
 # except in compliance with the License. See the license file in the root
 # directory of this source tree for more details.
 
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)
 project(mediatek_example)
 
 message(CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH})
@@ -46,7 +46,7 @@ find_package(executorch CONFIG REQUIRED)
 target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
 find_package(gflags REQUIRED)
 
-link_directories(${EXECUTORCH_ROOT}/cmake-android-out/lib)
+# Link directories will be set on individual executable targets
 
 if(${ANDROID})
   message("Build MTK Android Examples")
@@ -74,6 +74,7 @@ if(${ANDROID})
     gflags
   )
   target_compile_options(mtk_executor_runner PUBLIC ${_common_compile_options})
+  target_link_directories(mtk_executor_runner PRIVATE ${EXECUTORCH_ROOT}/cmake-android-out/lib)
 
   set(_mtk_oss_executor_runner__srcs ${_executor_runner__srcs})
   list(
@@ -112,6 +113,7 @@ if(${ANDROID})
       PUBLIC
       ${_common_compile_options}
   )
+  target_link_directories(mtk_oss_executor_runner PRIVATE ${EXECUTORCH_ROOT}/cmake-android-out/lib)
 
   set(_mtk_llama_executor_runner__srcs ${_mtk_executor_runner__srcs})
   list(FILTER _mtk_llama_executor_runner__srcs EXCLUDE REGEX
@@ -140,8 +142,12 @@ if(${ANDROID})
   set(LLAMA2_TOKENIZER_DIR ${EXTENSIONS_LLM_DIR}/tokenizers)
   add_library(tokenizer STATIC)
   target_include_directories(
-    tokenizer PUBLIC ${_common_include_directories} ${THIRD_PARTY_ABSL_DIR}
-                     ${THIRD_PARTY_RE2_DIR} ${LLAMA2_TOKENIZER_DIR}/include
+    tokenizer PUBLIC 
+      ${_common_include_directories} 
+      ${THIRD_PARTY_ABSL_DIR}
+      ${THIRD_PARTY_RE2_DIR} 
+      ${LLAMA2_TOKENIZER_DIR}/include
+      ${CMAKE_CURRENT_SOURCE_DIR}/../../backends/mediatek/runtime/include
   )
   target_link_libraries(tokenizer PRIVATE re2::re2)
   target_sources(
@@ -152,11 +158,7 @@ if(${ANDROID})
       ${CMAKE_CURRENT_SOURCE_DIR}/../models/llama/tokenizer/llama_tiktoken.cpp
   )
 
-  # Include directory for neuron headers
-  include_directories(
-    BEFORE ${_common_include_directories}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../backends/mediatek/runtime/include
-  )
+  # Neuron headers are now included in individual targets
 
   # Build Llama Executor static library
   add_subdirectory(executor_runner/llama_runner)
@@ -175,4 +177,5 @@ if(${ANDROID})
   target_compile_options(
     mtk_llama_executor_runner PUBLIC ${_common_compile_options}
   )
+  target_link_directories(mtk_llama_executor_runner PRIVATE ${EXECUTORCH_ROOT}/cmake-android-out/lib)
 endif()

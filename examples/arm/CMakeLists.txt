@@ -9,7 +9,7 @@
 # cmake-format -i CMakeLists.txt
 # ~~~
 
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)
 project(arm_example)
 
 # Option to register op list

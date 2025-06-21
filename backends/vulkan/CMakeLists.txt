@@ -14,7 +14,7 @@
 #
 # The targets in this file will be built if EXECUTORCH_BUILD_VULKAN is ON
 
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)
 
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)

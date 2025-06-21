@@ -2,7 +2,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)
 project(arm_backend)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -15,12 +15,12 @@ endif()
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 set(_common_include_directories ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)
-add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
+# C10_USING_CUSTOM_GENERATED_MACROS will be set on executorch_delegate_ethos_u target
 
 # Third-party folder and Ethos-U driver inclued
 set(THIRD_PARTY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third-party")
 set(DRIVER_ETHOSU_INCLUDE_DIR "${THIRD_PARTY_ROOT}/ethos-u-core-driver/include")
-include_directories(${DRIVER_ETHOSU_INCLUDE_DIR})
+# DRIVER_ETHOSU_INCLUDE_DIR is added to executorch_delegate_ethos_u target via target_include_directories
 
 set(_arm_baremetal_sources backends/arm/runtime/EthosUBackend.cpp
                            backends/arm/runtime/VelaBinStream.cpp
@@ -33,4 +33,7 @@ target_include_directories(
 )
 target_include_directories(
   executorch_delegate_ethos_u PUBLIC ${DRIVER_ETHOSU_INCLUDE_DIR}
+)
+target_compile_definitions(
+  executorch_delegate_ethos_u PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
 )
