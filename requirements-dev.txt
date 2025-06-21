@@ -9,3 +9,5 @@ wheel  # For building the pip package archive.
 zstd  # Imported by resolve_buck.py.
 lintrunner==0.12.7
 lintrunner-adapters==0.12.4
+hydra-core>=1.3.0
+omegaconf>=2.3.0

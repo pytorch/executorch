@@ -53,6 +53,8 @@ from executorch.extension.llm.export.quantizer_lib import (
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
 
+from omegaconf import DictConfig
+
 from ..model_factory import EagerModelFactory
 from .source_transformation.apply_spin_quant_r1_r2 import (
     fuse_layer_norms,
@@ -571,12 +573,14 @@ def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
 
 
 def export_llama(
-    export_options: Union[argparse.Namespace, LlmConfig],
+    export_options: Union[argparse.Namespace, LlmConfig, DictConfig],
 ) -> str:
     if isinstance(export_options, argparse.Namespace):
         # Legacy CLI.
         llm_config = LlmConfig.from_args(export_options)
-    elif isinstance(export_options, LlmConfig):
+    elif isinstance(export_options, LlmConfig) or isinstance(
+        export_options, DictConfig
+    ):
         # Hydra CLI.
         llm_config = export_options
     else:
