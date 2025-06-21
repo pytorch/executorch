@@ -392,18 +392,21 @@ if(EXECUTORCH_BUILD_PYBIND AND APPLE)
 endif()
 
 #
-# executorch: Primary runtime library with primitive operators.
+# prim_ops_lib: Primary runtime library with primitive operators.
 #
 # Provides the Program and Method interfaces, along with primitive operators.
 # Does not contain portable kernels or other full operators. Does not contain
 # any backends.
 #
-add_library(executorch ${_executorch__srcs})
-target_link_libraries(executorch PRIVATE executorch_core)
-target_include_directories(executorch PUBLIC ${_common_include_directories})
-target_compile_definitions(executorch PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
-target_compile_options(executorch PUBLIC ${_common_compile_options})
-target_link_options_shared_lib(executorch)
+add_library(prim_ops_lib ${_executorch__srcs})
+target_link_libraries(prim_ops_lib PRIVATE executorch_core)
+target_include_directories(prim_ops_lib PUBLIC ${_common_include_directories})
+target_compile_definitions(prim_ops_lib PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
+target_compile_options(prim_ops_lib PUBLIC ${_common_compile_options})
+target_link_options_shared_lib(prim_ops_lib)
+
+# Legacy alias for backward compatibility during transition
+add_library(executorch ALIAS prim_ops_lib)
 
 #
 # portable_ops_lib: A library to register core ATen ops using portable kernels,
@@ -469,7 +472,13 @@ install(
   PATTERN "*.h"
 )
 install(
-  TARGETS executorch executorch_core
+  TARGETS prim_ops_lib executorch_core
+  INCLUDES
+  DESTINATION ${_common_include_directories}
+)
+#prim_ops_lib install
+install(
+  TARGETS prim_ops_lib executorch_core
   INCLUDES
   DESTINATION ${_common_include_directories}
 )

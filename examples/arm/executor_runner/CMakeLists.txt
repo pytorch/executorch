@@ -470,7 +470,7 @@ endif()
 add_library(executorch STATIC IMPORTED)
 set_property(
   TARGET executorch PROPERTY IMPORTED_LOCATION
-                             "${ET_BUILD_DIR_PATH}/libexecutorch.a"
+                           "${ET_BUILD_DIR_PATH}/libexecutorch.a"
 )
 
 add_library(executorch_core STATIC IMPORTED)
