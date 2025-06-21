@@ -70,6 +70,11 @@ libquantized_kernels.a,\
 libquantized_ops_lib.a,\
 :"
 
+FRAMEWORK_KERNELS_TORCHAO="kernels_torchao:\
+libtorchao_ops_executorch.a,\
+libtorchao_kernels_aarch64.a,\
+:"
+
 usage() {
   echo "Usage: $0 [OPTIONS]"
   echo "Build frameworks for Apple platforms."
@@ -83,6 +88,7 @@ usage() {
   echo "  --optimized          Only build the Optimized kernels."
   echo "  --quantized          Only build the Quantized kernels."
   echo "  --xnnpack            Only build the XNNPACK backend."
+  echo "  --torchao            Build the TorchAO kernels."
   echo
   exit 0
 }
@@ -100,6 +106,7 @@ set_cmake_options_override() {
       "-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=OFF"
       "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=OFF"
       "-DEXECUTORCH_BUILD_XNNPACK=OFF"
+      "-DEXECUTORCH_BUILD_KERNELS_TORCHAO=OFF"
     )
   fi
 
@@ -130,6 +137,7 @@ for arg in "$@"; do
       --optimized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" ;;
       --quantized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_QUANTIZED" ;;
       --xnnpack) set_cmake_options_override "EXECUTORCH_BUILD_XNNPACK" ;;
+      --torchao) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_TORCHAO" ;;
       *)
         echo -e "\033[31m[error] unknown option: ${arg}\033[0m"
         exit 1
@@ -233,6 +241,7 @@ for mode in "${MODES[@]}"; do
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_CUSTOM" "$FRAMEWORK_KERNELS_CUSTOM" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" "$FRAMEWORK_KERNELS_OPTIMIZED" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_QUANTIZED" "$FRAMEWORK_KERNELS_QUANTIZED" "$mode"
+  append_framework_flag "EXECUTORCH_BUILD_KERNELS_TORCHAO" "$FRAMEWORK_KERNELS_TORCHAO" "$mode"
 
   cd "${OUTPUT_DIR}"
   "$SOURCE_ROOT_DIR"/scripts/create_frameworks.sh "${FRAMEWORK_FLAGS[@]}"
