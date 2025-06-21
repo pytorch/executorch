@@ -449,6 +449,15 @@ python_unittest(
 )
 
 python_library(
+    name = "memory_planning_algo",
+    srcs = [
+        "memory_planning_algo.py",
+    ],
+    deps = [
+    ],
+)
+
+python_library(
     name = "memory_planning",
     srcs = [
         "memory_planning.py",
@@ -456,6 +465,7 @@ python_library(
     deps = [
         "fbsource//third-party/pypi/tabulate:tabulate",
         ":memory_constraints",
+        ":memory_planning_algo",
         ":pass_utils",
         "//caffe2:torch",
         "//executorch/exir:lib",
