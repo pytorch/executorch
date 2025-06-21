@@ -74,13 +74,13 @@ backend:
             called_config = mock_export_llama.call_args[0][0]
             self.assertEqual(called_config["base"]["tokenizer_path"], "/path/to/tokenizer.json")
             self.assertEqual(called_config["base"]["model_class"], "llama2")
-            self.assertEqual(called_config["base"]["preq_mode"], "preq_8da4w")
-            self.assertEqual(called_config["model"]["dtype_override"], "fp16")
+            self.assertEqual(called_config["base"]["preq_mode"].value, "8da4w")
+            self.assertEqual(called_config["model"]["dtype_override"].value, "fp16")
             self.assertEqual(called_config["export"]["max_seq_length"], 256)
-            self.assertEqual(called_config["quantization"]["pt2e_quantize"], "xnnpack_dynamic")
-            self.assertEqual(called_config["quantization"]["use_spin_quant"], "cuda")
-            self.assertEqual(called_config["backend"]["coreml"]["quantize"], "c4w")
-            self.assertEqual(called_config["backend"]["coreml"]["compute_units"], "cpu_and_gpu")
+            self.assertEqual(called_config["quantization"]["pt2e_quantize"].value, "xnnpack_dynamic")
+            self.assertEqual(called_config["quantization"]["use_spin_quant"].value, "cuda")
+            self.assertEqual(called_config["backend"]["coreml"]["quantize"].value, "c4w")
+            self.assertEqual(called_config["backend"]["coreml"]["compute_units"].value, "cpu_and_gpu")
         finally:
             os.unlink(config_file)
 
