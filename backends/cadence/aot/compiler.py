@@ -41,7 +41,8 @@ from torch._inductor.decomposition import remove_decompositions
 from torch.export.exported_program import ExportedProgram
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
-from .passes import get_cadence_passes
+from .passes import get_edge_passes
+from .passes import apply_torch_ops_passes
 
 from .utils import print_ops_info
 
@@ -265,6 +266,9 @@ def export_to_edge(
     # Export the model into an ExportedProgram.
     expo_program = trace(model, inputs)
 
+    # Apply passes which transform the ExportedProgram before it gets lowered to edge.
+    apply_torch_ops_passes(expo_program)
+
     # Lower the model to edge IR.
     edge_prog_manager = _lower_ep_to_edge(expo_program, dump_graphs, constant_methods)
 
@@ -308,7 +312,7 @@ def _lower_ep_to_cadence(
     Lower an existing ExportedProgram to edge IR and apply frontend optimization passes.
     """
     edge_prog_manager = _lower_ep_to_edge(program, dump_graphs=dump_graphs)
-    cadence_passes = get_cadence_passes(opt_level)
+    cadence_passes = get_edge_passes(opt_level)
 
     # Run a couple required passes for quant/dequant ops
     cadence_prog_manager = edge_prog_manager.transform(
@@ -326,7 +330,7 @@ def export_to_cadence(
     opt_level: int = 1,
 ) -> EdgeProgramManager:
     edge_prog_manager = export_to_edge(model, inputs, dump_graphs=dump_graphs)
-    cadence_passes = get_cadence_passes(opt_level)
+    cadence_passes = get_edge_passes(opt_level)
 
     # Run a couple required passes for quant/dequant ops
     cadence_prog_manager = edge_prog_manager.transform(
@@ -370,7 +374,7 @@ def export_to_executorch_gen_etrecord(
     memory_config: Optional[MemoryConfig] = None,
     dump_graphs: bool = False,
 ) -> ExecutorchProgramManager:
-    cadence_passes = get_cadence_passes(opt_level)
+    cadence_passes = get_edge_passes(opt_level)
     edge_prog_manager = export_to_edge(model, inputs, dump_graphs)
 
     # Run a couple required passes for quant/dequant ops
