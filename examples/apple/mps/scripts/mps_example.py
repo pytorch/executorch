@@ -20,7 +20,7 @@ from executorch.devtools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
 
-from executorch.examples.models.llama.config.llm_config import LlmConfig
+from executorch.extension.llm.export.config.llm_config import LlmConfig
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
