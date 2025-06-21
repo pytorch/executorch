@@ -54,6 +54,8 @@ include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
 include(${PROJECT_SOURCE_DIR}/tools/cmake/Utils.cmake)
 include(CMakeDependentOption)
 include(ExternalProject)
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -109,46 +111,53 @@ set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 # built under the same directory, so no extra rpath is being added. To properly
 # fix this we need to install `portable_lib` into the correct path.
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
+
 # ------------------------------ OPTIONS -------------------------------------
 # WARNING: Please don't add example specific options in this CMakeLists.txt.
 # Instead please use `find_package(executorch REQUIRED)` in the example
 # directory and add a new executable in the example `CMakeLists.txt`.
 
-if(NOT EXECUTORCH_ENABLE_LOGGING)
-  # Avoid pulling in the logging strings, which can be large. Note that this
-  # will set the compiler flag for all targets in this directory, and for all
-  # subdirectories included after this point.
-  add_definitions(-DET_LOG_ENABLED=0)
-endif()
+# Create interface libraries for modern CMake practices
+add_library(executorch_base_config INTERFACE)
+add_library(executorch_compile_options INTERFACE)
 
-add_definitions(-DET_MIN_LOG_LEVEL=${ET_MIN_LOG_LEVEL})
-
-if(NOT EXECUTORCH_ENABLE_PROGRAM_VERIFICATION)
-  # Avoid pulling in the flatbuffer data verification logic, which can add about
-  # 20kB. Note that this will set the compiler flag for all targets in this
-  # directory, and for all subdirectories included after this point.
-  add_definitions(-DET_ENABLE_PROGRAM_VERIFICATION=0)
-endif()
-
-if(EXECUTORCH_ENABLE_EVENT_TRACER)
-  add_definitions(-DET_EVENT_TRACER_ENABLED)
-endif()
-
-# -ffunction-sections -fdata-sections: breaks function and data into sections so
-# they can be properly gc'd. -s: strip symbol.
-set(CMAKE_CXX_FLAGS_RELEASE
-    "-ffunction-sections -fdata-sections ${CMAKE_CXX_FLAGS_RELEASE}"
+# Set base compile definitions using generator expressions
+target_compile_definitions(executorch_base_config INTERFACE
+  C10_USING_CUSTOM_GENERATED_MACROS
+  $<$<NOT:$<BOOL:${EXECUTORCH_ENABLE_LOGGING}>>:ET_LOG_ENABLED=0>
+  ET_MIN_LOG_LEVEL=${ET_MIN_LOG_LEVEL}
+  $<$<NOT:$<BOOL:${EXECUTORCH_ENABLE_PROGRAM_VERIFICATION}>>:ET_ENABLE_PROGRAM_VERIFICATION=0>
+  $<$<BOOL:${EXECUTORCH_ENABLE_EVENT_TRACER}>:ET_EVENT_TRACER_ENABLED>
 )
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
-endif()
 
-if(EXECUTORCH_OPTIMIZE_SIZE)
-  # -Os: Optimize for size.
-  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Os")
-else()
-  # -O2: Moderate opt.
-  set(CMAKE_CXX_FLAGS_RELEASE "-O2 ${CMAKE_CXX_FLAGS_RELEASE}")
+# Modern compiler flag management using generator expressions
+target_compile_options(executorch_compile_options INTERFACE
+  -Wno-deprecated-declarations
+  -fPIC
+  $<$<CONFIG:Release>:-ffunction-sections>
+  $<$<CONFIG:Release>:-fdata-sections>
+  $<$<AND:$<CONFIG:Release>,$<CXX_COMPILER_ID:GNU>>:-s>
+  $<$<AND:$<BOOL:${EXECUTORCH_OPTIMIZE_SIZE}>,$<CONFIG:Release>>:-Os>
+  $<$<AND:$<NOT:$<BOOL:${EXECUTORCH_OPTIMIZE_SIZE}>>,$<CONFIG:Release>>:-O2>
+)
+
+# Modern code coverage support
+if(EXECUTORCH_USE_CPP_CODE_COVERAGE)
+  target_compile_options(executorch_compile_options INTERFACE
+    $<$<CXX_COMPILER_ID:GNU>:--coverage -fprofile-abs-path>
+    $<$<CXX_COMPILER_ID:Clang,AppleClang>:-fprofile-instr-generate -fcoverage-mapping>
+  )
+  target_link_options(executorch_compile_options INTERFACE
+    $<$<CXX_COMPILER_ID:GNU>:--coverage>
+    $<$<CXX_COMPILER_ID:Clang,AppleClang>:-fprofile-instr-generate>
+  )
+
+  # Verify compiler support
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    message(FATAL_ERROR
+            "Code coverage for compiler ${CMAKE_CXX_COMPILER_ID} is unsupported"
+    )
+  endif()
 endif()
 
 if(EXECUTORCH_BUILD_TESTS)
@@ -233,35 +242,13 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
     set(PTHREADPOOL_SYNC_PRIMITIVE
         "condvar"
         CACHE STRING ""
-    )
+  )
   endif()
   add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
   set(CMAKE_POSITION_INDEPENDENT_CODE
       ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
   )
 endif()
-
-# TODO(dbort): Fix these warnings and remove this flag.
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
-
-# Let files say "include <executorch/path/to/header.h>".
-# TODO(#6475): This requires/assumes that the repo lives in a directory named
-# exactly `executorch`. Check the assumption first. Remove this check once we
-# stop relying on the assumption.
-cmake_path(GET CMAKE_CURRENT_SOURCE_DIR FILENAME _repo_dir_name)
-if(NOT "${_repo_dir_name}" STREQUAL "executorch")
-  message(
-    FATAL_ERROR
-      "The ExecuTorch repo must be cloned into a directory named exactly "
-      "`executorch`; found `${_repo_dir_name}`. See "
-      "https://github.com/pytorch/executorch/issues/6475 for progress on a "
-      "fix for this restriction."
-  )
-endif()
-set(_common_include_directories
-    ${CMAKE_CURRENT_SOURCE_DIR}/..
-    ${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type/c10
-)
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
@@ -299,23 +286,6 @@ else()
   set(CMAKE_TOOLCHAIN_ANDROID OFF)
 endif()
 
-# Add code coverage flags to supported compilers
-if(EXECUTORCH_USE_CPP_CODE_COVERAGE)
-  if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-    string(APPEND CMAKE_C_FLAGS " --coverage -fprofile-abs-path")
-    string(APPEND CMAKE_CXX_FLAGS " --coverage -fprofile-abs-path")
-  elseif("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
-    string(APPEND CMAKE_C_FLAGS " -fprofile-instr-generate -fcoverage-mapping")
-    string(APPEND CMAKE_CXX_FLAGS
-           " -fprofile-instr-generate -fcoverage-mapping"
-    )
-  else()
-    message(FATAL_ERROR
-            "Code coverage for compiler ${CMAKE_CXX_COMPILER_ID} is unsupported"
-    )
-  endif()
-endif()
-
 #
 # program_schema: Generated .h files from schema/*.fbs inputs
 #
@@ -342,25 +312,37 @@ add_library(executorch_core ${_executorch_core__srcs})
 # Legacy name alias.
 add_library(executorch_no_prim_ops ALIAS executorch_core)
 
-target_link_libraries(executorch_core PRIVATE program_schema)
+# Modern target configuration
+target_link_libraries(executorch_core
+  PRIVATE
+    program_schema
+    executorch_compile_options
+  PUBLIC
+    executorch_base_config
+)
+
+# Platform-specific dependencies using modern CMake
 if(ANDROID)
-  target_link_libraries(executorch_core PUBLIC log)
+  find_library(LOG_LIBRARY log REQUIRED)
+  target_link_libraries(executorch_core PUBLIC ${LOG_LIBRARY})
 endif()
+
 if(EXECUTORCH_USE_DL)
-  # Check if dl exists for this toolchain and only then link it.
-  find_library(DL_LIBRARY_EXISTS NAMES dl)
-  # Check if the library was found
-  if(DL_LIBRARY_EXISTS)
-    target_link_libraries(executorch_core PRIVATE dl) # For dladdr()
+  find_library(DL_LIBRARY dl)
+  if(DL_LIBRARY)
+    target_link_libraries(executorch_core PRIVATE ${DL_LIBRARY})
   endif()
 endif()
-target_include_directories(
-  executorch_core PUBLIC ${_common_include_directories}
+
+# Modern include directory management
+target_include_directories(executorch_core
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type/c10>
+    $<INSTALL_INTERFACE:include>
+    $<INSTALL_INTERFACE:include/executorch/runtime/core/portable_type/c10>
 )
-target_compile_definitions(
-  executorch_core PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
-)
-target_compile_options(executorch_core PUBLIC ${_common_compile_options})
+
 if(MAX_KERNEL_NUM)
   target_compile_definitions(
     executorch_core PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}
@@ -370,20 +352,26 @@ endif()
 if(EXECUTORCH_BUILD_PYBIND AND APPLE)
   # shared version
   add_library(executorch_core_shared SHARED ${_executorch_core__srcs})
-  target_link_libraries(executorch_core_shared PRIVATE program_schema)
-  if(DL_LIBRARY_EXISTS)
-    # For dladdr()
-    target_link_libraries(executorch_core_shared PRIVATE dl)
+  target_link_libraries(executorch_core_shared
+    PRIVATE
+      program_schema
+      executorch_compile_options
+    PUBLIC
+      executorch_base_config
+  )
+
+  if(DL_LIBRARY)
+    target_link_libraries(executorch_core_shared PRIVATE ${DL_LIBRARY})
   endif()
-  target_include_directories(
-    executorch_core_shared PUBLIC ${_common_include_directories}
+
+  target_include_directories(executorch_core_shared
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type/c10>
+      $<INSTALL_INTERFACE:include>
+      $<INSTALL_INTERFACE:include/executorch/runtime/core/portable_type/c10>
   )
-  target_compile_definitions(
-    executorch_core_shared PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
-  )
-  target_compile_options(
-    executorch_core_shared PUBLIC ${_common_compile_options}
-  )
+
   if(MAX_KERNEL_NUM)
     target_compile_definitions(
       executorch_core_shared PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}
@@ -399,10 +387,18 @@ endif()
 # any backends.
 #
 add_library(executorch ${_executorch__srcs})
-target_link_libraries(executorch PRIVATE executorch_core)
-target_include_directories(executorch PUBLIC ${_common_include_directories})
-target_compile_definitions(executorch PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
-target_compile_options(executorch PUBLIC ${_common_compile_options})
+target_link_libraries(executorch
+  PRIVATE
+    executorch_core
+    executorch_compile_options
+  PUBLIC
+    executorch_base_config
+)
+target_include_directories(executorch
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<INSTALL_INTERFACE:include>
+)
 target_link_options_shared_lib(executorch)
 
 #
@@ -430,51 +426,71 @@ endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/configurations)
 
-# Install `executorch` library as well as `executorch-config.cmake` under
-# ${CMAKE_INSTALL_PREFIX}/
+# Modern installation configuration
 install(
   DIRECTORY runtime/core/
-  DESTINATION include/executorch/runtime/core
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/core
   FILES_MATCHING
   PATTERN "*.h"
 )
 install(
   DIRECTORY runtime/kernel/
-  DESTINATION include/executorch/runtime/kernel
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/kernel
   FILES_MATCHING
   PATTERN "*.h"
 )
 install(
   DIRECTORY runtime/platform/
-  DESTINATION include/executorch/runtime/platform
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/platform
   FILES_MATCHING
   PATTERN "*.h"
 )
 install(
   DIRECTORY extension/kernel_util/
-  DESTINATION include/executorch/extension/kernel_util
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/kernel_util
   FILES_MATCHING
   PATTERN "*.h"
 )
 install(
   DIRECTORY extension/tensor/
-  DESTINATION include/executorch/extension/tensor
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/tensor
   FILES_MATCHING
   PATTERN "*.h"
 )
 install(
   DIRECTORY extension/threadpool/
-  DESTINATION include/executorch/extension/threadpool
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/threadpool
   FILES_MATCHING
   PATTERN "*.h"
 )
+
+# Modern target installation with export
 install(
-  TARGETS executorch executorch_core
-  INCLUDES
-  DESTINATION ${_common_include_directories}
+  TARGETS executorch executorch_core executorch_base_config executorch_compile_options
+  EXPORT ExecutorchTargets
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
-install(FILES tools/cmake/executorch-config.cmake
-        DESTINATION lib/cmake/ExecuTorch
+
+install(
+  EXPORT ExecutorchTargets
+  FILE ExecutorchTargets.cmake
+  NAMESPACE Executorch::
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Executorch
+)
+
+# Configure package config file
+configure_package_config_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/tools/cmake/executorch-config.cmake
+  ${CMAKE_CURRENT_BINARY_DIR}/executorch-config.cmake
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Executorch
+)
+
+install(
+  FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch-config.cmake
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Executorch
 )
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
@@ -622,7 +638,9 @@ if(EXECUTORCH_BUILD_PYBIND)
          ${CMAKE_CURRENT_SOURCE_DIR}/extension/aten_util/aten_bridge.cpp
   )
   target_include_directories(
-    util PUBLIC ${_common_include_directories} ${TORCH_INCLUDE_DIRS}
+    util PUBLIC ${TORCH_INCLUDE_DIRS}
+         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+         $<INSTALL_INTERFACE:include>
   )
   target_compile_definitions(util PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
 
@@ -694,15 +712,13 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   endif()
 
   add_executable(executor_runner ${_executor_runner__srcs})
-  if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    if(APPLE)
-      target_link_options(executor_runner PRIVATE "LINKER:-dead_strip")
-    else()
-      target_link_options(executor_runner PRIVATE "LINKER:--gc-sections")
-    endif()
-  endif()
-  target_link_libraries(executor_runner ${_executor_runner_libs})
-  target_compile_options(executor_runner PUBLIC ${_common_compile_options})
+  target_link_libraries(executor_runner PRIVATE ${_executor_runner_libs} executorch_compile_options)
+
+  # Modern link options using generator expressions
+  target_link_options(executor_runner PRIVATE
+    $<$<AND:$<CONFIG:Release>,$<PLATFORM_ID:Darwin>>:LINKER:-dead_strip>
+    $<$<AND:$<CONFIG:Release>,$<NOT:$<PLATFORM_ID:Darwin>>>:LINKER:--gc-sections>
+  )
 endif()
 
 if(EXECUTORCH_BUILD_VULKAN)
