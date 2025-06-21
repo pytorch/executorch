@@ -702,7 +702,11 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             checkpoint=llm_config.base.checkpoint,
             checkpoint_dtype=DType.from_torch_dtype(checkpoint_dtype),  # type: ignore
             tokenizer_path=llm_config.base.tokenizer_path,
-            use_spin_quant=llm_config.quantization.use_spin_quant.value if llm_config.quantization.use_spin_quant else None,
+            use_spin_quant=(
+                llm_config.quantization.use_spin_quant.value
+                if llm_config.quantization.use_spin_quant
+                else None
+            ),
             embedding_quantize=llm_config.quantization.embedding_quantize,
             use_shared_embedding=llm_config.model.use_shared_embedding,
             quantization_mode=llm_config.quantization.qmode,
@@ -726,7 +730,9 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             vulkan=llm_config.backend.vulkan.enabled,
             use_qat=llm_config.quantization.use_qat,
             use_lora=llm_config.base.use_lora,
-            preq_mode=llm_config.base.preq_mode.value if llm_config.base.preq_mode else None,
+            preq_mode=(
+                llm_config.base.preq_mode.value if llm_config.base.preq_mode else None
+            ),
             preq_group_size=llm_config.base.preq_group_size,
             preq_embedding_quantize=llm_config.base.preq_embedding_quantize,
             local_global_attention=llm_config.model.local_global_attention,
@@ -738,7 +744,12 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
 
 def get_quantizer_and_quant_params(llm_config):
     pt2e_quant_params = get_pt2e_quantization_params(
-        llm_config.quantization.pt2e_quantize.value if llm_config.quantization.pt2e_quantize else None, llm_config.quantization.qmode
+        (
+            llm_config.quantization.pt2e_quantize.value
+            if llm_config.quantization.pt2e_quantize
+            else None
+        ),
+        llm_config.quantization.qmode,
     )
     quantizers = get_pt2e_quantizers(pt2e_quant_params, llm_config.export.so_library)
     quant_dtype = None
@@ -750,13 +761,17 @@ def get_quantizer_and_quant_params(llm_config):
         quantizers.append(qnn_quantizer)
     if llm_config.backend.coreml.enabled and llm_config.quantization.pt2e_quantize:
         assert len(quantizers) == 0, "Should not enable both xnnpack / qnn and coreml"
-        coreml_quantizer = get_coreml_quantizer(llm_config.quantization.pt2e_quantize.value)
+        coreml_quantizer = get_coreml_quantizer(
+            llm_config.quantization.pt2e_quantize.value
+        )
         quantizers.append(coreml_quantizer)
     if llm_config.backend.vulkan.enabled and llm_config.quantization.pt2e_quantize:
         assert (
             len(quantizers) == 0
         ), "Should not enable both vulkan and other quantizers"
-        vulkan_quantizer = get_vulkan_quantizer(llm_config.quantization.pt2e_quantize.value)
+        vulkan_quantizer = get_vulkan_quantizer(
+            llm_config.quantization.pt2e_quantize.value
+        )
         quantizers.append(vulkan_quantizer)
     logging.info(f"Applying quantizers: {quantizers}")
     return pt2e_quant_params, quantizers, quant_dtype
@@ -1076,9 +1091,17 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             enable_dynamic_shape=llm_config.model.enable_dynamic_shape,
             use_kv_cache=llm_config.model.use_kv_cache,
             embedding_quantize=llm_config.quantization.embedding_quantize,
-            pt2e_quantize=llm_config.quantization.pt2e_quantize.value if llm_config.quantization.pt2e_quantize else None,
+            pt2e_quantize=(
+                llm_config.quantization.pt2e_quantize.value
+                if llm_config.quantization.pt2e_quantize
+                else None
+            ),
             coreml_ios=llm_config.backend.coreml.ios,
-            coreml_quantize=llm_config.backend.coreml.quantize.value if llm_config.backend.coreml.quantize else None,
+            coreml_quantize=(
+                llm_config.backend.coreml.quantize.value
+                if llm_config.backend.coreml.quantize
+                else None
+            ),
             coreml_compute_units=llm_config.backend.coreml.compute_units.value,
             use_qnn_sha=llm_config.backend.qnn.use_sha,
             num_sharding=llm_config.backend.qnn.num_sharding,
