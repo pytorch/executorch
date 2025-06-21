@@ -49,6 +49,7 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     SoftmaxConfig,
     SquareRootConfig,
     SubConfig,
+    TanhConfig,
     UpsampleBilinear2dConfig,
 )
 from executorch.backends.xnnpack.partition.config.node_configs import (
@@ -99,6 +100,7 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     PreluConfig,
     ReciprocalSquareRootConfig,
     ReLUConfig,
+    TanhConfig,
     # SDPAConfig, TODO: D60553559: preserving SDPA for fairseq fails
     SigmoidConfig,
     SliceCopyConfig,
