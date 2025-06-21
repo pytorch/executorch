@@ -1,0 +1,54 @@
+Latency Stability Analysis: table8 (Reference)
+================================================================================
+Model: mv3(xnnpack_q8)
+Device: Samsung Galaxy S22 5G(Android 13)
+
+Dataset Overview:
+  - Number of samples: 21
+  - Date range: 2025-06-11 01:33:43+00:00 to 2025-06-17 17:05:10+00:00
+
+Central Tendency Metrics:
+  - Mean latency: 2.77 ms
+  - Median latency (P50): 2.39 ms
+  - Mean trimmed latency: 2.50 ms
+  - Median trimmed latency: 2.28 ms
+
+Dispersion Metrics:
+  - Standard deviation: 0.70 ms
+  - Coefficient of variation (CV): 25.21%
+  - Interquartile range (IQR): 0.98 ms
+  - Trimmed standard deviation: 0.56 ms
+  - Trimmed coefficient of variation: 22.28%
+
+Percentile Metrics:
+  - P50 (median): 2.39 ms
+  - P90: 3.94 ms
+  - P95: 4.01 ms
+  - P99: 4.15 ms
+
+Inter-Jitter Metrics (variability between runs):
+  - Max/Min ratio: 1.9309
+  - P99/P50 ratio: 1.7381
+  - Mean rolling std (window=5): 0.71 ms
+
+Intra-Jitter Metrics (variability within runs):
+  - Mean trimming effect ratio: 8.83%
+  - Max trimming effect ratio: 30.00%
+
+Stability Assessment:
+  - Overall stability score: 19.9/100
+  - Overall stability rating: Poor
+
+Interpretation:
+  The benchmark shows poor stability (score: 19.9/100) with significant
+  variation between runs (CV: 25.21%).
+  Performance is unpredictable and may lead to inconsistent user experience.
+
+  The significant difference between raw and trimmed means suggests
+  considerable intra-run jitter (8.8%) with occasional outliers within benchmark runs.
+
+  The max/min ratio of 1.93 indicates
+  substantial performance differences between the best and worst runs.
+
+  The P99/P50 ratio of 1.74 suggests
+  occasional latency spikes that could affect tail latency sensitive applications.

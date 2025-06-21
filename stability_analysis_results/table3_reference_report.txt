@@ -1,0 +1,40 @@
+Latency Stability Analysis: table3 (Reference)
+================================================================================
+Model: mv3(mps)
+Device: Apple iPhone 15(iOS 18.0)
+
+Dataset Overview:
+  - Number of samples: 6
+  - Date range: 2025-06-12 03:49:34+00:00 to 2025-06-17 03:03:25+00:00
+
+Central Tendency Metrics:
+  - Mean latency: 3.33 ms
+  - Median latency (P50): 4.00 ms
+
+Dispersion Metrics:
+  - Standard deviation: 1.03 ms
+  - Coefficient of variation (CV): 30.98%
+  - Interquartile range (IQR): 1.50 ms
+
+Percentile Metrics:
+  - P50 (median): 4.00 ms
+  - P90: 4.00 ms
+  - P95: 4.00 ms
+  - P99: 4.00 ms
+
+Inter-Jitter Metrics (variability between runs):
+  - Max/Min ratio: 2.0000
+  - P99/P50 ratio: 1.0000
+  - Mean rolling std (window=5): 0.89 ms
+
+Stability Assessment:
+  - Overall stability score: 37.5/100
+  - Overall stability rating: Poor
+
+Interpretation:
+  The benchmark shows poor stability (score: 37.5/100) with significant
+  variation between runs (CV: 30.98%).
+  Performance is unpredictable and may lead to inconsistent user experience.
+
+  The max/min ratio of 2.00 indicates
+  substantial performance differences between the best and worst runs.

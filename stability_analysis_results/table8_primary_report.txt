@@ -1,0 +1,45 @@
+Latency Stability Analysis: table8 (Primary)
+================================================================================
+Model: mv3(qnn_q8)
+Device: Samsung Galaxy S22 Ultra 5G (private)(Android 14)
+
+Dataset Overview:
+  - Number of samples: 11
+  - Date range: 2025-06-11 01:15:17+00:00 to 2025-06-12 17:06:01+00:00
+
+Central Tendency Metrics:
+  - Mean latency: 1.02 ms
+  - Median latency (P50): 1.02 ms
+  - Mean trimmed latency: 1.02 ms
+  - Median trimmed latency: 1.02 ms
+
+Dispersion Metrics:
+  - Standard deviation: 0.01 ms
+  - Coefficient of variation (CV): 0.51%
+  - Interquartile range (IQR): 0.01 ms
+  - Trimmed standard deviation: 0.00 ms
+  - Trimmed coefficient of variation: 0.46%
+
+Percentile Metrics:
+  - P50 (median): 1.02 ms
+  - P90: 1.03 ms
+  - P95: 1.03 ms
+  - P99: 1.03 ms
+
+Inter-Jitter Metrics (variability between runs):
+  - Max/Min ratio: 1.0098
+  - P99/P50 ratio: 1.0098
+  - Mean rolling std (window=5): 0.01 ms
+
+Intra-Jitter Metrics (variability within runs):
+  - Mean trimming effect ratio: 0.18%
+  - Max trimming effect ratio: 0.97%
+
+Stability Assessment:
+  - Overall stability score: 97.1/100
+  - Overall stability rating: Excellent
+
+Interpretation:
+  The benchmark shows excellent stability (score: 97.1/100) with very low
+  variation between runs (CV: 0.51%).
+  This indicates highly consistent performance suitable for latency-sensitive applications.

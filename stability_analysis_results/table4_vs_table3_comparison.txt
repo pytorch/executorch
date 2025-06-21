@@ -1,0 +1,42 @@
+Private vs Public Stability Comparison
+================================================================================
+Private Dataset: table4
+Public Dataset: table3
+Model: ('mv3(mps)',)
+Private Device: ('Apple iPhone 15 (private)(iOS 18.0)',)
+Public Device: Apple iPhone 15(iOS 18.0)
+
+Metric Comparison:
++-------------------------+---------------------+----------------------+--------------+------------+
+| Metric                  | Private (Primary)   | Public (Reference)   | Difference   | % Change   |
++=========================+=====================+======================+==============+============+
+| Mean Latency (ms)       | 4.00 ms             | 3.33 ms              | 0.67 ms      | 20.0%      |
++-------------------------+---------------------+----------------------+--------------+------------+
+| Median Latency (ms)     | 4.00 ms             | 4.00 ms              | 0.00 ms      | 0.0%       |
++-------------------------+---------------------+----------------------+--------------+------------+
+| Standard Deviation (ms) | 0.00 ms             | 1.03 ms              | -1.03 ms     | -100.0%    |
++-------------------------+---------------------+----------------------+--------------+------------+
+| CV (%)                  | 0.00%               | 30.98%               | -30.98%      | -100.0%    |
++-------------------------+---------------------+----------------------+--------------+------------+
+| IQR (ms)                | 0.00 ms             | 1.50 ms              | -1.50 ms     | -100.0%    |
++-------------------------+---------------------+----------------------+--------------+------------+
+| P99 (ms)                | 4.00 ms             | 4.00 ms              | 0.00 ms      | 0.0%       |
++-------------------------+---------------------+----------------------+--------------+------------+
+| Max/Min Ratio           | 1.0000              | 2.0000               | -1.0000      | -50.0%     |
++-------------------------+---------------------+----------------------+--------------+------------+
+| P99/P50 Ratio           | 1.0000              | 1.0000               | 0.0000       | 0.0%       |
++-------------------------+---------------------+----------------------+--------------+------------+
+| Stability Score         | 100.0/100           | 37.5/100             | 62.5         | 166.7%     |
++-------------------------+---------------------+----------------------+--------------+------------+
+| Stability Rating        | Excellent           | Poor                 | N/A          | N/A        |
++-------------------------+---------------------+----------------------+--------------+------------+
+
+Interpretation:
+  Private environment shows better stability with a 166.7% higher stability score.
+  (Private: 100.0/100 vs Public: 37.5/100)
+  Private environment has 100.0% lower coefficient of variation, indicating more consistent performance.
+  Public environment has 20.0% lower mean latency, indicating better performance.
+
+Recommendation:
+  The private environment provides better stability for this model+device combination.
+  It is recommended for applications where consistent performance is critical.
