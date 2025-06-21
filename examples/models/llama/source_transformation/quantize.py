@@ -16,6 +16,15 @@ import torch.nn.functional as F
 
 from executorch.extension.llm.export.builder import DType
 
+from torchao.quantization.granularity import PerAxis, PerGroup
+from torchao.quantization.quant_api import (
+    Int8DynamicActivationIntxWeightConfig,
+    IntxWeightOnlyConfig,
+    MappingType,
+    quantize_,
+)
+from torchao.utils import unwrap_tensor_subclass
+
 
 try:
     from fairseq2.nn.embedding import (
@@ -117,13 +126,6 @@ def quantize(  # noqa C901
         bitwidth = int(matches[0][0])
 
         from torchao.dtypes import PackedLinearInt8DynamicActivationIntxWeightLayout
-        from torchao.quantization.granularity import PerAxis, PerGroup
-        from torchao.quantization.quant_api import (
-            Int8DynamicActivationIntxWeightConfig,
-            MappingType,
-            quantize_,
-        )
-        from torchao.utils import unwrap_tensor_subclass
 
         with torch.no_grad():
             # Computation dtype is fixed to fp32 in the implementation of quantize_, so
@@ -148,14 +150,18 @@ def quantize(  # noqa C901
             # TODO: Default value for group size for 8da4w. Need this here for refactor, will clean this up.
             group_size = 128
 
-        from torchao.quantization import int8_dynamic_activation_int4_weight, quantize_
-        from torchao.utils import unwrap_tensor_subclass
-
-        quantize_(model, int8_dynamic_activation_int4_weight(group_size=group_size))
+        quantize_(
+            model,
+            Int8DynamicActivationIntxWeightConfig(
+                weight_dtype=torch.int4,
+                weight_granularity=(
+                    PerAxis(0) if group_size == 0 else PerGroup(group_size)
+                ),
+                weight_mapping_type=MappingType.SYMMETRIC,
+            ),
+        )
         model = unwrap_tensor_subclass(model)
-
         # TODO: deal with checkpoint / computation dtype decoupling.
-
         if verbose:
             print("quantized model:", model)
         return model
@@ -733,33 +739,34 @@ class QuantizedGroupEmbedding(torch.nn.Module):
 def get_quant_embedding_transform(
     embedding_quantize: str,
     use_shared_embedding: bool = False,
-    dtype_override: Optional[DType] = None,
 ):
-    if embedding_quantize.startswith("torchao:"):
+    use_torchao = embedding_quantize.startswith("torchao:")
+    if use_torchao:
+        quant_args = embedding_quantize.split(":")[1].split(",")
+    else:
+        quant_args = embedding_quantize.split(",")
+    assert len(quant_args) in [
+        2,
+        3,
+    ], f"Expected 2 or 3 embedding quant_args, but got: {quant_args}"
+
+    bitwidth = int(quant_args[0])
+    group_size = quant_args[1]
+    if group_size in ["none", "None", "0"]:
+        group_size = 0
+    group_size = int(group_size)
+    is_symmetric = (
+        bool(quant_args[3].lower() == "true") if len(quant_args) > 2 else True
+    )
+
+    weight_dtype = getattr(torch, f"int{bitwidth}")
+    granularity = PerAxis(0) if group_size == 0 else PerGroup(group_size)
+    mapping_type = MappingType.SYMMETRIC if is_symmetric else MappingType.ASYMMETRIC
+
+    if use_torchao:
         from torchao.experimental.quant_api import (
             EmbeddingQuantizer,
             SharedEmbeddingQuantizer,
-        )
-        from torchao.quantization.granularity import PerAxis, PerGroup
-        from torchao.quantization.quant_api import MappingType
-
-        quant_args = embedding_quantize.split(":")[1].split(",")
-        if len(quant_args) == 2:
-            bitwidth, group_size = quant_args
-            is_asymmetric = True
-        else:
-            bitwidth, group_size, is_asymmetric = quant_args
-
-        if group_size in ["none", "None", "0"]:
-            group_size = 0
-
-        group_size = int(group_size)
-        bitwidth = int(bitwidth)
-        is_asymmetric = bool(is_asymmetric)
-        weight_dtype = getattr(torch, f"int{bitwidth}")
-        granularity = PerAxis(0) if group_size == 0 else PerGroup(group_size)
-        mapping_type = (
-            MappingType.ASYMMETRIC if is_asymmetric else MappingType.SYMMETRIC
         )
 
         def _torchao_embedding_quantizer(model):
@@ -769,7 +776,6 @@ def get_quant_embedding_transform(
                         weight_dtype=weight_dtype,
                         granularity=granularity,
                         mapping_type=mapping_type,
-                        use_fallback=False,
                     ).quantize(model)
                 else:
                     SharedEmbeddingQuantizer(
@@ -781,20 +787,25 @@ def get_quant_embedding_transform(
 
         return _torchao_embedding_quantizer
 
-    bitwidth, group_size = embedding_quantize.split(",")
-    if group_size == "none" or group_size == "None" or group_size == "0":
-        group_size = None
-    else:
-        group_size = int(group_size)
-    bitwidth = int(bitwidth)
-    torch_dtype = dtype_override.to_torch_dtype() if dtype_override else None
-    return lambda model: EmbeddingQuantHandler(
-        model,
-        bitwidth=bitwidth,
-        group_size=group_size,
-        packed=(bitwidth in [2, 4]),
-        precision=torch_dtype,
-    ).quantized_model()
+    def _embedding_quantizer(model):
+        assert weight_dtype in [
+            torch.int2,
+            torch.int4,
+            torch.int8,
+        ], "Only 2, 4, or 8-bit embeddings are supported unless using torchao"
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(
+                weight_dtype=weight_dtype,
+                granularity=granularity,
+                mapping_type=mapping_type,
+            ),
+            lambda m, fqn: isinstance(m, nn.Embedding),
+        )
+        model = unwrap_tensor_subclass(model)
+        return model
+
+    return _embedding_quantizer
 
 
 def get_quant_weight_transform(
