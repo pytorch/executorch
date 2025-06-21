@@ -154,6 +154,7 @@ union XNodeUnion {
   XNNReciprocalSquareRoot: _XNNNode1x1,
   XNNLog: _XNNNode1x1,
   XNNGelu: _XNNNode1x1,
+  XNNExp: _XNNNode1x1,
 }
 
 union XValueUnion {
