@@ -54,10 +54,7 @@ PT2E_QUANTIZE="${PT2E_QUANTIZE:-}"
 # Default CMake Build Type to release mode
 CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-Release}
 
-if [[ $# -lt 4 ]]; then # Assuming 4 mandatory args
-    echo "Expecting atleast 4 positional arguments"
-    echo "Usage: [...]"
-fi
+# Argument validation is done individually below for each required parameter
 if [[ -z "${MODEL_NAME:-}" ]]; then
   echo "Missing model name, exiting..."
   exit 1
@@ -232,7 +229,7 @@ if [[ "${CUSTOM}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} model.use_sdpa_with_kv_cache=true"
 fi
 if [[ "${QE}" == "ON" ]]; then
-  EXPORT_ARGS="${EXPORT_ARGS} quantization.embedding_quantize=8,1024"
+  EXPORT_ARGS="${EXPORT_ARGS} quantization.embedding_quantize=\"8,1024\""
 fi
 if [[ "${MPS}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} backend.mps.enabled=true model.enable_dynamic_shape=false debug.verbose=true"
@@ -244,7 +241,7 @@ if [[ "${QNN}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} backend.qnn.enabled=true model.enable_dynamic_shape=false debug.verbose=true"
   echo "PT2E_QUANTIZE is ${PT2E_QUANTIZE}"
   if [[ "${PT2E_QUANTIZE}" == "qnn_16a16w" ]]; then
-    EXPORT_ARGS+=" base.tokenizer_path=tokenizer.model quantization.pt2e_quantize=qnn_16a16w quantization.calibration_tasks=[wikitext] quantization.calibration_limit=1 quantization.calibration_seq_length=128 quantization.calibration_data='Once '"
+    EXPORT_ARGS+=" base.tokenizer_path=tokenizer.model quantization.pt2e_quantize=qnn_16a16w quantization.calibration_tasks=\"[wikitext]\" quantization.calibration_limit=1 quantization.calibration_seq_length=128 quantization.calibration_data=\"Once\""
   fi
 fi
 if [[ "${QUANTIZE_KV_CACHE}" == "ON" ]]; then
