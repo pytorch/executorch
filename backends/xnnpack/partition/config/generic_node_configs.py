@@ -516,6 +516,13 @@ class SubConfig(GenericNodePartitionerConfig):
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        # No support for sub nodes with alpha != 1
+        if "alpha" in node.kwargs and node.kwargs["alpha"] != 1:
+            why(node, reason="Sub node doesn't support alpha != 1")
+            return False
+        return True
+
 
 class BMMConfig(GenericNodePartitionerConfig):
     """
