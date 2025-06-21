@@ -34,12 +34,11 @@ import sys
 from typing import Any, List, Tuple
 
 import hydra
-import yaml
 
 from executorch.examples.models.llama.config.llm_config import LlmConfig
 from executorch.examples.models.llama.export_llama_lib import export_llama
 from hydra.core.config_store import ConfigStore
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import OmegaConf
 
 cs = ConfigStore.instance()
 cs.store(name="llm_config", node=LlmConfig)
@@ -79,7 +78,7 @@ def main() -> None:
                 "Cannot specify additional CLI arguments when using --config. "
                 f"Found: {remaining_args}. Use either --config file or hydra CLI args, not both."
             )
-        
+
         config_file_path = pop_config_arg()
         default_llm_config = LlmConfig()
         llm_config_from_file = OmegaConf.load(config_file_path)

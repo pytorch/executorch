@@ -10,8 +10,11 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from executorch.examples.models.llama.config.llm_config import LlmConfig
-from executorch.extension.llm.export.export_llm import main, parse_config_arg, pop_config_arg
+from executorch.extension.llm.export.export_llm import (
+    main,
+    parse_config_arg,
+    pop_config_arg,
+)
 
 
 class TestExportLlm(unittest.TestCase):
@@ -45,12 +48,14 @@ class TestExportLlm(unittest.TestCase):
         """Test main function with --config file and no hydra args."""
         # Create a temporary config file
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            f.write("""
+            f.write(
+                """
 base:
   tokenizer_path: /path/to/tokenizer.json
 export:
   max_seq_length: 256
-""")
+"""
+            )
             config_file = f.name
 
         try:
@@ -61,7 +66,9 @@ export:
             # Verify export_llama was called with config
             mock_export_llama.assert_called_once()
             called_config = mock_export_llama.call_args[0][0]
-            self.assertEqual(called_config["base"]["tokenizer_path"], "/path/to/tokenizer.json")
+            self.assertEqual(
+                called_config["base"]["tokenizer_path"], "/path/to/tokenizer.json"
+            )
             self.assertEqual(called_config["export"]["max_seq_length"], 256)
         finally:
             os.unlink(config_file)
@@ -70,7 +77,9 @@ export:
         """Test main function with only hydra CLI args."""
         test_argv = ["script.py", "debug.verbose=True"]
         with patch.object(sys, "argv", test_argv):
-            with patch("executorch.extension.llm.export.export_llm.hydra_main") as mock_hydra:
+            with patch(
+                "executorch.extension.llm.export.export_llm.hydra_main"
+            ) as mock_hydra:
                 main()
                 mock_hydra.assert_called_once()
 
@@ -86,9 +95,12 @@ export:
             with patch.object(sys, "argv", test_argv):
                 with self.assertRaises(ValueError) as cm:
                     main()
-                
+
                 error_msg = str(cm.exception)
-                self.assertIn("Cannot specify additional CLI arguments when using --config", error_msg)
+                self.assertIn(
+                    "Cannot specify additional CLI arguments when using --config",
+                    error_msg,
+                )
         finally:
             os.unlink(config_file)
 
@@ -99,7 +111,13 @@ export:
             config_file = f.name
 
         try:
-            test_argv = ["script.py", "--config", config_file, "debug.verbose=True", "export.output_dir=/tmp"]
+            test_argv = [
+                "script.py",
+                "--config",
+                config_file,
+                "debug.verbose=True",
+                "export.output_dir=/tmp",
+            ]
             with patch.object(sys, "argv", test_argv):
                 with self.assertRaises(ValueError):
                     main()
@@ -109,4 +127,3 @@ export:
 
 if __name__ == "__main__":
     unittest.main()
-
