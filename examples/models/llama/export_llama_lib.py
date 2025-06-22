@@ -448,7 +448,7 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--openvino_device",
         type=str,
-        default=None,
+        default="CPU",
         choices=["CPU", "GPU"],
         help="Specify the device for Openvino (CPU or GPU).",
     )
