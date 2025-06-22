@@ -71,11 +71,36 @@ class TestBatchNormFusion(unittest.TestCase):
                 .run_method_and_compare_outputs()
             )
 
+    def test_fp32_standalone_batch_norm_converts_to_depthwise_conv(self):
+        """
+        Test that standalone batch norms (i.e. batch norms that are not fused with a conv)
+        can be converted to depthwise convolutions and successfully partitioned and lowered.
+        """
+
+        class StandaloneBN(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.bn = torch.nn.BatchNorm2d(2)
+                # Run forward to set up batch norm statistics  
+                self.forward(torch.randn(2, 2, 4, 4) * 2 + 2)
+
+            def forward(self, x):
+                return self.bn(x)
+
+        (
+            Tester(StandaloneBN().eval(), (torch.randn(2, 2, 4, 4),))
+            .export()
+            .to_edge()
+            .check_count({self.bn_name: 1})
+            .partition()
+            .check_count({self.bn_name: 0})  # Should be partitioned and converted
+            .run_method_and_compare_outputs()
+        )
+
     def test_fp32_batch_norm_no_fusion_doesnt_partition(self):
         """
-        We do not currently support standalone batch norms (i.e. batch norms that are
-        not fused with a conv). This is planned, but until implemented, this test ensures
-        that we do not partition the standalone batch norm and then fail to lower.
+        DEPRECATED: We now support standalone batch norms by converting them to depthwise conv.
+        This test remains for backwards compatibility but may be removed in the future.
         """
 
         class BN(torch.nn.Module):
@@ -86,6 +111,8 @@ class TestBatchNormFusion(unittest.TestCase):
             def forward(self, x):
                 return self.bn(x)
 
+        # Note: This test is now testing the old behavior where standalone batch norms
+        # without proper initialization may not be convertible
         (
             Tester(BN(), (torch.randn(2, 2, 4, 4),))
             .export()
