@@ -7,8 +7,11 @@
 
 set -ex
 
-# Source QNN configuration
-source "$(dirname "$0")/qnn_config.sh"
+# Get the absolute path of this script
+SCRIPT_DIR="$( cd -- "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 ; pwd -P )"
+
+# Source QNN configuration from the same directory
+source "${SCRIPT_DIR}/qnn_config.sh"
 
 # Function to install Android NDK (only if not already set)
 setup_android_ndk() {
