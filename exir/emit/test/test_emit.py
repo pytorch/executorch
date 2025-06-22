@@ -431,8 +431,8 @@ class TestEmit(unittest.TestCase):
             .executorch_program
         )
         # The value for beta should appear before alpha
-        self.assertEqual(program.execution_plan[0].values[12].val, Int(3))
-        self.assertEqual(program.execution_plan[0].values[13].val, Int(2))
+        self.assertEqual(program.execution_plan[0].values[4].val, Int(3))
+        self.assertEqual(program.execution_plan[0].values[5].val, Int(2))
 
     def test_kwargs2(self) -> None:
         """Tests that the kwargs are placed in the order specified by
@@ -451,10 +451,10 @@ class TestEmit(unittest.TestCase):
             to_edge(export(f, (x,), strict=True)).to_executorch().executorch_program
         )
         # The value for right should appear before side
-        self.assertEqual(program.execution_plan[0].values[6].val, Bool(False))
-        self.assertEqual(program.execution_plan[0].values[7].val, Bool(True))
-        self.assertEqual(program.execution_plan[0].values[8].val, String("right"))
-        self.assertEqual(program.execution_plan[0].values[9].val, Null())
+        self.assertEqual(program.execution_plan[0].values[3].val, Bool(False))
+        self.assertEqual(program.execution_plan[0].values[4].val, Bool(True))
+        self.assertEqual(program.execution_plan[0].values[5].val, String("right"))
+        self.assertEqual(program.execution_plan[0].values[6].val, Null())
 
     def _assertCallLength(self, program: Program, idx: int, expected_len: int) -> None:
         instr_args = program.execution_plan[0].chains[0].instructions[idx].instr_args
@@ -532,24 +532,24 @@ class TestEmit(unittest.TestCase):
         # Check the mul operator's stack trace contains f -> g -> h
         self.assertTrue(
             "return torch.mul(x, torch.randn(3, 2))"
-            in program.execution_plan[0].chains[0].stacktrace[1].items[-1].context
+            in program.execution_plan[0].chains[0].stacktrace[0].items[-1].context
         )
         self.assertEqual(
-            program.execution_plan[0].chains[0].stacktrace[1].items[-1].name, "f"
+            program.execution_plan[0].chains[0].stacktrace[0].items[-1].name, "f"
         )
         self.assertEqual(
-            program.execution_plan[0].chains[0].stacktrace[1].items[-2].name, "g"
+            program.execution_plan[0].chains[0].stacktrace[0].items[-2].name, "g"
         )
         self.assertEqual(
-            program.execution_plan[0].chains[0].stacktrace[1].items[-3].name, "forward"
+            program.execution_plan[0].chains[0].stacktrace[0].items[-3].name, "forward"
         )
 
         # Check the sin operator's stack trace contains g -> h
         self.assertEqual(
-            program.execution_plan[0].chains[0].stacktrace[2].items[-1].name, "g"
+            program.execution_plan[0].chains[0].stacktrace[1].items[-1].name, "g"
         )
         self.assertEqual(
-            program.execution_plan[0].chains[0].stacktrace[2].items[-2].name, "forward"
+            program.execution_plan[0].chains[0].stacktrace[1].items[-2].name, "forward"
         )
 
     def test_stacktrace_off(self) -> None:
@@ -878,10 +878,13 @@ class TestEmit(unittest.TestCase):
             .executorch_program.execution_plan[0]
             .non_const_buffer_sizes
         )
-
+        
+        config = ExecutorchBackendConfig(
+            do_quant_fusion_and_const_prop=False,
+        )
         edge_program_manager = to_edge(export(f, (torch.ones(3, 2),), strict=True))
         non_const_buffer_size_without_const_prop_pass = (
-            edge_program_manager.to_executorch()
+            edge_program_manager.to_executorch(config)
             .executorch_program.execution_plan[0]
             .non_const_buffer_sizes
         )
@@ -1510,7 +1513,12 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(model.W1.untyped_storage().nbytes(), 8)
         self.assertEqual(model.W2.nbytes, 4)
         self.assertEqual(model.W2.untyped_storage().nbytes(), 8)
-        program = to_edge(export(model, (torch.ones(1),), strict=True)).to_executorch()
+
+        # Without this, the views get 
+        config = exir.ExecutorchBackendConfig(
+            do_quant_fusion_and_const_prop=False,
+        )
+        program = to_edge(export(model, (torch.ones(1),), strict=True)).to_executorch(config)
 
         program = program._emitter_output.program
         # each emitted weight is not a view
@@ -1531,7 +1539,10 @@ class TestEmit(unittest.TestCase):
         program = program._emitter_output.program
         # confirm that the buffer was emitted
         self.assertEqual(len(program.constant_buffer), 2)
-        self.assertEqual(len(program.constant_buffer[1].storage), 8)
+
+        # executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default
+        # converts the buffer from i64 to fp32 (4 bytes), which gets const propagated
+        self.assertEqual(len(program.constant_buffer[1].storage), 4)
 
     def test_emit_lifted_tensor_constant(self) -> None:
         class LiftedTensorConstants(nn.Module):
@@ -1544,7 +1555,7 @@ class TestEmit(unittest.TestCase):
 
         model = LiftedTensorConstants()
         # Specify that we want to move non-lifted constants to external file
-        et_cfg = ExecutorchBackendConfig(external_constants=True)
+        et_cfg = ExecutorchBackendConfig(external_constants=True, do_quant_fusion_and_const_prop=False)
         program = to_edge(
             export(model, (torch.ones(3, 2),), strict=True)
         ).to_executorch(et_cfg)
@@ -1566,7 +1577,7 @@ class TestEmit(unittest.TestCase):
 
         model = LiftedConstants()
         # Specify that we want to move non-lifted constants to external file
-        et_cfg = ExecutorchBackendConfig(external_constants=True)
+        et_cfg = ExecutorchBackendConfig(external_constants=True, do_quant_fusion_and_const_prop=False)
         program = to_edge(
             export(model, (torch.ones(3, 2),), strict=True)
         ).to_executorch(et_cfg)
@@ -1658,7 +1669,10 @@ class TestEmit(unittest.TestCase):
         model = to_edge(export(InfinityMaskModel(), (torch.randn(2, 2),), strict=True))
 
         # Confirm that we can serialize the model with infinity in it.
-        model = model.to_executorch()
+        config = ExecutorchBackendConfig(
+            do_quant_fusion_and_const_prop=False,
+        )
+        model = model.to_executorch(config)
 
         # Assert that the infinity is stored as a string "-inf".
         values = model.executorch_program.execution_plan[0].values
@@ -1716,8 +1730,8 @@ class TestEmit(unittest.TestCase):
         external_map = emitter_output.external_constant_map[
             "_default_external_constant"
         ]
-        self.assertEqual(external_map["linear.weight"], 0)
-        self.assertEqual(external_map["linear.bias"], 1)
+        self.assertEqual(external_map["_prop_tensor_constant0"], 1)
+        self.assertEqual(external_map["linear.bias"], 0)
 
     def test_delegate_deduplicate(self) -> None:
         class SharedModule(torch.nn.Module):
@@ -1804,7 +1818,7 @@ class TestEmit(unittest.TestCase):
         ep = to_edge(ep)
         # Lower the graph to executorch.
         ep = ep.to_executorch(
-            config=ExecutorchBackendConfig(external_mutable_weights=True)
+            config=ExecutorchBackendConfig(external_mutable_weights=True, do_quant_fusion_and_const_prop=False)
         )
 
         emitter_output = ep._emitter_output
