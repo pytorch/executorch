@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-  "cmake<4.0.0",  # For building binary targets in the wheel. 4.0.0 breaks third-party CMake build so temporarily pin the version.
+  "cmake>=3.19,<4.0.0",  # For building binary targets in the wheel. 4.0.0 breaks third-party CMake build so temporarily pin the version.
   "pip>=23",  # For building the pip package.
   "pyyaml",  # Imported by the kernel codegen tools.
   "setuptools>=63",  # For building the pip package contents.
@@ -49,7 +49,7 @@ classifiers = [
 ]
 
 # Python dependencies required for use.
-# coremltools has issue with python 3.13, see https://github.com/apple/coremltools/issues/2487 
+# coremltools has issue with python 3.13, see https://github.com/apple/coremltools/issues/2487
 requires-python = ">=3.10,<3.13"
 dependencies=[
   "expecttest",
