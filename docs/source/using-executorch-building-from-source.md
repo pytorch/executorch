@@ -64,8 +64,8 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
    # Intel-based macOS systems require building PyTorch from source (see below)
    ./install_executorch.sh
    ```
-  
-   See the [PyTorch instructions](https://github.com/pytorch/pytorch#installation) on how to build PyTorch from source.  
+
+   See the [PyTorch instructions](https://github.com/pytorch/pytorch#installation) on how to build PyTorch from source.
 
    Use the [`--use-pt-pinned-commit` flag](../../install_executorch.py) to install ExecuTorch with an existing PyTorch build:
 
@@ -90,7 +90,7 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
 
    # Or you can directly do the following if dependencies are already installed
    # either via a previous invocation of `./install_executorch.sh` or by explicitly installing requirements via `./install_requirements.sh` first.
-   pip install -e .
+   pip install -e . --no-build-isolation
    ```
 
    If C++ files are being modified, you will still have to reinstall ExecuTorch from source.
@@ -243,7 +243,7 @@ Install ClangCL for Windows from the [official website](https://learn.microsoft.
 To check if conda is detected by the powershell prompt, try `conda list` or `conda --version`
 
 If conda is not detected, you could run the powershell script for conda named `conda-hook.ps1`.
-To verify that Conda is available in the in the powershell environment, run try `conda list` or `conda --version`. 
+To verify that Conda is available in the in the powershell environment, run try `conda list` or `conda --version`.
 If Conda is not available, run conda-hook.ps1 as follows:
 ```bash
 $miniconda_dir\\shell\\condabin\\conda-hook.ps1
