@@ -106,12 +106,12 @@ We support PTQ by default. The entire export may take ~20 minutes (Llama 3.1 8B)
 Examples:
 ```
 # 4 bits weight only quantize
-python -m extension.llm.export.export_llm base.checkpoint="${MODEL_DIR}/consolidated.00.pth" base.params="${MODEL_DIR}/params.json" model.use_kv_cache=True model.enable_dynamic_shape=False backend.qnn.enabled=True backend.qnn.quantization="qnn_16a4w" model.dtype_override="fp32" base.metadata='{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' export.output_name="test.pte"
+python -m extension.llm.export.export_llm base.checkpoint="${MODEL_DIR}/consolidated.00.pth" base.params="${MODEL_DIR}/params.json" model.use_kv_cache=True model.enable_dynamic_shape=False backend.qnn.enabled=True backend.qnn.quantization="qnn_16a4w" model.dtype_override="fp32" base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' export.output_name="test.pte"
 ```
 If the model is really big, it may require model sharding because the Qualcomm DSP is a 32bit system and has a 4GB size limit . For example for Llama 3 8B models, we need to shard the model into 4, but ExecuTorch still packages it into one PTE file. Here is an example:
 ```
 # 8 bits quantization with 4 shards
-python -m extension.llm.export.export_llm base.checkpoint="${MODEL_DIR}/consolidated.00.pth" base.params="${MODEL_DIR}/params.json" model.use_kv_cache=True model.enable_dynamic_shape=False backend.qnn.enabled=True backend.qnn.quantization="qnn_8a8w" model.dtype_override="fp32" backend.qnn.num_sharding=4 base.metadata='{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' export.output_name="test.pte"
+python -m extension.llm.export.export_llm base.checkpoint="${MODEL_DIR}/consolidated.00.pth" base.params="${MODEL_DIR}/params.json" model.use_kv_cache=True model.enable_dynamic_shape=False backend.qnn.enabled=True backend.qnn.quantization="qnn_8a8w" model.dtype_override="fp32" backend.qnn.num_sharding=4 base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' export.output_name="test.pte"
 ```
 Note: if you encountered issues below
 ```

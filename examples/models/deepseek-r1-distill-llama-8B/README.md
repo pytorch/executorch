@@ -61,8 +61,8 @@ python -m extension.llm.export.export_llm \
 	quantization.qmode="8da4w" \
 	quantization.group_size=128 \
 	model.dtype_override="fp16" \
-	base.metadata='{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
-	quantization.embedding_quantize="4,32" \
+	base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' \
+	quantization.embedding_quantize=\'4,32\' \
 	export.output_name="DeepSeek-R1-Distill-Llama-8B.pte"
 ```
 
