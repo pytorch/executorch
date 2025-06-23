@@ -174,7 +174,7 @@ __attribute__((deprecated("This API is experimental.")))
  * @return A new ExecuTorchValue instance with a tag of ExecuTorchValueTagTensor.
  */
 + (instancetype)valueWithTensor:(ExecuTorchTensor *)value
-    NS_REFINED_FOR_SWIFT
+    NS_SWIFT_NAME(init(_:))
     NS_RETURNS_RETAINED;
 
 /**

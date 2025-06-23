@@ -16,11 +16,8 @@ using namespace ::testing;
 using executorch::runtime::BackendOption;
 using executorch::runtime::BackendOptions;
 using executorch::runtime::BackendOptionsMap;
-using executorch::runtime::BoolKey;
 using executorch::runtime::Error;
-using executorch::runtime::IntKey;
 using executorch::runtime::OptionKey;
-using executorch::runtime::StrKey;
 
 namespace executorch {
 namespace runtime {
@@ -38,8 +35,8 @@ class BackendOptionsMapTest : public ::testing::Test {
 TEST_F(BackendOptionsMapTest, BasicAddAndRetrieve) {
   BackendOptions<5> cpu_options;
 
-  cpu_options.set_option(BoolKey("use_fp16"), true);
-  cpu_options.set_option(IntKey("thead"), 4);
+  cpu_options.set_option("use_fp16", true);
+  cpu_options.set_option("thead", 4);
   map.add("CPU", cpu_options.view());
 
   auto retrieved = map.get("CPU");
@@ -111,13 +108,13 @@ TEST_F(BackendOptionsMapTest, EmptyMapBehavior) {
 
 TEST_F(BackendOptionsMapTest, OptionIsolation) {
   BackendOptions<2> cpu_options;
-  cpu_options.set_option(BoolKey("Debug"), true);
-  cpu_options.set_option(IntKey("NumThreads"), 3);
+  cpu_options.set_option("Debug", true);
+  cpu_options.set_option("NumThreads", 3);
 
   BackendOptions<3> gpu_options;
-  gpu_options.set_option(BoolKey("Profile"), true);
-  gpu_options.set_option(IntKey("Mem"), 1024);
-  gpu_options.set_option(StrKey("Hardware"), "H100");
+  gpu_options.set_option("Profile", true);
+  gpu_options.set_option("Mem", 1024);
+  gpu_options.set_option("Hardware", "H100");
 
   // Add to map using Span
   map.add("CPU", cpu_options.view());
@@ -129,9 +126,9 @@ TEST_F(BackendOptionsMapTest, OptionIsolation) {
 
   // Verify CPU has its own option
   EXPECT_EQ(cpu_opts.size(), 2);
-  EXPECT_EQ(cpu_opts[0].key, "Debug");
+  EXPECT_STREQ(cpu_opts[0].key, "Debug");
   EXPECT_EQ(std::get<bool>(cpu_opts[0].value), true);
-  EXPECT_EQ(cpu_opts[1].key, "NumThreads");
+  EXPECT_STREQ(cpu_opts[1].key, "NumThreads");
   EXPECT_EQ(std::get<int>(cpu_opts[1].value), 3);
 
   // Test GPU options
@@ -140,12 +137,12 @@ TEST_F(BackendOptionsMapTest, OptionIsolation) {
 
   // Verify GPU has its own option
   EXPECT_EQ(gpu_opts.size(), 3);
-  EXPECT_EQ(gpu_opts[0].key, "Profile");
+  EXPECT_STREQ(gpu_opts[0].key, "Profile");
   EXPECT_EQ(std::get<bool>(gpu_opts[0].value), true);
-  EXPECT_EQ(gpu_opts[1].key, "Mem");
+  EXPECT_STREQ(gpu_opts[1].key, "Mem");
   EXPECT_EQ(std::get<int>(gpu_opts[1].value), 1024);
-  EXPECT_EQ(gpu_opts[2].key, "Hardware");
-  EXPECT_EQ(std::get<const char*>(gpu_opts[2].value), "H100");
+  EXPECT_STREQ(gpu_opts[2].key, "Hardware");
+  EXPECT_STREQ(std::get<const char*>(gpu_opts[2].value), "H100");
 }
 } // namespace runtime
 } // namespace executorch
