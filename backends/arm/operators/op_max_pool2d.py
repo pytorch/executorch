@@ -47,7 +47,7 @@ class MaxPool2dVisitor_0_80(NodeVisitor):
     ) -> None:
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
-        validate_num_inputs(self.target, inputs, [3, 4])
+        validate_num_inputs(self.target, inputs, [3, 4, 5, 6])
         validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
             self.target,
@@ -60,6 +60,10 @@ class MaxPool2dVisitor_0_80(NodeVisitor):
         kernel_size = inputs[1].special
         stride = inputs[2].special
 
+        if len(inputs) == 6:
+            ceil_mode = bool(inputs[5].number)
+        else:
+            ceil_mode = False
         try:
             pad_size_list = inputs[3].special
             pad_size_list = [
@@ -68,7 +72,7 @@ class MaxPool2dVisitor_0_80(NodeVisitor):
                 pad_size_list[1],
                 pad_size_list[1],
             ]
-        except IndexError:
+        except (IndexError, AttributeError):
             pad_size_list = [0, 0, 0, 0]
 
         # Adjust the padding as necessary
@@ -77,12 +81,14 @@ class MaxPool2dVisitor_0_80(NodeVisitor):
             kernel_size[0],
             stride[0],
             pad_size_list[1],
+            ceil_mode,
         )
         pad_size_list[3] = adjust_pooling_pad_if_needed(
             input_tensor.shape[3],
             kernel_size[1],
             stride[1],
             pad_size_list[3],
+            ceil_mode,
         )
 
         accumulator_type = output.dtype
@@ -138,7 +144,7 @@ class MaxPool2dVisitor(NodeVisitor):
 
         import serializer.tosa_serializer as ts  # type: ignore
 
-        validate_num_inputs(self.target, inputs, [3, 4])
+        validate_num_inputs(self.target, inputs, [3, 4, 5, 6])
         validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
             self.target,
@@ -151,6 +157,11 @@ class MaxPool2dVisitor(NodeVisitor):
         kernel_size = inputs[1].special
         stride = inputs[2].special
 
+        if len(inputs) == 6:
+            ceil_mode = bool(inputs[5].number)
+        else:
+            ceil_mode = False
+
         try:
             pad_size_list = inputs[3].special
             pad_size_list = [
@@ -159,7 +170,7 @@ class MaxPool2dVisitor(NodeVisitor):
                 pad_size_list[1],
                 pad_size_list[1],
             ]
-        except IndexError:
+        except (IndexError, AttributeError):
             pad_size_list = [0, 0, 0, 0]
 
         # Adjust the padding as necessary
@@ -168,12 +179,14 @@ class MaxPool2dVisitor(NodeVisitor):
             kernel_size[0],
             stride[0],
             pad_size_list[1],
+            ceil_mode,
         )
         pad_size_list[3] = adjust_pooling_pad_if_needed(
             input_tensor.shape[3],
             kernel_size[1],
             stride[1],
             pad_size_list[3],
+            ceil_mode,
         )
 
         attr = ts.TosaSerializerAttribute()

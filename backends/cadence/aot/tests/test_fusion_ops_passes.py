@@ -306,7 +306,7 @@ class TestFusionPasses(TestFusionPassesBase):
                 # Verify that dequant/quant pair was replaced with requantize.
                 exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: 0,
                 exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: 0,
-                exir_ops.edge.cadence.requantize.default: 1,
+                exir_ops.edge.cadence.requantize.per_tensor: 1,
             },
         )
 
@@ -336,7 +336,7 @@ class TestFusionPasses(TestFusionPassesBase):
                 # quantize -> permute -> dequantize should not be replaced with requantize.
                 exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: 1,
                 exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: 1,
-                exir_ops.edge.cadence.requantize.default: 0,
+                exir_ops.edge.cadence.requantize.per_tensor: 0,
             },
         )
 
@@ -364,7 +364,7 @@ class TestFusionPasses(TestFusionPassesBase):
                 # Verify that dequant/quant pair was replaced with requantize.
                 exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: 0,
                 exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: 0,
-                exir_ops.edge.cadence.requantize.default: 1,
+                exir_ops.edge.cadence.requantize.per_tensor: 1,
             },
         )
 
@@ -390,7 +390,7 @@ class TestFusionPasses(TestFusionPassesBase):
                 # Verify that dequant -> quant was replaced with requantize.
                 exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: 0,
                 exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: 0,
-                exir_ops.edge.cadence.requantize.default: 1,
+                exir_ops.edge.cadence.requantize.per_tensor: 1,
             },
         )
 
@@ -420,7 +420,7 @@ class TestFusionPasses(TestFusionPassesBase):
                 exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: 0,
                 exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: 0,
                 exir_ops.edge.aten.permute_copy.default: 1,
-                exir_ops.edge.cadence.requantize.default: 1,
+                exir_ops.edge.cadence.requantize.per_tensor: 1,
             },
         )
 

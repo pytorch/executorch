@@ -493,12 +493,10 @@ class KVCacheSimple(torch.nn.Module):
         self.register_buffer(
             "past_k_caches",
             torch.zeros(cache_shape, dtype=dtype, device="cpu"),
-            persistent=False,
         )
         self.register_buffer(
             "past_v_caches",
             torch.zeros(cache_shape, dtype=dtype, device="cpu"),
-            persistent=False,
         )
 
     def update(
