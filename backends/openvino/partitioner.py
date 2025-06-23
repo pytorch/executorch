@@ -101,7 +101,6 @@ class OpenvinoPartitioner(Partitioner):
         compile_spec: List[CompileSpec],
         op_types_to_skip: Optional[set] = None,
         op_names_to_skip: Optional[set] = None,
-        enabled_ops_by_name: Optional[set] = None,
     ) -> None:
         """
         Initializes the OpenvinoPartitioner class.
@@ -113,7 +112,7 @@ class OpenvinoPartitioner(Partitioner):
         self.delegation_spec = DelegationSpec(OpenvinoBackend.__name__, compile_spec)
         self._op_types_to_skip = op_types_to_skip
         self._op_names_to_skip = op_names_to_skip
-        self._enabled_ops_by_name = enabled_ops_by_name
+        self._enabled_ops_by_name = set()
 
     def ops_to_not_decompose(
         self,
@@ -191,7 +190,7 @@ class OpenvinoPartitioner(Partitioner):
         self.capture_nncf_patterns(exported_program.graph_module)
         partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
-            OpenvinoOperatorsSupport(self._op_types_to_skip, self._op_names_to_skip),
+            OpenvinoOperatorsSupport(self._op_types_to_skip, self._op_names_to_skip, self._enabled_ops_by_name),
             allows_single_node_partition=True,
         )
         partition_list = partitioner.propose_partitions()

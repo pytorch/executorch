@@ -555,7 +555,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--nncf_compression",
         default=False,
         action="store_true",
-        help="If true, stops right after torch.export() and saves the exported model.",
+        help="Enables nncf compression for openvino backend",
     )
 
     parser.add_argument(
@@ -1214,7 +1214,7 @@ def _load_llama_model(llm_config: LlmConfig) -> "LLMEdgeManager":
         use_legacy_export=llm_config.backend.qnn.enabled,
         save_exported_program=llm_config.export.export_only,
         verbose=llm_config.debug.verbose,
-        nncf_compression=llm_config.nncf_compression,
+        nncf_compression=llm_config.backend.openvino.nncf_compression,
         metadata=_load_llama_model_metadata(
             WeightType.FAIRSEQ2 if llm_config.base.fairseq2 else WeightType.LLAMA,
             llm_config.model.use_kv_cache,

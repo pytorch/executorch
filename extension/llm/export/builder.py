@@ -16,7 +16,6 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from unittest.mock import patch
 
-import nncf
 import torch
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
@@ -41,7 +40,6 @@ from torch.nn.attention import SDPBackend
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchao.quantization.pt2e.quantizer import ComposableQuantizer, Quantizer
 from torchao.utils import unwrap_tensor_subclass
-from functools import partial
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -433,6 +431,13 @@ class LLMEdgeManager:
                 self.pre_autograd_graph_module = m
             return self
         elif (self.nncf_compression):
+            try:
+                import nncf
+                from functools import partial
+            except ImportError:
+                raise ImportError(
+                    "Please install nncf via backends/openvino/requirements.txt"
+                )
             tokenizer = get_tokenizer(self.tokenizer_path)
 
             def transform_fn(
@@ -487,15 +492,27 @@ class LLMEdgeManager:
                 )
 
             with override_export_behaviour:
-                self.edge_manager = export_to_edge(
-                    self.pre_autograd_graph_module,  # pyre-fixme[6]
-                    self.example_inputs,
-                    example_kwarg_inputs=self.example_kwarg_inputs,
-                    dynamic_shapes=dynamic_shape,
-                    edge_constant_methods=self.metadata,
-                    edge_compile_config=edge_config,
-                    verbose=self.verbose,
-                )
+                if (self.nncf_compression):
+                    from executorch.backends.openvino.utils import nncf_export_to_edge
+                    self.edge_manager = nncf_export_to_edge(
+                        self.pre_autograd_graph_module,  # pyre-fixme[6]
+                        self.example_inputs,
+                        example_kwarg_inputs=self.example_kwarg_inputs,
+                        dynamic_shapes=dynamic_shape,
+                        edge_constant_methods=self.metadata,
+                        edge_compile_config=edge_config,
+                        verbose=self.verbose,
+                    )
+                else:
+                    self.edge_manager = export_to_edge(
+                        self.pre_autograd_graph_module,  # pyre-fixme[6]
+                        self.example_inputs,
+                        example_kwarg_inputs=self.example_kwarg_inputs,
+                        dynamic_shapes=dynamic_shape,
+                        edge_constant_methods=self.metadata,
+                        edge_compile_config=edge_config,
+                        verbose=self.verbose,
+                    )
         return self
 
     def to_backend(self, partitioners: Optional[List[Partitioner]]) -> "LLMEdgeManager":
