@@ -360,9 +360,9 @@ class ComputeGraphGen:
                 ret_str += f"{ref.src_cpp_name}->sizes().vec(), "
                 ret_str += f"from_at_scalartype({ref.src_cpp_name}->scalar_type()"
                 if ref.fixed_storage_type:
-                    ret_str += f", {self.suite_def.arg_storage_types[arg.name]}"
+                    ret_str += f", {ref.fixed_storage_type}"
                 if ref.fixed_memory_layout:
-                    ret_str += f", {self.suite_def.arg_memory_layouts[arg.name]}"
+                    ret_str += f", {ref.fixed_memory_layout}"
                 ret_str += "));\n"
             elif prepack:
                 ret_str += f"{self.graph}{self.dot}"
