@@ -75,20 +75,11 @@ class BackendOptions {
   BackendOptions() : size_(0) {}
 
   /**
-   * Returns a const view of all stored options as a Span.
-   *
-   * @return A const Span containing all BackendOption entries
-   */
-  executorch::runtime::Span<const BackendOption> view() const {
-    return executorch::runtime::Span<const BackendOption>(options_, size_);
-  }
-
-  /**
    * Returns a mutable view of all stored options as a Span.
    *
    * @return A mutable Span containing all BackendOption entries
    */
-  executorch::runtime::Span<BackendOption> mutable_view() {
+  executorch::runtime::Span<BackendOption> view() {
     return executorch::runtime::Span<BackendOption>(options_, size_);
   }
 
@@ -101,9 +92,13 @@ class BackendOptions {
    * @param value The boolean value to set
    * @return Error::Ok on success, Error::InvalidArgument if storage is full
    */
-  template <size_t N>
-  Error set_option(const char (&key)[N], bool value) noexcept {
-    static_assert(N <= kMaxOptionKeyLength, "Option key is too long");
+  Error set_option(const char* key, bool value) noexcept {
+    ET_CHECK_MSG(
+        strlen(key) <= kMaxOptionKeyLength,
+        "Option key %s (%zu) is too long (max %zu)",
+        key,
+        strlen(key),
+        kMaxOptionKeyLength);
     return set_option_impl(key, value);
   }
 
@@ -116,9 +111,13 @@ class BackendOptions {
    * @param value The integer value to set
    * @return Error::Ok on success, Error::InvalidArgument if storage is full
    */
-  template <size_t N>
-  Error set_option(const char (&key)[N], int value) noexcept {
-    static_assert(N <= kMaxOptionKeyLength, "Option key is too long");
+  Error set_option(const char* key, int value) noexcept {
+    ET_CHECK_MSG(
+        strlen(key) <= kMaxOptionKeyLength,
+        "Option key %s (%zu) is too long (max %zu)",
+        key,
+        strlen(key),
+        kMaxOptionKeyLength);
     return set_option_impl(key, value);
   }
 
@@ -134,9 +133,13 @@ class BackendOptions {
    * @param value The string value to set (must have static storage duration)
    * @return Error::Ok on success, Error::InvalidArgument if storage is full
    */
-  template <size_t N>
-  Error set_option(const char (&key)[N], const char* value) noexcept {
-    static_assert(N <= kMaxOptionKeyLength, "Option key is too long");
+  Error set_option(const char* key, const char* value) noexcept {
+    ET_CHECK_MSG(
+        strlen(key) <= kMaxOptionKeyLength,
+        "Option key %s (%zu) is too long (max %zu)",
+        key,
+        strlen(key),
+        kMaxOptionKeyLength);
     // Create a fixed-size array and copy the string
     std::array<char, kMaxOptionValueLength> arr;
     strncpy(arr.data(), value, kMaxOptionValueLength - 1);
