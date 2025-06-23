@@ -8,6 +8,7 @@
 
 #include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <executorch/test/utils/DeathTest.h>
 
 #include <gtest/gtest.h>
 
@@ -71,10 +72,9 @@ TEST_F(BackendOptionsTest, HandlesErrors) {
   const char* dummy_str = nullptr;
   EXPECT_EQ(options.get_option("threshold", dummy_str), Error::InvalidArgument);
 
-  // Null value handling
-  options.set_option("nullable", static_cast<const char*>(nullptr));
-  EXPECT_EQ(options.get_option("nullable", dummy_str), Error::Ok);
-  EXPECT_EQ(dummy_str, nullptr);
+  // Null value handling, should expect failure
+  ET_EXPECT_DEATH(
+      options.set_option("nullable", static_cast<const char*>(nullptr)), "");
 }
 
 // Test type-specific keys
@@ -92,4 +92,73 @@ TEST_F(BackendOptionsTest, EnforcesKeyTypes) {
   // Integer get should succeed with correct value
   EXPECT_EQ(options.get_option("flag", ival), Error::Ok);
   EXPECT_EQ(ival, 123);
+}
+
+TEST_F(BackendOptionsTest, MutableOption) {
+  int ival;
+  options.set_option("flag", 0);
+  // Integer get should succeed with correct value
+  EXPECT_EQ(options.get_option("flag", ival), Error::Ok);
+  EXPECT_EQ(ival, 0);
+
+  options.mutable_view()[0].value = 123; // Overwrites the entry
+
+  // Integer get should succeed with the updated value
+  EXPECT_EQ(options.get_option("flag", ival), Error::Ok);
+  EXPECT_EQ(ival, 123);
+}
+
+// Test copy constructor
+TEST_F(BackendOptionsTest, CopyConstructor) {
+  // Set up original option
+  options.set_option("debug", true);
+
+  // Create copy using copy constructor
+  BackendOptions<5> copied_options(options);
+
+  // Verify option was copied correctly
+  bool debug_val;
+  EXPECT_EQ(copied_options.get_option("debug", debug_val), Error::Ok);
+  EXPECT_TRUE(debug_val);
+
+  // Verify independence - modifying original doesn't affect copy
+  options.set_option("debug", false);
+  EXPECT_EQ(copied_options.get_option("debug", debug_val), Error::Ok);
+  EXPECT_TRUE(debug_val); // Should still be true in copy
+
+  // Verify independence - modifying copy doesn't affect original
+  copied_options.set_option("debug", false);
+  EXPECT_EQ(options.get_option("debug", debug_val), Error::Ok);
+  EXPECT_FALSE(debug_val); // Should be false in original
+}
+
+// Test copy assignment operator
+TEST_F(BackendOptionsTest, CopyAssignmentOperator) {
+  // Set up original option
+  options.set_option("enable_profiling", true);
+
+  // Create another options object and assign to it
+  BackendOptions<5> assigned_options;
+  assigned_options.set_option("temp_option", false); // Add something first
+
+  assigned_options = options;
+
+  // Verify option was copied correctly
+  bool profiling_val;
+  EXPECT_EQ(
+      assigned_options.get_option("enable_profiling", profiling_val),
+      Error::Ok);
+  EXPECT_TRUE(profiling_val);
+
+  // Verify the temp_option was overwritten (not present in assigned object)
+  bool temp_val;
+  EXPECT_EQ(
+      assigned_options.get_option("temp_option", temp_val), Error::NotFound);
+
+  // Verify independence - modifying original doesn't affect assigned copy
+  options.set_option("enable_profiling", false);
+  EXPECT_EQ(
+      assigned_options.get_option("enable_profiling", profiling_val),
+      Error::Ok);
+  EXPECT_TRUE(profiling_val); // Should still be true in assigned copy
 }
