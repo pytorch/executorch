@@ -274,7 +274,7 @@ class XNNPACKQuantizer(Quantizer):
         QuantPattern("linear_relu", False, False, LINEAR_TARGETS),
         QuantPattern("linear", True, False, LINEAR_TARGETS),
         QuantPattern("conv", True, False, CONV_TARGETS),
-        QuantPattern("conv_transpose", False, False, CONV_TARGETS),
+        QuantPattern("conv_transpose", True, False, CONV_TARGETS),
         QuantPattern("conv_relu", False, False, CONV_TARGETS),
         QuantPattern("conv_transpose_relu", False, False, CONV_TARGETS),
         QuantPattern("adaptive_avg_pool2d", False, False, ADAPTIVE_AVG_POOL2D_TARGETS),
