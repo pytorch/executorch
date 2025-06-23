@@ -142,9 +142,9 @@ class FoldAndAnnotateQParamsPass(ArmPass):
                         f"Expected one of {dq_ops} dq_op, got {n.target}"
                     )
 
-                if len(n.args) > 0:
-                    n.replace_all_uses_with(n.args[0])  # type: ignore[arg-type]
-                graph_module.graph.erase_node(n)
+                node.replace_input_with(n, cast(Node, n.args[0]))
+                if len(n.users) == 0:
+                    graph_module.graph.erase_node(n)
 
     def call(self, graph_module: GraphModule) -> PassResult:
 

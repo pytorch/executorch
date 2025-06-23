@@ -4,11 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
+# pyre-strict
 
 import math
 import unittest
-from typing import cast, Optional
+from typing import cast, List, Optional
 
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
@@ -19,6 +19,7 @@ from executorch.backends.cadence.aot.memory_planning import (
     find_peak_memory_usage,
 )
 from executorch.backends.cadence.aot.pass_utils import count_node
+from executorch.backends.cadence.aot.typing_stubs import expand
 from executorch.backends.cadence.aot.utils import (
     get_default_memory_config,
     MemoryConfig,
@@ -27,7 +28,6 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.memory_planning import collect_specs_from_nodes
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.tests.models import MultiLayerPerceptron
-from parameterized.parameterized import parameterized
 from torch.fx import GraphModule
 
 
@@ -224,11 +224,11 @@ class TestMemTransform(unittest.TestCase):
     # GenerateSliceAndSelectNopConstraints, and GenerateCatNopConstraints passes.
     def run_memory_planning(
         self,
-        original,
-        opt_level=2,
-        mem_algo=1,  # greedy_by_size_for_offset_calculation_with_hierarchy
-        alloc_graph_input=True,
-        alloc_graph_output=True,
+        original: GraphModule,
+        opt_level: int = 2,
+        mem_algo: int = 1,  # greedy_by_size_for_offset_calculation_with_hierarchy
+        alloc_graph_input: bool = True,
+        alloc_graph_output: bool = True,
         memory_config: Optional[MemoryConfig] = None,
     ) -> GraphModule:
         if memory_config is None:
@@ -242,7 +242,7 @@ class TestMemTransform(unittest.TestCase):
             alloc_graph_output=alloc_graph_output,
         )(graph_module).graph_module
 
-    @parameterized.expand(
+    @expand(
         [
             [
                 [3, 6],  # x_shape
@@ -259,7 +259,11 @@ class TestMemTransform(unittest.TestCase):
         ]
     )
     def test_optimize_cat_on_placeholders(
-        self, x_shape, y_shape, concat_dim, alloc_graph_input
+        self,
+        x_shape: List[int],
+        y_shape: List[int],
+        concat_dim: int,
+        alloc_graph_input: bool,
     ) -> None:
         concat_shape = [x_shape[concat_dim] + y_shape[concat_dim], x_shape[1]]
         builder = GraphBuilder()
@@ -294,7 +298,12 @@ class TestMemTransform(unittest.TestCase):
     # "add_add_cat_model" : cat(x + 123, y + 456)
     # "add_add_cat_add_model": cat(x + 123, y + 456) + 789
     def get_graph_module(
-        self, model_name, x_shape, y_shape, concated_shape, concat_dim
+        self,
+        model_name: str,
+        x_shape: List[int],
+        y_shape: List[int],
+        concated_shape: List[int],
+        concat_dim: int,
     ) -> GraphModule:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.ones(*x_shape, dtype=torch.float32))
@@ -346,7 +355,7 @@ class TestMemTransform(unittest.TestCase):
 
         raise ValueError(f"Unknown model name {model_name}")
 
-    @parameterized.expand(
+    @expand(
         [
             (
                 "outermost",
@@ -363,10 +372,14 @@ class TestMemTransform(unittest.TestCase):
                 1,  # concat dim
             ),
         ],
-        name_func=lambda f, _, param: f"{f.__name__}_{param.args[0]}",
     )
     def test_cat_optimized(
-        self, _, x_shape, y_shape, concated_shape, concat_dim
+        self,
+        _,
+        x_shape: List[int],
+        y_shape: List[int],
+        concated_shape: List[int],
+        concat_dim: int,
     ) -> None:
         original = self.get_graph_module(
             "add_add_cat_model", x_shape, y_shape, concated_shape, concat_dim
@@ -379,7 +392,7 @@ class TestMemTransform(unittest.TestCase):
         self.assertEqual(count_node(graph_module, torch.ops.aten._cat_nop.out), 1)
         self.verify_nop_memory_alloc(graph_module)
 
-    @parameterized.expand(
+    @expand(
         [
             (
                 "non_outermost",
@@ -389,10 +402,14 @@ class TestMemTransform(unittest.TestCase):
                 1,  # concat dim
             ),
         ],
-        name_func=lambda f, _, param: f"{f.__name__}_{param.args[0]}",
     )
     def test_cat_not_optimized(
-        self, _, x_shape, y_shape, concated_shape, concat_dim
+        self,
+        _,
+        x_shape: List[int],
+        y_shape: List[int],
+        concated_shape: List[int],
+        concat_dim: int,
     ) -> None:
         original = self.get_graph_module(
             "add_add_cat_model", x_shape, y_shape, concated_shape, concat_dim
@@ -404,7 +421,7 @@ class TestMemTransform(unittest.TestCase):
         self.assertEqual(count_node(graph_module, torch.ops.aten.cat.out), 1)
         self.verify_nop_memory_alloc(graph_module)
 
-    @parameterized.expand(
+    @expand(
         [
             (
                 "aligned",
@@ -423,10 +440,15 @@ class TestMemTransform(unittest.TestCase):
                 1,  # expected cat nodes
             ),
         ],
-        name_func=lambda f, _, param: f"{f.__name__}_{param.args[0]}",
     )
     def test_cat_not_graph_output(
-        self, _, x_shape, y_shape, concated_shape, concat_dim, expected_cat_nodes
+        self,
+        _,
+        x_shape: List[int],
+        y_shape: List[int],
+        concated_shape: List[int],
+        concat_dim: int,
+        expected_cat_nodes: int,
     ) -> None:
         original = self.get_graph_module(
             "add_add_cat_add_model", x_shape, y_shape, concated_shape, concat_dim
@@ -493,13 +515,13 @@ class TestMemTransform(unittest.TestCase):
         self.assertEqual(count_node(graph_module, exir_ops.edge.aten.slice.Tensor), 1)
         self.verify_nop_memory_alloc(graph_module)
 
-    @parameterized.expand(
+    @expand(
         [
             (True,),  # alloc_graph_input
             (False,),  # alloc_graph_input
         ],
     )
-    def test_optimize_cat_with_slice_infeasible(self, alloc_graph_input) -> None:
+    def test_optimize_cat_with_slice_infeasible(self, alloc_graph_input: bool) -> None:
         x_shape = [5, 6]
         y_shape = [3, 6]
         concated_shape = [8, 6]
