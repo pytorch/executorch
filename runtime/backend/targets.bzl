@@ -68,5 +68,6 @@ def define_common_targets():
             exported_deps = [
                 "//executorch/runtime/core:core",
                 ":options" + aten_suffix,
+                ":interface" + aten_suffix,
             ],
         )
