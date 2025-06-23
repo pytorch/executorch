@@ -21,12 +21,24 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 
 test_data_suite = {
     # (test_name, test_data, [kernel_size, stride, padding])
-    "zeros": lambda: (torch.zeros(1, 1, 4, 8), [2, 2, 1]),
+    "zeros": lambda: (torch.zeros(1, 1, 4, 8), [(4, 6), 2, (2, 0)]),
     "ones": lambda: (torch.ones(1, 16, 50, 32), [4, 2, 0]),
     "rand": lambda: (torch.rand(1, 16, 52, 16), [4, 3, 0]),
     "non_divisible": lambda: (torch.rand(1, 16, 112, 112), [3, 2, 1]),
     "non_divisible_window_height": lambda: (torch.rand(1, 16, 56, 56), [3, (2, 1), 1]),
     "non_divisible_window_width": lambda: (torch.rand(1, 16, 56, 56), [3, (1, 2), 1]),
+    "non_divisible_ceil_mode": lambda: (
+        torch.rand(1, 16, 112, 112),
+        [3, 2, 1, 1, True],
+    ),
+    "non_divisible_window_height_ceil_mode": lambda: (
+        torch.rand(1, 16, 56, 56),
+        [3, (2, 1), 1, 1, True],
+    ),
+    "non_divisible_window_width_ceil_mode": lambda: (
+        torch.rand(1, 16, 56, 56),
+        [3, (1, 2), 1, 1, True],
+    ),
 }
 
 test_data_suite_mult_batches = {
@@ -61,6 +73,7 @@ class MaxPool2d(torch.nn.Module):
         stride: int | Tuple[int, int],
         padding: int | Tuple[int, int],
         dilation: int | Tuple[int, int] = 1,
+        ceil_mode: bool = False,
     ):
         super().__init__()
         self.max_pool_2d = torch.nn.MaxPool2d(
@@ -68,6 +81,7 @@ class MaxPool2d(torch.nn.Module):
             stride=stride,
             padding=padding,
             dilation=dilation,
+            ceil_mode=ceil_mode,
         )
 
     def forward(self, x):

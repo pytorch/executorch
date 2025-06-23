@@ -618,13 +618,55 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_index_copy(self):
+        test_comb = [
+            {
+                QCOM_MODULE: IndexCopy(skip_mutable_buffer=False),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int64),
+                    torch.randn([1, 1, 12, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(skip_mutable_buffer=True),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int64),
+                    torch.randn([1, 1, 12, 64]),
+                ),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(
+                    test[QCOM_MODULE],
+                    test[QCOM_SAMPLE_INPUTS],
+                    skip_mutable_buffer=test[QCOM_MODULE].skip_mutable_buffer,
+                )
+
     def test_qnn_backend_index_put(self):
-        module = IndexPut()  # noqa: F405
-        sample_input = (
-            torch.tensor([2], dtype=torch.int32),
-            torch.randn([1, 1, 12, 64]),
-        )
-        self.lower_module_and_test_output(module, sample_input)
+        test_comb = [
+            {
+                QCOM_MODULE: IndexPut(skip_mutable_buffer=False),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int32),
+                    torch.randn([1, 1, 12, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexPut(skip_mutable_buffer=True),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int32),
+                    torch.randn([1, 1, 12, 64]),
+                ),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(
+                    test[QCOM_MODULE],
+                    test[QCOM_SAMPLE_INPUTS],
+                    skip_mutable_buffer=test[QCOM_MODULE].skip_mutable_buffer,
+                )
 
     def test_qnn_backend_instance_norm_2d(self):
         modules = [InstanceNorm2d(32), InstanceNorm2d(32, affine=False)]  # noqa: F405
@@ -1860,14 +1902,61 @@ class TestQNNQuantizedOperator(TestQNN):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_index_copy(self):
+        test_comb = [
+            {
+                QCOM_MODULE: IndexCopy(skip_mutable_buffer=False),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int64),
+                    torch.randn([1, 1, 12, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(skip_mutable_buffer=True),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int64),
+                    torch.randn([1, 1, 12, 64]),
+                ),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+                self.lower_module_and_test_output(
+                    module,
+                    test[QCOM_SAMPLE_INPUTS],
+                    skip_mutable_buffer=test[QCOM_MODULE].skip_mutable_buffer,
+                )
+
     def test_qnn_backend_index_put(self):
-        module = IndexPut()  # noqa: F405
-        sample_input = (
-            torch.tensor([2], dtype=torch.int32),
-            torch.randn([1, 1, 12, 64]),
-        )
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        test_comb = [
+            {
+                QCOM_MODULE: IndexPut(skip_mutable_buffer=False),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int32),
+                    torch.randn([1, 1, 12, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexPut(skip_mutable_buffer=True),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int32),
+                    torch.randn([1, 1, 12, 64]),
+                ),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+                self.lower_module_and_test_output(
+                    module,
+                    test[QCOM_SAMPLE_INPUTS],
+                    skip_mutable_buffer=test[QCOM_MODULE].skip_mutable_buffer,
+                )
 
     def test_qnn_backend_instance_norm_2d(self):
         modules = [InstanceNorm2d(32), InstanceNorm2d(32, affine=False)]  # noqa: F405
@@ -3030,7 +3119,17 @@ class TestQNNFloatingPointUtils(TestQNN):
                 for _, (optrace, qhas) in binaries_trace.items():
                     with open(optrace, "r") as optrace_file:
                         optrace_data = json.load(optrace_file)
-                        for row in optrace_data:
+                        # {
+                        #  header:
+                        #    {
+                        #     'header_version': {'major': x, 'minor': y, 'patch': z},
+                        #     'version': {'major': x, 'minor': y, 'patch': z},
+                        #     'artifact_type': 'OP_TRACE'
+                        #    }
+                        #  traceEvents:
+                        #    {...}
+                        # }
+                        for row in optrace_data["traceEvents"]:
                             self.assertIn("pid", row)
                     with open(qhas, "r") as qhas_file:
                         qhas_data = json.load(qhas_file)
@@ -3726,7 +3825,17 @@ class TestQNNQuantizedUtils(TestQNN):
                 for _, (optrace, qhas) in binaries_trace.items():
                     with open(optrace, "r") as optrace_file:
                         optrace_data = json.load(optrace_file)
-                        for row in optrace_data:
+                        # {
+                        #  header:
+                        #    {
+                        #     'header_version': {'major': x, 'minor': y, 'patch': z},
+                        #     'version': {'major': x, 'minor': y, 'patch': z},
+                        #     'artifact_type': 'OP_TRACE'
+                        #    }
+                        #  traceEvents:
+                        #    {...}
+                        # }
+                        for row in optrace_data["traceEvents"]:
                             self.assertIn("pid", row)
                     with open(qhas, "r") as qhas_file:
                         qhas_data = json.load(qhas_file)

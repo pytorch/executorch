@@ -352,7 +352,7 @@ class _Rope(nn.Module):
             x_r, x_i = x[..., ::2], x[..., 1::2]
             x_out_r = x_r * freqs_cos - x_i * freqs_sin
             x_out_i = x_r * freqs_sin + x_i * freqs_cos
-            x_out = torch.cat([x_out_r, x_out_i], dim=-1)
+            x_out = torch.stack([x_out_r, x_out_i], dim=-1).flatten(2)
             return x_out
 
 
@@ -378,6 +378,7 @@ class StaticAttention(Attention):
         self.inv_scale = 1.0 / (float(self.head_dim) ** 0.5)
         self.attention_qkv_bias = config.attention_qkv_bias
         self.use_qk_norm = config.use_qk_norm
+        self.qk_norm_before_rope = config.qk_norm_before_rope
         self.use_conv2d = False
 
         self.wqs = nn.ModuleList(
@@ -449,12 +450,17 @@ class StaticAttention(Attention):
             new_ks = from_conv2ds(new_ks)
             new_vs = from_conv2ds(new_vs)
 
-        if self.use_qk_norm:
+        if self.use_qk_norm and self.qk_norm_before_rope:
             new_qs = [self.q_norm(q) for q in new_qs]
             new_ks = [self.k_norm(k) for k in new_ks]
 
         new_qs = [self.rope(q, freqs_cos, freqs_sin) for q in new_qs]
         new_ks = [self.rope(k, freqs_cos, freqs_sin) for k in new_ks]
+
+        if self.use_qk_norm and not self.qk_norm_before_rope:
+            new_qs = [self.q_norm(q) for q in new_qs]
+            new_ks = [self.k_norm(k) for k in new_ks]
+
         all_ks = []
         all_vs = []
         for i in range(self.n_kv_heads):
@@ -505,6 +511,7 @@ class StaticAttention(Attention):
 
         if other.use_qk_norm:
             self.use_qk_norm = True
+            self.qk_norm_before_rope = other.qk_norm_before_rope
             self.q_norm = torch.nn.RMSNorm(other.q_norm_fn.dim, other.q_norm_fn.eps)
             self.q_norm.load_state_dict(other.q_norm_fn.state_dict())
             self.k_norm = torch.nn.RMSNorm(other.k_norm_fn.dim, other.k_norm_fn.eps)
