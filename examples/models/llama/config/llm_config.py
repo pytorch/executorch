@@ -10,6 +10,11 @@
 Configurations for exporting Llama.
 
 Uses dataclasses, which integrate with OmegaConf and Hydra.
+
+Note:
+- Hydra is a bit finnicky with string values that include quotations, please
+refer to https://hydra.cc/docs/1.2/advanced/override_grammar/basic/#quoted-values
+for more information.
 """
 
 import argparse
@@ -34,9 +39,9 @@ class ModelType(str, Enum):
     llama3_2_vision = "llama3_2_vision"
     static_llama = "static_llama"
     qwen2_5 = "qwen2_5"
-    qwen3_0_6b = "qwen3-0_6b"
-    qwen3_1_7b = "qwen3-1_7b"
-    qwen3_4b = "qwen3-4b"
+    qwen3_0_6b = "qwen3_0_6b"
+    qwen3_1_7b = "qwen3_1_7b"
+    qwen3_4b = "qwen3_4b"
     phi_4_mini = "phi_4_mini"
     smollm2 = "smollm2"
 
@@ -71,7 +76,7 @@ class BaseConfig:
         checkpoint_dir: Path to directory containing sharded checkpoint files.
         tokenizer_path: Path to the tokenizer file.
         metadata: Json string containing metadata information.
-            e.g. '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+            e.g. '"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"'
         use_lora: Rank of the LoRA, if set to 0 then this means no LoRA. For use with QAT.
         fairseq2: For legacy internal use cases, this is safe to ignore.
         preq_mode: Legacy option to specify how prequantized weights are loaded.
