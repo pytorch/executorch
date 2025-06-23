@@ -565,8 +565,7 @@ TEST_F(TensorPtrMakerTest, CreateArangeTensorWithDoubleType) {
 TEST_F(TensorPtrMakerTest, CreateArangeTensorWithEmptyRange) {
   // End < start with positive step should error out
   EXPECT_DEATH(
-    arange(5, 0, 1),
-    "inferred dimension size must be positive, got 0");
+      arange(5, 0, 1), "inferred dimension size must be positive, got 0");
 }
 
 TEST_F(TensorPtrMakerTest, CreateArangeTensorWithValidSizes) {
