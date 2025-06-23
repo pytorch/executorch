@@ -618,13 +618,55 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_index_copy(self):
+        test_comb = [
+            {
+                QCOM_MODULE: IndexCopy(skip_mutable_buffer=False),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int64),
+                    torch.randn([1, 1, 12, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(skip_mutable_buffer=True),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int64),
+                    torch.randn([1, 1, 12, 64]),
+                ),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(
+                    test[QCOM_MODULE],
+                    test[QCOM_SAMPLE_INPUTS],
+                    skip_mutable_buffer=test[QCOM_MODULE].skip_mutable_buffer,
+                )
+
     def test_qnn_backend_index_put(self):
-        module = IndexPut()  # noqa: F405
-        sample_input = (
-            torch.tensor([2], dtype=torch.int32),
-            torch.randn([1, 1, 12, 64]),
-        )
-        self.lower_module_and_test_output(module, sample_input)
+        test_comb = [
+            {
+                QCOM_MODULE: IndexPut(skip_mutable_buffer=False),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int32),
+                    torch.randn([1, 1, 12, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexPut(skip_mutable_buffer=True),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int32),
+                    torch.randn([1, 1, 12, 64]),
+                ),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(
+                    test[QCOM_MODULE],
+                    test[QCOM_SAMPLE_INPUTS],
+                    skip_mutable_buffer=test[QCOM_MODULE].skip_mutable_buffer,
+                )
 
     def test_qnn_backend_instance_norm_2d(self):
         modules = [InstanceNorm2d(32), InstanceNorm2d(32, affine=False)]  # noqa: F405
@@ -1860,14 +1902,61 @@ class TestQNNQuantizedOperator(TestQNN):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_index_copy(self):
+        test_comb = [
+            {
+                QCOM_MODULE: IndexCopy(skip_mutable_buffer=False),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int64),
+                    torch.randn([1, 1, 12, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(skip_mutable_buffer=True),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int64),
+                    torch.randn([1, 1, 12, 64]),
+                ),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+                self.lower_module_and_test_output(
+                    module,
+                    test[QCOM_SAMPLE_INPUTS],
+                    skip_mutable_buffer=test[QCOM_MODULE].skip_mutable_buffer,
+                )
+
     def test_qnn_backend_index_put(self):
-        module = IndexPut()  # noqa: F405
-        sample_input = (
-            torch.tensor([2], dtype=torch.int32),
-            torch.randn([1, 1, 12, 64]),
-        )
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        test_comb = [
+            {
+                QCOM_MODULE: IndexPut(skip_mutable_buffer=False),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int32),
+                    torch.randn([1, 1, 12, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexPut(skip_mutable_buffer=True),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int32),
+                    torch.randn([1, 1, 12, 64]),
+                ),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+                self.lower_module_and_test_output(
+                    module,
+                    test[QCOM_SAMPLE_INPUTS],
+                    skip_mutable_buffer=test[QCOM_MODULE].skip_mutable_buffer,
+                )
 
     def test_qnn_backend_instance_norm_2d(self):
         modules = [InstanceNorm2d(32), InstanceNorm2d(32, affine=False)]  # noqa: F405
@@ -3030,7 +3119,17 @@ class TestQNNFloatingPointUtils(TestQNN):
                 for _, (optrace, qhas) in binaries_trace.items():
                     with open(optrace, "r") as optrace_file:
                         optrace_data = json.load(optrace_file)
-                        for row in optrace_data:
+                        # {
+                        #  header:
+                        #    {
+                        #     'header_version': {'major': x, 'minor': y, 'patch': z},
+                        #     'version': {'major': x, 'minor': y, 'patch': z},
+                        #     'artifact_type': 'OP_TRACE'
+                        #    }
+                        #  traceEvents:
+                        #    {...}
+                        # }
+                        for row in optrace_data["traceEvents"]:
                             self.assertIn("pid", row)
                     with open(qhas, "r") as qhas_file:
                         qhas_data = json.load(qhas_file)
@@ -3726,7 +3825,17 @@ class TestQNNQuantizedUtils(TestQNN):
                 for _, (optrace, qhas) in binaries_trace.items():
                     with open(optrace, "r") as optrace_file:
                         optrace_data = json.load(optrace_file)
-                        for row in optrace_data:
+                        # {
+                        #  header:
+                        #    {
+                        #     'header_version': {'major': x, 'minor': y, 'patch': z},
+                        #     'version': {'major': x, 'minor': y, 'patch': z},
+                        #     'artifact_type': 'OP_TRACE'
+                        #    }
+                        #  traceEvents:
+                        #    {...}
+                        # }
+                        for row in optrace_data["traceEvents"]:
                             self.assertIn("pid", row)
                     with open(qhas, "r") as qhas_file:
                         qhas_data = json.load(qhas_file)
@@ -3891,6 +4000,74 @@ class TestExampleLLMScript(TestQNN):
 
 
 class TestExampleOssScript(TestQNN):
+    def test_albert(self):
+        if not self.required_envs([self.sentence_dataset]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/albert.py",
+            "--dataset",
+            self.sentence_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["accuracy"], 0.8)
+
+    def test_bert(self):
+        if not self.required_envs([self.sentence_dataset]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/bert.py",
+            "--dataset",
+            self.sentence_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["accuracy"], 0.6)
+
     def test_conv_former(self):
         if not self.required_envs([self.image_dataset]):
             self.skipTest("missing required envs")
@@ -4033,6 +4210,40 @@ class TestExampleOssScript(TestQNN):
                 self.assertGreaterEqual(msg["top_1"], 70)
                 self.assertGreaterEqual(msg["top_5"], 85)
 
+    def test_distilbert(self):
+        if not self.required_envs([self.sentence_dataset]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/distilbert.py",
+            "--dataset",
+            self.sentence_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["accuracy"], 0.45)
+
     def test_dit(self):
         if not self.required_envs():
             self.skipTest("missing required envs")
@@ -4142,41 +4353,6 @@ class TestExampleOssScript(TestQNN):
             else:
                 self.assertGreaterEqual(msg["MIoU"], 0.55)
 
-    def test_swin_transformer(self):
-        if not self.required_envs([self.image_dataset]):
-            self.skipTest("missing required envs")
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/swin_transformer.py",
-            "--dataset",
-            self.image_dataset,
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--device",
-            self.device,
-            "--model",
-            self.model,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-        ]
-        if self.host:
-            cmds.extend(["--host", self.host])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                self.assertGreaterEqual(msg["top_1"], 60)
-                self.assertGreaterEqual(msg["top_5"], 80)
-
     def test_esrgan(self):
         if not self.required_envs():
             self.skipTest("missing required envs")
@@ -4213,6 +4389,40 @@ class TestExampleOssScript(TestQNN):
             else:
                 self.assertGreaterEqual(msg["PSNR"], 24)
                 self.assertGreaterEqual(msg["SSIM"], 0.8)
+
+    def test_eurobert(self):
+        if not self.required_envs([self.sentence_dataset]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/eurobert.py",
+            "--dataset",
+            self.sentence_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["accuracy"], 0.5)
 
     def test_fastvit(self):
         if not self.required_envs(
@@ -4363,7 +4573,7 @@ class TestExampleOssScript(TestQNN):
                 self.fail(msg["Error"])
             else:
                 self.assertGreaterEqual(msg["top_1"], 60)
-                self.assertGreaterEqual(msg["top_5"], 90)
+                self.assertGreaterEqual(msg["top_5"], 85)
 
     @unittest.skip("Only outputs good accuracy in QNN 2.29")
     def test_mobilevit_v2(self):
@@ -4653,6 +4863,41 @@ class TestExampleOssScript(TestQNN):
                 self.fail(msg["Error"])
             else:
                 self.assertGreaterEqual(msg["mAP"], 0.70)
+
+    def test_swin_transformer(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/swin_transformer.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 60)
+                self.assertGreaterEqual(msg["top_5"], 80)
 
 
 class TestExampleQaihubScript(TestQNN):

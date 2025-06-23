@@ -10,12 +10,15 @@
 # backends. Converts via TOSA as an intermediate form supported by AoT and
 # JIT compiler flows.
 #
-
 from typing import List, Optional
 
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa_specification import (  # type: ignore[import-not-found]
+    TosaSpecification,
+)
 
-from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.backend.compile_spec_schema import (  # type: ignore[import-not-found]
+    CompileSpec,
+)
 
 
 class ArmCompileSpecBuilder:
@@ -28,6 +31,7 @@ class ArmCompileSpecBuilder:
 
     def vgf_compile_spec(
         self,
+        tosa_spec: TosaSpecification = None,  # type: ignore[assignment]
         compiler_flags: Optional[str] = "",
     ) -> "ArmCompileSpecBuilder":
         """
@@ -40,7 +44,33 @@ class ArmCompileSpecBuilder:
         self.compiler_flags = [
             compiler_flags,
         ]
-        self.tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+MI")
+
+        if tosa_spec is None:
+            tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+FP")
+
+        tosa_version = tosa_spec.version  # type: ignore[attr-defined]
+        tosa_profiles = tosa_spec.profiles  # type: ignore[attr-defined]
+
+        if tosa_version.major != 1:
+            raise ValueError(
+                "Arm backend only supports converter-backend for TOSA version 1. "
+                f"Invalid TOSA version: {tosa_version}"
+            )
+
+        if not ("FP" or "INT" in tosa_profiles):
+            raise ValueError(
+                "Arm backend only supports converter-backend for FP or INT. "
+                f"Invalid TOSA profile: {tosa_profiles}"
+            )
+
+        if len(tosa_profiles) != 1:
+            raise ValueError(
+                "For now Arm backend only supports converter-backend for either FP or INT. "
+                f"Invalid TOSA profile: {tosa_profiles}"
+            )
+
+        self.tosa_spec = tosa_spec
+
         return self
 
     def ethosu_compile_spec(

@@ -53,6 +53,8 @@ from executorch.extension.llm.export.quantizer_lib import (
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
 
+from omegaconf import DictConfig
+
 from ..model_factory import EagerModelFactory
 from .source_transformation.apply_spin_quant_r1_r2 import (
     fuse_layer_norms,
@@ -571,12 +573,14 @@ def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
 
 
 def export_llama(
-    export_options: Union[argparse.Namespace, LlmConfig],
+    export_options: Union[argparse.Namespace, LlmConfig, DictConfig],
 ) -> str:
     if isinstance(export_options, argparse.Namespace):
         # Legacy CLI.
         llm_config = LlmConfig.from_args(export_options)
-    elif isinstance(export_options, LlmConfig):
+    elif isinstance(export_options, LlmConfig) or isinstance(
+        export_options, DictConfig
+    ):
         # Hydra CLI.
         llm_config = export_options
     else:
@@ -914,6 +918,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm._passes`
         from executorch.backends.qualcomm._passes import (
             AnnotateStack,
+            ConvertBmmToMatmul,
             FoldQDQ,
             RecomposeRmsNorm,
             TagQuantIO,
@@ -956,6 +961,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
         passes_job = get_capture_program_passes()
         dep_table = get_passes_dependency_for_capture_program()
         passes_job[AnnotateStack][QCOM_PASS_ACTIVATE_KEY] = True
+        passes_job[ConvertBmmToMatmul][QCOM_PASS_ACTIVATE_KEY] = True
         passes_job[RecomposeRmsNorm][QCOM_PASS_ACTIVATE_KEY] = True
         passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
         passes_job[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][

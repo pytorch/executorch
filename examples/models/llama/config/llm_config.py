@@ -65,7 +65,9 @@ class BaseConfig:
         params: Model parameters, such as n_layers, hidden_size, etc.
             If left empty will use defaults specified in model_args.py.
         checkpoint: Path to the checkpoint file.
-            If left empty, the model will be initialized with random weights.
+            If left empty, the model will either be initialized with random weights
+            if it is a Llama model or the weights will be downloaded from HuggingFace
+            if it is a non-Llama model.
         checkpoint_dir: Path to directory containing sharded checkpoint files.
         tokenizer_path: Path to the tokenizer file.
         metadata: Json string containing metadata information.
@@ -86,7 +88,7 @@ class BaseConfig:
     checkpoint_dir: Optional[str] = None
     tokenizer_path: Optional[str] = None
     metadata: Optional[str] = None
-    use_lora: int = int
+    use_lora: int = 0
     fairseq2: bool = False
     preq_mode: Optional[PreqMode] = None
     preq_group_size: int = 32
@@ -214,7 +216,7 @@ class ExportConfig:
 
     max_seq_length: int = 128
     max_context_length: int = 128
-    output_dir: Optional[str] = None
+    output_dir: str = "."
     output_name: Optional[str] = None
     so_library: Optional[str] = None
     export_only: bool = False
