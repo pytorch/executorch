@@ -51,6 +51,7 @@ from executorch.backends.arm._passes import (
     DecomposeSqrtPass,
     DecomposeSumPass,
     DecomposeVarPass,
+    DecorateFp32toInt32CastingPass,
     FoldAndAnnotateQParamsPass,
     FuseBatchnorm2DPass,
     FuseConstantArgsPass,
@@ -191,6 +192,9 @@ class ArmPassManager(PassManager):
         self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
         self.add_pass(MatchArgRanksPass(exported_program))
         self.add_pass(DecomposeAvgPool2d())
+        self.add_pass(
+            DecorateFp32toInt32CastingPass()
+        )  # Require that no new fp32->int32 is introduced after this pass
         self.add_pass(ComputeConstantOpsAOT(exported_program))
 
         self.add_pass(DecomposeGroupedConv())
