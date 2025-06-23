@@ -4,7 +4,7 @@ ExecuTorch supports both iOS and macOS via Objective-C, Swift, and C++. ExecuTor
 
 ## Integration
 
-The ExecuTorch Runtime for iOS and macOS is distributed as a collection of prebuilt [.xcframework](https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle) binary targets. These targets are compatible with both iOS and macOS devices and simulators and are available in both release and debug modes:
+The ExecuTorch Runtime for iOS and macOS (ARM64) is distributed as a collection of prebuilt [.xcframework](https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle) binary targets. These targets are compatible with both iOS and macOS devices and simulators and are available in both release and debug modes:
 
 * `executorch` - Main Runtime components
 * `backend_coreml` - Core ML backend
