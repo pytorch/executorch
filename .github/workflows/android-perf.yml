@@ -316,7 +316,7 @@ jobs:
               if [[ ${{ matrix.config }} == "et_xnnpack_custom_spda_kv_cache_8da4w" ]]; then
                 DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "." --files "tokenizer.json")
                 python -m extension.llm.export.export_llm \
-                  base.model_class=qwen3-0_6b \
+                  base.model_class=qwen3_0_6b \
                   base.params=examples/models/qwen3/0_6b_config.json \
                   model.use_kv_cache=true \
                   model.use_sdpa_with_kv_cache=true \
