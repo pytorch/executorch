@@ -660,7 +660,7 @@ def register_ported_ops_with_prepacking(features: OpFeatures):
         exir_ops.edge.aten.native_group_norm.default,
     ]
 )
-def register_ported_ops_with_prepacking(features: OpFeatures):
+def register_native_group_norm(features: OpFeatures):
     features.texture_impl = TextureImplFeatures(
         valid_packed_dims={PackedDim.CHANNELS},
     )

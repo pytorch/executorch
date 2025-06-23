@@ -91,7 +91,7 @@ class TagMemoryMetaPass(ExportPass):
         self.default_layout: VkMemoryLayout = default_memory_layout
         self.texture_limits = texture_limits
 
-    def propose_node_storage(
+    def propose_node_storage(  # noqa: C901
         self,
         node: torch.fx.Node,
     ) -> Optional[VkStorageType]:
