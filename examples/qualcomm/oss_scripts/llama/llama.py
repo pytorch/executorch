@@ -398,7 +398,7 @@ class SingleLlama:
                 self.llama_graph_module, self.inputs, strict=True
             ).module()
 
-            if QuantDtype == QuantDtype.use_16a4w_block:
+            if quant_dtype == QuantDtype.use_16a4w_block:
                 conv_nodes = [
                     n for n in fx_graph_module.graph.nodes if "conv" in n.name
                 ]
