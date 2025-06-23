@@ -11,6 +11,7 @@ from executorch.backends.arm._passes import (
     AnnotateChannelsLastDimOrder,
     AnnotateDecomposedMatmulPass,
     BroadcastArgsPass,
+    CastBoolToInt8Pass,
     CastInt64BuffersToInt32Pass,
     CastToInt32Pass,
     ComputeConstantOpsAOT,
@@ -108,6 +109,7 @@ class ArmPassManager(PassManager):
         if self.tosa_spec.is_U55_subset:
             self.add_pass(CastToInt32Pass())
 
+        self.add_pass(CastBoolToInt8Pass())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
@@ -148,6 +150,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeRoundPass())
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(ConvertIntPowToMuls())
+        self.add_pass(CastBoolToInt8Pass())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSAMI())
         self.add_pass(DecomposeEmbeddingPass())
         self.add_pass(FuseQuantizedActivationPass())
@@ -230,6 +233,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeEmbeddingPass())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoundPass())
+        self.add_pass(CastBoolToInt8Pass())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(ScalarsToAttributePass())
         self.add_pass(DecomposeGroupNormPass())
