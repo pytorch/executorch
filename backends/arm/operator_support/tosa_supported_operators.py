@@ -211,6 +211,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.leaky_relu.default,
             exir_ops.edge.aten.sqrt.default,
             exir_ops.edge.aten.rsqrt.default,
+            exir_ops.edge.aten.round.default,
             exir_ops.edge.aten._softmax.default,
             exir_ops.edge.aten.select_copy.int,
             exir_ops.edge.aten._log_softmax.default,
@@ -281,6 +282,7 @@ class NeedsDecompositionCheck(OperatorSupportBase):
             exir_ops.edge.aten.ne.Scalar: None,
             exir_ops.edge.aten.div.Scalar: None,
             exir_ops.edge.aten.leaky_relu.default: None,
+            exir_ops.edge.aten.round.default: None,
         }
 
         if node.target in needs_decomp_dict:
