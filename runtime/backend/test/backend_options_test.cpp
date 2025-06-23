@@ -101,7 +101,7 @@ TEST_F(BackendOptionsTest, MutableOption) {
   EXPECT_EQ(options.get_option("flag", ival), Error::Ok);
   EXPECT_EQ(ival, 0);
 
-  options.mutable_view()[0].value = 123; // Overwrites the entry
+  options.view()[0].value = 123; // Overwrites the entry
 
   // Integer get should succeed with the updated value
   EXPECT_EQ(options.get_option("flag", ival), Error::Ok);
