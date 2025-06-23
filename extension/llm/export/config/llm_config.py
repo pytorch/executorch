@@ -45,11 +45,16 @@ class ModelType(str, Enum):
     smollm2 = "smollm2"
 
 
+class PreqMode(str, Enum):
+    """
+    If you are dealing with pre-quantized checkpoints, this used to
+    be the way to specify them. Now you don't need to specify these
+    options if you use a TorchAo-prequantized checkpoint, but they
+    are still around to preserve backward compatibility.
+    """
 
-PREQ_MODE_OPTIONS = [
-    "8da4w",
-    "8da4w_output_8da8w",
-]
+    preq_8da4w = "8da4w"
+    preq_8da4w_out_8da8w = "8da4w_output_8da8w"
 
 
 @dataclass
@@ -81,7 +86,7 @@ class BaseConfig:
             are loaded.
     """
 
-    model_class: str = "llama3"
+    model_class: ModelType = ModelType.llama3
     params: Optional[str] = None
     checkpoint: Optional[str] = None
     checkpoint_dir: Optional[str] = None
@@ -89,16 +94,9 @@ class BaseConfig:
     metadata: Optional[str] = None
     use_lora: int = 0
     fairseq2: bool = False
-    preq_mode: Optional[str] = None
+    preq_mode: Optional[PreqMode] = None
     preq_group_size: int = 32
     preq_embedding_quantize: str = "8,0"
-
-    def __post_init__(self):
-        if self.model_class not in MODEL_TYPE_OPTIONS:
-            raise ValueError(f"model_class must be one of {MODEL_TYPE_OPTIONS}, got '{self.model_class}'")
-
-        if self.preq_mode is not None and self.preq_mode not in PREQ_MODE_OPTIONS:
-            raise ValueError(f"preq_mode must be one of {PREQ_MODE_OPTIONS}, got '{self.preq_mode}'")
 
 
 ################################################################################
@@ -106,11 +104,16 @@ class BaseConfig:
 ################################################################################
 
 
-DTYPE_OVERRIDE_OPTIONS = [
-    "fp32",
-    "fp16",
-    "bf16",
-]
+class DtypeOverride(str, Enum):
+    """
+    DType of the model. Highly recommended to use "fp32", unless you want to
+    export without a backend, in which case you can also use "bf16". "fp16"
+    is not recommended.
+    """
+
+    fp32 = "fp32"
+    fp16 = "fp16"
+    bf16 = "bf16"
 
 
 @dataclass
@@ -148,7 +151,7 @@ class ModelConfig:
             [16] pattern specifies all layers have a sliding window of 16.
     """
 
-    dtype_override: str = "fp32"
+    dtype_override: DtypeOverride = DtypeOverride.fp32
     enable_dynamic_shape: bool = True
     use_shared_embedding: bool = False
     use_sdpa_with_kv_cache: bool = False
@@ -161,9 +164,6 @@ class ModelConfig:
     local_global_attention: Optional[List[int]] = None
 
     def __post_init__(self):
-        if self.dtype_override not in DTYPE_OVERRIDE_OPTIONS:
-            raise ValueError(f"dtype_override must be one of {DTYPE_OVERRIDE_OPTIONS}, got '{self.dtype_override}'")
-
         self._validate_attention_sink()
         self._validate_local_global_attention()
 
@@ -265,25 +265,31 @@ class DebugConfig:
 ################################################################################
 
 
-PT2E_QUANTIZE_OPTIONS = [
-    "xnnpack_dynamic",
-    "xnnpack_dynamic_qc4",
-    "qnn_8a8w",
-    "qnn_16a16w",
-    "qnn_16a4w",
-    "coreml_c4w",
-    "coreml_8a_c8w",
-    "coreml_8a_c4w",
-    "coreml_baseline_8a_c8w",
-    "coreml_baseline_8a_c4w",
-    "vulkan_8w",
-]
+class Pt2eQuantize(str, Enum):
+    """
+    Type of backend-specific Pt2e quantization strategy to use.
+
+    Pt2e uses a different quantization library that is graph-based
+    compared to `qmode`, which is also specified in the QuantizationConfig
+    and is source transform-based.
+    """
+
+    xnnpack_dynamic = "xnnpack_dynamic"
+    xnnpack_dynamic_qc4 = "xnnpack_dynamic_qc4"
+    qnn_8a8w = "qnn_8a8w"
+    qnn_16a16w = "qnn_16a16w"
+    qnn_16a4w = "qnn_16a4w"
+    coreml_c4w = "coreml_c4w"
+    coreml_8a_c8w = "coreml_8a_c8w"
+    coreml_8a_c4w = "coreml_8a_c4w"
+    coreml_baseline_8a_c8w = "coreml_baseline_8a_c8w"
+    coreml_baseline_8a_c4w = "coreml_baseline_8a_c4w"
+    vulkan_8w = "vulkan_8w"
 
 
-SPIN_QUANT_OPTIONS = [
-    "cuda",
-    "native",
-]
+class SpinQuant(str, Enum):
+    cuda = "cuda"
+    native = "native"
 
 
 @dataclass
@@ -318,9 +324,9 @@ class QuantizationConfig:
 
     qmode: Optional[str] = None
     embedding_quantize: Optional[str] = None
-    pt2e_quantize: Optional[str] = None
+    pt2e_quantize: Optional[Pt2eQuantize] = None
     group_size: Optional[int] = None
-    use_spin_quant: Optional[str] = None
+    use_spin_quant: Optional[SpinQuant] = None
     use_qat: bool = False
     calibration_tasks: Optional[List[str]] = None
     calibration_limit: Optional[int] = None
@@ -328,12 +334,6 @@ class QuantizationConfig:
     calibration_data: str = "Once upon a time"
 
     def __post_init__(self):
-        if self.pt2e_quantize is not None and self.pt2e_quantize not in PT2E_QUANTIZE_OPTIONS:
-            raise ValueError(f"pt2e_quantize must be one of {PT2E_QUANTIZE_OPTIONS}, got '{self.pt2e_quantize}'")
-
-        if self.use_spin_quant is not None and self.use_spin_quant not in SPIN_QUANT_OPTIONS:
-            raise ValueError(f"use_spin_quant must be one of {SPIN_QUANT_OPTIONS}, got '{self.use_spin_quant}'")
-
         if self.qmode:
             self._validate_qmode()
 
@@ -381,18 +381,16 @@ class XNNPackConfig:
     extended_ops: bool = False
 
 
-COREML_QUANTIZE_OPTIONS = [
-    "b4w",
-    "c4w",
-]
+class CoreMLQuantize(str, Enum):
+    b4w = "b4w"
+    c4w = "c4w"
 
 
-COREML_COMPUTE_UNIT_OPTIONS = [
-    "cpu_only",
-    "cpu_and_gpu",
-    "cpu_and_ne",
-    "all",
-]
+class CoreMLComputeUnit(str, Enum):
+    cpu_only = "cpu_only"
+    cpu_and_gpu = "cpu_and_gpu"
+    cpu_and_ne = "cpu_and_ne"
+    all = "all"
 
 
 @dataclass
@@ -404,17 +402,11 @@ class CoreMLConfig:
     enabled: bool = False
     enable_state: bool = False
     preserve_sdpa: bool = False
-    quantize: Optional[str] = None
+    quantize: Optional[CoreMLQuantize] = None
     ios: int = 15
-    compute_units: str = "cpu_only"
+    compute_units: CoreMLComputeUnit = CoreMLComputeUnit.cpu_only
 
     def __post_init__(self):
-        if self.quantize is not None and self.quantize not in COREML_QUANTIZE_OPTIONS:
-            raise ValueError(f"quantize must be one of {COREML_QUANTIZE_OPTIONS}, got '{self.quantize}'")
-
-        if self.compute_units not in COREML_COMPUTE_UNIT_OPTIONS:
-            raise ValueError(f"compute_units must be one of {COREML_COMPUTE_UNIT_OPTIONS}, got '{self.compute_units}'")
-
         if self.ios not in (15, 16, 17, 18):
             raise ValueError(f"Invalid coreml ios version: {self.ios}")
 
@@ -493,7 +485,7 @@ class LlmConfig:
 
         # BaseConfig
         if hasattr(args, "model"):
-            llm_config.base.model_class = args.model
+            llm_config.base.model_class = ModelType(args.model)
         if hasattr(args, "params"):
             llm_config.base.params = args.params
         if hasattr(args, "checkpoint"):
@@ -511,7 +503,7 @@ class LlmConfig:
 
         # PreqMode settings
         if hasattr(args, "preq_mode") and args.preq_mode:
-            llm_config.base.preq_mode = args.preq_mode
+            llm_config.base.preq_mode = PreqMode(args.preq_mode)
             if hasattr(args, "preq_group_size"):
                 llm_config.base.preq_group_size = args.preq_group_size
             if hasattr(args, "preq_embedding_quantize"):
@@ -519,7 +511,7 @@ class LlmConfig:
 
         # ModelConfig
         if hasattr(args, "dtype_override"):
-            llm_config.model.dtype_override = args.dtype_override
+            llm_config.model.dtype_override = DtypeOverride(args.dtype_override)
         if hasattr(args, "enable_dynamic_shape"):
             llm_config.model.enable_dynamic_shape = args.enable_dynamic_shape
         if hasattr(args, "use_shared_embedding"):
@@ -561,11 +553,11 @@ class LlmConfig:
         if hasattr(args, "embedding_quantize"):
             llm_config.quantization.embedding_quantize = args.embedding_quantize
         if hasattr(args, "pt2e_quantize") and args.pt2e_quantize:
-            llm_config.quantization.pt2e_quantize = args.pt2e_quantize
+            llm_config.quantization.pt2e_quantize = Pt2eQuantize(args.pt2e_quantize)
         if hasattr(args, "group_size"):
             llm_config.quantization.group_size = args.group_size
         if hasattr(args, "use_spin_quant") and args.use_spin_quant:
-            llm_config.quantization.use_spin_quant = args.use_spin_quant
+            llm_config.quantization.use_spin_quant = SpinQuant(args.use_spin_quant)
         if hasattr(args, "use_qat"):
             llm_config.quantization.use_qat = args.use_qat
         if hasattr(args, "calibration_tasks"):
@@ -593,11 +585,13 @@ class LlmConfig:
             args, "coreml_preserve_sdpa", False
         )
         if hasattr(args, "coreml_quantize") and args.coreml_quantize:
-            llm_config.backend.coreml.quantize = args.coreml_quantize
+            llm_config.backend.coreml.quantize = CoreMLQuantize(args.coreml_quantize)
         if hasattr(args, "coreml_ios"):
             llm_config.backend.coreml.ios = args.coreml_ios
         if hasattr(args, "coreml_compute_units"):
-            llm_config.backend.coreml.compute_units = args.coreml_compute_units
+            llm_config.backend.coreml.compute_units = CoreMLComputeUnit(
+                args.coreml_compute_units
+            )
 
         # Vulkan
         if hasattr(args, "vulkan"):
