@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from math import ceil, floor
 from typing import Any, List, Optional
 
 from executorch.backends.arm.operators.node_visitor import NodeVisitor
@@ -183,11 +184,18 @@ def validate_valid_dtype(
 
 
 def adjust_pooling_pad_if_needed(
-    input_size: int, kernel_size: int, stride: int, pad: int
+    input_size: int, kernel_size: int, stride: int, pad: int, ceil_mode: bool
 ) -> int:
     """
-    Calculates the padding that needs to be removed to a pooling window to make it
-    divisible by the kernels stride. All inputs should correspond to the same dimension.
+    The Aten pooling ops has one value 'pad' per dimension to specify padding, but they
+    do not require input and output sizes to match up perfectly. Instead, the output
+    size is rounded up or down depending on ceil_mode, and padding at the end of the
+    input is automatically added or removed. TOSA on the other hand specifies two
+    padding values, one for pre-padding and one for post-padding, and these must satisfy
+
+        output_size = (input_size + pre_pad + post_pad - kernel_size) / stride + 1
+
+    This function returns the post_pad value required to satisfy the above condition.
 
     Parameters:
     -----------
@@ -205,15 +213,16 @@ def adjust_pooling_pad_if_needed(
 
     Output:
     -------
-    An int, representing the padding to remove to make the window divisible.
+    An int, giving the post-padding to use for the
     """
-    if pad == 0:
-        return pad
 
-    mod_remainder = (input_size + 2 * pad - kernel_size) % stride
+    if ceil_mode:
+        output_size = ceil((input_size - kernel_size + 2 * pad) / stride) + 1
+    else:
+        output_size = floor((input_size - kernel_size + 2 * pad) / stride) + 1
 
-    # No need to adjust
-    if mod_remainder == 0:
-        return pad
+    # Solve for post_pad from
+    # output_size = (input_size + pre_pad + post_pad - kernel_size) / stride + 1
+    adjusted_post_pad = (output_size - 1) * stride - input_size + kernel_size - pad
 
-    return pad - mod_remainder
+    return adjusted_post_pad
