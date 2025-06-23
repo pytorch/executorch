@@ -186,5 +186,111 @@ TensorPtr randint_strided(
       std::uniform_int_distribution<int64_t>(low, high - 1));
 }
 
+TensorPtr arange(
+    executorch::aten::Scalar start,
+    executorch::aten::Scalar end,
+    executorch::aten::Scalar step,
+    std::vector<executorch::aten::SizesType> sizes,
+    executorch::aten::ScalarType type,
+    executorch::aten::TensorShapeDynamism dynamism) {
+  // Calculate the number of elements in the range
+  double start_val, end_val, step_val;
+
+  if (start.isFloatingPoint()) {
+    start_val = start.to<double>();
+  } else if (start.isIntegral(/*includeBool=*/false)) {
+    start_val = static_cast<double>(start.to<int64_t>());
+  } else {
+    ET_CHECK_MSG(false, "start must be a number");
+  }
+
+  if (end.isFloatingPoint()) {
+    end_val = end.to<double>();
+  } else if (end.isIntegral(/*includeBool=*/false)) {
+    end_val = static_cast<double>(end.to<int64_t>());
+  } else {
+    ET_CHECK_MSG(false, "end must be a number");
+  }
+
+  if (step.isFloatingPoint()) {
+    step_val = step.to<double>();
+  } else if (step.isIntegral(/*includeBool=*/false)) {
+    step_val = static_cast<double>(step.to<int64_t>());
+  } else {
+    ET_CHECK_MSG(false, "step must be a number");
+  }
+
+  ET_CHECK_MSG(step_val != 0, "step cannot be zero");
+
+  // Calculate the number of elements
+  int64_t numel =
+      static_cast<int64_t>(std::ceil((end_val - start_val) / step_val));
+  numel = std::max(int64_t(0), numel); // Ensure non-negative
+
+  // Validate sizes compatibility with numel
+  if (!sizes.empty()) {
+    int64_t negative_one_count = 0;
+    int64_t negative_one_index = -1;
+    int64_t product = 1;
+
+    // Count -1s and calculate product of positive dimensions
+    for (size_t i = 0; i < sizes.size(); ++i) {
+      if (sizes[i] == -1) {
+        negative_one_count++;
+        negative_one_index = static_cast<int64_t>(i);
+      } else if (sizes[i] <= 0) {
+        ET_CHECK_MSG(false, "sizes must contain positive integers or -1");
+      } else {
+        product *= sizes[i];
+      }
+    }
+
+    // Check that there's at most one -1
+    ET_CHECK_MSG(negative_one_count <= 1, "sizes can contain at most one -1");
+
+    if (negative_one_count == 1) {
+      // Infer the -1 dimension
+      ET_CHECK_MSG(
+          numel % product == 0,
+          "numel (%" PRId64
+          ") is not divisible by the product of known dimensions (%" PRId64 ")",
+          numel,
+          product);
+      int64_t inferred_size = numel / product;
+      ET_CHECK_MSG(
+          inferred_size > 0,
+          "inferred dimension size must be positive, got %" PRId64,
+          inferred_size);
+      // Update the sizes vector with the inferred dimension
+      sizes[negative_one_index] = inferred_size;
+    } else {
+      // No -1, check exact match
+      ET_CHECK_MSG(
+          product == numel,
+          "product of sizes (%" PRId64 ") does not match numel (%" PRId64 ")",
+          product,
+          numel);
+    }
+  }
+
+  // Create tensor with the provided sizes or default to 1D
+  std::vector<executorch::aten::SizesType> tensor_sizes = sizes.empty()
+      ? std::vector<executorch::aten::SizesType>{static_cast<
+            executorch::aten::SizesType>(numel)}
+      : sizes;
+
+  auto tensor = empty(tensor_sizes, type, dynamism);
+
+  // Fill the tensor with values from start to end with step
+  ET_SWITCH_REALHBBF16_TYPES(type, nullptr, "arange", CTYPE, [&] {
+    CTYPE* data = tensor->mutable_data_ptr<CTYPE>();
+    for (int64_t i = 0; i < numel; ++i) {
+      data[i] = static_cast<CTYPE>(start_val + i * step_val);
+    }
+  });
+
+  return tensor;
+}
+
 } // namespace extension
 } // namespace executorch

@@ -683,5 +683,47 @@ inline TensorPtr randint(
   return randint_strided(low, high, std::move(sizes), {}, type, dynamism);
 }
 
+/**
+ * Creates a tensor with values from `start` to `end` (exclusive) with step size
+ * `step`. This API will error out if `sizes` is not compatible with the number
+ * of elements of the output tensor. If `sizes` is empty, the result tensor will
+ * be 1D.
+ *
+ * @param start The starting value of the sequence.
+ * @param end The ending value of the sequence (exclusive).
+ * @param step The step size between values in the sequence.
+ * @param sizes A vector specifying the size of each dimension. Only 1
+ * occurrence of -1 is allowed, the sizes need to match the number of elements
+ * in the output tensor.
+ * @param type The scalar type of the tensor elements.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ */
+TensorPtr arange(
+    executorch::aten::Scalar start,
+    executorch::aten::Scalar end,
+    executorch::aten::Scalar step = 1,
+    std::vector<executorch::aten::SizesType> sizes = {-1},
+    executorch::aten::ScalarType type = executorch::aten::ScalarType::Float,
+    executorch::aten::TensorShapeDynamism dynamism =
+        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND);
+
+/**
+ * Creates a 1D tensor (sizes=[max]) with values from 0 to `end` (exclusive)
+ * with step size 1.
+ *
+ * @param end The ending value of the sequence (exclusive).
+ * @param type The scalar type of the tensor elements.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ */
+inline TensorPtr arange(
+    executorch::aten::Scalar end,
+    executorch::aten::ScalarType type = executorch::aten::ScalarType::Float,
+    executorch::aten::TensorShapeDynamism dynamism =
+        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  return arange(0, end, 1, {-1}, type, dynamism);
+}
+
 } // namespace extension
 } // namespace executorch

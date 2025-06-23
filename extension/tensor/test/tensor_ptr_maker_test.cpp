@@ -482,3 +482,245 @@ TEST_F(TensorPtrMakerTest, CreateRandnTensorWithIntType) {
     EXPECT_EQ(val, 0);
   }
 }
+
+TEST_F(TensorPtrMakerTest, CreateArangeTensorWithDefaultStartAndStep) {
+  auto tensor = arange(5);
+
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 5);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
+
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    auto val = tensor->const_data_ptr<float>()[i];
+    EXPECT_EQ(val, static_cast<float>(i));
+  }
+}
+
+TEST_F(TensorPtrMakerTest, CreateArangeTensorWithStartEndStep) {
+  auto tensor = arange(2, 10, 2);
+
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 4); // (10-2)/2 = 4 elements
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
+
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    auto val = tensor->const_data_ptr<float>()[i];
+    EXPECT_EQ(val, static_cast<float>(2 + i * 2));
+  }
+}
+
+TEST_F(TensorPtrMakerTest, CreateArangeTensorWithNegativeStep) {
+  auto tensor = arange(5, 0, -1);
+
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 5);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
+
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    auto val = tensor->const_data_ptr<float>()[i];
+    EXPECT_EQ(val, static_cast<float>(5 - i));
+  }
+}
+
+TEST_F(TensorPtrMakerTest, CreateArangeTensorWithIntType) {
+  auto tensor = arange(0, 5, 1, {-1}, executorch::aten::ScalarType::Int);
+
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 5);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Int);
+
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    auto val = tensor->const_data_ptr<int32_t>()[i];
+    EXPECT_EQ(val, i);
+  }
+}
+
+TEST_F(TensorPtrMakerTest, CreateArangeTensorWithLongType) {
+  auto tensor = arange(0, 5, 1, {-1}, executorch::aten::ScalarType::Long);
+
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 5);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Long);
+
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    auto val = tensor->const_data_ptr<int64_t>()[i];
+    EXPECT_EQ(val, static_cast<int64_t>(i));
+  }
+}
+
+TEST_F(TensorPtrMakerTest, CreateArangeTensorWithDoubleType) {
+  auto tensor =
+      arange(0.5, 5.5, 0.5, {-1}, executorch::aten::ScalarType::Double);
+
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 10); // (5.5-0.5)/0.5 = 10 elements
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Double);
+
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    auto val = tensor->const_data_ptr<double>()[i];
+    EXPECT_DOUBLE_EQ(val, 0.5 + i * 0.5);
+  }
+}
+
+TEST_F(TensorPtrMakerTest, CreateArangeTensorWithEmptyRange) {
+  // End < start with positive step should error out
+  EXPECT_DEATH(
+    arange(5, 0, 1),
+    "inferred dimension size must be positive, got 0");
+}
+
+TEST_F(TensorPtrMakerTest, CreateArangeTensorWithValidSizes) {
+  // Test arange with compatible sizes
+  auto tensor = arange(0, 12, 1, {3, 4});
+
+  EXPECT_EQ(tensor->dim(), 2);
+  EXPECT_EQ(tensor->size(0), 3);
+  EXPECT_EQ(tensor->size(1), 4);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
+
+  // Check values are correct
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    auto val = tensor->const_data_ptr<float>()[i];
+    EXPECT_EQ(val, static_cast<float>(i));
+  }
+}
+
+TEST_F(TensorPtrMakerTest, CreateArangeTensorWithInferredDimension) {
+  // Test arange with -1 dimension that should be inferred
+  auto tensor = arange(0, 12, 1, {3, -1});
+
+  EXPECT_EQ(tensor->dim(), 2);
+  EXPECT_EQ(tensor->size(0), 3);
+  EXPECT_EQ(tensor->size(1), 4); // Should be inferred as 12/3 = 4
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
+
+  // Check values are correct
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    auto val = tensor->const_data_ptr<float>()[i];
+    EXPECT_EQ(val, static_cast<float>(i));
+  }
+}
+
+TEST_F(
+    TensorPtrMakerTest,
+    CreateArangeTensorWithInferredDimensionDifferentPosition) {
+  // Test arange with -1 dimension in first position
+  auto tensor = arange(0, 20, 1, {-1, 5});
+
+  EXPECT_EQ(tensor->dim(), 2);
+  EXPECT_EQ(tensor->size(0), 4); // Should be inferred as 20/5 = 4
+  EXPECT_EQ(tensor->size(1), 5);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
+}
+
+TEST_F(
+    TensorPtrMakerTest,
+    CreateArangeTensorWithMultipleDimensionsAndInference) {
+  // Test arange with 3D tensor and -1 dimension
+  auto tensor = arange(0, 24, 1, {2, -1, 3});
+
+  EXPECT_EQ(tensor->dim(), 3);
+  EXPECT_EQ(tensor->size(0), 2);
+  EXPECT_EQ(tensor->size(1), 4); // Should be inferred as 24/(2*3) = 4
+  EXPECT_EQ(tensor->size(2), 3);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
+}
+
+TEST_F(TensorPtrMakerTest, ArangeTensorSizesValidationMultipleNegativeOnes) {
+  // Test that multiple -1s cause an error
+  EXPECT_DEATH(
+      arange(0, 12, 1, {-1, -1, 3}), "sizes can contain at most one -1");
+}
+
+TEST_F(TensorPtrMakerTest, ArangeTensorSizesValidationZeroDimension) {
+  // Test that zero dimensions cause an error
+  EXPECT_DEATH(
+      arange(0, 12, 1, {3, 0, 4}),
+      "sizes must contain positive integers or -1");
+}
+
+TEST_F(TensorPtrMakerTest, ArangeTensorSizesValidationNegativeDimension) {
+  // Test that negative dimensions (other than -1) cause an error
+  EXPECT_DEATH(
+      arange(0, 12, 1, {3, -2, 4}),
+      "sizes must contain positive integers or -1");
+}
+
+TEST_F(TensorPtrMakerTest, ArangeTensorSizesValidationIncompatibleProduct) {
+  // Test that incompatible product causes an error
+  EXPECT_DEATH(
+      arange(0, 12, 1, {3, 5}), // 3*5 = 15, but numel = 12
+      "product of sizes \\(15\\) does not match numel \\(12\\)");
+}
+
+TEST_F(TensorPtrMakerTest, ArangeTensorSizesValidationNonDivisibleInference) {
+  // Test that non-divisible inference causes an error
+  EXPECT_DEATH(
+      arange(0, 13, 1, {3, -1, 2}), // 13 is not divisible by 3*2 = 6
+      "numel \\(13\\) is not divisible by the product of known dimensions \\(6\\)");
+}
+
+TEST_F(TensorPtrMakerTest, ArangeTensorSizesValidationZeroInferredDimension) {
+  // Test that zero inferred dimension causes an error
+  EXPECT_DEATH(
+      arange(
+          0,
+          0,
+          1,
+          {5, -1}), // numel = 0, so inferred dimension would be 0/5 = 0
+      "inferred dimension size must be positive, got 0");
+}
+
+TEST_F(TensorPtrMakerTest, CreateArangeTensorWithFloatStepAndSizes) {
+  // Test arange with float step and sizes
+  auto tensor =
+      arange(0.0, 2.0, 0.5, {2, 2}, executorch::aten::ScalarType::Float);
+
+  EXPECT_EQ(tensor->dim(), 2);
+  EXPECT_EQ(tensor->size(0), 2);
+  EXPECT_EQ(tensor->size(1), 2);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
+
+  // Check values: [0.0, 0.5, 1.0, 1.5]
+  EXPECT_FLOAT_EQ(tensor->const_data_ptr<float>()[0], 0.0f);
+  EXPECT_FLOAT_EQ(tensor->const_data_ptr<float>()[1], 0.5f);
+  EXPECT_FLOAT_EQ(tensor->const_data_ptr<float>()[2], 1.0f);
+  EXPECT_FLOAT_EQ(tensor->const_data_ptr<float>()[3], 1.5f);
+}
+
+TEST_F(TensorPtrMakerTest, CreateArangeTensorWithNegativeStepAndSizes) {
+  // Test arange with negative step and sizes
+  auto tensor = arange(10, 6, -1, {2, 2});
+
+  EXPECT_EQ(tensor->dim(), 2);
+  EXPECT_EQ(tensor->size(0), 2);
+  EXPECT_EQ(tensor->size(1), 2);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
+
+  // Check values: [10, 9, 8, 7]
+  EXPECT_FLOAT_EQ(tensor->const_data_ptr<float>()[0], 10.0f);
+  EXPECT_FLOAT_EQ(tensor->const_data_ptr<float>()[1], 9.0f);
+  EXPECT_FLOAT_EQ(tensor->const_data_ptr<float>()[2], 8.0f);
+  EXPECT_FLOAT_EQ(tensor->const_data_ptr<float>()[3], 7.0f);
+}
+
+TEST_F(TensorPtrMakerTest, CreateArangeTensorWithSingleElementAndSizes) {
+  // Test arange with single element and sizes
+  auto tensor = arange(5, 6, 1, {1, 1});
+
+  EXPECT_EQ(tensor->dim(), 2);
+  EXPECT_EQ(tensor->size(0), 1);
+  EXPECT_EQ(tensor->size(1), 1);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
+
+  EXPECT_FLOAT_EQ(tensor->const_data_ptr<float>()[0], 5.0f);
+}
+
+TEST_F(TensorPtrMakerTest, CreateArangeTensorWithEmptyRangeAndSizes) {
+  // Test arange with empty range and sizes
+  auto tensor = arange(5, 0, 1, {});
+
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 0);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
+}
