@@ -33,7 +33,7 @@ if(NOT CMAKE_CXX_STANDARD)
   # Can't set to 11 due to executor_runner.cpp make_unique
 endif()
 
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+set(_common_compile_options -Wno-deprecated-declarations -fPIC -ffunction-sections -fdata-sections)
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
@@ -123,13 +123,25 @@ gen_selected_ops(
 )
 
 generate_bindings_for_kernels(
-  LIB_NAME "select_build_lib" FUNCTIONS_YAML
-  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml CUSTOM_OPS_YAML
+  LIB_NAME 
+  "select_build_lib" 
+  FUNCTIONS_YAML
+  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml 
+  CUSTOM_OPS_YAML
   "${_custom_ops_yaml}"
+  DTYPE_SELECTIVE_BUILD
+  "${EXECUTORCH_DTYPE_SELECTIVE_BUILD}"
 )
 
 gen_operators_lib(
-  LIB_NAME "select_build_lib" KERNEL_LIBS ${_kernel_lib} DEPS executorch_core
+  LIB_NAME 
+  "select_build_lib" 
+  KERNEL_LIBS 
+  ${_kernel_lib} 
+  DEPS 
+  executorch_core
+  DTYPE_SELECTIVE_BUILD
+  "${EXECUTORCH_DTYPE_SELECTIVE_BUILD}"
 )
 
 list(TRANSFORM _executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
