@@ -201,7 +201,13 @@ void et_pal_emit_log_message(
     const char* message,
     ET_UNUSED size_t length) {
   fprintf(
-      stderr, "%c [executorch:%s:%zu] %s\n", level, filename, line, message);
+      stderr,
+      "%c [executorch:%s:%zu %s()] %s\n",
+      level,
+      filename,
+      line,
+      function,
+      message);
 }
 
 /**
