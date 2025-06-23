@@ -7,6 +7,7 @@
 
 # pyre-unsafe
 from executorch.backends.arm._passes import (
+    AddBiasPass,
     AnnotateChannelsLastDimOrder,
     AnnotateDecomposedMatmulPass,
     BroadcastArgsPass,
@@ -134,6 +135,7 @@ class ArmPassManager(PassManager):
 
         self.add_pass(FuseViewCopyTransform())
         self.add_pass(FuseConstantArgsPass(exported_program))
+        self.add_pass(AddBiasPass(exported_program))
 
         self.add_pass(InsertTableOpsPass(exported_program))
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))
@@ -194,6 +196,7 @@ class ArmPassManager(PassManager):
 
         self.add_pass(FuseViewCopyTransform())
         self.add_pass(FuseConstantArgsPass(exported_program))
+        self.add_pass(AddBiasPass(exported_program))
         self.add_pass(InsertTableOpsPass(exported_program))
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))
         self.add_pass(AnnotateChannelsLastDimOrder())
