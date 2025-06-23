@@ -39,12 +39,13 @@ struct BackendOption {
 };
 
 /**
- * A template class for storing and managing backend-specific configuration options.
- * 
- * This class provides a type-safe way to store key-value pairs for backend configuration,
- * with compile-time capacity limits and runtime type checking. It supports bool, int, and
- * const char* value types.
- * 
+ * A template class for storing and managing backend-specific configuration
+ * options.
+ *
+ * This class provides a type-safe way to store key-value pairs for backend
+ * configuration, with compile-time capacity limits and runtime type checking.
+ * It supports bool, int, and const char* value types.
+ *
  * @tparam MaxCapacity The maximum number of options that can be stored
  */
 template <size_t MaxCapacity>
@@ -57,7 +58,7 @@ class BackendOptions {
 
   /**
    * Returns a const view of all stored options as a Span.
-   * 
+   *
    * @return A const Span containing all BackendOption entries
    */
   executorch::runtime::Span<BackendOption> view() const {
@@ -66,7 +67,7 @@ class BackendOptions {
 
   /**
    * Returns a mutable view of all stored options as a Span.
-   * 
+   *
    * @return A mutable Span containing all BackendOption entries
    */
   executorch::runtime::Span<BackendOption> view() {
@@ -76,7 +77,7 @@ class BackendOptions {
   /**
    * Sets a boolean option value for the given key.
    * If the key already exists, updates its value. Otherwise, adds a new option.
-   * 
+   *
    * @tparam N The length of the key string (automatically deduced)
    * @param key The option key (must be a string literal or array)
    * @param value The boolean value to set
@@ -84,14 +85,14 @@ class BackendOptions {
    */
   template <size_t N>
   Error set_option(const char (&key)[N], bool value) noexcept {
-    static_assert(N <= kMaxOptionKeyLength, "Option key is too long");
+    ET_CHECK_MSG(N <= kMaxOptionKeyLength, "Option key is too long");
     return set_option_impl(key, value);
   }
 
   /**
    * Sets an integer option value for the given key.
    * If the key already exists, updates its value. Otherwise, adds a new option.
-   * 
+   *
    * @tparam N The length of the key string (automatically deduced)
    * @param key The option key (must be a string literal or array)
    * @param value The integer value to set
@@ -99,17 +100,17 @@ class BackendOptions {
    */
   template <size_t N>
   Error set_option(const char (&key)[N], int value) noexcept {
-    static_assert(N <= kMaxOptionKeyLength, "Option key is too long");
+    ET_CHECK_MSG(N <= kMaxOptionKeyLength, "Option key is too long");
     return set_option_impl(key, value);
   }
 
   /**
    * Sets a string option value for the given key.
    * If the key already exists, updates its value. Otherwise, adds a new option.
-   * 
-   * Note: The string value must have static storage duration. This class does NOT
-   * take ownership of the string - it only stores the pointer.
-   * 
+   *
+   * Note: The string value must have static storage duration. This class does
+   * NOT take ownership of the string - it only stores the pointer.
+   *
    * @tparam N The length of the key string (automatically deduced)
    * @param key The option key (must be a string literal or array)
    * @param value The string value to set (must have static storage duration)
@@ -117,23 +118,23 @@ class BackendOptions {
    */
   template <size_t N>
   Error set_option(const char (&key)[N], const char* value) noexcept {
-    static_assert(N <= kMaxOptionKeyLength, "Option key is too long");
+    ET_CHECK_MSG(N <= kMaxOptionKeyLength, "Option key is too long");
     return set_option_impl(key, value);
   }
 
   /**
    * Retrieves an option value by key and type.
-   * 
+   *
    * @tparam T The expected type of the option value (bool, int, or const char*)
    * @tparam KeyLen The length of the key string (automatically deduced)
    * @param key The option key to look up
    * @param out Reference to store the retrieved value
-   * @return Error::Ok if found and type matches, Error::NotFound if key doesn't exist,
-   *         Error::InvalidArgument if type doesn't match
+   * @return Error::Ok if found and type matches, Error::NotFound if key doesn't
+   * exist, Error::InvalidArgument if type doesn't match
    */
   template <typename T, size_t KeyLen>
   Error get_option(const char (&key)[KeyLen], T& out) const {
-    static_assert(KeyLen <= kMaxOptionKeyLength, "Option key is too long");
+    ET_CHECK_MSG(KeyLen <= kMaxOptionKeyLength, "Option key is too long");
 
     for (size_t i = 0; i < size_; ++i) {
       if (std::strcmp(options_[i].key, key) == 0) {
@@ -154,7 +155,7 @@ class BackendOptions {
   /**
    * Internal implementation for setting option values.
    * Handles both updating existing options and adding new ones.
-   * 
+   *
    * @tparam T The type of the value (bool, int, or const char*)
    * @param key The option key
    * @param value The value to set
