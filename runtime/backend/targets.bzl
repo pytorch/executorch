@@ -10,6 +10,25 @@ def define_common_targets():
     for aten_mode in get_aten_mode_options():
         aten_suffix = ("_aten" if aten_mode else "")
         runtime.cxx_library(
+            name = "options" + aten_suffix,
+            exported_headers = [
+                "options.h",
+            ],
+            preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_deps = [
+                "//executorch/runtime/core:core",
+                "//executorch/runtime/core:evalue" + aten_suffix,
+                "//executorch/runtime/core:event_tracer" + aten_suffix,
+                "//executorch/runtime/core:memory_allocator",
+                "//executorch/runtime/core:named_data_map",
+            ],
+        )
+
+        runtime.cxx_library(
             name = "interface" + aten_suffix,
             srcs = [
                 "interface.cpp",
@@ -32,5 +51,22 @@ def define_common_targets():
                 "//executorch/runtime/core:event_tracer" + aten_suffix,
                 "//executorch/runtime/core:memory_allocator",
                 "//executorch/runtime/core:named_data_map",
+                "//executorch/runtime/backend:options" + aten_suffix,
+            ],
+        )
+
+        runtime.cxx_library(
+            name = "options_map" + aten_suffix,
+            exported_headers = [
+                "options_map.h",
+            ],
+            preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_deps = [
+                "//executorch/runtime/core:core",
+                ":options" + aten_suffix,
             ],
         )
