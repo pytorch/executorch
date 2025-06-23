@@ -40,7 +40,7 @@ python -m extension.llm.export.export_llm \
   model.use_sdpa_with_kv_cache=True \
   model.dtype_override="fp32" \
   backend.xnnpack.enabled=True \
-  base.metadata='{"get_bos_id":151643, "get_eos_ids":[151643]}' \
+  base.metadata='"{\"get_bos_id\":151643, \"get_eos_ids\":[151643]}"' \
   export.output_name="qwen2_5-1_5b.pte" \
   debug.verbose=True
 ```
