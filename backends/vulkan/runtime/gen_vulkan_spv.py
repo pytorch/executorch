@@ -845,66 +845,28 @@ class SPVGenerator:
     ) -> Dict[str, str]:
         output_file_map = {}
 
-        def process_shader(shader_paths_pair):
+        def generate_src_file(shader_paths_pair):
+            # Extract components from the input tuple
+            # name of .glsl, .glslh, or .h to be generated
             src_file_name = shader_paths_pair[0]
-
+            # path of template file used for codegen
             src_file_fullpath = shader_paths_pair[1][0]
+            # args to be used for codegen
             codegen_params = shader_paths_pair[1][1]
 
-            requires_codegen = True
-            if "YAML_SRC_FULLPATH" not in codegen_params:
-                requires_codegen = False
-
+            # Assume that generated files will have the same file extension as the
+            # source template file.
             src_file_ext = extract_extension(src_file_fullpath)
             out_file_ext = src_file_ext
-            compile_spv = False
 
-            if out_file_ext == "glsl":
-                compile_spv = True
-
+            # Construct generated file name
             gen_out_path = os.path.join(output_dir, f"{src_file_name}.{out_file_ext}")
-            spv_out_path = None
-            if compile_spv:
-                spv_out_path = os.path.join(output_dir, f"{src_file_name}.spv")
+            # Construct path of cached generated file
+            cached_gen_out_path = os.path.join(
+                cache_dir, f"{src_file_name}.{out_file_ext}"
+            )
 
-            if cache_dir is not None:
-                cached_src_file_fullpath = os.path.join(
-                    cache_dir, os.path.basename(src_file_fullpath) + ".t"
-                )
-                cached_codegen_yaml = os.path.join(cache_dir, f"{src_file_name}.yaml")
-                cached_gen_out_path = os.path.join(
-                    cache_dir, f"{src_file_name}.{out_file_ext}"
-                )
-                cached_spv_out_path = os.path.join(cache_dir, f"{src_file_name}.spv")
-                if (
-                    not force_rebuild
-                    and os.path.exists(cached_src_file_fullpath)
-                    and os.path.exists(cached_gen_out_path)
-                    and (not requires_codegen or os.path.exists(cached_codegen_yaml))
-                    and (not compile_spv or os.path.exists(cached_spv_out_path))
-                ):
-                    current_checksum = self.get_md5_checksum(src_file_fullpath)
-                    cached_checksum = self.get_md5_checksum(cached_src_file_fullpath)
-                    yaml_unchanged = True
-                    if requires_codegen:
-                        yaml_file_fullpath = codegen_params["YAML_SRC_FULLPATH"]
-                        current_yaml_checksum = self.get_md5_checksum(
-                            yaml_file_fullpath
-                        )
-                        cached_yaml_checksum = self.get_md5_checksum(
-                            cached_codegen_yaml
-                        )
-                        yaml_unchanged = current_yaml_checksum == cached_yaml_checksum
-                    # If the cached source GLSL template is the same as the current GLSL
-                    # source file, then assume that the generated GLSL and SPIR-V will
-                    # not have changed. In that case, just copy over the GLSL and SPIR-V
-                    # files from the cache.
-                    if yaml_unchanged and current_checksum == cached_checksum:
-                        shutil.copyfile(cached_gen_out_path, gen_out_path)
-                        if compile_spv:
-                            shutil.copyfile(cached_spv_out_path, spv_out_path)
-                        return (spv_out_path, gen_out_path)
-
+            # Execute codegen to generate the output file
             with codecs.open(src_file_fullpath, "r", encoding="utf-8") as input_file:
                 input_text = input_file.read()
                 input_text = self.maybe_replace_u16vecn(input_text)
@@ -914,16 +876,57 @@ class SPVGenerator:
                 output_file.write(output_text)
 
             if cache_dir is not None:
-                # Otherwise, store the generated GLSL files in the cache
+                # Store the generated file in the cache for SPIR-V compilation
                 shutil.copyfile(gen_out_path, cached_gen_out_path)
-                # If a YAML file was used to configure codegen, cache it as well
-                if requires_codegen:
-                    yaml_file_fullpath = codegen_params["YAML_SRC_FULLPATH"]
-                    shutil.copyfile(yaml_file_fullpath, cached_codegen_yaml)
 
-            # If no GLSL compiler is specified, or the source file is not a GLSL shader
-            # then only write out the generated GLSL shaders.
-            if compile_spv and self.glslc_path is not None:
+        def compile_spirv(shader_paths_pair):
+            # Extract components from the input tuple
+            # name of generated .glsl, .glslh, or .h
+            src_file_name = shader_paths_pair[0]
+            # path of template file used for codegen
+            src_file_fullpath = shader_paths_pair[1][0]
+
+            # Assume that generated files will have the same file extension as the
+            # source template file.
+            src_file_ext = extract_extension(src_file_fullpath)
+            out_file_ext = src_file_ext
+
+            # Infer name of generated file (created by generate_src_file)
+            gen_out_path = os.path.join(output_dir, f"{src_file_name}.{out_file_ext}")
+
+            # Only proceed if GLSL -> SPIR-V compilation is required for this file
+            if out_file_ext != "glsl":
+                return (None, gen_out_path)
+
+            # Construct name of SPIR-V file to be compiled, if needed
+            spv_out_path = os.path.join(output_dir, f"{src_file_name}.spv")
+
+            if cache_dir is not None:
+                # Construct the file names of cached SPIR-V file to check if they exist
+                # in the cache.
+                cached_gen_out_path = os.path.join(
+                    cache_dir, f"{src_file_name}.{out_file_ext}"
+                )
+                cached_spv_out_path = os.path.join(cache_dir, f"{src_file_name}.spv")
+
+                # Only use cached artifacts if all of the expected artifacts are present
+                if (
+                    not force_rebuild
+                    and os.path.exists(cached_gen_out_path)
+                    and os.path.exists(cached_spv_out_path)
+                ):
+                    current_checksum = self.get_md5_checksum(gen_out_path)
+                    cached_checksum = self.get_md5_checksum(cached_gen_out_path)
+                    # If the cached generated GLSL file is the same as the current GLSL
+                    # generated file, then assume that the generated GLSL and SPIR-V
+                    # will not have changed. In that case, just copy over the GLSL and
+                    # SPIR-V files from the cache and return.
+                    if current_checksum == cached_checksum:
+                        shutil.copyfile(cached_spv_out_path, spv_out_path)
+                        return (spv_out_path, gen_out_path)
+
+            # Only proceed if a GLSL compiler was specified
+            if self.glslc_path is not None:
                 cmd_base = [
                     self.glslc_path,
                     "-fshader-stage=compute",
@@ -961,10 +964,15 @@ class SPVGenerator:
 
             return (spv_out_path, gen_out_path)
 
-        # Parallelize shader compilation as much as possible to optimize build time.
+        # Run codegen serially to ensure that all .glsl, .glslh, and .h files are up to
+        # date before compilation
+        for generated_file_tuple in self.output_file_map.items():
+            generate_src_file(generated_file_tuple)
+
+        # Parallelize SPIR-V compilation to optimize build time
         with ThreadPool(os.cpu_count()) as pool:
             for spv_out_path, glsl_out_path in pool.map(
-                process_shader, self.output_file_map.items()
+                compile_spirv, self.output_file_map.items()
             ):
                 output_file_map[spv_out_path] = glsl_out_path
 
