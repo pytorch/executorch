@@ -48,7 +48,7 @@
 /extension/flat_tensor @lucylq
 /extension/gguf_util @larryliu0820
 /extension/kernel_util @kimishpatel @manuelcandales @swolchok
-/extension/llm @jackzhxng @larryliu0820 @swolchok
+/extension/llm @jackzhxng @larryliu0820 @swolchok @mergennachin
 /extension/memory_allocator @JacobSzwejbka @swolchok
 /extension/module @shoumikhin
 /extension/parallel @kimishpatel @swolchok

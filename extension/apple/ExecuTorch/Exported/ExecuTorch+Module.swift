@@ -60,7 +60,7 @@ public extension Module {
   /// - Returns: An array of `Value` objects representing the outputs.
   /// - Throws: An error if method execution fails.
   func execute(_ method: String, _ inputs: [ValueConvertible]) throws -> [Value] {
-    try __executeMethod(method, withInputs: inputs.map { $0.objcValue() } )
+    try __executeMethod(method, withInputs: inputs.map { $0.asValue() } )
   }
 
   /// Executes a specific method with a single input value.
@@ -72,7 +72,7 @@ public extension Module {
   /// - Returns: An array of `Value` objects representing the outputs.
   /// - Throws: An error if method execution fails.
   func execute(_ method: String, _ input: ValueConvertible) throws -> [Value] {
-    try __executeMethod(method, withInputs: [input.objcValue()])
+    try __executeMethod(method, withInputs: [input.asValue()])
   }
 
   /// Executes the "forward" method with the provided input values.
@@ -82,7 +82,7 @@ public extension Module {
   /// - Returns: An array of `Value` objects representing the outputs.
   /// - Throws: An error if method execution fails.
   func forward(_ inputs: [ValueConvertible]) throws -> [Value] {
-    try __executeMethod("forward", withInputs: inputs.map { $0.objcValue() })
+    try __executeMethod("forward", withInputs: inputs.map { $0.asValue() })
   }
 
   /// Executes the "forward" method with a single input value.
@@ -92,6 +92,6 @@ public extension Module {
   /// - Returns: An array of `Value` objects representing the outputs.
   /// - Throws: An error if method execution fails.
   func forward(_ input: ValueConvertible) throws -> [Value] {
-    try __executeMethod("forward", withInputs: [input.objcValue()])
+    try __executeMethod("forward", withInputs: [input.asValue()])
   }
 }

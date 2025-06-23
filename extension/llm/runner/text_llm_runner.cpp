@@ -14,6 +14,7 @@
 #include <executorch/extension/llm/runner/util.h>
 #include <pytorch/tokenizers/hf_tokenizer.h>
 #include <pytorch/tokenizers/llama2c_tokenizer.h>
+#include <pytorch/tokenizers/sentencepiece.h>
 #include <pytorch/tokenizers/tiktoken.h>
 
 namespace executorch::extension::llm {
@@ -116,8 +117,8 @@ Error TextLLMRunner::generate_from_pos(
 
   ::tokenizers::Result<std::vector<uint64_t>> encode_res = tokenizer_->encode(
       prompt,
-      /* bos */ 0,
-      /* eos */ 0);
+      /*bos=*/config.num_bos,
+      /*eos=*/config.num_eos);
 
   ET_CHECK_TK_OK_OR_RETURN_ERROR(
       encode_res.error(), "Failed to encode prompt %s", prompt.c_str());
@@ -276,6 +277,12 @@ std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
   if (tiktoken_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
     ET_LOG(Info, "Loaded TikToken tokenizer");
     return tiktoken_tokenizer;
+  }
+
+  auto sp_tokenizer = std::make_unique<::tokenizers::SPTokenizer>();
+  if (sp_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
+    ET_LOG(Info, "Loaded Sentencepiece tokenizer");
+    return sp_tokenizer;
   }
 
   auto bpe_tokenizer = std::make_unique<::tokenizers::Llama2cTokenizer>();
