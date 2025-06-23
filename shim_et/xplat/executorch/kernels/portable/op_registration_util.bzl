@@ -618,6 +618,7 @@ ATEN_OPS = (
         name = "op_glu",
         deps = [
             "//executorch/kernels/portable/cpu/util:activation_ops_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
@@ -974,6 +975,22 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_rand",
+        deps = [
+            ":scalar_utils",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+        ]
+    ),
+    op_target(
+        name = "op_randn",
+        deps = [
+            ":scalar_utils",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+        ]
+    ),
+    op_target(
         name = "op_reciprocal",
         deps = [
             "//executorch/kernels/portable/cpu/pattern:pattern",
@@ -1307,6 +1324,7 @@ ATEN_OPS = (
         name = "op__to_dim_order_copy",
         deps = [
             ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],
     ),
@@ -1333,7 +1351,3 @@ CUSTOM_OPS = (
 def portable_source_list():
     """All the source file names from //executorch/kernels/portable/cpu/"""
     return [op["name"] + ".cpp" for op in ATEN_OPS + CUSTOM_OPS]
-
-def portable_header_list():
-    """All the header file names from //executorch/kernels/portable/cpu/"""
-    return ["selective_build.h", "scalar_utils.h", "math_constants.h", "vec_ops.h"]

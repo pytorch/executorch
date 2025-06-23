@@ -56,47 +56,97 @@ DEFAULT_ENV: Dict[str, Any] = {
 TYPE_MAPPINGS: Dict[str, Any] = {
     "IMAGE_T": {
         3: {
+            "double": "image3D",
             "float": "image3D",
             "half": "image3D",
-            "int": "iimage3D",
-            "uint": "uimage3D",
+            # integer dtypes
             "int8": "iimage3D",
             "uint8": "uimage3D",
+            "int16": "iimage3D",
+            "uint16": "uimage3D",
+            "int32": "iimage3D",
+            "uint32": "uimage3D",
+            "int64": "iimage3D",
+            "uint64": "uimage3D",
+            # common dtype aliases
+            "bool": "uimage3D",
+            "int": "iimage3D",
+            "uint": "uimage3D",
         },
         2: {
+            "double": "image2D",
             "float": "image2D",
             "half": "image2D",
-            "int": "iimage2D",
-            "uint": "uimage2D",
+            # integer dtypes
             "int8": "iimage2D",
             "uint8": "uimage2D",
+            "int16": "iimage2D",
+            "uint16": "uimage2D",
+            "int32": "iimage2D",
+            "uint32": "uimage2D",
+            "int64": "iimage2D",
+            "uint64": "uimage2D",
+            # common dtype aliases
+            "bool": "uimage2D",
+            "int": "iimage2D",
+            "uint": "uimage2D",
         },
     },
     "SAMPLER_T": {
         3: {
+            "double": "sampler3D",
             "float": "sampler3D",
             "half": "sampler3D",
-            "int": "isampler3D",
-            "uint": "usampler3D",
+            # integer dtypes
             "int8": "isampler3D",
             "uint8": "usampler3D",
+            "int16": "isampler3D",
+            "uint16": "usampler3D",
+            "int32": "isampler3D",
+            "uint32": "usampler3D",
+            "int64": "isampler3D",
+            "uint64": "usampler3D",
+            # common dtype aliases
+            "bool": "usampler3D",
+            "int": "isampler3D",
+            "uint": "usampler3D",
         },
         2: {
+            "double": "sampler2D",
             "float": "sampler2D",
             "half": "sampler2D",
-            "int": "isampler2D",
-            "uint": "usampler2D",
+            # integer dtypes
             "int8": "isampler2D",
             "uint8": "usampler2D",
+            "int16": "isampler2D",
+            "uint16": "usampler2D",
+            "int32": "isampler2D",
+            "uint32": "usampler2D",
+            "int64": "isampler2D",
+            "uint64": "usampler2D",
+            # common dtype aliases
+            "bool": "usampler2D",
+            "int": "isampler2D",
+            "uint": "usampler2D",
         },
     },
     "IMAGE_FORMAT": {
+        "double": "rgba32f",
         "float": "rgba32f",
         "half": "rgba16f",
-        "int": "rgba32i",
-        "uint": "rgba32ui",
+        # integer dtypes
         "int8": "rgba8i",
         "uint8": "rgba8ui",
+        "int16": "rgba16i",
+        "uint16": "rgba16ui",
+        "int32": "rgba32i",
+        "uint32": "rgba32ui",
+        "int64": "rgba32i",
+        "uint64": "rgba32ui",
+        # common dtype aliases
+        "bool": "rgba8ui",
+        "int": "rgba32i",
+        "uint": "rgba32ui",
     },
 }
 
@@ -113,9 +163,18 @@ def define_variable(name: str) -> str:
 def buffer_scalar_type(dtype: str) -> str:
     if dtype == "half":
         return "float16_t"
-    elif dtype[-1] == "8":
+    elif dtype == "float":
+        return "float"
+    elif dtype == "double":
+        return "float64_t"
+    # integer dtype alias conversion
+    elif dtype == "bool":
+        return "uint8_t"
+    # we don't want to append _t for int32 or uint32 as int is already 32bit
+    elif dtype == "int32" or dtype == "uint32":
+        return "int" if dtype == "int32" else "uint"
+    elif dtype[-1].isdigit():
         return dtype + "_t"
-
     return dtype
 
 
@@ -123,29 +182,37 @@ def buffer_gvec_type(dtype: str, n: int) -> str:
     if n == 1:
         return buffer_scalar_type(dtype)
 
-    if dtype == "float":
-        return f"vec{n}"
-    if dtype == "uint":
-        return f"uvec{n}"
-    elif dtype == "half":
-        return f"f16vec{n}"
-    elif dtype == "int":
-        return f"ivec{n}"
-    elif dtype == "int8":
-        return f"i8vec{n}"
-    elif dtype == "uint8":
-        return f"u8vec{n}"
+    dtype_map = {
+        "half": f"f16vec{n}",
+        "float": f"vec{n}",
+        "double": f"vec{n}",  # No 64bit image format support in GLSL
+        "int8": f"i8vec{n}",
+        "uint8": f"u8vec{n}",
+        "int16": f"i16vec{n}",
+        "uint16": f"u16vec{n}",
+        "int32": f"ivec{n}",
+        "int": f"ivec{n}",
+        "uint32": f"uvec{n}",
+        "uint": f"uvec{n}",
+        "int64": f"ivec{n}",  # No 64bit image format support in GLSL
+        "uint64": f"uvec{n}",  # No 64bit image format support in GLSL
+        "bool": f"u8vec{n}",
+    }
 
-    raise AssertionError(f"Invalid dtype: {dtype}")
+    vector_type = dtype_map.get(dtype)
+    if vector_type is None:
+        raise AssertionError(f"Invalid dtype: {dtype}")
+
+    return vector_type
 
 
 def texel_type(dtype: str) -> str:
     image_format = TYPE_MAPPINGS["IMAGE_FORMAT"][dtype]
-    if image_format[-1] == "f":
+    if image_format[-1:] == "f":
         return "vec4"
-    elif image_format[-2] == "ui":
+    elif image_format[-2:] == "ui":
         return "uvec4"
-    elif image_format[-1] == "i":
+    elif image_format[-1:] == "i":
         return "ivec4"
     raise AssertionError(f"Invalid image format: {image_format}")
 
@@ -357,15 +424,22 @@ def define_required_extensions(dtypes: Union[str, List[str]]):
         if dtype == "half":
             nbit = "16bit"
             glsl_type = "float16"
-        elif dtype == "int16" or dtype == "uint16":
-            nbit = "16bit"
-            glsl_type = "int16"
-        elif dtype == "int8" or dtype == "uint8":
+        elif dtype == "double":
+            # We only need to allow float64_t type usage
+            glsl_type = "float64"
+        elif dtype in ["int8", "uint8", "bool"]:
             nbit = "8bit"
             glsl_type = "int8"
+        elif dtype in ["int16", "uint16"]:
+            nbit = "16bit"
+            glsl_type = "int16"
+        elif dtype in ["int64", "uint64"]:
+            # We only need to allow int64_t and uint64_t type usage
+            glsl_type = "int64"
 
-        if nbit is not None and glsl_type is not None:
+        if nbit is not None:
             out_str += f"#extension GL_EXT_shader_{nbit}_storage : require\n"
+        if glsl_type is not None:
             out_str += f"#extension GL_EXT_shader_explicit_arithmetic_types_{glsl_type} : require\n"
 
     return out_str
@@ -621,6 +695,10 @@ class SPVGenerator:
 
                     elif "VALUE" in value:
                         suffix = value.get("SUFFIX", value["VALUE"])
+                        if value["VALUE"] in ["int", "uint"]:
+                            raise ValueError(
+                                f"Use int32 or uint32 instead of {value['VALUE']}"
+                            )
                         param_values.append((param_name, suffix, value["VALUE"]))
 
                     else:
@@ -767,66 +845,28 @@ class SPVGenerator:
     ) -> Dict[str, str]:
         output_file_map = {}
 
-        def process_shader(shader_paths_pair):
+        def generate_src_file(shader_paths_pair):
+            # Extract components from the input tuple
+            # name of .glsl, .glslh, or .h to be generated
             src_file_name = shader_paths_pair[0]
-
+            # path of template file used for codegen
             src_file_fullpath = shader_paths_pair[1][0]
+            # args to be used for codegen
             codegen_params = shader_paths_pair[1][1]
 
-            requires_codegen = True
-            if "YAML_SRC_FULLPATH" not in codegen_params:
-                requires_codegen = False
-
+            # Assume that generated files will have the same file extension as the
+            # source template file.
             src_file_ext = extract_extension(src_file_fullpath)
             out_file_ext = src_file_ext
-            compile_spv = False
 
-            if out_file_ext == "glsl":
-                compile_spv = True
-
+            # Construct generated file name
             gen_out_path = os.path.join(output_dir, f"{src_file_name}.{out_file_ext}")
-            spv_out_path = None
-            if compile_spv:
-                spv_out_path = os.path.join(output_dir, f"{src_file_name}.spv")
+            # Construct path of cached generated file
+            cached_gen_out_path = os.path.join(
+                cache_dir, f"{src_file_name}.{out_file_ext}"
+            )
 
-            if cache_dir is not None:
-                cached_src_file_fullpath = os.path.join(
-                    cache_dir, os.path.basename(src_file_fullpath) + ".t"
-                )
-                cached_codegen_yaml = os.path.join(cache_dir, f"{src_file_name}.yaml")
-                cached_gen_out_path = os.path.join(
-                    cache_dir, f"{src_file_name}.{out_file_ext}"
-                )
-                cached_spv_out_path = os.path.join(cache_dir, f"{src_file_name}.spv")
-                if (
-                    not force_rebuild
-                    and os.path.exists(cached_src_file_fullpath)
-                    and os.path.exists(cached_gen_out_path)
-                    and (not requires_codegen or os.path.exists(cached_codegen_yaml))
-                    and (not compile_spv or os.path.exists(cached_spv_out_path))
-                ):
-                    current_checksum = self.get_md5_checksum(src_file_fullpath)
-                    cached_checksum = self.get_md5_checksum(cached_src_file_fullpath)
-                    yaml_unchanged = True
-                    if requires_codegen:
-                        yaml_file_fullpath = codegen_params["YAML_SRC_FULLPATH"]
-                        current_yaml_checksum = self.get_md5_checksum(
-                            yaml_file_fullpath
-                        )
-                        cached_yaml_checksum = self.get_md5_checksum(
-                            cached_codegen_yaml
-                        )
-                        yaml_unchanged = current_yaml_checksum == cached_yaml_checksum
-                    # If the cached source GLSL template is the same as the current GLSL
-                    # source file, then assume that the generated GLSL and SPIR-V will
-                    # not have changed. In that case, just copy over the GLSL and SPIR-V
-                    # files from the cache.
-                    if yaml_unchanged and current_checksum == cached_checksum:
-                        shutil.copyfile(cached_gen_out_path, gen_out_path)
-                        if compile_spv:
-                            shutil.copyfile(cached_spv_out_path, spv_out_path)
-                        return (spv_out_path, gen_out_path)
-
+            # Execute codegen to generate the output file
             with codecs.open(src_file_fullpath, "r", encoding="utf-8") as input_file:
                 input_text = input_file.read()
                 input_text = self.maybe_replace_u16vecn(input_text)
@@ -836,16 +876,57 @@ class SPVGenerator:
                 output_file.write(output_text)
 
             if cache_dir is not None:
-                # Otherwise, store the generated GLSL files in the cache
+                # Store the generated file in the cache for SPIR-V compilation
                 shutil.copyfile(gen_out_path, cached_gen_out_path)
-                # If a YAML file was used to configure codegen, cache it as well
-                if requires_codegen:
-                    yaml_file_fullpath = codegen_params["YAML_SRC_FULLPATH"]
-                    shutil.copyfile(yaml_file_fullpath, cached_codegen_yaml)
 
-            # If no GLSL compiler is specified, or the source file is not a GLSL shader
-            # then only write out the generated GLSL shaders.
-            if compile_spv and self.glslc_path is not None:
+        def compile_spirv(shader_paths_pair):
+            # Extract components from the input tuple
+            # name of generated .glsl, .glslh, or .h
+            src_file_name = shader_paths_pair[0]
+            # path of template file used for codegen
+            src_file_fullpath = shader_paths_pair[1][0]
+
+            # Assume that generated files will have the same file extension as the
+            # source template file.
+            src_file_ext = extract_extension(src_file_fullpath)
+            out_file_ext = src_file_ext
+
+            # Infer name of generated file (created by generate_src_file)
+            gen_out_path = os.path.join(output_dir, f"{src_file_name}.{out_file_ext}")
+
+            # Only proceed if GLSL -> SPIR-V compilation is required for this file
+            if out_file_ext != "glsl":
+                return (None, gen_out_path)
+
+            # Construct name of SPIR-V file to be compiled, if needed
+            spv_out_path = os.path.join(output_dir, f"{src_file_name}.spv")
+
+            if cache_dir is not None:
+                # Construct the file names of cached SPIR-V file to check if they exist
+                # in the cache.
+                cached_gen_out_path = os.path.join(
+                    cache_dir, f"{src_file_name}.{out_file_ext}"
+                )
+                cached_spv_out_path = os.path.join(cache_dir, f"{src_file_name}.spv")
+
+                # Only use cached artifacts if all of the expected artifacts are present
+                if (
+                    not force_rebuild
+                    and os.path.exists(cached_gen_out_path)
+                    and os.path.exists(cached_spv_out_path)
+                ):
+                    current_checksum = self.get_md5_checksum(gen_out_path)
+                    cached_checksum = self.get_md5_checksum(cached_gen_out_path)
+                    # If the cached generated GLSL file is the same as the current GLSL
+                    # generated file, then assume that the generated GLSL and SPIR-V
+                    # will not have changed. In that case, just copy over the GLSL and
+                    # SPIR-V files from the cache and return.
+                    if current_checksum == cached_checksum:
+                        shutil.copyfile(cached_spv_out_path, spv_out_path)
+                        return (spv_out_path, gen_out_path)
+
+            # Only proceed if a GLSL compiler was specified
+            if self.glslc_path is not None:
                 cmd_base = [
                     self.glslc_path,
                     "-fshader-stage=compute",
@@ -883,10 +964,15 @@ class SPVGenerator:
 
             return (spv_out_path, gen_out_path)
 
-        # Parallelize shader compilation as much as possible to optimize build time.
+        # Run codegen serially to ensure that all .glsl, .glslh, and .h files are up to
+        # date before compilation
+        for generated_file_tuple in self.output_file_map.items():
+            generate_src_file(generated_file_tuple)
+
+        # Parallelize SPIR-V compilation to optimize build time
         with ThreadPool(os.cpu_count()) as pool:
             for spv_out_path, glsl_out_path in pool.map(
-                process_shader, self.output_file_map.items()
+                compile_spirv, self.output_file_map.items()
             ):
                 output_file_map[spv_out_path] = glsl_out_path
 

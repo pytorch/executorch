@@ -33,7 +33,7 @@ def quantize(
         is_dynamic=is_dynamic,
     )
     quantizer.set_global(operator_config)
-    m = prepare_pt2e(model, quantizer)  # pyre-ignore[6]
+    m = prepare_pt2e(model, quantizer)
     # calibration
     m(*example_inputs)
     m = convert_pt2e(m)

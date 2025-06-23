@@ -19,7 +19,7 @@ From `executorch` root:
     ```
 3. Export model and generate `.pte` file.
     ```
-    python -m examples.models.llama.export_llama -c stories110M.pt -p params.json -X -kv
+    python -m extension.llm.export.export_llm base.checkpoint=stories110M.pt base.params=params.json backend.xnnpack.enabled=True model.use_kv_cache=True
     ```
 
 ## Smaller model delegated to other backends
@@ -27,15 +27,15 @@ From `executorch` root:
 Currently we supported lowering the stories model to other backends, including, CoreML, MPS and QNN. Please refer to the instruction
 for each backend ([CoreML](https://pytorch.org/executorch/main/backends-coreml), [MPS](https://pytorch.org/executorch/main/backends-mps), [QNN](https://pytorch.org/executorch/main/backends-qualcomm)) before trying to lower them. After the backend library is installed, the script to export a lowered model is
 
-- Lower to CoreML: `python -m examples.models.llama.export_llama -kv --disable_dynamic_shape --coreml -c stories110M.pt -p params.json `
-- MPS: `python -m examples.models.llama.export_llama -kv --disable_dynamic_shape --mps -c stories110M.pt -p params.json `
-- QNN: `python -m examples.models.llama.export_llama -kv --disable_dynamic_shape --qnn -c stories110M.pt -p params.json `
+- Lower to CoreML: `python -m extension.llm.export.export_llm model.use_kv_cache=True model.enable_dynamic_shape=False backend.coreml.enabled=True base.checkpoint=stories110M.pt base.params=params.json`
+- MPS: `python -m extension.llm.export.export_llm model.use_kv_cache=True model.enable_dynamic_shape=False backend.mps.enabled=True base.checkpoint=stories110M.pt base.params=params.json`
+- QNN: `python -m extension.llm.export.export_llm model.use_kv_cache=True model.enable_dynamic_shape=False backend.qnn.enabled=True base.checkpoint=stories110M.pt base.params=params.json`
 
 The iOS LLAMA app supports the CoreML and MPS model and the Android LLAMA app supports the QNN model. On Android, it also allow to cross compiler the llama runner binary, push to the device and run.
 
 For CoreML, there are 2 additional optional arguments:
-* `--coreml-ios`: Specify the minimum iOS version to deploy (and turn on available optimizations). E.g. `--coreml-ios 18` will turn on [in-place KV cache](https://developer.apple.com/documentation/coreml/mlstate?language=objc) and [fused scaled dot product attention kernel](https://apple.github.io/coremltools/source/coremltools.converters.mil.mil.ops.defs.html#coremltools.converters.mil.mil.ops.defs.iOS18.transformers.scaled_dot_product_attention) (the resulting model will then need at least iOS 18 to run, though)
-* `--coreml-quantize`: Use [quantization tailored for CoreML](https://apple.github.io/coremltools/docs-guides/source/opt-quantization-overview.html). E.g. `--coreml-quantize b4w` will perform per-block 4-bit weight-only quantization in a way tailored for CoreML
+* `backend.coreml.ios`: Specify the minimum iOS version to deploy (and turn on available optimizations). E.g. `backend.coreml.ios=18` will turn on [in-place KV cache](https://developer.apple.com/documentation/coreml/mlstate?language=objc) and [fused scaled dot product attention kernel](https://apple.github.io/coremltools/source/coremltools.converters.mil.mil.ops.defs.html#coremltools.converters.mil.mil.ops.defs.iOS18.transformers.scaled_dot_product_attention) (the resulting model will then need at least iOS 18 to run, though)
+* `backend.coreml.quantize`: Use [quantization tailored for CoreML](https://apple.github.io/coremltools/docs-guides/source/opt-quantization-overview.html). E.g. `backend.coreml.quantize="b4w"` will perform per-block 4-bit weight-only quantization in a way tailored for CoreML
 
 To deploy the large 8B model on the above backends, [please visit this section](non_cpu_backends.md).
 

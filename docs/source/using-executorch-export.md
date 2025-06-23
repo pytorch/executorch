@@ -169,6 +169,76 @@ outputs = method.execute([input_tensor])
 
 For more information, see [Runtime API Reference](executorch-runtime-api-reference.md).
 
+## Advanced Topics
+
+While many models will "just work" following the steps above, some more complex models may require additional work to export. These include models with state and models with complex control flow or auto-regressive generation.
+See the [Llama model](https://github.com/pytorch/executorch/tree/main/examples/models/llama) for example use of these techniques.
+
+### State Management
+
+Some types of models maintain internal state, such as KV caches in transformers. There are two ways to manage state within ExecuTorch. The first is to bring the state out as model inputs and outputs, effectively making the core model stateless. This is sometimes referred to as managing the state as IO.
+
+The second approach is to leverage mutable buffers within the model directly. A mutable buffer can be registered using the PyTorch [register_buffer](https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.register_buffer) API on `nn.Module`. Storage for the buffer is managed by the framework, and any mutations to the buffer within the model are written back at the end of method execution.
+
+Mutable buffers have several limitations:
+- Export of mutability can be fragile.
+    - Consider explicitly calling `detach()` on tensors before assigning to a buffer if you encounter export-time errors related to gradients.
+    - Ensure that any operations done on a mutable buffer are done with in-place operations (typipcally ending in `_`).
+    - Do not reassign the buffer variable. Instead, use `copy_` to update the entire buffer content.
+- Mutable buffers are not shared between multiple methods within a .pte.
+- In-place operations are replaced with non-in place variants, and the resulting tensor is written back at the end of the method execution. This can be a performance bottleneck when using `index_put_`.
+- Buffer mutations are not supported on all backends and may cause graph breaks and memory transfers back to CPU.
+
+Support for mutation is expiremental and may change in the future.
+
+### Dynamic Control Flow
+
+Control flow is considered dynamic if the path taken is not fixed at export-time. This is commonly the case when if or loop conditions depend on the value of a Tensor, such as a generator loop that terminates when an
+end-of-sequence token is generated. Shape-dependent control flow can also be dynamic if the tensor shape depends on the input.
+
+To make dynamic if statements exportable, they can be written using [torch.cond](https://docs.pytorch.org/docs/stable/generated/torch.cond.html). Dynamic loops are not currently supported on ExecuTorch. The general approach to
+enable this type of model is to export the body of the loop as a method, and then handle loop logic from the application code. This is common for handling generator loops in auto-regressive models, such as transformer incremental
+decoding.
+
+### Multi-method Models
+
+ExecuTorch allows for bundling of multiple methods with a single .pte file. This can be useful for more complex model architectures, such as encoder-decoder models.
+
+The include multiple methods in a .pte, each method must be exported individually with `torch.export.export`, yielding one `ExportedProgram` per method. These can be passed as a dictionary into `to_edge_transform_and_lower`:
+```python
+encode_ep = torch.export.export(...)
+decode_ep = torch.export.export(...)
+lowered = to_edge_transform_and_lower({
+    "encode": encode_ep,
+    "decode": decode_ep,
+}).to_executorch()
+```
+
+At runtime, the method name can be passed to `load_method` and `execute` on the `Module` class.
+
+Multi-method .ptes have several caveats:
+- Methods are individually memory-planned. Activation memory is not current re-used between methods. For advanced use cases, a [custom memory plan](compiler-memory-planning.md) or [custom memory allocators](https://docs.pytorch.org/executorch/stable/runtime-overview.html#operating-system-considerations) can be used to overlap the allocations.
+- Mutable buffers are not shared between methods.
+- PyTorch export does not currently allow for exporting methods on a module other than `forward`. To work around this, it is common to create wrapper `nn.Modules` for each method.
+
+```python
+
+class EncodeWrapper(torch.nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+    
+    def forward(self, *args, **kwargs):
+        return self.model.encode(*args, **kwargs)
+
+class DecodeWrapper(torch.nn.Module):
+    # ...
+
+encode_ep = torch.export.export(EncodeWrapper(model), ...)
+decode_ep = torch.export.export(DecodeWrapper(model), ...)
+# ...
+```
+
 ## Next Steps
 
 The PyTorch and ExecuTorch export and lowering APIs provide a high level of customizability to meet the needs of diverse hardware and models. See [torch.export](https://pytorch.org/docs/main/export.html) and [Export API Reference](export-to-executorch-api-reference.md) for more information.

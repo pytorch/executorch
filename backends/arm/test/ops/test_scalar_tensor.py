@@ -85,7 +85,6 @@ def test_scalar_tensor_u55_BI(test_data):
         ScalarTensor(scalar, dtype),
         tuple(data),
         ScalarTensor.aten_op,
-        symmetric_io_quantization=True,
         run_on_fvp=True,
     ).run()
 
@@ -98,6 +97,5 @@ def test_scalar_tensor_u85_BI(test_data):
         ScalarTensor(scalar, dtype),
         tuple(data),
         ScalarTensor.aten_op,
-        symmetric_io_quantization=True,
         run_on_fvp=True,
     ).run()

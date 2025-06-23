@@ -1,10 +1,12 @@
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
-
 import torch
 
-from .node_visitor import NodeVisitor, register_node_visitor
+from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
+
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpScatterNd, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
@@ -21,6 +23,10 @@ class IndexPutVisitor(NodeVisitor):
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
         input_node = self.get_node(node.args[0])
+        # Because the args[0] of index_put op doesn't annotate, need to fill in the quant_attr with the node here.
+        if quant_attrs := node.meta.get(QCOM_QUANT_ATTRS):
+            quant_attrs = quant_attrs.copy()
+            input_node.meta[QCOM_QUANT_ATTRS] = quant_attrs
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
@@ -41,7 +47,7 @@ class IndexPutVisitor(NodeVisitor):
         indices_qnn = torch.cat(indices_unpacked).unsqueeze(0)
         indice_node = [n for n in indicies_node if isinstance(n, torch.fx.Node)]
         # TODO consider to write a pass to combine to one input tensor for indices
-        assert len(indice_node) == 1, "Not support mutilple indices tensor"
+        assert len(indice_node) == 1, "Not support multiple indices tensor"
 
         indices_tensor_wrapper = self.define_tensor(
             indice_node[0],

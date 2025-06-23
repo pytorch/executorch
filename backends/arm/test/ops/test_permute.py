@@ -67,7 +67,6 @@ def test_permute_tosa_BI(test_data: torch.Tensor):
         (test_data,),
         aten_op,
         exir_op,
-        symmetric_io_quantization=True,
     )
     pipeline.run()
 
@@ -88,7 +87,6 @@ def test_permute_u55_BI(test_data):
         aten_op,
         exir_ops="executorch_exir_dialects_edge__ops_aten_permute_copy_default",
         run_on_fvp=True,
-        symmetric_io_quantization=True,
     )
     pipeline.run()
 
@@ -104,6 +102,5 @@ def test_permute_u85_BI(test_data: torch.Tensor):
         aten_op,
         exir_ops="executorch_exir_dialects_edge__ops_aten_permute_copy_default",
         run_on_fvp=True,
-        symmetric_io_quantization=True,
     )
     pipeline.run()

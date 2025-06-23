@@ -712,32 +712,14 @@ class FuseQuantDequantToRequantizePass(FuseOpPairsAcrossBranchesPass):
         out_dtype: torch.dtype,
         graph: torch.fx.Graph,
     ) -> torch.fx.Node:
-        in_scale_tensor = graph.call_function(
-            exir_ops.edge.aten.full.default, args=((1,), in_scale)
-        )
-        in_zero_point_tensor = graph.call_function(
-            exir_ops.edge.aten.full.default,
-            args=((1,), in_zero_point),
-            kwargs={"dtype": torch.int32},
-        )
-        out_scale_tensor = graph.call_function(
-            exir_ops.edge.aten.full.default, args=((1,), out_scale)
-        )
-        out_zero_point_tensor = graph.call_function(
-            exir_ops.edge.aten.full.default,
-            args=((1,), out_zero_point),
-            kwargs={"dtype": torch.int32},
-        )
-        # cadence::requantize(Tensor input, Tensor in_scale, Tensor in_zero_point, Tensor out_scale, Tensor out_zero_point, ScalarType out_dtype) -> Tensor Y
-        # TODO(hardiksharma): Add support for per-tensor requantize.
         return graph.call_function(
-            exir_ops.edge.cadence.requantize.default,
+            exir_ops.edge.cadence.requantize.per_tensor,
             args=(
                 in_tensor,
-                in_scale_tensor,
-                in_zero_point_tensor,
-                out_scale_tensor,
-                out_zero_point_tensor,
+                in_scale,
+                in_zero_point,
+                out_scale,
+                out_zero_point,
                 out_dtype,
             ),
         )
@@ -861,6 +843,76 @@ class FuseMulScalarIntoDequantPass(ExportPass):
             self.attempt_fusion(graph_module, node)
         result = super().call(graph_module)
         return result
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class FuseMulTensorIntoQuantPass(ExportPass):
+    """
+    Looks for the pattern where aten.mul.Tensor is followed by quant node.
+    If found, updates the quant scale to reflect the multiplication and
+    removes the mul node.
+    """
+
+    def attempt_fusion(
+        self, graph_module: torch.fx.GraphModule, mul_node: torch.fx.Node
+    ) -> None:
+        full_nodes = [
+            arg
+            for arg in mul_node.args
+            if isinstance(arg, torch.fx.Node)
+            and arg.target == exir_ops.edge.aten.full.default
+        ]
+
+        if len(full_nodes) != 1 or len(mul_node.users) != 1:
+            return
+
+        full_node = full_nodes[0]
+        mul_user = list(mul_node.users.keys())[0]
+
+        if mul_user.target not in {
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+        }:
+            return
+
+        quant_node = mul_user
+
+        # Calculate the new scale value.
+        prev_scale = quant_node.args[1]
+        assert isinstance(prev_scale, (int, float))
+        mul_scalar = full_node.args[1]
+        assert isinstance(mul_scalar, (int, float))
+        new_scale = float(prev_scale) * float(mul_scalar)
+
+        logging.debug(
+            f"Fused {mul_node} and {full_node} into {quant_node}. Updated scale from {quant_node.args[1]} to {new_scale}"
+        )
+
+        # Replace the input first
+        quant_node.replace_input_with(
+            cast(torch.fx.Node, quant_node.args[0]),
+            cast(torch.fx.Node, mul_node.args[0]),
+        )
+
+        # Now update the scale in the args
+        new_quant_args = list(quant_node.args)
+        new_quant_args[1] = new_scale
+        quant_node.args = tuple(new_quant_args)
+
+        # Clean up the mul_node
+        mul_node.args = ()
+        mul_node.users = {}
+
+        graph_module.graph.erase_node(mul_node)
+        graph_module.graph.erase_node(full_node)
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        for node in graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.mul.Tensor
+        ):
+            self.attempt_fusion(graph_module, node)
+        graph_module.graph.eliminate_dead_code()
+        return super().call(graph_module)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))

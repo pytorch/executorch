@@ -265,8 +265,8 @@ vkcompute::ComputeGraph build_mm_graph(
     vkcompute::vkapi::ScalarType dtype,
     vkcompute::utils::StorageType in_out_stype,
     vkcompute::utils::GPUMemoryLayout memory_layout,
-    const bool prepack_mat2 = false,
-    const float mat2_val = 0.0f);
+    const std::vector<float>& mat2_data,
+    const bool prepack_mat2 = false);
 
 //
 // Debugging Utilities

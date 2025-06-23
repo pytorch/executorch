@@ -26,8 +26,8 @@ DynamicDispatchNode::DynamicDispatchNode(
     : DispatchNode(
           graph,
           pick_shader_fn(&graph, args, resize_args),
-          pick_global_wg_fn(&graph, args, resize_args),
-          pick_local_wg_fn(&graph, args, resize_args),
+          {1u, 1u, 1u},
+          {8u, 8u, 1u},
           args,
           params,
           push_constants,
@@ -36,13 +36,56 @@ DynamicDispatchNode::DynamicDispatchNode(
           resize_fn),
       pick_shader_fn_(pick_shader_fn),
       pick_global_wg_fn_(pick_global_wg_fn),
+      pick_local_wg_fn_(pick_local_wg_fn) {
+  global_workgroup_size_ =
+      pick_global_wg_fn(&graph, shader_, args, resize_args);
+  local_workgroup_size_ = utils::WorkgroupSize(pick_local_wg_fn(
+      &graph, shader_, global_workgroup_size_, args, resize_args));
+}
+
+DynamicDispatchNode::DynamicDispatchNode(
+    ComputeGraph& graph,
+    const vkapi::ShaderInfo& shader,
+    const PickGlobalFn& pick_global_wg_fn,
+    const PickLocalFn& pick_local_wg_fn,
+    const std::vector<ArgGroup>& args,
+    const vkapi::ParamsBindList& params,
+    const std::vector<PushConstantDataInfo>& push_constants,
+    const vkapi::SpecVarList& spec_vars,
+    const std::vector<ValueRef>& resize_args,
+    const ResizeFunction& resize_fn)
+    : DispatchNode(
+          graph,
+          shader,
+          pick_global_wg_fn(&graph, shader, args, resize_args),
+          pick_local_wg_fn(
+              &graph,
+              shader,
+              pick_global_wg_fn(&graph, shader, args, resize_args),
+              args,
+              resize_args),
+          args,
+          params,
+          push_constants,
+          spec_vars,
+          resize_args,
+          resize_fn),
+      pick_shader_fn_{nullptr},
+      pick_global_wg_fn_(pick_global_wg_fn),
       pick_local_wg_fn_(pick_local_wg_fn) {}
 
 void DynamicDispatchNode::encode(ComputeGraph* graph) {
-  shader_ = pick_shader_fn_(graph, args_, resize_args_);
-  global_workgroup_size_ = pick_global_wg_fn_(graph, args_, resize_args_);
-  local_workgroup_size_ =
-      utils::WorkgroupSize(pick_local_wg_fn_(graph, args_, resize_args_));
+  if (pick_shader_fn_) {
+    shader_ = pick_shader_fn_(graph, args_, resize_args_);
+  }
+  if (pick_global_wg_fn_) {
+    global_workgroup_size_ =
+        pick_global_wg_fn_(graph, shader_, args_, resize_args_);
+  }
+  if (pick_local_wg_fn_) {
+    local_workgroup_size_ = utils::WorkgroupSize(pick_local_wg_fn_(
+        graph, shader_, global_workgroup_size_, args_, resize_args_));
+  }
   DispatchNode::encode(graph);
 }
 

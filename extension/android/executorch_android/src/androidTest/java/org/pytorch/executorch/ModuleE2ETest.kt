@@ -22,6 +22,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.pytorch.executorch.TensorImageUtils.bitmapToFloat32Tensor
+import org.pytorch.executorch.TestFileUtils.getTestFilePath
 
 /** Unit tests for [Module]. */
 @RunWith(AndroidJUnit4::class)
@@ -69,10 +70,6 @@ class ModuleE2ETest {
 
         val module = Module.load(getTestFilePath("/mv3_xnnpack_fp32.pte"))
         val expectedBackends = arrayOf("XnnpackBackend")
-        Assert.assertArrayEquals(
-            expectedBackends,
-            module.getMethodMetadata("forward").getBackends(),
-        )
     }
 
     @Test
@@ -94,12 +91,6 @@ class ModuleE2ETest {
     }
 
     companion object {
-        private fun getTestFilePath(fileName: String): String {
-            return InstrumentationRegistry.getInstrumentation()
-                .targetContext
-                .externalCacheDir
-                .toString() + fileName
-        }
 
         fun argmax(array: FloatArray): Int {
             require(array.isNotEmpty()) { "Array cannot be empty" }

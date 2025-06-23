@@ -71,7 +71,6 @@ from executorch.exir.tests.models import MLP, Mul
 from functorch.experimental import control_flow
 
 from torch import nn
-from torch.ao.quantization.quantizer import QuantizationSpec
 from torch.export import export
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 from torch.fx import GraphModule, subgraph_rewriter
@@ -81,6 +80,7 @@ from torch.testing import FileCheck
 from torch.utils import _pytree as pytree
 
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantizer import QuantizationSpec
 
 
 # pyre-ignore
@@ -1026,6 +1026,34 @@ class TestPasses(unittest.TestCase):
             "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor"
         ).run(gm.code)
 
+    def test_constant_prop_for_output(self) -> None:
+        class Add(torch.nn.Module):
+            def forward(self) -> torch.Tensor:
+                return torch.add(torch.tensor(3), torch.tensor(5))
+
+        add = Add()
+
+        edge = to_edge(
+            export(add, (), strict=True),
+            compile_config=EdgeCompileConfig(_skip_dim_order=False),
+        )
+        # Check there is a lifted tensor followed by a to_copy node
+        FileCheck().check("c_lifted_tensor_0").check("c_lifted_tensor_1").run(
+            edge.exported_program().graph_module.code
+        )
+
+        edge._edge_programs["forward"] = constant_prop_pass(
+            edge.exported_program("forward")
+        )
+
+        # Check (c_lifted_tensor_*) nodes are all replaced by _prop_tensor_constant.
+        FileCheck().check_not("c_lifted_tensor_").check("_prop_tensor_constant").run(
+            edge.exported_program().graph_module.code
+        )
+        # Validate that the program successfully passes validation to executorch:
+        edge.exported_program()._validate()
+        edge.to_executorch()
+
     def test_constant_prop_pass_for_add(self) -> None:
         class Add(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -1168,10 +1196,7 @@ class TestPasses(unittest.TestCase):
         ).module()
 
         # 8w16a quantization
-        from torch.ao.quantization.observer import (
-            MinMaxObserver,
-            PerChannelMinMaxObserver,
-        )
+        from torchao.quantization.pt2e import MinMaxObserver, PerChannelMinMaxObserver
 
         activation_qspec = QuantizationSpec(
             dtype=torch.int16,

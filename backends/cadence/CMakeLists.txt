@@ -82,6 +82,7 @@ elseif(EXECUTORCH_FUSION_G3_OPT)
   ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)
 else()
   set(TARGET_DIR reference)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)
 endif()
 
 

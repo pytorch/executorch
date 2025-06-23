@@ -224,7 +224,7 @@ EventTracerEntry ETDumpGen::start_profiling(
     prof_entry.chain_id = chain_id;
     prof_entry.debug_handle = debug_handle;
   }
-  prof_entry.start_time = et_pal_current_ticks();
+  prof_entry.start_time = runtime::pal_current_ticks();
   return prof_entry;
 }
 
@@ -246,7 +246,7 @@ EventTracerEntry ETDumpGen::start_profiling_delegate(
   prof_entry.event_id = delegate_debug_index == kUnsetDelegateDebugIntId
       ? create_string_entry(name)
       : delegate_debug_index;
-  prof_entry.start_time = et_pal_current_ticks();
+  prof_entry.start_time = runtime::pal_current_ticks();
   return prof_entry;
 }
 
@@ -254,7 +254,7 @@ void ETDumpGen::end_profiling_delegate(
     EventTracerEntry event_tracer_entry,
     const void* metadata,
     size_t metadata_len) {
-  et_timestamp_t end_time = et_pal_current_ticks();
+  et_timestamp_t end_time = runtime::pal_current_ticks();
   check_ready_to_add_events();
 
   // Start building the ProfileEvent entry.
@@ -394,9 +394,12 @@ Result<bool> ETDumpGen::log_intermediate_output_delegate_helper(
 
   // Check the type of `output` then call the corresponding logging functions
   if constexpr (std::is_same<T, Tensor>::value) {
-    long offset = write_tensor_or_raise_error(output);
+    Result<long> offset = write_tensor_or_return_error(output);
+    ET_CHECK_MSG(
+        offset.ok(),
+        "write_tensor_or_return_error() failed to write tensor to debug buffer");
     Result<etdump_Tensor_ref_t> tensor_ref =
-        add_tensor_entry(builder_, output, offset);
+        add_tensor_entry(builder_, output, offset.get());
     if (!tensor_ref.ok()) {
       return tensor_ref.error();
     }
@@ -408,9 +411,12 @@ Result<bool> ETDumpGen::log_intermediate_output_delegate_helper(
   } else if constexpr (std::is_same<T, ArrayRef<Tensor>>::value) {
     etdump_Tensor_vec_start(builder_);
     for (size_t i = 0; i < output.size(); ++i) {
-      long offset = write_tensor_or_raise_error(output[i]);
+      Result<long> offset = write_tensor_or_return_error(output[i]);
+      ET_CHECK_MSG(
+          offset.ok(),
+          "write_tensor_or_return_error() failed to write tensor to debug buffer");
       Result<etdump_Tensor_ref_t> tensor_ref =
-          add_tensor_entry(builder_, output[i], offset);
+          add_tensor_entry(builder_, output[i], offset.get());
       if (!tensor_ref.ok()) {
         return tensor_ref.error();
       }
@@ -463,7 +469,7 @@ Result<bool> ETDumpGen::log_intermediate_output_delegate_helper(
 }
 
 void ETDumpGen::end_profiling(EventTracerEntry prof_entry) {
-  et_timestamp_t end_time = et_pal_current_ticks();
+  et_timestamp_t end_time = runtime::pal_current_ticks();
   ET_CHECK_MSG(
       prof_entry.delegate_event_id_type == DelegateDebugIdType::kNone,
       "Delegate events must use end_profiling_delegate to mark the end of a delegate profiling event.");
@@ -566,9 +572,12 @@ Result<bool> ETDumpGen::log_evalue(
   switch (evalue.tag) {
     case Tag::Tensor: {
       executorch::aten::Tensor tensor = evalue.toTensor();
-      long offset = write_tensor_or_raise_error(tensor);
+      Result<long> offset = write_tensor_or_return_error(tensor);
+      ET_CHECK_MSG(
+          offset.ok(),
+          "write_tensor_or_return_error() failed to write tensor to debug buffer");
       Result<etdump_Tensor_ref_t> tensor_ref =
-          add_tensor_entry(builder_, tensor, offset);
+          add_tensor_entry(builder_, tensor, offset.get());
       if (!tensor_ref.ok()) {
         return tensor_ref.error();
       }
@@ -591,9 +600,12 @@ Result<bool> ETDumpGen::log_evalue(
           evalue.toTensorList();
       etdump_Tensor_vec_start(builder_);
       for (size_t i = 0; i < tensors.size(); ++i) {
-        long offset = write_tensor_or_raise_error(tensors[i]);
+        Result<long> offset = write_tensor_or_return_error(tensors[i]);
+        ET_CHECK_MSG(
+            offset.ok(),
+            "write_tensor_or_return_error() failed to write tensor to debug buffer");
         Result<etdump_Tensor_ref_t> tensor_ref =
-            add_tensor_entry(builder_, tensors[i], offset);
+            add_tensor_entry(builder_, tensors[i], offset.get());
         if (!tensor_ref.ok()) {
           return tensor_ref.error();
         }
@@ -689,7 +701,7 @@ void ETDumpGen::set_delegation_intermediate_output_filter(
   filter_ = filter;
 }
 
-long ETDumpGen::write_tensor_or_raise_error(Tensor tensor) {
+Result<long> ETDumpGen::write_tensor_or_return_error(Tensor tensor) {
   // Previously, the function copy_tensor_to_debug_buffer returned 0xFF..F when
   // given an empty tensor, which is an invalid offset for most buffers. In our
   // data sink, we will return the current debug_buffer_offset for better
@@ -702,14 +714,14 @@ long ETDumpGen::write_tensor_or_raise_error(Tensor tensor) {
     return static_cast<size_t>(-1);
   }
 
-  ET_CHECK_MSG(
-      data_sink_, "Must set data sink before writing tensor-like data");
+  if (!data_sink_) {
+    return Error::InvalidArgument;
+  }
   Result<size_t> ret =
       data_sink_->write(tensor.const_data_ptr(), tensor.nbytes());
-  ET_CHECK_MSG(
-      ret.ok(),
-      "Failed to write tensor with error 0x%" PRIx32,
-      static_cast<uint32_t>(ret.error()));
+  if (!ret.ok()) {
+    return ret.error();
+  }
   return static_cast<long>(ret.get());
 }
 

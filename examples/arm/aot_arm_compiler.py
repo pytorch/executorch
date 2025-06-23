@@ -342,7 +342,8 @@ targets = [
     "ethos-u85-1024",
     "ethos-u85-2048",
     "vgf",
-    "TOSA",
+    "TOSA-0.80+BI",
+    "TOSA-1.0+INT",
 ]
 
 
@@ -384,6 +385,7 @@ def get_compile_spec(
     intermediates: Optional[str] = None,
     system_config: Optional[str] = None,
     memory_mode: Optional[str] = None,
+    quantize: bool = False,
 ) -> list[CompileSpec]:
     spec_builder = None
     if target.startswith("TOSA"):
@@ -400,7 +402,11 @@ def get_compile_spec(
             extra_flags="--verbose-operators --verbose-cycle-estimate",
         )
     elif "vgf" in target:
-        spec_builder = ArmCompileSpecBuilder().vgf_compile_spec()
+        if quantize:
+            tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
+        else:
+            tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+FP")
+        spec_builder = ArmCompileSpecBuilder().vgf_compile_spec(tosa_spec)
 
     if intermediates is not None:
         spec_builder.dump_intermediate_artifacts_to(intermediates)
@@ -667,12 +673,12 @@ def save_bpte_program(exec_prog, original_model: torch.nn.Module, output_name: s
         )
 
     # Generate BundledProgram
+    output_dir = os.path.dirname(output_name)
+    os.makedirs(output_dir, exist_ok=True)
     save_bundled_program(exec_prog, method_test_suites, output_name)
 
 
-def quantize_model(
-    exported_program, args, model: torch.nn.Module, example_inputs, compile_spec
-):
+def quantize_model(args, model: torch.nn.Module, example_inputs, compile_spec):
     model_int8 = quantize(
         model,
         args.model_name,
@@ -699,12 +705,13 @@ def to_edge_TOSA_delegate(
         args.intermediates,
         args.system_config,
         args.memory_mode,
+        args.quantize,
     )
 
     model_int8 = None
     if args.quantize:
         model_int8, exported_program = quantize_model(
-            exported_program, args, model, example_inputs, compile_spec
+            args, model, example_inputs, compile_spec
         )
         model = model_int8
 
@@ -738,9 +745,10 @@ def to_edge_no_delegate(exported_program, args, model: torch.nn.Module, example_
             args.intermediates,
             args.system_config,
             args.memory_mode,
+            args.quantize,
         )
         model, exported_program = quantize_model(
-            exported_program, args, model, example_inputs, compile_spec
+            args, model, example_inputs, compile_spec
         )
         model_int8 = model
 

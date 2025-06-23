@@ -112,15 +112,24 @@ class TestGatehrBenchmarkConfigs(unittest.TestCase):
         result = self.gather_benchmark_configs.generate_compatible_configs(
             model_name, target_os
         )
-        expected = ["llama3_fb16", "llama3_coreml_ane"]
-        self.assertEqual(result, expected)
+        expected = [
+            "llama3_fb16",
+            "llama3_coreml_ane",
+            "et_xnnpack_custom_spda_kv_cache_8da4w",
+            "hf_xnnpack_custom_spda_kv_cache_8da4w",
+        ]
+        self.assertCountEqual(result, expected)
 
         target_os = "android"
         result = self.gather_benchmark_configs.generate_compatible_configs(
             model_name, target_os
         )
-        expected = ["llama3_fb16"]
-        self.assertEqual(result, expected)
+        expected = [
+            "llama3_fb16",
+            "et_xnnpack_custom_spda_kv_cache_8da4w",
+            "hf_xnnpack_custom_spda_kv_cache_8da4w",
+        ]
+        self.assertCountEqual(result, expected)
 
     def test_generate_compatible_configs_quantized_llama_model(self):
         model_name = "meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8"

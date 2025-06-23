@@ -22,6 +22,7 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_same_dtype,
+    validate_valid_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -47,17 +48,10 @@ class MulVisitor_080_BI(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs, output])
-
-        if (
-            inputs[0].dtype != ts.DType.INT8
-            or inputs[1].dtype != ts.DType.INT8
-            or output.dtype != ts.DType.INT8
-        ):
-            raise ValueError(
-                f"Inputs and output for {self.target} need to be INT8, got "
-                f"{inputs[0].dtype=}, {inputs[1].dtype=} and {output.dtype=}"
-            )
+        validate_same_dtype(self.target, [*inputs, output], ts)
+        validate_valid_dtype(
+            self.target, [*inputs, output], ts.DType.INT8, output.tosa_spec
+        )
 
         dim_order = (
             inputs[0].dim_order
@@ -76,14 +70,14 @@ class MulVisitor_080_BI(NodeVisitor):
         input_A_rescaled = tqutils.build_rescale_to_int32(
             tosa_graph,
             input_A,
-            input_A_qargs.zp,
-            [1.0],
+            input_A_qargs.get_zp_per_tensor(),
+            1.0,
         )
         input_B_rescaled = tqutils.build_rescale_to_int32(
             tosa_graph,
             input_B,
-            input_B_qargs.zp,
-            [1.0],
+            input_B_qargs.get_zp_per_tensor(),
+            1.0,
         )
 
         output_shape = tutils.tosa_shape(output.shape, output.dim_order)
@@ -107,7 +101,9 @@ class MulVisitor_080_BI(NodeVisitor):
             [mul_output.name],
             attr,
         )
-        output_scale = input_A_qargs.scale * input_B_qargs.scale
+        output_scale = (
+            input_A_qargs.get_scale_per_tensor() * input_B_qargs.get_scale_per_tensor()
+        )
         tqutils.insert_rescale_op_to_int8(tosa_graph, mul_output, output_scale, node)
 
 
@@ -130,7 +126,7 @@ class MulVisitor_080_MI(MulVisitor_080_BI):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs, output])
+        validate_same_dtype(self.target, [*inputs, output], ts)
 
         if inputs[0].dtype == ts.DType.INT8:
             return super().define_node(node, tosa_graph, inputs, output)
@@ -163,17 +159,10 @@ class MulVisitor_INT(NodeVisitor):
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs, output])
-
-        if (
-            inputs[0].dtype != ts.DType.INT8
-            or inputs[1].dtype != ts.DType.INT8
-            or output.dtype != ts.DType.INT8
-        ):
-            raise ValueError(
-                f"Inputs and output for {self.target} need to be INT8, got "
-                f"{inputs[0].dtype=}, {inputs[1].dtype=} and {output.dtype=}"
-            )
+        validate_same_dtype(self.target, [*inputs, output], ts)
+        validate_valid_dtype(
+            self.target, [*inputs, output], ts.DType.INT8, output.tosa_spec
+        )
 
         input_A = inputs[0]
         input_B = inputs[1]
@@ -187,15 +176,15 @@ class MulVisitor_INT(NodeVisitor):
         input_A_rescaled = tqutils.build_rescale_to_int32(
             tosa_graph,
             input_A,
-            input_A_qargs.zp,
-            [1.0],
+            input_A_qargs.get_zp_per_tensor(),
+            1.0,
             tosa_spec=self.tosa_spec,
         )
         input_B_rescaled = tqutils.build_rescale_to_int32(
             tosa_graph,
             input_B,
-            input_B_qargs.zp,
-            [1.0],
+            input_B_qargs.get_zp_per_tensor(),
+            1.0,
             tosa_spec=self.tosa_spec,
         )
 
@@ -209,7 +198,9 @@ class MulVisitor_INT(NodeVisitor):
             [input_A_rescaled.name, input_B_rescaled.name, f"{node.name}_shift"],
             [mul_output.name],
         )
-        output_scale = input_A_qargs.scale * input_B_qargs.scale
+        output_scale = (
+            input_A_qargs.get_scale_per_tensor() * input_B_qargs.get_scale_per_tensor()
+        )
         tqutils.insert_rescale_op_to_int8(
             tosa_graph, mul_output, output_scale, node, self.tosa_spec
         )
@@ -232,7 +223,7 @@ class MulVisitor_FP(MulVisitor_INT):
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs, output])
+        validate_same_dtype(self.target, [*inputs, output], ts)
 
         if inputs[0].dtype == ts.DType.INT8:
             return super().define_node(node, tosa_graph, inputs, output)
