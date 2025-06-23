@@ -34,9 +34,11 @@ typedef struct {
   char data[]; // block.name specific format data
 } VelaBinBlock;
 
+constexpr int shapeDim = 6; // Number of dimensions in VelaIO
+
 // A Vela input or output descriptor in the binary stream
 typedef struct {
-  int shape[4]; // Up to 4D shape of input or output
+  int shape[shapeDim]; // Shape of input or output
   int elem_size; // Element sizeof in bytes
   int offset; // Offset in bytes within SRAM working data
   int region; // Scratch region this belongs to
