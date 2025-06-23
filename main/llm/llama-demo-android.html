@@ -675,7 +675,7 @@ curl<span class="w"> </span>-C<span class="w"> </span>-<span class="w"> </span>-
 <span class="c1"># Create params.json file</span>
 touch<span class="w"> </span>params.json
 <span class="nb">echo</span><span class="w"> </span><span class="s1">&#39;{&quot;dim&quot;: 768, &quot;multiple_of&quot;: 32, &quot;n_heads&quot;: 12, &quot;n_layers&quot;: 12, &quot;norm_eps&quot;: 1e-05, &quot;vocab_size&quot;: 32000}&#39;</span><span class="w"> </span>&gt;<span class="w"> </span>params.json
-python<span class="w"> </span>-m<span class="w"> </span>examples.models.llama.export_llama<span class="w"> </span>-c<span class="w"> </span>stories110M.pt<span class="w"> </span>-p<span class="w"> </span>params.json<span class="w"> </span>-d<span class="w"> </span>fp16<span class="w"> </span>-n<span class="w"> </span>stories110m_h.pte<span class="w"> </span>-kv
+python<span class="w"> </span>-m<span class="w"> </span>extension.llm.export.export_llm<span class="w"> </span>base.checkpoint<span class="o">=</span>stories110M.pt<span class="w"> </span>base.params<span class="o">=</span>params.json<span class="w"> </span>model.dtype_override<span class="o">=</span><span class="s2">&quot;fp16&quot;</span><span class="w"> </span>export.output_name<span class="o">=</span>stories110m_h.pte<span class="w"> </span>model.use_kv_cache<span class="o">=</span>True
 python<span class="w"> </span>-m<span class="w"> </span>pytorch_tokenizers.tools.llama2c.convert<span class="w"> </span>-t<span class="w"> </span>tokenizer.model<span class="w"> </span>-o<span class="w"> </span>tokenizer.bin
 </pre></div>
 </div>
