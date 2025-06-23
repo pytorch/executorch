@@ -32,6 +32,10 @@ utils::uvec3 group_norm_local_wg_size(
     const utils::uvec3& global_workgroup_size,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
+  (void)graph;
+  (void)shader;
+  (void)global_workgroup_size;
+  (void)args;
   (void)resize_args;
 
   return {1, 64, 1};
@@ -78,6 +82,10 @@ void add_native_group_norm_node(
     const ValueRef out,
     const ValueRef mean,
     const ValueRef rstd) {
+  (void)N;
+  (void)C;
+  (void)HxW;
+
   const ValueRef arg_weight = prepack_standard(
       graph,
       weight_data,

@@ -108,11 +108,12 @@ void add_permute_node(
   ivec4 whcn_permute_dims{0, 1, 2, 3};
   {
     IntListPtr permute_dims_ptr = graph.get_int_list(permute_dims);
-    const size_t permute_ndim = permute_dims_ptr->size();
+    const int32_t permute_ndim =
+        utils::safe_downcast<int>(permute_dims_ptr->size());
 
-    for (int nchw_i = permute_ndim - 1, whcn_i = 0; nchw_i >= 0;
+    for (int32_t nchw_i = permute_ndim - 1, whcn_i = 0; nchw_i >= 0;
          nchw_i--, whcn_i++) {
-      const int64_t permute_dim_nchw = permute_dims_ptr->at(nchw_i);
+      const int32_t permute_dim_nchw = permute_dims_ptr->at(nchw_i);
       const int32_t permute_dim_whcn = permute_ndim - 1 - permute_dim_nchw;
 
       whcn_permute_dims[whcn_i] = permute_dim_whcn;
