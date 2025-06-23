@@ -45,12 +45,10 @@ class KVCacheSHA(torch.nn.Module):
             self.register_buffer(
                 f"past_k_caches_{i}",
                 torch.zeros(cache_shape, dtype=dtype, device="cpu"),
-                persistent=False,
             )
             self.register_buffer(
                 f"past_v_caches_{i}",
                 torch.zeros(cache_shape, dtype=dtype, device="cpu"),
-                persistent=False,
             )
 
     def update(
