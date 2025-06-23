@@ -203,10 +203,18 @@ class AnnotateChannelsLastDimOrder(ExportPass):
         - 1D/2D tensors
         """
         for node in graph_module.graph.nodes:
-            if node.op != "call_function":
+            # call_function and placeholder allowed due to
+            # index.Tensor being able to come in as both
+            if node.op not in ["call_function", "placeholder"]:
                 continue
 
-            elif node.target == exir_ops.edge.aten.view_copy.default:
+            elif node.target in (
+                exir_ops.edge.aten.view_copy.default,
+                exir_ops.edge.aten.index.Tensor,
+            ):
+                # For index.Tensor:
+                #   If we want to support 4D indexing tensors this logic
+                #   should be updated.
                 input_node = node.args[0]
                 input_shape = input_node.meta["val"].shape
                 output_shape = node.meta["val"].shape
