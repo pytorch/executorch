@@ -230,7 +230,7 @@ jobs:
                       model.dtype_override=fp32 \
                       base.preq_embedding_quantize=\'8,0\' \
                       quantization.use_spin_quant=native \
-                      base.metadata='{"get_bos_id":128000,"get_eos_ids":[128009,128001]}'
+                      base.metadata='"{\"get_bos_id\":128000,\"get_eos_ids\":[128009,128001]}"'
                     ls -lh "${OUT_ET_MODEL_NAME}.pte"
                 elif [[ ${{ matrix.config }} == "llama3_qlora" ]]; then
                     # QAT + LoRA
@@ -258,7 +258,7 @@ jobs:
                       export.max_seq_length=2048 \
                       export.max_context_length=2048 \
                       export.output_name="${OUT_ET_MODEL_NAME}.pte" \
-                      base.metadata='{"get_bos_id":128000,"get_eos_ids":[128009,128001]}'
+                      base.metadata='"{\"get_bos_id\":128000,\"get_eos_ids\":[128009,128001]}"'
                     ls -lh "${OUT_ET_MODEL_NAME}.pte"
                 elif [[ ${{ matrix.config }} == "llama3_fb16" ]]; then
                     # Original BF16 version, without any quantization
@@ -271,7 +271,7 @@ jobs:
                       model.use_sdpa_with_kv_cache=true \
                       backend.xnnpack.enabled=true \
                       model.dtype_override=bf16 \
-                      base.metadata='{"get_bos_id":128000,"get_eos_ids":[128009,128001]}' \
+                      base.metadata='"{\"get_bos_id\":128000,\"get_eos_ids\":[128009,128001]}"' \
                       export.output_name="${OUT_ET_MODEL_NAME}.pte"
                     ls -lh "${OUT_ET_MODEL_NAME}.pte"
                 elif [[ ${{ matrix.config }} == "et_xnnpack_custom_spda_kv_cache_8da4w" ]]; then
@@ -288,7 +288,7 @@ jobs:
                       quantization.qmode=8da4w \
                       quantization.group_size=32 \
                       quantization.embedding_quantize=\'8,0\' \
-                      base.metadata='{"get_bos_id":128000,"get_eos_ids":[128009,128001]}' \
+                      base.metadata='"{\"get_bos_id\":128000,\"get_eos_ids\":[128009,128001]}"' \
                       export.output_name="${OUT_ET_MODEL_NAME}.pte"
                     ls -lh "${OUT_ET_MODEL_NAME}.pte"
                 elif [[ ${{ matrix.config }} == "llama3_qnn_htp" ]]; then
@@ -326,7 +326,7 @@ jobs:
                   quantization.qmode=8da4w \
                   quantization.group_size=32 \
                   quantization.embedding_quantize=\'8,0\' \
-                  base.metadata='{"get_bos_id":151644,"get_eos_ids":[151645]}' \
+                  base.metadata='"{\"get_bos_id\":151644,\"get_eos_ids\":[151645]}"' \
                   export.output_name="${OUT_ET_MODEL_NAME}.pte"
                 ls -lh "${OUT_ET_MODEL_NAME}.pte"
               fi
