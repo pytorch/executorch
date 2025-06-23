@@ -193,14 +193,13 @@ Result<FreeableBuffer> MmapDataLoader::load(
     map_size = file_size_ - range.start;
   }
 
-  // Map the pages read-only. MAP_PRIVATE vs. MAP_SHARED doesn't matter since
-  // the data is read-only, but use PRIVATE just to further avoid accidentally
-  // modifying the file.
+  // Map the pages read-only. Use shared mappings so that other processes
+  // can also map the same pages and share the same memory.
   void* pages = ::mmap(
       nullptr,
       map_size,
       PROT_READ,
-      MAP_PRIVATE,
+      MAP_SHARED,
       fd_,
       static_cast<off_t>(range.start));
   ET_CHECK_OR_RETURN_ERROR(
