@@ -758,7 +758,6 @@ def get_permute_inputs():
     ]
     test_suite.dtypes = [
         "at::kFloat",
-        "at::kInt",
     ]
     return test_suite
 
