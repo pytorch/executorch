@@ -25,7 +25,7 @@ python -m extension.llm.export.export_llm \
   backend.xnnpack.enabled=True \
   backend.xnnpack.extended_ops=True \
   quantization.qmode="8da4w" \
-  base.metadata='{"get_bos_id": 151644, "get_eos_ids":[151645]}' \
+  base.metadata='"{\"get_bos_id\": 151644, \"get_eos_ids\":[151645]}"' \
   export.output_name="qwen3-0_6b.pte" \
   debug.verbose=True
 ```
@@ -41,7 +41,7 @@ python -m extension.llm.export.export_llm \
   backend.xnnpack.enabled=True \
   backend.xnnpack.extended_ops=True \
   quantization.qmode="8da4w" \
-  base.metadata='{"get_bos_id": 151644, "get_eos_ids":[151645]}' \
+  base.metadata='"{\"get_bos_id\": 151644, \"get_eos_ids\":[151645]}"' \
   export.output_name="qwen3-1_7b.pte" \
   debug.verbose=True
 ```
@@ -57,7 +57,7 @@ python -m extension.llm.export.export_llm \
   backend.xnnpack.enabled=True \
   backend.xnnpack.extended_ops=True \
   quantization.qmode="8da4w" \
-  base.metadata='{"get_bos_id": 151644, "get_eos_ids":[151645]}' \
+  base.metadata='"{\"get_bos_id\": 151644, \"get_eos_ids\":[151645]}"' \
   export.output_name="qwen3-4b.pte" \
   debug.verbose=True
 ```

@@ -174,7 +174,7 @@ python -m extension.llm.export.export_llm \
   model.use_kv_cache=True \
   model.use_sdpa_with_kv_cache=True \
   model.dtype_override="bf16" \
-  base.metadata='{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
+  base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' \
   export.output_name="llama3_2.pte"
 ```
 For convenience, an [exported ExecuTorch bf16 model](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/llama3_2-1B.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/ExportRecipe_1B.ipynb).
@@ -203,9 +203,9 @@ python -m extension.llm.export.export_llm \
    export.output_name="llama3_2.pte" \
    model.use_kv_cache=True \
    model.dtype_override="fp32" \
-   base.preq_embedding_quantize="8,0" \
+   base.preq_embedding_quantize=\'8,0\' \
    quantization.use_spin_quant="native" \
-   base.metadata='{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+   base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"'
 ```
 For convenience, an [exported ExecuTorch SpinQuant model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_SpinQuant_INT4_EO8.ipynb).
 
@@ -226,7 +226,7 @@ python -m extension.llm.export.export_llm \
    base.use_lora=16 \
    base.preq_mode="8da4w_output_8da8w" \
    base.preq_group_size=32 \
-   base.preq_embedding_quantize="8,0" \
+   base.preq_embedding_quantize=\'8,0\' \
    model.use_sdpa_with_kv_cache=True \
    model.use_kv_cache=True \
    backend.xnnpack.enabled=True \
@@ -235,7 +235,7 @@ python -m extension.llm.export.export_llm \
    export.max_seq_length=2048 \
    export.max_context_length=2048 \
    export.output_name="llama3_2.pte" \
-   base.metadata='{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+   base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"'
 ```
 For convenience, an [exported ExecuTorch QAT+LoRA model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-QLORA_INT4_EO8.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_QLORA_INT4_EO8.ipynb).
 
@@ -256,11 +256,11 @@ You can export and run the original Llama 3 8B instruct model.
 		quantization.qmode="8da4w" \
 		quantization.group_size=128 \
 		model.dtype_override="fp32" \
-		base.metadata='{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
-		quantization.embedding_quantize="4,32" \
+		base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' \
+		quantization.embedding_quantize=\'4,32\' \
 		export.output_name="llama3_kv_sdpa_xnn_qe_4_32.pte"
     ```
-    Due to the larger vocabulary size of Llama 3, we recommend quantizing the embeddings with `quantization.embedding_quantize="4,32"` as shown above to further reduce the model size.
+    Due to the larger vocabulary size of Llama 3, we recommend quantizing the embeddings with `quantization.embedding_quantize=\'4,32\'` as shown above to further reduce the model size.
 
 
     If you're interested in deploying on non-CPU backends, [please refer the non-cpu-backend section](non_cpu_backends.md)
@@ -395,11 +395,11 @@ python -m extension.llm.export.export_llm \
   base.params="${LLAMA_PARAMS:?}" \
   model.use_kv_cache=True \
   model.use_sdpa_with_kv_cache=True \
-  base.metadata='{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
+  base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' \
   export.output_name="llama3_2.pte" \
   quantization.qmode="torchao:8da${QLINEAR_BITWIDTH}w" \
   quantization.group_size=${QLINEAR_GROUP_SIZE} \
-  quantization.embedding_quantize="torchao:${QEMBEDDING_BITWIDTH},${QEMBEDDING_GROUP_SIZE}" \
+  quantization.embedding_quantize=\'torchao:${QEMBEDDING_BITWIDTH},${QEMBEDDING_GROUP_SIZE}\' \
   model.dtype_override="fp32"
 ```
 
