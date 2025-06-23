@@ -735,7 +735,7 @@ def argparsers():
         help="Filter results by one or more backend full name(e.g. --backends qlora mv3) (OR logic within backends scope, AND logic with other filter type)",
     )
     parser.add_argument(
-        "--private-device-pools",
+        "--device-pools",
         nargs="+",  # allow one or more values
         choices=VALID_PRIVATE_DEVICE_POOLS_NAMES,
         help="List of devices to include [apple_iphone_15_private, samsung_s22_private, you can include both] (OR logic within private-device-pools scope, AND logic with other filter type)",
@@ -757,7 +757,7 @@ if __name__ == "__main__":
         filters=BenchmarkFilters(
             models=args.models,
             backends=args.backends,
-            devicePoolNames=args.private_device_pools,
+            devicePoolNames=args.device_pools,
         ),
     )
     fetcher.output_data(args.outputType, args.outputDir)

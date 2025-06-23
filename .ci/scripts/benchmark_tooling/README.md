@@ -76,8 +76,8 @@ python3 .ci/scripts/benchmark_tooling/analyze_benchmark_stability.py \
 
 ##### Filtering Options:
 
-- `--private-device-pools`: Filter by private device pool names (e.g., "samsung-galaxy-s22-5g", "samsung-galaxy-s22plus-5g")
-- `--backends`: Filter by specific backend names (e.g., "qnn-q8", "llama3-spinquan")
+- `--device-pools`: Filter by private device pool names (e.g., "samsung-galaxy-s22-5g", "samsung-galaxy-s22plus-5g")
+- `--backends`: Filter by specific backend names (e.g.,"xnnpack_q8")
 - `--models`: Filter by specific model names (e.g., "mv3", "meta-llama-llama-3.2-1b-instruct-qlora-int4-eo8")
 
 #### Example Usage
@@ -88,7 +88,7 @@ Filter by multiple private device pools and models:
 python3 get_benchmark_analysis_data.py \
   --startTime "2025-06-01T00:00:00" \
   --endTime "2025-06-11T00:00:00" \
-  --private-device-pools 'apple_iphone_15_private' 'samsung_s22_private' \
+  --device-pools 'apple_iphone_15_private' 'samsung_s22_private' \
   --models 'meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8' 'mv3'
 ```
 
@@ -99,7 +99,7 @@ Filter by specific device pool and models:
 python3 get_benchmark_analysis_data.py \
   --startTime "2025-06-01T00:00:00" \
   --endTime "2025-06-11T00:00:00" \
-  --private-device-pools 'apple_iphone_15_private' \
+  --device-pools 'apple_iphone_15_private' \
   --models 'meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8' 'mv3'
 ```
 
