@@ -26,9 +26,9 @@ set(TARGET_CPU
 string(TOLOWER ${TARGET_CPU} CMAKE_SYSTEM_PROCESSOR)
 
 set(CMAKE_SYSTEM_NAME Generic)
-set(CMAKE_C_COMPILER "arm-zephyr-eabi-gcc")
-set(CMAKE_CXX_COMPILER "arm-zephyr-eabi-g++")
-set(CMAKE_ASM_COMPILER "arm-zephyr-eabi-gcc")
+set(CMAKE_C_COMPILER "/home/zephyruser/zephyr-sdk-0.16.0/arm-zephyr-eabi/bin/arm-zephyr-eabi-gcc")
+set(CMAKE_CXX_COMPILER "/home/zephyruser/zephyr-sdk-0.16.0/arm-zephyr-eabi/bin/arm-zephyr-eabi-g++")
+set(CMAKE_ASM_COMPILER "/home/zephyruser/zephyr-sdk-0.16.0/arm-zephyr-eabi/bin/arm-zephyr-eabi-gcc")
 set(CMAKE_LINKER "arm-zephyr-eabi-ld")
 
 set(CMAKE_EXECUTABLE_SUFFIX ".elf")
