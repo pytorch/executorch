@@ -12,5 +12,6 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/core:core",
             "//executorch/runtime/backend:interface",
+            "//executorch/test/utils:utils",
         ],
     )
