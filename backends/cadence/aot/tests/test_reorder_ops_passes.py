@@ -217,7 +217,7 @@ class TestReorderPasses(unittest.TestCase):
         self.assertEqual(
             count_node(
                 graph_module,
-                exir_ops.edge.cadence.requantize.default,
+                exir_ops.edge.cadence.requantize.per_tensor,
             ),
             1,
         )
