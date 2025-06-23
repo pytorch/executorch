@@ -27,10 +27,8 @@ XS = 3
 test_suites = {}
 
 
-def register_test_suite(aten_op, skip=True):
+def register_test_suite(aten_op):
     def test_suite_decorator(fn: Callable) -> Callable:
-        if skip:
-            return fn
         if isinstance(aten_op, str):
             test_suites[aten_op] = fn()
         elif isinstance(aten_op, list):
@@ -143,7 +141,7 @@ def get_linear_inputs():
     inputs_list += [((M, K), (N, K), (N)) for M, K, N in MKN_list]
     inputs_list += [((3, M, K), (N, K), None) for M, K, N in MKN_list]
     inputs_list += [((3, M, K), (N, K), (N)) for M, K, N in MKN_list]
-    inputs_list += [((3, 6, K), (N, K), (N)) for _, K, N in MKN_list]
+    inputs_list += [((3, 6, K), (N, K), (N)) for M, K, N in MKN_list]
 
     test_suite = VkTestSuite(inputs_list)
     test_suite.dtypes = ["at::kFloat"]
@@ -648,7 +646,7 @@ def get_native_layer_norm_inputs():
     return test_suite
 
 
-@register_test_suite("aten.native_group_norm.default", skip=False)
+@register_test_suite("aten.native_group_norm.default")
 def get_native_group_norm_inputs():
     test_suite = VkTestSuite(
         [
@@ -662,23 +660,17 @@ def get_native_group_norm_inputs():
         ]
     )
     test_suite.layouts = [
-        # "utils::kWidthPacked",
-        # "utils::kHeightPacked",
         "utils::kChannelsPacked",
     ]
     test_suite.storage_types = [
-        # "utils::kBuffer",
-        "utils::kTexture3D"
+        "utils::kTexture3D",
     ]
-    test_suite.dtypes = ["at::kFloat"]
+    test_suite.dtypes = [
+        "at::kFloat",
+    ]
     test_suite.arg_storage_types = {
         "out": [None, "utils::kBuffer", "utils::kBuffer"],
     }
-
-    # test_suite.arg_data_gen_fn = {
-    #     "weight": "make_zeros_tensor",
-    #     "bias": "make_rand_tensor",
-    # }
 
     test_suite.prepacked_args = ["weight", "bias"]
     test_suite.requires_prepack = True
@@ -798,7 +790,6 @@ def get_permute_inputs():
     ]
     test_suite.dtypes = [
         "at::kFloat",
-        "at::kInt",
     ]
     return test_suite
 
