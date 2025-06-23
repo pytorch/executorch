@@ -94,7 +94,6 @@ done
 # Default Ethos-u tool folder override with --scratch-dir=<FOLDER>
 ethos_u_scratch_dir=$(realpath ${ethos_u_scratch_dir})
 setup_path_script=${ethos_u_scratch_dir}/setup_path.sh
-toolchain_cmake=${script_dir}/ethos-u-setup/arm-none-eabi-gcc.cmake
 toolchain_cmake=${script_dir}/ethos-u-setup/arm-zephyr-eabi-gcc.cmake
 _setup_msg="please refer to ${script_dir}/setup.sh to properly install necessary tools."
 
