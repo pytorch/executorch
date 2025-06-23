@@ -58,27 +58,28 @@ class MockBackend : public BackendInterface {
       const executorch::runtime::Span<BackendOption>& backend_options)
       override {
     set_option_count++;
-    int sucess_update = 0;
+    int success_update = 0;
     for (const auto& backend_option : backend_options) {
       if (strcmp(backend_option.key, "Backend") == 0) {
-        if (std::holds_alternative<const char*>(backend_option.value)) {
+        if (std::holds_alternative<std::array<char, 256>>(backend_option.value)) {
           // Store the value in our member variable
-          target_backend = std::get<const char*>(backend_option.value);
-          sucess_update++;
+          const auto& arr = std::get<std::array<char, 256>>(backend_option.value);
+          target_backend = std::string(arr.data());
+          success_update++;
         }
       } else if (strcmp(backend_option.key, "NumberOfThreads") == 0) {
         if (std::holds_alternative<int>(backend_option.value)) {
           num_threads = std::get<int>(backend_option.value);
-          sucess_update++;
+          success_update++;
         }
       } else if (strcmp(backend_option.key, "Debug") == 0) {
         if (std::holds_alternative<bool>(backend_option.value)) {
           debug = std::get<bool>(backend_option.value);
-          sucess_update++;
+          success_update++;
         }
       }
     }
-    if (sucess_update == backend_options.size()) {
+    if (success_update == backend_options.size()) {
       return Error::Ok;
     }
     return Error::InvalidArgument;
@@ -113,9 +114,9 @@ TEST_F(BackendInterfaceUpdateTest, HandlesInvalidOption) {
   BackendOptionContext context;
 
   // Test invalid key case
-  BackendOption invalid_option{"InvalidKey", "None"};
+  std::array<char, 256> value_array{"None"};
+  BackendOption invalid_option{"InvalidKey", value_array};
 
-  // Create a span from the single option
   Error err = mock_backend->set_option(context, invalid_option);
   EXPECT_EQ(err, Error::InvalidArgument);
 }
