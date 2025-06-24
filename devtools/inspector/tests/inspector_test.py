@@ -17,6 +17,8 @@ from typing import Callable, List, Union
 
 from unittest.mock import patch
 
+import pandas as pd
+
 import torch
 import torch.fx
 
@@ -577,6 +579,75 @@ class TestInspector(unittest.TestCase):
             for key in range(5, 9):
                 self.assertIn((key,), runtime_outputs)
                 self.assertEqual(len(runtime_outputs[(key,)]), RAW_DATA_SIZE)
+
+    def test_calculate_numeric_gap(self):
+        # Create a context manager to patch functions called by Inspector.__init__
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
+        ):
+            # Call the constructor of Inspector
+            inspector_instance = Inspector(
+                etdump_path=ETDUMP_PATH,
+                etrecord=ETRECORD_PATH,
+            )
+
+            aot_intermediate_outputs = {
+                (0,): torch.tensor([1.0, 2.0, 3.0]),
+                (1,): torch.tensor([4.0, 5.0, 6.0]),
+            }
+
+            runtime_intermediate_outputs = {
+                (0,): torch.tensor([2.0, 1.0, 4.0]),
+                (1,): torch.tensor([3.0, 6.0, 5.0]),
+            }
+
+            inspector_instance._aot_intermediate_outputs = aot_intermediate_outputs
+            inspector_instance._get_runtime_intermediate_outputs = (
+                lambda: runtime_intermediate_outputs
+            )
+
+            df = inspector_instance.calculate_numeric_gap(distance="L1")
+            self.assertIsInstance(df, pd.DataFrame)
+            self.assertEqual(len(df), 2)
+            cols = set(df.columns)
+            expected_cols = {
+                "aot_debug_handle",
+                "aot_intermediate_output",
+                "runtime_debug_handle",
+                "runtime_intermediate_output",
+                "gap",
+            }
+            self.assertEqual(cols, expected_cols)
+            founded_aot_debug_handle = set(df["aot_debug_handle"])
+            self.assertEqual(
+                founded_aot_debug_handle, set(aot_intermediate_outputs.keys())
+            )
+            for _, row in df.iterrows():
+                aot_debuh_handle = row["aot_debug_handle"]
+                # aot_intermediate_output should equal aot_intermediate_outputs[h]
+                self.assertTrue(
+                    torch.allclose(
+                        row["aot_intermediate_output"],
+                        aot_intermediate_outputs[aot_debuh_handle],
+                    )
+                )
+                # runtime_debug_hanlde equals aot_debug_handle at this case
+                self.assertEqual(row["runtime_debug_handle"], aot_debuh_handle)
+                # runtime_intermediate_output should equal runtime_intermediate_outputs[h]
+                self.assertTrue(
+                    torch.allclose(
+                        row["runtime_intermediate_output"],
+                        runtime_intermediate_outputs[aot_debuh_handle],
+                    )
+                )
+                # gap should equal 3.0
+                self.assertEqual(row["gap"], 3.0)
 
     def _gen_random_float_list(self) -> List[float]:
         return [random.uniform(0, 10) for _ in range(RAW_DATA_SIZE)]
