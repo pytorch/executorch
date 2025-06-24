@@ -92,13 +92,9 @@ class BackendOptions {
    * @param value The boolean value to set
    * @return Error::Ok on success, Error::InvalidArgument if storage is full
    */
-  Error set_option(const char key[kMaxOptionKeyLength], bool value) noexcept {
-    ET_CHECK_MSG(
-        strlen(key) <= kMaxOptionKeyLength,
-        "Option key %s (%zu) is too long (max %zu)",
-        key,
-        strlen(key),
-        kMaxOptionKeyLength);
+  template <size_t N>
+  Error set_option(const char (&key)[N], bool value) noexcept {
+    static_assert(N <= kMaxOptionKeyLength, "Option key is too long");
     return set_option_impl(key, value);
   }
 
@@ -111,13 +107,9 @@ class BackendOptions {
    * @param value The integer value to set
    * @return Error::Ok on success, Error::InvalidArgument if storage is full
    */
-  Error set_option(const char key[kMaxOptionKeyLength], int value) noexcept {
-    ET_CHECK_MSG(
-        strlen(key) <= kMaxOptionKeyLength,
-        "Option key %s (%zu) is too long (max %zu)",
-        key,
-        strlen(key),
-        kMaxOptionKeyLength);
+  template <size_t N>
+  Error set_option(const char (&key)[N], int value) noexcept {
+    static_assert(N <= kMaxOptionKeyLength, "Option key is too long");
     return set_option_impl(key, value);
   }
 
@@ -133,14 +125,9 @@ class BackendOptions {
    * @param value The string value to set (must have static storage duration)
    * @return Error::Ok on success, Error::InvalidArgument if storage is full
    */
-  Error set_option(const char key[kMaxOptionKeyLength], const char* value) noexcept {
-    ET_CHECK_MSG(
-        strlen(key) <= kMaxOptionKeyLength,
-        "Option key %s (%zu) is too long (max %zu)",
-        key,
-        strlen(key),
-        kMaxOptionKeyLength);
-
+  template <size_t N>
+  Error set_option(const char (&key)[N], const char* value) noexcept {
+    static_assert(N <= kMaxOptionKeyLength, "Option key is too long");
     // Create a fixed-size array and copy the string
     std::array<char, kMaxOptionValueLength> arr;
     strncpy(arr.data(), value, kMaxOptionValueLength - 1);
@@ -159,7 +146,7 @@ class BackendOptions {
    */
   template <typename T, size_t KeyLen>
   Error get_option(const char (&key)[KeyLen], T& out) const {
-    ET_CHECK_MSG(KeyLen <= kMaxOptionKeyLength, "Option key is too long");
+    static_assert(KeyLen <= kMaxOptionKeyLength, "Option key is too long");
     for (size_t i = 0; i < size_; ++i) {
       if (std::strcmp(options_[i].key, key) == 0) {
         // Special handling for string (convert array to const char*)
