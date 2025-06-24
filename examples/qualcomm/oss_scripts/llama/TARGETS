@@ -49,6 +49,9 @@ python_binary(
     name = "eval_llama_qnn",
     srcs = ["eval_llama_qnn.py"],
     main_function = "executorch.examples.qualcomm.oss_scripts.llama.eval_llama_qnn.main",
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:model_sharding_py",
+    ],
     deps = [
         ":llama_lib",
         "//executorch/examples/models/llama:eval_library",
