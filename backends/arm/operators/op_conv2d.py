@@ -109,24 +109,6 @@ class Conv2dVisitor_0_80(NodeVisitor):
             local_bound=False,
         )
 
-        # Non-bias case.
-        if len(node.all_input_nodes) == 2:
-            # Create a zero bias tensor if not presented
-            out_channels = weight.shape[0]
-            bias_name = "bias" + node.name.split("default", 1)[1]
-            bias_type = output.dtype
-            if output.dtype == ts.DType.INT8:
-                # Conv is quantized to int8, but the TOSA operator has
-                # output type int32, and the bias must be the same type
-                # as the TOSA output type
-                bias_type = ts.DType.INT32
-            bias = tosa_graph.addConst(
-                [out_channels],
-                bias_type,
-                [0] * out_channels,
-                name=bias_name,
-            )
-
         # The output type is int32 when input type is int8.
         conv2d_output_name = output.name
         if output.dtype == ts.DType.INT8:
@@ -312,24 +294,6 @@ class Conv2dVisitor(NodeVisitor):
             weight_zp,
             name=f"{conv2d_output_name}_weight_zp",
         )
-
-        # Non-bias case.
-        if len(node.all_input_nodes) == 2:
-            # Create a zero bias tensor if not presented
-            out_channels = weight.shape[0]
-            bias_name = f"{conv2d_output_name}_bias"
-            bias_type = output.dtype
-            if output.dtype == ts.DType.INT8:
-                # Conv is quantized to int8, but the TOSA operator has
-                # output type int32, and the bias must be the same type
-                # as the TOSA output type
-                bias_type = ts.DType.INT32
-            bias = tosa_graph.addConst(
-                [out_channels],
-                bias_type,
-                [0] * out_channels,
-                name=bias_name,
-            )
 
         # Given input.shape is (N, Ci, H, W), and weight.shape is (Co, Ci/G, H, W)
         in_channels = input.shape[1]
