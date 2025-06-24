@@ -67,9 +67,9 @@ Result<const char*> get_backend_name(size_t index) {
 }
 
 Error set_option(
-  const char* backend_name,
-  const executorch::runtime::Span<executorch::runtime::BackendOption>
-      backend_options) {
+    const char* backend_name,
+    const executorch::runtime::Span<executorch::runtime::BackendOption>
+        backend_options) {
   auto backend_class = get_backend_class(backend_name);
   if (!backend_class) {
     return Error::NotFound;
@@ -84,10 +84,10 @@ Error set_option(
   return Error::Ok;
 }
 
- Error get_option(
-  const char* backend_name,
-  executorch::runtime::Span<executorch::runtime::BackendOption>
-      backend_options) {
+Error get_option(
+    const char* backend_name,
+    executorch::runtime::Span<executorch::runtime::BackendOption>
+        backend_options) {
   auto backend_class = get_backend_class(backend_name);
   if (!backend_class) {
     return Error::NotFound;
