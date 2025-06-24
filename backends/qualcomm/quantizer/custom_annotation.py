@@ -233,7 +233,7 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
         )
         quantization_config_8a4w_per_channel = get_ptq_per_channel_quant_config(
             act_dtype=torch.uint8,
-            weight_dtype="int4",
+            weight_dtype=torch.int4,
             act_observer=MinMaxObserver,
             act_symmetric=True,
         )
