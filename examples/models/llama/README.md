@@ -196,7 +196,7 @@ python -m extension.llm.export.export_llm \
    model.use_sdpa_with_kv_cache=True \
    backend.xnnpack.enabled=True \
    backend.xnnpack.extended_ops=True \
-   base.preq_mode="8da4w_output_8da8w" \
+   base.preq_mode="preq_8da4w_out_8da8w" \
    base.preq_group_size=32 \
    export.max_seq_length=2048 \
    export.max_context_length=2048 \
@@ -224,7 +224,7 @@ python -m extension.llm.export.export_llm \
    base.params="${LLAMA_PARAMS:?}" \
    quantization.use_qat=True \
    base.use_lora=16 \
-   base.preq_mode="8da4w_output_8da8w" \
+   base.preq_mode="preq_8da4w_out_8da8w" \
    base.preq_group_size=32 \
    base.preq_embedding_quantize=\'8,0\' \
    model.use_sdpa_with_kv_cache=True \
