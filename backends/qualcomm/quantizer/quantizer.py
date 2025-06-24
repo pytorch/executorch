@@ -85,7 +85,7 @@ QUANT_CONFIG_DICT = {
         partial(
             get_ptq_per_channel_quant_config,
             act_dtype=torch.uint16,
-            weight_dtype="int4",
+            weight_dtype=torch.int4,
         ),
         None,
     ),
@@ -94,12 +94,12 @@ QUANT_CONFIG_DICT = {
         partial(
             get_ptq_per_channel_quant_config,
             act_dtype=torch.uint16,
-            weight_dtype="int4",
+            weight_dtype=torch.int4,
         ),
         partial(
             get_ptq_per_block_quant_config,
             act_dtype=torch.uint16,
-            weight_dtype="int4",
+            weight_dtype=torch.int4,
         ),
     ),
     (QuantDtype.use_8a8w, False): (
@@ -113,7 +113,7 @@ QUANT_CONFIG_DICT = {
         partial(
             get_qat_per_channel_quant_config,
             act_dtype=torch.uint16,
-            weight_dtype="int4",
+            weight_dtype=torch.int4,
         ),
         None,
     ),
