@@ -70,16 +70,16 @@ QLINEAR_GROUP_SIZE=128 # Must be multiple of 16
 QEMBEDDING_BITWIDTH=4 # Can be 1-8
 QEMBEDDING_GROUP_SIZE=32 # Must be multiple of 16
 
-${PYTHON_EXECUTABLE} -m examples.models.llama.export_llama \
-    --checkpoint "${LLAMA_CHECKPOINT:?}" \
-    --params "${LLAMA_PARAMS:?}" \
-    -kv \
-    --use_sdpa_with_kv_cache \
-    --output_name=${MODEL_OUT} \
-    -qmode "torchao:8da${QLINEAR_BITWIDTH}w" \
-    --group_size ${QLINEAR_GROUP_SIZE} \
-    -E "torchao:${QEMBEDDING_BITWIDTH},${QEMBEDDING_GROUP_SIZE}" \
-    -d fp32
+${PYTHON_EXECUTABLE} -m extension.llm.export.export_llm \
+    base.checkpoint="${LLAMA_CHECKPOINT:?}" \
+    base.params="${LLAMA_PARAMS:?}" \
+    model.use_kv_cache=true \
+    model.use_sdpa_with_kv_cache=true \
+    export.output_name="${MODEL_OUT}" \
+    quantization.qmode="torchao:8da${QLINEAR_BITWIDTH}w" \
+    quantization.group_size=${QLINEAR_GROUP_SIZE} \
+    quantization.embedding_quantize=\"torchao:${QEMBEDDING_BITWIDTH},${QEMBEDDING_GROUP_SIZE}\" \
+    model.dtype_override=fp32
 
 # Test run
 ./cmake-out/examples/models/llama/llama_main --model_path=$MODEL_OUT --tokenizer_path=$TOKENIZER --prompt="Once upon a time,"
