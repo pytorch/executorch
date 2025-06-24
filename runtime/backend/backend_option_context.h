@@ -19,7 +19,7 @@ namespace ET_RUNTIME_NAMESPACE {
  */
 class BackendOptionContext final {
  public:
-  explicit BackendOptionContext(){}
+  explicit BackendOptionContext() {}
 };
 
 } // namespace ET_RUNTIME_NAMESPACE
