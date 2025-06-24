@@ -168,14 +168,10 @@ LLAMA_CHECKPOINT=path/to/consolidated.00.pth
 LLAMA_PARAMS=path/to/params.json
 
 python -m extension.llm.export.export_llm \
+  --config examples/models/llamaconfig/llama_bf16.yaml
   base.model_class="llama3_2" \
   base.checkpoint="${LLAMA_CHECKPOINT:?}" \
   base.params="${LLAMA_PARAMS:?}" \
-  model.use_kv_cache=True \
-  model.use_sdpa_with_kv_cache=True \
-  model.dtype_override="bf16" \
-  base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' \
-  export.output_name="llama3_2.pte"
 ```
 For convenience, an [exported ExecuTorch bf16 model](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/llama3_2-1B.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/ExportRecipe_1B.ipynb).
 
@@ -190,22 +186,10 @@ LLAMA_QUANTIZED_CHECKPOINT=path/to/spinquant/consolidated.00.pth.pth
 LLAMA_PARAMS=path/to/spinquant/params.json
 
 python -m extension.llm.export.export_llm \
-   base.model_class="llama3_2" \
-   base.checkpoint="${LLAMA_QUANTIZED_CHECKPOINT:?}" \
-   base.params="${LLAMA_PARAMS:?}" \
-   model.use_sdpa_with_kv_cache=True \
-   backend.xnnpack.enabled=True \
-   backend.xnnpack.extended_ops=True \
-   base.preq_mode="8da4w_output_8da8w" \
-   base.preq_group_size=32 \
-   export.max_seq_length=2048 \
-   export.max_context_length=2048 \
-   export.output_name="llama3_2.pte" \
-   model.use_kv_cache=True \
-   model.dtype_override="fp32" \
-   base.preq_embedding_quantize=\'8,0\' \
-   quantization.use_spin_quant="native" \
-   base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"'
+    --config examples/models/llama/config/llama_xnnpack_spinquant.yaml
+	base.model_class="llama3_2" \
+	base.checkpoint="${LLAMA_QUANTIZED_CHECKPOINT:?}" \
+	base.params="${LLAMA_PARAMS:?}" \
 ```
 For convenience, an [exported ExecuTorch SpinQuant model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_SpinQuant_INT4_EO8.ipynb).
 
@@ -219,23 +203,10 @@ LLAMA_QUANTIZED_CHECKPOINT=path/to/qlora/consolidated.00.pth.pth
 LLAMA_PARAMS=path/to/qlora/params.json
 
 python -m extension.llm.export.export_llm \
-   base.model_class="llama3_2" \
-   base.checkpoint="${LLAMA_QUANTIZED_CHECKPOINT:?}" \
-   base.params="${LLAMA_PARAMS:?}" \
-   quantization.use_qat=True \
-   base.use_lora=16 \
-   base.preq_mode="8da4w_output_8da8w" \
-   base.preq_group_size=32 \
-   base.preq_embedding_quantize=\'8,0\' \
-   model.use_sdpa_with_kv_cache=True \
-   model.use_kv_cache=True \
-   backend.xnnpack.enabled=True \
-   backend.xnnpack.extended_ops=True \
-   model.dtype_override="fp32" \
-   export.max_seq_length=2048 \
-   export.max_context_length=2048 \
-   export.output_name="llama3_2.pte" \
-   base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"'
+    --config examples/models/llama/config/llama_xnnpack_qat.yaml
+    base.model_class="llama3_2" \
+    base.checkpoint="${LLAMA_QUANTIZED_CHECKPOINT:?}" \
+    base.params="${LLAMA_PARAMS:?}" \
 ```
 For convenience, an [exported ExecuTorch QAT+LoRA model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-QLORA_INT4_EO8.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_QLORA_INT4_EO8.ipynb).
 
@@ -246,20 +217,13 @@ You can export and run the original Llama 3 8B instruct model.
 1. Llama 3 pretrained parameters can be downloaded from [Meta's official Llama 3 repository](https://github.com/meta-llama/llama3/).
 
 2. Export model and generate `.pte` file
-    ```
-    python -m extension.llm.export.export_llm \
-	    base.checkpoint=<consolidated.00.pth.pth> \
-		base.params=<params.json> \
-		model.use_kv_cache=True \
-		model.use_sdpa_with_kv_cache=True \
-		backend.xnnpack.enabled=True \
-		quantization.qmode="8da4w" \
-		quantization.group_size=128 \
-		model.dtype_override="fp32" \
-		base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' \
-		quantization.embedding_quantize=\'4,32\' \
-		export.output_name="llama3_kv_sdpa_xnn_qe_4_32.pte"
-    ```
+```
+python -m extension.llm.export.export_llm \
+    --config examples/models/llama/config/llama_q8da4w.yaml
+    base.model_clas="llama3"
+	base.checkpoint=<consolidated.00.pth.pth> \
+	base.params=<params.json> \
+```
     Due to the larger vocabulary size of Llama 3, we recommend quantizing the embeddings with `quantization.embedding_quantize=\'4,32\'` as shown above to further reduce the model size.
 
 
@@ -276,20 +240,20 @@ You can export and run the original Llama 3 8B instruct model.
 Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the section of Common Issues and Mitigations below for solutions.
 
 2. Build llama runner.
-    ```
-    cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DBUILD_TESTING=OFF \
-        -DCMAKE_BUILD_TYPE=Release \
-        -Bcmake-out/examples/models/llama \
-        examples/models/llama
+```
+cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
+	-DBUILD_TESTING=OFF \
+	-DCMAKE_BUILD_TYPE=Release \
+	-Bcmake-out/examples/models/llama \
+	examples/models/llama
 
-    cmake --build cmake-out/examples/models/llama -j16 --config Release
-    ```
+cmake --build cmake-out/examples/models/llama -j16 --config Release
+```
 
 3. Run model. Run options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/llama/main.cpp#L18-L40).
-    ```
-    cmake-out/examples/models/llama/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.model> --prompt=<prompt>
-    ```
+```
+cmake-out/examples/models/llama/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.model> --prompt=<prompt>
+```
 
 To build for CoreML backend and validate on Mac, replace `-DEXECUTORCH_BUILD_XNNPACK=ON` with `-DEXECUTORCH_BUILD_COREML=ON`
 

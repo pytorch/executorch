@@ -53,16 +53,9 @@ torch.save(sd, "/tmp/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/checkpoint.pth")
 5. Generate a PTE file for use with the Llama runner.
 ```
 python -m extension.llm.export.export_llm \
+    --config examples/models/deepseek-r1-distill-llama-8B/config/deepseek-r1-distill-llama-8B
     base.checkpoint=/tmp/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/checkpoint.pth \
 	base.params=params.json \
-	model.use_kv_cache=True \
-	model.use_sdpa_with_kv_cache=True \
-	backend.xnnpack.enabled=True \
-	quantization.qmode="8da4w" \
-	quantization.group_size=128 \
-	model.dtype_override="fp16" \
-	base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' \
-	quantization.embedding_quantize=\'4,32\' \
 	export.output_name="DeepSeek-R1-Distill-Llama-8B.pte"
 ```
 
