@@ -43,6 +43,12 @@ if is_backend_enabled("coreml"):
     COREML_TEST_FLOW = ("coreml", CoreMLTester)
     ALL_TEST_FLOWS.append(COREML_TEST_FLOW)
 
+if is_backend_enabled("vulkan"):
+    from executorch.backends.vulkan.test.tester import VulkanTester
+
+    VULKAN_TEST_FLOW = ("vulkan", VulkanTester)
+    ALL_TEST_FLOWS.append(VULKAN_TEST_FLOW)
+
 
 DTYPES = [
     torch.int8,
@@ -86,7 +92,7 @@ def _expand_test(cls, test_name: str):
     for (flow_name, tester_factory) in ALL_TEST_FLOWS:
         _create_test_for_backend(cls, test_func, flow_name, tester_factory)                        
     delattr(cls, test_name)
-
+    
 def _create_test_for_backend(
     cls,
     test_func: Callable,
@@ -103,14 +109,17 @@ def _create_test_for_backend(
         setattr(cls, test_name, wrapped_test)
     elif test_type == TestType.DTYPE:
         for dtype in DTYPES:
-            def wrapped_test(self):
-                test_func(self, dtype, tester_factory)
-            
+            wrapped_test = _create_dtype_test(test_func, dtype, tester_factory)
             dtype_name = str(dtype)[6:] # strip "torch."
             test_name = f"{test_func.__name__}_{dtype_name}_{flow_name}"
             setattr(cls, test_name, wrapped_test)
     else:
         raise NotImplementedError(f"Unknown test type {test_type}.")
+
+def _create_dtype_test(test_func, dtype, tester_factory) -> Callable:
+    def wrapped_test(self):
+        test_func(self, dtype, tester_factory)
+    return wrapped_test
 
 
 class OperatorTest(unittest.TestCase):
