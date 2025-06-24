@@ -29,7 +29,7 @@ using OptionValue =
 struct BackendOption {
   // key is the name of the backend option, like num_threads, enable_profiling,
   // etc
-  char key[kMaxOptionKeyLength];
+  char key[kMaxOptionKeyLength]{};
   // value is the value of the backend option, like 4, true, etc
   OptionValue value;
 };
@@ -129,7 +129,7 @@ class BackendOptions {
   Error set_option(const char (&key)[N], const char* value) noexcept {
     static_assert(N <= kMaxOptionKeyLength, "Option key is too long");
     // Create a fixed-size array and copy the string
-    std::array<char, kMaxOptionValueLength> arr;
+    std::array<char, kMaxOptionValueLength> arr{};
     strncpy(arr.data(), value, kMaxOptionValueLength - 1);
     arr[kMaxOptionValueLength - 1] = '\0'; // Ensure null termination
     return set_option_impl(key, arr);

@@ -40,23 +40,23 @@ class MockBackend : public BackendInterface {
   }
 
   Result<DelegateHandle*> init(
-      BackendInitContext& context,
-      FreeableBuffer* processed,
-      ArrayRef<CompileSpec> compile_specs) const override {
+      __ET_UNUSED BackendInitContext& context,
+      __ET_UNUSED FreeableBuffer* processed,
+      __ET_UNUSED ArrayRef<CompileSpec> compile_specs) const override {
     init_called = true;
     return nullptr;
   }
 
   Error execute(
-      BackendExecutionContext& context,
-      DelegateHandle* handle,
-      EValue** args) const override {
+      __ET_UNUSED BackendExecutionContext& context,
+      __ET_UNUSED DelegateHandle* handle,
+      __ET_UNUSED EValue** args) const override {
     execute_count++;
     return Error::Ok;
   }
 
   Error set_option(
-      BackendOptionContext& context,
+      __ET_UNUSED BackendOptionContext& context,
       const executorch::runtime::Span<BackendOption>& backend_options)
       override {
     set_option_count++;

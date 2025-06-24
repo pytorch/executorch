@@ -111,7 +111,7 @@ class BackendInterface {
    * @retval Error::Ok if successful.
    */
   ET_NODISCARD virtual Error set_option(
-      BackendOptionContext& context,
+      __ET_UNUSED BackendOptionContext& context,
       const executorch::runtime::Span<BackendOption>& backend_options) {
     return Error::Ok;
   };
@@ -127,7 +127,7 @@ class BackendInterface {
    * @retval Error::Ok if successful.
    */
   ET_NODISCARD virtual Error get_option(
-      BackendOptionContext& context,
+      __ET_UNUSED BackendOptionContext& context,
       executorch::runtime::Span<BackendOption>& backend_options) {
     return Error::Ok;
   };
