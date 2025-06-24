@@ -489,6 +489,68 @@ def get_imagenet_dataset(
     return inputs, targets, input_list
 
 
+def get_masked_language_model_dataset(dataset_path, tokenizer, data_size, shuffle=True):
+    import random
+
+    import transformers
+
+    from torch.utils.data import Dataset
+
+    def get_data_loader():
+        class MaskedSentencesDataset(Dataset):
+            def __init__(self, dataset_path, tokenizer, data_size) -> None:
+                self.data_size = data_size
+                self.dataset = self._get_val_dataset(dataset_path, data_size, tokenizer)
+
+            def _get_val_dataset(self, dataset_path, data_size, tokenizer):
+                data_collator = transformers.DataCollatorForLanguageModeling(
+                    tokenizer=tokenizer
+                )
+                with open(dataset_path, "r") as f:
+                    texts = f.read().split("\n")
+                    texts = [
+                        text for text in random.choices(texts, k=2000) if len(text) > 1
+                    ]
+                    dataset = data_collator([tokenizer(text) for text in texts])
+                return dataset
+
+            def __getitem__(self, idx):
+                return (
+                    self.dataset["input_ids"][idx].to(torch.int32),
+                    self.dataset["attention_mask"][idx].to(torch.float32),
+                    self.dataset["labels"][idx],
+                )
+
+            def __len__(self):
+                return self.data_size
+
+        dataset = MaskedSentencesDataset(dataset_path, tokenizer, data_size)
+        return torch.utils.data.DataLoader(
+            dataset,
+            shuffle=shuffle,
+        )
+
+    # prepare input data
+    inputs, targets, input_list = [], [], ""
+    data_loader = get_data_loader()
+    for _, data in enumerate(data_loader):
+        index = len(inputs)
+        if len(inputs) >= data_size:
+            break
+        input_ids = data[0]
+        attention_mask = data[1]
+        target = data[2][0]
+        indice = [i for i, x in enumerate(target) if x != -100]
+        # continue if no mask annotated
+        if len(indice) == 0:
+            continue
+        inputs.append((input_ids, attention_mask))
+        targets.append(target)
+        input_list += f"input_{index}_0.raw input_{index}_1.raw\n"
+
+    return inputs, targets, input_list
+
+
 def setup_common_args_and_variables():
     parser = argparse.ArgumentParser()
 

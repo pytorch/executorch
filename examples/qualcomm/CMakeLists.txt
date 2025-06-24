@@ -35,7 +35,10 @@ find_package(gflags REQUIRED)
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 # Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/json/single_include)
+set(_common_include_directories
+    ${EXECUTORCH_ROOT}/..
+    ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/json/single_include
+)
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
@@ -72,20 +75,11 @@ target_include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/llama.cpp-unicode/src
 )
 
-# find RE2 for tokenizer
-set(ABSL_ENABLE_INSTALL ON)
-set(ABSL_PROPAGATE_CXX_STD ON)
-set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+# add tokenizers
 add_subdirectory(
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/abseil-cpp
-  ${CMAKE_CURRENT_BINARY_DIR}/abseil-cpp
+  ${EXECUTORCH_ROOT}/extension/llm/tokenizers
+  ${CMAKE_CURRENT_BINARY_DIR}/../../extension/llm/tokenizers
 )
-add_subdirectory(
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/re2
-  ${CMAKE_CURRENT_BINARY_DIR}/re2
-)
-set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 
 # build qnn_executor_runner
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/executor_runner)

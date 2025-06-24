@@ -1,8 +1,9 @@
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
-
 import torch
+
+from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
 
 from .node_visitor import NodeVisitor
 from .node_visitor_manager import register_node_visitor
@@ -22,6 +23,10 @@ class IndexPutVisitor(NodeVisitor):
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
         input_node = self.get_node(node.args[0])
+        # Because the args[0] of index_put op doesn't annotate, need to fill in the quant_attr with the node here.
+        if quant_attrs := node.meta.get(QCOM_QUANT_ATTRS):
+            quant_attrs = quant_attrs.copy()
+            input_node.meta[QCOM_QUANT_ATTRS] = quant_attrs
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,

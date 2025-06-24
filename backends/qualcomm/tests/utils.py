@@ -183,6 +183,7 @@ class TestQNN(unittest.TestCase):
     executorch_root: str = ""
     artifact_dir: str = ""
     image_dataset: str = ""
+    sentence_dataset: str = ""
     pretrained_weight: str = ""
     enable_profile: bool = False
     op_package_dir: str = ""
@@ -461,6 +462,7 @@ class TestQNN(unittest.TestCase):
         passes_job: Optional[OrderedDict] = None,
         skip_node_id_set: set = None,
         skip_node_op_set: set = None,
+        skip_mutable_buffer: bool = False,
         dynamic_shapes: Dict = None,
     ):
         delegated_program = to_edge_transform_and_lower_to_qnn(
@@ -471,6 +473,7 @@ class TestQNN(unittest.TestCase):
             passes_job=passes_job,
             skip_node_id_set=skip_node_id_set,
             skip_node_op_set=skip_node_op_set,
+            skip_mutable_buffer=skip_mutable_buffer,
         )
 
         # this is needed for the ETRecord as lowering modifies the graph in-place

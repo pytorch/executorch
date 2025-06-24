@@ -103,7 +103,7 @@ def define_common_targets():
                 ":text_token_generator" + aten_suffix,
                 "//pytorch/tokenizers:hf_tokenizer",
                 "//pytorch/tokenizers:llama2c_tokenizer",
-                # "//pytorch/tokenizers:sentencepiece", # TODO(larryliu0820) Make sure this compiles in xplat.
+                "//pytorch/tokenizers:sentencepiece",
                 "//pytorch/tokenizers:tiktoken",
             ],
         )

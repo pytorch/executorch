@@ -50,5 +50,6 @@ from . import (  # noqa
     op_static_constant_pad,
     op_static_resize_bilinear_2d,
     op_sub,
+    op_tanh,
     op_to_copy,
 )

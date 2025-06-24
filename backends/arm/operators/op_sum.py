@@ -106,8 +106,6 @@ class SumVisitor_080_MI(SumVisitor_080_BI):
         if inputs[0].dtype == ts.DType.INT8:
             return super().define_node(node, tosa_graph, inputs, output)
 
-        validate_num_inputs(self.target, inputs, 3)
-
         tensor = inputs[0]
         input_shape = list(tensor.shape)
         dim = int(inputs[1].number % len(input_shape))

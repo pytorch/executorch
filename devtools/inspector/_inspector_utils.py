@@ -8,6 +8,7 @@
 
 import math
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, IO, List, Mapping, Optional, Tuple, TypeAlias, Union
@@ -676,17 +677,60 @@ def map_runtime_aot_intermediate_outputs(
         # Map only if both AOT and runtime data are present.
         if len(aot_list) != 0 and len(runtime_list) != 0:
             # Combine aot debug handles into a single key
-            aot_combined_debug_handle, aot_output = (
+            aot_combined_debug_handle, aot_intermediate_output = (
                 _combine_overlapped_intermediate_outputs(aot_list)
             )
             # Combine runtime debug handles into a single key
-            runtime_combined_debug_handle, runtime_output = (
+            runtime_combined_debug_handle, runtime_intermediate_output = (
                 _combine_overlapped_intermediate_outputs(runtime_list)
             )
+            # List can't be used as a key, so convert to tuple
+            if isinstance(aot_intermediate_output, list):
+                aot_intermediate_output = tuple(aot_intermediate_output)
+            # runtime follow the same format as aot, so it's safe to convert to tuple
+            if isinstance(runtime_intermediate_output, list):
+                runtime_intermediate_output = tuple(runtime_intermediate_output)
             # Create a mapping between runtime and aot
-            aot_runtime_mapping[(aot_combined_debug_handle, aot_output)] = (
+            aot_runtime_mapping[
+                (aot_combined_debug_handle, aot_intermediate_output)
+            ] = (
                 runtime_combined_debug_handle,
-                runtime_output,
+                runtime_intermediate_output,
             )
 
     return aot_runtime_mapping
+
+
+def convert_to_float_tensor(input_data: Any) -> torch.Tensor:
+    """
+    Convert input_data into a torch.Tensor on CPU with dtype torch.float64.
+    This function handles the following types of input:
+    - Scalar (int or float): Converts to a tensor with a single element.
+    - Tensor: Converts to a float64 tensor on CPU.
+    - Sequence of Tensors: Stacks the tensors into a single float64 tensor on CPU.
+    The resulting tensor is detached, moved to CPU, and cast to torch.float64.
+    Parameters:
+    input_data (Any): The input data to be converted to a tensor. It can be a scalar,
+                      a tensor, or a list of tensors.
+    Returns:
+    torch.Tensor: A tensor on CPU with dtype torch.float64.
+    Raises:
+    ValueError: If the input_data cannot be converted to a tensor.
+    """
+    try:
+        # Check if the input is a Sequence of tensors
+        if isinstance(input_data, Sequence):
+            input_tensor = torch.stack([convert_to_float_tensor(a) for a in input_data])
+        # Try to convert the input to a tensor
+        else:
+            input_tensor = torch.as_tensor(input_data, dtype=torch.float64)
+    except Exception as e:
+        raise ValueError(
+            f"Cannot convert value of type {type(input_data)} to a tensor: {e}"
+        )
+    input_tensor = input_tensor.detach().cpu().double()
+
+    # Convert NaN to 0.0
+    if torch.isnan(input_tensor).any():
+        input_tensor = torch.nan_to_num(input_tensor)
+    return input_tensor
