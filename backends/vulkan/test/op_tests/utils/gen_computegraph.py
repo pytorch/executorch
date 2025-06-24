@@ -344,7 +344,6 @@ class ComputeGraphGen:
         if not include_declarations:
             cpp_type = ""
 
-        print(ref)
         if ref.src_cpp_type == OPT_AT_TENSOR:
             ret_str = f"{cpp_type} {ref.name} = "
             if prepack:
