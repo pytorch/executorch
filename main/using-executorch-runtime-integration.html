@@ -524,7 +524,54 @@
 <p>For non-POSIX-compliant systems, a minimal no-op PAL implementation is provided. It is expected that users override the relevant PAL methods in order to enable logging, timestamps, and aborts. The minimal PAL can be selected by building with <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_PAL_DEFAULT=minimal</span></code>.</p>
 <div class="section" id="overriding-the-pal">
 <h3>Overriding the PAL<a class="headerlink" href="#overriding-the-pal" title="Permalink to this heading">¶</a></h3>
-<p>Overriding the default PAL implementation is commonly done to route logs to a user-specified destination or to provide PAL functionality on embedded systems. To override one or more PAL methods, take the following steps:</p>
+<p>Overriding the default PAL implementation is commonly done to route logs to a user-specified destination or to provide PAL functionality on embedded systems. The PAL can be overriden usinn runtime APIs or at link time. Prefer the runtime API unless you specifically need link-time overrides.</p>
+</div>
+<div class="section" id="runtime-pal-registration">
+<h3>Runtime PAL Registration<a class="headerlink" href="#runtime-pal-registration" title="Permalink to this heading">¶</a></h3>
+<p>To register a custom PAL implementation, take the following steps:</p>
+<ul class="simple">
+<li><p>Include
+<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/platform.h"><code class="docutils literal notranslate"><span class="pre">executorch/runtime/platform/platform.h</span></code></a>
+in one of your application’s <code class="docutils literal notranslate"><span class="pre">.c</span></code> or <code class="docutils literal notranslate"><span class="pre">.cpp</span></code> files.</p></li>
+<li><p>Create an instance of the <a class="reference external" href="https://github.com/pytorch/executorch/blob/7b39a0ce63bfb5124d4d29cfb6c8af85a3c580ba/runtime/platform/platform.h#L163">PalImpl</a> struct.</p>
+<ul>
+<li><p>Set one or more fields to custom PAL function implementations. Leave fields as null to use the default platform implementation.</p></li>
+<li><p>The PalImpl struct provides a <a class="reference external" href="https://github.com/pytorch/executorch/blob/7b39a0ce63bfb5124d4d29cfb6c8af85a3c580ba/runtime/platform/platform.h#L168">create</a> method for this purpose.</p></li>
+</ul>
+</li>
+<li><p>Call <code class="docutils literal notranslate"><span class="pre">executorch::platform::register_pal(pal_impl)</span></code> to register the implementation.</p>
+<ul>
+<li><p>This can be done from as as a global constructor, as in the example below.</p></li>
+</ul>
+</li>
+</ul>
+<p>Here is a complete example from <a class="reference external" href="https://github.com/pytorch/executorch/blob/7b39a0ce63bfb5124d4d29cfb6c8af85a3c580ba/extension/pybindings/pybindings.cpp#L1178">pybindings.cpp</a>, where logs are redirected to show up properly in a Python notebook environment.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">namespace</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kt">void</span><span class="w"> </span><span class="nf">emit_log_message</span><span class="p">(</span>
+<span class="w">      </span><span class="n">et_timestamp_t</span><span class="w"> </span><span class="n">timestamp</span><span class="p">,</span>
+<span class="w">      </span><span class="n">et_pal_log_level_t</span><span class="w"> </span><span class="n">level</span><span class="p">,</span>
+<span class="w">      </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">filename</span><span class="p">,</span>
+<span class="w">      </span><span class="n">ET_UNUSED</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">function</span><span class="p">,</span>
+<span class="w">      </span><span class="kt">size_t</span><span class="w"> </span><span class="n">line</span><span class="p">,</span>
+<span class="w">      </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">message</span><span class="p">,</span>
+<span class="w">      </span><span class="n">ET_UNUSED</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">length</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">cerr</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="s">&quot;[&quot;</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">filename</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="s">&quot;:&quot;</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">line</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="s">&quot;] &quot;</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">message</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">endl</span><span class="p">;</span>
+<span class="w">  </span><span class="p">}</span>
+
+<span class="w">  </span><span class="n">runtime</span><span class="o">::</span><span class="n">PalImpl</span><span class="w"> </span><span class="nf">build_pal</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">runtime</span><span class="o">::</span><span class="n">PalImpl</span><span class="o">::</span><span class="n">create</span><span class="p">(</span><span class="n">emit_log_message</span><span class="p">,</span><span class="w"> </span><span class="n">__FILE__</span><span class="p">);</span>
+<span class="w">  </span><span class="p">}</span>
+
+<span class="w">  </span><span class="c1">// Update PAL to redirect logs.</span>
+<span class="w">  </span><span class="n">ET_UNUSED</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="n">registration_result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">runtime</span><span class="o">::</span><span class="n">register_pal</span><span class="p">(</span><span class="n">build_pal</span><span class="p">());</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="weak-symbol-override">
+<h3>Weak Symbol Override<a class="headerlink" href="#weak-symbol-override" title="Permalink to this heading">¶</a></h3>
+<p>ExecuTorch also provides a link-time method to override the PAL using weak symbols. This method is primarily maintained for backwards compatability.</p>
+<p>To override one or more PAL methods, take the following steps:</p>
 <ul class="simple">
 <li><p>Include
 <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/platform.h"><code class="docutils literal notranslate"><span class="pre">executorch/runtime/platform/platform.h</span></code></a>
@@ -600,6 +647,8 @@ definitions in the link order.</p>
 <li><a class="reference internal" href="#logging">Logging</a></li>
 <li><a class="reference internal" href="#platform-abstraction-layer-pal">Platform Abstraction Layer (PAL)</a><ul>
 <li><a class="reference internal" href="#overriding-the-pal">Overriding the PAL</a></li>
+<li><a class="reference internal" href="#runtime-pal-registration">Runtime PAL Registration</a></li>
+<li><a class="reference internal" href="#weak-symbol-override">Weak Symbol Override</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#kernel-libraries">Kernel Libraries</a></li>
