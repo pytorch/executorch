@@ -1,0 +1,129 @@
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.python_library(
+    name = "text_decoder_model_args",
+    srcs = [
+        "model_args.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.extension.llm.modeling.text_decoder",
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+)
+
+runtime.python_library(
+    name = "text_decoder_norm",
+    srcs = [
+        "norm.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.extension.llm.modeling.text_decoder",
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+runtime.python_library(
+    name = "text_decoder_rope",
+    srcs = [
+        "rope.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.extension.llm.modeling.text_decoder",
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        ":text_decoder_model_args",
+        "//caffe2:torch",
+    ],
+)
+
+runtime.python_library(
+    name = "text_decoder_attention",
+    srcs = [
+        "attention/attention.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.extension.llm.modeling.text_decoder.attention",
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        ":text_decoder_model_args",
+        ":text_decoder_norm",
+        ":text_decoder_rope",
+        "//caffe2:torch",
+    ],
+)
+
+runtime.python_library(
+    name = "text_decoder_static_attention",
+    srcs = [
+        "attention/static_attention.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.extension.llm.modeling.text_decoder.attention",
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        ":text_decoder_attention",
+        ":text_decoder_model_args",
+        ":text_decoder_rope",
+        "//caffe2:torch",
+    ],
+)
+
+runtime.python_library(
+    name = "text_decoder_model",
+    srcs = [
+        "model.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.extension.llm.modeling.text_decoder",
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        ":text_decoder_model_args",
+        ":text_decoder_rope",
+        "//caffe2:torch",
+        "//executorch/examples/models:checkpoint",
+        "//executorch/examples/models:model_base",
+        "//executorch/examples/models/llama:llama_transformer",
+        "//executorch/extension/llm/export/config:llm_config",
+        "fbsource//third-party/pypi/torchao:torchao",
+    ],
+)
+
+runtime.python_library(
+    name = "text_decoder_all",
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        ":text_decoder_attention",
+        ":text_decoder_model",
+        ":text_decoder_model_args",
+        ":text_decoder_norm",
+        ":text_decoder_rope",
+        ":text_decoder_static_attention",
+    ],
+)
