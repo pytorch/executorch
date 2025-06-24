@@ -77,7 +77,7 @@ python3 .ci/scripts/benchmark_tooling/analyze_benchmark_stability.py \
 
 ##### Filtering Options:
 
-- `--device-pools`: Filter by private device pool names (e.g., "samsung-galaxy-s22-5g", "samsung-galaxy-s22plus-5g")
+- `--device-pools`: Filter by device pool names (e.g., "apple_iphone_15_private", "samsung_s22_private")
 - `--backends`: Filter by specific backend names (e.g.,"xnnpack_q8")
 - `--models`: Filter by specific model names (e.g., "mv3", "meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8")
 
