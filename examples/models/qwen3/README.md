@@ -7,7 +7,7 @@ Qwen 3 uses the same example code as our optimized Llama model, while the checkp
 
 All commands for exporting and running Llama on various backends should also be applicable to Qwen 3, by swapping the following args:
 ```
-base.model_class=[qwen3-0_6b,qwen3-1_7b,qwen3-4b]
+base.model_class=[qwen3_0_6b,qwen3_1_7b,qwen3_4b]
 base.params=[examples/models/qwen3/0_6b_config.json,examples/models/qwen3/1_7b_config.json,examples/models/qwen3/4b_config.json]
 ```
 
@@ -17,7 +17,7 @@ Here is a basic example for exporting Qwen 3, although please refer to the Llama
 Export 0.6b to XNNPack, quantized with 8da4w:
 ```
 python -m extension.llm.export.export_llm \
-  base.model_class="qwen3-0_6b" \
+  base.model_class="qwen3_0_6b" \
   base.params="examples/models/qwen3/0_6b_config.json" \
   model.use_kv_cache=True \
   model.use_sdpa_with_kv_cache=True \
@@ -26,14 +26,14 @@ python -m extension.llm.export.export_llm \
   backend.xnnpack.extended_ops=True \
   quantization.qmode="8da4w" \
   base.metadata='"{\"get_bos_id\": 151644, \"get_eos_ids\":[151645]}"' \
-  export.output_name="qwen3-0_6b.pte" \
+  export.output_name="qwen3_0_6b.pte" \
   debug.verbose=True
 ```
 
 Export 1.7b to XNNPack, quantized with 8da4w:
 ```
 python -m extension.llm.export.export_llm \
-  base.model_class="qwen3-1_7b" \
+  base.model_class="qwen3_1_7b" \
   base.params="examples/models/qwen3/1_7b_config.json" \
   model.use_kv_cache=True \
   model.use_sdpa_with_kv_cache=True \
@@ -42,14 +42,14 @@ python -m extension.llm.export.export_llm \
   backend.xnnpack.extended_ops=True \
   quantization.qmode="8da4w" \
   base.metadata='"{\"get_bos_id\": 151644, \"get_eos_ids\":[151645]}"' \
-  export.output_name="qwen3-1_7b.pte" \
+  export.output_name="qwen3_1_7b.pte" \
   debug.verbose=True
 ```
 
 Export 4b to XNNPack, quantized with 8da4w:
 ```
 python -m extension.llm.export.export_llm \
-  base.model_class="qwen3-4b" \
+  base.model_class="qwen3_4b" \
   base.params="examples/models/qwen3/4b_config.json" \
   model.use_kv_cache=True \
   model.use_sdpa_with_kv_cache=True \
@@ -58,7 +58,7 @@ python -m extension.llm.export.export_llm \
   backend.xnnpack.extended_ops=True \
   quantization.qmode="8da4w" \
   base.metadata='"{\"get_bos_id\": 151644, \"get_eos_ids\":[151645]}"' \
-  export.output_name="qwen3-4b.pte" \
+  export.output_name="qwen3_4b.pte" \
   debug.verbose=True
 ```
 
@@ -66,8 +66,8 @@ python -m extension.llm.export.export_llm \
 With ExecuTorch pybindings:
 ```
 python -m examples.models.llama.runner.native
-  --model qwen3-0_6b \
-  --pte qwen3-0_6b.pte \
+  --model qwen3_0_6b \
+  --pte qwen3_0_6b.pte \
   --tokenizer ~/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B/snapshots/a9c98e602b9d36d2a2f7ba1eb0f5f31e4e8e5143/tokenizer.json \
   --tokenizer_config ~/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B/snapshots/a9c98e602b9d36d2a2f7ba1eb0f5f31e4e8e5143/tokenizer_config.json \
   --prompt "Who is the president of the US?" \
@@ -80,7 +80,7 @@ python -m examples.models.llama.runner.native
 With ExecuTorch's sample c++ runner (see the Llama README's [Step 3: Run on your computer to validate](../llama/README.md#step-3-run-on-your-computer-to-validate) to build the runner):
 ```
 cmake-out/examples/models/llama/llama_main
-  --model_path qwen3-0_6b.pte
+  --model_path qwen3_0_6b.pte
   --tokenizer_path ~/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B/snapshots/a9c98e602b9d36d2a2f7ba1eb0f5f31e4e8e5143/tokenizer.json
   --prompt="Who is the president of the US?"
 ```
