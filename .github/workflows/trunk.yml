@@ -301,6 +301,61 @@ jobs:
             exit 1
         fi
 
+  test-arm-cortex-m-zephyr-size-test:
+    name: test-arm-cortex-m-zephyr-size-test
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-arm-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+        .ci/scripts/setup-arm-zephyr-tools.sh
+        source examples/arm/ethos-u-scratch/setup_path.sh
+
+        # User baremetal toolchain
+        arm-zephyr-eabi-c++ --version
+        toolchain_cmake=examples/arm/ethos-u-setup/arm-zephyr-eabi-gcc.cmake
+        toolchain_cmake=$(realpath ${toolchain_cmake})
+
+        # Build and test size test
+        cmake --preset zephyr
+        bash test/build_size_test.sh "-DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake}"
+        elf="cmake-out/test/size_test"
+
+        # Dump basic info
+        ls -al ${elf}
+        arm-zephyr-eabi-size ${elf}
+
+        # Dump symbols
+        python .github/scripts/run_nm.py -e ${elf}
+        python .github/scripts/run_nm.py -e ${elf} -f "executorch" -p "arm-zephyr-eabi-"
+        python .github/scripts/run_nm.py -e ${elf} -f "executorch_text" -p "arm-zephyr-eabi-"
+
+        # Add basic guard - TODO: refine this!
+        arm-zephyr-eabi-strip ${elf}
+        output=$(ls -la ${elf})
+        arr=($output)
+        size=${arr[4]}
+        threshold="103268" # ~100KiB
+        echo "size: $size, threshold: $threshold"
+        if [[ "$size" -le "$threshold" ]]; then
+          echo "Success $size <= $threshold"
+        else
+          echo "Fail $size > $threshold"
+          exit 1
+        fi
+
   test-coreml-delegate:
     name: test-coreml-delegate
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
