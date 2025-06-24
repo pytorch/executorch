@@ -66,7 +66,10 @@ def is_matching_dataset(primary_sheet, reference_sheet):
 
 
 def analyze_latency_stability(  # noqa: C901
-    primary_file, reference_file=None, output_dir="stability_analysis_results",debug=False
+    primary_file,
+    reference_file=None,
+    output_dir="stability_analysis_results",
+    debug=False,
 ):
     print(f"Analyzing latency stability from primary file: {primary_file}")
     if reference_file:
@@ -1551,16 +1554,18 @@ def main():
     )
 
     parser.add_argument(
-    "--debug",
-    action="store_true",
-    help="Enable debug mode (default: False)",
+        "--debug",
+        action="store_true",
+        help="Enable debug mode (default: False)",
     )
 
     # Parse arguments
     args = parser.parse_args()
 
     # Run analysis
-    analyze_latency_stability(args.primary_file, args.reference_file, args.output_dir, args.debug)
+    analyze_latency_stability(
+        args.primary_file, args.reference_file, args.output_dir, args.debug
+    )
 
 
 if __name__ == "__main__":
