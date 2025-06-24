@@ -36,3 +36,18 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
         ],
     )
+
+    runtime.cxx_test(
+        name = "test_text_decoder_runner",
+        srcs = ["test_text_decoder_runner.cpp"],
+        deps = [
+            "//executorch/extension/llm/runner:runner_lib",
+            "//executorch/kernels/portable:generated_lib",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+        ],
+        env = {
+            "KVCACHE_CACHE_POS": "$(location fbcode//executorch/test/models:exported_programs[ModuleKVCacheCachePos.pte])",
+            "KVCACHE_INPUT_POS": "$(location fbcode//executorch/test/models:exported_programs[ModuleKVCacheInputPos.pte])",
+            "NO_KVCACHE": "$(location fbcode//executorch/test/models:exported_programs[ModuleNoKVCache.pte])",
+        }
+    )

@@ -44,7 +44,7 @@ class TensorInfo final {
   /**
    * Returns the sizes of the tensor.
    */
-  Span<const int32_t> sizes() const;
+  Span<const ::executorch::aten::SizesType> sizes() const;
 
   /**
    * Returns the dim order of the tensor.
