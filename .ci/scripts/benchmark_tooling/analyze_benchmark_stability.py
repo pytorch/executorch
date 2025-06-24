@@ -66,7 +66,7 @@ def is_matching_dataset(primary_sheet, reference_sheet):
 
 
 def analyze_latency_stability(  # noqa: C901
-    primary_file, reference_file=None, output_dir="stability_analysis_results"
+    primary_file, reference_file=None, output_dir="stability_analysis_results",debug=False
 ):
     print(f"Analyzing latency stability from primary file: {primary_file}")
     if reference_file:
@@ -80,6 +80,9 @@ def analyze_latency_stability(  # noqa: C901
     print_section_header("LOADING PRIMARY DATASETS (Private)")
     primary_datasets = {}
     documents = read_excel_with_json_header(primary_file)
+
+    if debug:
+        print(f"[Debug Mode] Printing documents: {documents}")
 
     for document in documents:
         sheetName = document.get("sheetName", None)
@@ -1547,11 +1550,17 @@ def main():
         help="Directory to save analysis results (default: stability_analysis_results)",
     )
 
+    parser.add_argument(
+    "--debug",
+    action="store_true",
+    help="Enable debug mode (default: False)",
+    )
+
     # Parse arguments
     args = parser.parse_args()
 
     # Run analysis
-    analyze_latency_stability(args.primary_file, args.reference_file, args.output_dir)
+    analyze_latency_stability(args.primary_file, args.reference_file, args.output_dir, args.debug)
 
 
 if __name__ == "__main__":
