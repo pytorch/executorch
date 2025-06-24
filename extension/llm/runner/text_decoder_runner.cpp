@@ -9,6 +9,7 @@
 // Given inputs, run a text decoder and return logits.
 
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
+#include <executorch/kernels/portable/cpu/util/arange_util.h>
 
 #include <ctime>
 
@@ -48,18 +49,15 @@ TextDecoderRunner::TextDecoderRunner(Module* module) : module_(module) {}
       sizes_vec.emplace_back(size);
       numel *= size;
     }
-    // Assuming the last dimension is the one with the variable token length
-    sizes_vec[sizes_vec.size() - 1] = -1;
+    // Assuming the last dimension is the one with the variable token length,
+    // for example [1, S] or [1, 1, S]
+    sizes_vec[sizes_vec.size() - 1] = numel;
     TensorPtr start_pos_tensor;
     if (numel > 1) {
       // Assuming model is exported with cache_positions, create a tensor with
       // the same size as cache_positions
-      start_pos_tensor = arange(
-          start_pos,
-          start_pos + tokens->numel(),
-          1,
-          sizes_vec,
-          ::executorch::aten::ScalarType::Long);
+      start_pos_tensor = empty({sizes_vec}, ::executorch::aten::ScalarType::Long);
+      torch::executor::native::arange_out_impl(start_pos, start_pos + numel, 1.0, *start_pos_tensor);
     } else {
       // Assuming model is exported with input_pos, create a tensor with size 1
       start_pos_tensor =

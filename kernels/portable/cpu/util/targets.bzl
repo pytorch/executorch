@@ -13,6 +13,7 @@ def define_common_targets():
         name = "all_deps",
         exported_deps = [
             "//executorch/extension/threadpool:threadpool",
+            "//executorch/kernels/portable/cpu/util:arange_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:kernel_ops_util",
@@ -292,6 +293,19 @@ def define_common_targets():
             "//executorch/runtime/kernel:kernel_includes",
         ],
         visibility = ["//executorch/kernels/portable/cpu/..."],
+    )
+
+    runtime.cxx_library(
+        name = "arange_util",
+        srcs = ["arange_util.cpp"],
+        exported_headers = ["arange_util.h"],
+        exported_deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = [
+            "//executorch/kernels/portable/cpu/...",
+            "//executorch/extension/llm/...",
+        ],
     )
 
     runtime.cxx_library(
