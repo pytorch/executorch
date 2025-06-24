@@ -61,9 +61,11 @@ class MockBackend : public BackendInterface {
     int success_update = 0;
     for (const auto& backend_option : backend_options) {
       if (strcmp(backend_option.key, "Backend") == 0) {
-        if (std::holds_alternative<std::array<char, 256>>(backend_option.value)) {
+        if (std::holds_alternative<std::array<char, 256>>(
+                backend_option.value)) {
           // Store the value in our member variable
-          const auto& arr = std::get<std::array<char, 256>>(backend_option.value);
+          const auto& arr =
+              std::get<std::array<char, 256>>(backend_option.value);
           target_backend = std::string(arr.data());
           success_update++;
         }
