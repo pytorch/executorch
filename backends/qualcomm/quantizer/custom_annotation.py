@@ -233,7 +233,7 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
         )
         quantization_config_8a4w_per_channel = get_ptq_per_channel_quant_config(
             act_dtype=torch.uint8,
-            weight_dtype="int4",
+            weight_dtype=torch.int4,
             act_observer=MinMaxObserver,
             act_symmetric=True,
         )
@@ -292,14 +292,15 @@ def custom_annotate_llama_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noq
         )
 
     def annotate_index_put(node: Node, quantization_config: QuantizationConfig) -> None:
-        input = node.args[0]
+        # Avoid annotating the input node because mutable buffers will be folded during the convert_pt2e process.
         value = node.args[2]
+
         input_qspec_map = {}
-        input_qspec_map[input] = quantization_config.input_activation
-        input_qspec_map[value] = SharedQuantizationSpec((input, node))
+        input_qspec_map[value] = quantization_config.input_activation
+
         node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
-            output_qspec=SharedQuantizationSpec((input, node)),
+            output_qspec=SharedQuantizationSpec((value, node)),
             _annotated=True,
         )
 
