@@ -10,10 +10,6 @@
 # ~~~
 
 cmake_minimum_required(VERSION 3.19)
-set(CMAKE_C_COMPILER "/home/zephyruser/zephyr-sdk-0.16.0/arm-zephyr-eabi/bin/arm-zephyr-eabi-gcc")
-set(CMAKE_CXX_COMPILER "/home/zephyruser/zephyr-sdk-0.16.0/arm-zephyr-eabi/bin/arm-zephyr-eabi-g++")
-set(CMAKE_ASM_COMPILER "/home/zephyruser/zephyr-sdk-0.16.0/arm-zephyr-eabi/bin/arm-zephyr-eabi-gcc")
-set(CMAKE_LINKER "/home/zephyruser/zephyr-sdk-0.16.0/arm-zephyr-eabi/bin/arm-zephyr-eabi-ld")
 project(arm_example)
 
 # Option to register op list
