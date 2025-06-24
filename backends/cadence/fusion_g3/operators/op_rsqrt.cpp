@@ -25,14 +25,6 @@ namespace impl {
 namespace G3 {
 namespace native {
 
-namespace {
-
-double rsqrt(double x) {
-  return 1.0 / std::sqrt(x);
-}
-
-} // namespace
-
 Tensor& rsqrt_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
 #ifdef OP_ARG_CHECK
   // Resize for dynamic shape
@@ -60,8 +52,10 @@ Tensor& rsqrt_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
     return out;
   } else {
+    static constexpr const char op_name[] = "rsqrt.out";
     return torch::executor::native::internal::
-        unary_ufunc_realhbbf16_to_floathbf16(rsqrt, ctx, in, out);
+      unary_ufunc_realhbbf16_to_floathbf16<op_name>(
+          [](auto x) { return executorch::math::rsqrt(x); }, ctx, in, out);
   }
 }
 

@@ -533,6 +533,7 @@ ATEN_OPS = (
         name = "op_expm1",
         deps = [
             "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(

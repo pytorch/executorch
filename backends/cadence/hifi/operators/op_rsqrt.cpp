@@ -19,13 +19,6 @@ namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
-namespace {
-
-double rsqrt(double x) {
-  return 1.0 / std::sqrt(x);
-}
-
-} // namespace
 
 Tensor& rsqrt_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
   bool optimized = true;
@@ -45,8 +38,10 @@ Tensor& rsqrt_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
     return out;
   }
 
+  static constexpr const char op_name[] = "rsqrt.out";
   return torch::executor::native::internal::
-      unary_ufunc_realhbbf16_to_floathbf16(rsqrt, ctx, in, out);
+    unary_ufunc_realhbbf16_to_floathbf16<op_name>(
+        [](auto x) { return executorch::math::rsqrt(x); }, ctx, in, out);
 }
 
 } // namespace native
