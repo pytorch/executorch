@@ -393,7 +393,7 @@ TEST_F(BackendUpdateTest, TestSetGetOption) {
   status = get_option("StubBackend", ref_backend_option);
 
   // Verify that the backend actually received the options
-  ASSERT_TRUE(std::get<int>(ref_backend_option.value) ==new_num_threads);
+  ASSERT_TRUE(std::get<int>(ref_backend_option.value) == new_num_threads);
 
   // Verify that the backend actually update the options
   ASSERT_EQ(stub_backend->last_options_size, 1);
