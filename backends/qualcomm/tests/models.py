@@ -909,17 +909,35 @@ class Index(torch.nn.Module):
         return self.dispatcher[self.axis](x)
 
 
-class IndexPut(torch.nn.Module):
-    def __init__(self):
+class IndexCopy(torch.nn.Module):
+    def __init__(self, skip_mutable_buffer=False):
         super().__init__()
+        self.skip_mutable_buffer = skip_mutable_buffer
         self.register_buffer(
             "k_cache",
             torch.zeros((1, 1024, 12, 64), dtype=torch.float32),
+            persistent=True,
+        )
+
+    def forward(self, input_pos, k_val):
+        k_out = self.k_cache
+        k_out.index_copy_(1, input_pos, k_val)
+        return k_out + 0
+
+
+class IndexPut(torch.nn.Module):
+    def __init__(self, skip_mutable_buffer=False):
+        super().__init__()
+        self.skip_mutable_buffer = skip_mutable_buffer
+        self.register_buffer(
+            "k_cache",
+            torch.zeros((1, 1024, 12, 64), dtype=torch.float32),
+            persistent=True,
         )
 
     def forward(self, input_pos, k_val):
         k_out = torch.ops.aten.index_put_(self.k_cache, [None, input_pos], k_val)
-        return k_out
+        return k_out + 0
 
 
 class InstanceNorm2d(torch.nn.Module):
