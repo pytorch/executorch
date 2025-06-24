@@ -917,7 +917,7 @@ ATEN_OPS = (
     op_target(
         name = "op_neg",
         deps = [
-            "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
