@@ -17,6 +17,8 @@ et_dir=$(realpath $script_dir/../..)
 ARCH="$(uname -m)"
 OS="$(uname -s)"
 root_dir="${script_dir}/ethos-u-scratch"
+user_toolchain_url=""
+user_toolchain_dir=""
 eula_acceptance=0
 skip_toolchain_setup=0
 skip_fvp_setup=0
@@ -73,7 +75,7 @@ vela_rev="8cac2b9a7204b57125a8718049519b091a98846c"
 ########
 
 function print_usage() {
-    echo "Usage: $(basename $0) <--i-agree-to-the-contained-eula> [--root-dir path-to-a-scratch-dir] [--skip-fvp-setup] [--skip-toolchain-setup] [--skip-vela-setup]"
+    echo "Usage: $(basename $0) <--i-agree-to-the-contained-eula> [--root-dir path-to-a-scratch-dir] [--user-toolchain-url toolchain-url] [--user-toolchain-dir toolchain-dir] [--skip-fvp-setup] [--skip-toolchain-setup] [--skip-vela-setup]"
     echo "Supplied args: $*"
 }
 
@@ -88,6 +90,30 @@ function check_options() {
                 # Only change default root dir if the script is being executed and not sourced.
                 if [[ $is_script_sourced -eq 0 ]]; then
                     root_dir=${2:-"${root_dir}"}
+                fi
+
+                if [[ $# -ge 2 ]]; then
+                    shift 2
+                else
+                    print_usage "$@"
+                    exit 1
+                fi
+                ;;
+            --user-toolchain-url)
+                if [[ $is_script_sourced -eq 0 ]]; then
+                    user_toolchain_url=${2:-"${user_toolchain_url}"}
+                fi
+
+                if [[ $# -ge 2 ]]; then
+                    shift 2
+                else
+                    print_usage "$@"
+                    exit 1
+                fi
+                ;;
+            --user-toolchain-dir)
+                if [[ $is_script_sourced -eq 0 ]]; then
+                    user_toolchain_dir=${2:-"${user_toolchain_dir}"}
                 fi
 
                 if [[ $# -ge 2 ]]; then
@@ -200,15 +226,27 @@ function setup_fvp() {
 function setup_toolchain() {
     # Download and install the arm-none-eabi toolchain
     cd "${root_dir}"
-    if [[ ! -e "${toolchain_dir}.tar.xz" ]]; then
+    local selected_toolchain_url="${toolchain_url}"
+    local selected_toolchain_dir="${toolchain_dir}"
+    local selected_toolchain_md5="${toolchain_md5_checksum}"
+    local skip_md5_verify=0
+    if [[ -n "${user_toolchain_url}" ]]; then
+        selected_toolchain_url="${user_toolchain_url}"
+        selected_toolchain_dir="${user_toolchain_dir}"
+        selected_toolchain_md5=""
+        skip_md5_verify=1
+    fi
+    if [[ ! -e "${selected_toolchain_dir}.tar.xz" ]]; then
         echo "[${FUNCNAME[0]}] Downloading toolchain ..."
-        curl --output "${toolchain_dir}.tar.xz" "${toolchain_url}"
-        verify_md5 ${toolchain_md5_checksum} "${toolchain_dir}.tar.xz" || exit 1
+        curl --output "${selected_toolchain_dir}.tar.xz" -L "${selected_toolchain_url}"
+	if [[ ${skip_md5_verify} -eq 0 ]]; then 
+            verify_md5 ${selected_toolchain_md5} "${selected_toolchain_dir}.tar.xz" || exit 1
+	fi
     fi
 
     echo "[${FUNCNAME[0]}] Installing toolchain ..."
-    rm -rf "${toolchain_dir}"
-    tar xf "${toolchain_dir}.tar.xz"
+    rm -rf "${selected_toolchain_dir}"
+    tar xf "${selected_toolchain_dir}.tar.xz"
 }
 
 function setup_vela() {
@@ -237,8 +275,12 @@ function create_setup_path(){
         echo "hash FVP_Corstone_SSE-320" >> ${setup_path_script}
     fi
 
+    local selected_toolchain_dir="${toolchain_dir}"
+    if [[ -n "${user_toolchain_url}" && -n "${user_toolchain_dir}" ]]; then
+        selected_toolchain_dir="${user_toolchain_dir}"
+    fi
     if [[ "${skip_toolchain_setup}" -eq 0 ]]; then
-        toolchain_bin_path="$(cd ${toolchain_dir}/bin && pwd)"
+        toolchain_bin_path="$(cd ${selected_toolchain_dir}/bin && pwd)"
         echo "export PATH=\${PATH}:${toolchain_bin_path}" >> ${setup_path_script}
     fi
 }
@@ -271,6 +313,8 @@ if [[ $is_script_sourced -eq 0 ]]; then
     setup_root_dir
     cd "${root_dir}"
     echo "[main] Using root dir ${root_dir} and options:"
+    echo "user_toolchain_url=${user_toolchain_url}"
+    echo "user_toolchain_dir=${user_toolchain_dir}"
     echo "skip-fvp-setup=${skip_fvp_setup}"
     echo "skip-toolchain-setup=${skip_toolchain_setup}"
     echo "skip-vela-setup=${skip_vela_setup}"
