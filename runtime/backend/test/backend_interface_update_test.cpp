@@ -67,7 +67,8 @@ class MockBackend : public BackendInterface {
                 std::array<char, executorch::runtime::kMaxOptionValueLength>>(
                 backend_option.value)) {
           // Store the value in our member variable
-          const auto& arr = std::get<std::array<char, 256>>(backend_option.value);
+          const auto& arr =
+              std::get<std::array<char, 256>>(backend_option.value);
           target_backend = std::string(arr.data());
           success_update++;
         }
