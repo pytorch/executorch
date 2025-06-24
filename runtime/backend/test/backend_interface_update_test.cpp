@@ -7,9 +7,11 @@
  */
 
 #include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/platform/runtime.h>
 
 #include <gtest/gtest.h>
+#include <memory>
 
 using namespace ::testing;
 using executorch::runtime::ArrayRef;
@@ -61,7 +63,8 @@ class MockBackend : public BackendInterface {
     int success_update = 0;
     for (const auto& backend_option : backend_options) {
       if (strcmp(backend_option.key, "Backend") == 0) {
-        if (std::holds_alternative<std::array<char, 256>>(
+        if (std::holds_alternative<
+                std::array<char, executorch::runtime::kMaxOptionValueLength>>(
                 backend_option.value)) {
           // Store the value in our member variable
           const auto& arr =
@@ -284,4 +287,115 @@ TEST_F(BackendInterfaceUpdateTest, UpdateBetweenExecutes) {
   EXPECT_EQ(mock_backend->execute_count, 2);
   ASSERT_TRUE(mock_backend->target_backend.has_value());
   EXPECT_STREQ(mock_backend->target_backend.value().c_str(), "NPU");
+}
+
+// Mock backend for testing
+class StubBackend : public BackendInterface {
+ public:
+  ~StubBackend() override = default;
+
+  bool is_available() const override {
+    return true;
+  }
+
+  Result<DelegateHandle*> init(
+      BackendInitContext& context,
+      FreeableBuffer* processed,
+      ArrayRef<CompileSpec> compile_specs) const override {
+    return nullptr;
+  }
+
+  Error execute(
+      BackendExecutionContext& context,
+      DelegateHandle* handle,
+      EValue** args) const override {
+    return Error::Ok;
+  }
+
+  Error get_option(
+      BackendOptionContext& context,
+      executorch::runtime::Span<executorch::runtime::BackendOption>&
+          backend_options) override {
+    // For testing purposes, just record that get_option was called
+    // and verify the input parameters
+    get_option_called = true;
+    get_option_call_count++;
+    last_get_option_size = backend_options.size();
+
+    // Verify that the expected option key is present and modify the value
+    for (size_t i = 0; i < backend_options.size(); ++i) {
+      if (strcmp(backend_options[i].key, "NumberOfThreads") == 0) {
+        // Set the value to what was stored by set_option
+        backend_options[i].value = last_num_threads;
+        found_expected_key = true;
+        break;
+      }
+    }
+
+    return Error::Ok;
+  }
+
+  Error set_option(
+      BackendOptionContext& context,
+      const executorch::runtime::Span<executorch::runtime::BackendOption>&
+          backend_options) override {
+    // Store the options for verification
+    last_options_size = backend_options.size();
+    if (backend_options.size() > 0) {
+      for (const auto& option : backend_options) {
+        if (strcmp(option.key, "NumberOfThreads") == 0) {
+          if (auto* val = std::get_if<int>(&option.value)) {
+            last_num_threads = *val;
+          }
+        }
+      }
+    }
+    return Error::Ok;
+  }
+
+  // Mutable for testing verification
+  size_t last_options_size = 0;
+  int last_num_threads = 0;
+  bool get_option_called = false;
+  int get_option_call_count = 0;
+  size_t last_get_option_size = 0;
+  bool found_expected_key = false;
+};
+
+class BackendUpdateTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    // Since these tests cause ET_LOG to be called, the PAL must be initialized
+    // first.
+    executorch::runtime::runtime_init();
+
+    // Register the stub backend
+    stub_backend = std::make_unique<StubBackend>();
+    Backend backend_config{"StubBackend", stub_backend.get()};
+    auto register_result = register_backend(backend_config);
+    ASSERT_EQ(register_result, Error::Ok);
+  }
+
+  std::unique_ptr<StubBackend> stub_backend;
+};
+
+// Test basic string functionality
+TEST_F(BackendUpdateTest, TestSetGetOption) {
+  BackendOptions<1> backend_options;
+  int new_num_threads = 4;
+  backend_options.set_option("NumberOfThreads", new_num_threads);
+
+  auto status = set_option("StubBackend", backend_options.view());
+  ASSERT_EQ(status, Error::Ok);
+
+  // Set up the default option, which will be populuated by the get_option call
+  BackendOption ref_backend_option{"NumberOfThreads", 0};
+  status = get_option("StubBackend", ref_backend_option);
+
+  // Verify that the backend actually received the options
+  ASSERT_TRUE(std::get<int>(ref_backend_option.value) == new_num_threads);
+
+  // Verify that the backend actually update the options
+  ASSERT_EQ(stub_backend->last_options_size, 1);
+  ASSERT_EQ(stub_backend->last_num_threads, new_num_threads);
 }
