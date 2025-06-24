@@ -50,7 +50,7 @@ bool check_repeat_interleave_args(
     for (const auto i : c10::irange(repeats.numel())) {
       ET_CHECK_OR_RETURN_FALSE(
           repeats_data[i] >= 0,
-          "repeats cannot be negative; repeats_data[%" PRId64 "] = %ld",
+          "repeats cannot be negative; repeats_data[%" PRId64 "] = %d",
           static_cast<int64_t>(i),
           repeats_data[i]);
     }
