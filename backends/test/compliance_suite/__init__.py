@@ -121,7 +121,6 @@ class OperatorTest(unittest.TestCase):
                 inputs,
             )
             .export()
-            .dump_artifact()
             .to_edge_transform_and_lower()
         )
 
