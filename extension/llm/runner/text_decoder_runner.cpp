@@ -43,12 +43,15 @@ TextDecoderRunner::TextDecoderRunner(Module* module) : module_(module) {}
     auto second_input_info = ET_UNWRAP(method_meta.input_tensor_meta(1));
     // For input_pos, numel is 1, for cache_positions, numel is max_seq_len
     auto sizes = second_input_info.sizes();
-    auto numel = 1;
-    std::vector<::executorch::aten::SizesType> sizes_vec;
-    for (const auto& size : sizes) {
-      sizes_vec.emplace_back(size);
-      numel *= size;
-    }
+    // Assuming 1D tensor
+    ET_CHECK_OR_RETURN_ERROR(
+        sizes.size() == 1,
+        InvalidProgram,
+        "The second input tensor is not 1D tensor. Got dimension (%zu)",
+        sizes.size());
+    auto numel = sizes[0];
+    std::vector<::executorch::aten::SizesType> sizes_vec = {numel};
+
     // Assuming the last dimension is the one with the variable token length,
     // for example [1, S] or [1, 1, S]
     sizes_vec[sizes_vec.size() - 1] = numel;
@@ -56,12 +59,13 @@ TextDecoderRunner::TextDecoderRunner(Module* module) : module_(module) {}
     if (numel > 1) {
       // Assuming model is exported with cache_positions, create a tensor with
       // the same size as cache_positions
-      start_pos_tensor = empty({sizes_vec}, ::executorch::aten::ScalarType::Long);
-      torch::executor::native::arange_out_impl(start_pos, start_pos + numel, 1.0, *start_pos_tensor);
+      start_pos_tensor = empty(sizes_vec, ::executorch::aten::ScalarType::Long);
+      torch::executor::native::arange_out_impl(
+          start_pos, start_pos + numel, 1.0, *start_pos_tensor);
     } else {
       // Assuming model is exported with input_pos, create a tensor with size 1
-      start_pos_tensor =
-          from_blob(&start_pos, {1}, ::executorch::aten::ScalarType::Long);
+      start_pos_tensor = from_blob(
+          &start_pos, sizes_vec, ::executorch::aten::ScalarType::Long);
     }
     ET_LOG(Info, "Start pos tensor numel: %zu", start_pos_tensor->numel());
     auto outputs_res = module_->forward({tokens, start_pos_tensor});
