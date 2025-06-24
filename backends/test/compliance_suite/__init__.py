@@ -114,13 +114,14 @@ def _create_test_for_backend(
 
 
 class OperatorTest(unittest.TestCase):
-    def _test_op(self, model, inputs, tester_factory):
+    def _test_op(self, model, inputs, tester_factory, use_random_test_inputs=True):
         tester = (
             tester_factory(
                 model,
                 inputs,
             )
             .export()
+            .dump_artifact()
             .to_edge_transform_and_lower()
         )
 
@@ -136,6 +137,11 @@ class OperatorTest(unittest.TestCase):
                 tester
                 .to_executorch()
                 .serialize()
-                .run_method_and_compare_outputs()
+                # If use_random_test_inputs is False, explicitly pass the export inputs for the test.
+                # This is useful for ops like embedding where the random input generation isn't aware
+                # of the constraints on the input data values (e.g. the indices must be within bounds).
+                # If use_random_test_inputs is True, a value of None is passed to cause test inputs to
+                # be randomly generated.
+                .run_method_and_compare_outputs(inputs = inputs if not use_random_test_inputs else None)
             )
     
