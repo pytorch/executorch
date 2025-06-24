@@ -11,10 +11,10 @@ import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU85PipelineBI,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 
@@ -70,9 +70,9 @@ class MinWithIndex(torch.nn.Module):
 
 
 @common.parametrize("test_data", Amin.test_data)
-def test_amin_tosa_MI(test_data: Amin.input_t):
+def test_amin_tosa_FP(test_data: Amin.input_t):
     data, dim, keep_dims = test_data()
-    pipeline = TosaPipelineMI[Amin.input_t](
+    pipeline = TosaPipelineFP[Amin.input_t](
         Amin(dim, keep_dims),
         data,
         Amin.aten_op,
@@ -81,9 +81,9 @@ def test_amin_tosa_MI(test_data: Amin.input_t):
 
 
 @common.parametrize("test_data", Amin.test_data)
-def test_amin_tosa_BI(test_data: Amin.input_t):
+def test_amin_tosa_INT(test_data: Amin.input_t):
     data, dim, keep_dims = test_data()
-    pipeline = TosaPipelineBI[Amin.input_t](
+    pipeline = TosaPipelineINT[Amin.input_t](
         Amin(dim, keep_dims),
         data,
         Amin.aten_op,
@@ -91,7 +91,7 @@ def test_amin_tosa_BI(test_data: Amin.input_t):
     pipeline.run()
 
 
-def test_amin_u55_BI_not_delegated():
+def test_amin_u55_INT_not_delegated():
     data, dim, keep_dims = Amin.test_data["rank_4_all_dim"]()
     pipeline = OpNotSupportedPipeline[Amin.input_t](
         Amin(dim, keep_dims),
@@ -108,9 +108,9 @@ fvp_xfails = {"rank_4_mult_batches": "MLETORCH-517 : Multiple batches not suppor
 
 @common.parametrize("test_data", Amin.test_data, fvp_xfails, strict=False)
 @common.XfailIfNoCorstone320
-def test_amin_u85_BI(test_data: Amin.input_t):
+def test_amin_u85_INT(test_data: Amin.input_t):
     data, dim, keep_dims = test_data()
-    pipeline = EthosU85PipelineBI[Amin.input_t](
+    pipeline = EthosU85PipelineINT[Amin.input_t](
         Amin(dim, keep_dims),
         data,
         Amin.aten_op,
@@ -120,22 +120,22 @@ def test_amin_u85_BI(test_data: Amin.input_t):
 
 
 @common.parametrize("test_data", Min.test_data)
-def test_min_dim_tosa_MI_to_amin(test_data: Min.input_t):
+def test_min_dim_tosa_FP_to_amin(test_data: Min.input_t):
     data, dim = test_data()
-    pipeline = TosaPipelineMI[Min.input_t](Min(dim), data, "torch.ops.aten.min")
+    pipeline = TosaPipelineFP[Min.input_t](Min(dim), data, "torch.ops.aten.min")
     pipeline.run()
 
 
 @common.parametrize("test_data", Min.test_data)
-def test_min_dim_tosa_BI_to_amin(test_data: Min.input_t):
+def test_min_dim_tosa_INT_to_amin(test_data: Min.input_t):
     data, dim = test_data()
     module = Min(dim)
-    pipeline = TosaPipelineBI[Min.input_t](module, data, "torch.ops.aten.amin")
+    pipeline = TosaPipelineINT[Min.input_t](module, data, "torch.ops.aten.amin")
     pipeline.run()
 
 
 @pytest.mark.xfail(reason="MLETORCH-718 : Quantization of indices in arm_quantizer")
-def test_min_dim_tosa_BI_not_delegated():
+def test_min_dim_tosa_INT_not_delegated():
     data, dim = Min.test_data["rank_4_dim_3"]()
     pipeline = OpNotSupportedPipeline[Min.input_t](
         MinWithIndex(dim),
@@ -146,7 +146,7 @@ def test_min_dim_tosa_BI_not_delegated():
     pipeline.run()
 
 
-def test_min_dim_tosa_MI_not_delegated():
+def test_min_dim_tosa_FP_not_delegated():
     data, dim = Min.test_data["rank_4_dim_3"]()
     pipeline = OpNotSupportedPipeline[Min.input_t](MinWithIndex(dim), data, {})
     pipeline.run()
