@@ -181,9 +181,9 @@ Result<FreeableBuffer> MmapDataLoader::load(
     size_t size,
     ET_UNUSED const DataLoader::SegmentInfo& segment_info) const {
   // Ensure read range is valid.
-  auto validation_err = validate_input(offset, size);
-  if (validation_err != Error::Ok) {
-    return validation_err;
+  auto err = validate_input(offset, size);
+  if (err != Error::Ok) {
+    return err;
   }
 
   // mmap() will fail if the size is zero.
