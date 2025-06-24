@@ -9,6 +9,7 @@
 import logging
 from typing import cast, List, Optional
 
+import numpy as np
 import torch
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
@@ -371,6 +372,13 @@ class LogConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32]
 
 
+class TanhConfig(GenericNodePartitionerConfig):
+    target_name = "tanh.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
 class MeanDimConfig(GenericNodePartitionerConfig):
     target_name = "mean.dim"
 
@@ -515,6 +523,17 @@ class SubConfig(GenericNodePartitionerConfig):
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not self.check_common_constraints(node, ep):
+            return False
+        # No support for sub nodes with alpha != 1
+        if "alpha" in node.kwargs and not np.isclose(
+            node.kwargs["alpha"], 1.0, atol=1e-9, rtol=1e-9
+        ):
+            why(node, reason="Sub node doesn't support alpha != 1")
+            return False
+        return True
 
 
 class BMMConfig(GenericNodePartitionerConfig):
