@@ -8,7 +8,6 @@
 
 #pragma once
 
-#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -260,6 +259,33 @@ bool extract_scalar(Scalar scalar, BOOL_T* out_val) {
   }
   return false;
 }
+
+/*
+ * Convert Scalar to C++ type
+ */
+
+ template <typename T>
+ T scalar_to(const Scalar& s) {
+   if (s.isBoolean()) {
+     return static_cast<T>(s.to<bool>());
+   } else if (s.isFloatingPoint()) {
+     return static_cast<T>(s.to<double>());
+   } else {
+     return static_cast<T>(s.to<int64_t>());
+   }
+ }
+
+ template <>
+ inline double scalar_to<double>(const Scalar& s) {
+   return s.isFloatingPoint() ? s.to<double>()
+                              : static_cast<double>(s.to<int64_t>());
+ }
+
+ template <>
+ inline int64_t scalar_to<int64_t>(const Scalar& s) {
+   return s.isFloatingPoint() ? static_cast<int64_t>(s.to<double>())
+                              : s.to<int64_t>();
+ }
 
 } // namespace utils
 } // namespace native
