@@ -26,19 +26,19 @@ from typing import ClassVar, List, Optional
 
 
 class ModelType(str, Enum):
-    STORIES110M = "stories110m"
-    LLAMA2 = "llama2"
-    LLAMA3 = "llama3"
-    LLAMA3_1 = "llama3_1"
-    LLAMA3_2 = "llama3_2"
-    LLAMA3_2_VISION = "llama3_2_vision"
-    STATIC_LLAMA = "static_llama"
-    QWEN2_5 = "qwen2_5"
-    QWEN3_0_6B = "qwen3-0_6b"
-    QWEN3_1_7B = "qwen3-1_7b"
-    QWEN3_4B = "qwen3-4b"
-    PHI_4_MINI = "phi_4_mini"
-    SMOLLM2 = "smollm2"
+    stories110m = "stories110m"
+    llama2 = "llama2"
+    llama3 = "llama3"
+    llama3_1 = "llama3_1"
+    llama3_2 = "llama3_2"
+    llama3_2_vision = "llama3_2_vision"
+    static_llama = "static_llama"
+    qwen2_5 = "qwen2_5"
+    qwen3_0_6b = "qwen3-0_6b"
+    qwen3_1_7b = "qwen3-1_7b"
+    qwen3_4b = "qwen3-4b"
+    phi_4_mini = "phi_4_mini"
+    smollm2 = "smollm2"
 
 
 class PreqMode(str, Enum):
@@ -49,8 +49,8 @@ class PreqMode(str, Enum):
     are still around to preserve backward compatibility.
     """
 
-    PREQ_8DA4W = "8da4w"
-    PREQ_8DA4W_OUT_8DA8W = "8da4w_output_8da8w"
+    preq_8da4w = "8da4w"
+    preq_8da4w_out_8da8w = "8da4w_output_8da8w"
 
 
 @dataclass
@@ -65,7 +65,9 @@ class BaseConfig:
         params: Model parameters, such as n_layers, hidden_size, etc.
             If left empty will use defaults specified in model_args.py.
         checkpoint: Path to the checkpoint file.
-            If left empty, the model will be initialized with random weights.
+            If left empty, the model will either be initialized with random weights
+            if it is a Llama model or the weights will be downloaded from HuggingFace
+            if it is a non-Llama model.
         checkpoint_dir: Path to directory containing sharded checkpoint files.
         tokenizer_path: Path to the tokenizer file.
         metadata: Json string containing metadata information.
@@ -80,7 +82,7 @@ class BaseConfig:
             are loaded.
     """
 
-    model_class: ModelType = ModelType.LLAMA3
+    model_class: ModelType = ModelType.llama3
     params: Optional[str] = None
     checkpoint: Optional[str] = None
     checkpoint_dir: Optional[str] = None
@@ -105,9 +107,9 @@ class DtypeOverride(str, Enum):
     is not recommended.
     """
 
-    FP32 = "fp32"
-    FP16 = "fp16"
-    BF16 = "bf16"
+    fp32 = "fp32"
+    fp16 = "fp16"
+    bf16 = "bf16"
 
 
 @dataclass
@@ -145,7 +147,7 @@ class ModelConfig:
             [16] pattern specifies all layers have a sliding window of 16.
     """
 
-    dtype_override: DtypeOverride = DtypeOverride.FP32
+    dtype_override: DtypeOverride = DtypeOverride.fp32
     enable_dynamic_shape: bool = True
     use_shared_embedding: bool = False
     use_sdpa_with_kv_cache: bool = False
@@ -268,22 +270,22 @@ class Pt2eQuantize(str, Enum):
     and is source transform-based.
     """
 
-    XNNPACK_DYNAMIC = "xnnpack_dynamic"
-    XNNPACK_DYNAMIC_QC4 = "xnnpack_dynamic_qc4"
-    QNN_8A8W = "qnn_8a8w"
-    QNN_16A16W = "qnn_16a16w"
-    QNN_16A4W = "qnn_16a4w"
-    COREML_C4W = "coreml_c4w"
-    COREML_8A_C8W = "coreml_8a_c8w"
-    COREML_8A_C4W = "coreml_8a_c4w"
-    COREML_BASELINE_8A_C8W = "coreml_baseline_8a_c8w"
-    COREML_BASELINE_8A_C4W = "coreml_baseline_8a_c4w"
-    VULKAN_8W = "vulkan_8w"
+    xnnpack_dynamic = "xnnpack_dynamic"
+    xnnpack_dynamic_qc4 = "xnnpack_dynamic_qc4"
+    qnn_8a8w = "qnn_8a8w"
+    qnn_16a16w = "qnn_16a16w"
+    qnn_16a4w = "qnn_16a4w"
+    coreml_c4w = "coreml_c4w"
+    coreml_8a_c8w = "coreml_8a_c8w"
+    coreml_8a_c4w = "coreml_8a_c4w"
+    coreml_baseline_8a_c8w = "coreml_baseline_8a_c8w"
+    coreml_baseline_8a_c4w = "coreml_baseline_8a_c4w"
+    vulkan_8w = "vulkan_8w"
 
 
 class SpinQuant(str, Enum):
-    CUDA = "cuda"
-    NATIVE = "native"
+    cuda = "cuda"
+    native = "native"
 
 
 @dataclass
@@ -376,15 +378,15 @@ class XNNPackConfig:
 
 
 class CoreMLQuantize(str, Enum):
-    B4W = "b4w"
-    C4W = "c4w"
+    b4w = "b4w"
+    c4w = "c4w"
 
 
 class CoreMLComputeUnit(str, Enum):
-    CPU_ONLY = "cpu_only"
-    CPU_AND_GPU = "cpu_and_gpu"
-    CPU_AND_NE = "cpu_and_ne"
-    ALL = "all"
+    cpu_only = "cpu_only"
+    cpu_and_gpu = "cpu_and_gpu"
+    cpu_and_ne = "cpu_and_ne"
+    all = "all"
 
 
 @dataclass
@@ -398,7 +400,7 @@ class CoreMLConfig:
     preserve_sdpa: bool = False
     quantize: Optional[CoreMLQuantize] = None
     ios: int = 15
-    compute_units: CoreMLComputeUnit = CoreMLComputeUnit.CPU_ONLY
+    compute_units: CoreMLComputeUnit = CoreMLComputeUnit.cpu_only
 
     def __post_init__(self):
         if self.ios not in (15, 16, 17, 18):

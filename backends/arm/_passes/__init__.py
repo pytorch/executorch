@@ -10,6 +10,7 @@ from .add_bias_pass import AddBiasPass  # noqa
 from .annotate_channels_last_dim_order_pass import AnnotateChannelsLastDimOrder  # noqa
 from .annotate_decomposed_matmul import AnnotateDecomposedMatmulPass  # noqa
 from .broadcast_args_pass import BroadcastArgsPass  # noqa
+from .cast_bool_to_int8_pass import CastBoolToInt8Pass  # noqa
 from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
 from .conv1d_unsqueeze_pass import Conv1dUnsqueezePass  # noqa
