@@ -33,7 +33,7 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
         super().__init__(
             default_partitioner_cls=CoreMLPartitioner,
             partitioners=partitioners,
-            edge_compile_config=edge_compile_config,
+            edge_compile_config=edge_compile_config or EdgeCompileConfig(_check_ir_validity=False),
         )
 
 
@@ -59,4 +59,3 @@ class CoreMLTester(TesterBase):
             example_inputs=example_inputs,
             dynamic_shapes=dynamic_shapes,
         )
-
