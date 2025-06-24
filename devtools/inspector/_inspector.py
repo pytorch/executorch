@@ -55,6 +55,7 @@ from executorch.devtools.inspector._inspector_utils import (
     inflate_runtime_output,
     is_debug_output,
     is_inference_output_equal,
+    map_runtime_aot_intermediate_outputs,
     ProgramOutput,
     RESERVED_FRAMEWORK_EVENT_NAMES,
     TimeScale,
@@ -62,6 +63,10 @@ from executorch.devtools.inspector._inspector_utils import (
 )
 from executorch.devtools.inspector._intermediate_output_capturer import (
     IntermediateOutputCapturer,
+)
+from executorch.devtools.inspector.numerical_comparator import (
+    L1Comparator,
+    MSEComparator,
 )
 from executorch.exir import ExportedProgram
 
@@ -1337,3 +1342,50 @@ class Inspector:
             if graph is None
             else self._etrecord.graph_map.get(graph)
         )
+
+    def calculate_numeric_gap(self, distance: str = "MSE") -> pd.DataFrame:
+        """
+        Compares logged intermediate outputs from the exported graph (in ETRecord)
+        with runtime outputs (in ETDump) using a user-specific numerical comparator.
+
+        Args:
+            distance: the metrics the inspector will use for gap calculation. Should be one of "MSE", "L1" and "SNR".
+
+        Returns:
+            pd.DataFrame: A DataFrame listing corresponding operator outputs from
+                          both stages and their computed numerical gaps.
+        """
+        if self._aot_intermediate_outputs is None:
+            raise ValueError(
+                "The aot intermediate outputs is required but not populated."
+            )
+        mapping = map_runtime_aot_intermediate_outputs(
+            self._aot_intermediate_outputs, self._get_runtime_intermediate_outputs()
+        )
+        metric = distance.strip().upper()
+        if metric == "MSE":
+            comparator = MSEComparator()
+        elif metric == "L1":
+            comparator = L1Comparator()
+        else:
+            raise ValueError(f"Unsupported distance metric {distance!r}")
+
+        rows = []
+        for (aot_debug_handle, aot_intermediate_output), (
+            runtime_debug_handle,
+            runtime_intermediate_output,
+        ) in mapping.items():
+            if aot_intermediate_output is None or runtime_intermediate_output is None:
+                continue
+            rows.append(
+                {
+                    "aot_debug_handle": aot_debug_handle,
+                    "aot_intermediate_output": aot_intermediate_output,
+                    "runtime_debug_handle": runtime_debug_handle,
+                    "runtime_intermediate_output": runtime_intermediate_output,
+                    "gap": comparator.compare(
+                        aot_intermediate_output, runtime_intermediate_output
+                    ),
+                }
+            )
+        return pd.DataFrame(rows)
