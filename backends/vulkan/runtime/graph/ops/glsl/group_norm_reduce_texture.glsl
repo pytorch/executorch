@@ -13,10 +13,6 @@
 
 #define PRECISION ${PRECISION}
 
-#define VEC4_T ${texel_type(DTYPE)}
-
-#define T ${buffer_scalar_type(DTYPE)}
-
 ${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
@@ -67,8 +63,8 @@ shared float shared_sum_sq[LOCAL_WORK_GROUP_SIZE];
  * N is the number of elements in the tensor buffer; each thread computes one
  * output element.
  *
- * Local work group size:  {1, T, 1}
- * T should be a power of 2, recommended 64 or 128 threads. This allows
+ * Local work group size:  {1, float, 1}
+ * float should be a power of 2, recommended 64 or 128 threads. This allows
  * efficient tree-based reduction in shared memory. Each local group will
  * cooperate to compute the output element.
  *
@@ -133,7 +129,7 @@ void group_norm_reduce_C_packed() {
 
     // Check bounds and load texel
     if (all(lessThan(tex_pos, in_limits))) {
-      const VEC4_T texel_val = load_texel(t_in, tex_pos);
+      const vec4 texel_val = load_texel(t_in, tex_pos);
 
       // Process all components of the texel that belong to this group
       const int texel_start_channel = global_texel_idx * 4;
@@ -181,8 +177,8 @@ void group_norm_reduce_C_packed() {
     const float rstd_val = 1.0 / sqrt(variance + epsilon);
 
     // Write to buffer-backed tensors
-    t_mean[global_idx] = T(mean_val);
-    t_rstd[global_idx] = T(rstd_val);
+    t_mean[global_idx] = mean_val;
+    t_rstd[global_idx] = rstd_val;
   }
 }
 
