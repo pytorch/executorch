@@ -11,7 +11,7 @@ script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 ethos_u_root_dir=${et_root_dir}/examples/arm/ethos-u-scratch/ethos-u
 
-toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/arm-zephyr-eabi-gcc.cmake
+toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
 et_build_dir=${et_root_dir}/arm_test/cmake-out
 build_root_test_dir=${et_root_dir}/arm_test/arm_semihosting_executor_runner
 
