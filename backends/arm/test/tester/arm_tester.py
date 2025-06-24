@@ -496,7 +496,6 @@ class ArmTester(Tester):
             reference_outputs, _ = pytree.tree_flatten(
                 reference_stage.run_artifact(reference_input)
             )
-
             if run_eager_mode:
                 # Run exported module directly
                 test_outputs, _ = pytree.tree_flatten(
@@ -509,6 +508,10 @@ class ArmTester(Tester):
                 test_outputs, _ = pytree.tree_flatten(
                     test_stage.run_artifact(reference_input)
                 )
+
+            logger.info(f"\n      Input: {reference_input}")
+            logger.info(f"\n Ref output: {reference_outputs}")
+            logger.info(f"\nTest output: {test_outputs}")
 
             for reference_output, test_output, quantization_scale in zip(
                 reference_outputs, test_outputs, quantization_scales
