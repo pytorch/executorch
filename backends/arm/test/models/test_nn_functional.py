@@ -82,7 +82,6 @@ input_t = tuple[torch.Tensor]
     "test_data",
     module_tests,
     xfails={
-        "max_pool1d": "ValueError: Invalid TOSA graph",
         "affine_grid": "Int64 input. Partition handling fails since arange int64 output is split between 2 partitions.",
     },
 )
