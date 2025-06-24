@@ -11,10 +11,11 @@ import pytest
 import torch
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 from torchvision import models, transforms
@@ -31,8 +32,8 @@ input_t = Tuple[torch.Tensor]
 
 
 @pytest.mark.slow
-def test_ic3_tosa_MI():
-    pipeline = TosaPipelineMI[input_t](
+def test_ic3_tosa_FP():
+    pipeline = TosaPipelineFP[input_t](
         ic3,
         model_inputs,
         aten_op=[],
@@ -44,7 +45,7 @@ def test_ic3_tosa_MI():
 
 @pytest.mark.slow
 def test_ic3_tosa_BI():
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         ic3,
         model_inputs,
         aten_op=[],
@@ -60,7 +61,7 @@ def test_ic3_tosa_BI():
 @pytest.mark.skip(reason="Takes too long to run on CI")
 @common.XfailIfNoCorstone300
 def test_ic3_u55_BI():
-    pipeline = EthosU55PipelineBI[input_t](
+    pipeline = EthosU55PipelineINT[input_t](
         ic3,
         model_inputs,
         aten_ops=[],
@@ -77,7 +78,7 @@ def test_ic3_u55_BI():
 @pytest.mark.skip(reason="Takes too long to run on CI")
 @common.XfailIfNoCorstone320
 def test_ic3_u85_BI():
-    pipeline = EthosU85PipelineBI[input_t](
+    pipeline = EthosU85PipelineINT[input_t](
         ic3,
         model_inputs,
         aten_ops=[],
@@ -86,5 +87,35 @@ def test_ic3_u85_BI():
         use_to_edge_transform_and_lower=True,
         atol=0.5,
         qtol=1,
+    )
+    pipeline.run()
+
+
+@pytest.mark.slow
+@pytest.mark.skip(reason="Takes too long to run on CI")
+@common.SkipIfNoModelConverter
+def test_ic3_vgf_FP():
+    pipeline = VgfPipeline[input_t](
+        ic3,
+        model_inputs,
+        aten_op=[],
+        exir_op=[],
+        tosa_version="TOSA-1.0+FP",
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
+
+
+@pytest.mark.slow
+@pytest.mark.skip(reason="Takes too long to run on CI")
+@common.SkipIfNoModelConverter
+def test_ic3_vgf_INT():
+    pipeline = VgfPipeline[input_t](
+        ic3,
+        model_inputs,
+        aten_op=[],
+        exir_op=[],
+        tosa_version="TOSA-1.0+INT",
+        use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
