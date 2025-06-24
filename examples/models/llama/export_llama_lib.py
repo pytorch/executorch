@@ -27,14 +27,14 @@ import torch
 from executorch.devtools.backend_debug import print_delegation_info
 
 from executorch.devtools.etrecord import generate_etrecord as generate_etrecord_func
-
-from executorch.extension.llm.export.config.llm_config import LlmConfig
 from executorch.examples.models.llama.hf_download import (
     download_and_convert_hf_checkpoint,
 )
 from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
+
+from executorch.extension.llm.export.config.llm_config import LlmConfig
 
 from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,

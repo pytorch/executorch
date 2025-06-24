@@ -13,10 +13,6 @@ runtime.python_library(
     name = "llama_transformer",
     srcs = [
         "llama_transformer.py",
-        "rope.py",
-        "attention.py",
-        "model_args.py",
-        "norm.py",
     ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama",
@@ -26,23 +22,21 @@ runtime.python_library(
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/extension/llm/modeling/text_decoder:text_decoder_attention",
+        "//executorch/extension/llm/modeling/text_decoder:text_decoder_model_args",
+        "//executorch/extension/llm/modeling/text_decoder:text_decoder_norm",
+        "//executorch/extension/llm/modeling/text_decoder:text_decoder_rope",
     ],
 )
 
 runtime.python_library(
     name = "static_attention",
-    srcs = [
-        "static_attention.py",
-    ],
-    _is_external_target = True,
-    base_module = "executorch.examples.models.llama",
     visibility = [
         "//executorch/...",
         "@EXECUTORCH_CLIENTS",
     ],
     deps = [
-        ":llama_transformer",
-        "//caffe2:torch",
+        "//executorch/extension/llm/modeling/text_decoder:text_decoder_static_attention",
     ],
 )
 
