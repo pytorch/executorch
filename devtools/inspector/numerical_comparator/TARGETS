@@ -14,7 +14,7 @@ python_library(
     srcs = ["l1_numerical_comparator.py"],
     deps = [
         "//executorch/devtools/inspector/numerical_comparator:numerical_comparator_base",
-        "//executorch/devtools/inspector:lib",
+        "//executorch/devtools/inspector:inspector_utils",
     ],
 )
 
@@ -23,7 +23,7 @@ python_library(
     srcs = ["mse_numerical_comparator.py"],
     deps = [
         "//executorch/devtools/inspector/numerical_comparator:numerical_comparator_base",
-        "//executorch/devtools/inspector:lib",
+        "//executorch/devtools/inspector:inspector_utils",
     ],
 )
 
