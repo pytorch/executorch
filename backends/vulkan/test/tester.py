@@ -1,4 +1,4 @@
-git # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -10,7 +10,7 @@ import executorch
 import executorch.backends.test.harness.stages as BaseStages
 
 import torch
-from executorch.backends.apple.coreml.partition import CoreMLPartitioner
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.test.harness import Tester as TesterBase
 from executorch.backends.test.harness.stages import StageType
 from executorch.exir import EdgeCompileConfig
@@ -31,13 +31,13 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
         edge_compile_config: Optional[EdgeCompileConfig] = None,
     ):
         super().__init__(
-            default_partitioner_cls=CoreMLPartitioner,
+            default_partitioner_cls=VulkanPartitioner,
             partitioners=partitioners,
             edge_compile_config=edge_compile_config or EdgeCompileConfig(_check_ir_validity=False),
         )
 
 
-class CoreMLTester(TesterBase):
+class VulkanTester(TesterBase):
     def __init__(
         self,
         module: torch.nn.Module,
