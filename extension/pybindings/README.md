@@ -27,8 +27,6 @@ CMAKE_ARGS="-DEXECUTORCH_BUILD_MPS=ON" ./install_executorch.sh
 - `_reset_profile_results()`: Reset profile results.
 ## Classes
 ### ExecuTorchModule
-- `load_bundled_input()`: Load bundled input.
-- `verify_result_with_bundled_expected_output(bundle: str, method_name: str, testset_idx: int, rtol: float = 1e-5, atol: float = 1e-8)`: Verify result with bundled expected output.
 - `plan_execute()`: Plan and execute.
 - `run_method()`: Run method.
 - `forward()`: Forward. This takes a pytree-flattend PyTorch-tensor-based input.
@@ -37,5 +35,6 @@ CMAKE_ARGS="-DEXECUTORCH_BUILD_MPS=ON" ./install_executorch.sh
 - `__call__()`: Call method.
 ### BundledModule
 This class is currently empty and serves as a placeholder for future methods and attributes.
+- `verify_result_with_bundled_expected_output(method_name: str, testset_idx: int, rtol: float = 1e-5, atol: float = 1e-8)`: Verify result with bundled expected output.
 ## Note
 All functions and methods are guarded by a call guard that redirects `cout` and `cerr` to the Python environment.
