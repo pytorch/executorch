@@ -2,7 +2,7 @@ import os
 import unittest
 
 from enum import Enum
-from typing import Any, Callable, Tuple
+from typing import Any, Callable, Optional, Tuple
 
 import logging
 import torch
@@ -114,7 +114,13 @@ def _create_test_for_backend(
 
 
 class OperatorTest(unittest.TestCase):
-    def _test_op(self, model, inputs, tester_factory, use_random_test_inputs=True):
+    def _test_op(
+        self, 
+        model, 
+        inputs, 
+        tester_factory, 
+        use_random_test_inputs=True,
+        output_validator: Optional[Callable[[torch.Tensor], bool]] = None):
         tester = (
             tester_factory(
                 model,
@@ -136,11 +142,16 @@ class OperatorTest(unittest.TestCase):
                 tester
                 .to_executorch()
                 .serialize()
+            )
+
+            if output_validator is not None: # Custom validator provided
+                outputs = tester.stages[tester.cur].run_artifact(inputs)
+                self.assertTrue(output_validator(outputs), "Output validation failed.")
+            else: # Default validation logic
                 # If use_random_test_inputs is False, explicitly pass the export inputs for the test.
                 # This is useful for ops like embedding where the random input generation isn't aware
                 # of the constraints on the input data values (e.g. the indices must be within bounds).
                 # If use_random_test_inputs is True, a value of None is passed to cause test inputs to
                 # be randomly generated.
-                .run_method_and_compare_outputs(inputs = inputs if not use_random_test_inputs else None)
-            )
+                tester.run_method_and_compare_outputs(inputs = inputs if not use_random_test_inputs else None)
     
