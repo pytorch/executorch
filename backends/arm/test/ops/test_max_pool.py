@@ -39,6 +39,31 @@ test_data_suite = {
         torch.rand(1, 16, 56, 56),
         [3, (1, 2), 1, 1, True],
     ),
+    "non_divisible_window_adjust_padding": lambda: (
+        torch.rand(1, 16, 112, 112),
+        [3, 2, 1],
+    ),
+    "non_divisible_window_height_adjust_padding": lambda: (
+        torch.rand(1, 16, 56, 56),
+        [3, (2, 1), 1],
+    ),
+    "non_divisible_window_width_adjust_padding": lambda: (
+        torch.rand(1, 16, 56, 56),
+        [3, (1, 2), 1],
+    ),
+    "non_divisble_no_padding": lambda: (torch.rand(1, 16, 56, 56), [3, 2, 0]),
+    "non_divisible_window_adjust_padding+input": lambda: (
+        torch.rand(1, 16, 54, 54),
+        [3, 3, 1],
+    ),
+    "non_divisible_window_height_adjust_padding+input": lambda: (
+        torch.rand(1, 16, 54, 54),
+        [3, (3, 1), 1],
+    ),
+    "non_divisible_window_width_adjust_padding+input": lambda: (
+        torch.rand(1, 16, 54, 54),
+        [3, (1, 3), 1],
+    ),
 }
 
 test_data_suite_mult_batches = {
