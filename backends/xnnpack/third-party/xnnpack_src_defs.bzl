@@ -4,12 +4,11 @@ load(
     _OPERATOR_SRCS = "OPERATOR_SRCS",
     _SUBGRAPH_SRCS = "SUBGRAPH_SRCS",
     _TABLE_SRCS = "TABLE_SRCS",
-    # _MICROKERNEL_DEFS = "MICROKERNEL_DEFS",
-    # _MICROKERNEL_SRCS = "MICROKERNEL_SRCS",
 )
 load("//backends/xnnpack/third-party/XNNPACK/gen:microkernels.bzl", "prod_srcs_for_arch")
 load("@fbsource//xplat/executorch/third-party:glob_defs.bzl", "subdir_glob")
 
+# To get from XNNPACK:build_srcs.bzl in the future
 _XNNPACK_SRCS = [
     "src/configs/argmaxpool-config.c",
     "src/configs/avgpool-config.c",
@@ -45,20 +44,20 @@ def prod_srcs_for_arch_wrapper(arch):
 
 def get_xnnpack_headers():
     src_headers = subdir_glob([
-        ("xnnpack/src", "**/*.h"),
-        ("xnnpack/src", "**/*.inc"),
+        ("XNNPACK", "src/xnnpack/*.h"),
+        ("XNNPACK", "src/xnnpack/**/*.h"),
+        ("XNNPACK", "src/**/*.h"),
     ])
     include_headers = subdir_glob([
-        ("XNNPACK/include", "*.h"),
-        ("XNNPACK/include", "*.inc"),
+        ("XNNPACK", "include/*.h"),
     ])
-
-    return src_headers | include_headers
+    ukernel_headers = subdir_glob([
+        ("XNNPACK", "src/**/*.inc"),
+    ])
+    return src_headers | include_headers | ukernel_headers
 
 OPERATOR_SRCS = define_xnnpack_build_src(_OPERATOR_SRCS)
 SUBGRAPH_SRCS = define_xnnpack_build_src(_SUBGRAPH_SRCS)
 TABLE_SRCS = define_xnnpack_build_src(_TABLE_SRCS)
 XNNPACK_SRCS = define_xnnpack_build_src(_XNNPACK_SRCS)
 LOGGING_SRCS = define_xnnpack_build_src(_LOGGING_SRCS)
-# MICROKERNEL_DEFS = define_xnnpack_build_src(_MICROKERNEL_DEFS)
-# MICROKERNEL_SRCS = define_xnnpack_build_src(_MICROKERNEL_SRCS)
