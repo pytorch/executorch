@@ -255,6 +255,7 @@ def inference(args, compiler_specs, pte_files):
         host_id=args.host,
         soc_model=args.model,
         runner="examples/qualcomm/qaihub_scripts/stable_diffusion/qaihub_stable_diffusion_runner",
+        target=args.target,
     )
 
     input_unet = ()
