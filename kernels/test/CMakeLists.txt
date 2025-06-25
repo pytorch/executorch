@@ -17,7 +17,7 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
-set(_kernels portable optimized quantized)
+set(_kernels portable optimized_portable optimized quantized)
 foreach(kernel ${_kernels})
   set(_wrapper_dir
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/test"
@@ -37,13 +37,17 @@ foreach(kernel ${_kernels})
     VERBATIM
   )
 
+  set(_supported_features_kernel ${kernel})
+  if(${kernel} STREQUAL "optimized_portable")
+    set(_supported_features_kernel "portable")
+  endif()
   add_custom_command(
     OUTPUT "${_wrapper_dir}/supported_features.cpp"
            "${_wrapper_dir}/supported_features.h"
     COMMAND mkdir -p ${_wrapper_dir}
     COMMAND
       ${PYTHON_EXECUTABLE} kernels/test/gen_supported_features.py
-      kernels/${kernel}/test/supported_features_def.yaml >
+      kernels/${_supported_features_kernel}/test/supported_features_def.yaml >
       ${_wrapper_dir}/supported_features.cpp
     COMMAND
       ${PYTHON_EXECUTABLE} kernels/test/gen_supported_features.py
@@ -57,6 +61,11 @@ foreach(kernel ${_kernels})
     set(_kernel_ops_lib "optimized_native_cpu_ops_lib")
     set(_kernel_ops_lib_path
         "${CMAKE_CURRENT_BINARY_DIR}/../../configurations/optimized_native_cpu_ops_lib"
+      )
+  elseif(${kernel} STREQUAL "optimized_portable")
+    set(_kernel_ops_lib "${kernel}_ops_lib")
+    set(_kernel_ops_lib_path
+        "${CMAKE_CURRENT_BINARY_DIR}/../../kernels/portable/${kernel}_ops_lib"
     )
   else()
     set(_kernel_ops_lib "${kernel}_ops_lib")
@@ -88,6 +97,9 @@ add_custom_target(
     "${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/FunctionHeaderWrapper.h"
     "${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.h"
     "${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.cpp"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/optimized_portable/executorch/kernels/test/FunctionHeaderWrapper.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/optimized_portable/executorch/kernels/test/supported_features.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/optimized_portable/executorch/kernels/test/supported_features.cpp"
     "${CMAKE_CURRENT_BINARY_DIR}/include/quantized/executorch/kernels/test/FunctionHeaderWrapper.h"
     "${CMAKE_CURRENT_BINARY_DIR}/include/quantized/executorch/kernels/test/supported_features.h"
     "${CMAKE_CURRENT_BINARY_DIR}/include/quantized/executorch/kernels/test/supported_features.cpp"
@@ -299,6 +311,22 @@ set(_optimized_kernels_test_sources
 if(TARGET optimized_portable_kernels)
   list(APPEND _optimized_kernels_test_sources ${all_test_sources})
   list(REMOVE_DUPLICATES _optimized_kernels_test_sources)
+
+  # Make sure that we still test optimized versions of portable
+  # kernels even if they would currently be shadowed by specific
+  # optimized implementations.
+  et_cxx_test(
+    optimized_portable_kernels_test
+    SOURCES
+    ${all_test_sources}
+    ${CMAKE_CURRENT_BINARY_DIR}/include/optimized_portable/executorch/kernels/test/supported_features.cpp
+    EXTRA_LIBS
+    optimized_portable_kernels
+  )
+   add_dependencies(optimized_portable_kernels_test generate_wrapper)
+  target_include_directories(
+    optimized_portable_kernels_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/optimized_portable"
+  )
 endif()
 
 et_cxx_test(

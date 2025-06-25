@@ -167,15 +167,15 @@ Llama 3 8B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 
 LLAMA_CHECKPOINT=path/to/consolidated.00.pth
 LLAMA_PARAMS=path/to/params.json
 
-python -m examples.models.llama.export_llama \
-  --model "llama3_2" \
-  --checkpoint "${LLAMA_CHECKPOINT:?}" \
-  --params "${LLAMA_PARAMS:?}" \
-  -kv \
-  --use_sdpa_with_kv_cache \
-  -d bf16 \
-  --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
-  --output_name="llama3_2.pte"
+python -m extension.llm.export.export_llm \
+  base.model_class="llama3_2" \
+  base.checkpoint="${LLAMA_CHECKPOINT:?}" \
+  base.params="${LLAMA_PARAMS:?}" \
+  model.use_kv_cache=True \
+  model.use_sdpa_with_kv_cache=True \
+  model.dtype_override="bf16" \
+  base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' \
+  export.output_name="llama3_2.pte"
 ```
 For convenience, an [exported ExecuTorch bf16 model](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/llama3_2-1B.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/ExportRecipe_1B.ipynb).
 
@@ -189,23 +189,23 @@ For convenience, an [exported ExecuTorch bf16 model](https://huggingface.co/exec
 LLAMA_QUANTIZED_CHECKPOINT=path/to/spinquant/consolidated.00.pth.pth
 LLAMA_PARAMS=path/to/spinquant/params.json
 
-python -m examples.models.llama.export_llama \
-   --model "llama3_2" \
-   --checkpoint "${LLAMA_QUANTIZED_CHECKPOINT:?}" \
-   --params "${LLAMA_PARAMS:?}" \
-   --use_sdpa_with_kv_cache \
-   -X \
-   --xnnpack-extended-ops \
-   --preq_mode 8da4w_output_8da8w \
-   --preq_group_size 32 \
-   --max_seq_length 2048 \
-   --max_context_length 2048 \
-   --output_name "llama3_2.pte" \
-   -kv \
-   -d fp32 \
-   --preq_embedding_quantize 8,0 \
-   --use_spin_quant native \
-   --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+python -m extension.llm.export.export_llm \
+   base.model_class="llama3_2" \
+   base.checkpoint="${LLAMA_QUANTIZED_CHECKPOINT:?}" \
+   base.params="${LLAMA_PARAMS:?}" \
+   model.use_sdpa_with_kv_cache=True \
+   backend.xnnpack.enabled=True \
+   backend.xnnpack.extended_ops=True \
+   base.preq_mode="8da4w_output_8da8w" \
+   base.preq_group_size=32 \
+   export.max_seq_length=2048 \
+   export.max_context_length=2048 \
+   export.output_name="llama3_2.pte" \
+   model.use_kv_cache=True \
+   model.dtype_override="fp32" \
+   base.preq_embedding_quantize=\'8,0\' \
+   quantization.use_spin_quant="native" \
+   base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"'
 ```
 For convenience, an [exported ExecuTorch SpinQuant model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_SpinQuant_INT4_EO8.ipynb).
 
@@ -218,24 +218,24 @@ For convenience, an [exported ExecuTorch SpinQuant model](https://huggingface.co
 LLAMA_QUANTIZED_CHECKPOINT=path/to/qlora/consolidated.00.pth.pth
 LLAMA_PARAMS=path/to/qlora/params.json
 
-python -m examples.models.llama.export_llama \
-   --model "llama3_2" \
-   --checkpoint "${LLAMA_QUANTIZED_CHECKPOINT:?}" \
-   --params "${LLAMA_PARAMS:?}" \
-   -qat \
-   -lora 16 \
-   --preq_mode 8da4w_output_8da8w \
-   --preq_group_size 32 \
-   --preq_embedding_quantize 8,0 \
-   --use_sdpa_with_kv_cache \
-   -kv \
-   -X \
-   --xnnpack-extended-ops \
-   -d fp32 \
-   --max_seq_length 2048 \
-   --max_context_length 2048 \
-   --output_name "llama3_2.pte" \
-   --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+python -m extension.llm.export.export_llm \
+   base.model_class="llama3_2" \
+   base.checkpoint="${LLAMA_QUANTIZED_CHECKPOINT:?}" \
+   base.params="${LLAMA_PARAMS:?}" \
+   quantization.use_qat=True \
+   base.use_lora=16 \
+   base.preq_mode="8da4w_output_8da8w" \
+   base.preq_group_size=32 \
+   base.preq_embedding_quantize=\'8,0\' \
+   model.use_sdpa_with_kv_cache=True \
+   model.use_kv_cache=True \
+   backend.xnnpack.enabled=True \
+   backend.xnnpack.extended_ops=True \
+   model.dtype_override="fp32" \
+   export.max_seq_length=2048 \
+   export.max_context_length=2048 \
+   export.output_name="llama3_2.pte" \
+   base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"'
 ```
 For convenience, an [exported ExecuTorch QAT+LoRA model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-QLORA_INT4_EO8.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_QLORA_INT4_EO8.ipynb).
 
@@ -247,20 +247,20 @@ You can export and run the original Llama 3 8B instruct model.
 
 2. Export model and generate `.pte` file
     ```
-    python -m examples.models.llama.export_llama \
-	    --checkpoint <consolidated.00.pth.pth> \
-		-p <params.json> \
-		-kv \
-		--use_sdpa_with_kv_cache \
-		-X \
-		-qmode 8da4w \
-		--group_size 128 \
-		-d fp32 \
-		--metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
-		--embedding-quantize 4,32 \
-		--output_name="llama3_kv_sdpa_xnn_qe_4_32.pte"
+    python -m extension.llm.export.export_llm \
+	    base.checkpoint=<consolidated.00.pth.pth> \
+		base.params=<params.json> \
+		model.use_kv_cache=True \
+		model.use_sdpa_with_kv_cache=True \
+		backend.xnnpack.enabled=True \
+		quantization.qmode="8da4w" \
+		quantization.group_size=128 \
+		model.dtype_override="fp32" \
+		base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' \
+		quantization.embedding_quantize=\'4,32\' \
+		export.output_name="llama3_kv_sdpa_xnn_qe_4_32.pte"
     ```
-    Due to the larger vocabulary size of Llama 3, we recommend quantizing the embeddings with `--embedding-quantize 4,32` as shown above to further reduce the model size.
+    Due to the larger vocabulary size of Llama 3, we recommend quantizing the embeddings with `quantization.embedding_quantize=\'4,32\'` as shown above to further reduce the model size.
 
 
     If you're interested in deploying on non-CPU backends, [please refer the non-cpu-backend section](non_cpu_backends.md)
@@ -389,22 +389,22 @@ QLINEAR_GROUP_SIZE=128 # Must be multiple of 16
 QEMBEDDING_BITWIDTH=4 # Can be 1-8
 QEMBEDDING_GROUP_SIZE=32 # Must be multiple of 16
 
-python -m examples.models.llama.export_llama \
-  --model "llama3_2" \
-  --checkpoint "${LLAMA_CHECKPOINT:?}" \
-  --params "${LLAMA_PARAMS:?}" \
-  -kv \
-  --use_sdpa_with_kv_cache \
-  --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
-  --output_name="llama3_2.pte" \
-  -qmode "torchao:8da${QLINEAR_BITWIDTH}w" \
-  --group_size ${QLINEAR_GROUP_SIZE} \
-  -E "torchao:${QEMBEDDING_BITWIDTH},${QEMBEDDING_GROUP_SIZE}" \
-  -d fp32
+python -m extension.llm.export.export_llm \
+  base.model_class="llama3_2" \
+  base.checkpoint="${LLAMA_CHECKPOINT:?}" \
+  base.params="${LLAMA_PARAMS:?}" \
+  model.use_kv_cache=True \
+  model.use_sdpa_with_kv_cache=True \
+  base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' \
+  export.output_name="llama3_2.pte" \
+  quantization.qmode="torchao:8da${QLINEAR_BITWIDTH}w" \
+  quantization.group_size=${QLINEAR_GROUP_SIZE} \
+  quantization.embedding_quantize=\'torchao:${QEMBEDDING_BITWIDTH},${QEMBEDDING_GROUP_SIZE}\' \
+  model.dtype_override="fp32"
 ```
 
 A few notes:
-- If your model shares embedding/unembedding weights (like Llama1B and Llama3B do), you can add `--use_shared_embedding` to take advantage of this and reduce memory.  When this option is enabled, you can specify whether embeddings are quantized asymmetrically or not by specifying a third argument.  For example, `-E "torchao:4,32,true"` means that the embedding is quantized to 4-bits with group_size=32 and is asymmetric (this is the default behavior if you simply use `-E "torchao:4,32"`), whereas `-E "torchao:4,32,false"` means that the embedding is quantized to 4-bits with group_size=32 and is symmetric.  If `--use_shared_embedding` is specified, the unembedding (i.e., the final linear layer) is quantized in the same way, but also uses 8-bit dynamically quantized activations.
+- If your model shares embedding/unembedding weights (like Llama1B and Llama3B do), you can add `model.use_shared_embedding=True` to take advantage of this and reduce memory.  When this option is enabled, you can specify whether embeddings are quantized asymmetrically or not by specifying a third argument.  For example, `quantization.embedding_quantize="torchao:4,32,true"` means that the embedding is quantized to 4-bits with group_size=32 and is asymmetric (this is the default behavior if you simply use `quantization.embedding_quantize="torchao:4,32"`), whereas `quantization.embedding_quantize="torchao:4,32,false"` means that the embedding is quantized to 4-bits with group_size=32 and is symmetric.  If `model.use_shared_embedding=True` is specified, the unembedding (i.e., the final linear layer) is quantized in the same way, but also uses 8-bit dynamically quantized activations.
 - To do channelwise quantization, specify group_size to 0.  This works for both linear and embedding layers.
 
 Once the model is exported, we need to build ExecuTorch and the runner with the low-bit kernels.
