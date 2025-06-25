@@ -240,3 +240,27 @@ class TestAdd(unittest.TestCase):
             .serialize()
             .run_method_and_compare_outputs()
         )
+
+    class AddWithAlpha(torch.nn.Module):
+        def forward(self, x, y):
+            # node with alpha = 1.0 will be partitioned
+            out1 = torch.add(x, y, alpha=1)
+            # node with alpha != 1.0 will not be partitioned
+            out2 = torch.add(x, y, alpha=2)
+            return out1, out2
+
+    def test_add_with_alpha(self):
+        inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 4))
+        (
+            Tester(self.AddWithAlpha(), inputs)
+            .export()
+            .check_count({"torch.ops.aten.add.Tensor": 2})
+            .to_edge_transform_and_lower()
+            # unpartitioned node
+            .check_count({"executorch_exir_dialects_edge__ops_aten_add_Tensor": 1})
+            # partitioned node
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )

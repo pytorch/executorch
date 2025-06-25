@@ -77,16 +77,16 @@ python3 .ci/scripts/benchmark_tooling/analyze_benchmark_stability.py \
 
 ##### Filtering Options:
 
-- `--device-pools`: Filter by private device pool names (e.g., "samsung-galaxy-s22-5g", "samsung-galaxy-s22plus-5g")
+- `--device-pools`: Filter by device pool names (e.g., "apple_iphone_15_private", "samsung_s22_private")
 - `--backends`: Filter by specific backend names (e.g.,"xnnpack_q8")
-- `--models`: Filter by specific model names (e.g., "mv3", "meta-llama-llama-3.2-1b-instruct-qlora-int4-eo8")
+- `--models`: Filter by specific model names (e.g., "mv3", "meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8")
 
 #### Example Usage
 
 Filter by multiple private device pools and models:
 ```bash
 # This fetches all private table data for models 'llama-3.2-1B' and 'mv3'
-python3 get_benchmark_analysis_data.py \
+python3 .ci/scripts/benchmark_tooling/get_benchmark_analysis_data.py \
   --startTime "2025-06-01T00:00:00" \
   --endTime "2025-06-11T00:00:00" \
   --device-pools 'apple_iphone_15_private' 'samsung_s22_private' \
@@ -97,7 +97,7 @@ Filter by specific device pool and models:
 ```bash
 # This fetches all private iPhone table data for models 'llama-3.2-1B' and 'mv3',
 # and associated public iPhone data
-python3 get_benchmark_analysis_data.py \
+python3 .ci/scripts/benchmark_tooling/get_benchmark_analysis_data.py \
   --startTime "2025-06-01T00:00:00" \
   --endTime "2025-06-11T00:00:00" \
   --device-pools 'apple_iphone_15_private' \
@@ -139,22 +139,6 @@ fetcher.run(
     start_time="2025-06-11T00:00:00",
     end_time="2025-06-17T18:00:00"
 )
-
-# Get results in different formats
-# As DataFrames
-df_results = fetcher.to_df()
-
-# Export to Excel
-fetcher.to_excel(output_dir="./results")
-
-# Export to CSV
-fetcher.to_csv(output_dir="./results")
-
-# Export to JSON
-json_path = fetcher.to_json(output_dir="./results")
-
-# Get raw dictionary results
-dict_results = fetcher.to_dict()
 
 # Use the output_data method for flexible output
 results = fetcher.output_data(output_type="excel", output_dir="./results")

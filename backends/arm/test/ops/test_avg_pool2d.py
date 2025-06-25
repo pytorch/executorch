@@ -51,15 +51,15 @@ test_modules = {
         AvgPool2d((4, 6), (1, 2), (2, 3)),
         (torch.rand(1, 16, 50, 32),),
     ),
-    "non_divisible_window": lambda: (
+    "non_divisible_window_adjust_padding": lambda: (
         AvgPool2d(3, 2, 1, count_include_pad=False),
         (torch.rand(1, 16, 112, 112),),
     ),
-    "non_divisible_window_height": lambda: (
+    "non_divisible_window_adjust_padding_height": lambda: (
         AvgPool2d(3, (2, 1), 1),
         (torch.rand(1, 16, 56, 56),),
     ),
-    "non_divisible_window_width": lambda: (
+    "non_divisible_window_adjust_padding_width": lambda: (
         AvgPool2d(3, (1, 2), 1, count_include_pad=False),
         (torch.rand(1, 16, 56, 56),),
     ),
@@ -90,6 +90,22 @@ test_modules = {
     "divisor_override_ceil_mode_count_include_pad": lambda: (
         AvgPool2d(3, 2, 1, True, True, divisor_override=2),
         (torch.rand(1, 1, 14, 14),),
+    ),
+    "non_divisible_no_padding": lambda: (
+        AvgPool2d(3, 2, 0),
+        (torch.rand(1, 16, 56, 56),),
+    ),
+    "non_divibile_window_adjust_padding+input": lambda: (
+        AvgPool2d(3, 3, 1, count_include_pad=False),
+        (torch.rand(1, 16, 54, 54),),
+    ),
+    "non_divibile_window_height_adjust_padding+input": lambda: (
+        AvgPool2d(3, (3, 1), 1),
+        (torch.rand(1, 16, 54, 54),),
+    ),
+    "non_divibile_window_width_adjust_padding+input": lambda: (
+        AvgPool2d(3, (1, 3), 1, count_include_pad=False),
+        (torch.rand(1, 16, 54, 54),),
     ),
 }
 

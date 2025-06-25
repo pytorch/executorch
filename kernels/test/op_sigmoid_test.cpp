@@ -44,6 +44,10 @@ class OpSigmoidOutTest : public OperatorTest {
     EXPECT_TENSOR_CLOSE(
         out,
         tf_out.make(sizes, /*data=*/{0.731059, 0.880797, 0.982014, 0.999665}));
+
+    out = tf_out.zeros({18});
+    op_sigmoid_out(tf.full({18}, 2), out);
+    EXPECT_TENSOR_CLOSE(out, tf_out.full({18}, 0.880797));
   }
 
   // Unhandled output dtypes.

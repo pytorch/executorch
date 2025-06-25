@@ -85,7 +85,7 @@ debug:
 ### Export Qwen3 0.6B with XNNPACK backend and quantization
 ```bash
 python -m extension.llm.export.export_llm \
-    base.model_class=qwen3-0_6b \
+    base.model_class=qwen3_0_6b \
     base.params=examples/models/qwen3/0_6b_config.json \
     base.metadata='{"get_bos_id": 151644, "get_eos_ids":[151645]}' \
     model.use_kv_cache=true \
