@@ -29,6 +29,8 @@ endif()
 
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
+add_compile_options("-Wall" "-Werror")
+
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 

@@ -37,6 +37,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchHtpPerformanceMode,
     QnnExecuTorchHtpPrecision,
     QnnExecuTorchLogLevel,
+    QnnExecuTorchOpPackageOptions,
     QnnExecuTorchOptions,
     QnnExecuTorchProfileLevel,
 )
@@ -331,6 +332,7 @@ def to_edge_transform_and_lower_to_qnn(
     passes_job: Optional[Union[OrderedDict, Dict[str, OrderedDict]]] = None,
     skip_node_id_set: Optional[set] = None,
     skip_node_op_set: Optional[set] = None,
+    skip_mutable_buffer: bool = False,
 ) -> EdgeProgramManager:
     """
     Transforms and lowers a given PyTorch module to the QNN backend.
@@ -355,6 +357,8 @@ def to_edge_transform_and_lower_to_qnn(
             Set of node IDs to skip during partitioning.
         skip_node_op_set (Optional[set]):
             Set of node operations to skip during partitioning.
+        skip_mutable_buffer (Optional[set]):
+            Whether to skip delegating the mutable buffer in QNN backend.
 
     Returns:
         EdgeProgramManager:
@@ -406,6 +410,7 @@ def to_edge_transform_and_lower_to_qnn(
                 compiler_specs[graph_name],
                 skip_node_id_set=skip_node_id_set,
                 skip_node_op_set=skip_node_op_set,
+                skip_mutable_buffer=skip_mutable_buffer,
             )
         ]
         for graph_name in graph_names
@@ -975,6 +980,7 @@ def generate_qnn_executorch_compiler_spec(
     shared_buffer: bool = False,
     is_from_context_binary: bool = False,
     graph_name: str = "forward",
+    op_package_options: QnnExecuTorchOpPackageOptions = None,
 ) -> List[CompileSpec]:
     """
     Helper function generating compiler specs for Qualcomm AI Engine Direct
@@ -1003,6 +1009,8 @@ def generate_qnn_executorch_compiler_spec(
             and backend for graph I/O.
         is_from_context_binary: True if current graph comes from pre-built context binary.
         graph_name: Assign unique graph name if lowering multiple methods.
+        op_package_options: Optional structure to specify op packages
+            loaded and used by the backend.
 
     Returns:
         List[CompileSpec]: Compiler specs for Qualcomm AI Engine Direct.
@@ -1061,6 +1069,9 @@ def generate_qnn_executorch_compiler_spec(
     qnn_executorch_options.shared_buffer = shared_buffer
     qnn_executorch_options.online_prepare = online_prepare
     qnn_executorch_options.is_from_context_binary = is_from_context_binary
+
+    if op_package_options and len(op_package_options.op_package_infos) > 0:
+        qnn_executorch_options.op_package_options = op_package_options
 
     return [
         CompileSpec(QCOM_QNN_COMPILE_SPEC, option_to_flatbuffer(qnn_executorch_options))

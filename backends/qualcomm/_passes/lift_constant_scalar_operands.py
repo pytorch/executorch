@@ -86,7 +86,8 @@ class LiftConstantScalarOperands(ExportPass):
             dtype=(
                 node.args[0].meta["val"].dtype
                 if not is_float_tensor(node)
-                and not SCALAR_OPS.get(node.target).use_self_dtype
+                and (info := SCALAR_OPS.get(node.target))
+                and not info.use_self_dtype
                 else node.meta["val"].dtype
             ),
             device=node.meta["val"].device,

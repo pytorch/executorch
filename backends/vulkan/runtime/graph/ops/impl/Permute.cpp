@@ -10,6 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
@@ -100,54 +101,76 @@ void add_permute_node(
     const ValueRef out) {
   check_args(graph, in, permute_dims, out);
 
-  ivec4 out_dims{0, 1, 2, 3};
-
-  // Special cases of squeeze/unsqueeze. Because the input dim size can be
-  // different with output dim size. So pick graph.dim_of(in) if squeeze, and
-  // graph.dim_of(out) if unsqueeze to create parameter for permute.
-  const int64_t out_ndim = std::max(graph.dim_of(in), graph.dim_of(out));
-  std::vector<bool> seen(out_ndim);
+  // Convert the permute dims to WHCN dimension order, which is the standard in
+  // our compute shaders. The following transformations are applied.
+  // 1. Change dimension index values from NCHW order valueto WHCN order value
+  // 2. Reverse the order of the permute array from NCHW order to WHCN order
+  ivec4 whcn_permute_dims{0, 1, 2, 3};
   {
     IntListPtr permute_dims_ptr = graph.get_int_list(permute_dims);
-    for (int i = 0; i < out_ndim; i++) {
-      int64_t permute_dim = permute_dims_ptr->at(i);
-      VK_CHECK_COND(
-          !seen[permute_dim], "Argument dim ", permute_dim, "  is repeated");
-      seen[permute_dim] = true;
+    const int32_t permute_ndim =
+        utils::safe_downcast<int>(permute_dims_ptr->size());
 
-      out_dims[(4u - out_ndim) + i] =
-          utils::safe_downcast<int32_t>(permute_dim + (4 - out_ndim));
+    for (int32_t nchw_i = permute_ndim - 1, whcn_i = 0; nchw_i >= 0;
+         nchw_i--, whcn_i++) {
+      const int32_t permute_dim_nchw = permute_dims_ptr->at(nchw_i);
+      const int32_t permute_dim_whcn = permute_ndim - 1 - permute_dim_nchw;
+
+      whcn_permute_dims[whcn_i] = permute_dim_whcn;
     }
   }
 
   std::string kernel_name = "permute";
   kernel_name.reserve(kShaderNameReserve);
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  const int32_t out_channels = dim_at<kChannel4D>(graph.sizes_of(out));
-  const int32_t in_channels = dim_at<kChannel4D>(graph.sizes_of(in));
+  vkapi::ParamsBindList param_buffers;
+  std::vector<PushConstantDataInfo> push_constants;
+  vkapi::SpecVarList spec_vars;
 
-  const int32_t packed_dim = graph.packed_dim_of(in);
-  ivec2 channel_info = {out_channels, in_channels};
-  if (packed_dim == WHCN::kChannelsDim) {
-    channel_info[0] = utils::align_up_4(channel_info[0]);
-    channel_info[1] = utils::align_up_4(channel_info[1]);
+  if (graph.is_buffer_storage(out)) {
+    param_buffers.append(graph.sizes_ubo(in));
+    param_buffers.append(graph.strides_ubo(out));
+    param_buffers.append(graph.numel_ubo(out));
+
+    // Buffer storage - use permute_buffer shader
+    push_constants = {
+        graph.strides_pc_of(in),
+        PushConstantDataInfo(&whcn_permute_dims, sizeof(whcn_permute_dims)),
+    };
+
+    spec_vars = {graph.hashed_layout_of(out), graph.hashed_layout_of(in)};
+  } else {
+    // Texture storage - use permute_texture shader
+    const int32_t out_channels = dim_at<kChannel4D>(graph.sizes_of(out));
+    const int32_t in_channels = dim_at<kChannel4D>(graph.sizes_of(in));
+
+    const int32_t packed_dim = graph.packed_dim_of(in);
+    ivec2 channel_info = {out_channels, in_channels};
+    if (packed_dim == WHCN::kChannelsDim) {
+      channel_info[0] = utils::align_up_4(channel_info[0]);
+      channel_info[1] = utils::align_up_4(channel_info[1]);
+    }
+
+    push_constants = {
+        graph.sizes_pc_of(out),
+        graph.sizes_pc_of(in),
+        PushConstantDataInfo(&whcn_permute_dims, sizeof(whcn_permute_dims))};
+
+    spec_vars = {graph.hashed_layout_of(out), graph.hashed_layout_of(in)};
   }
 
-  const vkapi::SpecVarList spec_vars = {packed_dim};
-
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out),
-      graph.create_local_wg_size(out),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
-      {},
+      // Parameter buffers
+      param_buffers,
       // Push Constants
-      {{graph.logical_limits_pc_of(out),
-        graph.sizes_pc_of(in),
-        PushConstantDataInfo(&out_dims, sizeof(out_dims)),
-        PushConstantDataInfo(&channel_info, sizeof(channel_info))}},
+      push_constants,
       // Specialization Constants
       spec_vars,
       // Resize Args

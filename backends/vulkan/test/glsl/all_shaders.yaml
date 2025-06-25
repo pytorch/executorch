@@ -51,7 +51,7 @@ idx_fill_texture:
     DTYPE:
       - VALUE: half
       - VALUE: float
-      - VALUE: int
+      - VALUE: int32
       - VALUE: int8
   shader_variants:
     - NAME: idx_fill_texture

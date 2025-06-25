@@ -91,18 +91,10 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         return not self.is_nhwc_node(node)
 
     def requires_nhwc_input(self, node: torch.fx.Node) -> bool:
-        return (
-            node.target in self.memory_sensitive_ops_nhwc
-            or node.name == "output"
-            and not node.args[0][0].meta["val"].is_contiguous()
-        )
+        return node.target in self.memory_sensitive_ops_nhwc
 
     def requires_nchw_inputs(self, node: torch.fx.Node) -> bool:
-        return (
-            node.target in self.memory_sensitive_ops_nchw
-            or node.name == "output"
-            and node.args[0][0].meta["val"].is_contiguous()
-        )
+        return node.target in self.memory_sensitive_ops_nchw
 
     def can_be_converted_to_nhwc(self, node: torch.fx.Node) -> bool:
         # There are two conditions that must be met for a node to be able to
@@ -380,18 +372,21 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 # This node has no inputs so we don't need to change anything
                 continue
 
-            if self.requires_nhwc_input(node):
+            # Need special case for output node because it can have multiple output dim orders as we can output a tuple multiple nodes
+            if node.op == "output":
+                out_tuple = node.args[0]
+                for out_node in out_tuple:
+                    if out_node.meta["val"].is_contiguous():
+                        self.input_to_nchw(graph_module, out_node, node)
+                    else:
+                        self.input_to_nhwc(graph_module, out_node, node)
+            elif self.requires_nhwc_input(node):
                 # Nodes which enter this branch are ones that require their
                 # first input to be nhwc. This makes this node's output nhwc too
-                # Currently, all nodes like this should have all of their other
-                # inputs as nchw, so fail if this is not true
-                if node.name == "output":
-                    self.input_to_nhwc(graph_module, node.args[0][0], node)
-                else:
-                    self.input_to_nhwc(graph_module, node.args[0], node)
 
-                for input_node in node.all_input_nodes[1:]:
-                    if self.is_nhwc_node(input_node):
+                self.input_to_nhwc(graph_module, node.args[0], node)
+                for input_node in node.all_input_nodes:
+                    if input_node.op == "placeholder" and self.is_nhwc_node(input_node):
                         raise AssertionError(
                             f"Expected {input_node} to be NCHW in channels last reshape pass"
                         )
