@@ -39,7 +39,6 @@ import hydra
 from executorch.examples.models.llama.config.llm_config import LlmConfig
 from executorch.examples.models.llama.export_llama_lib import export_llama
 from hydra.core.config_store import ConfigStore
-from hydra.core.hydra_config import HydraConfig
 from omegaconf import OmegaConf
 
 cs = ConfigStore.instance()
@@ -73,10 +72,10 @@ def add_hydra_config_args(config_file_path: str) -> None:
     """
     config_dir = os.path.dirname(config_file_path)
     config_name = os.path.basename(config_file_path)
-    
+
     # Resolve to absolute path
     config_dir_abs = os.path.abspath(config_dir)
-    
+
     # Add the hydra config arguments to sys.argv
     sys.argv.extend(["--config-path", config_dir_abs, "--config-name", config_name])
 
@@ -93,11 +92,10 @@ def main() -> None:
     # First parse out the arg for whether to use Hydra or the old CLI.
     config, remaining_args = parse_config_arg()
     if config:
-        global llm_config_from_yaml
         # Pop out --config and its value so that they are not parsed by
         # Hydra's main.
         config_file_path = pop_config_arg()
-        
+
         # Add hydra config_path and config_name arguments to sys.argv.
         add_hydra_config_args(config_file_path)
 
