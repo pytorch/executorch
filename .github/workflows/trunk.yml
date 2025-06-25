@@ -327,9 +327,11 @@ jobs:
         arm-zephyr-eabi-c++ --version
         zephyr_preset=tools/cmake/preset/zephyr.cmake
         zephyr_preset=$(realpath ${zephyr_preset})
+        toolchain_cmake=examples/arm/ethos-u-setup/arm-zephyr-eabi-gcc.cmake
+        toolchain_cmake=$(realpath ${toolchain_cmake})
 
         # Build and test size test
-        bash test/build_size_test.sh "-DEXECUTORCH_BUILD_PRESET_FILE=${zephyr_preset}"
+        bash test/build_size_test.sh "-DEXECUTORCH_BUILD_PRESET_FILE=${zephyr_preset} -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake}"
         elf="cmake-out/test/size_test"
 
         # Dump basic info
