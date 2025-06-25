@@ -296,6 +296,8 @@ def main(args):
             device_id=args.device,
             host_id=args.host,
             soc_model=args.model,
+            shared_buffer=args.shared_buffer,
+            target=args.target,
             runner="examples/qualcomm/oss_scripts/t5/qnn_t5_runner",
         )
         adb.push(

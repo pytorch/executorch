@@ -156,6 +156,7 @@ def inference(args):
             host_id=args.host,
             soc_model=args.model,
             runner="examples/models/llama/llama_main",
+            target=args.target,
         )
         # No pregen inputs, input_list is not required
         adb.push(inputs=[], input_list="", files=[tokenizer_json_path])

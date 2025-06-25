@@ -148,7 +148,14 @@ def get_tensor(io_info, tensors, logger, checking_output=False):
 
 
 def to_context_binary(
-    model_lib, soc_model, device, host, build_folder, output_folder, logger
+    model_lib,
+    soc_model,
+    device,
+    host,
+    target,
+    build_folder,
+    output_folder,
+    logger,
 ):
     ext = Path(model_lib).suffix
     if ext == ".bin":
@@ -169,6 +176,7 @@ def to_context_binary(
         device_id=device,
         soc_model=soc_model,
         host_id=host,
+        target=target,
     )
 
     logger.info("pushing QNN libraries & tool")
@@ -237,6 +245,7 @@ def compile(args):
             soc_model=args.model,
             device=args.device,
             host=args.host,
+            target=args.target,
             build_folder=args.build_folder,
             output_folder=output_dir,
             logger=logger,
@@ -309,6 +318,7 @@ def execute(args):
         soc_model=graph_info["soc_model"],
         host_id=args.host,
         shared_buffer=args.shared_buffer,
+        target=args.target,
     )
 
     logger.info("pushing QNN libraries & other artifacts")
