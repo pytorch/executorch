@@ -133,7 +133,8 @@ ET_NODISCARD Error validateTensorLayout(
     ET_CHECK_OR_RETURN_ERROR(
         s_tensor->sizes()->Get(i) == expected_layout.sizes()[i],
         InvalidExternalData,
-        "Sizes mismatch. Expected %" PRId32 ", got %" PRId32 " for size at index %d.",
+        "Sizes mismatch. Expected %" PRId32 ", got %" PRId32
+        " for size at index %d.",
         s_tensor->sizes()->Get(i),
         expected_layout.sizes()[i],
         i);
