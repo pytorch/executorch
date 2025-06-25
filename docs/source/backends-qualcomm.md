@@ -53,7 +53,7 @@ For more details and troubleshooting, refer to the official Microsoft WSL instal
 👉 [Install WSL | Microsoft Learn](https://learn.microsoft.com/en-us/windows/wsl/install)
 
 ### Hardware:
-You will need an Android smartphone with adb-connected running on one of below Qualcomm SoCs:
+You will need an Android / Linux device with adb-connected running on one of below Qualcomm SoCs:
  - SA8295
  - SM8450 (Snapdragon 8 Gen 1)
  - SM8475 (Snapdragon 8 Gen 1+)
@@ -62,7 +62,7 @@ You will need an Android smartphone with adb-connected running on one of below Q
  - SM8750 (Snapdragon 8 Elite)
  - SSG2115P
  - SSG2125P
- - SXR1230P
+ - SXR1230P (Linux Embedded)
  - SXR2230P
  - SXR2330P
 
@@ -73,6 +73,7 @@ This example is verified with SM8550 and SM8450.
  - Follow ExecuTorch recommended Python version.
  - A compiler to compile AOT parts, e.g., the GCC compiler comes with Ubuntu LTS.
  - [Android NDK](https://developer.android.com/ndk). This example is verified with NDK 26c.
+ - (Optional) Target toolchain for linux embedded platform.
  - [Qualcomm AI Engine Direct SDK](https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk)
    - Click the "Get Software" button to download a version of QNN SDK.
    - However, at the moment of updating this tutorial, the above website doesn't provide QNN SDK newer than 2.22.6.
@@ -131,8 +132,11 @@ The above script is actively used. It is updated more frequently than this tutor
 An example usage is
 ```bash
 cd $EXECUTORCH_ROOT
+# android target
 ./backends/qualcomm/scripts/build.sh
-# or
+# (optional) linux embedded target
+./backends/qualcomm/scripts/build.sh --le
+# for release build
 ./backends/qualcomm/scripts/build.sh --release
 ```
 
@@ -148,11 +152,14 @@ cd build-x86
 # Please refer to the above build.sh for latest workable commands.
 cmake .. \
   -DCMAKE_INSTALL_PREFIX=$PWD \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DEXECUTORCH_BUILD_QNN=ON \
   -DQNN_SDK_ROOT=${QNN_SDK_ROOT} \
   -DEXECUTORCH_BUILD_DEVTOOLS=ON \
   -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
   -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
   -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
   -DPYTHON_EXECUTABLE=python3
 
@@ -177,17 +184,23 @@ An example `qnn_executor_runner` executable would be used to run the compiled `p
 Commands to build `qnn_executor_runner` for Android:
 
 ```bash
+export ANDROID_NDK_ROOT=/path/to/android_ndk_r26c/..
+
 cd $EXECUTORCH_ROOT
 mkdir build-android
 cd build-android
 # build executorch & qnn_executorch_backend
 cmake .. \
     -DCMAKE_INSTALL_PREFIX=$PWD \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
     -DEXECUTORCH_BUILD_QNN=ON \
     -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
     -DEXECUTORCH_BUILD_DEVTOOLS=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
     -DPYTHON_EXECUTABLE=python3 \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
@@ -199,6 +212,7 @@ cmake .. \
 cmake --build $PWD --target install -j$(nproc)
 
 cmake ../examples/qualcomm \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI='arm64-v8a' \
     -DANDROID_PLATFORM=android-30 \
@@ -211,6 +225,61 @@ cmake --build examples/qualcomm -j$(nproc)
 
 # qnn_executor_runner can be found under examples/qualcomm
 # The full path is $EXECUTORCH_ROOT/build-android/examples/qualcomm/executor_runner/qnn_executor_runner
+ls examples/qualcomm
+```
+
+(Optional) Commands to build `qnn_executor_runner` for Linux Embedded:
+
+```bash
+export TOOLCHAIN_ROOT_HOST=/path/to/sysroots/HOST # e.g. x86_64-qtisdk-linux
+export TOOLCHAIN_ROOT_TARGET=/path/to/sysroots/TARGET # e.g. armv8a-oe-linux
+
+cd $EXECUTORCH_ROOT
+mkdir build-oe-linux
+cd build-oe-linux
+# build executorch & qnn_executorch_backend
+cmake .. \
+    -DCMAKE_INSTALL_PREFIX=$PWD \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DCMAKE_C_COMPILER=${TOOLCHAIN_ROOT_HOST}/usr/bin/aarch64-oe-linux/aarch64-oe-linux-gcc \
+    -DCMAKE_CXX_COMPILER=${TOOLCHAIN_ROOT_HOST}/usr/bin/aarch64-oe-linux/aarch64-oe-linux-g++ \
+    -DCMAKE_SYSROOT=$TOOLCHAIN_ROOT_TARGET \
+    -DCMAKE_SYSTEM_NAME=Linux \
+    -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+    -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+    -DEXECUTORCH_BUILD_CPUINFO=OFF \
+    -DEXECUTORCH_BUILD_QNN=ON \
+    -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
+    -DEXECUTORCH_BUILD_DEVTOOLS=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+    -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
+    -DPYTHON_EXECUTABLE=python3 \
+
+# nproc is used to detect the number of available CPU.
+# If it is not applicable, please feel free to use the number you want.
+cmake --build $PWD --target install -j$(nproc)
+
+cmake ../examples/qualcomm \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DCMAKE_PREFIX_PATH="$PWD/lib/cmake/ExecuTorch;$PWD/third-party/gflags;" \
+    -DCMAKE_C_COMPILER=${TOOLCHAIN_ROOT_HOST}/usr/bin/aarch64-oe-linux/aarch64-oe-linux-gcc \
+    -DCMAKE_CXX_COMPILER=${TOOLCHAIN_ROOT_HOST}/usr/bin/aarch64-oe-linux/aarch64-oe-linux-g++ \
+    -DCMAKE_SYSROOT=$TOOLCHAIN_ROOT_TARGET \
+    -DCMAKE_SYSTEM_NAME=Linux \
+    -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+    -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+    -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+    -DPYTHON_EXECUTABLE=python3 \
+    -Bexamples/qualcomm
+
+cmake --build examples/qualcomm -j$(nproc)
+
+# qnn_executor_runner can be found under examples/qualcomm
+# The full path is $EXECUTORCH_ROOT/build-oe-linux/examples/qualcomm/qnn_executor_runner
 ls examples/qualcomm
 ```
 
@@ -351,7 +420,10 @@ I 00:00:00.364875 executorch:qnn_executor_runner.cpp:425] Write etdump to etdump
 The model is merely executed. If we want to feed real inputs and get model outputs, we can use
 ```bash
 cd $EXECUTORCH_ROOT
+# android
 python -m examples.qualcomm.scripts.deeplab_v3 -b build-android -m SM8550 --download -s <device_serial>
+# (optional) linux embedded
+python -m examples.qualcomm.scripts.deeplab_v3 -b build-oe-linux -m SXR1230P --download -s <device_serial> -t aarch64-oe-linux-gcc-9.3
 ```
 The `<device_serial>` can be found by `adb devices` command.
 

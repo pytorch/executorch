@@ -81,6 +81,7 @@ class SimpleADB:
         shared_buffer=False,
         dump_intermediate_outputs=False,
         runner="examples/qualcomm/executor_runner/qnn_executor_runner",
+        target="aarch64-android",
         expected_input_shape=None,
         expected_output_shape=None,
     ):
@@ -100,6 +101,7 @@ class SimpleADB:
         self.error_only = error_only
         self.shared_buffer = shared_buffer
         self.runner = runner
+        self.target = target
         self.expected_input_shape = expected_input_shape
         self.expected_output_shape = expected_output_shape
         self.extra_cmds = ""
@@ -130,20 +132,17 @@ class SimpleADB:
             # necessary artifacts
             artifacts = [
                 *self.pte_path,
-                f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtp.so",
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnHtp.so",
                 (
                     f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
                     f"unsigned/libQnnHtpV{self.htp_arch}Skel.so"
                 ),
-                (
-                    f"{self.qnn_sdk}/lib/aarch64-android/"
-                    f"libQnnHtpV{self.htp_arch}Stub.so"
-                ),
-                f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtpPrepare.so",
-                f"{self.qnn_sdk}/lib/aarch64-android/libQnnSystem.so",
+                (f"{self.qnn_sdk}/lib/{self.target}/" f"libQnnHtpV{self.htp_arch}Stub.so"),
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnHtpPrepare.so",
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnSystem.so",
                 f"{self.build_path}/{self.runner}",
                 f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
-                f"{self.qnn_sdk}/lib/aarch64-android/libQnnModelDlc.so",
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnModelDlc.so",
             ]
         input_list_file, input_files = generate_inputs(
             self.working_dir, self.input_list_filename, inputs
