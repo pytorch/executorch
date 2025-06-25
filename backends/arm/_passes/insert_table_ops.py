@@ -53,6 +53,7 @@ class TableOps:
         exir_ops.edge.aten.tanh.default: torch.tanh,
         exir_ops.edge.aten.hardsigmoid.default: torch.nn.functional.hardsigmoid,
         exir_ops.edge.aten.hardswish.default: torch.nn.functional.hardswish,
+        exir_ops.edge.aten.sinh.default: torch.sinh,
     }
 
     # Targets that must be treated explicitly

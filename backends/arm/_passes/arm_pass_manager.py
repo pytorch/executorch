@@ -42,6 +42,7 @@ from executorch.backends.arm._passes import (
     DecomposeRoundPass,
     DecomposeSelectPass,
     DecomposeSiluPass,
+    DecomposeSinhPass,
     DecomposeSoftmaxPass,
     DecomposeSoftmaxUnstablePass,
     DecomposeSqrtPass,
@@ -64,7 +65,7 @@ from executorch.backends.arm._passes import (
     ReplaceScalarWithTensorArgPassTOSAMI,
     RetraceFoldedDtypesPass,
     ScalarsToAttributePass,
-    SizeAdjustConv2DPass,
+    SizeAdjustInputPass,
     UnsqueezeBeforeRepeatPass,
     UnsqueezeScalarPlaceholdersPass,
 )
@@ -125,13 +126,13 @@ class ArmPassManager(PassManager):
 
         self.add_pass(DecomposeGroupedConv())
         self.add_pass(RemoveClonePass())
-        self.add_pass(SizeAdjustConv2DPass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(DecomposeSumPass())
         self.add_pass(Conv1dUnsqueezePass())
         self.add_pass(DecomposeMaxPool2DPass())
+        self.add_pass(SizeAdjustInputPass())
         self.add_pass(DecomposeSelectPass())
         self.add_pass(ConvertSqueezesToViewPass())
 
@@ -151,6 +152,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(ConvertIntPowToMuls())
         self.add_pass(CastBoolToInt8Pass())
+        self.add_pass(DecomposeSinhPass())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSAMI())
         self.add_pass(DecomposeEmbeddingPass())
         self.add_pass(FuseQuantizedActivationPass())
@@ -187,13 +189,13 @@ class ArmPassManager(PassManager):
 
         self.add_pass(DecomposeGroupedConv())
         self.add_pass(RemoveClonePass())
-        self.add_pass(SizeAdjustConv2DPass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(DecomposeSumPass())
         self.add_pass(Conv1dUnsqueezePass())
         self.add_pass(DecomposeMaxPool2DPass())
+        self.add_pass(SizeAdjustInputPass())
         self.add_pass(DecomposeSelectPass())
         self.add_pass(ConvertSqueezesToViewPass())
 

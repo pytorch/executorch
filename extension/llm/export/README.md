@@ -128,11 +128,7 @@ python -m extension.llm.export.export_llm \
 
 ## Configuration Options
 
-<<<<<<< HEAD
 For a complete reference of all available configuration options, see the [LlmConfig class definition](config/llm_config.py) which documents all supported parameters for base, model, export, quantization, backend, and debug configurations.
-=======
-For a complete reference of all available configuration options, see the [LlmConfig class definition](../../../examples/models/llama/config/llm_config.py) which documents all supported parameters for base, model, export, quantization, backend, and debug configurations.
->>>>>>> main
 
 ## Further Reading
 

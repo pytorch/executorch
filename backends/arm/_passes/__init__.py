@@ -39,6 +39,7 @@ from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
 from .decompose_round_pass import DecomposeRoundPass  # noqa
 from .decompose_select import DecomposeSelectPass  # noqa
 from .decompose_silu_pass import DecomposeSiluPass  # noqa
+from .decompose_sinh_pass import DecomposeSinhPass  # noqa
 from .decompose_softmax_pass import DecomposeSoftmaxPass  # noqa
 from .decompose_softmax_unstable_pass import DecomposeSoftmaxUnstablePass  # noqa
 from .decompose_sqrt_pass import DecomposeSqrtPass  # noqa
@@ -67,7 +68,7 @@ from .replace_scalar_with_tensor_pass import (  # noqa
     ReplaceScalarWithTensorArgPassTOSAMI,
 )
 from .scalars_to_attribute_pass import ScalarsToAttributePass  # noqa
-from .size_adjust_conv2d_pass import SizeAdjustConv2DPass  # noqa
+from .size_adjust_input_pass import SizeAdjustInputPass  # noqa
 from .unsqueeze_before_repeat_pass import UnsqueezeBeforeRepeatPass  # noqa
 from .unsqueeze_scalar_placeholders_pass import UnsqueezeScalarPlaceholdersPass  # noqa
 from .replace_inf_values_pass import ReplaceInfValues  # noqa  # usort: skip

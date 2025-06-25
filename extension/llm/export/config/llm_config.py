@@ -226,9 +226,9 @@ class ExportConfig:
     export_only: bool = False
 
     def __post_init__(self):
-        if self.max_context_length > self.max_seq_length:
+        if self.max_context_length < self.max_seq_length:
             raise ValueError(
-                f"max_context_length of {self.max_context_length} cannot be greater than max_seq_length of {self.max_seq_length}"
+                f"max_context_length of {self.max_context_length} cannot be shorter than max_seq_length of {self.max_seq_length}"
             )
 
 
