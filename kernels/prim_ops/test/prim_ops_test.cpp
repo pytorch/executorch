@@ -308,7 +308,7 @@ TEST_F(RegisterPrimOpsTest, NegScalarReturnsCorrectValue) {
   EXPECT_EQ(stack[1]->toInt(), -5l);
 }
 
-TEST_F(RegisterPrimOpsTest, TestNegScalarWithTensorDies) {
+TEST_F(RegisterPrimOpsTest, TestNegScalarWithTensorFails) {
   testing::TensorFactory<ScalarType::Int> tf;
 
   EValue values[2];
