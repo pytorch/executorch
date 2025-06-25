@@ -12,7 +12,7 @@ namespace torch::executor::native {
 #define ET_ARANGE_IMPL(ctx, start, numel, step, out, op_name)               \
   ET_SWITCH_REALHBF16_TYPES(out.scalar_type(), ctx, op_name, CTYPE, [&]() { \
     auto out_data = out.mutable_data_ptr<CTYPE>();                          \
-    for (size_t i = 0; i < numel; ++i) {                                    \
+    for (Tensor::SizesType i = 0; i < numel; ++i) {                         \
       out_data[i] = static_cast<CTYPE>(start + i * step);                   \
     }                                                                       \
   })
