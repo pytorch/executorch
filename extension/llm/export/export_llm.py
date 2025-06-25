@@ -30,6 +30,7 @@ python -m extension.llm.export.export_llm \
 """
 
 import argparse
+import os
 import sys
 from typing import Any, List, Tuple
 
@@ -45,11 +46,6 @@ cs = ConfigStore.instance()
 cs.store(name="llm_config", node=LlmConfig)
 
 
-# Need this global variable to pass an llm_config from yaml
-# into the hydra-wrapped main function.
-llm_config_from_yaml = None
-
-
 def parse_config_arg() -> Tuple[str, List[Any]]:
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--config", type=str, help="Path to the LlmConfig file")
@@ -61,6 +57,7 @@ def pop_config_arg() -> str:
     """
     Removes '--config' and its value from sys.argv.
     Assumes --config is specified and argparse has already validated the args.
+    Returns the config file path.
     """
     idx = sys.argv.index("--config")
     value = sys.argv[idx + 1]
@@ -68,20 +65,26 @@ def pop_config_arg() -> str:
     return value
 
 
-@hydra.main(version_base=None, config_name="llm_config")
-def hydra_main(llm_config: LlmConfig) -> None:
-    global llm_config_from_yaml
+def add_hydra_config_args(config_file_path: str) -> None:
+    """
+    Breaks down the config file path into directory and filename,
+    resolves the directory to an absolute path, and adds the
+    --config_path and --config_name arguments to sys.argv.
+    """
+    config_dir = os.path.dirname(config_file_path)
+    config_name = os.path.basename(config_file_path)
+    
+    # Resolve to absolute path
+    config_dir_abs = os.path.abspath(config_dir)
+    
+    # Add the hydra config arguments to sys.argv
+    sys.argv.extend(["--config-path", config_dir_abs, "--config-name", config_name])
 
-    # Override the LlmConfig constructed from the provide yaml config file
-    # with the CLI overrides.
-    if llm_config_from_yaml:
-        # Get CLI overrides (excluding defaults list).
-        overrides_list: List[str] = list(HydraConfig.get().overrides.get("task", []))
-        override_cfg = OmegaConf.from_dotlist(overrides_list)
-        merged_config = OmegaConf.merge(llm_config_from_yaml, override_cfg)
-        export_llama(merged_config)
-    else:
-        export_llama(OmegaConf.to_object(llm_config))
+
+@hydra.main(version_base=None, config_name="llm_config", config_path=None)
+def hydra_main(llm_config: LlmConfig) -> None:
+    breakpoint()
+    export_llama(OmegaConf.to_object(llm_config))
 
 
 def main() -> None:
@@ -90,13 +93,12 @@ def main() -> None:
     if config:
         global llm_config_from_yaml
         # Pop out --config and its value so that they are not parsed by
-        # Hyra's main.
+        # Hydra's main.
         config_file_path = pop_config_arg()
-        default_llm_config = LlmConfig()
-        # Construct the LlmConfig from the config yaml file.
-        default_llm_config = LlmConfig()
-        from_yaml = OmegaConf.load(config_file_path)
-        llm_config_from_yaml = OmegaConf.merge(default_llm_config, from_yaml)
+        
+        # Add hydra config_path and config_name arguments to sys.argv.
+        add_hydra_config_args(config_file_path)
+
     hydra_main()
 
 
