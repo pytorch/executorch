@@ -1,0 +1,30 @@
+From 03e33214c52fd98b2adf87b2ff1c01ff91eceb52 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?M=C3=A5ns=20Nilsson?= <mans.nilsson@arm.com>
+Date: Fri, 13 Jun 2025 20:12:28 +0200
+Subject: [PATCH] Do not include tflite micro and rtos projects as they are not
+ needed
+
+---
+ CMakeLists.txt | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index c6faad8..7c205e0 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -76,10 +76,10 @@ if (CORE_SOFTWARE_ACCELERATOR STREQUAL "NPU")
+ endif()
+ 
+ # Build Tensorflow Lite Micro library
+-include(tflite_micro.cmake)
++#include(tflite_micro.cmake)
+ 
+ # Build RTOS
+-add_subdirectory(rtos)
++#add_subdirectory(rtos)
+ 
+ # Build EventRecorder
+ include(event_recorder.cmake)
+-- 
+2.34.1
+
