@@ -78,9 +78,10 @@ def define_common_targets():
         xplat_exported_deps = [
             "//xplat/caffe2:aten_header",
             "//xplat/caffe2/c10:c10_headers",
-            ("//xplat/caffe2:ovrsource_aten_Config.h"
-            if is_arvr_mode() else "//xplat/caffe2:generated_aten_config_header"),
-        ] + get_sleef_deps(),
+        ] + select({
+            "DEFAULT": ["//xplat/caffe2:generated_aten_config_header"],
+            "ovr_config//build_mode:arvr_mode": ["//xplat/caffe2:ovrsource_aten_Config.h"],
+        }) + get_sleef_deps(),
         fbcode_exported_deps = ([
             "//caffe2:aten-headers-cpu",
             "//caffe2:generated-config-header",
