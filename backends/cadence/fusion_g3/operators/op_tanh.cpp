@@ -56,8 +56,8 @@ Tensor& tanh_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   } else {
     static constexpr const char op_name[] = "tanh.out";
     return torch::executor::native::internal::
-      unary_ufunc_realhbbf16_to_floathbf16<op_name>(
-          [](auto x) { return executorch::math::tanh(x); }, ctx, in, out);
+        unary_ufunc_realhbbf16_to_floathbf16<op_name>(
+            [](auto x) { return executorch::math::tanh(x); }, ctx, in, out);
   }
 }
 
