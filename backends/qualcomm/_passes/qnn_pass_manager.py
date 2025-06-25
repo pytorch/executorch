@@ -24,6 +24,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeLinalgVectorNorm,
     DecomposeRoll,
     DecomposeSilu,
+    DecomposeWrapWithAutocast,
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
     FoldQDQ,
@@ -40,7 +41,6 @@ from executorch.backends.qualcomm._passes import (
     Remove0DTensor,
     RemoveRedundancy,
     ReplaceArangeArgs,
-    ReplaceIndexPutInput,
     ReplaceInfValues,
     TagQuantIO,
 )
@@ -80,7 +80,7 @@ def get_capture_program_passes():
         (AnnotateQuantAttrs, True),
         (AnnotateStack, True),
         (AnnotateUnbind, True),
-        (ConvertBmmToMatmul, True),
+        (ConvertBmmToMatmul, False),
         (ConvertConv1dToConv2d, True),
         (DecomposeAny, True),
         (DecomposeColIm, True),
@@ -93,7 +93,6 @@ def get_capture_program_passes():
         (RecomposeRmsNorm, False),
         (Remove0DTensor, True),
         (RemoveRedundancy, True),
-        (ReplaceIndexPutInput, True),
         (TagQuantIO, False),
     ]
 
@@ -194,6 +193,7 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoll())
         self.add_pass(DecomposeSilu())
+        self.add_pass(DecomposeWrapWithAutocast())
         self.add_pass(DecomposeEinsum())
         self.add_pass(DecomposeExpM1())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
@@ -207,6 +207,7 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposeRoll())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(DecomposeExpM1())
+        self.add_pass(DecomposeWrapWithAutocast())
         # this pass will rewrite state_dict, it needs to be accomplished before
         # to_edge_transform_and_lower
         self.add_pass(ConvertConv1dToConv2d(exported_program))
@@ -223,4 +224,11 @@ class QnnPassManager(PassManager):
         self.add_pass(LayoutTransform(exported_program, insert_permute=True))
         self.add_pass(FuseConsecutiveCast())
         self.add_pass(FuseConsecutiveTranspose())
-        return self._transform(exported_program.graph_module)
+        self._transform(exported_program.graph_module)
+        # Update inputs_to_buffers and buffers_to_mutate in graph signature for mutable buffer
+        # Since I/O will be inserted Q/DQ, it results in failed to mapping output node names and buffer
+        exported_program._graph_signature = _get_updated_graph_signature(
+            exported_program.graph_signature,
+            exported_program.graph_module,
+        )
+        return exported_program.graph_module

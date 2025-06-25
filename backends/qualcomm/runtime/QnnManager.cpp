@@ -18,6 +18,7 @@
 #include <cstring>
 #include <fstream>
 #include <string>
+#include <unordered_map>
 
 namespace executorch {
 namespace backends {
@@ -33,6 +34,16 @@ bool CompareExportedInput(
   int numA = std::stoi(a->GetName().substr(a->GetName().find('_') + 1));
   int numB = std::stoi(b->GetName().substr(b->GetName().find('_') + 1));
   return numA < numB;
+}
+
+int ExtractMutableBufferNumber(const std::string& name) {
+  std::string prefix = "mutbuf_";
+  size_t startPos = name.find(prefix);
+  if (startPos != std::string::npos) {
+    startPos += prefix.length();
+    return std::stoi(name.substr(startPos));
+  }
+  return -1;
 }
 
 QnnManager::~QnnManager() {
@@ -75,6 +86,9 @@ QnnManager::QnnManager(
         "Is on-device graph construction: %d", options->online_prepare());
     QNN_EXECUTORCH_LOG_INFO(
         "Enable shared buffer: %d", options->shared_buffer());
+    QNN_EXECUTORCH_LOG_INFO(
+        "The number of op packages: %d",
+        options_->op_package_options()->op_package_infos()->size());
   }
 
   if (library_path.empty()) {
@@ -308,7 +322,8 @@ Error QnnManager::Init() {
         Internal,
         "Fail to configure Qnn backend cache");
     ET_CHECK_OR_RETURN_ERROR(
-        backend_params_ptr_->qnn_backend_ptr_->Configure() == Error::Ok,
+        backend_params_ptr_->qnn_backend_ptr_->Configure(
+            options_->op_package_options()) == Error::Ok,
         Internal,
         "Fail to configure Qnn backend");
     ET_CHECK_OR_RETURN_ERROR(
@@ -359,9 +374,21 @@ Error QnnManager::AllocateTensor(const std::string& graph_name) {
   std::vector<Qnn_Tensor_t> output_tensors =
       backend_params_ptr_->qnn_context_ptr_->GetGraphOutputs(graph_name);
 
+  // Mapping memory address for the input and output of mutable buffer
+  std::unordered_map<int, const void*> mutable_buffer_id_to_memory_map;
+
   for (auto& tensor : input_tensors) {
     std::shared_ptr<TensorWrapper> tensor_wrapper = CreateTensorWrapper(tensor);
     tensor_wrapper->UpdateQnnTensorMeta(tensor);
+
+    int mutable_buffer_id =
+        ExtractMutableBufferNumber(tensor_wrapper->GetName());
+    if (mutable_buffer_id != -1) {
+      // Delegate maintains the memory for mutable buffer
+      tensor_wrapper->AllocateDataBuffer();
+      mutable_buffer_id_to_memory_map[mutable_buffer_id] =
+          tensor_wrapper->GetStaticTensorData();
+    }
     input_tensors_[graph_name].emplace_back(std::move(tensor_wrapper));
   }
   if (!options_->is_from_context_binary()) {
@@ -383,6 +410,16 @@ Error QnnManager::AllocateTensor(const std::string& graph_name) {
     }
     if (IsTensorDump()) {
       tensor_wrapper->AllocateDataBuffer();
+    }
+    int mutable_buffer_id =
+        ExtractMutableBufferNumber(tensor_wrapper->GetName());
+    if (mutable_buffer_id != -1 &&
+        mutable_buffer_id_to_memory_map.find(mutable_buffer_id) !=
+            mutable_buffer_id_to_memory_map.end()) {
+      // Fill the same memory for I/O of mutable buffer
+      tensor_wrapper->FillDataBuffer(
+          mutable_buffer_id_to_memory_map[mutable_buffer_id],
+          false /* copy_data */);
     }
     output_tensors_[graph_name].emplace_back(std::move(tensor_wrapper));
   }

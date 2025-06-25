@@ -77,15 +77,14 @@ def get_passes_dependency_for_capture_program():
         RecomposePixelUnshuffle,
         RecomposeRmsNorm,
         RemoveRedundancy,
-        ReplaceIndexPutInput,
         TagQuantIO,
     )
 
     return {
         AnnotateAdaptiveAvgPool1D: [RemoveRedundancy],
         AnnotateQuantAttrs: [
-            RecomposePixelUnshuffle,
             ConvertBmmToMatmul,
+            RecomposePixelUnshuffle,
             RemoveRedundancy,
         ],
         AnnotateStack: [RemoveRedundancy],
@@ -106,8 +105,7 @@ def get_passes_dependency_for_capture_program():
         ],
         RecomposePixelUnshuffle: [RemoveRedundancy],
         RecomposeRmsNorm: [RemoveRedundancy],
-        ReplaceIndexPutInput: [LayoutTransform],
-        TagQuantIO: [ReplaceIndexPutInput],
+        TagQuantIO: [LayoutTransform],
     }
 
 

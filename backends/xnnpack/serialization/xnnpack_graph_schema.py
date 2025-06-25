@@ -292,6 +292,11 @@ class XNNCeiling(XNNNode1x1):
 
 
 @dataclass
+class XNNExp(XNNNode1x1):
+    pass
+
+
+@dataclass
 class XNNGelu(XNNNode1x1):
     pass
 
@@ -316,6 +321,11 @@ class XNNLeakyReLU:
 
 @dataclass
 class XNNLog(XNNNode1x1):
+    pass
+
+
+@dataclass
+class XNNTanh(XNNNode1x1):
     pass
 
 
@@ -391,6 +401,7 @@ XNodeUnion = Union[
     XNNReciprocalSquareRoot,
     XNNLog,
     XNNGelu,
+    XNNTanh,
 ]
 
 
