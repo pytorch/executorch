@@ -26,6 +26,9 @@ void add_unsqueeze_node(
       in_dim < 4, "Cannot unsqueeze a tensor with more than 3 dimensions");
 
   int64_t dim = graph.extract_scalar<int64_t>(dim_ref);
+  if (dim < 0) {
+    dim += out_dim;
+  }
 
   std::vector<int64_t> permute_dims(out_dim);
   for (int i = 1; i <= dim; i++) {
