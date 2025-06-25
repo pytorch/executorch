@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -127,11 +128,18 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   set(VULKAN_RUNNER_SRCS ${_executor_runner__srcs})
   list(TRANSFORM VULKAN_RUNNER_SRCS PREPEND "${EXECUTORCH_ROOT}/")
 
+  set(VGF_BACKEND )
+  if(EXECUTORCH_BUILD_VGF)
+  set(VGF_BACKEND vgf_backend)
+  endif()
+
   add_executable(vulkan_executor_runner ${VULKAN_RUNNER_SRCS})
   target_link_libraries(
     vulkan_executor_runner ${_executor_runner_libs} vulkan_schema
     vulkan_backend
+    ${VGF_BACKEND}
   )
+
   target_compile_options(vulkan_executor_runner PUBLIC ${VULKAN_CXX_FLAGS})
 endif()
 
