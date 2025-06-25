@@ -1726,6 +1726,75 @@ class ExecutorchProgramManager:
         else:
             print_program(self._emitter_output.program, out=out)
 
+    def dump_delegate_data(  # noqa: C901
+        self,
+        path: str,
+        extension: str,
+        delegate_id: Optional[str] = None,
+    ) -> None:
+        """
+        Dumps the delegate blob out of backend_delegate_data to <path><extension>.
+        Must have been created with extract_delegate_segments=True.
+        If no delegate_id is given and exactly one exists, it will be used.
+        """
+        if not extension.startswith("."):
+            extension = "." + extension
+        out_dir = os.path.dirname(path)
+        if out_dir and not os.path.isdir(out_dir):
+            os.makedirs(out_dir, exist_ok=True)
+
+        eo = self._emitter_output
+        blobs = eo.program.backend_delegate_data
+        if not blobs:
+            raise RuntimeError("No delegate data was produced for this model")
+
+        mapping = getattr(self, "delegate_map", None)
+        if not blobs or not mapping:
+            raise RuntimeError("No delegate segments available in this program.")
+
+        # Create a list of (method, index, name)
+        entries: List[Tuple[str, int, str]] = []
+        for method_name, id_map in mapping.items():
+            for idx, info in id_map.items():
+                name = info.get("name", str(idx))
+                entries.append((method_name, idx, name))
+
+        # Choose which delegate to dump
+        if delegate_id is None:
+            if len(entries) == 1:
+                method, idx, delegate_id = entries[0]
+            else:
+                names = [n for (_m, _i, n) in entries]
+                raise ValueError(f"Multiple delegete IDs found: {names}.")
+
+        # Find the selected delegate
+        matches = [(m, i, n) for (m, i, n) in entries if n == delegate_id]
+        if not matches:
+            raise ValueError(f"Delegate data for id {delegate_id} not found.")
+        if len(matches) > 1:
+            methods = [m for (m, _, _) in matches]
+            raise ValueError(
+                f"Delegate ID {delegate_id} ambiguous across methods {methods}."
+            )
+        method, idx, _ = matches[0]
+
+        if len(entries) > 1:
+            filename = f"{path}_{method}{extension}"
+        else:
+            filename = f"{path}{extension}"
+
+        blob = blobs[idx]
+        if hasattr(blob, "data"):
+            data = blob.data
+        elif isinstance(blob, (bytes, bytearray)):
+            data = blob
+        else:
+            # cord data - convert to bytes
+            data = bytes(blob)
+
+        with open(filename, "wb") as f:
+            f.write(data)
+
     @property
     def debug_handle_map(self) -> Dict[int, Union[int, List[int]]]:
         return self._emitter_output.debug_handle_map
