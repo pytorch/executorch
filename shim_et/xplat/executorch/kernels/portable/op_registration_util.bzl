@@ -268,6 +268,7 @@ ATEN_OPS = (
     op_target(
         name = "op_arange",
         deps = [
+            "//executorch/kernels/portable/cpu/util:arange_util",
             "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
