@@ -1898,3 +1898,69 @@ class TestVulkanBackend(unittest.TestCase):
             dynamic_shapes=dynamic_shapes,
             test_inputs=test_inputs,
         )
+
+    def test_vulkan_backend_group_norm(self):
+        class ConvGroupNormModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                # Conv2d: 3 input channels -> 16 output channels
+                self.conv = torch.nn.Conv2d(
+                    in_channels=3,
+                    out_channels=16,
+                    kernel_size=3,
+                    padding=1,
+                    bias=True,
+                )
+                # GroupNorm: 4 groups for 16 channels (16 % 4 == 0)
+                self.group_norm = torch.nn.GroupNorm(
+                    num_groups=4,
+                    num_channels=16,
+                    eps=1e-5,
+                    affine=True,
+                )
+
+            def forward(self, x):
+                x = self.conv(x)
+                x = self.group_norm(x)
+                return x
+
+        # Create sample inputs: [batch, channels, height, width]
+        sample_inputs = (torch.randn(size=(1, 3, 32, 32), dtype=torch.float32),)
+
+        # Test with static shapes first
+        self.lower_module_and_test_output(
+            ConvGroupNormModule(),
+            sample_inputs,
+        )
+
+    def test_vulkan_backend_group_norm_different_groups(self):
+        class GroupNormModule(torch.nn.Module):
+            def __init__(self, num_groups, num_channels):
+                super().__init__()
+                self.group_norm = torch.nn.GroupNorm(
+                    num_groups=num_groups,
+                    num_channels=num_channels,
+                    eps=1e-5,
+                    affine=True,
+                )
+
+            def forward(self, x):
+                return self.group_norm(x)
+
+        # Test different group configurations
+        test_configs = [
+            (2, 8),  # 2 groups, 8 channels
+            (4, 16),  # 4 groups, 16 channels
+            (8, 32),  # 8 groups, 32 channels
+        ]
+
+        for num_groups, num_channels in test_configs:
+            with self.subTest(num_groups=num_groups, num_channels=num_channels):
+                sample_inputs = (
+                    torch.randn(size=(2, num_channels, 16, 16), dtype=torch.float32),
+                )
+
+                self.lower_module_and_test_output(
+                    GroupNormModule(num_groups, num_channels),
+                    sample_inputs,
+                )
