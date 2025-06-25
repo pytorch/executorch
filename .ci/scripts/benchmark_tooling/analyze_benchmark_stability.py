@@ -71,6 +71,7 @@ def analyze_latency_stability(  # noqa: C901
     reference_file=None,
     output_dir="stability_analysis_results",
     verbose_level=0,
+    debug=False,
 ):
     print_section_header(f"Analyzing Stability Against Metric '{target_metric}'")
     print(f"Primary dataset: {primary_file}")
@@ -85,6 +86,9 @@ def analyze_latency_stability(  # noqa: C901
     print_section_header("LOADING PRIMARY DATASETS (Private)")
     primary_datasets = {}
     documents = read_excel_with_json_header(primary_file)
+
+    if debug:
+        print(f"[Debug Mode] Printing documents: {documents}")
 
     for document in documents:
         sheetName = document.get("sheetName", None)
@@ -1525,6 +1529,13 @@ def main():
         default="stability_analysis_results",
         help="Directory to save analysis results (default: stability_analysis_results)",
     )
+
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug mode (default: False)",
+    )
+
     parser.add_argument(
         "--verbose-level",
         type=int,
@@ -1542,6 +1553,7 @@ def main():
         args.reference_file,
         args.output_dir,
         args.verbose_level,
+        args.debug,
     )
 
 
