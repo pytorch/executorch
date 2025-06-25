@@ -1,6 +1,11 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
-# pyre-strict
+# pyre-unsafe
+
 
 from typing import Callable, Optional
 
@@ -12,9 +17,11 @@ from executorch.backends.test.compliance_suite import (
     OperatorTest,
 )
 
+
 class Model(torch.nn.Module):
     def forward(self, x, y):
         return x / y
+
 
 class ModelWithRounding(torch.nn.Module):
     def __init__(self, rounding_mode: Optional[str]):
@@ -24,6 +31,7 @@ class ModelWithRounding(torch.nn.Module):
     def forward(self, x, y):
         return torch.div(x, y, rounding_mode=self.rounding_mode)
 
+
 @operator_test
 class Divide(OperatorTest):
     @dtype_test
@@ -32,51 +40,64 @@ class Divide(OperatorTest):
             Model(),
             (
                 (torch.rand(2, 10) * 100).to(dtype),
-                (torch.rand(2, 10) * 100 + 0.1).to(dtype),  # Adding 0.1 to avoid division by zero
+                (torch.rand(2, 10) * 100 + 0.1).to(
+                    dtype
+                ),  # Adding 0.1 to avoid division by zero
             ),
-            tester_factory)
-        
+            tester_factory,
+        )
+
     def test_divide_f32_bcast_first(self, tester_factory: Callable) -> None:
         self._test_op(
-            Model(), 
+            Model(),
             (
                 torch.randn(5),
-                torch.randn(1, 5, 1, 5).abs() + 0.1,  # Using abs and adding 0.1 to avoid division by zero
+                torch.randn(1, 5, 1, 5).abs()
+                + 0.1,  # Using abs and adding 0.1 to avoid division by zero
             ),
-            tester_factory)
-        
+            tester_factory,
+        )
+
     def test_divide_f32_bcast_second(self, tester_factory: Callable) -> None:
         self._test_op(
-            Model(), 
+            Model(),
             (
                 torch.randn(4, 4, 2, 7),
-                torch.randn(2, 7).abs() + 0.1,  # Using abs and adding 0.1 to avoid division by zero
+                torch.randn(2, 7).abs()
+                + 0.1,  # Using abs and adding 0.1 to avoid division by zero
             ),
-            tester_factory)
+            tester_factory,
+        )
 
     def test_divide_f32_bcast_unary(self, tester_factory: Callable) -> None:
         self._test_op(
-            Model(), 
+            Model(),
             (
                 torch.randn(5),
-                torch.randn(1, 1, 5).abs() + 0.1,  # Using abs and adding 0.1 to avoid division by zero
+                torch.randn(1, 1, 5).abs()
+                + 0.1,  # Using abs and adding 0.1 to avoid division by zero
             ),
-            tester_factory)
-    
+            tester_factory,
+        )
+
     def test_divide_f32_trunc(self, tester_factory: Callable) -> None:
         self._test_op(
-            ModelWithRounding(rounding_mode="trunc"), 
+            ModelWithRounding(rounding_mode="trunc"),
             (
                 torch.randn(3, 4) * 10,
-                torch.randn(3, 4).abs() + 0.1,  # Using abs and adding 0.1 to avoid division by zero
+                torch.randn(3, 4).abs()
+                + 0.1,  # Using abs and adding 0.1 to avoid division by zero
             ),
-            tester_factory)
-    
+            tester_factory,
+        )
+
     def test_divide_f32_floor(self, tester_factory: Callable) -> None:
         self._test_op(
-            ModelWithRounding(rounding_mode="floor"), 
+            ModelWithRounding(rounding_mode="floor"),
             (
                 torch.randn(3, 4) * 10,
-                torch.randn(3, 4).abs() + 0.1,  # Using abs and adding 0.1 to avoid division by zero
+                torch.randn(3, 4).abs()
+                + 0.1,  # Using abs and adding 0.1 to avoid division by zero
             ),
-            tester_factory)
+            tester_factory,
+        )

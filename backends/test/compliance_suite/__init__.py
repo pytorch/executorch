@@ -1,10 +1,19 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# pyre-unsafe
+
+
+import logging
 import os
 import unittest
 
 from enum import Enum
 from typing import Any, Callable, Tuple
 
-import logging
 import torch
 from executorch.backends.test.harness import Tester
 
@@ -15,19 +24,22 @@ logger.setLevel(logging.INFO)
 # Read enabled backends from the environment variable. Enable all if
 # not specified (signalled by None).
 def get_enabled_backends():
-    et_test_backends = os.environ.get("ET_TEST_BACKENDS")
+    et_test_backends = os.environ.get("ET_TEST_ENABLED_BACKENDS")
     if et_test_backends is not None:
         return et_test_backends.split(",")
     else:
         return None
 
+
 _ENABLED_BACKENDS = get_enabled_backends()
+
 
 def is_backend_enabled(backend):
     if _ENABLED_BACKENDS is None:
         return True
     else:
         return backend in _ENABLED_BACKENDS
+
 
 ALL_TEST_FLOWS = []
 
@@ -58,49 +70,71 @@ DTYPES = [
     torch.float64,
 ]
 
+FLOAT_DTYPES = [
+    torch.float16,
+    torch.float32,
+    torch.float64,
+]
+
+
 class TestType(Enum):
     STANDARD = 1
     DTYPE = 2
 
+
 def dtype_test(func):
-    setattr(func, "test_type", TestType.DTYPE)
+    func.test_type = TestType.DTYPE
     return func
+
 
 def operator_test(cls):
     _create_tests(cls)
     return cls
 
+
 def _create_tests(cls):
     for key in dir(cls):
         if key.startswith("test_"):
             _expand_test(cls, key)
-        
+
+
 def _expand_test(cls, test_name: str):
     test_func = getattr(cls, test_name)
-    for (flow_name, tester_factory) in ALL_TEST_FLOWS:
-        _create_test_for_backend(cls, test_func, flow_name, tester_factory)                        
+    for flow_name, tester_factory in ALL_TEST_FLOWS:
+        _create_test_for_backend(cls, test_func, flow_name, tester_factory)
     delattr(cls, test_name)
+
+
+def _make_wrapped_test(test_func, tester_factory):
+    def wrapped_test(self):
+        test_func(self, tester_factory)
+
+    return tester_factory
+
+
+def _make_wrapped_dtype_test(test_func, dtype, tester_factory):
+    def wrapped_test(self):
+        test_func(self, dtype, tester_factory)
+
+    return wrapped_test
+
 
 def _create_test_for_backend(
     cls,
     test_func: Callable,
     flow_name: str,
-    tester_factory: Callable[[torch.nn.Module, Tuple[Any]], Tester]
+    tester_factory: Callable[[torch.nn.Module, Tuple[Any]], Tester],
 ):
     test_type = getattr(test_func, "test_type", TestType.STANDARD)
 
     if test_type == TestType.STANDARD:
-        def wrapped_test(self):
-            test_func(self, tester_factory)
-            
+        wrapped_test = _make_wrapped_test(test_func, tester_factory)
         test_name = f"{test_func.__name__}_{flow_name}"
         setattr(cls, test_name, wrapped_test)
     elif test_type == TestType.DTYPE:
         for dtype in DTYPES:
-            def wrapped_test(self):
-                test_func(self, dtype, tester_factory)
-            
-            dtype_name = str(dtype)[6:] # strip "torch."
+            wrapped_test = _make_wrapped_dtype_test(test_func, dtype, tester_factory)
+            dtype_name = str(dtype)[6:]  # strip "torch."
             test_name = f"{test_func.__name__}_{dtype_name}_{flow_name}"
             setattr(cls, test_name, wrapped_test)
     else:
@@ -126,10 +160,4 @@ class OperatorTest(unittest.TestCase):
 
         # Only run the runtime test if the op was delegated.
         if is_delegated:
-            (
-                tester
-                .to_executorch()
-                .serialize()
-                .run_method_and_compare_outputs()
-            )
-    
+            (tester.to_executorch().serialize().run_method_and_compare_outputs())
