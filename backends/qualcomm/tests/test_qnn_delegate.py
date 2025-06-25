@@ -5988,7 +5988,13 @@ def setup_environment():
         default="",
         type=str,
     )
-
+    parser.add_argument(
+        "-t",
+        "--target",
+        help="Target platform for deployment",
+        default="aarch64-android",
+        type=str,
+    )
     parser.add_argument(
         "--pre_gen_pte",
         help="Run the pre-generated pte in the given directory.",
@@ -6023,6 +6029,7 @@ def setup_environment():
     TestQNN.pre_gen_pte = args.pre_gen_pte
     TestQNN.llama_artifacts = args.llama_artifacts
     TestQNN.op_package_dir = args.op_package_dir
+    TestQNN.target = args.target
     return sys.argv[:1] + ns_args
 
 
