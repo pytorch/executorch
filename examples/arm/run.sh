@@ -38,7 +38,7 @@ memory_mode=""
 et_build_root="${et_root_dir}/arm_test"
 ethos_u_scratch_dir=${script_dir}/ethos-u-scratch
 scratch_dir_set=false
-toolchain=arm-non-eabi-gcc
+toolchain=arm-none-eabi-gcc
 
 function help() {
     echo "Usage: $(basename $0) [options]"
