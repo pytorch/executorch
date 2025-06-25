@@ -646,6 +646,45 @@ def get_native_layer_norm_inputs():
     return test_suite
 
 
+@register_test_suite("aten.native_group_norm.default")
+def get_native_group_norm_inputs():
+    test_suite = VkTestSuite(
+        [
+            # (input_shape, weight_shape, bias_shape, N, C, HxW, group, eps)
+            # General test cases
+            ((1, 8, 4, 4), (8), (8), 1, 8, 16, 2, 0.001),
+            ((2, 8, 3, 3), (8), (8), 2, 8, 9, 4, 0.001),
+            ((1, 12, 2, 2), (12), (12), 1, 12, 4, 3, 0.001),
+            ((3, 16, 5, 5), (16), (16), 3, 16, 25, 8, 0.001),
+            ((3, 16, 13, 17), (16), (16), 3, 16, 13 * 17, 4, 0.001),
+            ((1, 4, 7, 7), (4), (4), 1, 4, 49, 2, 0.001),
+            ((2, 6, 1, 8), (6), (6), 2, 6, 8, 3, 0.001),
+            # Single group and prime number sizes
+            ((3, 7, 13, 11), (7), (7), 3, 7, 13 * 11, 1, 0.001),
+            # Each channel is it's own group and prime number sizes
+            ((1, 7, 13, 11), (7), (7), 1, 7, 13 * 11, 7, 0.001),
+        ]
+    )
+    test_suite.layouts = [
+        "utils::kChannelsPacked",
+    ]
+    test_suite.storage_types = [
+        "utils::kTexture3D",
+    ]
+    test_suite.dtypes = [
+        "at::kFloat",
+        "at::kHalf",
+    ]
+    test_suite.arg_storage_types = {
+        "out": [None, "utils::kBuffer", "utils::kBuffer"],
+    }
+
+    test_suite.prepacked_args = ["weight", "bias"]
+    test_suite.requires_prepack = True
+
+    return test_suite
+
+
 def get_upsample_inputs():
     inputs_list = [
         # (input tensor shape, output 2D image size (H, W), output scaling factors)
