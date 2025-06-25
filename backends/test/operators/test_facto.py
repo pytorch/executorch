@@ -13,7 +13,6 @@ import unittest
 from typing import Any, Callable, Sequence
 
 import torch
-from executorch.backends.apple.coreml.test.tester import CoreMLTester
 from executorch.backends.test.harness.tester import Tester as TesterBase
 from executorch.backends.xnnpack.test.tester.tester import Tester as XnnpackTester
 from facto.inputgen.argtuple.gen import ArgumentTupleGenerator
@@ -272,7 +271,3 @@ class FactoTestsXNNPACK(FactoTestsBase):
     def __init__(self, *args, **kwargs):
         super().__init__(XnnpackTester, *args, **kwargs)
 
-
-class FactoTestsCoreML(FactoTestsBase):
-    def __init__(self, *args, **kwargs):
-        super().__init__(CoreMLTester, *args, **kwargs)
