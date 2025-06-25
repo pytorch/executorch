@@ -10,7 +10,7 @@ set -eux
 # TODO: can't query cadence & vulkan backends
 # TODO: can't query //kernels/prim_ops because of non-buckified stuff in OSS.
 buck2 query "//backends/apple/... + //backends/example/... + \
-//backends/mediatek/... + //backends/test/... + //backends/transforms/... + \
+//backends/mediatek/... + //backends/transforms/... + \
 //backends/xnnpack/... + //configurations/... + //kernels/aten/... + \
 //kernels/optimized/... + //kernels/portable/... + //kernels/quantized/... + \
 //kernels/test/... + //runtime/... + //schema/... + //test/... + //util/..."
