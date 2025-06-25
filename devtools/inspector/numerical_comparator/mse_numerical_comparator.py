@@ -19,9 +19,6 @@ class MSEComparator(NumericalComparatorBase):
 
         t_a = convert_to_float_tensor(a)
         t_b = convert_to_float_tensor(b)
-        if torch.isnan(t_a).any() or torch.isnan(t_b).any():
-            t_a = torch.nan_to_num(t_a)
-            t_b = torch.nan_to_num(t_b)
 
         try:
             res = float(torch.mean(torch.square(t_a - t_b)))
