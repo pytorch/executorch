@@ -13,18 +13,19 @@ from executorch.backends.xnnpack.test.tester.tester import (
     Serialize,
     Tester,
     ToEdge,
+    ToEdge,
     ToEdgeTransformAndLower,
     ToExecutorch,
 )
 
 __all__ = [
-    Export,
-    ToEdge,
-    Partition,
-    Quantize,
-    RunPasses,
-    ToEdgeTransformAndLower,
-    Tester,
-    Serialize,
-    ToExecutorch,
+    "Export",
+    "ToEdge",
+    "Partition",
+    "Quantize",
+    "RunPasses",
+    "ToEdgeTransformAndLower",
+    "Tester",
+    "Serialize",
+    "ToExecutorch",
 ]
