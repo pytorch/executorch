@@ -12,7 +12,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineBI,
     TosaPipelineMI,
 )
-from executorch.backends.xnnpack.test.tester import ToEdge
+from executorch.backends.test.harness.stages import StageType
 
 
 input_t1 = Tuple[torch.Tensor]
@@ -72,9 +72,8 @@ def test_partition_lifted_tensor_tosa_MI(test_data: input_t1):
         use_to_edge_transform_and_lower=False,
     )
     pipeline.run()
-    to_edge_stage_name = pipeline.tester.stage_name(ToEdge)
     signature = (
-        pipeline.tester.stages[to_edge_stage_name]
+        pipeline.tester.stages[StageType.TO_EDGE]
         .artifact.exported_program()
         .graph_signature
     )
@@ -94,9 +93,8 @@ def test_partition_lifted_tensor_tosa_BI(test_data: input_t1):
         use_to_edge_transform_and_lower=False,
     )
     pipeline.run()
-    to_edge_stage_name = pipeline.tester.stage_name(ToEdge)
     signature = (
-        pipeline.tester.stages[to_edge_stage_name]
+        pipeline.tester.stages[StageType.TO_EDGE]
         .artifact.exported_program()
         .graph_signature
     )
