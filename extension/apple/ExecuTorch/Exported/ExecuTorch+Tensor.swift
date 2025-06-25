@@ -821,9 +821,8 @@ public class Tensor<T: Scalar>: Equatable {
     lhs.anyTensor == rhs.anyTensor
   }
 
-  // MARK: Internal
-
-  let anyTensor: AnyTensor
+  // Wrapped AnyTensor instance.
+  public let anyTensor: AnyTensor
 }
 
 @available(*, deprecated, message: "This API is experimental.")
