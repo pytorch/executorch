@@ -22,12 +22,11 @@ namespace function {
 
 namespace {
 
-#define __ET_PRIM_OP_ERROR_IMPL(a, b, context)                     \
-  else {                                                           \
-    ET_CHECK_MSG(false, "%zu, %zu", (size_t)a.tag, (size_t)b.tag); \
+#define __ET_PRIM_OP_ERROR_IMPL(a, b, context)                \
+  else {                                                      \
+    ET_KERNEL_CHECK(context, false, InvalidType, /* void */); \
   }
 
-// TODO Fail using runtime context
 #define __NUMBER_ET_PRIM_OP_IMPL(operator, stack, context) \
   (void)context;                                           \
   EValue& a = *stack[0];                                   \
@@ -168,8 +167,7 @@ static Kernel prim_ops[] = {
           } else if (a.isDouble() && b.isInt()) {
             floor_div_double(a.toDouble(), static_cast<double>(b.toInt()), out);
           } else {
-            // TODO Fail using runtime context
-            ET_CHECK_MSG(false, "%zu, %zu", (size_t)a.tag, (size_t)b.tag);
+            ET_KERNEL_CHECK(context, false, InvalidType, /* void */);
           }
         }),
 
@@ -193,8 +191,7 @@ static Kernel prim_ops[] = {
           } else if (a.isDouble() && b.isInt()) {
             out = EValue(a.toDouble() / b.toInt());
           } else {
-            // TODO Fail using runtime context
-            ET_CHECK_MSG(false, "%zu, %zu", (size_t)a.tag, (size_t)b.tag);
+            ET_KERNEL_CHECK(context, false, InvalidType, /* void */);
           }
         }),
 
@@ -214,8 +211,7 @@ static Kernel prim_ops[] = {
             // TODO: This should be impossible
             out = EValue(a.toDouble());
           } else {
-            // TODO Fail using runtime context
-            ET_CHECK_MSG(false, "%zu", (size_t)a.tag);
+            ET_KERNEL_CHECK(context, false, InvalidType, /* void */);
           }
         }),
 
@@ -265,8 +261,7 @@ static Kernel prim_ops[] = {
           } else if (a.isDouble()) {
             out = EValue(-a.toDouble());
           } else {
-            // TODO Fail using runtime context
-            ET_CHECK_MSG(false, "%zu", (size_t)a.tag);
+            ET_KERNEL_CHECK(context, false, InvalidType, /* void */);
           }
         }),
 
@@ -303,7 +298,7 @@ static Kernel prim_ops[] = {
           if (a.isInt() && b.isInt()) {
             out = EValue(a.toInt() % b.toInt());
           } else {
-            ET_CHECK_MSG(false, "%zu, %zu", (size_t)a.tag, (size_t)b.tag);
+            ET_KERNEL_CHECK(context, false, InvalidType, /* void */);
           }
         }),
 
@@ -317,7 +312,7 @@ static Kernel prim_ops[] = {
           if (a.isDouble()) {
             out = EValue(static_cast<int64_t>(ceil(a.toDouble())));
           } else {
-            ET_CHECK_MSG(false, "Unsupported DType %zu", (size_t)a.tag);
+            ET_KERNEL_CHECK(context, false, InvalidType, /* void */);
           }
         }),
 
@@ -348,7 +343,7 @@ static Kernel prim_ops[] = {
 
             out = EValue(static_cast<int64_t>(res));
           } else {
-            ET_CHECK_MSG(false, "Unsupported DType %zu", (size_t)a.tag);
+            ET_KERNEL_CHECK(context, false, InvalidType, /* void */);
           }
         }),
 
@@ -362,7 +357,7 @@ static Kernel prim_ops[] = {
           if (a.isDouble()) {
             out = EValue(static_cast<int64_t>(trunc(a.toDouble())));
           } else {
-            ET_CHECK_MSG(false, "%zu", (size_t)a.tag);
+            ET_KERNEL_CHECK(context, false, InvalidType, /* void */);
           }
         }),
 
