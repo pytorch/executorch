@@ -752,6 +752,13 @@ def get_permute_inputs():
         "utils::kHeightPacked",
         "utils::kChannelsPacked",
     ]
+    test_suite.storage_types = [
+        "utils::kBuffer",
+        "utils::kTexture3D",
+    ]
+    test_suite.dtypes = [
+        "at::kFloat",
+    ]
     return test_suite
 
 
@@ -990,9 +997,11 @@ def get_unsqueeze_inputs():
             ((9, 9), 2),
             ((9,), 0),
             ((9,), 1),
+            ((1, 10), -1),
         ]
     )
     test_suite.layouts = [
+        "utils::kWidthPacked",
         "utils::kChannelsPacked",
     ]
     test_suite.data_gen = "make_seq_tensor"
