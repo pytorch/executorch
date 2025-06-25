@@ -94,7 +94,7 @@ class TestValidConstruction(unittest.TestCase):
             backend=BackendConfig(
                 xnnpack=XNNPackConfig(enabled=False),
                 coreml=CoreMLConfig(
-                    enabled=True, ios=17, compute_units=CoreMLComputeUnit.ALL
+                    enabled=True, ios=17, compute_units=CoreMLComputeUnit.cpu_only
                 ),
             ),
         )
