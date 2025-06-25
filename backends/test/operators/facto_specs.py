@@ -2,13 +2,7 @@ import facto.specdb.function as fn
 import torch
 
 from facto.inputgen.argument.type import ArgType
-from facto.inputgen.specs.model import (
-    ConstraintProducer as cp,
-    InKwArg,
-    InPosArg,
-    OutArg,
-    Spec,
-)
+from facto.inputgen.specs.model import ConstraintProducer as cp, InPosArg, OutArg, Spec
 
 """
 This file contains FACTO operator specs for ops not in the standard FACTO db. This mainly

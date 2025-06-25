@@ -10,19 +10,15 @@ import copy
 import functools
 import traceback
 import unittest
-from typing import Any, Callable, List, OrderedDict, Sequence, Tuple
+from typing import Any, Callable, Sequence
 
 import torch
 from executorch.backends.apple.coreml.test.tester import CoreMLTester
 from executorch.backends.test.harness.tester import Tester as TesterBase
-from executorch.backends.xnnpack.test.tester.tester import (
-    Tester as XnnpackTester,
-    ToEdgeTransformAndLower,
-)
+from executorch.backends.xnnpack.test.tester.tester import Tester as XnnpackTester
 from facto.inputgen.argtuple.gen import ArgumentTupleGenerator
-from facto.inputgen.specs.model import Constraint, ConstraintProducer as cp, Spec
+from facto.inputgen.specs.model import ConstraintProducer as cp, Spec
 from facto.inputgen.utils.random_manager import random_manager
-from facto.inputgen.variable.type import ScalarDtype
 from facto.specdb.db import SpecDictDB
 from torch._ops import OpOverload
 
@@ -31,9 +27,9 @@ from .facto_specs import ExtraSpecDB
 CombinedSpecDB = SpecDictDB | ExtraSpecDB
 
 COMMON_TENSOR_CONSTRAINTS = [
-    cp.Rank.Ge(lambda deps: 1),
+    cp.Rank.Ge(lambda deps: 1),  # Avoid zero and high rank tensors.
     cp.Rank.Le(lambda deps: 4),
-    cp.Size.Ge(lambda deps, r, d: 1),
+    cp.Size.Ge(lambda deps, r, d: 1),  # Keep sizes reasonable.
     cp.Size.Le(lambda deps, r, d: 2**9),
 ]
 
@@ -143,7 +139,9 @@ class FactoTestsBase(unittest.TestCase):
         torch_op = functools.reduce(getattr, sections, torch.ops.aten)
 
         test_name = "test_" + op_name.replace(".", "_")
-        test_body = lambda self: self._test_op(torch_op)
+
+        def test_body(self):
+            self._test_op(torch_op)
 
         setattr(FactoTestsBase, test_name, test_body)
 
@@ -171,7 +169,7 @@ class FactoTestsBase(unittest.TestCase):
     def setUp(self):
         torch.set_printoptions(threshold=3)
 
-    def _test_op(self, op: OpOverload) -> None:
+    def _test_op(self, op: OpOverload) -> None:  # noqa: C901
         random_manager.seed(0)
 
         # Strip namespace
@@ -182,7 +180,7 @@ class FactoTestsBase(unittest.TestCase):
             op_name += ".default"
 
         # Find and patch op spec
-        if not op_name in CombinedSpecDB:
+        if op_name not in CombinedSpecDB:
             raise ValueError(f"Operator {op_name} not found in SpecDictDB.")
         spec = _patch_spec(CombinedSpecDB[op_name])
 
@@ -223,9 +221,7 @@ class FactoTestsBase(unittest.TestCase):
                     self._tester_factory(model, tuple(posargs[:runtime_input_count]))
                     .export()
                     .dump_artifact()
-                    # .to_edge_transform_and_lower(ToEdgeTransformAndLower(partitioners=[]))
                     .to_edge_transform_and_lower()
-                    # .dump_artifact()
                 )
 
                 is_delegated = any(
@@ -248,7 +244,8 @@ class FactoTestsBase(unittest.TestCase):
                     success_count_undelegated += 1
             except Exception as e:
                 fail_count += 1
-                print(f"Args:")
+                print(f"Error: {e}")
+                print("Args:")
                 for arg in posargs:
                     if isinstance(arg, torch.Tensor):
                         print(f"  {arg.dtype} {arg.shape}")
