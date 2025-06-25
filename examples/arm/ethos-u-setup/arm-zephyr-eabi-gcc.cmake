@@ -17,8 +17,9 @@
 #
 
 # Copied this file from core_platform/cmake/toolchain/arm-non-eabi-gcc.cmake And
-# modified to align better with cs300 platform
-
+# modified to align better with cs300 platform. Currently, this cmake only 
+# supports Arm Cortex m55. Future version may include support for other 
+# chips, e.g. m33, m85 
 set(TARGET_CPU
     "cortex-m55"
     CACHE STRING "Target CPU"

@@ -5,15 +5,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-set_overridable_option(CMAKE_SYSTEM_PROCESSOR                   cortex-m55)
-set_overridable_option(CMAKE_BUILD_TYPE                         Release)
-set_overridable_option(PYTHON_EXECUTABLE                        /home/zephyruser/executorch/.venv/bin/python3)
 set_overridable_option(CMAKE_CXX_COMPILER_ID                    GNU)
 set_overridable_option(CMAKE_TOOLCHAIN_FILE                     "${PROJECT_SOURCE_DIR}/examples/arm/ethos-u-setup/arm-zephyr-eabi-gcc.cmake")
 set_overridable_option(EXECUTORCH_ENABLE_LOGGING                ON)
 set_overridable_option(EXECUTORCH_BUILD_COREML                  OFF)
 set_overridable_option(EXECUTORCH_FLATBUFFERS_MAX_ALIGNMENT     1024)
-set_overridable_option(EXECUTORCH_PAL_DEFAULT                   minimal)
 set_overridable_option(EXECUTORCH_LOG_LEVEL                     Info)
 set_overridable_option(EXECUTORCH_ENABLE_PROGRAM_VERIFICATION   OFF)
 set_overridable_option(EXECUTORCH_ENABLE_EVENT_TRACER           OFF)
