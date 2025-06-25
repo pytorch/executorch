@@ -58,6 +58,12 @@ DTYPES = [
     torch.float64,
 ]
 
+FLOAT_DTYPES =[
+    torch.float16,
+    torch.float32,
+    torch.float64,
+]
+
 class TestType(Enum):
     STANDARD = 1
     DTYPE = 2
