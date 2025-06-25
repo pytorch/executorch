@@ -4,7 +4,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-strict
+# pyre-unsafe
+
+#
+# This file contains logic to run generated operator tests using the FACTO
+# library (https://github.com/pytorch-labs/FACTO). To run the tests, first
+# clone and install FACTO by running pip install . from the FACTO source
+# directory. Then, from the executorch root directory, run the following:
+#
+# python -m unittest backends.test.operators.test_facto.FactoTestsXNNPACK
+#
 
 import copy
 import functools
@@ -270,4 +279,3 @@ for op_name in CombinedSpecDB.keys():
 class FactoTestsXNNPACK(FactoTestsBase):
     def __init__(self, *args, **kwargs):
         super().__init__(XnnpackTester, *args, **kwargs)
-
