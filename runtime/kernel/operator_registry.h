@@ -34,7 +34,7 @@
   for (const auto& meta : meta_list) {                               \
     ET_LOG(Info, "dtype: %d | dim order: [", int(meta.dtype_));      \
     for (size_t i = 0; i < meta.dim_order_.size(); i++) {            \
-      ET_LOG(Info, "%d,", static_cast<int32_t>(meta.dim_order_[i])); \
+      ET_LOG(Info, "%" PRId32 ",", static_cast<int32_t>(meta.dim_order_[i])); \
     }                                                                \
     ET_LOG(Info, "]");                                               \
   }

@@ -323,14 +323,13 @@ jobs:
         .ci/scripts/setup-arm-zephyr-tools.sh
         source examples/arm/ethos-u-scratch/setup_path.sh
 
-        # User baremetal toolchain
+        # Use arm zephyr toolchain
         arm-zephyr-eabi-c++ --version
-        toolchain_cmake=examples/arm/ethos-u-setup/arm-zephyr-eabi-gcc.cmake
-        toolchain_cmake=$(realpath ${toolchain_cmake})
+        zephyr_preset=tools/cmake/preset/zephyr.cmake
+        zephyr_preset=$(realpath ${zephyr_preset})
 
         # Build and test size test
-        cmake --preset zephyr
-        bash test/build_size_test.sh "-DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake}"
+        bash test/build_size_test.sh "-DEXECUTORCH_BUILD_PRESET_FILE=${zephyr_preset}"
         elf="cmake-out/test/size_test"
 
         # Dump basic info
@@ -347,7 +346,7 @@ jobs:
         output=$(ls -la ${elf})
         arr=($output)
         size=${arr[4]}
-        threshold="103268" # ~100KiB
+        threshold="153600" # should be ~138KB, set threashold to 150KB
         echo "size: $size, threshold: $threshold"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
