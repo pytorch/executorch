@@ -74,7 +74,8 @@ ET_NODISCARD executorch::runtime::Result<const char*> PteDataMap::get_key(
   ET_CHECK_OR_RETURN_ERROR(
       index < named_data_->size(),
       InvalidArgument,
-      "Index out of range: named_data size is %" PRId32 ", received index %" PRId32,
+      "Index out of range: named_data size is %" PRId32
+      ", received index %" PRId32,
       named_data_->size(),
       index);
 
