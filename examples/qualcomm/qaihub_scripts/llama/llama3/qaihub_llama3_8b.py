@@ -103,6 +103,7 @@ def main(args):
         host_id=args.host,
         soc_model=args.model,
         runner="examples/qualcomm/qaihub_scripts/llama/qaihub_llama3_8b_runner",
+        target=args.target,
     )
     output_file = "result.txt"
     pos_embs_file = ["freq_cos", "freq_sin"]
