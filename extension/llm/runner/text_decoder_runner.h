@@ -21,7 +21,7 @@ namespace llm {
 
 class ET_EXPERIMENTAL TextDecoderRunner {
  public:
-  TextDecoderRunner(Module* module);
+  explicit TextDecoderRunner(Module* module);
 
   virtual ~TextDecoderRunner() = default;
 
