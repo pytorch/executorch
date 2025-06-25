@@ -1,6 +1,6 @@
 # CLI Tool for Quantize / Compile / Deploy PyTorch Model with QNN Backend
 
-An easy-to-use tool for quantizing / compiling / executing .pte program with Qualcomm AI Engine Direct. Tool is verified with [host environement](../../../../docs/source/backends-qualcomm.md#host-os).
+An easy-to-use tool for quantizing / compiling / executing .pte program with Qualcomm AI Engine Direct. Tool is verified with [host environement](../../../docs/source/backends-qualcomm.md#host-os).
 
 ## Description
 
