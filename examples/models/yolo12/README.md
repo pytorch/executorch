@@ -17,7 +17,7 @@ This example demonstrates how to perform inference of [Ultralytics YOLO12 family
 | Intel(R) Core(TM) Ultra 7 155H | yolo12s | openvino | CPU    | FP32      | 88.3549             |
 | Intel(R) Core(TM) Ultra 7 155H | yolo12s | openvino | CPU    | INT8      | 53.066              |
 | Intel(R) Core(TM) Ultra 7 155H | yolo12l | openvino | CPU    | FP32      | 317.953             |
-| Intel(R) Core(TM) Ultra 7 155H | yolo12s | openvino | CPU    | INT8      | 150.846             |
+| Intel(R) Core(TM) Ultra 7 155H | yolo12l | openvino | CPU    | INT8      | 150.846             |
 | Intel(R) Core(TM) Ultra 7 155H | yolo12s | openvino | GPU    | FP32      | 32.71               |
 | Intel(R) Core(TM) Ultra 7 155H | yolo12l | openvino | GPU    | FP32      | 70.885              |
 | Intel(R) Core(TM) Ultra 7 155H | yolo12s | xnnpack  | CPU    | FP32      | 169.36              |

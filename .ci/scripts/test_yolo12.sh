@@ -75,9 +75,8 @@ if [[ "${MODE}" =~ .*openvino.* ]]; then
   OPENVINO=ON
   TARGET_LIBS="$TARGET_LIBS openvino_backend "
 
-  git clone https://github.com/daniil-lyakhov/openvino.git
-
-  cd openvino && git checkout dl/executorch/yolo12
+  git clone https://github.com/openvinotoolkit/openvino.git
+  cd openvino && git b16b776ac119dafda51f69a80f1e6b7376d02c3b
   git submodule update --init --recursive
   sudo ./install_build_dependencies.sh
   mkdir build && cd build
