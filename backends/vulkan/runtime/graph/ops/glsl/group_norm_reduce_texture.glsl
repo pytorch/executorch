@@ -13,6 +13,8 @@
 
 #define PRECISION ${PRECISION}
 
+#define BUF_T ${buffer_scalar_type(DTYPE)}
+
 ${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
@@ -177,8 +179,8 @@ void group_norm_reduce_C_packed() {
     const float rstd_val = 1.0 / sqrt(variance + epsilon);
 
     // Write to buffer-backed tensors
-    t_mean[global_idx] = mean_val;
-    t_rstd[global_idx] = rstd_val;
+    t_mean[global_idx] = BUF_T(mean_val);
+    t_rstd[global_idx] = BUF_T(rstd_val);
   }
 }
 

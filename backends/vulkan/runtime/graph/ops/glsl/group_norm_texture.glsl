@@ -13,10 +13,6 @@
 
 #define PRECISION ${PRECISION}
 
-#define VEC4_T ${texel_type(DTYPE)}
-
-#define T ${texel_component_type(DTYPE)}
-
 ${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
@@ -80,13 +76,13 @@ void apply_group_norm() {
   }
 
   // Load input texel (contains 4 consecutive channels)
-  const VEC4_T input_texel = load_texel(t_in, pos);
+  const vec4 input_texel = load_texel(t_in, pos);
 
   // Load weight and bias texels, which are width-packed; each element along the
   // width dim corresponds to a channel in the input tensor.
   const ivec3 weight_pos = ivec3(out_tidx.z / 4, 0, 0);
-  const VEC4_T weight_texel = load_texel(t_weight, weight_pos);
-  const VEC4_T bias_texel = load_texel(t_bias, weight_pos);
+  const vec4 weight_texel = load_texel(t_weight, weight_pos);
+  const vec4 bias_texel = load_texel(t_bias, weight_pos);
 
   // Calculate which channels this texel represents
   // For channels-packed layout: texel at position z contains channels [z, z+1, z+2, z+3]
@@ -97,7 +93,7 @@ void apply_group_norm() {
   const int batch_idx = out_tidx.w;
   const int channels_per_group = out_sizes.z / group;
 
-  VEC4_T bias;
+  vec4 bias;
   // Process each element of the output texel individually, since each element
   // may belong to a different channel group
   for (int i = 0; i < 4; ++i) {
@@ -116,11 +112,11 @@ void apply_group_norm() {
     const int mean_bufi = tidx_to_bufi(mean_tidx, mean_strides);
 
     // Load mean and rstd values for this channel
-    const T mean_val = t_mean[mean_bufi];
-    const T rstd_val = t_rstd[mean_bufi];
+    const float mean_val = t_mean[mean_bufi];
+    const float rstd_val = t_rstd[mean_bufi];
 
     // Apply group normalization with weight and bias: ((input - mean) * rstd) * weight + bias
-    const T normalized = (input_texel[i] - mean_val) * rstd_val;
+    const float normalized = (input_texel[i] - mean_val) * rstd_val;
     bias[i] = normalized * weight_texel[i] + bias_texel[i];
   }
 
