@@ -34,10 +34,10 @@ QWEN_CHECKPOINT=path/to/checkpoint.pth
 
 python -m extension.llm.export.export_llm \
   --config examples/models/qwen2_5/config/qwen2_5_xnnpack_q8da4w.yaml
-  base.model_class="qwen2_5" \
-  base.checkpoint="${QWEN_CHECKPOINT:?}" \
-  base.params="examples/models/qwen2_5/1_5b_config.json" \
-  export.output_name="qwen2_5-1_5b.pte" \
+  +base.model_class="qwen2_5" \
+  +base.checkpoint="${QWEN_CHECKPOINT:?}" \
+  +base.params="examples/models/qwen2_5/1_5b_config.json" \
+  +export.output_name="qwen2_5-1_5b.pte" \
 ```
 
 Run using the executor runner:

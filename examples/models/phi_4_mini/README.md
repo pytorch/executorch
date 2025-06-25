@@ -34,9 +34,9 @@ PHI_CHECKPOINT=path/to/checkpoint.pth
 
 python -m extension.llm.export.export_llm \
   --config config/phi_4_mini_xnnpack.yaml
-  base.checkpoint="${PHI_CHECKPOINT=path/to/checkpoint.pth:?}" \
-  base.params="examples/models/phi-4-mini/config/config.json" \
-  export.output_name="phi-4-mini.pte" \
+  +base.checkpoint="${PHI_CHECKPOINT=path/to/checkpoint.pth:?}" \
+  +base.params="examples/models/phi-4-mini/config/config.json" \
+  +export.output_name="phi-4-mini.pte" \
 ```
 
 Run using the executor runner:

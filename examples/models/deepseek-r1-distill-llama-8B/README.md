@@ -54,9 +54,9 @@ torch.save(sd, "/tmp/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/checkpoint.pth")
 ```
 python -m extension.llm.export.export_llm \
     --config examples/models/deepseek-r1-distill-llama-8B/config/deepseek-r1-distill-llama-8B
-    base.checkpoint=/tmp/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/checkpoint.pth \
-	base.params=params.json \
-	export.output_name="DeepSeek-R1-Distill-Llama-8B.pte"
+    +base.checkpoint=/tmp/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/checkpoint.pth \
+	+base.params=params.json \
+	+export.output_name="DeepSeek-R1-Distill-Llama-8B.pte"
 ```
 
 6. Run the model on your desktop for validation or integrate with iOS/Android apps. Instructions for these are available in the Llama [README](../llama/README.md) starting at Step 3.
