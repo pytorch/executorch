@@ -38,11 +38,13 @@ void arange_out_impl(
     double end,
     double step,
     Tensor& out) {
+  (void)ctx;
   Tensor::SizesType numel = compute_arange_out_size(start, end, step);
   ET_ARANGE_IMPL(ctx, start, numel, step, out, "arange.start_out");
 }
 
 void arange_out_impl(KernelRuntimeContext& ctx, double end, Tensor& out) {
+  (void)ctx;
   ET_ARANGE_IMPL(ctx, 0.0, end, 1.0, out, "arange.out");
 }
 
