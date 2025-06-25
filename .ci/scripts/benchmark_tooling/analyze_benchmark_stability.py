@@ -1553,7 +1553,7 @@ def main():
         args.reference_file,
         args.output_dir,
         args.verbose_level,
-        args.debug
+        args.debug,
     )
 
 
