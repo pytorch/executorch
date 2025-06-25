@@ -203,12 +203,6 @@ OPTIMIZED_ATEN_OPS = (
         deps = [":fft_utils"],
     ),
     op_target(
-        name = "op_sigmoid",
-        deps = [
-            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
-        ],
-    ),
-    op_target(
         name = "op_gelu",
         deps = [
             "//executorch/kernels/portable/cpu/util:activation_ops_util",
