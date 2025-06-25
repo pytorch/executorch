@@ -729,4 +729,8 @@ def convert_to_float_tensor(input_data: Any) -> torch.Tensor:
             f"Cannot convert value of type {type(input_data)} to a tensor: {e}"
         )
     input_tensor = input_tensor.detach().cpu().double()
+
+    # Convert NaN to 0.0
+    if torch.isnan(input_tensor).any():
+        input_tensor = torch.nan_to_num(input_tensor)
     return input_tensor

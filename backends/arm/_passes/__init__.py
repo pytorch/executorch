@@ -67,7 +67,7 @@ from .replace_scalar_with_tensor_pass import (  # noqa
     ReplaceScalarWithTensorArgPassTOSAMI,
 )
 from .scalars_to_attribute_pass import ScalarsToAttributePass  # noqa
-from .size_adjust_conv2d_pass import SizeAdjustConv2DPass  # noqa
+from .size_adjust_input_pass import SizeAdjustInputPass  # noqa
 from .unsqueeze_before_repeat_pass import UnsqueezeBeforeRepeatPass  # noqa
 from .unsqueeze_scalar_placeholders_pass import UnsqueezeScalarPlaceholdersPass  # noqa
 from .replace_inf_values_pass import ReplaceInfValues  # noqa  # usort: skip

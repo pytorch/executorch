@@ -52,18 +52,18 @@ torch.save(sd, "/tmp/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/checkpoint.pth")
 
 5. Generate a PTE file for use with the Llama runner.
 ```
-python -m examples.models.llama.export_llama \
-    --checkpoint /tmp/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/checkpoint.pth \
-	-p params.json \
-	-kv \
-	--use_sdpa_with_kv_cache \
-	-X \
-	-qmode 8da4w \
-	--group_size 128 \
-	-d fp16 \
-	--metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
-	--embedding-quantize 4,32 \
-	--output_name="DeepSeek-R1-Distill-Llama-8B.pte"
+python -m extension.llm.export.export_llm \
+    base.checkpoint=/tmp/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/checkpoint.pth \
+	base.params=params.json \
+	model.use_kv_cache=True \
+	model.use_sdpa_with_kv_cache=True \
+	backend.xnnpack.enabled=True \
+	quantization.qmode="8da4w" \
+	quantization.group_size=128 \
+	model.dtype_override="fp16" \
+	base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' \
+	quantization.embedding_quantize=\'4,32\' \
+	export.output_name="DeepSeek-R1-Distill-Llama-8B.pte"
 ```
 
 6. Run the model on your desktop for validation or integrate with iOS/Android apps. Instructions for these are available in the Llama [README](../llama/README.md) starting at Step 3.
