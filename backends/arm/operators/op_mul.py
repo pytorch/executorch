@@ -50,7 +50,10 @@ class MulVisitor_080_BI(NodeVisitor):
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs, output], ts)
         validate_valid_dtype(
-            self.target, [*inputs, output], ts.DType.INT8, output.tosa_spec
+            self.target,
+            [*inputs, output],
+            [ts.DType.INT8, ts.DType.INT32],
+            output.tosa_spec,
         )
 
         dim_order = (
@@ -58,30 +61,39 @@ class MulVisitor_080_BI(NodeVisitor):
             if len(inputs[0].shape) > len(inputs[1].shape)
             else inputs[1].dim_order
         )
-        input_A = inputs[0]
-        input_B = inputs[1]
-        input_qparams = get_input_qparams(node)
-        input_A_qargs = input_qparams[0]
-        input_B_qargs = input_qparams[1]
-        input_A.shape = tutils.tosa_shape(input_A.shape, input_A.dim_order)
-        input_B.shape = tutils.tosa_shape(input_B.shape, input_B.dim_order)
+        if inputs[0].dtype == ts.DType.INT8:
+            input_A = inputs[0]
+            input_B = inputs[1]
+            input_qparams = get_input_qparams(node)
+            input_A_qargs = input_qparams[0]
+            input_B_qargs = input_qparams[1]
+            input_A.shape = tutils.tosa_shape(input_A.shape, input_A.dim_order)
+            input_B.shape = tutils.tosa_shape(input_B.shape, input_B.dim_order)
 
-        # Rescale inputs to INT32 with zp=0
-        input_A_rescaled = tqutils.build_rescale_to_int32(
-            tosa_graph,
-            input_A,
-            input_A_qargs.get_zp_per_tensor(),
-            1.0,
-        )
-        input_B_rescaled = tqutils.build_rescale_to_int32(
-            tosa_graph,
-            input_B,
-            input_B_qargs.get_zp_per_tensor(),
-            1.0,
-        )
+            # Rescale inputs to INT32 with zp=0
+            input_A_rescaled = tqutils.build_rescale_to_int32(
+                tosa_graph,
+                input_A,
+                input_A_qargs.get_zp_per_tensor(),
+                1.0,
+            )
+            input_B_rescaled = tqutils.build_rescale_to_int32(
+                tosa_graph,
+                input_B,
+                input_B_qargs.get_zp_per_tensor(),
+                1.0,
+            )
+        else:
+            # input[0].dtype == ts.DType.INT32
+            # Non quantized input, natively support by TOSA.MUL
+            input_A_rescaled, input_B_rescaled = inputs[0], inputs[1]
 
-        output_shape = tutils.tosa_shape(output.shape, output.dim_order)
-        mul_output = tosa_graph.addIntermediate(output_shape, ts.DType.INT32)
+        if output.dtype == ts.DType.INT8:
+            output_shape = tutils.tosa_shape(output.shape, output.dim_order)
+            mul_output = tosa_graph.addIntermediate(output_shape, ts.DType.INT32)
+        else:
+            # output.dtype == ts.DType.INT32
+            mul_output = output
 
         input1, input2 = tutils.reshape_for_broadcast(
             tosa_graph,
@@ -101,10 +113,16 @@ class MulVisitor_080_BI(NodeVisitor):
             [mul_output.name],
             attr,
         )
-        output_scale = (
-            input_A_qargs.get_scale_per_tensor() * input_B_qargs.get_scale_per_tensor()
-        )
-        tqutils.insert_rescale_op_to_int8(tosa_graph, mul_output, output_scale, node)
+
+        if output.dtype == ts.DType.INT8:
+            # Scale output back to 8 bit
+            output_scale = (
+                input_A_qargs.get_scale_per_tensor()  # type: ignore[possibly-undefined]
+                * input_B_qargs.get_scale_per_tensor()  # type: ignore[possibly-undefined]
+            )
+            tqutils.insert_rescale_op_to_int8(
+                tosa_graph, mul_output, output_scale, node
+            )
 
 
 @register_node_visitor
@@ -161,35 +179,47 @@ class MulVisitor_INT(NodeVisitor):
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs, output], ts)
         validate_valid_dtype(
-            self.target, [*inputs, output], ts.DType.INT8, output.tosa_spec
+            self.target,
+            [*inputs, output],
+            [ts.DType.INT8, ts.DType.INT32],
+            output.tosa_spec,
         )
 
-        input_A = inputs[0]
-        input_B = inputs[1]
-        input_qparams = get_input_qparams(node)
-        input_A_qargs = input_qparams[0]
-        input_B_qargs = input_qparams[1]
-        input_A.shape = tutils.tosa_shape(input_A.shape, input_A.dim_order)
-        input_B.shape = tutils.tosa_shape(input_B.shape, input_B.dim_order)
+        if inputs[0].dtype == ts.DType.INT8:
+            input_A = inputs[0]
+            input_B = inputs[1]
+            input_qparams = get_input_qparams(node)
+            input_A_qargs = input_qparams[0]
+            input_B_qargs = input_qparams[1]
+            input_A.shape = tutils.tosa_shape(input_A.shape, input_A.dim_order)
+            input_B.shape = tutils.tosa_shape(input_B.shape, input_B.dim_order)
 
-        # Rescale inputs to INT32 with zp=0
-        input_A_rescaled = tqutils.build_rescale_to_int32(
-            tosa_graph,
-            input_A,
-            input_A_qargs.get_zp_per_tensor(),
-            1.0,
-            tosa_spec=self.tosa_spec,
-        )
-        input_B_rescaled = tqutils.build_rescale_to_int32(
-            tosa_graph,
-            input_B,
-            input_B_qargs.get_zp_per_tensor(),
-            1.0,
-            tosa_spec=self.tosa_spec,
-        )
+            # Rescale inputs to INT32 with zp=0
+            input_A_rescaled = tqutils.build_rescale_to_int32(
+                tosa_graph,
+                input_A,
+                input_A_qargs.get_zp_per_tensor(),
+                1.0,
+                tosa_spec=self.tosa_spec,
+            )
+            input_B_rescaled = tqutils.build_rescale_to_int32(
+                tosa_graph,
+                input_B,
+                input_B_qargs.get_zp_per_tensor(),
+                1.0,
+                tosa_spec=self.tosa_spec,
+            )
+        else:
+            # input[0].dtype == ts.DType.INT32
+            # Non quantized input, natively support by TOSA.MUL
+            input_A_rescaled, input_B_rescaled = inputs[0], inputs[1]
 
-        output_shape = tutils.tosa_shape(output.shape, output.dim_order)
-        mul_output = tosa_graph.addIntermediate(output_shape, ts.DType.INT32)
+        if output.dtype == ts.DType.INT8:
+            output_shape = tutils.tosa_shape(output.shape, output.dim_order)
+            mul_output = tosa_graph.addIntermediate(output_shape, ts.DType.INT32)
+        else:
+            # output.dtype == ts.DType.INT32
+            mul_output = output
 
         # Do the INT32 Mul
         tosa_graph.addConst([1], ts.DType.INT8, 0, name=f"{node.name}_shift")
@@ -198,12 +228,16 @@ class MulVisitor_INT(NodeVisitor):
             [input_A_rescaled.name, input_B_rescaled.name, f"{node.name}_shift"],
             [mul_output.name],
         )
-        output_scale = (
-            input_A_qargs.get_scale_per_tensor() * input_B_qargs.get_scale_per_tensor()
-        )
-        tqutils.insert_rescale_op_to_int8(
-            tosa_graph, mul_output, output_scale, node, self.tosa_spec
-        )
+
+        if output.dtype == ts.DType.INT8:
+            # Scale output back to 8 bit
+            output_scale = (
+                input_A_qargs.get_scale_per_tensor()  # type: ignore[possibly-undefined]
+                * input_B_qargs.get_scale_per_tensor()  # type: ignore[possibly-undefined]
+            )
+            tqutils.insert_rescale_op_to_int8(
+                tosa_graph, mul_output, output_scale, node, self.tosa_spec
+            )
 
 
 @register_node_visitor
