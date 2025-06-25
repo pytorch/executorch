@@ -19,11 +19,16 @@ namespace torch::executor::native {
 
 Tensor::SizesType
 compute_arange_out_size(double start, double end, double step) {
-  ET_CHECK_MSG(
-      end > start, "end (%f) must be greater than start (%f)", end, start);
-  ET_CHECK_MSG(step > 0, "step must be positive, got %f", step);
   Tensor::SizesType numel =
       static_cast<Tensor::SizesType>(std::ceil((end - start) / step));
+
+  ET_CHECK_MSG(
+      numel >= 0,
+      "numel should be non-negative, but got (%d). start (%f), end (%f), step (%f)",
+      numel,
+      start,
+      end,
+      step);
   return numel;
 }
 
