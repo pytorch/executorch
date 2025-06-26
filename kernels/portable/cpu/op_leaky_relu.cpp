@@ -44,11 +44,7 @@ Tensor& leaky_relu_out(
   ET_KERNEL_CHECK(ctx, in_type == out_type, InvalidArgument, out);
 
   ET_SWITCH_FLOATHBF16_TYPES(in_type, ctx, "leaky_relu.out", CTYPE, [&]() {
-    auto opt_negative_slope_casted =
-        utils::internal::check_overflow_scalar_cast<CTYPE>(negative_slope);
-    ET_KERNEL_CHECK(
-        ctx, opt_negative_slope_casted.has_value(), InvalidArgument, );
-    auto negative_slope_casted = opt_negative_slope_casted.value();
+    const CTYPE negative_slope_casted = utils::scalar_to<CTYPE>(negative_slope);
 
     apply_unary_map_fn(
         [negative_slope_casted](const CTYPE val_in) {
