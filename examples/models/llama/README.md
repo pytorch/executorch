@@ -186,7 +186,7 @@ LLAMA_QUANTIZED_CHECKPOINT=path/to/spinquant/consolidated.00.pth.pth
 LLAMA_PARAMS=path/to/spinquant/params.json
 
 python -m extension.llm.export.export_llm \
-    --config examples/models/llama/config/llama_xnnpack_spinquant.yaml
+  --config examples/models/llama/config/llama_xnnpack_spinquant.yaml
 	+base.model_class="llama3_2" \
 	+base.checkpoint="${LLAMA_QUANTIZED_CHECKPOINT:?}" \
 	+base.params="${LLAMA_PARAMS:?}" \

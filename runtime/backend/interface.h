@@ -183,6 +183,34 @@ size_t get_num_registered_backends();
  */
 Result<const char*> get_backend_name(size_t index);
 
+/**
+ * Sets backend options for a specific backend.
+ *
+ * @param backend_name The name of the backend to set options for
+ * @param backend_options The backend option list containing the options
+ * to set
+ * @return Error::Ok on success, Error::NotFound if backend is not found, or
+ * other error codes on failure
+ */
+Error set_option(
+    const char* backend_name,
+    const executorch::runtime::Span<executorch::runtime::BackendOption>
+        backend_options);
+
+/**
+ * Retrieves backend options for a specific backend.
+ *
+ * @param backend_name The name of the backend to get options from
+ * @param backend_options The backend option objects that will be filled with
+ * the populated values from the backend
+ * @return Error::Ok on success, Error::NotFound if backend is not found, or
+ * other error codes on failure
+ */
+Error get_option(
+    const char* backend_name,
+    executorch::runtime::Span<executorch::runtime::BackendOption>
+        backend_options);
+
 } // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
 

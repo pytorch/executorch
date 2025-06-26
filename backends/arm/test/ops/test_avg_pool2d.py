@@ -8,6 +8,8 @@
 
 from typing import Tuple
 
+import conftest
+
 import torch
 
 from executorch.backends.arm.test import common
@@ -119,6 +121,7 @@ def test_avg_pool2d_tosa_MI(test_module):
         input_tensor,
         aten_op,
         exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -132,6 +135,7 @@ def test_avg_pool2d_tosa_BI(test_module):
         input_tensor,
         aten_op,
         exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
