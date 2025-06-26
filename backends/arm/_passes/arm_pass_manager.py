@@ -26,6 +26,7 @@ from executorch.backends.arm._passes import (
     ConvertSqueezesToViewPass,
     ConvertToClampPass,
     DecomposeAvgPool2d,
+    DecomposeBatchNormNoStatsPass,
     DecomposeCosineSimilarityPass,
     DecomposeDivPass,
     DecomposeEmbeddingPass,
@@ -42,6 +43,7 @@ from executorch.backends.arm._passes import (
     DecomposeRoundPass,
     DecomposeSelectPass,
     DecomposeSiluPass,
+    DecomposeSinhPass,
     DecomposeSoftmaxPass,
     DecomposeSoftmaxUnstablePass,
     DecomposeSqrtPass,
@@ -151,6 +153,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(ConvertIntPowToMuls())
         self.add_pass(CastBoolToInt8Pass())
+        self.add_pass(DecomposeSinhPass())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSAMI())
         self.add_pass(DecomposeEmbeddingPass())
         self.add_pass(FuseQuantizedActivationPass())
@@ -162,6 +165,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeLeakyReLUPass())
         self.add_pass(DecomposeGroupNormPass())
         self.add_pass(DecomposeLayerNormPass())
+        self.add_pass(DecomposeBatchNormNoStatsPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(
             DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec)

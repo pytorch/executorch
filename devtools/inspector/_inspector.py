@@ -52,6 +52,7 @@ from executorch.devtools.inspector._inspector_utils import (
     FORWARD,
     gen_etdump_object,
     gen_graphs_from_etrecord,
+    get_aot_debug_handle_to_op_name_mapping,
     inflate_runtime_output,
     is_debug_output,
     is_inference_output_equal,
@@ -1084,6 +1085,7 @@ class Inspector:
         self._reference_outputs: Dict[str, List[ProgramOutput]] = {}
         self._enable_module_hierarchy = enable_module_hierarchy
         self._aot_intermediate_outputs: Optional[Dict[Tuple[int, ...], Any]] = None
+        self._aot_debug_handles_to_op_names: Optional[Dict[Tuple[int, ...], str]] = None
         self._consume_etrecord()
 
     def _consume_etrecord(self) -> None:
@@ -1150,6 +1152,9 @@ class Inspector:
             return
         export_program = self._etrecord.edge_dialect_program
         graph_module = export_program.module()
+        self._aot_debug_handles_to_op_names = get_aot_debug_handle_to_op_name_mapping(
+            graph_module
+        )
         capturer = IntermediateOutputCapturer(graph_module)
         self._aot_intermediate_outputs = capturer.run_and_capture(
             self._etrecord._representative_inputs

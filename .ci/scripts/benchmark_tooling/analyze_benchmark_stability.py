@@ -86,6 +86,9 @@ def analyze_latency_stability(  # noqa: C901
     primary_datasets = {}
     documents = read_excel_with_json_header(primary_file)
 
+    if verbose_level > 2:
+        print(f"Printing documents: {documents}")
+
     for document in documents:
         sheetName = document.get("sheetName", None)
         df = document.get("df", None)
@@ -1525,6 +1528,7 @@ def main():
         default="stability_analysis_results",
         help="Directory to save analysis results (default: stability_analysis_results)",
     )
+
     parser.add_argument(
         "--verbose-level",
         type=int,
