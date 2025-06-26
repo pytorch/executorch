@@ -973,57 +973,55 @@ inline std::unique_ptr<DataLoader> loader_from_buffer(
 
 inline std::unique_ptr<DataLoader> loader_from_file(const std::string& path) {
   Result<MmapDataLoader> res = MmapDataLoader::from(
-    path.c_str(), MmapDataLoader::MlockConfig::UseMlockIgnoreErrors);
+      path.c_str(), MmapDataLoader::MlockConfig::UseMlockIgnoreErrors);
   THROW_IF_ERROR(
-    res.error(),
-    "Failed to create MmapDataLoader from file %s, error: 0x:%" PRIx32,
-    path.c_str(),
-    static_cast<uint32_t>(res.error()));
+      res.error(),
+      "Failed to create MmapDataLoader from file %s, error: 0x:%" PRIx32,
+      path.c_str(),
+      static_cast<uint32_t>(res.error()));
 
   return std::make_unique<MmapDataLoader>(std::move(res.get()));
 }
 
 inline std::unique_ptr<Program> load_program(
-  DataLoader* loader,
+    DataLoader* loader,
     Program::Verification program_verification) {
   Result<Program> res = Program::load(loader, program_verification);
   THROW_IF_ERROR(
-    res.error(),
-    "Failed to load program, error: 0x:%" PRIx32,
-    static_cast<uint32_t>(res.error()));
+      res.error(),
+      "Failed to load program, error: 0x:%" PRIx32,
+      static_cast<uint32_t>(res.error()));
   return std::make_unique<Program>(std::move(res.get()));
 }
 
 struct PyProgram final {
-  explicit PyProgram(const py::bytes& buffer,
-    Program::Verification program_verification =
-        Program::Verification::Minimal)
-    : loader_(loader_from_buffer(
-        buffer.cast<std::string_view>().data(),
-        py::len(buffer))),
-      program_(load_program(
-        loader_.get(),
-        program_verification)) {}
+  explicit PyProgram(
+      const py::bytes& buffer,
+      Program::Verification program_verification =
+          Program::Verification::Minimal)
+      : loader_(loader_from_buffer(
+            buffer.cast<std::string_view>().data(),
+            py::len(buffer))),
+        program_(load_program(loader_.get(), program_verification)) {}
 
-  explicit PyProgram(const std::string& path,
-    Program::Verification program_verification =
-        Program::Verification::Minimal)
-    : loader_(loader_from_file(path)),
-      program_(load_program(
-        loader_.get(),
-        program_verification)) {}
+  explicit PyProgram(
+      const std::string& path,
+      Program::Verification program_verification =
+          Program::Verification::Minimal)
+      : loader_(loader_from_file(path)),
+        program_(load_program(loader_.get(), program_verification)) {}
 
   static std::unique_ptr<PyProgram> load_from_buffer(
-    const py::bytes& buffer,
-    Program::Verification program_verification =
-        Program::Verification::Minimal) {
+      const py::bytes& buffer,
+      Program::Verification program_verification =
+          Program::Verification::Minimal) {
     return std::make_unique<PyProgram>(buffer, program_verification);
   }
 
   static std::unique_ptr<PyProgram> load_from_file(
-    const std::string& path,
-    Program::Verification program_verification =
-        Program::Verification::Minimal) {
+      const std::string& path,
+      Program::Verification program_verification =
+          Program::Verification::Minimal) {
     return std::make_unique<PyProgram>(path, program_verification);
   }
 
@@ -1039,20 +1037,22 @@ struct PyProgram final {
   std::string get_method_name(size_t method_index) const {
     Result<const char*> res = program_->get_method_name(method_index);
     THROW_IF_ERROR(
-      res.error(),
-      "Failed get method name, error: 0x:%" PRIx32,
-      static_cast<uint32_t>(res.error()));
+        res.error(),
+        "Failed get method name, error: 0x:%" PRIx32,
+        static_cast<uint32_t>(res.error()));
     return std::string(res.get());
   }
 
   std::string get_output_flattening_encoding(std::string method_name) const {
-    Result<const char*> res = program_->get_output_flattening_encoding(method_name.c_str());
+    Result<const char*> res =
+        program_->get_output_flattening_encoding(method_name.c_str());
     THROW_IF_ERROR(
-      res.error(),
-      "Failed get output flattening encoding, error: 0x:%" PRIx32,
-      static_cast<uint32_t>(res.error()));
+        res.error(),
+        "Failed get output flattening encoding, error: 0x:%" PRIx32,
+        static_cast<uint32_t>(res.error()));
     return std::string(res.get());
   }
+
  private:
   std::unique_ptr<DataLoader> loader_;
   std::unique_ptr<Program> program_;
@@ -1245,20 +1245,17 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           call_guard)
       .def("__repr__", &PyMethodMeta::repr, call_guard);
 
-
   m.def(
       "_load_program",
       &PyProgram::load_from_file,
       py::arg("path"),
-      py::arg("program_verification") =
-        Program::Verification::Minimal,
+      py::arg("program_verification") = Program::Verification::Minimal,
       call_guard);
   m.def(
       "_load_program_from_buffer",
       &PyProgram::load_from_buffer,
       py::arg("buffer"),
-      py::arg("program_verification") =
-          Program::Verification::Minimal,
+      py::arg("program_verification") = Program::Verification::Minimal,
       call_guard);
   py::class_<PyProgram>(m, "ExecuTorchProgram")
       .def("num_methods", &PyProgram::num_methods, call_guard)
