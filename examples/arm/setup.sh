@@ -224,7 +224,7 @@ function setup_fvp() {
 }
 
 function setup_toolchain() {
-    # Download and install the arm-none-eabi toolchain
+    # Download and install the arm toolchain (default is arm-none-eabi)
     cd "${root_dir}"
     local selected_toolchain_url="${toolchain_url}"
     local selected_toolchain_dir="${toolchain_dir}"
