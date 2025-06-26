@@ -116,9 +116,9 @@ def define_common_targets():
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
             "//executorch/runtime/kernel:kernel_runtime_context",
             "//executorch/extension/threadpool:threadpool",
+            "//executorch/kernels/portable/cpu:scalar_utils",
         ],
         deps = [
-            "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/runtime/kernel:kernel_includes",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS"],
