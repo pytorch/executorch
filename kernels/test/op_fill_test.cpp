@@ -7,6 +7,7 @@
  */
 
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
+#include <executorch/kernels/test/ScalarOverflowTestMacros.h>
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -167,27 +168,4 @@ TEST_F(OpFillTest, MismatchedOutputDtypeDies) {
   ET_EXPECT_KERNEL_FAILURE(context_, op_fill_scalar_out(self, 0.0, out));
 }
 
-TEST_F(OpFillTest, ByteTensorTooLargeScalarDies) {
-  // Cannot be represented by a uint8_t.
-  expect_bad_scalar_value_dies<ScalarType::Byte>(256);
-}
-
-TEST_F(OpFillTest, CharTensorTooSmallScalarDies) {
-  // Cannot be represented by a int8_t.
-  expect_bad_scalar_value_dies<ScalarType::Char>(-129);
-}
-
-TEST_F(OpFillTest, ShortTensorTooLargeScalarDies) {
-  // Cannot be represented by a int16_t.
-  expect_bad_scalar_value_dies<ScalarType::Short>(32768);
-}
-
-TEST_F(OpFillTest, FloatTensorTooSmallScalarDies) {
-  // Cannot be represented by a float.
-  expect_bad_scalar_value_dies<ScalarType::Float>(-3.41e+38);
-}
-
-TEST_F(OpFillTest, FloatTensorTooLargeScalarDies) {
-  // Cannot be represented by a float.
-  expect_bad_scalar_value_dies<ScalarType::Float>(3.41e+38);
-}
+GENERATE_SCALAR_OVERFLOW_TESTS(OpFillTest)
