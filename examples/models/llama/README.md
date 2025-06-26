@@ -187,9 +187,9 @@ LLAMA_PARAMS=path/to/spinquant/params.json
 
 python -m extension.llm.export.export_llm \
   --config examples/models/llama/config/llama_xnnpack_spinquant.yaml
-	+base.model_class="llama3_2" \
-	+base.checkpoint="${LLAMA_QUANTIZED_CHECKPOINT:?}" \
-	+base.params="${LLAMA_PARAMS:?}" \
+  +base.model_class="llama3_2" \
+  +base.checkpoint="${LLAMA_QUANTIZED_CHECKPOINT:?}" \
+  +base.params="${LLAMA_PARAMS:?}"
 ```
 For convenience, an [exported ExecuTorch SpinQuant model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_SpinQuant_INT4_EO8.ipynb).
 
@@ -221,8 +221,8 @@ You can export and run the original Llama 3 8B instruct model.
 python -m extension.llm.export.export_llm \
     --config examples/models/llama/config/llama_q8da4w.yaml
     +base.model_clas="llama3"
-	+base.checkpoint=<consolidated.00.pth.pth> \
-	+base.params=<params.json> \
+    +base.checkpoint=<consolidated.00.pth.pth> \
+    +base.params=<params.json>
 ```
     Due to the larger vocabulary size of Llama 3, we recommend quantizing the embeddings with `quantization.embedding_quantize=\'4,32\'` as shown above to further reduce the model size.
 
