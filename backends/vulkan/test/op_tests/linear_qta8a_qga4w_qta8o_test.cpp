@@ -337,6 +337,11 @@ void test_vulkan_linear_qta8a_qga4w_qta8o(
 TEST(
     VulkanLinearQTA8AQGA4WQTA8OTest,
     test_vulkan_linear_quant_gemm_custom_groupsize_one) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_linear_qta8a_qga4w_qta8o(
       /*B = */ 1,
       /*M = */ 2,
@@ -348,6 +353,11 @@ TEST(
 TEST(
     VulkanLinearQTA8AQGA4WQTA8OTest,
     test_vulkan_linear_quant_gemm_custom_groupsize_two) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_linear_qta8a_qga4w_qta8o(
       /*B = */ 1,
       /*M = */ 2,
@@ -357,6 +367,11 @@ TEST(
 }
 
 TEST(VulkanLinearQTA8AQGA4WQTA8OTest, test_vulkan_linear_quant_gemm_case_one) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_linear_qta8a_qga4w_qta8o(
       /*B = */ 1,
       /*M = */ 4,
@@ -365,6 +380,11 @@ TEST(VulkanLinearQTA8AQGA4WQTA8OTest, test_vulkan_linear_quant_gemm_case_one) {
 }
 
 TEST(VulkanLinearQTA8AQGA4WQTA8OTest, test_vulkan_linear_quant_gemm_case_two) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_linear_qta8a_qga4w_qta8o(
       /*B = */ 1,
       /*M = */ 4,
@@ -375,6 +395,11 @@ TEST(VulkanLinearQTA8AQGA4WQTA8OTest, test_vulkan_linear_quant_gemm_case_two) {
 TEST(
     VulkanLinearQTA8AQGA4WQTA8OTest,
     test_vulkan_linear_quant_gemm_case_three) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_linear_qta8a_qga4w_qta8o(
       /*B = */ 1,
       /*M = */ 8,
@@ -383,6 +408,11 @@ TEST(
 }
 
 TEST(VulkanLinearQTA8AQGA4WQTA8OTest, test_vulkan_linear_quant_gemm_case_four) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_linear_qta8a_qga4w_qta8o(
       /*B = */ 1,
       /*M = */ 256,
@@ -393,6 +423,11 @@ TEST(VulkanLinearQTA8AQGA4WQTA8OTest, test_vulkan_linear_quant_gemm_case_four) {
 TEST(
     VulkanLinearQTA8AQGA4WQTA8OTest,
     test_vulkan_linear_quant_gemv_custom_groupsize_one) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_linear_qta8a_qga4w_qta8o(
       /*B = */ 1,
       /*M = */ 2,
@@ -402,6 +437,11 @@ TEST(
 }
 
 TEST(VulkanLinearQTA8AQGA4WQTA8OTest, test_vulkan_linear_quant_gemv_case_one) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_linear_qta8a_qga4w_qta8o(
       /*B = */ 1,
       /*M = */ 1,
@@ -410,6 +450,11 @@ TEST(VulkanLinearQTA8AQGA4WQTA8OTest, test_vulkan_linear_quant_gemv_case_one) {
 }
 
 TEST(VulkanLinearQTA8AQGA4WQTA8OTest, test_vulkan_linear_quant_gemv_case_two) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_linear_qta8a_qga4w_qta8o(
       /*B = */ 1,
       /*M = */ 1,
@@ -420,6 +465,11 @@ TEST(VulkanLinearQTA8AQGA4WQTA8OTest, test_vulkan_linear_quant_gemv_case_two) {
 TEST(
     VulkanLinearQTA8AQGA4WQTA8OTest,
     test_vulkan_linear_quant_gemv_case_three) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   test_vulkan_linear_qta8a_qga4w_qta8o(
       /*B = */ 1,
       /*M = */ 1,
