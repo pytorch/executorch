@@ -120,28 +120,28 @@ set_cmake_options_override() {
 
 for arg in "$@"; do
   case $arg in
-      -h|--help) usage ;;
-      --Release)
-        if [[ ! " ${MODES[*]:-} " =~ \bRelease\b ]]; then
-          MODES+=("Release")
-        fi
-        ;;
-      --Debug)
-        if [[ ! " ${MODES[*]:-} " =~ \bDebug\b ]]; then
-          MODES+=("Debug")
-        fi
-        ;;
-      --coreml) set_cmake_options_override "EXECUTORCH_BUILD_COREML";;
-      --custom) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_CUSTOM" ;;
-      --mps) set_cmake_options_override "EXECUTORCH_BUILD_MPS" ;;
-      --optimized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" ;;
-      --quantized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_QUANTIZED" ;;
-      --xnnpack) set_cmake_options_override "EXECUTORCH_BUILD_XNNPACK" ;;
-      --torchao) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_TORCHAO" ;;
-      *)
-        echo -e "\033[31m[error] unknown option: ${arg}\033[0m"
-        exit 1
-      ;;
+  -h | --help) usage ;;
+  --Release)
+    if [[ ! " ${MODES[*]:-} " =~ \bRelease\b ]]; then
+      MODES+=("Release")
+    fi
+    ;;
+  --Debug)
+    if [[ ! " ${MODES[*]:-} " =~ \bDebug\b ]]; then
+      MODES+=("Debug")
+    fi
+    ;;
+  --coreml) set_cmake_options_override "EXECUTORCH_BUILD_COREML" ;;
+  --custom) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_CUSTOM" ;;
+  --mps) set_cmake_options_override "EXECUTORCH_BUILD_MPS" ;;
+  --optimized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" ;;
+  --quantized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_QUANTIZED" ;;
+  --xnnpack) set_cmake_options_override "EXECUTORCH_BUILD_XNNPACK" ;;
+  --torchao) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_TORCHAO" ;;
+  *)
+    echo -e "\033[31m[error] unknown option: ${arg}\033[0m"
+    exit 1
+    ;;
   esac
 done
 
@@ -152,59 +152,20 @@ for preset_index in "${!PRESETS[@]}"; do
   preset="${PRESETS[$preset_index]}"
   preset_output_dir="${OUTPUT_DIR}/${PRESETS_RELATIVE_OUT_DIR[$preset_index]}"
 
-cmake_build() {
-    local platform=$1
-    local platform_flag=$2
-    local platform_target=$3
-    local mode=$4
-    echo "Building for $platform ($mode) with flag $platform_flag"
-    mkdir -p "$platform" && cd "$platform" || exit 1
-    cmake "$SOURCE_ROOT_DIR" -G Xcode \
-        -DCMAKE_BUILD_TYPE="$mode" \
-        -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
-        -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD="c++17" \
-        -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY="libc++" \
-        -DCMAKE_C_FLAGS="-ffile-prefix-map=$SOURCE_ROOT_DIR=/executorch -fdebug-prefix-map=$SOURCE_ROOT_DIR=/executorch" \
-        -DCMAKE_CXX_FLAGS="-ffile-prefix-map=$SOURCE_ROOT_DIR=/executorch -fdebug-prefix-map=$SOURCE_ROOT_DIR=/executorch" \
-        -DPYTHON_EXECUTABLE="$PYTHON" \
-        -DEXECUTORCH_BUILD_COREML=$COREML \
-        -DEXECUTORCH_BUILD_MPS=$MPS \
-        -DEXECUTORCH_BUILD_XNNPACK=$XNNPACK \
-        -DEXECUTORCH_XNNPACK_SHARED_WORKSPACE=ON \
-        -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
-        -DEXECUTORCH_BUILD_EXTENSION_APPLE=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-        -DEXECUTORCH_BUILD_KERNELS_CUSTOM=$CUSTOM \
-        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=$OPTIMIZED \
-        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=$QUANTIZED \
-        -DEXECUTORCH_BUILD_KERNELS_TORCHAO=$TORCHAO \
-        -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="$(pwd)" \
-        ${platform_flag:+-DPLATFORM=$platform_flag} \
-        ${platform_target:+-DDEPLOYMENT_TARGET=$platform_target} \
-        --log-level=VERBOSE
-    cmake --build . \
-        --config "$mode" \
-        --verbose
-    cd -
-}
-
-for index in ${!PLATFORMS[*]}; do
   for mode in "${MODES[@]}"; do
     echo "Building preset ${preset} (${mode}) in ${preset_output_dir}..."
 
     # Do NOT add options here. Update the respective presets instead.
     cmake -S "${SOURCE_ROOT_DIR}" \
-          -B "${preset_output_dir}" \
-          -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="${preset_output_dir}" \
-          -DCMAKE_BUILD_TYPE="${mode}" \
-          ${CMAKE_OPTIONS_OVERRIDE[@]:-} \
-          --preset "${preset}"
+      -B "${preset_output_dir}" \
+      -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="${preset_output_dir}" \
+      -DCMAKE_BUILD_TYPE="${mode}" \
+      ${CMAKE_OPTIONS_OVERRIDE[@]:-} \
+      --preset "${preset}"
 
     cmake --build "${preset_output_dir}" \
-          --config "${mode}" \
-          -j$(sysctl -n hw.ncpu)
+      --config "${mode}" \
+      -j$(sysctl -n hw.ncpu)
   done
 done
 
@@ -214,8 +175,8 @@ mkdir -p "$HEADERS_ABSOLUTE_PATH"
 
 "$SOURCE_ROOT_DIR"/scripts/print_exported_headers.py --buck2=$(realpath "$BUCK2") --targets \
   //extension/module: \
-  //extension/tensor: \
-| rsync -av --files-from=- "$SOURCE_ROOT_DIR" "$HEADERS_ABSOLUTE_PATH/executorch"
+  //extension/tensor: |
+  rsync -av --files-from=- "$SOURCE_ROOT_DIR" "$HEADERS_ABSOLUTE_PATH/executorch"
 
 # HACK: XCFrameworks don't appear to support exporting any build
 # options, but we need the following:
@@ -234,7 +195,7 @@ cp -r $HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/torch "$H
 
 cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"*.h "$HEADERS_ABSOLUTE_PATH/executorch"
 
-cat > "$HEADERS_ABSOLUTE_PATH/module.modulemap" << 'EOF'
+cat >"$HEADERS_ABSOLUTE_PATH/module.modulemap" <<'EOF'
 module ExecuTorch {
   umbrella header "ExecuTorch/ExecuTorch.h"
   export *
@@ -258,10 +219,10 @@ append_framework_flag() {
   fi
 
   if [[ -n "$mode" && "$mode" != "Release" ]]; then
-      local name spec
-      name=$(echo "$framework" | cut -d: -f1)
-      spec=$(echo "$framework" | cut -d: -f2-)
-      framework="${name}_$(echo "$mode" | tr '[:upper:]' '[:lower:]'):${spec}"
+    local name spec
+    name=$(echo "$framework" | cut -d: -f1)
+    spec=$(echo "$framework" | cut -d: -f2-)
+    framework="${name}_$(echo "$mode" | tr '[:upper:]' '[:lower:]'):${spec}"
   fi
   echo "Adding framework: ${framework}"
   FRAMEWORK_FLAGS+=("--framework=$framework")
