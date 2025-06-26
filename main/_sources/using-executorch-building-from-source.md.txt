@@ -30,6 +30,7 @@ Windows (x86_64)
 * `g++` version 7 or higher, `clang++` version 5 or higher, or another
   C++17-compatible toolchain.
 * `python` version 3.10-3.12
+* `ccache` (optional) - A compiler cache that speeds up recompilation
 
 Note that the cross-compilable core runtime code supports a wider range of
 toolchains, down to C++17. See the [Runtime Overview](runtime-overview.md) for
@@ -119,6 +120,8 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
 > git submodule sync
 > git submodule update --init --recursive
 > ```
+>
+> The `--clean` command removes build artifacts, pip outputs, and also clears the ccache if it's installed, ensuring a completely fresh build environment.
 
 ## Build ExecuTorch C++ runtime from source
 
@@ -171,6 +174,29 @@ To further optimize the release build for size, use both:
 -DEXECUTORCH_OPTIMIZE_SIZE=ON
 ```
 
+#### Compiler Cache (ccache)
+
+ExecuTorch automatically detects and enables [ccache](https://ccache.dev/) if it's installed on your system. This significantly speeds up recompilation by caching previously compiled objects:
+
+- If ccache is detected, you'll see: `ccache found and enabled for faster builds`
+- If ccache is not installed, you'll see: `ccache not found, builds will not be cached`
+
+To install ccache:
+```bash
+# Ubuntu/Debian
+sudo apt install ccache
+
+# macOS
+brew install ccache
+
+# CentOS/RHEL
+sudo yum install ccache
+# or
+sudo dnf install ccache
+```
+
+No additional configuration is needed - the build system will automatically use ccache when available.
+
 See [CMakeLists.txt](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt)
 
 ### Build the runtime components
@@ -189,6 +215,8 @@ cd executorch
 # "core count + 1" as the `-j` value.
 cmake --build cmake-out -j9
 ```
+
+> **_TIP:_** For faster rebuilds, consider installing ccache (see [Compiler Cache section](#compiler-cache-ccache) above). On first builds, ccache populates its cache. Subsequent builds with the same compiler flags can be significantly faster.
 
 ## Use an example binary `executor_runner` to execute a .pte file
 
