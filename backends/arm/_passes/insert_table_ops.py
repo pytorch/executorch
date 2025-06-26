@@ -51,7 +51,6 @@ class TableOps:
         exir_ops.edge.aten.cos.default: torch.cos,
         exir_ops.edge.aten.sin.default: torch.sin,
         exir_ops.edge.aten.tanh.default: torch.tanh,
-        exir_ops.edge.aten.atan.default: torch.atan,
         exir_ops.edge.aten.hardsigmoid.default: torch.nn.functional.hardsigmoid,
         exir_ops.edge.aten.hardswish.default: torch.nn.functional.hardswish,
         exir_ops.edge.aten.sinh.default: torch.sinh,

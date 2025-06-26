@@ -56,7 +56,6 @@ python_library(
         "_intermediate_output_capturer.py",
     ],
     deps = [
-        "//executorch/devtools/inspector:inspector_utils",
     ],
 )
 

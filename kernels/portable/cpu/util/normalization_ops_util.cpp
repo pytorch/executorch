@@ -38,7 +38,7 @@ bool check_batch_norm_args(
     ET_LOG_AND_RETURN_IF_FALSE(
         tensors_have_same_dtype(in, running_mean.value()));
   }
-  if (running_var.has_value()) {
+  if (running_mean.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(
         tensors_have_same_dtype(in, running_var.value()));
   }

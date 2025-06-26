@@ -537,7 +537,7 @@ class TestInspector(unittest.TestCase):
                     )
                 )
 
-    def test_get_runtime_intermediate_outputs_and_op_names(self):
+    def test_get_runtime_intermediate_outputs(self):
         # Create a context manager to patch functions called by Inspector.__init__
         with patch.object(
             _inspector, "parse_etrecord", return_value=None
@@ -560,39 +560,25 @@ class TestInspector(unittest.TestCase):
                 EventBlock(name=EVENT_BLOCK_NAME, events=self._gen_random_events())
             ]
 
-            runtime_outputs, op_names = (
-                inspector_instance._get_runtime_intermediate_outputs_and_op_names()
-            )
-            # These outputs and op_names dictionaries should all have 5 keys
+            runtime_outputs = inspector_instance._get_runtime_intermediate_outputs()
+            # This output should be a dictionary with 5 keys
             self.assertEqual(
                 len(runtime_outputs),
                 5,
             )
-            self.assertEqual(
-                len(op_names),
-                5,
-            )
-
-            # Check that keys (0,) and (1,) are not in these two dictionaries(skip OPERATOR_CALL and op_types are empty)
+            # Check that keys (0,) and (1,) are not in the dictionary(skip OPERATOR_CALL and op_types are empty)
             self.assertNotIn((0,), runtime_outputs)
             self.assertNotIn((1,), runtime_outputs)
-            self.assertNotIn((0,), op_names)
-            self.assertNotIn((1,), op_names)
 
             # Same debug_handle but different instruction_id, should record the last one
             self.assertIn((4,), runtime_outputs)
-            self.assertIn((4,), op_names)
             self.assertTrue(
                 torch.equal(runtime_outputs[(4,)][0], torch.tensor([4.0, 5.0, 6.0]))
             )
-            self.assertEqual(op_names[(4,)], "op_3")
-
             # Check that keys (5,) to (8,) are in the dictionary and have values of the correct size
             for key in range(5, 9):
                 self.assertIn((key,), runtime_outputs)
-                self.assertIn((key,), op_names)
                 self.assertEqual(len(runtime_outputs[(key,)]), RAW_DATA_SIZE)
-                self.assertEqual(op_names[(key,)], f"op_{key-1}")
 
     def test_calculate_numeric_gap(self):
         # Create a context manager to patch functions called by Inspector.__init__
@@ -622,8 +608,8 @@ class TestInspector(unittest.TestCase):
             }
 
             inspector_instance._aot_intermediate_outputs = aot_intermediate_outputs
-            inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
-                lambda: (runtime_intermediate_outputs, {})
+            inspector_instance._get_runtime_intermediate_outputs = (
+                lambda: runtime_intermediate_outputs
             )
 
             df = inspector_instance.calculate_numeric_gap(distance="L1")

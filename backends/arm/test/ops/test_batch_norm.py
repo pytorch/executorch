@@ -224,8 +224,6 @@ class BatchNorm2dNoStats(torch.nn.Module):
     Decomposes into _native_batch_norm_legit.no_stats
     """
 
-    aten_ops = ["torch.ops.aten.batch_norm.default"]
-
     def __init__(
         self,
         num_features: int,
@@ -252,60 +250,29 @@ class BatchNorm2dNoStats(torch.nn.Module):
         return self.batch_norm_2d(x)
 
 
-@common.parametrize("test_data", test_data_suite)
-def test_native_batch_norm_legit_no_stats_tosa_MI(test_data: Tuple):
-    test_data, model_params = test_data()
-    pipeline = TosaPipelineMI[input_t1](
-        BatchNorm2dNoStats(*model_params),
-        (test_data,),
-        aten_op=BatchNorm2dNoStats.aten_ops,
-    )
-    pipeline.run()
+@pytest.mark.skip(
+    reason="MLETORCH-999: Add support for _native_batch_norm_legit.no_stats."
+)
+def test_native_batch_norm_legit_no_stats_tosa_MI():
+    pass
 
 
 @pytest.mark.skip(
     reason="MLETORCH-999: Add support for _native_batch_norm_legit.no_stats."
 )
-def test_native_batch_norm_legit_no_stats_tosa_BI(test_data: Tuple):
-    test_data, model_params = test_data()
-    pipeline = TosaPipelineBI[input_t1](
-        BatchNorm2dNoStats(*model_params),
-        (test_data,),
-        aten_op=BatchNorm2dNoStats.aten_ops,
-        qtol=1,
-    )
-    pipeline.run()
+def test_native_batch_norm_legit_no_stats_tosa_BI():
+    pass
 
 
 @pytest.mark.skip(
     reason="MLETORCH-999: Add support for _native_batch_norm_legit.no_stats."
 )
-@common.parametrize("test_data", test_data_suite)
-@common.XfailIfNoCorstone300
-def test_native_batch_norm_legit_no_stats_u55_BI(test_data: Tuple):
-    test_data, model_params = test_data()
-    pipeline = EthosU55PipelineBI[input_t1](
-        BatchNorm2dNoStats(*model_params),
-        (test_data,),
-        aten_op=BatchNorm2dNoStats.aten_ops,
-        run_on_fvp=True,
-        qtol=1,
-    )
-    pipeline.run()
+def test_native_batch_norm_legit_no_stats_u55_BI():
+    pass
 
 
 @pytest.mark.skip(
     reason="MLETORCH-999: Add support for _native_batch_norm_legit.no_stats."
 )
-@common.parametrize("test_data", test_data_suite)
-@common.XfailIfNoCorstone320
-def test_native_batch_norm_legit_no_stats_u85_BI(test_data: Tuple):
-    test_data, model_params = test_data()
-    pipeline = EthosU85PipelineBI[input_t1](
-        BatchNorm2dNoStats(*model_params),
-        (test_data,),
-        aten_op=BatchNorm2dNoStats.aten_ops,
-        run_on_fvp=False,
-        qtol=1,
-    )
-    pipeline.run()
+def test_native_batch_norm_legit_no_stats_u85_BI():
+    pass

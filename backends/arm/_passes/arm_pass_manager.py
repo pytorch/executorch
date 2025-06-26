@@ -25,9 +25,7 @@ from executorch.backends.arm._passes import (
     ConvertSplitToSlicePass,
     ConvertSqueezesToViewPass,
     ConvertToClampPass,
-    DecomposeAtanPass,
     DecomposeAvgPool2d,
-    DecomposeBatchNormNoStatsPass,
     DecomposeCosineSimilarityPass,
     DecomposeDivPass,
     DecomposeEmbeddingPass,
@@ -152,7 +150,6 @@ class ArmPassManager(PassManager):
     def _tosa_080_MI_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
         self.add_pass(DecomposeRoundPass())
         self.add_pass(DecomposeSqrtPass())
-        self.add_pass(DecomposeAtanPass())
         self.add_pass(ConvertIntPowToMuls())
         self.add_pass(CastBoolToInt8Pass())
         self.add_pass(DecomposeSinhPass())
@@ -167,7 +164,6 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeLeakyReLUPass())
         self.add_pass(DecomposeGroupNormPass())
         self.add_pass(DecomposeLayerNormPass())
-        self.add_pass(DecomposeBatchNormNoStatsPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(
             DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec)

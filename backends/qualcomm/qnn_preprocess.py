@@ -78,7 +78,10 @@ class QnnBackend(BackendDetails):
                         )
                         assert node.target == context_loader_target, err_msg
                         # if graph has context binary loader node, return directly
-                        return node.meta[OpContextLoader.meta_ctx_bin]
+                        return PreprocessResult(
+                            processed_bytes=node.meta[OpContextLoader.meta_ctx_bin],
+                            debug_handle_map={},
+                        )
                     except:
                         raise RuntimeError(err_msg)
 
@@ -158,7 +161,7 @@ class QnnBackend(BackendDetails):
                 generate_qnn_executorch_option(compile_spec)
             )
             qnn_manager.Init()
-            py_op_wrapper_list, ctx_binary_list = [], []
+            py_op_wrapper_list = []
             for j, programs in enumerate(edge_programs.values()):
                 logger.info(f"Processing Method({j}): ({i+1}/{num_sub_graphs})")
                 py_op_wrappers = QnnBackend._build_op_wrappers(
@@ -166,36 +169,22 @@ class QnnBackend(BackendDetails):
                     qnn_manager.IsTensorDump(),
                     option.op_package_options.op_package_infos,
                 )
-                if isinstance(py_op_wrappers, bytes):
-                    ctx_binary_list.append(py_op_wrappers)
-                else:
-                    py_op_wrapper_list.append(
-                        [
-                            py_op_wrapper.GetOpWrapper()
-                            for py_op_wrapper in py_op_wrappers
-                        ]
-                    )
+                py_op_wrapper_list.append(
+                    [py_op_wrapper.GetOpWrapper() for py_op_wrapper in py_op_wrappers]
+                )
 
-            if len(py_op_wrapper_list) == len(edge_programs.values()):
-                qnn_context_binary = qnn_manager.Compile(graph_name, py_op_wrapper_list)
-                assert (
-                    len(qnn_context_binary) != 0
-                ), "Failed to generate Qnn context binary."
-                qnn_manager.Destroy()
-                # methods should share the same context binary for current partition
-                for key in edge_programs.keys():
-                    all_processed_results[key].append(
-                        PreprocessResult(
-                            processed_bytes=bytes(qnn_context_binary),
-                            debug_handle_map={},
-                        )
+            qnn_context_binary = qnn_manager.Compile(graph_name, py_op_wrapper_list)
+            assert (
+                len(qnn_context_binary) != 0
+            ), "Failed to generate Qnn context binary."
+            qnn_manager.Destroy()
+            # methods should share the same context binary for current partition
+            for key in edge_programs.keys():
+                all_processed_results[key].append(
+                    PreprocessResult(
+                        processed_bytes=bytes(qnn_context_binary),
+                        debug_handle_map={},
                     )
-            elif len(ctx_binary_list) == len(edge_programs.values()):
-                for i, key in enumerate(edge_programs.keys()):
-                    all_processed_results[key].append(
-                        PreprocessResult(processed_bytes=ctx_binary_list[i])
-                    )
-            else:
-                raise RuntimeError("Hybrid compilation is not supported")
+                )
 
         return all_processed_results

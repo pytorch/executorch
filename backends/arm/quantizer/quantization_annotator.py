@@ -214,7 +214,6 @@ _one_to_one = [
     torch.ops.aten.pow.Tensor_Scalar,
     torch.ops.aten.gelu.default,
     torch.ops.aten.sinh.default,
-    torch.ops.aten.atan.default,
 ]
 
 _one_to_one_shared_input_qspec = [

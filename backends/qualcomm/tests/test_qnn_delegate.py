@@ -5622,68 +5622,6 @@ class TestUtilsScript(TestQNN):
                         qhas_data = json.load(qhas_file)
                         self.assertIn("data", qhas_data)
 
-    def test_cli(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            sample_input = torch.randn(1, 2, 3, 4)
-            ep = torch.export.export(Relu(), (sample_input,))  # noqa: F405
-            torch.export.save(ep, f"{tmp_dir}/relu.pt2")
-            torch.save(sample_input, f"{tmp_dir}/input_0_0.pt")
-            with open(f"{tmp_dir}/input_list", "w") as f:
-                f.write(f"{tmp_dir}/input_0_0.pt\n")
-
-            # quantize
-            cmds = [
-                "python",
-                "-m",
-                "examples.qualcomm.util_scripts.cli",
-                "quantize",
-                "--artifact",
-                f"{tmp_dir}/relu.pt2",
-                "--output_folder",
-                f"{tmp_dir}/q_out",
-                "--input_list",
-                f"{tmp_dir}/input_list",
-            ]
-            subprocess.run(cmds, stdout=subprocess.DEVNULL)
-            self.assertTrue(os.path.isfile(f"{tmp_dir}/q_out/relu_quantized.pt2"))
-            # compile
-            cmds = [
-                "python",
-                "-m",
-                "examples.qualcomm.util_scripts.cli",
-                "compile",
-                "--artifact",
-                f"{tmp_dir}/q_out/relu_quantized.pt2",
-                "--output_folder",
-                f"{tmp_dir}/c_out",
-                "--model",
-                self.model,
-            ]
-            subprocess.run(cmds, stdout=subprocess.DEVNULL)
-            self.assertTrue(os.path.isfile(f"{tmp_dir}/c_out/relu_quantized.pte"))
-            self.assertTrue(os.path.isfile(f"{tmp_dir}/c_out/relu_quantized.svg"))
-            # execute
-            cmds = [
-                "python",
-                "-m",
-                "examples.qualcomm.util_scripts.cli",
-                "execute",
-                "--artifact",
-                f"{tmp_dir}/c_out/relu_quantized.pte",
-                "--output_folder",
-                f"{tmp_dir}/e_out",
-                "--model",
-                self.model,
-                "--device",
-                self.device,
-                "--build_folder",
-                self.build_folder,
-                "--input_list",
-                f"{tmp_dir}/input_list",
-            ]
-            subprocess.run(cmds, stdout=subprocess.DEVNULL)
-            self.assertTrue(os.path.isfile(f"{tmp_dir}/e_out/output_0_0.pt"))
-
 
 def setup_environment():
     parser = setup_common_args_and_variables()
