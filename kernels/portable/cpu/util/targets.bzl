@@ -13,6 +13,7 @@ def define_common_targets():
         name = "all_deps",
         exported_deps = [
             "//executorch/extension/threadpool:threadpool",
+            "//executorch/kernels/portable/cpu/util:arange_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:kernel_ops_util",
@@ -114,10 +115,10 @@ def define_common_targets():
             ":vectorized_math",
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
             "//executorch/runtime/kernel:kernel_runtime_context",
+            "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/extension/threadpool:threadpool",
         ],
         deps = [
-            "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/runtime/kernel:kernel_includes",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS"],
@@ -298,6 +299,19 @@ def define_common_targets():
             "//executorch/runtime/kernel:kernel_includes",
         ],
         visibility = ["//executorch/kernels/portable/cpu/..."],
+    )
+
+    runtime.cxx_library(
+        name = "arange_util",
+        srcs = ["arange_util.cpp"],
+        exported_headers = ["arange_util.h"],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = [
+            "//executorch/kernels/portable/cpu/...",
+            "//executorch/extension/llm/...",
+        ],
     )
 
     runtime.cxx_library(
