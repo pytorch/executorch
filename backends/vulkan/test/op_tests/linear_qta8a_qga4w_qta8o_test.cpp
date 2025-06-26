@@ -140,3 +140,339 @@ at::Tensor linear_qta8a_qga4w_qta8o_4bit_dequant_impl(
 
   return quantized_result;
 }
+
+void test_vulkan_linear_qta8a_qga4w_qta8o_impl(
+    const int B,
+    const int M,
+    const int K,
+    const int N,
+    const int group_size = 8,
+    const vkcompute::utils::StorageType in_storage =
+        vkcompute::utils::kTexture3D,
+    const vkcompute::utils::StorageType out_storage =
+        vkcompute::utils::kTexture3D) {
+  assert(K % group_size == 0);
+
+  // Create per-token quantization parameters for input
+  const int64_t input_num_tokens = B * M;
+  at::Tensor input_scale =
+      at::rand({input_num_tokens}, at::device(at::kCPU).dtype(at::kFloat)) *
+          0.1f +
+      0.05f; // Range [0.05, 0.15]
+  at::Tensor input_zero_point = at::randint(
+      -10, 10, {input_num_tokens}, at::device(at::kCPU).dtype(at::kInt));
+
+  at::Tensor float_x =
+      at::rand({B, M, K}, at::device(at::kCPU).dtype(at::kFloat));
+
+  // Create a reference quantized tensor using per-token quantization
+  // Mimic per-token quantization using at::quantize_per_channel by reshaping to
+  // [num_tokens, features]
+  at::Tensor float_x_reshaped = float_x.view({input_num_tokens, K});
+  at::Tensor qx_ref_reshaped = at::quantize_per_channel(
+      float_x_reshaped,
+      input_scale.to(at::kDouble),
+      input_zero_point.to(at::kLong),
+      0, // axis 0 for per-token (first dimension after reshape)
+      c10::ScalarType::QInt8);
+
+  // Convert back to int8 tensor and reshape to original shape
+  at::Tensor x =
+      at::int_repr(qx_ref_reshaped).view(float_x.sizes()).to(at::kChar);
+
+  at::Tensor weights_4x2 =
+      at::randint(0, 256, {N, K / 2}, at::device(at::kCPU).dtype(at::kByte));
+
+  const int k_groups = K / group_size;
+  at::Tensor scales_and_zeros =
+      at::rand({k_groups, N, 2}, at::device(at::kCPU).dtype(at::kFloat));
+
+  // Create per-token quantization parameters for output
+  const int64_t output_num_tokens = B * M;
+  at::Tensor output_scale =
+      at::rand({output_num_tokens}, at::device(at::kCPU).dtype(at::kFloat)) *
+          0.1f +
+      0.1f; // Range [0.1, 0.2]
+  at::Tensor output_zero_point = at::randint(
+      -10, 10, {output_num_tokens}, at::device(at::kCPU).dtype(at::kInt));
+
+  at::Tensor out_ref = linear_qta8a_qga4w_qta8o_4bit_dequant_impl(
+      x,
+      input_scale,
+      input_zero_point,
+      weights_4x2,
+      group_size,
+      scales_and_zeros,
+      output_scale,
+      output_zero_point);
+
+  // Build Vulkan graph
+  using namespace vkcompute;
+
+  GraphConfig config;
+  config.set_storage_type_override(utils::kTexture3D);
+  ComputeGraph graph(config);
+
+#define MAKE_TENSORREF_FOR(x)              \
+  ValueRef r_##x = graph.add_tensorref(    \
+      x.sizes().vec(),                     \
+      from_at_scalartype(x.scalar_type()), \
+      x.const_data_ptr());
+
+  MAKE_TENSORREF_FOR(weights_4x2);
+  MAKE_TENSORREF_FOR(scales_and_zeros);
+
+  IOValueRef r_x = graph.add_input_tensor(
+      x.sizes().vec(), from_at_scalartype(x.scalar_type()), in_storage);
+
+  IOValueRef r_input_scale = graph.add_input_tensor(
+      input_scale.sizes().vec(),
+      from_at_scalartype(input_scale.scalar_type()),
+      utils::kBuffer);
+
+  IOValueRef r_input_zero_point = graph.add_input_tensor(
+      input_zero_point.sizes().vec(),
+      from_at_scalartype(input_zero_point.scalar_type()),
+      utils::kBuffer);
+
+  IOValueRef r_output_scale = graph.add_input_tensor(
+      output_scale.sizes().vec(),
+      from_at_scalartype(output_scale.scalar_type()),
+      utils::kBuffer);
+
+  IOValueRef r_output_zero_point = graph.add_input_tensor(
+      output_zero_point.sizes().vec(),
+      from_at_scalartype(output_zero_point.scalar_type()),
+      utils::kBuffer);
+
+  const ValueRef r_out = graph.add_tensor(
+      out_ref.sizes().vec(),
+      from_at_scalartype(out_ref.scalar_type()),
+      out_storage);
+
+  VK_GET_OP_FN("et_vk.linear_qta8a_qga4w_qta8o.default")
+  (graph,
+   {r_x.value,
+    r_input_scale.value,
+    r_input_zero_point.value,
+    r_weights_4x2,
+    graph.add_scalar<int64_t>(group_size),
+    r_scales_and_zeros,
+    r_output_scale.value,
+    r_output_zero_point.value,
+    r_out});
+
+  ValueRef staging_out = graph.set_output_tensor(r_out);
+
+  graph.prepare();
+  graph.encode_prepack();
+  graph.prepack();
+  graph.encode_execute();
+
+  //
+  // Run model
+  //
+
+  graph.propagate_resize();
+  graph.copy_into_staging(r_x.staging, x.const_data_ptr(), x.numel());
+  graph.copy_into_staging(
+      r_input_scale.staging, input_scale.const_data_ptr(), input_scale.numel());
+  graph.copy_into_staging(
+      r_input_zero_point.staging,
+      input_zero_point.const_data_ptr(),
+      input_zero_point.numel());
+  graph.copy_into_staging(
+      r_output_scale.staging,
+      output_scale.const_data_ptr(),
+      output_scale.numel());
+  graph.copy_into_staging(
+      r_output_zero_point.staging,
+      output_zero_point.const_data_ptr(),
+      output_zero_point.numel());
+
+  graph.execute();
+
+  at::Tensor vk_out = at::empty_like(out_ref);
+  graph.copy_from_staging(
+      staging_out, vk_out.mutable_data_ptr(), vk_out.numel());
+
+  // For quantized int8 operations, allow for 1-unit differences due to rounding
+  bool is_close = at::allclose(vk_out, out_ref, 1.0, 1.0);
+
+  at::Tensor weights_int = unpack_weights_4x2(weights_4x2);
+
+  if (!is_close) {
+    std::cout << "out_ref: \n" << out_ref << std::endl;
+    std::cout << "vk_out: \n" << vk_out << std::endl;
+  }
+
+  ASSERT_TRUE(is_close);
+}
+
+void test_vulkan_linear_qta8a_qga4w_qta8o(
+    const int B,
+    const int M,
+    const int K,
+    const int N,
+    const int group_size = 32) {
+  test_vulkan_linear_qta8a_qga4w_qta8o_impl(
+      B,
+      M,
+      K,
+      N,
+      group_size,
+      vkcompute::utils::kBuffer,
+      vkcompute::utils::kBuffer);
+
+  test_vulkan_linear_qta8a_qga4w_qta8o_impl(
+      B,
+      M,
+      K,
+      N,
+      group_size,
+      vkcompute::utils::kTexture3D,
+      vkcompute::utils::kTexture3D);
+}
+
+TEST(
+    VulkanLinearQTA8AQGA4WQTA8OTest,
+    test_vulkan_linear_quant_gemm_custom_groupsize_one) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  test_vulkan_linear_qta8a_qga4w_qta8o(
+      /*B = */ 1,
+      /*M = */ 2,
+      /*K = */ 8,
+      /*N = */ 8,
+      /*group_size = */ 8);
+}
+
+TEST(
+    VulkanLinearQTA8AQGA4WQTA8OTest,
+    test_vulkan_linear_quant_gemm_custom_groupsize_two) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  test_vulkan_linear_qta8a_qga4w_qta8o(
+      /*B = */ 1,
+      /*M = */ 2,
+      /*K = */ 16,
+      /*N = */ 8,
+      /*group_size = */ 8);
+}
+
+TEST(VulkanLinearQTA8AQGA4WQTA8OTest, test_vulkan_linear_quant_gemm_case_one) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  test_vulkan_linear_qta8a_qga4w_qta8o(
+      /*B = */ 1,
+      /*M = */ 4,
+      /*K = */ 64,
+      /*N = */ 32);
+}
+
+TEST(VulkanLinearQTA8AQGA4WQTA8OTest, test_vulkan_linear_quant_gemm_case_two) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  test_vulkan_linear_qta8a_qga4w_qta8o(
+      /*B = */ 1,
+      /*M = */ 4,
+      /*K = */ 128,
+      /*N = */ 32);
+}
+
+TEST(
+    VulkanLinearQTA8AQGA4WQTA8OTest,
+    test_vulkan_linear_quant_gemm_case_three) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  test_vulkan_linear_qta8a_qga4w_qta8o(
+      /*B = */ 1,
+      /*M = */ 8,
+      /*K = */ 64,
+      /*N = */ 16);
+}
+
+TEST(VulkanLinearQTA8AQGA4WQTA8OTest, test_vulkan_linear_quant_gemm_case_four) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  test_vulkan_linear_qta8a_qga4w_qta8o(
+      /*B = */ 1,
+      /*M = */ 256,
+      /*K = */ 256,
+      /*N = */ 256);
+}
+
+TEST(
+    VulkanLinearQTA8AQGA4WQTA8OTest,
+    test_vulkan_linear_quant_gemv_custom_groupsize_one) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  test_vulkan_linear_qta8a_qga4w_qta8o(
+      /*B = */ 1,
+      /*M = */ 2,
+      /*K = */ 16,
+      /*N = */ 8,
+      /*group_size = */ 8);
+}
+
+TEST(VulkanLinearQTA8AQGA4WQTA8OTest, test_vulkan_linear_quant_gemv_case_one) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  test_vulkan_linear_qta8a_qga4w_qta8o(
+      /*B = */ 1,
+      /*M = */ 1,
+      /*K = */ 256,
+      /*N = */ 256);
+}
+
+TEST(VulkanLinearQTA8AQGA4WQTA8OTest, test_vulkan_linear_quant_gemv_case_two) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  test_vulkan_linear_qta8a_qga4w_qta8o(
+      /*B = */ 1,
+      /*M = */ 1,
+      /*K = */ 32,
+      /*N = */ 32);
+}
+
+TEST(
+    VulkanLinearQTA8AQGA4WQTA8OTest,
+    test_vulkan_linear_quant_gemv_case_three) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  test_vulkan_linear_qta8a_qga4w_qta8o(
+      /*B = */ 1,
+      /*M = */ 1,
+      /*K = */ 64,
+      /*N = */ 16);
+}
