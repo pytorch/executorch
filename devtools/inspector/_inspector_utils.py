@@ -301,14 +301,18 @@ def gen_graphs_from_etrecord(
     return op_graph_map
 
 
+# One debug handle should only be associated with one node. We are in the middle of migrating debug handle generation
+# from graph after to_edge to graph after torch.export, one every debug handle in exported graph may be associated with multiple nodes in to_edge
+# graph. After fully migration, we should bring the bring type as well as the #node check back.
+# TODO(gasoonjia): recover the return type to Dict[int, List[OperatorNode], reenable the #node check.
 def create_debug_handle_to_op_node_mapping(
     op_graph: OperatorGraph,
-) -> Dict[int, OperatorNode]:
+) -> Dict[int, List[OperatorNode]]:
     """
     Recursive function to traverse all the operator graph nodes of input op_graph and build a mapping
     from each debug handle to the operator node that contains the debug handle in its metadata.
     """
-    debug_handle_to_op_node_map: Dict[int, OperatorNode] = {}
+    debug_handle_to_op_node_map: Dict[int, List[OperatorNode]] = {}
 
     # Recursively searches through the metadata of nodes
     def _extract_debug_handles(graph: OperatorGraph):
@@ -318,14 +322,13 @@ def create_debug_handle_to_op_node_mapping(
             if isinstance(element, OperatorNode) and element.metadata is not None:
                 metadata = element.metadata
                 debug_handle = metadata.get("debug_handle")
-                if debug_handle is not None:
-                    existing_entry = debug_handle_to_op_node_map.get(debug_handle)
-                    if existing_entry is not None:
-                        raise ValueError(
-                            f"Duplicated debug handle {str(debug_handle)} shared between {element.name} and {existing_entry.name}. "
-                            "No two op nodes of the same graph should have the same debug handle."
-                        )
-                    debug_handle_to_op_node_map[debug_handle] = element
+                if debug_handle is None:
+                    continue
+
+                if debug_handle not in debug_handle_to_op_node_map:
+                    debug_handle_to_op_node_map[debug_handle] = []
+
+                debug_handle_to_op_node_map[debug_handle].append(element)
 
     # Start traversing
     _extract_debug_handles(op_graph)

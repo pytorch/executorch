@@ -62,25 +62,17 @@ class ConvlLinearModel(nn.Module):
         Returns the expected outputs of the debug handles and intermediate output mapping for this model for the given input.
         """
         return {
-            (10,): torch.tensor([[[[7.7000, 6.7000], [4.7000, 3.7000]]]]),
-            (11,): torch.tensor([[7.7000, 6.7000, 4.7000, 3.7000]]),
-            (12,): torch.tensor(
-                [
-                    [0.1000, 0.5000],
-                    [0.2000, 0.6000],
-                    [0.3000, 0.7000],
-                    [0.4000, 0.8000],
-                ]
-            ),
-            (13,): torch.tensor([[5.0000, 14.1200]]),
-            (14,): torch.tensor([[5.5000, 13.6200]]),
-            (15,): torch.tensor([[5.4000, 13.5200]]),
-            (16,): torch.tensor([[10.8000, 6.7600]]),
-            (17,): torch.tensor([3.0000, 1.5000]),
-            (18,): torch.tensor([[3.6000, 4.5067]]),
-            (19,): torch.tensor([[3.6000, 4.5067]]),
-            (20,): torch.tensor([[0.9734, 0.9891]]),
-            (21,): [torch.tensor([[0.9734]]), torch.tensor([[0.9891]])],
+            (1,): torch.tensor([[[[7.7000, 6.7000], [4.7000, 3.7000]]]]),
+            (2,): torch.tensor([[7.7000, 6.7000, 4.7000, 3.7000]]),
+            (3,): torch.tensor([[5.0000, 14.1200]]),
+            (4,): torch.tensor([[5.5000, 13.6200]]),
+            (5,): torch.tensor([[5.4000, 13.5200]]),
+            (6,): torch.tensor([[10.8000, 6.7600]]),
+            (7,): torch.tensor([3.0000, 1.5000]),
+            (8,): torch.tensor([[3.6000, 4.5067]]),
+            (9,): torch.tensor([[3.6000, 4.5067]]),
+            (10,): torch.tensor([[0.9734, 0.9891]]),
+            (11,): [torch.tensor([[0.9734]]), torch.tensor([[0.9891]])],
         }
 
 
