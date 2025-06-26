@@ -1012,17 +1012,46 @@ struct PyProgram final {
       program_(load_program(
         loader_.get(),
         program_verification)) {}
+
   static std::unique_ptr<PyProgram> load_from_buffer(
     const py::bytes& buffer,
     Program::Verification program_verification =
         Program::Verification::Minimal) {
     return std::make_unique<PyProgram>(buffer, program_verification);
   }
+
   static std::unique_ptr<PyProgram> load_from_file(
     const std::string& path,
     Program::Verification program_verification =
         Program::Verification::Minimal) {
     return std::make_unique<PyProgram>(path, program_verification);
+  }
+
+  PyProgram(const PyProgram&) = delete;
+  PyProgram& operator=(const PyProgram&) = delete;
+  PyProgram(PyProgram&&) = default;
+  PyProgram& operator=(PyProgram&&) = default;
+
+  size_t num_methods() const {
+    return program_->num_methods();
+  }
+
+  std::string get_method_name(size_t method_index) const {
+    Result<const char*> res = program_->get_method_name(method_index);
+    THROW_IF_ERROR(
+      res.error(),
+      "Failed get method name, error: 0x:%" PRIx32,
+      static_cast<uint32_t>(res.error()));
+    return std::string(res.get());
+  }
+
+  std::string get_output_flattening_encoding(std::string method_name) const {
+    Result<const char*> res = program_->get_output_flattening_encoding(method_name.c_str());
+    THROW_IF_ERROR(
+      res.error(),
+      "Failed get output flattening encoding, error: 0x:%" PRIx32,
+      static_cast<uint32_t>(res.error()));
+    return std::string(res.get());
   }
  private:
   std::unique_ptr<DataLoader> loader_;
@@ -1231,7 +1260,13 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       py::arg("program_verification") =
           Program::Verification::Minimal,
       call_guard);
-  py::class_<PyProgram>(m, "ExecuTorchProgram");
+  py::class_<PyProgram>(m, "ExecuTorchProgram")
+      .def("num_methods", &PyProgram::num_methods, call_guard)
+      .def(
+          "get_method_name",
+          &PyProgram::get_method_name,
+          py::arg("method_index"),
+          call_guard);
 }
 
 namespace {
