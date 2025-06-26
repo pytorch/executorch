@@ -298,7 +298,6 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
       jboolean echo) {
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-
       return static_cast<jint>(multi_modal_runner_->generate_from_pos(
           prompt->toStdString(),
           seq_len,
