@@ -366,6 +366,7 @@ jobs:
         # build module for executorch.extension.pybindings.portable_lib
         bash test/build_size_test.sh
         strip cmake-out/test/size_test
+        strip --strip-debug cmake-out/test/size_test
         output=$(ls -la cmake-out/test/size_test)
         arr=($output)
         size=${arr[4]}
@@ -403,6 +404,7 @@ jobs:
         # build module for executorch.extension.pybindings.portable_lib
         bash test/build_size_test.sh
         strip cmake-out/test/size_test
+        strip --strip-debug cmake-out/test/size_test
         output=$(ls -la cmake-out/test/size_test)
         arr=($output)
         size=${arr[4]}
