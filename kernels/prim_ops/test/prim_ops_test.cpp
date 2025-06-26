@@ -326,8 +326,7 @@ TEST_F(RegisterPrimOpsTest, TestNegScalarWithTensorFails) {
 
   // Try to negate a tensor, which should cause a runtime error.
   ET_EXPECT_KERNEL_FAILURE(
-      context_,
-      getOpsFn("executorch_prim::neg.Scalar")(context_, stack));
+      context_, getOpsFn("executorch_prim::neg.Scalar")(context_, stack));
 }
 
 TEST_F(RegisterPrimOpsTest, TestETView) {
