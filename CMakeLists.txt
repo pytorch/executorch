@@ -617,9 +617,9 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   if(EXECUTORCH_BUILD_XNNPACK)
-    # need to explicitly specify XNNPACK and microkernels-prod here otherwise
+    # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here otherwise
     # uses XNNPACK and microkernel-prod symbols from libtorch_cpu
-    list(APPEND _dep_libs xnnpack_backend XNNPACK microkernels-prod)
+    list(APPEND _dep_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
   endif()
 
   # compile options for pybind

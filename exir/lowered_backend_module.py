@@ -599,7 +599,10 @@ def _get_new_signature(  # noqa: C901
 
                     if any(
                         orig_output_spec.kind == OutputKind.BUFFER_MUTATION
-                        and orig_output_spec.target in new_state_dict
+                        and (
+                            orig_output_spec.target in new_state_dict
+                            or orig_output_spec.target in new_constants
+                        )
                         for orig_output_spec in orig_output_specs
                     ):
                         # If the delegate wants to consume the buffer, then the
@@ -612,7 +615,10 @@ def _get_new_signature(  # noqa: C901
                             orig_output_spec
                             for orig_output_spec in orig_output_specs
                             if orig_output_spec.kind == OutputKind.BUFFER_MUTATION
-                            and orig_output_spec.target in new_state_dict
+                            and (
+                                orig_output_spec.target in new_state_dict
+                                or orig_output_spec.target in new_constants
+                            )
                         ][0]
 
                         assert len(orig_output_specs) == 1, (
