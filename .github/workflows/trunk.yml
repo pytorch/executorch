@@ -554,6 +554,7 @@ jobs:
           google/gemma-3-1b-it,
           Qwen/Qwen3-0.6B,
           HuggingFaceTB/SmolLM2-135M,
+          microsoft/Phi-4-mini-instruct,
           meta-llama/Llama-3.2-1B,
           allenai/OLMo-1B-hf,
         ]
@@ -597,7 +598,7 @@ jobs:
         git clone https://github.com/huggingface/optimum-executorch
         pushd optimum-executorch
         # There is no release yet, for CI stability, always test from the same commit on main
-        git checkout 4c3b18f6cca68c5ccff809131d570062723d7188
+        git checkout a3942627f5ac048e06b4b1d703b0a6a53bf6da5b
         python install_dev.py --skip_override_torch
         popd
         pip list

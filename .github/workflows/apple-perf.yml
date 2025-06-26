@@ -72,7 +72,7 @@ jobs:
           # Separate default values from the workflow dispatch. To ensure defaults are accessible
           # during scheduled runs and to provide flexibility for different defaults between
           # on-demand and periodic benchmarking.
-          CRON_DEFAULT_MODELS: ${{ github.event_name == 'schedule' && 'mv3,mv2,ic4,ic3,resnet50,edsr,mobilebert,w2l,meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8,meta-llama/Llama-3.2-1B-Instruct-QLORA_INT4_EO8,Qwen/Qwen3-0.6B,HuggingFaceTB/SmolLM2-135M,meta-llama/Llama-3.2-1B,allenai/OLMo-1B-hf' || 'Qwen/Qwen3-0.6B' }}
+          CRON_DEFAULT_MODELS: ${{ github.event_name == 'schedule' && 'mv3,mv2,ic4,ic3,resnet50,edsr,mobilebert,w2l,meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8,meta-llama/Llama-3.2-1B-Instruct-QLORA_INT4_EO8,Qwen/Qwen3-0.6B,HuggingFaceTB/SmolLM2-135M,microsoft/Phi-4-mini-instruct,meta-llama/Llama-3.2-1B,allenai/OLMo-1B-hf' || 'Qwen/Qwen3-0.6B' }}
           CRON_DEFAULT_DEVICES: apple_iphone_15
         run: |
           set -eux
@@ -349,7 +349,7 @@ jobs:
             git clone https://github.com/huggingface/optimum-executorch
             pushd optimum-executorch
             # There is no release yet, for CI stability, always test from the same commit on main
-            git checkout 4c3b18f6cca68c5ccff809131d570062723d7188
+            git checkout a3942627f5ac048e06b4b1d703b0a6a53bf6da5b
             ${CONDA_RUN} python install_dev.py --skip_override_torch
             pip list
 
