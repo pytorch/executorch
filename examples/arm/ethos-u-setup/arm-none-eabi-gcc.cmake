@@ -108,7 +108,7 @@ add_compile_options(
   -Wno-psabi
 )
 
-if (CMAKE_ARM_ARCH_ABI STREQUAL "arm-zephyr-eabi")
+if(CMAKE_ARM_ARCH_ABI STREQUAL "arm-zephyr-eabi")
   add_compile_options(
     -Wno-stringop-overread
     -Wno-error=format=
