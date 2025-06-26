@@ -74,6 +74,15 @@ class OpFillTest : public OperatorTest {
     // Check `out` matches expected output.
     EXPECT_TENSOR_EQ(out, exp_out);
   }
+
+  template <ScalarType DTYPE>
+  void expect_bad_scalar_value_dies(const Scalar& bad_value) {
+    TensorFactory<DTYPE> tf;
+    Tensor a = tf.ones({2, 2});
+    Tensor out = tf.zeros({2, 2});
+
+    ET_EXPECT_KERNEL_FAILURE(context_, op_fill_scalar_out(a, bad_value, out));
+  }
 };
 
 // A macro for defining tests for both scalar and tensor variants of
@@ -156,4 +165,29 @@ TEST_F(OpFillTest, MismatchedOutputDtypeDies) {
 
   // Assert `out` can't be filled due to incompatible dtype.
   ET_EXPECT_KERNEL_FAILURE(context_, op_fill_scalar_out(self, 0.0, out));
+}
+
+TEST_F(OpFillTest, ByteTensorTooLargeScalarDies) {
+  // Cannot be represented by a uint8_t.
+  expect_bad_scalar_value_dies<ScalarType::Byte>(256);
+}
+
+TEST_F(OpFillTest, CharTensorTooSmallScalarDies) {
+  // Cannot be represented by a int8_t.
+  expect_bad_scalar_value_dies<ScalarType::Char>(-129);
+}
+
+TEST_F(OpFillTest, ShortTensorTooLargeScalarDies) {
+  // Cannot be represented by a int16_t.
+  expect_bad_scalar_value_dies<ScalarType::Short>(32768);
+}
+
+TEST_F(OpFillTest, FloatTensorTooSmallScalarDies) {
+  // Cannot be represented by a float.
+  expect_bad_scalar_value_dies<ScalarType::Float>(-3.41e+38);
+}
+
+TEST_F(OpFillTest, FloatTensorTooLargeScalarDies) {
+  // Cannot be represented by a float.
+  expect_bad_scalar_value_dies<ScalarType::Float>(3.41e+38);
 }
