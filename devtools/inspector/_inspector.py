@@ -654,7 +654,7 @@ class Event:
 
     def _associate_with_op_graph_nodes(
         self,
-        debug_handle_to_op_node_map: Dict[int, OperatorNode],
+        debug_handle_to_op_node_map: Dict[int, List[OperatorNode]],
     ) -> None:
         """
         Helper function to populate the stack_traces, module_hierarchy and op_types attributes
@@ -672,14 +672,21 @@ class Event:
             debug_handles = [debug_handles]
 
         for handle in debug_handles:
-            node = debug_handle_to_op_node_map.get(handle)
-            # Attach node metadata including stack traces, module hierarchy and op_types to this event
-            if node is not None and (metadata := node.metadata) is not None:
-                self.stack_traces[node.name] = metadata.get("stack_trace")
-                self.module_hierarchy[node.name] = metadata.get("nn_module_stack")
-                if node.op:
-                    # TODO: consider having this as a dict from node.name -> node.op
-                    self.op_types += [node.op]
+            nodes = debug_handle_to_op_node_map.get(handle, None)
+            if nodes is None:
+                continue
+
+            for node in nodes:
+                # Attach node metadata including stack traces, module hierarchy and op_types to this event
+                if node is not None and (metadata := node.metadata) is not None:
+                    if node.name not in self.stack_traces:
+                        self.stack_traces[node.name] = metadata.get("stack_trace")
+                        self.module_hierarchy[node.name] = metadata.get(
+                            "nn_module_stack"
+                        )
+                    if node.op:
+                        # TODO: consider having this as a dict from node.name -> node.op
+                        self.op_types += [node.op]
 
 
 @dataclass

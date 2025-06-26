@@ -381,7 +381,9 @@ def gen_mock_operator_graph_with_expected_map() -> (
             "nn_module_stack": "module_hierarchy_relu",
         },
     )
-    mapping[111] = node_fused_conv_relu
+    mapping[111] = [
+        node_fused_conv_relu,
+    ]
     node_sin = OperatorNode(
         "sin",
         [node_fused_conv_relu],
@@ -392,7 +394,9 @@ def gen_mock_operator_graph_with_expected_map() -> (
             "nn_module_stack": "module_hierarchy_sin",
         },
     )
-    mapping[222] = node_sin
+    mapping[222] = [
+        node_sin,
+    ]
     node_cos = OperatorNode(
         "cos",
         [node_sin],
@@ -403,7 +407,9 @@ def gen_mock_operator_graph_with_expected_map() -> (
             "nn_module_stack": "module_hierarchy_cos",
         },
     )
-    mapping[333] = node_cos
+    mapping[333] = [
+        node_cos,
+    ]
     node_div = OperatorNode(
         "div",
         [node_cos],
@@ -414,7 +420,9 @@ def gen_mock_operator_graph_with_expected_map() -> (
             "nn_module_stack": "module_hierarchy_div",
         },
     )
-    mapping[444] = node_div
+    mapping[444] = [
+        node_div,
+    ]
     node_output = ValueNode("output", [node_div])
     return (
         OperatorGraph(
