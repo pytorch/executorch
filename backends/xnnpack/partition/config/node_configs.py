@@ -9,12 +9,7 @@ import operator
 from typing import List, Optional
 
 import torch
-from executorch.backends.xnnpack._passes.fuse_batch_norm_with_conv import (
-    FuseBatchNormWithConvPass,
-)
-from executorch.backends.xnnpack._passes.fuse_batch_norm_with_linear import (
-    FuseBatchNormWithLinearPass,
-)
+from executorch.backends.xnnpack._passes.fuse_batch_norm import FuseBatchNormPass
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
     XNNPartitionerConfig,
@@ -49,9 +44,7 @@ class BatchNormConfig(XNNPartitionerConfig):
             why(node, f"Invalid input target {input_name.split('.')[0]}")
             return False
 
-        can_fuse = FuseBatchNormWithConvPass.can_fuse(
-            input_node, bn, ep
-        ) or FuseBatchNormWithLinearPass.can_fuse(input_node, bn, ep)
+        can_fuse = FuseBatchNormPass.can_fuse(input_node, bn, ep)
         if not can_fuse:
             why(node, f"BatchNorm cannot be fused with {input_name.split('.')[0]}")
             return False
