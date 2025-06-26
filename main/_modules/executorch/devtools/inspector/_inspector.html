@@ -556,6 +556,7 @@
     <span class="n">FORWARD</span><span class="p">,</span>
     <span class="n">gen_etdump_object</span><span class="p">,</span>
     <span class="n">gen_graphs_from_etrecord</span><span class="p">,</span>
+    <span class="n">get_aot_debug_handle_to_op_name_mapping</span><span class="p">,</span>
     <span class="n">inflate_runtime_output</span><span class="p">,</span>
     <span class="n">is_debug_output</span><span class="p">,</span>
     <span class="n">is_inference_output_equal</span><span class="p">,</span>
@@ -1588,6 +1589,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_reference_outputs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ProgramOutput</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_enable_module_hierarchy</span> <span class="o">=</span> <span class="n">enable_module_hierarchy</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_aot_intermediate_outputs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_aot_debug_handles_to_op_names</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_consume_etrecord</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_consume_etrecord</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -1654,6 +1656,9 @@
             <span class="k">return</span>
         <span class="n">export_program</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">edge_dialect_program</span>
         <span class="n">graph_module</span> <span class="o">=</span> <span class="n">export_program</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_aot_debug_handles_to_op_names</span> <span class="o">=</span> <span class="n">get_aot_debug_handle_to_op_name_mapping</span><span class="p">(</span>
+            <span class="n">graph_module</span>
+        <span class="p">)</span>
         <span class="n">capturer</span> <span class="o">=</span> <span class="n">IntermediateOutputCapturer</span><span class="p">(</span><span class="n">graph_module</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_aot_intermediate_outputs</span> <span class="o">=</span> <span class="n">capturer</span><span class="o">.</span><span class="n">run_and_capture</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">_representative_inputs</span>
