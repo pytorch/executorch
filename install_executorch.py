@@ -49,6 +49,19 @@ def clean():
         shutil.rmtree(d, ignore_errors=True)
     print("Cleaning buck-out/...")
     shutil.rmtree("buck-out/", ignore_errors=True)
+
+    # Clean ccache if available
+    try:
+        result = subprocess.run(["ccache", "--version"], capture_output=True, text=True)
+        if result.returncode == 0:
+            print("Cleaning ccache...")
+            subprocess.run(["ccache", "--clear"], check=True)
+            print("ccache cleared successfully.")
+        else:
+            print("ccache not found, skipping ccache cleanup.")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("ccache not found, skipping ccache cleanup.")
+
     print("Done cleaning build artifacts.")
 
 
