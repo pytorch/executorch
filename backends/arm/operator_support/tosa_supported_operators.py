@@ -243,6 +243,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             torch.ops.aten.scalar_tensor.default,
             exir_ops.edge.aten.gelu.default,
             exir_ops.edge.aten.alias_copy.default,
+            exir_ops.edge.aten.sinh.default,
         ]
 
         return supported

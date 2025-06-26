@@ -136,6 +136,18 @@ python_unittest(
     ],
 )
 
+python_unittest(
+    name = "reinplace_pass",
+    srcs = [
+        "test_reinplace_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir/passes:lib",
+    ],
+)
+
 cpp_library(
     name = "test_lib",
     srcs = [
