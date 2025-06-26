@@ -211,6 +211,12 @@ def define_common_targets(is_fbcode = False):
         ]
     )
     define_test_targets(
+        "linear_qta8a_qga4w_qta8o_test",
+        extra_deps = [
+            ":test_utils",
+        ]
+    )
+    define_test_targets(
         "rotary_embedding_test",
         extra_deps = [
             ":test_utils",
