@@ -22,10 +22,12 @@ from executorch.backends.nxp.tests.executorch_pipeline import (
 )
 from executorch.backends.nxp.tests.executors import (
     convert_run_compare,
+    graph_contains_any_of_ops,
     ToChannelFirstPreprocess,
     ToChannelLastPreprocess,
 )
 from executorch.backends.nxp.tests.models import Conv1dModule, Conv2dModule
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
 
 
@@ -517,3 +519,154 @@ def test_conv2d_conversion__depthwise__padded__quantized(padding, mocker):
         len(nodes) == 7
     )  # input, Quant, lowered_module, delegate_call, getitem, Deq, output
     assert nodes[2].target == "lowered_module_0"
+
+
+@pytest.mark.parametrize(
+    "model, input_shape",
+    [
+        pytest.param(
+            torch.nn.ConvTranspose2d(8, 16, (1, 4), stride=(1, 2)),
+            (1, 8, 1, 16),
+            id="In ch 8, out ch 16, kernel (1, 4), stride (1, 2)",
+        ),
+        pytest.param(
+            torch.nn.ConvTranspose2d(64, 64, (1, 2), stride=(1, 2)),
+            (1, 64, 3, 12),
+            id="In ch 64, out ch 64, kernel (1, 2), stride (1, 2)",
+        ),
+        pytest.param(
+            torch.nn.ConvTranspose2d(
+                16, 24, (1, 6), stride=(1, 6), output_padding=(0, 3)
+            ),
+            (1, 16, 7, 15),
+            id="In ch 16, out ch 24, kernel (1, 6), stride (1, 6), output_padding (0, 3)",
+        ),
+        pytest.param(
+            torch.nn.ConvTranspose2d(16, 40, (1, 4), stride=(1, 4), padding=(0, 1)),
+            (1, 16, 1, 27),
+            id="In ch 16, out ch 40, kernel (1, 4), stride (1, 4), padding (0, 1)",
+        ),
+        pytest.param(
+            torch.nn.ConvTranspose2d(8, 16, (1, 4), stride=(1, 2), padding=(0, 1)),
+            (1, 8, 1, 16),
+            id="In ch 8, out ch 16, kernel (1, 4), stride (1, 2), padding (0, 1)",
+        ),
+        pytest.param(
+            torch.nn.ConvTranspose2d(
+                8, 16, (1, 8), stride=(1, 4), output_padding=(0, 2)
+            ),
+            (1, 8, 1, 16),
+            id="In ch 8, out ch 16, kernel (1, 8), stride (1, 4), output_padding (0, 2)",
+        ),
+        pytest.param(
+            torch.nn.ConvTranspose2d(16, 16, (1, 4), stride=(1, 2)),
+            (1, 16, 1, 16),
+            id="In ch 16, out ch 16, kernel (1, 4), stride (1, 2)",
+        ),
+        pytest.param(
+            torch.nn.ConvTranspose2d(8, 16, (1, 4), stride=(1, 2), bias=False),
+            (1, 8, 1, 16),
+            id="In ch 8, out ch 16, kernel (1, 4), stride (1, 2), no bias",
+        ),
+        pytest.param(
+            torch.nn.ConvTranspose2d(
+                8, 16, (1, 4), stride=(1, 2), padding=(0, 1), bias=False
+            ),
+            (1, 8, 1, 16),
+            id="In ch 8, out ch 16, kernel (1, 4), stride (1, 2),"
+            "padding (0, 1), no bias",
+        ),
+    ],
+)
+def test_conv_transpose2d_conversion__quantized(
+    mocker, model: torch.nn.Module, input_shape
+):
+    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
+
+    edge_program = to_quantized_edge_program(model, input_shape).exported_program()
+
+    # Make sure the `TransposeConv` was delegated.
+    assert not graph_contains_any_of_ops(
+        graph=edge_program.graph, ops=[exir_ops.edge.aten.convolution.default]
+    )
+    assert any("lowered_module" in node.name for node in edge_program.graph.nodes)
+
+    # Capture generated model
+    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+
+    # Capture converted program
+    exported_program: ExportedProgram = converter_spy.call_args.args[1]
+
+    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
+
+    convert_run_compare(
+        exported_program,
+        tflite_input_preprocess=ToChannelLastPreprocess(),
+        tfl_model=tflite_flatbuffers_model,
+        tflite_output_preprocess=ToChannelFirstPreprocess(),
+        input_data=input_data,
+        atol=1.0,
+    )
+
+
+@pytest.mark.parametrize(
+    "model, input_shape",
+    [
+        pytest.param(
+            torch.nn.ConvTranspose2d(8, 16, (1, 4), stride=(1, 2), dilation=(1, 2)),
+            (1, 8, 1, 16),
+            id="In ch 8, out ch 16, kernel (1, 4), stride (1, 2), "
+            "dilation (1, 2) - Dilation != (1, 1)",
+        ),
+        pytest.param(
+            torch.nn.ConvTranspose2d(6, 16, (1, 4), stride=(1, 2)),
+            (1, 6, 1, 16),
+            id="In ch 6, out ch 16, kernel (1, 4), stride (1, 2) - In channels % num_macs != 0",
+        ),
+        pytest.param(
+            torch.nn.ConvTranspose2d(8, 16, (1, 4), stride=(1, 2)),
+            (1, 8, 4, 16),
+            id="In ch 8, out ch 16, kernel (1, 4), stride (1, 2) - Out height != 1, stride width"
+            " != kernel width",
+        ),
+        pytest.param(
+            torch.nn.ConvTranspose2d(8, 16, (2, 4), stride=(1, 2), padding=(0, 1)),
+            (1, 8, 1, 16),
+            id="In ch 8, out ch 16, kernel (2, 4), stride (1, 2), padding "
+            "(0, 1) - Out height != 1, stride width != kernel width",
+        ),
+        pytest.param(
+            torch.nn.ConvTranspose2d(8, 16, (1, 5), stride=(1, 4)),
+            (1, 8, 1, 16),
+            id="In ch 8, out ch 16, kernel (1, 5), stride (1, 4) - Stride width != kernel width / 2"
+            ", stride width != kernel width",
+        ),
+        pytest.param(
+            torch.nn.ConvTranspose2d(16, 12, (1, 4), stride=(3, 3)),
+            (1, 16, 1, 16),
+            id="In ch 16, out ch 12, kernel (1, 4), stride (3, 3) - Out channels % num_macs != 0",
+        ),
+        pytest.param(
+            torch.nn.ConvTranspose2d(64, 64, (1, 4), stride=(1, 2)),
+            (1, 64, 3, 12),
+            id="In ch 64, out ch 64, kernel (1, 4), stride (1, 2) - Out height != 1, stride width"
+            " != kernel width",
+        ),
+        pytest.param(
+            torch.nn.ConvTranspose2d(16, 40, (1, 4), stride=(1, 4), padding=(0, 1)),
+            (1, 16, 4, 27),
+            id="In ch 16, out ch 40, kernel (1, 4), stride (1, 4), padding (0, 1) - Padding width "
+            "!= 1 and input height != 1",
+        ),
+    ],
+)
+def test_conv_transpose2d_non_delegated_conversion__quantized(
+    model: torch.nn.Module, input_shape
+):
+    edge_program = to_quantized_edge_program(model, input_shape).exported_program()
+
+    nodes = list(edge_program.graph.nodes)
+    assert len(nodes) == 15
+    assert (
+        nodes[11].target.__name__ == "aten.convolution.default"
+    )  # TransposeConv not delegated.
