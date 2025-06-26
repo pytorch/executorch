@@ -552,6 +552,7 @@
     <span class="n">EXCLUDED_COLUMNS_WHEN_PRINTING</span><span class="p">,</span>
     <span class="n">EXCLUDED_EVENTS_FOR_INTERMEDIATE_OUTPUT</span><span class="p">,</span>
     <span class="n">EXCLUDED_EVENTS_WHEN_PRINTING</span><span class="p">,</span>
+    <span class="n">find_op_names</span><span class="p">,</span>
     <span class="n">find_populated_event</span><span class="p">,</span>
     <span class="n">FORWARD</span><span class="p">,</span>
     <span class="n">gen_etdump_object</span><span class="p">,</span>
@@ -572,6 +573,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.inspector.numerical_comparator</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">L1Comparator</span><span class="p">,</span>
     <span class="n">MSEComparator</span><span class="p">,</span>
+    <span class="n">SNRComparator</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExportedProgram</span>
 
@@ -1588,8 +1590,6 @@
         <span class="c1"># Key str is method name; value is list of ProgramOutputs because of list of test cases</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_reference_outputs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ProgramOutput</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_enable_module_hierarchy</span> <span class="o">=</span> <span class="n">enable_module_hierarchy</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_aot_intermediate_outputs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_aot_debug_handles_to_op_names</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_consume_etrecord</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_consume_etrecord</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -1650,19 +1650,26 @@
                     <span class="n">event_block</span><span class="o">.</span><span class="n">reference_output</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reference_outputs</span><span class="p">[</span><span class="n">FORWARD</span><span class="p">][</span>
                         <span class="n">index</span>
                     <span class="p">]</span>
-        <span class="c1"># Capture intermediate outputs only if _representative_inputs are provided</span>
-        <span class="c1"># when using bundled program to create the etrecord</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_aot_intermediate_outputs_and_op_names</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="n">Any</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="nb">str</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Capture intermediate outputs only if _representative_inputs are provided</span>
+<span class="sd">        when using bundled program to create the etrecord</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">_representative_inputs</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">return</span>
+            <span class="k">return</span> <span class="p">{},</span> <span class="p">{}</span>
         <span class="n">export_program</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">edge_dialect_program</span>
         <span class="n">graph_module</span> <span class="o">=</span> <span class="n">export_program</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_aot_debug_handles_to_op_names</span> <span class="o">=</span> <span class="n">get_aot_debug_handle_to_op_name_mapping</span><span class="p">(</span>
+        <span class="n">aot_debug_handle_to_op_name</span> <span class="o">=</span> <span class="n">get_aot_debug_handle_to_op_name_mapping</span><span class="p">(</span>
             <span class="n">graph_module</span>
         <span class="p">)</span>
         <span class="n">capturer</span> <span class="o">=</span> <span class="n">IntermediateOutputCapturer</span><span class="p">(</span><span class="n">graph_module</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_aot_intermediate_outputs</span> <span class="o">=</span> <span class="n">capturer</span><span class="o">.</span><span class="n">run_and_capture</span><span class="p">(</span>
+        <span class="n">aot_intermediate_outputs</span> <span class="o">=</span> <span class="n">capturer</span><span class="o">.</span><span class="n">run_and_capture</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">_representative_inputs</span>
         <span class="p">)</span>
+        <span class="k">return</span> <span class="n">aot_intermediate_outputs</span><span class="p">,</span> <span class="n">aot_debug_handle_to_op_name</span>
 
     <span class="c1"># TODO: Make it more extensible to further merge overlapping debug handles</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_get_runtime_intermediate_outputs_and_op_names</span><span class="p">(</span>
@@ -1870,22 +1877,27 @@
 <span class="sd">            pd.DataFrame: A DataFrame listing corresponding operator outputs from</span>
 <span class="sd">                          both stages and their computed numerical gaps.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_aot_intermediate_outputs</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">aot_intermediate_outputs</span><span class="p">,</span> <span class="n">aot_debug_handle_to_op_name</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_get_aot_intermediate_outputs_and_op_names</span><span class="p">()</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">aot_intermediate_outputs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">aot_debug_handle_to_op_name</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">&quot;The aot intermediate outputs is required but not populated.&quot;</span>
+                <span class="s2">&quot;calculate_numerical_gap error: The aot debug information is required but not populated&quot;</span>
             <span class="p">)</span>
         <span class="c1"># The runtime_op_names will be used later to map runtime debug_handle to op_name</span>
-        <span class="n">runtime_intermediate_outputs</span><span class="p">,</span> <span class="n">runtime_op_names</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">runtime_intermediate_outputs</span><span class="p">,</span> <span class="n">runtime_debug_handle_to_op_name</span> <span class="o">=</span> <span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_get_runtime_intermediate_outputs_and_op_names</span><span class="p">()</span>
         <span class="p">)</span>
         <span class="n">mapping</span> <span class="o">=</span> <span class="n">map_runtime_aot_intermediate_outputs</span><span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_aot_intermediate_outputs</span><span class="p">,</span> <span class="n">runtime_intermediate_outputs</span>
+            <span class="n">aot_intermediate_outputs</span><span class="p">,</span> <span class="n">runtime_intermediate_outputs</span>
         <span class="p">)</span>
         <span class="n">metric</span> <span class="o">=</span> <span class="n">distance</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">metric</span> <span class="o">==</span> <span class="s2">&quot;MSE&quot;</span><span class="p">:</span>
             <span class="n">comparator</span> <span class="o">=</span> <span class="n">MSEComparator</span><span class="p">()</span>
         <span class="k">elif</span> <span class="n">metric</span> <span class="o">==</span> <span class="s2">&quot;L1&quot;</span><span class="p">:</span>
             <span class="n">comparator</span> <span class="o">=</span> <span class="n">L1Comparator</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="n">metric</span> <span class="o">==</span> <span class="s2">&quot;SNR&quot;</span><span class="p">:</span>
+            <span class="n">comparator</span> <span class="o">=</span> <span class="n">SNRComparator</span><span class="p">()</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unsupported distance metric </span><span class="si">{</span><span class="n">distance</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
 
@@ -1898,9 +1910,13 @@
                 <span class="k">continue</span>
             <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                 <span class="p">{</span>
-                    <span class="s2">&quot;aot_debug_handle&quot;</span><span class="p">:</span> <span class="n">aot_debug_handle</span><span class="p">,</span>
+                    <span class="s2">&quot;aot_ops&quot;</span><span class="p">:</span> <span class="n">find_op_names</span><span class="p">(</span>
+                        <span class="n">aot_debug_handle</span><span class="p">,</span> <span class="n">aot_debug_handle_to_op_name</span>
+                    <span class="p">),</span>
                     <span class="s2">&quot;aot_intermediate_output&quot;</span><span class="p">:</span> <span class="n">aot_intermediate_output</span><span class="p">,</span>
-                    <span class="s2">&quot;runtime_debug_handle&quot;</span><span class="p">:</span> <span class="n">runtime_debug_handle</span><span class="p">,</span>
+                    <span class="s2">&quot;runtime_ops&quot;</span><span class="p">:</span> <span class="n">find_op_names</span><span class="p">(</span>
+                        <span class="n">runtime_debug_handle</span><span class="p">,</span> <span class="n">runtime_debug_handle_to_op_name</span>
+                    <span class="p">),</span>
                     <span class="s2">&quot;runtime_intermediate_output&quot;</span><span class="p">:</span> <span class="n">runtime_intermediate_output</span><span class="p">,</span>
                     <span class="s2">&quot;gap&quot;</span><span class="p">:</span> <span class="n">comparator</span><span class="o">.</span><span class="n">compare</span><span class="p">(</span>
                         <span class="n">aot_intermediate_output</span><span class="p">,</span> <span class="n">runtime_intermediate_output</span>
