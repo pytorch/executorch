@@ -26,23 +26,23 @@ cmake_install_executorch_lib() {
   CXXFLAGS="$COMMON_CXXFLAGS" retry cmake -DBUCK2="$BUCK2" \
           -DCMAKE_CXX_STANDARD_REQUIRED=ON \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
-          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo \
           -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
           -DEXECUTORCH_OPTIMIZE_SIZE=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           ${EXTRA_BUILD_ARGS} \
           -Bcmake-out .
-  cmake --build cmake-out -j9 --target install --config Release
+  cmake --build cmake-out -j9 --target install --config RelWithDebInfo
 }
 
 test_cmake_size_test() {
-    CXXFLAGS="$COMMON_CXXFLAGS" retry cmake -DCMAKE_BUILD_TYPE=Release \
+    CXXFLAGS="$COMMON_CXXFLAGS" retry cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         ${EXTRA_BUILD_ARGS} \
         -Bcmake-out/test test
 
     echo "Build size test"
-    cmake --build cmake-out/test -j9 --config Release
+    cmake --build cmake-out/test -j9 --config RelWithDebInfo
 
     echo 'ExecuTorch with no ops binary size, unstripped:'
     ls -al cmake-out/test/size_test
