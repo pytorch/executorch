@@ -152,14 +152,14 @@ The following packages should be linked in your app target `LLaMA` (left side, L
 - kernels_portable
 - kernels_quantized
 
-The following package should be linked in your target app `LLaMARunner` (left side, LLaMA --> General --> select LLaMARunner under "TARGETS" --> scroll down to "Frameworks and Libraries")
+The following package should be linked in your target app `LLMRunner` (left side, LLaMA --> General --> select LLMRunner under "TARGETS" --> scroll down to "Frameworks and Libraries")
 - executorch
 
 <p align="center">
 <img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_choosing_package.png" alt="iOS LLaMA App Choosing package" style="width:600px">
 </p>
 
-If you cannot add the package into your app target (it's greyed out), it might have been linked before. You can verify it by checking it from your target app `(LLaMA / LLaMARunner) --> Build Phases --> Link Binary With Libraries`.
+If you cannot add the package into your app target (it's greyed out), it might have been linked before. You can verify it by checking it from your target app `(LLaMA / LLMRunner) --> Build Phases --> Link Binary With Libraries`.
 
 
 

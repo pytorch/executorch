@@ -26,8 +26,8 @@
 		E931C68A2CFAF3A500DA599B /* kernels_optimized in Frameworks */ = {isa = PBXBuildFile; productRef = E931C6892CFAF3A500DA599B /* kernels_optimized */; };
 		E931C68C2CFAF3AC00DA599B /* kernels_portable in Frameworks */ = {isa = PBXBuildFile; productRef = E931C68B2CFAF3AC00DA599B /* kernels_portable */; };
 		E931C68E2CFAF3B200DA599B /* kernels_quantized in Frameworks */ = {isa = PBXBuildFile; productRef = E931C68D2CFAF3B200DA599B /* kernels_quantized */; };
-		E931C6A72CFBD70E00DA599B /* LLaMARunner.h in Headers */ = {isa = PBXBuildFile; fileRef = E931C6A42CFBD70E00DA599B /* LLaMARunner.h */; settings = {ATTRIBUTES = (Public, ); }; };
-		E931C6A82CFBD70E00DA599B /* LLaMARunner.mm in Sources */ = {isa = PBXBuildFile; fileRef = E931C6A52CFBD70E00DA599B /* LLaMARunner.mm */; };
+		E931C6A72CFBD70E00DA599B /* LLMRunner.h in Headers */ = {isa = PBXBuildFile; fileRef = E931C6A42CFBD70E00DA599B /* LLMRunner.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		E931C6A82CFBD70E00DA599B /* LLMRunner.mm in Sources */ = {isa = PBXBuildFile; fileRef = E931C6A52CFBD70E00DA599B /* LLMRunner.mm */; };
 		E931C6F62CFBD7FF00DA599B /* runner.h in Headers */ = {isa = PBXBuildFile; fileRef = E931C6ED2CFBD7FF00DA599B /* runner.h */; };
 		E931C6F72CFBD7FF00DA599B /* llava_runner.h in Headers */ = {isa = PBXBuildFile; fileRef = E931C6EE2CFBD7FF00DA599B /* llava_runner.h */; };
 		E931C6F82CFBD7FF00DA599B /* text_prefiller.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E931C6EF2CFBD7FF00DA599B /* text_prefiller.cpp */; };
@@ -92,8 +92,8 @@
 		E931C6412CFAF07E00DA599B /* LlamaRunner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = LlamaRunner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		E931C67D2CFAF16000DA599B /* LlamaBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = LlamaBridge.h; sourceTree = "<group>"; };
 		E931C67E2CFAF17500DA599B /* LlamaBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = LlamaBridge.mm; sourceTree = "<group>"; };
-		E931C6A42CFBD70E00DA599B /* LLaMARunner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = LLaMARunner.h; sourceTree = "<group>"; };
-		E931C6A52CFBD70E00DA599B /* LLaMARunner.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = LLaMARunner.mm; sourceTree = "<group>"; };
+		E931C6A42CFBD70E00DA599B /* LLMRunner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = LLMRunner.h; sourceTree = "<group>"; };
+		E931C6A52CFBD70E00DA599B /* LLMRunner.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = LLMRunner.mm; sourceTree = "<group>"; };
 		E931C6ED2CFBD7FF00DA599B /* runner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = runner.h; path = ../../../examples/models/llama/runner/runner.h; sourceTree = "<group>"; };
 		E931C6EE2CFBD7FF00DA599B /* llava_runner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = llava_runner.h; path = ../../../examples/models/llava/runner/llava_runner.h; sourceTree = "<group>"; };
 		E931C6EF2CFBD7FF00DA599B /* text_prefiller.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = text_prefiller.cpp; sourceTree = "<group>"; };
@@ -263,11 +263,11 @@
 		E931C6A62CFBD70E00DA599B /* Exported */ = {
 			isa = PBXGroup;
 			children = (
-				E931C6A42CFBD70E00DA599B /* LLaMARunner.h */,
-				E931C6A52CFBD70E00DA599B /* LLaMARunner.mm */,
+				E931C6A42CFBD70E00DA599B /* LLMRunner.h */,
+				E931C6A52CFBD70E00DA599B /* LLMRunner.mm */,
 			);
 			name = Exported;
-			path = ../../../../../apple_ios/LLaMA/LLaMARunner/LLaMARunner/Exported;
+			path = ../../../../../apple_ios/LLaMA/LLMRunner/LLMRunner/Exported;
 			sourceTree = "<group>";
 		};
 		E931C6B72CFBD74400DA599B /* runner */ = {
@@ -330,7 +330,7 @@
 				E931C6F92CFBD7FF00DA599B /* text_decoder_runner.h in Headers */,
 				E931C70F2CFBD81E00DA599B /* bpe_tokenizer.h in Headers */,
 				E931C7112CFBD81E00DA599B /* llama_tiktoken.h in Headers */,
-				E931C6A72CFBD70E00DA599B /* LLaMARunner.h in Headers */,
+				E931C6A72CFBD70E00DA599B /* LLMRunner.h in Headers */,
 				E931C7102CFBD81E00DA599B /* tiktoken.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -604,7 +604,7 @@
 				E931C70E2CFBD81E00DA599B /* bpe_tokenizer.cpp in Sources */,
 				E931C6FE2CFBD7FF00DA599B /* runner.cpp in Sources */,
 				E931C70C2CFBD81E00DA599B /* llama_tiktoken.cpp in Sources */,
-				E931C6A82CFBD70E00DA599B /* LLaMARunner.mm in Sources */,
+				E931C6A82CFBD70E00DA599B /* LLMRunner.mm in Sources */,
 				E931C6FC2CFBD7FF00DA599B /* text_decoder_runner.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

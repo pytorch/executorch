@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#import "LLaMARunner.h"
+#import "LLMRunner.h"
 
 #import <ExecuTorch/ExecuTorchLog.h>
 #import <executorch/examples/models/llama/runner/runner.h>
@@ -17,13 +17,13 @@ using executorch::extension::llm::Image;
 using executorch::extension::llm::TextLLMRunner;
 using executorch::runtime::Error;
 
-NSErrorDomain const LLaMARunnerErrorDomain = @"LLaMARunnerErrorDomain";
+NSErrorDomain const LLMRunnerErrorDomain = @"LLMRunnerErrorDomain";
 NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
 
-@interface LLaMARunner ()<ExecuTorchLogSink>
+@interface LLMRunner ()<ExecuTorchLogSink>
 @end
 
-@implementation LLaMARunner {
+@implementation LLMRunner {
   std::unique_ptr<TextLLMRunner> _runner;
 }
 
@@ -50,7 +50,7 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
   const auto status = _runner->load();
   if (status != Error::Ok) {
     if (error) {
-      *error = [NSError errorWithDomain:LLaMARunnerErrorDomain
+      *error = [NSError errorWithDomain:LLMRunnerErrorDomain
                                    code:(NSInteger)status
                                userInfo:nil];
     }
@@ -72,7 +72,7 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
       });
   if (status != Error::Ok) {
     if (error) {
-      *error = [NSError errorWithDomain:LLaMARunnerErrorDomain
+      *error = [NSError errorWithDomain:LLMRunnerErrorDomain
                                    code:(NSInteger)status
                                userInfo:nil];
       return NO;
@@ -170,7 +170,7 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
       [callback](const std::string& token) { callback(@(token.c_str())); });
   if (status != Error::Ok) {
     if (error) {
-      *error = [NSError errorWithDomain:LLaMARunnerErrorDomain
+      *error = [NSError errorWithDomain:LLMRunnerErrorDomain
                                    code:(NSInteger)status
                                userInfo:nil];
       return NO;

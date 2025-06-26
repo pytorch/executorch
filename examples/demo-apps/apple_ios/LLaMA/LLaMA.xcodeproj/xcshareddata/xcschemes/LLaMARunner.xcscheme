@@ -16,8 +16,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "03729ED42BB1F8DE00152F2E"
-               BuildableName = "LLaMARunner.framework"
-               BlueprintName = "LLaMARunner"
+               BuildableName = "LLMRunner.framework"
+               BlueprintName = "LLMRunner"
                ReferencedContainer = "container:LLaMA.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -51,8 +51,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "03729ED42BB1F8DE00152F2E"
-            BuildableName = "LLaMARunner.framework"
-            BlueprintName = "LLaMARunner"
+            BuildableName = "LLMRunner.framework"
+            BlueprintName = "LLMRunner"
             ReferencedContainer = "container:LLaMA.xcodeproj">
          </BuildableReference>
       </MacroExpansion>

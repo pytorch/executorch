@@ -9,7 +9,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-import LLaMARunner
+import LLMRunner
 
 class RunnerHolder: ObservableObject {
   var runner: Runner?
@@ -87,7 +87,7 @@ struct ContentView: View {
     case llava
     case qwen3
     case phi4
-    
+
     static func fromPath(_ path: String) -> ModelType {
       let filename = (path as NSString).lastPathComponent.lowercased()
       if filename.hasPrefix("llama") {

@@ -17,9 +17,9 @@
 		0324D6922BAACB6900DEF36F /* ResourceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0324D6872BAACB6900DEF36F /* ResourceManager.swift */; };
 		0324D6932BAACB6900DEF36F /* ResourceMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0324D6882BAACB6900DEF36F /* ResourceMonitor.swift */; };
 		0324D6962BAACB7000DEF36F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0324D6942BAACB7000DEF36F /* Assets.xcassets */; };
-		03729EDC2BB1F8DE00152F2E /* LLaMARunner.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		03729EE12BB1F93800152F2E /* LLaMARunner.mm in Sources */ = {isa = PBXBuildFile; fileRef = 0324D69A2BAACB7C00DEF36F /* LLaMARunner.mm */; };
-		03729EE22BB1F93E00152F2E /* LLaMARunner.h in Headers */ = {isa = PBXBuildFile; fileRef = 0324D6992BAACB7C00DEF36F /* LLaMARunner.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		03729EDC2BB1F8DE00152F2E /* LLMRunner.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 03729ED52BB1F8DE00152F2E /* LLMRunner.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		03729EE12BB1F93800152F2E /* LLMRunner.mm in Sources */ = {isa = PBXBuildFile; fileRef = 0324D69A2BAACB7C00DEF36F /* LLMRunner.mm */; };
+		03729EE22BB1F93E00152F2E /* LLMRunner.h in Headers */ = {isa = PBXBuildFile; fileRef = 0324D6992BAACB7C00DEF36F /* LLMRunner.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		03729F0A2BB203B300152F2E /* runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03729F072BB203B300152F2E /* runner.cpp */; };
 		03729F0B2BB203B300152F2E /* runner.h in Headers */ = {isa = PBXBuildFile; fileRef = 03729F082BB203B300152F2E /* runner.h */; };
 		03729F0C2BB203B300152F2E /* util.h in Headers */ = {isa = PBXBuildFile; fileRef = 03729F092BB203B300152F2E /* util.h */; };
@@ -84,7 +84,7 @@
 			containerPortal = 032C01672AC228E5002955E1 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 03729ED42BB1F8DE00152F2E;
-			remoteInfo = LLaMARunner;
+			remoteInfo = LLMRunner;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -95,7 +95,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
-				03729EDC2BB1F8DE00152F2E /* LLaMARunner.framework in Embed Frameworks */,
+				03729EDC2BB1F8DE00152F2E /* LLMRunner.framework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -114,11 +114,11 @@
 		0324D6872BAACB6900DEF36F /* ResourceManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ResourceManager.swift; sourceTree = "<group>"; };
 		0324D6882BAACB6900DEF36F /* ResourceMonitor.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ResourceMonitor.swift; sourceTree = "<group>"; };
 		0324D6942BAACB7000DEF36F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		0324D6992BAACB7C00DEF36F /* LLaMARunner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = LLaMARunner.h; sourceTree = "<group>"; };
-		0324D69A2BAACB7C00DEF36F /* LLaMARunner.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = LLaMARunner.mm; sourceTree = "<group>"; };
+		0324D6992BAACB7C00DEF36F /* LLMRunner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = LLMRunner.h; sourceTree = "<group>"; };
+		0324D69A2BAACB7C00DEF36F /* LLMRunner.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = LLMRunner.mm; sourceTree = "<group>"; };
 		035A5E942BB4B523001E0553 /* LLaMA.entitlements */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.entitlements; path = LLaMA.entitlements; sourceTree = "<group>"; };
 		036CAF9D2BB1444500D6C2D5 /* LLaMA.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LLaMA.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = LLaMARunner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		03729ED52BB1F8DE00152F2E /* LLMRunner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = LLMRunner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		03729F072BB203B300152F2E /* runner.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = runner.cpp; path = ../../../examples/models/llama/runner/runner.cpp; sourceTree = "<group>"; };
 		03729F082BB203B300152F2E /* runner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = runner.h; path = ../../../examples/models/llama/runner/runner.h; sourceTree = "<group>"; };
 		03729F092BB203B300152F2E /* util.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = util.h; sourceTree = "<group>"; };
@@ -245,13 +245,13 @@
 		0324D69B2BAACB7C00DEF36F /* Exported */ = {
 			isa = PBXGroup;
 			children = (
-				0324D6992BAACB7C00DEF36F /* LLaMARunner.h */,
-				0324D69A2BAACB7C00DEF36F /* LLaMARunner.mm */,
+				0324D6992BAACB7C00DEF36F /* LLMRunner.h */,
+				0324D69A2BAACB7C00DEF36F /* LLMRunner.mm */,
 			);
 			path = Exported;
 			sourceTree = "<group>";
 		};
-		0324D69C2BAACB7C00DEF36F /* LLaMARunner */ = {
+		0324D69C2BAACB7C00DEF36F /* LLMRunner */ = {
 			isa = PBXGroup;
 			children = (
 				0324D69B2BAACB7C00DEF36F /* Exported */,
@@ -259,15 +259,15 @@
 				03729F0F2BB203E100152F2E /* sampler */,
 				03729F0E2BB203D700152F2E /* tokenizers */,
 			);
-			path = LLaMARunner;
+			path = LLMRunner;
 			sourceTree = "<group>";
 		};
-		0324D69F2BAACB7C00DEF36F /* LLaMARunner */ = {
+		0324D69F2BAACB7C00DEF36F /* LLMRunner */ = {
 			isa = PBXGroup;
 			children = (
-				0324D69C2BAACB7C00DEF36F /* LLaMARunner */,
+				0324D69C2BAACB7C00DEF36F /* LLMRunner */,
 			);
-			path = LLaMARunner;
+			path = LLMRunner;
 			sourceTree = "<group>";
 		};
 		032C01662AC228E5002955E1 = {
@@ -276,9 +276,9 @@
 				0324D68A2BAACB6900DEF36F /* LLaMA */,
 				0324D6952BAACB7000DEF36F /* LLaMAAssets */,
 				035A5E952BB4B523001E0553 /* LLaMAEntitlements */,
-				0324D69F2BAACB7C00DEF36F /* LLaMARunner */,
+				0324D69F2BAACB7C00DEF36F /* LLMRunner */,
 				036CAF9D2BB1444500D6C2D5 /* LLaMA.app */,
-				03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */,
+				03729ED52BB1F8DE00152F2E /* LLMRunner.framework */,
 			);
 			sourceTree = "<group>";
 		};
@@ -384,7 +384,7 @@
 			isa = PBXHeadersBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				03729EE22BB1F93E00152F2E /* LLaMARunner.h in Headers */,
+				03729EE22BB1F93E00152F2E /* LLMRunner.h in Headers */,
 				03D03DA82C7823620088D6A7 /* text_prefiller.h in Headers */,
 				F292B0882D88B0D200BE6839 /* llama2c_tokenizer.h in Headers */,
 				F292B0892D88B0D200BE6839 /* tokenizer.h in Headers */,
@@ -435,9 +435,9 @@
 			productReference = 036CAF9D2BB1444500D6C2D5 /* LLaMA.app */;
 			productType = "com.apple.product-type.application";
 		};
-		03729ED42BB1F8DE00152F2E /* LLaMARunner */ = {
+		03729ED42BB1F8DE00152F2E /* LLMRunner */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 03729EDD2BB1F8DE00152F2E /* Build configuration list for PBXNativeTarget "LLaMARunner" */;
+			buildConfigurationList = 03729EDD2BB1F8DE00152F2E /* Build configuration list for PBXNativeTarget "LLMRunner" */;
 			buildPhases = (
 				03641D7C2C409960004AF8DE /* Build Cmake Dependencies */,
 				03729ED02BB1F8DE00152F2E /* Headers */,
@@ -449,7 +449,7 @@
 			);
 			dependencies = (
 			);
-			name = LLaMARunner;
+			name = LLMRunner;
 			packageProductDependencies = (
 				03CF43952CEC5CEC00C7113B /* backend_coreml */,
 				03CF43972CEC5CEC00C7113B /* backend_coreml_debug */,
@@ -467,8 +467,8 @@
 				03CF43AF2CEC5CEC00C7113B /* kernels_quantized */,
 				03CF43B12CEC5CEC00C7113B /* kernels_quantized_debug */,
 			);
-			productName = LLaMARunner;
-			productReference = 03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */;
+			productName = LLMRunner;
+			productReference = 03729ED52BB1F8DE00152F2E /* LLMRunner.framework */;
 			productType = "com.apple.product-type.framework";
 		};
 /* End PBXNativeTarget section */
@@ -506,7 +506,7 @@
 			projectRoot = "";
 			targets = (
 				032C016E2AC228E6002955E1 /* LLaMA */,
-				03729ED42BB1F8DE00152F2E /* LLaMARunner */,
+				03729ED42BB1F8DE00152F2E /* LLMRunner */,
 			);
 		};
 /* End PBXProject section */
@@ -574,7 +574,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				03729EE12BB1F93800152F2E /* LLaMARunner.mm in Sources */,
+				03729EE12BB1F93800152F2E /* LLMRunner.mm in Sources */,
 				0372C3152C89418E00CD942A /* llava_runner.cpp in Sources */,
 				F292B1022D88B20C00BE6839 /* llama_tiktoken.cpp in Sources */,
 				03D03DAB2C7823830088D6A7 /* text_decoder_runner.cpp in Sources */,
@@ -599,7 +599,7 @@
 /* Begin PBXTargetDependency section */
 		03729EDA2BB1F8DE00152F2E /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 03729ED42BB1F8DE00152F2E /* LLaMARunner */;
+			target = 03729ED42BB1F8DE00152F2E /* LLMRunner */;
 			targetProxy = 03729ED92BB1F8DE00152F2E /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -830,7 +830,7 @@
 				MARKETING_VERSION = 1.0;
 				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
-				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.illama.LLaMARunner;
+				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.illama.LLMRunner;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -866,7 +866,7 @@
 				MARKETING_VERSION = 1.0;
 				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
-				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.illama.LLaMARunner;
+				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.illama.LLMRunner;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -901,7 +901,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		03729EDD2BB1F8DE00152F2E /* Build configuration list for PBXNativeTarget "LLaMARunner" */ = {
+		03729EDD2BB1F8DE00152F2E /* Build configuration list for PBXNativeTarget "LLMRunner" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				03729EDE2BB1F8DE00152F2E /* Debug */,

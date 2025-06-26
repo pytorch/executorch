@@ -17,14 +17,14 @@ RCT_EXPORT_METHOD(initialize:(NSString *)modelPath
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject) {
   dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-    self.runner = [[LLaMARunner alloc] initWithModelPath:modelPath tokenizerPath:tokenizerPath];
-    
+    self.runner = [[LLMRunner alloc] initWithModelPath:modelPath tokenizerPath:tokenizerPath];
+
     NSError *error = nil;
     if (![self.runner loadWithError:&error]) {
       reject(@"load_error", error.localizedDescription, error);
       return;
     }
-    
+
     resolve(@YES);
   });
 }
@@ -40,12 +40,12 @@ RCT_EXPORT_METHOD(generate:(NSString *)prompt
                      withTokenCallback:^(NSString *token) {
       [self sendEventWithName:@"onToken" body:token];
     } error:&error];
-    
+
     if (!success) {
       reject(@"generation_error", error.localizedDescription, error);
       return;
     }
-    
+
     resolve(@YES);
   });
 }

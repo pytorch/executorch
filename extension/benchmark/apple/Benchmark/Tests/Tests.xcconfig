@@ -12,7 +12,7 @@ OTHER_LDFLAGS = $(inherited) \
     -force_load $(BUILT_PRODUCTS_DIR)/libkernels_quantized_$(ET_PLATFORM).a \
     @$(TEMP_DIR)/cmake/linker_flags
 
-// LLaMARunner requires additional dependencies built with CMake in a custom run script phase.
+// LLMRunner requires additional dependencies built with CMake in a custom run script phase.
 // Include headers and libraries from $(TEMP_DIR)/cmake for it.
 HEADER_SEARCH_PATHS = $(inherited) \
     $(SRCROOT)/../../../../.. \

@@ -10,11 +10,11 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-FOUNDATION_EXPORT NSErrorDomain const LLaMARunnerErrorDomain;
+FOUNDATION_EXPORT NSErrorDomain const LLMRunnerErrorDomain;
 FOUNDATION_EXPORT NSErrorDomain const LLaVARunnerErrorDomain;
 
 NS_SWIFT_NAME(Runner)
-@interface LLaMARunner : NSObject
+@interface LLMRunner : NSObject
 
 - (instancetype)initWithModelPath:(NSString*)filePath
                     tokenizerPath:(NSString*)tokenizerPath;
