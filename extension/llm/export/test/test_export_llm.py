@@ -67,7 +67,7 @@ base:
 model:
   dtype_override: fp16
 export:
-  max_seq_length: 256
+  max_seq_length: 128
 quantization:
   pt2e_quantize: xnnpack_dynamic
   use_spin_quant: cuda
@@ -93,7 +93,7 @@ backend:
             self.assertEqual(called_config.base.model_class, "llama2")
             self.assertEqual(called_config.base.preq_mode.value, "8da4w")
             self.assertEqual(called_config.model.dtype_override.value, "fp16")
-            self.assertEqual(called_config.export.max_seq_length, 256)
+            self.assertEqual(called_config.export.max_seq_length, 128)
             self.assertEqual(
                 called_config.quantization.pt2e_quantize.value, "xnnpack_dynamic"
             )
