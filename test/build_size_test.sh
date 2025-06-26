@@ -23,15 +23,16 @@ cmake_install_executorch_lib() {
   update_tokenizers_git_submodule
   local EXTRA_BUILD_ARGS="${@}"
 
-  CXXFLAGS="$COMMON_CXXFLAGS" retry cmake -DBUCK2="$BUCK2" \
-          -DCMAKE_CXX_STANDARD_REQUIRED=ON \
-          -DCMAKE_INSTALL_PREFIX=cmake-out \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
-          -DEXECUTORCH_OPTIMIZE_SIZE=ON \
-          -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
-          ${EXTRA_BUILD_ARGS} \
-          -Bcmake-out .
+#  CXXFLAGS="$COMMON_CXXFLAGS" retry cmake -DBUCK2="$BUCK2" \
+#          -DCMAKE_CXX_STANDARD_REQUIRED=ON \
+#          -DCMAKE_INSTALL_PREFIX=cmake-out \
+#          -DCMAKE_BUILD_TYPE=Release \
+#          -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
+#          -DEXECUTORCH_OPTIMIZE_SIZE=ON \
+#          -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+#          ${EXTRA_BUILD_ARGS} \
+#          -Bcmake-out .
+  cmake --preset zephyr ${EXTRA_BUILD_ARGS} -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out .
   cmake --build cmake-out -j9 --target install --config Release
 }
 
@@ -40,7 +41,7 @@ test_cmake_size_test() {
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         ${EXTRA_BUILD_ARGS} \
         -Bcmake-out/test test
-
+#    cmake --preset zephyr ${EXTRA_BUILD_ARGS} -DCMAKE_BUILD_TYPE=Release  -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out/test test
     echo "Build size test"
     cmake --build cmake-out/test -j9 --config Release
 

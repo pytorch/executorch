@@ -223,6 +223,10 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    strategy:
+      matrix:
+        os: [bare_metal, zephyr-preset]
+      fail-fast: false
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-arm-sdk
@@ -234,40 +238,17 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        source .ci/scripts/utils.sh
-        install_executorch "--use-pt-pinned-commit"
-        .ci/scripts/setup-arm-baremetal-tools.sh
-        source examples/arm/ethos-u-scratch/setup_path.sh
-
-        # User baremetal toolchain
-        arm-none-eabi-c++ --version
-        toolchain_cmake=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
-        toolchain_cmake=$(realpath ${toolchain_cmake})
-
-        # Build and test size test
-        bash test/build_size_test.sh "-DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON"
-        elf="cmake-out/test/size_test"
-
-        # Dump basic info
-        ls -al ${elf}
-        arm-none-eabi-size ${elf}
-
-        # Dump symbols
-        python .github/scripts/run_nm.py -e ${elf}
-        python .github/scripts/run_nm.py -e ${elf} -f "executorch" -p "arm-none-eabi-"
-        python .github/scripts/run_nm.py -e ${elf} -f "executorch_text" -p "arm-none-eabi-"
-
-        # Add basic guard - TODO: refine this!
-        arm-none-eabi-strip ${elf}
-        output=$(ls -la ${elf})
-        arr=($output)
-        size=${arr[4]}
-        threshold="103268" # ~100KiB
-        echo "size: $size, threshold: $threshold"
-        if [[ "$size" -le "$threshold" ]]; then
-          echo "Success $size <= $threshold"
+        cxx_flags="-fno-exceptions -fno-rtti -Wall -Werror -Wno-int-in-bool-context -DET_HAVE_PREAD=0"
+        if [[ ${{ matrix.os}} == "bare_metal" ]]; then 
+          setup_script=.ci/scripts/setup-arm-baremetal-tools.sh
+          toolchain_prefic=arm-none-eabi-
+          threshold="103268" # ~100KiB
+        elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then 
+          setup_script=.ci/scripts/setup-arm-zephyr-x86-64-tools.sh
+          toolchain_prefic=arm-zephyr-eabi-
+          threshold="153600" # should be ~138KB, set threashold to 150KB
         else
-          echo "Fail $size > $threshold"
+          echo "Fail unsupport OS selection ${{ matrix.os }}"
           exit 1
         fi
 
@@ -320,35 +301,43 @@ jobs:
 
         source .ci/scripts/utils.sh
         install_executorch "--use-pt-pinned-commit"
-        .ci/scripts/setup-arm-zephyr-tools.sh
+        ${setup_script}
         source examples/arm/ethos-u-scratch/setup_path.sh
 
-        # Use arm zephyr toolchain
-        arm-zephyr-eabi-c++ --version
-        zephyr_preset=tools/cmake/preset/zephyr.cmake
-        zephyr_preset=$(realpath ${zephyr_preset})
-        toolchain_cmake=examples/arm/ethos-u-setup/arm-zephyr-eabi-gcc.cmake
+        # User toolchain
+        ${toolchain_prefix}c++ --version
+        toolchain_cmake=examples/arm/ethos-u-setup/${toolchain_prefix}gcc.cmake
         toolchain_cmake=$(realpath ${toolchain_cmake})
 
         # Build and test size test
-        bash test/build_size_test.sh "-DEXECUTORCH_BUILD_PRESET_FILE=${zephyr_preset} -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake}"
+        if [[ ${{ matrix.os}} == "bare_metal" ]]; then 
+          bash test/build_size_test.sh "-DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON"
+        elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then 
+          CXXFLAGS=${cxx_flags} cmake --preset zephyr -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out .
+          cmake --build cmake-out -j9 --target install --config Release
+          CXXFLAGS=${cxx_flags}  cmake  -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out/test test
+          cmake --build cmake-out/test -j9 --config Release
+        else
+          echo "Fail unsupport OS selection ${{ matrix.os }}"
+          exit 1
+        fi
+
         elf="cmake-out/test/size_test"
 
         # Dump basic info
         ls -al ${elf}
-        arm-zephyr-eabi-size ${elf}
+        ${toolchain_prefix}size ${elf}
 
         # Dump symbols
         python .github/scripts/run_nm.py -e ${elf}
-        python .github/scripts/run_nm.py -e ${elf} -f "executorch" -p "arm-zephyr-eabi-"
-        python .github/scripts/run_nm.py -e ${elf} -f "executorch_text" -p "arm-zephyr-eabi-"
+        python .github/scripts/run_nm.py -e ${elf} -f "executorch" -p "${toolchain_prefix}"
+        python .github/scripts/run_nm.py -e ${elf} -f "executorch_text" -p "${toolchain_prefix}"
 
         # Add basic guard - TODO: refine this!
-        arm-zephyr-eabi-strip ${elf}
+        ${toolchain_prefix}strip ${elf}
         output=$(ls -la ${elf})
         arr=($output)
         size=${arr[4]}
-        threshold="153600" # should be ~138KB, set threashold to 150KB
         echo "size: $size, threshold: $threshold"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"

@@ -112,7 +112,8 @@
             "common"
         ],
         "cacheVariables": {
-            "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/zephyr.cmake"
+            "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/zephyr.cmake",
+            "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/examples/arm/ethos-u-setup/arm-zephyr-eabi-gcc.cmake"
         }
     }
   ]

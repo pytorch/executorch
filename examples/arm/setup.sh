@@ -268,6 +268,7 @@ function select_toolchain() {
     fi
     echo "[main] Info selected ${toolchain_dir} for ${ARCH} - ${OS} platform"
 }
+
 function setup_toolchain() {
     # Download and install the arm toolchain (default is arm-none-eabi)
     # setting --target-toolchain to zephyr sets this to arm-zephyr-eabi

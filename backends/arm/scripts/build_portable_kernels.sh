@@ -28,7 +28,7 @@ help() {
     echo "  --et_build_root=<FOLDER>   Build output root folder to use, defaults to ${et_build_root}"
     echo "  --build_type=<TYPE>        Build with Release, Debug or RelWithDebInfo, default is ${build_type}"
     echo "  --portable_kernels=<OPS>   Comma separated list of portable (non delagated) kernels to include Default: ${portable_kernels}"
-    echo "  --toolchain=<TOOLCHAIN>   Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zpehyr as arm-zephyr-eabi-gcc"
+    echo "  --toolchain=<TOOLCHAIN>    Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zephyr as arm-zephyr-eabi-gcc"
     exit 0
 }
 
