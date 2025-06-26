@@ -306,7 +306,10 @@ jobs:
 
         # User toolchain
         ${toolchain_prefix}c++ --version
-        toolchain_cmake=examples/arm/ethos-u-setup/arm-eabi-gcc.cmake
+
+        # We will use the the bare metal default, specify to use the 
+        # arm zephyr toolchain if we need to
+        toolchain_cmake=examples/arm/ethos-u-setup/arm-eabi-none-gcc.cmake
         toolchain_cmake=$(realpath ${toolchain_cmake})
 
         # Build and test size test

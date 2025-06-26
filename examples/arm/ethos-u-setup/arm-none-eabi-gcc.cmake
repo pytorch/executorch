@@ -25,6 +25,12 @@ set(TARGET_CPU
 )
 string(TOLOWER ${TARGET_CPU} CMAKE_SYSTEM_PROCESSOR)
 
+if(ARM_TOOLCHAIN_NAME MATCHES "^zephyr")
+    set(CMAKE_ARM_ARCH_ABI arm-zephyr-eabi)
+else()
+    set(CMAKE_ARM_ARCH_ABI arm-none-eabi)
+endif()
+
 set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_C_COMPILER "arm-none-eabi-gcc")
 set(CMAKE_CXX_COMPILER "arm-none-eabi-g++")
@@ -101,3 +107,11 @@ add_compile_options(
   -Wno-error=shift-count-overflow
   -Wno-psabi
 )
+
+if (CMAKE_ARM_ARCH_ABI STREQUAL "arm-zephyr-eabi")
+  add_compile_options(
+    -Wno-stringop-overread
+    -Wno-error=format=
+    -Wno-error=maybe-uninitialized
+  )
+endif()
