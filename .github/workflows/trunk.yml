@@ -246,7 +246,7 @@ jobs:
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then 
           setup_script=.ci/scripts/setup-arm-zephyr-x86-64-tools.sh
           toolchain_prefix=arm-zephyr-eabi-
-          threshold="225280" # should be ~216KB, set threshold to 220KB
+          threshold="133120" # should be ~125KB, set threshold to 130KB
         else
           echo "Fail unsupport OS selection ${{ matrix.os }}"
           exit 1
@@ -316,7 +316,7 @@ jobs:
         if [[ ${{ matrix.os}} == "bare_metal" ]]; then 
           bash test/build_size_test.sh "-DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON"
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then 
-          CXXFLAGS=${cxx_flags} cmake --preset zephyr -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out .
+          CXXFLAGS=${cxx_flags} cmake --preset zephyr -DCMAKE_BUILD_TYPE=Release -DEXECUTORCH_OPTIMIZE_SIZE=ON -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out .
           cmake --build cmake-out -j9 --target install --config Release
           CXXFLAGS=${cxx_flags}  cmake -DARM_TOOLCHAIN_NAME=zephyr -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out/test test
           cmake --build cmake-out/test -j9 --config Release
