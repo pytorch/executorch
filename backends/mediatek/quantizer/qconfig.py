@@ -10,9 +10,12 @@ from enum import IntEnum, unique
 
 import torch
 
-from torch.ao.quantization.fake_quantize import FakeQuantize
-from torch.ao.quantization.observer import MinMaxObserver, PerChannelMinMaxObserver
-from torch.ao.quantization.quantizer import QuantizationSpec
+from torchao.quantization.pt2e import (
+    FakeQuantize,
+    MinMaxObserver,
+    PerChannelMinMaxObserver,
+)
+from torchao.quantization.pt2e.quantizer import QuantizationSpec
 
 
 @unique

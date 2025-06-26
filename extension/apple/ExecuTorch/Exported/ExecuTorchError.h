@@ -62,7 +62,23 @@ NSString *ExecuTorchErrorDescription(ExecuTorchErrorCode code)
  * @param code The ExecuTorchErrorCode to wrap.
  * @return An NSError with ExecuTorchErrorDomain, the specified code, and a localized description.
  */
-FOUNDATION_EXPORT NSError *ExecuTorchErrorWithCode(ExecuTorchErrorCode code)
+FOUNDATION_EXPORT
+NS_RETURNS_RETAINED
+__attribute__((deprecated("This API is experimental.")))
+NSError *ExecuTorchErrorWithCode(ExecuTorchErrorCode code)
     NS_SWIFT_NAME(Error(code:));
+
+/**
+ * Create an NSError in the ExecuTorch domain for the given code.
+ *
+ * @param code The ExecuTorchErrorCode to wrap.
+ * @param description Additional error description.
+ * @return An NSError with ExecuTorchErrorDomain, the specified code, and a localized description.
+ */
+ FOUNDATION_EXPORT
+ NS_RETURNS_RETAINED
+ __attribute__((deprecated("This API is experimental.")))
+ NSError *ExecuTorchErrorWithCodeAndDescription(ExecuTorchErrorCode code, NSString * __nullable description)
+     NS_SWIFT_NAME(Error(code:description:));
 
 NS_ASSUME_NONNULL_END

@@ -45,6 +45,7 @@ def define_common_targets():
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
         ],
+        platforms = CXX,
         exported_deps = all_op_targets,
     )
 

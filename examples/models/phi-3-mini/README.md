@@ -3,7 +3,7 @@ This example demonstrates how to run a [Phi-3-mini](https://huggingface.co/micro
 
 # Instructions
 ## Step 1: Setup
-1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch. For installation run `./install_executorch.sh --pybind xnnpack`
+1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch. For installation run `./install_executorch.sh`
 2. Currently, we support transformers v4.44.2. Install transformers with the following command:
 ```
 pip uninstall -y transformers ; pip install transformers==4.44.2

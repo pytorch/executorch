@@ -9,6 +9,7 @@
 import argparse
 import os
 import platform
+import ssl
 import stat
 import sys
 import urllib.request
@@ -18,6 +19,7 @@ from pathlib import Path
 from typing import Union
 
 import buck_util
+import certifi
 import zstd
 
 """
@@ -179,26 +181,23 @@ def resolve_buck2(args: argparse.Namespace) -> Union[str, int]:
             if os.path.isfile(buck2_local_path):
                 return buck2_local_path
 
-            buck2_archive_url = f"https://github.com/facebook/buck2/releases/download/{target_buck_version}/{buck_info.archive_name}"
+        buck2_archive_url = f"https://github.com/facebook/buck2/releases/download/{target_buck_version}/{buck_info.archive_name}"
 
-            try:
-                print(f"Downloading buck2 from {buck2_archive_url}...", file=sys.stderr)
-                archive_file, _ = urllib.request.urlretrieve(buck2_archive_url)
+        print(f"Downloading buck2 from {buck2_archive_url}...", file=sys.stderr)
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
 
-                # Extract and chmod.
-                with open(archive_file, "rb") as f:
-                    data = f.read()
-                    decompressed_bytes = zstd.decompress(data)
+        with urllib.request.urlopen(buck2_archive_url, context=ssl_context) as request:
+            # Extract and chmod.
+            data = request.read()
+            decompressed_bytes = zstd.decompress(data)
 
-                with open(buck2_local_path, "wb") as f:
-                    f.write(decompressed_bytes)
+            with open(buck2_local_path, "wb") as f:
+                f.write(decompressed_bytes)
 
-                file_stat = os.stat(buck2_local_path)
-                os.chmod(buck2_local_path, file_stat.st_mode | stat.S_IEXEC)
-            finally:
-                os.remove(archive_file)
+        file_stat = os.stat(buck2_local_path)
+        os.chmod(buck2_local_path, file_stat.st_mode | stat.S_IEXEC)
 
-            return buck2_local_path
+    return buck2_local_path
 
 
 def main():

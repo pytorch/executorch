@@ -35,11 +35,10 @@ from executorch.extension.export_util.utils import export_to_edge, save_pte_prog
 
 from executorch.extension.llm.export.export_passes import RemoveRedundantTransposes
 from pytorch_tokenizers import get_tokenizer
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torch.ao.quantization.quantizer import Quantizer
-from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
 from torch.export import export_for_training, ExportedProgram
 from torch.nn.attention import SDPBackend
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantizer import ComposableQuantizer, Quantizer
 from torchao.utils import unwrap_tensor_subclass
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -134,6 +133,19 @@ class LLMEdgeManager:
         self.output_dir = "."
         self._saved_pte_filename = None
 
+    def __post_init__(self):
+        """
+        Post init function to update metadata based on dynamic shape
+        """
+        dynamic_shape = self._get_dynamic_shape()
+        if dynamic_shape is not None:
+            token_dim = dynamic_shape[0][1]
+            if self.verbose:
+                logging.info(
+                    f"Metadata 'get_max_seq_len' is being updated to match torch.export's dynamic shape max: {token_dim.max}"
+                )
+            self.metadata["get_max_seq_len"] = token_dim.max
+
     def set_output_dir(self, output_dir: str) -> "LLMEdgeManager":
         """
         Set the directory where the .pte file will be saved.
@@ -181,14 +193,19 @@ class LLMEdgeManager:
         if self.dynamic_shapes:
             return self.dynamic_shapes
 
-        dim = torch.export.Dim("token_dim", max=self.max_seq_len - 1)
         if self.enable_dynamic_shape:
             if not self.use_kv_cache:
                 # Only one input argument: tokens
-                self.dynamic_shapes = ({1: dim},)
+                # Here we -1 due to export limitation: https://gist.github.com/larryliu0820/419022a57e24d5e64150e325a685eaad
+                self.dynamic_shapes = (
+                    {1: torch.export.Dim("token_dim", max=self.max_seq_len - 1)},
+                )
             else:
                 # Two input arguments: tokens and input_pos but input_pos is static shape
-                self.dynamic_shapes = ({1: dim}, {"input_pos": {0: 1}})
+                self.dynamic_shapes = (
+                    {1: torch.export.Dim("token_dim", max=self.max_seq_len)},
+                    {"input_pos": {0: 1}},
+                )
         else:
             # Two input arguments: tokens and input_pos but both are of static shape
             self.dynamic_shapes = None
@@ -367,7 +384,9 @@ class LLMEdgeManager:
             with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
                 if self.verbose:
                     logging.info(f"Applied quantizers: {quantizers}")
+
                 composed_quantizer = ComposableQuantizer(quantizers)
+
                 assert (
                     self.pre_autograd_graph_module is not None
                 ), "Please run export() first"

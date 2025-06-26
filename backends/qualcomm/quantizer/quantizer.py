@@ -12,8 +12,9 @@ import torch
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 
 from torch._ops import OpOverload
-from torch.ao.quantization.quantizer import Quantizer
 from torch.fx import GraphModule
+from torchao.quantization.pt2e import UniformQuantizationObserverBase
+from torchao.quantization.pt2e.quantizer import Quantizer
 
 from .annotators import OP_ANNOTATOR
 
@@ -84,7 +85,7 @@ QUANT_CONFIG_DICT = {
         partial(
             get_ptq_per_channel_quant_config,
             act_dtype=torch.uint16,
-            weight_dtype="int4",
+            weight_dtype=torch.int4,
         ),
         None,
     ),
@@ -93,12 +94,12 @@ QUANT_CONFIG_DICT = {
         partial(
             get_ptq_per_channel_quant_config,
             act_dtype=torch.uint16,
-            weight_dtype="int4",
+            weight_dtype=torch.int4,
         ),
         partial(
             get_ptq_per_block_quant_config,
             act_dtype=torch.uint16,
-            weight_dtype="int4",
+            weight_dtype=torch.int4,
         ),
     ),
     (QuantDtype.use_8a8w, False): (
@@ -112,7 +113,7 @@ QUANT_CONFIG_DICT = {
         partial(
             get_qat_per_channel_quant_config,
             act_dtype=torch.uint16,
-            weight_dtype="int4",
+            weight_dtype=torch.int4,
         ),
         None,
     ),
@@ -130,9 +131,7 @@ class ModuleQConfig:
     is_qat: bool = False
     is_conv_per_channel: bool = False
     is_linear_per_channel: bool = False
-    act_observer: Optional[
-        torch.ao.quantization.observer.UniformQuantizationObserverBase
-    ] = None
+    act_observer: Optional[UniformQuantizationObserverBase] = None
 
     def __post_init__(self):
         if (self.quant_dtype, self.is_qat) not in QUANT_CONFIG_DICT:

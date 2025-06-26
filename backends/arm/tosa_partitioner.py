@@ -96,18 +96,22 @@ class TOSAPartitioner(Partitioner):
 
             # De-tag outmost q-nodes upwards and dq-nodes downwards.
             # De-tag if at least one input/ output is not part of partition.
-            for node in partition.nodes:
+            for node in exported_program.graph_module.graph.nodes:
+                if not is_partitioned(node):
+                    continue
                 if is_quant_node(node):
                     for input in node.all_input_nodes:
                         if not is_partitioned(input):
                             del node.meta["delegation_tag"]
                             break
+                    continue
 
                 if is_dequant_node(node):
                     for user in node.users:
                         if not is_partitioned(user):
                             del node.meta["delegation_tag"]
                             break
+                    continue
 
                 if tosa_spec.support_float():
                     continue

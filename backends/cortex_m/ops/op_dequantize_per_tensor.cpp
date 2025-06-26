@@ -173,8 +173,8 @@ Tensor& dequantize_per_tensor_out(
 
   for (; i < numel; i++) {
     *out_data = dequantize_val<int8_t, float>(scale, zp, *input_data);
-    *input_data++;
-    *out_data++;
+    input_data++;
+    out_data++;
   }
   return out;
 }

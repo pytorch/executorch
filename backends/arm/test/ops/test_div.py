@@ -66,6 +66,11 @@ test_data_suite = {
         torch.rand(5, 10, 25, 20) + 1,
         None,
     ),
+    "op_div_rank4_randn_mutltiple_broadcasts": lambda: (
+        torch.randn(1, 4, 4, 1),
+        torch.randn(1, 1, 4, 4),
+        None,
+    ),
 }
 
 

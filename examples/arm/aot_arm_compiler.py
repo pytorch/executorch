@@ -56,10 +56,10 @@ from executorch.exir import (
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.extension.export_util.utils import save_pte_program
 from tabulate import tabulate
+from torch.utils.data import DataLoader
 
 # Quantize model if required using the standard export quantizaion flow.
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torch.utils.data import DataLoader
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
@@ -342,7 +342,8 @@ targets = [
     "ethos-u85-1024",
     "ethos-u85-2048",
     "vgf",
-    "TOSA",
+    "TOSA-0.80+BI",
+    "TOSA-1.0+INT",
 ]
 
 
@@ -384,6 +385,8 @@ def get_compile_spec(
     intermediates: Optional[str] = None,
     system_config: Optional[str] = None,
     memory_mode: Optional[str] = None,
+    quantize: bool = False,
+    config: Optional[str] = None,
 ) -> list[CompileSpec]:
     spec_builder = None
     if target.startswith("TOSA"):
@@ -398,9 +401,14 @@ def get_compile_spec(
             system_config=system_config,
             memory_mode=memory_mode,
             extra_flags="--verbose-operators --verbose-cycle-estimate",
+            config_ini=config,
         )
     elif "vgf" in target:
-        spec_builder = ArmCompileSpecBuilder().vgf_compile_spec()
+        if quantize:
+            tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
+        else:
+            tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+FP")
+        spec_builder = ArmCompileSpecBuilder().vgf_compile_spec(tosa_spec)
 
     if intermediates is not None:
         spec_builder.dump_intermediate_artifacts_to(intermediates)
@@ -567,6 +575,12 @@ def get_args():
         default=None,
         help="Memory mode to select from the Vela configuration file (see vela.ini). Default is 'Shared_Sram' for Ethos-U55 targets and 'Sram_Only' for Ethos-U85 targets",
     )
+    parser.add_argument(
+        "--config",
+        required=False,
+        default="Arm/vela.ini",
+        help="Specify custom vela configuration file (vela.ini)",
+    )
     args = parser.parse_args()
 
     if args.evaluate and (
@@ -667,12 +681,12 @@ def save_bpte_program(exec_prog, original_model: torch.nn.Module, output_name: s
         )
 
     # Generate BundledProgram
+    output_dir = os.path.dirname(output_name)
+    os.makedirs(output_dir, exist_ok=True)
     save_bundled_program(exec_prog, method_test_suites, output_name)
 
 
-def quantize_model(
-    exported_program, args, model: torch.nn.Module, example_inputs, compile_spec
-):
+def quantize_model(args, model: torch.nn.Module, example_inputs, compile_spec):
     model_int8 = quantize(
         model,
         args.model_name,
@@ -699,12 +713,14 @@ def to_edge_TOSA_delegate(
         args.intermediates,
         args.system_config,
         args.memory_mode,
+        args.quantize,
+        args.config,
     )
 
     model_int8 = None
     if args.quantize:
         model_int8, exported_program = quantize_model(
-            exported_program, args, model, example_inputs, compile_spec
+            args, model, example_inputs, compile_spec
         )
         model = model_int8
 
@@ -738,9 +754,11 @@ def to_edge_no_delegate(exported_program, args, model: torch.nn.Module, example_
             args.intermediates,
             args.system_config,
             args.memory_mode,
+            args.quantize,
+            args.config,
         )
         model, exported_program = quantize_model(
-            exported_program, args, model, example_inputs, compile_spec
+            args, model, example_inputs, compile_spec
         )
         model_int8 = model
 

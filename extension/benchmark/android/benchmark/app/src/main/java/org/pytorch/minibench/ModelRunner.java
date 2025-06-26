@@ -41,6 +41,8 @@ public class ModelRunner {
       latency.add(forwardMs);
     }
 
+    module.etdump();
+
     final BenchmarkMetric.BenchmarkModel benchmarkModel =
         BenchmarkMetric.extractBackendAndQuantization(model.getName().replace(".pte", ""));
     // The list of metrics we have atm includes:

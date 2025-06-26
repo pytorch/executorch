@@ -52,8 +52,11 @@ Tensor& add_out(
 
   ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     const CTYPE_COMPUTE val_alpha = utils::scalar_to<CTYPE_COMPUTE>(alpha);
-    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        [val_alpha](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+    utils::apply_bitensor_elementwise_fn<
+        CTYPE_COMPUTE,
+        op_name,
+        utils::SupportedTensorDtypes::REALHBBF16>(
+        [val_alpha](const auto val_a, const auto val_b) {
           return val_a + val_alpha * val_b;
         },
         ctx,
@@ -61,8 +64,7 @@ Tensor& add_out(
         utils::SupportedTensorDtypes::REALHBBF16,
         b,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::REALHBBF16);
+        out);
   });
 
   return out;
@@ -100,17 +102,23 @@ Tensor& add_scalar_out(
   static constexpr const char op_name[] = "add.Scalar_out";
 
   ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        [b, alpha](const CTYPE_COMPUTE val_a) {
-          CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
-          CTYPE_COMPUTE val_alpha = utils::scalar_to<CTYPE_COMPUTE>(alpha);
-          return val_a + val_alpha * val_b;
+    CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
+    CTYPE_COMPUTE val_alpha = utils::scalar_to<CTYPE_COMPUTE>(alpha);
+    auto val_alpha_times_b = val_alpha * val_b;
+    utils::apply_unitensor_elementwise_fn<
+        CTYPE_COMPUTE,
+        op_name,
+        utils::SupportedTensorDtypes::SAME_AS_COMMON>(
+        [val_alpha_times_b](const auto val_a) {
+          // Cast here supports vectorization; either it does nothing
+          // or it casts from CTYPE_COMPUTE to
+          // Vectorized<CTYPE_COMPUTE>.
+          return val_a + decltype(val_a)(val_alpha_times_b);
         },
         ctx,
         a,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::SAME_AS_COMMON);
+        out);
   });
 
   return out;

@@ -19,8 +19,8 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 )
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.xnnpack.test.tester import Quantize
-from torch.ao.quantization.observer import HistogramObserver
-from torch.ao.quantization.quantizer import QuantizationSpec
+from torchao.quantization.pt2e import HistogramObserver
+from torchao.quantization.pt2e.quantizer import QuantizationSpec
 
 aten_op = "torch.ops.aten.add.Tensor"
 exir_op = "executorch_exir_dialects_edge__ops_aten_add_Tensor"
@@ -59,6 +59,10 @@ class Add2(torch.nn.Module):
         "4d_randn_big": lambda: (
             10000 * torch.randn(1, 1, 4, 4),
             torch.randn(1, 1, 4, 1),
+        ),
+        "4d_randn_1_mutltiple_broadcasts": lambda: (
+            torch.randn(1, 4, 4, 1),
+            torch.ones(1, 1, 4, 4),
         ),
     }
 

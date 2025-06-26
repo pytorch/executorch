@@ -101,10 +101,6 @@ def is_tensor_node(node: torch.fx.Node) -> bool:
     """
     Returns true if the given node produces a tensor value, or a collection of tensor values
     """
-    # All nodes with tensor values are tagged by the SpecPropPass transform
-    if "spec" in node.meta:
-        return True
-
     if "val" not in node.meta:
         return False
 
@@ -268,9 +264,19 @@ def set_node_spec_attr(node: torch.fx.Node, attr: str, value):
     if isinstance(spec, TensorSpec):
         setattr(spec, attr, value)
     elif isinstance(spec, (list, tuple)):
-        for s in spec:
-            assert isinstance(s, TensorSpec)
-            setattr(s, attr, value)
+        # Special case if value is a list/tuple of the same length as the
+        # collection of tensors in the node. In this case, treat the value list
+        # as a list of values to set indivudually for each tensor in the node
+        if isinstance(value, (list, tuple)) and len(spec) == len(value):
+            assert len(spec) == len(value)
+            for s, v in zip(spec, value):
+                assert isinstance(s, TensorSpec)
+                setattr(s, attr, v)
+        # Otherwise, set the attribute to value for all tensors in the list
+        else:
+            for s in spec:
+                assert isinstance(s, TensorSpec)
+                setattr(s, attr, value)
     else:
         raise RuntimeError(f"Cannot set attr for spec of type {type(spec)}")
 

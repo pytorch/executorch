@@ -30,7 +30,7 @@ CMAKE_X86_64="build-x86"
 BUILD_AARCH64="true"
 CMAKE_AARCH64="build-android"
 CLEAN="true"
-BUILD_TYPE="Debug"
+BUILD_TYPE="RelWithDebInfo"
 BUILD_JOB_NUMBER="16"
 
 if [ -z PYTHON_EXECUTABLE ]; then
@@ -71,7 +71,7 @@ if [ "$BUILD_AARCH64" = true ]; then
         rm -rf $BUILD_ROOT && mkdir $BUILD_ROOT
     else
         # Force rebuild flatccrt for the correct platform
-        cd $BUILD_ROOT/devtools && make clean
+        cd $BUILD_ROOT/third-party/flatcc && make clean
     fi
 
     cd $BUILD_ROOT
@@ -81,6 +81,8 @@ if [ "$BUILD_AARCH64" = true ]; then
         -DEXECUTORCH_BUILD_QNN=ON \
         -DEXECUTORCH_BUILD_DEVTOOLS=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
         -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
@@ -116,7 +118,7 @@ if [ "$BUILD_X86_64" = true ]; then
         rm -rf $BUILD_ROOT && mkdir $BUILD_ROOT
     else
         # Force rebuild flatccrt for the correct platform
-        cd $BUILD_ROOT/devtools && make clean
+        cd $BUILD_ROOT/third-party/flatcc && make clean
     fi
 
     cd $BUILD_ROOT
@@ -127,6 +129,8 @@ if [ "$BUILD_X86_64" = true ]; then
         -DEXECUTORCH_BUILD_QNN=ON \
         -DEXECUTORCH_BUILD_DEVTOOLS=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \

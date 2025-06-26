@@ -216,6 +216,16 @@ TEST_F(ModuleTest, TestExecuteOnCurrupted) {
   EXPECT_NE(result.error(), Error::Ok);
 }
 
+TEST_F(ModuleTest, TestExecuteWithTooManyInputs) {
+  Module module(model_path_);
+
+  auto tensor = make_tensor_ptr({2, 2}, {1.f, 2.f, 3.f, 4.f});
+
+  const auto result = module.execute("forward", {tensor, tensor, 1.0, 1.0});
+
+  EXPECT_NE(result.error(), Error::Ok);
+}
+
 TEST_F(ModuleTest, TestGet) {
   Module module(model_path_);
 

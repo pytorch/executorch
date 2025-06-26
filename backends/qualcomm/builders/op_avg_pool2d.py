@@ -12,7 +12,8 @@ import numpy as np
 import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpPoolAvg2d, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
@@ -23,12 +24,18 @@ class AvgPool2d(NodeVisitor):
     def __init__(self, *args) -> None:
         super().__init__(*args)
 
+    def _get_filter_size(self, node):
+        filter_size = cast(List[int], node.args[1])
+        if len(filter_size) == 1:
+            filter_size = filter_size + filter_size
+        return filter_size
+
     def define_node(
         self,
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        input_node = node.args[0]
+        input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
@@ -46,31 +53,44 @@ class AvgPool2d(NodeVisitor):
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
-        # kernel info
-        filter_size = cast(List[int], node.args[1])
-        if len(filter_size) == 1:
-            filter_size = filter_size + filter_size
-        filter_size_shape = [len(filter_size)]
 
-        # stride info - default to kernel_size if not given
-        stride = cast(List[int], node.args[2]) if len(node.args) > 2 else filter_size
-        if len(stride) == 1:
-            stride = stride + stride
-        stride_shape = [len(stride)]
+        pt_ceil_mode = node.args[4] if len(node.args) > 4 else False
+
+        # kernel info
+        input_shape = input_node.meta["val"].shape
+        input_h, input_w = input_shape[2], input_shape[3]
+        filter_size = self._get_filter_size(node)
+        if pt_ceil_mode:
+            # filter_size might larger than input_h, input_w, use min of them
+            filter_size = [min(filter_size[0], input_h), min(filter_size[1], input_w)]
+        filter_size_shape = [len(filter_size)]
 
         padding = [0, 0]
         if len(node.args) > 3:
             padding = cast(List[int], node.args[3])
             if len(padding) == 1:
                 padding = padding + padding
+            if pt_ceil_mode:
+                ori_filter_h, ori_filter_w = self._get_filter_size(node)
+                padding = [
+                    0 if ori_filter_h > input_h else padding[0],
+                    0 if ori_filter_w > input_w else padding[1],
+                ]
+
         padding_shape = [len(padding), len(padding)]
 
         # if ceil mode is True, use ceil instead of floor to compute the output shape
-        mode = OpPoolAvg2d.RoundingMode.FLOOR
-        if len(node.args) > 4:
-            ceil_mode = cast(bool, node.args[4])
-            if ceil_mode:
-                mode = OpPoolAvg2d.RoundingMode.CEIL
+        mode = (
+            OpPoolAvg2d.RoundingMode.CEIL
+            if pt_ceil_mode
+            else OpPoolAvg2d.RoundingMode.FLOOR
+        )
+
+        # stride info - default to kernel_size if not given
+        stride = cast(List[int], node.args[2]) if len(node.args) > 2 else filter_size
+        if len(stride) == 1:
+            stride = stride + stride
+        stride_shape = [len(stride)]
 
         count_include_pad = True
         if len(node.args) > 5:

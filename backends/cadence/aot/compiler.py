@@ -37,9 +37,9 @@ from executorch.exir.passes import ToOutVarPass
 from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
 from executorch.exir.program._program import to_edge_with_preserved_ops
 from torch._inductor.decomposition import remove_decompositions
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from torch.export.exported_program import ExportedProgram
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from .passes import get_cadence_passes
 
@@ -217,6 +217,7 @@ def _lower_ep_to_edge(
     expo_program: ExportedProgram,
     dump_graphs: bool = False,
     constant_methods: Optional[dict[str, object]] = None,
+    core_aten_exceptions: Optional[list[torch._ops.OpOverload]] = None,
 ) -> EdgeProgramManager:
     """
     Lower an ExportedProgram to an EdgeProgramManager (in edge IR).
@@ -237,7 +238,8 @@ def _lower_ep_to_edge(
                 torch.ops.aten.unfold.default,
                 torch.ops.aten.angle.default,
                 torch.ops.aten.rms_norm.default,
-            ],
+            ]
+            + (core_aten_exceptions or []),
         ),
         constant_methods=constant_methods,
         preserve_ops=(torch.ops.aten.rms_norm.default,),
@@ -275,6 +277,8 @@ def quantize_and_export_to_edge(
     quantizer: Optional[CadenceQuantizer] = None,
     dump_graphs: bool = False,
     constant_methods: Optional[dict[str, object]] = None,
+    calibration_data: Optional[list[tuple[object, ...]]] = None,
+    core_aten_exceptions: Optional[list[torch._ops.OpOverload]] = None,
 ) -> EdgeProgramManager:
     """
     Trace, quantize and lower a model/inputs pair to edge IR.
@@ -283,6 +287,7 @@ def quantize_and_export_to_edge(
         model,
         inputs,
         quantizer=quantizer,
+        calibration_data=calibration_data,
         dump_graphs=dump_graphs,
     )
 
@@ -290,6 +295,7 @@ def quantize_and_export_to_edge(
         quantized_model,
         dump_graphs=dump_graphs,
         constant_methods=constant_methods,
+        core_aten_exceptions=core_aten_exceptions,
     )
 
 

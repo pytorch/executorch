@@ -53,15 +53,17 @@ Tensor& copy_out(
     std::memcpy(out.mutable_data_ptr(), src.const_data_ptr(), src.nbytes());
   } else {
     ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "copy.out", CTYPE, [&]() {
-      utils::apply_bitensor_elementwise_fn<CTYPE, op_name>(
+      utils::apply_bitensor_elementwise_fn<
+          CTYPE,
+          op_name,
+          utils::SupportedTensorDtypes::REALHBBF16>(
           [](ET_UNUSED const CTYPE _, const CTYPE val_src) { return val_src; },
           ctx,
           in,
           utils::SupportedTensorDtypes::REALHBBF16,
           src,
           utils::SupportedTensorDtypes::REALHBBF16,
-          out,
-          utils::SupportedTensorDtypes::REALHBBF16);
+          out);
     });
   }
 
@@ -93,15 +95,17 @@ Tensor& copy_(
     std::memcpy(in.mutable_data_ptr(), src.const_data_ptr(), in.nbytes());
   } else {
     ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "copy_", CTYPE, [&]() {
-      utils::apply_bitensor_elementwise_fn<CTYPE, op_name>(
+      utils::apply_bitensor_elementwise_fn<
+          CTYPE,
+          op_name,
+          utils::SupportedTensorDtypes::REALHBBF16>(
           [](ET_UNUSED const CTYPE _, const CTYPE val_src) { return val_src; },
           ctx,
           in,
           utils::SupportedTensorDtypes::REALHBBF16,
           src,
           utils::SupportedTensorDtypes::REALHBBF16,
-          in,
-          utils::SupportedTensorDtypes::REALHBBF16);
+          in);
     });
   }
 

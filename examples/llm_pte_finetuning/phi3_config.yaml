@@ -12,6 +12,8 @@ batch_size: 1
 loss:
   _component_: torch.nn.CrossEntropyLoss
 
+learning_rate: 5e-3
+
 model:
   _component_: torchtune.models.phi3.lora_phi3_mini
   lora_attn_modules: ['q_proj', 'v_proj']

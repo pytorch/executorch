@@ -12,7 +12,6 @@ from torch.ao.ns.fx.utils import compute_sqnr
 from torch.ao.quantization import (
     default_dynamic_fake_quant,
     default_dynamic_qconfig,
-    observer,
     QConfig,
     QConfigMapping,
 )
@@ -28,16 +27,16 @@ from torch.ao.quantization.quantize_fx import (
     convert_to_reference_fx,
     prepare_fx,
 )
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.export import export_for_training
 from torch.testing._internal.common_quantization import (
     NodeSpec as ns,
-    PT2EQuantizationTestCase,
     skip_if_no_torchvision,
     skipIfNoQNNPACK,
     TestHelperModules,
 )
 from torch.testing._internal.common_quantized import override_quantized_engine
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.testing.pt2e.utils import PT2EQuantizationTestCase
 
 
 @skipIfNoQNNPACK
@@ -119,6 +118,116 @@ class TestXNNPACKQuantizer(PT2EQuantizationTestCase):
             quantizer,
             node_occurrence,
             node_list,
+        )
+
+    def test_q_tconv_and_conv2d(self):
+        class TConv2dConv2d(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.first = torch.nn.ConvTranspose2d(
+                    in_channels=1,
+                    out_channels=3,
+                    kernel_size=(3, 3),
+                    padding=1,
+                    bias=False,
+                )
+                self.second = torch.nn.Conv2d(
+                    in_channels=3,
+                    out_channels=2,
+                    kernel_size=(3, 3),
+                    padding=1,
+                    bias=False,
+                )
+
+            def forward(self, x):
+                y = self.first(x)
+                return self.second(y)
+
+            def example_inputs(self):
+                return (torch.randn(1, 1, 3, 3),)
+
+        quantizer = XNNPACKQuantizer()
+        quantization_config = get_symmetric_quantization_config(is_per_channel=True)
+        quantizer.set_operator_type(
+            torch.ops.aten.conv_transpose2d.input, quantization_config
+        )
+        node_occurrence = {
+            # input and output are using quantize_per_tensor and weight is using quantize_per_channel
+            torch.ops.quantized_decomposed.quantize_per_tensor.default: 2,
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default: 2,
+            torch.ops.quantized_decomposed.quantize_per_channel.default: 0,
+            torch.ops.quantized_decomposed.dequantize_per_channel.default: 1,
+        }
+        node_list = [
+            torch.ops.quantized_decomposed.quantize_per_tensor.default,
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            torch.ops.aten.conv_transpose2d.input,
+            torch.ops.quantized_decomposed.quantize_per_tensor.default,
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            torch.ops.aten.conv2d.default,
+        ]
+        m = TConv2dConv2d()
+        self._test_quantizer(
+            m,
+            m.example_inputs(),
+            quantizer,
+            node_occurrence,
+            node_list,
+            is_debug_mode=True,
+        )
+
+    def test_q_conv2_and_tconv2d(self):
+        class TConv2dConv2d(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.first = torch.nn.ConvTranspose2d(
+                    in_channels=1,
+                    out_channels=3,
+                    kernel_size=(3, 3),
+                    padding=1,
+                    bias=False,
+                )
+                self.second = torch.nn.Conv2d(
+                    in_channels=3,
+                    out_channels=2,
+                    kernel_size=(3, 3),
+                    padding=1,
+                    bias=False,
+                )
+
+            def forward(self, x):
+                y = self.first(x)
+                return self.second(y)
+
+            def example_inputs(self):
+                return (torch.randn(1, 1, 3, 3),)
+
+        quantizer = XNNPACKQuantizer()
+        quantization_config = get_symmetric_quantization_config(is_per_channel=True)
+        quantizer.set_operator_type(torch.ops.aten.conv2d.default, quantization_config)
+        node_occurrence = {
+            # input and output are using quantize_per_tensor and weight is using quantize_per_channel
+            torch.ops.quantized_decomposed.quantize_per_tensor.default: 2,
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default: 2,
+            torch.ops.quantized_decomposed.quantize_per_channel.default: 0,
+            torch.ops.quantized_decomposed.dequantize_per_channel.default: 1,
+        }
+        node_list = [
+            torch.ops.aten.conv_transpose2d.input,
+            torch.ops.quantized_decomposed.quantize_per_tensor.default,
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            torch.ops.aten.conv2d.default,
+            torch.ops.quantized_decomposed.quantize_per_tensor.default,
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+        ]
+        m = TConv2dConv2d()
+        self._test_quantizer(
+            m,
+            m.example_inputs(),
+            quantizer,
+            node_occurrence,
+            node_list,
+            is_debug_mode=True,
         )
 
     def test_linear(self):
@@ -575,7 +684,7 @@ class TestXNNPACKQuantizer(PT2EQuantizationTestCase):
             torch.ops.quantized_decomposed.quantize_per_channel.default: 0,
             torch.ops.quantized_decomposed.dequantize_per_channel.default: 2,
         }
-        act_affine_quant_obs = observer.PlaceholderObserver.with_args(
+        act_affine_quant_obs = torch.ao.quantization.PlaceholderObserver.with_args(
             dtype=torch.qint8,
             qscheme=torch.per_tensor_affine,
             quant_min=-128,
@@ -621,7 +730,7 @@ class TestXNNPACKQuantizer(PT2EQuantizationTestCase):
             torch.ops.quantized_decomposed.quantize_per_channel.default: 0,
             torch.ops.quantized_decomposed.dequantize_per_channel.default: 2,
         }
-        act_affine_quant_obs = observer.PlaceholderObserver.with_args(
+        act_affine_quant_obs = torch.ao.quantization.PlaceholderObserver.with_args(
             dtype=torch.qint8,
             qscheme=torch.per_tensor_affine,
             quant_min=-128,
@@ -718,7 +827,7 @@ class TestXNNPACKQuantizer(PT2EQuantizationTestCase):
             torch.ops.quantized_decomposed.quantize_per_tensor.default: 0,
             torch.ops.quantized_decomposed.dequantize_per_tensor.default: 0,
         }
-        act_affine_quant_obs = observer.PlaceholderObserver.with_args(
+        act_affine_quant_obs = torch.ao.quantization.PlaceholderObserver.with_args(
             dtype=torch.qint8,
             qscheme=torch.per_tensor_affine,
             quant_min=-128,

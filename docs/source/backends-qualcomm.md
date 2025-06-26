@@ -143,8 +143,7 @@ cmake .. \
   -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
   -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
   -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
-  -DPYTHON_EXECUTABLE=python3 \
-  -DEXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT=OFF
+  -DPYTHON_EXECUTABLE=python3
 
 # nproc is used to detect the number of available CPU.
 # If it is not applicable, please feel free to use the number you want.

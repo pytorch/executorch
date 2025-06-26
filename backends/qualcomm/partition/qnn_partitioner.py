@@ -4,15 +4,22 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import copy
+import logging
 from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import torch
-from executorch.backends.qualcomm.builders import node_visitor
+from executorch.backends.qualcomm.builders import node_visitor_manager
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
-from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER
+from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
+    flatbuffer_to_option,
+)
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_AXIS_ORDER,
+    QCOM_BYPASS_NODE,
+)
 
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
@@ -23,7 +30,7 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
-from executorch.exir.backend.utils import tag_constant_data
+from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -36,6 +43,9 @@ from .common_defs import (
 )
 from .utils import filter_fn, generate_qnn_executorch_option, get_skip_decomp_table
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
 
 class QnnOperatorSupport(OperatorSupportBase):
     def __init__(
@@ -45,7 +55,11 @@ class QnnOperatorSupport(OperatorSupportBase):
         skip_node_id_set: set = None,
         skip_node_op_set: set = None,
     ):
-        self.node_visitors = node_visitor.get_node_visitors(edge_program)
+        python_options = flatbuffer_to_option(compiler_specs[0].value)
+        self.node_visitors = node_visitor_manager.get_node_visitors(
+            edge_program,
+            op_package_infos=python_options.op_package_options.op_package_infos,
+        )
 
         self.skip_node_op_set = skip_node_op_set
         self.skip_node_id_set = skip_node_id_set
@@ -70,6 +84,8 @@ class QnnOperatorSupport(OperatorSupportBase):
             node.target in allow_list_operator
             # bypass if custom op appears
             or OpContextLoader.namespace == node.target.namespace
+            # bypass dequantize op for parameters & buffers
+            or node.meta.get(QCOM_BYPASS_NODE, False)
         ):
             return True
 
@@ -112,6 +128,7 @@ class QnnPartitioner(Partitioner):
         compiler_specs: List[CompileSpec],
         skip_node_id_set: set = None,
         skip_node_op_set: set = None,
+        skip_mutable_buffer: bool = False,
     ):
         self.compiler_specs_snapshot = copy.deepcopy(compiler_specs)
 
@@ -121,6 +138,7 @@ class QnnPartitioner(Partitioner):
         self.partition_tags: Dict[str, DelegationSpec] = {}
         self.skip_node_id_set = set() if skip_node_id_set is None else skip_node_id_set
         self.skip_node_op_set = set() if skip_node_op_set is None else skip_node_op_set
+        self.skip_mutable_buffer = skip_mutable_buffer
 
     def generate_partitions(
         self, edge_program: torch.export.ExportedProgram
@@ -166,6 +184,15 @@ class QnnPartitioner(Partitioner):
         if len(partitions) != 0:
             self.tag_nodes(partitions, edge_program)
             tag_constant_data(edge_program)
+            if not self.skip_mutable_buffer:
+                logger.info(
+                    "Qnn partitioner will delegate torch mutable buffer with the same I/O address during the runtime, "
+                    "so if your model contains mutable buffer, "
+                    "then you can get the better performance with skip_mutable_buffer=False. "
+                    "If you encounter accuracy issue during the runtime, "
+                    "then please set `skip_mutable_buffer=True` and try again."
+                )
+                tag_mutated_buffer(edge_program)
         for node in edge_program.graph_module.graph.nodes:
             if hasattr(node, "meta"):
                 # pop certain keys in meta for not affecting the passes in compilation

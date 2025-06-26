@@ -41,28 +41,28 @@ class ComboBlockBottleneckResidual(torch.nn.Module):
         # (t, c, n, s) = (6, 96, 1, 1)
         # 1. 1x1 CONV2d + ReLU6 (Pointwise)
         self.pointwise_conv2d = torch.nn.Conv2d(
-            in_channels=64, out_channels=384, kernel_size=1, stride=1, groups=1
-        )  ## (1, 384, 81, 81)
-        self.batch_norm2d_16 = torch.nn.BatchNorm2d(384, affine=False)
+            in_channels=32, out_channels=128, kernel_size=1, stride=1, groups=1
+        )  ## (1, 128, 81, 81)
+        self.batch_norm2d_16 = torch.nn.BatchNorm2d(128, affine=False)
         self.relu6 = torch.nn.ReLU6()
 
         # 2. 3x3 DepthwiseConv2d + ReLu6
         self.depthwise_conv2d = torch.nn.Conv2d(
-            in_channels=384,
-            out_channels=384,
+            in_channels=128,
+            out_channels=128,
             kernel_size=3,
             padding=1,
             stride=1,
-            groups=384,
-        )  ## (1, 384, H, W)
+            groups=128,
+        )  ## (1, 128, H, W)
 
         # 3. Linear 1x1 Conv2d
         self.pointwise_conv2d_linear = torch.nn.Conv2d(
-            in_channels=384, out_channels=64, kernel_size=1, stride=1, groups=1
-        )  ## (1, 64, 81, 81)
+            in_channels=128, out_channels=32, kernel_size=1, stride=1, groups=1
+        )  ## (1, 32, 81, 81)
 
     def get_inputs(self) -> Tuple[torch.Tensor]:
-        return (torch.randn(1, 64, 81, 81),)
+        return (torch.randn(1, 32, 81, 81),)
 
     def forward(self, x):
         input = x
@@ -430,16 +430,8 @@ def test_convolution_2d_tosa_MI_avgpool2d(test_data: torch.Tensor):
     pipeline.run()
 
 
-x_fails = {
-    "combo_conv_avgpool_20_x_4d": "AssertionError: Output 0 does not match reference output.",
-    "combo_conv_avgpool_4d": "AssertionError: Output 0 does not match reference output.",
-    "combo_conv_avgpool_5_x_4d_randn": "AssertionError: Output 0 does not match reference output.",
-    "combo_conv_avgpool_2_x_4d": "AssertionError: Output 0 does not match reference output.",
-}
-
-
 @pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness (MLTORCH-307)
-@common.parametrize("test_data", ComboConvAvgPool2d.test_data, x_fails)
+@common.parametrize("test_data", ComboConvAvgPool2d.test_data)
 def test_convolution_2d_tosa_BI_avgpool2d(test_data: torch.Tensor):
     model = ComboConvAvgPool2d()
     pipeline = TosaPipelineBI[input_t1](

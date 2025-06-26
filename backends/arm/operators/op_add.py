@@ -16,6 +16,8 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
+    validate_same_dtype,
+    validate_valid_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -44,20 +46,13 @@ class AddVisitor_080_BI(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
-        # Specification (0.80) states that input and output types
-        # should all be the same
-        if inputs[0].dtype != inputs[1].dtype or inputs[0].dtype != output.dtype:
-            raise TypeError(
-                f"All IO needs to have the same data type, got input 1: "
-                f"{inputs[0].dtype}, input 2: {inputs[1].dtype} and output: "
-                f"{output.dtype}"
-            )
-        # Handle int8 (quantized) and int32
-        supported_dtypes = [ts.DType.INT8, ts.DType.INT32]
-        if inputs[0].dtype not in supported_dtypes:
-            raise TypeError(
-                f'IO data type needs to be {supported_dtypes}, got "{inputs[0].dtype}"'
-            )
+        validate_same_dtype(self.target, [*inputs, output], ts)
+        validate_valid_dtype(
+            self.target,
+            [*inputs, output],
+            [ts.DType.INT8, ts.DType.INT32],
+            output.tosa_spec,
+        )
 
         dim_order = (
             inputs[0].dim_order
@@ -123,24 +118,16 @@ class AddVisitor_080_MI(AddVisitor_080_BI):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
-        # Specification (0.80) states that input and output types
-        # should all be the same
-        if inputs[0].dtype != inputs[1].dtype or inputs[0].dtype != output.dtype:
-            raise TypeError(
-                f"All IO needs to have the same data type, got input 1: "
-                f"{inputs[0].dtype}, input 2: {inputs[1].dtype} and output: "
-                f"{output.dtype}"
-            )
+        validate_same_dtype(self.target, [*inputs, output], ts)
 
         if inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]:
             # Call the inherited define_node for handling integers
             super().define_node(node, tosa_graph, inputs, output)
         else:
             # FP32 Add lowering
-            if inputs[0].dtype != ts.DType.FP32:
-                raise TypeError(
-                    f"Expected IO data type to be FP32, got {inputs[0].dtype}"
-                )
+            validate_valid_dtype(
+                self.target, [*inputs, output], ts.DType.FP32, output.tosa_spec
+            )
 
             input1, input2 = inputs
 
@@ -175,25 +162,18 @@ class AddVisitor_INT(NodeVisitor):
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
+        validate_same_dtype(self.target, [*inputs, output], ts)
+        validate_valid_dtype(
+            self.target,
+            [*inputs, output],
+            [ts.DType.INT8, ts.DType.INT32],
+            output.tosa_spec,
+        )
 
-        # Specification (1.0) states that input and output types
-        # should all be the same
-        if inputs[0].dtype != inputs[1].dtype or inputs[0].dtype != output.dtype:
-            raise TypeError(
-                f"All IO needs to have the same data type, got input 1: "
-                f"{inputs[0].dtype}, input 2: {inputs[1].dtype} and output: "
-                f"{output.dtype}"
-            )
-        # Handle int8 (quantized) and int32
-        supported_dtypes = [ts.DType.INT8, ts.DType.INT32]
-        if inputs[0].dtype not in supported_dtypes:
-            raise TypeError(
-                f'IO data type needs to be {supported_dtypes}, got "{inputs[0].dtype}"'
-            )
         scale_back = 1.0
         if inputs[0].dtype == ts.DType.INT8:
             rescaled_inputs, scale_back = tqutils.insert_rescale_ops_to_int32(
-                tosa_graph, inputs, node, self.tosa_specs
+                tosa_graph, inputs, node, self.tosa_spec
             )
         else:
             # input[0].dtype == ts.DType.INT32
@@ -221,7 +201,7 @@ class AddVisitor_INT(NodeVisitor):
             # Scale output back to 8 bit
             # pyre-ignore
             tqutils.insert_rescale_op_to_int8(
-                tosa_graph, add_output, scale_back, node, self.tosa_specs
+                tosa_graph, add_output, scale_back, node, self.tosa_spec
             )  # type: ignore[possibly-undefined]
 
 
@@ -245,25 +225,16 @@ class AddVisitor_FP(AddVisitor_INT):
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
-
-        # Specification (1.0) states that input and output types
-        # should all be the same
-        if inputs[0].dtype != inputs[1].dtype or inputs[0].dtype != output.dtype:
-            raise TypeError(
-                f"All IO needs to have the same data type, got input 1: "
-                f"{inputs[0].dtype}, input 2: {inputs[1].dtype} and output: "
-                f"{output.dtype}"
-            )
+        validate_same_dtype(self.target, [*inputs, output], ts)
 
         if inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]:
             # Call the inherited define_node for handling integers
             super().define_node(node, tosa_graph, inputs, output)
         else:
             # FP32 Add lowering
-            if inputs[0].dtype != ts.DType.FP32:
-                raise TypeError(
-                    f"Expected IO data type to be FP32, got {inputs[0].dtype}"
-                )
+            validate_valid_dtype(
+                self.target, [*inputs, output], ts.DType.FP32, output.tosa_spec
+            )
 
             input1, input2 = inputs
 

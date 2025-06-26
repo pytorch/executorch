@@ -29,8 +29,8 @@ def get_mock_happy_flow_content(app_type: str = "IOS_APP"):
                 "name": "Syslog",
                 "type": "DEVICE_LOG",
                 "extension": "syslog",
-                "url": "https://job_arn_1_device_log",
-                "s3_url": "https://job_arn_1/test-workflow1/1/syslog.syslog",
+                "url": "https://job_arn_1_device_log",  # @lint-ignore
+                "s3_url": "https://job_arn_1/test-workflow1/1/syslog.syslog",  # @lint-ignore
                 "app_type": app_type,
                 "job_name": "job_arn_1_name",
                 "os": "14",
@@ -55,8 +55,8 @@ def get_mock_happy_flow_content(app_type: str = "IOS_APP"):
                 "name": "Customer Artifacts",
                 "type": "CUSTOMER_ARTIFACT",
                 "extension": "zip",
-                "url": "https://job_arn_1_customer_artifact",
-                "s3_url": "https://job_arn_1_customer_artifact1",
+                "url": "https://job_arn_1_customer_artifact",  # @lint-ignore
+                "s3_url": "https://job_arn_1_customer_artifact1",  # @lint-ignore
                 "app_type": app_type,
                 "job_name": "job_arn_1_device_name",
                 "os": "14",
@@ -68,8 +68,8 @@ def get_mock_happy_flow_content(app_type: str = "IOS_APP"):
                 "name": "Syslog",
                 "type": "DEVICE_LOG",
                 "extension": "syslog",
-                "url": "https://job_arn_1_device_log",
-                "s3_url": "https://job_arn_1/test-workflow1/1/syslog.syslog",
+                "url": "https://job_arn_1_device_log",  # @lint-ignore
+                "s3_url": "https://job_arn_1/test-workflow1/1/syslog.syslog",  # @lint-ignore
                 "app_type": app_type,
                 "job_name": "job_arn_2_name",
                 "os": "14",
@@ -94,8 +94,8 @@ def get_mock_happy_flow_content(app_type: str = "IOS_APP"):
                 "name": "Customer Artifacts",
                 "type": "CUSTOMER_ARTIFACT",
                 "extension": "zip",
-                "url": "https://job_arn_1_customer_artifact",
-                "s3_url": "https://job_arn_1_customer_artifact1",
+                "url": "https://job_arn_1_customer_artifact",  # @lint-ignore
+                "s3_url": "https://job_arn_1_customer_artifact1",  # @lint-ignore
                 "app_type": app_type,
                 "job_name": "job_arn_2_name",
                 "os": "14",

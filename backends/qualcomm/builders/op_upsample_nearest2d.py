@@ -10,7 +10,8 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpResizeNearestNeighbor, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
@@ -26,7 +27,7 @@ class ResizeBilinear(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        input_node = node.args[0]
+        input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
@@ -45,23 +46,23 @@ class ResizeBilinear(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        reisze_nearest_op = PyQnnWrapper.PyQnnOpWrapper(
+        resize_nearest_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpResizeNearestNeighbor.op_name,
         )
-        reisze_nearest_op.AddInputTensors([input_tensor_wrapper])
-        reisze_nearest_op.AddOutputTensors([output_tensor_wrapper])
+        resize_nearest_op.AddInputTensors([input_tensor_wrapper])
+        resize_nearest_op.AddOutputTensors([output_tensor_wrapper])
         # align_corners is guaranteed to be false
-        reisze_nearest_op.AddScalarParam(
+        resize_nearest_op.AddScalarParam(
             OpResizeNearestNeighbor.param_align_corners,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
             {QCOM_DATA: False},
         )
-        reisze_nearest_op.AddScalarParam(
+        resize_nearest_op.AddScalarParam(
             OpResizeNearestNeighbor.param_half_pixel_centers,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
             {QCOM_DATA: True},
         )
 
-        return reisze_nearest_op
+        return resize_nearest_op

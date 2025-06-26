@@ -26,10 +26,6 @@ set(_common_compile_options -Wno-deprecated-declarations)
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
-if(NOT PYTHON_EXECUTABLE)
-  resolve_python_executable()
-endif()
-
 # Portable kernel sources TODO(larryliu0820): use buck2 to gather the sources
 file(GLOB_RECURSE _portable_kernels__srcs
      "${CMAKE_CURRENT_SOURCE_DIR}/cpu/*.cpp"
@@ -52,7 +48,7 @@ message("Generated files ${gen_command_sources}")
 # Focused on portability and understandability rather than speed.
 #
 add_library(portable_kernels ${_portable_kernels__srcs})
-target_link_libraries(portable_kernels PRIVATE executorch_core)
+target_link_libraries(portable_kernels PRIVATE executorch_core kernels_util_all_deps)
 target_compile_options(portable_kernels PUBLIC ${_common_compile_options})
 
 # Build a library for _portable_kernels__srcs
@@ -72,9 +68,16 @@ if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   target_link_libraries(optimized_portable_kernels PUBLIC extension_threadpool)
   target_compile_options(optimized_portable_kernels PUBLIC ${_common_compile_options})
   target_include_directories(optimized_portable_kernels PRIVATE ${TORCH_INCLUDE_DIRS})
-  target_compile_definitions(optimized_portable_kernels PRIVATE ET_USE_PYTORCH_HEADERS)
+  target_compile_definitions(optimized_portable_kernels PRIVATE "ET_USE_PYTORCH_HEADERS=ET_HAS_EXCEPTIONS")
+  gen_selected_ops(LIB_NAME "optimized_portable_ops_lib" OPS_SCHEMA_YAML "${_yaml}")
+  generate_bindings_for_kernels(
+    LIB_NAME "optimized_portable_ops_lib" FUNCTIONS_YAML "${_yaml}"
+  )
+  gen_operators_lib(
+    LIB_NAME "optimized_portable_ops_lib" KERNEL_LIBS optimized_portable_kernels DEPS executorch_core
+  )
   install(
-    TARGETS optimized_portable_kernels
+    TARGETS optimized_portable_kernels optimized_portable_ops_lib
     DESTINATION lib
   )
 endif()

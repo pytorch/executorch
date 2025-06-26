@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import json
+import logging
 import os
 import re
 from multiprocessing.connection import Client
@@ -113,8 +114,11 @@ def main(args):
         )
 
     instance = EdsrModel()
-    if args.compile_only:
+    if args.ci:
         inputs = instance.get_example_inputs()
+        logging.warning(
+            "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
+        )
     else:
         dataset = get_dataset(
             args.hr_ref_dir, args.lr_dir, args.default_dataset, args.artifact

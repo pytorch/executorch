@@ -16,6 +16,8 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
+    validate_same_dtype,
+    validate_valid_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 
@@ -37,11 +39,30 @@ def binary_operator_factory_0_80(bw_target: str, tosa_op):
             import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore  # noqa: F401
 
             validate_num_inputs(self.target, inputs, 2)
+            validate_same_dtype(self.target, [*inputs, output], ts)
 
-            if not (inputs[0].dtype == inputs[1].dtype == output.dtype):
-                raise ValueError(
-                    "All inputs and outputs need same dtype."
-                    f"Got {inputs[0].dtype=}, {inputs[1].dtype=}, {output.dtype=}."
+            if self.target in [
+                "aten.bitwise_and.Tensor",
+                "aten.bitwise_xor.Tensor",
+                "aten.bitwise_or.Tensor",
+                "aten.bitwise_left_shift.Tensor",
+            ]:
+                validate_valid_dtype(
+                    self.target,
+                    [*inputs, output],
+                    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
+                    output.tosa_spec,
+                )
+            if self.target in [
+                "aten.logical_and.default",
+                "aten.logical_xor.defaul",
+                "aten.logical_or.default",
+            ]:
+                validate_valid_dtype(
+                    self.target,
+                    [*inputs, output],
+                    [ts.DType.BOOL],
+                    output.tosa_spec,
                 )
 
             tosa_graph.addOperator(
@@ -68,11 +89,30 @@ def binary_operator_factory(bw_target: str, tosa_op):
             import serializer.tosa_serializer as ts  # type: ignore  # noqa: F401
 
             validate_num_inputs(self.target, inputs, 2)
+            validate_same_dtype(self.target, [*inputs, output], ts)
 
-            if not (inputs[0].dtype == inputs[1].dtype == output.dtype):
-                raise ValueError(
-                    "All inputs and outputs need same dtype."
-                    f"Got {inputs[0].dtype=}, {inputs[1].dtype=}, {output.dtype=}."
+            if self.target in [
+                "aten.bitwise_and.Tensor",
+                "aten.bitwise_xor.Tensor",
+                "aten.bitwise_or.Tensor",
+                "aten.bitwise_left_shift.Tensor",
+            ]:
+                validate_valid_dtype(
+                    self.target,
+                    [*inputs, output],
+                    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
+                    output.tosa_spec,
+                )
+            if self.target in [
+                "aten.logical_and.default",
+                "aten.logical_xor.defaul",
+                "aten.logical_or.default",
+            ]:
+                validate_valid_dtype(
+                    self.target,
+                    [*inputs, output],
+                    [ts.DType.BOOL],
+                    output.tosa_spec,
                 )
 
             tosa_graph.addOperator(

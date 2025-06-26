@@ -24,10 +24,6 @@ if(NOT RUNTIME_PATH)
   set(RUNTIME_PATH ${CMAKE_CURRENT_SOURCE_DIR}/runtime)
 endif()
 
-if(NOT PYTHON_EXECUTABLE)
-  set(PYTHON_EXECUTABLE python3)
-endif()
-
 # Include this file to access target_link_options_shared_lib This is required to
 # provide access to target_link_options_shared_lib which allows libraries to be
 # linked with the --whole-archive flag. This is required for libraries that
@@ -85,7 +81,7 @@ set(GENERATED_HEADER
 add_custom_command(
   OUTPUT ${GENERATED_HEADER}
   COMMAND
-    ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
+    flatc --cpp --cpp-std c++11 --scoped-enums -o
     "${SCHEMA_INCLUDE_DIR}/executorch/backends/vulkan/serialization/" ${_vulkan_schema__srcs}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   DEPENDS flatc

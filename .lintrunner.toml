@@ -220,6 +220,13 @@ exclude_patterns = [
     'extension/**',
     'kernels/optimized/**',
     # Justified <functional> include.
+    'kernels/portable/cpu/op_bitwise*.cpp',
+    'kernels/portable/cpu/op_eq.cpp',
+    'kernels/portable/cpu/op_ge.cpp',
+    'kernels/portable/cpu/op_gt.cpp',
+    'kernels/portable/cpu/op_le.cpp',
+    'kernels/portable/cpu/op_lt.cpp',
+    'kernels/portable/cpu/op_ne.cpp',
     'runtime/kernel/thread_parallel_interface.h',
     'scripts/**',
     'third-party/**',
@@ -264,6 +271,10 @@ exclude_patterns = [
     'examples/**',
     'exir/verification/bindings.cpp',
     'extension/**',
+    # Uses properly-gated (ET_USE_PYTORCH_HEADERS) ATen include.
+    'kernels/portable/cpu/util/elementwise_util.h',
+    'kernels/portable/cpu/util/math_util.h',
+    'kernels/portable/cpu/util/vectorized_math.h',
     'kernels/optimized/**',
     'runtime/core/exec_aten/**',
     # Want to be able to keep c10 in sync with PyTorch core.
@@ -370,4 +381,37 @@ command = [
     """,
     '--',
     '@{{PATHSFILE}}',
+]
+
+[[linter]]
+code = "TORCH_AO_IMPORT"
+include_patterns = ["**/*.py"]
+exclude_patterns = [
+    "third-party/**",
+    # TODO: remove exceptions as we migrate
+    # backends
+    "exir/tests/test_memory_planning.py",
+    "exir/backend/test/demos/test_xnnpack_qnnpack.py",
+    "backends/xnnpack/test/test_xnnpack_utils.py",
+]
+
+command = [
+  "python3",
+  "-m",
+  "lintrunner_adapters",
+  "run",
+  "grep_linter",
+  "--pattern=\\bfrom torch\\.ao\\.quantization\\.(?:quantizer|observer|quantize_pt2e|pt2e)(?:\\.[A-Za-z0-9_]+)*\\b",
+  "--linter-name=TorchAOImport",
+  "--error-name=Prohibited torch.ao.quantization import",
+  """--error-description=\
+  Imports from torch.ao.quantization are not allowed. \
+  Please import from torchao.quantization.pt2e instead.\n \
+  * torchao.quantization.pt2e (includes all the utils, including observers, fake quants etc.) \n \
+  * torchao.quantization.pt2e.quantizer (quantizer related objects and utils) \n \
+  * torchao.quantization.pt2e.quantize_pt2e (prepare_pt2e, prepare_qat_pt2e, convert_pt2e) \n\n \
+  If you need something from torch.ao.quantization, you can add your file to an exclude_patterns for TORCH_AO_IMPORT in .lintrunner.toml. \
+  """,
+  "--",
+  "@{{PATHSFILE}}",
 ]

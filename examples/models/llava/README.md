@@ -41,10 +41,8 @@ The model weights is 15GiB, and the other memory usage at export stage (`export_
 
 ### Generate ExecuTorch .PTE and other artifacts
 
-Run the following command to generate `llava.pte`, `tokenizer.bin` and an image
-tensor (serialized in TorchScript) `image.pt`.
+Run the following command to generate `llava.pte`, `tokenizer.bin` and an image `basketball.jpg`.
 
-> **Warning**: The C++ runner `llava_main` binary cannot process raw image inputs such as JPEG, PNG, or BMP files directly. You must convert these images to a `.pt` file format using the `examples/models/llava/image_util.py` script before using them with `llava_main`.
 
 Prerequisite: run `install_executorch.sh` to install ExecuTorch and run
 `examples/models/llava/install_requirements.sh` to install dependencies.
@@ -64,11 +62,6 @@ python -m executorch.examples.models.llava.test.test_pte llava.pte
 
 See or run `.ci/scripts/test_llava.sh` shell script to build a C++ runner. This
 script also has preliminary support to build the C++ runner for Android.
-
-This also has an image utility Python script to generate image in PyTorch
-loadable format. Alternatively, we are working on generating image format which
-doesn't need PyTorch to load an image. Motivation for this is to build the C++
-runner on Android.
 
 Then you should be able to find `llava_main` binary:
 
@@ -104,8 +97,8 @@ Run:
 cmake-out/examples/models/llava/llava_main \
     --model_path=llava.pte                 \
     --tokenizer_path=tokenizer.bin         \
-    --image_path=image.pt                  \
-    --prompt="ASSISTANT:" \
+    --image_path=basketball.jpg            \
+    --prompt="ASSISTANT:"                  \
     --seq_len=768                          \
     --temperature=0
 ```

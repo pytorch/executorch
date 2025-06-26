@@ -38,6 +38,10 @@ sub2_test_data = {
     "rand_3D_4x4x4": lambda: (torch.rand(4, 2, 2), torch.rand(4, 2, 2)),
     "rand_4D_2x2x4x4": lambda: (torch.rand(2, 2, 4, 4), torch.rand(2, 2, 4, 4)),
     "zeros": lambda: (torch.rand(4, 4), torch.zeros(4, 4)),
+    "randn_4D_mutltiple_broadcasts": lambda: (
+        torch.randn(1, 4, 4, 1),
+        torch.randn(1, 1, 4, 4),
+    ),
 }
 fvp_sub2_xfails = {"rand_4D_2x2x4x4": "MLETORCH-517 : Multiple batches not supported"}
 

@@ -80,6 +80,3 @@ if(CMAKE_BUILD_TYPE EQUAL "Release")
   target_link_options(size_test_all_optimized_ops PRIVATE "LINKER:--gc-sections")
 endif()
 endif()
-
-# Print all summary
-executorch_print_configuration_summary()

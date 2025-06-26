@@ -39,6 +39,7 @@
 
 [buck2]
 restarter=true
+file_watcher=notify
 
 [oss]
 folly_cxx_tests = False

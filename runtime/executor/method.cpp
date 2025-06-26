@@ -372,7 +372,7 @@ Error Method::parse_external_constants(const NamedDataMap* named_data_map) {
       continue;
     }
     Result<const TensorLayout> tensor_layout =
-        named_data_map->get_metadata(key);
+        named_data_map->get_tensor_layout(key);
     if (!tensor_layout.ok()) {
       ET_LOG(Info, "Failed to get metadata for key %s", key);
       return tensor_layout.error();
@@ -754,7 +754,7 @@ Result<Method> Method::load(
     temp_allocator = platform_allocator;
   }
   Method method(program, memory_manager, event_tracer, temp_allocator);
-
+  ET_LOG(Debug, "Loading method: %s.", s_plan->name()->c_str());
   Error err = method.init(s_plan, named_data_map);
   if (err != Error::Ok) {
     return err;
@@ -1522,6 +1522,7 @@ Error Method::execute() {
       initialized(),
       NotSupported,
       "Cannot execute until method has been initialized.");
+  ET_LOG(Debug, "Executing method: %s.", method_meta().name());
 
   // Chains are executed sequentially today, but future async designs may
   // branch and run many in parallel or out of order.
@@ -1605,8 +1606,7 @@ EValue& Method::mutable_input(size_t i) {
   return mutable_value(get_input_index(i));
 }
 
-Result<executorch::aten::Tensor> Method::get_attribute(
-    executorch::aten::string_view name) {
+Result<executorch::aten::Tensor> Method::get_attribute(std::string_view name) {
   auto flatbuffer_values = serialization_plan_->values();
   size_t counter = 0;
 

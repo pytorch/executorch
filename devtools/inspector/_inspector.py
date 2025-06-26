@@ -46,18 +46,28 @@ from executorch.devtools.inspector._inspector_utils import (
     display_or_print_df,
     EDGE_DIALECT_GRAPH_KEY,
     EXCLUDED_COLUMNS_WHEN_PRINTING,
+    EXCLUDED_EVENTS_FOR_INTERMEDIATE_OUTPUT,
     EXCLUDED_EVENTS_WHEN_PRINTING,
     find_populated_event,
     FORWARD,
     gen_etdump_object,
     gen_graphs_from_etrecord,
+    get_aot_debug_handle_to_op_name_mapping,
     inflate_runtime_output,
     is_debug_output,
     is_inference_output_equal,
+    map_runtime_aot_intermediate_outputs,
     ProgramOutput,
     RESERVED_FRAMEWORK_EVENT_NAMES,
     TimeScale,
     verify_debug_data_equivalence,
+)
+from executorch.devtools.inspector._intermediate_output_capturer import (
+    IntermediateOutputCapturer,
+)
+from executorch.devtools.inspector.numerical_comparator import (
+    L1Comparator,
+    MSEComparator,
 )
 from executorch.exir import ExportedProgram
 
@@ -1074,6 +1084,8 @@ class Inspector:
         # Key str is method name; value is list of ProgramOutputs because of list of test cases
         self._reference_outputs: Dict[str, List[ProgramOutput]] = {}
         self._enable_module_hierarchy = enable_module_hierarchy
+        self._aot_intermediate_outputs: Optional[Dict[Tuple[int, ...], Any]] = None
+        self._aot_debug_handles_to_op_names: Optional[Dict[Tuple[int, ...], str]] = None
         self._consume_etrecord()
 
     def _consume_etrecord(self) -> None:
@@ -1134,6 +1146,55 @@ class Inspector:
                     event_block.reference_output = self._reference_outputs[FORWARD][
                         index
                     ]
+        # Capture intermediate outputs only if _representative_inputs are provided
+        # when using bundled program to create the etrecord
+        if self._etrecord._representative_inputs is None:
+            return
+        export_program = self._etrecord.edge_dialect_program
+        graph_module = export_program.module()
+        self._aot_debug_handles_to_op_names = get_aot_debug_handle_to_op_name_mapping(
+            graph_module
+        )
+        capturer = IntermediateOutputCapturer(graph_module)
+        self._aot_intermediate_outputs = capturer.run_and_capture(
+            self._etrecord._representative_inputs
+        )
+
+    # TODO: Make it more extensible to further merge overlapping debug handles
+    def _get_runtime_intermediate_outputs_and_op_names(
+        self,
+    ) -> Tuple[Dict[Tuple[int, ...], Any], Dict[Tuple[int, ...], str]]:
+        """
+        Retrieve the runtime intermediate outputs(debug handles and intermediate values mappings)
+        from the event blocks, along with the corresponding debug handles and op names mapping.
+        """
+        debug_handle_to_output = {}
+        debug_handle_to_op_name = {}
+        for event_block in self.event_blocks:
+            for event in event_block.events:
+                # Skip OPERATOR_CALL events to avoid double-counting and exclude framework tax
+                if (
+                    event.name in EXCLUDED_EVENTS_FOR_INTERMEDIATE_OUTPUT
+                    or not event.op_types
+                ):
+                    continue
+                # Normalize debug_handle to a tuple
+                debug_handle = event.debug_handles
+                if isinstance(debug_handle, int):
+                    debug_handle = (debug_handle,)
+                else:
+                    debug_handle = tuple(debug_handle)
+                current_entry = debug_handle_to_output.get(debug_handle, (-1, None))
+                # When event has same debug_handle, only keep the one with the largest instruction id
+                if event._instruction_id > current_entry[0]:
+                    debug_handle_to_output[debug_handle] = (
+                        event._instruction_id,
+                        event.debug_data,
+                    )
+                    debug_handle_to_op_name[debug_handle] = event.name
+        return {
+            k: v[1] for k, v in debug_handle_to_output.items()
+        }, debug_handle_to_op_name
 
     def to_dataframe(
         self,
@@ -1240,7 +1301,7 @@ class Inspector:
         for block in self.event_blocks:
             for event in block.events:
                 # Skip OPERATOR_CALL events to avoid double-counting and exclude framework tax
-                if event.event_name == "OPERATOR_CALL":
+                if event.name == "OPERATOR_CALL":
                     continue
 
                 module_hierarchy = event.module_hierarchy.values()
@@ -1292,3 +1353,54 @@ class Inspector:
             if graph is None
             else self._etrecord.graph_map.get(graph)
         )
+
+    def calculate_numeric_gap(self, distance: str = "MSE") -> pd.DataFrame:
+        """
+        Compares logged intermediate outputs from the exported graph (in ETRecord)
+        with runtime outputs (in ETDump) using a user-specific numerical comparator.
+
+        Args:
+            distance: the metrics the inspector will use for gap calculation. Should be one of "MSE", "L1" and "SNR".
+
+        Returns:
+            pd.DataFrame: A DataFrame listing corresponding operator outputs from
+                          both stages and their computed numerical gaps.
+        """
+        if self._aot_intermediate_outputs is None:
+            raise ValueError(
+                "The aot intermediate outputs is required but not populated."
+            )
+        # The runtime_op_names will be used later to map runtime debug_handle to op_name
+        runtime_intermediate_outputs, runtime_op_names = (
+            self._get_runtime_intermediate_outputs_and_op_names()
+        )
+        mapping = map_runtime_aot_intermediate_outputs(
+            self._aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        metric = distance.strip().upper()
+        if metric == "MSE":
+            comparator = MSEComparator()
+        elif metric == "L1":
+            comparator = L1Comparator()
+        else:
+            raise ValueError(f"Unsupported distance metric {distance!r}")
+
+        rows = []
+        for (aot_debug_handle, aot_intermediate_output), (
+            runtime_debug_handle,
+            runtime_intermediate_output,
+        ) in mapping.items():
+            if aot_intermediate_output is None or runtime_intermediate_output is None:
+                continue
+            rows.append(
+                {
+                    "aot_debug_handle": aot_debug_handle,
+                    "aot_intermediate_output": aot_intermediate_output,
+                    "runtime_debug_handle": runtime_debug_handle,
+                    "runtime_intermediate_output": runtime_intermediate_output,
+                    "gap": comparator.compare(
+                        aot_intermediate_output, runtime_intermediate_output
+                    ),
+                }
+            )
+        return pd.DataFrame(rows)

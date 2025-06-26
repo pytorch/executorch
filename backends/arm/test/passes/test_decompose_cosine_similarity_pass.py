@@ -42,11 +42,11 @@ def test_decompose_cosine_similarity_tosa_BI(module):
     pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),
-        tosa_version="TOSA-0.80+BI",
         ops_before_pass=None,
         ops_not_before_pass=None,
         ops_after_pass=ops_after_pass,
         ops_not_after_pass=None,
         pass_list=[DecomposeCosineSimilarityPass],
+        quantize=True,
     )
     pipeline.run()
