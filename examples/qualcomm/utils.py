@@ -9,6 +9,7 @@
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -395,9 +396,7 @@ def build_executorch_binary(
 
 def make_output_dir(path: str):
     if os.path.exists(path):
-        for f in os.listdir(path):
-            os.remove(os.path.join(path, f))
-        os.removedirs(path)
+        shutil.rmtree(path, ignore_errors=True)
     os.makedirs(path)
 
 
