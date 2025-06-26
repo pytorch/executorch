@@ -8,7 +8,7 @@
 
 import unittest
 
-from executorch.examples.models.llama.config.llm_config import (
+from executorch.extension.llm.export.config.llm_config import (
     BackendConfig,
     BaseConfig,
     CoreMLComputeUnit,
