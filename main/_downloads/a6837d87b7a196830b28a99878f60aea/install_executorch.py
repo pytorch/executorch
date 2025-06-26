@@ -19,7 +19,6 @@ from install_requirements import (
     install_optional_example_requirements,
     install_requirements,
     python_is_compatible,
-    TORCH_NIGHTLY_URL,
 )
 
 # Set up logging
@@ -208,8 +207,6 @@ def main(args):
             ".",
             "--no-build-isolation",
             "-v",
-            "--extra-index-url",
-            TORCH_NIGHTLY_URL,
         ]
     )
     subprocess.run(cmd, check=True)
