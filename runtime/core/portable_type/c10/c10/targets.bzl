@@ -112,6 +112,7 @@ def define_common_targets():
                 "util/complex_utils.h",
                 "util/floating_point_utils.h",
                 "util/irange.h",
+                "util/overflows.h",
             ],
             exported_preprocessor_flags = [
                 "-DC10_USING_CUSTOM_GENERATED_MACROS",
