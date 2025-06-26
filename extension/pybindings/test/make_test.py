@@ -476,21 +476,33 @@ def make_test(  # noqa: C901
             tester.assertRaises(RuntimeError, executorch_module, inputs)
 
         def test_program_methods_one(tester):
+            # Create an ExecuTorch program from ModuleAdd.
             exported_program, _ = create_program(ModuleAdd())
+
+            # Use pybindings to load the program.
             executorch_program = load_prog_fn(exported_program.buffer)
+
             tester.assertEqual(executorch_program.num_methods(), 1)
             tester.assertEqual(executorch_program.get_method_name(0), "forward")
 
         def test_program_methods_multi(tester):
+            # Create an ExecuTorch program from ModuleMulti.
             exported_program, _ = create_program(ModuleMulti())
+
+            # Use pybindings to load the program.
             executorch_program = load_prog_fn(exported_program.buffer)
+
             tester.assertEqual(executorch_program.num_methods(), 2)
             tester.assertEqual(executorch_program.get_method_name(0), "forward")
             tester.assertEqual(executorch_program.get_method_name(1), "forward2")
 
         def test_program_method_index_out_of_bounds(tester):
+            # Create an ExecuTorch program from ModuleMulti.
             exported_program, _ = create_program(ModuleMulti())
+
+            # Use pybindings to load the program.
             executorch_program = load_prog_fn(exported_program.buffer)
+
             tester.assertRaises(RuntimeError, executorch_program.get_method_name, 2)
 
         ######### RUN TEST CASES #########
