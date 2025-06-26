@@ -9,6 +9,7 @@
 #pragma once
 
 #include <c10/util/irange.h>
+#include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_indexes_range.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/dtype_util.h>
@@ -27,34 +28,6 @@ namespace torch {
 namespace executor {
 namespace native {
 namespace utils {
-
-/*
- * Convert Scalar to C++ type
- */
-
-template <typename T>
-T scalar_to(const Scalar& s) {
-  if (s.isBoolean()) {
-    return static_cast<T>(s.to<bool>());
-  } else if (s.isFloatingPoint()) {
-    return static_cast<T>(s.to<double>());
-  } else {
-    return static_cast<T>(s.to<int64_t>());
-  }
-}
-
-template <>
-inline double scalar_to<double>(const Scalar& s) {
-  return s.isFloatingPoint() ? s.to<double>()
-                             : static_cast<double>(s.to<int64_t>());
-}
-
-template <>
-inline int64_t scalar_to<int64_t>(const Scalar& s) {
-  return s.isFloatingPoint() ? static_cast<int64_t>(s.to<double>())
-                             : s.to<int64_t>();
-}
-
 namespace internal {
 /**
  * Causes these utility functions to make sure to respect Tensor
