@@ -24,9 +24,11 @@ scalar_tensor_out(KernelRuntimeContext& ctx, const Scalar& s, Tensor& out) {
 
   constexpr auto name = "scalar_tensor.out";
 
-  if (s.isFloatingPoint() && executorch::runtime::isIntegralType(out_type, false)) {
+  if (s.isFloatingPoint() &&
+      executorch::runtime::isIntegralType(out_type, false)) {
     ET_SWITCH_INT_TYPES(out_type, ctx, name, CTYPE, [&]() {
-      out.mutable_data_ptr<CTYPE>()[0] = static_cast<CTYPE>(utils::scalar_to<int64_t>(s));
+      out.mutable_data_ptr<CTYPE>()[0] =
+          static_cast<CTYPE>(utils::scalar_to<int64_t>(s));
     });
   } else {
     ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE, [&]() {
