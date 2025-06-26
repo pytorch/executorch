@@ -15,8 +15,6 @@
 
 #include <gtest/gtest.h>
 
-#include <iostream>
-
 using namespace ::testing;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
@@ -231,6 +229,16 @@ class OpAddOutKernelTest : public OperatorTest {
     EXPECT_TENSOR_CLOSE(op_add_out(a, b, 1.0, out), expected);
     EXPECT_TENSOR_CLOSE(op_add_out(b, a, 1.0, out), expected);
   }
+
+  template <ScalarType DTYPE>
+  void expect_bad_alpha_value_dies(Scalar bad_value) {
+    TensorFactory<DTYPE> tf;
+    Tensor a = tf.ones({2, 2});
+    Tensor b = tf.ones({2, 2});
+    Tensor out = tf.zeros({2, 2});
+
+    ET_EXPECT_KERNEL_FAILURE(context_, op_add_out(a, b, bad_value, out));
+  }
 };
 
 class OpAddScalarOutKernelTest : public OperatorTest {
@@ -241,6 +249,16 @@ class OpAddScalarOutKernelTest : public OperatorTest {
       const Scalar& alpha,
       Tensor& out) {
     return torch::executor::aten::add_outf(context_, self, other, alpha, out);
+  }
+
+  template <ScalarType DTYPE>
+  void expect_bad_alpha_value_dies(Scalar bad_value) {
+    TensorFactory<DTYPE> tf;
+    Tensor a = tf.ones({2, 2});
+    Scalar b = 1;
+    Tensor out = tf.zeros({2, 2});
+
+    ET_EXPECT_KERNEL_FAILURE(context_, op_add_scalar_out(a, b, bad_value, out));
   }
 };
 
@@ -793,4 +811,94 @@ TEST_F(OpAddScalarOutKernelTest, DtypeTest_float16_bool_int_float16) {
   executorch::aten::Tensor out_expected = tfHalf.full({2, 2}, 2.0);
   op_add_scalar_out(self, other, alpha, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST_F(OpAddOutKernelTest, ByteTensorTooLargeAlphaDies) {
+  // Cannot be represented by a uint8_t.
+  expect_bad_alpha_value_dies<ScalarType::Byte>(256);
+}
+
+TEST_F(OpAddOutKernelTest, ByteTensorFloatingPointAlphaDies) {
+  // Cannot be represented by a uint8_t.
+  expect_bad_alpha_value_dies<ScalarType::Byte>(2.2);
+}
+
+#ifndef USE_ATEN_LIB
+TEST_F(OpAddOutKernelTest, IntTensorTooSmallAlphaDies) {
+  // Cannot be represented by a int32_t.
+  expect_bad_alpha_value_dies<ScalarType::Int>(-2147483649);
+}
+
+TEST_F(OpAddOutKernelTest, IntTensorTooLargeAlphaDies) {
+  // Cannot be represented by a int32_t.
+  expect_bad_alpha_value_dies<ScalarType::Int>(2147483648);
+}
+#endif
+
+TEST_F(OpAddOutKernelTest, IntTensorFloatingPointAlphaDies) {
+  // Cannot be represented by a uint32_t.
+  expect_bad_alpha_value_dies<ScalarType::Int>(2.2);
+}
+
+TEST_F(OpAddOutKernelTest, FloatTensorTooSmallAlphaDies) {
+  // Cannot be represented by a float.
+  expect_bad_alpha_value_dies<ScalarType::Float>(-3.41e+38);
+}
+
+TEST_F(OpAddOutKernelTest, FloatTensorTooLargeAlphaDies) {
+  // Cannot be represented by a float.
+  expect_bad_alpha_value_dies<ScalarType::Float>(3.41e+38);
+}
+
+TEST_F(OpAddOutKernelTest, HalfTensorTooLargeAlphaDies) {
+  if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "Portable kernel does the computation in float";
+  }
+  // Cannot be represented by a float.
+  expect_bad_alpha_value_dies<ScalarType::Half>(65505.0);
+}
+
+TEST_F(OpAddScalarOutKernelTest, ByteTensorTooLargeAlphaDies) {
+  // Cannot be represented by a uint8_t.
+  expect_bad_alpha_value_dies<ScalarType::Byte>(256);
+}
+
+TEST_F(OpAddScalarOutKernelTest, ByteTensorFloatingPointAlphaDies) {
+  // Cannot be represented by a uint8_t.
+  expect_bad_alpha_value_dies<ScalarType::Byte>(2.2);
+}
+
+#ifndef USE_ATEN_LIB
+TEST_F(OpAddScalarOutKernelTest, IntTensorTooSmallAlphaDies) {
+  // Cannot be represented by a int32_t.
+  expect_bad_alpha_value_dies<ScalarType::Int>(-2147483649);
+}
+
+TEST_F(OpAddScalarOutKernelTest, IntTensorTooLargeAlphaDies) {
+  // Cannot be represented by a int32_t.
+  expect_bad_alpha_value_dies<ScalarType::Int>(2147483648);
+}
+#endif
+
+TEST_F(OpAddScalarOutKernelTest, IntTensorFloatingPointAlphaDies) {
+  // Cannot be represented by a uint32_t.
+  expect_bad_alpha_value_dies<ScalarType::Int>(2.2);
+}
+
+TEST_F(OpAddScalarOutKernelTest, FloatTensorTooSmallAlphaDies) {
+  // Cannot be represented by a float.
+  expect_bad_alpha_value_dies<ScalarType::Float>(-3.41e+38);
+}
+
+TEST_F(OpAddScalarOutKernelTest, FloatTensorTooLargeAlphaDies) {
+  // Cannot be represented by a float.
+  expect_bad_alpha_value_dies<ScalarType::Float>(3.41e+38);
+}
+
+TEST_F(OpAddScalarOutKernelTest, HalfTensorTooLargeAlphaDies) {
+  if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "Portable kernel does the computation in float";
+  }
+  // Cannot be represented by a float.
+  expect_bad_alpha_value_dies<ScalarType::Half>(65505.0);
 }
