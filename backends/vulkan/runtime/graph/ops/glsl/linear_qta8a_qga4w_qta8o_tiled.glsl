@@ -16,7 +16,7 @@
 #define TILE_ROWS ${TILE_ROWS}
 
 ${define_required_extensions(DTYPE)}
-$if WEIGHT_STORAGE == "buffer":
+$if WEIGHT_STORAGE == "buffer" and WEIGHT_DTYPE == "uint8":
   ${define_required_extensions("uint8")}
 
 #extension GL_EXT_control_flow_attributes : require
@@ -25,7 +25,7 @@ layout(std430) buffer;
 
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, OUT_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_mat1", DTYPE, IN_STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_qmat2", "uint8", WEIGHT_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_qmat2", WEIGHT_DTYPE, WEIGHT_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_qparams", "float", PARAMS_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_input_scale", "float", "buffer", is_scalar_array=True)}
 ${layout_declare_tensor(B, "r", "t_input_zero_point", "int", "buffer", is_scalar_array=True)}
