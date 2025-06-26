@@ -7,33 +7,12 @@
 # pyre-unsafe
 
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Tuple
 
 import torch
+from executorch.devtools.inspector._inspector_utils import NodeFilter
 from torch.fx import GraphModule
 from torch.fx.interpreter import Interpreter
-
-
-class NodeFilter:
-    """
-    A class used to filter nodes based on extensible criteria.
-    Attributes:
-        metadata_key (str): The key to look for in the node's metadata.
-        op_type (str): The operation code to match.
-        exclude_ops (List[str]): A list of operations to exclude from the filter.
-    """
-
-    def __init__(self, metadata_key: str, op_type: str, exclude_ops: List[str] = None):
-        self.metadata_key = metadata_key
-        self.op_type = op_type
-        self.exclude_ops = exclude_ops
-
-    def matches(self, node: torch.fx.Node) -> bool:
-        return (
-            node.meta.get(self.metadata_key) is not None
-            and node.op == self.op_type
-            and all(exclude_name not in node.name for exclude_name in self.exclude_ops)
-        )
 
 
 class IntermediateOutputCapturer(Interpreter):
