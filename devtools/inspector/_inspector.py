@@ -1161,12 +1161,15 @@ class Inspector:
         )
 
     # TODO: Make it more extensible to further merge overlapping debug handles
-    def _get_runtime_intermediate_outputs(self) -> Dict[Tuple[int, ...], Any]:
+    def _get_runtime_intermediate_outputs_and_op_names(
+        self,
+    ) -> Tuple[Dict[Tuple[int, ...], Any], Dict[Tuple[int, ...], str]]:
         """
-        Retrieve the raw runtime intermediate outputs(debug handles and value mappings)
-        from the event blocks. These outputs will be processed later to merge overlapping debug handles.
+        Retrieve the runtime intermediate outputs(debug handles and intermediate values mappings)
+        from the event blocks, along with the corresponding debug handles and op names mapping.
         """
         debug_handle_to_output = {}
+        debug_handle_to_op_name = {}
         for event_block in self.event_blocks:
             for event in event_block.events:
                 # Skip OPERATOR_CALL events to avoid double-counting and exclude framework tax
@@ -1175,20 +1178,23 @@ class Inspector:
                     or not event.op_types
                 ):
                     continue
-                # Normalize debug_handles to a tuple
-                debug_handles = event.debug_handles
-                if isinstance(debug_handles, int):
-                    debug_handles = (debug_handles,)
+                # Normalize debug_handle to a tuple
+                debug_handle = event.debug_handles
+                if isinstance(debug_handle, int):
+                    debug_handle = (debug_handle,)
                 else:
-                    debug_handles = tuple(debug_handles)
-                current_entry = debug_handle_to_output.get(debug_handles, (-1, None))
-                # When event has same debug handles, only keep the one with the largest instruction id
+                    debug_handle = tuple(debug_handle)
+                current_entry = debug_handle_to_output.get(debug_handle, (-1, None))
+                # When event has same debug_handle, only keep the one with the largest instruction id
                 if event._instruction_id > current_entry[0]:
-                    debug_handle_to_output[debug_handles] = (
+                    debug_handle_to_output[debug_handle] = (
                         event._instruction_id,
                         event.debug_data,
                     )
-        return {k: v[1] for k, v in debug_handle_to_output.items()}
+                    debug_handle_to_op_name[debug_handle] = event.name
+        return {
+            k: v[1] for k, v in debug_handle_to_output.items()
+        }, debug_handle_to_op_name
 
     def to_dataframe(
         self,
@@ -1364,8 +1370,12 @@ class Inspector:
             raise ValueError(
                 "The aot intermediate outputs is required but not populated."
             )
+        # The runtime_op_names will be used later to map runtime debug_handle to op_name
+        runtime_intermediate_outputs, runtime_op_names = (
+            self._get_runtime_intermediate_outputs_and_op_names()
+        )
         mapping = map_runtime_aot_intermediate_outputs(
-            self._aot_intermediate_outputs, self._get_runtime_intermediate_outputs()
+            self._aot_intermediate_outputs, runtime_intermediate_outputs
         )
         metric = distance.strip().upper()
         if metric == "MSE":
