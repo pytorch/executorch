@@ -48,6 +48,7 @@ from executorch.devtools.inspector._inspector_utils import (
     EXCLUDED_COLUMNS_WHEN_PRINTING,
     EXCLUDED_EVENTS_FOR_INTERMEDIATE_OUTPUT,
     EXCLUDED_EVENTS_WHEN_PRINTING,
+    find_op_names,
     find_populated_event,
     FORWARD,
     gen_etdump_object,
@@ -68,6 +69,7 @@ from executorch.devtools.inspector._intermediate_output_capturer import (
 from executorch.devtools.inspector.numerical_comparator import (
     L1Comparator,
     MSEComparator,
+    SNRComparator,
 )
 from executorch.exir import ExportedProgram
 
@@ -1084,8 +1086,6 @@ class Inspector:
         # Key str is method name; value is list of ProgramOutputs because of list of test cases
         self._reference_outputs: Dict[str, List[ProgramOutput]] = {}
         self._enable_module_hierarchy = enable_module_hierarchy
-        self._aot_intermediate_outputs: Optional[Dict[Tuple[int, ...], Any]] = None
-        self._aot_debug_handles_to_op_names: Optional[Dict[Tuple[int, ...], str]] = None
         self._consume_etrecord()
 
     def _consume_etrecord(self) -> None:
@@ -1146,19 +1146,26 @@ class Inspector:
                     event_block.reference_output = self._reference_outputs[FORWARD][
                         index
                     ]
-        # Capture intermediate outputs only if _representative_inputs are provided
-        # when using bundled program to create the etrecord
+
+    def _get_aot_intermediate_outputs_and_op_names(
+        self,
+    ) -> Tuple[Dict[Tuple[int, ...], Any], Dict[Tuple[int, ...], str]]:
+        """
+        Capture intermediate outputs only if _representative_inputs are provided
+        when using bundled program to create the etrecord
+        """
         if self._etrecord._representative_inputs is None:
-            return
+            return {}, {}
         export_program = self._etrecord.edge_dialect_program
         graph_module = export_program.module()
-        self._aot_debug_handles_to_op_names = get_aot_debug_handle_to_op_name_mapping(
+        aot_debug_handle_to_op_name = get_aot_debug_handle_to_op_name_mapping(
             graph_module
         )
         capturer = IntermediateOutputCapturer(graph_module)
-        self._aot_intermediate_outputs = capturer.run_and_capture(
+        aot_intermediate_outputs = capturer.run_and_capture(
             self._etrecord._representative_inputs
         )
+        return aot_intermediate_outputs, aot_debug_handle_to_op_name
 
     # TODO: Make it more extensible to further merge overlapping debug handles
     def _get_runtime_intermediate_outputs_and_op_names(
@@ -1366,22 +1373,27 @@ class Inspector:
             pd.DataFrame: A DataFrame listing corresponding operator outputs from
                           both stages and their computed numerical gaps.
         """
-        if self._aot_intermediate_outputs is None:
+        aot_intermediate_outputs, aot_debug_handle_to_op_name = (
+            self._get_aot_intermediate_outputs_and_op_names()
+        )
+        if len(aot_intermediate_outputs) == 0 or len(aot_debug_handle_to_op_name) == 0:
             raise ValueError(
-                "The aot intermediate outputs is required but not populated."
+                "calculate_numerical_gap error: The aot debug information is required but not populated"
             )
         # The runtime_op_names will be used later to map runtime debug_handle to op_name
-        runtime_intermediate_outputs, runtime_op_names = (
+        runtime_intermediate_outputs, runtime_debug_handle_to_op_name = (
             self._get_runtime_intermediate_outputs_and_op_names()
         )
         mapping = map_runtime_aot_intermediate_outputs(
-            self._aot_intermediate_outputs, runtime_intermediate_outputs
+            aot_intermediate_outputs, runtime_intermediate_outputs
         )
         metric = distance.strip().upper()
         if metric == "MSE":
             comparator = MSEComparator()
         elif metric == "L1":
             comparator = L1Comparator()
+        elif metric == "SNR":
+            comparator = SNRComparator()
         else:
             raise ValueError(f"Unsupported distance metric {distance!r}")
 
@@ -1394,9 +1406,13 @@ class Inspector:
                 continue
             rows.append(
                 {
-                    "aot_debug_handle": aot_debug_handle,
+                    "aot_ops": find_op_names(
+                        aot_debug_handle, aot_debug_handle_to_op_name
+                    ),
                     "aot_intermediate_output": aot_intermediate_output,
-                    "runtime_debug_handle": runtime_debug_handle,
+                    "runtime_ops": find_op_names(
+                        runtime_debug_handle, runtime_debug_handle_to_op_name
+                    ),
                     "runtime_intermediate_output": runtime_intermediate_output,
                     "gap": comparator.compare(
                         aot_intermediate_output, runtime_intermediate_output
