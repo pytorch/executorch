@@ -234,6 +234,8 @@ function setup_toolchain() {
         selected_toolchain_url="${user_toolchain_url}"
         selected_toolchain_dir="${user_toolchain_dir}"
         selected_toolchain_md5=""
+	# TODO: For now we skip this if its a user specified url
+        # but eventually we should verify the checksums	
         skip_md5_verify=1
     fi
     if [[ ! -e "${selected_toolchain_dir}.tar.xz" ]]; then
