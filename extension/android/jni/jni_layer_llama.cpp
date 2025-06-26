@@ -14,6 +14,7 @@
 #include <vector>
 
 #include <executorch/examples/models/llama/runner/runner.h>
+#include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 #include <executorch/examples/models/llava/runner/llava_runner.h>
 #include <executorch/extension/llm/runner/image.h>
 #include <executorch/extension/llm/runner/irunner.h>
@@ -170,10 +171,17 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           : std::nullopt;
       // TODO(larryliu0820): Use the API in text_llm_runner.h to create the
       // runner.
-      runner_ = example::create_llama_runner(
-          model_path->toStdString(),
-          tokenizer_path->toStdString(),
-          data_path_str);
+      // Create and load tokenizer
+      auto special_tokens = example::get_special_tokens(example::Version::Default);
+      std::unique_ptr<::tokenizers::Tokenizer> tokenizer =
+          llm::load_tokenizer(tokenizer_path->toStdString(), std::move(special_tokens));
+
+      if (tokenizer == nullptr) {
+        runner_ = nullptr;
+      } else {
+        runner_ = llm::create_text_llm_runner(
+            model_path->toStdString(), std::move(tokenizer), data_path_str);
+      }
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
     } else if (model_type_category == MODEL_TYPE_MEDIATEK_LLAMA) {
       runner_ = std::make_unique<MTKLlamaRunner>(

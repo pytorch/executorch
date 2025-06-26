@@ -10,6 +10,7 @@
 #include <gflags/gflags.h>
 
 #include <executorch/examples/models/llama/runner/runner.h>
+#include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 
 #if defined(ET_USE_THREADPOOL)
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
@@ -91,8 +92,27 @@ int32_t main(int32_t argc, char** argv) {
   }
 #endif
   // create llama runner
-  std::unique_ptr<::executorch::extension::llm::TextLLMRunner> runner =
-      example::create_llama_runner(model_path, tokenizer_path, data_path);
+  ET_LOG(
+      Info,
+      "Creating LLaMa runner: model_path=%s, tokenizer_path=%s",
+      model_path,
+      tokenizer_path);
+
+  // Create and load tokenizer
+  auto special_tokens = example::get_special_tokens(example::Version::Default);
+  std::unique_ptr<::tokenizers::Tokenizer> tokenizer =
+      ::executorch::extension::llm::load_tokenizer(tokenizer_path, std::move(special_tokens));
+
+  std::unique_ptr<::executorch::extension::llm::TextLLMRunner> runner = nullptr;
+  if (tokenizer == nullptr) {
+    ET_LOG(
+        Info,
+        "Failed to load %s as a Tiktoken, Sentencepiece or Llama2.c tokenizer, make sure the artifact is one of these types",
+        tokenizer_path);
+  } else {
+    runner = ::executorch::extension::llm::create_text_llm_runner(
+        model_path, std::move(tokenizer), data_path);
+  }
 
   if (runner == nullptr) {
     ET_LOG(Error, "Failed to create llama runner");

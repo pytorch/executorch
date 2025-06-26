@@ -9,6 +9,7 @@
 #import "ResourceTestCase.h"
 
 #import <executorch/examples/models/llama/runner/runner.h>
+#import <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 
 using namespace ::executorch::extension;
 using namespace ::executorch::runtime;
@@ -74,8 +75,16 @@ using namespace ::executorch::runtime;
   NSString *tokenizerPath = resources[@"tokenizer"];
   return @{
     @"generate" : ^(XCTestCase *testCase){
-      auto __block runner = example::create_llama_runner(
-          modelPath.UTF8String, tokenizerPath.UTF8String);
+      // Create and load tokenizer
+      auto special_tokens = example::get_special_tokens(example::Version::Default);
+      std::unique_ptr<::tokenizers::Tokenizer> tokenizer =
+          ::executorch::extension::llm::load_tokenizer(tokenizerPath.UTF8String, std::move(special_tokens));
+
+      std::unique_ptr<::executorch::extension::llm::TextLLMRunner> runner = nullptr;
+      if (tokenizer != nullptr) {
+        runner = ::executorch::extension::llm::create_text_llm_runner(
+            modelPath.UTF8String, std::move(tokenizer), std::nullopt);
+      }
       if (!runner) {
         XCTFail("Failed to create runner");
         return;
