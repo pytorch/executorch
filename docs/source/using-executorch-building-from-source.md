@@ -91,7 +91,7 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
 
    # Or you can directly do the following if dependencies are already installed
    # either via a previous invocation of `./install_executorch.sh` or by explicitly installing requirements via `./install_requirements.sh` first.
-   pip install -e .
+   pip install -e . --no-build-isolation
    ```
 
    If C++ files are being modified, you will still have to reinstall ExecuTorch from source.
