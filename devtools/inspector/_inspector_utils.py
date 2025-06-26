@@ -8,6 +8,7 @@
 
 import math
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, IO, List, Mapping, Optional, Tuple, TypeAlias, Union
@@ -90,6 +91,28 @@ class NodeData:
     source: NodeSource
     debug_handle: tuple[int]
     output: Any
+
+
+class NodeFilter:
+    """
+    A class used to filter nodes based on extensible criteria.
+    Attributes:
+        metadata_key (str): The key to look for in the node's metadata.
+        op_type (str): The operation code to match.
+        exclude_ops (List[str]): A list of operations to exclude from the filter.
+    """
+
+    def __init__(self, metadata_key: str, op_type: str, exclude_ops: List[str] = None):
+        self.metadata_key = metadata_key
+        self.op_type = op_type
+        self.exclude_ops = exclude_ops
+
+    def matches(self, node: torch.fx.Node) -> bool:
+        return (
+            node.meta.get(self.metadata_key) is not None
+            and node.op == self.op_type
+            and all(exclude_name not in node.name for exclude_name in self.exclude_ops)
+        )
 
 
 def calculate_time_scale_factor(
@@ -676,17 +699,25 @@ def map_runtime_aot_intermediate_outputs(
         # Map only if both AOT and runtime data are present.
         if len(aot_list) != 0 and len(runtime_list) != 0:
             # Combine aot debug handles into a single key
-            aot_combined_debug_handle, aot_output = (
+            aot_combined_debug_handle, aot_intermediate_output = (
                 _combine_overlapped_intermediate_outputs(aot_list)
             )
             # Combine runtime debug handles into a single key
-            runtime_combined_debug_handle, runtime_output = (
+            runtime_combined_debug_handle, runtime_intermediate_output = (
                 _combine_overlapped_intermediate_outputs(runtime_list)
             )
+            # List can't be used as a key, so convert to tuple
+            if isinstance(aot_intermediate_output, list):
+                aot_intermediate_output = tuple(aot_intermediate_output)
+            # runtime follow the same format as aot, so it's safe to convert to tuple
+            if isinstance(runtime_intermediate_output, list):
+                runtime_intermediate_output = tuple(runtime_intermediate_output)
             # Create a mapping between runtime and aot
-            aot_runtime_mapping[(aot_combined_debug_handle, aot_output)] = (
+            aot_runtime_mapping[
+                (aot_combined_debug_handle, aot_intermediate_output)
+            ] = (
                 runtime_combined_debug_handle,
-                runtime_output,
+                runtime_intermediate_output,
             )
 
     return aot_runtime_mapping
@@ -698,7 +729,7 @@ def convert_to_float_tensor(input_data: Any) -> torch.Tensor:
     This function handles the following types of input:
     - Scalar (int or float): Converts to a tensor with a single element.
     - Tensor: Converts to a float64 tensor on CPU.
-    - List of Tensors: Stacks the tensors into a single float64 tensor on CPU.
+    - Sequence of Tensors: Stacks the tensors into a single float64 tensor on CPU.
     The resulting tensor is detached, moved to CPU, and cast to torch.float64.
     Parameters:
     input_data (Any): The input data to be converted to a tensor. It can be a scalar,
@@ -709,8 +740,8 @@ def convert_to_float_tensor(input_data: Any) -> torch.Tensor:
     ValueError: If the input_data cannot be converted to a tensor.
     """
     try:
-        # Check if the input is a list of tensors
-        if isinstance(input_data, list):
+        # Check if the input is a Sequence of tensors
+        if isinstance(input_data, Sequence):
             input_tensor = torch.stack([convert_to_float_tensor(a) for a in input_data])
         # Try to convert the input to a tensor
         else:
@@ -720,4 +751,36 @@ def convert_to_float_tensor(input_data: Any) -> torch.Tensor:
             f"Cannot convert value of type {type(input_data)} to a tensor: {e}"
         )
     input_tensor = input_tensor.detach().cpu().double()
+
+    # Convert NaN to 0.0
+    if torch.isnan(input_tensor).any():
+        input_tensor = torch.nan_to_num(input_tensor)
     return input_tensor
+
+
+def get_aot_debug_handle_to_op_name_mapping(
+    graph_module: torch.fx.GraphModule,
+) -> Dict[Tuple[int, ...], str]:
+    """
+    Get a mapping from debug handle to operator name from the ETRecord edge_dialect_program's graph module.
+    Parameters:
+    graph_module (torch.fx.GraphModule): The graph module to get the mapping from.
+    Returns:
+    Dict[Tuple[int, ...], str]: A dictionary mapping debug handles to operator names.
+    """
+    node_filters = [
+        NodeFilter("debug_handle", "call_function", exclude_ops=["getitem"])
+    ]
+
+    debug_handle_to_op_name = {}
+    for node in graph_module.graph.nodes:
+        if all(filter.matches(node) for filter in node_filters):
+            debug_handle = node.meta["debug_handle"]
+            # Convert the debug handle to a tuple to use as a dictionary key
+            key = (
+                (debug_handle,)
+                if isinstance(debug_handle, int)
+                else tuple(debug_handle)
+            )
+            debug_handle_to_op_name[key] = node.name
+    return debug_handle_to_op_name

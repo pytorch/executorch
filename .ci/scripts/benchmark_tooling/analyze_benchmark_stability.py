@@ -1,10 +1,10 @@
 import argparse
 import os
-import re
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from common import read_excel_with_json_header
 from tabulate import tabulate
 
 
@@ -15,40 +15,23 @@ def print_section_header(title):
     print("=" * 100 + "\n")
 
 
-def normalize_tab_name(name):
+def normalize_name(name):
     """Normalize tab name for better matching"""
     # Convert to lowercase and remove spaces
-    return name.lower().replace(" ", "")
+    return name.lower().replace(" ", "").replace("(private)", "")
 
 
-def parse_model_device(sheet_name):
-    """Extract model and device from sheet name using the 'model+device' pattern"""
-    parts = sheet_name.split("+", 1)
-    if len(parts) < 2:
-        return sheet_name, "Unknown"
-    return parts[0], parts[1]
-
-
-def extract_model_device_os(sheet_name):
-    """
-    Extract model, device, and OS from sheet name
-    Format expected: model+device_osname
-    Returns: (model, device_base, os_version)
-    """
-    model, device_full = parse_model_device(sheet_name)
-
-    # Use regex to separate device base name from OS version
-    # Pattern looks for device name followed by underscore or android/ios
-    match = re.match(r"(.*?)(android|ios|_)(.*)", device_full, re.IGNORECASE)
-
-    if match:
-        device_base = match.group(1).rstrip("_")
-        os_name = match.group(2)
-        os_version = match.group(3)
-        return model, device_base, f"{os_name}{os_version}"
-    else:
-        # If no OS version found, return the device as is with empty OS
-        return model, device_full, ""
+def parse_model_device_config(config):
+    """Extract model and device from config"""
+    model = config.get("model", "")
+    backend = config.get("backend", "")
+    full_model = f"{model}({backend})" if backend else model
+    base_device = config.get("device", "")
+    os_version = config.get("arch", "")
+    full_device = f"{base_device}({os_version})" if os_version else base_device
+    if not base_device:
+        return full_model, "unkown", "unknown", ""
+    return full_model, full_device, base_device, os_version
 
 
 def is_matching_dataset(primary_sheet, reference_sheet):
@@ -56,10 +39,20 @@ def is_matching_dataset(primary_sheet, reference_sheet):
     Check if two datasets match for comparison based on model and device
     Allows different OS versions for the same device
     """
-    primary_model, primary_device, primary_os = extract_model_device_os(primary_sheet)
-    reference_model, reference_device, reference_os = extract_model_device_os(
-        reference_sheet
-    )
+    primary_model = normalize_name(primary_sheet.get("model", ""))
+    primary_device = normalize_name(primary_sheet.get("base_device", ""))
+    # primary_os = normalize_name(primary_sheet.get("os_version", ""))
+
+    reference_model = normalize_name(reference_sheet.get("model", ""))
+    reference_device = normalize_name(reference_sheet.get("base_device", ""))
+    # reference_os = normalize_name(reference_sheet.get("os_version", ""))
+
+    if not primary_model:
+        print("Warning: Primary sheet {} has no model info, for {primary_model} ")
+        return False
+    if not reference_model:
+        print("Warning: Reference sheet {} has no model info, for {reference_model}")
+        return False
 
     # Model must match exactly
     if primary_model != reference_model:
@@ -69,29 +62,20 @@ def is_matching_dataset(primary_sheet, reference_sheet):
     if primary_device != reference_device:
         return False
 
-    # If we get here, model and device base match, so it's a valid comparison
-    # even if OS versions differ
     return True
 
 
 def analyze_latency_stability(  # noqa: C901
-    primary_file, reference_file=None, output_dir="stability_analysis_results"
+    target_metric,
+    primary_file,
+    reference_file=None,
+    output_dir="stability_analysis_results",
+    verbose_level=0,
 ):
-    """
-    Analyze latency stability metrics from benchmark data in Excel files.
-
-    Parameters:
-    -----------
-    primary_file : str
-        Path to the Excel file containing primary (private) benchmark data
-    reference_file : str, optional
-        Path to the Excel file containing reference (public) benchmark data
-    output_dir : str
-        Directory to save output files
-    """
-    print(f"Analyzing latency stability from primary file: {primary_file}")
+    print_section_header(f"Analyzing Stability Against Metric '{target_metric}'")
+    print(f"Primary dataset: {primary_file}")
     if reference_file:
-        print(f"Using reference file for comparison: {reference_file}")
+        print(f"Reference dataset for comparison: {reference_file}")
 
     # Create output directory if it doesn't exist
     if not os.path.exists(output_dir):
@@ -100,119 +84,136 @@ def analyze_latency_stability(  # noqa: C901
     # Load primary datasets
     print_section_header("LOADING PRIMARY DATASETS (Private)")
     primary_datasets = {}
-    primary_xls = pd.ExcelFile(primary_file)
+    documents = read_excel_with_json_header(primary_file)
 
-    for sheet in primary_xls.sheet_names:
-        print(f"Loading dataset: {sheet}")
-        df = pd.read_excel(primary_xls, sheet_name=sheet)
-        model, device = parse_model_device(sheet)
+    if verbose_level > 2:
+        print(f"Printing documents: {documents}")
 
-        # Check if required columns exist
-        required_cols = ["InferenceTime", "Date"]
-        if "trimmean_inference_latency(ms)" in df.columns:
-            trimmed_col = "trimmean_inference_latency(ms)"
-            required_cols.append(trimmed_col)
-        else:
-            trimmed_col = None
+    for document in documents:
+        sheetName = document.get("sheetName", None)
+        df = document.get("df", None)
+        config = document.get("groupInfo", None)
+        print(f"Loading dataset: {sheetName} with config: {config} ")
 
-        if "TPS" in df.columns:
-            tps_col = "TPS"
-            required_cols.append(tps_col)
-        else:
-            tps_col = None
+        if df is None or df.empty:
+            print(f"Skipping sheet {sheetName} because it has no df data")
+            continue
+
+        if not config or not sheetName:
+            print(
+                f" Skipping document: Missing required data groupInfo:{config} sheetName:{sheetName}"
+            )
+            continue
+
+        model, full_device, base_device, os_version = parse_model_device_config(config)
 
         # Skip sheets without required columns
+        required_cols = [target_metric, "metadata_info.timestamp"]
         if not all(col in df.columns for col in required_cols):
-            print(f"  Skipping {sheet}: Missing required columns")
+            print(f"  Skipping {sheetName}: Missing required columns")
             continue
 
         # Convert Date to datetime
-        df["Date"] = pd.to_datetime(df["Date"])
+        df["Date"] = pd.to_datetime(df["metadata_info.timestamp"])
 
-        # Calculate stability metrics
-        metrics = calculate_stability_metrics(df, "InferenceTime", trimmed_col, tps_col)
+        # Calculate stability metrics along the target column in the dataset
+        metrics = calculate_stability_metrics(
+            df,
+            target_metric,
+        )
 
-        primary_datasets[sheet] = {
+        primary_datasets[sheetName] = {
             "df": df,
             "metrics": metrics,
             "model": model,
-            "device": device,
-            "sheet_name": sheet,
+            "full_device": full_device,
+            "base_device": base_device,
+            "os_version": os_version,
+            "sheet_name": sheetName,
         }
 
     # Load reference datasets if provided
     reference_datasets = {}
     if reference_file:
         print_section_header("LOADING REFERENCE DATASETS (Public)")
-        reference_xls = pd.ExcelFile(reference_file)
+        documents = read_excel_with_json_header(reference_file)
 
-        for sheet in reference_xls.sheet_names:
-            print(f"Loading reference dataset: {sheet}")
-            df = pd.read_excel(reference_xls, sheet_name=sheet)
-            model, device = parse_model_device(sheet)
+        for document in documents:
+            sheetName = document.get("sheetName", None)
+            df = document.get("df", None)
+            config = document.get("groupInfo", None)
+            print(f"Loading dataset: {sheetName} with config:{config}")
+            if df is None or df.empty:
+                print(f"Skipping sheet {sheetName} because it has no df data")
+                continue
 
-            # Check if required columns exist
-            required_cols = ["InferenceTime", "Date"]
-            if "trimmean_inference_latency(ms)" in df.columns:
-                trimmed_col = "trimmean_inference_latency(ms)"
-                required_cols.append(trimmed_col)
-            else:
-                trimmed_col = None
+            if not config or not sheetName:
+                print(
+                    f" Skipping document: Missing required data groupInfo:{config} sheetName:{sheetName}"
+                )
+                continue
 
-            if "TPS" in df.columns:
-                tps_col = "TPS"
-                required_cols.append(tps_col)
-            else:
-                tps_col = None
+            model, full_device, base_device, os_version = parse_model_device_config(
+                config
+            )
 
             # Skip sheets without required columns
+            required_cols = [target_metric, "metadata_info.timestamp"]
             if not all(col in df.columns for col in required_cols):
-                print(f"  Skipping reference {sheet}: Missing required columns")
+                print(
+                    f"  Skipping reference {sheetName}: Missing required columns{required_cols}"
+                )
                 continue
 
             # Convert Date to datetime
-            df["Date"] = pd.to_datetime(df["Date"])
+            df["Date"] = pd.to_datetime(df["metadata_info.timestamp"])
 
             # Calculate stability metrics
             metrics = calculate_stability_metrics(
-                df, "InferenceTime", trimmed_col, tps_col
+                df,
+                target_metric,
             )
 
-            reference_datasets[sheet] = {
+            reference_datasets[sheetName] = {
                 "df": df,
                 "metrics": metrics,
                 "model": model,
-                "device": device,
-                "sheet_name": sheet,
+                "full_device": full_device,
+                "sheet_name": sheetName,
+                "base_device": base_device,
+                "os_version": os_version,
             }
 
     # Process primary datasets
-    print_section_header("ANALYZING PRIMARY DATASETS")
-    for sheet, info in primary_datasets.items():
-        # Generate dataset report
-        generate_dataset_report(
-            sheet,
-            info["model"],
-            info["device"],
-            "Primary",
-            info["df"],
-            info["metrics"],
-            output_dir,
-        )
+    if verbose_level > 2:
+        print_section_header("ANALYZING PRIMARY DATASETS")
+        for sheet, info in primary_datasets.items():
+            # Generate dataset report
+            generate_dataset_report(
+                sheet,
+                target_metric,
+                info["model"],
+                info["full_device"],
+                "Primary",
+                info["df"],
+                info["metrics"],
+                output_dir,
+            )
 
-        # Generate time series plot
-        if len(info["df"]) > 5:  # Only create plot if enough data points
-            generate_time_series_plot(sheet, info["df"], output_dir, "Primary")
+            # Generate time series plot
+            if len(info["df"]) > 5:  # Only create plot if enough data points
+                generate_time_series_plot(sheet, info["df"], output_dir, "Primary")
 
     # Process reference datasets if provided
-    if reference_file:
+    if reference_file and verbose_level > 3:
         print_section_header("ANALYZING REFERENCE DATASETS")
         for sheet, info in reference_datasets.items():
             # Generate dataset report
             generate_dataset_report(
                 sheet,
+                target_metric,
                 info["model"],
-                info["device"],
+                info["full_device"],
                 "Reference",
                 info["df"],
                 info["metrics"],
@@ -224,7 +225,7 @@ def analyze_latency_stability(  # noqa: C901
                 generate_time_series_plot(sheet, info["df"], output_dir, "Reference")
 
     # Generate comparison reports for matching datasets
-    if reference_file:
+    if reference_file and verbose_level > 1:
         print_section_header("PRIVATE VS PUBLIC STABILITY COMPARISON")
         matches_found = False
 
@@ -232,7 +233,7 @@ def analyze_latency_stability(  # noqa: C901
             found_match = False
 
             for ref_sheet, ref_info in reference_datasets.items():
-                if is_matching_dataset(primary_sheet, ref_sheet):
+                if is_matching_dataset(primary_info, ref_info):
                     # Found a match
                     print(
                         f"Matched: {primary_sheet} (Private) with {ref_sheet} (Public)"
@@ -240,11 +241,8 @@ def analyze_latency_stability(  # noqa: C901
                     generate_comparison_report(
                         primary_sheet,
                         ref_sheet,
-                        primary_info["model"],
-                        primary_info["device"],
-                        ref_info["device"],
-                        primary_info["metrics"],
-                        ref_info["metrics"],
+                        primary_info,
+                        ref_info,
                         output_dir,
                     )
                     found_match = True
@@ -252,14 +250,17 @@ def analyze_latency_stability(  # noqa: C901
                     break
 
             if not found_match:
-                print(f"Warning: No matching reference dataset for {primary_sheet}")
+                print(
+                    f"Warning: No matching reference dataset for {primary_sheet} with config:  {primary_info['model']}{primary_info['full_device']} "
+                )
 
         if not matches_found:
             print("No matching datasets found between primary and reference files.")
 
-    # Generate intra-primary summary (comparing across different models/devices)
-    print_section_header("INTRA-PRIMARY STABILITY COMPARISON")
-    generate_intra_primary_summary(primary_datasets, output_dir)
+    if verbose_level > 0:
+        # Generate intra-primary summary (comparing across different models/devices)
+        print_section_header("INTRA-PRIMARY STABILITY COMPARISON")
+        generate_intra_primary_summary(primary_datasets, output_dir)
 
     # Generate summary report for all datasets
     print_section_header("COMPREHENSIVE STABILITY SUMMARY")
@@ -272,28 +273,17 @@ def analyze_latency_stability(  # noqa: C901
 
 
 def calculate_stability_metrics(  # noqa: C901
-    df, raw_col, trimmed_col=None, tps_col=None
+    df,
+    target_metric,
 ):
     """Calculate stability metrics for the given dataset"""
     metrics = {}
-
-    # Extract data
-    raw_latency = df[raw_col].values
-    if trimmed_col and trimmed_col in df.columns:
-        trimmed_latency = df[trimmed_col].values
-    else:
-        trimmed_latency = None
-    if tps_col and tps_col in df.columns:
-        tps = df[tps_col].values
-    else:
-        tps = None
+    # Extract data and ingore NaN values
+    raw_latency = df[target_metric].dropna().values
 
     # Central tendency metrics
     metrics["mean_raw_latency"] = np.mean(raw_latency)
     metrics["median_raw_latency"] = np.median(raw_latency)
-    if trimmed_latency is not None:
-        metrics["mean_trimmed_latency"] = np.mean(trimmed_latency)
-        metrics["median_trimmed_latency"] = np.median(trimmed_latency)
 
     # Dispersion metrics
     metrics["std_raw_latency"] = np.std(raw_latency, ddof=1)
@@ -303,20 +293,10 @@ def calculate_stability_metrics(  # noqa: C901
     metrics["iqr_raw_latency"] = np.percentile(raw_latency, 75) - np.percentile(
         raw_latency, 25
     )
-    if trimmed_latency is not None:
-        metrics["std_trimmed_latency"] = np.std(trimmed_latency, ddof=1)
-        metrics["cv_trimmed_latency"] = (
-            metrics["std_trimmed_latency"] / metrics["mean_trimmed_latency"]
-        ) * 100
-        metrics["iqr_trimmed_latency"] = np.percentile(
-            trimmed_latency, 75
-        ) - np.percentile(trimmed_latency, 25)
 
     # Percentile metrics
     for p in [50, 90, 95, 99]:
         metrics[f"p{p}_raw_latency"] = np.percentile(raw_latency, p)
-        if trimmed_latency is not None:
-            metrics[f"p{p}_trimmed_latency"] = np.percentile(trimmed_latency, p)
 
     # Inter-jitter metrics (variability between runs)
     if np.min(raw_latency) > 0:
@@ -329,37 +309,45 @@ def calculate_stability_metrics(  # noqa: C901
         metrics["p99_raw_latency"] / metrics["p50_raw_latency"]
     )
 
-    if trimmed_latency is not None:
-        if np.min(trimmed_latency) > 0:
-            metrics["max_min_range_ratio_trimmed"] = np.max(trimmed_latency) / np.min(
-                trimmed_latency
+    # Intra-jitter proxy (if both raw and trimmed latency are available)
+    trimmed_metric_col = "trimmean_inference_latency(ms)"
+    if (
+        target_metric == "avg_inference_latency(ms)"
+        and trimmed_metric_col in df.columns
+    ):
+        trimmed_latency = df[trimmed_metric_col].values
+        if trimmed_latency is not None:
+            metrics["mean_trimmed_latency"] = np.mean(trimmed_latency)
+            metrics["median_trimmed_latency"] = np.median(trimmed_latency)
+            metrics["std_trimmed_latency"] = np.std(trimmed_latency, ddof=1)
+            metrics["cv_trimmed_latency"] = (
+                metrics["std_trimmed_latency"] / metrics["mean_trimmed_latency"]
+            ) * 100
+            metrics["iqr_trimmed_latency"] = np.percentile(
+                trimmed_latency, 75
+            ) - np.percentile(trimmed_latency, 25)
+            for p in [50, 90, 95, 99]:
+                metrics[f"p{p}_trimmed_latency"] = np.percentile(trimmed_latency, p)
+            if np.min(trimmed_latency) > 0:
+                metrics["max_min_range_ratio_trimmed"] = np.max(
+                    trimmed_latency
+                ) / np.min(trimmed_latency)
+            else:
+                metrics["max_min_range_ratio_trimmed"] = float("inf")
+                print(
+                    "Warning: Minimum trimmed latency value is zero, max/min ratio set to infinity"
+                )
+            metrics["p99_p50_ratio_trimmed"] = (
+                metrics["p99_trimmed_latency"] / metrics["p50_trimmed_latency"]
             )
-        else:
-            metrics["max_min_range_ratio_trimmed"] = float("inf")
-            print(
-                "Warning: Minimum trimmed latency value is zero, max/min ratio set to infinity"
-            )
-
-        metrics["p99_p50_ratio_trimmed"] = (
-            metrics["p99_trimmed_latency"] / metrics["p50_trimmed_latency"]
-        )
-
-    # Intra-jitter proxy (if both raw and trimmed are available)
-    if trimmed_latency is not None:
-        trimming_effect = (raw_latency - trimmed_latency) / raw_latency
-        metrics["mean_trimming_effect_ratio"] = np.mean(trimming_effect)
-        metrics["max_trimming_effect_ratio"] = np.max(trimming_effect)
-
-    # TPS metrics
-    if tps is not None:
-        metrics["mean_tps"] = np.mean(tps)
-        metrics["std_tps"] = np.std(tps, ddof=1)
-        metrics["cv_tps"] = (metrics["std_tps"] / metrics["mean_tps"]) * 100
+            trimming_effect = (raw_latency - trimmed_latency) / raw_latency
+            metrics["mean_trimming_effect_ratio"] = np.mean(trimming_effect)
+            metrics["max_trimming_effect_ratio"] = np.max(trimming_effect)
 
     # Time-based stability (rolling window of 5 samples)
     if len(df) >= 5:
         df_sorted = df.sort_values("Date")
-        rolling_std = df_sorted[raw_col].rolling(window=5).std()
+        rolling_std = df_sorted[target_metric].rolling(window=5).std()
         metrics["mean_rolling_std"] = rolling_std.mean()
         metrics["max_rolling_std"] = rolling_std.max()
 
@@ -406,7 +394,7 @@ def calculate_stability_metrics(  # noqa: C901
 
 
 def generate_dataset_report(  # noqa: C901
-    sheet_name, model, device, dataset_type, df, metrics, output_dir
+    sheet_name, target_column, model, device, dataset_type, df, metrics, output_dir
 ):
     """Generate a detailed report for a single dataset"""
     report_file = f"{output_dir}/{sheet_name}_{dataset_type.lower()}_report.txt"
@@ -423,7 +411,9 @@ def generate_dataset_report(  # noqa: C901
 
     # Dataset overview
     report_content.append("Dataset Overview:")
-    report_content.append(f"  - Number of samples: {len(df)}")
+    report_content.append(
+        f"  - Number of samples: {len(df[target_column].dropna().values)}"
+    )
     report_content.append(f"  - Date range: {df['Date'].min()} to {df['Date'].max()}")
     report_content.append("")
 
@@ -620,7 +610,12 @@ def generate_time_series_plot(dataset_name, df, output_dir, dataset_type):
     df_sorted = df.sort_values("Date")
 
     # Plot raw latency
-    plt.plot(df_sorted["Date"], df_sorted["InferenceTime"], "b-", label="Raw Latency")
+    plt.plot(
+        df_sorted["Date"],
+        df_sorted["avg_inference_latency(ms)"],
+        "b-",
+        label="Raw Latency",
+    )
 
     # Plot trimmed latency if available
     if "trimmean_inference_latency(ms)" in df_sorted.columns:
@@ -634,7 +629,9 @@ def generate_time_series_plot(dataset_name, df, output_dir, dataset_type):
     # Add rolling mean
     window = min(5, len(df_sorted))
     if window > 1:
-        rolling_mean = df_sorted["InferenceTime"].rolling(window=window).mean()
+        rolling_mean = (
+            df_sorted["avg_inference_latency(ms)"].rolling(window=window).mean()
+        )
         plt.plot(
             df_sorted["Date"], rolling_mean, "r--", label=f"{window}-point Rolling Mean"
         )
@@ -658,11 +655,8 @@ def generate_time_series_plot(dataset_name, df, output_dir, dataset_type):
 def generate_comparison_report(  # noqa: C901
     primary_sheet,
     reference_sheet,
-    model,
-    primary_device,
-    reference_device,
-    primary_metrics,
-    reference_metrics,
+    primary_info,
+    reference_info,
     output_dir,
 ):
     """Generate a comparison report between primary and reference datasets"""
@@ -670,6 +664,12 @@ def generate_comparison_report(  # noqa: C901
 
     # Create a string buffer to hold the report content
     report_content = []
+
+    model = (primary_info["model"],)
+    primary_device = (primary_info["full_device"],)
+    reference_device = reference_info["full_device"]
+    primary_metrics = primary_info["metrics"]
+    reference_metrics = reference_info["metrics"]
 
     # Header
     report_content.append("Private vs Public Stability Comparison")
@@ -696,12 +696,12 @@ def generate_comparison_report(  # noqa: C901
 
     # Add key metrics to the table
     metrics_to_compare = [
-        ("Mean Latency (ms)", "mean_raw_latency", "ms"),
-        ("Median Latency (ms)", "median_raw_latency", "ms"),
-        ("Standard Deviation (ms)", "std_raw_latency", "ms"),
+        ("Mean Value", "mean_raw_latency", ""),
+        ("Median Value", "median_raw_latency", ""),
+        ("Standard Deviation", "std_raw_latency", ""),
         ("CV (%)", "cv_raw_latency", "%"),
-        ("IQR (ms)", "iqr_raw_latency", "ms"),
-        ("P99 (ms)", "p99_raw_latency", "ms"),
+        ("IQR", "iqr_raw_latency", ""),
+        ("P99", "p99_raw_latency", ""),
         ("Max/Min Ratio", "max_min_range_ratio_raw", ""),
         ("P99/P50 Ratio", "p99_p50_ratio_raw", ""),
         ("Stability Score", "stability_score", ""),
@@ -971,8 +971,10 @@ def generate_comparison_report(  # noqa: C901
             )
 
     # Note about OS version difference if applicable
-    _, primary_device_base, primary_os = extract_model_device_os(primary_sheet)
-    _, reference_device_base, reference_os = extract_model_device_os(reference_sheet)
+    primary_device_base = primary_info.get("base_device", "")
+    primary_os = primary_info.get("os_version", "")
+    reference_device_base = reference_info.get("base_device", "")
+    reference_os = reference_info.get("os_version", "")
 
     if primary_os != reference_os and primary_os and reference_os:
         report_content.append("")
@@ -1030,8 +1032,8 @@ def generate_intra_primary_summary(primary_datasets, output_dir):  # noqa: C901
             {
                 "Sheet": sheet_name,
                 "Model": info["model"],
-                "Device": info["device"],
-                "Mean Latency (ms)": info["metrics"]["mean_raw_latency"],
+                "Device": info["full_device"],
+                "Mean Value": info["metrics"]["mean_raw_latency"],
                 "CV (%)": info["metrics"]["cv_raw_latency"],
                 "Stability Score": info["metrics"]["stability_score"],
                 "Stability Rating": info["metrics"]["stability_rating"],
@@ -1103,8 +1105,8 @@ def generate_intra_primary_summary(primary_datasets, output_dir):  # noqa: C901
     # Device-based comparison
     # First, extract base device names for grouping
     device_base_map = {}
-    for sheet_name in primary_datasets:
-        _, device_base, _ = extract_model_device_os(sheet_name)
+    for sheet_name, info in primary_datasets.items():
+        device_base = info.get("base_device", "")
         device_base_map[sheet_name] = device_base
 
     # Add base device to DataFrame
@@ -1138,8 +1140,8 @@ def generate_intra_primary_summary(primary_datasets, output_dir):  # noqa: C901
 
     # OS version comparison if multiple OS versions exist
     os_versions = {}
-    for sheet_name in primary_datasets:
-        _, _, os_version = extract_model_device_os(sheet_name)
+    for sheet_name, info in primary_datasets.items():
+        os_version = info.get("os_version", "")
         if os_version:  # Only include if OS version was extracted
             os_versions[sheet_name] = os_version
 
@@ -1254,9 +1256,13 @@ def generate_summary_report(  # noqa: C901
     # Primary datasets summary
     primary_data = []
     for sheet_name, info in primary_datasets.items():
-        model, device_base, os_version = extract_model_device_os(sheet_name)
+        model, device_base, os_version = (
+            info.get("model", ""),
+            info.get("base_device", ""),
+            info.get("os_version", ""),
+        )
         device_display = (
-            f"{device_base} ({os_version})" if os_version else info["device"]
+            f"{device_base}({os_version})" if os_version else info["device"]
         )
 
         primary_data.append(
@@ -1264,7 +1270,7 @@ def generate_summary_report(  # noqa: C901
                 "Dataset": sheet_name,
                 "Model": model,
                 "Device": device_display,
-                "Mean Latency (ms)": info["metrics"]["mean_raw_latency"],
+                "Mean Value": info["metrics"]["mean_raw_latency"],
                 "CV (%)": info["metrics"]["cv_raw_latency"],
                 "Stability Score": info["metrics"]["stability_score"],
                 "Stability Rating": info["metrics"]["stability_rating"],
@@ -1287,9 +1293,13 @@ def generate_summary_report(  # noqa: C901
     if reference_datasets:
         reference_data = []
         for sheet_name, info in reference_datasets.items():
-            model, device_base, os_version = extract_model_device_os(sheet_name)
+            model, device_base, os_version = (
+                info.get("model", ""),
+                info.get("base_device", ""),
+                info.get("os_version", ""),
+            )
             device_display = (
-                f"{device_base} ({os_version})" if os_version else info["device"]
+                f"{device_base}({os_version})" if os_version else info["device"]
             )
 
             reference_data.append(
@@ -1297,7 +1307,7 @@ def generate_summary_report(  # noqa: C901
                     "Dataset": sheet_name,
                     "Model": model,
                     "Device": device_display,
-                    "Mean Latency (ms)": info["metrics"]["mean_raw_latency"],
+                    "Mean Value": info["metrics"]["mean_raw_latency"],
                     "CV (%)": info["metrics"]["cv_raw_latency"],
                     "Stability Score": info["metrics"]["stability_score"],
                     "Stability Rating": info["metrics"]["stability_rating"],
@@ -1322,29 +1332,31 @@ def generate_summary_report(  # noqa: C901
 
         # Comparison summary for matching datasets
         comparison_data = []
-        for primary_sheet, primary_info in primary_datasets.items():
-            for ref_sheet, ref_info in reference_datasets.items():
-                if is_matching_dataset(primary_sheet, ref_sheet):
+        for _, primary_info in primary_datasets.items():
+            for _, ref_info in reference_datasets.items():
+                if is_matching_dataset(primary_info, ref_info):
                     primary_metrics = primary_info["metrics"]
                     reference_metrics = ref_info["metrics"]
 
                     # Extract model and device info for display
-                    model, primary_device_base, primary_os = extract_model_device_os(
-                        primary_sheet
+                    model, primary_device_base, primary_os = (
+                        primary_info.get("model", ""),
+                        primary_info.get("base_device", ""),
+                        primary_info.get("os_version", ""),
                     )
-                    _, reference_device_base, reference_os = extract_model_device_os(
-                        ref_sheet
-                    )
+                    reference_device_base, reference_os = ref_info.get(
+                        "base_device", ""
+                    ), ref_info.get("os_version", "")
 
                     primary_device_display = (
                         f"{primary_device_base} ({primary_os})"
                         if primary_os
-                        else primary_info["device"]
+                        else primary_info["full_device"]
                     )
                     reference_device_display = (
                         f"{reference_device_base} ({reference_os})"
                         if reference_os
-                        else ref_info["device"]
+                        else ref_info["full_device"]
                     )
 
                     comparison_data.append(
@@ -1424,15 +1436,15 @@ def generate_summary_report(  # noqa: C901
 
     # OS version insights if available
     os_versions = {}
-    for sheet_name in primary_datasets:
-        _, _, os_version = extract_model_device_os(sheet_name)
+    for sheet_name, info in primary_datasets.items():
+        os_version = info.get("os_version", "")
         if os_version:
             os_versions[sheet_name] = os_version
 
     if os_versions and len(set(os_versions.values())) > 1:
         # Add OS version to primary DataFrame
         primary_df["OS Version"] = primary_df["Dataset"].map(
-            lambda x: extract_model_device_os(x)[2]
+            lambda x: primary_datasets[x].get("os_version", np.nan)
         )
 
         # Remove rows with no OS version
@@ -1498,13 +1510,18 @@ def main():
         description="Analyze ML model latency stability from benchmark data."
     )
     parser.add_argument(
-        "primary_file",
+        "--primary-file",
         help="Path to Excel file containing primary (private) benchmark data",
     )
     parser.add_argument(
-        "--reference_file",
+        "--reference-file",
         help="Path to Excel file containing reference (public) benchmark data for comparison",
         default=None,
+    )
+    parser.add_argument(
+        "--metric",
+        help="Target metric to analyze (default: avg_inference_latency(ms)). Examples: avg_inference_latency(ms), token_per_sec",
+        default="avg_inference_latency(ms)",
     )
     parser.add_argument(
         "--output-dir",
@@ -1512,11 +1529,24 @@ def main():
         help="Directory to save analysis results (default: stability_analysis_results)",
     )
 
+    parser.add_argument(
+        "--verbose-level",
+        type=int,
+        default=0,
+        choices=range(4),
+        help="Verbose level 0-3 (default: 0) to control analysis output detail. Higher values show more detailed results.",
+    )
     # Parse arguments
     args = parser.parse_args()
 
     # Run analysis
-    analyze_latency_stability(args.primary_file, args.reference_file, args.output_dir)
+    analyze_latency_stability(
+        args.metric,
+        args.primary_file,
+        args.reference_file,
+        args.output_dir,
+        args.verbose_level,
+    )
 
 
 if __name__ == "__main__":

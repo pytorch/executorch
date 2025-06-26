@@ -693,6 +693,35 @@ public class Tensor<T: Scalar>: Equatable {
     ))
   }
 
+  /// Initializes a tensor without copying the data from an existing array.
+  ///
+  /// - Parameters:
+  ///   - scalars: An `inout` array of scalar values to share memory with.
+  ///   - shape: An array of integers representing the desired tensor shape. If empty, the shape is inferred as `[scalars.count]`.
+  ///   - strides: An array of integers representing the tensor strides.
+  ///   - dimensionOrder: An array of integers indicating the order of dimensions.
+  ///   - shapeDynamism: A `ShapeDynamism` value indicating the shape dynamism.
+  public convenience init(
+    _ scalars: inout [T],
+    shape: [Int] = [],
+    strides: [Int] = [],
+    dimensionOrder: [Int] = [],
+    shapeDynamism: ShapeDynamism = .dynamicBound
+  ) {
+    let newShape = shape.isEmpty ? [scalars.count] : shape
+    precondition(scalars.count == elementCount(ofShape: newShape))
+    self.init(scalars.withUnsafeMutableBufferPointer {
+      AnyTensor(
+        bytesNoCopy: $0.baseAddress!,
+        shape: newShape,
+        strides: strides,
+        dimensionOrder: dimensionOrder,
+        dataType: T.dataType,
+        shapeDynamism: shapeDynamism
+      )
+    })
+  }
+
   /// Initializes a tensor with an array of scalar values.
   ///
   /// - Parameters:
@@ -792,9 +821,8 @@ public class Tensor<T: Scalar>: Equatable {
     lhs.anyTensor == rhs.anyTensor
   }
 
-  // MARK: Internal
-
-  let anyTensor: AnyTensor
+  // Wrapped AnyTensor instance.
+  public let anyTensor: AnyTensor
 }
 
 @available(*, deprecated, message: "This API is experimental.")

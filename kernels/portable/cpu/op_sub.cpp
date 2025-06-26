@@ -61,7 +61,7 @@ Tensor& sub_out(
         op_name,
         utils::SupportedTensorDtypes::REALHBF16>(
         [val_alpha](const auto val_a, const auto val_b) {
-          return val_a - val_alpha * val_b;
+          return val_a - (decltype(val_b))(val_alpha)*val_b;
         },
         ctx,
         a,
@@ -112,12 +112,13 @@ Tensor& sub_scalar_out(
   ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
     const CTYPE_COMPUTE val_alpha = utils::scalar_to<CTYPE_COMPUTE>(alpha);
+    const auto val_alpha_times_b = val_alpha * val_b;
     utils::apply_unitensor_elementwise_fn<
         CTYPE_COMPUTE,
         op_name,
         utils::SupportedTensorDtypes::SAME_AS_COMMON>(
-        [val_b, val_alpha](const auto val_a) {
-          return val_a - val_alpha * val_b;
+        [val_alpha_times_b](const auto val_a) {
+          return val_a - (decltype(val_a))(val_alpha_times_b);
         },
         ctx,
         a,

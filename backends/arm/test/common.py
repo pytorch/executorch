@@ -95,6 +95,7 @@ def get_u55_compile_spec(
     memory_mode: str = "Shared_Sram",
     extra_flags: str = "--debug-force-regor --output-format=raw",
     custom_path: Optional[str] = None,
+    config: Optional[str] = "Arm/vela.ini",
 ) -> list[CompileSpec]:
     """
     Compile spec for Ethos-U55.
@@ -105,6 +106,7 @@ def get_u55_compile_spec(
         memory_mode=memory_mode,
         extra_flags=extra_flags,
         custom_path=custom_path,
+        config=config,
     ).build()
 
 
@@ -114,6 +116,7 @@ def get_u85_compile_spec(
     memory_mode="Shared_Sram",
     extra_flags="--output-format=raw",
     custom_path=None,
+    config: Optional[str] = "Arm/vela.ini",
 ) -> list[CompileSpec]:
     """
     Compile spec for Ethos-U85.
@@ -124,6 +127,7 @@ def get_u85_compile_spec(
         memory_mode=memory_mode,
         extra_flags=extra_flags,
         custom_path=custom_path,
+        config=config,
     ).build()
 
 
@@ -133,6 +137,7 @@ def get_u55_compile_spec_unbuilt(
     memory_mode: str,
     extra_flags: str,
     custom_path: Optional[str],
+    config: Optional[str],
 ) -> ArmCompileSpecBuilder:
     """Get the ArmCompileSpecBuilder for the Ethos-U55 tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -151,6 +156,7 @@ def get_u55_compile_spec_unbuilt(
             system_config=system_config,
             memory_mode=memory_mode,
             extra_flags=extra_flags,
+            config_ini=config,
         )
         .dump_intermediate_artifacts_to(artifact_path)
     )
@@ -163,6 +169,7 @@ def get_u85_compile_spec_unbuilt(
     memory_mode: str,
     extra_flags: str,
     custom_path: Optional[str],
+    config: Optional[str],
 ) -> list[CompileSpec]:
     """Get the ArmCompileSpecBuilder for the Ethos-U85 tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -180,6 +187,7 @@ def get_u85_compile_spec_unbuilt(
             system_config=system_config,
             memory_mode=memory_mode,
             extra_flags=extra_flags,
+            config_ini=config,
         )
         .dump_intermediate_artifacts_to(artifact_path)
     )
