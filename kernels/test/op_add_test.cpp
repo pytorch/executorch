@@ -15,8 +15,6 @@
 
 #include <gtest/gtest.h>
 
-#include <iostream>
-
 using namespace ::testing;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
@@ -239,8 +237,7 @@ class OpAddOutKernelTest : public OperatorTest {
     Tensor b = tf.ones({2, 2});
     Tensor out = tf.zeros({2, 2});
 
-    ET_EXPECT_KERNEL_FAILURE(
-        context_, op_add_out(a, b, bad_value, out));
+    ET_EXPECT_KERNEL_FAILURE(context_, op_add_out(a, b, bad_value, out));
   }
 };
 
@@ -261,8 +258,7 @@ class OpAddScalarOutKernelTest : public OperatorTest {
     Scalar b = 1;
     Tensor out = tf.zeros({2, 2});
 
-    ET_EXPECT_KERNEL_FAILURE(
-        context_, op_add_scalar_out(a, b, bad_value, out));
+    ET_EXPECT_KERNEL_FAILURE(context_, op_add_scalar_out(a, b, bad_value, out));
   }
 };
 

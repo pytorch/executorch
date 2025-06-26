@@ -53,9 +53,7 @@ Tensor& add_out(
   ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     CTYPE_COMPUTE val_alpha;
     ET_KERNEL_CHECK(
-      ctx,
-      utils::extract_scalar(alpha, &val_alpha),
-      InvalidArgument, );
+        ctx, utils::extract_scalar(alpha, &val_alpha), InvalidArgument, );
     utils::apply_bitensor_elementwise_fn<
         CTYPE_COMPUTE,
         op_name,
@@ -109,9 +107,7 @@ Tensor& add_scalar_out(
     CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
     CTYPE_COMPUTE val_alpha;
     ET_KERNEL_CHECK(
-      ctx,
-      utils::extract_scalar(alpha, &val_alpha),
-      InvalidArgument, );
+        ctx, utils::extract_scalar(alpha, &val_alpha), InvalidArgument, );
     auto val_alpha_times_b = val_alpha * val_b;
     utils::apply_unitensor_elementwise_fn<
         CTYPE_COMPUTE,

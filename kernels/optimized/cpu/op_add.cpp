@@ -45,9 +45,7 @@ Tensor& opt_add_out(
         ET_SWITCH_REALB_TYPES(b_type, ctx, "add.out", CTYPE_B, [&]() {
           CTYPE alpha_val;
           ET_KERNEL_CHECK(
-              ctx,
-              utils::extract_scalar(alpha, &alpha_val),
-              InvalidArgument, );
+              ctx, utils::extract_scalar(alpha, &alpha_val), InvalidArgument, );
           CTYPE_B b_val = *b.const_data_ptr<CTYPE_B>();
           CTYPE b_casted = static_cast<CTYPE>(b_val);
 
@@ -101,9 +99,7 @@ Tensor& opt_add_scalar_out(
       CTYPE b_casted = utils::scalar_to<CTYPE>(b);
       CTYPE alpha_val;
       ET_KERNEL_CHECK(
-          ctx,
-          utils::extract_scalar(alpha, &alpha_val),
-          InvalidArgument, );
+          ctx, utils::extract_scalar(alpha, &alpha_val), InvalidArgument, );
 
       using Vec = at::vec::Vectorized<CTYPE>;
       at::vec::map<CTYPE>(
