@@ -260,12 +260,6 @@ OPTIMIZED_ATEN_OPS = (
         ],
     ),
     op_target(
-        name = "op_neg",
-        deps = [
-            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
-        ],
-    ),
-    op_target(
         name = "op_sub",
         deps = [
             ":binary_ops",
