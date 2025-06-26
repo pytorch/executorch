@@ -132,3 +132,18 @@ def define_common_targets():
             ":test_tiktoken_tokenizer_model": "test_tiktoken_tokenizer.model",
         },
     )
+
+    runtime.cxx_test(
+        name = "test_hf_tokenizer",
+        srcs = [
+            "test_hf_tokenizer.cpp",
+            "test_token_decoder.cpp",
+        ],
+        deps = [
+            "//pytorch/tokenizers:hf_tokenizer",
+        ],
+        env = {
+            "RESOURCES_PATH": "$(location :resources)/resources",
+        },
+        platforms = [CXX, ANDROID],  # Cannot bundle resources on Apple platform.
+    )

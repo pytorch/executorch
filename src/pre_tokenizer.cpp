@@ -37,7 +37,24 @@ PreTokenizer::Ptr PreTokenizerConfig::create() const {
       throw std::runtime_error(
           "Missing pattern for PreTokenizer of type Split");
     }
-    return PreTokenizer::Ptr(new RegexPreTokenizer(*pattern));
+
+    // Validate behavior parameter
+    std::string behavior_str = behavior ? *behavior : "";
+    if (!behavior_str.empty() && behavior_str != "MergedWithPrevious") {
+      throw std::runtime_error(
+          "Unsupported behavior '" + behavior_str +
+          "' for Split PreTokenizer. Only 'MergedWithPrevious' is supported.");
+    }
+
+    // Validate invert parameter
+    bool invert_flag = invert ? *invert : false;
+    if (invert_flag) {
+      throw std::runtime_error(
+          "invert=true is not supported for Split PreTokenizer. Only invert=false is supported.");
+    }
+
+    return PreTokenizer::Ptr(new RegexPreTokenizer(
+        *pattern, is_delimiter ? *is_delimiter : false, behavior_str));
   }
   if (type == "Digits") {
     if (individual_digits) {
@@ -79,7 +96,27 @@ PreTokenizerConfig& PreTokenizerConfig::parse_json(const json& json_config) {
   if (type == "Split") {
     try {
       pattern = json_config.at("pattern").at("Regex");
+      is_delimiter = false;
     } catch (json::out_of_range&) {
+      // "Regex" is not there, check "String", which is a delimiter
+      std::string delimiter = json_config.at("pattern").at("String");
+      // For string patterns, escape regex special characters to treat them as
+      // literal strings (same as Rust's regex::escape)
+      pattern = IRegex::escape(delimiter);
+      is_delimiter = true;
+    }
+
+    // Parse behavior and invert fields
+    try {
+      behavior = json_config.at("behavior");
+    } catch (json::out_of_range&) {
+      // behavior is optional, default to empty string
+    }
+
+    try {
+      invert = json_config.at("invert");
+    } catch (json::out_of_range&) {
+      // invert is optional, default to false
     }
   } else if (type == "Digits") {
     try {
@@ -115,9 +152,66 @@ std::vector<std::string> RegexPreTokenizer::pre_tokenize(
     const std::string& input) const {
   if (!regex_)
     return {};
+
   std::vector<std::string> results;
-  for (const auto& match : regex_->find_all(input)) {
-    results.push_back(input.substr(match.start, match.end - match.start));
+  auto matches = regex_->find_all(input);
+
+  if (!is_delimiter_) {
+    // Original behavior: return the matches themselves
+    for (const auto& match : matches) {
+      results.push_back(input.substr(match.start, match.end - match.start));
+    }
+  } else {
+    // Delimiter behavior
+    if (matches.empty()) {
+      // No matches found, return the entire input
+      results.push_back(input);
+      return results;
+    }
+
+    if (behavior_ == "MergedWithPrevious") {
+      // MergedWithPrevious: Include delimiter with previous token
+      // Example: "the-final--countdown" with delimiter "-"
+      // -> ["the-", "final-", "-", "countdown"]
+      size_t last_end = 0;
+
+      for (size_t i = 0; i < matches.size(); ++i) {
+        const auto& match = matches[i];
+
+        // Add text before the match plus the delimiter
+        if (match.start > last_end) {
+          std::string token = input.substr(last_end, match.end - last_end);
+          results.push_back(token);
+        } else {
+          // Only delimiter, no preceding text
+          std::string delimiter =
+              input.substr(match.start, match.end - match.start);
+          results.push_back(delimiter);
+        }
+
+        last_end = match.end;
+      }
+
+      // Add remaining text after the last match (if any)
+      if (last_end < input.length()) {
+        results.push_back(input.substr(last_end));
+      }
+    } else {
+      // Default delimiter behavior (split on delimiters)
+      size_t last_end = 0;
+      for (const auto& match : matches) {
+        // Add text before the match (if any)
+        if (match.start > last_end) {
+          results.push_back(input.substr(last_end, match.start - last_end));
+        }
+        last_end = match.end;
+      }
+
+      // Add remaining text after the last match (if any)
+      if (last_end < input.length()) {
+        results.push_back(input.substr(last_end));
+      }
+    }
   }
   return results;
 }

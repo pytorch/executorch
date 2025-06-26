@@ -42,6 +42,14 @@ class IRegex {
    * @return A vector of strings containing all matched substrings.
    */
   virtual std::vector<Match> find_all(const std::string& text) const = 0;
+
+  /**
+   * @brief Escape special regex characters in a string to treat it as literal.
+   *
+   * @param input The input string to escape.
+   * @return The escaped string that can be used as a literal pattern in regex.
+   */
+  static std::string escape(const std::string& input);
 };
 
 // Function pointer type for create_fallback_regex implementations

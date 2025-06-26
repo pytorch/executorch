@@ -65,6 +65,13 @@ class TokenDecoderConfig {
    */
   std::string type;
 
+  // Parameters for Replace decoder
+  std::string replace_pattern;
+  std::string replace_content;
+
+  // Parameters for Sequence decoder
+  std::vector<nlohmann::json> sequence_decoders;
+
   /*----------------*/
   /* Public methods */
   /*----------------*/
@@ -95,5 +102,50 @@ class ByteLevelTokenDecoder : public TokenDecoder {
   std::string decode(const std::string& token) const override;
 
 }; // end class ByteLevelTokenDecoder
+
+// -- Replace ------------------------------------------------------------------
+// Replaces a pattern with a replacement string
+
+class ReplaceTokenDecoder : public TokenDecoder {
+ public:
+  explicit ReplaceTokenDecoder(
+      const std::string& pattern,
+      const std::string& content);
+  std::string decode(const std::string& token) const override;
+
+ private:
+  std::string pattern_;
+  std::string content_;
+}; // end class ReplaceTokenDecoder
+
+// -- ByteFallback -------------------------------------------------------------
+// Handles byte fallback decoding
+
+class ByteFallbackTokenDecoder : public TokenDecoder {
+ public:
+  std::string decode(const std::string& token) const override;
+
+}; // end class ByteFallbackTokenDecoder
+
+// -- Fuse --------------------------------------------------------------------
+// Fuses tokens together
+
+class FuseTokenDecoder : public TokenDecoder {
+ public:
+  std::string decode(const std::string& token) const override;
+
+}; // end class FuseTokenDecoder
+
+// -- Sequence -----------------------------------------------------------------
+// Applies a sequence of decoders in order
+
+class SequenceTokenDecoder : public TokenDecoder {
+ public:
+  explicit SequenceTokenDecoder(std::vector<TokenDecoder::Ptr> decoders);
+  std::string decode(const std::string& token) const override;
+
+ private:
+  std::vector<TokenDecoder::Ptr> decoders_;
+}; // end class SequenceTokenDecoder
 
 } // namespace tokenizers

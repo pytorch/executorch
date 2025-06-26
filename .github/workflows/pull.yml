@@ -24,6 +24,6 @@ jobs:
       timeout: 90
       script: |
         set -ex
-        cmake -DTOKENIZERS_BUILD_TEST=ON -DCMAKE_BUILD_TYPE=Debug . -Bbuild
-        cmake --build build -j9 --config Debug
-        cd build && ctest
+        cmake -DCMAKE_BUILD_TYPE=Debug test -Bbuild/test
+        cmake --build build/test -j9 --config Debug
+        cd build/test && ctest

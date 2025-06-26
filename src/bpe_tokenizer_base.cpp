@@ -194,6 +194,7 @@ Result<std::vector<uint64_t>> BPETokenizerBase::byte_pair_encode_(
       return std::vector<uint64_t>(*result);
     } else {
       // TODO: is it possible?
+      TK_LOG(Error, "unknown token: '%s'", piece.c_str());
       return Error::EncodeFailure;
     }
   }

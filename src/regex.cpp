@@ -33,6 +33,23 @@ FallbackRegexFn get_fallback_regex() {
   return fallback_regex;
 }
 
+std::string IRegex::escape(const std::string& input) {
+  std::string result;
+  result.reserve(input.size() * 2); // Reserve space for potential escaping
+
+  for (char c : input) {
+    // Escape regex special characters to treat them as literal strings
+    if (c == '\\' || c == '^' || c == '$' || c == '.' || c == '|' || c == '?' ||
+        c == '*' || c == '+' || c == '(' || c == ')' || c == '[' || c == ']' ||
+        c == '{' || c == '}') {
+      result += '\\';
+    }
+    result += c;
+  }
+
+  return result;
+}
+
 Result<std::unique_ptr<IRegex>> create_regex(const std::string& pattern) {
   // Try RE2 first
   auto re2 = std::make_unique<Re2Regex>();
