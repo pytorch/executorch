@@ -102,7 +102,7 @@ test_model() {
       bash examples/models/llama/install_requirements.sh
       # Test export_llm script: python3 -m extension.llm.export.export_llm.
       # Use Llama random checkpoint with Qwen 2.5 1.5b model configuration.
-      "${PYTHON_EXECUTABLE}" -m extension.llm.export.export_llm base.model_class="${MODEL_NAME}" base.params=examples/models/qwen2_5/1_5b_config.json
+      "${PYTHON_EXECUTABLE}" -m extension.llm.export.export_llm base.model_class="${MODEL_NAME}" base.params=examples/models/qwen2_5/config/1_5b_config.json
       rm "./${MODEL_NAME}.pte"
       return  # Skip running with portable executor runnner since portable doesn't support Qwen's biased linears.
   fi
@@ -110,7 +110,7 @@ test_model() {
       # Install requirements for export_llama
       bash examples/models/llama/install_requirements.sh
       # Test export_llm script: python3 -m extension.llm.export.export_llm.
-      "${PYTHON_EXECUTABLE}" -m extension.llm.export.export_llm base.model_class="${MODEL_NAME}" base.params=examples/models/phi_4_mini/config.json
+      "${PYTHON_EXECUTABLE}" -m extension.llm.export.export_llm base.model_class="${MODEL_NAME}" base.params=examples/models/phi_4_mini/config/config.json
       run_portable_executor_runner
       rm "./${MODEL_NAME}.pte"
       return
