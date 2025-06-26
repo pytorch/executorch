@@ -8,18 +8,12 @@ import unittest
 from typing import Tuple
 
 import torch
-from executorch.backends.xnnpack._passes.fuse_batch_norm_with_conv import (
-    FuseBatchNormWithConvPass,
-)
-from executorch.backends.xnnpack._passes.fuse_batch_norm_with_linear import (
-    FuseBatchNormWithLinearPass,
-)
+from executorch.backends.xnnpack._passes.fuse_batch_norm import FuseBatchNormPass
 from executorch.backends.xnnpack.test.tester import RunPasses, Tester
 
 
 class TestBatchNormFusion(unittest.TestCase):
-    ConvPassStage = RunPasses([FuseBatchNormWithConvPass])
-    LinearPassStage = RunPasses([FuseBatchNormWithLinearPass])
+    PassStage = RunPasses([FuseBatchNormPass])
     bn_name = "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default"
 
     def setUp(self):
@@ -70,7 +64,7 @@ class TestBatchNormFusion(unittest.TestCase):
                 )
                 .export()
                 .to_edge()
-                .run_passes(self.ConvPassStage)
+                .run_passes(self.PassStage)
                 .check_count({self.bn_name: 1})
                 .run_method_and_compare_outputs()
             )
@@ -85,7 +79,7 @@ class TestBatchNormFusion(unittest.TestCase):
                 .quantize()
                 .export()
                 .to_edge()
-                .run_passes(self.ConvPassStage)
+                .run_passes(self.PassStage)
                 .check_count({self.bn_name: 1})
                 .run_method_and_compare_outputs()
             )
