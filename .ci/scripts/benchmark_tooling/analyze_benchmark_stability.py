@@ -66,11 +66,16 @@ def is_matching_dataset(primary_sheet, reference_sheet):
 
 
 def analyze_latency_stability(  # noqa: C901
-    primary_file, reference_file=None, output_dir="stability_analysis_results"
+    target_metric,
+    primary_file,
+    reference_file=None,
+    output_dir="stability_analysis_results",
+    verbose_level=0,
 ):
-    print(f"Analyzing latency stability from primary file: {primary_file}")
+    print_section_header(f"Analyzing Stability Against Metric '{target_metric}'")
+    print(f"Primary dataset: {primary_file}")
     if reference_file:
-        print(f"Using reference file for comparison: {reference_file}")
+        print(f"Reference dataset for comparison: {reference_file}")
 
     # Create output directory if it doesn't exist
     if not os.path.exists(output_dir):
@@ -80,6 +85,9 @@ def analyze_latency_stability(  # noqa: C901
     print_section_header("LOADING PRIMARY DATASETS (Private)")
     primary_datasets = {}
     documents = read_excel_with_json_header(primary_file)
+
+    if verbose_level > 2:
+        print(f"Printing documents: {documents}")
 
     for document in documents:
         sheetName = document.get("sheetName", None)
@@ -99,21 +107,8 @@ def analyze_latency_stability(  # noqa: C901
 
         model, full_device, base_device, os_version = parse_model_device_config(config)
 
-        # Check if required columns exist
-        required_cols = ["avg_inference_latency(ms)", "metadata_info.timestamp"]
-        if "trimmean_inference_latency(ms)" in df.columns:
-            trimmed_col = "trimmean_inference_latency(ms)"
-            required_cols.append(trimmed_col)
-        else:
-            trimmed_col = None
-
-        if "TPS" in df.columns:
-            tps_col = "TPS"
-            required_cols.append(tps_col)
-        else:
-            tps_col = None
-
         # Skip sheets without required columns
+        required_cols = [target_metric, "metadata_info.timestamp"]
         if not all(col in df.columns for col in required_cols):
             print(f"  Skipping {sheetName}: Missing required columns")
             continue
@@ -121,9 +116,10 @@ def analyze_latency_stability(  # noqa: C901
         # Convert Date to datetime
         df["Date"] = pd.to_datetime(df["metadata_info.timestamp"])
 
-        # Calculate stability metrics
+        # Calculate stability metrics along the target column in the dataset
         metrics = calculate_stability_metrics(
-            df, "avg_inference_latency(ms)", trimmed_col, tps_col
+            df,
+            target_metric,
         )
 
         primary_datasets[sheetName] = {
@@ -161,21 +157,8 @@ def analyze_latency_stability(  # noqa: C901
                 config
             )
 
-            # Check if required columns exist
-            required_cols = ["avg_inference_latency(ms)", "metadata_info.timestamp"]
-            if "trimmean_inference_latency(ms)" in df.columns:
-                trimmed_col = "trimmean_inference_latency(ms)"
-                required_cols.append(trimmed_col)
-            else:
-                trimmed_col = None
-
-            if "TPS" in df.columns:
-                tps_col = "TPS"
-                required_cols.append(tps_col)
-            else:
-                tps_col = None
-
             # Skip sheets without required columns
+            required_cols = [target_metric, "metadata_info.timestamp"]
             if not all(col in df.columns for col in required_cols):
                 print(
                     f"  Skipping reference {sheetName}: Missing required columns{required_cols}"
@@ -187,7 +170,8 @@ def analyze_latency_stability(  # noqa: C901
 
             # Calculate stability metrics
             metrics = calculate_stability_metrics(
-                df, "avg_inference_latency(ms)", trimmed_col, tps_col
+                df,
+                target_metric,
             )
 
             reference_datasets[sheetName] = {
@@ -201,30 +185,33 @@ def analyze_latency_stability(  # noqa: C901
             }
 
     # Process primary datasets
-    print_section_header("ANALYZING PRIMARY DATASETS")
-    for sheet, info in primary_datasets.items():
-        # Generate dataset report
-        generate_dataset_report(
-            sheet,
-            info["model"],
-            info["full_device"],
-            "Primary",
-            info["df"],
-            info["metrics"],
-            output_dir,
-        )
+    if verbose_level > 2:
+        print_section_header("ANALYZING PRIMARY DATASETS")
+        for sheet, info in primary_datasets.items():
+            # Generate dataset report
+            generate_dataset_report(
+                sheet,
+                target_metric,
+                info["model"],
+                info["full_device"],
+                "Primary",
+                info["df"],
+                info["metrics"],
+                output_dir,
+            )
 
-        # Generate time series plot
-        if len(info["df"]) > 5:  # Only create plot if enough data points
-            generate_time_series_plot(sheet, info["df"], output_dir, "Primary")
+            # Generate time series plot
+            if len(info["df"]) > 5:  # Only create plot if enough data points
+                generate_time_series_plot(sheet, info["df"], output_dir, "Primary")
 
     # Process reference datasets if provided
-    if reference_file:
+    if reference_file and verbose_level > 3:
         print_section_header("ANALYZING REFERENCE DATASETS")
         for sheet, info in reference_datasets.items():
             # Generate dataset report
             generate_dataset_report(
                 sheet,
+                target_metric,
                 info["model"],
                 info["full_device"],
                 "Reference",
@@ -238,7 +225,7 @@ def analyze_latency_stability(  # noqa: C901
                 generate_time_series_plot(sheet, info["df"], output_dir, "Reference")
 
     # Generate comparison reports for matching datasets
-    if reference_file:
+    if reference_file and verbose_level > 1:
         print_section_header("PRIVATE VS PUBLIC STABILITY COMPARISON")
         matches_found = False
 
@@ -270,9 +257,10 @@ def analyze_latency_stability(  # noqa: C901
         if not matches_found:
             print("No matching datasets found between primary and reference files.")
 
-    # Generate intra-primary summary (comparing across different models/devices)
-    print_section_header("INTRA-PRIMARY STABILITY COMPARISON")
-    generate_intra_primary_summary(primary_datasets, output_dir)
+    if verbose_level > 0:
+        # Generate intra-primary summary (comparing across different models/devices)
+        print_section_header("INTRA-PRIMARY STABILITY COMPARISON")
+        generate_intra_primary_summary(primary_datasets, output_dir)
 
     # Generate summary report for all datasets
     print_section_header("COMPREHENSIVE STABILITY SUMMARY")
@@ -285,28 +273,17 @@ def analyze_latency_stability(  # noqa: C901
 
 
 def calculate_stability_metrics(  # noqa: C901
-    df, raw_col, trimmed_col=None, tps_col=None
+    df,
+    target_metric,
 ):
     """Calculate stability metrics for the given dataset"""
     metrics = {}
-
-    # Extract data
-    raw_latency = df[raw_col].values
-    if trimmed_col and trimmed_col in df.columns:
-        trimmed_latency = df[trimmed_col].values
-    else:
-        trimmed_latency = None
-    if tps_col and tps_col in df.columns:
-        tps = df[tps_col].values
-    else:
-        tps = None
+    # Extract data and ingore NaN values
+    raw_latency = df[target_metric].dropna().values
 
     # Central tendency metrics
     metrics["mean_raw_latency"] = np.mean(raw_latency)
     metrics["median_raw_latency"] = np.median(raw_latency)
-    if trimmed_latency is not None:
-        metrics["mean_trimmed_latency"] = np.mean(trimmed_latency)
-        metrics["median_trimmed_latency"] = np.median(trimmed_latency)
 
     # Dispersion metrics
     metrics["std_raw_latency"] = np.std(raw_latency, ddof=1)
@@ -316,20 +293,10 @@ def calculate_stability_metrics(  # noqa: C901
     metrics["iqr_raw_latency"] = np.percentile(raw_latency, 75) - np.percentile(
         raw_latency, 25
     )
-    if trimmed_latency is not None:
-        metrics["std_trimmed_latency"] = np.std(trimmed_latency, ddof=1)
-        metrics["cv_trimmed_latency"] = (
-            metrics["std_trimmed_latency"] / metrics["mean_trimmed_latency"]
-        ) * 100
-        metrics["iqr_trimmed_latency"] = np.percentile(
-            trimmed_latency, 75
-        ) - np.percentile(trimmed_latency, 25)
 
     # Percentile metrics
     for p in [50, 90, 95, 99]:
         metrics[f"p{p}_raw_latency"] = np.percentile(raw_latency, p)
-        if trimmed_latency is not None:
-            metrics[f"p{p}_trimmed_latency"] = np.percentile(trimmed_latency, p)
 
     # Inter-jitter metrics (variability between runs)
     if np.min(raw_latency) > 0:
@@ -342,37 +309,45 @@ def calculate_stability_metrics(  # noqa: C901
         metrics["p99_raw_latency"] / metrics["p50_raw_latency"]
     )
 
-    if trimmed_latency is not None:
-        if np.min(trimmed_latency) > 0:
-            metrics["max_min_range_ratio_trimmed"] = np.max(trimmed_latency) / np.min(
-                trimmed_latency
+    # Intra-jitter proxy (if both raw and trimmed latency are available)
+    trimmed_metric_col = "trimmean_inference_latency(ms)"
+    if (
+        target_metric == "avg_inference_latency(ms)"
+        and trimmed_metric_col in df.columns
+    ):
+        trimmed_latency = df[trimmed_metric_col].values
+        if trimmed_latency is not None:
+            metrics["mean_trimmed_latency"] = np.mean(trimmed_latency)
+            metrics["median_trimmed_latency"] = np.median(trimmed_latency)
+            metrics["std_trimmed_latency"] = np.std(trimmed_latency, ddof=1)
+            metrics["cv_trimmed_latency"] = (
+                metrics["std_trimmed_latency"] / metrics["mean_trimmed_latency"]
+            ) * 100
+            metrics["iqr_trimmed_latency"] = np.percentile(
+                trimmed_latency, 75
+            ) - np.percentile(trimmed_latency, 25)
+            for p in [50, 90, 95, 99]:
+                metrics[f"p{p}_trimmed_latency"] = np.percentile(trimmed_latency, p)
+            if np.min(trimmed_latency) > 0:
+                metrics["max_min_range_ratio_trimmed"] = np.max(
+                    trimmed_latency
+                ) / np.min(trimmed_latency)
+            else:
+                metrics["max_min_range_ratio_trimmed"] = float("inf")
+                print(
+                    "Warning: Minimum trimmed latency value is zero, max/min ratio set to infinity"
+                )
+            metrics["p99_p50_ratio_trimmed"] = (
+                metrics["p99_trimmed_latency"] / metrics["p50_trimmed_latency"]
             )
-        else:
-            metrics["max_min_range_ratio_trimmed"] = float("inf")
-            print(
-                "Warning: Minimum trimmed latency value is zero, max/min ratio set to infinity"
-            )
-
-        metrics["p99_p50_ratio_trimmed"] = (
-            metrics["p99_trimmed_latency"] / metrics["p50_trimmed_latency"]
-        )
-
-    # Intra-jitter proxy (if both raw and trimmed are available)
-    if trimmed_latency is not None:
-        trimming_effect = (raw_latency - trimmed_latency) / raw_latency
-        metrics["mean_trimming_effect_ratio"] = np.mean(trimming_effect)
-        metrics["max_trimming_effect_ratio"] = np.max(trimming_effect)
-
-    # TPS metrics
-    if tps is not None:
-        metrics["mean_tps"] = np.mean(tps)
-        metrics["std_tps"] = np.std(tps, ddof=1)
-        metrics["cv_tps"] = (metrics["std_tps"] / metrics["mean_tps"]) * 100
+            trimming_effect = (raw_latency - trimmed_latency) / raw_latency
+            metrics["mean_trimming_effect_ratio"] = np.mean(trimming_effect)
+            metrics["max_trimming_effect_ratio"] = np.max(trimming_effect)
 
     # Time-based stability (rolling window of 5 samples)
     if len(df) >= 5:
         df_sorted = df.sort_values("Date")
-        rolling_std = df_sorted[raw_col].rolling(window=5).std()
+        rolling_std = df_sorted[target_metric].rolling(window=5).std()
         metrics["mean_rolling_std"] = rolling_std.mean()
         metrics["max_rolling_std"] = rolling_std.max()
 
@@ -419,7 +394,7 @@ def calculate_stability_metrics(  # noqa: C901
 
 
 def generate_dataset_report(  # noqa: C901
-    sheet_name, model, device, dataset_type, df, metrics, output_dir
+    sheet_name, target_column, model, device, dataset_type, df, metrics, output_dir
 ):
     """Generate a detailed report for a single dataset"""
     report_file = f"{output_dir}/{sheet_name}_{dataset_type.lower()}_report.txt"
@@ -436,7 +411,9 @@ def generate_dataset_report(  # noqa: C901
 
     # Dataset overview
     report_content.append("Dataset Overview:")
-    report_content.append(f"  - Number of samples: {len(df)}")
+    report_content.append(
+        f"  - Number of samples: {len(df[target_column].dropna().values)}"
+    )
     report_content.append(f"  - Date range: {df['Date'].min()} to {df['Date'].max()}")
     report_content.append("")
 
@@ -719,12 +696,12 @@ def generate_comparison_report(  # noqa: C901
 
     # Add key metrics to the table
     metrics_to_compare = [
-        ("Mean Latency (ms)", "mean_raw_latency", "ms"),
-        ("Median Latency (ms)", "median_raw_latency", "ms"),
-        ("Standard Deviation (ms)", "std_raw_latency", "ms"),
+        ("Mean Value", "mean_raw_latency", ""),
+        ("Median Value", "median_raw_latency", ""),
+        ("Standard Deviation", "std_raw_latency", ""),
         ("CV (%)", "cv_raw_latency", "%"),
-        ("IQR (ms)", "iqr_raw_latency", "ms"),
-        ("P99 (ms)", "p99_raw_latency", "ms"),
+        ("IQR", "iqr_raw_latency", ""),
+        ("P99", "p99_raw_latency", ""),
         ("Max/Min Ratio", "max_min_range_ratio_raw", ""),
         ("P99/P50 Ratio", "p99_p50_ratio_raw", ""),
         ("Stability Score", "stability_score", ""),
@@ -1056,7 +1033,7 @@ def generate_intra_primary_summary(primary_datasets, output_dir):  # noqa: C901
                 "Sheet": sheet_name,
                 "Model": info["model"],
                 "Device": info["full_device"],
-                "Mean Latency (ms)": info["metrics"]["mean_raw_latency"],
+                "Mean Value": info["metrics"]["mean_raw_latency"],
                 "CV (%)": info["metrics"]["cv_raw_latency"],
                 "Stability Score": info["metrics"]["stability_score"],
                 "Stability Rating": info["metrics"]["stability_rating"],
@@ -1293,7 +1270,7 @@ def generate_summary_report(  # noqa: C901
                 "Dataset": sheet_name,
                 "Model": model,
                 "Device": device_display,
-                "Mean Latency (ms)": info["metrics"]["mean_raw_latency"],
+                "Mean Value": info["metrics"]["mean_raw_latency"],
                 "CV (%)": info["metrics"]["cv_raw_latency"],
                 "Stability Score": info["metrics"]["stability_score"],
                 "Stability Rating": info["metrics"]["stability_rating"],
@@ -1330,7 +1307,7 @@ def generate_summary_report(  # noqa: C901
                     "Dataset": sheet_name,
                     "Model": model,
                     "Device": device_display,
-                    "Mean Latency (ms)": info["metrics"]["mean_raw_latency"],
+                    "Mean Value": info["metrics"]["mean_raw_latency"],
                     "CV (%)": info["metrics"]["cv_raw_latency"],
                     "Stability Score": info["metrics"]["stability_score"],
                     "Stability Rating": info["metrics"]["stability_rating"],
@@ -1542,16 +1519,34 @@ def main():
         default=None,
     )
     parser.add_argument(
+        "--metric",
+        help="Target metric to analyze (default: avg_inference_latency(ms)). Examples: avg_inference_latency(ms), token_per_sec",
+        default="avg_inference_latency(ms)",
+    )
+    parser.add_argument(
         "--output-dir",
         default="stability_analysis_results",
         help="Directory to save analysis results (default: stability_analysis_results)",
     )
 
+    parser.add_argument(
+        "--verbose-level",
+        type=int,
+        default=0,
+        choices=range(4),
+        help="Verbose level 0-3 (default: 0) to control analysis output detail. Higher values show more detailed results.",
+    )
     # Parse arguments
     args = parser.parse_args()
 
     # Run analysis
-    analyze_latency_stability(args.primary_file, args.reference_file, args.output_dir)
+    analyze_latency_stability(
+        args.metric,
+        args.primary_file,
+        args.reference_file,
+        args.output_dir,
+        args.verbose_level,
+    )
 
 
 if __name__ == "__main__":
