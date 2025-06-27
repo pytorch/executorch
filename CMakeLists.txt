@@ -544,10 +544,6 @@ if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
 endif()
 
-if(EXECUTORCH_BUILD_EXTENSION_LLM)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizers)
-endif()
-
 if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
 endif()
